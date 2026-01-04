@@ -1,0 +1,416 @@
+{
+  "folders": [
+    {
+      "name": "🚗 UBI Root",
+      "path": "."
+    },
+    {
+      "name": "📱 Web App",
+      "path": "apps/web-app"
+    },
+    {
+      "name": "🔧 Admin Dashboard",
+      "path": "apps/admin-dashboard"
+    },
+    {
+      "name": "🌐 Marketing Site",
+      "path": "apps/marketing-site"
+    },
+    {
+      "name": "🍔 Restaurant Portal",
+      "path": "apps/restaurant-portal"
+    },
+    {
+      "name": "🚚 Fleet Portal",
+      "path": "apps/fleet-portal"
+    },
+    {
+      "name": "📦 Merchant Portal",
+      "path": "apps/merchant-portal"
+    },
+    {
+      "name": "🚪 API Gateway",
+      "path": "services/api-gateway"
+    },
+    {
+      "name": "👤 User Service",
+      "path": "services/user-service"
+    },
+    {
+      "name": "🚗 Ride Service (Go)",
+      "path": "services/ride-service"
+    },
+    {
+      "name": "🍕 Food Service",
+      "path": "services/food-service"
+    },
+    {
+      "name": "📦 Delivery Service (Go)",
+      "path": "services/delivery-service"
+    },
+    {
+      "name": "💳 Payment Service",
+      "path": "services/payment-service"
+    },
+    {
+      "name": "🔔 Notification Service",
+      "path": "services/notification-service"
+    },
+    {
+      "name": "🎨 UI Package",
+      "path": "packages/ui"
+    },
+    {
+      "name": "🛠️ Utils Package",
+      "path": "packages/utils"
+    },
+    {
+      "name": "🗄️ Database Package",
+      "path": "packages/database"
+    }
+  ],
+  "settings": {
+    // Editor
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit",
+      "source.organizeImports": "explicit"
+    },
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false,
+
+    // Files
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.turbo": true,
+      "**/dist": true,
+      "**/.next": true,
+      "**/coverage": true
+    },
+    "files.watcherExclude": {
+      "**/node_modules/**": true,
+      "**/.turbo/**": true,
+      "**/dist/**": true,
+      "**/.next/**": true
+    },
+    "files.associations": {
+      "*.css": "tailwindcss"
+    },
+
+    // TypeScript
+    "typescript.preferences.importModuleSpecifier": "relative",
+    "typescript.suggest.autoImports": true,
+    "typescript.updateImportsOnFileMove.enabled": "always",
+    "typescript.tsdk": "node_modules/typescript/lib",
+
+    // ESLint
+    "eslint.workingDirectories": [
+      { "mode": "auto" }
+    ],
+    "eslint.validate": [
+      "javascript",
+      "javascriptreact",
+      "typescript",
+      "typescriptreact"
+    ],
+
+    // Prettier
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[json]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[jsonc]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[markdown]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+
+    // Go
+    "[go]": {
+      "editor.defaultFormatter": "golang.go",
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+      }
+    },
+    "go.useLanguageServer": true,
+    "go.lintTool": "golangci-lint",
+    "go.lintOnSave": "package",
+    "gopls": {
+      "ui.semanticTokens": true
+    },
+
+    // Tailwind CSS
+    "tailwindCSS.experimental.classRegex": [
+      ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
+      ["cn\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]
+    ],
+    "tailwindCSS.includeLanguages": {
+      "typescript": "javascript",
+      "typescriptreact": "javascript"
+    },
+
+    // Prisma
+    "[prisma]": {
+      "editor.defaultFormatter": "Prisma.prisma"
+    },
+
+    // Search
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/.next": true,
+      "**/.turbo": true,
+      "**/coverage": true,
+      "pnpm-lock.yaml": true
+    },
+
+    // Terminal
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "terminal.integrated.cwd": "${workspaceFolder:🚗 UBI Root}",
+
+    // Git
+    "git.autofetch": true,
+    "git.enableSmartCommit": true,
+
+    // Testing
+    "testing.automaticallyOpenPeekView": "failureVisible"
+  },
+  "extensions": {
+    "recommendations": [
+      // Core
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "bradlc.vscode-tailwindcss",
+
+      // TypeScript/JavaScript
+      "ms-vscode.vscode-typescript-next",
+
+      // Go
+      "golang.go",
+
+      // Database
+      "Prisma.prisma",
+
+      // Git
+      "eamodio.gitlens",
+      "mhutchie.git-graph",
+
+      // Docker
+      "ms-azuretools.vscode-docker",
+
+      // Testing
+      "vitest.explorer",
+
+      // Utilities
+      "christian-kohler.path-intellisense",
+      "formulahendry.auto-rename-tag",
+      "mikestead.dotenv",
+      "streetsidesoftware.code-spell-checker",
+
+      // Theme (optional)
+      "GitHub.github-vscode-theme"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Web App (Next.js)",
+        "type": "node",
+        "request": "launch",
+        "cwd": "${workspaceFolder:📱 Web App}",
+        "runtimeExecutable": "pnpm",
+        "runtimeArgs": ["dev"],
+        "console": "integratedTerminal",
+        "serverReadyAction": {
+          "pattern": "- Local:.+(https?://\\S+)",
+          "uriFormat": "%s",
+          "action": "openExternally"
+        }
+      },
+      {
+        "name": "Admin Dashboard (Next.js)",
+        "type": "node",
+        "request": "launch",
+        "cwd": "${workspaceFolder:🔧 Admin Dashboard}",
+        "runtimeExecutable": "pnpm",
+        "runtimeArgs": ["dev"],
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "API Gateway",
+        "type": "node",
+        "request": "launch",
+        "cwd": "${workspaceFolder:🚪 API Gateway}",
+        "runtimeExecutable": "pnpm",
+        "runtimeArgs": ["dev"],
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "User Service",
+        "type": "node",
+        "request": "launch",
+        "cwd": "${workspaceFolder:👤 User Service}",
+        "runtimeExecutable": "pnpm",
+        "runtimeArgs": ["dev"],
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "Ride Service (Go)",
+        "type": "go",
+        "request": "launch",
+        "mode": "auto",
+        "program": "${workspaceFolder:🚗 Ride Service (Go)}/cmd/server",
+        "cwd": "${workspaceFolder:🚗 Ride Service (Go)}"
+      },
+      {
+        "name": "Delivery Service (Go)",
+        "type": "go",
+        "request": "launch",
+        "mode": "auto",
+        "program": "${workspaceFolder:📦 Delivery Service (Go)}/cmd/server",
+        "cwd": "${workspaceFolder:📦 Delivery Service (Go)}"
+      },
+      {
+        "name": "All Services",
+        "type": "node",
+        "request": "launch",
+        "cwd": "${workspaceFolder:🚗 UBI Root}",
+        "runtimeExecutable": "pnpm",
+        "runtimeArgs": ["dev:services"],
+        "console": "integratedTerminal"
+      }
+    ],
+    "compounds": [
+      {
+        "name": "Full Stack (Web + API Gateway)",
+        "configurations": ["Web App (Next.js)", "API Gateway"]
+      }
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Install Dependencies",
+        "type": "shell",
+        "command": "pnpm install",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Build All",
+        "type": "shell",
+        "command": "pnpm build",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "group": "build",
+        "problemMatcher": ["$tsc"]
+      },
+      {
+        "label": "Lint All",
+        "type": "shell",
+        "command": "pnpm lint",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "problemMatcher": ["$eslint-stylish"]
+      },
+      {
+        "label": "Test All",
+        "type": "shell",
+        "command": "pnpm test",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "group": "test",
+        "problemMatcher": []
+      },
+      {
+        "label": "Type Check",
+        "type": "shell",
+        "command": "pnpm typecheck",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "problemMatcher": ["$tsc"]
+      },
+      {
+        "label": "Docker: Start",
+        "type": "shell",
+        "command": "pnpm docker:up",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Docker: Stop",
+        "type": "shell",
+        "command": "pnpm docker:down",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Database: Migrate Dev",
+        "type": "shell",
+        "command": "pnpm db:migrate:dev",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Database: Studio",
+        "type": "shell",
+        "command": "pnpm db:studio",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "problemMatcher": []
+      },
+      {
+        "label": "Generate: New Package",
+        "type": "shell",
+        "command": "pnpm generate:package ${input:packageType} ${input:packageName}",
+        "options": {
+          "cwd": "${workspaceFolder:🚗 UBI Root}"
+        },
+        "problemMatcher": []
+      }
+    ],
+    "inputs": [
+      {
+        "id": "packageType",
+        "type": "pickString",
+        "description": "Package type",
+        "options": ["service", "app", "package"]
+      },
+      {
+        "id": "packageName",
+        "type": "promptString",
+        "description": "Package name (e.g., my-service)"
+      }
+    ]
+  }
+}

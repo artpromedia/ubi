@@ -1,0 +1,72 @@
+# =============================================================================
+# Default Resource Quotas
+# =============================================================================
+# Prevents runaway resource consumption in namespaces
+# =============================================================================
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: default-quota
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: default-quota
+spec:
+  hard:
+    # Compute
+    requests.cpu: "50"
+    requests.memory: 100Gi
+    limits.cpu: "100"
+    limits.memory: 200Gi
+
+    # Storage
+    requests.storage: 500Gi
+    persistentvolumeclaims: "50"
+
+    # Objects
+    pods: "200"
+    services: "50"
+    secrets: "100"
+    configmaps: "100"
+    replicationcontrollers: "50"
+
+    # Workloads
+    count/deployments.apps: "50"
+    count/statefulsets.apps: "20"
+    count/jobs.batch: "100"
+    count/cronjobs.batch: "20"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: default-quota
+  namespace: ubi-system
+  labels:
+    app.kubernetes.io/name: default-quota
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    pods: "50"
+    services: "20"
+    secrets: "50"
+    configmaps: "50"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: default-quota
+  namespace: ubi-monitoring
+  labels:
+    app.kubernetes.io/name: default-quota
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 60Gi
+    limits.cpu: "40"
+    limits.memory: 120Gi
+    pods: "50"
+    persistentvolumeclaims: "20"
+    requests.storage: 1Ti

@@ -1,0 +1,131 @@
+# =============================================================================
+# UBI Cluster Roles
+# =============================================================================
+# Defines cluster-wide RBAC roles for different user personas
+# =============================================================================
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ubi-admin
+  labels:
+    app.kubernetes.io/name: ubi-admin
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ubi-developer
+  labels:
+    app.kubernetes.io/name: ubi-developer
+rules:
+  # Read access to most resources
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - services
+      - endpoints
+      - configmaps
+      - secrets
+      - events
+    verbs: ["get", "list", "watch"]
+
+  # Read access to workloads
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+
+  # Limited write access for debugging
+  - apiGroups: [""]
+    resources:
+      - pods/exec
+      - pods/portforward
+    verbs: ["create"]
+
+  # Read access to ingress
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+
+  # Read access to custom resources
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - applications
+      - rollouts
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ubi-readonly
+  labels:
+    app.kubernetes.io/name: ubi-readonly
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - configmaps
+      - events
+      - namespaces
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBindings for groups
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ubi-admins
+subjects:
+  - kind: Group
+    name: ubi:admins
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: ubi-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ubi-developers
+subjects:
+  - kind: Group
+    name: ubi:developers
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: ubi-developer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ubi-viewers
+subjects:
+  - kind: Group
+    name: ubi:viewers
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: ubi-readonly
+  apiGroup: rbac.authorization.k8s.io

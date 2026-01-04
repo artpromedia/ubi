@@ -1,0 +1,308 @@
+# UBI Deployment Pipeline
+# Deploys applications and services based on changed packages
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+      package:
+        description: "Specific package to deploy (leave empty for affected)"
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-${{ github.ref }}-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9"
+  AWS_REGION: af-south-1
+
+jobs:
+  # ===========================================
+  # DETERMINE WHAT TO DEPLOY
+  # ===========================================
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      web-app: ${{ steps.changes.outputs.web-app }}
+      admin-dashboard: ${{ steps.changes.outputs.admin-dashboard }}
+      marketing-site: ${{ steps.changes.outputs.marketing-site }}
+      api-gateway: ${{ steps.changes.outputs.api-gateway }}
+      user-service: ${{ steps.changes.outputs.user-service }}
+      ride-service: ${{ steps.changes.outputs.ride-service }}
+      food-service: ${{ steps.changes.outputs.food-service }}
+      payment-service: ${{ steps.changes.outputs.payment-service }}
+      delivery-service: ${{ steps.changes.outputs.delivery-service }}
+      notification-service: ${{ steps.changes.outputs.notification-service }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect package changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web-app:
+              - 'apps/web-app/**'
+              - 'packages/ui/**'
+              - 'packages/utils/**'
+              - 'packages/api-client/**'
+            admin-dashboard:
+              - 'apps/admin-dashboard/**'
+              - 'packages/ui/**'
+              - 'packages/utils/**'
+            marketing-site:
+              - 'apps/marketing-site/**'
+              - 'packages/ui/**'
+            api-gateway:
+              - 'services/api-gateway/**'
+              - 'packages/utils/**'
+              - 'packages/database/**'
+            user-service:
+              - 'services/user-service/**'
+              - 'packages/database/**'
+            ride-service:
+              - 'services/ride-service/**'
+            food-service:
+              - 'services/food-service/**'
+              - 'packages/database/**'
+            payment-service:
+              - 'services/payment-service/**'
+              - 'packages/database/**'
+            delivery-service:
+              - 'services/delivery-service/**'
+            notification-service:
+              - 'services/notification-service/**'
+
+  # ===========================================
+  # DEPLOY WEB APPLICATIONS (Vercel)
+  # ===========================================
+  deploy-web-app:
+    name: Deploy Web App
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web-app == 'true' || github.event.inputs.package == 'web-app'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web-app
+        run: pnpm turbo run build --filter=@ubi/web-app
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.API_URL }}
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_WEB_APP_PROJECT_ID }}
+          working-directory: apps/web-app
+          vercel-args: ${{ inputs.environment == 'production' && '--prod' || '' }}
+
+  deploy-admin-dashboard:
+    name: Deploy Admin Dashboard
+    needs: detect-changes
+    if: needs.detect-changes.outputs.admin-dashboard == 'true' || github.event.inputs.package == 'admin-dashboard'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build admin-dashboard
+        run: pnpm turbo run build --filter=@ubi/admin-dashboard
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
+          working-directory: apps/admin-dashboard
+          vercel-args: ${{ inputs.environment == 'production' && '--prod' || '' }}
+
+  # ===========================================
+  # DEPLOY BACKEND SERVICES (AWS ECS)
+  # ===========================================
+  deploy-api-gateway:
+    name: Deploy API Gateway
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api-gateway == 'true' || github.event.inputs.package == 'api-gateway'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd services/api-gateway
+          docker build -t $ECR_REGISTRY/ubi-api-gateway:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/ubi-api-gateway:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/ubi-api-gateway:$IMAGE_TAG $ECR_REGISTRY/ubi-api-gateway:latest
+          docker push $ECR_REGISTRY/ubi-api-gateway:latest
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ubi-${{ inputs.environment || 'staging' }} \
+            --service api-gateway \
+            --force-new-deployment
+
+  deploy-ride-service:
+    name: Deploy Ride Service
+    needs: detect-changes
+    if: needs.detect-changes.outputs.ride-service == 'true' || github.event.inputs.package == 'ride-service'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd services/ride-service
+          docker build -t $ECR_REGISTRY/ubi-ride-service:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/ubi-ride-service:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/ubi-ride-service:$IMAGE_TAG $ECR_REGISTRY/ubi-ride-service:latest
+          docker push $ECR_REGISTRY/ubi-ride-service:latest
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster ubi-${{ inputs.environment || 'staging' }} \
+            --service ride-service \
+            --force-new-deployment
+
+  # ===========================================
+  # DATABASE MIGRATIONS
+  # ===========================================
+  run-migrations:
+    name: Run Database Migrations
+    needs: [deploy-api-gateway]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Prisma migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # ===========================================
+  # POST-DEPLOYMENT
+  # ===========================================
+  notify-deployment:
+    name: Notify Deployment
+    needs: [deploy-web-app, deploy-admin-dashboard, deploy-api-gateway, deploy-ride-service]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+          mention: "here"
+          if_mention: failure
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: env.SLACK_WEBHOOK_URL != ''

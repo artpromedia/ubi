@@ -1,0 +1,43 @@
+name: ubi_storage
+description: Local storage and caching for UBI mobile apps. Provides secure storage, database, and cache management.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Core package
+  ubi_core:
+    path: ../core
+  
+  # Local Database
+  isar: ^3.1.0+1
+  isar_flutter_libs: ^3.1.0+1
+  
+  # Secure Storage
+  flutter_secure_storage: ^9.0.0
+  
+  # Shared Preferences
+  shared_preferences: ^2.2.2
+  
+  # DI
+  get_it: ^7.6.4
+  injectable: ^2.3.2
+  
+  # Utilities
+  path_provider: ^2.1.1
+  crypto: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  injectable_generator: ^2.4.1
+  build_runner: ^2.4.7
+  isar_generator: ^3.1.0+1
+  mockito: ^5.4.4

@@ -1,0 +1,65 @@
+# =============================================================================
+# Priority Classes
+# =============================================================================
+# Defines pod scheduling priorities for different workload types
+# =============================================================================
+
+# Critical system components (monitoring, logging)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: ubi-critical
+  labels:
+    app.kubernetes.io/name: ubi-critical
+value: 1000000
+globalDefault: false
+description: "Critical UBI system components that must not be preempted"
+preemptionPolicy: PreemptLowerPriority
+---
+# High priority services (payment, core APIs)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: ubi-high
+  labels:
+    app.kubernetes.io/name: ubi-high
+value: 900000
+globalDefault: false
+description: "High priority UBI services (payment processing, core APIs)"
+preemptionPolicy: PreemptLowerPriority
+---
+# Standard services (most application pods)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: ubi-standard
+  labels:
+    app.kubernetes.io/name: ubi-standard
+value: 500000
+globalDefault: true
+description: "Standard priority for UBI application services"
+preemptionPolicy: PreemptLowerPriority
+---
+# Low priority workloads (batch jobs, analytics)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: ubi-low
+  labels:
+    app.kubernetes.io/name: ubi-low
+value: 100000
+globalDefault: false
+description: "Low priority for batch jobs and non-critical workloads"
+preemptionPolicy: PreemptLowerPriority
+---
+# Best effort (can be preempted anytime)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: ubi-best-effort
+  labels:
+    app.kubernetes.io/name: ubi-best-effort
+value: 1000
+globalDefault: false
+description: "Best effort workloads that can be preempted"
+preemptionPolicy: Never

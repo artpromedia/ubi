@@ -1,0 +1,449 @@
+# =============================================================================
+# UBI Infrastructure & Deployment Pipeline
+# =============================================================================
+# Handles Terraform infrastructure changes and service deployments
+# Triggered by changes to infrastructure/ or on manual dispatch
+# =============================================================================
+
+name: Infrastructure & Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      action:
+        description: "Terraform action"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+concurrency:
+  group: infra-${{ github.ref }}-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.6.6"
+  AWS_REGION: "af-south-1"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ===========================================
+  # TERRAFORM VALIDATION
+  # ===========================================
+  terraform-validate:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: infrastructure/terraform
+
+      - name: Terraform Init (VPC)
+        run: terraform init -backend=false
+        working-directory: infrastructure/terraform/modules/vpc
+
+      - name: Terraform Validate (VPC)
+        run: terraform validate
+        working-directory: infrastructure/terraform/modules/vpc
+
+      - name: Terraform Init (EKS)
+        run: terraform init -backend=false
+        working-directory: infrastructure/terraform/modules/eks
+
+      - name: Terraform Validate (EKS)
+        run: terraform validate
+        working-directory: infrastructure/terraform/modules/eks
+
+      - name: Terraform Init (RDS)
+        run: terraform init -backend=false
+        working-directory: infrastructure/terraform/modules/rds
+
+      - name: Terraform Validate (RDS)
+        run: terraform validate
+        working-directory: infrastructure/terraform/modules/rds
+
+      - name: Terraform Init (ElastiCache)
+        run: terraform init -backend=false
+        working-directory: infrastructure/terraform/modules/elasticache
+
+      - name: Terraform Validate (ElastiCache)
+        run: terraform validate
+        working-directory: infrastructure/terraform/modules/elasticache
+
+  # ===========================================
+  # TERRAFORM PLAN (Dev)
+  # ===========================================
+  terraform-plan-dev:
+    name: Plan (Dev)
+    needs: terraform-validate
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: infrastructure/terraform/environments/dev
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -out=tfplan -no-color | tee plan.txt
+          echo "plan<<EOF" >> $GITHUB_OUTPUT
+          cat plan.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        working-directory: infrastructure/terraform/environments/dev
+
+      - name: Upload Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-dev
+          path: infrastructure/terraform/environments/dev/tfplan
+          retention-days: 7
+
+      - name: Comment Plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const plan = `${{ steps.plan.outputs.plan }}`;
+            const truncated = plan.length > 65000 
+              ? plan.substring(0, 65000) + '\n\n... (truncated)'
+              : plan;
+
+            const output = `### Terraform Plan (Dev) 📋
+
+            <details>
+            <summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${truncated}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+  # ===========================================
+  # TERRAFORM APPLY (Dev)
+  # ===========================================
+  terraform-apply-dev:
+    name: Apply (Dev)
+    needs: terraform-plan-dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply' && inputs.environment == 'dev')
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: infrastructure/terraform/environments/dev
+
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-dev
+          path: infrastructure/terraform/environments/dev
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: infrastructure/terraform/environments/dev
+
+      - name: Get Outputs
+        id: outputs
+        run: |
+          echo "cluster_name=$(terraform output -raw eks_cluster_name)" >> $GITHUB_OUTPUT
+          echo "cluster_endpoint=$(terraform output -raw eks_cluster_endpoint)" >> $GITHUB_OUTPUT
+        working-directory: infrastructure/terraform/environments/dev
+
+  # ===========================================
+  # KUBERNETES VALIDATION
+  # ===========================================
+  kubernetes-validate:
+    name: Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Validate base manifests
+        run: |
+          kustomize build infrastructure/kubernetes/base > /tmp/base.yaml
+          cat /tmp/base.yaml | kubectl apply --dry-run=client -f -
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Validate with kubeconform
+        run: |
+          kubeconform -summary -output json \
+            -kubernetes-version 1.29.0 \
+            -strict \
+            /tmp/base.yaml
+
+  # ===========================================
+  # ARGOCD SYNC (Dev)
+  # ===========================================
+  argocd-sync-dev:
+    name: Sync ArgoCD (Dev)
+    needs: [terraform-apply-dev, kubernetes-validate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ubi-dev
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+          rm argocd-linux-amd64
+
+      - name: Login to ArgoCD
+        run: |
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+          argocd login argocd-server.argocd.svc.cluster.local:443 \
+            --username admin \
+            --password $ARGOCD_PASSWORD \
+            --insecure \
+            --grpc-web
+
+      - name: Sync Applications
+        run: |
+          argocd app sync ubi-apps --prune --async
+          argocd app wait ubi-apps --health --timeout 600
+
+  # ===========================================
+  # SECURITY SCANNING
+  # ===========================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (IaC)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "config"
+          scan-ref: "infrastructure/"
+          format: "sarif"
+          output: "trivy-results.sarif"
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      - name: Run checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infrastructure/terraform
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+
+      - name: Upload checkov results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "checkov-results.sarif"
+
+  # ===========================================
+  # STAGING & PROD (Simplified - expand as needed)
+  # ===========================================
+  terraform-plan-staging:
+    name: Plan (Staging)
+    needs: terraform-validate
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: infrastructure/terraform/environments/staging
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+        working-directory: infrastructure/terraform/environments/staging
+
+      - name: Upload Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-staging
+          path: infrastructure/terraform/environments/staging/tfplan
+          retention-days: 7
+
+  terraform-plan-prod:
+    name: Plan (Prod)
+    needs: terraform-validate
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    environment: prod-plan
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: infrastructure/terraform/environments/prod
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+        working-directory: infrastructure/terraform/environments/prod
+
+      - name: Upload Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-prod
+          path: infrastructure/terraform/environments/prod/tfplan
+          retention-days: 7
+
+  terraform-apply-prod:
+    name: Apply (Prod)
+    needs: terraform-plan-prod
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply' && inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    environment: prod-apply # Requires manual approval
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: infrastructure/terraform/environments/prod
+
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-prod
+          path: infrastructure/terraform/environments/prod
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: infrastructure/terraform/environments/prod
+
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always()

@@ -1,0 +1,42 @@
+name: ubi_location
+description: Location services and permissions handling for UBI mobile apps. Provides GPS tracking, geocoding, and place search.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Core package
+  ubi_core:
+    path: ../core
+  
+  # Location
+  geolocator: ^11.0.0
+  geocoding: ^2.1.1
+  permission_handler: ^11.1.0
+  
+  # Maps & Places
+  google_maps_flutter: ^2.5.0
+  flutter_polyline_points: ^2.0.0
+  
+  # DI
+  get_it: ^7.6.4
+  injectable: ^2.3.2
+  
+  # Utilities
+  rxdart: ^0.27.7
+  equatable: ^2.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  injectable_generator: ^2.4.1
+  build_runner: ^2.4.7
+  mockito: ^5.4.4
+  bloc_test: ^9.1.5

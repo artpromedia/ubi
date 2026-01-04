@@ -1,0 +1,43 @@
+{
+  "name": "@ubi/api-gateway",
+  "version": "0.0.1",
+  "private": true,
+  "description": "UBI API Gateway - Authentication, rate limiting, routing",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "docker:build": "docker build -t ubi-api-gateway .",
+    "clean": "rm -rf dist .turbo node_modules"
+  },
+  "dependencies": {
+    "@ubi/database": "workspace:*",
+    "@ubi/utils": "workspace:*",
+    "@ubi/logger": "workspace:*",
+    "@hono/node-server": "^1.13.7",
+    "@hono/zod-openapi": "^0.18.4",
+    "hono": "^4.6.14",
+    "ioredis": "^5.4.1",
+    "jose": "^5.9.6",
+    "rate-limiter-flexible": "^5.0.4",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@ubi/eslint-config": "workspace:*",
+    "@ubi/typescript-config": "workspace:*",
+    "@types/node": "^22.10.2",
+    "eslint": "^8.57.1",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

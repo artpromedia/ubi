@@ -1,0 +1,723 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ubi-design-tokens-semantic",
+  "title": "UBI Design Tokens - Semantic/Component Tokens",
+  "description": "Semantic tokens that compose base tokens for specific use cases",
+
+  "component": {
+    "$description": "Component-specific semantic tokens",
+
+    "button": {
+      "$description": "Button component tokens",
+
+      "size": {
+        "sm": {
+          "height": {
+            "$value": "{spacing.8}",
+            "$type": "dimension",
+            "$description": "Small button height"
+          },
+          "paddingX": {
+            "$value": "{spacing.3}",
+            "$type": "dimension",
+            "$description": "Small button horizontal padding"
+          },
+          "fontSize": {
+            "$value": "{font.size.sm}",
+            "$type": "dimension",
+            "$description": "Small button font size"
+          },
+          "iconSize": {
+            "$value": "16px",
+            "$type": "dimension",
+            "$description": "Small button icon size"
+          }
+        },
+        "md": {
+          "height": {
+            "$value": "{spacing.10}",
+            "$type": "dimension",
+            "$description": "Medium button height"
+          },
+          "paddingX": {
+            "$value": "{spacing.4}",
+            "$type": "dimension",
+            "$description": "Medium button horizontal padding"
+          },
+          "fontSize": {
+            "$value": "{font.size.sm}",
+            "$type": "dimension",
+            "$description": "Medium button font size"
+          },
+          "iconSize": {
+            "$value": "18px",
+            "$type": "dimension",
+            "$description": "Medium button icon size"
+          }
+        },
+        "lg": {
+          "height": {
+            "$value": "{spacing.12}",
+            "$type": "dimension",
+            "$description": "Large button height"
+          },
+          "paddingX": {
+            "$value": "{spacing.6}",
+            "$type": "dimension",
+            "$description": "Large button horizontal padding"
+          },
+          "fontSize": {
+            "$value": "{font.size.md}",
+            "$type": "dimension",
+            "$description": "Large button font size"
+          },
+          "iconSize": {
+            "$value": "20px",
+            "$type": "dimension",
+            "$description": "Large button icon size"
+          }
+        },
+        "xl": {
+          "height": {
+            "$value": "{spacing.14}",
+            "$type": "dimension",
+            "$description": "XL button height"
+          },
+          "paddingX": {
+            "$value": "{spacing.8}",
+            "$type": "dimension",
+            "$description": "XL button horizontal padding"
+          },
+          "fontSize": {
+            "$value": "{font.size.lg}",
+            "$type": "dimension",
+            "$description": "XL button font size"
+          },
+          "iconSize": {
+            "$value": "24px",
+            "$type": "dimension",
+            "$description": "XL button icon size"
+          }
+        }
+      },
+
+      "borderRadius": {
+        "$value": "{radius.lg}",
+        "$type": "dimension",
+        "$description": "Button border radius"
+      },
+
+      "fontWeight": {
+        "$value": "{font.weight.semibold}",
+        "$type": "fontWeight",
+        "$description": "Button font weight"
+      },
+
+      "transition": {
+        "$value": "all {motion.duration.fast} {motion.easing.default}",
+        "$type": "string",
+        "$description": "Button transition"
+      }
+    },
+
+    "input": {
+      "$description": "Input component tokens",
+
+      "size": {
+        "sm": {
+          "height": {
+            "$value": "{spacing.8}",
+            "$type": "dimension",
+            "$description": "Small input height"
+          },
+          "paddingX": {
+            "$value": "{spacing.3}",
+            "$type": "dimension",
+            "$description": "Small input horizontal padding"
+          },
+          "fontSize": {
+            "$value": "{font.size.sm}",
+            "$type": "dimension",
+            "$description": "Small input font size"
+          }
+        },
+        "md": {
+          "height": {
+            "$value": "{spacing.10}",
+            "$type": "dimension",
+            "$description": "Medium input height"
+          },
+          "paddingX": {
+            "$value": "{spacing.4}",
+            "$type": "dimension",
+            "$description": "Medium input horizontal padding"
+          },
+          "fontSize": {
+            "$value": "{font.size.sm}",
+            "$type": "dimension",
+            "$description": "Medium input font size"
+          }
+        },
+        "lg": {
+          "height": {
+            "$value": "{spacing.12}",
+            "$type": "dimension",
+            "$description": "Large input height"
+          },
+          "paddingX": {
+            "$value": "{spacing.4}",
+            "$type": "dimension",
+            "$description": "Large input horizontal padding"
+          },
+          "fontSize": {
+            "$value": "{font.size.md}",
+            "$type": "dimension",
+            "$description": "Large input font size"
+          }
+        }
+      },
+
+      "borderRadius": {
+        "$value": "{radius.lg}",
+        "$type": "dimension",
+        "$description": "Input border radius"
+      },
+
+      "borderWidth": {
+        "$value": "1px",
+        "$type": "dimension",
+        "$description": "Input border width"
+      },
+
+      "focusRingWidth": {
+        "$value": "3px",
+        "$type": "dimension",
+        "$description": "Input focus ring width"
+      }
+    },
+
+    "card": {
+      "$description": "Card component tokens",
+
+      "padding": {
+        "sm": {
+          "$value": "{spacing.4}",
+          "$type": "dimension",
+          "$description": "Small card padding"
+        },
+        "md": {
+          "$value": "{spacing.6}",
+          "$type": "dimension",
+          "$description": "Medium card padding"
+        },
+        "lg": {
+          "$value": "{spacing.8}",
+          "$type": "dimension",
+          "$description": "Large card padding"
+        }
+      },
+
+      "borderRadius": {
+        "$value": "{radius.xl}",
+        "$type": "dimension",
+        "$description": "Card border radius"
+      },
+
+      "shadow": {
+        "default": {
+          "$value": "{shadow.sm}",
+          "$type": "shadow",
+          "$description": "Card default shadow"
+        },
+        "hover": {
+          "$value": "{shadow.md}",
+          "$type": "shadow",
+          "$description": "Card hover shadow"
+        }
+      }
+    },
+
+    "modal": {
+      "$description": "Modal component tokens",
+
+      "borderRadius": {
+        "$value": "{radius.2xl}",
+        "$type": "dimension",
+        "$description": "Modal border radius"
+      },
+
+      "padding": {
+        "$value": "{spacing.6}",
+        "$type": "dimension",
+        "$description": "Modal padding"
+      },
+
+      "maxWidth": {
+        "sm": {
+          "$value": "400px",
+          "$type": "dimension",
+          "$description": "Small modal max width"
+        },
+        "md": {
+          "$value": "500px",
+          "$type": "dimension",
+          "$description": "Medium modal max width"
+        },
+        "lg": {
+          "$value": "600px",
+          "$type": "dimension",
+          "$description": "Large modal max width"
+        },
+        "xl": {
+          "$value": "800px",
+          "$type": "dimension",
+          "$description": "XL modal max width"
+        },
+        "full": {
+          "$value": "calc(100vw - 32px)",
+          "$type": "dimension",
+          "$description": "Full width modal"
+        }
+      }
+    },
+
+    "avatar": {
+      "$description": "Avatar component tokens",
+
+      "size": {
+        "xs": {
+          "$value": "{spacing.6}",
+          "$type": "dimension",
+          "$description": "XS avatar size (24px)"
+        },
+        "sm": {
+          "$value": "{spacing.8}",
+          "$type": "dimension",
+          "$description": "Small avatar size (32px)"
+        },
+        "md": {
+          "$value": "{spacing.10}",
+          "$type": "dimension",
+          "$description": "Medium avatar size (40px)"
+        },
+        "lg": {
+          "$value": "{spacing.12}",
+          "$type": "dimension",
+          "$description": "Large avatar size (48px)"
+        },
+        "xl": {
+          "$value": "{spacing.16}",
+          "$type": "dimension",
+          "$description": "XL avatar size (64px)"
+        },
+        "2xl": {
+          "$value": "{spacing.24}",
+          "$type": "dimension",
+          "$description": "2XL avatar size (96px)"
+        }
+      },
+
+      "borderRadius": {
+        "$value": "{radius.full}",
+        "$type": "dimension",
+        "$description": "Avatar border radius"
+      }
+    },
+
+    "badge": {
+      "$description": "Badge component tokens",
+
+      "height": {
+        "sm": {
+          "$value": "{spacing.5}",
+          "$type": "dimension",
+          "$description": "Small badge height"
+        },
+        "md": {
+          "$value": "{spacing.6}",
+          "$type": "dimension",
+          "$description": "Medium badge height"
+        },
+        "lg": {
+          "$value": "{spacing.7}",
+          "$type": "dimension",
+          "$description": "Large badge height"
+        }
+      },
+
+      "paddingX": {
+        "$value": "{spacing.2}",
+        "$type": "dimension",
+        "$description": "Badge horizontal padding"
+      },
+
+      "borderRadius": {
+        "$value": "{radius.full}",
+        "$type": "dimension",
+        "$description": "Badge border radius"
+      },
+
+      "fontSize": {
+        "$value": "{font.size.xs}",
+        "$type": "dimension",
+        "$description": "Badge font size"
+      }
+    },
+
+    "toast": {
+      "$description": "Toast component tokens",
+
+      "padding": {
+        "$value": "{spacing.4}",
+        "$type": "dimension",
+        "$description": "Toast padding"
+      },
+
+      "borderRadius": {
+        "$value": "{radius.lg}",
+        "$type": "dimension",
+        "$description": "Toast border radius"
+      },
+
+      "maxWidth": {
+        "$value": "400px",
+        "$type": "dimension",
+        "$description": "Toast max width"
+      },
+
+      "gap": {
+        "$value": "{spacing.3}",
+        "$type": "dimension",
+        "$description": "Toast content gap"
+      }
+    },
+
+    "tooltip": {
+      "$description": "Tooltip component tokens",
+
+      "padding": {
+        "x": {
+          "$value": "{spacing.3}",
+          "$type": "dimension",
+          "$description": "Tooltip horizontal padding"
+        },
+        "y": {
+          "$value": "{spacing.2}",
+          "$type": "dimension",
+          "$description": "Tooltip vertical padding"
+        }
+      },
+
+      "borderRadius": {
+        "$value": "{radius.md}",
+        "$type": "dimension",
+        "$description": "Tooltip border radius"
+      },
+
+      "fontSize": {
+        "$value": "{font.size.sm}",
+        "$type": "dimension",
+        "$description": "Tooltip font size"
+      },
+
+      "maxWidth": {
+        "$value": "250px",
+        "$type": "dimension",
+        "$description": "Tooltip max width"
+      }
+    },
+
+    "table": {
+      "$description": "Table component tokens",
+
+      "cell": {
+        "paddingX": {
+          "$value": "{spacing.4}",
+          "$type": "dimension",
+          "$description": "Table cell horizontal padding"
+        },
+        "paddingY": {
+          "$value": "{spacing.3}",
+          "$type": "dimension",
+          "$description": "Table cell vertical padding"
+        }
+      },
+
+      "header": {
+        "paddingY": {
+          "$value": "{spacing.3}",
+          "$type": "dimension",
+          "$description": "Table header vertical padding"
+        },
+        "fontSize": {
+          "$value": "{font.size.xs}",
+          "$type": "dimension",
+          "$description": "Table header font size"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.semibold}",
+          "$type": "fontWeight",
+          "$description": "Table header font weight"
+        }
+      }
+    }
+  },
+
+  "typography": {
+    "$description": "Typography composition tokens",
+
+    "display": {
+      "2xl": {
+        "fontSize": { "$value": "{font.size.7xl}", "$type": "dimension" },
+        "lineHeight": { "$value": "{font.lineHeight.none}", "$type": "number" },
+        "fontWeight": { "$value": "{font.weight.bold}", "$type": "fontWeight" },
+        "letterSpacing": {
+          "$value": "{font.letterSpacing.tight}",
+          "$type": "dimension"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "xl": {
+        "fontSize": { "$value": "{font.size.6xl}", "$type": "dimension" },
+        "lineHeight": { "$value": "{font.lineHeight.none}", "$type": "number" },
+        "fontWeight": { "$value": "{font.weight.bold}", "$type": "fontWeight" },
+        "letterSpacing": {
+          "$value": "{font.letterSpacing.tight}",
+          "$type": "dimension"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "lg": {
+        "fontSize": { "$value": "{font.size.5xl}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.tight}",
+          "$type": "number"
+        },
+        "fontWeight": { "$value": "{font.weight.bold}", "$type": "fontWeight" },
+        "letterSpacing": {
+          "$value": "{font.letterSpacing.tight}",
+          "$type": "dimension"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "md": {
+        "fontSize": { "$value": "{font.size.4xl}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.tight}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.semibold}",
+          "$type": "fontWeight"
+        },
+        "letterSpacing": {
+          "$value": "{font.letterSpacing.tight}",
+          "$type": "dimension"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "sm": {
+        "fontSize": { "$value": "{font.size.3xl}", "$type": "dimension" },
+        "lineHeight": { "$value": "{font.lineHeight.snug}", "$type": "number" },
+        "fontWeight": {
+          "$value": "{font.weight.semibold}",
+          "$type": "fontWeight"
+        },
+        "letterSpacing": {
+          "$value": "{font.letterSpacing.normal}",
+          "$type": "dimension"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      }
+    },
+
+    "heading": {
+      "h1": {
+        "fontSize": { "$value": "{font.size.3xl}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.tight}",
+          "$type": "number"
+        },
+        "fontWeight": { "$value": "{font.weight.bold}", "$type": "fontWeight" },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "h2": {
+        "fontSize": { "$value": "{font.size.2xl}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.tight}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.semibold}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "h3": {
+        "fontSize": { "$value": "{font.size.xl}", "$type": "dimension" },
+        "lineHeight": { "$value": "{font.lineHeight.snug}", "$type": "number" },
+        "fontWeight": {
+          "$value": "{font.weight.semibold}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "h4": {
+        "fontSize": { "$value": "{font.size.lg}", "$type": "dimension" },
+        "lineHeight": { "$value": "{font.lineHeight.snug}", "$type": "number" },
+        "fontWeight": {
+          "$value": "{font.weight.semibold}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "h5": {
+        "fontSize": { "$value": "{font.size.md}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.normal}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.semibold}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      },
+      "h6": {
+        "fontSize": { "$value": "{font.size.sm}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.normal}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.semibold}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": {
+          "$value": "{font.family.heading}",
+          "$type": "fontFamily"
+        }
+      }
+    },
+
+    "body": {
+      "lg": {
+        "fontSize": { "$value": "{font.size.lg}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.relaxed}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.regular}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": { "$value": "{font.family.body}", "$type": "fontFamily" }
+      },
+      "md": {
+        "fontSize": { "$value": "{font.size.md}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.normal}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.regular}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": { "$value": "{font.family.body}", "$type": "fontFamily" }
+      },
+      "sm": {
+        "fontSize": { "$value": "{font.size.sm}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.normal}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.regular}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": { "$value": "{font.family.body}", "$type": "fontFamily" }
+      },
+      "xs": {
+        "fontSize": { "$value": "{font.size.xs}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.normal}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.regular}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": { "$value": "{font.family.body}", "$type": "fontFamily" }
+      }
+    },
+
+    "label": {
+      "lg": {
+        "fontSize": { "$value": "{font.size.md}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.normal}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.medium}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": { "$value": "{font.family.body}", "$type": "fontFamily" }
+      },
+      "md": {
+        "fontSize": { "$value": "{font.size.sm}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.normal}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.medium}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": { "$value": "{font.family.body}", "$type": "fontFamily" }
+      },
+      "sm": {
+        "fontSize": { "$value": "{font.size.xs}", "$type": "dimension" },
+        "lineHeight": {
+          "$value": "{font.lineHeight.normal}",
+          "$type": "number"
+        },
+        "fontWeight": {
+          "$value": "{font.weight.medium}",
+          "$type": "fontWeight"
+        },
+        "fontFamily": { "$value": "{font.family.body}", "$type": "fontFamily" }
+      }
+    }
+  }
+}

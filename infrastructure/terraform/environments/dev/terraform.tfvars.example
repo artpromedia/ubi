@@ -1,0 +1,42 @@
+# =============================================================================
+# Development Environment - Example tfvars
+# =============================================================================
+# Copy this file to dev.auto.tfvars and customize for your environment
+# =============================================================================
+
+region      = "af-south-1"
+environment = "dev"
+
+# Restrict to your team's IP ranges
+developer_cidrs = [
+  "0.0.0.0/0" # Replace with actual office/VPN CIDRs
+]
+
+# IAM roles with cluster access
+developer_roles = [
+  # {
+  #   rolearn  = "arn:aws:iam::123456789012:role/DevOpsRole"
+  #   username = "devops"
+  #   groups   = ["system:masters"]
+  # },
+  # {
+  #   rolearn  = "arn:aws:iam::123456789012:role/DeveloperRole"
+  #   username = "developer"
+  #   groups   = ["ubi:developers"]
+  # }
+]
+
+# IAM users with cluster access
+developer_users = [
+  # {
+  #   userarn  = "arn:aws:iam::123456789012:user/admin"
+  #   username = "admin"
+  #   groups   = ["system:masters"]
+  # }
+]
+
+# Alert recipients
+alert_emails = [
+  # "devops@ubi.africa",
+  # "platform-team@ubi.africa"
+]

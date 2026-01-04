@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* UBI Send - Merchant Portal cyan theme */
+  --color-primary: 16 174 186; /* #10AEBA */
+  --color-background: 10 10 10;
+  --color-surface: 17 17 17;
+  --color-card: 22 22 22;
+  --color-border: 38 38 38;
+}
+
+body {
+  @apply bg-background text-white antialiased;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-surface;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full hover:bg-gray-600;
+  }
+}
+
+@layer components {
+  /* Merchant card */
+  .merchant-card {
+    @apply bg-card rounded-xl p-6 border border-border;
+  }
+  
+  .merchant-stat-card {
+    @apply bg-card rounded-xl p-5 border border-border;
+  }
+  
+  /* Delivery status badges */
+  .merchant-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .merchant-badge.pending {
+    @apply bg-yellow-500/10 text-yellow-500;
+  }
+  
+  .merchant-badge.assigned {
+    @apply bg-blue-500/10 text-blue-500;
+  }
+  
+  .merchant-badge.picked-up {
+    @apply bg-purple-500/10 text-purple-500;
+  }
+  
+  .merchant-badge.in-transit {
+    @apply bg-cyan-500/10 text-cyan-500;
+  }
+  
+  .merchant-badge.delivered {
+    @apply bg-green-500/10 text-green-500;
+  }
+  
+  .merchant-badge.cancelled {
+    @apply bg-red-500/10 text-red-500;
+  }
+  
+  .merchant-badge.returned {
+    @apply bg-orange-500/10 text-orange-500;
+  }
+  
+  /* Priority badges */
+  .merchant-badge.express {
+    @apply bg-red-500/10 text-red-500;
+  }
+  
+  .merchant-badge.same-day {
+    @apply bg-orange-500/10 text-orange-500;
+  }
+  
+  .merchant-badge.standard {
+    @apply bg-gray-500/10 text-gray-400;
+  }
+  
+  /* Merchant table */
+  .merchant-table {
+    @apply w-full;
+  }
+  
+  .merchant-table th {
+    @apply text-left text-xs font-medium text-gray-500 uppercase tracking-wider py-3 px-4 bg-surface;
+  }
+  
+  .merchant-table td {
+    @apply py-4 px-4 text-sm text-gray-300 border-b border-border;
+  }
+  
+  .merchant-table tr:hover td {
+    @apply bg-surface/50;
+  }
+  
+  /* Input styles */
+  .merchant-input {
+    @apply w-full px-4 py-2.5 bg-surface border border-border rounded-lg 
+           text-white placeholder-gray-500 focus:outline-none focus:ring-2 
+           focus:ring-primary-500 focus:border-transparent transition-all;
+  }
+  
+  /* Button styles */
+  .merchant-btn-primary {
+    @apply px-4 py-2 bg-primary-500 text-white rounded-lg font-medium
+           hover:bg-primary-600 transition-colors focus:outline-none 
+           focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 
+           focus:ring-offset-background;
+  }
+  
+  .merchant-btn-secondary {
+    @apply px-4 py-2 bg-surface border border-border text-gray-300 rounded-lg 
+           font-medium hover:bg-border/50 transition-colors focus:outline-none 
+           focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 
+           focus:ring-offset-background;
+  }
+  
+  /* Shipment tracker */
+  .shipment-tracker {
+    @apply relative;
+  }
+  
+  .shipment-tracker-step {
+    @apply flex items-center gap-4 relative pb-8;
+  }
+  
+  .shipment-tracker-step:last-child {
+    @apply pb-0;
+  }
+  
+  .shipment-tracker-step::before {
+    content: "";
+    @apply absolute left-[15px] top-8 w-0.5 h-[calc(100%-16px)] bg-border;
+  }
+  
+  .shipment-tracker-step:last-child::before {
+    @apply hidden;
+  }
+  
+  .shipment-tracker-step.completed::before {
+    @apply bg-primary-500;
+  }
+  
+  .shipment-tracker-dot {
+    @apply w-8 h-8 rounded-full border-2 border-border bg-surface flex items-center justify-center z-10;
+  }
+  
+  .shipment-tracker-step.completed .shipment-tracker-dot {
+    @apply border-primary-500 bg-primary-500;
+  }
+  
+  .shipment-tracker-step.active .shipment-tracker-dot {
+    @apply border-primary-500 bg-surface;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .animate-in-transit {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}

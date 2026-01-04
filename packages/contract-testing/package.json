@@ -1,0 +1,25 @@
+{
+  "name": "@ubi/contract-testing",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pact contract testing for UBI services",
+  "scripts": {
+    "test:consumer": "jest --config jest.consumer.config.js",
+    "test:provider": "jest --config jest.provider.config.js",
+    "test": "npm run test:consumer && npm run test:provider",
+    "pact:publish": "pact-broker publish ./pacts --consumer-app-version=$npm_package_version --broker-base-url=$PACT_BROKER_URL --broker-token=$PACT_BROKER_TOKEN",
+    "pact:verify": "jest --config jest.provider.config.js --runInBand",
+    "pact:can-i-deploy": "pact-broker can-i-deploy --pacticipant=$SERVICE_NAME --version=$npm_package_version --to-environment=staging --broker-base-url=$PACT_BROKER_URL --broker-token=$PACT_BROKER_TOKEN"
+  },
+  "devDependencies": {
+    "@pact-foundation/pact": "^12.1.1",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "@ubi/testing": "workspace:*"
+  }
+}

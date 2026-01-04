@@ -1,0 +1,49 @@
+{
+  "name": "@ubi/design-tokens",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UBI Design System - Design tokens for all platforms",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./css": "./dist/css/tokens.css",
+    "./tailwind": {
+      "import": "./dist/tailwind/index.mjs",
+      "require": "./dist/tailwind/index.js",
+      "types": "./dist/tailwind/index.d.ts"
+    },
+    "./json": "./tokens/index.json"
+  },
+  "files": [
+    "dist",
+    "tokens"
+  ],
+  "scripts": {
+    "build": "style-dictionary build && tsup",
+    "build:tokens": "style-dictionary build",
+    "clean": "rm -rf dist .turbo node_modules",
+    "dev": "tsup --watch",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@ubi/typescript-config": "workspace:*",
+    "style-dictionary": "^4.2.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "keywords": [
+    "design-tokens",
+    "design-system",
+    "ubi",
+    "style-dictionary"
+  ]
+}

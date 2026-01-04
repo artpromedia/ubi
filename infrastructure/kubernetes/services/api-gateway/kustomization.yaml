@@ -1,0 +1,32 @@
+# =============================================================================
+# API Gateway Kustomization
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: api-gateway
+
+commonLabels:
+  app.kubernetes.io/name: api-gateway
+  app.kubernetes.io/component: gateway
+  app.kubernetes.io/part-of: ubi
+
+resources:
+  - deployment.yaml
+
+# Image configuration - override in environment overlays
+images:
+  - name: ${ECR_REGISTRY}/ubi/api-gateway
+    newName: api-gateway
+    newTag: latest
+
+# ConfigMap for service-specific configuration
+configMapGenerator:
+  - name: api-gateway-config
+    namespace: ubi-apps
+    literals:
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX_REQUESTS=100
+      - CORS_ORIGINS=https://app.ubi.africa,https://admin.ubi.africa

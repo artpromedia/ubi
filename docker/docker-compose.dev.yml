@@ -1,0 +1,194 @@
+# UBI Development Environment
+# Docker Compose for local development
+
+services:
+  # =============================================================================
+  # DATABASES
+  # =============================================================================
+  
+  postgres:
+    image: postgis/postgis:15-3.4-alpine
+    container_name: ubi-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ubi
+      POSTGRES_PASSWORD: ubi_dev_password
+      POSTGRES_DB: ubi_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ubi -d ubi_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ubi-network
+
+  # =============================================================================
+  # CACHING
+  # =============================================================================
+  
+  redis:
+    image: redis:7-alpine
+    container_name: ubi-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ubi-network
+
+  # =============================================================================
+  # MESSAGE QUEUE (Optional - for async processing)
+  # =============================================================================
+  
+  # rabbitmq:
+  #   image: rabbitmq:3-management-alpine
+  #   container_name: ubi-rabbitmq
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  #   environment:
+  #     RABBITMQ_DEFAULT_USER: ubi
+  #     RABBITMQ_DEFAULT_PASS: ubi_dev_password
+  #   volumes:
+  #     - rabbitmq_data:/var/lib/rabbitmq
+  #   networks:
+  #     - ubi-network
+
+  # =============================================================================
+  # MONITORING (Optional)
+  # =============================================================================
+  
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: ubi-grafana
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3100:3000"
+  #   environment:
+  #     GF_SECURITY_ADMIN_PASSWORD: admin
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #   networks:
+  #     - ubi-network
+
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: ubi-prometheus
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml
+  #     - prometheus_data:/prometheus
+  #   networks:
+  #     - ubi-network
+
+  # =============================================================================
+  # ADMIN TOOLS
+  # =============================================================================
+  
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: ubi-pgadmin
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5050:80"
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@ubi.africa
+  #     PGADMIN_DEFAULT_PASSWORD: admin
+  #   depends_on:
+  #     - postgres
+  #   networks:
+  #     - ubi-network
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ubi-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    depends_on:
+      - redis
+    networks:
+      - ubi-network
+
+  # =============================================================================
+  # MINIO (S3-compatible storage for local development)
+  # =============================================================================
+  
+  minio:
+    image: minio/minio:latest
+    container_name: ubi-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ubi_minio
+      MINIO_ROOT_PASSWORD: ubi_minio_password
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - ubi-network
+
+  # =============================================================================
+  # MAILHOG (Email testing)
+  # =============================================================================
+  
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: ubi-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - ubi-network
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  # rabbitmq_data:
+  #   driver: local
+  # grafana_data:
+  #   driver: local
+  # prometheus_data:
+  #   driver: local
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+
+networks:
+  ubi-network:
+    driver: bridge
+    name: ubi-network

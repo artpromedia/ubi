@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ubi-system
+  labels:
+    app.kubernetes.io/name: ubi-system
+    app.kubernetes.io/part-of: ubi
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ubi-apps
+  labels:
+    app.kubernetes.io/name: ubi-apps
+    app.kubernetes.io/part-of: ubi
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ubi-monitoring
+  labels:
+    app.kubernetes.io/name: ubi-monitoring
+    app.kubernetes.io/part-of: ubi
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ubi-data
+  labels:
+    app.kubernetes.io/name: ubi-data
+    app.kubernetes.io/part-of: ubi
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    app.kubernetes.io/name: argocd
+    app.kubernetes.io/part-of: ubi

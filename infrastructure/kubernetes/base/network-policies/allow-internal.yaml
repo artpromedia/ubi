@@ -1,0 +1,201 @@
+# =============================================================================
+# Internal Communication Network Policies
+# =============================================================================
+# Allows necessary internal communication between UBI services
+# =============================================================================
+
+# Allow API Gateway to receive traffic from ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-gateway-ingress
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: api-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    # From Istio ingress gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+        - podSelector:
+            matchLabels:
+              app: istio-ingressgateway
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# Allow API Gateway to call all backend services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-gateway-egress
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: api-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes:
+    - Egress
+  egress:
+    # To all services in ubi-apps namespace
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: ubi
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 8080
+---
+# Allow services to receive traffic from API Gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-api-gateway
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: backend-services
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: ubi
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 8080
+---
+# Allow services to access database (RDS)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-database-egress
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: database-access
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: ubi
+  policyTypes:
+    - Egress
+  egress:
+    # PostgreSQL
+    - ports:
+        - protocol: TCP
+          port: 5432
+---
+# Allow services to access Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis-egress
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: redis-access
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: ubi
+  policyTypes:
+    - Egress
+  egress:
+    # Redis
+    - ports:
+        - protocol: TCP
+          port: 6379
+---
+# Allow services to access Kafka
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka-egress
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: kafka-access
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: ubi
+  policyTypes:
+    - Egress
+  egress:
+    # Kafka
+    - ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+---
+# Allow Prometheus to scrape metrics
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: prometheus-scrape
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: ubi
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ubi-monitoring
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090 # Metrics port
+---
+# Allow services to send telemetry to monitoring namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-telemetry-egress
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: telemetry-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: ubi
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ubi-monitoring
+      ports:
+        # OTLP gRPC
+        - protocol: TCP
+          port: 4317
+        # OTLP HTTP
+        - protocol: TCP
+          port: 4318
+        # Jaeger
+        - protocol: TCP
+          port: 14268

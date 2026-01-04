@@ -1,0 +1,141 @@
+# Melos Configuration for UBI Flutter Monorepo
+# https://melos.invertase.dev/
+
+name: ubi_mobile
+repository: https://github.com/ubi-africa/ubi-mobile
+
+packages:
+  - apps/*
+  - packages/*
+
+ide:
+  intellij:
+    enabled: true
+
+command:
+  version:
+    # Generate changelogs
+    changelog: true
+    # Commit changes
+    commit: true
+    # Tag releases
+    tag: true
+    # Link to commits in changelog
+    linkToCommits: true
+    # Use conventional commits for versioning
+    updateGitTagRefs: true
+    workspaceChangelog: true
+
+  bootstrap:
+    # Run pub get in parallel
+    runPubGetInParallel: true
+    # Use pub get offline if possible
+    usePubspecOverrides: true
+
+scripts:
+  # Analysis and formatting
+  analyze:
+    run: melos exec -- "flutter analyze --no-fatal-infos"
+    description: Run static analysis on all packages
+
+  format:
+    run: melos exec -- "dart format --set-exit-if-changed ."
+    description: Format all packages
+
+  format:fix:
+    run: melos exec -- "dart format ."
+    description: Format and fix all packages
+
+  # Code generation
+  gen:
+    run: melos exec --depends-on="build_runner" -- "dart run build_runner build --delete-conflicting-outputs"
+    description: Run code generation in all packages
+
+  gen:watch:
+    run: melos exec --depends-on="build_runner" -- "dart run build_runner watch --delete-conflicting-outputs"
+    description: Watch and run code generation
+
+  # Testing
+  test:
+    run: melos exec -- "flutter test"
+    description: Run tests in all packages
+    packageFilters:
+      dirExists: test
+
+  test:coverage:
+    run: melos exec -- "flutter test --coverage"
+    description: Run tests with coverage
+    packageFilters:
+      dirExists: test
+
+  test:integration:
+    run: melos exec --scope="ubi_rider_app" --scope="ubi_driver_app" -- "flutter test integration_test"
+    description: Run integration tests
+
+  # Building
+  build:android:dev:
+    run: |
+      cd apps/rider && flutter build apk --flavor dev -t lib/main_dev.dart
+      cd apps/driver && flutter build apk --flavor dev -t lib/main_dev.dart
+    description: Build Android APKs (dev)
+
+  build:android:prod:
+    run: |
+      cd apps/rider && flutter build appbundle --flavor prod -t lib/main_prod.dart
+      cd apps/driver && flutter build appbundle --flavor prod -t lib/main_prod.dart
+    description: Build Android App Bundles (prod)
+
+  build:ios:dev:
+    run: |
+      cd apps/rider && flutter build ios --flavor dev -t lib/main_dev.dart --no-codesign
+      cd apps/driver && flutter build ios --flavor dev -t lib/main_dev.dart --no-codesign
+    description: Build iOS (dev)
+
+  build:ios:prod:
+    run: |
+      cd apps/rider && flutter build ipa --flavor prod -t lib/main_prod.dart
+      cd apps/driver && flutter build ipa --flavor prod -t lib/main_prod.dart
+    description: Build iOS (prod)
+
+  # Cleaning
+  clean:
+    run: melos exec -- "flutter clean"
+    description: Clean all packages
+
+  clean:deep:
+    run: |
+      melos exec -- "flutter clean"
+      melos exec -- "rm -rf pubspec.lock"
+      melos exec -- "rm -rf .dart_tool"
+      melos exec -- "rm -rf build"
+    description: Deep clean all packages
+
+  # Development
+  run:rider:
+    run: cd apps/rider && flutter run --flavor dev -t lib/main_dev.dart
+    description: Run Rider app in dev mode
+
+  run:driver:
+    run: cd apps/driver && flutter run --flavor dev -t lib/main_dev.dart
+    description: Run Driver app in dev mode
+
+  # Golden tests
+  golden:update:
+    run: melos exec -- "flutter test --update-goldens"
+    description: Update golden test files
+    packageFilters:
+      dirExists: test
+
+  # Dependencies
+  deps:upgrade:
+    run: melos exec -- "flutter pub upgrade"
+    description: Upgrade dependencies in all packages
+
+  deps:outdated:
+    run: melos exec -- "flutter pub outdated"
+    description: Check for outdated dependencies
+
+  # Localization
+  l10n:
+    run: melos exec --scope="ubi_rider_app" --scope="ubi_driver_app" -- "flutter gen-l10n"
+    description: Generate localization files

@@ -1,0 +1,307 @@
+# UBI Monorepo CI Pipeline
+# Runs on all pull requests and pushes to main
+# Uses affected-based execution to only test/build changed packages
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9"
+
+jobs:
+  # ===========================================
+  # SETUP & LINT
+  # ===========================================
+  setup:
+    name: Setup & Cache
+    runs-on: ubuntu-latest
+    outputs:
+      affected: ${{ steps.affected.outputs.packages }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Get affected packages
+        id: affected
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            AFFECTED=$(pnpm turbo run build --filter='...[origin/${{ github.base_ref }}]' --dry-run=json | jq -c '.packages')
+          else
+            AFFECTED=$(pnpm turbo run build --dry-run=json | jq -c '.packages')
+          fi
+          echo "packages=$AFFECTED" >> $GITHUB_OUTPUT
+
+  lint:
+    name: Lint & Format
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Run ESLint
+        run: pnpm lint:affected
+
+  typecheck:
+    name: TypeScript Check
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run TypeScript check
+        run: pnpm typecheck:affected
+
+  # ===========================================
+  # BUILD
+  # ===========================================
+  build:
+    name: Build
+    needs: [lint, typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build affected packages
+        run: pnpm build:affected
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            apps/*/dist
+            apps/*/.next
+            packages/*/dist
+            services/*/dist
+          retention-days: 1
+
+  # ===========================================
+  # TEST
+  # ===========================================
+  test:
+    name: Unit Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: Run tests
+        run: pnpm test:affected
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          flags: unittests
+          fail_ci_if_error: false
+
+  # ===========================================
+  # GO SERVICES
+  # ===========================================
+  go-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Run golangci-lint (ride-service)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: services/ride-service
+
+      - name: Run golangci-lint (delivery-service)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: services/delivery-service
+
+  go-build:
+    name: Go Build
+    needs: go-lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [ride-service, delivery-service]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Build ${{ matrix.service }}
+        working-directory: services/${{ matrix.service }}
+        run: |
+          go mod download
+          go build -v -o bin/server ./cmd/server
+
+      - name: Run tests
+        working-directory: services/${{ matrix.service }}
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+  # ===========================================
+  # DATABASE
+  # ===========================================
+  db-check:
+    name: Database Schema Check
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Prisma schema
+        run: pnpm --filter @ubi/database exec prisma validate
+
+      - name: Generate Prisma client
+        run: pnpm --filter @ubi/database exec prisma generate
+
+  # ===========================================
+  # FINAL STATUS CHECK
+  # ===========================================
+  ci-success:
+    name: CI Success
+    needs: [build, test, go-build, db-check]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.go-build.result }}" != "success" ] || \
+             [ "${{ needs.db-check.result }}" != "success" ]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          echo "All CI jobs passed successfully!"

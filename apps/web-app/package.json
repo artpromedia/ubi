@@ -1,0 +1,51 @@
+{
+  "name": "@ubi/web-app",
+  "version": "0.0.1",
+  "private": true,
+  "description": "UBI Rider Web App - Progressive Web App for booking rides, ordering food, and sending packages",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "clean": "rm -rf .next .turbo node_modules"
+  },
+  "dependencies": {
+    "@ubi/api-client": "workspace:*",
+    "@ubi/ui": "workspace:*",
+    "@ubi/utils": "workspace:*",
+    "@tanstack/react-query": "^5.62.7",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.15.0",
+    "next": "^15.1.0",
+    "next-auth": "^5.0.0-beta.25",
+    "next-intl": "^3.25.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^2.6.0",
+    "zustand": "^5.0.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@ubi/eslint-config": "workspace:*",
+    "@ubi/typescript-config": "workspace:*",
+    "@playwright/test": "^1.49.1",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,90 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+cypress/screenshots/
+cypress/videos/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Generated files
+*.generated.ts
+*.generated.js
+__generated__/
+generated/
+
+# Prisma
+prisma/generated/
+
+# Mobile (Flutter)
+mobile/**/build/
+mobile/**/.dart_tool/
+mobile/**/.flutter-plugins
+mobile/**/.flutter-plugins-dependencies
+mobile/**/*.iml
+mobile/**/ios/Pods/
+mobile/**/ios/.symlinks/
+mobile/**/android/.gradle/
+mobile/**/android/local.properties
+
+# Go
+services/**/bin/
+services/**/*.exe
+
+# Terraform
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
+
+# Docker
+docker-compose.override.yml
+
+# Misc
+*.pem
+*.key
+*.cert
+.cache/
+.temp/
+tmp/

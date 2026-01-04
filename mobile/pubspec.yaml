@@ -1,0 +1,19 @@
+# UBI Mobile - Flutter Monorepo
+# Root pubspec for workspace configuration
+
+name: ubi_mobile_workspace
+publish_to: none
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+# Dev dependencies for the workspace
+dev_dependencies:
+  melos: ^4.1.0
+
+# Dependency overrides for the entire workspace
+# Use this to force specific versions across all packages
+dependency_overrides:
+  # Ensure consistent versions across packages
+  # meta: ^1.11.0

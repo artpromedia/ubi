@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ubi-design-tokens-dark",
+  "title": "UBI Design Tokens - Dark Mode",
+  "description": "Dark mode color token overrides for the UBI Design System",
+
+  "color": {
+    "$description": "Dark mode color overrides",
+
+    "text": {
+      "primary": {
+        "$value": "#FFFFFF",
+        "$type": "color",
+        "$description": "Primary text color (dark mode)"
+      },
+      "secondary": {
+        "$value": "#A3A3A3",
+        "$type": "color",
+        "$description": "Secondary text color (dark mode)"
+      },
+      "tertiary": {
+        "$value": "#737373",
+        "$type": "color",
+        "$description": "Tertiary/muted text color (dark mode)"
+      },
+      "disabled": {
+        "$value": "#525252",
+        "$type": "color",
+        "$description": "Disabled text color (dark mode)"
+      },
+      "inverse": {
+        "$value": "#191414",
+        "$type": "color",
+        "$description": "Text on light backgrounds (dark mode)"
+      },
+      "link": {
+        "$value": "#22D66A",
+        "$type": "color",
+        "$description": "Link text color (dark mode)"
+      },
+      "link-hover": {
+        "$value": "#1DB954",
+        "$type": "color",
+        "$description": "Link hover state (dark mode)"
+      }
+    },
+
+    "background": {
+      "primary": {
+        "$value": "#0A0A0A",
+        "$type": "color",
+        "$description": "Primary background (dark mode)"
+      },
+      "secondary": {
+        "$value": "#171717",
+        "$type": "color",
+        "$description": "Secondary background (dark mode)"
+      },
+      "tertiary": {
+        "$value": "#262626",
+        "$type": "color",
+        "$description": "Tertiary background (dark mode)"
+      },
+      "elevated": {
+        "$value": "#1A1A1A",
+        "$type": "color",
+        "$description": "Elevated surface (dark mode)"
+      },
+      "inverse": {
+        "$value": "#FFFFFF",
+        "$type": "color",
+        "$description": "Inverse background (dark mode)"
+      },
+      "overlay": {
+        "$value": "rgba(0, 0, 0, 0.7)",
+        "$type": "color",
+        "$description": "Modal/drawer overlay (dark mode)"
+      }
+    },
+
+    "border": {
+      "default": {
+        "$value": "#262626",
+        "$type": "color",
+        "$description": "Default border (dark mode)"
+      },
+      "strong": {
+        "$value": "#404040",
+        "$type": "color",
+        "$description": "Strong border (dark mode)"
+      },
+      "subtle": {
+        "$value": "#1A1A1A",
+        "$type": "color",
+        "$description": "Subtle border (dark mode)"
+      },
+      "focus": {
+        "$value": "#22D66A",
+        "$type": "color",
+        "$description": "Focus ring (dark mode)"
+      },
+      "error": {
+        "$value": "#F87171",
+        "$type": "color",
+        "$description": "Error border (dark mode)"
+      }
+    },
+
+    "status": {
+      "success": {
+        "default": {
+          "$value": "#22D66A",
+          "$type": "color",
+          "$description": "Success color (dark mode)"
+        },
+        "light": {
+          "$value": "rgba(34, 214, 106, 0.15)",
+          "$type": "color",
+          "$description": "Success background (dark mode)"
+        },
+        "dark": {
+          "$value": "#1DB954",
+          "$type": "color",
+          "$description": "Success hover (dark mode)"
+        }
+      },
+      "warning": {
+        "default": {
+          "$value": "#FBB034",
+          "$type": "color",
+          "$description": "Warning color (dark mode)"
+        },
+        "light": {
+          "$value": "rgba(251, 176, 52, 0.15)",
+          "$type": "color",
+          "$description": "Warning background (dark mode)"
+        },
+        "dark": {
+          "$value": "#F5A623",
+          "$type": "color",
+          "$description": "Warning hover (dark mode)"
+        }
+      },
+      "error": {
+        "default": {
+          "$value": "#F87171",
+          "$type": "color",
+          "$description": "Error color (dark mode)"
+        },
+        "light": {
+          "$value": "rgba(248, 113, 113, 0.15)",
+          "$type": "color",
+          "$description": "Error background (dark mode)"
+        },
+        "dark": {
+          "$value": "#E53E3E",
+          "$type": "color",
+          "$description": "Error hover (dark mode)"
+        }
+      },
+      "info": {
+        "default": {
+          "$value": "#63B3ED",
+          "$type": "color",
+          "$description": "Info color (dark mode)"
+        },
+        "light": {
+          "$value": "rgba(99, 179, 237, 0.15)",
+          "$type": "color",
+          "$description": "Info background (dark mode)"
+        },
+        "dark": {
+          "$value": "#3182CE",
+          "$type": "color",
+          "$description": "Info hover (dark mode)"
+        }
+      }
+    },
+
+    "interactive": {
+      "primary": {
+        "disabled": {
+          "$value": "rgba(29, 185, 84, 0.4)",
+          "$type": "color",
+          "$description": "Primary disabled (dark mode)"
+        }
+      },
+      "secondary": {
+        "default": {
+          "$value": "#FFFFFF",
+          "$type": "color",
+          "$description": "Secondary button (dark mode)"
+        },
+        "hover": {
+          "$value": "#F5F5F5",
+          "$type": "color",
+          "$description": "Secondary hover (dark mode)"
+        },
+        "active": {
+          "$value": "#E5E5E5",
+          "$type": "color",
+          "$description": "Secondary active (dark mode)"
+        },
+        "disabled": {
+          "$value": "#525252",
+          "$type": "color",
+          "$description": "Secondary disabled (dark mode)"
+        }
+      },
+      "ghost": {
+        "hover": {
+          "$value": "#262626",
+          "$type": "color",
+          "$description": "Ghost hover (dark mode)"
+        },
+        "active": {
+          "$value": "#404040",
+          "$type": "color",
+          "$description": "Ghost active (dark mode)"
+        }
+      },
+      "danger": {
+        "disabled": {
+          "$value": "rgba(229, 62, 62, 0.4)",
+          "$type": "color",
+          "$description": "Danger disabled (dark mode)"
+        }
+      }
+    }
+  },
+
+  "shadow": {
+    "$description": "Dark mode shadows with adjusted opacity",
+    "xs": {
+      "$value": "0 1px 2px 0 rgba(0, 0, 0, 0.3)",
+      "$type": "shadow",
+      "$description": "Extra small shadow (dark mode)"
+    },
+    "sm": {
+      "$value": "0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4)",
+      "$type": "shadow",
+      "$description": "Small shadow (dark mode)"
+    },
+    "md": {
+      "$value": "0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4)",
+      "$type": "shadow",
+      "$description": "Medium shadow (dark mode)"
+    },
+    "lg": {
+      "$value": "0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4)",
+      "$type": "shadow",
+      "$description": "Large shadow (dark mode)"
+    },
+    "xl": {
+      "$value": "0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4)",
+      "$type": "shadow",
+      "$description": "Extra large shadow (dark mode)"
+    },
+    "2xl": {
+      "$value": "0 25px 50px -12px rgba(0, 0, 0, 0.6)",
+      "$type": "shadow",
+      "$description": "2XL shadow (dark mode)"
+    },
+    "inner": {
+      "$value": "inset 0 2px 4px 0 rgba(0, 0, 0, 0.3)",
+      "$type": "shadow",
+      "$description": "Inner shadow (dark mode)"
+    },
+    "focus": {
+      "$value": "0 0 0 3px rgba(34, 214, 106, 0.5)",
+      "$type": "shadow",
+      "$description": "Focus ring (dark mode)"
+    },
+    "focus-error": {
+      "$value": "0 0 0 3px rgba(248, 113, 113, 0.5)",
+      "$type": "shadow",
+      "$description": "Error focus ring (dark mode)"
+    }
+  }
+}

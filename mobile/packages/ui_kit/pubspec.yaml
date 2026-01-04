@@ -1,0 +1,42 @@
+name: ubi_ui_kit
+description: UBI Design System - Shared UI components and theming for UBI mobile apps
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Typography
+  google_fonts: ^6.1.0
+  
+  # Icons
+  flutter_svg: ^2.0.9
+  
+  # Animations
+  flutter_animate: ^4.3.0
+  
+  # Image handling
+  cached_network_image: ^3.3.1
+  
+  # Shimmer loading
+  shimmer: ^3.0.0
+  
+  # Responsive
+  flutter_screenutil: ^5.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  golden_toolkit: ^0.15.0
+
+flutter:
+  assets:
+    - assets/icons/
+    - assets/images/
+    - assets/animations/

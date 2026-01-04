@@ -1,0 +1,88 @@
+# =============================================================================
+# Default Limit Ranges
+# =============================================================================
+# Sets default resource requests/limits for containers
+# =============================================================================
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: ubi-apps
+  labels:
+    app.kubernetes.io/name: default-limits
+spec:
+  limits:
+    # Default container limits
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "4"
+        memory: 8Gi
+      min:
+        cpu: 10m
+        memory: 16Mi
+
+    # Pod limits (aggregate of all containers)
+    - type: Pod
+      max:
+        cpu: "8"
+        memory: 16Gi
+
+    # PVC limits
+    - type: PersistentVolumeClaim
+      max:
+        storage: 100Gi
+      min:
+        storage: 1Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: ubi-system
+  labels:
+    app.kubernetes.io/name: default-limits
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "2"
+        memory: 4Gi
+      min:
+        cpu: 10m
+        memory: 16Mi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: ubi-monitoring
+  labels:
+    app.kubernetes.io/name: default-limits
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "1"
+        memory: 1Gi
+      defaultRequest:
+        cpu: 200m
+        memory: 256Mi
+      max:
+        cpu: "4"
+        memory: 16Gi
+      min:
+        cpu: 50m
+        memory: 64Mi

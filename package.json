@@ -1,0 +1,100 @@
+{
+  "name": "ubi-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "UBI - African Mobility Super-App Monorepo",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ubi-africa/ubi-monorepo.git"
+  },
+  "author": "UBI Engineering <engineering@ubi.africa>",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.14.2",
+  "scripts": {
+    "build": "turbo run build",
+    "build:affected": "turbo run build --filter=...[origin/main]",
+    "dev": "turbo run dev --parallel",
+    "dev:web": "turbo run dev --filter=@ubi/web-app",
+    "dev:admin": "turbo run dev --filter=@ubi/admin-dashboard",
+    "dev:marketing": "turbo run dev --filter=@ubi/marketing-site",
+    "dev:services": "turbo run dev --filter=./services/*",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "lint:affected": "turbo run lint --filter=...[origin/main]",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
+    "test": "turbo run test",
+    "test:affected": "turbo run test --filter=...[origin/main]",
+    "test:coverage": "turbo run test:coverage",
+    "test:e2e": "turbo run test:e2e",
+    "typecheck": "turbo run typecheck",
+    "typecheck:affected": "turbo run typecheck --filter=...[origin/main]",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "clean:turbo": "rm -rf .turbo && rm -rf **/node_modules/.cache",
+    "db:generate": "turbo run db:generate --filter=@ubi/database",
+    "db:migrate": "turbo run db:migrate --filter=@ubi/database",
+    "db:migrate:dev": "turbo run db:migrate:dev --filter=@ubi/database",
+    "db:seed": "turbo run db:seed --filter=@ubi/database",
+    "db:studio": "pnpm --filter @ubi/database db:studio",
+    "docker:up": "docker-compose -f docker/docker-compose.dev.yml up -d",
+    "docker:down": "docker-compose -f docker/docker-compose.dev.yml down",
+    "docker:logs": "docker-compose -f docker/docker-compose.dev.yml logs -f",
+    "docker:build": "turbo run docker:build",
+    "codegen": "turbo run codegen",
+    "graph": "turbo run build --graph",
+    "graph:viz": "turbo run build --graph=graph.html && open graph.html",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "pnpm build && changeset publish",
+    "prepare": "husky",
+    "new:package": "turbo gen package",
+    "new:service": "turbo gen service",
+    "new:app": "turbo gen app",
+    "ci:version": "changeset version && pnpm install --lockfile-only",
+    "ci:publish": "pnpm build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.10",
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@ubi/eslint-config": "workspace:*",
+    "@ubi/typescript-config": "workspace:*",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yaml,yml}": [
+      "prettier --write"
+    ],
+    "*.go": [
+      "gofmt -w",
+      "golangci-lint run --fix"
+    ]
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "react": "18",
+        "react-dom": "18"
+      },
+      "ignoreMissing": [
+        "@babel/core",
+        "webpack"
+      ]
+    },
+    "overrides": {
+      "typescript": "^5.7.2"
+    }
+  }
+}

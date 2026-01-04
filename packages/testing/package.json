@@ -1,0 +1,78 @@
+{
+  "name": "@ubi/testing",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shared testing utilities, mocks, and fixtures for UBI",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./vitest": {
+      "import": "./dist/vitest/index.mjs",
+      "require": "./dist/vitest/index.js",
+      "types": "./dist/vitest/index.d.ts"
+    },
+    "./mocks": {
+      "import": "./dist/mocks/index.mjs",
+      "require": "./dist/mocks/index.js",
+      "types": "./dist/mocks/index.d.ts"
+    },
+    "./fixtures": {
+      "import": "./dist/fixtures/index.mjs",
+      "require": "./dist/fixtures/index.js",
+      "types": "./dist/fixtures/index.d.ts"
+    },
+    "./factories": {
+      "import": "./dist/factories/index.mjs",
+      "require": "./dist/factories/index.js",
+      "types": "./dist/factories/index.d.ts"
+    },
+    "./matchers": {
+      "import": "./dist/matchers/index.mjs",
+      "require": "./dist/matchers/index.js",
+      "types": "./dist/matchers/index.d.ts"
+    },
+    "./msw": {
+      "import": "./dist/msw/index.mjs",
+      "require": "./dist/msw/index.js",
+      "types": "./dist/msw/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo node_modules"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^8.4.1",
+    "msw": "^2.4.11",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@ubi/eslint-config": "workspace:*",
+    "@ubi/typescript-config": "workspace:*",
+    "@types/node": "^22.10.2",
+    "eslint": "^8.57.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "peerDependencies": {
+    "vitest": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  }
+}

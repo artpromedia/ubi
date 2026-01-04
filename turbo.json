@@ -1,0 +1,200 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalDependencies": [
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.production"
+  ],
+  "globalEnv": [
+    "NODE_ENV",
+    "CI",
+    "VERCEL",
+    "VERCEL_ENV",
+    "VERCEL_URL",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "AWS_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY"
+  ],
+  "globalPassThroughEnv": [
+    "GITHUB_TOKEN",
+    "NPM_TOKEN",
+    "TURBO_TOKEN",
+    "TURBO_TEAM"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build", "codegen"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!**/*.spec.ts",
+        "!**/*.spec.tsx",
+        "!**/__tests__/**",
+        "!**/coverage/**",
+        "!**/.turbo/**"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**",
+        "build/**",
+        "out/**"
+      ],
+      "cache": true,
+      "persistent": false
+    },
+    "build:docker": {
+      "dependsOn": ["build"],
+      "inputs": ["Dockerfile", "docker/**", "dist/**"],
+      "outputs": [],
+      "cache": false
+    },
+    "dev": {
+      "dependsOn": ["^build", "codegen"],
+      "inputs": ["$TURBO_DEFAULT$"],
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.js",
+        "**/*.jsx",
+        ".eslintrc.js",
+        ".eslintrc.json",
+        "eslint.config.mjs"
+      ],
+      "outputs": [],
+      "cache": true
+    },
+    "lint:fix": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": [],
+      "cache": false
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "codegen"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "**/*.ts",
+        "**/*.tsx",
+        "tsconfig.json",
+        "tsconfig.*.json"
+      ],
+      "outputs": [],
+      "cache": true
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx",
+        "**/__tests__/**",
+        "jest.config.*",
+        "vitest.config.*"
+      ],
+      "outputs": ["coverage/**"],
+      "cache": true,
+      "env": ["CI", "NODE_ENV"]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": ["coverage/**"],
+      "cache": true
+    },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "**/e2e/**",
+        "**/playwright/**",
+        "**/cypress/**",
+        "playwright.config.*",
+        "cypress.config.*"
+      ],
+      "outputs": [
+        "playwright-report/**",
+        "cypress/screenshots/**",
+        "cypress/videos/**"
+      ],
+      "cache": false,
+      "env": ["CI", "BASE_URL", "TEST_USER_EMAIL", "TEST_USER_PASSWORD"]
+    },
+    "clean": {
+      "cache": false,
+      "persistent": false
+    },
+    "codegen": {
+      "dependsOn": ["^codegen"],
+      "inputs": [
+        "**/*.graphql",
+        "**/*.gql",
+        "**/openapi.yaml",
+        "**/openapi.json",
+        "**/schema.prisma",
+        "codegen.ts",
+        "codegen.yaml"
+      ],
+      "outputs": [
+        "**/generated/**",
+        "**/__generated__/**",
+        "**/src/generated/**"
+      ],
+      "cache": true
+    },
+    "db:generate": {
+      "inputs": ["**/schema.prisma", "**/prisma/schema.prisma"],
+      "outputs": ["**/node_modules/.prisma/**"],
+      "cache": true
+    },
+    "db:migrate": {
+      "inputs": ["**/prisma/migrations/**"],
+      "outputs": [],
+      "cache": false
+    },
+    "db:migrate:dev": {
+      "inputs": ["**/schema.prisma", "**/prisma/schema.prisma"],
+      "outputs": ["**/prisma/migrations/**"],
+      "cache": false
+    },
+    "db:seed": {
+      "dependsOn": ["db:migrate"],
+      "cache": false
+    },
+    "deploy": {
+      "dependsOn": ["build", "test", "lint"],
+      "outputs": [],
+      "cache": false,
+      "env": [
+        "AWS_REGION",
+        "AWS_ACCOUNT_ID",
+        "DEPLOY_ENV",
+        "VERCEL_TOKEN"
+      ]
+    },
+    "docker:build": {
+      "dependsOn": ["build"],
+      "inputs": ["Dockerfile", "docker/**", ".dockerignore"],
+      "outputs": [],
+      "cache": false
+    }
+  }
+}

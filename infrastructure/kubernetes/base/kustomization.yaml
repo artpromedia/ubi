@@ -1,0 +1,47 @@
+# =============================================================================
+# UBI Base Kustomization
+# =============================================================================
+# This is the base configuration that all environments inherit from.
+# Environment-specific overlays customize these resources.
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: ubi-base
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/part-of: ubi
+
+resources:
+  # Namespaces
+  - namespaces.yaml
+
+  # RBAC
+  - rbac/cluster-roles.yaml
+  - rbac/service-accounts.yaml
+
+  # Network Policies
+  - network-policies/default-deny.yaml
+  - network-policies/allow-internal.yaml
+
+  # Resource Quotas
+  - resource-quotas/default.yaml
+
+  # Limit Ranges
+  - limit-ranges/default.yaml
+
+  # Priority Classes
+  - priority-classes.yaml
+
+# Config Maps that can be referenced by services
+configMapGenerator:
+  - name: ubi-config
+    namespace: ubi-system
+    literals:
+      - APP_NAME=ubi
+      - LOG_FORMAT=json
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.ubi-monitoring:4317

@@ -1,0 +1,53 @@
+# UBI Monorepo Workspace Configuration
+# This file defines which directories contain workspace packages
+# pnpm will link dependencies between these packages automatically
+
+packages:
+  # ============================================
+  # APPLICATIONS
+  # ============================================
+  # Consumer-facing and internal web applications
+  - "apps/*"
+
+  # ============================================
+  # BACKEND SERVICES
+  # ============================================
+  # Node.js and Go microservices
+  - "services/*"
+
+  # ============================================
+  # SHARED PACKAGES
+  # ============================================
+  # Reusable libraries, utilities, and configurations
+  - "packages/*"
+
+  # ============================================
+  # INFRASTRUCTURE
+  # ============================================
+  # Terraform modules, K8s configs (not npm packages)
+  # These are excluded from pnpm workspace but included
+  # in the repository for unified infrastructure management
+  # - "!infra/**"
+
+  # ============================================
+  # TOOLING
+  # ============================================
+  # Build tools, generators, and scripts
+  - "tooling/*"
+
+  # ============================================
+  # MOBILE (Flutter)
+  # ============================================
+  # Flutter apps are not pnpm packages but live in the monorepo
+  # They share Dart packages defined in pubspec.yaml
+  # - "!mobile/**"
+
+  # ============================================
+  # EXCLUSIONS
+  # ============================================
+  # Explicitly exclude certain directories
+  - "!**/test/**"
+  - "!**/tests/**"
+  - "!**/__tests__/**"
+  - "!**/fixtures/**"
+  - "!**/examples/**"
