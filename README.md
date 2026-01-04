@@ -21,6 +21,7 @@ Welcome to the UBI monorepo! This repository contains all the code for UBI's pla
 ## 🌍 Overview
 
 UBI is an African mobility super-app operating in:
+
 - 🇳🇬 Nigeria
 - 🇿🇦 South Africa
 - 🇰🇪 Kenya
@@ -30,13 +31,13 @@ UBI is an African mobility super-app operating in:
 
 ### Features
 
-| Feature | Description |
-|---------|-------------|
-| 🚗 **Rides** | Book rides with economy, comfort, premium, XL, and moto options |
-| 🍔 **Food** | Order from local restaurants with real-time tracking |
-| 📦 **Packages** | Send packages anywhere with proof of delivery |
-| 💳 **Payments** | Pay with M-Pesa, MTN MoMo, cards, cash, or UBI Wallet |
-| ⚡ **CEERION** | Electric vehicle financing for drivers |
+| Feature         | Description                                                     |
+| --------------- | --------------------------------------------------------------- |
+| 🚗 **Rides**    | Book rides with economy, comfort, premium, XL, and moto options |
+| 🍔 **Food**     | Order from local restaurants with real-time tracking            |
+| 📦 **Packages** | Send packages anywhere with proof of delivery                   |
+| 💳 **Payments** | Pay with M-Pesa, MTN MoMo, cards, cash, or UBI Wallet           |
+| ⚡ **CEERION**  | Electric vehicle financing for drivers                          |
 
 ## 🏗 Architecture
 
@@ -51,38 +52,45 @@ UBI is an African mobility super-app operating in:
      │          │          │          │               │
      └──────────┴──────────┴──────────┴───────────────┘
                            │
-                    ┌──────┴──────┐
-                    │ API Gateway │
-                    │   (Hono)    │
-                    └──────┬──────┘
-                           │
-     ┌─────────────────────┼─────────────────────┐
-     │                     │                     │
-┌────┴────┐          ┌─────┴─────┐         ┌────┴────┐
-│  Ride   │          │   Food    │         │ Delivery│
-│ Service │          │  Service  │         │ Service │
-│  (Go)   │          │ (Node.js) │         │  (Go)   │
-└────┬────┘          └─────┬─────┘         └────┬────┘
-     │                     │                     │
-┌────┴────┐          ┌─────┴─────┐         ┌────┴────┐
-│ Payment │          │   User    │         │Notif.   │
-│ Service │          │  Service  │         │Service  │
-│(Node.js)│          │ (Node.js) │         │(Node.js)│
-└─────────┘          └───────────┘         └─────────┘
+        ┌──────────────────┴──────────────────┐
+        │                                     │
+   ┌────▼─────┐                      ┌────────▼────────┐
+   │WebSocket │                      │   API Gateway   │
+   │ Gateway  │◄─────Redis Pub/Sub──►│     (Hono)      │
+   │(Node.js) │                      └────────┬────────┘
+   └──────────┘                               │
+        │                                     │
+        │         ┌───────────────────────────┼─────────────┐
+        │         │            │              │             │
+   ┌────▼────┐  ┌─▼──────┐  ┌─▼────────┐  ┌─▼──────┐  ┌──▼──────┐
+   │Location │  │  Ride  │  │   Food   │  │Delivery│  │ Payment │
+   │Service  │  │Service │  │ Service  │  │Service │  │ Service │
+   │(Go/H3)  │  │  (Go)  │  │(Node.js) │  │  (Go)  │  │(Node.js)│
+   └────┬────┘  └───┬────┘  └────┬─────┘  └───┬────┘  └────┬────┘
+        │           │            │            │            │
+        │      ┌────┴────┐  ┌────┴────┐  ┌───┴────┐  ┌───┴────┐
+        │      │ Matching│  │  User   │  │ Notif. │  │  ETA   │
+        └─────►│ Engine  │  │ Service │  │Service │  │Service │
+               │  (Go)   │  │(Node.js)│  │(Node.js)│  │  (Go)  │
+               └─────────┘  └─────────┘  └────────┘  └────────┘
 ```
+
+> 🆕 **Real-Time Systems** now include WebSocket Gateway, Location Service with H3 indexing, Matching Engine, and Surge Pricing! See [Real-Time Quick Start](./docs/REALTIME-QUICKSTART.md) for details.
 
 ### Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| **Mobile** | Flutter 3.19+ |
-| **Web** | Next.js 15, React 19, TypeScript |
-| **API Gateway** | Hono (Node.js) |
-| **Services** | Go 1.22+, Node.js 20 |
-| **Database** | PostgreSQL 15 + PostGIS |
-| **Cache** | Redis 7 |
-| **Infrastructure** | AWS (ECS, RDS, ElastiCache) |
-| **Monorepo** | Turborepo + pnpm |
+| Layer              | Technology                               |
+| ------------------ | ---------------------------------------- |
+| **Mobile**         | Flutter 3.19+                            |
+| **Web**            | Next.js 15, React 19, TypeScript         |
+| **API Gateway**    | Hono (Node.js)                           |
+| **Real-Time**      | WebSockets, Redis Pub/Sub, H3 Geospatial |
+| **Services**       | Go 1.22+, Node.js 20                     |
+| **Database**       | PostgreSQL 15 + PostGIS, TimescaleDB     |
+| **Cache**          | Redis 7 (Geo + Pub/Sub)                  |
+| **Streaming**      | Kafka (Event Sourcing)                   |
+| **Infrastructure** | AWS (ECS, RDS, ElastiCache, MSK)         |
+| **Monorepo**       | Turborepo + pnpm                         |
 
 ## 🚀 Getting Started
 
@@ -238,6 +246,7 @@ Install recommended extensions:
 ```
 
 **Recommended extensions:**
+
 - ESLint
 - Prettier
 - Tailwind CSS IntelliSense
@@ -299,11 +308,11 @@ go test -v -coverprofile=coverage.out ./...
 
 ### Environments
 
-| Environment | Purpose | URL |
-|-------------|---------|-----|
-| Development | Local development | localhost |
-| Staging | Pre-production testing | *.staging.ubi.africa |
-| Production | Live environment | *.ubi.africa |
+| Environment | Purpose                | URL                   |
+| ----------- | ---------------------- | --------------------- |
+| Development | Local development      | localhost             |
+| Staging     | Pre-production testing | \*.staging.ubi.africa |
+| Production  | Live environment       | \*.ubi.africa         |
 
 ### Deploy Process
 
