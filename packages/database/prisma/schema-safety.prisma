@@ -1,0 +1,1079 @@
+// =============================================================================
+// UBI SAFETY & TRUST PLATFORM - DATABASE SCHEMA
+// =============================================================================
+// Comprehensive safety systems for:
+// - Identity Verification (KYC, Documents, Biometrics)
+// - Trip Safety Monitoring
+// - SOS Emergency Response
+// - Women Safety Features
+// - Fraud Prevention
+// - Driver Safety
+// - Background Checks
+// =============================================================================
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum VerificationLevel {
+  BASIC // Phone verified only
+  VERIFIED // Phone + Email + ID + Selfie
+  DRIVER // Full driver verification
+  MERCHANT // Merchant verification
+  PREMIUM // Enhanced verification
+}
+
+enum VerificationType {
+  PHONE
+  EMAIL
+  GOVERNMENT_ID
+  DRIVERS_LICENSE
+  SELFIE
+  LIVENESS
+  ADDRESS
+  VEHICLE
+  INSURANCE
+  BACKGROUND_CHECK
+  BIOMETRIC
+}
+
+enum VerificationStatus {
+  PENDING
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  EXPIRED
+  NEEDS_REVIEW
+}
+
+enum DocumentType {
+  // Nigeria
+  BVN
+  NIN
+  VOTERS_CARD
+  DRIVERS_LICENSE_NG
+  INTERNATIONAL_PASSPORT_NG
+  // Kenya
+  NATIONAL_ID_KE
+  KRA_PIN
+  DRIVERS_LICENSE_KE
+  // South Africa
+  RSA_ID
+  DRIVERS_LICENSE_ZA
+  // Ghana
+  GHANA_CARD
+  VOTERS_ID_GH
+  DRIVERS_LICENSE_GH
+  // Rwanda
+  NATIONAL_ID_RW
+  // Ethiopia
+  NATIONAL_ID_ET
+  // Generic
+  PASSPORT
+  UTILITY_BILL
+  BANK_STATEMENT
+}
+
+enum BackgroundCheckType {
+  CRIMINAL_RECORD
+  DRIVING_RECORD
+  CREDIT_CHECK
+  EMPLOYMENT
+  EDUCATION
+  REFERENCE
+  SEX_OFFENDER
+  WATCHLIST
+}
+
+enum BackgroundCheckStatus {
+  INITIATED
+  PENDING_DOCUMENTS
+  IN_PROGRESS
+  COMPLETED_CLEAR
+  COMPLETED_REVIEW
+  COMPLETED_FAIL
+  EXPIRED
+}
+
+enum SOSStatus {
+  ACTIVE
+  RESPONDED
+  RESOLVED
+  CANCELLED
+  ESCALATED
+  FALSE_ALARM
+}
+
+enum SOSEscalationLevel {
+  LEVEL_1 // Safety team
+  LEVEL_2 // Senior safety + Law enforcement notified
+  LEVEL_3 // Emergency services dispatched
+  LEVEL_4 // Critical - All hands
+}
+
+enum IncidentType {
+  SOS_TRIGGERED
+  CRASH_DETECTED
+  ROUTE_DEVIATION
+  UNEXPECTED_STOP
+  SPEED_ANOMALY
+  SAFETY_CHECK_FAILED
+  ASSAULT
+  ROBBERY
+  ACCIDENT
+  HARASSMENT
+  DRIVER_MISCONDUCT
+  RIDER_MISCONDUCT
+  VEHICLE_ISSUE
+  OTHER
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  REPORTED
+  ACKNOWLEDGED
+  INVESTIGATING
+  RESOLVED
+  CLOSED
+  ESCALATED
+}
+
+enum TripAnomalyType {
+  ROUTE_DEVIATION
+  UNEXPECTED_STOP
+  EXCESSIVE_SPEED
+  UNUSUAL_DURATION
+  LOCATION_JUMP
+  CRASH_DETECTED
+  PHONE_INACTIVE
+  DRIVER_UNRESPONSIVE
+}
+
+enum FraudSignalType {
+  NEW_DEVICE
+  IMPOSSIBLE_TRAVEL
+  SIM_SWAP
+  PASSWORD_RESET
+  MULTI_ACCOUNT
+  PROMO_ABUSE
+  CIRCULAR_REFERRAL
+  VELOCITY_BREACH
+  DEVICE_REPUTATION
+  IP_REPUTATION
+  BEHAVIORAL_ANOMALY
+  COLLUSION
+  FAKE_GPS
+  EMULATOR
+}
+
+enum FraudActionType {
+  ALLOW
+  CHALLENGE
+  BLOCK
+  FLAG_FOR_REVIEW
+  RESTRICT
+  SUSPEND
+  TERMINATE
+}
+
+enum RiskLevel {
+  VERY_LOW
+  LOW
+  MEDIUM
+  HIGH
+  VERY_HIGH
+  CRITICAL
+}
+
+enum SafetyCheckStatus {
+  SENT
+  ACKNOWLEDGED
+  CONFIRMED_SAFE
+  NO_RESPONSE
+  HELP_REQUESTED
+  ESCALATED
+}
+
+enum GenderPreference {
+  NO_PREFERENCE
+  SAME_GENDER
+  FEMALE_ONLY
+  MALE_ONLY
+}
+
+// =============================================================================
+// VERIFICATION MODELS
+// =============================================================================
+
+/// Verification level configurations and requirements
+model VerificationLevelConfig {
+  level        VerificationLevel @id
+  name         String
+  description  String?
+  requirements Json // Required verification types
+  capabilities Json // What user can do at this level
+  dailyLimit   Decimal?          @db.Decimal(15, 2)
+  monthlyLimit Decimal?          @db.Decimal(15, 2)
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@map("verification_level_configs")
+}
+
+/// User verification records
+model UserVerification {
+  id                 String             @id @default(uuid())
+  userId             String
+  verificationType   VerificationType
+  status             VerificationStatus @default(PENDING)
+  provider           String? // smile_id, onfido, iprs, etc.
+  providerReference  String?
+  documentType       DocumentType?
+  documentNumberHash String? // Hashed for privacy
+  documentCountry    String?            @db.VarChar(2)
+  documentExpiry     DateTime?
+  verificationData   Json? // Encrypted sensitive data
+  confidenceScore    Float? // Provider confidence 0-1
+  rejectionReason    String?
+  rejectionCode      String?
+  attempts           Int                @default(1)
+  maxAttempts        Int                @default(3)
+  verifiedAt         DateTime?
+  expiresAt          DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  documents VerificationDocument[]
+  auditLogs VerificationAuditLog[]
+
+  @@unique([userId, verificationType])
+  @@index([userId])
+  @@index([status])
+  @@index([documentNumberHash])
+  @@map("user_verifications")
+}
+
+/// Documents submitted for verification
+model VerificationDocument {
+  id             String           @id @default(uuid())
+  verificationId String
+  verification   UserVerification @relation(fields: [verificationId], references: [id])
+  documentSide   String // front, back, selfie, page_1, etc.
+  storagePath    String // Encrypted S3/GCS path
+  contentHash    String // SHA-256 of original
+  mimeType       String
+  fileSize       Int
+  extractedData  Json? // OCR/extracted fields (encrypted)
+  qualityScore   Float? // Image quality 0-1
+  isEncrypted    Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+
+  @@index([verificationId])
+  @@map("verification_documents")
+}
+
+/// Liveness check records
+model LivenessCheck {
+  id             String   @id @default(uuid())
+  userId         String
+  sessionId      String   @unique
+  provider       String
+  checkType      String // passive, active_blink, active_movement
+  livenessScore  Float
+  spoofingScore  Float?
+  passed         Boolean
+  checks         Json // Individual check results
+  deviceInfo     Json?
+  failureReasons String[]
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([passed])
+  @@map("liveness_checks")
+}
+
+/// Face match records (selfie to document)
+model FaceMatch {
+  id          String   @id @default(uuid())
+  userId      String
+  selfieDocId String
+  idDocId     String
+  provider    String
+  matchScore  Float // 0-1 similarity
+  matched     Boolean
+  threshold   Float // Threshold used
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("face_matches")
+}
+
+/// Verification audit logs
+model VerificationAuditLog {
+  id             String              @id @default(uuid())
+  verificationId String
+  verification   UserVerification    @relation(fields: [verificationId], references: [id])
+  action         String // submitted, approved, rejected, expired, etc.
+  performedBy    String? // userId or 'system'
+  previousStatus VerificationStatus?
+  newStatus      VerificationStatus?
+  reason         String?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime            @default(now())
+
+  @@index([verificationId])
+  @@index([createdAt])
+  @@map("verification_audit_logs")
+}
+
+// =============================================================================
+// BACKGROUND CHECK MODELS
+// =============================================================================
+
+/// Background check records
+model BackgroundCheck {
+  id                  String                @id @default(uuid())
+  userId              String
+  checkType           BackgroundCheckType
+  status              BackgroundCheckStatus @default(INITIATED)
+  provider            String
+  providerReference   String?
+  country             String                @db.VarChar(2)
+  consentGiven        Boolean               @default(false)
+  consentTimestamp    DateTime?
+  consentIpAddress    String?
+  requestData         Json? // Request sent to provider
+  responseData        Json? // Encrypted response
+  findings            Json? // Parsed findings
+  hasCriticalFindings Boolean               @default(false)
+  reviewedBy          String?
+  reviewedAt          DateTime?
+  reviewNotes         String?
+  validUntil          DateTime?
+  initiatedAt         DateTime              @default(now())
+  completedAt         DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@unique([userId, checkType])
+  @@index([userId])
+  @@index([status])
+  @@map("background_checks")
+}
+
+/// Continuous background monitoring alerts
+model BackgroundMonitoringAlert {
+  id                String           @id @default(uuid())
+  userId            String
+  backgroundCheckId String?
+  alertType         String // new_offense, license_suspended, watchlist_match
+  severity          IncidentSeverity
+  details           Json
+  sourceProvider    String
+  isReviewed        Boolean          @default(false)
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  actionTaken       String?
+  createdAt         DateTime         @default(now())
+
+  @@index([userId])
+  @@index([isReviewed])
+  @@map("background_monitoring_alerts")
+}
+
+// =============================================================================
+// SOS & EMERGENCY MODELS
+// =============================================================================
+
+/// Emergency contacts for users
+model EmergencyContact {
+  id              String    @id @default(uuid())
+  userId          String
+  name            String
+  phoneNumber     String
+  relationship    String? // spouse, parent, friend, etc.
+  isPrimary       Boolean   @default(false)
+  whatsappEnabled Boolean   @default(false)
+  telegramEnabled Boolean   @default(false)
+  emailEnabled    Boolean   @default(false)
+  email           String?
+  notifyOnTrip    Boolean   @default(false) // Auto-share all trips
+  isVerified      Boolean   @default(false)
+  verifiedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  notifications EmergencyContactNotification[]
+
+  @@index([userId])
+  @@map("emergency_contacts")
+}
+
+/// SOS incident records
+model SOSIncident {
+  id                  String             @id @default(uuid())
+  userId              String
+  tripId              String?
+  driverId            String?
+  status              SOSStatus          @default(ACTIVE)
+  escalationLevel     SOSEscalationLevel @default(LEVEL_1)
+  triggerMethod       String // button, voice, shake, auto
+  triggerLocation     Json // lat, lng, accuracy
+  currentLocation     Json? // Updated location
+  batteryLevel        Int?
+  networkType         String? // wifi, 4g, 3g
+  audioRecordingUrl   String?
+  videoRecordingUrl   String?
+  assignedAgentId     String?
+  firstResponseAt     DateTime?
+  responseTimeSeconds Int?
+  resolvedAt          DateTime?
+  resolutionType      String? // false_alarm, resolved, escalated
+  resolutionNotes     String?
+  triggeredAt         DateTime           @default(now())
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  timeline             SOSTimeline[]
+  contactNotifications EmergencyContactNotification[]
+
+  @@index([userId])
+  @@index([tripId])
+  @@index([status])
+  @@index([triggeredAt])
+  @@map("sos_incidents")
+}
+
+/// SOS incident timeline
+model SOSTimeline {
+  id          String      @id @default(uuid())
+  incidentId  String
+  incident    SOSIncident @relation(fields: [incidentId], references: [id])
+  eventType   String // triggered, contact_notified, agent_assigned, escalated, etc.
+  eventData   Json?
+  performedBy String?
+  createdAt   DateTime    @default(now())
+
+  @@index([incidentId])
+  @@map("sos_timeline")
+}
+
+/// Emergency contact notifications sent
+model EmergencyContactNotification {
+  id            String           @id @default(uuid())
+  incidentId    String
+  incident      SOSIncident      @relation(fields: [incidentId], references: [id])
+  contactId     String
+  contact       EmergencyContact @relation(fields: [contactId], references: [id])
+  channel       String // sms, whatsapp, call, email
+  status        String // sent, delivered, read, failed
+  locationLink  String?
+  sentAt        DateTime         @default(now())
+  deliveredAt   DateTime?
+  readAt        DateTime?
+  failureReason String?
+
+  @@index([incidentId])
+  @@index([contactId])
+  @@map("emergency_contact_notifications")
+}
+
+// =============================================================================
+// TRIP SAFETY MODELS
+// =============================================================================
+
+/// Trip safety monitoring sessions
+model TripSafetySession {
+  id                  String    @id @default(uuid())
+  tripId              String    @unique
+  riderId             String
+  driverId            String
+  status              String    @default("monitoring") // monitoring, completed, incident
+  expectedRoute       Json // Polyline points
+  expectedDuration    Int // seconds
+  actualDuration      Int?
+  riskScore           Float     @default(0)
+  anomalyCount        Int       @default(0)
+  safetyChecksCount   Int       @default(0)
+  womenSafetyMode     Boolean   @default(false)
+  pinVerified         Boolean?
+  sharedWithContacts  Boolean   @default(false)
+  monitoringStartedAt DateTime
+  monitoringEndedAt   DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  anomalies       TripAnomaly[]
+  safetyChecks    TripSafetyCheck[]
+  locationHistory TripLocationHistory[]
+
+  @@index([tripId])
+  @@index([riderId])
+  @@index([driverId])
+  @@index([status])
+  @@map("trip_safety_sessions")
+}
+
+/// Trip anomalies detected
+model TripAnomaly {
+  id             String            @id @default(uuid())
+  sessionId      String
+  session        TripSafetySession @relation(fields: [sessionId], references: [id])
+  tripId         String
+  anomalyType    TripAnomalyType
+  severity       IncidentSeverity
+  details        Json
+  location       Json?
+  detectedAt     DateTime
+  resolvedAt     DateTime?
+  resolutionType String? // auto_resolved, user_confirmed, escalated
+  createdAt      DateTime          @default(now())
+
+  @@index([sessionId])
+  @@index([tripId])
+  @@index([severity])
+  @@map("trip_anomalies")
+}
+
+/// Trip safety check-ins
+model TripSafetyCheck {
+  id             String            @id @default(uuid())
+  sessionId      String
+  session        TripSafetySession @relation(fields: [sessionId], references: [id])
+  tripId         String
+  userId         String
+  reason         String // periodic, anomaly, driver_request
+  status         SafetyCheckStatus @default(SENT)
+  sentAt         DateTime          @default(now())
+  respondedAt    DateTime?
+  responseType   String? // safe, need_help, no_response
+  timeoutSeconds Int               @default(60)
+  escalatedAt    DateTime?
+  createdAt      DateTime          @default(now())
+
+  @@index([sessionId])
+  @@index([tripId])
+  @@index([status])
+  @@map("trip_safety_checks")
+}
+
+/// Trip location history (for safety replay)
+model TripLocationHistory {
+  id        String            @id @default(uuid())
+  sessionId String
+  session   TripSafetySession @relation(fields: [sessionId], references: [id])
+  tripId    String
+  userId    String // driver or rider
+  location  Json // lat, lng, accuracy, speed, bearing
+  source    String // gps, network, fused
+  timestamp DateTime
+  createdAt DateTime          @default(now())
+
+  @@index([sessionId])
+  @@index([tripId])
+  @@index([timestamp])
+  @@map("trip_location_history")
+}
+
+/// Trip PIN verification
+model TripPinVerification {
+  id          String    @id @default(uuid())
+  tripId      String    @unique
+  pinHash     String
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  verified    Boolean   @default(false)
+  verifiedAt  DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@index([tripId])
+  @@map("trip_pin_verifications")
+}
+
+/// Trip sharing records
+model TripShare {
+  id           String    @id @default(uuid())
+  tripId       String
+  sharedBy     String // userId
+  shareType    String // link, contact, emergency
+  shareLink    String?   @unique
+  contactId    String?
+  contactPhone String?
+  contactEmail String?
+  expiresAt    DateTime?
+  accessCount  Int       @default(0)
+  lastAccessAt DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  @@index([tripId])
+  @@index([shareLink])
+  @@map("trip_shares")
+}
+
+// =============================================================================
+// INCIDENT MODELS
+// =============================================================================
+
+/// Safety incidents
+model SafetyIncident {
+  id                String           @id @default(uuid())
+  incidentType      IncidentType
+  severity          IncidentSeverity
+  status            IncidentStatus   @default(REPORTED)
+  reportedBy        String
+  reporterType      String // rider, driver, system, agent
+  tripId            String?
+  riderId           String?
+  driverId          String?
+  sosIncidentId     String?
+  location          Json?
+  description       String?
+  evidenceUrls      String[]
+  assignedTeam      String? // safety, fraud, support
+  assignedAgentId   String?
+  assignedAt        DateTime?
+  firstResponseAt   DateTime?
+  resolvedBy        String?
+  resolvedAt        DateTime?
+  resolutionSummary String?
+  resolutionActions Json? // Actions taken
+  userFeedback      Json? // Post-resolution feedback
+  priority          Int              @default(0)
+  slaDeadline       DateTime?
+  slaBreach         Boolean          @default(false)
+  reportedAt        DateTime         @default(now())
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  notes   IncidentNote[]
+  actions IncidentAction[]
+
+  @@index([status])
+  @@index([severity])
+  @@index([tripId])
+  @@index([riderId])
+  @@index([driverId])
+  @@index([reportedAt])
+  @@map("safety_incidents")
+}
+
+/// Incident notes/comments
+model IncidentNote {
+  id          String         @id @default(uuid())
+  incidentId  String
+  incident    SafetyIncident @relation(fields: [incidentId], references: [id])
+  authorId    String
+  authorType  String // agent, system, user
+  content     String
+  isInternal  Boolean        @default(true)
+  attachments String[]
+  createdAt   DateTime       @default(now())
+
+  @@index([incidentId])
+  @@map("incident_notes")
+}
+
+/// Incident actions taken
+model IncidentAction {
+  id           String         @id @default(uuid())
+  incidentId   String
+  incident     SafetyIncident @relation(fields: [incidentId], references: [id])
+  actionType   String // suspend_user, refund, warn, etc.
+  targetUserId String?
+  targetType   String? // rider, driver
+  performedBy  String
+  reason       String?
+  metadata     Json?
+  reversible   Boolean        @default(false)
+  reversedAt   DateTime?
+  reversedBy   String?
+  createdAt    DateTime       @default(now())
+
+  @@index([incidentId])
+  @@index([targetUserId])
+  @@map("incident_actions")
+}
+
+// =============================================================================
+// FRAUD DETECTION MODELS
+// =============================================================================
+
+/// Fraud detection events
+model FraudEvent {
+  id              String          @id @default(uuid())
+  userId          String
+  eventType       String // login, payment, promo_use, trip_request
+  riskScore       Float
+  riskLevel       RiskLevel
+  action          FraudActionType
+  signals         Json // Array of detected signals
+  deviceInfo      Json?
+  ipAddress       String?
+  geoLocation     Json?
+  sessionId       String?
+  requestId       String?
+  wasBlocked      Boolean         @default(false)
+  wasChallenged   Boolean         @default(false)
+  challengePassed Boolean?
+  reviewRequired  Boolean         @default(false)
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewDecision  String?
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([riskLevel])
+  @@index([reviewRequired])
+  @@index([createdAt])
+  @@map("fraud_events")
+}
+
+/// Device fingerprints
+model DeviceFingerprint {
+  id               String   @id @default(uuid())
+  userId           String
+  deviceId         String // Generated fingerprint
+  deviceType       String // ios, android, web
+  platform         String?
+  osVersion        String?
+  appVersion       String?
+  manufacturer     String?
+  model            String?
+  screenResolution String?
+  language         String?
+  timezone         String?
+  isEmulator       Boolean  @default(false)
+  isRooted         Boolean  @default(false)
+  hasVpn           Boolean  @default(false)
+  hasMockLocation  Boolean  @default(false)
+  trustScore       Float    @default(1)
+  riskFlags        String[]
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([userId, deviceId])
+  @@index([deviceId])
+  @@index([trustScore])
+  @@map("device_fingerprints")
+}
+
+/// Accounts linked to device
+model DeviceAccountLink {
+  id          String   @id @default(uuid())
+  deviceId    String
+  userId      String
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  isActive    Boolean  @default(true)
+
+  @@unique([deviceId, userId])
+  @@index([deviceId])
+  @@index([userId])
+  @@map("device_account_links")
+}
+
+/// User risk profile
+model UserRiskProfile {
+  id                  String            @id @default(uuid())
+  userId              String            @unique
+  overallRiskScore    Float             @default(0)
+  riskLevel           RiskLevel         @default(VERY_LOW)
+  accountAge          Int? // days
+  verificationLevel   VerificationLevel @default(BASIC)
+  totalTrips          Int               @default(0)
+  completedTrips      Int               @default(0)
+  cancelledTrips      Int               @default(0)
+  disputedTrips       Int               @default(0)
+  fraudEventsCount    Int               @default(0)
+  promoAbusFlags      Int               @default(0)
+  deviceCount         Int               @default(1)
+  phoneChangeCount    Int               @default(0)
+  passwordResetCount  Int               @default(0)
+  recentIncidents     Int               @default(0)
+  isUnderReview       Boolean           @default(false)
+  isRestricted        Boolean           @default(false)
+  isSuspended         Boolean           @default(false)
+  suspensionReason    String?
+  suspendedUntil      DateTime?
+  lastRiskCalculation DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([riskLevel])
+  @@index([isUnderReview])
+  @@map("user_risk_profiles")
+}
+
+/// Velocity tracking for fraud detection
+model VelocityTracker {
+  id            String   @id @default(uuid())
+  userId        String
+  actionType    String // login, payment, promo_use, trip_request
+  windowMinutes Int // Time window
+  count         Int      @default(1)
+  firstAction   DateTime
+  lastAction    DateTime @default(now())
+  threshold     Int // Alert threshold
+  breached      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, actionType, windowMinutes])
+  @@index([userId])
+  @@index([breached])
+  @@map("velocity_trackers")
+}
+
+/// Promo abuse tracking
+model PromoAbuseTracker {
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  totalPromosUsed    Int       @default(0)
+  totalPromoValue    Decimal   @default(0) @db.Decimal(15, 2)
+  uniquePromos       Int       @default(0)
+  referralsMade      Int       @default(0)
+  referralsAbused    Int       @default(0)
+  promoUsageRate     Float     @default(0) // % of orders with promo
+  suspiciousPatterns Json?
+  isAbuser           Boolean   @default(false)
+  abuseScore         Float     @default(0)
+  lastPromoUsedAt    DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([isAbuser])
+  @@index([abuseScore])
+  @@map("promo_abuse_trackers")
+}
+
+// =============================================================================
+// DRIVER SAFETY MODELS
+// =============================================================================
+
+/// Driver safety profile
+model DriverSafetyProfile {
+  id                   String    @id @default(uuid())
+  driverId             String    @unique
+  safetyScore          Float     @default(100)
+  totalTrips           Int       @default(0)
+  incidentsReported    Int       @default(0)
+  incidentsConfirmed   Int       @default(0)
+  complaintsReceived   Int       @default(0)
+  averageRating        Float?
+  speedingIncidents    Int       @default(0)
+  hardBrakingCount     Int       @default(0)
+  phoneUseWhileDriving Int       @default(0)
+  acceptsCash          Boolean   @default(true)
+  cashlessOnly         Boolean   @default(false)
+  preferredAreas       Json?
+  avoidedAreas         Json?
+  workingHours         Json?
+  lastBackgroundCheck  DateTime?
+  backgroundClear      Boolean   @default(false)
+  isVerified           Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([safetyScore])
+  @@map("driver_safety_profiles")
+}
+
+/// High-risk area zones
+model RiskZone {
+  id             String    @id @default(uuid())
+  name           String
+  description    String?
+  geoJson        Json // Polygon definition
+  center         Json // lat, lng
+  radius         Float? // meters if circular
+  riskLevel      RiskLevel
+  riskFactors    String[] // robbery, assault, accident_prone
+  incidentCount  Int       @default(0)
+  lastIncidentAt DateTime?
+  isActive       Boolean   @default(true)
+  advisoryText   String?
+  restrictions   Json? // cash_restricted, night_restricted
+  country        String    @db.VarChar(2)
+  city           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([country])
+  @@index([city])
+  @@index([riskLevel])
+  @@index([isActive])
+  @@map("risk_zones")
+}
+
+/// Driver incident reports
+model DriverIncidentReport {
+  id             String           @id @default(uuid())
+  driverId       String
+  reportedBy     String // driver, rider, system
+  tripId         String?
+  incidentType   IncidentType
+  severity       IncidentSeverity
+  description    String
+  location       Json?
+  evidenceUrls   String[]
+  status         IncidentStatus   @default(REPORTED)
+  investigatorId String?
+  resolution     String?
+  actionTaken    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([driverId])
+  @@index([status])
+  @@map("driver_incident_reports")
+}
+
+// =============================================================================
+// WOMEN SAFETY MODELS
+// =============================================================================
+
+/// Women safety preferences
+model WomenSafetyPreference {
+  id                     String           @id @default(uuid())
+  userId                 String           @unique
+  womenSafetyModeEnabled Boolean          @default(false)
+  genderPreference       GenderPreference @default(NO_PREFERENCE)
+  autoShareTrips         Boolean          @default(false)
+  autoShareContacts      String[] // Contact IDs
+  pinVerificationEnabled Boolean          @default(false)
+  trustedContacts        String[] // Contact IDs
+  safeWords              String[] // Trigger words for SOS
+  quietHoursEnabled      Boolean          @default(false)
+  quietHoursStart        String? // HH:MM
+  quietHoursEnd          String? // HH:MM
+  preferVerifiedDrivers  Boolean          @default(true)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  @@index([womenSafetyModeEnabled])
+  @@map("women_safety_preferences")
+}
+
+/// Female driver registry (for matching)
+model FemaleDriverRegistry {
+  id                    String    @id @default(uuid())
+  driverId              String    @unique
+  verifiedFemale        Boolean   @default(false)
+  verificationMethod    String? // id_document, video_call, in_person
+  verifiedAt            DateTime?
+  verifiedBy            String?
+  isActive              Boolean   @default(true)
+  availableForWomenOnly Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([isActive, availableForWomenOnly])
+  @@map("female_driver_registry")
+}
+
+// =============================================================================
+// SAFETY AGENT & OPERATIONS MODELS
+// =============================================================================
+
+/// Safety team agents
+model SafetyAgent {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  name            String
+  email           String
+  phoneNumber     String?
+  role            String // agent, senior_agent, manager
+  team            String // sos_response, fraud, investigations
+  country         String?   @db.VarChar(2)
+  city            String?
+  isOnDuty        Boolean   @default(false)
+  shiftStart      DateTime?
+  shiftEnd        DateTime?
+  activeIncidents Int       @default(0)
+  maxIncidents    Int       @default(5)
+  totalResolved   Int       @default(0)
+  avgResponseTime Float? // seconds
+  rating          Float?
+  permissions     Json
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([isOnDuty, team])
+  @@index([country, city])
+  @@map("safety_agents")
+}
+
+/// Safety team shift schedule
+model SafetyShift {
+  id        String   @id @default(uuid())
+  agentId   String
+  date      DateTime @db.Date
+  shiftType String // morning, afternoon, night, on_call
+  startTime DateTime
+  endTime   DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([agentId])
+  @@index([date])
+  @@map("safety_shifts")
+}
+
+// =============================================================================
+// AUDIT & COMPLIANCE MODELS
+// =============================================================================
+
+/// Safety audit log
+model SafetyAuditLog {
+  id            String   @id @default(uuid())
+  entityType    String // user, driver, trip, incident
+  entityId      String
+  action        String
+  performedBy   String
+  performerType String // agent, system, user
+  previousState Json?
+  newState      Json?
+  reason        String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([performedBy])
+  @@index([createdAt])
+  @@map("safety_audit_logs")
+}
+
+/// Data retention tracking
+model DataRetentionRecord {
+  id             String    @id @default(uuid())
+  dataType       String // verification_doc, location_history, etc.
+  entityId       String
+  userId         String
+  retentionDays  Int
+  expiresAt      DateTime
+  deletedAt      DateTime?
+  deletionMethod String?
+  createdAt      DateTime  @default(now())
+
+  @@index([dataType])
+  @@index([expiresAt])
+  @@index([deletedAt])
+  @@map("data_retention_records")
+}

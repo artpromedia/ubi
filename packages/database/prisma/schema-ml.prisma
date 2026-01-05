@@ -1,0 +1,1181 @@
+// =============================================================================
+// UBI AI/ML PLATFORM SCHEMA
+// =============================================================================
+// Comprehensive ML infrastructure for personalization, pricing, safety, and ops
+// Target: 1B+ events/day, sub-10ms inference latency
+// =============================================================================
+
+// =============================================================================
+// FEATURE STORE
+// =============================================================================
+
+enum FeatureEntityType {
+  USER
+  DRIVER
+  RESTAURANT
+  TRIP
+  ORDER
+  LOCATION
+  VEHICLE
+  PAYMENT
+}
+
+enum FeatureValueType {
+  INT
+  FLOAT
+  STRING
+  BOOLEAN
+  VECTOR
+  EMBEDDING
+  JSON
+  TIMESTAMP
+}
+
+enum FeatureFreshness {
+  REALTIME // Updated on every event (<1s)
+  NEAR_REALTIME // Updated every few seconds
+  MINUTE // Updated every minute
+  HOURLY // Updated every hour
+  DAILY // Updated once per day
+  WEEKLY // Updated weekly
+  STATIC // Rarely changes
+}
+
+enum FeatureSource {
+  STREAM // Kafka/event stream
+  BATCH // Scheduled computation
+  REQUEST_TIME // Computed at inference
+  EXTERNAL // External API
+  MANUAL // Manual input
+}
+
+model FeatureDefinition {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  displayName String
+  description String?
+
+  // Feature metadata
+  entityType   FeatureEntityType
+  valueType    FeatureValueType
+  defaultValue Json?
+
+  // Computation
+  freshness          FeatureFreshness
+  source             FeatureSource
+  computationSql     String? // For batch features
+  streamSource       String? // Kafka topic for streaming
+  transformationCode String? // Python/JS transformation
+
+  // Dependencies
+  dependsOn String[] // Other feature names
+
+  // Validation
+  minValue      Float?
+  maxValue      Float?
+  allowedValues String[]
+  isNullable    Boolean  @default(true)
+
+  // Versioning
+  version      Int       @default(1)
+  isActive     Boolean   @default(true)
+  deprecatedAt DateTime?
+
+  // Lineage
+  owner String? // Team/person responsible
+  tags  String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  values        FeatureValue[]
+  featureGroups FeatureGroupMember[]
+
+  @@index([entityType])
+  @@index([freshness])
+  @@index([isActive])
+}
+
+model FeatureValue {
+  id        String @id @default(uuid())
+  featureId String
+  entityId  String // User ID, Driver ID, etc.
+
+  // Value storage
+  value       Json
+  valueVector Float[] // For embedding features
+
+  // Metadata
+  computedAt DateTime
+  expiresAt  DateTime?
+  confidence Float? // For ML-computed features
+
+  // Audit
+  sourceEvent String? // Event that triggered update
+
+  feature FeatureDefinition @relation(fields: [featureId], references: [id])
+
+  @@unique([featureId, entityId])
+  @@index([entityId])
+  @@index([computedAt])
+  @@index([expiresAt])
+}
+
+model FeatureGroup {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  description String?
+  entityType  FeatureEntityType
+
+  // Used for model training/serving
+  usedByModels String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members FeatureGroupMember[]
+}
+
+model FeatureGroupMember {
+  id        String @id @default(uuid())
+  groupId   String
+  featureId String
+  order     Int    @default(0)
+
+  group   FeatureGroup      @relation(fields: [groupId], references: [id])
+  feature FeatureDefinition @relation(fields: [featureId], references: [id])
+
+  @@unique([groupId, featureId])
+}
+
+// =============================================================================
+// MODEL REGISTRY
+// =============================================================================
+
+enum ModelType {
+  CLASSIFICATION
+  REGRESSION
+  RANKING
+  RECOMMENDATION
+  CLUSTERING
+  ANOMALY_DETECTION
+  TIME_SERIES
+  NLP
+  COMPUTER_VISION
+  REINFORCEMENT_LEARNING
+  EMBEDDING
+}
+
+enum ModelFramework {
+  TENSORFLOW
+  PYTORCH
+  SKLEARN
+  XGBOOST
+  LIGHTGBM
+  CATBOOST
+  ONNX
+  CUSTOM
+}
+
+enum ModelStatus {
+  TRAINING
+  VALIDATING
+  STAGED
+  DEPLOYED
+  DEPRECATED
+  FAILED
+  ARCHIVED
+}
+
+model MLModel {
+  id          String  @id @default(uuid())
+  name        String
+  displayName String
+  description String?
+
+  // Model metadata
+  type      ModelType
+  framework ModelFramework
+  version   String
+  status    ModelStatus    @default(TRAINING)
+
+  // Features used
+  featureGroupId String?
+  inputFeatures  String[] // Feature names
+  outputSchema   Json // Expected output format
+
+  // Artifacts
+  artifactUri String? // S3/GCS path to model files
+  modelSize   Int? // Size in bytes
+  checksum    String? // MD5/SHA256 of model file
+
+  // Training metadata
+  trainingDataStart DateTime?
+  trainingDataEnd   DateTime?
+  trainingSamples   Int?
+  trainingDuration  Int? // Seconds
+  hyperparameters   Json?
+
+  // Performance metrics
+  metrics           Json? // Accuracy, AUC, RMSE, etc.
+  validationMetrics Json?
+  productionMetrics Json?
+
+  // Deployment config
+  servingConfig        Json? // Batch size, timeout, etc.
+  resourceRequirements Json? // CPU, memory, GPU
+
+  // A/B testing
+  trafficPercentage Float   @default(0)
+  isCanary          Boolean @default(false)
+  championModelId   String? // Model it's being tested against
+
+  // Lineage
+  parentModelId String? // Previous version
+  trainedBy     String? // User/pipeline
+  approvedBy    String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deployedAt DateTime?
+  retiredAt  DateTime?
+
+  // Relations
+  predictions ModelPrediction[]
+  experiments ABExperiment[]
+  alerts      ModelAlert[]
+
+  @@unique([name, version])
+  @@index([status])
+  @@index([type])
+}
+
+model ModelPrediction {
+  id      String @id @default(uuid())
+  modelId String
+
+  // Request
+  entityType FeatureEntityType
+  entityId   String
+  features   Json // Input features
+
+  // Prediction
+  prediction Json // Model output
+  confidence Float?
+  latencyMs  Int
+
+  // Outcome (for training)
+  actualOutcome     Json?
+  outcomeRecordedAt DateTime?
+
+  // Context
+  requestSource String? // API, batch, stream
+  experimentId  String?
+
+  createdAt DateTime @default(now())
+
+  model MLModel @relation(fields: [modelId], references: [id])
+
+  @@index([modelId])
+  @@index([entityId])
+  @@index([createdAt])
+  @@index([experimentId])
+}
+
+// =============================================================================
+// A/B TESTING
+// =============================================================================
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum ExperimentType {
+  MODEL_COMPARISON
+  FEATURE_FLAG
+  UI_TEST
+  ALGORITHM_TEST
+  PRICING_TEST
+}
+
+model ABExperiment {
+  id          String           @id @default(uuid())
+  name        String
+  description String?
+  type        ExperimentType
+  status      ExperimentStatus @default(DRAFT)
+
+  // Configuration
+  hypothesis       String?
+  primaryMetric    String // Main success metric
+  secondaryMetrics String[]
+
+  // Traffic allocation
+  trafficPercentage Float @default(10)
+  variants          Json // Variant configs
+
+  // Targeting
+  userSegment  Json? // User targeting rules
+  geoTargeting Json? // Location targeting
+
+  // Statistical config
+  minimumSampleSize       Int   @default(1000)
+  confidenceLevel         Float @default(0.95)
+  minimumDetectableEffect Float @default(0.05)
+
+  // Timeline
+  startedAt      DateTime?
+  scheduledEndAt DateTime?
+  endedAt        DateTime?
+
+  // Results
+  results    Json? // Statistical analysis
+  winner     String? // Winning variant
+  conclusion String?
+
+  // Model association
+  modelId String?
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  model       MLModel?               @relation(fields: [modelId], references: [id])
+  assignments ExperimentAssignment[]
+
+  @@index([status])
+  @@index([type])
+}
+
+model ExperimentAssignment {
+  id           String @id @default(uuid())
+  experimentId String
+  userId       String
+  variant      String
+
+  assignedAt DateTime @default(now())
+
+  // Metrics captured for this user
+  metricsSnapshot Json?
+
+  experiment ABExperiment @relation(fields: [experimentId], references: [id])
+
+  @@unique([experimentId, userId])
+  @@index([userId])
+}
+
+// =============================================================================
+// RECOMMENDATIONS
+// =============================================================================
+
+enum RecommendationType {
+  RESTAURANT
+  CUISINE
+  DESTINATION
+  OFFER
+  DRIVER
+  VEHICLE_TYPE
+  CONTENT
+  SEARCH_RESULT
+}
+
+model RecommendationRequest {
+  id     String             @id @default(uuid())
+  userId String
+  type   RecommendationType
+
+  // Context
+  location Json? // lat, lng
+  context  Json? // Time, weather, etc.
+
+  // Request
+  candidateCount Int?
+  filters        Json?
+
+  // Response
+  recommendations Json // Ordered list with scores
+  modelVersion    String?
+  latencyMs       Int
+
+  // Interaction
+  impressions String[] // Items shown
+  clicks      String[] // Items clicked
+  conversions String[] // Items purchased/used
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model UserPreference {
+  id     String @id @default(uuid())
+  userId String
+
+  // Explicit preferences
+  favoriteCuisines    String[]
+  dietaryRestrictions String[]
+  pricePreference     String? // budget, moderate, premium
+
+  // Learned preferences (embeddings)
+  cuisineEmbedding    Float[]
+  restaurantEmbedding Float[]
+  locationEmbedding   Float[]
+
+  // Behavioral signals
+  orderHistory    Json? // Aggregated order patterns
+  ridePatterns    Json? // Commute patterns
+  timePreferences Json? // Preferred ordering times
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId])
+}
+
+model ItemEmbedding {
+  id       String @id @default(uuid())
+  itemType String // restaurant, cuisine, location
+  itemId   String
+
+  embedding        Float[]
+  embeddingVersion String
+
+  // Metadata
+  popularity Float?
+  quality    Float?
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([itemType, itemId, embeddingVersion])
+  @@index([itemType])
+}
+
+// =============================================================================
+// DEMAND FORECASTING
+// =============================================================================
+
+model DemandForecast {
+  id String @id @default(uuid())
+
+  // Location (H3 index)
+  h3Index      String
+  h3Resolution Int    @default(7)
+
+  // Time
+  forecastTime    DateTime
+  forecastHorizon Int // Minutes into future
+
+  // Predictions
+  predictedDemand Float // Expected ride requests
+  predictedSupply Float // Expected available drivers
+  demandLower     Float? // 5th percentile
+  demandUpper     Float? // 95th percentile
+
+  // Factors
+  factors Json? // Contributing factors
+
+  // Model info
+  modelVersion String
+  confidence   Float
+
+  // Actual (filled in later)
+  actualDemand Float?
+  actualSupply Float?
+
+  createdAt DateTime @default(now())
+
+  @@unique([h3Index, forecastTime, forecastHorizon])
+  @@index([h3Index])
+  @@index([forecastTime])
+}
+
+model SupplyOptimization {
+  id String @id @default(uuid())
+
+  // Target area
+  targetH3Index String
+
+  // Recommendation
+  driversNeeded   Int
+  sourceH3Indices String[] // Where to pull drivers from
+
+  // Incentive
+  incentiveType   String? // bonus, surge_guarantee
+  incentiveAmount Float?
+
+  // Timing
+  validFrom  DateTime
+  validUntil DateTime
+
+  // Outcome
+  driversResponded Int?
+  demandFulfilled  Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([targetH3Index])
+  @@index([validFrom])
+}
+
+// =============================================================================
+// DYNAMIC PRICING
+// =============================================================================
+
+model SurgeZone {
+  id      String @id @default(uuid())
+  h3Index String
+
+  // Current state
+  currentMultiplier Float @default(1.0)
+  currentDemand     Float
+  currentSupply     Float
+
+  // ML inputs
+  demandForecast Float?
+  supplyForecast Float?
+
+  // Constraints
+  maxMultiplier Float @default(3.0)
+  minMultiplier Float @default(1.0)
+
+  // History
+  multiplierHistory Json? // Last 24 hours
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([h3Index])
+}
+
+model PriceCalculation {
+  id String @id @default(uuid())
+
+  // Request context
+  userId      String?
+  pickupH3    String
+  dropoffH3   String
+  vehicleType String
+
+  // Base calculation
+  basePrice     Float
+  distancePrice Float
+  timePrice     Float
+
+  // Surge
+  surgeMultiplier Float   @default(1.0)
+  surgeAmount     Float   @default(0)
+  surgeReason     String?
+
+  // Adjustments
+  promotionDiscount    Float @default(0)
+  subscriptionDiscount Float @default(0)
+
+  // Final
+  finalPrice Float
+  currency   String @default("NGN")
+
+  // Model info
+  pricingModelVersion String?
+
+  // Validity
+  validUntil  DateTime
+  wasAccepted Boolean?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([pickupH3])
+  @@index([createdAt])
+}
+
+// =============================================================================
+// FRAUD DETECTION
+// =============================================================================
+
+enum FraudRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum FraudType {
+  PAYMENT_FRAUD
+  ACCOUNT_TAKEOVER
+  PROMO_ABUSE
+  COLLUSION
+  FAKE_TRIP
+  IDENTITY_FRAUD
+  REFUND_ABUSE
+  GPS_SPOOFING
+}
+
+model FraudScore {
+  id String @id @default(uuid())
+
+  // Entity
+  entityType String // user, driver, trip, transaction
+  entityId   String
+
+  // Score
+  score     Float // 0-1 probability
+  riskLevel FraudRiskLevel
+
+  // Breakdown
+  fraudTypes Json // Score per fraud type
+  topFactors Json // Top contributing features
+
+  // Model
+  modelVersion String
+  latencyMs    Int
+
+  // Decision
+  recommendation String // approve, review, block
+  wasReviewed    Boolean   @default(false)
+  reviewOutcome  String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([riskLevel])
+  @@index([createdAt])
+}
+
+model FraudPattern {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  type        FraudType
+
+  // Pattern definition
+  patternRules Json // Rules/conditions
+  mlFeatures   String[] // Features to check
+
+  // Thresholds
+  scoreThreshold  Float @default(0.7)
+  volumeThreshold Int? // Min occurrences
+
+  // Actions
+  autoBlock        Boolean @default(false)
+  alertOnDetection Boolean @default(true)
+
+  // Stats
+  detectionsCount   Int    @default(0)
+  falsePositiveRate Float?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([isActive])
+}
+
+model FraudInvestigation {
+  id String @id @default(uuid())
+
+  // Subject
+  entityType   String
+  entityId     String
+  fraudScoreId String?
+
+  // Investigation
+  status     String // open, investigating, resolved
+  assignedTo String?
+
+  // Findings
+  findings Json?
+  evidence Json? // Screenshots, logs, etc.
+
+  // Outcome
+  outcome         String? // confirmed_fraud, false_positive, inconclusive
+  actionsTaken    String[]
+  recoveredAmount Float?
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([entityType, entityId])
+  @@index([status])
+}
+
+model CollusionNetwork {
+  id String @id @default(uuid())
+
+  // Network members
+  members Json // Array of {type, id}
+
+  // Pattern
+  patternType     String // ring, pair, cluster
+  connectionCount Int
+  totalTrips      Int
+  totalAmount     Float
+
+  // Risk
+  riskScore Float
+
+  // Status
+  status String // detected, investigating, confirmed, dismissed
+
+  detectedAt DateTime @default(now())
+
+  @@index([status])
+  @@index([riskScore])
+}
+
+// =============================================================================
+// CHURN PREDICTION
+// =============================================================================
+
+model ChurnPrediction {
+  id     String @id @default(uuid())
+  userId String
+
+  // Prediction
+  churnProbability  Float // 0-1
+  riskLevel         String // low, medium, high, critical
+  expectedChurnDays Int? // Days until churn
+
+  // Factors
+  topFactors Json // Top churn indicators
+
+  // Model
+  modelVersion String
+
+  // Intervention
+  recommendedActions    Json? // Suggested retention actions
+  interventionTriggered Boolean @default(false)
+
+  // Outcome
+  actualChurned Boolean?
+  churnedAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([riskLevel])
+  @@index([createdAt])
+}
+
+model RetentionCampaign {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+
+  // Targeting
+  targetSegment   Json // Churn risk level, user attributes
+  targetUserCount Int?
+
+  // Intervention
+  interventionType   String // offer, email, push, call
+  interventionConfig Json // Discount amount, message, etc.
+
+  // Timing
+  startDate DateTime
+  endDate   DateTime?
+
+  // Budget
+  budgetTotal Float?
+  budgetUsed  Float  @default(0)
+  maxPerUser  Float?
+
+  // Performance
+  usersTargeted  Int    @default(0)
+  usersConverted Int    @default(0)
+  conversionRate Float?
+  roi            Float?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  interventions RetentionIntervention[]
+
+  @@index([isActive])
+}
+
+model RetentionIntervention {
+  id                String  @id @default(uuid())
+  campaignId        String
+  userId            String
+  churnPredictionId String?
+
+  // Intervention details
+  type  String
+  value Json // Offer details, message, etc.
+
+  // Delivery
+  deliveredAt DateTime?
+  channel     String? // push, email, sms, in_app
+
+  // Response
+  opened    Boolean @default(false)
+  clicked   Boolean @default(false)
+  converted Boolean @default(false)
+
+  // Post-intervention
+  tripsAfter30Days   Int?
+  revenueAfter30Days Float?
+
+  createdAt DateTime @default(now())
+
+  campaign RetentionCampaign @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([userId])
+}
+
+// =============================================================================
+// ETA PREDICTION
+// =============================================================================
+
+model ETAPrediction {
+  id     String  @id @default(uuid())
+  tripId String?
+
+  // Route
+  originLat Float
+  originLng Float
+  destLat   Float
+  destLng   Float
+
+  // Prediction
+  predictedDuration Int // Seconds
+  predictedArrival  DateTime
+  confidence        Float
+
+  // Breakdown
+  drivingTime  Int?
+  pickupTime   Int?
+  trafficDelay Int?
+
+  // Features used
+  features Json?
+
+  // Model
+  modelVersion String
+
+  // Actual
+  actualDuration  Int?
+  actualArrival   DateTime?
+  predictionError Int? // Seconds
+
+  createdAt DateTime @default(now())
+
+  @@index([tripId])
+  @@index([createdAt])
+}
+
+model TrafficCondition {
+  id      String @id @default(uuid())
+  h3Index String
+
+  // Current conditions
+  congestionLevel Float // 0-1
+  averageSpeed    Float // km/h
+  incidentCount   Int   @default(0)
+
+  // Predictions
+  forecastedCongestion Json? // Next few hours
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([h3Index])
+}
+
+// =============================================================================
+// SUPPORT NLP
+// =============================================================================
+
+enum IntentCategory {
+  TRIP_ISSUE
+  PAYMENT_ISSUE
+  ACCOUNT_ISSUE
+  DRIVER_ISSUE
+  FOOD_ORDER_ISSUE
+  DELIVERY_ISSUE
+  PROMO_ISSUE
+  GENERAL_INQUIRY
+  FEEDBACK
+  EMERGENCY
+}
+
+model SupportIntent {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  category    IntentCategory
+  description String?
+
+  // Training
+  trainingExamples String[]
+  keywords         String[]
+
+  // Auto-resolution
+  canAutoResolve      Boolean @default(false)
+  autoResolveTemplate String?
+
+  // Routing
+  defaultQueue String?
+  priority     Int     @default(5)
+
+  isActive Boolean @default(true)
+
+  classifications IntentClassification[]
+}
+
+model IntentClassification {
+  id String @id @default(uuid())
+
+  // Input
+  ticketId    String?
+  messageText String
+  language    String  @default("en")
+
+  // Classification
+  intentId   String
+  confidence Float
+  allIntents Json // All intents with scores
+
+  // Entities
+  entities Json? // Extracted entities
+
+  // Sentiment
+  sentiment      String? // positive, neutral, negative
+  sentimentScore Float?
+
+  // Routing
+  suggestedQueue String?
+  autoResolved   Boolean @default(false)
+  autoResponse   String?
+
+  // Model
+  modelVersion String
+  latencyMs    Int
+
+  // Feedback
+  wasCorrect      Boolean?
+  correctedIntent String?
+
+  createdAt DateTime @default(now())
+
+  intent SupportIntent @relation(fields: [intentId], references: [id])
+
+  @@index([intentId])
+  @@index([ticketId])
+  @@index([createdAt])
+}
+
+// =============================================================================
+// MODEL MONITORING & ALERTS
+// =============================================================================
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum AlertType {
+  DATA_DRIFT
+  PREDICTION_DRIFT
+  PERFORMANCE_DEGRADATION
+  LATENCY_SPIKE
+  ERROR_RATE_SPIKE
+  FAIRNESS_VIOLATION
+  STALE_MODEL
+  RESOURCE_EXHAUSTION
+}
+
+model ModelAlert {
+  id      String @id @default(uuid())
+  modelId String
+
+  type     AlertType
+  severity AlertSeverity
+
+  // Details
+  message String
+  details Json?
+  metrics Json? // Relevant metrics
+
+  // Thresholds
+  thresholdValue Float?
+  actualValue    Float?
+
+  // Status
+  status         String    @default("open") // open, acknowledged, resolved
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  resolution     String?
+
+  createdAt DateTime @default(now())
+
+  model MLModel @relation(fields: [modelId], references: [id])
+
+  @@index([modelId])
+  @@index([severity])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ModelMetrics {
+  id      String @id @default(uuid())
+  modelId String
+
+  // Time window
+  windowStart DateTime
+  windowEnd   DateTime
+
+  // Performance
+  accuracy  Float?
+  precision Float?
+  recall    Float?
+  f1Score   Float?
+  auc       Float?
+  rmse      Float?
+  mae       Float?
+
+  // Latency
+  p50Latency Int?
+  p95Latency Int?
+  p99Latency Int?
+
+  // Volume
+  predictionCount Int
+  errorCount      Int @default(0)
+
+  // Distribution
+  predictionDistribution Json?
+
+  // Drift
+  featureDriftScore    Float?
+  predictionDriftScore Float?
+
+  // Fairness (if applicable)
+  fairnessMetrics Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([modelId])
+  @@index([windowStart])
+}
+
+model DataDriftReport {
+  id      String @id @default(uuid())
+  modelId String
+
+  // Time window
+  referenceStart DateTime
+  referenceEnd   DateTime
+  currentStart   DateTime
+  currentEnd     DateTime
+
+  // Overall drift
+  overallDriftScore Float
+  driftDetected     Boolean
+
+  // Per-feature drift
+  featureDrift Json // Feature name -> drift score
+
+  // Statistics
+  psiScores Json? // Population stability index
+  ksScores  Json? // Kolmogorov-Smirnov
+
+  createdAt DateTime @default(now())
+
+  @@index([modelId])
+  @@index([driftDetected])
+}
+
+// =============================================================================
+// TRAINING PIPELINE
+// =============================================================================
+
+enum PipelineStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+model TrainingPipeline {
+  id        String @id @default(uuid())
+  modelName String
+
+  // Configuration
+  config        Json // Training config
+  datasetConfig Json // Data selection
+
+  // Status
+  status      PipelineStatus @default(PENDING)
+  currentStep String?
+  progress    Float          @default(0)
+
+  // Timing
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  // Resources
+  computeType String? // GPU type, instance type
+  computeCost Float?
+
+  // Output
+  modelId   String? // Created model
+  logs      String? // Log URI
+  artifacts Json? // Intermediate artifacts
+
+  // Error
+  errorMessage String?
+
+  triggeredBy String // manual, scheduled, auto
+  createdAt   DateTime @default(now())
+
+  @@index([modelName])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model TrainingDataset {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+
+  // Data specification
+  entityType       FeatureEntityType
+  dateRangeStart   DateTime
+  dateRangeEnd     DateTime
+  filterConditions Json?
+
+  // Features
+  featureGroupId String?
+  labelColumn    String?
+
+  // Statistics
+  rowCount          Int?
+  columnCount       Int?
+  labelDistribution Json?
+
+  // Storage
+  storageUri String? // S3/GCS path
+  format     String? // parquet, csv, tfrecord
+
+  // Quality
+  missingValueRate Float?
+  duplicateRate    Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType])
+  @@index([createdAt])
+}

@@ -1,0 +1,528 @@
+// =============================================================================
+// UBI OFFLINE & ACCESSIBILITY PLATFORM - DATABASE SCHEMA
+// =============================================================================
+// Supports offline sync, USSD/SMS channels, and accessibility features
+// Target: 100M+ users in low-connectivity environments
+// =============================================================================
+
+// =============================================================================
+// OFFLINE SYNC MODELS
+// =============================================================================
+
+/// Tracks sync state for each user's device
+model SyncState {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+  deviceId          String   @map("device_id")
+  lastSyncTimestamp DateTime @map("last_sync_timestamp")
+  lastSyncVersion   BigInt   @map("last_sync_version")
+  syncStatus        String   @default("synced") @map("sync_status") // synced, pending, conflict
+  pendingChanges    Int      @default(0) @map("pending_changes")
+  bandwidth         String   @default("unknown") // 2g, 3g, 4g, wifi, unknown
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@index([lastSyncTimestamp])
+  @@map("sync_states")
+}
+
+/// Log of all changes for delta sync
+model SyncLog {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  entityType String   @map("entity_type") // trip, payment, place, preference
+  entityId   String   @map("entity_id")
+  action     String // create, update, delete
+  data       Json?
+  version    BigInt
+  timestamp  DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([entityType, entityId])
+  @@index([version])
+  @@map("sync_logs")
+}
+
+/// Offline actions queued for sync
+model OfflineAction {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  deviceId    String    @map("device_id")
+  actionType  String    @map("action_type") // book_ride, cancel_ride, rate_trip, update_location
+  payload     Json
+  priority    Int       @default(5) // 1-10, higher = more urgent
+  status      String    @default("pending") // pending, processing, completed, failed
+  retryCount  Int       @default(0) @map("retry_count")
+  maxRetries  Int       @default(5) @map("max_retries")
+  lastError   String?   @map("last_error")
+  processedAt DateTime? @map("processed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, status])
+  @@index([status, priority])
+  @@index([createdAt])
+  @@map("offline_actions")
+}
+
+/// Conflict resolution records
+model SyncConflict {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  entityType      String    @map("entity_type")
+  entityId        String    @map("entity_id")
+  localVersion    Json      @map("local_version")
+  serverVersion   Json      @map("server_version")
+  resolvedVersion Json?     @map("resolved_version")
+  resolution      String? // local_wins, server_wins, merged, manual
+  resolvedBy      String?   @map("resolved_by") // user_id or 'system'
+  status          String    @default("pending") // pending, resolved, escalated
+  createdAt       DateTime  @default(now()) @map("created_at")
+  resolvedAt      DateTime? @map("resolved_at")
+
+  @@index([userId, status])
+  @@index([entityType, entityId])
+  @@map("sync_conflicts")
+}
+
+// =============================================================================
+// USSD SESSION MODELS
+// =============================================================================
+
+/// USSD session management
+model USSDSession {
+  id           String   @id @default(cuid())
+  sessionId    String   @unique @map("session_id") // Carrier session ID
+  phoneNumber  String   @map("phone_number")
+  userId       String?  @map("user_id")
+  serviceCode  String   @map("service_code") // *384*UBI#
+  carrier      String // safaricom, airtel, mtn, glo
+  state        String   @default("MAIN_MENU")
+  menuPath     String[] @default([]) @map("menu_path") // Navigation breadcrumb
+  bookingData  Json?    @map("booking_data")
+  walletData   Json?    @map("wallet_data")
+  tempData     Json?    @map("temp_data") // Temporary storage during flow
+  language     String   @default("en")
+  inputHistory String[] @default([]) @map("input_history")
+  lastInput    String?  @map("last_input")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([phoneNumber])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("ussd_sessions")
+}
+
+/// USSD menu definitions
+model USSDMenu {
+  id          String   @id @default(cuid())
+  menuCode    String   @unique @map("menu_code") // MAIN_MENU, BOOK_RIDE, etc.
+  parentMenu  String?  @map("parent_menu")
+  title       Json // Multilingual: { en: "Main Menu", sw: "Menyu Kuu" }
+  options     Json // Array of { key: "1", label: {...}, action: "...", nextMenu: "..." }
+  inputType   String?  @map("input_type") // text, number, phone, pin
+  inputPrompt Json?    @map("input_prompt") // Multilingual prompt
+  validation  Json? // Validation rules
+  handler     String? // Custom handler function name
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([parentMenu])
+  @@map("ussd_menus")
+}
+
+/// USSD transaction logs
+model USSDLog {
+  id          String   @id @default(cuid())
+  sessionId   String   @map("session_id")
+  phoneNumber String   @map("phone_number")
+  carrier     String
+  input       String?
+  response    String
+  state       String
+  menuCode    String?  @map("menu_code")
+  duration    Int? // Milliseconds
+  error       String?
+  timestamp   DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([phoneNumber, timestamp])
+  @@index([timestamp])
+  @@map("ussd_logs")
+}
+
+// =============================================================================
+// SMS MODELS
+// =============================================================================
+
+/// Incoming SMS messages
+model IncomingSMS {
+  id          String    @id @default(cuid())
+  messageId   String    @unique @map("message_id") // Carrier message ID
+  from        String // Phone number
+  to          String // Shortcode
+  message     String
+  carrier     String
+  userId      String?   @map("user_id")
+  parsed      Json? // Parsed command structure
+  processed   Boolean   @default(false)
+  processedAt DateTime? @map("processed_at")
+  response    String?
+  error       String?
+  receivedAt  DateTime  @default(now()) @map("received_at")
+
+  @@index([from])
+  @@index([userId])
+  @@index([processed, receivedAt])
+  @@map("incoming_sms")
+}
+
+/// Outgoing SMS messages
+model OutgoingSMS {
+  id           String    @id @default(cuid())
+  to           String
+  message      String
+  templateId   String?   @map("template_id")
+  templateData Json?     @map("template_data")
+  priority     String    @default("normal") // low, normal, high, urgent
+  carrier      String?
+  status       String    @default("pending") // pending, sent, delivered, failed
+  messageId    String?   @map("message_id") // Carrier message ID
+  sentAt       DateTime? @map("sent_at")
+  deliveredAt  DateTime? @map("delivered_at")
+  failedAt     DateTime? @map("failed_at")
+  error        String?
+  retryCount   Int       @default(0) @map("retry_count")
+  cost         Decimal?  @db.Decimal(10, 4) // SMS cost in USD
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([to])
+  @@index([status])
+  @@index([createdAt])
+  @@map("outgoing_sms")
+}
+
+/// SMS templates
+model SMSTemplate {
+  id        String   @id @default(cuid())
+  code      String   @unique // RIDE_BOOKED, DRIVER_ARRIVING, etc.
+  name      String
+  content   Json // Multilingual: { en: "...", sw: "..." }
+  variables String[] // List of required variables
+  category  String // booking, payment, promo, system
+  maxLength Int      @default(160) @map("max_length")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("sms_templates")
+}
+
+// =============================================================================
+// VOICE / CALL CENTER MODELS
+// =============================================================================
+
+/// IVR call sessions
+model IVRSession {
+  id            String    @id @default(cuid())
+  callId        String    @unique @map("call_id") // Provider call ID
+  callerId      String    @map("caller_id")
+  calledNumber  String    @map("called_number")
+  userId        String?   @map("user_id")
+  state         String    @default("WELCOME")
+  menuPath      String[]  @default([]) @map("menu_path")
+  dtmfInput     String[]  @default([]) @map("dtmf_input")
+  speechInput   String[]  @default([]) @map("speech_input")
+  language      String    @default("en")
+  bookingData   Json?     @map("booking_data")
+  agentId       String?   @map("agent_id") // If transferred to agent
+  transferredAt DateTime? @map("transferred_at")
+  duration      Int? // Seconds
+  recordingUrl  String?   @map("recording_url")
+  status        String    @default("in_progress") // in_progress, completed, abandoned, transferred
+  startedAt     DateTime  @default(now()) @map("started_at")
+  endedAt       DateTime? @map("ended_at")
+
+  @@index([callerId])
+  @@index([userId])
+  @@index([status])
+  @@map("ivr_sessions")
+}
+
+/// Call center agents
+model CallCenterAgent {
+  id            String    @id @default(cuid())
+  employeeId    String    @unique @map("employee_id")
+  name          String
+  email         String    @unique
+  phone         String
+  extension     String?
+  languages     String[] // Languages agent speaks
+  skills        String[] // ride_booking, food_order, complaints, etc.
+  status        String    @default("offline") // online, busy, break, offline
+  currentCalls  Int       @default(0) @map("current_calls")
+  maxCalls      Int       @default(3) @map("max_calls")
+  shiftStart    DateTime? @map("shift_start")
+  shiftEnd      DateTime? @map("shift_end")
+  rating        Float? // Average customer rating
+  totalCalls    Int       @default(0) @map("total_calls")
+  avgHandleTime Int?      @map("avg_handle_time") // Seconds
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([skills])
+  @@map("call_center_agents")
+}
+
+/// Agent-assisted bookings
+model AgentBooking {
+  id            String   @id @default(cuid())
+  agentId       String   @map("agent_id")
+  callId        String?  @map("call_id")
+  customerId    String   @map("customer_id")
+  customerPhone String   @map("customer_phone")
+  tripId        String?  @map("trip_id")
+  orderId       String?  @map("order_id")
+  type          String // ride, food, delivery
+  status        String   @default("pending") // pending, completed, cancelled
+  notes         String?
+  handleTime    Int?     @map("handle_time") // Seconds
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([agentId])
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("agent_bookings")
+}
+
+// =============================================================================
+// ACCESSIBILITY MODELS
+// =============================================================================
+
+/// User accessibility preferences
+model AccessibilityPreference {
+  id                 String   @id @default(cuid())
+  userId             String   @unique @map("user_id")
+  highContrast       Boolean  @default(false) @map("high_contrast")
+  largeText          Boolean  @default(false) @map("large_text")
+  textScale          Float    @default(1.0) @map("text_scale") // 0.8 - 2.0
+  largeTargets       Boolean  @default(false) @map("large_targets")
+  reduceMotion       Boolean  @default(false) @map("reduce_motion")
+  reduceTransparency Boolean  @default(false) @map("reduce_transparency")
+  screenReader       Boolean  @default(false) @map("screen_reader")
+  voiceControl       Boolean  @default(false) @map("voice_control")
+  hapticFeedback     Boolean  @default(true) @map("haptic_feedback")
+  soundEffects       Boolean  @default(true) @map("sound_effects")
+  colorBlindMode     String?  @map("color_blind_mode") // protanopia, deuteranopia, tritanopia
+  preferredLanguage  String   @default("en") @map("preferred_language")
+  preferredChannel   String   @default("app") @map("preferred_channel") // app, ussd, sms, voice
+  readAloudSpeed     Float    @default(1.0) @map("read_aloud_speed")
+  simplifiedUI       Boolean  @default(false) @map("simplified_ui")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("accessibility_preferences")
+}
+
+/// Accessibility audit logs
+model AccessibilityAudit {
+  id         String   @id @default(cuid())
+  screenName String   @map("screen_name")
+  component  String?
+  wcagLevel  String   @map("wcag_level") // A, AA, AAA
+  criterion  String // WCAG criterion (e.g., "1.4.3")
+  status     String // pass, fail, warning
+  issue      String?
+  suggestion String?
+  automated  Boolean  @default(true) // Automated vs manual audit
+  auditedBy  String?  @map("audited_by")
+  platform   String // ios, android, web
+  appVersion String   @map("app_version")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([screenName])
+  @@index([status])
+  @@index([wcagLevel])
+  @@map("accessibility_audits")
+}
+
+// =============================================================================
+// TRANSLATION MODELS
+// =============================================================================
+
+/// Translation keys
+model Translation {
+  id          String   @id @default(cuid())
+  key         String // e.g., "booking.confirm_button"
+  namespace   String   @default("common") // common, booking, payment, etc.
+  language    String // en, sw, yo, zu, am, ar, fr, pt, ha
+  value       String
+  pluralForms Json?    @map("plural_forms") // For languages with plural rules
+  context     String? // Additional context for translators
+  isVerified  Boolean  @default(false) @map("is_verified")
+  verifiedBy  String?  @map("verified_by")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([key, namespace, language])
+  @@index([namespace, language])
+  @@map("translations")
+}
+
+/// Supported languages configuration
+model Language {
+  id             String   @id @default(cuid())
+  code           String   @unique // ISO 639-1
+  name           String // English name
+  nativeName     String   @map("native_name") // Native name
+  rtl            Boolean  @default(false) // Right-to-left
+  fallbackCode   String?  @map("fallback_code")
+  pluralRules    String?  @map("plural_rules") // ICU plural rule
+  dateFormat     String   @default("DD/MM/YYYY") @map("date_format")
+  timeFormat     String   @default("HH:mm") @map("time_format")
+  currencyFormat String   @default("{symbol}{amount}") @map("currency_format")
+  numberFormat   Json?    @map("number_format") // Decimal/thousand separators
+  coverage       Float    @default(0) // Translation coverage percentage
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("languages")
+}
+
+// =============================================================================
+// LOW BANDWIDTH OPTIMIZATION MODELS
+// =============================================================================
+
+/// Cached places for offline search
+model CachedPlace {
+  id          String   @id @default(cuid())
+  placeId     String   @unique @map("place_id")
+  name        String
+  address     String
+  lat         Float
+  lng         Float
+  category    String? // restaurant, landmark, transit, etc.
+  city        String
+  country     String
+  searchTerms String[] @map("search_terms") // Indexed search terms
+  popularity  Int      @default(0) // Usage count for prioritization
+  h3Index     String   @map("h3_index") // For geospatial queries
+  isVerified  Boolean  @default(false) @map("is_verified")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([city])
+  @@index([h3Index])
+  @@index([popularity])
+  @@fulltext([name, address])
+  @@map("cached_places")
+}
+
+/// Offline map regions
+model OfflineMapRegion {
+  id            String   @id @default(cuid())
+  name          String
+  bounds        Json // { north, south, east, west }
+  centerLat     Float    @map("center_lat")
+  centerLng     Float    @map("center_lng")
+  minZoom       Int      @default(10) @map("min_zoom")
+  maxZoom       Int      @default(16) @map("max_zoom")
+  sizeBytes     BigInt   @map("size_bytes")
+  version       Int      @default(1)
+  downloadUrl   String   @map("download_url")
+  checksum      String // For integrity verification
+  isDefault     Boolean  @default(false) @map("is_default") // Pre-bundled regions
+  downloadCount Int      @default(0) @map("download_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([name])
+  @@map("offline_map_regions")
+}
+
+/// User's downloaded regions
+model UserOfflineRegion {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  regionId     String    @map("region_id")
+  version      Int
+  downloadedAt DateTime  @map("downloaded_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+  sizeBytes    BigInt    @map("size_bytes")
+
+  @@unique([userId, regionId])
+  @@index([userId])
+  @@map("user_offline_regions")
+}
+
+/// Data usage tracking
+model DataUsageLog {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  deviceId     String   @map("device_id")
+  endpoint     String // API endpoint
+  method       String // GET, POST, etc.
+  requestSize  Int      @map("request_size") // Bytes
+  responseSize Int      @map("response_size") // Bytes
+  compressed   Boolean  @default(false)
+  networkType  String   @map("network_type") // 2g, 3g, 4g, wifi
+  latency      Int // Milliseconds
+  timestamp    DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([endpoint])
+  @@index([networkType])
+  @@map("data_usage_logs")
+}
+
+// =============================================================================
+// CHANNEL PREFERENCE MODELS
+// =============================================================================
+
+/// User channel preferences
+model ChannelPreference {
+  id                String   @id @default(cuid())
+  userId            String   @unique @map("user_id")
+  primaryChannel    String   @default("app") @map("primary_channel") // app, ussd, sms, voice
+  fallbackChannel   String?  @map("fallback_channel")
+  notificationSMS   Boolean  @default(true) @map("notification_sms")
+  notificationPush  Boolean  @default(true) @map("notification_push")
+  notificationEmail Boolean  @default(false) @map("notification_email")
+  notificationVoice Boolean  @default(false) @map("notification_voice")
+  ussdPin           String?  @map("ussd_pin") // Hashed PIN for USSD auth
+  smsKeywords       String[] @default([]) @map("sms_keywords") // Custom keywords
+  preferredTime     Json?    @map("preferred_time") // Quiet hours
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("channel_preferences")
+}
+
+/// Channel availability by region
+model ChannelAvailability {
+  id               String   @id @default(cuid())
+  country          String
+  region           String?
+  carrier          String?
+  ussdAvailable    Boolean  @default(false) @map("ussd_available")
+  ussdShortcode    String?  @map("ussd_shortcode")
+  smsAvailable     Boolean  @default(false) @map("sms_available")
+  smsShortcode     String?  @map("sms_shortcode")
+  voiceAvailable   Boolean  @default(false) @map("voice_available")
+  voiceNumber      String?  @map("voice_number")
+  appLiteAvailable Boolean  @default(true) @map("app_lite_available")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([country, region, carrier])
+  @@index([country])
+  @@map("channel_availability")
+}

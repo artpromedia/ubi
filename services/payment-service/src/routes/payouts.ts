@@ -5,15 +5,19 @@
  */
 
 import { zValidator } from "@hono/zod-validator";
-import { Prisma } from "@prisma/client";
+import { Currency, Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
-import { Currency, TransactionStatus, TransactionType } from "../types";
+import { FraudDetectionService } from "../services/fraud-detection.service";
+import { PayoutService } from "../services/payout.service";
+import { TransactionStatus, TransactionType } from "../types";
 
 const payoutRoutes = new Hono();
+const payoutService = new PayoutService(prisma);
+const fraudService = new FraudDetectionService(prisma);
 
 // ============================================
 // Types
@@ -860,5 +864,166 @@ async function processPayout(payout: {
     providerReference: `prov_${generateId("ref")}`,
   };
 }
+
+// ============================================
+// NEW ENDPOINTS - Instant Cashout
+// ============================================
+
+/**
+ * Instant cashout (driver immediate payout)
+ * POST /api/v1/payouts/instant-cashout
+ */
+payoutRoutes.post(
+  "/instant-cashout",
+  zValidator(
+    "json",
+    z.object({
+      driverId: z.string(),
+      amount: z.number().positive(),
+      currency: z.nativeEnum(Currency),
+      phoneNumber: z.string(),
+      reason: z.string().optional(),
+    })
+  ),
+  async (c) => {
+    try {
+      const { driverId, amount, currency, phoneNumber, reason } =
+        c.req.valid("json");
+      const userId = c.get("userId");
+
+      // Fraud check first
+      const riskAssessment = await fraudService.assessRisk({
+        userId,
+        amount,
+        currency,
+        ipAddress: c.req.header("x-forwarded-for") || c.req.header("x-real-ip"),
+        deviceId: c.req.header("x-device-id"),
+        userAgent: c.req.header("user-agent"),
+        metadata: { type: "instant_cashout" },
+      });
+
+      // Block if high risk
+      if (riskAssessment.action === "BLOCK") {
+        return c.json(
+          {
+            success: false,
+            error: "Transaction blocked for security reasons",
+            riskScore: riskAssessment.riskScore,
+            reasons: riskAssessment.reasons,
+          },
+          403
+        );
+      }
+
+      // Create instant cashout
+      const result = await payoutService.createInstantCashout({
+        driverId,
+        amount,
+        currency,
+        paymentMethod: "mobile_money",
+        phoneNumber,
+        reason,
+      });
+
+      return c.json({
+        success: true,
+        data: result,
+        riskAssessment: {
+          score: riskAssessment.riskScore,
+          requiresReview: riskAssessment.requiresReview,
+        },
+      });
+    } catch (error: any) {
+      console.error("Instant cashout error:", error);
+      return c.json(
+        {
+          success: false,
+          error: error.message || "Failed to process instant cashout",
+        },
+        400
+      );
+    }
+  }
+);
+
+/**
+ * Get payout status
+ * GET /api/v1/payouts/:payoutId
+ */
+payoutRoutes.get("/:payoutId", async (c) => {
+  try {
+    const payoutId = c.param("payoutId");
+    const status = await payoutService.getPayoutStatus(payoutId);
+
+    return c.json({
+      success: true,
+      data: status,
+    });
+  } catch (error: any) {
+    return c.json(
+      {
+        success: false,
+        error: error.message,
+      },
+      404
+    );
+  }
+});
+
+/**
+ * Get driver payout history
+ * GET /api/v1/payouts/driver/:driverId/history
+ */
+payoutRoutes.get("/driver/:driverId/history", async (c) => {
+  try {
+    const driverId = c.param("driverId");
+    const limit = Number(c.req.query("limit")) || 20;
+    const offset = Number(c.req.query("offset")) || 0;
+
+    const history = await payoutService.getPayoutHistory(driverId, {
+      limit,
+      offset,
+    });
+
+    return c.json({
+      success: true,
+      data: history,
+    });
+  } catch (error: any) {
+    return c.json(
+      {
+        success: false,
+        error: error.message,
+      },
+      400
+    );
+  }
+});
+
+/**
+ * Get available balance for payout
+ * GET /api/v1/payouts/driver/:driverId/balance/:currency
+ */
+payoutRoutes.get("/driver/:driverId/balance/:currency", async (c) => {
+  try {
+    const driverId = c.param("driverId");
+    const currency = c.param("currency") as Currency;
+
+    const balance = await payoutService.getAvailableBalance(driverId, currency);
+
+    return c.json({
+      success: true,
+      data: balance,
+    });
+  } catch (error: any) {
+    return c.json(
+      {
+        success: false,
+        error: error.message,
+      },
+      400
+    );
+  }
+});
 
 export { PayoutMethod, payoutRoutes, PayoutStatus };

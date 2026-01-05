@@ -25,10 +25,14 @@ import {
   serviceAuth,
   webhookRateLimit,
 } from "./middleware";
+import { adminRoutes } from "./routes/admin";
+import fraudRoutes from "./routes/fraud";
 import { healthRoutes } from "./routes/health";
+import { loyaltyRoutes } from "./routes/loyalty";
 import { mobileMoneyRoutes } from "./routes/mobile-money";
 import { paymentRoutes } from "./routes/payments";
 import { payoutRoutes } from "./routes/payouts";
+import { safetyRoutes } from "./routes/safety";
 import { walletRoutes } from "./routes/wallet";
 import { webhookRoutes } from "./routes/webhooks";
 
@@ -91,12 +95,24 @@ app.use("/mobile-money/*", paymentRateLimit);
 app.use("/mobile-money/*", serviceAuth);
 app.use("/payouts/*", paymentRateLimit);
 app.use("/payouts/*", serviceAuth);
+app.use("/fraud/*", paymentRateLimit);
+app.use("/fraud/*", serviceAuth);
+app.use("/loyalty/*", paymentRateLimit);
+app.use("/loyalty/*", serviceAuth);
+app.use("/safety/*", paymentRateLimit);
+app.use("/safety/*", serviceAuth);
+app.use("/admin/*", paymentRateLimit);
+app.use("/admin/*", serviceAuth);
 
 // API routes
 app.route("/wallets", walletRoutes);
 app.route("/payments", paymentRoutes);
 app.route("/mobile-money", mobileMoneyRoutes);
 app.route("/payouts", payoutRoutes);
+app.route("/fraud", fraudRoutes);
+app.route("/loyalty", loyaltyRoutes);
+app.route("/safety", safetyRoutes);
+app.route("/admin", adminRoutes);
 
 // 404 handler
 app.notFound((c) => {

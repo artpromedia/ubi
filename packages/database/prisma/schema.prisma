@@ -107,6 +107,89 @@ enum Currency {
   USD
 }
 
+enum AccountType {
+  USER_WALLET
+  DRIVER_WALLET
+  RESTAURANT_WALLET
+  UBI_COMMISSION
+  UBI_FLOAT
+  CEERION_ESCROW
+  PROMOTIONAL
+  REFUND_RESERVE
+}
+
+enum EntryType {
+  DEBIT
+  CREDIT
+}
+
+enum TransactionType {
+  WALLET_TOPUP
+  WALLET_WITHDRAWAL
+  RIDE_PAYMENT
+  RIDE_REFUND
+  FOOD_PAYMENT
+  FOOD_REFUND
+  DELIVERY_PAYMENT
+  DRIVER_EARNING
+  COMMISSION_DEDUCTION
+  CEERION_DEDUCTION
+  INCENTIVE_BONUS
+  PROMOTIONAL_CREDIT
+  TIP
+  SETTLEMENT_PAYOUT
+  INTERNAL_TRANSFER
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REVERSED
+  CANCELLED
+}
+
+enum PaymentMethodType {
+  CARD
+  MOBILE_MONEY
+  BANK_ACCOUNT
+}
+
+enum PaymentProvider {
+  PAYSTACK
+  FLUTTERWAVE
+  MPESA
+  MTN_MOMO_GH // Ghana
+  MTN_MOMO_RW // Rwanda
+  MTN_MOMO_UG // Uganda
+  AIRTEL_MONEY
+  TELEBIRR
+  ORANGE_MONEY
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskAction {
+  ALLOW
+  REVIEW
+  REQUIRE_3DS
+  BLOCK
+}
+
 // ===========================================
 // USER MODELS
 // ===========================================
@@ -131,13 +214,15 @@ model User {
   deletedAt     DateTime?  @map("deleted_at")
 
   // Relations
-  driver        Driver?
-  rider         Rider?
-  restaurant    Restaurant?
-  merchant      Merchant?
-  wallet        Wallet?
-  notifications Notification[]
-  sessions      Session[]
+  driver              Driver?
+  rider               Rider?
+  restaurant          Restaurant?
+  merchant            Merchant?
+  walletAccounts      WalletAccount[]
+  paymentMethods      PaymentMethodRecord[]
+  paymentTransactions PaymentTransaction[]
+  notifications       Notification[]
+  sessions            Session[]
 
   @@index([email])
   @@index([phone])
@@ -233,6 +318,7 @@ model Driver {
   vehicle  Vehicle?        @relation(fields: [vehicleId], references: [id])
   rides    Ride[]
   earnings DriverEarning[]
+  payouts  Payout[]
 
   @@index([isOnline, isAvailable])
   @@index([currentLatitude, currentLongitude])
@@ -332,9 +418,8 @@ model Ride {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  rider   Rider    @relation(fields: [riderId], references: [id])
-  driver  Driver?  @relation(fields: [driverId], references: [id])
-  payment Payment?
+  rider  Rider   @relation(fields: [riderId], references: [id])
+  driver Driver? @relation(fields: [driverId], references: [id])
 
   @@index([riderId, status])
   @@index([driverId, status])
@@ -343,60 +428,452 @@ model Ride {
 }
 
 // ===========================================
-// PAYMENT MODELS
+// PAYMENT MODELS (COMPREHENSIVE)
 // ===========================================
 
-model Wallet {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @unique @map("user_id") @db.Uuid
-  balance   Decimal  @default(0) @db.Decimal(12, 2)
-  currency  Currency
-  isActive  Boolean  @default(true) @map("is_active")
+// Double-Entry Ledger: Wallet Accounts
+model WalletAccount {
+  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String?     @map("user_id") @db.Uuid
+  accountType      AccountType @map("account_type")
+  currency         Currency
+  balance          Decimal     @default(0) @db.Decimal(19, 4)
+  availableBalance Decimal     @default(0) @map("available_balance") @db.Decimal(19, 4)
+  heldBalance      Decimal     @default(0) @map("held_balance") @db.Decimal(19, 4)
+  isActive         Boolean     @default(true) @map("is_active")
+  metadata         Json?
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  user          User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerEntries LedgerEntry[]
+  holds         BalanceHold[]
+
+  @@unique([userId, accountType, currency])
+  @@index([userId])
+  @@index([accountType])
+  @@index([currency])
+  @@map("wallet_accounts")
+}
+
+// Immutable Ledger Entries (Double-Entry Bookkeeping)
+model LedgerEntry {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId String    @map("transaction_id") @db.Uuid
+  accountId     String    @map("account_id") @db.Uuid
+  entryType     EntryType @map("entry_type")
+  amount        Decimal   @db.Decimal(19, 4)
+  balanceAfter  Decimal   @map("balance_after") @db.Decimal(19, 4)
+  description   String?
+  metadata      Json?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  transaction Transaction   @relation(fields: [transactionId], references: [id])
+  account     WalletAccount @relation(fields: [accountId], references: [id])
+
+  @@index([transactionId])
+  @@index([accountId, createdAt])
+  @@index([createdAt])
+  @@map("ledger_entries")
+}
+
+// Transactions (Group Ledger Entries)
+model Transaction {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  idempotencyKey  String            @unique @map("idempotency_key")
+  transactionType TransactionType   @map("transaction_type")
+  status          TransactionStatus @default(PENDING)
+  amount          Decimal           @db.Decimal(19, 4)
+  currency        Currency
+  fee             Decimal           @default(0) @db.Decimal(19, 4)
+  description     String?
+  metadata        Json?
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  completedAt     DateTime?         @map("completed_at")
+
+  ledgerEntries      LedgerEntry[]
+  paymentTransaction PaymentTransaction?
+  payout             Payout?
+
+  @@index([status, createdAt])
+  @@index([transactionType])
+  @@index([idempotencyKey])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+// Payment Methods (Tokenized)
+model PaymentMethodRecord {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String            @map("user_id") @db.Uuid
+  type          PaymentMethodType
+  provider      PaymentProvider
+  token         String // Provider authorization token/code
+  lastFour      String?           @map("last_four") // Last 4 digits of card/account
+  brand         String? // visa, mastercard, verve, mpesa, mtn
+  phoneNumber   String?           @map("phone_number")
+  bankCode      String?           @map("bank_code")
+  accountNumber String?           @map("account_number") // Masked
+  accountName   String?           @map("account_name")
+  isDefault     Boolean           @default(false) @map("is_default")
+  isVerified    Boolean           @default(false) @map("is_verified")
+  expiresAt     DateTime?         @map("expires_at") // For cards
+  metadata      Json? // Additional provider data
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments PaymentTransaction[]
+
+  @@index([userId])
+  @@index([userId, isDefault])
+  @@index([type, provider])
+  @@map("payment_methods")
+}
+
+// Payment Transactions (External Payments)
+model PaymentTransaction {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String          @map("user_id") @db.Uuid
+  paymentMethodId   String?         @map("payment_method_id") @db.Uuid
+  transactionId     String?         @unique @map("transaction_id") @db.Uuid // Link to Transaction
+  provider          PaymentProvider
+  providerReference String?         @unique @map("provider_reference") // Provider's transaction ID
+  amount            Decimal         @db.Decimal(19, 4)
+  currency          Currency
+  status            PaymentStatus   @default(PENDING)
+  initiatedAt       DateTime        @default(now()) @map("initiated_at")
+  confirmedAt       DateTime?       @map("confirmed_at")
+  failedAt          DateTime?       @map("failed_at")
+  failureReason     String?         @map("failure_reason")
+  providerResponse  Json?           @map("provider_response")
+  webhookReceived   Boolean         @default(false) @map("webhook_received")
+  metadata          Json?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  user          User                 @relation(fields: [userId], references: [id])
+  paymentMethod PaymentMethodRecord? @relation(fields: [paymentMethodId], references: [id])
+  transaction   Transaction?         @relation(fields: [transactionId], references: [id])
+  riskScore     RiskAssessment?
+  refunds       Refund[]
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([provider, providerReference])
+  @@index([createdAt])
+  @@map("payment_transactions")
+}
+
+// Balance Holds (Pre-authorization)
+model BalanceHold {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId  String    @map("account_id") @db.Uuid
+  amount     Decimal   @db.Decimal(19, 4)
+  currency   Currency
+  reason     String
+  reference  String?
+  isReleased Boolean   @default(false) @map("is_released")
+  releasedAt DateTime? @map("released_at")
+  expiresAt  DateTime  @map("expires_at")
+  metadata   Json?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  account WalletAccount @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, isReleased])
+  @@index([expiresAt])
+  @@map("balance_holds")
+}
+
+// Driver Payouts
+model Payout {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId          String          @map("driver_id") @db.Uuid
+  transactionId     String?         @unique @map("transaction_id") @db.Uuid
+  amount            Decimal         @db.Decimal(19, 4)
+  fee               Decimal         @default(0) @db.Decimal(19, 4)
+  netAmount         Decimal         @map("net_amount") @db.Decimal(19, 4)
+  currency          Currency
+  status            PayoutStatus    @default(PENDING)
+  provider          PaymentProvider
+  providerReference String?         @map("provider_reference")
+  payoutMethod      String          @map("payout_method") // mobile_money, bank_transfer
+  accountNumber     String          @map("account_number")
+  accountName       String?         @map("account_name")
+  initiatedAt       DateTime        @default(now()) @map("initiated_at")
+  completedAt       DateTime?       @map("completed_at")
+  failedAt          DateTime?       @map("failed_at")
+  failureReason     String?         @map("failure_reason")
+  metadata          Json?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  driver      Driver       @relation(fields: [driverId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([driverId, status])
+  @@index([status, createdAt])
+  @@index([provider, providerReference])
+  @@map("payouts")
+}
+
+// Fraud Detection: Risk Assessments
+model RiskAssessment {
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentTransactionId String       @unique @map("payment_transaction_id") @db.Uuid
+  userId               String       @map("user_id") @db.Uuid
+  score                Int // 0-100
+  level                RiskLevel
+  action               RiskAction
+  factors              RiskFactor[]
+  deviceFingerprint    String?      @map("device_fingerprint")
+  ipAddress            String?      @map("ip_address")
+  ipLocation           Json?        @map("ip_location")
+  reviewedAt           DateTime?    @map("reviewed_at")
+  reviewedBy           String?      @map("reviewed_by") @db.Uuid
+  reviewNotes          String?      @map("review_notes")
+  createdAt            DateTime     @default(now()) @map("created_at")
+
+  paymentTransaction PaymentTransaction @relation(fields: [paymentTransactionId], references: [id])
+
+  @@index([userId, level])
+  @@index([level, action])
+  @@index([createdAt])
+  @@map("risk_assessments")
+}
+
+// Risk Factors (Embedded in RiskAssessment)
+model RiskFactor {
+  id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  riskAssessmentId String  @map("risk_assessment_id") @db.Uuid
+  name             String
+  score            Int
+  details          String?
+  metadata         Json?
+
+  riskAssessment RiskAssessment @relation(fields: [riskAssessmentId], references: [id], onDelete: Cascade)
+
+  @@index([riskAssessmentId])
+  @@map("risk_factors")
+}
+
+// Reconciliation Records
+model ReconciliationReport {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date              DateTime
+  provider          PaymentProvider
+  currency          Currency
+  totalInternal     Int             @map("total_internal")
+  totalProvider     Int             @map("total_provider")
+  matched           Int
+  unmatchedInternal Int             @map("unmatched_internal")
+  unmatchedProvider Int             @map("unmatched_provider")
+  discrepancies     Int
+  internalAmount    Decimal         @map("internal_amount") @db.Decimal(19, 4)
+  providerAmount    Decimal         @map("provider_amount") @db.Decimal(19, 4)
+  amountDifference  Decimal         @map("amount_difference") @db.Decimal(19, 4)
+  status            String          @default("pending") // pending, reviewed, resolved
+  reviewedAt        DateTime?       @map("reviewed_at")
+  reviewedBy        String?         @map("reviewed_by") @db.Uuid
+  notes             String?
+  reportData        Json?           @map("report_data")
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  discrepancyRecords ReconciliationDiscrepancy[]
+
+  @@unique([date, provider, currency])
+  @@index([date, provider])
+  @@index([status])
+  @@map("reconciliation_reports")
+}
+
+// Reconciliation Discrepancies
+model ReconciliationDiscrepancy {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reconciliationReportId String    @map("reconciliation_report_id") @db.Uuid
+  type                   String // MISSING_IN_UBI, MISSING_IN_PROVIDER, AMOUNT_MISMATCH, STATUS_MISMATCH
+  severity               String // LOW, MEDIUM, HIGH, CRITICAL
+  transactionId          String?   @map("transaction_id") @db.Uuid
+  providerReference      String?   @map("provider_reference")
+  ubiAmount              Decimal?  @map("ubi_amount") @db.Decimal(19, 4)
+  providerAmount         Decimal?  @map("provider_amount") @db.Decimal(19, 4)
+  difference             Decimal?  @db.Decimal(19, 4)
+  currency               Currency
+  description            String
+  status                 String    @default("pending") // pending, investigating, resolved, ignored
+  resolution             String?
+  resolvedAt             DateTime? @map("resolved_at")
+  resolvedBy             String?   @map("resolved_by") @db.Uuid
+  notes                  String?
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  reconciliationReport ReconciliationReport @relation(fields: [reconciliationReportId], references: [id])
+
+  @@index([reconciliationReportId, status])
+  @@index([type, severity])
+  @@index([status, createdAt])
+  @@map("reconciliation_discrepancies")
+}
+
+// Balance Reconciliation (Daily snapshots)
+model BalanceReconciliation {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  date            DateTime
+  provider        PaymentProvider
+  currency        Currency
+  ubiBalance      Decimal         @map("ubi_balance") @db.Decimal(19, 4)
+  providerBalance Decimal         @map("provider_balance") @db.Decimal(19, 4)
+  difference      Decimal         @db.Decimal(19, 4)
+  percentageDiff  Float           @map("percentage_diff")
+  status          String          @default("pending") // pending, matched, discrepancy, resolved
+  notes           String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  @@unique([date, provider, currency])
+  @@index([provider, date])
+  @@map("balance_reconciliations")
+}
+
+// Settlement Records
+model Settlement {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipientId      String   @map("recipient_id") @db.Uuid
+  recipientType    String   @map("recipient_type") // RESTAURANT, MERCHANT, DRIVER, PARTNER
+  periodStart      DateTime @map("period_start")
+  periodEnd        DateTime @map("period_end")
+  grossAmount      Decimal  @map("gross_amount") @db.Decimal(19, 4)
+  ubiCommission    Decimal  @map("ubi_commission") @db.Decimal(19, 4)
+  ceerionDeduction Decimal  @map("ceerion_deduction") @db.Decimal(19, 4)
+  settlementFee    Decimal  @map("settlement_fee") @db.Decimal(19, 4)
+  netAmount        Decimal  @map("net_amount") @db.Decimal(19, 4)
+  currency         Currency
+
+  status            String    @default("pending") // pending, processing, completed, failed
+  payoutMethod      String    @map("payout_method") // bank_transfer, mobile_money
+  payoutDestination Json      @map("payout_destination") // Bank or mobile money details
+  providerReference String?   @map("provider_reference")
+  processedAt       DateTime? @map("processed_at")
+  failureReason     String?   @map("failure_reason")
+  retryCount        Int       @default(0) @map("retry_count")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions WalletTransaction[]
-
-  @@map("wallets")
-}
-
-model WalletTransaction {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  walletId    String   @map("wallet_id") @db.Uuid
-  amount      Decimal  @db.Decimal(12, 2)
-  type        String // credit, debit
-  description String
-  reference   String?
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
-
-  @@index([walletId, createdAt])
-  @@map("wallet_transactions")
-}
-
-model Payment {
-  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  rideId           String?       @unique @map("ride_id") @db.Uuid
-  foodOrderId      String?       @unique @map("food_order_id") @db.Uuid
-  deliveryId       String?       @unique @map("delivery_id") @db.Uuid
-  amount           Decimal       @db.Decimal(12, 2)
-  currency         Currency
-  method           PaymentMethod
-  status           PaymentStatus @default(PENDING)
-  providerRef      String?       @map("provider_ref")
-  providerResponse Json?         @map("provider_response")
-  failureReason    String?       @map("failure_reason")
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
-
-  ride      Ride?      @relation(fields: [rideId], references: [id])
-  foodOrder FoodOrder? @relation(fields: [foodOrderId], references: [id])
-  delivery  Delivery?  @relation(fields: [deliveryId], references: [id])
-
+  @@index([recipientId, recipientType])
   @@index([status, createdAt])
-  @@map("payments")
+  @@index([periodStart, periodEnd])
+  @@map("settlements")
+}
+
+// Refund Records
+model Refund {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId String    @map("transaction_id") @db.Uuid
+  amount        Decimal   @db.Decimal(19, 4)
+  currency      Currency
+  reason        String
+  status        String    @default("pending") // pending, processing, completed, failed
+  initiatedBy   String    @map("initiated_by") @db.Uuid
+  processedAt   DateTime? @map("processed_at")
+  failureReason String?   @map("failure_reason")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  transaction PaymentTransaction @relation(fields: [transactionId], references: [id])
+
+  @@index([transactionId])
+  @@index([status, createdAt])
+  @@map("refunds")
+}
+
+// Alerts for Operations Team
+model Alert {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type           String // CRITICAL_DISCREPANCY, FRAUD_DETECTED, SETTLEMENT_FAILED, PROVIDER_DOWN
+  severity       String // LOW, MEDIUM, HIGH, CRITICAL
+  title          String
+  message        String
+  data           Json?
+  acknowledged   Boolean   @default(false)
+  acknowledgedAt DateTime? @map("acknowledged_at")
+  acknowledgedBy String?   @map("acknowledged_by") @db.Uuid
+  resolved       Boolean   @default(false)
+  resolvedAt     DateTime? @map("resolved_at")
+  resolvedBy     String?   @map("resolved_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([type, severity])
+  @@index([acknowledged, resolved])
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+// Webhook Events (Idempotency)
+model WebhookEvent {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider    PaymentProvider
+  eventId     String          @map("event_id") // Provider's event ID
+  eventType   String          @map("event_type")
+  payload     Json
+  processed   Boolean         @default(false)
+  processedAt DateTime?       @map("processed_at")
+  retryCount  Int             @default(0) @map("retry_count")
+  lastRetryAt DateTime?       @map("last_retry_at")
+  error       String?
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@unique([provider, eventId])
+  @@index([processed, createdAt])
+  @@index([provider, eventType])
+  @@map("webhook_events")
+}
+
+// Chargebacks and Disputes
+model Dispute {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentTransactionId String    @map("payment_transaction_id") @db.Uuid
+  userId               String    @map("user_id") @db.Uuid
+  type                 String // chargeback, refund_request, payment_dispute
+  status               String    @default("open") // open, under_review, won, lost, closed
+  amount               Decimal   @db.Decimal(19, 4)
+  currency             Currency
+  reason               String
+  evidence             Json? // Files, screenshots, GPS data
+  providerReference    String?   @map("provider_reference")
+  openedAt             DateTime  @default(now()) @map("opened_at")
+  respondedAt          DateTime? @map("responded_at")
+  resolvedAt           DateTime? @map("resolved_at")
+  resolution           String? // won, lost, withdrawn
+  notes                String?
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId, status])
+  @@index([status, openedAt])
+  @@index([providerReference])
+  @@map("disputes")
+}
+
+// Provider Health Monitoring
+model ProviderHealth {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider            PaymentProvider
+  isHealthy           Boolean         @default(true) @map("is_healthy")
+  lastCheckAt         DateTime        @default(now()) @map("last_check_at")
+  consecutiveFailures Int             @default(0) @map("consecutive_failures")
+  avgResponseTime     Int?            @map("avg_response_time") // milliseconds
+  successRate         Float?          @map("success_rate") // percentage
+  lastIncidentAt      DateTime?       @map("last_incident_at")
+  metadata            Json?
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  @@unique([provider])
+  @@map("provider_health")
 }
 
 // ===========================================
@@ -481,7 +958,6 @@ model FoodOrder {
   rider      Rider       @relation(fields: [riderId], references: [id])
   restaurant Restaurant  @relation(fields: [restaurantId], references: [id])
   items      OrderItem[]
-  payment    Payment?
 
   @@index([riderId, status])
   @@index([restaurantId, status])
@@ -578,7 +1054,6 @@ model Delivery {
 
   sender   Rider     @relation("DeliverySender", fields: [senderId], references: [id])
   merchant Merchant? @relation(fields: [merchantId], references: [id])
-  payment  Payment?
 
   @@index([senderId, status])
   @@index([trackingNumber])

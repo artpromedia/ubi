@@ -1,0 +1,944 @@
+// ===========================================
+// UBI FINTECH SCHEMA EXTENSIONS
+// ===========================================
+// This file contains the schema additions for:
+// - Enhanced Wallet (Tiers, Limits)
+// - P2P Transfers
+// - Bill Payments
+// - QR Payments
+// - Savings Products
+// - Micro-Lending
+// - Card Issuance
+// - International Remittances
+// - KYC/AML Compliance
+// ===========================================
+
+// ===========================================
+// NEW ENUMS FOR FINTECH
+// ===========================================
+
+enum WalletTier {
+  BASIC
+  VERIFIED
+  PREMIUM
+  BUSINESS
+}
+
+enum WalletStatus {
+  ACTIVE
+  FROZEN
+  SUSPENDED
+  CLOSED
+}
+
+enum KYCLevel {
+  NONE
+  BASIC // Phone verified
+  STANDARD // ID verified
+  ENHANCED // Address + Income verified
+  FULL // Full KYC with video
+}
+
+enum KYCStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum TransferStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REVERSED
+}
+
+enum BillCategory {
+  AIRTIME
+  DATA
+  ELECTRICITY
+  WATER
+  TV
+  INTERNET
+  EDUCATION
+  GOVERNMENT
+  INSURANCE
+  OTHER
+}
+
+enum BillPaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum SavingsPocketStatus {
+  ACTIVE
+  LOCKED
+  MATURED
+  WITHDRAWN
+  CLOSED
+}
+
+enum AutoSaveFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  PER_TRANSACTION
+}
+
+enum LoanStatus {
+  APPLIED
+  APPROVED
+  DISBURSED
+  ACTIVE
+  PAID
+  OVERDUE
+  DEFAULTED
+  WRITTEN_OFF
+}
+
+enum LoanProductType {
+  PERSONAL
+  DRIVER_ADVANCE
+  MERCHANT_WORKING_CAPITAL
+  SALARY_ADVANCE
+  EMERGENCY
+}
+
+enum RepaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  WAIVED
+  PARTIAL
+}
+
+enum CardType {
+  VIRTUAL
+  PHYSICAL
+}
+
+enum CardStatus {
+  PENDING
+  ACTIVE
+  FROZEN
+  BLOCKED
+  EXPIRED
+  CANCELLED
+}
+
+enum CardNetwork {
+  VISA
+  MASTERCARD
+  VERVE
+}
+
+enum RemittanceStatus {
+  QUOTED
+  INITIATED
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum RemittanceProvider {
+  WISE
+  WORLDREMIT
+  CHIPPER
+  FLUTTERWAVE
+  INTERNAL
+}
+
+// ===========================================
+// ENHANCED WALLET SYSTEM
+// ===========================================
+
+// Wallet with tiered limits
+model Wallet {
+  id                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId              String       @unique @map("user_id") @db.Uuid
+  status              WalletStatus @default(ACTIVE)
+  tier                WalletTier   @default(BASIC)
+  kycLevel            KYCLevel     @default(NONE) @map("kyc_level")
+  pin                 String? // Encrypted transaction PIN
+  pinAttempts         Int          @default(0) @map("pin_attempts")
+  pinLockedUntil      DateTime?    @map("pin_locked_until")
+  dailyLimitUsed      Decimal      @default(0) @map("daily_limit_used") @db.Decimal(19, 4)
+  dailyLimitResetAt   DateTime     @default(now()) @map("daily_limit_reset_at")
+  monthlyLimitUsed    Decimal      @default(0) @map("monthly_limit_used") @db.Decimal(19, 4)
+  monthlyLimitResetAt DateTime     @default(now()) @map("monthly_limit_reset_at")
+  metadata            Json?
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  balances        WalletBalance[]
+  p2pSent         P2PTransfer[]    @relation("P2PSender")
+  p2pReceived     P2PTransfer[]    @relation("P2PRecipient")
+  moneyRequests   MoneyRequest[]   @relation("MoneyRequestor")
+  moneyResponses  MoneyRequest[]   @relation("MoneyResponder")
+  billPayments    BillPayment[]
+  qrCodes         MerchantQRCode[]
+  savingsPockets  SavingsPocket[]
+  loans           Loan[]
+  cards           Card[]
+  remittancesSent Remittance[]     @relation("RemittanceSender")
+  kycRecords      KYCRecord[]
+  beneficiaries   Beneficiary[]
+
+  @@index([userId])
+  @@index([status, tier])
+  @@map("wallets")
+}
+
+// Multi-currency balances
+model WalletBalance {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId         String   @map("wallet_id") @db.Uuid
+  currency         Currency
+  availableBalance Decimal  @default(0) @map("available_balance") @db.Decimal(19, 4)
+  pendingBalance   Decimal  @default(0) @map("pending_balance") @db.Decimal(19, 4)
+  heldBalance      Decimal  @default(0) @map("held_balance") @db.Decimal(19, 4)
+  lastActivityAt   DateTime @default(now()) @map("last_activity_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, currency])
+  @@index([walletId])
+  @@map("wallet_balances")
+}
+
+// Wallet tier configuration
+model WalletTierConfig {
+  tier                    WalletTier @id
+  dailyTransactionLimit   Decimal    @map("daily_transaction_limit") @db.Decimal(19, 4)
+  monthlyTransactionLimit Decimal    @map("monthly_transaction_limit") @db.Decimal(19, 4)
+  singleTransactionLimit  Decimal    @map("single_transaction_limit") @db.Decimal(19, 4)
+  maxBalance              Decimal    @map("max_balance") @db.Decimal(19, 4)
+  p2pEnabled              Boolean    @default(true) @map("p2p_enabled")
+  billsEnabled            Boolean    @default(true) @map("bills_enabled")
+  cardsEnabled            Boolean    @default(false) @map("cards_enabled")
+  loansEnabled            Boolean    @default(false) @map("loans_enabled")
+  internationalEnabled    Boolean    @default(false) @map("international_enabled")
+  savingsInterestRate     Decimal    @default(0) @map("savings_interest_rate") @db.Decimal(5, 4)
+  maxSavingsPockets       Int        @default(3) @map("max_savings_pockets")
+  requiredKycLevel        KYCLevel   @map("required_kyc_level")
+  createdAt               DateTime   @default(now()) @map("created_at")
+  updatedAt               DateTime   @updatedAt @map("updated_at")
+
+  @@map("wallet_tier_configs")
+}
+
+// ===========================================
+// P2P TRANSFERS
+// ===========================================
+
+model P2PTransfer {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  senderWalletId    String         @map("sender_wallet_id") @db.Uuid
+  recipientWalletId String?        @map("recipient_wallet_id") @db.Uuid
+  recipientPhone    String?        @map("recipient_phone")
+  recipientEmail    String?        @map("recipient_email")
+  amount            Decimal        @db.Decimal(19, 4)
+  fee               Decimal        @default(0) @db.Decimal(19, 4)
+  currency          Currency
+  status            TransferStatus @default(PENDING)
+  note              String?
+  idempotencyKey    String         @unique @map("idempotency_key")
+  transactionId     String?        @unique @map("transaction_id") @db.Uuid
+  expiresAt         DateTime?      @map("expires_at") // For pending transfers to non-users
+  claimedAt         DateTime?      @map("claimed_at")
+  failureReason     String?        @map("failure_reason")
+  metadata          Json?
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  senderWallet    Wallet  @relation("P2PSender", fields: [senderWalletId], references: [id])
+  recipientWallet Wallet? @relation("P2PRecipient", fields: [recipientWalletId], references: [id])
+
+  @@index([senderWalletId, status])
+  @@index([recipientWalletId])
+  @@index([recipientPhone])
+  @@index([status, expiresAt])
+  @@map("p2p_transfers")
+}
+
+model MoneyRequest {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestorWallet String         @map("requestor_wallet_id") @db.Uuid
+  responderWallet String?        @map("responder_wallet_id") @db.Uuid
+  responderPhone  String?        @map("responder_phone")
+  amount          Decimal        @db.Decimal(19, 4)
+  currency        Currency
+  status          TransferStatus @default(PENDING)
+  note            String?
+  expiresAt       DateTime       @map("expires_at")
+  respondedAt     DateTime?      @map("responded_at")
+  transferId      String?        @unique @map("transfer_id") @db.Uuid
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  requestor Wallet  @relation("MoneyRequestor", fields: [requestorWallet], references: [id])
+  responder Wallet? @relation("MoneyResponder", fields: [responderWallet], references: [id])
+
+  @@index([requestorWallet, status])
+  @@index([responderWallet])
+  @@index([responderPhone])
+  @@map("money_requests")
+}
+
+// Saved beneficiaries for quick transfers
+model Beneficiary {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId      String    @map("wallet_id") @db.Uuid
+  name          String
+  phone         String?
+  email         String?
+  bankCode      String?   @map("bank_code")
+  accountNumber String?   @map("account_number")
+  accountName   String?   @map("account_name")
+  type          String // p2p, bank, mobile_money
+  isFavorite    Boolean   @default(false) @map("is_favorite")
+  lastUsedAt    DateTime? @map("last_used_at")
+  metadata      Json?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, phone])
+  @@index([walletId])
+  @@map("beneficiaries")
+}
+
+// ===========================================
+// BILL PAYMENTS
+// ===========================================
+
+model BillProvider {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code            String       @unique // e.g., "EKEDC-NG", "SAFARICOM-KE"
+  name            String
+  shortName       String       @map("short_name")
+  logo            String?
+  category        BillCategory
+  country         String       @db.Char(2)
+  currency        Currency
+  inputFields     Json         @map("input_fields") // Array of field definitions
+  validationRules Json?        @map("validation_rules")
+  processingTime  String?      @map("processing_time") // "instant", "1-24 hours"
+  minAmount       Decimal?     @map("min_amount") @db.Decimal(19, 4)
+  maxAmount       Decimal?     @map("max_amount") @db.Decimal(19, 4)
+  fixedFee        Decimal      @default(0) @map("fixed_fee") @db.Decimal(19, 4)
+  percentageFee   Decimal      @default(0) @map("percentage_fee") @db.Decimal(5, 4)
+  aggregator      String // paystack, flutterwave, direct
+  aggregatorCode  String?      @map("aggregator_code")
+  isActive        Boolean      @default(true) @map("is_active")
+  metadata        Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  payments BillPayment[]
+
+  @@index([category, country])
+  @@index([isActive])
+  @@map("bill_providers")
+}
+
+model BillPayment {
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId            String            @map("wallet_id") @db.Uuid
+  providerId          String            @map("provider_id") @db.Uuid
+  customerParams      Json              @map("customer_params") // meter_number, phone, etc.
+  customerName        String?           @map("customer_name") // From validation
+  amount              Decimal           @db.Decimal(19, 4)
+  fee                 Decimal           @default(0) @db.Decimal(19, 4)
+  totalAmount         Decimal           @map("total_amount") @db.Decimal(19, 4)
+  currency            Currency
+  status              BillPaymentStatus @default(PENDING)
+  token               String? // Electricity token, airtime PIN
+  providerReference   String?           @map("provider_reference")
+  aggregatorReference String?           @map("aggregator_reference")
+  idempotencyKey      String            @unique @map("idempotency_key")
+  transactionId       String?           @unique @map("transaction_id") @db.Uuid
+  failureReason       String?           @map("failure_reason")
+  metadata            Json?
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  wallet   Wallet       @relation(fields: [walletId], references: [id])
+  provider BillProvider @relation(fields: [providerId], references: [id])
+
+  @@index([walletId, status])
+  @@index([providerId])
+  @@index([status, createdAt])
+  @@map("bill_payments")
+}
+
+model ScheduledBillPayment {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId       String    @map("wallet_id") @db.Uuid
+  providerId     String    @map("provider_id") @db.Uuid
+  customerParams Json      @map("customer_params")
+  amount         Decimal?  @db.Decimal(19, 4) // Null for variable bills
+  frequency      String // weekly, monthly, custom
+  nextRunDate    DateTime  @map("next_run_date")
+  lastRunDate    DateTime? @map("last_run_date")
+  lastRunStatus  String?   @map("last_run_status")
+  isActive       Boolean   @default(true) @map("is_active")
+  retryCount     Int       @default(0) @map("retry_count")
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([isActive, nextRunDate])
+  @@index([walletId])
+  @@map("scheduled_bill_payments")
+}
+
+// ===========================================
+// QR CODE PAYMENTS
+// ===========================================
+
+model MerchantQRCode {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId     String    @map("wallet_id") @db.Uuid
+  merchantName String    @map("merchant_name")
+  type         String // static, dynamic
+  amount       Decimal?  @db.Decimal(19, 4) // For fixed amount QR
+  currency     Currency
+  qrData       String    @unique @map("qr_data") // Encoded QR payload
+  qrImageUrl   String?   @map("qr_image_url")
+  reference    String? // For dynamic QR
+  usageCount   Int       @default(0) @map("usage_count")
+  maxUsages    Int?      @map("max_usages") // For dynamic QR
+  expiresAt    DateTime? @map("expires_at")
+  isActive     Boolean   @default(true) @map("is_active")
+  metadata     Json?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  wallet   Wallet      @relation(fields: [walletId], references: [id])
+  payments QRPayment[]
+
+  @@index([walletId])
+  @@index([qrData])
+  @@index([isActive, expiresAt])
+  @@map("merchant_qr_codes")
+}
+
+model QRPayment {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  qrCodeId       String         @map("qr_code_id") @db.Uuid
+  payerWalletId  String         @map("payer_wallet_id") @db.Uuid
+  amount         Decimal        @db.Decimal(19, 4)
+  fee            Decimal        @default(0) @db.Decimal(19, 4)
+  currency       Currency
+  status         TransferStatus @default(PENDING)
+  transactionId  String?        @unique @map("transaction_id") @db.Uuid
+  idempotencyKey String         @unique @map("idempotency_key")
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  qrCode MerchantQRCode @relation(fields: [qrCodeId], references: [id])
+
+  @@index([qrCodeId])
+  @@index([payerWalletId])
+  @@map("qr_payments")
+}
+
+// ===========================================
+// SAVINGS PRODUCTS
+// ===========================================
+
+model SavingsPocket {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId          String              @map("wallet_id") @db.Uuid
+  name              String
+  description       String?
+  targetAmount      Decimal?            @map("target_amount") @db.Decimal(19, 4)
+  targetDate        DateTime?           @map("target_date")
+  currentBalance    Decimal             @default(0) @map("current_balance") @db.Decimal(19, 4)
+  currency          Currency
+  icon              String              @default("piggy-bank")
+  color             String              @default("#1DB954")
+  interestRate      Decimal             @default(0) @map("interest_rate") @db.Decimal(5, 4) // Annual
+  accruedInterest   Decimal             @default(0) @map("accrued_interest") @db.Decimal(19, 4)
+  status            SavingsPocketStatus @default(ACTIVE)
+  isLocked          Boolean             @default(false) @map("is_locked")
+  lockPenaltyRate   Decimal             @default(0) @map("lock_penalty_rate") @db.Decimal(5, 4)
+  autoSaveEnabled   Boolean             @default(false) @map("auto_save_enabled")
+  autoSaveAmount    Decimal?            @map("auto_save_amount") @db.Decimal(19, 4)
+  autoSaveFrequency AutoSaveFrequency?  @map("auto_save_frequency")
+  autoSaveDay       Int?                @map("auto_save_day") // Day of week/month
+  roundUpEnabled    Boolean             @default(false) @map("round_up_enabled")
+  roundUpMultiplier Int                 @default(1) @map("round_up_multiplier") // 1x, 2x, 5x, 10x
+  nextAutoSaveDate  DateTime?           @map("next_auto_save_date")
+  maturedAt         DateTime?           @map("matured_at")
+  metadata          Json?
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  wallet       Wallet               @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  transactions SavingsTransaction[]
+  interestLogs InterestAccrual[]
+
+  @@index([walletId, status])
+  @@index([autoSaveEnabled, nextAutoSaveDate])
+  @@map("savings_pockets")
+}
+
+model SavingsTransaction {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pocketId     String   @map("pocket_id") @db.Uuid
+  type         String // deposit, withdrawal, interest, bonus, penalty
+  amount       Decimal  @db.Decimal(19, 4)
+  balanceAfter Decimal  @map("balance_after") @db.Decimal(19, 4)
+  source       String // manual, auto_save, round_up, interest, cashback
+  referenceId  String?  @map("reference_id") @db.Uuid // Link to triggering transaction
+  description  String?
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  pocket SavingsPocket @relation(fields: [pocketId], references: [id], onDelete: Cascade)
+
+  @@index([pocketId, createdAt])
+  @@index([type])
+  @@map("savings_transactions")
+}
+
+model InterestAccrual {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pocketId       String    @map("pocket_id") @db.Uuid
+  periodStart    DateTime  @map("period_start")
+  periodEnd      DateTime  @map("period_end")
+  averageBalance Decimal   @map("average_balance") @db.Decimal(19, 4)
+  interestRate   Decimal   @map("interest_rate") @db.Decimal(5, 4)
+  interestAmount Decimal   @map("interest_amount") @db.Decimal(19, 4)
+  isPaid         Boolean   @default(false) @map("is_paid")
+  paidAt         DateTime? @map("paid_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  pocket SavingsPocket @relation(fields: [pocketId], references: [id], onDelete: Cascade)
+
+  @@index([pocketId, isPaid])
+  @@index([periodEnd])
+  @@map("interest_accruals")
+}
+
+// ===========================================
+// MICRO-LENDING
+// ===========================================
+
+model LoanProduct {
+  id                    String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                  String          @unique
+  name                  String
+  description           String?
+  type                  LoanProductType
+  minAmount             Decimal         @map("min_amount") @db.Decimal(19, 4)
+  maxAmount             Decimal         @map("max_amount") @db.Decimal(19, 4)
+  minTermDays           Int             @map("min_term_days")
+  maxTermDays           Int             @map("max_term_days")
+  baseInterestRate      Decimal         @map("base_interest_rate") @db.Decimal(5, 4) // Monthly
+  originationFeeRate    Decimal         @default(0) @map("origination_fee_rate") @db.Decimal(5, 4)
+  lateFeeRate           Decimal         @default(0) @map("late_fee_rate") @db.Decimal(5, 4)
+  requiredCreditGrade   String[]        @map("required_credit_grade") // ['A', 'B', 'C']
+  autoDebitEnabled      Boolean         @default(true) @map("auto_debit_enabled")
+  earningsDeductionRate Decimal?        @map("earnings_deduction_rate") @db.Decimal(5, 4) // For drivers
+  isActive              Boolean         @default(true) @map("is_active")
+  metadata              Json?
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+
+  loans Loan[]
+
+  @@map("loan_products")
+}
+
+model CreditScore {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  score          Int // 300-850
+  grade          String // A, B, C, D, F
+  eligibleAmount Decimal  @map("eligible_amount") @db.Decimal(19, 4)
+  interestRate   Decimal  @map("interest_rate") @db.Decimal(5, 4)
+  factors        Json // Array of CreditFactor
+  calculatedAt   DateTime @map("calculated_at")
+  expiresAt      DateTime @map("expires_at")
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([calculatedAt])
+  @@map("credit_scores")
+}
+
+model Loan {
+  id                       String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId                 String     @map("wallet_id") @db.Uuid
+  productId                String     @map("product_id") @db.Uuid
+  principalAmount          Decimal    @map("principal_amount") @db.Decimal(19, 4)
+  interestRate             Decimal    @map("interest_rate") @db.Decimal(5, 4)
+  originationFee           Decimal    @map("origination_fee") @db.Decimal(19, 4)
+  totalInterest            Decimal    @map("total_interest") @db.Decimal(19, 4)
+  totalAmount              Decimal    @map("total_amount") @db.Decimal(19, 4)
+  disbursedAmount          Decimal    @map("disbursed_amount") @db.Decimal(19, 4)
+  outstandingPrincipal     Decimal    @map("outstanding_principal") @db.Decimal(19, 4)
+  outstandingInterest      Decimal    @map("outstanding_interest") @db.Decimal(19, 4)
+  outstandingFees          Decimal    @default(0) @map("outstanding_fees") @db.Decimal(19, 4)
+  currency                 Currency
+  termDays                 Int        @map("term_days")
+  status                   LoanStatus @default(APPLIED)
+  creditScoreAtOrigination Int?       @map("credit_score_at_origination")
+  approvedAt               DateTime?  @map("approved_at")
+  disbursedAt              DateTime?  @map("disbursed_at")
+  dueDate                  DateTime   @map("due_date")
+  paidAt                   DateTime?  @map("paid_at")
+  defaultedAt              DateTime?  @map("defaulted_at")
+  transactionId            String?    @unique @map("transaction_id") @db.Uuid
+  metadata                 Json?
+  createdAt                DateTime   @default(now()) @map("created_at")
+  updatedAt                DateTime   @updatedAt @map("updated_at")
+
+  wallet     Wallet          @relation(fields: [walletId], references: [id])
+  product    LoanProduct     @relation(fields: [productId], references: [id])
+  schedule   LoanSchedule[]
+  repayments LoanRepayment[]
+
+  @@index([walletId, status])
+  @@index([status, dueDate])
+  @@index([productId])
+  @@map("loans")
+}
+
+model LoanSchedule {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  loanId            String          @map("loan_id") @db.Uuid
+  installmentNumber Int             @map("installment_number")
+  dueDate           DateTime        @map("due_date")
+  principalAmount   Decimal         @map("principal_amount") @db.Decimal(19, 4)
+  interestAmount    Decimal         @map("interest_amount") @db.Decimal(19, 4)
+  feeAmount         Decimal         @default(0) @map("fee_amount") @db.Decimal(19, 4)
+  totalAmount       Decimal         @map("total_amount") @db.Decimal(19, 4)
+  paidAmount        Decimal         @default(0) @map("paid_amount") @db.Decimal(19, 4)
+  status            RepaymentStatus @default(PENDING)
+  paidAt            DateTime?       @map("paid_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@unique([loanId, installmentNumber])
+  @@index([loanId, status])
+  @@index([dueDate, status])
+  @@map("loan_schedules")
+}
+
+model LoanRepayment {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  loanId              String   @map("loan_id") @db.Uuid
+  amount              Decimal  @db.Decimal(19, 4)
+  principalPortion    Decimal  @map("principal_portion") @db.Decimal(19, 4)
+  interestPortion     Decimal  @map("interest_portion") @db.Decimal(19, 4)
+  feePortion          Decimal  @default(0) @map("fee_portion") @db.Decimal(19, 4)
+  source              String // manual, auto_debit, earnings_deduction, collections
+  sourceTransactionId String?  @map("source_transaction_id") @db.Uuid
+  metadata            Json?
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  loan Loan @relation(fields: [loanId], references: [id])
+
+  @@index([loanId, createdAt])
+  @@map("loan_repayments")
+}
+
+// ===========================================
+// CARD ISSUANCE
+// ===========================================
+
+model Card {
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId            String      @map("wallet_id") @db.Uuid
+  type                CardType
+  network             CardNetwork
+  status              CardStatus  @default(PENDING)
+  processorCardId     String?     @unique @map("processor_card_id")
+  lastFour            String      @map("last_four")
+  expiryMonth         Int         @map("expiry_month")
+  expiryYear          Int         @map("expiry_year")
+  cardholderName      String      @map("cardholder_name")
+  billingAddress      Json?       @map("billing_address")
+  currency            Currency
+  // Spending controls
+  dailyLimit          Decimal?    @map("daily_limit") @db.Decimal(19, 4)
+  monthlyLimit        Decimal?    @map("monthly_limit") @db.Decimal(19, 4)
+  perTransactionLimit Decimal?    @map("per_transaction_limit") @db.Decimal(19, 4)
+  allowedCategories   String[]    @map("allowed_categories") // MCC codes
+  blockedCategories   String[]    @map("blocked_categories")
+  allowOnline         Boolean     @default(true) @map("allow_online")
+  allowInternational  Boolean     @default(false) @map("allow_international")
+  allowAtm            Boolean     @default(true) @map("allow_atm")
+  // Physical card specifics
+  deliveryAddress     Json?       @map("delivery_address")
+  deliveryStatus      String?     @map("delivery_status")
+  activatedAt         DateTime?   @map("activated_at")
+  // PIN management
+  pinSetAt            DateTime?   @map("pin_set_at")
+  pinAttempts         Int         @default(0) @map("pin_attempts")
+  pinBlockedAt        DateTime?   @map("pin_blocked_at")
+  // Lifecycle
+  frozenAt            DateTime?   @map("frozen_at")
+  frozenReason        String?     @map("frozen_reason")
+  blockedAt           DateTime?   @map("blocked_at")
+  blockedReason       String?     @map("blocked_reason")
+  metadata            Json?
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+
+  wallet             Wallet                  @relation(fields: [walletId], references: [id])
+  transactions       CardTransaction[]
+  authorizationHolds CardAuthorizationHold[]
+
+  @@index([walletId, status])
+  @@index([processorCardId])
+  @@map("cards")
+}
+
+model CardTransaction {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cardId             String   @map("card_id") @db.Uuid
+  type               String // purchase, atm_withdrawal, refund, reversal
+  amount             Decimal  @db.Decimal(19, 4)
+  currency           Currency
+  merchantName       String?  @map("merchant_name")
+  merchantCategory   String?  @map("merchant_category") // MCC
+  merchantCity       String?  @map("merchant_city")
+  merchantCountry    String?  @map("merchant_country")
+  status             String // pending, completed, declined, reversed
+  declineReason      String?  @map("decline_reason")
+  authorizationCode  String?  @map("authorization_code")
+  processorReference String?  @map("processor_reference")
+  transactionId      String?  @unique @map("transaction_id") @db.Uuid
+  metadata           Json?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  card Card @relation(fields: [cardId], references: [id])
+
+  @@index([cardId, createdAt])
+  @@index([status])
+  @@map("card_transactions")
+}
+
+model CardAuthorizationHold {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cardId            String    @map("card_id") @db.Uuid
+  amount            Decimal   @db.Decimal(19, 4)
+  currency          Currency
+  merchantName      String?   @map("merchant_name")
+  authorizationCode String    @map("authorization_code")
+  status            String // active, captured, released, expired
+  expiresAt         DateTime  @map("expires_at")
+  capturedAt        DateTime? @map("captured_at")
+  releasedAt        DateTime? @map("released_at")
+  capturedAmount    Decimal?  @map("captured_amount") @db.Decimal(19, 4)
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  card Card @relation(fields: [cardId], references: [id])
+
+  @@index([cardId, status])
+  @@index([expiresAt])
+  @@map("card_authorization_holds")
+}
+
+// ===========================================
+// INTERNATIONAL REMITTANCES
+// ===========================================
+
+model RemittanceCorridor {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceCountry       String   @map("source_country") @db.Char(2)
+  sourceCurrency      Currency @map("source_currency")
+  destinationCountry  String   @map("destination_country") @db.Char(2)
+  destinationCurrency Currency @map("destination_currency")
+  providers           String[] // Available providers for this corridor
+  isActive            Boolean  @default(true) @map("is_active")
+  minAmount           Decimal  @map("min_amount") @db.Decimal(19, 4)
+  maxAmount           Decimal  @map("max_amount") @db.Decimal(19, 4)
+  metadata            Json?
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@unique([sourceCountry, sourceCurrency, destinationCountry, destinationCurrency])
+  @@map("remittance_corridors")
+}
+
+model Remittance {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  senderWalletId    String             @map("sender_wallet_id") @db.Uuid
+  provider          RemittanceProvider
+  providerReference String?            @map("provider_reference")
+  sendAmount        Decimal            @map("send_amount") @db.Decimal(19, 4)
+  sendCurrency      Currency           @map("send_currency")
+  receiveAmount     Decimal            @map("receive_amount") @db.Decimal(19, 4)
+  receiveCurrency   Currency           @map("receive_currency")
+  exchangeRate      Decimal            @map("exchange_rate") @db.Decimal(12, 6)
+  fee               Decimal            @db.Decimal(19, 4)
+  totalAmount       Decimal            @map("total_amount") @db.Decimal(19, 4)
+  status            RemittanceStatus   @default(QUOTED)
+  // Recipient details
+  recipientName     String             @map("recipient_name")
+  recipientCountry  String             @map("recipient_country") @db.Char(2)
+  recipientPhone    String?            @map("recipient_phone")
+  recipientEmail    String?            @map("recipient_email")
+  recipientBank     String?            @map("recipient_bank")
+  recipientAccount  String?            @map("recipient_account")
+  deliveryMethod    String             @map("delivery_method") // bank_transfer, mobile_money, cash_pickup
+  // Timing
+  quotedAt          DateTime           @map("quoted_at")
+  quoteExpiresAt    DateTime           @map("quote_expires_at")
+  initiatedAt       DateTime?          @map("initiated_at")
+  completedAt       DateTime?          @map("completed_at")
+  failedAt          DateTime?          @map("failed_at")
+  failureReason     String?            @map("failure_reason")
+  // Compliance
+  purposeOfTransfer String?            @map("purpose_of_transfer")
+  sourceOfFunds     String?            @map("source_of_funds")
+  idempotencyKey    String             @unique @map("idempotency_key")
+  transactionId     String?            @unique @map("transaction_id") @db.Uuid
+  metadata          Json?
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  senderWallet Wallet @relation("RemittanceSender", fields: [senderWalletId], references: [id])
+
+  @@index([senderWalletId, status])
+  @@index([status, createdAt])
+  @@index([providerReference])
+  @@map("remittances")
+}
+
+model ExchangeRate {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceCurrency Currency @map("source_currency")
+  targetCurrency Currency @map("target_currency")
+  rate           Decimal  @db.Decimal(12, 6)
+  inverseRate    Decimal  @map("inverse_rate") @db.Decimal(12, 6)
+  provider       String // xe, openexchangerates, internal
+  validFrom      DateTime @map("valid_from")
+  validUntil     DateTime @map("valid_until")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([sourceCurrency, targetCurrency, validUntil])
+  @@map("exchange_rates")
+}
+
+// ===========================================
+// KYC/AML COMPLIANCE
+// ===========================================
+
+model KYCRecord {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId              String    @map("wallet_id") @db.Uuid
+  level                 KYCLevel
+  status                KYCStatus @default(PENDING)
+  // Personal information
+  firstName             String?   @map("first_name")
+  lastName              String?   @map("last_name")
+  dateOfBirth           DateTime? @map("date_of_birth")
+  nationality           String?   @db.Char(2)
+  // Document verification
+  idType                String?   @map("id_type") // passport, national_id, drivers_license
+  idNumber              String?   @map("id_number")
+  idExpiryDate          DateTime? @map("id_expiry_date")
+  idFrontUrl            String?   @map("id_front_url")
+  idBackUrl             String?   @map("id_back_url")
+  // Address verification
+  address               String?
+  city                  String?
+  state                 String?
+  postalCode            String?   @map("postal_code")
+  country               String?   @db.Char(2)
+  addressProofUrl       String?   @map("address_proof_url")
+  // Selfie/Liveness
+  selfieUrl             String?   @map("selfie_url")
+  livenessScore         Float?    @map("liveness_score")
+  facematchScore        Float?    @map("facematch_score")
+  // BVN/NIN verification (Nigeria)
+  bvn                   String?
+  nin                   String?
+  // Verification results
+  verificationProvider  String?   @map("verification_provider") // smile_id, onfido, youverify
+  verificationReference String?   @map("verification_reference")
+  verificationResult    Json?     @map("verification_result")
+  // Review
+  submittedAt           DateTime? @map("submitted_at")
+  reviewedAt            DateTime? @map("reviewed_at")
+  reviewedBy            String?   @map("reviewed_by") @db.Uuid
+  rejectionReason       String?   @map("rejection_reason")
+  expiresAt             DateTime? @map("expires_at")
+  metadata              Json?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, level])
+  @@index([status])
+  @@map("kyc_records")
+}
+
+model AMLScreening {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  screeningType     String    @map("screening_type") // pep, sanctions, adverse_media
+  provider          String // comply_advantage, refinitiv
+  providerReference String?   @map("provider_reference")
+  fullName          String    @map("full_name")
+  dateOfBirth       DateTime? @map("date_of_birth")
+  nationality       String?   @db.Char(2)
+  matchStatus       String    @map("match_status") // no_match, potential_match, confirmed_match
+  matchDetails      Json?     @map("match_details")
+  riskLevel         String?   @map("risk_level")
+  reviewRequired    Boolean   @default(false) @map("review_required")
+  reviewedAt        DateTime? @map("reviewed_at")
+  reviewedBy        String?   @map("reviewed_by") @db.Uuid
+  reviewDecision    String?   @map("review_decision") // cleared, escalated, blocked
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([matchStatus, reviewRequired])
+  @@map("aml_screenings")
+}
+
+model TransactionMonitoring {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  transactionId  String    @map("transaction_id") @db.Uuid
+  ruleId         String    @map("rule_id")
+  ruleName       String    @map("rule_name")
+  triggerDetails Json      @map("trigger_details")
+  riskScore      Int       @map("risk_score")
+  action         String // alert, block, review
+  status         String    @default("open") // open, investigating, resolved, false_positive
+  investigatedAt DateTime? @map("investigated_at")
+  investigatedBy String?   @map("investigated_by") @db.Uuid
+  resolution     String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@map("transaction_monitoring")
+}

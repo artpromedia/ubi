@@ -1,0 +1,1474 @@
+// ===========================================
+// UBI Driver Experience & Benefits Platform
+// Database Schema - Making UBI the best place to drive
+// ===========================================
+
+// -----------------------------------------
+// EARNINGS & FINANCIAL
+// -----------------------------------------
+
+/// Driver earnings summary for a period
+model DriverEarnings {
+  id          String             @id @default(uuid())
+  driverId    String             @map("driver_id")
+  periodStart DateTime           @map("period_start")
+  periodEnd   DateTime           @map("period_end")
+  periodType  EarningsPeriodType @default(DAILY) @map("period_type")
+
+  // Earnings breakdown
+  grossEarnings Decimal @map("gross_earnings") @db.Decimal(12, 2)
+  tips          Decimal @default(0) @db.Decimal(12, 2)
+  incentives    Decimal @default(0) @db.Decimal(12, 2)
+  bonuses       Decimal @default(0) @db.Decimal(12, 2)
+  surgeEarnings Decimal @default(0) @map("surge_earnings") @db.Decimal(12, 2)
+
+  // Deductions
+  commission       Decimal @db.Decimal(12, 2)
+  commissionRate   Decimal @map("commission_rate") @db.Decimal(5, 4)
+  ceerionDeduction Decimal @default(0) @map("ceerion_deduction") @db.Decimal(12, 2)
+  otherDeductions  Decimal @default(0) @map("other_deductions") @db.Decimal(12, 2)
+
+  // Net result
+  netEarnings Decimal @map("net_earnings") @db.Decimal(12, 2)
+
+  // Activity metrics
+  tripCount     Int     @map("trip_count")
+  rideTrips     Int     @default(0) @map("ride_trips")
+  deliveryTrips Int     @default(0) @map("delivery_trips")
+  onlineMinutes Int     @map("online_minutes")
+  activeMinutes Int     @map("active_minutes")
+  totalDistance Decimal @map("total_distance") @db.Decimal(10, 2)
+
+  // Performance
+  acceptanceRate Decimal @map("acceptance_rate") @db.Decimal(5, 4)
+  completionRate Decimal @map("completion_rate") @db.Decimal(5, 4)
+  averageRating  Decimal @map("average_rating") @db.Decimal(3, 2)
+
+  currency  String   @db.VarChar(3)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([driverId, periodStart, periodEnd, periodType])
+  @@index([driverId, periodStart])
+  @@index([driverId, periodType])
+  @@map("driver_earnings")
+}
+
+enum EarningsPeriodType {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+/// Real-time trip earnings
+model TripEarning {
+  id       String          @id @default(uuid())
+  driverId String          @map("driver_id")
+  tripId   String          @unique @map("trip_id")
+  tripType TripEarningType @map("trip_type")
+
+  // Fare breakdown
+  baseFare        Decimal @map("base_fare") @db.Decimal(10, 2)
+  distanceFare    Decimal @map("distance_fare") @db.Decimal(10, 2)
+  timeFare        Decimal @map("time_fare") @db.Decimal(10, 2)
+  surgeFare       Decimal @default(0) @map("surge_fare") @db.Decimal(10, 2)
+  surgeMultiplier Decimal @default(1) @map("surge_multiplier") @db.Decimal(4, 2)
+  tollsCollected  Decimal @default(0) @map("tolls_collected") @db.Decimal(10, 2)
+
+  grossFare      Decimal @map("gross_fare") @db.Decimal(10, 2)
+  tip            Decimal @default(0) @db.Decimal(10, 2)
+  incentiveBonus Decimal @default(0) @map("incentive_bonus") @db.Decimal(10, 2)
+
+  // Deductions
+  commission     Decimal @db.Decimal(10, 2)
+  commissionRate Decimal @map("commission_rate") @db.Decimal(5, 4)
+
+  netEarnings Decimal @map("net_earnings") @db.Decimal(10, 2)
+
+  // Trip details
+  distance        Decimal @db.Decimal(10, 2)
+  duration        Int // minutes
+  pickupLocation  String  @map("pickup_location")
+  dropoffLocation String  @map("dropoff_location")
+  rating          Int? // 1-5
+
+  currency    String   @db.VarChar(3)
+  completedAt DateTime @map("completed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([driverId, completedAt])
+  @@index([driverId, tripType])
+  @@map("trip_earnings")
+}
+
+enum TripEarningType {
+  RIDE
+  RIDE_SHARE
+  RIDE_PREMIUM
+  DELIVERY_FOOD
+  DELIVERY_PACKAGE
+  DELIVERY_GROCERY
+}
+
+/// Driver earnings goals
+model DriverGoal {
+  id       String         @id @default(uuid())
+  driverId String         @map("driver_id")
+  goalType DriverGoalType @map("goal_type")
+
+  // Target
+  targetValue  Decimal @map("target_value") @db.Decimal(12, 2)
+  currentValue Decimal @default(0) @map("current_value") @db.Decimal(12, 2)
+  targetUnit   String  @map("target_unit") // trips, earnings, hours, distance
+
+  // Period
+  periodStart DateTime @map("period_start")
+  periodEnd   DateTime @map("period_end")
+
+  // Status
+  achieved   Boolean   @default(false)
+  achievedAt DateTime? @map("achieved_at")
+  progress   Decimal   @default(0) @db.Decimal(5, 4) // 0-1
+
+  // Reward
+  rewardType    String?  @map("reward_type")
+  rewardValue   Decimal? @map("reward_value") @db.Decimal(10, 2)
+  rewardClaimed Boolean  @default(false) @map("reward_claimed")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([driverId, isActive])
+  @@index([driverId, goalType])
+  @@map("driver_goals")
+}
+
+enum DriverGoalType {
+  DAILY_EARNINGS
+  DAILY_TRIPS
+  WEEKLY_EARNINGS
+  WEEKLY_TRIPS
+  MONTHLY_EARNINGS
+  MONTHLY_TRIPS
+  ONLINE_HOURS
+  ACCEPTANCE_RATE
+  RATING_TARGET
+  CUSTOM
+}
+
+// -----------------------------------------
+// INCENTIVES & BONUSES
+// -----------------------------------------
+
+/// Incentive campaigns
+model Incentive {
+  id            String        @id @default(uuid())
+  name          String
+  description   String
+  incentiveType IncentiveType @map("incentive_type")
+
+  // Targeting
+  targetCities    String[] @map("target_cities")
+  targetTiers     String[] @map("target_tiers")
+  targetVehicles  String[] @map("target_vehicles")
+  maxParticipants Int?     @map("max_participants")
+
+  // Timing
+  startTime   DateTime @map("start_time")
+  endTime     DateTime @map("end_time")
+  activeHours Json?    @map("active_hours") // e.g., peak hours only
+  activeDays  Int[]    @map("active_days") // 0=Sun, 1=Mon, etc.
+
+  // Requirements
+  requirements Json // Varies by type
+
+  // Rewards (tiered)
+  rewardTiers Json @map("reward_tiers")
+
+  // Budget
+  totalBudget Decimal? @map("total_budget") @db.Decimal(12, 2)
+  spentBudget Decimal  @default(0) @map("spent_budget") @db.Decimal(12, 2)
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  progress DriverIncentiveProgress[]
+
+  @@index([isActive, startTime, endTime])
+  @@index([incentiveType])
+  @@map("incentives")
+}
+
+enum IncentiveType {
+  TRIP_COUNT // Complete X trips
+  CONSECUTIVE_TRIPS // Complete without declining
+  PEAK_HOUR // Bonus during peak
+  AREA_BONUS // High-demand areas
+  QUEST // Multi-tier targets
+  STREAK // Daily/weekly streaks
+  RATING_BONUS // Maintain rating
+  REFERRAL // Refer new drivers
+  FIRST_TRIP // New driver first trip
+  COMEBACK // Re-engage inactive
+}
+
+/// Driver progress on incentives
+model DriverIncentiveProgress {
+  id          String @id @default(uuid())
+  driverId    String @map("driver_id")
+  incentiveId String @map("incentive_id")
+
+  // Progress
+  currentValue   Decimal @default(0) @map("current_value") @db.Decimal(12, 2)
+  currentTier    Int     @default(0) @map("current_tier")
+  tiersCompleted Int[]   @map("tiers_completed")
+
+  // Earnings
+  totalEarned   Decimal @default(0) @map("total_earned") @db.Decimal(12, 2)
+  pendingPayout Decimal @default(0) @map("pending_payout") @db.Decimal(12, 2)
+
+  // Status
+  status      IncentiveProgressStatus @default(ACTIVE)
+  completedAt DateTime?               @map("completed_at")
+
+  // Tracking
+  tripIds     String[] @map("trip_ids")
+  lastUpdated DateTime @default(now()) @map("last_updated")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  incentive Incentive @relation(fields: [incentiveId], references: [id])
+
+  @@unique([driverId, incentiveId])
+  @@index([driverId, status])
+  @@map("driver_incentive_progress")
+}
+
+enum IncentiveProgressStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+  FORFEITED
+}
+
+/// Driver streaks
+model DriverStreak {
+  id         String     @id @default(uuid())
+  driverId   String     @map("driver_id")
+  streakType StreakType @map("streak_type")
+
+  // Current streak
+  currentCount   Int      @default(0) @map("current_count")
+  lastActivityAt DateTime @map("last_activity_at")
+
+  // Best streak
+  bestCount     Int       @default(0) @map("best_count")
+  bestStartDate DateTime? @map("best_start_date")
+  bestEndDate   DateTime? @map("best_end_date")
+
+  // Rewards
+  nextMilestone Int   @map("next_milestone")
+  milestonesHit Int[] @map("milestones_hit")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([driverId, streakType])
+  @@map("driver_streaks")
+}
+
+enum StreakType {
+  DAILY_ACTIVE // Active every day
+  DAILY_TRIPS // Complete trips daily
+  FIVE_STAR // Consecutive 5-star
+  ACCEPTANCE // High acceptance streak
+  COMPLETION // Completion streak
+}
+
+// -----------------------------------------
+// BENEFITS & INSURANCE
+// -----------------------------------------
+
+/// Available benefit packages
+model BenefitPackage {
+  id          String      @id @default(uuid())
+  name        String
+  description String
+  benefitType BenefitType @map("benefit_type")
+  provider    String // Insurance company, fuel partner
+
+  // Coverage details
+  coverageItems Json     @map("coverage_items")
+  exclusions    String[]
+  waitingPeriod Int      @default(0) @map("waiting_period") // days
+
+  // Pricing
+  monthlyPrice Decimal  @map("monthly_price") @db.Decimal(10, 2)
+  annualPrice  Decimal? @map("annual_price") @db.Decimal(10, 2)
+  currency     String   @db.VarChar(3)
+
+  // Eligibility
+  minTrips  Int     @default(0) @map("min_trips")
+  minTier   String? @map("min_tier")
+  minTenure Int     @default(0) @map("min_tenure") // days
+
+  // Metadata
+  termsUrl       String? @map("terms_url")
+  claimProcess   String? @map("claim_process")
+  supportContact String? @map("support_contact")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  enrollments BenefitEnrollment[]
+
+  @@index([benefitType, isActive])
+  @@map("benefit_packages")
+}
+
+enum BenefitType {
+  HEALTH_BASIC
+  HEALTH_FAMILY
+  VEHICLE_INSURANCE
+  ACCIDENT_COVER
+  LIFE_INSURANCE
+  FUEL_DISCOUNT
+  MAINTENANCE_DISCOUNT
+  PHONE_PLAN
+  SAVINGS_PROGRAM
+}
+
+/// Driver benefit enrollments
+model BenefitEnrollment {
+  id        String @id @default(uuid())
+  driverId  String @map("driver_id")
+  packageId String @map("package_id")
+
+  // Status
+  status        BenefitEnrollmentStatus @default(PENDING)
+  enrolledAt    DateTime?               @map("enrolled_at")
+  effectiveDate DateTime?               @map("effective_date")
+  expiryDate    DateTime?               @map("expiry_date")
+
+  // Payment
+  billingCycle  BillingCycle @default(MONTHLY) @map("billing_cycle")
+  lastPaymentAt DateTime?    @map("last_payment_at")
+  nextPaymentAt DateTime?    @map("next_payment_at")
+  autoRenew     Boolean      @default(true) @map("auto_renew")
+
+  // Dependents (for family plans)
+  dependents Json?
+
+  // Policy details
+  policyNumber   String? @map("policy_number")
+  policyDocument String? @map("policy_document")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  package BenefitPackage @relation(fields: [packageId], references: [id])
+  claims  BenefitClaim[]
+
+  @@unique([driverId, packageId])
+  @@index([driverId, status])
+  @@map("benefit_enrollments")
+}
+
+enum BenefitEnrollmentStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+}
+
+/// Benefit claims
+model BenefitClaim {
+  id           String @id @default(uuid())
+  enrollmentId String @map("enrollment_id")
+  driverId     String @map("driver_id")
+
+  // Claim details
+  claimType   String  @map("claim_type")
+  description String
+  amount      Decimal @db.Decimal(12, 2)
+  currency    String  @db.VarChar(3)
+
+  // Documentation
+  documents    String[]
+  incidentDate DateTime @map("incident_date")
+
+  // Processing
+  status      ClaimStatus @default(SUBMITTED)
+  reviewedBy  String?     @map("reviewed_by")
+  reviewedAt  DateTime?   @map("reviewed_at")
+  reviewNotes String?     @map("review_notes")
+
+  // Payout
+  approvedAmount Decimal?  @map("approved_amount") @db.Decimal(12, 2)
+  paidAmount     Decimal?  @map("paid_amount") @db.Decimal(12, 2)
+  paidAt         DateTime? @map("paid_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  enrollment BenefitEnrollment @relation(fields: [enrollmentId], references: [id])
+
+  @@index([driverId, status])
+  @@index([enrollmentId])
+  @@map("benefit_claims")
+}
+
+enum ClaimStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  PAID
+  APPEALED
+}
+
+/// Fuel discount program
+model FuelDiscount {
+  id       String @id @default(uuid())
+  driverId String @map("driver_id")
+
+  // Current discount
+  discountTier    String  @map("discount_tier")
+  discountPercent Decimal @map("discount_percent") @db.Decimal(5, 2)
+
+  // Usage
+  monthlyLimit  Decimal @map("monthly_limit") @db.Decimal(10, 2)
+  usedThisMonth Decimal @default(0) @map("used_this_month") @db.Decimal(10, 2)
+  totalSaved    Decimal @default(0) @map("total_saved") @db.Decimal(12, 2)
+
+  // Card
+  fuelCardNumber String? @map("fuel_card_number")
+  fuelCardPin    String? @map("fuel_card_pin")
+  cardStatus     String  @default("active") @map("card_status")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  transactions FuelTransaction[]
+
+  @@unique([driverId])
+  @@map("fuel_discounts")
+}
+
+/// Fuel transactions
+model FuelTransaction {
+  id         String @id @default(uuid())
+  discountId String @map("discount_id")
+  driverId   String @map("driver_id")
+
+  // Transaction
+  stationId      String  @map("station_id")
+  stationName    String  @map("station_name")
+  liters         Decimal @db.Decimal(8, 2)
+  pricePerLiter  Decimal @map("price_per_liter") @db.Decimal(8, 2)
+  originalAmount Decimal @map("original_amount") @db.Decimal(10, 2)
+  discountAmount Decimal @map("discount_amount") @db.Decimal(10, 2)
+  finalAmount    Decimal @map("final_amount") @db.Decimal(10, 2)
+
+  currency       String   @db.VarChar(3)
+  transactionRef String   @map("transaction_ref")
+  transactedAt   DateTime @map("transacted_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  discount FuelDiscount @relation(fields: [discountId], references: [id])
+
+  @@index([driverId, transactedAt])
+  @@map("fuel_transactions")
+}
+
+/// Partner fuel stations
+model FuelStation {
+  id    String @id @default(uuid())
+  name  String
+  brand String // Shell, Total, etc.
+
+  // Location
+  address   String
+  city      String
+  latitude  Decimal @db.Decimal(10, 8)
+  longitude Decimal @db.Decimal(11, 8)
+
+  // Discount info
+  discountPercent Decimal  @map("discount_percent") @db.Decimal(5, 2)
+  amenities       String[] // car_wash, air, toilet, shop
+
+  // Operating hours
+  operatingHours Json    @map("operating_hours")
+  is24Hours      Boolean @default(false) @map("is_24_hours")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([city, isActive])
+  @@index([latitude, longitude])
+  @@map("fuel_stations")
+}
+
+// -----------------------------------------
+// CAREER & PROGRESSION
+// -----------------------------------------
+
+/// Driver profile with tier info
+model DriverProfile {
+  id       String @id @default(uuid())
+  driverId String @unique @map("driver_id")
+
+  // Tier
+  currentTier  DriverTier @default(STARTER) @map("current_tier")
+  tierSince    DateTime   @default(now()) @map("tier_since")
+  tierProgress Decimal    @default(0) @map("tier_progress") @db.Decimal(5, 4)
+
+  // Lifetime stats
+  lifetimeTrips    Int     @default(0) @map("lifetime_trips")
+  lifetimeEarnings Decimal @default(0) @map("lifetime_earnings") @db.Decimal(14, 2)
+  lifetimeRating   Decimal @default(5) @map("lifetime_rating") @db.Decimal(3, 2)
+  totalRatings     Int     @default(0) @map("total_ratings")
+
+  // Commission
+  commissionRate Decimal @default(0.25) @map("commission_rate") @db.Decimal(5, 4)
+
+  // Preferences
+  preferredAreas String[] @map("preferred_areas")
+  workSchedule   Json?    @map("work_schedule")
+
+  // Status
+  onlineStatus DriverOnlineStatus @default(OFFLINE) @map("online_status")
+  lastOnlineAt DateTime?          @map("last_online_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  certifications DriverCertification[]
+  badges         DriverBadge[]
+
+  @@map("driver_profiles")
+}
+
+enum DriverTier {
+  STARTER
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+  DIAMOND
+}
+
+enum DriverOnlineStatus {
+  OFFLINE
+  ONLINE
+  ON_TRIP
+  BUSY
+}
+
+/// Driver tier history
+model DriverTierHistory {
+  id       String @id @default(uuid())
+  driverId String @map("driver_id")
+
+  previousTier DriverTier @map("previous_tier")
+  newTier      DriverTier @map("new_tier")
+  reason       String // promoted, demoted, maintained
+
+  // Stats at time of change
+  tripsAtChange  Int     @map("trips_at_change")
+  ratingAtChange Decimal @map("rating_at_change") @db.Decimal(3, 2)
+
+  changedAt DateTime @default(now()) @map("changed_at")
+
+  @@index([driverId, changedAt])
+  @@map("driver_tier_history")
+}
+
+// -----------------------------------------
+// TRAINING & CERTIFICATIONS
+// -----------------------------------------
+
+/// Training modules
+model TrainingModule {
+  id          String           @id @default(uuid())
+  name        String
+  description String
+  category    TrainingCategory
+
+  // Content
+  durationMinutes Int                 @map("duration_minutes")
+  contentType     TrainingContentType @map("content_type")
+  contentUrl      String              @map("content_url")
+
+  // Requirements
+  isRequired      Boolean  @default(false) @map("is_required")
+  prerequisiteIds String[] @map("prerequisite_ids")
+
+  // Assessment
+  hasAssessment Boolean @default(false) @map("has_assessment")
+  passingScore  Int     @default(70) @map("passing_score")
+  questions     Json?
+
+  // Rewards
+  certification String? // certification code on completion
+  rewardType    String? @map("reward_type")
+  rewardValue   Json?   @map("reward_value")
+
+  // Targeting
+  targetTiers    String[] @map("target_tiers")
+  targetVehicles String[] @map("target_vehicles")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  completions TrainingCompletion[]
+
+  @@index([category, isActive])
+  @@map("training_modules")
+}
+
+enum TrainingCategory {
+  ONBOARDING
+  SAFETY
+  CUSTOMER_SERVICE
+  VEHICLE_CARE
+  EV_SPECIALIST
+  DELIVERY_PRO
+  FLEET_MANAGEMENT
+  LEADERSHIP
+}
+
+enum TrainingContentType {
+  VIDEO
+  INTERACTIVE
+  DOCUMENT
+  QUIZ
+  WEBINAR
+}
+
+/// Driver training completions
+model TrainingCompletion {
+  id       String @id @default(uuid())
+  driverId String @map("driver_id")
+  moduleId String @map("module_id")
+
+  // Progress
+  status      TrainingStatus @default(NOT_STARTED)
+  progress    Decimal        @default(0) @db.Decimal(5, 4)
+  startedAt   DateTime?      @map("started_at")
+  completedAt DateTime?      @map("completed_at")
+
+  // Assessment
+  attemptCount Int     @default(0) @map("attempt_count")
+  bestScore    Int?    @map("best_score")
+  passed       Boolean @default(false)
+
+  // Time spent
+  timeSpentMinutes Int @default(0) @map("time_spent_minutes")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  module TrainingModule @relation(fields: [moduleId], references: [id])
+
+  @@unique([driverId, moduleId])
+  @@index([driverId, status])
+  @@map("training_completions")
+}
+
+enum TrainingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+/// Driver certifications
+model DriverCertification {
+  id        String @id @default(uuid())
+  driverId  String @map("driver_id")
+  profileId String @map("profile_id")
+
+  certificationCode String  @map("certification_code")
+  name              String
+  description       String?
+
+  // Validity
+  issuedAt  DateTime  @map("issued_at")
+  expiresAt DateTime? @map("expires_at")
+  isActive  Boolean   @default(true) @map("is_active")
+
+  // Verification
+  certificateUrl   String? @map("certificate_url")
+  verificationCode String? @map("verification_code")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  profile DriverProfile @relation(fields: [profileId], references: [id])
+
+  @@unique([driverId, certificationCode])
+  @@index([driverId, isActive])
+  @@map("driver_certifications")
+}
+
+/// Driver badges/achievements
+model DriverBadge {
+  id        String @id @default(uuid())
+  driverId  String @map("driver_id")
+  profileId String @map("profile_id")
+
+  badgeCode   String @map("badge_code")
+  name        String
+  description String
+  iconUrl     String @map("icon_url")
+
+  // Badge level (some badges have tiers)
+  level    Int @default(1)
+  maxLevel Int @default(1) @map("max_level")
+
+  earnedAt    DateTime @map("earned_at")
+  isDisplayed Boolean  @default(true) @map("is_displayed")
+
+  profile DriverProfile @relation(fields: [profileId], references: [id])
+
+  @@unique([driverId, badgeCode])
+  @@index([driverId])
+  @@map("driver_badges")
+}
+
+// -----------------------------------------
+// COMMUNITY & SOCIAL
+// -----------------------------------------
+
+/// Forum categories
+model ForumCategory {
+  id          String  @id @default(uuid())
+  name        String
+  description String
+  slug        String  @unique
+  iconUrl     String? @map("icon_url")
+
+  // Moderation
+  moderatorIds     String[] @map("moderator_ids")
+  requiresApproval Boolean  @default(false) @map("requires_approval")
+
+  // Stats
+  postCount Int @default(0) @map("post_count")
+
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  posts ForumPost[]
+
+  @@map("forum_categories")
+}
+
+/// Forum posts
+model ForumPost {
+  id         String @id @default(uuid())
+  categoryId String @map("category_id")
+  authorId   String @map("author_id")
+
+  title       String
+  content     String
+  contentHtml String @map("content_html")
+
+  // Metadata
+  tags     String[]
+  isPinned Boolean  @default(false) @map("is_pinned")
+  isLocked Boolean  @default(false) @map("is_locked")
+
+  // Stats
+  viewCount    Int @default(0) @map("view_count")
+  likeCount    Int @default(0) @map("like_count")
+  commentCount Int @default(0) @map("comment_count")
+
+  // Moderation
+  status      PostStatus @default(PUBLISHED)
+  moderatedBy String?    @map("moderated_by")
+  moderatedAt DateTime?  @map("moderated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  category ForumCategory  @relation(fields: [categoryId], references: [id])
+  comments ForumComment[]
+  likes    ForumLike[]
+
+  @@index([categoryId, createdAt])
+  @@index([authorId])
+  @@map("forum_posts")
+}
+
+enum PostStatus {
+  DRAFT
+  PENDING
+  PUBLISHED
+  HIDDEN
+  REMOVED
+}
+
+/// Forum comments
+model ForumComment {
+  id       String  @id @default(uuid())
+  postId   String  @map("post_id")
+  authorId String  @map("author_id")
+  parentId String? @map("parent_id") // For nested replies
+
+  content     String
+  contentHtml String @map("content_html")
+
+  // Stats
+  likeCount Int @default(0) @map("like_count")
+
+  // Moderation
+  status PostStatus @default(PUBLISHED)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  post    ForumPost      @relation(fields: [postId], references: [id])
+  parent  ForumComment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies ForumComment[] @relation("CommentReplies")
+
+  @@index([postId, createdAt])
+  @@index([authorId])
+  @@map("forum_comments")
+}
+
+/// Forum likes
+model ForumLike {
+  id        String  @id @default(uuid())
+  userId    String  @map("user_id")
+  postId    String? @map("post_id")
+  commentId String? @map("comment_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post ForumPost? @relation(fields: [postId], references: [id])
+
+  @@unique([userId, postId])
+  @@unique([userId, commentId])
+  @@map("forum_likes")
+}
+
+/// Driver events
+model DriverEvent {
+  id String @id @default(uuid())
+
+  // Event info
+  name        String
+  description String
+  eventType   DriverEventType @map("event_type")
+
+  // Location
+  city       String
+  venue      String
+  address    String
+  latitude   Decimal? @db.Decimal(10, 8)
+  longitude  Decimal? @db.Decimal(11, 8)
+  isVirtual  Boolean  @default(false) @map("is_virtual")
+  virtualUrl String?  @map("virtual_url")
+
+  // Timing
+  startTime DateTime @map("start_time")
+  endTime   DateTime @map("end_time")
+
+  // Capacity
+  maxAttendees     Int? @map("max_attendees")
+  currentAttendees Int  @default(0) @map("current_attendees")
+
+  // Requirements
+  minTier String? @map("min_tier")
+
+  imageUrl  String?  @map("image_url")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  registrations EventRegistration[]
+
+  @@index([city, startTime])
+  @@index([eventType, startTime])
+  @@map("driver_events")
+}
+
+enum DriverEventType {
+  MEETUP
+  TRAINING
+  CELEBRATION
+  FEEDBACK
+  TOWN_HALL
+  WEBINAR
+}
+
+/// Event registrations
+model EventRegistration {
+  id       String @id @default(uuid())
+  eventId  String @map("event_id")
+  driverId String @map("driver_id")
+
+  status      EventRegistrationStatus @default(REGISTERED)
+  checkedInAt DateTime?               @map("checked_in_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  event DriverEvent @relation(fields: [eventId], references: [id])
+
+  @@unique([eventId, driverId])
+  @@index([driverId])
+  @@map("event_registrations")
+}
+
+enum EventRegistrationStatus {
+  REGISTERED
+  WAITLIST
+  CHECKED_IN
+  NO_SHOW
+  CANCELLED
+}
+
+/// Mentorship program
+model MentorshipPair {
+  id       String @id @default(uuid())
+  mentorId String @map("mentor_id")
+  menteeId String @map("mentee_id")
+
+  // Status
+  status    MentorshipStatus @default(PENDING)
+  startedAt DateTime?        @map("started_at")
+  endedAt   DateTime?        @map("ended_at")
+
+  // Progress
+  sessionsCompleted Int @default(0) @map("sessions_completed")
+  targetSessions    Int @default(4) @map("target_sessions")
+
+  // Notes
+  goals String[]
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([mentorId, menteeId])
+  @@index([mentorId, status])
+  @@index([menteeId, status])
+  @@map("mentorship_pairs")
+}
+
+enum MentorshipStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// -----------------------------------------
+// FLEET OWNER PROGRAM
+// -----------------------------------------
+
+/// Fleet owner accounts
+model FleetOwner {
+  id      String @id @default(uuid())
+  ownerId String @unique @map("owner_id") // Reference to user
+
+  // Business info
+  businessName       String       @map("business_name")
+  businessType       BusinessType @map("business_type")
+  registrationNumber String?      @map("registration_number")
+  taxId              String?      @map("tax_id")
+
+  // Status
+  status     FleetStatus @default(PENDING)
+  approvedAt DateTime?   @map("approved_at")
+  approvedBy String?     @map("approved_by")
+
+  // Tier
+  fleetTier      FleetTier @default(STARTER) @map("fleet_tier")
+  commissionRate Decimal   @default(0.15) @map("commission_rate") @db.Decimal(5, 4)
+
+  // Stats
+  vehicleCount  Int @default(0) @map("vehicle_count")
+  activeDrivers Int @default(0) @map("active_drivers")
+
+  // Contact
+  contactEmail String @map("contact_email")
+  contactPhone String @map("contact_phone")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vehicles FleetVehicle[]
+  drivers  FleetDriver[]
+  earnings FleetEarnings[]
+
+  @@map("fleet_owners")
+}
+
+enum BusinessType {
+  INDIVIDUAL
+  PARTNERSHIP
+  LIMITED_COMPANY
+  COOPERATIVE
+}
+
+enum FleetStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+  TERMINATED
+}
+
+enum FleetTier {
+  STARTER // 1-5 vehicles
+  BRONZE // 6-20 vehicles
+  SILVER // 21-50 vehicles
+  GOLD // 51-100 vehicles
+  PLATINUM // 100+ vehicles
+}
+
+/// Fleet vehicles
+model FleetVehicle {
+  id      String @id @default(uuid())
+  fleetId String @map("fleet_id")
+
+  // Vehicle info
+  make        String
+  model       String
+  year        Int
+  color       String
+  plateNumber String  @unique @map("plate_number")
+  vin         String? @unique
+
+  // Classification
+  vehicleType     VehicleType @map("vehicle_type")
+  fuelType        FuelType    @map("fuel_type")
+  seatingCapacity Int         @map("seating_capacity")
+
+  // Documents
+  registrationDoc String? @map("registration_doc")
+  insuranceDoc    String? @map("insurance_doc")
+  inspectionDoc   String? @map("inspection_doc")
+
+  // Insurance
+  insuranceExpiry  DateTime? @map("insurance_expiry")
+  inspectionExpiry DateTime? @map("inspection_expiry")
+
+  // Status
+  status           FleetVehicleStatus @default(PENDING)
+  assignedDriverId String?            @map("assigned_driver_id")
+
+  // Telematics
+  currentLocation Json?     @map("current_location")
+  lastLocationAt  DateTime? @map("last_location_at")
+  odometer        Int       @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  fleet       FleetOwner           @relation(fields: [fleetId], references: [id])
+  maintenance VehicleMaintenance[]
+
+  @@index([fleetId, status])
+  @@map("fleet_vehicles")
+}
+
+enum VehicleType {
+  SEDAN
+  SUV
+  HATCHBACK
+  MINIVAN
+  MOTORCYCLE
+  TRICYCLE
+  CARGO_VAN
+  TRUCK
+}
+
+enum FuelType {
+  PETROL
+  DIESEL
+  CNG
+  ELECTRIC
+  HYBRID
+}
+
+enum FleetVehicleStatus {
+  PENDING
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+  DECOMMISSIONED
+}
+
+/// Fleet drivers (drivers assigned to fleets)
+model FleetDriver {
+  id       String @id @default(uuid())
+  fleetId  String @map("fleet_id")
+  driverId String @map("driver_id")
+
+  // Assignment
+  vehicleId  String?  @map("vehicle_id")
+  assignedAt DateTime @map("assigned_at")
+
+  // Status
+  status FleetDriverStatus @default(ACTIVE)
+
+  // Terms
+  revenueSharePercent Decimal @map("revenue_share_percent") @db.Decimal(5, 2)
+  weeklyTarget        Int?    @map("weekly_target")
+
+  // Performance
+  monthlyTrips    Int     @default(0) @map("monthly_trips")
+  monthlyEarnings Decimal @default(0) @map("monthly_earnings") @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  fleet FleetOwner @relation(fields: [fleetId], references: [id])
+
+  @@unique([fleetId, driverId])
+  @@index([driverId])
+  @@map("fleet_drivers")
+}
+
+enum FleetDriverStatus {
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+/// Fleet earnings
+model FleetEarnings {
+  id      String @id @default(uuid())
+  fleetId String @map("fleet_id")
+
+  // Period
+  periodStart DateTime @map("period_start")
+  periodEnd   DateTime @map("period_end")
+
+  // Earnings
+  grossEarnings Decimal @map("gross_earnings") @db.Decimal(14, 2)
+  driverPayouts Decimal @map("driver_payouts") @db.Decimal(14, 2)
+  platformFees  Decimal @map("platform_fees") @db.Decimal(14, 2)
+  netEarnings   Decimal @map("net_earnings") @db.Decimal(14, 2)
+
+  // Stats
+  tripCount      Int @map("trip_count")
+  activeVehicles Int @map("active_vehicles")
+  activeDrivers  Int @map("active_drivers")
+
+  currency  String   @db.VarChar(3)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  fleet FleetOwner @relation(fields: [fleetId], references: [id])
+
+  @@unique([fleetId, periodStart, periodEnd])
+  @@index([fleetId, periodStart])
+  @@map("fleet_earnings")
+}
+
+/// Vehicle maintenance records
+model VehicleMaintenance {
+  id        String @id @default(uuid())
+  vehicleId String @map("vehicle_id")
+
+  // Type
+  maintenanceType MaintenanceType @map("maintenance_type")
+  description     String
+
+  // Schedule
+  scheduledDate DateTime? @map("scheduled_date")
+  completedDate DateTime? @map("completed_date")
+
+  // Cost
+  cost     Decimal? @db.Decimal(10, 2)
+  currency String?  @db.VarChar(3)
+  receipt  String?
+
+  // Service provider
+  provider        String?
+  providerContact String? @map("provider_contact")
+
+  // Odometer
+  odometerAtService   Int?      @map("odometer_at_service")
+  nextServiceOdometer Int?      @map("next_service_odometer")
+  nextServiceDate     DateTime? @map("next_service_date")
+
+  status    MaintenanceStatus @default(SCHEDULED)
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  vehicle FleetVehicle @relation(fields: [vehicleId], references: [id])
+
+  @@index([vehicleId, status])
+  @@map("vehicle_maintenance")
+}
+
+enum MaintenanceType {
+  OIL_CHANGE
+  TIRE_ROTATION
+  BRAKE_SERVICE
+  ENGINE_SERVICE
+  TRANSMISSION
+  AC_SERVICE
+  ELECTRICAL
+  BODY_REPAIR
+  INSPECTION
+  OTHER
+}
+
+enum MaintenanceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// -----------------------------------------
+// DRIVER SUPPORT & FEEDBACK
+// -----------------------------------------
+
+/// Driver support tickets
+model DriverSupportTicket {
+  id       String @id @default(uuid())
+  driverId String @map("driver_id")
+
+  // Ticket info
+  category    SupportCategory
+  subcategory String?
+  subject     String
+  description String
+
+  // Related
+  tripId String? @map("trip_id")
+
+  // Priority
+  priority TicketPriority @default(NORMAL)
+
+  // Status
+  status     TicketStatus @default(OPEN)
+  assignedTo String?      @map("assigned_to")
+  resolvedAt DateTime?    @map("resolved_at")
+
+  // Satisfaction
+  satisfactionRating  Int?    @map("satisfaction_rating")
+  satisfactionComment String? @map("satisfaction_comment")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  messages SupportMessage[]
+
+  @@index([driverId, status])
+  @@index([status, priority])
+  @@map("driver_support_tickets")
+}
+
+enum SupportCategory {
+  EARNINGS
+  INCENTIVES
+  ACCOUNT
+  VEHICLE
+  PASSENGER
+  APP_ISSUE
+  SAFETY
+  OTHER
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_DRIVER
+  RESOLVED
+  CLOSED
+}
+
+/// Support ticket messages
+model SupportMessage {
+  id         String     @id @default(uuid())
+  ticketId   String     @map("ticket_id")
+  senderId   String     @map("sender_id")
+  senderType SenderType @map("sender_type")
+
+  message     String
+  attachments String[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  ticket DriverSupportTicket @relation(fields: [ticketId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("support_messages")
+}
+
+enum SenderType {
+  DRIVER
+  SUPPORT_AGENT
+  SYSTEM
+}
+
+/// Driver feedback/surveys
+model DriverFeedback {
+  id       String @id @default(uuid())
+  driverId String @map("driver_id")
+
+  // Survey info
+  surveyType    String @map("survey_type")
+  surveyVersion String @map("survey_version")
+
+  // Responses
+  responses     Json
+  overallRating Int? @map("overall_rating")
+  npsScore      Int? @map("nps_score")
+
+  // Metadata
+  completedAt      DateTime @map("completed_at")
+  timeSpentSeconds Int      @map("time_spent_seconds")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([driverId, surveyType])
+  @@index([surveyType, completedAt])
+  @@map("driver_feedback")
+}
+
+// -----------------------------------------
+// DEMAND PREDICTION & GUIDANCE
+// -----------------------------------------
+
+/// Demand heatmap data
+model DemandHeatmap {
+  id String @id @default(uuid())
+
+  // Location
+  city    String
+  h3Index String @map("h3_index") // H3 geospatial index
+
+  // Time
+  timestamp DateTime
+  hourOfDay Int      @map("hour_of_day")
+  dayOfWeek Int      @map("day_of_week")
+
+  // Demand metrics
+  demandScore     Decimal @map("demand_score") @db.Decimal(5, 2) // 0-100
+  surgeMultiplier Decimal @map("surge_multiplier") @db.Decimal(4, 2)
+  estimatedWait   Int     @map("estimated_wait") // seconds
+
+  // Supply
+  availableDrivers Int @map("available_drivers")
+  activeTrips      Int @map("active_trips")
+
+  // Predictions
+  predictedDemand Decimal? @map("predicted_demand") @db.Decimal(5, 2)
+  confidence      Decimal? @db.Decimal(5, 4)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([city, timestamp])
+  @@index([h3Index, timestamp])
+  @@map("demand_heatmaps")
+}
+
+/// Driver location guidance
+model DriverGuidance {
+  id       String @id @default(uuid())
+  driverId String @map("driver_id")
+
+  // Current location
+  currentH3 String @map("current_h3")
+
+  // Recommendation
+  recommendedH3        String  @map("recommended_h3")
+  distanceKm           Decimal @map("distance_km") @db.Decimal(6, 2)
+  estimatedTimeMinutes Int     @map("estimated_time_minutes")
+
+  // Expected benefit
+  currentDemand Decimal @map("current_demand") @db.Decimal(5, 2)
+  targetDemand  Decimal @map("target_demand") @db.Decimal(5, 2)
+  expectedSurge Decimal @map("expected_surge") @db.Decimal(4, 2)
+
+  // Action
+  wasFollowed   Boolean? @map("was_followed")
+  resultingTrip String?  @map("resulting_trip")
+
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([driverId, createdAt])
+  @@map("driver_guidance")
+}
+
+// -----------------------------------------
+// ANALYTICS & REPORTING
+// -----------------------------------------
+
+/// Driver analytics events
+model DriverAnalyticsEvent {
+  id       String @id @default(uuid())
+  driverId String @map("driver_id")
+
+  // Event
+  eventName       String @map("event_name")
+  eventCategory   String @map("event_category")
+  eventProperties Json   @map("event_properties")
+
+  // Context
+  sessionId  String? @map("session_id")
+  deviceInfo Json?   @map("device_info")
+  appVersion String? @map("app_version")
+
+  timestamp DateTime @default(now())
+
+  @@index([driverId, eventName, timestamp])
+  @@index([eventName, timestamp])
+  @@map("driver_analytics_events")
+}
+
+/// Driver daily reports
+model DriverDailyReport {
+  id         String   @id @default(uuid())
+  driverId   String   @map("driver_id")
+  reportDate DateTime @map("report_date")
+
+  // Summary
+  tripCount     Int     @map("trip_count")
+  onlineMinutes Int     @map("online_minutes")
+  activeMinutes Int     @map("active_minutes")
+  grossEarnings Decimal @map("gross_earnings") @db.Decimal(12, 2)
+  netEarnings   Decimal @map("net_earnings") @db.Decimal(12, 2)
+
+  // Performance
+  acceptanceRate Decimal  @map("acceptance_rate") @db.Decimal(5, 4)
+  completionRate Decimal  @map("completion_rate") @db.Decimal(5, 4)
+  averageRating  Decimal? @map("average_rating") @db.Decimal(3, 2)
+
+  // Comparisons
+  vsYesterday Json? @map("vs_yesterday")
+  vsWeekAvg   Json? @map("vs_week_avg")
+
+  currency    String   @db.VarChar(3)
+  generatedAt DateTime @default(now()) @map("generated_at")
+
+  @@unique([driverId, reportDate])
+  @@index([driverId, reportDate])
+  @@map("driver_daily_reports")
+}

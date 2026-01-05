@@ -1,7 +1,16 @@
 /**
  * Webhook Routes
  *
- * Handle callbacks from payment providers
+ * Handle callbacks from payment providers:
+ * - M-Pesa callbacks
+ * - MTN MoMo callbacks
+ * - Paystack webhooks
+ * - Flutterwave webhooks
+ *
+ * Security:
+ * - Signature verification
+ * - Idempotency checking
+ * - Rate limiting
  */
 
 import { Prisma } from "@prisma/client";
@@ -10,6 +19,7 @@ import { createHmac } from "node:crypto";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
+import { MpesaConfig, MpesaService } from "../providers/mpesa.service";
 import { PaymentStatus, TransactionStatus, TransactionType } from "../types";
 
 const webhookRoutes = new Hono();
@@ -54,6 +64,169 @@ function verifyStripeSignature(body: string, signature: string): boolean {
 
   return hash === expectedHash;
 }
+
+// ============================================
+// M-Pesa Webhook Routes
+// ============================================
+
+/**
+ * M-Pesa STK Push Callback
+ * POST /webhooks/mpesa/callback
+ */
+webhookRoutes.post("/mpesa/callback", async (c) => {
+  try {
+    const body = await c.req.json();
+
+    console.log(
+      "[M-Pesa Webhook] Received callback:",
+      JSON.stringify(body, null, 2)
+    );
+
+    const mpesaConfig: MpesaConfig = {
+      consumerKey: process.env.MPESA_CONSUMER_KEY!,
+      consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+      shortCode: process.env.MPESA_SHORT_CODE!,
+      passkey: process.env.MPESA_PASSKEY!,
+      callbackUrl: process.env.MPESA_CALLBACK_URL!,
+      environment:
+        (process.env.MPESA_ENVIRONMENT as "sandbox" | "production") ||
+        "sandbox",
+    };
+
+    const mpesaService = new MpesaService(mpesaConfig, prisma);
+    await mpesaService.handleCallback(body);
+
+    return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  } catch (error: any) {
+    console.error("[M-Pesa Webhook] Error:", error);
+    return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
+});
+
+/**
+ * M-Pesa Timeout Callback
+ * POST /webhooks/mpesa/timeout
+ */
+webhookRoutes.post("/mpesa/timeout", async (c) => {
+  try {
+    const body = await c.req.json();
+    console.log("[M-Pesa Timeout] Received:", JSON.stringify(body, null, 2));
+    return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  } catch (error: any) {
+    console.error("[M-Pesa Timeout] Error:", error);
+    return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
+});
+
+/**
+ * M-Pesa B2C Result Callback
+ * POST /webhooks/mpesa/b2c/result
+ *
+ * Called when B2C payout completes or fails
+ */
+webhookRoutes.post("/mpesa/b2c/result", async (c) => {
+  try {
+    const body = await c.req.json();
+
+    console.log(
+      "[M-Pesa B2C Result] Received callback:",
+      JSON.stringify(body, null, 2)
+    );
+
+    const mpesaConfig: MpesaConfig = {
+      consumerKey: process.env.MPESA_CONSUMER_KEY!,
+      consumerSecret: process.env.MPESA_CONSUMER_SECRET!,
+      shortCode: process.env.MPESA_SHORT_CODE!,
+      passkey: process.env.MPESA_PASSKEY!,
+      callbackUrl: process.env.MPESA_CALLBACK_URL!,
+      b2cShortCode: process.env.MPESA_B2C_SHORT_CODE,
+      b2cInitiatorName: process.env.MPESA_B2C_INITIATOR_NAME,
+      b2cSecurityCredential: process.env.MPESA_B2C_SECURITY_CREDENTIAL,
+      b2cQueueTimeoutUrl: process.env.MPESA_B2C_QUEUE_TIMEOUT_URL,
+      b2cResultUrl: process.env.MPESA_B2C_RESULT_URL,
+      environment:
+        (process.env.MPESA_ENVIRONMENT as "sandbox" | "production") ||
+        "sandbox",
+    };
+
+    const mpesaService = new MpesaService(mpesaConfig, prisma);
+
+    // Extract payout ID from callback
+    // M-Pesa includes OriginatorConversationID which we can map to payout
+    const originatorConversationId = body.Result?.OriginatorConversationID;
+
+    if (!originatorConversationId) {
+      console.error("[M-Pesa B2C] Missing OriginatorConversationID");
+      return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+    }
+
+    // Find payout by provider reference
+    const payout = await prisma.payout.findFirst({
+      where: {
+        providerReference: originatorConversationId,
+      },
+    });
+
+    if (!payout) {
+      console.error(
+        `[M-Pesa B2C] Payout not found for reference: ${originatorConversationId}`
+      );
+      return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+    }
+
+    // Handle the B2C callback
+    await mpesaService.handleB2CCallback(body, payout.id);
+
+    return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  } catch (error: any) {
+    console.error("[M-Pesa B2C Result] Error:", error);
+    return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
+});
+
+/**
+ * M-Pesa B2C Queue Timeout Callback
+ * POST /webhooks/mpesa/b2c/timeout
+ *
+ * Called when B2C request times out in queue
+ */
+webhookRoutes.post("/mpesa/b2c/timeout", async (c) => {
+  try {
+    const body = await c.req.json();
+
+    console.log(
+      "[M-Pesa B2C Timeout] Received callback:",
+      JSON.stringify(body, null, 2)
+    );
+
+    const originatorConversationId = body.Result?.OriginatorConversationID;
+
+    if (originatorConversationId) {
+      // Find and fail the payout
+      const payout = await prisma.payout.findFirst({
+        where: {
+          providerReference: originatorConversationId,
+        },
+      });
+
+      if (payout) {
+        await prisma.payout.update({
+          where: { id: payout.id },
+          data: {
+            status: "FAILED",
+            failedAt: new Date(),
+            failureReason: "B2C request timeout in queue",
+          },
+        });
+      }
+    }
+
+    return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  } catch (error: any) {
+    console.error("[M-Pesa B2C Timeout] Error:", error);
+    return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
+});
 
 // ============================================
 // Webhook Event Handlers
@@ -119,43 +292,43 @@ async function processPaystackEvent(event: WebhookEvent): Promise<void> {
     }
 
     case "transfer.success": {
-      // Payout completed
+      // Payout completed - use PaystackService to handle properly
       const payout = await prisma.payout.findFirst({
-        where: { providerReference: data.reference },
+        where: { providerReference: data.transfer_code },
       });
 
-      if (payout) {
-        await prisma.payout.update({
-          where: { id: payout.id },
-          data: {
-            status: "COMPLETED",
-            completedAt: new Date(),
-          },
-        });
+      if (payout && payout.status !== "COMPLETED") {
+        // Import PayoutService to complete the payout
+        const { PayoutService } = await import("../services/payout.service");
+        const payoutService = new PayoutService(prisma);
+
+        await payoutService.completePayout(payout.id, data.transfer_code);
+
+        console.log(`Paystack transfer ${payout.id} completed successfully`);
       }
       break;
     }
 
-    case "transfer.failed": {
+    case "transfer.failed":
+    case "transfer.reversed": {
+      // Payout failed or reversed
       const payout = await prisma.payout.findFirst({
-        where: { providerReference: data.reference },
+        where: { providerReference: data.transfer_code },
       });
 
-      if (payout) {
-        // Release locked funds
-        await prisma.$transaction([
-          prisma.wallet.update({
-            where: { id: payout.walletId },
-            data: { lockedBalance: { decrement: payout.amount } },
-          }),
-          prisma.payout.update({
-            where: { id: payout.id },
-            data: {
-              status: "FAILED",
-              failureReason: data.reason || "Transfer failed",
-            },
-          }),
-        ]);
+      if (payout && payout.status === "PROCESSING") {
+        // Import PayoutService to fail the payout properly
+        const { PayoutService } = await import("../services/payout.service");
+        const payoutService = new PayoutService(prisma);
+
+        const reason =
+          event.type === "transfer.reversed"
+            ? "Transfer reversed by Paystack"
+            : data.reason || "Transfer failed";
+
+        await payoutService.failPayout(payout.id, reason);
+
+        console.log(`Paystack transfer ${payout.id} ${event.type}: ${reason}`);
       }
       break;
     }

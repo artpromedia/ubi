@@ -1,0 +1,1703 @@
+// =============================================================================
+// UBI B2B PLATFORM DATABASE SCHEMA
+// =============================================================================
+// Comprehensive schema for enterprise business platform including:
+// - Corporate Accounts & Organizations
+// - Delivery API Infrastructure
+// - E-commerce Integrations
+// - Healthcare Transport
+// - School Transport
+// - API Management
+// - B2B Billing & Invoicing
+// =============================================================================
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum OrganizationType {
+  COMPANY
+  SCHOOL
+  HOSPITAL
+  HEALTHCARE_PROVIDER
+  PHARMACY
+  ECOMMERCE
+  LOGISTICS
+  GOVERNMENT
+  NGO
+  OTHER
+}
+
+enum OrganizationSize {
+  STARTUP // 1-10 employees
+  SMALL // 10-50 employees
+  MEDIUM // 50-200 employees
+  LARGE // 200-1000 employees
+  ENTERPRISE // 1000+ employees
+}
+
+enum OrganizationStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  CLOSED
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  FINANCE_ADMIN
+  MANAGER
+  DISPATCHER
+  MEMBER
+  VIEWER
+}
+
+enum MemberStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  QUOTED
+  CONFIRMED
+  DRIVER_ASSIGNED
+  PICKUP_EN_ROUTE
+  AT_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  AT_DROPOFF
+  DELIVERED
+  FAILED
+  CANCELLED
+  RETURNED
+}
+
+enum DeliveryPriority {
+  ECONOMY
+  STANDARD
+  EXPRESS
+  SAME_DAY
+  INSTANT
+  SCHEDULED
+}
+
+enum PackageSize {
+  ENVELOPE // Documents, small items
+  SMALL // Fits in a bag
+  MEDIUM // Fits in trunk
+  LARGE // Requires van
+  XLARGE // Requires truck
+  CUSTOM // Special dimensions
+}
+
+enum ProofOfDeliveryType {
+  NONE
+  PHOTO
+  SIGNATURE
+  OTP
+  PHOTO_SIGNATURE
+  PHOTO_OTP
+  BARCODE_SCAN
+}
+
+enum WebhookEvent {
+  // Delivery events
+  DELIVERY_CREATED
+  DELIVERY_QUOTED
+  DELIVERY_CONFIRMED
+  DELIVERY_DRIVER_ASSIGNED
+  DELIVERY_PICKUP_EN_ROUTE
+  DELIVERY_PICKED_UP
+  DELIVERY_IN_TRANSIT
+  DELIVERY_DELIVERED
+  DELIVERY_FAILED
+  DELIVERY_CANCELLED
+  // Trip events
+  TRIP_CREATED
+  TRIP_DRIVER_ASSIGNED
+  TRIP_STARTED
+  TRIP_COMPLETED
+  TRIP_CANCELLED
+  // Billing events
+  INVOICE_CREATED
+  INVOICE_PAID
+  PAYMENT_FAILED
+}
+
+enum WebhookStatus {
+  ACTIVE
+  PAUSED
+  FAILED
+  DISABLED
+}
+
+enum ApiKeyEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  SENT
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+enum BillingCycle {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  PAY_AS_YOU_GO
+}
+
+enum IntegrationType {
+  SHOPIFY
+  WOOCOMMERCE
+  MAGENTO
+  JUMIA
+  TAKEALOT
+  KONGA
+  CUSTOM_API
+  ERP_SAP
+  ERP_ORACLE
+  HR_WORKDAY
+  HR_BAMBOO
+}
+
+enum IntegrationStatus {
+  PENDING_SETUP
+  ACTIVE
+  PAUSED
+  ERROR
+  DISCONNECTED
+}
+
+enum SchoolRouteType {
+  MORNING_PICKUP
+  AFTERNOON_DROPOFF
+  FIELD_TRIP
+  SPECIAL_EVENT
+}
+
+enum StudentTransitStatus {
+  AT_HOME
+  WAITING_PICKUP
+  IN_VEHICLE
+  AT_SCHOOL
+  ABSENT
+}
+
+enum MedicalTransportType {
+  PRESCRIPTION_DELIVERY
+  LAB_SAMPLE_PICKUP
+  PATIENT_TRANSPORT
+  MEDICAL_EQUIPMENT
+  ORGAN_TRANSPORT
+  EMERGENCY_SUPPLY
+}
+
+enum VehicleRequirement {
+  STANDARD
+  WHEELCHAIR_ACCESSIBLE
+  STRETCHER_CAPABLE
+  COLD_CHAIN
+  TEMPERATURE_CONTROLLED
+  BIOHAZARD_CERTIFIED
+}
+
+// =============================================================================
+// ORGANIZATIONS & CORPORATE ACCOUNTS
+// =============================================================================
+
+/// Corporate organization account
+model B2BOrganization {
+  id        String           @id @default(cuid())
+  name      String
+  slug      String           @unique
+  legalName String?
+  type      OrganizationType
+  industry  String?
+  size      OrganizationSize @default(SMALL)
+
+  // Registration details
+  registrationNumber String? // Company registration
+  taxId              String? // Tax identification
+  vatNumber          String? // VAT number
+
+  // Contact information
+  email        String
+  billingEmail String?
+  phone        String?
+  website      String?
+
+  // Address
+  country      String // ISO 2-letter code
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  coordinates  Json? // { lat, lng }
+
+  // Branding
+  logoUrl      String?
+  primaryColor String?
+
+  // Settings
+  settings Json @default("{}")
+  // {
+  //   timezone: string,
+  //   currency: string,
+  //   language: string,
+  //   autoApprove: boolean,
+  //   maxSpendPerTrip: number,
+  //   allowedVehicleTypes: string[],
+  //   requireProjectCode: boolean,
+  //   ssoEnabled: boolean,
+  //   ssoProvider: string,
+  //   ssoDomain: string
+  // }
+
+  // Account status
+  status     OrganizationStatus @default(PENDING_VERIFICATION)
+  verifiedAt DateTime?
+  verifiedBy String?
+
+  // Billing
+  billingCycle    BillingCycle @default(MONTHLY)
+  creditLimit     Decimal      @default(0) @db.Decimal(12, 2)
+  currentBalance  Decimal      @default(0) @db.Decimal(12, 2)
+  paymentTermDays Int          @default(30)
+
+  // Contract
+  contractStartDate DateTime?
+  contractEndDate   DateTime?
+  contractDocument  String? // URL to contract PDF
+
+  // Metadata
+  referralCode     String? @unique
+  referredBy       String?
+  salesRepId       String?
+  accountManagerId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  members          B2BOrganizationMember[]
+  costCenters      B2BCostCenter[]
+  departments      B2BDepartment[]
+  approvalPolicies B2BApprovalPolicy[]
+  apiKeys          B2BApiKey[]
+  webhooks         B2BWebhook[]
+  deliveries       B2BDelivery[]
+  corporateTrips   B2BCorporateTrip[]
+  invoices         B2BInvoice[]
+  credits          B2BCredit[]
+  integrations     B2BIntegration[]
+  usageRecords     B2BUsageRecord[]
+
+  // School-specific
+  school B2BSchool?
+
+  // Healthcare-specific
+  healthcareProvider B2BHealthcareProvider?
+
+  @@index([type])
+  @@index([status])
+  @@index([country])
+  @@map("b2b_organizations")
+}
+
+/// Organization member (employee)
+model B2BOrganizationMember {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // User link
+  userId String? // Link to main user table
+
+  // Member details
+  email     String
+  firstName String
+  lastName  String
+  phone     String?
+
+  // Role & permissions
+  role        MemberRole @default(MEMBER)
+  permissions Json       @default("[]")
+  // ["create_trips", "approve_trips", "view_reports", "manage_members", ...]
+
+  // Organizational structure
+  departmentId String?
+  department   B2BDepartment? @relation(fields: [departmentId], references: [id])
+  employeeId   String? // Internal employee ID
+  title        String? // Job title
+  managerId    String? // Manager's member ID
+
+  // Spending controls
+  spendingLimitPerTrip Decimal? @db.Decimal(10, 2)
+  monthlyLimit         Decimal? @db.Decimal(10, 2)
+  requiresApproval     Boolean  @default(false)
+  defaultCostCenterId  String?
+
+  // Status
+  status       MemberStatus @default(INVITED)
+  invitedBy    String?
+  invitedAt    DateTime     @default(now())
+  joinedAt     DateTime?
+  lastActiveAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  corporateTrips   B2BCorporateTrip[]   @relation("MemberTrips")
+  bookedByTrips    B2BCorporateTrip[]   @relation("BookedByMember")
+  approvalRequests B2BApprovalRequest[] @relation("RequesterApprovals")
+  approvalsGiven   B2BApprovalRequest[] @relation("ApproverApprovals")
+
+  @@unique([organizationId, email])
+  @@unique([organizationId, employeeId])
+  @@index([userId])
+  @@index([status])
+  @@map("b2b_organization_members")
+}
+
+/// Cost center for budget tracking
+model B2BCostCenter {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name        String
+  code        String // e.g., "CC-001"
+  description String?
+
+  // Hierarchy
+  parentId String?
+  parent   B2BCostCenter?  @relation("CostCenterHierarchy", fields: [parentId], references: [id])
+  children B2BCostCenter[] @relation("CostCenterHierarchy")
+
+  // Budget
+  budget               Decimal? @db.Decimal(12, 2)
+  budgetPeriod         String? // "monthly", "quarterly", "annual"
+  budgetUsed           Decimal  @default(0) @db.Decimal(12, 2)
+  budgetAlertThreshold Int? // Percentage (e.g., 80)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  corporateTrips B2BCorporateTrip[]
+  deliveries     B2BDelivery[]
+
+  @@unique([organizationId, code])
+  @@map("b2b_cost_centers")
+}
+
+/// Department within organization
+model B2BDepartment {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name   String
+  code   String?
+  headId String? // Department head member ID
+
+  // Hierarchy
+  parentId String?
+  parent   B2BDepartment?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children B2BDepartment[] @relation("DepartmentHierarchy")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  members B2BOrganizationMember[]
+
+  @@unique([organizationId, code])
+  @@map("b2b_departments")
+}
+
+// =============================================================================
+// APPROVAL SYSTEM
+// =============================================================================
+
+/// Approval policy for corporate trips/spending
+model B2BApprovalPolicy {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  priority    Int     @default(0) // Higher = checked first
+
+  // Conditions (all must match)
+  conditions Json @default("[]")
+  // [
+  //   { field: "amount", operator: "gt", value: 50 },
+  //   { field: "vehicleType", operator: "in", value: ["premium", "luxury"] },
+  //   { field: "timeOfDay", operator: "between", value: [22, 6] }, // Night rides
+  //   { field: "distance", operator: "gt", value: 30 }
+  // ]
+
+  // What happens when conditions match
+  requiresApproval  Boolean @default(true)
+  approverRoles     Json    @default("[]") // ["manager", "admin"]
+  approverMemberIds Json    @default("[]") // Specific member IDs
+  autoApproveAfter  Int? // Auto-approve after X hours
+
+  // Actions
+  actions Json @default("[]")
+  // [
+  //   { type: "notify", recipients: ["admin"] },
+  //   { type: "flag", reason: "High value trip" },
+  //   { type: "block", message: "This trip type is not allowed" }
+  // ]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, isActive])
+  @@map("b2b_approval_policies")
+}
+
+/// Individual approval request
+model B2BApprovalRequest {
+  id             String @id @default(cuid())
+  organizationId String
+
+  // What needs approval
+  entityType String // "trip", "delivery", "expense"
+  entityId   String
+
+  // Who requested
+  requesterId String
+  requester   B2BOrganizationMember @relation("RequesterApprovals", fields: [requesterId], references: [id])
+
+  // Request details
+  amount   Decimal @db.Decimal(10, 2)
+  reason   String?
+  metadata Json    @default("{}")
+
+  // Approval details
+  status        ApprovalStatus         @default(PENDING)
+  approverId    String?
+  approver      B2BOrganizationMember? @relation("ApproverApprovals", fields: [approverId], references: [id])
+  approverNotes String?
+
+  // Timing
+  requestedAt DateTime  @default(now())
+  expiresAt   DateTime?
+  respondedAt DateTime?
+
+  // Policy that triggered this
+  policyId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, status])
+  @@index([requesterId])
+  @@index([entityType, entityId])
+  @@map("b2b_approval_requests")
+}
+
+// =============================================================================
+// CORPORATE TRIPS
+// =============================================================================
+
+/// Corporate ride booking
+model B2BCorporateTrip {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id])
+
+  // Member taking the trip
+  memberId String
+  member   B2BOrganizationMember @relation("MemberTrips", fields: [memberId], references: [id])
+
+  // Who booked (could be different - admin booking for employee)
+  bookedById String?
+  bookedBy   B2BOrganizationMember? @relation("BookedByMember", fields: [bookedById], references: [id])
+
+  // Link to actual trip
+  tripId String? @unique // Reference to main trips table
+
+  // Trip details
+  pickupAddress      String
+  pickupCoordinates  Json?
+  dropoffAddress     String
+  dropoffCoordinates Json?
+
+  // Scheduling
+  scheduledAt DateTime?
+  vehicleType String    @default("standard")
+
+  // Business context
+  purpose     String? // "Client meeting", "Airport transfer"
+  projectCode String?
+  notes       String?
+
+  // Cost center
+  costCenterId String?
+  costCenter   B2BCostCenter? @relation(fields: [costCenterId], references: [id])
+
+  // Pricing
+  estimatedCost Decimal? @db.Decimal(10, 2)
+  actualCost    Decimal? @db.Decimal(10, 2)
+  currency      String   @default("NGN")
+
+  // Approval
+  requiresApproval  Boolean        @default(false)
+  approvalStatus    ApprovalStatus @default(APPROVED)
+  approvalRequestId String?
+
+  // Status
+  status             String    @default("pending")
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+
+  // Receipt
+  receiptUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([memberId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("b2b_corporate_trips")
+}
+
+// =============================================================================
+// DELIVERY API
+// =============================================================================
+
+/// B2B Delivery request
+model B2BDelivery {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id])
+
+  // External reference
+  externalId   String? // Merchant's order ID
+  trackingCode String  @unique
+
+  // Status
+  status   DeliveryStatus   @default(PENDING)
+  priority DeliveryPriority @default(STANDARD)
+
+  // Pickup details
+  pickupAddress      String
+  pickupCoordinates  Json?
+  pickupContactName  String?
+  pickupContactPhone String?
+  pickupInstructions String?
+  pickupPlusCode     String?
+
+  // Dropoff details
+  dropoffAddress      String
+  dropoffCoordinates  Json?
+  dropoffContactName  String
+  dropoffContactPhone String
+  dropoffInstructions String?
+  dropoffPlusCode     String?
+
+  // Recipient
+  recipientName  String?
+  recipientPhone String?
+  recipientEmail String?
+
+  // Package details
+  packageSize        PackageSize @default(SMALL)
+  packageWeightKg    Decimal?    @db.Decimal(6, 2)
+  packageDescription String?
+  packageValue       Decimal?    @db.Decimal(10, 2)
+  isFragile          Boolean     @default(false)
+  requiresSignature  Boolean     @default(false)
+
+  // Special requirements
+  temperatureRequired String? // "cold", "frozen", "ambient"
+  ageVerificationMin  Int? // Minimum age for delivery
+
+  // Scheduling
+  scheduledPickupAt  DateTime?
+  scheduledDropoffAt DateTime?
+  pickupWindowStart  DateTime?
+  pickupWindowEnd    DateTime?
+  dropoffWindowStart DateTime?
+  dropoffWindowEnd   DateTime?
+
+  // Cash on delivery
+  codAmount      Decimal?  @db.Decimal(10, 2)
+  codCollected   Boolean   @default(false)
+  codCollectedAt DateTime?
+
+  // Insurance
+  isInsured       Boolean  @default(false)
+  insuranceAmount Decimal? @db.Decimal(10, 2)
+
+  // Proof of delivery
+  proofOfDeliveryType ProofOfDeliveryType @default(NONE)
+  proofPhotoUrl       String?
+  proofSignatureUrl   String?
+  proofOtp            String?
+  proofVerifiedAt     DateTime?
+
+  // Driver assignment
+  driverId   String?
+  vehicleId  String?
+  assignedAt DateTime?
+
+  // Timestamps
+  pickedUpAt  DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
+  cancelledAt DateTime?
+  returnedAt  DateTime?
+
+  // Failure/cancellation
+  failureReason      String?
+  cancellationReason String?
+
+  // Pricing
+  quotedPrice Decimal? @db.Decimal(10, 2)
+  finalPrice  Decimal? @db.Decimal(10, 2)
+  currency    String   @default("NGN")
+
+  // Distance/duration
+  distanceKm            Decimal? @db.Decimal(8, 2)
+  estimatedDurationMins Int?
+  actualDurationMins    Int?
+
+  // Cost center
+  costCenterId String?
+  costCenter   B2BCostCenter? @relation(fields: [costCenterId], references: [id])
+
+  // Batch reference (if part of batch)
+  batchId String?
+  batch   B2BDeliveryBatch? @relation(fields: [batchId], references: [id])
+
+  // API key that created this
+  apiKeyId String?
+
+  // Metadata
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  statusHistory B2BDeliveryStatusHistory[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([externalId])
+  @@index([trackingCode])
+  @@index([createdAt])
+  @@map("b2b_deliveries")
+}
+
+/// Delivery status history
+model B2BDeliveryStatusHistory {
+  id         String      @id @default(cuid())
+  deliveryId String
+  delivery   B2BDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  status   DeliveryStatus
+  location Json? // { lat, lng }
+  notes    String?
+  metadata Json           @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([deliveryId])
+  @@map("b2b_delivery_status_history")
+}
+
+/// Batch delivery request
+model B2BDeliveryBatch {
+  id             String @id @default(cuid())
+  organizationId String
+
+  name            String?
+  totalDeliveries Int
+  successfulCount Int     @default(0)
+  failedCount     Int     @default(0)
+
+  status String @default("processing") // processing, completed, partial
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  // Relations
+  deliveries B2BDelivery[]
+
+  @@map("b2b_delivery_batches")
+}
+
+// =============================================================================
+// API MANAGEMENT
+// =============================================================================
+
+/// API key for programmatic access
+model B2BApiKey {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name        String // "Production Key", "Development Key"
+  description String?
+
+  // Key details (only prefix stored, hash for verification)
+  keyPrefix     String // "ubi_live_" or "ubi_test_"
+  keyHash       String // Hashed full key
+  lastFourChars String // For display
+
+  environment ApiKeyEnvironment @default(SANDBOX)
+
+  // Permissions
+  permissions Json @default("[]")
+  // ["deliveries:create", "deliveries:read", "trips:create", ...]
+
+  // Rate limiting
+  rateLimitPerMinute Int  @default(1000)
+  rateLimitPerDay    Int?
+
+  // Security
+  ipWhitelist    Json @default("[]") // Array of IPs/CIDRs
+  allowedOrigins Json @default("[]") // CORS origins
+
+  // Usage tracking
+  totalRequests BigInt    @default(0)
+  lastUsedAt    DateTime?
+  lastUsedIp    String?
+
+  // Expiration
+  expiresAt DateTime?
+
+  isActive  Boolean @default(true)
+  createdBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  requestLogs B2BApiRequestLog[]
+
+  @@index([organizationId])
+  @@index([keyHash])
+  @@map("b2b_api_keys")
+}
+
+/// API request log for monitoring and debugging
+model B2BApiRequestLog {
+  id       String    @id @default(cuid())
+  apiKeyId String
+  apiKey   B2BApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  // Request details
+  requestId   String @unique
+  method      String // GET, POST, etc.
+  endpoint    String
+  queryParams Json?
+  requestBody Json?
+
+  // Response details
+  statusCode     Int
+  responseTimeMs Int
+  responseBody   Json?
+
+  // Client info
+  ipAddress String
+  userAgent String?
+
+  // Error info
+  errorCode    String?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+
+  @@index([apiKeyId])
+  @@index([endpoint])
+  @@index([statusCode])
+  @@index([createdAt])
+  @@map("b2b_api_request_logs")
+}
+
+/// Webhook configuration
+model B2BWebhook {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  url         String
+  description String?
+
+  // Events to subscribe to
+  events Json @default("[]") // Array of WebhookEvent
+
+  // Security
+  secret String // For signing payloads
+
+  // Status
+  status WebhookStatus @default(ACTIVE)
+
+  // Retry configuration
+  maxRetries   Int @default(5)
+  retryDelayMs Int @default(1000)
+
+  // Health tracking
+  lastTriggeredAt     DateTime?
+  lastSuccessAt       DateTime?
+  lastFailureAt       DateTime?
+  consecutiveFailures Int       @default(0)
+  totalDeliveries     BigInt    @default(0)
+  totalFailures       BigInt    @default(0)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  deliveryLogs B2BWebhookDeliveryLog[]
+
+  @@index([organizationId])
+  @@map("b2b_webhooks")
+}
+
+/// Webhook delivery log
+model B2BWebhookDeliveryLog {
+  id        String     @id @default(cuid())
+  webhookId String
+  webhook   B2BWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  event   String
+  payload Json
+
+  // Delivery details
+  attemptNumber  Int     @default(1)
+  statusCode     Int?
+  responseBody   String?
+  responseTimeMs Int?
+
+  // Status
+  success      Boolean
+  errorMessage String?
+
+  // Next retry
+  nextRetryAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([webhookId])
+  @@index([event])
+  @@index([createdAt])
+  @@map("b2b_webhook_delivery_logs")
+}
+
+// =============================================================================
+// E-COMMERCE INTEGRATIONS
+// =============================================================================
+
+/// Third-party integration configuration
+model B2BIntegration {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  type IntegrationType
+  name String // "My Shopify Store"
+
+  // Platform-specific identifiers
+  externalShopId    String? // Shopify shop domain, etc.
+  externalAccountId String?
+
+  // Credentials (encrypted)
+  credentials Json @default("{}")
+  // {
+  //   accessToken: "encrypted_token",
+  //   refreshToken: "encrypted_token",
+  //   apiKey: "encrypted_key",
+  //   webhookSecret: "secret"
+  // }
+
+  // Settings
+  settings Json @default("{}")
+  // {
+  //   autoDispatch: boolean,
+  //   defaultPriority: "standard",
+  //   proofOfDelivery: "photo",
+  //   syncInventory: boolean,
+  //   fulfillmentLocations: string[]
+  // }
+
+  // Status
+  status      IntegrationStatus @default(PENDING_SETUP)
+  lastSyncAt  DateTime?
+  lastErrorAt DateTime?
+  lastError   String?
+
+  // Stats
+  ordersProcessed   BigInt @default(0)
+  deliveriesCreated BigInt @default(0)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  orders B2BIntegrationOrder[]
+
+  @@unique([organizationId, type, externalShopId])
+  @@map("b2b_integrations")
+}
+
+/// Synced order from integration
+model B2BIntegrationOrder {
+  id            String         @id @default(cuid())
+  integrationId String
+  integration   B2BIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  externalOrderId     String // Order ID from platform
+  externalOrderNumber String? // Human-readable order number
+
+  // Order details (denormalized for quick access)
+  customerName    String?
+  customerEmail   String?
+  customerPhone   String?
+  shippingAddress Json
+
+  // Totals
+  subtotal     Decimal @db.Decimal(10, 2)
+  shippingCost Decimal @default(0) @db.Decimal(10, 2)
+  tax          Decimal @default(0) @db.Decimal(10, 2)
+  total        Decimal @db.Decimal(10, 2)
+  currency     String
+
+  // Items
+  lineItems Json @default("[]")
+
+  // Payment
+  paymentStatus String // "paid", "pending", "cod"
+  paymentMethod String?
+
+  // Fulfillment
+  fulfillmentStatus String @default("unfulfilled")
+
+  // UBI delivery
+  deliveryId        String?   @unique
+  deliveryCreatedAt DateTime?
+
+  // Raw data
+  rawOrderData Json?
+
+  syncedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([integrationId, externalOrderId])
+  @@index([fulfillmentStatus])
+  @@map("b2b_integration_orders")
+}
+
+// =============================================================================
+// SCHOOL TRANSPORT
+// =============================================================================
+
+/// School profile
+model B2BSchool {
+  id             String          @id @default(cuid())
+  organizationId String          @unique
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // School details
+  schoolType   String // "primary", "secondary", "mixed"
+  studentCount Int?
+
+  // Location
+  address       String
+  coordinates   Json // { lat, lng }
+  gateLocations Json   @default("[]") // Multiple entry points
+
+  // Schedule
+  startTime String // "07:30"
+  endTime   String // "14:30"
+  timezone  String @default("Africa/Lagos")
+
+  // Days of operation
+  operatingDays Json @default("[1,2,3,4,5]") // Mon-Fri
+
+  // Settings
+  settings Json @default("{}")
+  // {
+  //   requirePhotoVerification: boolean,
+  //   allowThirdPartyPickup: boolean,
+  //   maxPickupRadius: number,
+  //   parentNotifications: boolean
+  // }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  students B2BStudent[]
+  routes   B2BSchoolRoute[]
+  terms    B2BSchoolTerm[]
+
+  @@map("b2b_schools")
+}
+
+/// Academic term/semester
+model B2BSchoolTerm {
+  id       String    @id @default(cuid())
+  schoolId String
+  school   B2BSchool @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name      String // "Term 1 2024"
+  startDate DateTime
+  endDate   DateTime
+
+  // Holidays/breaks
+  holidays Json @default("[]")
+  // [{ name: "Mid-term break", startDate: "", endDate: "" }]
+
+  isActive Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@map("b2b_school_terms")
+}
+
+/// Student enrolled in school transport
+model B2BStudent {
+  id       String    @id @default(cuid())
+  schoolId String
+  school   B2BSchool @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  // Student details
+  studentId   String // School's student ID
+  firstName   String
+  lastName    String
+  dateOfBirth DateTime?
+  grade       String? // "Grade 5", "Year 7"
+  className   String? // "5A", "Blue"
+
+  // Photo for verification
+  photoUrl String?
+
+  // Home address
+  homeAddress     String
+  homeCoordinates Json // { lat, lng }
+
+  // Pickup point (if different from home)
+  pickupPointAddress     String?
+  pickupPointCoordinates Json?
+  pickupPointNotes       String?
+
+  // Guardians
+  guardians Json @default("[]")
+  // [
+  //   {
+  //     name: "Jane Doe",
+  //     relationship: "Mother",
+  //     phone: "+234...",
+  //     email: "jane@email.com",
+  //     userId: "optional_user_id",
+  //     isPrimary: true,
+  //     canPickup: true,
+  //     photoUrl: "optional"
+  //   }
+  // ]
+
+  // Special needs
+  specialNeeds String?
+  medicalNotes String?
+
+  // Transport subscription
+  subscriptionStatus String @default("active") // active, paused, cancelled
+  subscriptionType   String @default("both") // morning, afternoon, both
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  routeAssignments B2BRouteStudent[]
+  tripLogs         B2BStudentTripLog[]
+
+  @@unique([schoolId, studentId])
+  @@map("b2b_students")
+}
+
+/// School transport route
+model B2BSchoolRoute {
+  id       String    @id @default(cuid())
+  schoolId String
+  school   B2BSchool @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name String // "Route A - North"
+  type SchoolRouteType
+
+  // Route details
+  stops Json @default("[]")
+  // [
+  //   {
+  //     order: 1,
+  //     address: "...",
+  //     coordinates: { lat, lng },
+  //     estimatedTime: "07:00",
+  //     waitTimeMinutes: 2
+  //   }
+  // ]
+
+  // Timing
+  estimatedDurationMins Int?
+  startTime             String? // "06:30"
+
+  // Assignment
+  assignedDriverId  String?
+  assignedVehicleId String?
+  driverName        String?
+  driverPhone       String?
+  vehiclePlate      String?
+  vehicleCapacity   Int?
+
+  // Status
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  students     B2BRouteStudent[]
+  activeRoutes B2BActiveSchoolRoute[]
+
+  @@map("b2b_school_routes")
+}
+
+/// Student assignment to route
+model B2BRouteStudent {
+  id        String         @id @default(cuid())
+  routeId   String
+  route     B2BSchoolRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  studentId String
+  student   B2BStudent     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  stopOrder  Int // Which stop this student uses
+  pickupTime String? // Expected pickup time
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([routeId, studentId])
+  @@map("b2b_route_students")
+}
+
+/// Active/in-progress route session
+model B2BActiveSchoolRoute {
+  id      String         @id @default(cuid())
+  routeId String
+  route   B2BSchoolRoute @relation(fields: [routeId], references: [id])
+
+  date DateTime @db.Date
+
+  // Driver
+  driverId     String
+  driverName   String
+  vehiclePlate String
+
+  // Status
+  status String @default("not_started")
+  // not_started, in_progress, completed, cancelled
+
+  currentStopIndex Int   @default(0)
+  currentLocation  Json? // { lat, lng }
+
+  // Timing
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  // Student tracking
+  studentsExpected   Int
+  studentsPickedUp   Int @default(0)
+  studentsDroppedOff Int @default(0)
+  studentsAbsent     Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  studentLogs B2BStudentTripLog[]
+
+  @@unique([routeId, date])
+  @@map("b2b_active_school_routes")
+}
+
+/// Individual student pickup/dropoff log
+model B2BStudentTripLog {
+  id            String               @id @default(cuid())
+  activeRouteId String
+  activeRoute   B2BActiveSchoolRoute @relation(fields: [activeRouteId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       B2BStudent           @relation(fields: [studentId], references: [id])
+
+  // Event type
+  eventType String // "pickup", "dropoff", "absent"
+
+  // Location and time
+  location  Json? // { lat, lng }
+  timestamp DateTime @default(now())
+
+  // Verification
+  verifiedBy         String? // Driver ID or guardian ID
+  verificationMethod String? // "app", "manual", "photo"
+  photoUrl           String?
+
+  // Notes
+  notes String?
+
+  // Guardian notified
+  guardianNotifiedAt DateTime?
+
+  @@index([activeRouteId])
+  @@index([studentId])
+  @@map("b2b_student_trip_logs")
+}
+
+// =============================================================================
+// HEALTHCARE TRANSPORT
+// =============================================================================
+
+/// Healthcare provider profile
+model B2BHealthcareProvider {
+  id             String          @id @default(cuid())
+  organizationId String          @unique
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Provider type
+  providerType String // "hospital", "clinic", "pharmacy", "lab", "home_care"
+
+  // Licensing
+  licenseNumber String?
+  licenseExpiry DateTime?
+
+  // Certifications
+  certifications Json @default("[]")
+  // ["cold_chain", "biohazard", "controlled_substances"]
+
+  // Operating hours
+  operatingHours Json @default("{}")
+  // { mon: { open: "08:00", close: "18:00" }, ... }
+
+  // Emergency contact
+  emergencyContact Json?
+
+  // Settings
+  settings Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  medicalDeliveries B2BMedicalDelivery[]
+  patientTransports B2BPatientTransport[]
+
+  @@map("b2b_healthcare_providers")
+}
+
+/// Medical delivery request
+model B2BMedicalDelivery {
+  id         String                @id @default(cuid())
+  providerId String
+  provider   B2BHealthcareProvider @relation(fields: [providerId], references: [id])
+
+  // Type
+  deliveryType MedicalTransportType
+
+  // Reference
+  externalReference String? // Prescription number, lab order, etc.
+
+  // Pickup (provider location)
+  pickupAddress     String
+  pickupCoordinates Json?
+  pickupContact     Json // { name, phone }
+
+  // Delivery destination
+  deliveryAddress     String
+  deliveryCoordinates Json?
+  deliveryContact     Json // { name, phone }
+
+  // Patient info (optional, for HIPAA compliance handled separately)
+  patientReference String? // Anonymized reference
+
+  // Package details
+  packageDescription    String
+  isControlledSubstance Boolean @default(false)
+  requiresColdChain     Boolean @default(false)
+  temperatureRange      Json? // { min: 2, max: 8 }
+  isUrgent              Boolean @default(false)
+
+  // Verification requirements
+  requiresIdVerification  Boolean @default(false)
+  requiresAgeVerification Boolean @default(false)
+  minimumAge              Int?
+  requiresSignature       Boolean @default(true)
+
+  // Special handling
+  vehicleRequirement   VehicleRequirement @default(STANDARD)
+  handlingInstructions String?
+
+  // Status
+  status DeliveryStatus @default(PENDING)
+
+  // Assignment
+  driverId   String?
+  assignedAt DateTime?
+
+  // Timestamps
+  pickedUpAt  DateTime?
+  deliveredAt DateTime?
+
+  // Verification records
+  pickupVerification   Json?
+  deliveryVerification Json?
+  temperatureLog       Json  @default("[]") // For cold chain
+
+  // Pricing
+  price    Decimal? @db.Decimal(10, 2)
+  currency String   @default("NGN")
+
+  // Link to standard delivery
+  deliveryId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([providerId])
+  @@index([status])
+  @@map("b2b_medical_deliveries")
+}
+
+/// Patient transport request
+model B2BPatientTransport {
+  id         String                @id @default(cuid())
+  providerId String
+  provider   B2BHealthcareProvider @relation(fields: [providerId], references: [id])
+
+  // Booking reference
+  bookingReference String @unique
+
+  // Patient (anonymized)
+  patientReference String
+  patientFirstName String // For driver reference
+  patientPhone     String?
+
+  // Requirements
+  wheelchairAccessible Boolean @default(false)
+  stretcherRequired    Boolean @default(false)
+  oxygenRequired       Boolean @default(false)
+  accompanyingPersons  Int     @default(0)
+  medicalEquipment     Json    @default("[]")
+
+  // Pickup
+  pickupAddress      String
+  pickupCoordinates  Json?
+  pickupInstructions String?
+
+  // Destination
+  destinationAddress     String
+  destinationCoordinates Json?
+  destinationType        String // "hospital", "clinic", "home", "dialysis_center"
+
+  // Scheduling
+  appointmentTime DateTime
+  pickupTime      DateTime // When to pick up patient
+
+  // Return trip
+  returnTripRequired  Boolean   @default(false)
+  estimatedReturnTime DateTime?
+
+  // Status
+  status String @default("scheduled")
+  // scheduled, driver_assigned, en_route_pickup, patient_picked_up,
+  // en_route_destination, arrived, completed, cancelled, no_show
+
+  // Assignment
+  driverId   String?
+  vehicleId  String?
+  assignedAt DateTime?
+
+  // Timestamps
+  pickedUpAt  DateTime?
+  arrivedAt   DateTime?
+  completedAt DateTime?
+
+  // Trip link
+  tripId       String?
+  returnTripId String?
+
+  // Special notes
+  medicalNotes String?
+  driverNotes  String?
+
+  // Pricing
+  price    Decimal? @db.Decimal(10, 2)
+  currency String   @default("NGN")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([providerId])
+  @@index([appointmentTime])
+  @@map("b2b_patient_transports")
+}
+
+// =============================================================================
+// BILLING & INVOICING
+// =============================================================================
+
+/// Usage record for billing
+model B2BUsageRecord {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Period
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Usage type
+  usageType String // "ride", "delivery", "api_call", "sms", "storage"
+
+  // Quantity
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(10, 4)
+  totalAmount Decimal @db.Decimal(12, 2)
+  currency    String  @default("NGN")
+
+  // Details
+  details Json @default("{}")
+
+  // Invoice link
+  invoiceId String?
+  invoiced  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, periodStart])
+  @@index([invoiced])
+  @@map("b2b_usage_records")
+}
+
+/// Invoice
+model B2BInvoice {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id])
+
+  // Invoice number
+  invoiceNumber String @unique
+
+  // Period
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Line items
+  lineItems Json @default("[]")
+  // [
+  //   {
+  //     description: "Business Rides",
+  //     quantity: 150,
+  //     unitPrice: 500,
+  //     amount: 75000,
+  //     details: { ... }
+  //   }
+  // ]
+
+  // Totals
+  subtotal       Decimal @db.Decimal(12, 2)
+  taxRate        Decimal @default(0) @db.Decimal(5, 4)
+  taxAmount      Decimal @default(0) @db.Decimal(12, 2)
+  discountAmount Decimal @default(0) @db.Decimal(12, 2)
+  discountReason String?
+  creditApplied  Decimal @default(0) @db.Decimal(12, 2)
+  total          Decimal @db.Decimal(12, 2)
+  amountPaid     Decimal @default(0) @db.Decimal(12, 2)
+  amountDue      Decimal @db.Decimal(12, 2)
+  currency       String  @default("NGN")
+
+  // Status
+  status InvoiceStatus @default(DRAFT)
+
+  // Dates
+  issuedAt DateTime?
+  dueDate  DateTime?
+  paidAt   DateTime?
+
+  // PDF
+  pdfUrl String?
+
+  // Notes
+  notes         String?
+  internalNotes String?
+
+  // Payment details
+  paymentMethod    String?
+  paymentReference String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  payments B2BPayment[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("b2b_invoices")
+}
+
+/// Payment record
+model B2BPayment {
+  id        String     @id @default(cuid())
+  invoiceId String
+  invoice   B2BInvoice @relation(fields: [invoiceId], references: [id])
+
+  amount   Decimal @db.Decimal(12, 2)
+  currency String
+
+  // Payment method
+  paymentMethod    String // "bank_transfer", "card", "wallet", "credit"
+  paymentReference String?
+
+  // External payment info
+  externalPaymentId String?
+  paymentProvider   String? // "paystack", "flutterwave", "bank"
+
+  // Status
+  status String @default("pending")
+  // pending, processing, completed, failed, refunded
+
+  processedAt   DateTime?
+  failureReason String?
+
+  // Metadata
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("b2b_payments")
+}
+
+/// Credit/prepaid balance
+model B2BCredit {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   B2BOrganization @relation(fields: [organizationId], references: [id])
+
+  // Credit type
+  type String // "prepaid", "promotional", "adjustment", "refund"
+
+  // Amount
+  originalAmount  Decimal @db.Decimal(12, 2)
+  remainingAmount Decimal @db.Decimal(12, 2)
+  currency        String  @default("NGN")
+
+  // Validity
+  expiresAt DateTime?
+
+  // Reason
+  reason      String?
+  referenceId String? // Related invoice, promo code, etc.
+
+  // Status
+  status String @default("active") // active, depleted, expired, cancelled
+
+  issuedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("b2b_credits")
+}
+
+// =============================================================================
+// PRICING & CONTRACTS
+// =============================================================================
+
+/// Custom pricing for organization
+model B2BPricing {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  // Base rates (override defaults)
+  rideBaseRate      Decimal? @db.Decimal(10, 2)
+  ridePerKmRate     Decimal? @db.Decimal(10, 2)
+  ridePerMinuteRate Decimal? @db.Decimal(10, 2)
+
+  deliveryBaseRate  Decimal? @db.Decimal(10, 2)
+  deliveryPerKmRate Decimal? @db.Decimal(10, 2)
+
+  // Volume discounts
+  volumeDiscounts Json @default("[]")
+  // [
+  //   { minTrips: 100, discountPercent: 5 },
+  //   { minTrips: 500, discountPercent: 10 },
+  //   { minTrips: 1000, discountPercent: 15 }
+  // ]
+
+  // Subscription/platform fee
+  monthlyPlatformFee Decimal? @db.Decimal(10, 2)
+
+  // API pricing
+  includedApiCalls Int      @default(10000)
+  apiOverageRate   Decimal? @db.Decimal(10, 4)
+
+  // Effective dates
+  effectiveFrom  DateTime  @default(now())
+  effectiveUntil DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("b2b_pricing")
+}
+
+// =============================================================================
+// INDEXES FOR PERFORMANCE
+// =============================================================================
+
+// Additional composite indexes for common queries would be added based on
+// actual query patterns in production
