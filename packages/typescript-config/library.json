@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "UBI Library TypeScript Config (Alias for node-library.json)",
+  "extends": "./node-library.json"
+}

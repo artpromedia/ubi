@@ -9,13 +9,15 @@
     "nextjs.json",
     "react-library.json",
     "node-library.json",
-    "node-service.json"
+    "node-service.json",
+    "library.json"
   ],
   "exports": {
     "./base.json": "./base.json",
     "./nextjs.json": "./nextjs.json",
     "./react-library.json": "./react-library.json",
     "./node-library.json": "./node-library.json",
-    "./node-service.json": "./node-service.json"
+    "./node-service.json": "./node-service.json",
+    "./library.json": "./library.json"
   }
 }
