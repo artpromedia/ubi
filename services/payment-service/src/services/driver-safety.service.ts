@@ -36,7 +36,7 @@ export class DriverSafetyService extends EventEmitter {
 
   // Thresholds
   private readonly MAX_CONTINUOUS_DRIVING_HOURS = 10;
-  private readonly MIN_REST_BREAK_MINUTES = 30;
+  // private readonly _MIN_REST_BREAK_MINUTES = 30;
   private readonly MAX_WEEKLY_HOURS = 60;
   private readonly SPEEDING_THRESHOLD_KMH = 120;
   private readonly HARD_BRAKE_THRESHOLD_G = 0.5;
@@ -477,7 +477,7 @@ export class DriverSafetyService extends EventEmitter {
   async recordHardBraking(
     driverId: string,
     gForce: number,
-    location: Location
+    _location: Location
   ): Promise<void> {
     const profile = await this.getDriverSafetyProfile(driverId);
     profile.hardBrakingCount++;
@@ -758,7 +758,7 @@ export class DriverSafetyService extends EventEmitter {
         medium: 2,
         low: 1,
       };
-      return priorityOrder[b.priority] - priorityOrder[a.priority];
+      return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
     });
   }
 
@@ -891,18 +891,7 @@ interface SafetyRecommendation {
   action: string;
 }
 
-interface DriverIncident {
-  id: string;
-  driverId: string;
-  incidentType: IncidentType;
-  severity: IncidentSeverity;
-  tripId?: string;
-  description: string;
-  location?: Location;
-  status: IncidentStatus;
-  resolution?: string;
-  reportedAt: Date;
-}
+// DriverIncident is imported from ../types/safety.types
 
 // =============================================================================
 // EXPORT SINGLETON

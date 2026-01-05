@@ -24,6 +24,30 @@
 
 import { PrismaClient, RiskAction, RiskLevel } from "@prisma/client";
 
+/**
+ * Represents a single risk factor identified during fraud analysis
+ */
+export interface RiskFactor {
+  name: string;
+  score: number;
+  weight: number;
+  description: string;
+}
+
+/**
+ * Result of a fraud check including risk level, score, factors, and recommended action
+ */
+export interface FraudCheckResult {
+  assessmentId: string;
+  riskScore: number;
+  riskLevel: RiskLevel;
+  action: RiskAction;
+  factors: RiskFactor[];
+  reasons: string[];
+  requiresReview: boolean;
+  requires3DS: boolean;
+}
+
 export interface RiskAssessmentRequest {
   userId: string;
   amount: number;
@@ -237,7 +261,7 @@ export class FraudDetectionService {
   /**
    * Check velocity (transaction frequency)
    */
-  private async checkVelocity(userId: string, amount: number): Promise<number> {
+  private async checkVelocity(userId: string, _amount: number): Promise<number> {
     const now = new Date();
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -697,4 +721,24 @@ export class FraudDetectionService {
       },
     });
   }
+}
+
+// Singleton instance
+let fraudDetectionServiceInstance: FraudDetectionService | null = null;
+
+// Create new instance
+export function createFraudDetectionService(
+  prisma: PrismaClient
+): FraudDetectionService {
+  return new FraudDetectionService(prisma);
+}
+
+// Get singleton instance
+export function getFraudDetectionService(
+  prisma: PrismaClient
+): FraudDetectionService {
+  if (!fraudDetectionServiceInstance) {
+    fraudDetectionServiceInstance = createFraudDetectionService(prisma);
+  }
+  return fraudDetectionServiceInstance;
 }

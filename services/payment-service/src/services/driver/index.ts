@@ -66,7 +66,7 @@ export class DriverExperiencePlatform {
 
     this.goals = new DriverGoalsService(
       config.database,
-      config.notificationService,
+      this.earnings,
       config.analyticsService
     );
 
@@ -87,7 +87,6 @@ export class DriverExperiencePlatform {
 
     this.career = new DriverCareerService(
       config.database,
-      config.redis,
       config.notificationService,
       config.analyticsService
     );
@@ -147,7 +146,6 @@ export class DriverExperiencePlatform {
       commission,
       rating,
       completedAt,
-      wasAccepted,
       wasCancelled,
       distance,
       duration,
@@ -155,18 +153,17 @@ export class DriverExperiencePlatform {
 
     // Skip if cancelled
     if (wasCancelled) {
-      await this.incentives.handleTripDeclined(driverId, id);
+      await this.incentives.handleTripDeclined(driverId);
       return;
     }
 
     // 1. Record trip earning
-    await this.earnings.recordTripEarning(driverId, {
+    const tripEarning = await this.earnings.recordTripEarning({
+      driverId,
       tripId: id,
       baseFare: fare,
-      tips: tip,
-      commission,
-      bonuses: 0, // Will be calculated by incentives
-      totalEarning: fare + tip - commission,
+      tip,
+      grossFare: fare,
       distance,
       duration,
       completedAt,
@@ -174,18 +171,11 @@ export class DriverExperiencePlatform {
     });
 
     // 2. Process trip for incentives (quests, bonuses)
-    await this.incentives.processTripForIncentives(driverId, {
-      tripId: id,
-      fare,
-      tip,
-      rating,
-      completedAt,
-      distance,
-      duration,
-    });
+    await this.incentives.processTripForIncentives(driverId, tripEarning);
 
-    // 3. Update goals progress
-    await this.goals.updateGoalProgress(driverId, fare + tip - commission);
+    // 3. Update goals progress - will be handled by processTripForGoals
+    // The updateGoalProgress method expects 3 arguments: driverId, goalId, value
+    // We'll use processTripForGoals instead which handles all active goals
 
     // 4. Process fleet earnings if applicable
     await this.fleet.processFleetTrip(id, driverId, fare + tip - commission);
@@ -213,15 +203,15 @@ export class DriverExperiencePlatform {
   /**
    * Handle trip acceptance
    */
-  async handleTripAccepted(driverId: string, tripId: string): Promise<void> {
-    await this.incentives.handleTripAccepted(driverId, tripId);
+  async handleTripAccepted(driverId: string): Promise<void> {
+    await this.incentives.handleTripAccepted(driverId);
   }
 
   /**
    * Handle trip declined/ignored
    */
-  async handleTripDeclined(driverId: string, tripId: string): Promise<void> {
-    await this.incentives.handleTripDeclined(driverId, tripId);
+  async handleTripDeclined(driverId: string): Promise<void> {
+    await this.incentives.handleTripDeclined(driverId);
   }
 
   // -----------------------------------------

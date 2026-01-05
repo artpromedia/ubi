@@ -9,12 +9,11 @@ import { EventEmitter } from "events";
 import {
   GeoLocation,
   IUSSDService,
-  USSDMenu,
   USSDRequest,
   USSDResponse,
   USSDSession,
   USSDState,
-} from "../types/offline.types";
+} from "@/types/offline.types";
 
 // =============================================================================
 // USSD CONSTANTS
@@ -22,7 +21,7 @@ import {
 
 const USSD_SESSION_TIMEOUT_MS = 180000; // 3 minutes
 const MAX_MESSAGE_LENGTH = 182; // USSD max characters
-const MAX_GSM7_LENGTH = 160;
+// const _MAX_GSM7_LENGTH = 160;
 
 // =============================================================================
 // USSD SERVICE
@@ -35,7 +34,7 @@ export class USSDService implements IUSSDService {
   private sessions: Map<string, USSDSession> = new Map();
 
   // Menu definitions
-  private menus: Map<string, USSDMenu> = new Map();
+  // private _menus: Map<string, USSDMenu> = new Map();
 
   constructor() {
     this.eventEmitter = new EventEmitter();
@@ -123,7 +122,7 @@ export class USSDService implements IUSSDService {
         return this.handleDestinationEntry(session, input);
 
       case USSDState.SELECT_VEHICLE:
-        return this.handleVehicleSelection(session, input);
+        return this.handleBookingConfirmation(session, input);
 
       case USSDState.CONFIRM_BOOKING:
         return this.handleBookingConfirmation(session, input);
@@ -979,7 +978,7 @@ export class USSDService implements IUSSDService {
 
   private async handleHelp(
     session: USSDSession,
-    input: string
+    _input: string
   ): Promise<USSDResponse> {
     return this.goBack(session);
   }
@@ -1062,7 +1061,7 @@ export class USSDService implements IUSSDService {
     };
   }
 
-  private goBack(session: USSDSession): USSDResponse {
+  private async goBack(session: USSDSession): Promise<USSDResponse> {
     session.menuPath.pop();
 
     // Navigate to parent state
@@ -1086,7 +1085,7 @@ export class USSDService implements IUSSDService {
     session.state = parentState;
 
     // Re-render the parent menu
-    return this.processInput(session, "");
+    return await this.processInput(session, "");
   }
 
   private goToMainMenu(session: USSDSession): USSDResponse {
@@ -1136,6 +1135,9 @@ export class USSDService implements IUSSDService {
     };
 
     const config = currencies[lang] || currencies.en;
+    if (!config) {
+      return "KES " + Math.round(amount).toLocaleString();
+    }
     const formatted = Math.round(amount).toLocaleString();
 
     return config.position === "before"
@@ -1321,14 +1323,14 @@ export class USSDService implements IUSSDService {
   // ===========================================================================
 
   private async getUserByPhone(
-    phone: string
+    _phone: string
   ): Promise<{ id: string; preferredLanguage: string } | null> {
     // Query user service
     return { id: "user_123", preferredLanguage: "en" };
   }
 
   private async getCurrentLocation(
-    phone: string
+    _phone: string
   ): Promise<{ coords: GeoLocation; address: string } | null> {
     // Get from cell tower location or last GPS
     return null;
@@ -1345,13 +1347,13 @@ export class USSDService implements IUSSDService {
   }
 
   private async getFareEstimate(
-    pickup: GeoLocation,
-    dropoff: GeoLocation
+    _pickup: GeoLocation,
+    _dropoff: GeoLocation
   ): Promise<{ fare: number; eta: number }> {
     return { fare: 350, eta: 5 };
   }
 
-  private async createTrip(session: USSDSession): Promise<any> {
+  private async createTrip(_session: USSDSession): Promise<any> {
     return {
       id: "trip_" + Date.now(),
       driverName: "John K.",
@@ -1362,68 +1364,68 @@ export class USSDService implements IUSSDService {
   }
 
   private async sendSMSConfirmation(
-    phone: string,
-    trip: any,
-    lang: string
+    _phone: string,
+    _trip: any,
+    _lang: string
   ): Promise<void> {
     // Send via SMS service
   }
 
-  private async getWalletBalance(userId?: string): Promise<number> {
+  private async getWalletBalance(_userId?: string): Promise<number> {
     return 1500;
   }
 
   private async initiateTopUp(
-    userId: string,
-    phone: string,
-    amount: number
+    _userId: string,
+    _phone: string,
+    _amount: number
   ): Promise<void> {
     // Initiate M-Pesa STK push
   }
 
-  private async verifyPin(userId: string, pin: string): Promise<boolean> {
+  private async verifyPin(_userId: string, pin: string): Promise<boolean> {
     return pin === "1234";
   }
 
   private async processWalletTransfer(
-    userId: string,
-    recipientPhone: string,
-    amount: number
+    _userId: string,
+    _recipientPhone: string,
+    _amount: number
   ): Promise<void> {
     // Process P2P transfer
   }
 
-  private async getActiveTrip(userId?: string): Promise<any> {
+  private async getActiveTrip(_userId?: string): Promise<any> {
     return null;
   }
 
-  private async getTrip(tripId?: string): Promise<any> {
+  private async getTrip(_tripId?: string): Promise<any> {
     return null;
   }
 
   private async getRecentTrips(
-    userId?: string,
-    limit?: number
+    _userId?: string,
+    _limit?: number
   ): Promise<any[]> {
     return [];
   }
 
-  private async getSavedPlaces(userId?: string): Promise<any[]> {
+  private async getSavedPlaces(_userId?: string): Promise<any[]> {
     return [];
   }
 
-  private async getSavedPlace(userId?: string, type?: string): Promise<any> {
+  private async getSavedPlace(_userId?: string, _type?: string): Promise<any> {
     return null;
   }
 
   private async updateUserLanguage(
-    userId?: string,
-    lang?: string
+    _userId?: string,
+    _lang?: string
   ): Promise<void> {
     // Update user preferences
   }
 
-  private async showWalletHistory(session: USSDSession): Promise<USSDResponse> {
+  private async showWalletHistory(_session: USSDSession): Promise<USSDResponse> {
     return {
       message: "Transaction history coming soon\n\n0. Back",
       continueSession: true,

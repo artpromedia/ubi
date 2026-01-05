@@ -60,7 +60,7 @@ export class StreaksService {
    */
   async recordActivity(
     userId: string,
-    activityType: string = "general"
+    _activityType: string = "general"
   ): Promise<{
     streak: UserStreak;
     isNewDay: boolean;
@@ -262,7 +262,7 @@ export class StreaksService {
       orderBy: { date: "desc" },
     });
 
-    return history.map((h) => ({
+    return history.map((h: any) => ({
       date: h.date,
       activityType: h.activityType,
       streakValue: h.streakValue,
@@ -299,7 +299,7 @@ export class StreaksService {
     });
 
     const activityMap = new Map(
-      history.map((h) => [h.date.toISOString().split("T")[0], h])
+      history.map((h: any) => [h.date.toISOString().split("T")[0], h])
     );
 
     const calendar: Array<{
@@ -312,7 +312,7 @@ export class StreaksService {
     const current = new Date(startDate);
     while (current <= endDate) {
       const dateKey = current.toISOString().split("T")[0];
-      const activity = activityMap.get(dateKey);
+      const activity: any = activityMap.get(dateKey);
 
       calendar.push({
         date: new Date(current),
@@ -396,7 +396,7 @@ export class StreaksService {
     const hoursUntilMidnight =
       (midnight.getTime() - now.getTime()) / (1000 * 60 * 60);
 
-    return atRisk.map((streak) => ({
+    return atRisk.map((streak: any) => ({
       userId: streak.userId,
       currentStreak: streak.currentStreak,
       hoursUntilExpiry: Math.round(hoursUntilMidnight),
@@ -425,7 +425,7 @@ export class StreaksService {
       take: limit,
     });
 
-    return streaks.map((s, index) => ({
+    return streaks.map((s: any, index: number) => ({
       userId: s.userId,
       streak: type === "current" ? s.currentStreak : s.longestStreak,
       rank: index + 1,

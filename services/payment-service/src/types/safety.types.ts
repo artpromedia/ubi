@@ -266,6 +266,15 @@ export type SOSStatus =
 
 export type SOSEscalationLevel = "LEVEL_1" | "LEVEL_2" | "LEVEL_3" | "LEVEL_4";
 
+export type SOSTrigger =
+  | "button"
+  | "voice"
+  | "shake"
+  | "auto"
+  | "crash_detected"
+  | "timer"
+  | "accident_detection";
+
 export interface SOSIncident {
   id: string;
   userId: string;
@@ -273,7 +282,7 @@ export interface SOSIncident {
   driverId?: string;
   status: SOSStatus;
   escalationLevel: SOSEscalationLevel;
-  triggerMethod: "button" | "voice" | "shake" | "auto" | "crash_detected";
+  triggerMethod: SOSTrigger;
   triggerLocation: Location;
   currentLocation?: Location;
   batteryLevel?: number;
@@ -718,6 +727,7 @@ export interface DriverIncident {
   status: IncidentStatus;
   resolution?: string;
   actionTaken?: string;
+  reportedAt: Date;
 }
 
 // =============================================================================

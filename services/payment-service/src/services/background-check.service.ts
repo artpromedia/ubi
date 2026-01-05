@@ -440,6 +440,10 @@ export class BackgroundCheckService extends EventEmitter {
         (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0)
     )[0];
 
+    if (!latestCheck) {
+      return [];
+    }
+
     // In production, fetch actual user details
     const request: BackgroundCheckRequest = {
       userId,
@@ -626,7 +630,7 @@ class NigeriaPoliceProvider implements BackgroundCheckProvider {
     };
   }
 
-  async getStatus(reference: string): Promise<ProviderStatusResult> {
+  async getStatus(_reference: string): Promise<ProviderStatusResult> {
     // Simulate response
     return {
       status: "clear",
@@ -639,7 +643,7 @@ class KenyaPoliceProvider implements BackgroundCheckProvider {
   name = "kenya_police";
 
   async submitCheck(
-    params: ProviderCheckParams
+    _params: ProviderCheckParams
   ): Promise<ProviderSubmitResult> {
     console.log("[KenyaPolice] Submitting DCI check");
 
@@ -649,7 +653,7 @@ class KenyaPoliceProvider implements BackgroundCheckProvider {
     };
   }
 
-  async getStatus(reference: string): Promise<ProviderStatusResult> {
+  async getStatus(_reference: string): Promise<ProviderStatusResult> {
     return {
       status: "clear",
     };
@@ -660,7 +664,7 @@ class SAPSProvider implements BackgroundCheckProvider {
   name = "saps";
 
   async submitCheck(
-    params: ProviderCheckParams
+    _params: ProviderCheckParams
   ): Promise<ProviderSubmitResult> {
     console.log("[SAPS] Submitting South African police check");
 
@@ -670,7 +674,7 @@ class SAPSProvider implements BackgroundCheckProvider {
     };
   }
 
-  async getStatus(reference: string): Promise<ProviderStatusResult> {
+  async getStatus(_reference: string): Promise<ProviderStatusResult> {
     return {
       status: "clear",
     };
@@ -681,7 +685,7 @@ class GhanaPoliceProvider implements BackgroundCheckProvider {
   name = "ghana_police";
 
   async submitCheck(
-    params: ProviderCheckParams
+    _params: ProviderCheckParams
   ): Promise<ProviderSubmitResult> {
     console.log("[GhanaPolice] Submitting check");
 
@@ -691,7 +695,7 @@ class GhanaPoliceProvider implements BackgroundCheckProvider {
     };
   }
 
-  async getStatus(reference: string): Promise<ProviderStatusResult> {
+  async getStatus(_reference: string): Promise<ProviderStatusResult> {
     return {
       status: "clear",
     };
@@ -702,7 +706,7 @@ class CheckrProvider implements BackgroundCheckProvider {
   name = "checkr";
 
   async submitCheck(
-    params: ProviderCheckParams
+    _params: ProviderCheckParams
   ): Promise<ProviderSubmitResult> {
     console.log("[Checkr] Submitting international check");
 
@@ -712,7 +716,7 @@ class CheckrProvider implements BackgroundCheckProvider {
     };
   }
 
-  async getStatus(reference: string): Promise<ProviderStatusResult> {
+  async getStatus(_reference: string): Promise<ProviderStatusResult> {
     return {
       status: "clear",
     };

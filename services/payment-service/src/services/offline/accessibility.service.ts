@@ -13,7 +13,7 @@ import {
   ScreenReaderAnnouncement,
   VoiceCommand,
   WCAGLevel,
-} from "../types/offline.types";
+} from "@/types/offline.types";
 
 // =============================================================================
 // ACCESSIBILITY CONSTANTS
@@ -77,7 +77,7 @@ export class AccessibilityService implements IAccessibilityService {
   async updatePreferences(
     userId: string,
     updates: Partial<AccessibilityPreferences>
-  ): Promise<AccessibilityPreferences> {
+  ): Promise<void> {
     const current = await this.getPreferences(userId);
     const updated = { ...current, ...updates };
 
@@ -92,8 +92,6 @@ export class AccessibilityService implements IAccessibilityService {
       userId,
       preferences: updated,
     });
-
-    return updated;
   }
 
   private validatePreferences(prefs: AccessibilityPreferences): void {
@@ -109,15 +107,15 @@ export class AccessibilityService implements IAccessibilityService {
   }
 
   private async loadPreferences(
-    userId: string
+    _userId: string
   ): Promise<AccessibilityPreferences> {
     // In production, load from database
     return this.getDefaultPreferences();
   }
 
   private async savePreferences(
-    userId: string,
-    prefs: AccessibilityPreferences
+    _userId: string,
+    _prefs: AccessibilityPreferences
   ): Promise<void> {
     // In production, save to database
   }
@@ -147,7 +145,6 @@ export class AccessibilityService implements IAccessibilityService {
 
   parseVoiceCommand(transcript: string, context?: string): VoiceCommand {
     const normalized = transcript.toLowerCase().trim();
-    const words = normalized.split(/\s+/);
 
     // Determine intent
     let intent: string = "unknown";
@@ -184,7 +181,8 @@ export class AccessibilityService implements IAccessibilityService {
 
   private extractEntities(
     text: string,
-    intent: string
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _intent: string
   ): Record<string, string> {
     const entities: Record<string, string> = {};
 
@@ -197,7 +195,7 @@ export class AccessibilityService implements IAccessibilityService {
 
     for (const pattern of locationPatterns) {
       const match = text.match(pattern);
-      if (match) {
+      if (match && match[1]) {
         if (
           pattern.source.includes("from") ||
           pattern.source.includes("pick")
@@ -211,13 +209,13 @@ export class AccessibilityService implements IAccessibilityService {
 
     // Simple location (just a place name after "to")
     const toMatch = text.match(/(?:to|going to|go to)\s+(.+)/i);
-    if (toMatch && !entities.destination) {
+    if (toMatch && toMatch[1] && !entities.destination) {
       entities.destination = toMatch[1].trim();
     }
 
     // Number extraction (for amounts, ratings, etc.)
     const numberMatch = text.match(/(\d+(?:\.\d+)?)/);
-    if (numberMatch) {
+    if (numberMatch && numberMatch[1]) {
       entities.number = numberMatch[1];
     }
 
@@ -225,7 +223,7 @@ export class AccessibilityService implements IAccessibilityService {
   }
 
   private refineCommandByContext(command: VoiceCommand): VoiceCommand {
-    const { context, intent, normalized } = command;
+    const { context, normalized } = command;
 
     // Context-specific refinements
     switch (context) {
@@ -248,7 +246,7 @@ export class AccessibilityService implements IAccessibilityService {
 
       case "rating":
         const ratingMatch = normalized.match(/(\d)\s*(?:star|stars)?/);
-        if (ratingMatch) {
+        if (ratingMatch && ratingMatch[1]) {
           command.entities.rating = ratingMatch[1];
           command.intent = "RATE";
           command.confidence = 0.95;
@@ -278,7 +276,7 @@ export class AccessibilityService implements IAccessibilityService {
       trip_tracking: ["Call driver", "Cancel trip", "Refresh status"],
     };
 
-    return suggestions[context] || suggestions.main_menu;
+    return suggestions[context] || suggestions.main_menu || [];
   }
 
   // ===========================================================================
@@ -338,8 +336,11 @@ export class AccessibilityService implements IAccessibilityService {
       parts.push(element.label);
     }
 
-    if (element.type && typeLabels[element.type]) {
-      parts.push(typeLabels[element.type]);
+    if (element.type) {
+      const typeLabel = typeLabels[element.type];
+      if (typeLabel) {
+        parts.push(typeLabel);
+      }
     }
 
     if (element.value) {
@@ -357,8 +358,9 @@ export class AccessibilityService implements IAccessibilityService {
         loading: "loading",
         error: "has error",
       };
-      if (stateLabels[element.state]) {
-        parts.push(stateLabels[element.state]);
+      const stateLabel = stateLabels[element.state];
+      if (stateLabel) {
+        parts.push(stateLabel);
       }
     }
 
@@ -390,7 +392,8 @@ export class AccessibilityService implements IAccessibilityService {
         parts.push(`driving a ${trip.vehicleDescription}`);
       }
       if (trip.vehiclePlate) {
-        parts.push(`license plate ${this.spelledOut(trip.vehiclePlate)}`);
+        const plateText = String(trip.vehiclePlate);
+        parts.push(`license plate ${this.spelledOut(plateText)}`);
       }
     }
 
@@ -405,11 +408,14 @@ export class AccessibilityService implements IAccessibilityService {
     }
 
     // Locations
-    if (trip.pickupAddress) {
-      parts.push(`Picking up from ${trip.pickupAddress}`);
+    const pickupAddress = trip.pickupAddress ? String(trip.pickupAddress) : "";
+    const dropoffAddress = trip.dropoffAddress ? String(trip.dropoffAddress) : "";
+
+    if (pickupAddress) {
+      parts.push(`Picking up from ${pickupAddress}`);
     }
-    if (trip.dropoffAddress) {
-      parts.push(`Going to ${trip.dropoffAddress}`);
+    if (dropoffAddress) {
+      parts.push(`Going to ${dropoffAddress}`);
     }
 
     return parts.join(". ") + ".";
@@ -480,17 +486,19 @@ export class AccessibilityService implements IAccessibilityService {
     passesLargeTextAA: boolean;
   } {
     const fgLuminance = this.getRelativeLuminance(foreground);
-    const bgLuminance = this.getRelativeLuminance(background);
 
-    const lighter = Math.max(fgLuminance, bgLuminance);
-    const darker = Math.min(fgLuminance, bgLuminance);
+    const lighter = Math.max(fgLuminance, this.getRelativeLuminance(background));
+    const darker = Math.min(fgLuminance, this.getRelativeLuminance(background));
     const ratio = (lighter + 0.05) / (darker + 0.05);
+
+    const aaRequirements = CONTRAST_REQUIREMENTS[WCAGLevel.AA];
+    const aaaRequirements = CONTRAST_REQUIREMENTS[WCAGLevel.AAA];
 
     return {
       ratio: Math.round(ratio * 100) / 100,
-      passesAA: ratio >= CONTRAST_REQUIREMENTS[WCAGLevel.AA].normalText,
-      passesAAA: ratio >= CONTRAST_REQUIREMENTS[WCAGLevel.AAA].normalText,
-      passesLargeTextAA: ratio >= CONTRAST_REQUIREMENTS[WCAGLevel.AA].largeText,
+      passesAA: ratio >= (aaRequirements?.normalText || 4.5),
+      passesAAA: ratio >= (aaaRequirements?.normalText || 7.0),
+      passesLargeTextAA: ratio >= (aaRequirements?.largeText || 3.0),
     };
   }
 
@@ -509,15 +517,13 @@ export class AccessibilityService implements IAccessibilityService {
     });
 
     // Calculate luminance
-    return 0.2126 * sRGB[0] + 0.7152 * sRGB[1] + 0.0722 * sRGB[2];
+    return 0.2126 * (sRGB[0] || 0) + 0.7152 * (sRGB[1] || 0) + 0.0722 * (sRGB[2] || 0);
   }
 
   suggestContrastingColor(
     background: string,
     targetRatio: number = 4.5
   ): string {
-    const bgLuminance = this.getRelativeLuminance(background);
-
     // Try white first
     const whiteContrast = this.checkContrast("#FFFFFF", background);
     if (whiteContrast.ratio >= targetRatio) {
@@ -601,7 +607,7 @@ export class AccessibilityService implements IAccessibilityService {
 
   simplifyText(
     text: string,
-    targetLevel: "basic" | "simple" | "standard"
+    _targetLevel: "basic" | "simple" | "standard"
   ): string {
     // In production, use NLP to simplify
     // This is a simplified example
@@ -785,6 +791,11 @@ export class AccessibilityService implements IAccessibilityService {
   // ===========================================================================
   // EVENT HANDLERS
   // ===========================================================================
+
+  async getScreenReaderText(_screenName: string, _language: string): Promise<string> {
+    // Implementation for screen reader text
+    return "";
+  }
 
   on(event: string, listener: (...args: unknown[]) => void): void {
     this.eventEmitter.on(event, listener);

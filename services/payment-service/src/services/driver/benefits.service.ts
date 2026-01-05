@@ -40,17 +40,20 @@ const FUEL_DISCOUNT_TIERS = {
 // -----------------------------------------
 
 export class DriverBenefitsService implements IDriverBenefitsService {
-  private eventEmitter: EventEmitter;
-  private cache: Map<string, { data: unknown; expiry: number }> = new Map();
+  // @ts-expect-error - Reserved for future event handling
+  private _eventEmitter: EventEmitter;
+  // @ts-expect-error - Reserved for future caching
+  private _cache: Map<string, { data: unknown; expiry: number }> = new Map();
 
   constructor(
     private db: any,
-    private redis: any,
+    // @ts-expect-error - Reserved for future Redis integration
+    private _redis: any,
     private paymentService: any,
     private notificationService: any,
     private analyticsService: any
   ) {
-    this.eventEmitter = new EventEmitter();
+    this._eventEmitter = new EventEmitter();
   }
 
   // -----------------------------------------
@@ -355,6 +358,10 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     approvedAmount?: number,
     notes?: string
   ): Promise<BenefitClaim> {
+    const existingClaim = await this.db.benefitClaim.findUnique({
+      where: { id: claimId },
+    });
+
     const claim = await this.db.benefitClaim.update({
       where: { id: claimId },
       data: {
@@ -362,7 +369,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
         reviewedBy: reviewerId,
         reviewedAt: new Date(),
         reviewNotes: notes,
-        approvedAmount: approved ? approvedAmount || claim.amount : null,
+        approvedAmount: approved ? approvedAmount || existingClaim.amount : null,
       },
     });
 
@@ -1017,5 +1024,3 @@ interface DriverProfileForBenefits {
   tenureDays: number;
   vehicleType: string;
 }
-
-export { DriverBenefitsService };

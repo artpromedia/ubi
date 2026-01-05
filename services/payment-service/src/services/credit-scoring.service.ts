@@ -73,8 +73,8 @@ export class CreditScoringService {
       name: "Wallet Activity",
       score: walletActivityScore.score,
       weight: FACTOR_WEIGHTS.WALLET_ACTIVITY,
-      impact: this.getImpactLevel(walletActivityScore.score),
-      description: walletActivityScore.description,
+      impact: this.convertImpactLevel(this.getImpactLevel(walletActivityScore.score)),
+      details: walletActivityScore.description,
     });
 
     // 2. Payment History Score
@@ -83,8 +83,8 @@ export class CreditScoringService {
       name: "Payment History",
       score: paymentHistoryScore.score,
       weight: FACTOR_WEIGHTS.PAYMENT_HISTORY,
-      impact: this.getImpactLevel(paymentHistoryScore.score),
-      description: paymentHistoryScore.description,
+      impact: this.convertImpactLevel(this.getImpactLevel(paymentHistoryScore.score)),
+      details: paymentHistoryScore.description,
     });
 
     // 3. Savings Behavior Score
@@ -93,8 +93,8 @@ export class CreditScoringService {
       name: "Savings Behavior",
       score: savingsScore.score,
       weight: FACTOR_WEIGHTS.SAVINGS_BEHAVIOR,
-      impact: this.getImpactLevel(savingsScore.score),
-      description: savingsScore.description,
+      impact: this.convertImpactLevel(this.getImpactLevel(savingsScore.score)),
+      details: savingsScore.description,
     });
 
     // 4. Income Stability Score
@@ -103,8 +103,8 @@ export class CreditScoringService {
       name: "Income Stability",
       score: incomeScore.score,
       weight: FACTOR_WEIGHTS.INCOME_STABILITY,
-      impact: this.getImpactLevel(incomeScore.score),
-      description: incomeScore.description,
+      impact: this.convertImpactLevel(this.getImpactLevel(incomeScore.score)),
+      details: incomeScore.description,
     });
 
     // 5. Account Age Score
@@ -113,8 +113,8 @@ export class CreditScoringService {
       name: "Account Age",
       score: accountAgeScore.score,
       weight: FACTOR_WEIGHTS.ACCOUNT_AGE,
-      impact: this.getImpactLevel(accountAgeScore.score),
-      description: accountAgeScore.description,
+      impact: this.convertImpactLevel(this.getImpactLevel(accountAgeScore.score)),
+      details: accountAgeScore.description,
     });
 
     // 6. KYC Level Score
@@ -123,8 +123,8 @@ export class CreditScoringService {
       name: "Identity Verification",
       score: kycScore.score,
       weight: FACTOR_WEIGHTS.KYC_LEVEL,
-      impact: this.getImpactLevel(kycScore.score),
-      description: kycScore.description,
+      impact: this.convertImpactLevel(this.getImpactLevel(kycScore.score)),
+      details: kycScore.description,
     });
 
     // Calculate weighted total score
@@ -453,11 +453,11 @@ export class CreditScoringService {
     });
 
     const totalSavings = pockets.reduce(
-      (sum, p) => sum + Number(p.currentBalance),
+      (sum: number, p: any) => sum + Number(p.currentBalance),
       0
     );
-    const hasAutoSave = pockets.some((p) => p.autoSaveEnabled);
-    const hasRoundUp = pockets.some((p) => p.roundUpEnabled);
+    const hasAutoSave = pockets.some((p: any) => p.autoSaveEnabled);
+    const hasRoundUp = pockets.some((p: any) => p.roundUpEnabled);
 
     let score = 0;
 
@@ -586,7 +586,7 @@ export class CreditScoringService {
     score: number;
     description: string;
   } {
-    const scores: Record<string, { score: number; description: string }> = {
+    const scores = {
       NONE: { score: 0, description: "No verification" },
       BASIC: { score: 40, description: "Basic verification" },
       STANDARD: { score: 70, description: "Standard verification" },
@@ -594,13 +594,23 @@ export class CreditScoringService {
       FULL: { score: 100, description: "Fully verified" },
     };
 
-    return scores[kycLevel] || scores.NONE;
+    const result = scores[kycLevel as keyof typeof scores];
+    if (!result) {
+      return scores.NONE;
+    }
+    return result;
   }
 
   private getImpactLevel(score: number): "HIGH" | "MEDIUM" | "LOW" {
     if (score >= 70) return "HIGH";
     if (score >= 40) return "MEDIUM";
     return "LOW";
+  }
+
+  private convertImpactLevel(level: "HIGH" | "MEDIUM" | "LOW"): "positive" | "negative" | "neutral" {
+    if (level === "HIGH") return "positive";
+    if (level === "MEDIUM") return "neutral";
+    return "negative";
   }
 
   private getAccountAgeInMonths(createdAt: Date): number {

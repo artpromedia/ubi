@@ -10,7 +10,7 @@ import {
   ITranslationService,
   Language,
   TranslationRequest,
-} from "../types/offline.types";
+} from "@/types/offline.types";
 
 // =============================================================================
 // SUPPORTED LANGUAGES
@@ -21,131 +21,131 @@ const SUPPORTED_LANGUAGES: Language[] = [
     code: "en",
     name: "English",
     nativeName: "English",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "one,other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "hh:mm A",
     currencyFormat: "{symbol}{amount}",
-    numberFormat: "1,234.56",
-    enabled: true,
-    completeness: 100,
+    numberFormat: { decimal: ".", thousand: "," },
+    coverage: 100,
+    isActive: true,
   },
   {
     code: "sw",
     name: "Swahili",
     nativeName: "Kiswahili",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "one,other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "HH:mm",
     currencyFormat: "{symbol}{amount}",
-    numberFormat: "1,234.56",
-    enabled: true,
-    completeness: 95,
+    numberFormat: { decimal: ".", thousand: "," },
+    coverage: 95,
+    isActive: true,
   },
   {
     code: "yo",
     name: "Yoruba",
     nativeName: "Yorùbá",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "other", // No plural form distinction
     dateFormat: "DD/MM/YYYY",
     timeFormat: "HH:mm",
     currencyFormat: "₦{amount}",
-    numberFormat: "1,234.56",
-    enabled: true,
-    completeness: 80,
+    numberFormat: { decimal: ".", thousand: "," },
+    coverage: 80,
+    isActive: true,
   },
   {
     code: "ha",
     name: "Hausa",
     nativeName: "Hausa",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "one,other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "HH:mm",
     currencyFormat: "₦{amount}",
-    numberFormat: "1,234.56",
-    enabled: true,
-    completeness: 75,
+    numberFormat: { decimal: ".", thousand: "," },
+    coverage: 75,
+    isActive: true,
   },
   {
     code: "am",
     name: "Amharic",
     nativeName: "አማርኛ",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "one,other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "h:mm A",
     currencyFormat: "ETB {amount}",
-    numberFormat: "1,234.56",
-    enabled: true,
-    completeness: 70,
+    numberFormat: { decimal: ".", thousand: "," },
+    coverage: 70,
+    isActive: true,
   },
   {
     code: "ar",
     name: "Arabic",
     nativeName: "العربية",
-    direction: "rtl",
+    rtl: true,
     pluralRules: "zero,one,two,few,many,other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "hh:mm",
     currencyFormat: "{amount} {symbol}",
-    numberFormat: "١٬٢٣٤٫٥٦",
-    enabled: true,
-    completeness: 85,
+    numberFormat: { decimal: "٫", thousand: "٬" },
+    coverage: 85,
+    isActive: true,
   },
   {
     code: "fr",
     name: "French",
     nativeName: "Français",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "one,other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "HH:mm",
     currencyFormat: "{amount} {symbol}",
-    numberFormat: "1 234,56",
-    enabled: true,
-    completeness: 90,
+    numberFormat: { decimal: ",", thousand: " " },
+    coverage: 90,
+    isActive: true,
   },
   {
     code: "pt",
     name: "Portuguese",
     nativeName: "Português",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "one,other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "HH:mm",
     currencyFormat: "{symbol} {amount}",
-    numberFormat: "1.234,56",
-    enabled: true,
-    completeness: 85,
+    numberFormat: { decimal: ",", thousand: "." },
+    coverage: 85,
+    isActive: true,
   },
   {
     code: "zu",
     name: "Zulu",
     nativeName: "isiZulu",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "one,other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "HH:mm",
     currencyFormat: "R{amount}",
-    numberFormat: "1 234,56",
-    enabled: true,
-    completeness: 65,
+    numberFormat: { decimal: ",", thousand: " " },
+    coverage: 65,
+    isActive: true,
   },
   {
     code: "ig",
     name: "Igbo",
     nativeName: "Igbo",
-    direction: "ltr",
+    rtl: false,
     pluralRules: "other",
     dateFormat: "DD/MM/YYYY",
     timeFormat: "HH:mm",
     currencyFormat: "₦{amount}",
-    numberFormat: "1,234.56",
-    enabled: true,
-    completeness: 60,
+    numberFormat: { decimal: ".", thousand: "," },
+    coverage: 60,
+    isActive: true,
   },
 ];
 
@@ -551,7 +551,10 @@ export class TranslationService implements ITranslationService {
 
     // Add base language if it's a variant (e.g., en-US -> en)
     if (lang.includes("-")) {
-      chain.push(lang.split("-")[0]);
+      const baseLang = lang.split("-")[0];
+      if (baseLang) {
+        chain.push(baseLang);
+      }
     }
 
     // Add default language
@@ -568,8 +571,6 @@ export class TranslationService implements ITranslationService {
 
   private getPluralForm(lang: string, count: number): string {
     // ICU plural rules implementation
-    const rules = this.getPluralRules(lang);
-
     switch (lang) {
       case "ar":
         // Arabic has 6 plural forms
@@ -591,17 +592,13 @@ export class TranslationService implements ITranslationService {
     }
   }
 
-  private getPluralRules(lang: string): string[] {
-    const language = this.languages.get(lang);
-    return language?.pluralRules.split(",") || ["one", "other"];
-  }
 
   // ===========================================================================
   // LANGUAGE MANAGEMENT
   // ===========================================================================
 
   getSupportedLanguages(): Language[] {
-    return Array.from(this.languages.values()).filter((l) => l.enabled);
+    return Array.from(this.languages.values()).filter((l) => l.isActive);
   }
 
   getLanguage(code: string): Language | undefined {
@@ -622,7 +619,7 @@ export class TranslationService implements ITranslationService {
 
   isRTL(lang?: string): boolean {
     const language = this.languages.get(lang || this.currentLanguage);
-    return language?.direction === "rtl";
+    return language?.rtl === true;
   }
 
   // ===========================================================================
@@ -634,8 +631,6 @@ export class TranslationService implements ITranslationService {
     lang?: string,
     format?: "short" | "long" | "relative"
   ): string {
-    const language = this.languages.get(lang || this.currentLanguage);
-
     if (format === "relative") {
       return this.formatRelativeDate(date, lang);
     }
@@ -654,12 +649,11 @@ export class TranslationService implements ITranslationService {
 
   formatTime(date: Date, lang?: string): string {
     const language = this.languages.get(lang || this.currentLanguage);
+    const timeFormat = language?.timeFormat || "HH:mm";
     const options: Intl.DateTimeFormatOptions = {
       hour: "2-digit",
       minute: "2-digit",
-      hour12:
-        language?.timeFormat.includes("A") ||
-        language?.timeFormat.includes("a"),
+      hour12: timeFormat.includes("A") || timeFormat.includes("a"),
     };
 
     return new Intl.DateTimeFormat(
@@ -704,11 +698,8 @@ export class TranslationService implements ITranslationService {
   }
 
   formatCurrency(amount: number, currency: string, lang?: string): string {
-    const language = this.languages.get(lang || this.currentLanguage);
-
     // Handle Arabic numerals
     if (lang === "ar") {
-      const arabicNumerals = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
       const formatted = amount.toLocaleString("ar-EG", {
         style: "currency",
         currency,
@@ -798,9 +789,8 @@ export class TranslationService implements ITranslationService {
 
     for (const req of requests) {
       results[req.key] = this.t(req.key, req.params, {
-        language: req.targetLanguage,
+        language: req.language,
         count: req.count,
-        context: req.context,
       });
     }
 
@@ -867,6 +857,31 @@ export class TranslationService implements ITranslationService {
   // ===========================================================================
   // EVENT HANDLERS
   // ===========================================================================
+
+  async translate(request: TranslationRequest): Promise<string> {
+    return this.t(request.key, request.params, {
+      language: request.language,
+      count: request.count,
+    });
+  }
+
+  async getLanguages(): Promise<Language[]> {
+    return this.getSupportedLanguages();
+  }
+
+  async getNamespace(
+    _namespace: string,
+    language: string
+  ): Promise<Record<string, string>> {
+    const dict = this.translations.get(language) || {};
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(dict)) {
+      if (typeof value === "string") {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
 
   on(event: string, listener: (...args: unknown[]) => void): void {
     this.eventEmitter.on(event, listener);

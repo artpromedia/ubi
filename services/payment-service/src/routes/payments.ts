@@ -5,7 +5,6 @@
  */
 
 import { zValidator } from "@hono/zod-validator";
-import { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -281,7 +280,7 @@ paymentRoutes.post(
       const { walletId, amount } = JSON.parse(lockData);
 
       // Capture the payment
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await prisma.$transaction(async (tx) => {
         // Deduct from wallet
         await tx.wallet.update({
           where: { id: walletId },
@@ -460,7 +459,7 @@ paymentRoutes.post("/:paymentId/refund", async (c) => {
     });
 
     if (wallet) {
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await prisma.$transaction(async (tx) => {
         await tx.wallet.update({
           where: { id: wallet.id },
           data: { balance: { increment: refundAmount } },
@@ -653,7 +652,7 @@ paymentRoutes.post("/escrow/release", async (c) => {
   }
 
   // Execute transfer
-  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  await prisma.$transaction(async (tx) => {
     // Release lock from payer's wallet and deduct
     await tx.wallet.update({
       where: { id: escrow.walletId },

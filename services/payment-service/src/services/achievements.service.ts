@@ -328,7 +328,7 @@ export class AchievementsService {
     });
 
     const progressMap = new Map(
-      userAchievements.map((ua) => [ua.achievementId, ua])
+      userAchievements.map((ua: { achievementId: string; progress: number; unlockedAt: Date | null }) => [ua.achievementId, ua])
     );
 
     // Filter and enrich achievements
@@ -336,17 +336,17 @@ export class AchievementsService {
       if (a.isHidden) {
         // Show hidden achievements only if user has made progress
         const progress = progressMap.get(a.id);
-        return progress && progress.progress > 0;
+        return progress && (progress as { progress: number }).progress > 0;
       }
       return true;
     }).map((a) => ({
       ...a,
       userProgress: progressMap.get(a.id)
-        ? this.formatUserAchievement(progressMap.get(a.id)!)
+        ? this.formatUserAchievement(progressMap.get(a.id) as { id: string; achievementId: string; progress: number; unlockedAt: Date | null; rewardClaimed: boolean; claimedAt: Date | null; timesUnlocked: number; achievement?: unknown })
         : undefined,
     }));
 
-    const unlocked = userAchievements.filter((ua) => ua.unlockedAt).length;
+    const unlocked = userAchievements.filter((ua: { unlockedAt: Date | null }) => ua.unlockedAt).length;
     const total = ACHIEVEMENTS.filter((a) => !a.isHidden).length;
 
     return {
@@ -383,7 +383,7 @@ export class AchievementsService {
       orderBy: { unlockedAt: "desc" },
     });
 
-    return userAchievements.map((ua) => this.formatUserAchievement(ua));
+    return userAchievements.map((ua: { id: string; achievementId: string; progress: number; unlockedAt: Date | null; rewardClaimed: boolean; claimedAt: Date | null; timesUnlocked: number; achievement?: unknown }) => this.formatUserAchievement(ua));
   }
 
   /**
@@ -397,7 +397,7 @@ export class AchievementsService {
       target: number;
     }>;
   }> {
-    const { userId, type: eventType, data } = event;
+    const { userId, type: eventType } = event;
 
     const unlockedAchievements: Achievement[] = [];
     const progressUpdates: Array<{
@@ -507,7 +507,7 @@ export class AchievementsService {
       orderBy: { unlockedAt: "desc" },
     });
 
-    return recent.map((ua) => ({
+    return recent.map((ua: { achievementId: string; unlockedAt: Date | null }) => ({
       achievement: ACHIEVEMENTS.find((a) => a.id === ua.achievementId)!,
       unlockedAt: ua.unlockedAt!,
     }));
@@ -532,9 +532,9 @@ export class AchievementsService {
 
     // Sort and add ranks
     const sorted = leaderboard
-      .sort((a, b) => b._count.id - a._count.id)
+      .sort((a: { _count: { id: number } }, b: { _count: { id: number } }) => b._count.id - a._count.id)
       .slice(0, limit)
-      .map((entry, index) => ({
+      .map((entry: { userId: string; _count: { id: number } }, index: number) => ({
         userId: entry.userId,
         achievementCount: entry._count.id,
         totalPoints: 0, // TODO: Calculate from rewards
@@ -677,10 +677,13 @@ export class AchievementsService {
     // Check time-based criteria
     if (criteria.timeBefore) {
       const eventTime = new Date(event.timestamp);
-      const [hours, minutes] = criteria.timeBefore.split(":").map(Number);
+      const timeParts = criteria.timeBefore.split(":").map(Number);
+      const hours = timeParts[0];
+      const minutes = timeParts[1];
       if (
-        eventTime.getHours() > hours ||
-        (eventTime.getHours() === hours && eventTime.getMinutes() > minutes)
+        hours !== undefined && minutes !== undefined &&
+        (eventTime.getHours() > hours ||
+        (eventTime.getHours() === hours && eventTime.getMinutes() > minutes))
       ) {
         return false;
       }
@@ -702,7 +705,7 @@ export class AchievementsService {
     // Check condition
     if (criteria.condition) {
       for (const [key, value] of Object.entries(criteria.condition)) {
-        if (key === "afterHour") {
+        if (key === "afterHour" && typeof value === "number") {
           const eventTime = new Date(event.timestamp);
           if (eventTime.getHours() < value) return false;
         }

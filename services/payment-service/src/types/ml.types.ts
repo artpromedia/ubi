@@ -117,6 +117,25 @@ export enum FraudRiskLevel {
   CRITICAL = "CRITICAL",
 }
 
+export enum ChurnRiskLevel {
+  LOW = "LOW",
+  MEDIUM = "MEDIUM",
+  HIGH = "HIGH",
+  CRITICAL = "CRITICAL",
+}
+
+export enum InterventionType {
+  EMAIL = "EMAIL",
+  SMS = "SMS",
+  PUSH = "PUSH",
+  CALL = "CALL",
+  DISCOUNT = "DISCOUNT",
+  OFFER = "OFFER",
+  PERSONALIZED_CONTENT = "PERSONALIZED_CONTENT",
+  IN_APP_MESSAGE = "IN_APP_MESSAGE",
+  LOYALTY_BONUS = "LOYALTY_BONUS",
+}
+
 export enum FraudType {
   PAYMENT_FRAUD = "PAYMENT_FRAUD",
   ACCOUNT_TAKEOVER = "ACCOUNT_TAKEOVER",
@@ -896,7 +915,7 @@ export interface ChurnPrediction {
   id: string;
   userId: string;
   churnProbability: number;
-  riskLevel: "low" | "medium" | "high" | "critical";
+  riskLevel: ChurnRiskLevel;
   expectedChurnDays?: number;
   topFactors: ChurnFactor[];
   recommendedActions?: RetentionAction[];
@@ -922,13 +941,40 @@ export interface RetentionAction {
   config: Record<string, unknown>;
 }
 
+export interface RetentionIntervention {
+  id: string;
+  userId: string;
+  type: InterventionType;
+  priority: number;
+  message: string;
+  subject?: string;
+  offerDetails?: {
+    discountPercentage?: number;
+    discountAmount?: number;
+    validityDays?: number;
+    minimumOrderValue?: number;
+    promoCode?: string;
+  };
+  scheduledAt: Date;
+  deliveredAt?: Date;
+  openedAt?: Date;
+  clickedAt?: Date;
+  convertedAt?: Date;
+  status: "scheduled" | "delivered" | "opened" | "clicked" | "converted" | "failed";
+  campaignId?: string;
+  churnPredictionId?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface RetentionCampaign {
   id: string;
   name: string;
   description?: string;
   targetSegment: ChurnSegment;
   targetUserCount?: number;
-  interventionType: string;
+  interventionType: InterventionType;
   interventionConfig: InterventionConfig;
   startDate: Date;
   endDate?: Date;
@@ -940,7 +986,7 @@ export interface RetentionCampaign {
 }
 
 export interface ChurnSegment {
-  riskLevels: string[];
+  riskLevels: ChurnRiskLevel[];
   minChurnProbability?: number;
   maxChurnProbability?: number;
   lastActivityDays?: number;
@@ -971,7 +1017,7 @@ export interface CreateRetentionCampaignInput {
   name: string;
   description?: string;
   targetSegment: ChurnSegment;
-  interventionType: string;
+  interventionType: InterventionType;
   interventionConfig: InterventionConfig;
   startDate: Date;
   endDate?: Date;

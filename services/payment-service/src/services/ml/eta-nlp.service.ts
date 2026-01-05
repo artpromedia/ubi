@@ -7,26 +7,27 @@
 
 import { EventEmitter } from "events";
 import {
-  ETAComponent,
   ETAPrediction,
   ETAPredictionRequest,
   FeatureEntityType,
   GeoLocation,
-  IETAPredictionService,
   TrafficCondition,
-} from "../types/ml.types";
+} from "../../types/ml.types";
 import { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
 // ETA MODELS
 // =============================================================================
 
-interface RouteSegment {
-  start: GeoLocation;
-  end: GeoLocation;
-  distanceKm: number;
-  baseSpeedKmh: number;
-  roadType: "highway" | "major" | "minor" | "residential";
+interface ETAComponent {
+  type: "travel" | "traffic" | "wait" | "weather" | "pickup";
+  durationSeconds: number;
+  confidence: number;
+}
+
+interface IETAPredictionService {
+  predictETA(request: ETAPredictionRequest): Promise<ETAPrediction>;
+  updateTrafficConditions(h3Index: string, condition: TrafficCondition): Promise<void>;
 }
 
 interface TrafficData {
@@ -57,14 +58,6 @@ export class ETAPredictionService implements IETAPredictionService {
     condition: "clear",
     speedImpact: 1.0,
     visibility: 10,
-  };
-
-  // Road type base speeds (km/h) - Nigerian conditions
-  private readonly BASE_SPEEDS: Record<string, number> = {
-    highway: 80,
-    major: 45,
-    minor: 30,
-    residential: 20,
   };
 
   // Time of day factors
@@ -126,35 +119,29 @@ export class ETAPredictionService implements IETAPredictionService {
     // Calculate confidence based on data quality
     const confidence = this.calculateConfidence(components, request);
 
-    // Calculate range
-    const uncertainty = (1 - confidence) * totalSeconds;
-    const rangeMinSeconds = Math.max(0, totalSeconds - uncertainty);
-    const rangeMaxSeconds = totalSeconds + uncertainty;
-
     const prediction: ETAPrediction = {
       id: predictionId,
-      tripId: request.tripId,
-      origin: request.origin,
-      destination: request.destination,
-      estimatedSeconds: Math.round(totalSeconds),
-      estimatedArrival: new Date(Date.now() + totalSeconds * 1000),
+      predictedDuration: Math.round(totalSeconds),
+      predictedArrival: new Date(Date.now() + totalSeconds * 1000),
       confidence,
-      components,
-      rangeMinSeconds: Math.round(rangeMinSeconds),
-      rangeMaxSeconds: Math.round(rangeMaxSeconds),
+      breakdown: {
+        drivingTime: Math.round(
+          components.find((c) => c.type === "travel")?.durationSeconds || 0
+        ),
+        pickupTime: Math.round(
+          components.find((c) => c.type === "pickup")?.durationSeconds || 0
+        ),
+        trafficDelay: Math.round(
+          components.find((c) => c.type === "traffic")?.durationSeconds || 0
+        ),
+        weatherDelay: Math.round(
+          components.find((c) => c.type === "weather")?.durationSeconds || 0
+        ),
+        historicalAdjustment: 0,
+      },
       modelVersion: "eta-v1.0.0",
       latencyMs: Date.now() - startTime,
-      createdAt: new Date(),
     };
-
-    // Update feature store
-    if (request.tripId) {
-      await this.featureStore.setFeatureValue(
-        "trip_eta_seconds",
-        request.tripId,
-        totalSeconds
-      );
-    }
 
     this.eventEmitter.emit("eta:predicted", prediction);
 
@@ -192,7 +179,7 @@ export class ETAPredictionService implements IETAPredictionService {
 
     // 3. Time of day adjustment
     const timeOfDay = this.getTimeOfDay();
-    const timeFactor = this.TIME_FACTORS[timeOfDay];
+    const timeFactor = this.TIME_FACTORS[timeOfDay] || 0.8;
     const timeAdjustment = baseTravelSeconds * (1 / timeFactor - 1);
     if (Math.abs(timeAdjustment) > 60) {
       components.push({
@@ -203,7 +190,7 @@ export class ETAPredictionService implements IETAPredictionService {
     }
 
     // 4. Weather impact
-    const weatherFactor = this.WEATHER_FACTORS[this.weatherCache.condition];
+    const weatherFactor = this.WEATHER_FACTORS[this.weatherCache.condition] || 1.0;
     const weatherDelay = baseTravelSeconds * (1 / weatherFactor - 1);
     if (weatherDelay > 60) {
       components.push({
@@ -228,18 +215,6 @@ export class ETAPredictionService implements IETAPredictionService {
       }
     }
 
-    // 6. Driver-specific adjustments
-    if (request.driverId) {
-      const driverAdjustment = await this.getDriverAdjustment(request.driverId);
-      if (Math.abs(driverAdjustment) > 30) {
-        components.push({
-          type: "travel",
-          durationSeconds: driverAdjustment,
-          confidence: 0.65,
-        });
-      }
-    }
-
     return components;
   }
 
@@ -248,8 +223,8 @@ export class ETAPredictionService implements IETAPredictionService {
   // ===========================================================================
 
   private async getTrafficMultiplier(
-    origin: GeoLocation,
-    destination: GeoLocation
+    _origin: GeoLocation,
+    _destination: GeoLocation
   ): Promise<number> {
     // In production, query real-time traffic data
     const timeOfDay = this.getTimeOfDay();
@@ -273,23 +248,29 @@ export class ETAPredictionService implements IETAPredictionService {
     this.trafficCache.set(h3Index, {
       segmentId: h3Index,
       speedMultiplier: this.conditionToMultiplier(condition),
-      congestionLevel: condition.congestionLevel,
-      incidents: condition.incidents || [],
+      congestionLevel: this.getCongestionLevelName(condition.congestionLevel),
+      incidents: [],
       lastUpdated: new Date(),
     });
 
     this.eventEmitter.emit("traffic:updated", { h3Index, condition });
   }
 
+  private getCongestionLevelName(level: number): "free" | "light" | "moderate" | "heavy" | "severe" {
+    if (level < 0.2) return "free";
+    if (level < 0.4) return "light";
+    if (level < 0.6) return "moderate";
+    if (level < 0.8) return "heavy";
+    return "severe";
+  }
+
   private conditionToMultiplier(condition: TrafficCondition): number {
-    const multipliers: Record<string, number> = {
-      free: 1.0,
-      light: 0.85,
-      moderate: 0.65,
-      heavy: 0.4,
-      severe: 0.2,
-    };
-    return multipliers[condition.congestionLevel] || 0.7;
+    const congestionLevel = condition.congestionLevel;
+    if (congestionLevel < 0.2) return 1.0;
+    if (congestionLevel < 0.4) return 0.85;
+    if (congestionLevel < 0.6) return 0.65;
+    if (congestionLevel < 0.8) return 0.4;
+    return 0.2;
   }
 
   // ===========================================================================
@@ -299,26 +280,6 @@ export class ETAPredictionService implements IETAPredictionService {
   updateWeatherConditions(weather: WeatherConditions): void {
     this.weatherCache = weather;
     this.eventEmitter.emit("weather:updated", weather);
-  }
-
-  // ===========================================================================
-  // DRIVER-SPECIFIC
-  // ===========================================================================
-
-  private async getDriverAdjustment(driverId: string): Promise<number> {
-    // Get driver's historical performance
-    const response = await this.featureStore.getFeatures({
-      entityType: FeatureEntityType.DRIVER,
-      entityIds: [driverId],
-      featureNames: ["driver_avg_speed_ratio", "driver_route_efficiency"],
-    });
-
-    const features = response.vectors[0]?.features || {};
-    const speedRatio = Number(features.driver_avg_speed_ratio || 1.0);
-    const efficiency = Number(features.driver_route_efficiency || 1.0);
-
-    // Positive = slower than average, negative = faster
-    return (1 / speedRatio - 1) * 60; // seconds adjustment per minute
   }
 
   // ===========================================================================
@@ -332,7 +293,7 @@ export class ETAPredictionService implements IETAPredictionService {
     // Get nearby driver density
     const locationFeatures = await this.featureStore.getFeatures({
       entityType: FeatureEntityType.LOCATION,
-      entityIds: [`${location.lat}_${location.lng}`],
+      entityIds: [`${location.latitude}_${location.longitude}`],
       featureNames: ["location_driver_density", "location_avg_pickup_time"],
     });
 
@@ -357,12 +318,11 @@ export class ETAPredictionService implements IETAPredictionService {
   // ===========================================================================
 
   async updateLiveETA(
-    tripId: string,
+    _tripId: string,
     currentLocation: GeoLocation,
     destination: GeoLocation
   ): Promise<ETAPrediction> {
     return this.predictETA({
-      tripId,
       origin: currentLocation,
       destination,
     });
@@ -378,13 +338,13 @@ export class ETAPredictionService implements IETAPredictionService {
   ): number {
     // Haversine formula
     const R = 6371; // Earth's radius in km
-    const dLat = this.toRad(destination.lat - origin.lat);
-    const dLng = this.toRad(destination.lng - origin.lng);
+    const dLat = this.toRad(destination.latitude - origin.latitude);
+    const dLng = this.toRad(destination.longitude - origin.longitude);
 
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(this.toRad(origin.lat)) *
-        Math.cos(this.toRad(destination.lat)) *
+      Math.cos(this.toRad(origin.latitude)) *
+        Math.cos(this.toRad(destination.latitude)) *
         Math.sin(dLng / 2) *
         Math.sin(dLng / 2);
 
@@ -431,7 +391,7 @@ export class ETAPredictionService implements IETAPredictionService {
 
   private calculateConfidence(
     components: ETAComponent[],
-    request: ETAPredictionRequest
+    _request: ETAPredictionRequest
   ): number {
     // Weighted average of component confidences
     const totalDuration = components.reduce(
@@ -799,20 +759,21 @@ export class SupportNLPService {
     }
 
     // Get base response
-    let response =
-      intent.responses[Math.floor(Math.random() * intent.responses.length)];
+    const response =
+      intent.responses[Math.floor(Math.random() * intent.responses.length)] || "";
 
     // Replace entity placeholders
+    let formattedResponse = response;
     for (const entity of entities) {
-      response = response.replace(`{${entity.type}}`, entity.value);
+      formattedResponse = formattedResponse.replace(`{${entity.type}}`, entity.value);
     }
 
     // Add context if available
     if (context?.tripId) {
-      response = response.replace("{trip_id}", context.tripId);
+      formattedResponse = formattedResponse.replace("{trip_id}", context.tripId || "");
     }
 
-    return response;
+    return formattedResponse;
   }
 
   // ===========================================================================

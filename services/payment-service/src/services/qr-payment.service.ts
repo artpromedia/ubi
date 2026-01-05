@@ -235,6 +235,9 @@ export class QRPaymentService {
     }
 
     // Verify PIN
+    if (!pin) {
+      throw new Error("PIN is required");
+    }
     const pinValid = await enhancedWalletService.verifyPin(payerWalletId, pin);
     if (!pinValid) {
       throw new Error("Invalid PIN");
@@ -381,7 +384,22 @@ export class QRPaymentService {
       orderBy: { createdAt: "desc" },
     });
 
-    return qrCodes.map((qr) => ({
+    return qrCodes.map((qr: {
+      id: string;
+      merchantId: string;
+      walletId: string;
+      name: string;
+      type: string;
+      qrData: string;
+      location: string | null;
+      defaultCurrency: Currency;
+      fixedAmount: number | null;
+      isActive: boolean;
+      totalTransactions: number;
+      totalAmount: number;
+      createdAt: Date;
+      lastUsedAt: Date | null;
+    }) => ({
       id: qr.id,
       merchantId: qr.merchantId,
       walletId: qr.walletId,
@@ -489,7 +507,16 @@ export class QRPaymentService {
     ]);
 
     return {
-      payments: payments.map((p) => ({
+      payments: payments.map((p: {
+        id: string;
+        status: string;
+        amount: number;
+        currency: Currency;
+        note: string | null;
+        payerWalletId: string;
+        createdAt: Date;
+        completedAt: Date | null;
+      }) => ({
         paymentId: p.id,
         status: p.status as "COMPLETED" | "FAILED",
         amount: Number(p.amount),
@@ -536,7 +563,7 @@ export class QRPaymentService {
         where: { merchantId },
         select: { id: true },
       });
-      where.qrCodeId = { in: qrCodes.map((q) => q.id) };
+      where.qrCodeId = { in: qrCodes.map((q: { id: string }) => q.id) };
     }
 
     if (dateRange) {
@@ -555,7 +582,7 @@ export class QRPaymentService {
 
     // Calculate totals
     const totalTransactions = payments.length;
-    const totalAmount = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const totalAmount = payments.reduce((sum: number, p: { amount: number }) => sum + Number(p.amount), 0);
     const averageAmount =
       totalTransactions > 0 ? totalAmount / totalTransactions : 0;
 
@@ -629,7 +656,7 @@ export class QRPaymentService {
       const data = Buffer.from(qrData, "base64url").toString("utf-8");
       const parts = data.split("|");
 
-      if (parts.length < 3 || !parts[0].startsWith("UBI")) {
+      if (parts.length < 3 || !parts[0] || !parts[0].startsWith("UBI")) {
         throw new Error("Invalid format");
       }
 
@@ -637,11 +664,11 @@ export class QRPaymentService {
 
       return {
         version,
-        type: parts[1] as QRCodeType,
-        qrId: parts[2],
+        type: (parts[1] as QRCodeType) || "static",
+        qrId: parts[2] || undefined,
         merchantId: parts[3] || undefined,
         walletId: parts[4] || undefined,
-        currency: parts[5] ? (parts[5] as Currency) : undefined,
+        currency: parts[5] || undefined,
         amount: parts[6] ? Number(parts[6]) : undefined,
         description: parts[7] || undefined,
         expiresAt: parts[8] || undefined,

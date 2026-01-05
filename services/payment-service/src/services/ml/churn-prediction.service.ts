@@ -15,17 +15,40 @@ import {
   IChurnPredictionService,
   InterventionType,
   RetentionCampaign,
-  RetentionIntervention,
-  UserSegment,
-} from "../types/ml.types";
+  RetentionAction,
+} from "../../types/ml.types";
 import { FeatureStoreService } from "./feature-store.service";
+
+// User segment types for churn prediction
+enum UserSegmentType {
+  VIP = "VIP",
+  POWER_USER = "POWER_USER",
+  CASUAL = "CASUAL",
+  NEW = "NEW",
+  AT_RISK = "AT_RISK",
+  DORMANT = "DORMANT",
+  PRICE_SENSITIVE = "PRICE_SENSITIVE",
+  BUSINESS = "BUSINESS",
+}
+
+// Internal type for retention recommendations (before converting to RetentionAction)
+interface RetentionRecommendation {
+  id: string;
+  type: InterventionType;
+  channel: string;
+  message: string;
+  offerValue: number;
+  validityDays: number;
+  expectedLiftPercent: number;
+  priority: string;
+}
 
 // =============================================================================
 // CHURN RISK PROFILES
 // =============================================================================
 
 interface ChurnRiskProfile {
-  segment: UserSegment;
+  segment: UserSegmentType;
   baseChurnRate: number;
   riskFactorWeights: Record<string, number>;
   interventionPriority: number;
@@ -49,7 +72,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   private eventEmitter: EventEmitter;
 
   // Segment-specific risk profiles
-  private riskProfiles: Map<UserSegment, ChurnRiskProfile> = new Map();
+  private riskProfiles: Map<UserSegmentType, ChurnRiskProfile> = new Map();
 
   // Intervention effectiveness tracking
   private interventionEffectiveness: Map<InterventionType, number> = new Map();
@@ -73,7 +96,6 @@ export class ChurnPredictionService implements IChurnPredictionService {
   async predictChurn(
     request: ChurnPredictionRequest
   ): Promise<ChurnPrediction> {
-    const startTime = Date.now();
     const predictionId = this.generateId();
 
     // Get user features
@@ -95,28 +117,34 @@ export class ChurnPredictionService implements IChurnPredictionService {
     // Determine risk level
     const riskLevel = this.determineRiskLevel(probability);
 
-    // Predict days until churn if at risk
-    const predictedChurnDate = this.predictChurnDate(probability, engagement);
-
     // Get recommended interventions
-    const recommendedInterventions = this.recommendInterventions(
+    const recommendations = this.recommendInterventions(
       probability,
       segment,
       factors
     );
 
+    // Convert recommendations to RetentionAction format
+    const recommendedActions: RetentionAction[] = recommendations.map((rec) => ({
+      type: rec.type,
+      description: rec.message,
+      expectedImpact: rec.expectedLiftPercent / 100,
+      cost: rec.offerValue,
+      priority: rec.priority === "high" || rec.priority === "urgent" ? 1 : 2,
+      config: {
+        channel: rec.channel,
+        validityDays: rec.validityDays,
+      },
+    }));
+
     const prediction: ChurnPrediction = {
       id: predictionId,
       userId: request.userId,
-      probability,
+      churnProbability: probability,
       riskLevel,
-      segment,
       topFactors: factors.slice(0, 5),
-      predictedChurnDate,
-      recommendedInterventions,
-      lifetimeValue: this.estimateLifetimeValue(features, engagement),
+      recommendedActions,
       modelVersion: "churn-v1.0.0",
-      latencyMs: Date.now() - startTime,
       createdAt: new Date(),
     };
 
@@ -136,7 +164,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
         userId: request.userId,
         probability,
         riskLevel,
-        recommendedInterventions,
+        recommendedActions,
       });
     }
 
@@ -178,7 +206,6 @@ export class ChurnPredictionService implements IChurnPredictionService {
     features: Record<string, unknown>
   ): EngagementMetrics {
     const tripsLast7d = Number(features.user_trips_last_7d || 0);
-    const daysActive = Number(features.user_days_since_registration || 1);
 
     return {
       tripFrequency: tripsLast7d, // per week
@@ -193,42 +220,42 @@ export class ChurnPredictionService implements IChurnPredictionService {
   private determineUserSegment(
     features: Record<string, unknown>,
     engagement: EngagementMetrics
-  ): UserSegment {
+  ): UserSegmentType {
     const totalTrips = Number(features.user_total_trips || 0);
     const totalSpend = Number(features.user_total_spend || 0);
     const daysSinceReg = Number(features.user_days_since_registration || 0);
 
     // New users (< 30 days)
     if (daysSinceReg < 30) {
-      return UserSegment.NEW;
+      return UserSegmentType.NEW;
     }
 
     // VIP users (high spend, high frequency)
     if (totalSpend > 100000 && engagement.tripFrequency >= 3) {
-      return UserSegment.VIP;
+      return UserSegmentType.VIP;
     }
 
     // Power users (regular, frequent use)
     if (engagement.tripFrequency >= 2 && totalTrips > 20) {
-      return UserSegment.POWER_USER;
+      return UserSegmentType.POWER_USER;
     }
 
     // At-risk users (declining engagement)
     if (engagement.lastActivityDays > 14 && totalTrips > 5) {
-      return UserSegment.AT_RISK;
+      return UserSegmentType.AT_RISK;
     }
 
     // Casual users
     if (totalTrips >= 5) {
-      return UserSegment.CASUAL;
+      return UserSegmentType.CASUAL;
     }
 
     // Dormant users
     if (engagement.lastActivityDays > 30) {
-      return UserSegment.DORMANT;
+      return UserSegmentType.DORMANT;
     }
 
-    return UserSegment.CASUAL;
+    return UserSegmentType.CASUAL;
   }
 
   // ===========================================================================
@@ -238,7 +265,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   private calculateChurnProbability(
     features: Record<string, unknown>,
     engagement: EngagementMetrics,
-    segment: UserSegment
+    segment: UserSegmentType
   ): { probability: number; factors: ChurnFactor[] } {
     const factors: ChurnFactor[] = [];
     let riskScore = 0;
@@ -311,18 +338,18 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private calculateInactivityRisk(
     lastActivityDays: number,
-    segment: UserSegment
+    segment: UserSegmentType
   ): ChurnFactor {
     // Different thresholds per segment
-    const thresholds: Record<UserSegment, number> = {
-      [UserSegment.VIP]: 7,
-      [UserSegment.POWER_USER]: 10,
-      [UserSegment.CASUAL]: 21,
-      [UserSegment.NEW]: 7,
-      [UserSegment.AT_RISK]: 14,
-      [UserSegment.DORMANT]: 30,
-      [UserSegment.PRICE_SENSITIVE]: 14,
-      [UserSegment.BUSINESS]: 10,
+    const thresholds: Record<UserSegmentType, number> = {
+      [UserSegmentType.VIP]: 7,
+      [UserSegmentType.POWER_USER]: 10,
+      [UserSegmentType.CASUAL]: 21,
+      [UserSegmentType.NEW]: 7,
+      [UserSegmentType.AT_RISK]: 14,
+      [UserSegmentType.DORMANT]: 30,
+      [UserSegmentType.PRICE_SENSITIVE]: 14,
+      [UserSegmentType.BUSINESS]: 10,
     };
 
     const threshold = thresholds[segment] || 14;
@@ -338,12 +365,11 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
     return {
       name: "Inactivity period",
+      description: `User has been inactive for ${lastActivityDays} days`,
       contribution,
-      currentValue: lastActivityDays,
-      threshold,
-      trend: "declining",
-      impact:
-        contribution > 0.5 ? "high" : contribution > 0.2 ? "medium" : "low",
+      value: lastActivityDays,
+      trend: contribution > 0.5 ? "worsening" : "stable",
+      benchmark: threshold,
     };
   }
 
@@ -368,12 +394,11 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
     return {
       name: "Trip frequency decline",
+      description: `Trip frequency declined from ${avgFrequency} to ${currentFrequency}`,
       contribution,
-      currentValue: currentFrequency,
-      previousValue: avgFrequency,
-      trend: "declining",
-      impact:
-        contribution > 0.5 ? "high" : contribution > 0.2 ? "medium" : "low",
+      value: currentFrequency,
+      trend: contribution > 0.5 ? "worsening" : contribution > 0.2 ? "worsening" : "stable",
+      benchmark: avgFrequency,
     };
   }
 
@@ -400,12 +425,11 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
     return {
       name: "Low satisfaction indicators",
+      description: `User satisfaction score is ${avgRating} (target: 4.0+)`,
       contribution,
-      currentValue: avgRating,
-      threshold: 4.0,
-      trend: avgRating < 4 ? "declining" : "stable",
-      impact:
-        contribution > 0.5 ? "high" : contribution > 0.2 ? "medium" : "low",
+      value: avgRating,
+      trend: avgRating < 4 ? "worsening" : "stable",
+      benchmark: 4.0,
     };
   }
 
@@ -423,12 +447,11 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
     return {
       name: "Support ticket volume",
+      description: `User has ${supportTickets} support tickets in last 30 days`,
       contribution,
-      currentValue: supportTickets,
-      threshold: 3,
-      trend: supportTickets > 0 ? "increasing" : "stable",
-      impact:
-        contribution > 0.5 ? "high" : contribution > 0.2 ? "medium" : "low",
+      value: supportTickets,
+      trend: supportTickets >= 3 ? "worsening" : "stable",
+      benchmark: 3,
     };
   }
 
@@ -453,45 +476,12 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
     return {
       name: "Low app engagement",
+      description: `App opened ${appOpens} times in last 7 days`,
       contribution: Math.min(1, contribution),
-      currentValue: appOpens,
-      threshold: 3,
-      trend: "declining",
-      impact:
-        contribution > 0.5 ? "high" : contribution > 0.2 ? "medium" : "low",
+      value: appOpens,
+      trend: contribution > 0.3 ? "worsening" : "stable",
+      benchmark: 3,
     };
-  }
-
-  // ===========================================================================
-  // CHURN DATE PREDICTION
-  // ===========================================================================
-
-  private predictChurnDate(
-    probability: number,
-    engagement: EngagementMetrics
-  ): Date | undefined {
-    if (probability < this.MEDIUM_RISK_THRESHOLD) {
-      return undefined;
-    }
-
-    // Estimate days until churn based on inactivity pattern
-    const baselineDays = engagement.lastActivityDays;
-    const velocityFactor = 1 + probability;
-
-    // High-risk users churn faster
-    let predictedDays: number;
-    if (probability > this.CRITICAL_RISK_THRESHOLD) {
-      predictedDays = Math.max(3, 7 - baselineDays / 2);
-    } else if (probability > this.HIGH_RISK_THRESHOLD) {
-      predictedDays = Math.max(7, 14 - baselineDays / 3);
-    } else {
-      predictedDays = Math.max(14, 30 - baselineDays / 2);
-    }
-
-    const churnDate = new Date();
-    churnDate.setDate(churnDate.getDate() + Math.round(predictedDays));
-
-    return churnDate;
   }
 
   // ===========================================================================
@@ -507,38 +497,15 @@ export class ChurnPredictionService implements IChurnPredictionService {
   }
 
   // ===========================================================================
-  // LIFETIME VALUE ESTIMATION
-  // ===========================================================================
-
-  private estimateLifetimeValue(
-    features: Record<string, unknown>,
-    engagement: EngagementMetrics
-  ): number {
-    const totalSpend = Number(features.user_total_spend || 0);
-    const avgOrderValue = engagement.avgOrderValue;
-    const tripFrequency = engagement.tripFrequency;
-
-    // Project future value based on current patterns
-    // Assuming average customer lifetime of 2 years
-    const monthlyValue = avgOrderValue * tripFrequency * 4;
-    const projectedMonths = 24;
-    const churnAdjustedMonths = projectedMonths * 0.7; // Adjust for expected churn
-
-    const futureLTV = monthlyValue * churnAdjustedMonths;
-
-    return Math.round(totalSpend + futureLTV);
-  }
-
-  // ===========================================================================
   // RETENTION INTERVENTIONS
   // ===========================================================================
 
   private recommendInterventions(
     probability: number,
-    segment: UserSegment,
+    segment: UserSegmentType,
     factors: ChurnFactor[]
-  ): RetentionIntervention[] {
-    const interventions: RetentionIntervention[] = [];
+  ): RetentionRecommendation[] {
+    const interventions: RetentionRecommendation[] = [];
 
     // Determine intervention intensity based on risk
     const riskLevel = this.determineRiskLevel(probability);
@@ -568,7 +535,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
     // Sort by expected effectiveness
     interventions.sort(
-      (a, b) => (b.expectedLiftPercent || 0) - (a.expectedLiftPercent || 0)
+      (a, b) => b.expectedLiftPercent - a.expectedLiftPercent
     );
 
     return interventions.slice(0, 3);
@@ -576,15 +543,15 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private mapFactorToIntervention(
     factor: ChurnFactor,
-    segment: UserSegment,
+    segment: UserSegmentType,
     riskLevel: ChurnRiskLevel
-  ): RetentionIntervention | null {
+  ): RetentionRecommendation | null {
     const factorInterventions: Record<string, InterventionType> = {
-      "Inactivity period": InterventionType.REENGAGEMENT_EMAIL,
-      "Trip frequency decline": InterventionType.DISCOUNT_OFFER,
-      "Low satisfaction indicators": InterventionType.SUPPORT_OUTREACH,
-      "Support ticket volume": InterventionType.PRIORITY_SUPPORT,
-      "Low app engagement": InterventionType.PUSH_NOTIFICATION,
+      "Inactivity period": InterventionType.EMAIL,
+      "Trip frequency decline": InterventionType.DISCOUNT,
+      "Low satisfaction indicators": InterventionType.CALL,
+      "Support ticket volume": InterventionType.PERSONALIZED_CONTENT,
+      "Low app engagement": InterventionType.PUSH,
     };
 
     const type = factorInterventions[factor.name];
@@ -613,28 +580,28 @@ export class ChurnPredictionService implements IChurnPredictionService {
   }
 
   private getSegmentInterventions(
-    segment: UserSegment,
+    segment: UserSegmentType,
     riskLevel: ChurnRiskLevel
-  ): RetentionIntervention[] {
-    const interventions: RetentionIntervention[] = [];
+  ): RetentionRecommendation[] {
+    const interventions: RetentionRecommendation[] = [];
 
-    if (segment === UserSegment.VIP || segment === UserSegment.POWER_USER) {
+    if (segment === UserSegmentType.VIP || segment === UserSegmentType.POWER_USER) {
       interventions.push({
         id: this.generateId(),
-        type: InterventionType.VIP_PERKS,
+        type: InterventionType.PERSONALIZED_CONTENT,
         channel: "in_app",
         message: "Exclusive benefits waiting for you!",
-        offerValue: 2000, // NGN
+        offerValue: 2000,
         validityDays: 14,
         expectedLiftPercent: 25,
         priority: "high",
       });
     }
 
-    if (segment === UserSegment.NEW) {
+    if (segment === UserSegmentType.NEW) {
       interventions.push({
         id: this.generateId(),
-        type: InterventionType.ONBOARDING_SUPPORT,
+        type: InterventionType.IN_APP_MESSAGE,
         channel: "email",
         message: "Complete your profile for bonus rewards",
         offerValue: 500,
@@ -647,7 +614,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     if (riskLevel === ChurnRiskLevel.CRITICAL) {
       interventions.push({
         id: this.generateId(),
-        type: InterventionType.WIN_BACK_OFFER,
+        type: InterventionType.OFFER,
         channel: "sms",
         message: "We miss you! Here's a special offer just for you",
         offerValue: 1500,
@@ -662,60 +629,50 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private getChannelForType(type: InterventionType): string {
     const channels: Record<InterventionType, string> = {
-      [InterventionType.DISCOUNT_OFFER]: "in_app",
-      [InterventionType.FREE_DELIVERY]: "push",
+      [InterventionType.EMAIL]: "email",
+      [InterventionType.SMS]: "sms",
+      [InterventionType.PUSH]: "push",
+      [InterventionType.CALL]: "phone",
+      [InterventionType.DISCOUNT]: "in_app",
+      [InterventionType.OFFER]: "in_app",
+      [InterventionType.PERSONALIZED_CONTENT]: "in_app",
+      [InterventionType.IN_APP_MESSAGE]: "in_app",
       [InterventionType.LOYALTY_BONUS]: "in_app",
-      [InterventionType.PERSONAL_MESSAGE]: "email",
-      [InterventionType.VIP_PERKS]: "in_app",
-      [InterventionType.REENGAGEMENT_EMAIL]: "email",
-      [InterventionType.PUSH_NOTIFICATION]: "push",
-      [InterventionType.WIN_BACK_OFFER]: "sms",
-      [InterventionType.SUPPORT_OUTREACH]: "phone",
-      [InterventionType.SURVEY]: "email",
-      [InterventionType.REFERRAL_INCENTIVE]: "in_app",
-      [InterventionType.PRIORITY_SUPPORT]: "in_app",
-      [InterventionType.ONBOARDING_SUPPORT]: "email",
     };
     return channels[type] || "email";
   }
 
   private generateInterventionMessage(
     type: InterventionType,
-    segment: UserSegment
+    _segment: UserSegmentType
   ): string {
     const messages: Record<InterventionType, string> = {
-      [InterventionType.DISCOUNT_OFFER]: "Your exclusive discount is ready!",
-      [InterventionType.FREE_DELIVERY]:
-        "Enjoy free delivery on your next order",
+      [InterventionType.EMAIL]: "We miss you! Check out what's new",
+      [InterventionType.SMS]: "Special offer just for you!",
+      [InterventionType.PUSH]: "Great deals waiting for you",
+      [InterventionType.CALL]: "How can we help you better?",
+      [InterventionType.DISCOUNT]: "Your exclusive discount is ready!",
+      [InterventionType.OFFER]: "Welcome back! Special offer inside",
+      [InterventionType.PERSONALIZED_CONTENT]: "We value you as a customer",
+      [InterventionType.IN_APP_MESSAGE]: "Check out your personalized recommendations",
       [InterventionType.LOYALTY_BONUS]: "Bonus points added to your account",
-      [InterventionType.PERSONAL_MESSAGE]: "We value you as a customer",
-      [InterventionType.VIP_PERKS]: "Unlock VIP benefits today",
-      [InterventionType.REENGAGEMENT_EMAIL]:
-        "We miss you! Check out what's new",
-      [InterventionType.PUSH_NOTIFICATION]: "Great deals waiting for you",
-      [InterventionType.WIN_BACK_OFFER]: "Welcome back! Special offer inside",
-      [InterventionType.SUPPORT_OUTREACH]: "How can we help you better?",
-      [InterventionType.SURVEY]: "Your feedback matters to us",
-      [InterventionType.REFERRAL_INCENTIVE]: "Share the love, earn rewards",
-      [InterventionType.PRIORITY_SUPPORT]: "Priority support enabled",
-      [InterventionType.ONBOARDING_SUPPORT]: "Let us help you get started",
     };
     return messages[type] || "Special offer for you";
   }
 
   private calculateOfferValue(
-    segment: UserSegment,
+    segment: UserSegmentType,
     multiplier: number
   ): number {
-    const baseValues: Record<UserSegment, number> = {
-      [UserSegment.VIP]: 2000,
-      [UserSegment.POWER_USER]: 1500,
-      [UserSegment.CASUAL]: 800,
-      [UserSegment.NEW]: 500,
-      [UserSegment.AT_RISK]: 1200,
-      [UserSegment.DORMANT]: 1000,
-      [UserSegment.PRICE_SENSITIVE]: 1000,
-      [UserSegment.BUSINESS]: 1500,
+    const baseValues: Record<UserSegmentType, number> = {
+      [UserSegmentType.VIP]: 2000,
+      [UserSegmentType.POWER_USER]: 1500,
+      [UserSegmentType.CASUAL]: 800,
+      [UserSegmentType.NEW]: 500,
+      [UserSegmentType.AT_RISK]: 1200,
+      [UserSegmentType.DORMANT]: 1000,
+      [UserSegmentType.PRICE_SENSITIVE]: 1000,
+      [UserSegmentType.BUSINESS]: 1500,
     };
 
     return Math.round((baseValues[segment] || 500) * multiplier);
@@ -726,7 +683,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   // ===========================================================================
 
   async createCampaign(
-    campaign: Partial<RetentionCampaign>
+    campaign: Partial<RetentionCampaign> & { name: string }
   ): Promise<RetentionCampaign> {
     const campaignId = this.generateId();
 
@@ -734,17 +691,17 @@ export class ChurnPredictionService implements IChurnPredictionService {
       id: campaignId,
       name: campaign.name || "New Campaign",
       description: campaign.description,
-      targetSegments: campaign.targetSegments || [],
-      interventionTypes: campaign.interventionTypes || [],
+      targetSegment: campaign.targetSegment || { riskLevels: [] },
+      targetUserCount: campaign.targetUserCount,
+      interventionType: campaign.interventionType || InterventionType.EMAIL,
+      interventionConfig: campaign.interventionConfig || { channels: [] },
       startDate: campaign.startDate || new Date(),
       endDate: campaign.endDate,
-      budget: campaign.budget || 0,
+      budgetTotal: campaign.budgetTotal,
       budgetUsed: 0,
-      targetAudience: campaign.targetAudience || 0,
-      reachedAudience: 0,
-      convertedUsers: 0,
-      status: "draft",
-      createdAt: new Date(),
+      maxPerUser: campaign.maxPerUser,
+      performance: campaign.performance,
+      isActive: false,
     };
 
     this.eventEmitter.emit("campaign:created", newCampaign);
@@ -781,14 +738,32 @@ export class ChurnPredictionService implements IChurnPredictionService {
     }
   }
 
+  async triggerIntervention(userId: string, campaignId: string): Promise<void> {
+    this.eventEmitter.emit("intervention:triggered", {
+      userId,
+      campaignId,
+      timestamp: new Date(),
+    });
+    // In production, would trigger the intervention through notification service
+  }
+
+  async recordOutcome(predictionId: string, churned: boolean): Promise<void> {
+    this.eventEmitter.emit("churn:outcome_recorded", {
+      predictionId,
+      churned,
+      timestamp: new Date(),
+    });
+    // In production, would update the model with actual outcome for continuous learning
+  }
+
   // ===========================================================================
   // BATCH PREDICTIONS
   // ===========================================================================
 
   async batchPredictChurn(
     userIds: string[]
-  ): Promise<Map<string, ChurnPrediction>> {
-    const results = new Map<string, ChurnPrediction>();
+  ): Promise<ChurnPrediction[]> {
+    const results: ChurnPrediction[] = [];
 
     // Process in batches for efficiency
     const batchSize = 100;
@@ -799,17 +774,15 @@ export class ChurnPredictionService implements IChurnPredictionService {
         batch.map((userId) => this.predictChurn({ userId }))
       );
 
-      for (let j = 0; j < batch.length; j++) {
-        results.set(batch[j], predictions[j]);
-      }
+      results.push(...predictions);
     }
 
     return results;
   }
 
   async getHighRiskUsers(
-    segment?: UserSegment,
-    limit: number = 100
+    _segment?: UserSegmentType,
+    _limit: number = 100
   ): Promise<ChurnPrediction[]> {
     // In production, query pre-computed predictions from database
     // filtered by risk level and segment
@@ -821,15 +794,15 @@ export class ChurnPredictionService implements IChurnPredictionService {
   // ===========================================================================
 
   private initializeRiskProfiles(): void {
-    this.riskProfiles.set(UserSegment.VIP, {
-      segment: UserSegment.VIP,
+    this.riskProfiles.set(UserSegmentType.VIP, {
+      segment: UserSegmentType.VIP,
       baseChurnRate: 0.05,
       riskFactorWeights: { inactivity: 0.4, frequency: 0.3, satisfaction: 0.3 },
       interventionPriority: 1,
     });
 
-    this.riskProfiles.set(UserSegment.POWER_USER, {
-      segment: UserSegment.POWER_USER,
+    this.riskProfiles.set(UserSegmentType.POWER_USER, {
+      segment: UserSegmentType.POWER_USER,
       baseChurnRate: 0.08,
       riskFactorWeights: {
         inactivity: 0.35,
@@ -839,8 +812,8 @@ export class ChurnPredictionService implements IChurnPredictionService {
       interventionPriority: 2,
     });
 
-    this.riskProfiles.set(UserSegment.CASUAL, {
-      segment: UserSegment.CASUAL,
+    this.riskProfiles.set(UserSegmentType.CASUAL, {
+      segment: UserSegmentType.CASUAL,
       baseChurnRate: 0.2,
       riskFactorWeights: {
         inactivity: 0.5,
@@ -850,22 +823,22 @@ export class ChurnPredictionService implements IChurnPredictionService {
       interventionPriority: 4,
     });
 
-    this.riskProfiles.set(UserSegment.NEW, {
-      segment: UserSegment.NEW,
+    this.riskProfiles.set(UserSegmentType.NEW, {
+      segment: UserSegmentType.NEW,
       baseChurnRate: 0.35,
       riskFactorWeights: { inactivity: 0.3, frequency: 0.3, satisfaction: 0.4 },
       interventionPriority: 3,
     });
 
-    this.riskProfiles.set(UserSegment.AT_RISK, {
-      segment: UserSegment.AT_RISK,
+    this.riskProfiles.set(UserSegmentType.AT_RISK, {
+      segment: UserSegmentType.AT_RISK,
       baseChurnRate: 0.5,
       riskFactorWeights: { inactivity: 0.5, frequency: 0.3, satisfaction: 0.2 },
       interventionPriority: 1,
     });
 
-    this.riskProfiles.set(UserSegment.DORMANT, {
-      segment: UserSegment.DORMANT,
+    this.riskProfiles.set(UserSegmentType.DORMANT, {
+      segment: UserSegmentType.DORMANT,
       baseChurnRate: 0.7,
       riskFactorWeights: { inactivity: 0.6, frequency: 0.2, satisfaction: 0.2 },
       interventionPriority: 5,
@@ -874,24 +847,15 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private initializeInterventionEffectiveness(): void {
     // Based on historical A/B test results
-    this.interventionEffectiveness.set(InterventionType.DISCOUNT_OFFER, 0.22);
-    this.interventionEffectiveness.set(InterventionType.FREE_DELIVERY, 0.18);
+    this.interventionEffectiveness.set(InterventionType.EMAIL, 0.08);
+    this.interventionEffectiveness.set(InterventionType.SMS, 0.12);
+    this.interventionEffectiveness.set(InterventionType.PUSH, 0.05);
+    this.interventionEffectiveness.set(InterventionType.CALL, 0.12);
+    this.interventionEffectiveness.set(InterventionType.DISCOUNT, 0.22);
+    this.interventionEffectiveness.set(InterventionType.OFFER, 0.28);
+    this.interventionEffectiveness.set(InterventionType.PERSONALIZED_CONTENT, 0.15);
+    this.interventionEffectiveness.set(InterventionType.IN_APP_MESSAGE, 0.10);
     this.interventionEffectiveness.set(InterventionType.LOYALTY_BONUS, 0.15);
-    this.interventionEffectiveness.set(InterventionType.VIP_PERKS, 0.25);
-    this.interventionEffectiveness.set(
-      InterventionType.REENGAGEMENT_EMAIL,
-      0.08
-    );
-    this.interventionEffectiveness.set(
-      InterventionType.PUSH_NOTIFICATION,
-      0.05
-    );
-    this.interventionEffectiveness.set(InterventionType.WIN_BACK_OFFER, 0.28);
-    this.interventionEffectiveness.set(InterventionType.SUPPORT_OUTREACH, 0.12);
-    this.interventionEffectiveness.set(
-      InterventionType.REFERRAL_INCENTIVE,
-      0.1
-    );
   }
 
   // ===========================================================================

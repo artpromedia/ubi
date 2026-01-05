@@ -11,7 +11,7 @@
  */
 
 import { EventEmitter } from "events";
-import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "nanoid";
 import type {
   ContactInfo,
   Coordinates,
@@ -126,7 +126,7 @@ export class HealthcareTransportService extends EventEmitter {
     }
   ): Promise<HealthcareProvider> {
     const provider: HealthcareProvider = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       providerType,
       licenseNumber: details.licenseNumber,
@@ -218,12 +218,12 @@ export class HealthcareTransportService extends EventEmitter {
     }
 
     // Generate booking reference
-    const bookingRef = this.generateMedicalBookingReference(
-      request.deliveryType
-    );
+    // const _bookingRef = this.generateMedicalBookingReference(
+    //   request.deliveryType
+    // );
 
     const delivery: MedicalDelivery = {
-      id: uuidv4(),
+      id: nanoid(),
       providerId,
       deliveryType: request.deliveryType,
       externalReference: request.externalReference,
@@ -495,7 +495,7 @@ export class HealthcareTransportService extends EventEmitter {
     ); // 1 hour before
 
     const transport: PatientTransport = {
-      id: uuidv4(),
+      id: nanoid(),
       providerId,
       bookingReference,
       patientReference: request.patientReference,
@@ -786,7 +786,7 @@ export class HealthcareTransportService extends EventEmitter {
     vehicle: Omit<MedicalVehicle, "id">
   ): Promise<MedicalVehicle> {
     const medicalVehicle: MedicalVehicle = {
-      id: uuidv4(),
+      id: nanoid(),
       ...vehicle,
     };
 
@@ -1060,21 +1060,21 @@ export class HealthcareTransportService extends EventEmitter {
     return "STANDARD";
   }
 
-  private generateMedicalBookingReference(type: MedicalTransportType): string {
-    const prefix = {
-      PRESCRIPTION_DELIVERY: "RX",
-      LAB_SAMPLE_PICKUP: "LAB",
-      PATIENT_TRANSPORT: "PT",
-      MEDICAL_EQUIPMENT: "ME",
-      ORGAN_TRANSPORT: "ORG",
-      EMERGENCY_SUPPLY: "EMG",
-    };
+  // private _generateMedicalBookingReference(type: MedicalTransportType): string {
+  //   const prefix = {
+  //     PRESCRIPTION_DELIVERY: "RX",
+  //     LAB_SAMPLE_PICKUP: "LAB",
+  //     PATIENT_TRANSPORT: "PT",
+  //     MEDICAL_EQUIPMENT: "ME",
+  //     ORGAN_TRANSPORT: "ORG",
+  //     EMERGENCY_SUPPLY: "EMG",
+  //   };
 
-    const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, "");
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  //   const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, "");
+  //   const random = Math.random().toString(36).substring(2, 6).toUpperCase();
 
-    return `${prefix[type]}${dateStr}${random}`;
-  }
+  //   return `${prefix[type]}${dateStr}${random}`;
+  // }
 
   private generatePatientTransportReference(): string {
     const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, "");
@@ -1082,23 +1082,23 @@ export class HealthcareTransportService extends EventEmitter {
     return `NEMT${dateStr}${random}`;
   }
 
-  private getProviderAddress(provider: HealthcareProvider): string {
+  private getProviderAddress(_provider: HealthcareProvider): string {
     // In production, get from provider record
     return "Provider Address";
   }
 
   private async getProviderCoordinates(
-    provider: HealthcareProvider
+    _provider: HealthcareProvider
   ): Promise<Coordinates> {
     // In production, get from provider record
     return { lat: 6.5244, lng: 3.3792 };
   }
 
   private async findCertifiedDriver(
-    delivery: MedicalDelivery
+    _delivery: MedicalDelivery
   ): Promise<{ id: string } | null> {
     // In production, query driver pool
-    return { id: uuidv4() };
+    return { id: nanoid() };
   }
 
   private scheduleDriverAssignment(transport: PatientTransport): void {

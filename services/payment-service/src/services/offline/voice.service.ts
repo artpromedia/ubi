@@ -11,35 +11,25 @@ import {
   AgentStatus,
   CallCenterAgent,
   GeoLocation,
-  IVoiceService,
   IVRAction,
   IVRActionType,
   IVRSession,
   IVRState,
-} from "../types/offline.types";
+} from "@/types/offline.types";
 
 // =============================================================================
 // IVR CONSTANTS
 // =============================================================================
 
-const IVR_SESSION_TIMEOUT_MS = 300000; // 5 minutes
-const AGENT_QUEUE_TIMEOUT_MS = 180000; // 3 minutes max wait
+const _IVR_SESSION_TIMEOUT_MS = 300000; // 5 minutes
 const MAX_RETRIES = 3;
 const TTS_RATE = 0.9; // Slower for accessibility
-
-// IVR Phone Numbers by Country
-const IVR_NUMBERS: Record<string, string> = {
-  KE: "+254800123456",
-  NG: "+2340800123456",
-  GH: "+233800123456",
-  ZA: "+27800123456",
-};
 
 // =============================================================================
 // VOICE SERVICE
 // =============================================================================
 
-export class VoiceService implements IVoiceService {
+export class VoiceService {
   private eventEmitter: EventEmitter;
 
   // Sessions (Redis in production)
@@ -504,11 +494,13 @@ export class VoiceService implements IVoiceService {
     session.data.dropoff = dropoff;
 
     // Get fare estimate
+    const pickup = session.data?.pickup as any;
     const estimate = await this.getFareEstimate(
-      session.data.pickup.coords,
+      pickup?.coords,
       dropoff.coords
     );
 
+    session.data = session.data || {};
     session.data.fareEstimate = estimate.fare;
     session.data.eta = estimate.eta;
     session.state = IVRState.CONFIRM_BOOKING;
@@ -517,7 +509,7 @@ export class VoiceService implements IVoiceService {
     return [
       this.speak(
         this.t("book.confirm_details", lang, {
-          from: session.data.pickup.address,
+          from: pickup?.address,
           to: dropoff.address,
           fare: this.formatCurrency(estimate.fare, lang),
           eta: estimate.eta,
@@ -635,7 +627,7 @@ export class VoiceService implements IVoiceService {
 
     switch (input) {
       case "1": // Refresh
-        const trip = await this.getTrip(session.data?.tripId);
+        const trip = await this.getTrip(session.data?.tripId as string | undefined);
         if (trip) {
           return this.buildTripStatusActions(trip, lang);
         }
@@ -645,7 +637,7 @@ export class VoiceService implements IVoiceService {
         ];
 
       case "2": // Call driver
-        const tripForDriver = await this.getTrip(session.data?.tripId);
+        const tripForDriver = await this.getTrip(session.data?.tripId as string | undefined);
         if (tripForDriver?.driverPhone) {
           return [
             this.speak(this.t("track.connecting_driver", lang), lang),
@@ -670,7 +662,7 @@ export class VoiceService implements IVoiceService {
 
   private async handleCancelTrip(session: IVRSession): Promise<IVRAction[]> {
     const lang = session.language;
-    const trip = await this.getTrip(session.data?.tripId);
+    const trip = await this.getTrip(session.data?.tripId as string | undefined);
 
     if (!trip) {
       return this.buildMainMenuActions(session);
@@ -995,7 +987,7 @@ export class VoiceService implements IVoiceService {
       ha: "Polly.Joanna",
       zu: "Polly.Joanna",
     };
-    return voices[lang] || voices.en;
+    return voices[lang] || voices.en || "Polly.Joanna";
   }
 
   // ===========================================================================
@@ -1060,6 +1052,7 @@ export class VoiceService implements IVoiceService {
       inputHistory: [],
       createdAt: new Date(),
       updatedAt: new Date(),
+      expiresAt: new Date(Date.now() + _IVR_SESSION_TIMEOUT_MS),
     };
 
     this.sessions.set(callSid, session);
@@ -1111,12 +1104,17 @@ export class VoiceService implements IVoiceService {
     for (const def of agentDefs) {
       const agent: CallCenterAgent = {
         id: def.id,
+        employeeId: def.id,
         name: def.name,
+        email: `${def.id}@ubi.com`,
+        phone: def.extension,
         extension: def.extension,
         languages: def.languages,
         status: AgentStatus.AVAILABLE,
         skills: ["booking", "support"],
         currentCallId: undefined,
+        currentCalls: 0,
+        maxCalls: 3,
         shiftsThisWeek: 5,
         rating: 4.5,
       };
@@ -1273,7 +1271,7 @@ export class VoiceService implements IVoiceService {
     return { ...translations.en, ...(translations[lang] || {}) };
   }
 
-  private formatCurrency(amount: number, lang: string): string {
+  private formatCurrency(amount: number, _lang: string): string {
     return "KES " + Math.round(amount).toLocaleString();
   }
 
@@ -1291,11 +1289,11 @@ export class VoiceService implements IVoiceService {
   // EXTERNAL SERVICE STUBS
   // ===========================================================================
 
-  private async getUserByPhone(phone: string): Promise<any> {
+  private async getUserByPhone(_phone: string): Promise<any> {
     return { id: "user_123", preferredLanguage: "en" };
   }
 
-  private async getCurrentLocation(phone: string): Promise<any> {
+  private async getCurrentLocation(_phone: string): Promise<any> {
     return null;
   }
 
@@ -1305,18 +1303,18 @@ export class VoiceService implements IVoiceService {
     return { coords: { lat: -1.2921, lng: 36.8219 }, address };
   }
 
-  private async getSavedPlace(userId?: string, type?: string): Promise<any> {
+  private async getSavedPlace(_userId?: string, _type?: string): Promise<any> {
     return null;
   }
 
   private async getFareEstimate(
-    pickup: GeoLocation,
-    dropoff: GeoLocation
+    _pickup: GeoLocation,
+    _dropoff: GeoLocation
   ): Promise<any> {
     return { fare: 350, eta: 5 };
   }
 
-  private async createTrip(data: any): Promise<any> {
+  private async createTrip(_data: any): Promise<any> {
     return {
       id: "trip_" + Date.now(),
       driverName: "John K.",
@@ -1326,36 +1324,36 @@ export class VoiceService implements IVoiceService {
     };
   }
 
-  private async getActiveTrip(userId?: string): Promise<any> {
+  private async getActiveTrip(_userId?: string): Promise<any> {
     return null;
   }
 
-  private async getTrip(tripId?: string): Promise<any> {
+  private async getTrip(_tripId?: string): Promise<any> {
     return null;
   }
 
-  private async cancelTrip(tripId: string, reason: string): Promise<void> {}
+  private async cancelTrip(_tripId: string, _reason: string): Promise<void> {}
 
-  private async getWalletBalance(userId?: string): Promise<number> {
+  private async getWalletBalance(_userId?: string): Promise<number> {
     return 1500;
   }
 
   private async getRecentTransactions(
-    userId: string,
-    limit: number
+    _userId: string,
+    _limit: number
   ): Promise<any[]> {
     return [];
   }
 
   private async updateUserLanguage(
-    userId?: string,
-    lang?: string
+    _userId?: string,
+    _lang?: string
   ): Promise<void> {}
 
   private async sendSMSConfirmation(
-    phone: string,
-    trip: any,
-    lang: string
+    _phone: string,
+    _trip: any,
+    _lang: string
   ): Promise<void> {}
 
   // ===========================================================================

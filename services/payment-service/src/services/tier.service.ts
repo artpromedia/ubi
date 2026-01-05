@@ -232,7 +232,7 @@ export class TierService {
     userId: string,
     benefit: "freeDelivery" | "freeCancellation"
   ): Promise<{ success: boolean; remaining: number | "unlimited" }> {
-    const { tier, benefits, usage } = await this.getUserBenefits(userId);
+    const { tier: _tier, benefits, usage } = await this.getUserBenefits(userId);
 
     if (benefit === "freeDelivery") {
       if (benefits.freeDeliveries === 0) {
@@ -436,7 +436,7 @@ export class TierService {
       take: limit,
     });
 
-    return history.map((h) => ({
+    return history.map((h: any) => ({
       previousTier: h.previousTier as LoyaltyTier | undefined,
       newTier: h.newTier as LoyaltyTier,
       reason: h.reason,

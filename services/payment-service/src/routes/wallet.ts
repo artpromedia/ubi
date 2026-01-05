@@ -5,7 +5,6 @@
  */
 
 import { zValidator } from "@hono/zod-validator";
-import { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -257,7 +256,7 @@ walletRoutes.post(
 
     // Execute transfer in transaction
     const result = await prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
+      async (tx) => {
         // Debit source wallet
         await tx.wallet.update({
           where: { id: sourceWallet.id },

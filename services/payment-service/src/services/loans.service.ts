@@ -13,10 +13,19 @@ import type {
   LoanProductType,
   LoanQuote,
   LoanRepaymentParams,
-  LoanRepaymentResult,
   LoanScheduleItem,
   LoanStatus,
 } from "../types/fintech.types";
+
+// Define LoanRepaymentResult locally as it's not in fintech.types
+export interface LoanRepaymentResult {
+  repaymentId: string;
+  amountPaid: number;
+  lateFee: number;
+  totalPaid: number;
+  newOutstanding: number;
+  status: LoanStatus;
+}
 import { creditScoringService } from "./credit-scoring.service";
 import { enhancedWalletService } from "./enhanced-wallet.service";
 
@@ -24,7 +33,6 @@ import { enhancedWalletService } from "./enhanced-wallet.service";
 // CONSTANTS
 // ===========================================
 
-const PROCESSING_FEE_RATE = 0.02; // 2% processing fee
 const LATE_PAYMENT_PENALTY_RATE = 0.05; // 5% of amount due
 const GRACE_PERIOD_DAYS = 3; // Days before late fees apply
 
@@ -45,20 +53,35 @@ export class LoanService {
       orderBy: { maxAmount: "asc" },
     });
 
-    return products.map((p) => ({
+    return products.map((p: {
+      id: string;
+      name: string;
+      type: string;
+      minAmount: unknown;
+      maxAmount: unknown;
+      minTenureMonths: number;
+      maxTenureMonths: number;
+      interestRate: unknown;
+      processingFeeRate: unknown;
+      minCreditScore: number;
+      currency: string;
+      description: string | null;
+      features: unknown;
+    }) => ({
       id: p.id,
+      code: p.id,
       name: p.name,
       type: p.type as LoanProductType,
       minAmount: Number(p.minAmount),
       maxAmount: Number(p.maxAmount),
-      minTenureMonths: p.minTenureMonths,
-      maxTenureMonths: p.maxTenureMonths,
-      interestRate: Number(p.interestRate),
-      processingFeeRate: Number(p.processingFeeRate),
-      minCreditScore: p.minCreditScore,
-      currency: p.currency,
+      minTermDays: p.minTenureMonths * 30,
+      maxTermDays: p.maxTenureMonths * 30,
+      baseInterestRate: Number(p.interestRate),
+      originationFeeRate: Number(p.processingFeeRate),
+      lateFeeRate: LATE_PAYMENT_PENALTY_RATE,
+      requiredCreditGrade: ["A", "B", "C"],
+      autoDebitEnabled: true,
       description: p.description || undefined,
-      features: p.features as string[] | undefined,
     }));
   }
 
@@ -135,31 +158,32 @@ export class LoanService {
 
     return {
       productId,
-      productName: product.name,
       principalAmount: amount,
       interestRate,
-      tenureMonths,
-      processingFee,
+      originationFee: processingFee,
       totalInterest,
       totalAmount,
+      disbursedAmount: amount - processingFee,
+      termDays: tenureMonths * 30,
       monthlyPayment: Math.ceil(monthlyPayment),
-      effectiveRate: (totalInterest / amount) * (12 / tenureMonths) * 100,
+      dueDate: new Date(Date.now() + tenureMonths * 30 * 24 * 60 * 60 * 1000),
       schedule,
-      validUntil: new Date(Date.now() + 30 * 60 * 1000), // Valid for 30 minutes
     };
   }
 
   /**
    * Apply for a loan
    */
-  async applyForLoan(params: LoanApplication): Promise<Loan> {
-    const { userId, walletId, productId, amount, tenureMonths, purpose, pin } =
+  async applyForLoan(params: LoanApplication & { userId: string; pin?: string }): Promise<Loan> {
+    const { userId, walletId, productId, amount, termDays, purpose, pin } =
       params;
 
-    // Verify PIN
-    const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
-    if (!pinValid) {
-      throw new Error("Invalid PIN");
+    // Verify PIN if provided
+    if (pin) {
+      const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
+      if (!pinValid) {
+        throw new Error("Invalid PIN");
+      }
     }
 
     // Check for existing active loans
@@ -177,6 +201,7 @@ export class LoanService {
     }
 
     // Get quote (validates eligibility)
+    const tenureMonths = Math.ceil(termDays / 30);
     const quote = await this.getLoanQuote({
       productId,
       amount,
@@ -185,10 +210,9 @@ export class LoanService {
     });
 
     const loanId = `loan_${nanoid(16)}`;
-    const disbursementDate = new Date();
 
     // Create loan in pending state
-    const loan = await prisma.loan.create({
+    await prisma.loan.create({
       data: {
         id: loanId,
         userId,
@@ -197,7 +221,7 @@ export class LoanService {
         principalAmount: amount,
         interestRate: quote.interestRate,
         tenureMonths,
-        processingFee: quote.processingFee,
+        processingFee: quote.originationFee,
         totalInterest: quote.totalInterest,
         totalAmount: quote.totalAmount,
         monthlyPayment: quote.monthlyPayment,
@@ -252,7 +276,38 @@ export class LoanService {
     ]);
 
     return {
-      loans: loans.map((l) => this.formatLoan(l)),
+      loans: loans.map((l: {
+        id: string;
+        userId: string;
+        walletId: string;
+        productId: string;
+        principalAmount: unknown;
+        interestRate: unknown;
+        tenureMonths: number;
+        processingFee: unknown;
+        totalInterest: unknown;
+        totalAmount: unknown;
+        monthlyPayment: unknown;
+        outstandingAmount: unknown;
+        totalRepaid: unknown;
+        purpose: string | null;
+        status: string;
+        currency: string;
+        applicationDate: Date | null;
+        approvedDate: Date | null;
+        disbursementDate: Date | null;
+        firstPaymentDate: Date | null;
+        paidOffDate: Date | null;
+        schedule: Array<{
+          installmentNumber: number;
+          dueDate: Date;
+          principalAmount: unknown;
+          interestAmount: unknown;
+          amountDue: unknown;
+          amountPaid: unknown;
+          status: string;
+        }>;
+      }) => this.formatLoan(l)),
       total,
     };
   }
@@ -275,14 +330,16 @@ export class LoanService {
    * Make loan repayment
    */
   async makeRepayment(
-    params: LoanRepaymentParams
+    params: LoanRepaymentParams & { pin?: string; payOffRemaining?: boolean }
   ): Promise<LoanRepaymentResult> {
-    const { loanId, walletId, amount, pin, payOffRemaining = false } = params;
+    const { loanId, amount, source: _source, walletId, pin, payOffRemaining = false } = params;
 
-    // Verify PIN
-    const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
-    if (!pinValid) {
-      throw new Error("Invalid PIN");
+    // Verify PIN if provided and manual payment
+    if (pin && walletId) {
+      const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
+      if (!pinValid) {
+        throw new Error("Invalid PIN");
+      }
     }
 
     const loan = await prisma.loan.findUnique({
@@ -296,11 +353,14 @@ export class LoanService {
       throw new Error("Loan not found");
     }
 
-    if (loan.walletId !== walletId) {
+    // Use loan's walletId if not provided
+    const effectiveWalletId = walletId || loan.walletId;
+
+    if (loan.walletId !== effectiveWalletId) {
       throw new Error("Not authorized to repay this loan");
     }
 
-    if (loan.status === "PAID_OFF" || loan.status === "CANCELLED") {
+    if (loan.status === "PAID" || loan.status === "WRITTEN_OFF") {
       throw new Error(`Loan is ${loan.status.toLowerCase()}`);
     }
 
@@ -311,13 +371,13 @@ export class LoanService {
       : Math.min(amount, outstanding);
 
     // Check wallet balance
-    const wallet = await enhancedWalletService.getWalletById(walletId);
+    const wallet = await enhancedWalletService.getWalletById(effectiveWalletId);
     if (!wallet) {
       throw new Error("Wallet not found");
     }
 
     const balance = await enhancedWalletService.getBalance(
-      walletId,
+      effectiveWalletId,
       loan.currency
     );
     if (balance.available < paymentAmount) {
@@ -348,7 +408,7 @@ export class LoanService {
     await prisma.$transaction(async (tx) => {
       // Debit wallet
       await enhancedWalletService.debit({
-        walletId,
+        walletId: effectiveWalletId,
         amount: totalPayment,
         currency: loan.currency,
         description: `Loan repayment - ${loanId}`,
@@ -370,7 +430,7 @@ export class LoanService {
       // Update loan outstanding
       const newOutstanding = outstanding - paymentAmount;
       const newStatus: LoanStatus =
-        newOutstanding <= 0 ? "PAID_OFF" : loan.status;
+        newOutstanding <= 0 ? "PAID" : (loan.status as LoanStatus);
 
       await tx.loan.update({
         where: { id: loanId },
@@ -378,7 +438,7 @@ export class LoanService {
           outstandingAmount: Math.max(0, newOutstanding),
           totalRepaid: { increment: paymentAmount },
           status: newStatus,
-          ...(newStatus === "PAID_OFF" ? { paidOffDate: now } : {}),
+          ...(newStatus === "PAID" ? { paidOffDate: now } : {}),
         },
       });
 
@@ -418,7 +478,7 @@ export class LoanService {
       lateFee,
       totalPaid: totalPayment,
       newOutstanding,
-      status: newOutstanding <= 0 ? "PAID_OFF" : "ACTIVE",
+      status: newOutstanding <= 0 ? "PAID" : "ACTIVE",
     };
   }
 
@@ -439,7 +499,13 @@ export class LoanService {
       orderBy: { createdAt: "desc" },
     });
 
-    return repayments.map((r) => ({
+    return repayments.map((r: {
+      id: string;
+      amount: unknown;
+      lateFee: unknown;
+      totalPaid: unknown;
+      createdAt: Date;
+    }) => ({
       id: r.id,
       amount: Number(r.amount),
       lateFee: Number(r.lateFee),
@@ -508,7 +574,7 @@ export class LoanService {
       distinct: ["loanId"],
     });
 
-    const loanIds = overdueSchedules.map((s) => s.loanId);
+    const loanIds = overdueSchedules.map((s: { loanId: string }) => s.loanId);
 
     if (loanIds.length === 0) {
       return { updated: 0 };
@@ -632,10 +698,8 @@ export class LoanService {
         principalAmount: Math.round(principalPortion * 100) / 100,
         interestAmount: interestPortion,
         totalAmount: monthlyPayment,
-        remainingBalance: Math.max(
-          0,
-          Math.round(remainingPrincipal * 100) / 100
-        ),
+        status: "PENDING",
+        paidAmount: 0,
       });
     }
 
@@ -691,7 +755,7 @@ export class LoanService {
     loanId: string,
     schedule: LoanScheduleItem[]
   ): Promise<void> {
-    const scheduleData = schedule.map((item, index) => ({
+    const scheduleData = schedule.map((item) => ({
       id: `sched_${nanoid(12)}`,
       loanId,
       installmentNumber: item.installmentNumber,
@@ -749,7 +813,7 @@ export class LoanService {
         data: {
           outstandingAmount: Math.max(0, newOutstanding),
           totalRepaid: { increment: amount },
-          status: newOutstanding <= 0 ? "PAID_OFF" : "ACTIVE",
+          status: newOutstanding <= 0 ? "PAID" : "ACTIVE",
         },
       });
 
@@ -789,6 +853,7 @@ export class LoanService {
     totalRepaid: unknown;
     purpose: string | null;
     status: string;
+    currency: string;
     applicationDate: Date | null;
     approvedDate: Date | null;
     disbursementDate: Date | null;
@@ -804,35 +869,31 @@ export class LoanService {
       status: string;
     }>;
   }): Loan {
+    const disbursedAmount = Number(loan.principalAmount) - Number(loan.processingFee);
     return {
       id: loan.id,
-      userId: loan.userId,
-      walletId: loan.walletId,
-      productId: loan.productId,
+      productName: "Loan Product",
       principalAmount: Number(loan.principalAmount),
       interestRate: Number(loan.interestRate),
-      tenureMonths: loan.tenureMonths,
-      processingFee: Number(loan.processingFee),
-      totalInterest: Number(loan.totalInterest),
       totalAmount: Number(loan.totalAmount),
-      monthlyPayment: Number(loan.monthlyPayment),
-      outstandingAmount: Number(loan.outstandingAmount),
-      totalRepaid: Number(loan.totalRepaid),
-      purpose: loan.purpose || undefined,
+      disbursedAmount,
+      outstandingBalance: Number(loan.outstandingAmount),
+      currency: loan.currency,
+      termDays: loan.tenureMonths * 30,
       status: loan.status as LoanStatus,
-      applicationDate: loan.applicationDate || undefined,
-      approvedDate: loan.approvedDate || undefined,
-      disbursementDate: loan.disbursementDate || undefined,
-      firstPaymentDate: loan.firstPaymentDate || undefined,
-      paidOffDate: loan.paidOffDate || undefined,
+      nextPaymentDate: loan.firstPaymentDate || undefined,
+      nextPaymentAmount: loan.schedule.length > 0 && loan.schedule[0] ? Number(loan.schedule[0].amountDue) : undefined,
+      dueDate: loan.firstPaymentDate ? new Date(loan.firstPaymentDate.getTime() + loan.tenureMonths * 30 * 24 * 60 * 60 * 1000) : new Date(),
+      disbursedAt: loan.disbursementDate || undefined,
+      paidAt: loan.paidOffDate || undefined,
       schedule: loan.schedule.map((s) => ({
         installmentNumber: s.installmentNumber,
         dueDate: s.dueDate,
         principalAmount: Number(s.principalAmount),
         interestAmount: Number(s.interestAmount),
         totalAmount: Number(s.amountDue),
-        remainingBalance: Number(s.amountDue) - Number(s.amountPaid),
-        status: s.status as "PENDING" | "PAID" | "PARTIAL" | "OVERDUE",
+        status: s.status as "PENDING" | "PAID" | "OVERDUE" | "WAIVED" | "PARTIAL",
+        paidAmount: Number(s.amountPaid),
       })),
     };
   }

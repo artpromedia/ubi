@@ -33,7 +33,21 @@ export class SubscriptionService {
       orderBy: { displayOrder: "asc" },
     });
 
-    return plans.map((p) => this.formatPlan(p));
+    return plans.map((p: {
+      id: string;
+      name: string;
+      slug: string;
+      description: string | null;
+      price: unknown;
+      currency: string;
+      billingPeriod: string;
+      trialDays: number;
+      features: unknown;
+      maxFamilyMembers: number;
+      isPopular: boolean;
+      displayOrder: number;
+      isActive: boolean;
+    }) => this.formatPlan(p));
   }
 
   /**
@@ -595,7 +609,16 @@ export class SubscriptionService {
       take: limit,
     });
 
-    return invoices.map((inv) => ({
+    return invoices.map((inv: {
+      id: string;
+      amount: unknown;
+      currency: string;
+      status: string;
+      periodStart: Date;
+      periodEnd: Date;
+      paidAt: Date | null;
+      createdAt: Date;
+    }) => ({
       id: inv.id,
       amount: Number(inv.amount),
       currency: inv.currency,
@@ -654,9 +677,9 @@ export class SubscriptionService {
   }
 
   private async processPayment(
-    subscriptionId: string,
-    amount: number,
-    currency: string
+    _subscriptionId: string,
+    _amount: number,
+    _currency: string
   ): Promise<boolean> {
     // TODO: Integrate with actual payment processor
     // For now, simulate success

@@ -14,17 +14,14 @@ import {
   OutgoingSMS,
   ParsedSMSCommand,
   SMSCommand,
-  SMSDeliveryStatus,
   SMSTemplate,
-} from "../types/offline.types";
+} from "@/types/offline.types";
 
 // =============================================================================
 // SMS CONSTANTS
 // =============================================================================
 
 const MAX_SMS_LENGTH = 160; // GSM-7 single SMS
-const MAX_CONCATENATED_LENGTH = 459; // 3-part SMS
-const SHORTCODE = "20384";
 const SENDER_ID = "UBI";
 
 // =============================================================================
@@ -547,7 +544,7 @@ export class SMSService implements ISMSService {
   private async handleFeedback(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    user: any,
+    _user: any,
     lang: string
   ): Promise<OutgoingSMS> {
     const [message] = command.args;
@@ -557,7 +554,7 @@ export class SMSService implements ISMSService {
     }
 
     await this.submitFeedback({
-      userId: user?.id,
+      userId: _user?.id,
       phoneNumber: sms.sender,
       message: message,
       source: "sms",
@@ -573,7 +570,7 @@ export class SMSService implements ISMSService {
   private async handleConfirm(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    user: any,
+    _user: any,
     lang: string
   ): Promise<OutgoingSMS> {
     const [code] = command.args;
@@ -654,11 +651,11 @@ export class SMSService implements ISMSService {
     const [address] = command.args;
     const placeType = command.command === SMSCommand.SET_HOME ? "home" : "work";
 
-    const location = await this.geocodeAddress(address);
+    const location = await this.geocodeAddress(address || "");
     if (!location) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.address_not_found", lang, { address })
+        this.t("error.address_not_found", lang, { address: address || "" })
       );
     }
 
@@ -761,12 +758,8 @@ export class SMSService implements ISMSService {
       id: this.generateId(),
       recipient,
       sender: SENDER_ID,
-      body: parts[0],
-      parts: parts.length,
-      encoding: this.detectEncoding(message),
+      message: parts[0] || "",
       priority,
-      status: "pending" as SMSDeliveryStatus,
-      createdAt: new Date(),
     };
   }
 
@@ -893,12 +886,18 @@ export class SMSService implements ISMSService {
     ];
 
     for (const def of templateDefs) {
+      const content: Record<string, string> = {};
+      content[def.lang] = def.template;
+
       const template: SMSTemplate = {
         id: `${def.id}_${def.lang}`,
+        code: def.id,
         name: def.id,
+        content,
         template: def.template,
         variables: this.extractVariables(def.template),
         language: def.lang,
+        category: "notification",
         priority: def.priority || MessagePriority.NORMAL,
         maxLength: MAX_SMS_LENGTH,
       };
@@ -1068,12 +1067,12 @@ export class SMSService implements ISMSService {
   // EXTERNAL SERVICE STUBS
   // ===========================================================================
 
-  private async getUserByPhone(phone: string): Promise<any> {
+  private async getUserByPhone(_phone: string): Promise<any> {
     return { id: "user_123", name: "John", preferredLanguage: "en" };
   }
 
-  private async createUser(data: any): Promise<any> {
-    return { id: "user_" + Date.now(), ...data };
+  private async createUser(_data: any): Promise<any> {
+    return { id: "user_" + Date.now(), ..._data };
   }
 
   private async geocodeAddress(
@@ -1083,19 +1082,19 @@ export class SMSService implements ISMSService {
   }
 
   private async getDefaultPickup(
-    userId: string
+    _userId: string
   ): Promise<{ coords: GeoLocation; address: string } | null> {
     return null;
   }
 
   private async getFareEstimate(
-    pickup: GeoLocation,
-    dropoff: GeoLocation
+    _pickup: GeoLocation,
+    _dropoff: GeoLocation
   ): Promise<any> {
     return { fare: 350, eta: 5, distance: 7.2 };
   }
 
-  private async createTrip(data: any): Promise<any> {
+  private async createTrip(_data: any): Promise<any> {
     return {
       id: "trip_" + Date.now(),
       driverName: "John K.",
@@ -1105,39 +1104,72 @@ export class SMSService implements ISMSService {
     };
   }
 
-  private async getActiveTrip(userId: string): Promise<any> {
+  private async getActiveTrip(_userId: string): Promise<any> {
     return null;
   }
 
-  private async getTrip(tripId: string): Promise<any> {
+  private async getTrip(_tripId: string): Promise<any> {
     return null;
   }
 
-  private async cancelTrip(tripId: string, reason: string): Promise<void> {}
+  private async cancelTrip(_tripId: string, _reason: string): Promise<void> {}
 
   private async deductCancellationFee(
-    phone: string,
-    fee: number
+    _phone: string,
+    _fee: number
   ): Promise<void> {}
 
-  private async getWalletBalance(userId: string): Promise<number> {
+  private async getWalletBalance(_userId: string): Promise<number> {
     return 1500;
   }
 
   private async getRecentTransactions(
-    userId: string,
-    limit: number
+    _userId: string,
+    _limit: number
   ): Promise<any[]> {
     return [];
   }
 
-  private async getDriverByPlate(plate: string): Promise<any> {
+  private async getDriverByPlate(_plate: string): Promise<any> {
     return null;
   }
 
-  private async savePlace(userId: string, place: any): Promise<void> {}
+  private async savePlace(_userId: string, _place: any): Promise<void> {}
 
-  private async submitFeedback(data: any): Promise<void> {}
+  private async submitFeedback(_data: any): Promise<void> {}
+
+  // ===========================================================================
+  // INTERFACE METHODS
+  // ===========================================================================
+
+  async handleIncoming(sms: IncomingSMS): Promise<void> {
+    await this.handleIncomingSMS(sms);
+  }
+
+  async send(_sms: OutgoingSMS): Promise<string> {
+    return this.generateId();
+  }
+
+  async sendTemplate(
+    to: string,
+    templateCode: string,
+    data: Record<string, unknown>,
+    language?: string
+  ): Promise<string> {
+    const template = this.templates.get(`${templateCode}_${language || "en"}`);
+    if (!template) {
+      throw new Error(`Template not found: ${templateCode}`);
+    }
+
+    let message = template.template;
+    for (const [key, value] of Object.entries(data)) {
+      message = message.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
+    }
+
+    return this.send({ message, recipient: to });
+  }
+
+  // parseCommand is already a public method defined earlier in the class
 
   // ===========================================================================
   // EVENT HANDLERS

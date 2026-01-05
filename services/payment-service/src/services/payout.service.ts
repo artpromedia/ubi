@@ -38,6 +38,23 @@ import { MpesaService } from "../providers/mpesa.service";
 import { PaystackService } from "../providers/paystack.service";
 import { WalletService } from "./wallet.service";
 
+export interface CashoutRequest {
+  userId: string; // User ID (driver or merchant)
+  driverId?: string; // Optional driver ID if applicable
+  merchantId?: string; // Optional merchant ID if applicable
+  amount: number;
+  currency: Currency;
+  paymentMethod: "mobile_money" | "bank_transfer";
+  phoneNumber?: string; // Required for mobile money
+  bankAccount?: {
+    accountNumber: string;
+    bankCode: string;
+    accountName: string;
+  };
+  reason?: string;
+  metadata?: Record<string, any>; // Additional metadata for the cashout
+}
+
 export interface CreatePayoutRequest {
   driverId: string;
   amount: number;
@@ -176,7 +193,7 @@ export class PayoutService {
 
     const balance = await this.walletService.getBalance(
       driver.userId,
-      "DRIVER_WALLET",
+      "DRIVER_WALLET" as any,
       currency
     );
 
@@ -246,10 +263,11 @@ export class PayoutService {
         provider = PaymentProvider.MPESA;
       } else if (currency === "GHS") {
         provider = PaymentProvider.MTN_MOMO_GH;
-      } else if (currency === "RWF") {
+      } else if (currency === Currency.RWF) {
         provider = PaymentProvider.MTN_MOMO_RW;
-      } else if (currency === "UGX") {
-        provider = PaymentProvider.MTN_MOMO_UG;
+      } else if (currency === Currency.USD) {
+        // Use default provider for USD
+        provider = PaymentProvider.PAYSTACK;
       } else {
         throw new Error(`Mobile money not supported for ${currency}`);
       }
@@ -322,14 +340,26 @@ export class PayoutService {
         return; // Already processed or cancelled
       }
 
+      // Get driver's wallet account
+      const driverAccount = await this.prisma.walletAccount.findFirst({
+        where: {
+          userId: payout.driver.userId,
+          accountType: "DRIVER_WALLET" as any,
+          currency: payout.currency,
+        },
+      });
+
+      if (!driverAccount) {
+        throw new Error("Driver wallet account not found");
+      }
+
       // Hold funds in wallet (prevent double payout)
       const holdResult = await this.walletService.holdFunds({
-        userId: payout.driver.userId,
-        accountType: "DRIVER_WALLET",
+        accountId: driverAccount.id,
         amount: Number(payout.amount),
         currency: payout.currency,
         reason: `Payout ${payoutId}`,
-        expiryMinutes: 30, // Hold for 30 minutes
+        expiresInMinutes: 30, // Hold for 30 minutes
         metadata: { payoutId },
       });
 
@@ -589,8 +619,8 @@ export class PayoutService {
     }
 
     // Capture held funds (debit driver wallet, credit UBI_FLOAT)
-    const transaction = await this.walletService.captureFunds({
-      holdId,
+    await this.walletService.captureFunds(holdId, {
+      transactionType: "PAYOUT" as any,
       toAccountId: ubiFloat.id,
       description: `Payout to driver - ${providerReference || payout.providerReference}`,
       metadata: {
@@ -745,7 +775,7 @@ export class PayoutService {
 
     const balance = await this.walletService.getBalance(
       driver.userId,
-      "DRIVER_WALLET",
+      "DRIVER_WALLET" as any,
       currency
     );
 
@@ -859,7 +889,7 @@ export class PayoutService {
           try {
             const balance = await this.walletService.getBalance(
               driver.userId,
-              "DRIVER_WALLET",
+              "DRIVER_WALLET" as any,
               currency
             );
 
@@ -912,4 +942,20 @@ export class PayoutService {
 
     return { processed, failed, totalAmount };
   }
+}
+
+// Singleton instance
+let payoutServiceInstance: PayoutService | null = null;
+
+// Create new instance
+export function createPayoutService(prisma: PrismaClient): PayoutService {
+  return new PayoutService(prisma);
+}
+
+// Get singleton instance
+export function getPayoutService(prisma: PrismaClient): PayoutService {
+  if (!payoutServiceInstance) {
+    payoutServiceInstance = createPayoutService(prisma);
+  }
+  return payoutServiceInstance;
 }

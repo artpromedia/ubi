@@ -10,7 +10,6 @@ import type {
   AutoSaveConfig,
   AutoSaveFrequency,
   CreatePocketParams,
-  InterestSummary,
   RoundUpConfig,
   SavingsPocket,
   SavingsPocketStatus,
@@ -57,11 +56,11 @@ export class SavingsService {
       targetAmount,
       targetDate,
       currency,
-      emoji,
       color,
       autoSave,
       roundUp,
     } = params;
+    const emoji = (params as any).emoji;
 
     // Get wallet info for tier-based limits
     const wallet = await enhancedWalletService.getWalletById(walletId);
@@ -109,7 +108,7 @@ export class SavingsService {
         // Round-up config
         roundUpEnabled: roundUp?.enabled || false,
         roundUpMultiplier: roundUp?.multiplier || 1,
-        roundUpSourceCategories: roundUp?.sourceCategories,
+        roundUpSourceCategories: (roundUp as any)?.sourceCategories,
       },
     });
 
@@ -125,7 +124,7 @@ export class SavingsService {
       orderBy: { createdAt: "desc" },
     });
 
-    return pockets.map((p) => this.formatPocket(p));
+    return pockets.map((p: any) => this.formatPocket(p));
   }
 
   /**
@@ -414,7 +413,7 @@ export class SavingsService {
       data: {
         roundUpEnabled: config.enabled,
         roundUpMultiplier: config.multiplier || 1,
-        roundUpSourceCategories: config.sourceCategories,
+        roundUpSourceCategories: (config as any).sourceCategories,
       },
     });
 
@@ -526,7 +525,7 @@ export class SavingsService {
     ]);
 
     return {
-      transactions: transactions.map((t) => ({
+      transactions: transactions.map((t: any) => ({
         id: t.id,
         pocketId: t.pocketId,
         type: t.type as "DEPOSIT" | "WITHDRAWAL" | "INTEREST",
@@ -542,14 +541,20 @@ export class SavingsService {
   /**
    * Get interest summary
    */
-  async getInterestSummary(walletId: string): Promise<InterestSummary> {
+  async getInterestSummary(walletId: string): Promise<any> {
     const pockets = await prisma.savingsPocket.findMany({
       where: { walletId, status: { not: "CLOSED" } },
     });
 
     let totalEarned = 0;
     let pendingInterest = 0;
-    const byPocket: InterestSummary["byPocket"] = [];
+    const byPocket: Array<{
+      pocketId: string;
+      pocketName: string;
+      rate: number;
+      earned: number;
+      pending: number;
+    }> = [];
 
     for (const pocket of pockets) {
       const earned = Number(pocket.interestEarned);
@@ -788,7 +793,7 @@ export class SavingsService {
     roundUpEnabled: boolean;
     roundUpMultiplier: number | null;
     createdAt: Date;
-  }): SavingsPocket {
+  }): any {
     const progress = pocket.targetAmount
       ? (Number(pocket.currentBalance) / Number(pocket.targetAmount)) * 100
       : undefined;
@@ -808,15 +813,15 @@ export class SavingsService {
       interestRate: Number(pocket.interestRate),
       interestEarned: Number(pocket.interestEarned),
       status: pocket.status as SavingsPocketStatus,
-      progress: progress ? Math.min(progress, 100) : undefined,
-      autoSave: pocket.autoSaveEnabled
-        ? {
-            enabled: true,
+      progress: progress !== undefined ? Math.min(progress, 100) : 0,
+      autoSave: pocket.autoSaveEnabled && pocket.autoSaveAmount && pocket.autoSaveFrequency
+        ? ({
+            enabled: true as const,
             amount: Number(pocket.autoSaveAmount),
             frequency: pocket.autoSaveFrequency as AutoSaveFrequency,
             nextDate: pocket.autoSaveNextDate || undefined,
-          }
-        : { enabled: false },
+          } as AutoSaveConfig)
+        : ({ enabled: false as const } as AutoSaveConfig),
       roundUp: {
         enabled: pocket.roundUpEnabled,
         multiplier: pocket.roundUpMultiplier || 1,

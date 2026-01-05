@@ -132,20 +132,21 @@ const LEADERBOARD_CONFIGS: LeaderboardConfig[] = [
       { position: 10, points: 400 },
     ],
   },
-  {
-    type: "SAVINGS",
-    name: "Super Savers",
-    description: "Top savers building wealth with UBI",
-    icon: "💰",
-    metricField: "totalSaved",
-    periods: ["MONTHLY", "ALL_TIME"],
-    rewards: [
-      { position: 1, points: 3000, badge: "super_saver" },
-      { position: 2, points: 2000 },
-      { position: 3, points: 1000 },
-      { position: 10, points: 300 },
-    ],
-  },
+  // SAVINGS leaderboard disabled - not in LeaderboardType union yet
+  // {
+  //   type: "SAVINGS",
+  //   name: "Super Savers",
+  //   description: "Top savers building wealth with UBI",
+  //   icon: "💰",
+  //   metricField: "totalSaved",
+  //   periods: ["MONTHLY", "ALL_TIME"],
+  //   rewards: [
+  //     { position: 1, points: 3000, badge: "super_saver" },
+  //     { position: 2, points: 2000 },
+  //     { position: 3, points: 1000 },
+  //     { position: 10, points: 300 },
+  //   ],
+  // },
 ];
 
 // ============================================================================
@@ -226,16 +227,12 @@ export class LeaderboardsService {
     );
 
     return {
-      id: `${type}_${period}`,
       type,
-      name: config.name,
-      description: config.description,
       period,
-      startDate,
-      endDate: period === "ALL_TIME" ? undefined : endDate,
+      periodStart: startDate,
+      periodEnd: endDate,
       entries,
       totalParticipants,
-      rewards: config.rewards,
     };
   }
 
@@ -303,14 +300,15 @@ export class LeaderboardsService {
     let pointsToNextRank: number | undefined;
 
     if (rank > 1) {
-      nextRankScore = await this.getScoreAtRank(
+      const score = await this.getScoreAtRank(
         type,
         config.metricField,
         rank - 1,
         startDate,
         endDate
       );
-      if (nextRankScore !== null) {
+      if (score !== null) {
+        nextRankScore = score;
         pointsToNextRank = nextRankScore - userScore;
       }
     }
@@ -528,7 +526,7 @@ export class LeaderboardsService {
       throw new Error("Invalid leaderboard type");
     }
 
-    const { startDate, endDate } = this.getPeriodBoundaries(period);
+    const { startDate } = this.getPeriodBoundaries(period);
     const leaderboardId = `${type}_${period}_${startDate.toISOString().slice(0, 10)}`;
 
     // Check if rewards already processed
@@ -644,7 +642,7 @@ export class LeaderboardsService {
       orderBy: { awardedAt: "desc" },
     });
 
-    return rewards.map((r) => {
+    return rewards.map((r: { leaderboardId: string; rank: number; pointsAwarded: number; badgeAwarded: string | null; awardedAt: Date }) => {
       const [type, period] = r.leaderboardId.split("_");
       return {
         leaderboardType: type,
@@ -684,7 +682,7 @@ export class LeaderboardsService {
     const friendIds = new Set<string>();
     friendIds.add(userId); // Include self
 
-    friends.forEach((f) => {
+    friends.forEach((f: { referrerId: string; refereeId: string }) => {
       friendIds.add(f.referrerId);
       friendIds.add(f.refereeId);
     });
@@ -694,7 +692,7 @@ export class LeaderboardsService {
       throw new Error("Invalid leaderboard type");
     }
 
-    const { startDate, endDate } = this.getPeriodBoundaries(period);
+    const { startDate } = this.getPeriodBoundaries(period);
     const leaderboardId = `${type}_${period}_${startDate.toISOString().slice(0, 10)}`;
 
     const entries = await prisma.leaderboardEntry.findMany({
@@ -714,7 +712,7 @@ export class LeaderboardsService {
       },
     });
 
-    return entries.map((entry, index) => ({
+    return entries.map((entry: { userId: string; score: number; user?: { name?: string | null; avatar?: string | null } | null }, index: number) => ({
       userId: entry.userId,
       rank: index + 1,
       score: entry.score,
@@ -771,13 +769,13 @@ export class LeaderboardsService {
 
   private async getLeaderboardEntries(
     type: LeaderboardType,
-    metricField: string,
+    _metricField: string,
     startDate: Date,
-    endDate: Date,
+    _endDate: Date,
     limit: number,
     offset: number,
-    region?: string,
-    tier?: LoyaltyTier
+    _region?: string,
+    _tier?: LoyaltyTier
   ): Promise<LeaderboardEntry[]> {
     const leaderboardId = `${type}_${this.getPeriodKey(startDate)}_${startDate.toISOString().slice(0, 10)}`;
 
@@ -801,7 +799,7 @@ export class LeaderboardsService {
       },
     });
 
-    return entries.map((entry, index) => ({
+    return entries.map((entry: { userId: string; score: number; user?: { name?: string | null; avatar?: string | null } | null }, index: number) => ({
       userId: entry.userId,
       rank: offset + index + 1,
       score: entry.score,
@@ -813,7 +811,6 @@ export class LeaderboardsService {
 
   private getPeriodKey(startDate: Date): string {
     // Determine period from start date pattern
-    const now = new Date();
     if (startDate.getFullYear() === 2020) return "ALL_TIME";
     if (startDate.getDate() === 1) return "MONTHLY";
     if (startDate.getDay() === 1) return "WEEKLY";
@@ -821,9 +818,9 @@ export class LeaderboardsService {
   }
 
   private async getTotalParticipants(
-    type: LeaderboardType,
-    startDate: Date,
-    endDate: Date
+    _type: LeaderboardType,
+    _startDate: Date,
+    _endDate: Date
   ): Promise<number> {
     // For simplicity, count users with activity in the period
     // This would be more sophisticated in production
@@ -838,7 +835,7 @@ export class LeaderboardsService {
   private async getUserScore(
     userId: string,
     type: LeaderboardType,
-    metricField: string,
+    _metricField: string,
     startDate: Date,
     endDate: Date
   ): Promise<number | null> {
@@ -896,7 +893,7 @@ export class LeaderboardsService {
 
   private async getUsersAboveScore(
     type: LeaderboardType,
-    metricField: string,
+    _metricField: string,
     score: number,
     startDate: Date,
     endDate: Date
@@ -915,7 +912,7 @@ export class LeaderboardsService {
 
   private async getScoreAtRank(
     type: LeaderboardType,
-    metricField: string,
+    _metricField: string,
     rank: number,
     startDate: Date,
     endDate: Date

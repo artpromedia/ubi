@@ -161,7 +161,7 @@ export class WomenSafetyService extends EventEmitter {
 
     const profile: FemaleDriverProfile = {
       driverId,
-      genderVerified: isVerified,
+      genderVerified: isVerified ?? false,
       verificationMethod: verification.method,
       registeredAt: new Date(),
       isActive: true,
@@ -324,7 +324,7 @@ export class WomenSafetyService extends EventEmitter {
     return pin; // In production, might partially mask for display
   }
 
-  private async sendPinToRider(riderId: string, pin: string): Promise<void> {
+  private async sendPinToRider(riderId: string, _pin: string): Promise<void> {
     // In production, send via push notification and SMS
     console.log("[WomenSafety] PIN sent to rider:", riderId.slice(-4));
   }
@@ -428,15 +428,15 @@ export class WomenSafetyService extends EventEmitter {
     }
   }
 
-  private async generateShareLink(tripId: string): Promise<string> {
+  private async generateShareLink(_tripId: string): Promise<string> {
     const token = crypto.randomBytes(16).toString("hex");
     return `https://ubi.app/trip/track/${token}`;
   }
 
   private async notifyContactOfTripShare(
     contactId: string,
-    riderId: string,
-    shareLink: string
+    _riderId: string,
+    _shareLink: string
   ): Promise<void> {
     // In production, send SMS/WhatsApp with share link
     console.log("[WomenSafety] Contact notified of trip share:", contactId);
@@ -444,7 +444,7 @@ export class WomenSafetyService extends EventEmitter {
 
   private async notifyContactTripEnded(
     contactId: string,
-    riderId: string
+    _riderId: string
   ): Promise<void> {
     // In production, send notification that trip ended safely
     console.log("[WomenSafety] Contact notified trip ended safely:", contactId);
@@ -533,8 +533,22 @@ export class WomenSafetyService extends EventEmitter {
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
 
-    const [startHour, startMin] = prefs.quietHoursStart.split(":").map(Number);
-    const [endHour, endMin] = prefs.quietHoursEnd.split(":").map(Number);
+    const startParts = prefs.quietHoursStart.split(":").map(Number);
+    const endParts = prefs.quietHoursEnd.split(":").map(Number);
+
+    const startHour = startParts[0];
+    const startMin = startParts[1];
+    const endHour = endParts[0];
+    const endMin = endParts[1];
+
+    if (
+      startHour === undefined ||
+      startMin === undefined ||
+      endHour === undefined ||
+      endMin === undefined
+    ) {
+      return false;
+    }
 
     const startTime = startHour * 60 + startMin;
     const endTime = endHour * 60 + endMin;
@@ -581,7 +595,7 @@ export class WomenSafetyService extends EventEmitter {
     this.userPreferences.set(userId, prefs);
   }
 
-  async getTrustedContacts(userId: string): Promise<EmergencyContact[]> {
+  async getTrustedContacts(_userId: string): Promise<EmergencyContact[]> {
     // In production, fetch from database
     return [];
   }
@@ -610,7 +624,7 @@ export class WomenSafetyService extends EventEmitter {
     };
   }
 
-  private async isDriverFullyVerified(driverId: string): Promise<boolean> {
+  private async isDriverFullyVerified(_driverId: string): Promise<boolean> {
     // In production, check driver's verification status
     return true;
   }

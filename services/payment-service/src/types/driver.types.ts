@@ -623,6 +623,17 @@ export interface DriverProfile {
   badges: DriverBadge[];
 }
 
+export interface DriverTierHistory {
+  id: string;
+  driverId: string;
+  tier: DriverTier;
+  previousTier?: DriverTier;
+  achievedAt: Date;
+  tripsAtUpgrade: number;
+  ratingAtUpgrade: number;
+  earningsAtUpgrade: number;
+}
+
 export enum DriverOnlineStatus {
   OFFLINE = "OFFLINE",
   ONLINE = "ONLINE",
@@ -749,6 +760,12 @@ export interface DriverTrainingModule extends TrainingModule {
   lockReason?: string;
 }
 
+export enum CertificationStatus {
+  ACTIVE = "ACTIVE",
+  EXPIRED = "EXPIRED",
+  EXPIRING_SOON = "EXPIRING_SOON",
+}
+
 export interface DriverCertification {
   id: string;
   driverId: string;
@@ -760,6 +777,14 @@ export interface DriverCertification {
   isActive: boolean;
   certificateUrl?: string;
   verificationCode?: string;
+}
+
+export enum BadgeRarity {
+  COMMON = "COMMON",
+  UNCOMMON = "UNCOMMON",
+  RARE = "RARE",
+  EPIC = "EPIC",
+  LEGENDARY = "LEGENDARY",
 }
 
 export interface DriverBadge {
@@ -778,6 +803,14 @@ export interface DriverBadge {
 // -----------------------------------------
 // COMMUNITY TYPES
 // -----------------------------------------
+
+export enum PostType {
+  DISCUSSION = "DISCUSSION",
+  QUESTION = "QUESTION",
+  TIP = "TIP",
+  ANNOUNCEMENT = "ANNOUNCEMENT",
+  POLL = "POLL",
+}
 
 export interface ForumCategory {
   id: string;
@@ -887,6 +920,10 @@ export enum DriverEventType {
   WEBINAR = "WEBINAR",
 }
 
+// Alias for backward compatibility
+export type EventType = DriverEventType;
+export const EventType = DriverEventType;
+
 export interface EventRegistration {
   id: string;
   eventId: string;
@@ -898,6 +935,15 @@ export interface EventRegistration {
 export enum EventRegistrationStatus {
   REGISTERED = "REGISTERED",
   WAITLIST = "WAITLIST",
+  CHECKED_IN = "CHECKED_IN",
+  NO_SHOW = "NO_SHOW",
+  CANCELLED = "CANCELLED",
+}
+
+// Alternative registration status enum used in community service
+export enum RegistrationStatus {
+  REGISTERED = "REGISTERED",
+  WAITLISTED = "WAITLISTED",
   CHECKED_IN = "CHECKED_IN",
   NO_SHOW = "NO_SHOW",
   CANCELLED = "CANCELLED",
@@ -938,9 +984,34 @@ export interface DriverOfMonth {
   story?: string;
 }
 
+export type LeaderboardPeriod = "DAILY" | "WEEKLY" | "MONTHLY" | "ALL_TIME";
+
+// Export LeaderboardPeriod values for runtime use
+export const LeaderboardPeriod = {
+  DAILY: "DAILY" as const,
+  WEEKLY: "WEEKLY" as const,
+  MONTHLY: "MONTHLY" as const,
+  ALL_TIME: "ALL_TIME" as const,
+};
+
+export interface DriverLeaderboard {
+  type: string;
+  period: LeaderboardPeriod;
+  city?: string;
+  entries: LeaderboardEntry[];
+  lastUpdated: Date;
+}
+
 // -----------------------------------------
 // FLEET OWNER TYPES
 // -----------------------------------------
+
+export enum ApplicationStatus {
+  PENDING = "PENDING",
+  UNDER_REVIEW = "UNDER_REVIEW",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+}
 
 export enum BusinessType {
   INDIVIDUAL = "INDIVIDUAL",
@@ -955,6 +1026,10 @@ export enum FleetStatus {
   SUSPENDED = "SUSPENDED",
   TERMINATED = "TERMINATED",
 }
+
+// Alias for backward compatibility
+export type FleetOwnerStatus = FleetStatus;
+export const FleetOwnerStatus = FleetStatus;
 
 export enum FleetTier {
   STARTER = "STARTER",
@@ -1014,6 +1089,29 @@ export interface FleetStats {
   onlineHours: number;
 }
 
+export interface FleetEarningsBreakdown {
+  date: Date;
+  totalEarnings: number;
+  ownerShare: number;
+  driverShare: number;
+  platformFee: number;
+  trips: number;
+}
+
+export interface FleetEarnings {
+  fleetId: string;
+  period: {
+    start: Date;
+    end: Date;
+  };
+  totalEarnings: number;
+  ownerShare: number;
+  totalTrips: number;
+  dailyBreakdown: FleetEarningsBreakdown[];
+  vehicleBreakdown: any[];
+  driverBreakdown: any[];
+}
+
 export interface FleetAlert {
   id: string;
   type: FleetAlertType;
@@ -1047,7 +1145,7 @@ export interface FleetVehicle {
   vehicleType: VehicleType;
   fuelType: FuelType;
   seatingCapacity: number;
-  status: FleetVehicleStatus;
+  status: VehicleStatus;
   assignedDriverId?: string;
   assignedDriver?: FleetDriver;
   currentLocation?: { lat: number; lng: number };
@@ -1078,6 +1176,15 @@ export enum FuelType {
   HYBRID = "HYBRID",
 }
 
+export enum VehicleStatus {
+  PENDING_APPROVAL = "PENDING_APPROVAL",
+  ACTIVE = "ACTIVE",
+  MAINTENANCE = "MAINTENANCE",
+  INACTIVE = "INACTIVE",
+  DECOMMISSIONED = "DECOMMISSIONED",
+}
+
+// Alias for backward compatibility
 export enum FleetVehicleStatus {
   PENDING = "PENDING",
   ACTIVE = "ACTIVE",

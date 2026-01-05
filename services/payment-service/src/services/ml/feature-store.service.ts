@@ -19,7 +19,7 @@ import {
   GetFeaturesRequest,
   GetFeaturesResponse,
   IFeatureStoreService,
-} from "../types/ml.types";
+} from "../../types/ml.types";
 
 // =============================================================================
 // REDIS CLIENT INTERFACE (for real-time features)
@@ -48,12 +48,13 @@ interface RedisPipeline {
 // FEATURE COMPUTATION CONTEXT
 // =============================================================================
 
-interface FeatureComputationContext {
-  entityType: FeatureEntityType;
-  entityId: string;
-  timestamp: Date;
-  dependencies: Record<string, unknown>;
-}
+// Reserved for future use
+// interface FeatureComputationContext {
+//   entityType: FeatureEntityType;
+//   entityId: string;
+//   timestamp: Date;
+//   dependencies: Record<string, unknown>;
+// }
 
 interface StreamFeatureUpdate {
   featureName: string;
@@ -966,10 +967,11 @@ export class FeatureStoreService implements IFeatureStoreService {
 
     for (let i = 0; i < featureNames.length; i++) {
       const rawValue = values[i];
-      if (rawValue) {
-        result[featureNames[i]] = JSON.parse(rawValue);
-      } else {
-        result[featureNames[i]] = null;
+      const featureName = featureNames[i];
+      if (featureName && rawValue) {
+        result[featureName] = JSON.parse(rawValue);
+      } else if (featureName) {
+        result[featureName] = null;
       }
     }
 
@@ -1046,7 +1048,7 @@ export class FeatureStoreService implements IFeatureStoreService {
           entityIds: [entityId],
           featureNames: [depName],
         });
-        if (depValue.vectors.length > 0) {
+        if (depValue.vectors.length > 0 && depValue.vectors[0]) {
           dependencies[depName] = depValue.vectors[0].features[depName];
         }
       }
@@ -1093,8 +1095,8 @@ export class FeatureStoreService implements IFeatureStoreService {
 
   private async computeBatchFeature(
     definition: FeatureDefinition,
-    entityId: string,
-    dependencies: Record<string, unknown>
+    _entityId: string,
+    _dependencies: Record<string, unknown>
   ): Promise<unknown> {
     // In production, this would execute the SQL or transformation code
     // For now, return default value
@@ -1103,8 +1105,8 @@ export class FeatureStoreService implements IFeatureStoreService {
 
   private async computeRequestTimeFeature(
     definition: FeatureDefinition,
-    entityId: string,
-    dependencies: Record<string, unknown>
+    _entityId: string,
+    _dependencies: Record<string, unknown>
   ): Promise<unknown> {
     // Compute request-time features based on current context
     const now = new Date();
@@ -1121,7 +1123,7 @@ export class FeatureStoreService implements IFeatureStoreService {
 
   private async computeExternalFeature(
     definition: FeatureDefinition,
-    entityId: string
+    _entityId: string
   ): Promise<unknown> {
     // Call external API
     // For now, return default value
@@ -1204,7 +1206,7 @@ export class FeatureStoreService implements IFeatureStoreService {
     });
   }
 
-  private applyTransformation(code: string, value: unknown): unknown {
+  private applyTransformation(_code: string, value: unknown): unknown {
     // In production, this would safely execute transformation code
     // For now, return value as-is
     return value;
@@ -1258,7 +1260,7 @@ export class FeatureStoreService implements IFeatureStoreService {
   // ===========================================================================
 
   async getFeatureVectorForModel(
-    modelId: string,
+    _modelId: string,
     entityType: FeatureEntityType,
     entityId: string,
     featureNames: string[]
@@ -1286,7 +1288,7 @@ export class FeatureStoreService implements IFeatureStoreService {
     }
 
     const vector: number[] = [];
-    const features = response.vectors[0].features;
+    const features = response.vectors[0]?.features || {};
 
     for (const name of featureNames) {
       const def = await this.getFeatureDefinition(name);
@@ -1563,7 +1565,7 @@ export class FeatureStoreService implements IFeatureStoreService {
 
 export class FeatureComputationScheduler {
   private featureStore: FeatureStoreService;
-  private schedules: Map<string, NodeJS.Timer> = new Map();
+  private schedules: Map<string, ReturnType<typeof setInterval>> = new Map();
 
   constructor(featureStore: FeatureStoreService) {
     this.featureStore = featureStore;
@@ -1617,7 +1619,7 @@ export class FeatureComputationScheduler {
     intervalMs: number,
     features: string[]
   ): void {
-    const timer = setInterval(async () => {
+    const timer: ReturnType<typeof setInterval> = setInterval(async () => {
       console.log(`Running ${name} feature computation...`);
       try {
         const result = await this.featureStore.runBatchComputation(features);

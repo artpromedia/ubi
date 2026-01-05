@@ -10,8 +10,8 @@
  * - Field trip management
  */
 
+import crypto from "crypto";
 import { EventEmitter } from "events";
-import { v4 as uuidv4 } from "uuid";
 import type {
   ActiveSchoolRoute,
   Coordinates,
@@ -137,7 +137,7 @@ export class SchoolTransportService extends EventEmitter {
     }
   ): Promise<School> {
     const school: School = {
-      id: uuidv4(),
+      id: `school_${crypto.randomBytes(12).toString("hex")}`,
       organizationId,
       schoolType: schoolData.schoolType,
       address: schoolData.address,
@@ -207,7 +207,7 @@ export class SchoolTransportService extends EventEmitter {
     }
   ): Promise<SchoolTerm> {
     const schoolTerm: SchoolTerm = {
-      id: uuidv4(),
+      id: `term_${crypto.randomBytes(12).toString("hex")}`,
       schoolId,
       name: term.name,
       startDate: term.startDate,
@@ -278,7 +278,7 @@ export class SchoolTransportService extends EventEmitter {
     }
 
     const student: Student = {
-      id: uuidv4(),
+      id: `student_${crypto.randomBytes(12).toString("hex")}`,
       schoolId,
       studentId: studentData.studentId,
       firstName: studentData.firstName,
@@ -469,7 +469,7 @@ export class SchoolTransportService extends EventEmitter {
     }
   ): Promise<SchoolRoute> {
     const route: SchoolRoute = {
-      id: uuidv4(),
+      id: `route_${crypto.randomBytes(12).toString("hex")}`,
       schoolId,
       name: routeData.name,
       type: routeData.type,
@@ -700,7 +700,7 @@ export class SchoolTransportService extends EventEmitter {
     const students = await this.getRouteStudents(routeId);
 
     const activeRoute: ActiveSchoolRoute = {
-      id: uuidv4(),
+      id: `active_route_${crypto.randomBytes(12).toString("hex")}`,
       routeId,
       routeName: route.name,
       date: new Date(),
@@ -746,8 +746,10 @@ export class SchoolTransportService extends EventEmitter {
     const route = this.routes.get(activeRoute.routeId);
     if (route && route.stops[activeRoute.currentStopIndex]) {
       const nextStop = route.stops[activeRoute.currentStopIndex];
-      const etaMins = this.calculateETA(location, nextStop.coordinates);
-      activeRoute.estimatedArrival = new Date(Date.now() + etaMins * 60 * 1000);
+      if (nextStop) {
+        const etaMins = this.calculateETA(location, nextStop.coordinates);
+        activeRoute.estimatedArrival = new Date(Date.now() + etaMins * 60 * 1000);
+      }
     }
 
     this.activeRoutes.set(activeRouteId, activeRoute);
@@ -780,7 +782,7 @@ export class SchoolTransportService extends EventEmitter {
     }
 
     const log: StudentTripLog = {
-      id: uuidv4(),
+      id: `log_${crypto.randomBytes(12).toString("hex")}`,
       activeRouteId,
       studentId,
       studentName: `${student.firstName} ${student.lastName}`,
@@ -827,7 +829,7 @@ export class SchoolTransportService extends EventEmitter {
     }
 
     const log: StudentTripLog = {
-      id: uuidv4(),
+      id: `log_${crypto.randomBytes(12).toString("hex")}`,
       activeRouteId,
       studentId,
       studentName: `${student.firstName} ${student.lastName}`,
@@ -873,7 +875,7 @@ export class SchoolTransportService extends EventEmitter {
     }
 
     const log: StudentTripLog = {
-      id: uuidv4(),
+      id: `log_${crypto.randomBytes(12).toString("hex")}`,
       activeRouteId,
       studentId,
       studentName: `${student.firstName} ${student.lastName}`,
@@ -916,7 +918,9 @@ export class SchoolTransportService extends EventEmitter {
     // Notify parents at next stop
     if (activeRoute.currentStopIndex < route.stops.length) {
       const nextStop = route.stops[activeRoute.currentStopIndex];
-      await this.notifyUpcomingStop(activeRoute, nextStop);
+      if (nextStop) {
+        await this.notifyUpcomingStop(activeRoute, nextStop);
+      }
     }
 
     this.activeRoutes.set(activeRouteId, activeRoute);
@@ -1094,7 +1098,7 @@ export class SchoolTransportService extends EventEmitter {
 
     if (!record) {
       record = {
-        id: uuidv4(),
+        id: `attendance_${crypto.randomBytes(12).toString("hex")}`,
         studentId,
         date,
         morningStatus: "present",
@@ -1176,7 +1180,7 @@ export class SchoolTransportService extends EventEmitter {
       if (!guardian.userId) continue;
 
       const notification: ParentNotification = {
-        id: uuidv4(),
+        id: `notif_${crypto.randomBytes(12).toString("hex")}`,
         studentId: student.id,
         parentUserId: guardian.userId,
         type,
@@ -1274,14 +1278,18 @@ export class SchoolTransportService extends EventEmitter {
     let totalMinutes = 0;
 
     for (let i = 0; i < stops.length - 1; i++) {
-      // Travel time between stops
-      const distance = this.calculateDistance(
-        stops[i].coordinates,
-        stops[i + 1].coordinates
-      );
-      totalMinutes += Math.ceil(distance * 3); // ~3 min per km
-      // Wait time at stop
-      totalMinutes += stops[i].waitTimeMinutes;
+      const currentStop = stops[i];
+      const nextStop = stops[i + 1];
+      if (currentStop && nextStop) {
+        // Travel time between stops
+        const distance = this.calculateDistance(
+          currentStop.coordinates,
+          nextStop.coordinates
+        );
+        totalMinutes += Math.ceil(distance * 3); // ~3 min per km
+        // Wait time at stop
+        totalMinutes += currentStop.waitTimeMinutes;
+      }
     }
 
     return totalMinutes;
@@ -1291,10 +1299,14 @@ export class SchoolTransportService extends EventEmitter {
     let totalKm = 0;
 
     for (let i = 0; i < stops.length - 1; i++) {
-      totalKm += this.calculateDistance(
-        stops[i].coordinates,
-        stops[i + 1].coordinates
-      );
+      const currentStop = stops[i];
+      const nextStop = stops[i + 1];
+      if (currentStop && nextStop) {
+        totalKm += this.calculateDistance(
+          currentStop.coordinates,
+          nextStop.coordinates
+        );
+      }
     }
 
     return Math.round(totalKm * 10) / 10;
@@ -1325,27 +1337,38 @@ export class SchoolTransportService extends EventEmitter {
   private optimizeStopOrder(stops: RouteStop[]): RouteStop[] {
     if (stops.length <= 2) return stops;
 
+    const firstStop = stops[0];
+    if (!firstStop) return stops;
+
     // Simple nearest-neighbor algorithm
-    const optimized: RouteStop[] = [stops[0]];
+    const optimized: RouteStop[] = [firstStop];
     const remaining = stops.slice(1);
 
     while (remaining.length > 0) {
       const lastStop = optimized[optimized.length - 1];
+      if (!lastStop) break;
+
       let nearestIdx = 0;
       let nearestDist = Infinity;
 
       for (let i = 0; i < remaining.length; i++) {
-        const dist = this.calculateDistance(
-          lastStop.coordinates,
-          remaining[i].coordinates
-        );
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestIdx = i;
+        const currentRemaining = remaining[i];
+        if (currentRemaining) {
+          const dist = this.calculateDistance(
+            lastStop.coordinates,
+            currentRemaining.coordinates
+          );
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestIdx = i;
+          }
         }
       }
 
-      optimized.push(remaining.splice(nearestIdx, 1)[0]);
+      const nearestStop = remaining.splice(nearestIdx, 1)[0];
+      if (nearestStop) {
+        optimized.push(nearestStop);
+      }
     }
 
     // Update order numbers
@@ -1373,7 +1396,7 @@ export class SchoolTransportService extends EventEmitter {
 
       if (!record) {
         record = {
-          id: uuidv4(),
+          id: `attendance_${crypto.randomBytes(12).toString("hex")}`,
           studentId: log.studentId,
           date: activeRoute.date,
           morningStatus: "present",

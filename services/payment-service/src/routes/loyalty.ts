@@ -32,10 +32,6 @@ const loyaltyRoutes = new Hono();
 // ============================================================================
 
 // Common schemas
-const userIdSchema = z.object({
-  userId: z.string().uuid(),
-});
-
 const paginationSchema = z.object({
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
@@ -59,18 +55,17 @@ const earnPointsSchema = z.object({
     "REVIEW",
     "OTHER",
   ]),
-  baseAmount: z.number().positive(),
-  referenceId: z.string(),
-  referenceType: z.string(),
+  amount: z.number().positive(),
+  sourceId: z.string().optional(),
   description: z.string().optional(),
   metadata: z.record(z.any()).optional(),
 });
 
 const redeemPointsSchema = z.object({
   userId: z.string().uuid(),
-  amount: z.number().positive(),
-  rewardType: z.string(),
-  rewardId: z.string().optional(),
+  points: z.number().positive(),
+  redemptionType: z.enum(["rides", "food", "cash", "partner", "catalog"]),
+  catalogItemId: z.string().optional(),
   description: z.string().optional(),
 });
 
@@ -103,7 +98,7 @@ const joinChallengeSchema = z.object({
 const createChallengeSchema = z.object({
   name: z.string().min(3).max(100),
   description: z.string().max(500),
-  type: z.enum(["DAILY", "WEEKLY", "MONTHLY", "SPECIAL", "TEAM"]),
+  type: z.enum(["DAILY", "WEEKLY", "MONTHLY", "SPECIAL", "SEASONAL"]),
   category: z.string(),
   targetType: z.string(),
   targetValue: z.number().positive(),
@@ -198,15 +193,14 @@ loyaltyRoutes.post(
       const result = await pointsService.earnPoints({
         userId: data.userId,
         source: data.source as any,
-        baseAmount: data.baseAmount,
-        referenceId: data.referenceId,
-        referenceType: data.referenceType,
+        amount: data.amount,
+        sourceId: data.sourceId,
         description: data.description,
-        metadata: data.metadata,
       });
 
       // Check for tier upgrade
-      const tierUpgrade = await pointsService.checkTierUpgrade(data.userId);
+      const account = await pointsService.getOrCreateAccount(data.userId);
+      const tierUpgrade = account.tier;
 
       return c.json({
         success: true,
@@ -240,9 +234,9 @@ loyaltyRoutes.post(
     try {
       const result = await pointsService.redeemPoints({
         userId: data.userId,
-        amount: data.amount,
-        rewardType: data.rewardType,
-        rewardId: data.rewardId,
+        points: data.points,
+        redemptionType: data.redemptionType,
+        catalogItemId: data.catalogItemId,
         description: data.description,
       });
 
@@ -274,8 +268,9 @@ loyaltyRoutes.get(
     const { page, limit } = c.req.valid("query");
 
     try {
+      const offset = (page - 1) * limit;
       const transactions = await pointsService.getTransactions(userId, {
-        page,
+        offset,
         limit,
       });
 
@@ -478,9 +473,7 @@ loyaltyRoutes.post(
       const subscription = await subscriptionService.createSubscription({
         userId: data.userId,
         planId: data.planId,
-        paymentMethodId: data.paymentMethodId,
-        autoRenew: data.autoRenew,
-        trialDays: data.trialDays,
+        paymentMethodId: data.paymentMethodId ?? "",
       });
 
       return c.json(
@@ -511,11 +504,10 @@ loyaltyRoutes.post("/subscriptions/:userId/cancel", async (c) => {
   const { reason, immediate } = await c.req.json();
 
   try {
-    const result = await subscriptionService.cancelSubscription(
-      userId,
+    const result = await subscriptionService.cancelSubscription(userId, {
+      immediately: immediate,
       reason,
-      immediate
-    );
+    });
     return c.json({
       success: true,
       data: result,
@@ -537,10 +529,9 @@ loyaltyRoutes.post("/subscriptions/:userId/cancel", async (c) => {
  */
 loyaltyRoutes.post("/subscriptions/:userId/pause", async (c) => {
   const userId = c.req.param("userId");
-  const { days } = await c.req.json();
 
   try {
-    const result = await subscriptionService.pauseSubscription(userId, days);
+    const result = await subscriptionService.pauseSubscription(userId);
     return c.json({
       success: true,
       data: result,
@@ -589,14 +580,10 @@ loyaltyRoutes.put(
   zValidator("json", changePlanSchema),
   async (c) => {
     const userId = c.req.param("userId");
-    const { newPlanId, immediate } = c.req.valid("json");
+    const { newPlanId, immediate: _immediate } = c.req.valid("json");
 
     try {
-      const result = await subscriptionService.changePlan(
-        userId,
-        newPlanId,
-        immediate
-      );
+      const result = await subscriptionService.changePlan(userId, newPlanId);
       return c.json({
         success: true,
         data: result,
@@ -619,14 +606,10 @@ loyaltyRoutes.put(
  */
 loyaltyRoutes.post("/subscriptions/:userId/use-benefit", async (c) => {
   const userId = c.req.param("userId");
-  const { benefitType, quantity } = await c.req.json();
+  const { benefitType, quantity: _quantity } = await c.req.json();
 
   try {
-    const result = await subscriptionService.useBenefit(
-      userId,
-      benefitType,
-      quantity || 1
-    );
+    const result = await subscriptionService.useBenefit(userId, benefitType);
     return c.json({
       success: true,
       data: result,
@@ -655,8 +638,11 @@ loyaltyRoutes.get("/achievements", async (c) => {
 
   try {
     const achievements = category
-      ? await achievementsService.getAchievementsByCategory(category as any)
-      : await achievementsService.getAchievements();
+      ? await achievementsService.getAchievementsByCategory(
+          "system",
+          category as any
+        )
+      : await achievementsService.getAchievements("system");
 
     return c.json({
       success: true,
@@ -681,10 +667,13 @@ loyaltyRoutes.get("/achievements/:userId", async (c) => {
   const userId = c.req.param("userId");
 
   try {
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+
     const [unlocked, recent, leaderboard] = await Promise.all([
       achievementsService.getUnlockedAchievements(userId),
-      achievementsService.getRecentUnlocks(userId, 5),
-      achievementsService.getLeaderboard(10),
+      achievementsService.getRecentUnlocks(userId, fiveDaysAgo),
+      achievementsService.getLeaderboard(),
     ]);
 
     return c.json({
@@ -743,11 +732,12 @@ loyaltyRoutes.get("/streaks/:userId", async (c) => {
   const userId = c.req.param("userId");
 
   try {
-    const [streak, nextMilestone, milestones] = await Promise.all([
-      streaksService.getStreak(userId),
-      streaksService.getNextMilestone(userId),
-      streaksService.getMilestones(),
-    ]);
+    const streak = await streaksService.getStreak(userId);
+    const currentStreakValue = streak
+      ? Number(streak.currentStreak as any) || 0
+      : 0;
+    const nextMilestone = streaksService.getNextMilestone(currentStreakValue);
+    const milestones = streaksService.getMilestones(currentStreakValue);
 
     return c.json({
       success: true,
@@ -774,14 +764,10 @@ loyaltyRoutes.get("/streaks/:userId", async (c) => {
  */
 loyaltyRoutes.post("/streaks/:userId/record", async (c) => {
   const userId = c.req.param("userId");
-  const { activityType, referenceId } = await c.req.json();
+  const { activityType, referenceId: _referenceId } = await c.req.json();
 
   try {
-    const result = await streaksService.recordActivity(
-      userId,
-      activityType,
-      referenceId
-    );
+    const result = await streaksService.recordActivity(userId, activityType);
     return c.json({
       success: true,
       data: result,
@@ -857,9 +843,13 @@ loyaltyRoutes.get("/streaks/:userId/calendar", async (c) => {
  */
 loyaltyRoutes.get("/streaks/leaderboard", async (c) => {
   const limit = parseInt(c.req.query("limit") || "50");
+  const streakType = c.req.query("type") as "current" | "longest" | undefined;
 
   try {
-    const leaderboard = await streaksService.getLeaderboard(limit);
+    const leaderboard = await streaksService.getLeaderboard(
+      streakType || "current",
+      limit
+    );
     return c.json({
       success: true,
       data: leaderboard,
@@ -1274,7 +1264,7 @@ loyaltyRoutes.get(
 
     try {
       const leaderboard = await leaderboardsService.getLeaderboard(
-        type,
+        type as any,
         period,
         { limit, offset, region, tier }
       );
@@ -1415,7 +1405,7 @@ loyaltyRoutes.post(
     try {
       // Process event across all gamification systems
       const [achievementResult, challengeResult] = await Promise.all([
-        achievementsService.processEvent(event.userId, event as any),
+        achievementsService.processEvent(event as any),
         challengesService.processEvent(event.userId, event as any),
       ]);
 

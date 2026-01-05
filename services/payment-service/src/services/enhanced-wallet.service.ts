@@ -221,7 +221,7 @@ export class EnhancedWalletService {
       where: { walletId },
     });
 
-    return balances.map((b) => ({
+    return balances.map((b: any) => ({
       currency: b.currency,
       available: Number(b.availableBalance),
       pending: Number(b.pendingBalance),
@@ -832,7 +832,7 @@ export class EnhancedWalletService {
     ]);
 
     return {
-      transactions: transactions.map((t) => ({
+      transactions: transactions.map((t: any) => ({
         id: t.id,
         type: t.type,
         amount: Number(t.amount),

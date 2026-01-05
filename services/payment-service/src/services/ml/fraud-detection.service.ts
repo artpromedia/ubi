@@ -20,7 +20,7 @@ import {
   FraudType,
   FraudTypeScore,
   IFraudDetectionService,
-} from "../types/ml.types";
+} from "../../types/ml.types";
 import { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
@@ -40,23 +40,24 @@ interface FraudRule {
   autoBlock: boolean;
 }
 
-interface VelocityCheck {
-  metric: string;
-  windowMinutes: number;
-  threshold: number;
-  score: number;
-}
+// Reserved for future use
+// interface VelocityCheck {
+//   metric: string;
+//   windowMinutes: number;
+//   threshold: number;
+//   score: number;
+// }
 
-interface DeviceFingerprint {
-  deviceId: string;
-  userAgent: string;
-  platform: string;
-  screenResolution: string;
-  timezone: string;
-  language: string;
-  plugins: string[];
-  canvasHash: string;
-}
+// interface DeviceFingerprint {
+//   deviceId: string;
+//   userAgent: string;
+//   platform: string;
+//   screenResolution: string;
+//   timezone: string;
+//   language: string;
+//   plugins: string[];
+//   canvasHash: string;
+// }
 
 // =============================================================================
 // FRAUD DETECTION SERVICE
@@ -70,13 +71,12 @@ export class FraudDetectionService implements IFraudDetectionService {
   private fraudRules: FraudRule[] = [];
 
   // Velocity tracking (in production, use Redis)
-  private velocityCache: Map<string, { count: number; lastUpdate: number }[]> =
-    new Map();
+  // private velocityCache: Map<string, { count: number; lastUpdate: number }[]> = new Map();
 
   // Known fraud patterns
   private knownFraudDevices: Set<string> = new Set();
   private knownFraudIPs: Set<string> = new Set();
-  private highRiskCountries: Set<string> = new Set(["XX"]); // Placeholder
+  // private highRiskCountries: Set<string> = new Set(["XX"]); // Placeholder
 
   // Thresholds
   private readonly BLOCK_THRESHOLD = 0.85;
@@ -423,7 +423,7 @@ export class FraudDetectionService implements IFraudDetectionService {
 
   private calculateGPSSpoofingScore(
     features: Record<string, unknown>,
-    context?: FraudContext
+    _context?: FraudContext
   ): number {
     let score = 0;
 
@@ -693,10 +693,10 @@ export class FraudDetectionService implements IFraudDetectionService {
   }
 
   private async buildConnectionGraph(
-    driverId?: string,
-    userId?: string,
-    tripId?: string,
-    lookbackDays: number = 30
+    _driverId?: string,
+    _userId?: string,
+    _tripId?: string,
+    _lookbackDays: number = 30
   ): Promise<Map<string, Set<string>>> {
     // In production, query trip history and build driver-rider graph
     // For now, return empty graph
@@ -711,7 +711,7 @@ export class FraudDetectionService implements IFraudDetectionService {
   }
 
   private detectSuspiciousClusters(
-    connections: Map<string, Set<string>>
+    _connections: Map<string, Set<string>>
   ): Array<{
     members: CollusionMember[];
     type: "ring" | "pair" | "cluster";
@@ -818,7 +818,7 @@ export class FraudDetectionService implements IFraudDetectionService {
         id: "rule_known_fraud_device",
         name: "Known Fraud Device",
         type: FraudType.PAYMENT_FRAUD,
-        condition: (features, context) =>
+        condition: (_features, context) =>
           Boolean(
             context?.deviceId && this.knownFraudDevices.has(context.deviceId)
           ),
@@ -830,7 +830,7 @@ export class FraudDetectionService implements IFraudDetectionService {
         id: "rule_known_fraud_ip",
         name: "Known Fraud IP",
         type: FraudType.PAYMENT_FRAUD,
-        condition: (features, context) =>
+        condition: (_features, context) =>
           Boolean(
             context?.ipAddress && this.knownFraudIPs.has(context.ipAddress)
           ),
@@ -861,7 +861,7 @@ export class FraudDetectionService implements IFraudDetectionService {
         id: "rule_new_user_high_value",
         name: "New User High Value Transaction",
         type: FraudType.PAYMENT_FRAUD,
-        condition: (features, context) => {
+        condition: (features, _context) => {
           const trips = Number(features.user_total_trips || 0);
           const amount = Number(features.transaction_amount || 0);
           return trips < 3 && amount > 20000; // > 20k NGN for new user

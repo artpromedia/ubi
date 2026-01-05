@@ -115,6 +115,46 @@ export interface ReconciliationDiscrepancy {
   createdAt: Date;
 }
 
+export interface DiscrepancyDetails {
+  // Identifiers
+  transactionId?: string; // Internal UBI transaction ID
+  providerReference?: string; // Provider's transaction reference
+
+  // Discrepancy classification
+  type:
+    | "MISSING_IN_UBI"
+    | "MISSING_IN_PROVIDER"
+    | "AMOUNT_MISMATCH"
+    | "STATUS_MISMATCH"
+    | "FEE_MISMATCH";
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+
+  // Amount details
+  ubiAmount?: number; // Amount recorded in UBI system
+  providerAmount?: number; // Amount reported by provider
+  difference?: number; // Absolute difference between amounts
+
+  // Status details
+  ubiStatus?: string; // Transaction status in UBI system
+  providerStatus?: string; // Transaction status from provider
+
+  // Timestamps
+  timestamp: Date; // When the discrepancy was detected
+  transactionDate?: Date; // When the original transaction occurred
+
+  // Resolution tracking
+  status: "PENDING" | "AUTO_RESOLVED" | "MANUALLY_RESOLVED" | "IGNORED";
+  resolution?: string; // Description of how it was resolved
+  resolvedBy?: string; // User/system that resolved it
+  resolvedAt?: Date; // When it was resolved
+
+  // Additional context
+  reconciliationId?: string; // Associated reconciliation run
+  provider?: PaymentProvider; // Payment provider
+  currency?: Currency; // Transaction currency
+  metadata?: Record<string, any>; // Additional provider-specific data
+}
+
 export class ReconciliationService {
   private config: ReconciliationConfig = {
     amountTolerancePercent: 0.1, // 0.1% tolerance
@@ -205,7 +245,16 @@ export class ReconciliationService {
 
       // Alert on critical discrepancies
       if (result.discrepancyAmount > this.config.criticalDiscrepancyThreshold) {
-        await this.sendCriticalAlert(reconciliation.id, result);
+        await this.sendCriticalAlert(reconciliation.id, {
+          ...result,
+          id: reconciliation.id,
+          date: startOfDay,
+          provider,
+          currency,
+          status: result.discrepancies > 0 ? "PENDING" : "COMPLETED",
+          createdAt: reconciliation.createdAt,
+          completedAt: new Date(),
+        });
       }
 
       console.log(
@@ -436,7 +485,7 @@ export class ReconciliationService {
         throw new Error(`Paystack API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as any;
 
       if (data.status && data.data) {
         for (const tx of data.data) {
@@ -468,8 +517,8 @@ export class ReconciliationService {
     reconciliationId: string,
     ubiTransactions: Map<string, any>,
     providerTransactions: Map<string, ProviderTransaction>,
-    provider: PaymentProvider,
-    currency: Currency
+    _provider: PaymentProvider,
+    _currency: Currency
   ): Promise<{
     totalTransactions: number;
     matchedTransactions: number;
@@ -953,7 +1002,7 @@ export class ReconciliationService {
         throw new Error(`Paystack API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as any;
 
       if (data.status && data.data) {
         const balance = data.data.find((b: any) => b.currency === currency);
@@ -1086,4 +1135,24 @@ export class ReconciliationService {
       }
     }
   }
+}
+
+// Singleton instance
+let reconciliationServiceInstance: ReconciliationService | null = null;
+
+// Create new instance
+export function createReconciliationService(
+  prisma: PrismaClient
+): ReconciliationService {
+  return new ReconciliationService(prisma);
+}
+
+// Get singleton instance
+export function getReconciliationService(
+  prisma: PrismaClient
+): ReconciliationService {
+  if (!reconciliationServiceInstance) {
+    reconciliationServiceInstance = createReconciliationService(prisma);
+  }
+  return reconciliationServiceInstance;
 }

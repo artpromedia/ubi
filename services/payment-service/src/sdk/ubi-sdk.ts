@@ -228,7 +228,7 @@ export class UbiClient {
         );
 
         if (!response.ok) {
-          const errorBody = await response.json().catch(() => ({}));
+          const errorBody = await response.json().catch(() => ({})) as any;
           throw new UbiApiError(
             errorBody.message || `HTTP ${response.status}`,
             response.status,
@@ -237,7 +237,7 @@ export class UbiClient {
           );
         }
 
-        const responseData = await response.json();
+        const responseData = await response.json() as any;
         return responseData.data || responseData;
       } catch (error) {
         lastError = error as Error;

@@ -93,7 +93,7 @@ export class PaymentGateway {
   private walletService: WalletService;
 
   constructor(
-    private config: PaymentGatewayConfig,
+    config: PaymentGatewayConfig,
     private prisma: PrismaClient
   ) {
     // Initialize services
@@ -485,13 +485,12 @@ export class PaymentGateway {
     // Top up wallet
     const result = await this.walletService.topUp({
       userId: paymentTx.userId,
-      accountType,
       amount: Number(paymentTx.amount),
       currency: paymentTx.currency,
-      idempotencyKey: `payment-${paymentTransactionId}`,
-      description: `Top up via ${paymentTx.provider}`,
+      paymentTransactionId,
+      description: `Top up via ${paymentTx.provider} (${accountType})`,
       metadata: {
-        paymentTransactionId,
+        accountType,
         provider: paymentTx.provider,
         providerReference: paymentTx.providerReference,
       },
@@ -499,7 +498,7 @@ export class PaymentGateway {
 
     return {
       transactionId: result.transaction.id,
-      newBalance: result.balance.balance,
+      newBalance: result.newBalance,
     };
   }
 

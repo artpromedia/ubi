@@ -19,11 +19,11 @@ import { z } from "zod";
 // VALIDATION SCHEMAS
 // =============================================================================
 
-const EarningsQuerySchema = z.object({
-  period: z.enum(["day", "week", "month", "custom"]).optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-});
+// const _EarningsQuerySchema = z.object({
+//   period: z.enum(["day", "week", "month", "custom"]).optional(),
+//   startDate: z.string().datetime().optional(),
+//   endDate: z.string().datetime().optional(),
+// });
 
 const GoalSchema = z.object({
   goalType: z.enum([

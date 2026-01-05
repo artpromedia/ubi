@@ -11,7 +11,7 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
-import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "nanoid";
 import type {
   CreateDeliveryRequest,
   Integration,
@@ -212,7 +212,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     this.validateCredentials(type, credentials);
 
     const integration: Integration = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       type,
       name,
@@ -515,7 +515,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
 
     // Create order record
     const order: IntegrationOrder = {
-      id: uuidv4(),
+      id: nanoid(),
       integrationId: integration.id,
       externalOrderId: String(orderData.id),
       externalOrderNumber: String(orderData.order_number),
@@ -587,7 +587,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     orderData: WooCommerceOrder
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     const order: IntegrationOrder = {
-      id: uuidv4(),
+      id: nanoid(),
       integrationId: integration.id,
       externalOrderId: String(orderData.id),
       externalOrderNumber: orderData.number,
@@ -640,7 +640,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     orderData: JumiaOrder
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     const order: IntegrationOrder = {
-      id: uuidv4(),
+      id: nanoid(),
       integrationId: integration.id,
       externalOrderId: orderData.order_id,
       externalOrderNumber: orderData.order_number,
@@ -694,7 +694,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   async syncShopifyOrders(
     integrationId: string,
-    options?: { since?: Date; limit?: number }
+    _options?: { since?: Date; limit?: number }
   ): Promise<{ synced: number; failed: number }> {
     const integration = this.integrations.get(integrationId);
     if (!integration || integration.type !== "SHOPIFY") {
@@ -735,7 +735,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   async syncWooCommerceOrders(
     integrationId: string,
-    options?: { since?: Date; limit?: number }
+    _options?: { since?: Date; limit?: number }
   ): Promise<{ synced: number; failed: number }> {
     const integration = this.integrations.get(integrationId);
     if (!integration || integration.type !== "WOOCOMMERCE") {
@@ -959,7 +959,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
   }
 
   private async testShopifyConnection(
-    credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials
   ): Promise<{ success: boolean; message: string }> {
     // In production, make API call to Shopify
     // GET https://{shop}.myshopify.com/admin/api/2024-01/shop.json
@@ -967,26 +967,26 @@ export class EcommerceIntegrationsService extends EventEmitter {
   }
 
   private async testWooCommerceConnection(
-    credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials
   ): Promise<{ success: boolean; message: string }> {
     // In production, make API call to WooCommerce
     return { success: true, message: "Connected to WooCommerce" };
   }
 
   private async testJumiaConnection(
-    credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials
   ): Promise<{ success: boolean; message: string }> {
     return { success: true, message: "Connected to Jumia Seller Center" };
   }
 
   private async testTakealotConnection(
-    credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials
   ): Promise<{ success: boolean; message: string }> {
     return { success: true, message: "Connected to Takealot Seller Portal" };
   }
 
   private async testKongaConnection(
-    credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials
   ): Promise<{ success: boolean; message: string }> {
     return { success: true, message: "Connected to Konga Seller Hub" };
   }
@@ -1198,7 +1198,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     const logs = this.webhookLogs.get(integrationId) || [];
 
     logs.push({
-      id: uuidv4(),
+      id: nanoid(),
       integrationId,
       event,
       payload,

@@ -106,7 +106,7 @@ export class PointsService {
     });
 
     const expiringNext30Days = expiringBatches.reduce(
-      (sum, batch) => sum + Number(batch.remainingPoints),
+      (sum: number, batch: any) => sum + Number(batch.remainingPoints),
       0
     );
 
@@ -505,7 +505,7 @@ export class PointsService {
     ]);
 
     return {
-      transactions: transactions.map((t) => this.formatTransaction(t)),
+      transactions: transactions.map((t: any) => this.formatTransaction(t)),
       total,
     };
   }

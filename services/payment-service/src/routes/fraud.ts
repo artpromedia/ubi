@@ -99,7 +99,7 @@ fraudRoutes.get("/review-queue", async (c) => {
  */
 fraudRoutes.post("/approve/:assessmentId", async (c) => {
   try {
-    const assessmentId = c.param("assessmentId");
+    const assessmentId = c.req.param("assessmentId");
     const reviewedBy = c.get("userId") || "admin"; // Get from auth context
 
     await fraudService.approveTransaction(assessmentId, reviewedBy);
@@ -133,7 +133,7 @@ fraudRoutes.post(
   ),
   async (c) => {
     try {
-      const assessmentId = c.param("assessmentId");
+      const assessmentId = c.req.param("assessmentId");
       const { reason } = c.req.valid("json");
       const reviewedBy = c.get("userId") || "admin";
 

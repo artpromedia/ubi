@@ -39,7 +39,6 @@ export class SOSEmergencyService extends EventEmitter {
   private readonly LEVEL_1_TIMEOUT = 60; // 1 minute
   private readonly LEVEL_2_TIMEOUT = 120; // 2 minutes
   private readonly LEVEL_3_TIMEOUT = 180; // 3 minutes
-  private readonly AUTO_ESCALATE_NO_RESPONSE = 300; // 5 minutes
 
   constructor() {
     super();
@@ -368,8 +367,12 @@ export class SOSEmergencyService extends EventEmitter {
     }
 
     const newLevel = levels[currentIndex + 1];
-    incident.escalationLevel = newLevel;
-    incident.status = "ESCALATED";
+    if (newLevel) {
+      incident.escalationLevel = newLevel;
+      incident.status = "ESCALATED";
+    } else {
+      return;
+    }
 
     this.addTimelineEntry(incident.id, "escalated", {
       from: levels[currentIndex],
@@ -515,7 +518,7 @@ export class SOSEmergencyService extends EventEmitter {
 
   private async sendEmergencySMS(
     phone: string,
-    incident: SOSIncident,
+    _incident: SOSIncident,
     locationLink: string
   ): Promise<void> {
     const message =
@@ -534,8 +537,8 @@ export class SOSEmergencyService extends EventEmitter {
 
   private async sendEmergencyWhatsApp(
     phone: string,
-    incident: SOSIncident,
-    locationLink: string
+    _incident: SOSIncident,
+    _locationLink: string
   ): Promise<void> {
     // In production, use WhatsApp Business API
     console.log("[SOSService] WhatsApp to:", phone.slice(-4));
@@ -543,7 +546,7 @@ export class SOSEmergencyService extends EventEmitter {
 
   private async initiateEmergencyCall(
     phone: string,
-    incident: SOSIncident
+    _incident: SOSIncident
   ): Promise<void> {
     // In production, use voice API (Twilio, Africa's Talking)
     console.log("[SOSService] Initiating call to:", phone.slice(-4));
@@ -693,7 +696,7 @@ export class SOSEmergencyService extends EventEmitter {
   private async notifyAgent(
     agentId: string,
     type: string,
-    incident: SOSIncident
+    _incident: SOSIncident
   ): Promise<void> {
     const agent = this.safetyAgents.get(agentId);
     if (!agent) return;
@@ -825,24 +828,24 @@ export class SOSEmergencyService extends EventEmitter {
     ];
   }
 
-  private async generateLiveLocationLink(incidentId: string): Promise<string> {
+  private async generateLiveLocationLink(_incidentId: string): Promise<string> {
     const token = crypto.randomBytes(16).toString("hex");
     return `https://ubi.app/sos/track/${token}`;
   }
 
-  private async getUserCountry(userId: string): Promise<string> {
+  private async getUserCountry(_userId: string): Promise<string> {
     // In production, get from user profile
     return "NG";
   }
 
-  private async verifyUserPin(userId: string, pin: string): Promise<boolean> {
+  private async verifyUserPin(_userId: string, pin: string): Promise<boolean> {
     // In production, verify against stored PIN hash
     return pin === "1234";
   }
 
-  private async recordFalseAlarm(userId: string): Promise<void> {
+  private async recordFalseAlarm(_userId: string): Promise<void> {
     // In production, update user's false alarm count
-    console.log("[SOSService] Recorded false alarm for user:", userId);
+    console.log("[SOSService] Recorded false alarm for user:", _userId);
   }
 
   private generateId(): string {

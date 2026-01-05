@@ -272,20 +272,20 @@ export class PaystackService {
       },
     });
 
-    const data = await response.json();
+    const data = await response.json() as { status?: boolean; message?: string };
 
     if (!response.ok || !data.status) {
       throw new Error(`Paystack API error: ${data.message || "Unknown error"}`);
     }
 
-    return data;
+    return data as T;
   }
 
   /**
    * Convert amount to kobo/pesewas/cents (smallest currency unit)
    * Paystack expects amounts in kobo (1 Naira = 100 kobo)
    */
-  private toSubunit(amount: number, currency: string): number {
+  private toSubunit(amount: number, _currency: string): number {
     // All supported currencies use 100 subunits
     return Math.round(amount * 100);
   }
@@ -293,7 +293,7 @@ export class PaystackService {
   /**
    * Convert from kobo/pesewas/cents to main currency unit
    */
-  private fromSubunit(amount: number, currency: string): number {
+  private fromSubunit(amount: number, _currency: string): number {
     return amount / 100;
   }
 
@@ -347,12 +347,12 @@ export class PaystackService {
   async chargeAuthorization(
     request: PaystackChargeAuthorizationRequest
   ): Promise<PaystackChargeAuthorizationResponse> {
+    const authCodeParts = request.authorizationCode.split("_");
+    const currency = authCodeParts[0] || "NGN";
+
     const payload = {
       email: request.email,
-      amount: this.toSubunit(
-        request.amount,
-        request.authorizationCode.split("_")[0]
-      ),
+      amount: this.toSubunit(request.amount, currency),
       authorization_code: request.authorizationCode,
       reference: request.reference,
       metadata: request.metadata,
@@ -702,6 +702,10 @@ export class PaystackService {
       throw new Error("Invalid payment method provider");
     }
 
+    // Get currency from authorization code or default to NGN
+    const authCode = paymentMethod.providerMethodId;
+    const currency = authCode.includes("_") ? authCode.split("_")[0] : "NGN";
+
     // Charge authorization
     const chargeResponse = await this.chargeAuthorization({
       email: paymentMethod.user.email,
@@ -711,6 +715,7 @@ export class PaystackService {
       metadata: {
         userId,
         description: description || "UBI Payment",
+        currency,
       },
     });
 
@@ -826,7 +831,7 @@ export class PaystackService {
       body: JSON.stringify(recipient),
     });
 
-    const data: PaystackCreateRecipientResponse = await response.json();
+    const data = await response.json() as PaystackCreateRecipientResponse;
 
     if (!data.status) {
       throw new Error(
@@ -857,7 +862,7 @@ export class PaystackService {
       body: JSON.stringify(request),
     });
 
-    const data: PaystackInitiateTransferResponse = await response.json();
+    const data = await response.json() as PaystackInitiateTransferResponse;
 
     if (!data.status) {
       throw new Error(`Failed to initiate Paystack transfer: ${data.message}`);
@@ -881,7 +886,7 @@ export class PaystackService {
       }
     );
 
-    const data: PaystackVerifyTransferResponse = await response.json();
+    const data = await response.json() as PaystackVerifyTransferResponse;
 
     if (!data.status) {
       throw new Error(`Failed to verify Paystack transfer: ${data.message}`);

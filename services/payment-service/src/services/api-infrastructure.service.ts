@@ -12,22 +12,45 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
-import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "nanoid";
 import type {
-  ApiEnvironment,
+  ApiKeyEnvironment,
   ApiKey,
   ApiKeyScope,
   ApiRequest,
   PaginatedResponse,
   PaginationParams,
   Webhook,
-  WebhookDelivery,
+  WebhookDeliveryLog,
   WebhookEvent,
 } from "../types/b2b.types";
 
 // =============================================================================
 // INTERFACES
 // =============================================================================
+
+// Extended interfaces with additional service-specific properties
+interface ApiKeyExtended extends ApiKey {
+  keyHash: string;
+  scopes: ApiKeyScope[];
+  rateLimits: RateLimitConfig;
+  requestCount: number;
+}
+
+interface WebhookExtended extends Webhook {
+  signingSecret: string;
+  headers?: Record<string, string>;
+  failureCount?: number;
+}
+
+interface WebhookDeliveryLogExtended extends Omit<WebhookDeliveryLog, "attemptNumber" | "success" | "statusCode" | "createdAt"> {
+  status: "pending" | "delivered" | "failed";
+  retryCount: number;
+  timestamp: Date;
+  deliveredAt?: Date;
+  responseStatus?: number;
+  nextRetryAt?: Date;
+}
 
 interface RateLimitConfig {
   perMinute: number;
@@ -108,33 +131,26 @@ const WEBHOOK_RETRY_CONFIG: WebhookRetryConfig = {
 const WEBHOOK_EVENT_TYPES: WebhookEvent[] = [
   // Delivery events
   "delivery.created",
-  "delivery.assigned",
+  "delivery.quoted",
+  "delivery.confirmed",
+  "delivery.driver_assigned",
+  "delivery.pickup_en_route",
   "delivery.picked_up",
   "delivery.in_transit",
-  "delivery.arrived",
   "delivery.delivered",
   "delivery.failed",
   "delivery.cancelled",
-  // Ride events
-  "ride.requested",
-  "ride.confirmed",
-  "ride.driver_assigned",
-  "ride.started",
-  "ride.completed",
-  "ride.cancelled",
+  // Trip events (not ride)
+  "trip.created",
+  "trip.driver_assigned",
+  "trip.started",
+  "trip.completed",
+  "trip.cancelled",
   // Payment events
-  "payment.completed",
   "payment.failed",
-  "payment.refunded",
   // Invoice events
   "invoice.created",
   "invoice.paid",
-  "invoice.overdue",
-  // School transport events
-  "student.picked_up",
-  "student.dropped_off",
-  "route.started",
-  "route.completed",
 ];
 
 // =============================================================================
@@ -142,13 +158,13 @@ const WEBHOOK_EVENT_TYPES: WebhookEvent[] = [
 // =============================================================================
 
 export class ApiInfrastructureService extends EventEmitter {
-  private apiKeys: Map<string, ApiKey> = new Map();
+  private apiKeys: Map<string, ApiKeyExtended> = new Map();
   private apiKeysByHash: Map<string, string> = new Map(); // hash -> keyId
   private rateLimitBuckets: Map<string, RateLimitBucket> = new Map();
   private apiRequests: Map<string, ApiRequest[]> = new Map(); // organizationId -> requests
-  private webhooks: Map<string, Webhook> = new Map();
-  private webhookDeliveries: Map<string, WebhookDelivery[]> = new Map();
-  private webhookQueue: WebhookDelivery[] = [];
+  private webhooks: Map<string, WebhookExtended> = new Map();
+  private webhookDeliveries: Map<string, WebhookDeliveryLogExtended[]> = new Map();
+  private webhookQueue: WebhookDeliveryLogExtended[] = [];
 
   constructor() {
     super();
@@ -167,39 +183,47 @@ export class ApiInfrastructureService extends EventEmitter {
     organizationId: string,
     keyData: {
       name: string;
-      environment: ApiEnvironment;
+      environment: ApiKeyEnvironment;
       scopes: ApiKeyScope[];
       ipWhitelist?: string[];
       expiresAt?: Date;
       rateLimitTier?: string;
       metadata?: Record<string, string>;
     }
-  ): Promise<{ apiKey: ApiKey; secret: string }> {
+  ): Promise<{ apiKey: ApiKeyExtended; secret: string }> {
     // Generate secure key
     const keyPrefix =
-      keyData.environment === "production" ? "ubi_live_" : "ubi_test_";
+      keyData.environment === "PRODUCTION" ? "ubi_live_" : "ubi_test_";
     const randomPart = crypto.randomBytes(24).toString("base64url");
     const secret = `${keyPrefix}${randomPart}`;
 
     // Hash the key for storage
     const keyHash = this.hashApiKey(secret);
 
-    const apiKey: ApiKey = {
-      id: uuidv4(),
+    const rateLimitTier = keyData.rateLimitTier || "starter";
+    const rateLimits: RateLimitConfig = (DEFAULT_RATE_LIMITS[rateLimitTier] || DEFAULT_RATE_LIMITS.starter) as RateLimitConfig;
+
+    const apiKey: ApiKeyExtended = {
+      id: nanoid(),
       organizationId,
       name: keyData.name,
       keyPrefix: secret.substring(0, 12) + "...",
+      lastFourChars: secret.substring(secret.length - 4),
       keyHash,
       environment: keyData.environment,
       scopes: keyData.scopes,
+      permissions: keyData.scopes,
       ipWhitelist: keyData.ipWhitelist || [],
-      rateLimits: DEFAULT_RATE_LIMITS[keyData.rateLimitTier || "starter"],
+      allowedOrigins: [],
+      rateLimits: rateLimits,
+      rateLimitPerMinute: rateLimits.perMinute,
+      rateLimitPerDay: rateLimits.perDay,
       requestCount: 0,
+      totalRequests: 0,
       lastUsedAt: undefined,
       expiresAt: keyData.expiresAt,
       isActive: true,
       createdAt: new Date(),
-      metadata: keyData.metadata || {},
     };
 
     this.apiKeys.set(apiKey.id, apiKey);
@@ -223,7 +247,7 @@ export class ApiInfrastructureService extends EventEmitter {
     requiredScope?: ApiKeyScope
   ): Promise<{
     valid: boolean;
-    apiKey?: ApiKey;
+    apiKey?: ApiKeyExtended;
     error?: string;
   }> {
     const keyHash = this.hashApiKey(secret);
@@ -277,7 +301,7 @@ export class ApiInfrastructureService extends EventEmitter {
    */
   async rotateApiKey(
     keyId: string
-  ): Promise<{ apiKey: ApiKey; secret: string }> {
+  ): Promise<{ apiKey: ApiKeyExtended; secret: string }> {
     const existingKey = this.apiKeys.get(keyId);
     if (!existingKey) {
       throw new Error("API key not found");
@@ -288,7 +312,7 @@ export class ApiInfrastructureService extends EventEmitter {
 
     // Generate new secret
     const keyPrefix =
-      existingKey.environment === "production" ? "ubi_live_" : "ubi_test_";
+      existingKey.environment === "PRODUCTION" ? "ubi_live_" : "ubi_test_";
     const randomPart = crypto.randomBytes(24).toString("base64url");
     const secret = `${keyPrefix}${randomPart}`;
     const keyHash = this.hashApiKey(secret);
@@ -333,7 +357,7 @@ export class ApiInfrastructureService extends EventEmitter {
       rateLimits?: RateLimitConfig;
       isActive?: boolean;
     }
-  ): Promise<ApiKey> {
+  ): Promise<ApiKeyExtended> {
     const apiKey = this.apiKeys.get(keyId);
     if (!apiKey) {
       throw new Error("API key not found");
@@ -355,8 +379,8 @@ export class ApiInfrastructureService extends EventEmitter {
    */
   async listApiKeys(
     organizationId: string,
-    environment?: ApiEnvironment
-  ): Promise<ApiKey[]> {
+    environment?: ApiKeyEnvironment
+  ): Promise<ApiKeyExtended[]> {
     let keys = Array.from(this.apiKeys.values()).filter(
       (k) => k.organizationId === organizationId
     );
@@ -479,7 +503,7 @@ export class ApiInfrastructureService extends EventEmitter {
     errorMessage?: string;
   }): Promise<ApiRequest> {
     const apiRequest: ApiRequest = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId: request.organizationId,
       apiKeyId: request.apiKeyId,
       method: request.method as ApiRequest["method"],
@@ -533,7 +557,7 @@ export class ApiInfrastructureService extends EventEmitter {
       requests = requests.filter((r) => r.method === filters.method);
     }
     if (filters.path) {
-      requests = requests.filter((r) => r.path.includes(filters.path));
+      requests = requests.filter((r) => r.path.includes(filters.path!));
     }
     if (filters.statusCode) {
       requests = requests.filter((r) => r.statusCode === filters.statusCode);
@@ -620,7 +644,7 @@ export class ApiInfrastructureService extends EventEmitter {
       description?: string;
       headers?: Record<string, string>;
     }
-  ): Promise<Webhook> {
+  ): Promise<WebhookExtended> {
     // Validate URL
     try {
       new URL(webhookData.url);
@@ -638,14 +662,18 @@ export class ApiInfrastructureService extends EventEmitter {
     // Generate signing secret
     const signingSecret = `whsec_${crypto.randomBytes(24).toString("base64url")}`;
 
-    const webhook: Webhook = {
-      id: uuidv4(),
+    const webhook: WebhookExtended = {
+      id: nanoid(),
       organizationId,
       url: webhookData.url,
       events: webhookData.events,
       signingSecret,
       description: webhookData.description,
       headers: webhookData.headers || {},
+      status: "ACTIVE",
+      maxRetries: WEBHOOK_RETRY_CONFIG.maxRetries,
+      consecutiveFailures: 0,
+      failureCount: 0,
       isActive: true,
       createdAt: new Date(),
     };
@@ -670,7 +698,7 @@ export class ApiInfrastructureService extends EventEmitter {
       headers?: Record<string, string>;
       isActive?: boolean;
     }
-  ): Promise<Webhook> {
+  ): Promise<WebhookExtended> {
     const webhook = this.webhooks.get(webhookId);
     if (!webhook) {
       throw new Error("Webhook not found");
@@ -716,7 +744,7 @@ export class ApiInfrastructureService extends EventEmitter {
   /**
    * Rotate webhook signing secret
    */
-  async rotateWebhookSecret(webhookId: string): Promise<Webhook> {
+  async rotateWebhookSecret(webhookId: string): Promise<WebhookExtended> {
     const webhook = this.webhooks.get(webhookId);
     if (!webhook) {
       throw new Error("Webhook not found");
@@ -731,7 +759,7 @@ export class ApiInfrastructureService extends EventEmitter {
   /**
    * List webhooks for an organization
    */
-  async listWebhooks(organizationId: string): Promise<Webhook[]> {
+  async listWebhooks(organizationId: string): Promise<WebhookExtended[]> {
     return Array.from(this.webhooks.values()).filter(
       (w) => w.organizationId === organizationId
     );
@@ -743,7 +771,7 @@ export class ApiInfrastructureService extends EventEmitter {
   async getWebhookDeliveries(
     webhookId: string,
     pagination: PaginationParams
-  ): Promise<PaginatedResponse<WebhookDelivery>> {
+  ): Promise<PaginatedResponse<WebhookDeliveryLogExtended>> {
     const deliveries = this.webhookDeliveries.get(webhookId) || [];
     deliveries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
@@ -774,7 +802,7 @@ export class ApiInfrastructureService extends EventEmitter {
   /**
    * Retry failed webhook delivery
    */
-  async retryWebhookDelivery(deliveryId: string): Promise<WebhookDelivery> {
+  async retryWebhookDelivery(deliveryId: string): Promise<WebhookDeliveryLogExtended> {
     // Find delivery across all webhooks
     for (const [webhookId, deliveries] of this.webhookDeliveries) {
       const delivery = deliveries.find((d) => d.id === deliveryId);
@@ -799,7 +827,7 @@ export class ApiInfrastructureService extends EventEmitter {
   /**
    * Test webhook endpoint
    */
-  async testWebhook(webhookId: string): Promise<WebhookDelivery> {
+  async testWebhook(webhookId: string): Promise<WebhookDeliveryLogExtended> {
     const webhook = this.webhooks.get(webhookId);
     if (!webhook) {
       throw new Error("Webhook not found");
@@ -909,7 +937,12 @@ export class ApiInfrastructureService extends EventEmitter {
   }
 
   private isIpInCidr(ip: string, cidr: string): boolean {
-    const [range, bits] = cidr.split("/");
+    const parts = cidr.split("/");
+    const range = parts[0];
+    const bits = parts[1];
+
+    if (!range || !bits) return false;
+
     const mask = ~(2 ** (32 - parseInt(bits)) - 1);
 
     const ipNum = this.ipToNumber(ip);
@@ -920,10 +953,10 @@ export class ApiInfrastructureService extends EventEmitter {
 
   private ipToNumber(ip: string): number {
     const parts = ip.split(".").map(Number);
-    return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+    return ((parts[0] || 0) << 24) | ((parts[1] || 0) << 16) | ((parts[2] || 0) << 8) | (parts[3] || 0);
   }
 
-  private initializeRateLimits(keyId: string, limits: RateLimitConfig): void {
+  private initializeRateLimits(keyId: string, _limits: RateLimitConfig): void {
     const now = new Date();
 
     const bucket: RateLimitBucket = {
@@ -968,12 +1001,12 @@ export class ApiInfrastructureService extends EventEmitter {
   }
 
   private createWebhookDelivery(
-    webhook: Webhook,
+    webhook: WebhookExtended,
     event: WebhookEvent,
     payload: Record<string, unknown>
-  ): WebhookDelivery {
-    const delivery: WebhookDelivery = {
-      id: uuidv4(),
+  ): WebhookDeliveryLogExtended {
+    const delivery: WebhookDeliveryLogExtended = {
+      id: nanoid(),
       webhookId: webhook.id,
       event,
       payload,
@@ -996,7 +1029,7 @@ export class ApiInfrastructureService extends EventEmitter {
   }
 
   private async processWebhookDelivery(
-    delivery: WebhookDelivery
+    delivery: WebhookDeliveryLogExtended
   ): Promise<void> {
     const webhook = this.webhooks.get(delivery.webhookId);
     if (!webhook || !webhook.isActive) {
@@ -1005,22 +1038,23 @@ export class ApiInfrastructureService extends EventEmitter {
       return;
     }
 
-    const timestamp = Math.floor(Date.now() / 1000);
-    const payloadString = JSON.stringify(delivery.payload);
-    const signature = this.generateWebhookSignature(
-      payloadString,
-      webhook.signingSecret,
-      timestamp
-    );
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "X-UBI-Webhook-Signature": signature,
-      "X-UBI-Webhook-ID": webhook.id,
-      "X-UBI-Webhook-Event": delivery.event,
-      "X-UBI-Webhook-Timestamp": timestamp.toString(),
-      ...webhook.headers,
-    };
+    // In production, timestamp, payloadString, signature and headers would be used
+    // when actually making the HTTP request. Currently simulating webhook delivery.
+    // const timestamp = Math.floor(Date.now() / 1000);
+    // const payloadString = JSON.stringify(delivery.payload);
+    // const signature = this.generateWebhookSignature(
+    //   payloadString,
+    //   webhook.signingSecret,
+    //   timestamp
+    // );
+    // const headers: Record<string, string> = {
+    //   "Content-Type": "application/json",
+    //   "X-UBI-Webhook-Signature": signature,
+    //   "X-UBI-Webhook-ID": webhook.id,
+    //   "X-UBI-Webhook-Event": delivery.event,
+    //   "X-UBI-Webhook-Timestamp": timestamp.toString(),
+    //   ...(webhook.headers || {}),
+    // };
 
     try {
       // In production, this would use fetch or axios

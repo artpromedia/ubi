@@ -20,7 +20,7 @@ import {
   RidePatternAggregates,
   TimePreferences,
   UserPreferences,
-} from "../types/ml.types";
+} from "../../types/ml.types";
 import { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
@@ -50,13 +50,6 @@ interface UserEmbedding {
   updatedAt: Date;
 }
 
-interface ItemEmbedding {
-  itemId: string;
-  itemType: string;
-  embedding: number[];
-  updatedAt: Date;
-}
-
 // =============================================================================
 // RECOMMENDATION ENGINE
 // =============================================================================
@@ -67,7 +60,6 @@ export class RecommendationEngine implements IRecommendationService {
 
   // Caches
   private userEmbeddings: Map<string, UserEmbedding> = new Map();
-  private itemEmbeddings: Map<string, ItemEmbedding> = new Map();
   private userPreferences: Map<string, UserPreferences> = new Map();
 
   // Configuration
@@ -278,7 +270,7 @@ export class RecommendationEngine implements IRecommendationService {
   }
 
   private async getOrderHistoryAggregates(
-    userId: string
+    _userId: string
   ): Promise<OrderHistoryAggregates> {
     // In production, query order history
     return {
@@ -291,7 +283,7 @@ export class RecommendationEngine implements IRecommendationService {
   }
 
   private async getRidePatternAggregates(
-    userId: string
+    _userId: string
   ): Promise<RidePatternAggregates> {
     // In production, query ride history
     return {
@@ -301,7 +293,7 @@ export class RecommendationEngine implements IRecommendationService {
     };
   }
 
-  private async getTimePreferences(userId: string): Promise<TimePreferences> {
+  private async getTimePreferences(_userId: string): Promise<TimePreferences> {
     // In production, analyze usage patterns
     return {
       preferredOrderTimes: [12, 13, 18, 19, 20],
@@ -315,7 +307,7 @@ export class RecommendationEngine implements IRecommendationService {
   // ===========================================================================
 
   private async generateRestaurantCandidates(
-    userId: string,
+    _userId: string,
     location?: GeoLocation,
     filters?: RecommendationFilters
   ): Promise<RecommendationCandidate[]> {
@@ -374,7 +366,7 @@ export class RecommendationEngine implements IRecommendationService {
   }
 
   private async generateCuisineCandidates(
-    userId: string,
+    _userId: string,
     preferences: UserPreferences
   ): Promise<RecommendationCandidate[]> {
     const cuisines = [
@@ -400,7 +392,7 @@ export class RecommendationEngine implements IRecommendationService {
     for (const cuisine of cuisines) {
       // Calculate affinity based on order history
       const orderCount =
-        preferences.orderHistory?.topCuisines.find((c) => c.cuisine === cuisine)
+        preferences.orderHistory?.topCuisines.find((c: any) => c.cuisine === cuisine)
           ?.count || 0;
 
       candidates.push({
@@ -424,7 +416,7 @@ export class RecommendationEngine implements IRecommendationService {
   private async generateDestinationCandidates(
     userId: string,
     currentLocation?: GeoLocation,
-    context?: RecommendationContext
+    _context?: RecommendationContext
   ): Promise<RecommendationCandidate[]> {
     const candidates: RecommendationCandidate[] = [];
     const preferences = await this.getUserPreferences(userId);
@@ -549,7 +541,7 @@ export class RecommendationEngine implements IRecommendationService {
   }
 
   private async generateDriverCandidates(
-    userId: string,
+    _userId: string,
     location: GeoLocation
   ): Promise<RecommendationCandidate[]> {
     const candidates: RecommendationCandidate[] = [];
@@ -785,8 +777,8 @@ export class RecommendationEngine implements IRecommendationService {
   }
 
   private calculateRecencyScore(
-    candidate: RecommendationCandidate,
-    preferences: UserPreferences
+    _candidate: RecommendationCandidate,
+    _preferences: UserPreferences
   ): number {
     // Boost items recently interacted with (but not too recently to avoid repetition)
     // In production, check recent interaction timestamps
@@ -870,6 +862,7 @@ export class RecommendationEngine implements IRecommendationService {
 
       for (let i = 0; i < remaining.length; i++) {
         const candidate = remaining[i];
+        if (!candidate) continue;
 
         // Calculate diversity penalty
         const diversityPenalty = this.calculateDiversityPenalty(
@@ -889,7 +882,10 @@ export class RecommendationEngine implements IRecommendationService {
         }
       }
 
-      diversified.push(remaining.splice(bestIdx, 1)[0]);
+      const removed = remaining.splice(bestIdx, 1)[0];
+      if (removed) {
+        diversified.push(removed);
+      }
     }
 
     return diversified;
@@ -948,7 +944,7 @@ export class RecommendationEngine implements IRecommendationService {
 
   private applyExploration(
     candidates: RecommendationCandidate[],
-    userId: string
+    _userId: string
   ): RecommendationCandidate[] {
     if (candidates.length < 5) return candidates;
 
@@ -960,7 +956,12 @@ export class RecommendationEngine implements IRecommendationService {
         // Swap with a random lower-ranked candidate
         const swapIdx =
           Math.floor(Math.random() * (result.length - i - 3)) + i + 3;
-        [result[i], result[swapIdx]] = [result[swapIdx], result[i]];
+        const temp = result[i];
+        const swap = result[swapIdx];
+        if (temp && swap) {
+          result[i] = swap;
+          result[swapIdx] = temp;
+        }
       }
     }
 
@@ -995,7 +996,7 @@ export class RecommendationEngine implements IRecommendationService {
 
   private enrichContext(
     context?: RecommendationContext,
-    preferences?: UserPreferences
+    _preferences?: UserPreferences
   ): RecommendationContext {
     const now = new Date();
 
@@ -1045,9 +1046,13 @@ export class RecommendationEngine implements IRecommendationService {
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      const aVal = a[i];
+      const bVal = b[i];
+      if (aVal !== undefined && bVal !== undefined) {
+        dotProduct += aVal * bVal;
+        normA += aVal * aVal;
+        normB += bVal * bVal;
+      }
     }
 
     const denominator = Math.sqrt(normA) * Math.sqrt(normB);
@@ -1057,7 +1062,7 @@ export class RecommendationEngine implements IRecommendationService {
   private generateRecommendationReason(
     candidate: RecommendationCandidate,
     preferences: UserPreferences,
-    context?: RecommendationContext
+    _context?: RecommendationContext
   ): string {
     const reasons: string[] = [];
 
@@ -1114,6 +1119,7 @@ export class RecommendationEngine implements IRecommendationService {
         // Simple diversity: different items contribute to diversity
         const r1 = recommendations[i];
         const r2 = recommendations[j];
+        if (!r1 || !r2) continue;
 
         // Check if they're different enough
         const isDifferent = r1.itemId !== r2.itemId;
@@ -1143,22 +1149,22 @@ export class RecommendationEngine implements IRecommendationService {
 
   // Stub methods for data access (would query database in production)
   private async getNearbyRestaurants(
-    location?: GeoLocation,
-    radiusM?: number
+    _location?: GeoLocation,
+    _radiusM?: number
   ): Promise<any[]> {
     // Would query restaurants within radius of location
     return [];
   }
 
   private async getNearbyDrivers(
-    location: GeoLocation,
-    radiusM: number
+    _location: GeoLocation,
+    _radiusM: number
   ): Promise<any[]> {
     // Would query available drivers within radius
     return [];
   }
 
-  private async getPopularDestinations(location?: GeoLocation): Promise<any[]> {
+  private async getPopularDestinations(_location?: GeoLocation): Promise<any[]> {
     // Would query popular destinations from location
     return [];
   }
@@ -1169,7 +1175,7 @@ export class RecommendationEngine implements IRecommendationService {
   }
 
   private passesFilters(
-    restaurant: any,
+    _restaurant: any,
     filters?: RecommendationFilters
   ): boolean {
     if (!filters) return true;
@@ -1177,22 +1183,22 @@ export class RecommendationEngine implements IRecommendationService {
     return true;
   }
 
-  private isEligibleForOffer(userId: string, offer: any): boolean {
+  private isEligibleForOffer(_userId: string, _offer: any): boolean {
     // Check user eligibility for offer
     return true;
   }
 
   private calculateOfferRelevance(
-    offer: any,
-    preferences: UserPreferences,
-    context?: RecommendationContext
+    _offer: any,
+    _preferences: UserPreferences,
+    _context?: RecommendationContext
   ): number {
     return 0.5;
   }
 
   private estimateDeliveryTime(
     restaurant: any,
-    location?: GeoLocation
+    _location?: GeoLocation
   ): number {
     const prepTime = restaurant.avgPrepTime || 20;
     const distance = restaurant.distance || 3000;
@@ -1200,7 +1206,7 @@ export class RecommendationEngine implements IRecommendationService {
     return prepTime + deliveryTime;
   }
 
-  private getDestinationLabel(h3Index: string): string {
+  private getDestinationLabel(_h3Index: string): string {
     // Would lookup POI name from H3 index
     return "Destination";
   }

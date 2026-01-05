@@ -228,7 +228,7 @@ function sanitizeObject(obj: unknown): unknown {
 /**
  * Middleware to validate admin role
  */
-export async function requireAdmin(c: Context, next: Next) {
+export async function requireAdmin(c: Context, next: Next): Promise<Response | void> {
   const userRole = c.req.header("X-User-Role");
 
   if (!userRole || !["ADMIN", "SUPER_ADMIN", "FINANCE"].includes(userRole)) {
@@ -244,13 +244,13 @@ export async function requireAdmin(c: Context, next: Next) {
     );
   }
 
-  await next();
+  return await next();
 }
 
 /**
  * Middleware to prevent replay attacks
  */
-export async function preventReplay(c: Context, next: Next) {
+export async function preventReplay(c: Context, next: Next): Promise<Response | void> {
   const timestamp = c.req.header("X-Timestamp");
   const nonce = c.req.header("X-Nonce");
 
@@ -278,7 +278,7 @@ export async function preventReplay(c: Context, next: Next) {
     // TODO: Check nonce in Redis
   }
 
-  await next();
+  return await next();
 }
 
 /**
@@ -289,9 +289,10 @@ export async function maskSensitiveData(c: Context, next: Next) {
 
   // Get response body
   const body = c.res.body;
-  if (body && typeof body === "object") {
-    const masked = maskObject(body as Record<string, unknown>);
-    // Would need to replace response body
+  if (body && typeof body === "object" && !(body instanceof ReadableStream)) {
+    // maskObject would be used to replace response body
+    // Currently just a placeholder for future implementation
+    maskObject(body as Record<string, unknown>);
   }
 }
 
@@ -356,15 +357,17 @@ export function encryptSensitive(data: string): string {
  * Decrypt sensitive data
  */
 export function decryptSensitive(encryptedData: string): string {
-  const [ivHex, authTagHex, encrypted] = encryptedData.split(":");
+  const parts = encryptedData.split(":");
+  const ivHex = parts[0] || "";
+  const authTagHex = parts[1] || "";
+  const encrypted = parts[2] || "";
 
-  const decipher = createDecipheriv(
-    ENCRYPTION_ALGORITHM,
-    Buffer.from(ENCRYPTION_KEY, "hex"),
-    Buffer.from(ivHex, "hex")
-  );
+  const iv = Buffer.from(ivHex, "hex");
+  const authTag = Buffer.from(authTagHex, "hex");
+  const key = Buffer.from(ENCRYPTION_KEY, "hex");
 
-  decipher.setAuthTag(Buffer.from(authTagHex, "hex"));
+  const decipher = createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
 
   let decrypted = decipher.update(encrypted, "hex", "utf8");
   decrypted += decipher.final("utf8");

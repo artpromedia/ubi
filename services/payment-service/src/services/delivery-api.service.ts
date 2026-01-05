@@ -11,7 +11,7 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
-import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "nanoid";
 import type {
   BatchDeliveryRequest,
   BatchDeliveryResult,
@@ -182,7 +182,7 @@ export class DeliveryApiService extends EventEmitter {
     );
 
     const quote: DeliveryQuote = {
-      id: uuidv4(),
+      id: nanoid(),
       price: total,
       currency: config.currency,
       distanceKm: Math.round(distance * 10) / 10,
@@ -239,10 +239,8 @@ export class DeliveryApiService extends EventEmitter {
   async createDelivery(
     organizationId: string,
     request: CreateDeliveryRequest,
-    memberId?: string
+    _memberId?: string
   ): Promise<Delivery> {
-    const config = this.getPricingConfig(organizationId);
-
     // Generate tracking code
     const trackingCode = this.generateTrackingCode(organizationId);
 
@@ -270,7 +268,7 @@ export class DeliveryApiService extends EventEmitter {
 
     // Build delivery object
     const delivery: Delivery = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       externalId: request.external_id,
       trackingCode,
@@ -319,7 +317,10 @@ export class DeliveryApiService extends EventEmitter {
         currency: quote.currency,
         distanceKm: quote.distanceKm,
         estimatedDurationMins: quote.estimatedDurationMins,
-        breakdown: quote.breakdown,
+        breakdown: {
+          ...quote.breakdown,
+          codFee: request.options?.cash_on_delivery ? 100 : 0,
+        },
       },
       timestamps: {
         quotedAt: new Date(),
@@ -353,7 +354,7 @@ export class DeliveryApiService extends EventEmitter {
     memberId?: string
   ): Promise<BatchDeliveryResult> {
     const batch: DeliveryBatch = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       totalDeliveries: request.deliveries.length,
       successfulDeliveries: 0,
@@ -369,9 +370,11 @@ export class DeliveryApiService extends EventEmitter {
 
     for (let i = 0; i < request.deliveries.length; i++) {
       try {
+        const deliveryRequest = request.deliveries[i];
+        if (!deliveryRequest) continue;
         const delivery = await this.createDelivery(
           organizationId,
-          request.deliveries[i],
+          deliveryRequest,
           memberId
         );
         batch.successfulDeliveries++;
@@ -828,6 +831,8 @@ export class DeliveryApiService extends EventEmitter {
     for (const delivery of activeDeliveries) {
       if (delivery.driver) {
         delivery.driver.location = location;
+        delivery.driver.location.lat = location.lat || 0;
+        delivery.driver.location.lng = location.lng || 0;
         delivery.updatedAt = new Date();
         this.deliveries.set(delivery.id, delivery);
 
@@ -902,12 +907,14 @@ export class DeliveryApiService extends EventEmitter {
         delivery.pricing.finalPrice || delivery.pricing.quotedPrice || 0;
 
       // Daily volume
-      const dateKey = delivery.createdAt.toISOString().split("T")[0];
+      const dateKey = delivery.createdAt.toISOString().split("T")[0] || "";
       const daily = dailyVolume.get(dateKey) || { count: 0, revenue: 0 };
       daily.count++;
       daily.revenue +=
         delivery.pricing.finalPrice || delivery.pricing.quotedPrice || 0;
-      dailyVolume.set(dateKey, daily);
+      if (dateKey) {
+        dailyVolume.set(dateKey, daily);
+      }
     }
 
     const inProgressStatuses: DeliveryStatus[] = [
@@ -977,14 +984,14 @@ export class DeliveryApiService extends EventEmitter {
   // PRIVATE HELPERS
   // ===========================================================================
 
-  private generateTrackingCode(organizationId: string): string {
+  private generateTrackingCode(_organizationId: string): string {
     const prefix = "UBI";
     const timestamp = Date.now().toString(36).toUpperCase();
     const random = crypto.randomBytes(3).toString("hex").toUpperCase();
     return `${prefix}${timestamp}${random}`;
   }
 
-  private async geocodeAddress(address: string): Promise<Coordinates> {
+  private async geocodeAddress(_address: string): Promise<Coordinates> {
     // Simplified geocoding - in production, use actual geocoding service
     // Return placeholder coordinates for Lagos
     return {
@@ -1111,7 +1118,7 @@ export class DeliveryApiService extends EventEmitter {
     const history = this.statusHistory.get(deliveryId) || [];
 
     history.push({
-      id: uuidv4(),
+      id: nanoid(),
       deliveryId,
       status,
       location,
@@ -1161,13 +1168,13 @@ export class DeliveryApiService extends EventEmitter {
     // Simplified driver matching - in production, use actual matching algorithm
     setTimeout(() => {
       const mockDriver: DriverInfo = {
-        id: uuidv4(),
+        id: nanoid(),
         name: "John Driver",
         phone: "+2348012345678",
         vehicleType: "motorcycle",
         vehiclePlate: "LAG-123-XY",
         rating: 4.8,
-        location: delivery.pickup.coordinates,
+        location: delivery.pickup.coordinates || { lat: 0, lng: 0 },
       };
 
       this.assignDriver(delivery.id, mockDriver).catch(console.error);

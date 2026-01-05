@@ -21,7 +21,7 @@ import { pointsService } from "./points.service";
 // DEFAULT REFERRAL PROGRAM
 // ===========================================
 
-const DEFAULT_PROGRAM: Omit<ReferralProgram, "id"> = {
+/* const _DEFAULT_PROGRAM: Omit<ReferralProgram, "id"> = {
   name: "UBI Referral Program",
   description: "Invite friends and earn rewards when they ride!",
   referrerReward: {
@@ -38,7 +38,7 @@ const DEFAULT_PROGRAM: Omit<ReferralProgram, "id"> = {
   },
   maxUsesPerReferrer: 50,
   isActive: true,
-};
+}; */
 
 // ===========================================
 // REFERRALS SERVICE
@@ -302,7 +302,7 @@ export class ReferralsService {
       return JSON.parse(cached);
     }
 
-    const code = await this.getOrCreateCode(userId);
+    await this.getOrCreateCode(userId);
 
     const referrals = await prisma.referral.findMany({
       where: { referrerId: userId },
@@ -310,20 +310,20 @@ export class ReferralsService {
 
     const stats: ReferralStats = {
       totalReferrals: referrals.length,
-      pendingReferrals: referrals.filter((r) => r.status === "PENDING").length,
-      qualifiedReferrals: referrals.filter((r) => r.status === "QUALIFIED")
+      pendingReferrals: referrals.filter((r: any) => r.status === "PENDING").length,
+      qualifiedReferrals: referrals.filter((r: any) => r.status === "QUALIFIED")
         .length,
-      rewardedReferrals: referrals.filter((r) => r.status === "REWARDED")
+      rewardedReferrals: referrals.filter((r: any) => r.status === "REWARDED")
         .length,
       totalPointsEarned: referrals
-        .filter((r) => r.status === "REWARDED")
-        .reduce((sum, r) => {
+        .filter((r: any) => r.status === "REWARDED")
+        .reduce((sum: any, r: any) => {
           const reward = r.referrerReward as ReferralReward | null;
           return sum + (reward?.points || 0);
         }, 0),
       totalCashEarned: referrals
-        .filter((r) => r.status === "REWARDED")
-        .reduce((sum, r) => {
+        .filter((r: any) => r.status === "REWARDED")
+        .reduce((sum: any, r: any) => {
           const reward = r.referrerReward as ReferralReward | null;
           return sum + (reward?.cash || 0);
         }, 0),
@@ -357,7 +357,7 @@ export class ReferralsService {
     ]);
 
     return {
-      referrals: referrals.map((r) => this.formatReferral(r)),
+      referrals: referrals.map((r: any) => this.formatReferral(r)),
       total,
     };
   }
@@ -421,7 +421,7 @@ export class ReferralsService {
       take: limit,
     });
 
-    return leaderboard.map((entry, index) => ({
+    return leaderboard.map((entry: any, index: any) => ({
       userId: entry.referrerId,
       referralCount: entry._count.id,
       rank: index + 1,
@@ -479,7 +479,7 @@ export class ReferralsService {
   // PRIVATE HELPERS
   // ===========================================
 
-  private async generateUniqueCode(userId: string): Promise<string> {
+  private async generateUniqueCode(_userId: string): Promise<string> {
     // Try to create a memorable code from user info
     // Format: ABC1234
     const randomPart = nanoid(4)

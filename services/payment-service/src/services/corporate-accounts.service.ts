@@ -6,7 +6,7 @@
  */
 
 import { EventEmitter } from "events";
-import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "nanoid";
 import type {
   ApprovalCondition,
   ApprovalPolicy,
@@ -196,7 +196,7 @@ export class CorporateAccountsService extends EventEmitter {
     }
 
     const organization: Organization = {
-      id: uuidv4(),
+      id: nanoid(),
       name: request.name,
       slug,
       legalName: request.legalName,
@@ -389,7 +389,7 @@ export class CorporateAccountsService extends EventEmitter {
     }
 
     const member: OrganizationMember = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       email: request.email,
       firstName: request.firstName,
@@ -606,7 +606,7 @@ export class CorporateAccountsService extends EventEmitter {
     }
 
     const costCenter: CostCenter = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       name: request.name,
       code: request.code,
@@ -713,7 +713,7 @@ export class CorporateAccountsService extends EventEmitter {
     parentId?: string
   ): Promise<Department> {
     const department: Department = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       name,
       code,
@@ -758,7 +758,7 @@ export class CorporateAccountsService extends EventEmitter {
     policy: Omit<ApprovalPolicy, "id" | "organizationId">
   ): Promise<ApprovalPolicy> {
     const approvalPolicy: ApprovalPolicy = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       ...policy,
     };
@@ -885,7 +885,7 @@ export class CorporateAccountsService extends EventEmitter {
     }
 
     const request: ApprovalRequest = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       entityType,
       entityId,
@@ -1028,7 +1028,7 @@ export class CorporateAccountsService extends EventEmitter {
     );
 
     const trip: CorporateTrip = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       memberId,
       memberName: `${member.firstName} ${member.lastName}`,
@@ -1307,7 +1307,7 @@ export class CorporateAccountsService extends EventEmitter {
     email: string
   ): Promise<OrganizationMember> {
     const member: OrganizationMember = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       userId,
       email,
@@ -1327,7 +1327,7 @@ export class CorporateAccountsService extends EventEmitter {
   }
 
   private buildCostCenterHierarchy(costCenters: CostCenter[]): CostCenter[] {
-    const map = new Map(costCenters.map((c) => [c.id, { ...c, children: [] }]));
+    const map = new Map(costCenters.map((c) => [c.id, { ...c, children: [] as CostCenter[] }]));
     const roots: CostCenter[] = [];
 
     for (const costCenter of map.values()) {
@@ -1335,7 +1335,7 @@ export class CorporateAccountsService extends EventEmitter {
         const parent = map.get(costCenter.parentId);
         if (parent) {
           parent.children = parent.children || [];
-          parent.children.push(costCenter);
+          (parent.children as CostCenter[]).push(costCenter);
         }
       } else {
         roots.push(costCenter);
@@ -1346,7 +1346,7 @@ export class CorporateAccountsService extends EventEmitter {
   }
 
   private buildDepartmentHierarchy(departments: Department[]): Department[] {
-    const map = new Map(departments.map((d) => [d.id, { ...d, children: [] }]));
+    const map = new Map(departments.map((d) => [d.id, { ...d, children: [] as Department[] }]));
     const roots: Department[] = [];
 
     for (const dept of map.values()) {
@@ -1354,7 +1354,7 @@ export class CorporateAccountsService extends EventEmitter {
         const parent = map.get(dept.parentId);
         if (parent) {
           parent.children = parent.children || [];
-          parent.children.push(dept);
+          (parent.children as Department[]).push(dept);
         }
       } else {
         roots.push(dept);

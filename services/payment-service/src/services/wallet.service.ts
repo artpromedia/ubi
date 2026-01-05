@@ -63,6 +63,41 @@ export interface LedgerSummary {
   isBalanced: boolean;
 }
 
+export interface TopupRequest {
+  userId: string;
+  amount: number;
+  currency: Currency;
+  paymentTransactionId: string;
+  description?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface TransferRequest {
+  fromAccountId: string;
+  toAccountId: string;
+  amount: number;
+  currency: Currency;
+  description?: string;
+  metadata?: Record<string, any>;
+  idempotencyKey?: string;
+}
+
+export interface WalletCreation {
+  userId: string;
+  accountType: AccountType;
+  currency: Currency;
+  initialBalance?: number;
+}
+
+export interface WithdrawalRequest {
+  userId: string;
+  amount: number;
+  currency: Currency;
+  payoutId?: string;
+  description?: string;
+  metadata?: Record<string, any>;
+}
+
 export class WalletService {
   constructor(private prisma: PrismaClient) {}
 
@@ -815,4 +850,20 @@ export class WalletService {
 
     return { released: expiredHolds.length };
   }
+}
+
+// Singleton instance
+let walletServiceInstance: WalletService | null = null;
+
+// Create new instance
+export function createWalletService(prisma: PrismaClient): WalletService {
+  return new WalletService(prisma);
+}
+
+// Get singleton instance
+export function getWalletService(prisma: PrismaClient): WalletService {
+  if (!walletServiceInstance) {
+    walletServiceInstance = createWalletService(prisma);
+  }
+  return walletServiceInstance;
 }

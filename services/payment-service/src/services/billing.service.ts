@@ -11,7 +11,7 @@
  */
 
 import { EventEmitter } from "events";
-import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "nanoid";
 import type {
   BillingCycle,
   CreditBalance,
@@ -192,6 +192,8 @@ export class BillingService extends EventEmitter {
   private creditBalances: Map<string, CreditBalance> = new Map();
   private creditTransactions: Map<string, CreditTransaction[]> = new Map();
   private paymentMethods: Map<string, PaymentMethod[]> = new Map();
+  // Payment attempts tracking (for future payment processing features)
+  // @ts-ignore - TS6133: Reserved for future payment processing implementation
   private paymentAttempts: Map<string, PaymentAttempt[]> = new Map();
 
   constructor() {
@@ -226,7 +228,7 @@ export class BillingService extends EventEmitter {
     const periodEnd = this.calculatePeriodEnd(now, plan.billingCycle);
 
     const subscription: Subscription = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       planId,
       status: "active",
@@ -420,19 +422,25 @@ export class BillingService extends EventEmitter {
       usage.unitPrice ?? (await this.getPricing(organizationId, usage.type));
     const totalAmount = usage.quantity * unitPrice;
 
+    const now = new Date();
     const record: UsageRecord = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
-      type: usage.type,
+      periodStart: now,
+      periodEnd: now,
+      usageType: usage.type as "ride" | "delivery" | "api_call" | "sms" | "storage",
       quantity: usage.quantity,
       unitPrice,
       totalAmount,
-      referenceId: usage.referenceId,
-      referenceType: usage.referenceType,
-      description: usage.description,
-      timestamp: new Date(),
+      currency: "NGN",
+      details: {
+        referenceId: usage.referenceId,
+        referenceType: usage.referenceType,
+        description: usage.description,
+        usageTypeOriginal: usage.type,
+        ...(usage.metadata || {}),
+      },
       invoiced: false,
-      metadata: usage.metadata || {},
     };
 
     const records = this.usageRecords.get(organizationId) || [];
@@ -456,11 +464,11 @@ export class BillingService extends EventEmitter {
     let records = this.usageRecords.get(organizationId) || [];
 
     records = records.filter(
-      (r) => r.timestamp >= periodStart && r.timestamp <= periodEnd
+      (r) => r.periodStart >= periodStart && r.periodStart <= periodEnd
     );
 
     if (usageType) {
-      records = records.filter((r) => r.type === usageType);
+      records = records.filter((r) => r.usageType === usageType);
     }
 
     return records;
@@ -485,11 +493,15 @@ export class BillingService extends EventEmitter {
     let total = 0;
 
     for (const record of records) {
-      if (!byType[record.type]) {
-        byType[record.type] = { count: 0, amount: 0 };
+      const usageType = record.usageType;
+      if (!byType[usageType]) {
+        byType[usageType] = { count: 0, amount: 0 };
       }
-      byType[record.type].count += record.quantity;
-      byType[record.type].amount += record.totalAmount;
+      const typeStats = byType[usageType];
+      if (typeStats) {
+        typeStats.count += record.quantity;
+        typeStats.amount += record.totalAmount;
+      }
       total += record.totalAmount;
     }
 
@@ -519,10 +531,12 @@ export class BillingService extends EventEmitter {
         for (const key of usageTypes) {
           const included = plan.includedUsage[key] || 0;
           const usageType = typeMapping[key];
-          const used = byType[usageType]?.count || 0;
+          if (usageType) {
+            const used = byType[usageType]?.count || 0;
 
-          includedUsage[usageType] = Math.min(used, included);
-          overageUsage[usageType] = Math.max(0, used - included);
+            includedUsage[usageType] = Math.min(used, included);
+            overageUsage[usageType] = Math.max(0, used - included);
+          }
         }
       }
     }
@@ -556,7 +570,7 @@ export class BillingService extends EventEmitter {
     }
   ): Promise<Invoice> {
     const lineItems: InvoiceLineItem[] = invoiceData.lineItems.map((item) => ({
-      id: uuidv4(),
+      id: nanoid(),
       description: item.description,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
@@ -570,16 +584,20 @@ export class BillingService extends EventEmitter {
     const total = subtotal + taxAmount;
 
     const invoice: Invoice = {
-      id: uuidv4(),
+      id: nanoid(),
       invoiceNumber: this.generateInvoiceNumber(),
       organizationId,
-      status: "draft",
+      status: "DRAFT",
       periodStart: new Date(),
       periodEnd: new Date(),
       subtotal,
       taxAmount,
       taxRate,
+      discountAmount: 0,
+      creditApplied: 0,
       total,
+      amountPaid: 0,
+      amountDue: total,
       currency: "NGN",
       lineItems,
       dueDate: invoiceData.dueDate,
@@ -656,7 +674,7 @@ export class BillingService extends EventEmitter {
     // Mark usage as invoiced
     const records = this.usageRecords.get(organizationId) || [];
     for (const record of records) {
-      if (record.timestamp >= periodStart && record.timestamp <= periodEnd) {
+      if (record.periodStart >= periodStart && record.periodStart <= periodEnd) {
         record.invoiced = true;
         record.invoiceId = invoice.id;
       }
@@ -674,12 +692,12 @@ export class BillingService extends EventEmitter {
       throw new Error("Invoice not found");
     }
 
-    if (invoice.status !== "draft") {
+    if (invoice.status !== "DRAFT") {
       throw new Error("Only draft invoices can be finalized");
     }
 
-    invoice.status = "sent";
-    invoice.sentAt = new Date();
+    invoice.status = "SENT";
+    invoice.issuedAt = new Date();
 
     this.invoices.set(invoiceId, invoice);
 
@@ -693,16 +711,16 @@ export class BillingService extends EventEmitter {
    */
   async markInvoicePaid(
     invoiceId: string,
-    paymentReference?: string
+    _paymentReference?: string
   ): Promise<Invoice> {
     const invoice = this.invoices.get(invoiceId);
     if (!invoice) {
       throw new Error("Invoice not found");
     }
 
-    invoice.status = "paid";
+    invoice.status = "PAID";
     invoice.paidAt = new Date();
-    invoice.paymentReference = paymentReference;
+    invoice.amountPaid = invoice.total;
 
     this.invoices.set(invoiceId, invoice);
 
@@ -720,11 +738,11 @@ export class BillingService extends EventEmitter {
       throw new Error("Invoice not found");
     }
 
-    if (invoice.status === "paid") {
+    if (invoice.status === "PAID") {
       throw new Error("Cannot void a paid invoice");
     }
 
-    invoice.status = "void";
+    invoice.status = "CANCELLED";
 
     this.invoices.set(invoiceId, invoice);
 
@@ -767,7 +785,7 @@ export class BillingService extends EventEmitter {
   async getOverdueInvoices(organizationId?: string): Promise<Invoice[]> {
     const now = new Date();
     let invoices = Array.from(this.invoices.values()).filter(
-      (i) => i.status === "sent" && i.dueDate < now
+      (i) => i.status === "SENT" && i.dueDate && i.dueDate < now
     );
 
     if (organizationId) {
@@ -776,7 +794,7 @@ export class BillingService extends EventEmitter {
 
     // Update status to overdue
     for (const invoice of invoices) {
-      invoice.status = "overdue";
+      invoice.status = "OVERDUE";
       this.invoices.set(invoice.id, invoice);
     }
 
@@ -820,7 +838,7 @@ export class BillingService extends EventEmitter {
     balance.updatedAt = new Date();
 
     const transaction: CreditTransaction = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       type: "credit",
       amount,
@@ -861,7 +879,7 @@ export class BillingService extends EventEmitter {
     balance.updatedAt = new Date();
 
     const transaction: CreditTransaction = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       type: "debit",
       amount,
@@ -915,7 +933,7 @@ export class BillingService extends EventEmitter {
       throw new Error("Invoice not found");
     }
 
-    if (invoice.status === "paid" || invoice.status === "void") {
+    if (invoice.status === "PAID" || invoice.status === "CANCELLED") {
       throw new Error("Cannot apply credit to this invoice");
     }
 
@@ -942,8 +960,9 @@ export class BillingService extends EventEmitter {
     invoice.creditApplied = (invoice.creditApplied || 0) + amountToApply;
 
     if (invoice.creditApplied >= invoice.total) {
-      invoice.status = "paid";
+      invoice.status = "PAID";
       invoice.paidAt = new Date();
+      invoice.amountPaid = invoice.total;
     }
 
     this.invoices.set(invoiceId, invoice);
@@ -963,7 +982,7 @@ export class BillingService extends EventEmitter {
     method: Omit<PaymentMethod, "id" | "organizationId" | "createdAt">
   ): Promise<PaymentMethod> {
     const paymentMethod: PaymentMethod = {
-      id: uuidv4(),
+      id: nanoid(),
       organizationId,
       ...method,
       createdAt: new Date(),
@@ -1003,12 +1022,16 @@ export class BillingService extends EventEmitter {
       throw new Error("Payment method not found");
     }
 
-    const wasDefault = methods[index].isDefault;
+    const removedMethod = methods[index];
+    const wasDefault = removedMethod?.isDefault || false;
     methods.splice(index, 1);
 
     // If we removed the default, set a new default
     if (wasDefault && methods.length > 0) {
-      methods[0].isDefault = true;
+      const firstMethod = methods[0];
+      if (firstMethod) {
+        firstMethod.isDefault = true;
+      }
     }
 
     this.paymentMethods.set(organizationId, methods);
@@ -1076,15 +1099,15 @@ export class BillingService extends EventEmitter {
       invoices = invoices.filter((i) => i.createdAt <= dateTo);
     }
 
-    const paidInvoices = invoices.filter((i) => i.status === "paid");
-    const overdueInvoices = invoices.filter((i) => i.status === "overdue");
+    const paidInvoices = invoices.filter((i) => i.status === "PAID");
+    const overdueInvoices = invoices.filter((i) => i.status === "OVERDUE");
     const outstandingInvoices = invoices.filter(
-      (i) => i.status === "sent" || i.status === "overdue"
+      (i) => i.status === "SENT" || i.status === "OVERDUE"
     );
 
     const totalRevenue = paidInvoices.reduce((sum, i) => sum + i.total, 0);
     const totalInvoiced = invoices
-      .filter((i) => i.status !== "void" && i.status !== "draft")
+      .filter((i) => i.status !== "CANCELLED" && i.status !== "DRAFT")
       .reduce((sum, i) => sum + i.total, 0);
     const totalPaid = totalRevenue;
     const totalOutstanding = outstandingInvoices.reduce(
@@ -1156,7 +1179,7 @@ export class BillingService extends EventEmitter {
   private calculateProration(
     priceDifference: number,
     remainingDays: number,
-    periodEnd: Date
+    _periodEnd: Date
   ): number {
     const totalDays = 30; // Approximate month
     return Math.round((priceDifference / totalDays) * remainingDays);

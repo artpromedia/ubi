@@ -24,19 +24,20 @@ import {
   SupplyOptimizationResponse,
   SurgeZoneState,
   UpdateSurgeRequest,
-} from "../types/ml.types";
+} from "../../types/ml.types";
 import { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
 // H3 UTILITIES
 // =============================================================================
 
-interface H3Cell {
-  index: string;
-  resolution: number;
-  center: GeoLocation;
-  neighbors: string[];
-}
+// Reserved for future use
+// interface H3Cell {
+//   index: string;
+//   resolution: number;
+//   center: GeoLocation;
+//   neighbors: string[];
+// }
 
 // Simplified H3 utilities (in production, use h3-js library)
 function latLngToH3(lat: number, lng: number, resolution: number = 7): string {
@@ -48,7 +49,7 @@ function latLngToH3(lat: number, lng: number, resolution: number = 7): string {
 
 function h3ToLatLng(h3Index: string): GeoLocation {
   // Simplified reverse lookup
-  const resolution = parseInt(h3Index[0], 10);
+  const resolution = parseInt(h3Index[0] || "7", 10);
   const latBucket = parseInt(h3Index.substring(1, 5), 16);
   const lngBucket = parseInt(h3Index.substring(5, 9), 16);
   return {
@@ -62,7 +63,7 @@ function h3ToLatLng(h3Index: string): GeoLocation {
 function getH3Neighbors(h3Index: string): string[] {
   // Simplified neighbor calculation
   const center = h3ToLatLng(h3Index);
-  const resolution = parseInt(h3Index[0], 10);
+  const resolution = parseInt(h3Index[0] || "7", 10);
   const offsets = [
     [0.01, 0],
     [0, 0.01],
@@ -75,7 +76,7 @@ function getH3Neighbors(h3Index: string): string[] {
   ];
 
   return offsets.map(([latOff, lngOff]) =>
-    latLngToH3(center.latitude + latOff, center.longitude + lngOff, resolution)
+    latLngToH3(center.latitude + (latOff ?? 0), center.longitude + (lngOff ?? 0), resolution)
   );
 }
 
@@ -310,7 +311,7 @@ export class DemandForecastService implements IDemandForecastService {
   }
 
   private predictSupply(
-    h3Index: string,
+    _h3Index: string,
     forecastTime: Date,
     currentSupply: number
   ): number {
@@ -750,7 +751,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private async getUserDiscounts(
     userId?: string,
-    subtotal?: number
+    _subtotal?: number
   ): Promise<{ promotionDiscount: number; subscriptionDiscount: number }> {
     if (!userId) {
       return { promotionDiscount: 0, subscriptionDiscount: 0 };
@@ -761,8 +762,8 @@ export class DynamicPricingService implements IDynamicPricingService {
   }
 
   private async estimateTolls(
-    pickup: GeoLocation,
-    dropoff: GeoLocation
+    _pickup: GeoLocation,
+    _dropoff: GeoLocation
   ): Promise<number> {
     // In production, check if route passes through toll roads
     return 0;

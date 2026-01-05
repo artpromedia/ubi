@@ -462,7 +462,7 @@ export class VerificationService extends EventEmitter {
   async captureSelfie(
     userId: string,
     imageData: Buffer,
-    deviceInfo?: Record<string, any>
+    _deviceInfo?: Record<string, any>
   ): Promise<SelfieCapture | null> {
     // Basic image validation
     const imageAnalysis = await this.analyzeImage(imageData);
@@ -532,7 +532,7 @@ export class VerificationService extends EventEmitter {
       avgScore >= 0.7 && !spoofingDetected && checks.every((c) => c.passed);
 
     // Create verification record
-    const verification = await this.createVerification({
+    await this.createVerification({
       userId,
       verificationType: "LIVENESS",
       status: isLive ? "APPROVED" : "REJECTED",
@@ -894,7 +894,7 @@ export class VerificationService extends EventEmitter {
       "PREMIUM",
     ];
     const currentIndex = levels.indexOf(current);
-    return levels[Math.min(currentIndex + 1, levels.length - 1)];
+    return levels[Math.min(currentIndex + 1, levels.length - 1)] || "PREMIUM";
   }
 
   // ---------------------------------------------------------------------------
@@ -956,7 +956,7 @@ export class VerificationService extends EventEmitter {
     return null;
   }
 
-  private async getSelfieCapture(id: string): Promise<SelfieCapture | null> {
+  private async getSelfieCapture(_id: string): Promise<SelfieCapture | null> {
     // In production, query database
     return null;
   }
@@ -980,30 +980,24 @@ export class VerificationService extends EventEmitter {
   }
 
   private async storeDocumentData(
-    userId: string,
-    documentType: DocumentType,
-    data: ExtractedDocumentData
+    _userId: string,
+    _documentType: DocumentType,
+    _data: ExtractedDocumentData
   ): Promise<void> {
     // In production, encrypt and store securely
-    console.log(
-      "[VerificationService] Storing document data for user:",
-      userId,
-      "type:",
-      documentType
-    );
   }
 
   private async storeSecurely(
     userId: string,
     type: string,
-    data: Buffer
+    _data: Buffer
   ): Promise<string> {
     // In production, encrypt and store in secure storage
     const path = `verifications/${userId}/${type}/${this.generateId()}`;
     return path;
   }
 
-  private async analyzeImage(imageData: Buffer): Promise<{
+  private async analyzeImage(_imageData: Buffer): Promise<{
     faceDetected: boolean;
     multipleFaces: boolean;
     qualityScore: number;
@@ -1017,7 +1011,7 @@ export class VerificationService extends EventEmitter {
   }
 
   private checkBlink(
-    videoData: Buffer,
+    _videoData: Buffer,
     blinkTimes: number[]
   ): import("../types/safety.types").LivenessCheck {
     // In production, analyze video frames for blinks
@@ -1030,7 +1024,7 @@ export class VerificationService extends EventEmitter {
   }
 
   private checkHeadMovement(
-    videoData: Buffer,
+    _videoData: Buffer,
     movements: { direction: string; timestamp: number }[]
   ): import("../types/safety.types").LivenessCheck {
     return {
@@ -1041,8 +1035,8 @@ export class VerificationService extends EventEmitter {
   }
 
   private checkExpression(
-    videoData: Buffer,
-    expression: string
+    _videoData: Buffer,
+    _expression: string
   ): import("../types/safety.types").LivenessCheck {
     return {
       type: "expression",
@@ -1052,7 +1046,7 @@ export class VerificationService extends EventEmitter {
   }
 
   private checkAntiSpoofing(
-    videoData: Buffer
+    _videoData: Buffer
   ): import("../types/safety.types").LivenessCheck {
     // In production, check for:
     // - 2D photo presentation
@@ -1067,8 +1061,8 @@ export class VerificationService extends EventEmitter {
   }
 
   private async compareFaces(
-    selfiePath: string,
-    documentRef: string
+    _selfiePath: string,
+    _documentRef: string
   ): Promise<{ score: number; documentQuality: number }> {
     // In production, use facial recognition API
     return {
@@ -1086,25 +1080,23 @@ export class VerificationService extends EventEmitter {
   }
 
   private async getRecentOTPCount(
-    userId: string,
-    type: string
+    _userId: string,
+    _type: string
   ): Promise<number> {
     // In production, query database for recent OTPs
     return 0;
   }
 
-  private async sendSMS(phoneNumber: string, message: string): Promise<void> {
+  private async sendSMS(_phoneNumber: string, _message: string): Promise<void> {
     // In production, use SMS provider (Twilio, Africa's Talking, etc.)
-    console.log("[VerificationService] SMS sent to:", phoneNumber.slice(-4));
   }
 
   private async sendEmail(
-    email: string,
-    subject: string,
-    body: string
+    _email: string,
+    _subject: string,
+    _body: string
   ): Promise<void> {
     // In production, use email provider
-    console.log("[VerificationService] Email sent to:", email);
   }
 
   private generateId(): string {
@@ -1251,7 +1243,7 @@ class HomeAffairsProvider implements VerificationProvider {
   supportedCountries = ["ZA"];
   supportedDocuments: DocumentType[] = ["RSA_ID"];
 
-  async verify(params: ProviderVerifyParams): Promise<ProviderVerifyResult> {
+  async verify(_params: ProviderVerifyParams): Promise<ProviderVerifyResult> {
     console.log("[HomeAffairs] Verifying RSA ID");
 
     return {

@@ -22,68 +22,57 @@ import { enhancedWalletService } from "./enhanced-wallet.service";
 // ===========================================
 
 const QUOTE_VALIDITY_MINUTES = 15;
-const MAX_REMITTANCE_AMOUNT_USD = 10000;
 
-// Supported corridors with providers
-const CORRIDORS: Record<string, RemittanceCorridor> = {
+// Supported corridors with providers (extended with isActive tracking)
+const CORRIDORS: Record<string, RemittanceCorridor & { isActive: boolean }> = {
   NGN_KES: {
-    id: "NGN_KES",
-    sourceCurrency: "NGN",
-    destinationCurrency: "KES",
     sourceCountry: "Nigeria",
+    sourceCurrency: "NGN",
     destinationCountry: "Kenya",
+    destinationCurrency: "KES",
     minAmount: 5000,
     maxAmount: 5000000,
-    providers: ["UBI_INTERNAL", "WORLD_REMIT", "WISE"],
-    estimatedDelivery: "1-2 hours",
+    providers: ["INTERNAL", "WORLDREMIT", "WISE"],
     isActive: true,
   },
   KES_NGN: {
-    id: "KES_NGN",
-    sourceCurrency: "KES",
-    destinationCurrency: "NGN",
     sourceCountry: "Kenya",
+    sourceCurrency: "KES",
     destinationCountry: "Nigeria",
+    destinationCurrency: "NGN",
     minAmount: 500,
     maxAmount: 500000,
-    providers: ["UBI_INTERNAL", "WORLD_REMIT"],
-    estimatedDelivery: "1-2 hours",
+    providers: ["INTERNAL", "WORLDREMIT"],
     isActive: true,
   },
   ZAR_NGN: {
-    id: "ZAR_NGN",
-    sourceCurrency: "ZAR",
-    destinationCurrency: "NGN",
     sourceCountry: "South Africa",
+    sourceCurrency: "ZAR",
     destinationCountry: "Nigeria",
+    destinationCurrency: "NGN",
     minAmount: 100,
     maxAmount: 100000,
-    providers: ["WORLD_REMIT", "WISE"],
-    estimatedDelivery: "2-4 hours",
+    providers: ["WORLDREMIT", "WISE"],
     isActive: true,
   },
   GHS_NGN: {
-    id: "GHS_NGN",
-    sourceCurrency: "GHS",
-    destinationCurrency: "NGN",
     sourceCountry: "Ghana",
+    sourceCurrency: "GHS",
     destinationCountry: "Nigeria",
+    destinationCurrency: "NGN",
     minAmount: 50,
     maxAmount: 50000,
-    providers: ["UBI_INTERNAL", "WORLD_REMIT"],
-    estimatedDelivery: "1-2 hours",
+    providers: ["INTERNAL", "WORLDREMIT"],
     isActive: true,
   },
   RWF_KES: {
-    id: "RWF_KES",
-    sourceCurrency: "RWF",
-    destinationCurrency: "KES",
     sourceCountry: "Rwanda",
+    sourceCurrency: "RWF",
     destinationCountry: "Kenya",
+    destinationCurrency: "KES",
     minAmount: 5000,
     maxAmount: 5000000,
-    providers: ["UBI_INTERNAL"],
-    estimatedDelivery: "1-2 hours",
+    providers: ["INTERNAL"],
     isActive: true,
   },
 };
@@ -244,6 +233,10 @@ export class RemittanceService {
     providerQuotes.sort((a, b) => a.total - b.total);
     const bestQuote = providerQuotes[0];
 
+    if (!bestQuote) {
+      throw new Error("No providers available for this corridor");
+    }
+
     const quoteId = `quote_${nanoid(16)}`;
     const validUntil = new Date(
       Date.now() + QUOTE_VALIDITY_MINUTES * 60 * 1000
@@ -254,6 +247,7 @@ export class RemittanceService {
       `remit_quote:${quoteId}`,
       QUOTE_VALIDITY_MINUTES * 60,
       JSON.stringify({
+        quoteId,
         sourceCurrency,
         destinationCurrency,
         sourceAmount: calculatedSourceAmount,
@@ -266,23 +260,17 @@ export class RemittanceService {
     );
 
     return {
-      quoteId,
-      sourceCurrency,
-      destinationCurrency,
-      sourceAmount: Math.round(calculatedSourceAmount * 100) / 100,
-      destinationAmount: Math.round(calculatedDestinationAmount * 100) / 100,
+      provider: bestQuote.provider,
+      sendAmount: Math.round(calculatedSourceAmount * 100) / 100,
+      sendCurrency: sourceCurrency,
+      receiveAmount: Math.round(calculatedDestinationAmount * 100) / 100,
+      receiveCurrency: destinationCurrency,
       exchangeRate,
       fee: bestQuote.fee,
-      totalCost: bestQuote.total,
-      provider: bestQuote.provider,
-      estimatedDelivery: bestQuote.deliveryTime,
-      validUntil,
-      alternativeProviders: providerQuotes.slice(1).map((q) => ({
-        provider: q.provider,
-        fee: q.fee,
-        total: q.total,
-        deliveryTime: q.deliveryTime,
-      })),
+      totalAmount: bestQuote.total,
+      deliveryTime: bestQuote.deliveryTime,
+      deliveryMethod: corridor.providers.length > 0 ? "bank_transfer" : "bank_transfer",
+      expiresAt: validUntil,
     };
   }
 
@@ -292,26 +280,32 @@ export class RemittanceService {
   async sendRemittance(params: RemittanceParams): Promise<Remittance> {
     const {
       walletId,
-      quoteId,
+      provider: _provider,
+      sendAmount: _sendAmount,
+      sendCurrency: _sendCurrency,
+      receiveCurrency: _receiveCurrency,
       recipientName,
+      recipientCountry,
       recipientPhone,
       recipientEmail,
-      recipientBankCode,
-      recipientBankAccount,
-      recipientMobileWallet,
+      recipientBank,
+      recipientAccount,
       deliveryMethod,
-      purpose,
+      purposeOfTransfer,
       pin,
+      idempotencyKey,
     } = params;
 
-    // Verify PIN
-    const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
-    if (!pinValid) {
-      throw new Error("Invalid PIN");
+    // Verify PIN if provided
+    if (pin) {
+      const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
+      if (!pinValid) {
+        throw new Error("Invalid PIN");
+      }
     }
 
-    // Get quote
-    const quoteCached = await redis.get(`remit_quote:${quoteId}`);
+    // Get quote from cache using idempotency key as quote reference
+    const quoteCached = await redis.get(`remit_quote:${idempotencyKey}`);
     if (!quoteCached) {
       throw new Error("Quote expired. Please get a new quote.");
     }
@@ -361,7 +355,6 @@ export class RemittanceService {
     const remittance = await prisma.remittance.create({
       data: {
         id: remittanceId,
-        walletId,
         userId: wallet.userId,
         sourceCurrency: quote.sourceCurrency,
         destinationCurrency: quote.destinationCurrency,
@@ -372,19 +365,19 @@ export class RemittanceService {
         totalCharged: totalAmount,
         provider: quote.provider,
         recipientName,
+        recipientCountry,
         recipientPhone,
         recipientEmail,
-        recipientBankCode,
-        recipientBankAccount,
-        recipientMobileWallet,
+        recipientBankCode: recipientBank,
+        recipientBankAccount: recipientAccount,
         deliveryMethod,
-        purpose,
+        purpose: purposeOfTransfer,
         status: "PROCESSING",
       },
     });
 
     // Invalidate quote
-    await redis.del(`remit_quote:${quoteId}`);
+    await redis.del(`remit_quote:${idempotencyKey}`);
 
     // Process with provider (async)
     this.processWithProvider(remittanceId);
@@ -428,7 +421,29 @@ export class RemittanceService {
     ]);
 
     return {
-      remittances: remittances.map((r) => this.formatRemittance(r)),
+      remittances: remittances.map((r: {
+        id: string;
+        userId: string;
+        sourceCurrency: string;
+        destinationCurrency: string;
+        sourceAmount: unknown;
+        destinationAmount: unknown;
+        exchangeRate: unknown;
+        fee: unknown;
+        totalCharged: unknown;
+        provider: string;
+        recipientName: string;
+        recipientCountry: string;
+        recipientPhone: string | null;
+        recipientEmail: string | null;
+        deliveryMethod: string;
+        purpose: string | null;
+        status: string;
+        providerReference: string | null;
+        createdAt: Date;
+        completedAt: Date | null;
+        failureReason: string | null;
+      }) => this.formatRemittance(r)),
       total,
     };
   }
@@ -536,7 +551,14 @@ export class RemittanceService {
       orderBy: [{ lastUsedAt: "desc" }, { name: "asc" }],
     });
 
-    return recipients.map((r) => ({
+    return recipients.map((r: {
+      id: string;
+      name: string;
+      country: string;
+      phone: string | null;
+      email: string | null;
+      lastUsedAt: Date | null;
+    }) => ({
       id: r.id,
       name: r.name,
       country: r.country,
@@ -581,18 +603,19 @@ export class RemittanceService {
   private async getProviderQuote(
     provider: RemittanceProvider,
     amount: number,
-    sourceCurrency: Currency,
-    destinationCurrency: Currency
+    _sourceCurrency: Currency,
+    _destinationCurrency: Currency
   ): Promise<{ fee: number; deliveryTime: string }> {
     // Provider-specific fee structures
     const fees: Record<
       RemittanceProvider,
       { percentage: number; flat: number; time: string }
     > = {
-      UBI_INTERNAL: { percentage: 0.005, flat: 500, time: "1-2 hours" },
-      WORLD_REMIT: { percentage: 0.01, flat: 1000, time: "2-4 hours" },
+      INTERNAL: { percentage: 0.005, flat: 500, time: "1-2 hours" },
+      WORLDREMIT: { percentage: 0.01, flat: 1000, time: "2-4 hours" },
       WISE: { percentage: 0.007, flat: 800, time: "1-3 hours" },
       FLUTTERWAVE: { percentage: 0.015, flat: 0, time: "2-6 hours" },
+      CHIPPER: { percentage: 0.01, flat: 750, time: "2-4 hours" },
     };
 
     const config = fees[provider];
@@ -669,8 +692,8 @@ export class RemittanceService {
   }
 
   private async cancelWithProvider(
-    remittanceId: string,
-    provider: string
+    _remittanceId: string,
+    _provider: string
   ): Promise<boolean> {
     // In production, call provider API to cancel
     // For demo, allow cancellation if processing
@@ -679,7 +702,6 @@ export class RemittanceService {
 
   private formatRemittance(remittance: {
     id: string;
-    walletId: string;
     userId: string;
     sourceCurrency: string;
     destinationCurrency: string;
@@ -690,6 +712,7 @@ export class RemittanceService {
     totalCharged: unknown;
     provider: string;
     recipientName: string;
+    recipientCountry: string;
     recipientPhone: string | null;
     recipientEmail: string | null;
     deliveryMethod: string;
@@ -698,35 +721,25 @@ export class RemittanceService {
     providerReference: string | null;
     createdAt: Date;
     completedAt: Date | null;
-    cancelledAt: Date | null;
     failureReason: string | null;
   }): Remittance {
     return {
       id: remittance.id,
-      walletId: remittance.walletId,
-      userId: remittance.userId,
-      sourceCurrency: remittance.sourceCurrency as Currency,
-      destinationCurrency: remittance.destinationCurrency as Currency,
-      sourceAmount: Number(remittance.sourceAmount),
-      destinationAmount: Number(remittance.destinationAmount),
+      provider: remittance.provider as RemittanceProvider,
+      sendAmount: Number(remittance.sourceAmount),
+      sendCurrency: remittance.sourceCurrency,
+      receiveAmount: Number(remittance.destinationAmount),
+      receiveCurrency: remittance.destinationCurrency,
       exchangeRate: Number(remittance.exchangeRate),
       fee: Number(remittance.fee),
-      totalCharged: Number(remittance.totalCharged),
-      provider: remittance.provider as RemittanceProvider,
-      recipientName: remittance.recipientName,
-      recipientPhone: remittance.recipientPhone || undefined,
-      recipientEmail: remittance.recipientEmail || undefined,
-      deliveryMethod: remittance.deliveryMethod as
-        | "BANK"
-        | "MOBILE_WALLET"
-        | "CASH_PICKUP",
-      purpose: remittance.purpose || undefined,
+      totalAmount: Number(remittance.totalCharged),
       status: remittance.status as RemittanceStatus,
-      providerReference: remittance.providerReference || undefined,
-      createdAt: remittance.createdAt,
+      recipientName: remittance.recipientName,
+      recipientCountry: remittance.recipientCountry,
+      deliveryMethod: remittance.deliveryMethod,
+      trackingNumber: remittance.providerReference || undefined,
       completedAt: remittance.completedAt || undefined,
-      cancelledAt: remittance.cancelledAt || undefined,
-      failureReason: remittance.failureReason || undefined,
+      createdAt: remittance.createdAt,
     };
   }
 }

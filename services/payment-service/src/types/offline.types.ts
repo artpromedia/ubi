@@ -20,8 +20,12 @@ export enum ChannelType {
 
 export enum NetworkType {
   OFFLINE = "offline",
+  GPRS = "gprs",
+  EDGE_2G = "edge_2g",
   TWO_G = "2g",
+  HSPA_3G = "hspa_3g",
   THREE_G = "3g",
+  LTE_4G = "lte_4g",
   FOUR_G = "4g",
   FIVE_G = "5g",
   WIFI = "wifi",
@@ -29,6 +33,7 @@ export enum NetworkType {
 }
 
 export enum SyncStatus {
+  IDLE = "idle",
   SYNCED = "synced",
   PENDING = "pending",
   SYNCING = "syncing",
@@ -78,6 +83,14 @@ export enum SMSCommand {
   HISTORY = "HISTORY",
   PROMO = "PROMO",
   STOP = "STOP",
+  PRICE = "PRICE",
+  REGISTER = "REGISTER",
+  FEEDBACK = "FEEDBACK",
+  CONFIRM = "CONFIRM",
+  DRIVER = "DRIVER",
+  SET_HOME = "SET_HOME",
+  SET_WORK = "SET_WORK",
+  UNKNOWN = "UNKNOWN",
 }
 
 export enum IVRState {
@@ -85,16 +98,36 @@ export enum IVRState {
   LANGUAGE_SELECT = "LANGUAGE_SELECT",
   MAIN_MENU = "MAIN_MENU",
   BOOK_RIDE = "BOOK_RIDE",
+  ENTER_PICKUP = "ENTER_PICKUP",
+  ENTER_DESTINATION = "ENTER_DESTINATION",
   SPEAK_DESTINATION = "SPEAK_DESTINATION",
   CONFIRM_BOOKING = "CONFIRM_BOOKING",
+  BOOKING_CONFIRMED = "BOOKING_CONFIRMED",
   TRACK_RIDE = "TRACK_RIDE",
+  TRIP_STATUS = "TRIP_STATUS",
   WALLET_BALANCE = "WALLET_BALANCE",
+  WALLET_MENU = "WALLET_MENU",
   TRANSFER_AGENT = "TRANSFER_AGENT",
+  AWAITING_AGENT = "AWAITING_AGENT",
+  WITH_AGENT = "WITH_AGENT",
   HELP = "HELP",
   GOODBYE = "GOODBYE",
+  ENDED = "ENDED",
+}
+
+export enum IVRActionType {
+  PLAY = "play",
+  SPEAK = "speak",
+  GATHER = "gather",
+  RECORD = "record",
+  TRANSFER = "transfer",
+  DIAL = "dial",
+  HANGUP = "hangup",
+  REDIRECT = "redirect",
 }
 
 export enum AgentStatus {
+  AVAILABLE = "available",
   ONLINE = "online",
   BUSY = "busy",
   BREAK = "break",
@@ -102,9 +135,11 @@ export enum AgentStatus {
 }
 
 export enum ColorBlindMode {
+  NONE = "none",
   PROTANOPIA = "protanopia", // Red-blind
   DEUTERANOPIA = "deuteranopia", // Green-blind
   TRITANOPIA = "tritanopia", // Blue-blind
+  MONOCHROMACY = "monochromacy", // Complete color blindness
   ACHROMATOPSIA = "achromatopsia", // Complete color blindness
 }
 
@@ -128,11 +163,13 @@ export enum MessagePriority {
 export interface SyncState {
   userId: string;
   deviceId: string;
-  lastSyncTimestamp: Date;
-  lastSyncVersion: bigint;
+  lastSyncAt: Date;
+  serverVersion: number;
+  clientVersion: number;
   syncStatus: SyncStatus;
   pendingChanges: number;
-  bandwidth: NetworkType;
+  syncErrors: number;
+  bandwidth?: NetworkType;
 }
 
 export interface SyncLog {
@@ -181,7 +218,8 @@ export interface DeltaSyncRequest {
   deviceId: string;
   lastSyncTimestamp: number;
   lastSyncVersion: bigint;
-  entityTypes?: string[];
+  entities?: string[];
+  networkType?: NetworkType;
 }
 
 export interface DeltaSyncResponse {
@@ -193,8 +231,11 @@ export interface DeltaSyncResponse {
     version: bigint;
   }>;
   currentVersion: bigint;
+  serverVersion: number;
   timestamp: number;
   hasMore: boolean;
+  syncedAt: Date;
+  compressed?: any;
 }
 
 // =============================================================================
@@ -284,16 +325,19 @@ export interface USSDMenu {
 // =============================================================================
 
 export interface IncomingSMS {
-  messageId: string;
-  from: string;
+  id: string;
+  sender: string;
   to: string;
-  message: string;
+  body: string;
   carrier?: string;
   receivedAt: Date;
 }
 
 export interface OutgoingSMS {
-  to: string;
+  id?: string;
+  to?: string;
+  recipient?: string;
+  sender?: string;
   message: string;
   templateId?: string;
   templateData?: Record<string, unknown>;
@@ -311,22 +355,24 @@ export interface SMSDeliveryReport {
   errorMessage?: string;
 }
 
+export type SMSDeliveryStatus = SMSDeliveryReport["status"];
+
 export interface ParsedSMSCommand {
-  action: SMSCommand;
-  pickup?: string;
-  destination?: string;
-  amount?: number;
-  rating?: number;
-  promoCode?: string;
-  rawText: string;
+  command: SMSCommand;
+  args: string[];
+  raw: string;
 }
 
 export interface SMSTemplate {
+  id: string;
   code: string;
   name: string;
+  template: string;
+  language: string;
   content: Record<string, string>; // Multilingual
   variables: string[];
   category: string;
+  priority: MessagePriority;
   maxLength: number;
 }
 
@@ -336,27 +382,32 @@ export interface SMSTemplate {
 
 export interface IVRSession {
   id: string;
-  callId: string;
-  callerId: string;
+  callSid: string;
+  callerPhone: string;
   calledNumber: string;
   userId?: string;
   state: IVRState;
   menuPath: string[];
-  dtmfInput: string[];
-  speechInput: string[];
+  inputHistory: string[];
+  lastInput?: string;
+  retryCount?: number;
   language: string;
-  bookingData?: USSDBookingData;
+  data?: Record<string, unknown>;
   agentId?: string;
   transferredAt?: Date;
   duration?: number;
   recordingUrl?: string;
-  status: "in_progress" | "completed" | "abandoned" | "transferred";
-  startedAt: Date;
+  status?: "in_progress" | "completed" | "abandoned" | "transferred";
+  createdAt: Date;
+  updatedAt: Date;
+  expiresAt: Date;
   endedAt?: Date;
 }
 
 export interface IVRAction {
-  action: "play" | "say" | "gather" | "record" | "dial" | "hangup" | "redirect";
+  type: IVRActionType;
+  payload?: Record<string, unknown>;
+  action?: "play" | "say" | "gather" | "record" | "dial" | "hangup" | "redirect";
   audio?: string; // Audio file to play
   text?: string; // Text to say (TTS)
   voice?: string; // TTS voice
@@ -387,8 +438,10 @@ export interface CallCenterAgent {
   skills: string[];
   status: AgentStatus;
   currentCalls: number;
+  currentCallId?: string;
   maxCalls: number;
   rating?: number;
+  shiftsThisWeek?: number;
 }
 
 export interface AgentBookingRequest {
@@ -396,11 +449,13 @@ export interface AgentBookingRequest {
   callId?: string;
   userId: string;
   phone: string;
+  userPhone: string;
   pickup: GeoLocation;
   pickupAddress: string;
   dropoff: GeoLocation;
   dropoffAddress: string;
   vehicleType?: string;
+  fareEstimate?: number;
   paymentMethod?: string;
   notes?: string;
 }
@@ -410,22 +465,21 @@ export interface AgentBookingRequest {
 // =============================================================================
 
 export interface AccessibilityPreferences {
-  userId: string;
+  screenReaderEnabled: boolean;
+  voiceControlEnabled: boolean;
+  fontSize: number;
   highContrast: boolean;
-  largeText: boolean;
-  textScale: number;
-  largeTargets: boolean;
+  colorBlindMode: ColorBlindMode;
   reduceMotion: boolean;
+  animationDuration?: number;
   reduceTransparency: boolean;
-  screenReader: boolean;
-  voiceControl: boolean;
+  largerTouchTargets: boolean;
   hapticFeedback: boolean;
-  soundEffects: boolean;
-  colorBlindMode?: ColorBlindMode;
-  preferredLanguage: string;
-  preferredChannel: ChannelType;
-  readAloudSpeed: number;
-  simplifiedUI: boolean;
+  audioDescriptions: boolean;
+  captionsEnabled: boolean;
+  simplifiedInterface: boolean;
+  readingSpeed: number;
+  preferredInputMethod: string;
 }
 
 export interface AccessibilityAuditResult {
@@ -441,20 +495,21 @@ export interface AccessibilityAuditResult {
 }
 
 export interface VoiceCommand {
-  transcript: string;
+  raw: string;
+  normalized: string;
+  intent: string;
+  entities: Record<string, string>;
   confidence: number;
-  language: string;
-  parsed?: {
-    intent: string;
-    entities: Record<string, string>;
-    action?: string;
-  };
+  context?: string;
+  language?: string;
 }
 
 export interface ScreenReaderAnnouncement {
-  message: string;
+  text: string;
   priority: "polite" | "assertive";
   language?: string;
+  timestamp?: Date;
+  role?: string;
 }
 
 // =============================================================================
@@ -503,11 +558,11 @@ export interface TranslationRequest {
 
 export interface CompressedResponse<T = unknown> {
   data: T;
-  compressed: boolean;
+  compressed?: boolean;
   originalSize: number;
   compressedSize: number;
   compressionRatio: number;
-  encoding: "gzip" | "brotli" | "msgpack" | "none";
+  encoding: "gzip" | "brotli" | "msgpack" | "msgpack+gzip" | "identity" | "none";
 }
 
 export interface LiteTrip {
@@ -522,20 +577,24 @@ export interface LiteTrip {
 }
 
 export interface LiteFareEstimate {
-  f: number; // fare (rounded)
-  t: number; // time (minutes)
+  p: number; // price min (rounded)
+  x: number; // price max (rounded)
+  e: number; // eta in minutes
   d: number; // distance (km, 1 decimal)
+  c: string; // currency code
+  s?: number; // surge multiplier (if applicable)
 }
 
 export interface DataUsageStats {
   userId: string;
-  period: "day" | "week" | "month";
+  periodStart: Date;
+  periodEnd: Date;
   totalBytes: number;
-  requestCount: number;
-  avgLatency: number;
-  byEndpoint: Record<string, { bytes: number; count: number }>;
-  byNetworkType: Record<string, { bytes: number; count: number }>;
+  uploadBytes: number;
+  downloadBytes: number;
+  byEndpoint: Record<string, number>;
   savedBytes: number; // Bytes saved by compression
+  budgetRemaining: number;
 }
 
 export interface CachedPlace {
@@ -674,7 +733,7 @@ export interface IAccessibilityService {
     userId: string,
     prefs: Partial<AccessibilityPreferences>
   ): Promise<void>;
-  parseVoiceCommand(audio: Buffer, language: string): Promise<VoiceCommand>;
+  parseVoiceCommand(transcript: string, context?: string): VoiceCommand;
   getScreenReaderText(screenName: string, language: string): Promise<string>;
 }
 
@@ -692,14 +751,11 @@ export interface ITranslationService {
 
 export interface ILowBandwidthService {
   compressResponse<T>(data: T): Promise<CompressedResponse<T>>;
-  getLiteTrip(tripId: string): Promise<LiteTrip>;
+  getLiteTrip(tripId: string, networkType?: NetworkType): Promise<LiteTrip | null>;
   getLiteFareEstimate(
     origin: GeoLocation,
     destination: GeoLocation
   ): Promise<LiteFareEstimate>;
   searchPlacesOffline(query: string, city: string): Promise<CachedPlace[]>;
-  getDataUsageStats(
-    userId: string,
-    period: "day" | "week" | "month"
-  ): Promise<DataUsageStats>;
+  getDataUsageStats(userId: string): Promise<DataUsageStats>;
 }

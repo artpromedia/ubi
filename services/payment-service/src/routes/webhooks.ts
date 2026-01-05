@@ -13,7 +13,6 @@
  * - Rate limiting
  */
 
-import { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { createHmac } from "node:crypto";
 import { prisma } from "../lib/prisma";
@@ -299,7 +298,7 @@ async function processPaystackEvent(event: WebhookEvent): Promise<void> {
 
       if (payout && payout.status !== "COMPLETED") {
         // Import PayoutService to complete the payout
-        const { PayoutService } = await import("../services/payout.service");
+        const { PayoutService } = await import("../services/index.js");
         const payoutService = new PayoutService(prisma);
 
         await payoutService.completePayout(payout.id, data.transfer_code);
@@ -318,7 +317,7 @@ async function processPaystackEvent(event: WebhookEvent): Promise<void> {
 
       if (payout && payout.status === "PROCESSING") {
         // Import PayoutService to fail the payout properly
-        const { PayoutService } = await import("../services/payout.service");
+        const { PayoutService } = await import("../services/index.js");
         const payoutService = new PayoutService(prisma);
 
         const reason =
@@ -469,7 +468,7 @@ async function handleSuccessfulPayment(
 
   if (!payment) return;
 
-  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  await prisma.$transaction(async (tx) => {
     // Update payment status
     await tx.payment.update({
       where: { id: paymentId },

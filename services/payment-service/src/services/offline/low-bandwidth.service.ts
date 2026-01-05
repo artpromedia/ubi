@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
-import * as zlib from "zlib";
+import { gzip, gunzip } from "zlib";
 import {
   CompressedResponse,
   DataUsageStats,
@@ -19,7 +19,7 @@ import {
   NetworkType,
   SyncState,
   SyncStatus,
-} from "../types/offline.types";
+} from "@/types/offline.types";
 
 // =============================================================================
 // COMPRESSION CONSTANTS
@@ -29,14 +29,6 @@ const COMPRESSION_THRESHOLD = 500; // Only compress if > 500 bytes
 const MAX_DELTA_SIZE = 10000; // Max bytes for delta sync
 const SYNC_BATCH_SIZE = 50; // Max records per sync
 const CACHE_TTL_SECONDS = 300; // 5 minutes default cache
-
-// Data budget tiers (MB per month)
-const DATA_BUDGETS = {
-  ultra_saver: 50,
-  saver: 100,
-  normal: 500,
-  unlimited: Infinity,
-};
 
 // =============================================================================
 // LOW-BANDWIDTH SERVICE
@@ -106,10 +98,10 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   async decompress(response: CompressedResponse): Promise<unknown> {
     if (response.encoding === "identity") {
-      return JSON.parse(response.data);
+      return JSON.parse(response.data as string);
     }
 
-    const buffer = Buffer.from(response.data, "base64");
+    const buffer = Buffer.from(response.data as string, "base64");
 
     if (response.encoding === "gzip") {
       const decompressed = await this.gzipDecompress(buffer);
@@ -121,12 +113,12 @@ export class LowBandwidthService implements ILowBandwidthService {
       return this.fromBinaryFormat(decompressed.toString("utf8"));
     }
 
-    throw new Error(`Unknown encoding: ${response.encoding}`);
+    throw new Error(`Unknown encoding: ${response.encoding as string}`);
   }
 
   private gzipCompress(data: string | Buffer): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      zlib.gzip(data, { level: 9 }, (err, result) => {
+    return new Promise<Buffer>((resolve, reject) => {
+      gzip(data, { level: 9 }, (err, result) => {
         if (err) reject(err);
         else resolve(result);
       });
@@ -135,7 +127,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   private gzipDecompress(data: Buffer): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      zlib.gunzip(data, (err, result) => {
+      gunzip(data, (err, result) => {
         if (err) reject(err);
         else resolve(result);
       });
@@ -290,7 +282,7 @@ export class LowBandwidthService implements ILowBandwidthService {
       const entityChanges = await this.getEntityChanges(
         userId,
         entity,
-        lastSyncVersion,
+        Number(lastSyncVersion),
         batchSize
       );
 
@@ -300,7 +292,13 @@ export class LowBandwidthService implements ILowBandwidthService {
           break; // Stop if we exceed max payload size
         }
 
-        changes.push(change);
+        changes.push({
+          entity: change.entity,
+          id: change.id,
+          action: change.operation,
+          data: change.data as Record<string, unknown> | undefined,
+          version: BigInt(Math.floor(change.version)),
+        });
         currentSize += changeSize;
       }
     }
@@ -310,9 +308,11 @@ export class LowBandwidthService implements ILowBandwidthService {
 
     // Prepare response
     const response: DeltaSyncResponse = {
+      currentVersion: BigInt(newVersion),
       serverVersion: newVersion,
       changes,
       hasMore: changes.length >= batchSize,
+      timestamp: newVersion,
       syncedAt: new Date(),
     };
 
@@ -335,7 +335,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     this.syncStates.set(userId, syncState);
 
     // Track data usage
-    this.trackDataUsage(userId, currentSize, "download", "delta_sync");
+    await this.trackDataUsage(userId, currentSize, "download", "delta_sync");
 
     return response;
   }
@@ -356,8 +356,24 @@ export class LowBandwidthService implements ILowBandwidthService {
     }
   }
 
+
+  private async initializeSyncState(userId: string): Promise<SyncState> {
+    const state: SyncState = {
+      userId,
+      deviceId: "",
+      lastSyncAt: new Date(0),
+      serverVersion: 0,
+      clientVersion: 0,
+      syncStatus: SyncStatus.IDLE,
+      pendingChanges: 0,
+      syncErrors: 0,
+    };
+    this.syncStates.set(userId, state);
+    return state;
+  }
+
   private async getEntityChanges(
-    userId: string,
+    _userId: string,
     entity: string,
     sinceVersion: number,
     limit: number
@@ -383,7 +399,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     // Example: Get trip changes
     if (entity === "trips") {
       const trips = await this.getTripsSinceVersion(
-        userId,
+        _userId,
         sinceVersion,
         limit
       );
@@ -401,21 +417,6 @@ export class LowBandwidthService implements ILowBandwidthService {
     return changes;
   }
 
-  private async initializeSyncState(userId: string): Promise<SyncState> {
-    const state: SyncState = {
-      userId,
-      deviceId: "",
-      lastSyncAt: new Date(0),
-      serverVersion: 0,
-      clientVersion: 0,
-      syncStatus: SyncStatus.IDLE,
-      pendingChanges: 0,
-      syncErrors: 0,
-    };
-    this.syncStates.set(userId, state);
-    return state;
-  }
-
   // ===========================================================================
   // LITE API ENDPOINTS
   // ===========================================================================
@@ -423,7 +424,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async getLiteFareEstimate(
     pickup: GeoLocation,
     dropoff: GeoLocation,
-    networkType?: NetworkType
+    _networkType?: NetworkType
   ): Promise<LiteFareEstimate> {
     // Get fare estimate with minimal data
     const estimate = await this.calculateFare(pickup, dropoff);
@@ -445,7 +446,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   async getLiteTrip(
     tripId: string,
-    networkType?: NetworkType
+    _networkType?: NetworkType
   ): Promise<LiteTrip | null> {
     const trip = await this.getTrip(tripId);
     if (!trip) return null;
@@ -456,13 +457,16 @@ export class LowBandwidthService implements ILowBandwidthService {
   async getLiteTrips(
     userId: string,
     limit: number = 10,
-    networkType?: NetworkType
+    _networkType?: NetworkType
   ): Promise<LiteTrip[]> {
     const trips = await this.getUserTrips(userId, limit);
     return trips.map((trip) => this.toLiteTrip(trip));
   }
 
   private toLiteTrip(trip: any): LiteTrip {
+    const pickupAddress = trip.pickupAddress || "";
+    const dropoffAddress = trip.dropoffAddress || "";
+
     return {
       i: trip.id, // id
       s: trip.status[0].toUpperCase(), // status (first letter: S=searching, M=matched, A=arriving, P=in_progress, C=completed)
@@ -470,13 +474,13 @@ export class LowBandwidthService implements ILowBandwidthService {
         // pickup
         la: trip.pickup.lat,
         lo: trip.pickup.lng,
-        a: this.truncateAddress(trip.pickupAddress, 30),
+        a: this.truncateAddress(pickupAddress, 30),
       },
       d: {
         // dropoff
         la: trip.dropoff.lat,
         lo: trip.dropoff.lng,
-        a: this.truncateAddress(trip.dropoffAddress, 30),
+        a: this.truncateAddress(dropoffAddress, 30),
       },
       e: trip.eta, // eta
       f: Math.round(trip.fare), // fare
@@ -614,8 +618,8 @@ export class LowBandwidthService implements ILowBandwidthService {
   }
 
   async getCachedPlacesForRegion(
-    regionId: string,
-    limit: number = 100
+    _regionId: string,
+    _limit: number = 100
   ): Promise<
     Array<{
       id: string;
@@ -700,8 +704,8 @@ export class LowBandwidthService implements ILowBandwidthService {
   // ===========================================================================
 
   private async calculateFare(
-    pickup: GeoLocation,
-    dropoff: GeoLocation
+    _pickup: GeoLocation,
+    _dropoff: GeoLocation
   ): Promise<any> {
     return {
       minFare: 300,
@@ -713,33 +717,33 @@ export class LowBandwidthService implements ILowBandwidthService {
     };
   }
 
-  private async getTrip(tripId: string): Promise<any> {
+  private async getTrip(_tripId: string): Promise<any> {
     return null;
   }
 
-  private async getUserTrips(userId: string, limit: number): Promise<any[]> {
+  private async getUserTrips(_userId: string, _limit: number): Promise<any[]> {
     return [];
   }
 
   private async getTripsSinceVersion(
-    userId: string,
-    version: number,
-    limit: number
+    _userId: string,
+    _version: number,
+    _limit: number
   ): Promise<any[]> {
     return [];
   }
 
-  private async getRegionDefinition(regionId: string): Promise<any> {
+  private async getRegionDefinition(_regionId: string): Promise<any> {
     return {
-      id: regionId,
+      id: _regionId,
       boundingBox: { north: -1.2, south: -1.4, east: 37.0, west: 36.7 },
     };
   }
 
   private async getTilesForRegion(
-    region: any,
-    zoom: number,
-    quality: string
+    _region: any,
+    _zoom: number,
+    _quality: string
   ): Promise<any[]> {
     return [];
   }
@@ -747,6 +751,22 @@ export class LowBandwidthService implements ILowBandwidthService {
   // ===========================================================================
   // EVENT HANDLERS
   // ===========================================================================
+
+  async compressResponse<T>(data: T): Promise<CompressedResponse<T>> {
+    const compressed = await this.compress(data);
+    return {
+      data: data,
+      compressed: true,
+      originalSize: compressed.originalSize,
+      compressedSize: compressed.compressedSize,
+      compressionRatio: compressed.compressionRatio,
+      encoding: compressed.encoding,
+    };
+  }
+
+  async searchPlacesOffline(_query: string, _city: string): Promise<any[]> {
+    return [];
+  }
 
   on(event: string, listener: (...args: unknown[]) => void): void {
     this.eventEmitter.on(event, listener);

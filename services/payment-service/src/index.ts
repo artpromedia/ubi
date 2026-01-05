@@ -179,10 +179,9 @@ const driverServices = {
     notificationServiceStub,
     analyticsStub
   ),
-  // DriverCareerService(db, redis, notificationService, analyticsService)
+  // DriverCareerService(db, notificationService, analyticsService)
   careerService: new DriverCareerService(
     prisma,
-    redis,
     notificationServiceStub,
     analyticsStub
   ),

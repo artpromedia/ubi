@@ -268,6 +268,8 @@ export class TripMonitorService extends EventEmitter {
     const lastLoc = recentLocations[recentLocations.length - 1];
 
     // Check if vehicle has been stationary
+    if (!firstLoc || !lastLoc) return null;
+
     const distance = this.calculateDistance(firstLoc, lastLoc);
     const timeDiff =
       (lastLoc.timestamp?.getTime() || Date.now()) -
@@ -283,7 +285,7 @@ export class TripMonitorService extends EventEmitter {
 
       // Check if this is near expected stops (dropoff, pickup)
       const isExpectedStop = this.isNearExpectedStop(
-        lastLoc,
+        lastLoc!,
         session.expectedRoute
       );
       if (isExpectedStop) return null;
@@ -602,7 +604,7 @@ export class TripMonitorService extends EventEmitter {
     return this.generateShareLink(tripId);
   }
 
-  private async generateShareLink(tripId: string): Promise<string> {
+  private async generateShareLink(_tripId: string): Promise<string> {
     const token = crypto.randomBytes(16).toString("hex");
     // Store token mapping in production
     return `https://ubi.app/trip/track/${token}`;
@@ -610,7 +612,7 @@ export class TripMonitorService extends EventEmitter {
 
   private async notifyTripShareContact(
     contactId: string,
-    share: TripShare
+    _share: TripShare
   ): Promise<void> {
     // In production, send SMS/WhatsApp/Email with share link
     console.log(
@@ -721,8 +723,8 @@ export class TripMonitorService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   private async calculateInitialRiskScore(
-    riderId: string,
-    driverId: string,
+    _riderId: string,
+    _driverId: string,
     route: Location[]
   ): Promise<number> {
     let riskScore = 0;
@@ -800,9 +802,11 @@ export class TripMonitorService extends EventEmitter {
 
   private pointToSegmentDistance(
     point: Location,
-    segStart: Location,
-    segEnd: Location
+    segStart: Location | undefined,
+    segEnd: Location | undefined
   ): number {
+    if (!segStart || !segEnd) return Infinity;
+
     const dx = segEnd.lng - segStart.lng;
     const dy = segEnd.lat - segStart.lat;
 
@@ -845,7 +849,11 @@ export class TripMonitorService extends EventEmitter {
   private calculateRouteLength(route: Location[]): number {
     let length = 0;
     for (let i = 0; i < route.length - 1; i++) {
-      length += this.calculateDistance(route[i], route[i + 1]);
+      const loc1 = route[i];
+      const loc2 = route[i + 1];
+      if (loc1 && loc2) {
+        length += this.calculateDistance(loc1, loc2);
+      }
     }
     return length;
   }
@@ -857,16 +865,18 @@ export class TripMonitorService extends EventEmitter {
     return "LOW";
   }
 
-  private isNearExpectedStop(location: Location, route: Location[]): boolean {
+  private isNearExpectedStop(location: Location, route: Location[] | undefined): boolean {
     if (!route || route.length < 2) return false;
 
     const dropoff = route[route.length - 1];
+    if (!dropoff) return false;
+
     const distanceToDropoff = this.calculateDistance(location, dropoff);
 
     return distanceToDropoff < 200; // Within 200m of dropoff
   }
 
-  private async checkRouteRiskZones(route: Location[]): Promise<string[]> {
+  private async checkRouteRiskZones(_route: Location[]): Promise<string[]> {
     // In production, check against risk zone database
     return [];
   }
@@ -896,8 +906,8 @@ export class TripMonitorService extends EventEmitter {
 
   private async sendSafetyCheckNotification(
     userId: string,
-    checkId: string,
-    reason: string
+    _checkId: string,
+    _reason: string
   ): Promise<void> {
     // In production, send push notification
     console.log("[TripMonitor] Sent safety check notification to:", userId);

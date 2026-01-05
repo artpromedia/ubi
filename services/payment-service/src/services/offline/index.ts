@@ -13,7 +13,7 @@ export { USSDService } from "./ussd.service";
 export { VoiceService } from "./voice.service";
 
 // Re-export types for convenience
-export * from "../types/offline.types";
+export * from "../../types/offline.types";
 
 // =============================================================================
 // UNIFIED OFFLINE PLATFORM

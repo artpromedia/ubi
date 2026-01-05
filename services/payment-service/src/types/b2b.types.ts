@@ -120,6 +120,22 @@ export type WebhookEvent =
 
 export type ApiKeyEnvironment = "SANDBOX" | "PRODUCTION";
 
+export type ApiKeyScope =
+  | "organizations:read"
+  | "organizations:write"
+  | "deliveries:read"
+  | "deliveries:write"
+  | "healthcare:read"
+  | "healthcare:write"
+  | "school:read"
+  | "school:write"
+  | "billing:read"
+  | "billing:write"
+  | "webhooks:read"
+  | "webhooks:write"
+  | "api_keys:read"
+  | "api_keys:write";
+
 export type InvoiceStatus =
   | "DRAFT"
   | "PENDING"
@@ -129,6 +145,16 @@ export type InvoiceStatus =
   | "OVERDUE"
   | "CANCELLED"
   | "REFUNDED";
+
+export type UsageType =
+  | "ride"
+  | "delivery"
+  | "api_call"
+  | "school_transport"
+  | "medical_transport"
+  | "subscription"
+  | "platform_fee"
+  | "other";
 
 export type BillingCycle =
   | "WEEKLY"
@@ -880,6 +906,22 @@ export interface RateLimitResult {
   resetAt: Date;
 }
 
+export interface ApiRequest {
+  id: string;
+  organizationId: string;
+  apiKeyId: string;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  path: string;
+  statusCode: number;
+  latencyMs: number;
+  clientIp: string;
+  userAgent?: string;
+  requestBody?: Record<string, unknown>;
+  responseBody?: Record<string, unknown>;
+  errorMessage?: string;
+  timestamp: Date;
+}
+
 // =============================================================================
 // INTEGRATION TYPES
 // =============================================================================
@@ -1312,6 +1354,34 @@ export interface Pricing {
   apiOverageRate?: number;
   effectiveFrom: Date;
   effectiveUntil?: Date;
+}
+
+export interface PricingTier {
+  id?: string;
+  usageType: UsageType;
+  unitPrice: number;
+  minQuantity?: number;
+  maxQuantity?: number;
+  description?: string;
+}
+
+export interface CreditBalance {
+  organizationId: string;
+  balance: number;
+  currency: string;
+  updatedAt: Date;
+}
+
+export interface CreditTransaction {
+  id: string;
+  organizationId: string;
+  type: "credit" | "debit";
+  amount: number;
+  balance: number;
+  description: string;
+  expiresAt?: Date;
+  referenceId?: string;
+  createdAt: Date;
 }
 
 // =============================================================================

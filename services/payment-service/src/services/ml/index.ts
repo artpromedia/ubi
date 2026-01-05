@@ -11,13 +11,15 @@ export {
 } from "./feature-store.service";
 
 // Recommendation Engine
-export { RecommendationService } from "./recommendation.service";
+export { RecommendationEngine } from "./recommendation.service";
 
 // Demand & Pricing
 export {
   DemandForecastService,
   DynamicPricingService,
-  H3Utils,
+  getH3Neighbors,
+  h3ToLatLng,
+  latLngToH3,
 } from "./demand-pricing.service";
 
 // Fraud Detection
@@ -36,6 +38,7 @@ export { ABTestingService, MLOpsService } from "./mlops.service";
 // SERVICE FACTORY
 // =============================================================================
 
+import { redis } from "../../lib/redis";
 import { ChurnPredictionService } from "./churn-prediction.service";
 import {
   DemandForecastService,
@@ -45,7 +48,7 @@ import { ETAPredictionService, SupportNLPService } from "./eta-nlp.service";
 import { FeatureStoreService } from "./feature-store.service";
 import { FraudDetectionService } from "./fraud-detection.service";
 import { ABTestingService, MLOpsService } from "./mlops.service";
-import { RecommendationService } from "./recommendation.service";
+import { RecommendationEngine } from "./recommendation.service";
 
 export interface MLServiceConfig {
   redisUrl?: string;
@@ -56,7 +59,7 @@ export interface MLServiceConfig {
 
 export class MLServiceFactory {
   private featureStore: FeatureStoreService;
-  private recommendationService: RecommendationService;
+  private recommendationService: RecommendationEngine;
   private demandService: DemandForecastService;
   private pricingService: DynamicPricingService;
   private fraudService: FraudDetectionService;
@@ -66,14 +69,17 @@ export class MLServiceFactory {
   private mlopsService: MLOpsService;
   private abTestingService: ABTestingService;
 
-  constructor(config?: MLServiceConfig) {
+  constructor(_config?: MLServiceConfig) {
     // Initialize core feature store first
-    this.featureStore = new FeatureStoreService();
+    this.featureStore = new FeatureStoreService(redis as any);
 
     // Initialize dependent services
-    this.recommendationService = new RecommendationService(this.featureStore);
+    this.recommendationService = new RecommendationEngine(this.featureStore);
     this.demandService = new DemandForecastService(this.featureStore);
-    this.pricingService = new DynamicPricingService(this.featureStore);
+    this.pricingService = new DynamicPricingService(
+      this.featureStore,
+      this.demandService
+    );
     this.fraudService = new FraudDetectionService(this.featureStore);
     this.churnService = new ChurnPredictionService(this.featureStore);
     this.etaService = new ETAPredictionService(this.featureStore);
@@ -86,7 +92,7 @@ export class MLServiceFactory {
     return this.featureStore;
   }
 
-  getRecommendationService(): RecommendationService {
+  getRecommendationService(): RecommendationEngine {
     return this.recommendationService;
   }
 

@@ -27,7 +27,7 @@ interface ChallengeDefinition {
   id: string;
   name: string;
   description: string;
-  type: "DAILY" | "WEEKLY" | "MONTHLY" | "SPECIAL" | "TEAM";
+  type: "DAILY" | "WEEKLY" | "MONTHLY" | "SPECIAL" | "SEASONAL";
   category:
     | "RIDES"
     | "FOOD"
@@ -438,7 +438,7 @@ export class ChallengesService {
     });
 
     const activeChallengeIds = new Set(
-      activeUserChallenges.map((uc) => uc.challengeId)
+      activeUserChallenges.map((uc: any) => uc.challengeId)
     );
 
     // Filter challenges by tier and not already active
@@ -464,20 +464,19 @@ export class ChallengesService {
     // Convert to Challenge format
     const convertChallenge = (def: ChallengeDefinition): Challenge => ({
       id: def.id,
+      slug: def.id,
       name: def.name,
       description: def.description,
+      icon: def.iconUrl,
       type: def.type,
-      category: def.category,
-      targetType: def.targetType,
+      criteria: { event: def.targetType, count: def.targetValue },
       targetValue: def.targetValue,
-      pointsReward: def.pointsReward,
-      bonusReward: def.bonusReward,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + def.expiresInDays * 24 * 60 * 60 * 1000),
-      minTier: def.minTier,
+      reward: { points: def.pointsReward },
+      startsAt: new Date(),
+      endsAt: new Date(Date.now() + def.expiresInDays * 24 * 60 * 60 * 1000),
+      targetTiers: def.minTier ? [def.minTier] : undefined,
+      currentParticipants: 0,
       isActive: true,
-      iconUrl: def.iconUrl,
-      difficulty: def.difficulty,
     });
 
     return {
@@ -514,7 +513,7 @@ export class ChallengesService {
       orderBy: [{ status: "asc" }, { expiresAt: "asc" }],
     });
 
-    return userChallenges.map((uc) => this.mapUserChallenge(uc));
+    return userChallenges.map((uc: any) => this.mapUserChallenge(uc));
   }
 
   /**
@@ -541,7 +540,7 @@ export class ChallengesService {
     });
 
     const activeChallengeIds = new Set(
-      userDailyChallenges.map((uc) => uc.challengeId)
+      userDailyChallenges.map((uc: any) => uc.challengeId)
     );
 
     // Get available daily challenges not yet joined
@@ -551,29 +550,29 @@ export class ChallengesService {
       (def) =>
         ({
           id: def.id,
+          slug: def.id,
           name: def.name,
           description: def.description,
+          icon: def.iconUrl,
           type: def.type,
-          category: def.category,
-          targetType: def.targetType,
+          criteria: { event: def.targetType, count: def.targetValue },
           targetValue: def.targetValue,
-          pointsReward: def.pointsReward,
-          bonusReward: def.bonusReward,
-          startDate: today,
-          endDate: tomorrow,
+          reward: { points: def.pointsReward },
+          startsAt: today,
+          endsAt: tomorrow,
+          currentParticipants: 0,
           isActive: true,
-          difficulty: def.difficulty,
         }) as Challenge
     );
 
     return {
       available: availableDailies,
       active: userDailyChallenges
-        .filter((uc) => uc.status === "ACTIVE")
-        .map((uc) => this.mapUserChallenge(uc)),
+        .filter((uc: any) => uc.status === "ACTIVE")
+        .map((uc: any) => this.mapUserChallenge(uc)),
       completed: userDailyChallenges
-        .filter((uc) => uc.status === "COMPLETED" || uc.status === "CLAIMED")
-        .map((uc) => this.mapUserChallenge(uc)),
+        .filter((uc: any) => uc.status === "COMPLETED" || uc.status === "CLAIMED")
+        .map((uc: any) => this.mapUserChallenge(uc)),
     };
   }
 
@@ -606,7 +605,7 @@ export class ChallengesService {
     });
 
     const activeChallengeIds = new Set(
-      userWeeklyChallenges.map((uc) => uc.challengeId)
+      userWeeklyChallenges.map((uc: any) => uc.challengeId)
     );
 
     // Get available weekly challenges
@@ -616,30 +615,30 @@ export class ChallengesService {
       (def) =>
         ({
           id: def.id,
+          slug: def.id,
           name: def.name,
           description: def.description,
+          icon: def.iconUrl,
           type: def.type,
-          category: def.category,
-          targetType: def.targetType,
+          criteria: { event: def.targetType, count: def.targetValue },
           targetValue: def.targetValue,
-          pointsReward: def.pointsReward,
-          bonusReward: def.bonusReward,
-          startDate: startOfWeek,
-          endDate: endOfWeek,
-          minTier: def.minTier,
+          reward: { points: def.pointsReward },
+          startsAt: startOfWeek,
+          endsAt: endOfWeek,
+          targetTiers: def.minTier ? [def.minTier] : undefined,
+          currentParticipants: 0,
           isActive: true,
-          difficulty: def.difficulty,
         }) as Challenge
     );
 
     return {
       available: availableWeeklies,
       active: userWeeklyChallenges
-        .filter((uc) => uc.status === "ACTIVE")
-        .map((uc) => this.mapUserChallenge(uc)),
+        .filter((uc: any) => uc.status === "ACTIVE")
+        .map((uc: any) => this.mapUserChallenge(uc)),
       completed: userWeeklyChallenges
-        .filter((uc) => uc.status === "COMPLETED" || uc.status === "CLAIMED")
-        .map((uc) => this.mapUserChallenge(uc)),
+        .filter((uc: any) => uc.status === "COMPLETED" || uc.status === "CLAIMED")
+        .map((uc: any) => this.mapUserChallenge(uc)),
     };
   }
 
@@ -772,14 +771,14 @@ export class ChallengesService {
       // Match event to challenge target type
       switch (challenge.targetType) {
         case "TOTAL_RIDES":
-          if (event.eventType === "RIDE_COMPLETED") {
+          if (event.type === "RIDE_COMPLETED") {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
           }
           break;
 
         case "RIDE_BEFORE_TIME":
-          if (event.eventType === "RIDE_COMPLETED") {
+          if (event.type === "RIDE_COMPLETED") {
             const hour = new Date(event.timestamp).getHours();
             if (hour < challenge.targetValue) {
               newProgress = userChallenge.progress + 1;
@@ -789,7 +788,7 @@ export class ChallengesService {
           break;
 
         case "MORNING_RIDES":
-          if (event.eventType === "RIDE_COMPLETED") {
+          if (event.type === "RIDE_COMPLETED") {
             const hour = new Date(event.timestamp).getHours();
             if (hour < 9) {
               newProgress = userChallenge.progress + 1;
@@ -799,7 +798,7 @@ export class ChallengesService {
           break;
 
         case "RIDE_OFF_PEAK":
-          if (event.eventType === "RIDE_COMPLETED") {
+          if (event.type === "RIDE_COMPLETED") {
             const hour = new Date(event.timestamp).getHours();
             if (hour >= 10 && hour <= 16) {
               newProgress = userChallenge.progress + 1;
@@ -810,8 +809,8 @@ export class ChallengesService {
 
         case "GREEN_RIDE":
           if (
-            event.eventType === "RIDE_COMPLETED" &&
-            event.metadata?.rideType === "UBI_GREEN"
+            event.type === "RIDE_COMPLETED" &&
+            event.data?.rideType === "UBI_GREEN"
           ) {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
@@ -819,7 +818,7 @@ export class ChallengesService {
           break;
 
         case "FOOD_AFTER_TIME":
-          if (event.eventType === "FOOD_ORDERED") {
+          if (event.type === "FOOD_ORDERED") {
             const hour = new Date(event.timestamp).getHours();
             if (hour >= challenge.targetValue) {
               newProgress = userChallenge.progress + 1;
@@ -829,8 +828,8 @@ export class ChallengesService {
           break;
 
         case "UNIQUE_RESTAURANTS":
-          if (event.eventType === "FOOD_ORDERED") {
-            const restaurantId = event.metadata?.restaurantId;
+          if (event.type === "FOOD_ORDERED") {
+            const restaurantId = event.data?.restaurantId;
             if (restaurantId) {
               const restaurants = progressData.restaurants || [];
               if (!restaurants.includes(restaurantId)) {
@@ -845,8 +844,8 @@ export class ChallengesService {
 
         case "NEW_RESTAURANT":
           if (
-            event.eventType === "FOOD_ORDERED" &&
-            event.metadata?.isNewRestaurant
+            event.type === "FOOD_ORDERED" &&
+            event.data?.isNewRestaurant
           ) {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
@@ -858,9 +857,9 @@ export class ChallengesService {
           const services = progressData.services || [];
           let serviceType: string | null = null;
 
-          if (event.eventType === "RIDE_COMPLETED") serviceType = "RIDE";
-          else if (event.eventType === "FOOD_ORDERED") serviceType = "FOOD";
-          else if (event.eventType === "DELIVERY_COMPLETED")
+          if (event.type === "RIDE_COMPLETED") serviceType = "RIDE";
+          else if (event.type === "FOOD_ORDERED") serviceType = "FOOD";
+          else if (event.type === "DELIVERY_COMPLETED")
             serviceType = "DELIVERY";
 
           if (serviceType && !services.includes(serviceType)) {
@@ -872,7 +871,7 @@ export class ChallengesService {
           break;
 
         case "TOTAL_DELIVERIES":
-          if (event.eventType === "DELIVERY_COMPLETED") {
+          if (event.type === "DELIVERY_COMPLETED") {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
           }
@@ -880,8 +879,8 @@ export class ChallengesService {
 
         case "WALLET_PAYMENTS":
           if (
-            event.eventType === "PAYMENT_MADE" &&
-            event.metadata?.method === "WALLET"
+            event.type === "PAYMENT_MADE" &&
+            event.data?.method === "WALLET"
           ) {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
@@ -891,10 +890,10 @@ export class ChallengesService {
         case "TOTAL_SPEND":
           if (
             ["RIDE_COMPLETED", "FOOD_ORDERED", "DELIVERY_COMPLETED"].includes(
-              event.eventType
+              event.type
             )
           ) {
-            const amount = Number(event.metadata?.amount || 0);
+            const amount = Number(event.data?.amount || 0);
             newProgress = userChallenge.progress + amount;
             shouldUpdate = true;
           }
@@ -902,14 +901,14 @@ export class ChallengesService {
 
         case "SHARE_RIDES":
         case "SHARED_RIDES":
-          if (event.eventType === "RIDE_SHARED") {
+          if (event.type === "RIDE_SHARED") {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
           }
           break;
 
         case "REVIEWS":
-          if (event.eventType === "REVIEW_SUBMITTED") {
+          if (event.type === "REVIEW_SUBMITTED") {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
           }
@@ -922,7 +921,7 @@ export class ChallengesService {
               "FOOD_ORDERED",
               "DELIVERY_COMPLETED",
               "PAYMENT_MADE",
-            ].includes(event.eventType)
+            ].includes(event.type)
           ) {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
@@ -930,30 +929,30 @@ export class ChallengesService {
           break;
 
         case "SAVINGS_AMOUNT":
-          if (event.eventType === "SAVINGS_DEPOSIT") {
-            const amount = Number(event.metadata?.amount || 0);
+          if (event.type === "SAVINGS_DEPOSIT") {
+            const amount = Number(event.data?.amount || 0);
             newProgress = userChallenge.progress + amount;
             shouldUpdate = true;
           }
           break;
 
         case "STREAK_DAYS":
-          if (event.eventType === "STREAK_UPDATED") {
-            newProgress = Number(event.metadata?.streakDays || 0);
+          if (event.type === "STREAK_UPDATED") {
+            newProgress = Number(event.data?.streakDays || 0);
             shouldUpdate = true;
           }
           break;
 
         case "SUCCESSFUL_REFERRALS":
-          if (event.eventType === "REFERRAL_COMPLETED") {
+          if (event.type === "REFERRAL_COMPLETED") {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
           }
           break;
 
         case "POINTS_EARNED":
-          if (event.eventType === "POINTS_EARNED") {
-            const points = Number(event.metadata?.points || 0);
+          if (event.type === "POINTS_EARNED") {
+            const points = Number(event.data?.points || 0);
             newProgress = userChallenge.progress + points;
             shouldUpdate = true;
           }
@@ -1077,7 +1076,7 @@ export class ChallengesService {
   async createChallenge(params: {
     name: string;
     description: string;
-    type: "DAILY" | "WEEKLY" | "MONTHLY" | "SPECIAL" | "TEAM";
+    type: "DAILY" | "WEEKLY" | "MONTHLY" | "SPECIAL" | "SEASONAL";
     category: string;
     targetType: string;
     targetValue: number;
@@ -1110,20 +1109,19 @@ export class ChallengesService {
 
     return {
       id: challenge.id,
+      slug: challenge.id,
       name: challenge.name,
       description: challenge.description,
       type: challenge.type as any,
-      category: challenge.category as any,
-      targetType: challenge.targetType,
+      criteria: { event: challenge.targetType, count: challenge.targetValue },
       targetValue: challenge.targetValue,
-      pointsReward: challenge.pointsReward,
-      bonusReward: challenge.bonusReward as any,
-      startDate: challenge.startDate,
-      endDate: challenge.endDate,
-      minTier: challenge.minTier as LoyaltyTier,
+      reward: { points: challenge.pointsReward },
+      startsAt: challenge.startDate,
+      endsAt: challenge.endDate,
+      targetTiers: challenge.minTier ? [challenge.minTier as LoyaltyTier] : undefined,
       maxParticipants: challenge.maxParticipants || undefined,
+      currentParticipants: 0,
       isActive: challenge.isActive,
-      difficulty: challenge.difficulty as any,
     };
   }
 
@@ -1174,7 +1172,7 @@ export class ChallengesService {
       },
     });
 
-    return participants.map((p, index) => ({
+    return participants.map((p: any, index: number) => ({
       userId: p.userId,
       progress: p.progress,
       completedAt: p.completedAt || undefined,
@@ -1202,10 +1200,10 @@ export class ChallengesService {
 
     const totalParticipants = participants.length;
     const completedCount = participants.filter(
-      (p) => p.status === "COMPLETED" || p.status === "CLAIMED"
+      (p: any) => p.status === "COMPLETED" || p.status === "CLAIMED"
     ).length;
 
-    const totalProgress = participants.reduce((sum, p) => sum + p.progress, 0);
+    const totalProgress = participants.reduce((sum: number, p: any) => sum + p.progress, 0);
     const averageProgress =
       totalParticipants > 0 ? totalProgress / totalParticipants : 0;
     const completionRate =
@@ -1226,39 +1224,33 @@ export class ChallengesService {
   private mapUserChallenge(uc: any): UserChallenge {
     return {
       id: uc.id,
+      userId: uc.userId,
       challengeId: uc.challengeId,
       challenge: uc.challenge
         ? {
             id: uc.challenge.id,
+            slug: uc.challenge.id,
             name: uc.challenge.name,
             description: uc.challenge.description,
+            icon: uc.challenge.iconUrl,
             type: uc.challenge.type,
-            category: uc.challenge.category,
-            targetType: uc.challenge.targetType,
+            criteria: { event: uc.challenge.targetType, count: uc.challenge.targetValue },
             targetValue: uc.challenge.targetValue,
-            pointsReward: uc.challenge.pointsReward,
-            bonusReward: uc.challenge.bonusReward,
-            startDate: uc.challenge.startDate,
-            endDate: uc.challenge.endDate,
-            minTier: uc.challenge.minTier,
-            maxParticipants: uc.challenge.maxParticipants,
+            reward: { points: uc.challenge.pointsReward },
+            startsAt: uc.challenge.startDate,
+            endsAt: uc.challenge.endDate,
+            targetTiers: uc.challenge.minTier ? [uc.challenge.minTier] : undefined,
+            maxParticipants: uc.challenge.maxParticipants || undefined,
+            currentParticipants: 0,
             isActive: uc.challenge.isActive,
-            iconUrl: uc.challenge.iconUrl,
-            difficulty: uc.challenge.difficulty,
           }
         : undefined,
-      userId: uc.userId,
       status: uc.status,
       progress: uc.progress,
-      targetValue: uc.targetValue,
-      progressPercentage: Math.min(
-        100,
-        Math.round((uc.progress / uc.targetValue) * 100)
-      ),
-      joinedAt: uc.joinedAt,
-      expiresAt: uc.expiresAt,
+      startedAt: uc.joinedAt,
       completedAt: uc.completedAt,
-      rewardClaimedAt: uc.rewardClaimedAt,
+      claimedAt: uc.rewardClaimedAt,
+      rewardClaimed: uc.status === "CLAIMED",
     };
   }
 }

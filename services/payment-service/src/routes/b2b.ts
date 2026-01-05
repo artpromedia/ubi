@@ -171,10 +171,14 @@ b2bRoutes.get(
     const orgId = c.get("organizationId");
     const page = parseInt(c.req.query("page") || "1");
     const limit = parseInt(c.req.query("limit") || "20");
-    const members = await corporateAccountsService.listMembers(orgId, {
-      page,
-      limit,
-    });
+    const members = await corporateAccountsService.listMembers(
+      orgId,
+      {},
+      {
+        page,
+        limit,
+      }
+    );
     return c.json(members);
   }
 );
@@ -185,7 +189,11 @@ b2bRoutes.post(
   async (c) => {
     const orgId = c.get("organizationId");
     const body = await c.req.json();
-    const member = await corporateAccountsService.addMember(orgId, body);
+    const member = await corporateAccountsService.inviteMember(
+      orgId,
+      body,
+      "api"
+    );
     return c.json({ data: member }, 201);
   }
 );
@@ -247,7 +255,7 @@ b2bRoutes.post(
   async (c) => {
     const orgId = c.get("organizationId");
     const body = await c.req.json();
-    const quote = await deliveryApiService.createQuote(orgId, body);
+    const quote = await deliveryApiService.getQuote(orgId, body);
     return c.json({ data: quote }, 201);
   }
 );
@@ -267,7 +275,7 @@ b2bRoutes.post(
       quantity: 1,
       referenceId: delivery.id,
       referenceType: "delivery",
-      description: `Delivery ${delivery.trackingNumber}`,
+      description: `Delivery ${delivery.trackingCode}`,
     });
 
     return c.json({ data: delivery }, 201);
@@ -280,15 +288,15 @@ b2bRoutes.post(
   async (c) => {
     const orgId = c.get("organizationId");
     const body = await c.req.json();
-    const batch = await deliveryApiService.createBatchDelivery(orgId, body);
+    const batch = await deliveryApiService.createBatchDeliveries(orgId, body);
 
     // Record usage for batch
     await billingService.recordUsage(orgId, {
       type: "delivery",
-      quantity: batch.totalDeliveries,
-      referenceId: batch.id,
+      quantity: batch.total,
+      referenceId: `batch_${Date.now()}`,
       referenceType: "batch_delivery",
-      description: `Batch delivery (${batch.totalDeliveries} deliveries)`,
+      description: `Batch delivery (${batch.total} deliveries)`,
     });
 
     return c.json({ data: batch }, 201);
@@ -337,7 +345,7 @@ b2bRoutes.get(
   authenticateApiKey("deliveries:read"),
   async (c) => {
     const trackingNumber = c.req.param("trackingNumber");
-    const tracking = await deliveryApiService.trackDelivery(trackingNumber);
+    const tracking = await deliveryApiService.getTrackingInfo(trackingNumber);
     if (!tracking) {
       return c.json({ error: "not_found", message: "Tracking not found" }, 404);
     }
@@ -388,7 +396,8 @@ b2bRoutes.post(
     const body = await c.req.json();
     const provider = await healthcareTransportService.registerProvider(
       orgId,
-      body
+      body.providerType,
+      body.details || {}
     );
     return c.json({ data: provider }, 201);
   }
@@ -399,13 +408,10 @@ b2bRoutes.get(
   authenticateApiKey("healthcare:read"),
   async (c) => {
     const orgId = c.get("organizationId");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
-    const providers = await healthcareTransportService.listProviders(orgId, {
-      page,
-      limit,
-    });
-    return c.json(providers);
+    const provider = await healthcareTransportService.getProviderByOrganization(
+      orgId
+    );
+    return c.json({ data: provider });
   }
 );
 
@@ -471,7 +477,7 @@ b2bRoutes.post(
       quantity: 1,
       referenceId: transport.id,
       referenceType: "patient_transport",
-      description: `Patient transport: ${transport.appointmentType}`,
+      description: `Patient transport: ${transport.appointmentTime}`,
     });
 
     return c.json({ data: transport }, 201);

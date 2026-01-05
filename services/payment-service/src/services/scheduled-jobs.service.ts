@@ -53,13 +53,12 @@ export class ScheduledJobsService {
   private redis: Redis;
   private reconciliationService: ReconciliationService;
   private settlementService: SettlementService;
-  private payoutService: PayoutService;
 
   private jobs: Map<string, ScheduledJob> = new Map();
   private isRunning: boolean = false;
 
   // Provider-currency mappings
-  private readonly providerCurrencies: Record<PaymentProvider, Currency[]> = {
+  private readonly providerCurrencies: Partial<Record<PaymentProvider, Currency[]>> = {
     [PaymentProvider.PAYSTACK]: [
       Currency.NGN,
       Currency.GHS,
@@ -67,10 +66,8 @@ export class ScheduledJobsService {
       Currency.KES,
     ],
     [PaymentProvider.MPESA]: [Currency.KES],
-    [PaymentProvider.MTN_MOMO]: [Currency.GHS, Currency.RWF],
-    [PaymentProvider.CARD]: [],
-    [PaymentProvider.CASH]: [],
-    [PaymentProvider.WALLET]: [],
+    [PaymentProvider.MTN_MOMO_GH]: [Currency.GHS],
+    [PaymentProvider.MTN_MOMO_RW]: [Currency.RWF],
     [PaymentProvider.AIRTEL_MONEY]: [],
   };
 
@@ -79,13 +76,12 @@ export class ScheduledJobsService {
     redis: Redis,
     reconciliationService: ReconciliationService,
     settlementService: SettlementService,
-    payoutService: PayoutService
+    _payoutService: PayoutService
   ) {
     this.prisma = prisma;
     this.redis = redis;
     this.reconciliationService = reconciliationService;
     this.settlementService = settlementService;
-    this.payoutService = payoutService;
 
     this.initializeJobs();
   }
@@ -338,7 +334,8 @@ export class ScheduledJobsService {
     const providers = [
       PaymentProvider.PAYSTACK,
       PaymentProvider.MPESA,
-      PaymentProvider.MTN_MOMO,
+      PaymentProvider.MTN_MOMO_GH,
+      PaymentProvider.MTN_MOMO_RW,
     ];
 
     for (const provider of providers) {
@@ -370,7 +367,8 @@ export class ScheduledJobsService {
     const providers = [
       PaymentProvider.PAYSTACK,
       PaymentProvider.MPESA,
-      PaymentProvider.MTN_MOMO,
+      PaymentProvider.MTN_MOMO_GH,
+      PaymentProvider.MTN_MOMO_RW,
     ];
 
     for (const provider of providers) {
@@ -383,7 +381,6 @@ export class ScheduledJobsService {
           );
           await this.reconciliationService.runBalanceReconciliation(
             provider,
-            today,
             currency
           );
         } catch (error) {
@@ -498,7 +495,8 @@ export class ScheduledJobsService {
     const providers = [
       PaymentProvider.PAYSTACK,
       PaymentProvider.MPESA,
-      PaymentProvider.MTN_MOMO,
+      PaymentProvider.MTN_MOMO_GH,
+      PaymentProvider.MTN_MOMO_RW,
     ];
 
     for (const provider of providers) {
@@ -641,18 +639,18 @@ export class ScheduledJobsService {
 
   private getNextRunTime(cronExpression: string): Date {
     // Simplified cron parser - in production use a library like 'cron-parser'
-    const [minute, hour, dayOfMonth, month, dayOfWeek] =
+    const [minute, hour, _dayOfMonth, _month, dayOfWeek] =
       cronExpression.split(" ");
 
     const now = new Date();
     const next = new Date(now);
 
     // Handle hour and minute
-    if (minute !== "*") {
-      next.setMinutes(parseInt(minute));
+    if (minute !== "*" && minute !== undefined) {
+      next.setMinutes(parseInt(minute, 10));
     }
-    if (hour !== "*") {
-      next.setHours(parseInt(hour));
+    if (hour !== "*" && hour !== undefined) {
+      next.setHours(parseInt(hour, 10));
     }
 
     // If the calculated time is in the past, move to next occurrence
@@ -663,9 +661,9 @@ export class ScheduledJobsService {
       } else if (hour !== "*") {
         // Daily job - move to tomorrow
         next.setDate(next.getDate() + 1);
-      } else if (minute !== "*" && minute.startsWith("*/")) {
+      } else if (minute && minute !== "*" && minute.startsWith("*/")) {
         // Interval job - move to next interval
-        const interval = parseInt(minute.substring(2));
+        const interval = parseInt(minute.substring(2), 10);
         next.setMinutes(
           Math.ceil((now.getMinutes() + 1) / interval) * interval
         );
@@ -843,7 +841,7 @@ export function createScheduledJobsService(
   redis: Redis,
   reconciliationService: ReconciliationService,
   settlementService: SettlementService,
-  payoutService: PayoutService
+  _payoutService: PayoutService
 ): ScheduledJobsService {
   if (!instance) {
     instance = new ScheduledJobsService(
@@ -851,7 +849,7 @@ export function createScheduledJobsService(
       redis,
       reconciliationService,
       settlementService,
-      payoutService
+      _payoutService
     );
   }
   return instance;

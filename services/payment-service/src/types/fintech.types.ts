@@ -138,6 +138,14 @@ export interface Beneficiary {
   lastUsedAt?: Date;
 }
 
+export interface BeneficiaryParams {
+  walletId: string;
+  name: string;
+  identifier: string;
+  identifierType: "phone" | "email" | "username";
+  isFrequent?: boolean;
+}
+
 // ===========================================
 // BILL PAYMENT TYPES
 // ===========================================
@@ -244,32 +252,35 @@ export interface ScheduledBillPayment {
 // QR PAYMENT TYPES
 // ===========================================
 
-export type QRCodeType = "static" | "dynamic";
+export type QRCodeType = "static" | "dynamic" | "STATIC_FIXED" | "STATIC_VARIABLE" | "DYNAMIC";
 
 export interface MerchantQRCode {
   id: string;
-  merchantName: string;
+  merchantId: string;
+  walletId: string;
+  name: string;
   type: QRCodeType;
-  amount?: number;
-  currency: string;
   qrData: string;
-  qrImageUrl?: string;
-  usageCount: number;
-  maxUsages?: number;
-  expiresAt?: Date;
+  location?: string;
+  defaultCurrency: string;
+  fixedAmount?: number;
   isActive: boolean;
+  totalTransactions: number;
+  totalAmount: number;
+  createdAt?: Date;
+  lastUsedAt?: Date;
 }
 
 export interface QRPayload {
-  version: number;
+  version: string;
   type: QRCodeType;
-  merchantId: string;
-  merchantName: string;
+  merchantId?: string;
+  walletId?: string;
+  qrId?: string;
   amount?: number;
-  currency: string;
-  reference?: string;
-  expiresAt?: number;
-  checksum: string;
+  currency?: string;
+  description?: string;
+  expiresAt?: string;
 }
 
 export interface QRPaymentParams {
@@ -277,18 +288,36 @@ export interface QRPaymentParams {
   qrData: string;
   amount?: number; // Required for open-amount QR
   pin?: string;
-  idempotencyKey: string;
+  note?: string;
 }
 
 export interface QRPaymentResult {
   paymentId: string;
   status: TransferStatus;
-  merchantName: string;
   amount: number;
-  fee: number;
   currency: string;
-  reference: string;
-  createdAt: Date;
+  recipientName?: string;
+  note?: string;
+  direction?: string;
+  createdAt?: Date;
+  completedAt?: Date;
+}
+
+export interface DynamicQRParams {
+  walletId: string;
+  amount: number;
+  currency: string;
+  description?: string;
+  expiryMinutes?: number;
+}
+
+export interface DynamicQRResult {
+  qrId: string;
+  qrData: string;
+  amount: number;
+  currency: string;
+  description?: string;
+  expiresAt: Date;
 }
 
 // ===========================================
@@ -414,6 +443,18 @@ export interface CreditFactor {
   score: number;
   impact: "positive" | "negative" | "neutral";
   details: string;
+}
+
+export interface CreditScoreResult {
+  userId: string;
+  score: number;
+  category: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
+  categoryLabel: string;
+  factors: CreditFactor[];
+  trend: "UP" | "DOWN" | "STABLE" | "NEW";
+  previousScore?: number;
+  calculatedAt: Date;
+  validUntil: Date;
 }
 
 export interface LoanProduct {

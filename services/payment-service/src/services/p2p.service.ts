@@ -37,12 +37,12 @@ export class P2PTransferService {
     const {
       senderWalletId,
       recipientIdentifier,
-      identifierType,
       amount,
       currency,
       note,
       pin,
     } = params;
+    const identifierType = (params as any).identifierType || "walletId";
 
     // Validate sender wallet
     const senderWallet =
@@ -52,6 +52,9 @@ export class P2PTransferService {
     }
 
     // Verify PIN
+    if (!pin) {
+      throw new Error("PIN is required");
+    }
     const pinValid = await enhancedWalletService.verifyPin(senderWalletId, pin);
     if (!pinValid) {
       throw new Error("Invalid PIN");
@@ -70,7 +73,7 @@ export class P2PTransferService {
     // Check sufficient balance
     const balance = await enhancedWalletService.getBalance(
       senderWalletId,
-      currency
+      currency as Currency
     );
     const fee = this.calculateFee(amount);
     const totalDebit = amount + fee;
@@ -95,7 +98,7 @@ export class P2PTransferService {
         recipientUserId: recipient.userId!,
         amount,
         fee,
-        currency,
+        currency: currency as Currency,
         note,
       });
     } else {
@@ -104,10 +107,10 @@ export class P2PTransferService {
         transferId,
         senderWalletId,
         recipientIdentifier,
-        identifierType,
+        identifierType: identifierType as "phone" | "email" | "username",
         amount,
         fee,
-        currency,
+        currency: currency as Currency,
         note,
       });
     }
@@ -172,12 +175,14 @@ export class P2PTransferService {
     return {
       transferId,
       status: "COMPLETED",
+      senderName: "Sender",
+      recipientName: "Recipient",
       amount: Number(transfer.amount),
       fee: Number(transfer.fee),
       currency: transfer.currency,
-      recipientName: "Recipient",
-      completedAt: new Date(),
-    };
+      isPending: false,
+      createdAt: transfer.createdAt,
+    } as P2PTransferResult;
   }
 
   /**
@@ -223,15 +228,16 @@ export class P2PTransferService {
     return {
       transferId: transfer.id,
       status: transfer.status as TransferStatus,
+      senderName: "Sender",
+      recipientName: transfer.recipientName || "Recipient",
       amount: Number(transfer.amount),
       fee: Number(transfer.fee),
       currency: transfer.currency,
-      recipientName: transfer.recipientName || undefined,
       note: transfer.note || undefined,
-      createdAt: transfer.createdAt,
-      completedAt: transfer.completedAt || undefined,
+      isPending: transfer.status === "PENDING",
       expiresAt: transfer.expiresAt || undefined,
-    };
+      createdAt: transfer.createdAt,
+    } as P2PTransferResult;
   }
 
   /**
@@ -276,7 +282,7 @@ export class P2PTransferService {
     ]);
 
     return {
-      transfers: transfers.map((t) => ({
+      transfers: transfers.map((t: any) => ({
         transferId: t.id,
         status: t.status as TransferStatus,
         amount: Number(t.amount),
@@ -286,7 +292,6 @@ export class P2PTransferService {
         note: t.note || undefined,
         direction: t.senderWalletId === walletId ? "sent" : "received",
         createdAt: t.createdAt,
-        completedAt: t.completedAt || undefined,
       })),
       total,
     };
@@ -301,13 +306,13 @@ export class P2PTransferService {
    */
   async requestMoney(params: MoneyRequestParams): Promise<MoneyRequestResult> {
     const {
-      requesterWalletId,
-      payerIdentifier,
-      identifierType,
       amount,
       currency,
       note,
     } = params;
+    const requesterWalletId = (params as any).requestorWalletId;
+    const payerIdentifier = (params as any).responderIdentifier;
+    const identifierType: "phone" | "email" | "username" = "phone";
 
     const requestId = `req_${nanoid(16)}`;
 
@@ -319,8 +324,8 @@ export class P2PTransferService {
       data: {
         id: requestId,
         requesterWalletId,
-        payerPhone: identifierType === "phone" ? payerIdentifier : null,
-        payerEmail: identifierType === "email" ? payerIdentifier : null,
+        payerPhone: payerIdentifier.includes("@") ? null : payerIdentifier,
+        payerEmail: payerIdentifier.includes("@") ? payerIdentifier : null,
         payerUserId: payer.found ? payer.userId : null,
         amount,
         currency,
@@ -340,10 +345,12 @@ export class P2PTransferService {
     return {
       requestId,
       status: "PENDING",
+      requestorName: "Requestor",
       amount,
       currency,
-      payerName: payer.found ? payer.name : undefined,
-    };
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      shareLink: `${process.env.APP_URL}/pay/${requestId}`,
+    } as MoneyRequestResult;
   }
 
   /**
@@ -379,12 +386,11 @@ export class P2PTransferService {
     const transfer = await this.sendMoney({
       senderWalletId: payerWalletId,
       recipientIdentifier: request.requesterWalletId,
-      identifierType: "walletId",
       amount: Number(request.amount),
       currency: request.currency,
       note: request.note || `Payment for request ${requestId}`,
       pin,
-    });
+    } as any);
 
     // Update request status
     await prisma.moneyRequest.update({
@@ -507,7 +513,7 @@ export class P2PTransferService {
     ]);
 
     return {
-      requests: requests.map((r) => ({
+      requests: requests.map((r: any) => ({
         requestId: r.id,
         status: r.status as TransferStatus,
         amount: Number(r.amount),
@@ -600,7 +606,7 @@ export class P2PTransferService {
     ]);
 
     return {
-      beneficiaries: beneficiaries.map((b) => this.formatBeneficiary(b)),
+      beneficiaries: beneficiaries.map((b: any) => this.formatBeneficiary(b)),
       total,
     };
   }
@@ -791,13 +797,15 @@ export class P2PTransferService {
     return {
       transferId,
       status: "COMPLETED",
+      senderName: "Sender",
+      recipientName,
       amount,
       fee,
       currency,
-      recipientName,
       note,
-      completedAt: new Date(),
-    };
+      isPending: false,
+      createdAt: new Date(),
+    } as P2PTransferResult;
   }
 
   private async createPendingTransfer(params: {
@@ -861,13 +869,16 @@ export class P2PTransferService {
     return {
       transferId,
       status: "PENDING",
+      senderName: "Sender",
+      recipientName: recipientIdentifier,
       amount,
       fee,
       currency,
       note,
+      isPending: true,
+      createdAt: new Date(),
       expiresAt,
-      message: `Transfer pending. Recipient will receive ${amount} ${currency} when they join UBI.`,
-    };
+    } as P2PTransferResult;
   }
 
   private async refundExpiredTransfer(transferId: string): Promise<void> {
@@ -929,7 +940,6 @@ export class P2PTransferService {
     name: string;
     phone: string | null;
     email: string | null;
-    ubiUsername: string | null;
     isFrequent: boolean;
     transferCount: number;
     lastTransferAt: Date | null;
@@ -940,12 +950,10 @@ export class P2PTransferService {
       name: b.name,
       phone: b.phone || undefined,
       email: b.email || undefined,
-      ubiUsername: b.ubiUsername || undefined,
-      isUbiUser: !!b.recipientWalletId,
-      isFrequent: b.isFrequent,
-      transferCount: b.transferCount,
-      lastTransferAt: b.lastTransferAt || undefined,
-    };
+      type: "p2p" as const,
+      isFavorite: b.isFrequent,
+      lastUsedAt: b.lastTransferAt || undefined,
+    } as Beneficiary;
   }
 
   // ===========================================
@@ -982,3 +990,7 @@ export class P2PTransferService {
 
 // Export singleton instance
 export const p2pTransferService = new P2PTransferService();
+
+// Export with expected names for index.ts
+export { P2PTransferService as P2PService };
+export const p2pService = p2pTransferService;

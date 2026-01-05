@@ -64,7 +64,6 @@ export class DriverEarningsService implements IDriverEarningsService {
     const grossEarnings = this.sum(trips, "grossFare");
     const tips = this.sum(trips, "tip");
     const incentives = this.sum(trips, "incentiveBonus");
-    const commission = this.sum(trips, "commission");
     const netEarnings = this.sum(trips, "netEarnings");
 
     // Calculate per-hour metrics
@@ -224,7 +223,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   private async getEarningsComparison(
     driverId: string,
     todayEarnings: number,
-    todayTrips: number
+    _todayTrips: number
   ): Promise<EarningsComparison> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -391,7 +390,7 @@ export class DriverEarningsService implements IDriverEarningsService {
         description: `${nearbyDemand.surgeMultiplier}x surge active. ${nearbyDemand.distanceKm}km away.`,
         impact: "high",
         actionUrl: `/navigate?lat=${nearbyDemand.latitude}&lng=${nearbyDemand.longitude}`,
-        data: nearbyDemand,
+        data: nearbyDemand as unknown as Record<string, unknown>,
       });
     }
 
@@ -404,7 +403,7 @@ export class DriverEarningsService implements IDriverEarningsService {
         title: `${remaining} trips to complete quest`,
         description: `Complete ${remaining} more trips to earn ₦${activeQuest.reward}`,
         impact: "high",
-        data: activeQuest,
+        data: activeQuest as unknown as Record<string, unknown>,
       });
     }
 
@@ -1319,5 +1318,3 @@ interface ActiveQuest {
   reward: number;
   endsAt: Date;
 }
-
-export { DriverEarningsService, DriverGoalsService };

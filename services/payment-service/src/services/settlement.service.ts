@@ -110,6 +110,9 @@ export class SettlementService {
     recipientType: "RESTAURANT" | "MERCHANT" | "PARTNER" | "DRIVER"
   ): CommissionBreakdown {
     const rates = this.commissionRates[recipientType];
+    if (!rates) {
+      throw new Error(`No commission rates found for ${recipientType}`);
+    }
 
     const ubiCommission = grossAmount * (rates.ubiPercent / 100);
     const ceerionCommission = grossAmount * (rates.ceerionPercent / 100);
@@ -412,7 +415,11 @@ export class SettlementService {
       }
     );
 
-    const recipientData = await recipientResponse.json();
+    const recipientData = (await recipientResponse.json()) as {
+      status: boolean;
+      message?: string;
+      data?: { recipient_code: string };
+    };
     if (!recipientData.status) {
       throw new Error(`Failed to create recipient: ${recipientData.message}`);
     }
@@ -427,18 +434,22 @@ export class SettlementService {
       body: JSON.stringify({
         source: "balance",
         amount: Math.round(Number(settlement.netAmount) * 100), // Convert to kobo
-        recipient: recipientData.data.recipient_code,
+        recipient: recipientData.data?.recipient_code,
         reason: `Settlement ${settlement.id}`,
         reference: `SETTLEMENT_${settlement.id}`,
       }),
     });
 
-    const transferData = await transferResponse.json();
+    const transferData = (await transferResponse.json()) as {
+      status: boolean;
+      message?: string;
+      data?: { transfer_code: string };
+    };
     if (!transferData.status) {
       throw new Error(`Failed to initiate transfer: ${transferData.message}`);
     }
 
-    return transferData.data.transfer_code;
+    return transferData.data?.transfer_code || "";
   }
 
   /**
@@ -706,8 +717,9 @@ export class SettlementService {
       summary.totalNetAmount += Number(settlement.netAmount);
 
       // Group by recipient type
-      if (!summary.byRecipientType[settlement.recipientType]) {
-        summary.byRecipientType[settlement.recipientType] = {
+      const recipientType = settlement.recipientType;
+      if (!summary.byRecipientType[recipientType]) {
+        summary.byRecipientType[recipientType] = {
           count: 0,
           grossAmount: 0,
           commission: 0,
@@ -715,15 +727,14 @@ export class SettlementService {
         };
       }
 
-      summary.byRecipientType[settlement.recipientType].count++;
-      summary.byRecipientType[settlement.recipientType].grossAmount += Number(
-        settlement.grossAmount
-      );
-      summary.byRecipientType[settlement.recipientType].commission +=
-        Number(settlement.ubiCommission) + Number(settlement.ceerionCommission);
-      summary.byRecipientType[settlement.recipientType].netAmount += Number(
-        settlement.netAmount
-      );
+      const typeStats = summary.byRecipientType[recipientType];
+      if (typeStats) {
+        typeStats.count++;
+        typeStats.grossAmount += Number(settlement.grossAmount);
+        typeStats.commission +=
+          Number(settlement.ubiCommission) + Number(settlement.ceerionCommission);
+        typeStats.netAmount += Number(settlement.netAmount);
+      }
     }
 
     return summary;
@@ -757,4 +768,24 @@ export class SettlementService {
     // Process the settlement
     await this.processSettlement(settlementId);
   }
+}
+
+// Singleton instance
+let settlementServiceInstance: SettlementService | null = null;
+
+// Create new instance
+export function createSettlementService(
+  prisma: PrismaClient
+): SettlementService {
+  return new SettlementService(prisma);
+}
+
+// Get singleton instance
+export function getSettlementService(
+  prisma: PrismaClient
+): SettlementService {
+  if (!settlementServiceInstance) {
+    settlementServiceInstance = createSettlementService(prisma);
+  }
+  return settlementServiceInstance;
 }

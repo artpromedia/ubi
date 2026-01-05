@@ -8,31 +8,33 @@
 import { EventEmitter } from "events";
 import {
   ABExperiment,
-  ABExperimentStatus,
   AlertSeverity,
+  AlertType,
   DataDriftReport,
-  DriftType,
   ExperimentAssignment,
+  ExperimentStatus,
+  ExperimentType,
   ExperimentVariant,
-  IABTestingService,
-  IMLOpsService,
   MLModel,
   ModelAlert,
-  ModelMetrics,
-  ModelServingConfig,
+  ModelFramework,
+  ModelPerformanceMetrics,
   ModelStatus,
   ModelType,
   PipelineStatus,
+  ServingConfig,
+  TrainingConfig,
   TrainingPipeline,
-} from "../types/ml.types";
+} from "../../types/ml.types";
 import { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
 // MLOPS SERVICE
 // =============================================================================
 
-export class MLOpsService implements IMLOpsService {
-  private featureStore: FeatureStoreService;
+export class MLOpsService {
+  // @ts-expect-error - Reserved for future feature store integration
+  private _featureStore: FeatureStoreService;
   private eventEmitter: EventEmitter;
 
   // Model registry (in production, use dedicated model registry)
@@ -40,7 +42,7 @@ export class MLOpsService implements IMLOpsService {
   private deployedModels: Map<string, MLModel> = new Map();
 
   // Metrics storage
-  private modelMetrics: Map<string, ModelMetrics[]> = new Map();
+  private modelMetrics: Map<string, ModelPerformanceMetrics[]> = new Map();
 
   // Alert thresholds
   private alertThresholds = {
@@ -51,7 +53,7 @@ export class MLOpsService implements IMLOpsService {
   };
 
   constructor(featureStore: FeatureStoreService) {
-    this.featureStore = featureStore;
+    this._featureStore = featureStore;
     this.eventEmitter = new EventEmitter();
     this.initializeDefaultModels();
   }
@@ -66,15 +68,18 @@ export class MLOpsService implements IMLOpsService {
     const newModel: MLModel = {
       id: modelId,
       name: model.name || "Unnamed Model",
+      displayName: model.displayName || model.name || "Unnamed Model",
       type: model.type || ModelType.REGRESSION,
       version: model.version || "1.0.0",
       status: ModelStatus.TRAINING,
-      framework: model.framework || "tensorflow",
-      inputSchema: model.inputSchema || {},
-      outputSchema: model.outputSchema || {},
+      framework: model.framework || ModelFramework.TENSORFLOW,
+      inputFeatures: model.inputFeatures || [],
+      outputSchema: model.outputSchema || { type: "regression" as const },
       hyperparameters: model.hyperparameters || {},
       metrics: model.metrics || {},
-      artifactPath: model.artifactPath,
+      artifactUri: model.artifactUri,
+      trafficPercentage: model.trafficPercentage || 0,
+      isCanary: model.isCanary || false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -115,7 +120,7 @@ export class MLOpsService implements IMLOpsService {
 
   async deployModel(
     modelId: string,
-    config: ModelServingConfig
+    config: ServingConfig
   ): Promise<void> {
     const model = this.models.get(modelId);
     if (!model) {
@@ -123,8 +128,8 @@ export class MLOpsService implements IMLOpsService {
     }
 
     // Validate model is ready
-    if (model.status !== ModelStatus.VALIDATED) {
-      throw new Error(`Model ${modelId} is not validated for deployment`);
+    if (model.status !== ModelStatus.STAGED && model.status !== ModelStatus.VALIDATING) {
+      throw new Error(`Model ${modelId} is not ready for deployment`);
     }
 
     // Update model status
@@ -154,6 +159,9 @@ export class MLOpsService implements IMLOpsService {
     }
 
     const targetModel = models[0];
+    if (!targetModel) {
+      throw new Error(`Target model not found`);
+    }
 
     // Undeploy current
     this.deployedModels.delete(modelId);
@@ -170,7 +178,7 @@ export class MLOpsService implements IMLOpsService {
   // MODEL MONITORING
   // ===========================================================================
 
-  private startModelMonitoring(modelId: string): void {
+  private startModelMonitoring(_modelId: string): void {
     // In production, this would set up continuous monitoring
     // For now, we'll track metrics when predictions are made
   }
@@ -184,14 +192,15 @@ export class MLOpsService implements IMLOpsService {
   ): Promise<void> {
     const metrics = this.modelMetrics.get(modelId) || [];
 
-    const metric: ModelMetrics = {
+    const metric: ModelPerformanceMetrics = {
       modelId,
-      timestamp: new Date(),
-      requestCount: 1,
-      latencyP50Ms: latencyMs,
-      latencyP99Ms: latencyMs,
+      windowStart: new Date(),
+      windowEnd: new Date(),
+      p50Latency: latencyMs,
+      p99Latency: latencyMs,
       errorRate: success ? 0 : 1,
-      predictionDistribution: {},
+      predictionCount: 1,
+      errorCount: success ? 0 : 1,
     };
 
     // Calculate accuracy if actual provided
@@ -215,45 +224,47 @@ export class MLOpsService implements IMLOpsService {
   async getModelMetrics(
     modelId: string,
     timeRange?: { start: Date; end: Date }
-  ): Promise<ModelMetrics> {
+  ): Promise<ModelPerformanceMetrics> {
     const metrics = this.modelMetrics.get(modelId) || [];
 
     let filteredMetrics = metrics;
     if (timeRange) {
       filteredMetrics = metrics.filter(
-        (m) => m.timestamp >= timeRange.start && m.timestamp <= timeRange.end
+        (m) => m.windowStart >= timeRange.start && m.windowEnd <= timeRange.end
       );
     }
 
     if (filteredMetrics.length === 0) {
       return {
         modelId,
-        timestamp: new Date(),
-        requestCount: 0,
-        latencyP50Ms: 0,
-        latencyP99Ms: 0,
+        windowStart: new Date(),
+        windowEnd: new Date(),
+        p50Latency: 0,
+        p99Latency: 0,
         errorRate: 0,
-        predictionDistribution: {},
+        predictionCount: 0,
+        errorCount: 0,
       };
     }
 
     // Aggregate metrics
-    const aggregated: ModelMetrics = {
+    const aggregated: ModelPerformanceMetrics = {
       modelId,
-      timestamp: new Date(),
-      requestCount: filteredMetrics.length,
-      latencyP50Ms: this.calculatePercentile(
-        filteredMetrics.map((m) => m.latencyP50Ms),
+      windowStart: new Date(),
+      windowEnd: new Date(),
+      p50Latency: this.calculatePercentile(
+        filteredMetrics.map((m) => m.p50Latency || 0),
         50
       ),
-      latencyP99Ms: this.calculatePercentile(
-        filteredMetrics.map((m) => m.latencyP99Ms),
+      p99Latency: this.calculatePercentile(
+        filteredMetrics.map((m) => m.p99Latency || 0),
         99
       ),
       errorRate:
         filteredMetrics.reduce((sum, m) => sum + m.errorRate, 0) /
         filteredMetrics.length,
-      predictionDistribution: {},
+      predictionCount: filteredMetrics.reduce((sum, m) => sum + m.predictionCount, 0),
+      errorCount: filteredMetrics.reduce((sum, m) => sum + m.errorCount, 0),
     };
 
     // Calculate accuracy if available
@@ -275,7 +286,7 @@ export class MLOpsService implements IMLOpsService {
     const sorted = [...values].sort((a, b) => a - b);
     const index = Math.ceil((percentile / 100) * sorted.length) - 1;
 
-    return sorted[Math.max(0, index)];
+    return sorted[Math.max(0, index)] ?? 0;
   }
 
   // ===========================================================================
@@ -305,7 +316,7 @@ export class MLOpsService implements IMLOpsService {
     // Check latency drift
     const recentLatency = this.calculateAverageLatency(recentMetrics);
     const baselineLatency = this.calculateAverageLatency(baselineMetrics);
-    const latencyDrift = (recentLatency - baselineLatency) / baselineLatency;
+    const latencyDrift = (recentLatency - baselineLatency) / (baselineLatency || 1);
 
     if (latencyDrift > 0.2) {
       // 20% increase
@@ -322,31 +333,28 @@ export class MLOpsService implements IMLOpsService {
     const report: DataDriftReport = {
       id: this.generateId("drift"),
       modelId,
-      reportDate: new Date(),
-      driftType: this.determineDriftType(driftingFeatures),
-      driftScore: overallDriftScore,
-      driftingFeatures,
-      baselinePeriod: {
-        start: baselineMetrics[0]?.timestamp || new Date(),
-        end:
-          baselineMetrics[baselineMetrics.length - 1]?.timestamp || new Date(),
-      },
-      currentPeriod: {
-        start: recentMetrics[0]?.timestamp || new Date(),
-        end: recentMetrics[recentMetrics.length - 1]?.timestamp || new Date(),
-      },
-      requiresRetraining: overallDriftScore > this.alertThresholds.driftScore,
+      referenceStart: baselineMetrics[0]?.windowStart || new Date(),
+      referenceEnd:
+        baselineMetrics[baselineMetrics.length - 1]?.windowEnd || new Date(),
+      currentStart: recentMetrics[0]?.windowStart || new Date(),
+      currentEnd: recentMetrics[recentMetrics.length - 1]?.windowEnd || new Date(),
+      overallDriftScore,
+      driftDetected: overallDriftScore > this.alertThresholds.driftScore,
+      featureDrift: driftScores,
+      recommendations: overallDriftScore > this.alertThresholds.driftScore
+        ? [`Consider retraining model due to drift in: ${driftingFeatures.join(", ")}`]
+        : [],
       createdAt: new Date(),
     };
 
     // Emit alert if drift detected
-    if (report.requiresRetraining) {
+    if (report.driftDetected) {
       await this.createAlert({
         modelId,
         severity: AlertSeverity.WARNING,
-        type: "drift",
+        type: AlertType.DATA_DRIFT,
         message: `Model drift detected: ${driftingFeatures.join(", ")}`,
-        threshold: this.alertThresholds.driftScore,
+        thresholdValue: this.alertThresholds.driftScore,
         actualValue: overallDriftScore,
       });
     }
@@ -354,7 +362,7 @@ export class MLOpsService implements IMLOpsService {
     return report;
   }
 
-  private calculateAverageAccuracy(metrics: ModelMetrics[]): number {
+  private calculateAverageAccuracy(metrics: ModelPerformanceMetrics[]): number {
     const withAccuracy = metrics.filter((m) => m.accuracy !== undefined);
     if (withAccuracy.length === 0) return 1;
 
@@ -364,20 +372,10 @@ export class MLOpsService implements IMLOpsService {
     );
   }
 
-  private calculateAverageLatency(metrics: ModelMetrics[]): number {
+  private calculateAverageLatency(metrics: ModelPerformanceMetrics[]): number {
     if (metrics.length === 0) return 0;
 
-    return metrics.reduce((sum, m) => sum + m.latencyP50Ms, 0) / metrics.length;
-  }
-
-  private determineDriftType(features: string[]): DriftType {
-    if (features.includes("accuracy")) {
-      return DriftType.CONCEPT;
-    }
-    if (features.length > 0) {
-      return DriftType.DATA;
-    }
-    return DriftType.NONE;
+    return metrics.reduce((sum, m) => sum + (m.p50Latency || 0), 0) / metrics.length;
   }
 
   // ===========================================================================
@@ -386,17 +384,17 @@ export class MLOpsService implements IMLOpsService {
 
   private async checkModelAlerts(
     modelId: string,
-    metric: ModelMetrics
+    metric: ModelPerformanceMetrics
   ): Promise<void> {
     // Check latency
-    if (metric.latencyP99Ms > this.alertThresholds.latencyP99Ms) {
+    if ((metric.p99Latency || 0) > this.alertThresholds.latencyP99Ms) {
       await this.createAlert({
         modelId,
         severity: AlertSeverity.WARNING,
-        type: "latency",
-        message: `High latency detected: ${metric.latencyP99Ms}ms`,
-        threshold: this.alertThresholds.latencyP99Ms,
-        actualValue: metric.latencyP99Ms,
+        type: AlertType.LATENCY_SPIKE,
+        message: `High latency detected: ${metric.p99Latency}ms`,
+        thresholdValue: this.alertThresholds.latencyP99Ms,
+        actualValue: metric.p99Latency,
       });
     }
 
@@ -405,9 +403,9 @@ export class MLOpsService implements IMLOpsService {
       await this.createAlert({
         modelId,
         severity: AlertSeverity.ERROR,
-        type: "error_rate",
+        type: AlertType.ERROR_RATE_SPIKE,
         message: `High error rate: ${(metric.errorRate * 100).toFixed(2)}%`,
-        threshold: this.alertThresholds.errorRate,
+        thresholdValue: this.alertThresholds.errorRate,
         actualValue: metric.errorRate,
       });
     }
@@ -418,11 +416,11 @@ export class MLOpsService implements IMLOpsService {
       id: this.generateId("alert"),
       modelId: alert.modelId || "unknown",
       severity: alert.severity || AlertSeverity.INFO,
-      type: alert.type || "unknown",
+      type: alert.type || AlertType.PERFORMANCE_DEGRADATION,
       message: alert.message || "Alert triggered",
-      threshold: alert.threshold,
+      thresholdValue: alert.thresholdValue,
       actualValue: alert.actualValue,
-      status: "active",
+      status: "open",
       createdAt: new Date(),
     };
 
@@ -444,12 +442,25 @@ export class MLOpsService implements IMLOpsService {
       throw new Error(`Model ${modelId} not found`);
     }
 
+    const config: TrainingConfig = {
+      algorithm: "default",
+      hyperparameters: model.hyperparameters || {},
+    };
+
+    const now = new Date();
     const pipeline: TrainingPipeline = {
       id: this.generateId("pipeline"),
-      modelId,
+      modelName: model.name,
       status: PipelineStatus.PENDING,
-      triggeredBy: reason,
-      config: model.hyperparameters || {},
+      triggeredBy: reason === "drift_detected" ? "drift_detected" : "manual",
+      config,
+      datasetConfig: {
+        featureGroupId: model.featureGroupId || "default",
+        labelColumn: "target",
+        dateRangeStart: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+        dateRangeEnd: now,
+      },
+      progress: 0,
       createdAt: new Date(),
     };
 
@@ -469,47 +480,41 @@ export class MLOpsService implements IMLOpsService {
         name: "fraud-detection",
         type: ModelType.CLASSIFICATION,
         version: "1.0.0",
-        framework: "xgboost",
-        inputSchema: {
-          features: ["payment_velocity", "device_fingerprint", "location_risk"],
-        },
-        outputSchema: { score: "float", label: "string" },
+        framework: ModelFramework.XGBOOST,
+        inputFeatures: ["payment_velocity", "device_fingerprint", "location_risk"],
+        outputSchema: { type: "classification" as const, classes: ["fraud", "legitimate"] },
       },
       {
         name: "demand-forecast",
         type: ModelType.REGRESSION,
         version: "1.0.0",
-        framework: "tensorflow",
-        inputSchema: {
-          features: ["h3_index", "hour", "day_of_week", "weather"],
-        },
-        outputSchema: { demand: "float" },
+        framework: ModelFramework.TENSORFLOW,
+        inputFeatures: ["h3_index", "hour", "day_of_week", "weather"],
+        outputSchema: { type: "regression" as const },
       },
       {
         name: "eta-prediction",
         type: ModelType.REGRESSION,
         version: "1.0.0",
-        framework: "lightgbm",
-        inputSchema: { features: ["distance", "traffic", "time_of_day"] },
-        outputSchema: { eta_seconds: "float" },
+        framework: ModelFramework.LIGHTGBM,
+        inputFeatures: ["distance", "traffic", "time_of_day"],
+        outputSchema: { type: "regression" as const },
       },
       {
         name: "churn-prediction",
         type: ModelType.CLASSIFICATION,
         version: "1.0.0",
-        framework: "xgboost",
-        inputSchema: {
-          features: ["last_activity", "frequency", "satisfaction"],
-        },
-        outputSchema: { probability: "float", risk_level: "string" },
+        framework: ModelFramework.XGBOOST,
+        inputFeatures: ["last_activity", "frequency", "satisfaction"],
+        outputSchema: { type: "classification" as const, classes: ["low", "medium", "high"] },
       },
       {
         name: "recommendation",
         type: ModelType.RANKING,
         version: "1.0.0",
-        framework: "tensorflow",
-        inputSchema: { user_id: "string", context: "object" },
-        outputSchema: { items: "array", scores: "array" },
+        framework: ModelFramework.TENSORFLOW,
+        inputFeatures: ["user_id", "context"],
+        outputSchema: { type: "ranking" as const },
       },
     ];
 
@@ -538,7 +543,7 @@ export class MLOpsService implements IMLOpsService {
 // A/B TESTING SERVICE
 // =============================================================================
 
-export class ABTestingService implements IABTestingService {
+export class ABTestingService {
   private eventEmitter: EventEmitter;
 
   // Experiment registry
@@ -569,18 +574,21 @@ export class ABTestingService implements IABTestingService {
       id: experimentId,
       name: experiment.name || "Unnamed Experiment",
       description: experiment.description,
-      status: ABExperimentStatus.DRAFT,
+      type: experiment.type || ExperimentType.MODEL_COMPARISON,
+      status: ExperimentStatus.DRAFT,
       variants: experiment.variants || [
-        { id: "control", name: "Control", weight: 50 },
-        { id: "treatment", name: "Treatment", weight: 50 },
+        { id: "control", name: "Control", trafficWeight: 50, config: {} },
+        { id: "treatment", name: "Treatment", trafficWeight: 50, config: {} },
       ],
-      targetMetric: experiment.targetMetric || "conversion_rate",
+      primaryMetric: experiment.primaryMetric || "conversion_rate",
       secondaryMetrics: experiment.secondaryMetrics || [],
-      trafficAllocation: experiment.trafficAllocation || 100,
-      startDate: experiment.startDate,
-      endDate: experiment.endDate,
-      targetSampleSize: experiment.targetSampleSize || 1000,
-      currentSampleSize: 0,
+      trafficPercentage: experiment.trafficPercentage || 100,
+      startedAt: experiment.startedAt,
+      endedAt: experiment.endedAt,
+      minimumSampleSize: experiment.minimumSampleSize || 1000,
+      confidenceLevel: experiment.confidenceLevel || 0.95,
+      minimumDetectableEffect: experiment.minimumDetectableEffect || 0.05,
+      createdBy: experiment.createdBy || "system",
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -597,8 +605,8 @@ export class ABTestingService implements IABTestingService {
       throw new Error(`Experiment ${experimentId} not found`);
     }
 
-    experiment.status = ABExperimentStatus.RUNNING;
-    experiment.startDate = new Date();
+    experiment.status = ExperimentStatus.RUNNING;
+    experiment.startedAt = new Date();
     experiment.updatedAt = new Date();
 
     this.eventEmitter.emit("experiment:started", { experimentId });
@@ -610,8 +618,8 @@ export class ABTestingService implements IABTestingService {
       throw new Error(`Experiment ${experimentId} not found`);
     }
 
-    experiment.status = ABExperimentStatus.STOPPED;
-    experiment.endDate = new Date();
+    experiment.status = ExperimentStatus.PAUSED;
+    experiment.endedAt = new Date();
     experiment.updatedAt = new Date();
 
     this.eventEmitter.emit("experiment:stopped", { experimentId });
@@ -621,7 +629,7 @@ export class ABTestingService implements IABTestingService {
     return this.experiments.get(experimentId);
   }
 
-  async listExperiments(status?: ABExperimentStatus): Promise<ABExperiment[]> {
+  async listExperiments(status?: ExperimentStatus): Promise<ABExperiment[]> {
     const experiments = Array.from(this.experiments.values());
     if (status) {
       return experiments.filter((e) => e.status === status);
@@ -636,14 +644,14 @@ export class ABTestingService implements IABTestingService {
   async assignUser(
     experimentId: string,
     userId: string,
-    context?: Record<string, unknown>
+    _context?: Record<string, unknown>
   ): Promise<ExperimentAssignment> {
     const experiment = this.experiments.get(experimentId);
     if (!experiment) {
       throw new Error(`Experiment ${experimentId} not found`);
     }
 
-    if (experiment.status !== ABExperimentStatus.RUNNING) {
+    if (experiment.status !== ExperimentStatus.RUNNING) {
       throw new Error(`Experiment ${experimentId} is not running`);
     }
 
@@ -656,15 +664,19 @@ export class ABTestingService implements IABTestingService {
     }
 
     // Check traffic allocation
-    if (Math.random() * 100 > experiment.trafficAllocation) {
-      // User not in experiment
+    if (Math.random() * 100 > experiment.trafficPercentage) {
+      // User not in experiment - return control
+      const controlVariant = experiment.variants.find(v => v.id === "control") || experiment.variants[0];
+      if (!controlVariant) {
+        throw new Error("No control variant found");
+      }
       const assignment: ExperimentAssignment = {
-        id: this.generateId("assign"),
         experimentId,
         userId,
-        variantId: "control",
+        variantId: controlVariant.id,
+        variantName: controlVariant.name,
+        config: controlVariant.config,
         assignedAt: new Date(),
-        isInExperiment: false,
       };
       return assignment;
     }
@@ -673,21 +685,17 @@ export class ABTestingService implements IABTestingService {
     const variant = this.selectVariant(experiment.variants);
 
     const assignment: ExperimentAssignment = {
-      id: this.generateId("assign"),
       experimentId,
       userId,
       variantId: variant.id,
+      variantName: variant.name,
+      config: variant.config,
       assignedAt: new Date(),
-      isInExperiment: true,
-      context,
     };
 
     // Store assignment
     userAssignments.set(experimentId, assignment);
     this.assignments.set(userId, userAssignments);
-
-    // Update sample size
-    experiment.currentSampleSize++;
 
     this.eventEmitter.emit("experiment:assignment", assignment);
 
@@ -695,17 +703,21 @@ export class ABTestingService implements IABTestingService {
   }
 
   private selectVariant(variants: ExperimentVariant[]): ExperimentVariant {
-    const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
+    const totalWeight = variants.reduce((sum, v) => sum + v.trafficWeight, 0);
     let random = Math.random() * totalWeight;
 
     for (const variant of variants) {
-      random -= variant.weight;
+      random -= variant.trafficWeight;
       if (random <= 0) {
         return variant;
       }
     }
 
-    return variants[0];
+    const fallback = variants[0];
+    if (!fallback) {
+      throw new Error("No variants available");
+    }
+    return fallback;
   }
 
   async getUserVariant(
@@ -716,7 +728,7 @@ export class ABTestingService implements IABTestingService {
     if (!userAssignments) return undefined;
 
     const assignment = userAssignments.get(experimentId);
-    if (!assignment?.isInExperiment) return undefined;
+    if (!assignment) return undefined;
 
     return assignment.variantId;
   }
@@ -738,7 +750,7 @@ export class ABTestingService implements IABTestingService {
     if (!userAssignments) return;
 
     const assignment = userAssignments.get(experimentId);
-    if (!assignment?.isInExperiment) return;
+    if (!assignment) return;
 
     // Store event for analysis
     this.eventEmitter.emit("experiment:event", {
@@ -775,10 +787,11 @@ export class ABTestingService implements IABTestingService {
 
     // In production, aggregate real metrics from event store
     // For now, return placeholder analysis
-    const variants = experiment.variants.map((v) => ({
+    const sampleSize = experiment.minimumSampleSize || 100;
+    const variants = experiment.variants.map((v: ExperimentVariant) => ({
       id: v.id,
       sampleSize: Math.floor(
-        experiment.currentSampleSize / experiment.variants.length
+        sampleSize / experiment.variants.length
       ),
       mean: Math.random() * 0.1 + 0.05, // Placeholder conversion rate
       standardError: 0.01,
@@ -816,6 +829,8 @@ export class ABTestingService implements IABTestingService {
 
     // Check minimum sample size
     if (
+      !control ||
+      !treatment ||
       control.sampleSize < this.MIN_SAMPLE_SIZE ||
       treatment.sampleSize < this.MIN_SAMPLE_SIZE
     ) {
@@ -866,13 +881,16 @@ export class ABTestingService implements IABTestingService {
     // Check if feature is part of an experiment
     const experiments = Array.from(this.experiments.values()).filter(
       (e) =>
-        e.status === ABExperimentStatus.RUNNING &&
+        e.status === ExperimentStatus.RUNNING &&
         e.name.toLowerCase() === featureKey.toLowerCase()
     );
 
     if (experiments.length > 0) {
-      const assignment = await this.assignUser(experiments[0].id, userId);
-      return assignment.variantId === "treatment";
+      const exp = experiments[0];
+      if (exp) {
+        const assignment = await this.assignUser(exp.id, userId);
+        return assignment.variantId === "treatment";
+      }
     }
 
     return defaultValue;
@@ -885,13 +903,16 @@ export class ABTestingService implements IABTestingService {
   ): Promise<string> {
     const experiments = Array.from(this.experiments.values()).filter(
       (e) =>
-        e.status === ABExperimentStatus.RUNNING &&
+        e.status === ExperimentStatus.RUNNING &&
         e.name.toLowerCase() === featureKey.toLowerCase()
     );
 
     if (experiments.length > 0) {
-      const variant = await this.getUserVariant(experiments[0].id, userId);
-      return variant || defaultVariant;
+      const exp = experiments[0];
+      if (exp) {
+        const variant = await this.getUserVariant(exp.id, userId);
+        return variant || defaultVariant;
+      }
     }
 
     return defaultVariant;

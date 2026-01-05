@@ -145,7 +145,8 @@ export class IncentiveService implements IIncentiveService {
 
   constructor(
     private db: any,
-    private redis: any,
+    // @ts-expect-error - Reserved for future Redis integration
+    private _redis: any,
     private notificationService: any,
     private analyticsService: any
   ) {
@@ -889,7 +890,7 @@ export class IncentiveService implements IIncentiveService {
   private mapToDriverIncentive(
     incentive: any,
     progress: any,
-    driver: DriverProfileForIncentive
+    _driver: DriverProfileForIncentive
   ): DriverIncentive {
     const rewardTiers: RewardTier[] = incentive.rewardTiers;
     const currentValue = parseFloat(progress.currentValue);
@@ -1145,5 +1146,3 @@ interface RewardEarnedEvent {
   tier: number;
   reward: RewardTier;
 }
-
-export { IncentiveService };

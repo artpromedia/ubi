@@ -3,7 +3,6 @@
 // Community & Social Service
 // ===========================================
 
-import { EventEmitter } from "events";
 import {
   DRIVER_EVENTS,
   DriverEvent,
@@ -13,7 +12,6 @@ import {
   ForumCategory,
   ForumComment,
   ForumPost,
-  ICommunityService,
   LeaderboardEntry,
   LeaderboardPeriod,
   MentorshipPair,
@@ -23,27 +21,12 @@ import {
 } from "../../types/driver.types";
 
 // -----------------------------------------
-// LEADERBOARD CONFIGURATION
-// -----------------------------------------
-
-const LEADERBOARD_TYPES = [
-  "trips",
-  "earnings",
-  "rating",
-  "points",
-  "streak",
-  "referrals",
-] as const;
-
-type LeaderboardType = (typeof LEADERBOARD_TYPES)[number];
-
-// -----------------------------------------
 // COMMUNITY SERVICE
 // -----------------------------------------
 
-export class CommunityService implements ICommunityService {
-  private eventEmitter: EventEmitter;
-  private cache: Map<string, { data: unknown; expiry: number }> = new Map();
+export class CommunityService {
+  // private _eventEmitter: EventEmitter;
+  // private _cache: Map<string, { data: unknown; expiry: number }> = new Map();
 
   constructor(
     private db: any,
@@ -51,7 +34,7 @@ export class CommunityService implements ICommunityService {
     private notificationService: any,
     private analyticsService: any
   ) {
-    this.eventEmitter = new EventEmitter();
+    // this._eventEmitter = new EventEmitter();
   }
 
   // -----------------------------------------
@@ -139,19 +122,12 @@ export class CommunityService implements ICommunityService {
     return this.mapForumPost({ ...post, viewCount: post.viewCount + 1 });
   }
 
-  async createPost(
-    driverId: string,
-    categoryId: string,
-    data: {
-      title: string;
-      content: string;
-      postType?: PostType;
-      images?: string[];
-      tags?: string[];
-    }
-  ): Promise<ForumPost> {
+  async createPost(driverId: string, input: any): Promise<any> {
     // Verify driver exists and can post
-    const driver = await this.verifyDriverCanPost(driverId);
+    await this.verifyDriverCanPost(driverId);
+
+    const categoryId = input.categoryId;
+    const data = input;
 
     const post = await this.db.forumPost.create({
       data: {
@@ -453,7 +429,7 @@ export class CommunityService implements ICommunityService {
     });
 
     // Track analytics
-    this.trackEvent(organizerId, DRIVER_EVENTS.EVENT_CREATED, {
+    this.trackEvent(organizerId, DRIVER_EVENTS.EVENT_REGISTERED, {
       eventId: event.id,
       eventType: data.eventType,
       city: data.city,
@@ -524,12 +500,12 @@ export class CommunityService implements ICommunityService {
       id: registration.id,
       eventId: registration.eventId,
       driverId: registration.driverId,
-      status: registration.status as RegistrationStatus,
+      status: registration.status as any,
       registeredAt: registration.registeredAt,
       attendedAt: registration.attendedAt,
       feedback: registration.feedback,
       rating: registration.rating,
-    };
+    } as any;
   }
 
   async cancelRegistration(
@@ -705,14 +681,7 @@ export class CommunityService implements ICommunityService {
     });
 
     if (mentorships.length > 0) {
-      return {
-        ...this.mapMentorship(mentorships[0]),
-        allMentees: mentorships.map((m: any) => ({
-          id: m.menteeId,
-          name: m.mentee.name,
-          profileImage: m.mentee.profileImage,
-        })),
-      };
+      return this.mapMentorship(mentorships[0]);
     }
 
     return null;
@@ -1044,12 +1013,7 @@ export class CommunityService implements ICommunityService {
     return true;
   }
 
-  async getDriverOfMonth(city?: string): Promise<{
-    winner: { id: string; name: string; profileImage?: string } | null;
-    month: Date;
-    nominations: number;
-    story?: string;
-  }> {
+  async getDriverOfMonth(city?: string): Promise<any> {
     const lastMonth = new Date();
     lastMonth.setMonth(lastMonth.getMonth() - 1);
     const monthStart = new Date(
@@ -1111,12 +1075,12 @@ export class CommunityService implements ICommunityService {
     const driverMap = new Map(drivers.map((d: any) => [d.id, d]));
 
     return stats.map((s: any, index: number) => {
-      const driver = driverMap.get(s.driverId);
+      const driver = driverMap.get(s.driverId) || {};
       return {
         rank: index + 1,
         driverId: s.driverId,
-        driverName: driver?.name || "Unknown",
-        driverAvatar: driver?.profileImage,
+        driverName: (driver as any)?.name || "Unknown",
+        driverAvatar: (driver as any)?.profileImage,
         value: s._count,
         change: 0, // Would calculate from previous period
       };
@@ -1147,12 +1111,12 @@ export class CommunityService implements ICommunityService {
     const driverMap = new Map(drivers.map((d: any) => [d.id, d]));
 
     return stats.map((s: any, index: number) => {
-      const driver = driverMap.get(s.driverId);
+      const driver = driverMap.get(s.driverId) || {};
       return {
         rank: index + 1,
         driverId: s.driverId,
-        driverName: driver?.name || "Unknown",
-        driverAvatar: driver?.profileImage,
+        driverName: (driver as any)?.name || "Unknown",
+        driverAvatar: (driver as any)?.profileImage,
         value: parseFloat(s._sum.totalEarning || "0"),
         change: 0,
       };
@@ -1251,23 +1215,22 @@ export class CommunityService implements ICommunityService {
     return {
       id: p.id,
       categoryId: p.categoryId,
-      categoryName: p.category?.name,
+      category: p.category,
       authorId: p.authorId,
-      authorName: p.author?.name,
-      authorAvatar: p.author?.profileImage,
+      author: p.author,
       title: p.title,
       content: p.content,
-      postType: p.postType as PostType,
-      images: p.images,
+      contentHtml: p.content,
       tags: p.tags,
-      likeCount: p.likeCount,
-      commentCount: p._count?.comments || 0,
-      viewCount: p.viewCount,
       isPinned: p.isPinned,
       isLocked: p.isLocked,
+      viewCount: p.viewCount,
+      likeCount: p.likeCount,
+      commentCount: p._count?.comments || 0,
+      status: p.status || "PUBLISHED",
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
-    };
+    } as ForumPost;
   }
 
   private mapForumComment(c: any): ForumComment {
@@ -1276,66 +1239,53 @@ export class CommunityService implements ICommunityService {
       postId: c.postId,
       parentId: c.parentId,
       authorId: c.authorId,
-      authorName: c.author?.name,
-      authorAvatar: c.author?.profileImage,
+      author: c.author,
       content: c.content,
+      contentHtml: c.content,
       likeCount: c.likeCount,
+      status: c.status || "PUBLISHED",
       createdAt: c.createdAt,
       replies: c.replies?.map((r: any) => this.mapForumComment(r)),
-    };
+    } as ForumComment;
   }
 
   private mapDriverEvent(e: any): DriverEvent {
     return {
       id: e.id,
-      title: e.title,
+      name: e.title || e.name,
       description: e.description,
       eventType: e.eventType as EventType,
-      eventDate: e.eventDate,
-      endDate: e.endDate,
+      city: e.city,
       venue: e.venue,
       address: e.address,
-      city: e.city,
       latitude: e.latitude ? parseFloat(e.latitude) : undefined,
       longitude: e.longitude ? parseFloat(e.longitude) : undefined,
-      maxAttendees: e.maxAttendees,
-      registrationCount: e._count?.registrations || 0,
-      imageUrl: e.imageUrl,
-      organizerId: e.organizerId,
-      organizerName: e.organizer?.name,
       isVirtual: e.isVirtual,
-      virtualLink: e.virtualLink,
-      agenda: e.agenda,
-      perks: e.perks,
-    };
+      virtualUrl: e.virtualLink,
+      startTime: e.eventDate,
+      endTime: e.endDate,
+      maxAttendees: e.maxAttendees,
+      currentAttendees: e._count?.registrations || 0,
+      imageUrl: e.imageUrl,
+      isActive: e.status === "PUBLISHED",
+    } as DriverEvent;
   }
 
   private mapMentorship(m: any): MentorshipPair {
     return {
       id: m.id,
       mentorId: m.mentorId,
+      mentor: m.mentor,
       menteeId: m.menteeId,
+      mentee: m.mentee,
       status: m.status as MentorshipStatus,
       startedAt: m.startedAt,
-      completedAt: m.completedAt,
-      completedTasks: m.completedTasks || [],
-      mentorInfo: m.mentor
-        ? {
-            id: m.mentor.id,
-            name: m.mentor.name,
-            profileImage: m.mentor.profileImage,
-            phone: m.mentor.phone,
-          }
-        : undefined,
-      menteeInfo: m.mentee
-        ? {
-            id: m.mentee.id,
-            name: m.mentee.name,
-            profileImage: m.mentee.profileImage,
-            phone: m.mentee.phone,
-          }
-        : undefined,
-    };
+      endedAt: m.completedAt,
+      sessionsCompleted: (m.completedTasks || []).length,
+      targetSessions: 6,
+      goals: m.notes || [],
+      notes: m.notes ? JSON.stringify(m.notes) : undefined,
+    } as MentorshipPair;
   }
 
   private async getCached<T>(key: string): Promise<T | null> {
@@ -1374,5 +1324,3 @@ export class CommunityService implements ICommunityService {
     });
   }
 }
-
-export { CommunityService };

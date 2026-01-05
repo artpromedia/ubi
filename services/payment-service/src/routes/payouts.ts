@@ -5,7 +5,7 @@
  */
 
 import { zValidator } from "@hono/zod-validator";
-import { Currency, Prisma } from "@prisma/client";
+import { Currency } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -342,7 +342,7 @@ payoutRoutes.post(
 
     // Create payout and lock funds
     const payout = await prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
+      async (tx) => {
         // Lock funds
         await tx.wallet.update({
           where: { id: wallet.id },
@@ -734,14 +734,11 @@ payoutRoutes.post("/process", async (c) => {
 // ============================================
 
 function getMinimumPayout(currency: Currency): number {
-  const minimums: Record<Currency, number> = {
+  const minimums: Partial<Record<Currency, number>> = {
     [Currency.NGN]: 1000,
     [Currency.KES]: 100,
     [Currency.GHS]: 10,
-    [Currency.UGX]: 5000,
-    [Currency.TZS]: 2000,
     [Currency.ZAR]: 50,
-    [Currency.XOF]: 500,
     [Currency.RWF]: 500,
     [Currency.ETB]: 100,
     [Currency.USD]: 5,
@@ -952,7 +949,7 @@ payoutRoutes.post(
  */
 payoutRoutes.get("/:payoutId", async (c) => {
   try {
-    const payoutId = c.param("payoutId");
+    const payoutId = c.req.param("payoutId");
     const status = await payoutService.getPayoutStatus(payoutId);
 
     return c.json({
@@ -976,7 +973,7 @@ payoutRoutes.get("/:payoutId", async (c) => {
  */
 payoutRoutes.get("/driver/:driverId/history", async (c) => {
   try {
-    const driverId = c.param("driverId");
+    const driverId = c.req.param("driverId");
     const limit = Number(c.req.query("limit")) || 20;
     const offset = Number(c.req.query("offset")) || 0;
 
@@ -1006,8 +1003,8 @@ payoutRoutes.get("/driver/:driverId/history", async (c) => {
  */
 payoutRoutes.get("/driver/:driverId/balance/:currency", async (c) => {
   try {
-    const driverId = c.param("driverId");
-    const currency = c.param("currency") as Currency;
+    const driverId = c.req.param("driverId");
+    const currency = c.req.param("currency") as Currency;
 
     const balance = await payoutService.getAvailableBalance(driverId, currency);
 
