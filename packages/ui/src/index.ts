@@ -337,16 +337,6 @@ export type {
 // ===========================================
 export { Logo, LogoIcon } from "./components/logo";
 
-export { RideCard } from "./components/ride-card";
-
-export { DriverCard } from "./components/driver-card";
-
-export { PriceDisplay } from "./components/price-display";
-
-export { LocationInput } from "./components/location-input";
-
-export { RatingStars } from "./components/rating-stars";
-
 // Legacy StatusBadge - use StatusIndicatorBadge for new code
 export { StatusBadge } from "./components/status-badge";
 
@@ -394,6 +384,20 @@ export {
   ratingVariants,
 } from "./components/rating";
 export type { RatingDisplayProps, RatingInputProps } from "./components/rating";
+
+// ===========================================
+// UBI Brand Components
+// ===========================================
+export {
+  UbiBitesLogo,
+  UbiIcon,
+  UbiLogo,
+  UbiLogoBadge,
+  UbiMoveLogo,
+  UbiSendLogo,
+  UbiServiceBadge,
+} from "./components/logo";
+export type { LogoVariant, ServiceVariant } from "./components/logo";
 
 // ===========================================
 // UBI Domain Components

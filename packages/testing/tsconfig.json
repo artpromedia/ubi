@@ -1,5 +1,5 @@
 {
-  "extends": "@ubi/typescript-config/library.json",
+  "extends": "@ubi/typescript-config/node-library.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src"

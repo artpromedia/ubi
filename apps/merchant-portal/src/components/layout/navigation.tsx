@@ -1,32 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { UbiIcon } from "@ubi/ui";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Home,
-  Package,
-  MapPin,
-  Truck,
-  DollarSign,
   BarChart3,
-  Settings,
+  Bell,
+  Building,
   ChevronLeft,
   ChevronRight,
-  Bell,
-  Search,
-  User,
-  Menu,
-  X,
-  HelpCircle,
-  LogOut,
-  Clock,
-  Building,
+  DollarSign,
   FileText,
-  Send,
+  HelpCircle,
+  Home,
+  LogOut,
+  MapPin,
+  Menu,
+  Package,
+  Search,
+  Settings,
+  Truck,
+  X,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 // Navigation items
 const navigation = [
@@ -142,7 +140,7 @@ export function Sidebar() {
         {!isCollapsed && (
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center">
-              <Send className="w-5 h-5 text-white -rotate-45" />
+              <UbiIcon size={22} variant="white" />
             </div>
             <span className="text-lg font-bold text-white">UBI Send</span>
           </Link>
@@ -176,7 +174,8 @@ export function Sidebar() {
       <nav className="flex-1 p-3 overflow-y-auto">
         <ul className="space-y-1">
           {navigation.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive =
+              pathname === item.href || pathname.startsWith(item.href + "/");
             const isExpanded = expandedItems.includes(item.name);
             const hasChildren = item.children && item.children.length > 0;
 
@@ -276,9 +275,7 @@ export function Sidebar() {
                   )}
                 >
                   <item.icon className="w-4 h-4 flex-shrink-0" />
-                  {!isCollapsed && (
-                    <span className="text-sm">{item.name}</span>
-                  )}
+                  {!isCollapsed && <span className="text-sm">{item.name}</span>}
                 </Link>
               </li>
             );
@@ -392,7 +389,7 @@ export function MobileSidebar() {
               <div className="h-16 flex items-center justify-between px-4 border-b border-border">
                 <Link href="/dashboard" className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center">
-                    <Send className="w-5 h-5 text-white -rotate-45" />
+                    <UbiIcon size={22} variant="white" />
                   </div>
                   <span className="text-lg font-bold text-white">UBI Send</span>
                 </Link>

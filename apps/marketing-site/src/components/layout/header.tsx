@@ -4,12 +4,12 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, ChevronDown } from "lucide-react";
-import { Button } from "@ubi/ui";
 import { cn } from "@/lib/utils";
+import { Button, UbiLogo } from "@ubi/ui";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronDown, Menu, X } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 const navigation = [
   { name: "Ride", href: "/ride" },
@@ -53,10 +53,9 @@ export function Header() {
     >
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 lg:px-8">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ubi-green">
-            <span className="text-lg font-bold text-white">UBI</span>
-          </div>
+        <Link href="/" className="flex items-center">
+          <UbiLogo size={28} className="dark:hidden" />
+          <UbiLogo size={28} variant="white" className="hidden dark:block" />
         </Link>
 
         {/* Desktop Navigation */}
@@ -66,7 +65,9 @@ export function Header() {
               {item.children ? (
                 <button
                   onClick={() =>
-                    setOpenDropdown(openDropdown === item.name ? null : item.name)
+                    setOpenDropdown(
+                      openDropdown === item.name ? null : item.name
+                    )
                   }
                   onMouseEnter={() => setOpenDropdown(item.name)}
                   onMouseLeave={() => setOpenDropdown(null)}
@@ -180,7 +181,10 @@ export function Header() {
                 <Button variant="outline" asChild className="w-full">
                   <Link href="https://app.ubi.africa/login">Log in</Link>
                 </Button>
-                <Button asChild className="w-full bg-ubi-green hover:bg-ubi-green/90">
+                <Button
+                  asChild
+                  className="w-full bg-ubi-green hover:bg-ubi-green/90"
+                >
                   <Link href="https://app.ubi.africa/signup">Sign up</Link>
                 </Button>
               </div>

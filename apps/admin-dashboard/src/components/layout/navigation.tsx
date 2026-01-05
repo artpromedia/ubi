@@ -1,26 +1,27 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { UbiIcon } from "@ubi/ui";
 import { motion } from "framer-motion";
 import {
-  LayoutDashboard,
-  Users,
-  Car,
-  UtensilsCrossed,
-  Package,
-  CreditCard,
   AlertTriangle,
-  Shield,
-  Settings,
-  HelpCircle,
+  Car,
   ChevronDown,
+  CreditCard,
+  HelpCircle,
+  LayoutDashboard,
   LogOut,
   Menu,
+  Package,
+  Settings,
+  Shield,
+  Users,
+  UtensilsCrossed,
   X,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { cn } from "@/lib/utils";
 
 const navigation = [
   {
@@ -118,7 +119,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     );
   };
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(href + "/");
 
   return (
     <>
@@ -141,7 +143,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">U</span>
+              <UbiIcon size={22} variant="white" />
             </div>
             <span className="font-bold text-white">UBI Admin</span>
           </Link>
@@ -250,7 +252,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <span className="text-white text-sm font-medium">JD</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">John Doe</p>
+              <p className="text-sm font-medium text-white truncate">
+                John Doe
+              </p>
               <p className="text-xs text-gray-500 truncate">Super Admin</p>
             </div>
             <button className="text-gray-400 hover:text-white transition">
@@ -278,9 +282,7 @@ export function AdminHeader({ onMenuClick, title }: AdminHeaderProps) {
         <Menu className="w-6 h-6" />
       </button>
 
-      {title && (
-        <h1 className="text-lg font-semibold text-white">{title}</h1>
-      )}
+      {title && <h1 className="text-lg font-semibold text-white">{title}</h1>}
 
       <div className="ml-auto flex items-center gap-4">
         {/* Search */}
@@ -294,8 +296,18 @@ export function AdminHeader({ onMenuClick, title }: AdminHeaderProps) {
 
         {/* Notifications */}
         <button className="relative text-gray-400 hover:text-white transition">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+            />
           </svg>
           <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
             3

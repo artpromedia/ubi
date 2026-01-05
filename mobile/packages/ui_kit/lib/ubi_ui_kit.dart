@@ -19,6 +19,7 @@ export 'src/atoms/inputs/ubi_text_field.dart';
 export 'src/atoms/badges/ubi_badge.dart';
 export 'src/atoms/avatars/ubi_avatar.dart';
 export 'src/atoms/loaders/ubi_loading.dart';
+export 'src/atoms/logos/ubi_logo.dart';
 
 // Molecules (Combinations of atoms)
 export 'src/molecules/cards/ubi_card.dart';

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ubi_storage/ubi_storage.dart';
+import 'package:ubi_ui_kit/ubi_ui_kit.dart';
 
 import '../../auth/bloc/auth_bloc.dart';
 import '../../../core/di/injection.dart';
@@ -53,25 +54,15 @@ class _SplashPageState extends State<SplashPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Logo
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: const Icon(
-                Icons.directions_car,
-                size: 60,
-                color: Colors.white,
-              ),
+            const UbiServiceBadge(
+              service: UbiService.move,
+              size: 120,
+              borderRadius: 30,
             ),
             const SizedBox(height: 24),
-            Text(
-              'UBI',
-              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+            const UbiLogo(
+              size: 40,
+              variant: UbiLogoVariant.dark,
             ),
             const SizedBox(height: 8),
             Text(

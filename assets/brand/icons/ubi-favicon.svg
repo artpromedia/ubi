@@ -1,0 +1,16 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ubi Favicon - U icon in black square -->
+  
+  <!-- Black rounded square background -->
+  <rect width="32" height="32" rx="6" fill="#191414"/>
+  
+  <!-- Simplified U with green dot -->
+  <path 
+    d="M8 8 L8 18 Q8 24 16 24 Q24 24 24 18 L24 8"
+    stroke="#FFFFFF"
+    stroke-width="4"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <circle cx="24" cy="6" r="3" fill="#1DB954"/>
+</svg>

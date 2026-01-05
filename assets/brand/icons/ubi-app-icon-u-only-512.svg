@@ -1,0 +1,20 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ubi App Icon - U Icon Only in Black Square -->
+  
+  <!-- Black rounded square background -->
+  <rect width="512" height="512" rx="114" fill="#191414"/>
+  
+  <!-- Stylized U with bounce + green dot -->
+  <g transform="translate(126, 116)">
+    <!-- U shape -->
+    <path 
+      d="M40 30 L40 180 Q40 260 130 260 Q220 260 220 180 L220 30"
+      stroke="#FFFFFF"
+      stroke-width="50"
+      stroke-linecap="round"
+      fill="none"
+    />
+    <!-- Green dot accent -->
+    <circle cx="220" cy="20" r="30" fill="#1DB954"/>
+  </g>
+</svg>

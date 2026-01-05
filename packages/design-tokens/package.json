@@ -27,7 +27,7 @@
   ],
   "scripts": {
     "build": "style-dictionary build --config style-dictionary.config.mjs && tsup",
-    "build:tokens": "style-dictionary build",
+    "build:tokens": "style-dictionary build --config style-dictionary.config.mjs",
     "clean": "rm -rf dist .turbo node_modules",
     "dev": "tsup --watch",
     "lint": "eslint src --ext .ts",

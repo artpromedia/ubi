@@ -1,28 +1,28 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { UbiIcon } from "@ubi/ui";
 import { motion } from "framer-motion";
 import {
-  LayoutDashboard,
-  Users,
-  Car,
-  MapPin,
-  DollarSign,
-  BarChart3,
-  Settings,
-  HelpCircle,
-  Bell,
-  ChevronDown,
-  LogOut,
-  Menu,
-  X,
-  Truck,
   AlertTriangle,
+  BarChart3,
+  Bell,
+  Car,
+  ChevronDown,
+  DollarSign,
   FileText,
+  HelpCircle,
+  LayoutDashboard,
+  LogOut,
+  MapPin,
+  Menu,
+  Settings,
+  Users,
+  X,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { cn } from "@/lib/utils";
 
 const navigation = [
   {
@@ -129,7 +129,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-              <Truck className="w-4 h-4 text-white" />
+              <UbiIcon size={22} variant="white" />
             </div>
             <span className="font-bold text-white">UBI Fleet</span>
           </Link>
@@ -282,9 +282,7 @@ export function FleetHeader({ onMenuClick, title }: FleetHeaderProps) {
         <Menu className="w-6 h-6" />
       </button>
 
-      {title && (
-        <h1 className="text-lg font-semibold text-white">{title}</h1>
-      )}
+      {title && <h1 className="text-lg font-semibold text-white">{title}</h1>}
 
       <div className="ml-auto flex items-center gap-4">
         {/* Search */}

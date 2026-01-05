@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ubi_ui_kit/ubi_ui_kit.dart';
 
 import '../../../core/router/app_router.dart';
 
@@ -66,7 +67,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF00A86B), // Jade green
+      backgroundColor: UbiColors.ubiBlack,
       body: Center(
         child: FadeTransition(
           opacity: _fadeAnimation,
@@ -76,42 +77,24 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Logo
-                Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.directions_car,
-                    size: 60,
-                    color: Color(0xFF00A86B),
-                  ),
+                const UbiServiceBadge(
+                  service: UbiService.move,
+                  size: 120,
+                  borderRadius: 30,
                 ),
                 const SizedBox(height: 24),
                 // App name
-                const Text(
-                  'UBI Driver',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                const UbiLogo(
+                  size: 36,
+                  variant: UbiLogoVariant.light,
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'Partner App',
+                const Text(
+                  'Driver',
                   style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 48),

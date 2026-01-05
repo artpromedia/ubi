@@ -1,27 +1,28 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { UbiIcon } from "@ubi/ui";
 import { motion } from "framer-motion";
 import {
-  LayoutDashboard,
-  ClipboardList,
-  UtensilsCrossed,
-  DollarSign,
-  Star,
-  Settings,
-  HelpCircle,
+  BarChart3,
   Bell,
   ChevronDown,
+  ClipboardList,
+  Clock,
+  DollarSign,
+  HelpCircle,
+  LayoutDashboard,
   LogOut,
   Menu,
-  X,
+  Settings,
+  Star,
   Store,
-  Clock,
-  BarChart3,
+  UtensilsCrossed,
+  X,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { cn } from "@/lib/utils";
 
 const navigation = [
   {
@@ -118,7 +119,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
-              <UtensilsCrossed className="w-4 h-4 text-white" />
+              <UbiIcon size={22} variant="white" />
             </div>
             <span className="font-bold text-white">UBI Bites</span>
           </Link>
@@ -270,7 +271,10 @@ interface RestaurantHeaderProps {
   title?: string;
 }
 
-export function RestaurantHeader({ onMenuClick, title }: RestaurantHeaderProps) {
+export function RestaurantHeader({
+  onMenuClick,
+  title,
+}: RestaurantHeaderProps) {
   return (
     <header className="sticky top-0 z-30 h-16 bg-gray-950/80 backdrop-blur-sm border-b border-gray-800 flex items-center px-4 lg:px-6">
       <button
@@ -280,9 +284,7 @@ export function RestaurantHeader({ onMenuClick, title }: RestaurantHeaderProps) 
         <Menu className="w-6 h-6" />
       </button>
 
-      {title && (
-        <h1 className="text-lg font-semibold text-white">{title}</h1>
-      )}
+      {title && <h1 className="text-lg font-semibold text-white">{title}</h1>}
 
       <div className="ml-auto flex items-center gap-4">
         {/* Notifications */}

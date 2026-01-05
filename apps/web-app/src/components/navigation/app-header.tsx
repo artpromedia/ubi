@@ -10,9 +10,22 @@ import { ROUTES } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers";
 import { useAuthStore, useUIStore, useUserStore } from "@/store";
-import { Button } from "@ubi/ui";
+import { Button, UbiLogo } from "@ubi/ui";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Gift, Heart, HelpCircle, LogOut, MapPin, Menu, Moon, Settings, Sun, User, Wallet } from "lucide-react";
+import {
+  Bell,
+  Gift,
+  Heart,
+  HelpCircle,
+  LogOut,
+  MapPin,
+  Menu,
+  Moon,
+  Settings,
+  Sun,
+  User,
+  Wallet,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -56,10 +69,9 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
             <Menu className="h-5 w-5" />
           </Button>
         )}
-        <Link href={ROUTES.home} className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-ubi-green">
-            <span className="text-sm font-bold text-white">UBI</span>
-          </div>
+        <Link href={ROUTES.home} className="flex items-center">
+          <UbiLogo size={24} className="dark:hidden" />
+          <UbiLogo size={24} variant="white" className="hidden dark:block" />
         </Link>
       </div>
 
@@ -100,7 +112,9 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
                     className="absolute right-0 top-full mt-2 w-80 rounded-lg border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-800"
                   >
                     <h3 className="mb-3 font-semibold">Notifications</h3>
-                    <p className="text-sm text-gray-500">No new notifications</p>
+                    <p className="text-sm text-gray-500">
+                      No new notifications
+                    </p>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -145,7 +159,9 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
                         <p className="font-semibold">
                           {profile?.firstName} {profile?.lastName}
                         </p>
-                        <p className="text-sm text-gray-500">{profile?.email}</p>
+                        <p className="text-sm text-gray-500">
+                          {profile?.email}
+                        </p>
                       </div>
 
                       {/* Menu items */}

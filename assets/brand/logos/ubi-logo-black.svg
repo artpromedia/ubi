@@ -1,0 +1,24 @@
+<svg width="120" height="60" viewBox="0 0 120 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ubi Bouncy Logo - Black on Transparent -->
+  <!-- U - sitting lower -->
+  <path 
+    d="M8 18 L8 42 Q8 54 20 54 Q32 54 32 42 L32 18"
+    stroke="#191414"
+    stroke-width="9"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <!-- b - bounced up -->
+  <path 
+    d="M46 4 L46 44 M46 26 Q46 18 56 18 Q68 18 68 31 Q68 44 56 44 Q46 44 46 36"
+    stroke="#191414"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+  <!-- i - bounced down -->
+  <line x1="84" y1="24" x2="84" y2="52" stroke="#191414" stroke-width="9" stroke-linecap="round"/>
+  <!-- Green dot -->
+  <circle cx="84" cy="12" r="6" fill="#1DB954"/>
+</svg>
