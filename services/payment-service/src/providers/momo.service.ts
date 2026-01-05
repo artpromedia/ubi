@@ -29,8 +29,14 @@
  * - Duplicate reference → Idempotency via X-Reference-Id
  */
 
-import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
-import { v4 as uuidv4 } from "uuid";
+import {
+  Currency,
+  PaymentProvider,
+  PaymentStatus,
+  Prisma,
+  PrismaClient,
+} from "@prisma/client";
+import { nanoid } from "nanoid";
 
 export interface MoMoConfig {
   subscriptionKey: string; // Ocp-Apim-Subscription-Key
@@ -111,13 +117,13 @@ export interface MoMoTokenResponse {
 }
 
 export class MoMoService {
-  private baseUrl: string;
+  private readonly baseUrl: string;
   private accessToken?: string;
   private tokenExpiresAt?: Date;
 
   constructor(
-    private config: MoMoConfig,
-    private prisma: PrismaClient
+    private readonly config: MoMoConfig,
+    private readonly prisma: PrismaClient
   ) {
     this.baseUrl =
       config.environment === "production"
@@ -156,7 +162,7 @@ export class MoMoService {
       throw new Error(`Failed to get MoMo access token: ${errorText}`);
     }
 
-    const data: MoMoTokenResponse = await response.json();
+    const data = (await response.json()) as MoMoTokenResponse;
     this.accessToken = data.access_token;
     this.tokenExpiresAt = new Date(Date.now() + (data.expires_in - 60) * 1000); // Expire 1 min early
 
@@ -168,11 +174,11 @@ export class MoMoService {
    */
   private validatePhoneNumber(phoneNumber: string): boolean {
     const countryPatterns: Record<string, RegExp> = {
-      GH: /^233[0-9]{9}$/, // Ghana: 233 + 9 digits
-      RW: /^250[0-9]{9}$/, // Rwanda: 250 + 9 digits
-      UG: /^256[0-9]{9}$/, // Uganda: 256 + 9 digits
-      ZM: /^260[0-9]{9}$/, // Zambia: 260 + 9 digits
-      CI: /^225[0-9]{10}$/, // Côte d'Ivoire: 225 + 10 digits
+      GH: /^233\d{9}$/, // Ghana: 233 + 9 digits
+      RW: /^250\d{9}$/, // Rwanda: 250 + 9 digits
+      UG: /^256\d{9}$/, // Uganda: 256 + 9 digits
+      ZM: /^260\d{9}$/, // Zambia: 260 + 9 digits
+      CI: /^225\d{10}$/, // Côte d'Ivoire: 225 + 10 digits
     };
 
     const pattern = countryPatterns[this.config.country];
@@ -186,61 +192,43 @@ export class MoMoService {
   /**
    * Format phone number to MoMo format
    */
+  /**
+   * Country code prefixes for phone number formatting
+   */
+  private readonly countryPrefixes: Record<string, string> = {
+    GH: "233",
+    RW: "250",
+    UG: "256",
+    ZM: "260",
+    CI: "225",
+  };
+
+  /**
+   * Apply country prefix to phone number
+   */
+  private applyCountryPrefix(cleaned: string, prefix: string): string {
+    if (cleaned.startsWith("0")) {
+      return prefix + cleaned.substring(1);
+    }
+    if (!cleaned.startsWith(prefix)) {
+      return prefix + cleaned;
+    }
+    return cleaned;
+  }
+
   private formatPhoneNumber(phoneNumber: string): string {
     // Remove any spaces or special characters
-    let cleaned = phoneNumber.replace(/[\s\-\(\)]/g, "");
+    let cleaned = phoneNumber.replaceAll(/[\s\-()]/g, "");
 
     // Remove leading + if present
     if (cleaned.startsWith("+")) {
       cleaned = cleaned.substring(1);
     }
 
-    // Country-specific formatting
-    switch (this.config.country) {
-      case "GH":
-        if (cleaned.startsWith("0")) {
-          cleaned = "233" + cleaned.substring(1);
-        }
-        if (!cleaned.startsWith("233")) {
-          cleaned = "233" + cleaned;
-        }
-        break;
-
-      case "RW":
-        if (cleaned.startsWith("0")) {
-          cleaned = "250" + cleaned.substring(1);
-        }
-        if (!cleaned.startsWith("250")) {
-          cleaned = "250" + cleaned;
-        }
-        break;
-
-      case "UG":
-        if (cleaned.startsWith("0")) {
-          cleaned = "256" + cleaned.substring(1);
-        }
-        if (!cleaned.startsWith("256")) {
-          cleaned = "256" + cleaned;
-        }
-        break;
-
-      case "ZM":
-        if (cleaned.startsWith("0")) {
-          cleaned = "260" + cleaned.substring(1);
-        }
-        if (!cleaned.startsWith("260")) {
-          cleaned = "260" + cleaned;
-        }
-        break;
-
-      case "CI":
-        if (cleaned.startsWith("0")) {
-          cleaned = "225" + cleaned.substring(1);
-        }
-        if (!cleaned.startsWith("225")) {
-          cleaned = "225" + cleaned;
-        }
-        break;
+    // Apply country-specific prefix
+    const prefix = this.countryPrefixes[this.config.country];
+    if (prefix) {
+      cleaned = this.applyCountryPrefix(cleaned, prefix);
     }
 
     if (!this.validatePhoneNumber(cleaned)) {
@@ -264,7 +252,7 @@ export class MoMoService {
       CI: "XOF",
     };
 
-    return currencyMap[this.config.country];
+    return currencyMap[this.config.country] ?? "GHS";
   }
 
   /**
@@ -275,7 +263,7 @@ export class MoMoService {
     request: Omit<MoMoRequestToPayRequest, "currency">
   ): Promise<MoMoRequestToPayResponse> {
     const token = await this.getAccessToken();
-    const referenceId = uuidv4();
+    const referenceId = nanoid();
     const formattedPhone = this.formatPhoneNumber(request.phoneNumber);
     const currency = this.getCurrency();
 
@@ -348,7 +336,7 @@ export class MoMoService {
       throw new Error(`Failed to get MoMo transaction status: ${errorText}`);
     }
 
-    const data: MoMoTransactionStatus = await response.json();
+    const data = (await response.json()) as MoMoTransactionStatus;
     return data;
   }
 
@@ -427,7 +415,7 @@ export class MoMoService {
         userId,
         provider: this.getProvider(),
         amount,
-        currency,
+        currency: currency as unknown as Currency,
         status: PaymentStatus.PENDING,
         metadata: {
           phoneNumber,
@@ -473,7 +461,7 @@ export class MoMoService {
             status: PaymentStatus.COMPLETED,
             confirmedAt: new Date(),
             providerReference: status.financialTransactionId,
-            providerResponse: status,
+            providerResponse: status as unknown as Prisma.InputJsonValue,
           },
         });
 
@@ -487,7 +475,7 @@ export class MoMoService {
             status: PaymentStatus.FAILED,
             failedAt: new Date(),
             failureReason: status.reason?.message || "Payment failed",
-            providerResponse: status,
+            providerResponse: status as unknown as Prisma.InputJsonValue,
           },
         });
 
@@ -576,7 +564,10 @@ export class MoMoService {
       throw new Error(`Failed to get MoMo account balance: ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as {
+      availableBalance: string;
+      currency: string;
+    };
     return data;
   }
 
@@ -616,7 +607,7 @@ export class MoMoService {
       );
     }
 
-    const data: MoMoTokenResponse = await response.json();
+    const data = (await response.json()) as MoMoTokenResponse;
 
     // Cache token for 1 hour (minus 5 minutes buffer)
     const expiresIn = (data.expires_in - 300) * 1000;
@@ -638,7 +629,7 @@ export class MoMoService {
     }
 
     const token = await this.getDisbursementAccessToken();
-    const referenceId = uuidv4(); // Generate unique reference ID
+    const referenceId = nanoid(); // Generate unique reference ID
 
     if (request.amount <= 0) {
       throw new Error("Amount must be positive");
@@ -727,7 +718,7 @@ export class MoMoService {
       throw new Error(`Failed to get MoMo disbursement status: ${errorText}`);
     }
 
-    const data: MoMoDisbursementStatus = await response.json();
+    const data = (await response.json()) as MoMoDisbursementStatus;
     return data;
   }
 
@@ -850,7 +841,10 @@ export class MoMoService {
       throw new Error(`Failed to get MoMo disbursement balance: ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as {
+      availableBalance: string;
+      currency: string;
+    };
     return data;
   }
 }

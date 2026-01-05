@@ -28,9 +28,9 @@
 
 import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
 import { WalletService } from "../services/wallet.service";
-import { MoMoConfig, MoMoService } from "./momo.service";
-import { MpesaConfig, MpesaService } from "./mpesa.service";
-import { PaystackConfig, PaystackService } from "./paystack.service";
+import { MoMoConfig, MoMoService } from "../providers/momo.service";
+import { MpesaConfig, MpesaService } from "../providers/mpesa.service";
+import { PaystackConfig, PaystackService } from "../providers/paystack.service";
 
 export interface PaymentGatewayConfig {
   mpesa?: MpesaConfig;

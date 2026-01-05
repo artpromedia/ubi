@@ -24,7 +24,12 @@
  * - Duplicate transaction → Idempotency check
  */
 
-import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
+import {
+  PaymentProvider,
+  PaymentStatus,
+  Prisma,
+  PrismaClient,
+} from "@prisma/client";
 
 export interface MpesaConfig {
   consumerKey: string;
@@ -114,13 +119,13 @@ export interface MpesaTransactionStatusResponse {
 }
 
 export class MpesaService {
-  private baseUrl: string;
+  private readonly baseUrl: string;
   private accessToken?: string;
   private tokenExpiresAt?: Date;
 
   constructor(
-    private config: MpesaConfig,
-    private prisma: PrismaClient
+    private readonly config: MpesaConfig,
+    private readonly prisma: PrismaClient
   ) {
     this.baseUrl =
       config.environment === "production"
@@ -160,7 +165,7 @@ export class MpesaService {
       );
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as { access_token: string };
     this.accessToken = data.access_token;
     this.tokenExpiresAt = new Date(Date.now() + 55 * 60 * 1000); // 55 minutes (token valid for 1 hour)
 
@@ -195,7 +200,7 @@ export class MpesaService {
    * Must be: 254XXXXXXXXX (Kenya country code + 9 digits)
    */
   private validatePhoneNumber(phoneNumber: string): boolean {
-    const regex = /^254[0-9]{9}$/;
+    const regex = /^254\d{9}$/;
     return regex.test(phoneNumber);
   }
 
@@ -206,7 +211,7 @@ export class MpesaService {
    */
   private formatPhoneNumber(phoneNumber: string): string {
     // Remove any spaces or special characters
-    let cleaned = phoneNumber.replace(/[\s\-\(\)]/g, "");
+    let cleaned = phoneNumber.replaceAll(/[\s\-()]/g, "");
 
     // If starts with 0, replace with 254
     if (cleaned.startsWith("0")) {
@@ -276,7 +281,9 @@ export class MpesaService {
       }
     );
 
-    const data = await response.json();
+    const data = (await response.json()) as MpesaSTKPushResponse & {
+      errorMessage?: string;
+    };
 
     if (!response.ok || data.ResponseCode !== "0") {
       throw new Error(
@@ -284,7 +291,7 @@ export class MpesaService {
       );
     }
 
-    return data;
+    return data as MpesaSTKPushResponse;
   }
 
   /**
@@ -317,7 +324,9 @@ export class MpesaService {
       }
     );
 
-    const data = await response.json();
+    const data = (await response.json()) as MpesaTransactionStatusResponse & {
+      errorMessage?: string;
+    };
 
     if (!response.ok) {
       throw new Error(
@@ -325,7 +334,7 @@ export class MpesaService {
       );
     }
 
-    return data;
+    return data as MpesaTransactionStatusResponse;
   }
 
   /**
@@ -539,7 +548,7 @@ export class MpesaService {
           transactionId,
           mpesaMerchantRequestID: stkResponse.MerchantRequestID,
           mpesaCheckoutRequestID: stkResponse.CheckoutRequestID,
-          stkPushResponse: stkResponse,
+          stkPushResponse: stkResponse as unknown as Prisma.InputJsonValue,
         },
       },
     });
@@ -591,7 +600,7 @@ export class MpesaService {
             status: PaymentStatus.COMPLETED,
             confirmedAt: new Date(),
             providerReference: checkoutRequestId,
-            providerResponse: status,
+            providerResponse: status as unknown as Prisma.InputJsonValue,
           },
         });
       } else {
@@ -601,7 +610,7 @@ export class MpesaService {
             status: PaymentStatus.FAILED,
             failedAt: new Date(),
             failureReason: status.ResultDesc,
-            providerResponse: status,
+            providerResponse: status as unknown as Prisma.InputJsonValue,
           },
         });
       }
@@ -709,7 +718,9 @@ export class MpesaService {
       }
     );
 
-    const data = await response.json();
+    const data = (await response.json()) as MpesaB2CResponse & {
+      errorMessage?: string;
+    };
 
     if (!response.ok || data.ResponseCode !== "0") {
       throw new Error(
@@ -717,7 +728,7 @@ export class MpesaService {
       );
     }
 
-    return data;
+    return data as MpesaB2CResponse;
   }
 
   /**
@@ -809,9 +820,7 @@ export class MpesaService {
    * Query B2C transaction status
    * Used when callback is not received within timeout period
    */
-  async queryB2CStatus(
-    originatorConversationId: string
-  ): Promise<{
+  async queryB2CStatus(originatorConversationId: string): Promise<{
     status: "COMPLETED" | "FAILED" | "PENDING";
     description: string;
   }> {
@@ -821,7 +830,7 @@ export class MpesaService {
 
     const payout = await this.prisma.payout.findFirst({
       where: {
-        providerMetadata: {
+        metadata: {
           path: ["originatorConversationId"],
           equals: originatorConversationId,
         },
