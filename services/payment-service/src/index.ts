@@ -17,8 +17,8 @@ import { logger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
-import { disconnectPrisma } from "./lib/prisma";
-import { disconnectRedis } from "./lib/redis";
+import { disconnectPrisma, prisma } from "./lib/prisma";
+import { disconnectRedis, redis } from "./lib/redis";
 import {
   errorHandler,
   paymentRateLimit,
@@ -26,6 +26,8 @@ import {
   webhookRateLimit,
 } from "./middleware";
 import { adminRoutes } from "./routes/admin";
+import { b2bRoutes } from "./routes/b2b";
+import { createDriverRoutes } from "./routes/driver";
 import fraudRoutes from "./routes/fraud";
 import { healthRoutes } from "./routes/health";
 import { loyaltyRoutes } from "./routes/loyalty";
@@ -35,6 +37,20 @@ import { payoutRoutes } from "./routes/payouts";
 import { safetyRoutes } from "./routes/safety";
 import { walletRoutes } from "./routes/wallet";
 import { webhookRoutes } from "./routes/webhooks";
+
+// Import driver services for route initialization
+import { DriverBenefitsService } from "./services/driver/benefits.service";
+import {
+  DriverCareerService,
+  TrainingService,
+} from "./services/driver/career.service";
+import { CommunityService } from "./services/driver/community.service";
+import {
+  DriverEarningsService,
+  DriverGoalsService,
+} from "./services/driver/earnings.service";
+import { FleetOwnerService } from "./services/driver/fleet.service";
+import { IncentiveService } from "./services/driver/incentives.service";
 
 const app = new Hono();
 
@@ -103,6 +119,9 @@ app.use("/safety/*", paymentRateLimit);
 app.use("/safety/*", serviceAuth);
 app.use("/admin/*", paymentRateLimit);
 app.use("/admin/*", serviceAuth);
+app.use("/b2b/*", paymentRateLimit);
+app.use("/drivers/*", paymentRateLimit);
+app.use("/drivers/*", serviceAuth);
 
 // API routes
 app.route("/wallets", walletRoutes);
@@ -113,6 +132,84 @@ app.route("/fraud", fraudRoutes);
 app.route("/loyalty", loyaltyRoutes);
 app.route("/safety", safetyRoutes);
 app.route("/admin", adminRoutes);
+
+// B2B API routes (uses API key auth internally)
+app.route("/b2b", b2bRoutes);
+
+// Driver Experience routes - services require database, redis, and various service stubs
+// Create service stubs for dependencies
+const analyticsStub = {
+  track: async (event: string, properties: Record<string, unknown>) => {
+    console.log(`[Analytics] ${event}:`, properties);
+  },
+};
+
+const notificationServiceStub = {
+  send: async (userId: string, notification: unknown) => {
+    console.log(`[Notification] to ${userId}:`, notification);
+  },
+};
+
+const paymentServiceStub = {
+  process: async (payment: unknown) => {
+    console.log(`[Payment] Processing:`, payment);
+    return { success: true };
+  },
+};
+
+// Initialize earnings service first (other services depend on it)
+const earningsService = new DriverEarningsService(prisma, redis, analyticsStub);
+
+const driverServices = {
+  earningsService,
+  // DriverGoalsService(db, earningsService, analyticsService)
+  goalsService: new DriverGoalsService(prisma, earningsService, analyticsStub),
+  // IncentiveService(db, redis, notificationService, analyticsService)
+  incentiveService: new IncentiveService(
+    prisma,
+    redis,
+    notificationServiceStub,
+    analyticsStub
+  ),
+  // DriverBenefitsService(db, redis, paymentService, notificationService, analyticsService)
+  benefitsService: new DriverBenefitsService(
+    prisma,
+    redis,
+    paymentServiceStub,
+    notificationServiceStub,
+    analyticsStub
+  ),
+  // DriverCareerService(db, redis, notificationService, analyticsService)
+  careerService: new DriverCareerService(
+    prisma,
+    redis,
+    notificationServiceStub,
+    analyticsStub
+  ),
+  // TrainingService(db, notificationService, analyticsService)
+  trainingService: new TrainingService(
+    prisma,
+    notificationServiceStub,
+    analyticsStub
+  ),
+  // CommunityService(db, redis, notificationService, analyticsService)
+  communityService: new CommunityService(
+    prisma,
+    redis,
+    notificationServiceStub,
+    analyticsStub
+  ),
+  // FleetOwnerService(db, redis, paymentService, notificationService, analyticsService)
+  fleetService: new FleetOwnerService(
+    prisma,
+    redis,
+    paymentServiceStub,
+    notificationServiceStub,
+    analyticsStub
+  ),
+};
+const driverRoutes = createDriverRoutes(driverServices);
+app.route("/drivers", driverRoutes);
 
 // 404 handler
 app.notFound((c) => {

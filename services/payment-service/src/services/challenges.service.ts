@@ -11,7 +11,7 @@
  * - TEAM: Group challenges for social engagement
  */
 
-import { prisma } from "@ubi/database";
+import { prisma } from "../lib/prisma";
 import {
   Challenge,
   GameEvent,

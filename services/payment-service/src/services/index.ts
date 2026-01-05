@@ -6,29 +6,17 @@
  */
 
 // Core Services
-export {
-  PaymentGateway,
-  createPaymentGateway,
-  getPaymentGateway,
-} from "./payment-gateway.service";
+export { PaymentGateway } from "../gateway/payment-gateway";
 export {
   WalletService,
   createWalletService,
   getWalletService,
 } from "./wallet.service";
 
-// Provider Services
-export { MomoService, createMomoService, getMomoService } from "./momo.service";
-export {
-  MpesaService,
-  createMpesaService,
-  getMpesaService,
-} from "./mpesa.service";
-export {
-  PaystackService,
-  createPaystackService,
-  getPaystackService,
-} from "./paystack.service";
+// Provider Services (from providers folder)
+export { MoMoService as MomoService } from "../providers/momo.service";
+export { MpesaService } from "../providers/mpesa.service";
+export { PaystackService } from "../providers/paystack.service";
 
 // Payout & Settlement Services
 export {
@@ -145,35 +133,13 @@ export type {
 } from "./wallet.service";
 
 export type {
-  PaymentCallback,
   // Payment gateway types
-  PaymentRequest,
-  PaymentResult,
-} from "./payment-gateway.service";
+  InitiatePaymentRequest as PaymentRequest,
+  InitiatePaymentResponse as PaymentResult,
+} from "../gateway/payment-gateway";
 
-export type {
-  B2CRequest,
-  B2CResult,
-  // M-Pesa types
-  STKPushRequest,
-  STKPushResult,
-} from "./mpesa.service";
-
-export type {
-  DisbursementRequest,
-  DisbursementResult,
-  // MoMo types
-  RequestToPayRequest,
-  RequestToPayResult,
-} from "./momo.service";
-
-export type {
-  CardTokenizationRequest,
-  // Paystack types
-  PaystackChargeRequest,
-  PaystackChargeResult,
-  TransferRequest as PaystackTransferRequest,
-} from "./paystack.service";
+// Re-export provider types from their respective files
+// These are available from the providers directory
 
 export type {
   // Payout types
@@ -198,3 +164,21 @@ export type {
   // Reconciliation types
   ReconciliationResult,
 } from "./reconciliation.service";
+
+// ===========================================
+// ML SERVICES (AI/ML Platform)
+// ===========================================
+
+export * from "./ml";
+
+// ===========================================
+// OFFLINE & ACCESSIBILITY SERVICES
+// ===========================================
+
+export * from "./offline";
+
+// ===========================================
+// DRIVER EXPERIENCE SERVICES
+// ===========================================
+
+export * from "./driver";

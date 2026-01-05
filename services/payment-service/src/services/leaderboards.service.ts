@@ -15,7 +15,7 @@
  * Periods: DAILY, WEEKLY, MONTHLY, ALL_TIME
  */
 
-import { prisma } from "@ubi/database";
+import { prisma } from "../lib/prisma";
 import {
   Leaderboard,
   LeaderboardEntry,
