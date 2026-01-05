@@ -4,7 +4,7 @@
  */
 
 import { WebSocket } from 'ws';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { nanoid } from 'nanoid';
 import type {
   WebSocketConnection,
@@ -41,7 +41,7 @@ export class ConnectionManager {
     });
 
     // Pattern subscribe for user channels
-    this.redisSub.psubscribe('user:*').catch((err) => {
+    this.redisSub.psubscribe('user:*').catch((err: Error) => {
       console.error('Redis psubscribe error:', err);
     });
   }

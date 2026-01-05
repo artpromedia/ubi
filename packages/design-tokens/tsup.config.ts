@@ -4,19 +4,20 @@ export default defineConfig([
   {
     entry: ["src/index.ts"],
     format: ["cjs", "esm"],
-    dts: true,
+    dts: false, // Disabled - re-exports from dist/ break rootDir constraint
     splitting: false,
     sourcemap: true,
-    clean: true,
+    clean: false, // Don't clean - style-dictionary generates files to dist/ first
     treeshake: true,
   },
   {
-    entry: ["dist/tailwind/theme.ts"],
+    entry: { index: "dist/tailwind/theme.ts" },
     outDir: "dist/tailwind",
     format: ["cjs", "esm"],
-    dts: true,
+    dts: false, // Disabled - generated file with external dependencies
     splitting: false,
     sourcemap: false,
     clean: false,
+    external: ["tailwindcss"],
   },
 ]);

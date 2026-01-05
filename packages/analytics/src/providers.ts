@@ -6,6 +6,28 @@
 
 import type { AnalyticsProvider, BaseEvent, PageViewEvent, UserTraits } from "./analytics";
 
+// Re-export AnalyticsProvider type for convenience
+export type { AnalyticsProvider };
+
+// Provider types
+export type ProviderType = "console" | "ga4" | "mixpanel" | "amplitude" | "posthog" | "segment";
+
+export interface ProviderConfig {
+  type: ProviderType;
+  // GA4
+  measurementId?: string;
+  // Mixpanel
+  token?: string;
+  // Amplitude
+  apiKey?: string;
+  // PostHog
+  host?: string;
+  // Segment
+  writeKey?: string;
+  // Common options
+  options?: Record<string, unknown>;
+}
+
 // Console provider (for development/debugging)
 export class ConsoleProvider implements AnalyticsProvider {
   name = "console";

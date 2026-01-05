@@ -61,10 +61,12 @@ export type {
 // Provider exports
 export {
     AmplitudeProvider,
-    ConsoleProvider, GoogleAnalytics4Provider,
+    ConsoleProvider,
+    GoogleAnalytics4Provider,
     MixpanelProvider,
     PostHogProvider,
-    SegmentProvider, createProvider
+    SegmentProvider,
+    createProvider
 } from "./providers";
-export type { AnalyticsProvider, ProviderConfig, ProviderType } from "./providers";
+export type { ProviderConfig, ProviderType } from "./providers";
 

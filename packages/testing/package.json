@@ -2,44 +2,38 @@
   "name": "@ubi/testing",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "description": "Shared testing utilities, mocks, and fixtures for UBI",
-  "main": "dist/index.js",
+  "main": "dist/index.mjs",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
     "./vitest": {
       "import": "./dist/vitest/index.mjs",
-      "require": "./dist/vitest/index.js",
       "types": "./dist/vitest/index.d.ts"
     },
     "./mocks": {
       "import": "./dist/mocks/index.mjs",
-      "require": "./dist/mocks/index.js",
       "types": "./dist/mocks/index.d.ts"
     },
     "./fixtures": {
       "import": "./dist/fixtures/index.mjs",
-      "require": "./dist/fixtures/index.js",
       "types": "./dist/fixtures/index.d.ts"
     },
     "./factories": {
       "import": "./dist/factories/index.mjs",
-      "require": "./dist/factories/index.js",
       "types": "./dist/factories/index.d.ts"
     },
     "./matchers": {
       "import": "./dist/matchers/index.mjs",
-      "require": "./dist/matchers/index.js",
       "types": "./dist/matchers/index.d.ts"
     },
     "./msw": {
       "import": "./dist/msw/index.mjs",
-      "require": "./dist/msw/index.js",
       "types": "./dist/msw/index.d.ts"
     }
   },

@@ -335,8 +335,6 @@ export type {
 // ===========================================
 // UBI-Specific Components (Legacy)
 // ===========================================
-export { Logo, LogoIcon } from "./components/logo";
-
 // Legacy StatusBadge - use StatusIndicatorBadge for new code
 export { StatusBadge } from "./components/status-badge";
 
@@ -388,16 +386,9 @@ export type { RatingDisplayProps, RatingInputProps } from "./components/rating";
 // ===========================================
 // UBI Brand Components
 // ===========================================
-export {
-  UbiBitesLogo,
-  UbiIcon,
-  UbiLogo,
-  UbiLogoBadge,
-  UbiMoveLogo,
-  UbiSendLogo,
-  UbiServiceBadge,
-} from "./components/logo";
-export type { LogoVariant, ServiceVariant } from "./components/logo";
+// Note: UBI-specific logo components to be added
+export { Logo, LogoIcon } from "./components/logo";
+export type { LogoProps, LogoIconProps } from "./components/logo";
 
 // ===========================================
 // UBI Domain Components

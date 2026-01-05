@@ -6,10 +6,12 @@
  */
 
 // Event types
+export type AnalyticsEventProperties = Record<string, unknown>;
+
 export interface BaseEvent {
   name: string;
   timestamp?: number;
-  properties?: Record<string, unknown>;
+  properties?: AnalyticsEventProperties;
 }
 
 export interface PageViewEvent extends BaseEvent {

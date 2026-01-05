@@ -2,7 +2,7 @@
  * React Analytics Hooks and Components
  */
 
-import {
+import React, {
   createContext,
   useContext,
   useEffect,
@@ -23,7 +23,7 @@ interface AnalyticsProviderProps {
 export function AnalyticsProvider({
   analytics,
   children,
-}: AnalyticsProviderProps): JSX.Element {
+}: AnalyticsProviderProps): ReactNode {
   return (
     <AnalyticsContext.Provider value={analytics}>
       {children}
