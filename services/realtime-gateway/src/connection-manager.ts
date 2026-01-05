@@ -41,10 +41,8 @@ export class ConnectionManager {
     });
 
     // Pattern subscribe for user channels
-    this.redisSub.psubscribe('user:*', (err) => {
-      if (err) {
-        console.error('Redis psubscribe error:', err);
-      }
+    this.redisSub.psubscribe('user:*').catch((err) => {
+      console.error('Redis psubscribe error:', err);
     });
   }
 
@@ -328,7 +326,7 @@ export class ConnectionManager {
 
   private async subscribeToChannel(channel: string) {
     // Check if already subscribed
-    const subscribers = await this.redis.pubsub('NUMSUB', channel);
+    const subscribers = await this.redis.pubsub('NUMSUB', channel) as [string, number];
     if (subscribers[1] > 0) return;
 
     await this.redisSub.subscribe(channel);
