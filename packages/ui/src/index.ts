@@ -247,13 +247,7 @@ export {
 // ===========================================
 // Navigation Components
 // ===========================================
-export {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  tabsListVariants,
-} from "./components/tabs";
+export { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/tabs";
 
 export {
   Breadcrumb,
@@ -386,9 +380,8 @@ export type { RatingDisplayProps, RatingInputProps } from "./components/rating";
 // ===========================================
 // UBI Brand Components
 // ===========================================
-// Note: UBI-specific logo components to be added
-export { Logo, LogoIcon } from "./components/logo";
-export type { LogoProps, LogoIconProps } from "./components/logo";
+export { Logo, LogoIcon, UbiIcon, UbiLogo } from "./components/logo";
+export type { LogoIconProps, LogoProps } from "./components/logo";
 
 // ===========================================
 // UBI Domain Components

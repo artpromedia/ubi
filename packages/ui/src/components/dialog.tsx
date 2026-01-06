@@ -136,7 +136,21 @@ const DialogBody = ({
 );
 DialogBody.displayName = "DialogBody";
 
-export {
-    Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger
-};
+/** Props for the Dialog component */
+export type DialogProps = React.ComponentPropsWithoutRef<
+  typeof DialogPrimitive.Root
+>;
 
+export {
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+};

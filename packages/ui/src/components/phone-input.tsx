@@ -1,16 +1,16 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import * as React from "react";
-import { ChevronDown, Phone } from "lucide-react";
 import { cn } from "../lib/utils";
 
 /**
  * PhoneInput - Phone number input with country code selector
- * 
+ *
  * Pre-configured for African countries with popular country codes.
- * 
+ *
  * @example
- * <PhoneInput 
+ * <PhoneInput
  *   value={phone}
  *   onChange={setPhone}
  *   defaultCountry="NG"
@@ -88,7 +88,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
   ) => {
     const [isOpen, setIsOpen] = React.useState(false);
     const [selectedCountry, setSelectedCountry] = React.useState<Country>(
-      () => COUNTRIES.find((c) => c.code === defaultCountry) || COUNTRIES[0]
+      () => COUNTRIES.find((c) => c.code === defaultCountry) ?? COUNTRIES[0]!
     );
     const [phoneNumber, setPhoneNumber] = React.useState(value?.number || "");
     const dropdownRef = React.useRef<HTMLDivElement>(null);
@@ -107,19 +107,23 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
     // Close dropdown on outside click
     React.useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
-        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        if (
+          dropdownRef.current &&
+          !dropdownRef.current.contains(event.target as Node)
+        ) {
           setIsOpen(false);
         }
       };
 
       document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
     const handleCountrySelect = (country: Country) => {
       setSelectedCountry(country);
       setIsOpen(false);
-      
+
       onChange?.({
         countryCode: country.code,
         dialCode: country.dialCode,
@@ -132,7 +136,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
       // Only allow digits
       const number = e.target.value.replace(/\D/g, "");
       setPhoneNumber(number);
-      
+
       onChange?.({
         countryCode: selectedCountry.code,
         dialCode: selectedCountry.dialCode,
@@ -165,8 +169,15 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
             aria-haspopup="listbox"
           >
             <span className="text-lg">{selectedCountry.flag}</span>
-            <span className="text-sm text-muted-foreground">{selectedCountry.dialCode}</span>
-            <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+            <span className="text-sm text-muted-foreground">
+              {selectedCountry.dialCode}
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 text-muted-foreground transition-transform",
+                isOpen && "rotate-180"
+              )}
+            />
           </button>
 
           {/* Phone number input */}
@@ -208,7 +219,9 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
               >
                 <span className="text-lg">{country.flag}</span>
                 <span className="flex-1 text-left">{country.name}</span>
-                <span className="text-muted-foreground">{country.dialCode}</span>
+                <span className="text-muted-foreground">
+                  {country.dialCode}
+                </span>
               </button>
             ))}
           </div>
@@ -219,4 +232,4 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
 );
 PhoneInput.displayName = "PhoneInput";
 
-export { PhoneInput, COUNTRIES };
+export { COUNTRIES, PhoneInput };

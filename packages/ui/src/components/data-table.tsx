@@ -8,47 +8,47 @@
 "use client";
 
 import {
-    flexRender,
-    getCoreRowModel,
-    getFilteredRowModel,
-    getPaginationRowModel,
-    getSortedRowModel,
-    useReactTable,
-    type ColumnDef,
-    type ColumnFiltersState,
-    type Row,
-    type SortingState,
-    type Table as TanstackTable,
-    type VisibilityState
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type ColumnFiltersState,
+  type Row,
+  type SortingState,
+  type Table as TanstackTable,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import {
-    ArrowDown,
-    ArrowUp,
-    ArrowUpDown,
-    ChevronLeft,
-    ChevronRight,
-    ChevronsLeft,
-    ChevronsRight,
-    Search,
-    Settings2,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Search,
+  Settings2,
 } from "lucide-react";
 import * as React from "react";
 import { cn } from "../lib/utils";
 import { Button } from "./button";
 import { Checkbox } from "./checkbox";
 import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
 } from "./dropdown-menu";
 import { Input } from "./input";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "./select";
 
 // Base table components
@@ -156,8 +156,7 @@ const TableCaption = React.forwardRef<
 TableCaption.displayName = "TableCaption";
 
 // Sortable column header
-interface DataTableColumnHeaderProps<TData, TValue>
-  extends React.HTMLAttributes<HTMLDivElement> {
+interface DataTableColumnHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   column: {
     getCanSort: () => boolean;
     getIsSorted: () => false | "asc" | "desc";
@@ -166,11 +165,11 @@ interface DataTableColumnHeaderProps<TData, TValue>
   title: string;
 }
 
-function DataTableColumnHeader<TData, TValue>({
+function DataTableColumnHeader({
   column,
   title,
   className,
-}: DataTableColumnHeaderProps<TData, TValue>) {
+}: DataTableColumnHeaderProps) {
   if (!column.getCanSort()) {
     return <div className={cn(className)}>{title}</div>;
   }
@@ -429,7 +428,9 @@ function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: enablePagination ? getPaginationRowModel() : undefined,
+    getPaginationRowModel: enablePagination
+      ? getPaginationRowModel()
+      : undefined,
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
@@ -538,10 +539,18 @@ function DataTable<TData, TValue>({
 }
 
 export {
-    DataTable,
-    DataTableColumnHeader,
-    DataTablePagination, DataTableSearch, DataTableViewOptions, getSelectionColumn,
-    Table, TableBody, TableCaption, TableCell, TableFooter,
-    TableHead, TableHeader, TableRow
+  DataTable,
+  DataTableColumnHeader,
+  DataTablePagination,
+  DataTableSearch,
+  DataTableViewOptions,
+  getSelectionColumn,
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
 };
-

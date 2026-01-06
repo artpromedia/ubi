@@ -65,6 +65,10 @@ export function generateCSSVariables(mode: "light" | "dark"): string {
 /**
  * Complete CSS styles string
  */
+// Export aliases for convenience
+export const lightModeVariables = cssVariables.light;
+export const darkModeVariables = cssVariables.dark;
+
 export const globalStyles = `
 @layer base {
   :root {

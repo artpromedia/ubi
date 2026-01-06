@@ -1,24 +1,25 @@
 "use client";
 
-import * as React from "react";
 import { Search, X } from "lucide-react";
+import * as React from "react";
 import { cn } from "../lib/utils";
-import { Input } from "./input";
 
 /**
  * SearchInput - Search input with icon and clear button
- * 
+ *
  * @example
- * <SearchInput 
- *   placeholder="Search restaurants..." 
+ * <SearchInput
+ *   placeholder="Search restaurants..."
  *   value={query}
  *   onChange={setQuery}
  *   onClear={() => setQuery("")}
  * />
  */
 
-export interface SearchInputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "type" | "onChange"> {
+export interface SearchInputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "type" | "onChange" | "size"
+> {
   /** Controlled value */
   value?: string;
   /** Change handler */
@@ -34,7 +35,19 @@ export interface SearchInputProps
 }
 
 const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
-  ({ className, value, onChange, onClear, onSearch, loading, size = "md", ...props }, ref) => {
+  (
+    {
+      className,
+      value,
+      onChange,
+      onClear,
+      onSearch,
+      loading,
+      size = "md",
+      ...props
+    },
+    ref
+  ) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       onChange?.(e.target.value);
     };
@@ -56,14 +69,14 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
 
     return (
       <div className="relative">
-        <Search 
+        <Search
           className={cn(
             "absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground",
             size === "sm" && "h-4 w-4",
             size === "md" && "h-5 w-5",
             size === "lg" && "h-6 w-6",
             loading && "animate-pulse"
-          )} 
+          )}
         />
         <input
           ref={ref}
