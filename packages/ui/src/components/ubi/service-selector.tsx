@@ -127,7 +127,7 @@ const serviceSelectorVariants = cva("flex gap-2", {
 
 export interface ServiceSelectorProps
   extends
-    React.HTMLAttributes<HTMLDivElement>,
+    Omit<React.HTMLAttributes<HTMLDivElement>, "onSelect">,
     VariantProps<typeof serviceSelectorVariants> {
   /** Currently selected service */
   selected?: ServiceType;

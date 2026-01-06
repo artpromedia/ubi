@@ -10,10 +10,8 @@ async function globalSetup(config: FullConfig): Promise<void> {
   console.log("🚀 Starting E2E test setup...");
 
   // Set timezone to UTC for consistent date handling
-  process.env.TZ = "UTC";
-
-  // Set test environment
-  process.env.NODE_ENV = "test";
+  // Using Object.assign to avoid TypeScript read-only assignment errors
+  Object.assign(process.env, { TZ: "UTC", NODE_ENV: "test" });
 
   // Log test configuration
   console.log(`📍 Base URL: ${config.projects[0]?.use?.baseURL || "Not set"}`);

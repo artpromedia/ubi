@@ -256,7 +256,7 @@ test.describe("Wallet Operations", () => {
     await mockApiResponse(/\/api\/wallets\/me/, {
       success: true,
       data: {
-        wallet: TEST_WALLETS.naira,
+        wallet: TEST_WALLETS.ADAOBI_WALLET,
       },
     });
 

@@ -19,6 +19,7 @@
   "dependencies": {
     "@amplitude/analytics-browser": "^2.33.1",
     "@tanstack/react-query": "^5.62.7",
+    "@ubi/analytics": "workspace:^",
     "@ubi/api-client": "workspace:*",
     "@ubi/ui": "workspace:*",
     "@ubi/utils": "workspace:*",
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
+    "@tanstack/react-query-devtools": "^5.91.2",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",

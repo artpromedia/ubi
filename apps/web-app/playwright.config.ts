@@ -15,8 +15,9 @@ const CI = !!process.env.CI;
 
 /**
  * Network conditions for African markets
+ * @internal Prepared for future network throttling implementation
  */
-const NETWORK_CONDITIONS = {
+export const NETWORK_CONDITIONS = {
   "2G": {
     offline: false,
     downloadThroughput: (50 * 1024) / 8, // 50 KB/s

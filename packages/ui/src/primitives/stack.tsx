@@ -113,9 +113,9 @@ const Stack = React.forwardRef<HTMLDivElement, StackProps>(
 
     return (
       <Component
-        ref={ref as React.Ref<Element>}
+        ref={ref as React.Ref<never>}
         className={cn(stackVariants({ gap, align, justify }), className)}
-        {...props}
+        {...(props as React.HTMLAttributes<HTMLElement>)}
       >
         {content}
       </Component>
@@ -224,9 +224,9 @@ const HStack = React.forwardRef<HTMLDivElement, HStackProps>(
 
     return (
       <Component
-        ref={ref as React.Ref<Element>}
+        ref={ref as React.Ref<never>}
         className={cn(hstackVariants({ gap, align, justify, wrap }), className)}
-        {...props}
+        {...(props as React.HTMLAttributes<HTMLElement>)}
       >
         {content}
       </Component>

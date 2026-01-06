@@ -40,7 +40,7 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
   const { isAuthenticated, clearAuth } = useAuthStore();
   const { profile, clearUser } = useUserStore();
   const { toggleSidebar } = useUIStore();
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { theme: _theme, setTheme, resolvedTheme } = useTheme();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 

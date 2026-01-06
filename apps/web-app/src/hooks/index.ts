@@ -19,7 +19,7 @@ interface UseGeolocationOptions {
   maximumAge?: number;
 }
 
-interface GeolocationState {
+export interface GeolocationState {
   location: Coordinates | null;
   error: string | null;
   isLoading: boolean;
@@ -59,17 +59,23 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     try {
       // Check permission status
       if ("permissions" in navigator) {
-        const permission = await navigator.permissions.query({ name: "geolocation" });
-        setLocationPermission(permission.state as "granted" | "denied" | "prompt");
+        const permission = await navigator.permissions.query({
+          name: "geolocation",
+        });
+        setLocationPermission(
+          permission.state as "granted" | "denied" | "prompt"
+        );
       }
 
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy,
-          timeout,
-          maximumAge,
-        });
-      });
+      const position = await new Promise<GeolocationPosition>(
+        (resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy,
+            timeout,
+            maximumAge,
+          });
+        }
+      );
 
       const coords: Coordinates = {
         latitude: position.coords.latitude,
@@ -99,7 +105,16 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     } finally {
       setLocationLoading(false);
     }
-  }, [isSupported, enableHighAccuracy, timeout, maximumAge, setCurrentLocation, setLocationPermission, setLocationLoading, setLocationError]);
+  }, [
+    isSupported,
+    enableHighAccuracy,
+    timeout,
+    maximumAge,
+    setCurrentLocation,
+    setLocationPermission,
+    setLocationLoading,
+    setLocationError,
+  ]);
 
   // Watch position for real-time updates
   const watchLocation = useCallback(() => {
@@ -119,7 +134,13 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [isSupported, enableHighAccuracy, timeout, maximumAge, setCurrentLocation]);
+  }, [
+    isSupported,
+    enableHighAccuracy,
+    timeout,
+    maximumAge,
+    setCurrentLocation,
+  ]);
 
   return {
     location: currentLocation,
@@ -214,7 +235,7 @@ export function useLocalStorage<T>(
 ): [T, (value: T | ((prev: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
     if (typeof window === "undefined") return initialValue;
-    
+
     try {
       const item = window.localStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
@@ -226,7 +247,8 @@ export function useLocalStorage<T>(
   const setValue = useCallback(
     (value: T | ((prev: T) => T)) => {
       try {
-        const valueToStore = value instanceof Function ? value(storedValue) : value;
+        const valueToStore =
+          value instanceof Function ? value(storedValue) : value;
         setStoredValue(valueToStore);
         if (typeof window !== "undefined") {
           window.localStorage.setItem(key, JSON.stringify(valueToStore));

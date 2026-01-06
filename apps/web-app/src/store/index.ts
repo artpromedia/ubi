@@ -158,7 +158,9 @@ export const useUserStore = create<UserState>()(
 
         removeSavedAddress: (id) =>
           set((state) => {
-            state.savedAddresses = state.savedAddresses.filter((a) => a.id !== id);
+            state.savedAddresses = state.savedAddresses.filter(
+              (a) => a.id !== id
+            );
           }),
 
         clearUser: () =>
@@ -191,9 +193,15 @@ export interface LocationState {
 
   // Actions
   setCurrentLocation: (location: Coordinates | null) => void;
-  setSelectedPickup: (pickup: { address: string; coordinates: Coordinates } | null) => void;
-  setSelectedDropoff: (dropoff: { address: string; coordinates: Coordinates } | null) => void;
-  setLocationPermission: (permission: LocationState["locationPermission"]) => void;
+  setSelectedPickup: (
+    pickup: { address: string; coordinates: Coordinates } | null
+  ) => void;
+  setSelectedDropoff: (
+    dropoff: { address: string; coordinates: Coordinates } | null
+  ) => void;
+  setLocationPermission: (
+    permission: LocationState["locationPermission"]
+  ) => void;
   setLocationLoading: (loading: boolean) => void;
   setLocationError: (error: string | null) => void;
   swapLocations: () => void;
@@ -491,15 +499,27 @@ export const useCartStore = create<CartState>()(
         discount: 0,
 
         // Computed
-        subtotal: () => get().items.reduce((sum, item) => sum + item.price * item.quantity, 0),
-        total: () => get().subtotal() + get().deliveryFee + get().serviceFee - get().discount,
-        itemCount: () => get().items.reduce((count, item) => count + item.quantity, 0),
+        subtotal: () =>
+          get().items.reduce(
+            (sum, item) => sum + item.price * item.quantity,
+            0
+          ),
+        total: () =>
+          get().subtotal() +
+          get().deliveryFee +
+          get().serviceFee -
+          get().discount,
+        itemCount: () =>
+          get().items.reduce((count, item) => count + item.quantity, 0),
 
         // Actions
         addItem: (item) =>
           set((state) => {
             // Check if switching restaurants
-            if (state.restaurantId && state.restaurantId !== item.restaurantId) {
+            if (
+              state.restaurantId &&
+              state.restaurantId !== item.restaurantId
+            ) {
               // Clear cart if different restaurant
               state.items = [];
             }
@@ -507,9 +527,14 @@ export const useCartStore = create<CartState>()(
             state.restaurantId = item.restaurantId || null;
             state.restaurantName = item.restaurantName || null;
 
-            const existingIndex = state.items.findIndex((i) => i.id === item.id);
+            const existingIndex = state.items.findIndex(
+              (i) => i.id === item.id
+            );
             if (existingIndex >= 0) {
-              state.items[existingIndex].quantity += item.quantity;
+              const existingItem = state.items[existingIndex];
+              if (existingItem) {
+                existingItem.quantity += item.quantity;
+              }
             } else {
               state.items.push(item);
             }
@@ -518,7 +543,7 @@ export const useCartStore = create<CartState>()(
         updateQuantity: (itemId, quantity) =>
           set((state) => {
             const item = state.items.find((i) => i.id === itemId);
-            if (item) {
+            if (item !== undefined) {
               if (quantity <= 0) {
                 state.items = state.items.filter((i) => i.id !== itemId);
               } else {

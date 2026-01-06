@@ -145,6 +145,9 @@ export const test = base.extend<UbiFixtures>({
 
     const setConditions = async (profile: keyof typeof NETWORK_PROFILES) => {
       const conditions = NETWORK_PROFILES[profile];
+      if (!conditions) {
+        throw new Error(`Unknown network profile: ${profile}`);
+      }
       await cdpSession.send("Network.emulateNetworkConditions", {
         offline: false,
         downloadThroughput: conditions.downloadThroughput,

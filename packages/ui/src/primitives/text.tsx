@@ -1,16 +1,16 @@
 "use client";
 
-import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import * as React from "react";
 import { cn } from "../lib/utils";
 
 /**
  * Text - A typography primitive
- * 
+ *
  * Renders text with consistent typography styles.
  * Supports all heading levels, body text, and special variants.
- * 
+ *
  * @example
  * <Text variant="h1">Page Title</Text>
  * <Text variant="body" color="muted">Description text</Text>
@@ -21,9 +21,11 @@ const textVariants = cva("", {
   variants: {
     variant: {
       // Display variants - for hero sections
-      display1: "font-heading text-6xl sm:text-7xl md:text-8xl font-bold tracking-tight",
-      display2: "font-heading text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight",
-      
+      display1:
+        "font-heading text-6xl sm:text-7xl md:text-8xl font-bold tracking-tight",
+      display2:
+        "font-heading text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight",
+
       // Heading variants
       h1: "font-heading text-4xl sm:text-5xl font-bold tracking-tight",
       h2: "font-heading text-3xl sm:text-4xl font-semibold tracking-tight",
@@ -31,25 +33,26 @@ const textVariants = cva("", {
       h4: "font-heading text-xl sm:text-2xl font-semibold",
       h5: "font-heading text-lg sm:text-xl font-semibold",
       h6: "font-heading text-base sm:text-lg font-semibold",
-      
+
       // Body variants
       "body-xl": "font-body text-xl",
       "body-lg": "font-body text-lg",
       body: "font-body text-base",
       "body-sm": "font-body text-sm",
       "body-xs": "font-body text-xs",
-      
+
       // Special variants
       lead: "font-body text-xl text-muted-foreground leading-relaxed",
       large: "font-body text-lg font-medium",
       small: "font-body text-sm font-medium leading-none",
       muted: "font-body text-sm text-muted-foreground",
-      
+
       // UI variants
-      label: "font-body text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+      label:
+        "font-body text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
       caption: "font-body text-xs text-muted-foreground",
       overline: "font-body text-xs font-semibold uppercase tracking-wider",
-      
+
       // Code
       code: "font-mono text-sm bg-muted px-1.5 py-0.5 rounded",
       "code-block": "font-mono text-sm",
@@ -161,7 +164,7 @@ const Text = React.forwardRef(function Text<E extends React.ElementType = "p">(
     children,
     ...props
   }: TextProps<E>,
-  ref: React.ComponentPropsWithRef<E>["ref"]
+  ref: React.ForwardedRef<Element>
 ) {
   const Component = asChild
     ? Slot
@@ -169,9 +172,20 @@ const Text = React.forwardRef(function Text<E extends React.ElementType = "p">(
 
   return (
     <Component
-      ref={ref}
-      className={cn(textVariants({ variant, color, weight, align, wrap, truncate, lineClamp }), className)}
-      {...props}
+      ref={ref as React.Ref<never>}
+      className={cn(
+        textVariants({
+          variant,
+          color,
+          weight,
+          align,
+          wrap,
+          truncate,
+          lineClamp,
+        }),
+        className
+      )}
+      {...(props as React.HTMLAttributes<HTMLElement>)}
     >
       {children}
     </Component>

@@ -4,12 +4,7 @@ const nextConfig = {
   reactStrictMode: true,
 
   // Transpile workspace packages
-  transpilePackages: [
-    "@ubi/ui",
-    "@ubi/utils",
-    "@ubi/api-client",
-    "@ubi/i18n",
-  ],
+  transpilePackages: ["@ubi/ui", "@ubi/utils", "@ubi/api-client", "@ubi/i18n"],
 
   // Image optimization configuration
   images: {
@@ -32,7 +27,7 @@ const nextConfig = {
   experimental: {
     // Enable Turbopack for faster development
     // turbo: {},
-    
+
     // Optimize package imports
     optimizePackageImports: [
       "@ubi/ui",
@@ -107,7 +102,11 @@ const nextConfig = {
   },
 
   // Output configuration for deployment
-  output: "standalone",
+  // Standalone output is disabled for local development due to Windows symlink permission issues
+  // Enable in CI by setting NEXT_OUTPUT_STANDALONE=true
+  ...(process.env.NEXT_OUTPUT_STANDALONE === "true"
+    ? { output: "standalone" }
+    : {}),
 
   // Disable x-powered-by header for security
   poweredByHeader: false,
