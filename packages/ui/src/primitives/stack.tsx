@@ -63,7 +63,7 @@ const stackVariants = cva("flex flex-col", {
 });
 
 export interface StackProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends React.HTMLAttributes<HTMLElement>,
     VariantProps<typeof stackVariants> {
   /** Use a different HTML element */
   as?: "div" | "section" | "article" | "aside" | "ul" | "ol" | "nav" | "form" | "fieldset";
@@ -71,7 +71,7 @@ export interface StackProps
   divider?: React.ReactNode;
 }
 
-const Stack = React.forwardRef<HTMLDivElement, StackProps>(
+const Stack = React.forwardRef<HTMLElement, StackProps>(
   ({ as: Component = "div", className, gap, align, justify, divider, children, ...props }, ref) => {
     // If divider is provided, intersperse it between children
     const childArray = React.Children.toArray(children).filter(Boolean);
@@ -89,7 +89,7 @@ const Stack = React.forwardRef<HTMLDivElement, StackProps>(
 
     return (
       <Component
-        ref={ref as React.Ref<HTMLDivElement>}
+        ref={ref as React.Ref<never>}
         className={cn(stackVariants({ gap, align, justify }), className)}
         {...props}
       >
@@ -159,7 +159,7 @@ const hstackVariants = cva("flex flex-row", {
 });
 
 export interface HStackProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends React.HTMLAttributes<HTMLElement>,
     VariantProps<typeof hstackVariants> {
   /** Use a different HTML element */
   as?: "div" | "section" | "nav" | "ul" | "ol";
@@ -167,7 +167,7 @@ export interface HStackProps
   divider?: React.ReactNode;
 }
 
-const HStack = React.forwardRef<HTMLDivElement, HStackProps>(
+const HStack = React.forwardRef<HTMLElement, HStackProps>(
   ({ as: Component = "div", className, gap, align, justify, wrap, divider, children, ...props }, ref) => {
     const childArray = React.Children.toArray(children).filter(Boolean);
     const content = divider
@@ -184,7 +184,7 @@ const HStack = React.forwardRef<HTMLDivElement, HStackProps>(
 
     return (
       <Component
-        ref={ref as React.Ref<HTMLDivElement>}
+        ref={ref as React.Ref<never>}
         className={cn(hstackVariants({ gap, align, justify, wrap }), className)}
         {...props}
       >
