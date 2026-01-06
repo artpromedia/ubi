@@ -5,7 +5,7 @@
 library ubi_api_client;
 
 // === Client ===
-export 'src/client/api_client.dart';
+export 'src/client/api_client.dart' hide TokenStorage;
 export 'src/client/api_config.dart';
 
 // === Interceptors ===

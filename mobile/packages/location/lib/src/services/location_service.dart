@@ -5,7 +5,8 @@ library;
 
 import 'dart:async';
 
-import 'package:geolocator/geolocator.dart';
+import 'package:geolocator/geolocator.dart' as geo;
+import 'package:geolocator/geolocator.dart' show Position, LocationServiceDisabledException, AndroidSettings, ForegroundNotificationConfig, LocationSettings;
 import 'package:injectable/injectable.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:ubi_core/ubi_core.dart';
@@ -67,7 +68,7 @@ class LocationService {
       }
 
       // Get position
-      final position = await Geolocator.getCurrentPosition(
+      final position = await geo.Geolocator.getCurrentPosition(
         locationSettings: LocationSettings(
           accuracy: _mapAccuracy(accuracy),
           timeLimit: timeout,
@@ -97,7 +98,7 @@ class LocationService {
   /// Get last known location (faster, may be stale)
   Future<Result<GeoLocation?>> getLastKnownLocation() async {
     try {
-      final position = await Geolocator.getLastKnownPosition();
+      final position = await geo.Geolocator.getLastKnownPosition();
       if (position == null) {
         return Result.success(null);
       }
@@ -131,7 +132,7 @@ class LocationService {
       interval: interval,
     );
 
-    _positionSubscription = Geolocator.getPositionStream(
+    _positionSubscription = geo.Geolocator.getPositionStream(
       locationSettings: settings,
     ).listen(
       (position) {
@@ -200,7 +201,7 @@ class LocationService {
 
   /// Calculate distance between two points in meters
   double calculateDistance(GeoLocation from, GeoLocation to) {
-    return Geolocator.distanceBetween(
+    return geo.Geolocator.distanceBetween(
       from.latitude,
       from.longitude,
       to.latitude,
@@ -210,7 +211,7 @@ class LocationService {
 
   /// Calculate bearing between two points in degrees
   double calculateBearing(GeoLocation from, GeoLocation to) {
-    return Geolocator.bearingBetween(
+    return geo.Geolocator.bearingBetween(
       from.latitude,
       from.longitude,
       to.latitude,
@@ -225,16 +226,16 @@ class LocationService {
   }
 
   /// Map our accuracy enum to Geolocator's
-  geolocator.LocationAccuracy _mapAccuracy(LocationAccuracy accuracy) {
+  geo.LocationAccuracy _mapAccuracy(LocationAccuracy accuracy) {
     switch (accuracy) {
       case LocationAccuracy.high:
-        return geolocator.LocationAccuracy.best;
+        return geo.LocationAccuracy.best;
       case LocationAccuracy.medium:
-        return geolocator.LocationAccuracy.medium;
+        return geo.LocationAccuracy.medium;
       case LocationAccuracy.low:
-        return geolocator.LocationAccuracy.low;
+        return geo.LocationAccuracy.low;
       case LocationAccuracy.lowest:
-        return geolocator.LocationAccuracy.lowest;
+        return geo.LocationAccuracy.lowest;
     }
   }
 
@@ -260,6 +261,3 @@ class LocationService {
     );
   }
 }
-
-/// Type alias for Geolocator's LocationAccuracy
-typedef geolocator = Geolocator;
