@@ -3,8 +3,6 @@
 /// Manages authentication tokens securely.
 library;
 
-import 'dart:convert';
-
 import 'package:injectable/injectable.dart';
 
 import 'secure_storage.dart';
@@ -110,8 +108,8 @@ class TokenStorage {
     return tokens?.refreshToken;
   }
 
-  /// Save auth tokens
-  Future<void> saveTokens(AuthTokens tokens) async {
+  /// Save auth tokens from AuthTokens object
+  Future<void> saveAuthTokens(AuthTokens tokens) async {
     await Future.wait([
       _secureStorage.write(TokenStorageKeys.accessToken, tokens.accessToken),
       _secureStorage.write(TokenStorageKeys.refreshToken, tokens.refreshToken),
@@ -125,6 +123,17 @@ class TokenStorage {
     ]);
 
     _cachedTokens = tokens;
+  }
+
+  /// Save tokens (compatible with api_client TokenStorage interface)
+  Future<void> saveTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    await saveAuthTokens(AuthTokens(
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+    ));
   }
 
   /// Update only the access token (after refresh)

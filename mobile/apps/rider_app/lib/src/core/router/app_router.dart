@@ -96,20 +96,13 @@ class AppRouter {
         builder: (context, state) {
           final extras = state.extra as Map<String, dynamic>?;
           return OtpPage(
-            phoneNumber: extras?['phoneNumber'] ?? '',
-            countryCode: extras?['countryCode'] ?? '+1',
+            verificationId: extras?['verificationId'] ?? '',
           );
         },
       ),
       GoRoute(
         path: Routes.register,
-        builder: (context, state) {
-          final extras = state.extra as Map<String, dynamic>?;
-          return RegisterPage(
-            phoneNumber: extras?['phoneNumber'] ?? '',
-            countryCode: extras?['countryCode'] ?? '+1',
-          );
-        },
+        builder: (context, state) => const RegisterPage(),
       ),
 
       // Home (with shell for bottom navigation)
