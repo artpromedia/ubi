@@ -3,7 +3,9 @@
 /// Contract for package delivery data operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/delivery.dart';
+import '../entities/location.dart';
 
 /// Repository for package delivery operations
 abstract class DeliveryRepository {
@@ -57,3 +59,4 @@ abstract class DeliveryRepository {
   /// Stream courier location updates
   Stream<GeoLocation> watchCourierLocation(String deliveryId);
 }
+

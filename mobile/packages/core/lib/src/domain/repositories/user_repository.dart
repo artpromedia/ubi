@@ -3,7 +3,13 @@
 /// Contract for user-related data operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/user.dart';
+import '../entities/location.dart';
+import '../entities/ride.dart';
+import '../entities/food_order.dart';
+import '../entities/delivery.dart';
+import '../entities/payment.dart';
 
 /// Repository for user-related operations
 abstract class UserRepository {
@@ -84,3 +90,4 @@ abstract class UserRepository {
   /// Delete user account
   Future<Result<void>> deleteAccount({String? reason});
 }
+

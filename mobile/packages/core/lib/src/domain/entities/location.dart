@@ -130,3 +130,133 @@ class GeoBounds with _$GeoBounds {
     );
   }
 }
+
+/// Type alias for backward compatibility
+typedef Location = GeoLocation;
+
+/// Place type enumeration
+enum PlaceType {
+  home('home', 'Home'),
+  work('work', 'Work'),
+  favorite('favorite', 'Favorite'),
+  recent('recent', 'Recent'),
+  other('other', 'Other');
+
+  const PlaceType(this.value, this.displayName);
+  final String value;
+  final String displayName;
+}
+
+/// Saved place entity
+@freezed
+class SavedPlace with _$SavedPlace {
+  const SavedPlace._();
+
+  const factory SavedPlace({
+    required String id,
+    required String name,
+    required GeoLocation location,
+    required PlaceType type,
+    String? address,
+    String? instructions,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) = _SavedPlace;
+
+  factory SavedPlace.fromJson(Map<String, dynamic> json) =>
+      _$SavedPlaceFromJson(json);
+}
+
+/// Place search result
+@freezed
+class PlaceSearchResult with _$PlaceSearchResult {
+  const PlaceSearchResult._();
+
+  const factory PlaceSearchResult({
+    required String placeId,
+    required String name,
+    String? address,
+    String? secondaryText,
+    GeoLocation? location,
+    double? distance,
+    List<String>? types,
+  }) = _PlaceSearchResult;
+
+  factory PlaceSearchResult.fromJson(Map<String, dynamic> json) =>
+      _$PlaceSearchResultFromJson(json);
+}
+
+/// Place details
+@freezed
+class PlaceDetails with _$PlaceDetails {
+  const PlaceDetails._();
+
+  const factory PlaceDetails({
+    required String placeId,
+    required String name,
+    required GeoLocation location,
+    String? formattedAddress,
+    String? formattedPhoneNumber,
+    String? website,
+    double? rating,
+    int? totalRatings,
+    List<String>? types,
+    PlaceOpeningHours? openingHours,
+    GeoBounds? viewport,
+    List<AddressComponent>? addressComponents,
+  }) = _PlaceDetails;
+
+  factory PlaceDetails.fromJson(Map<String, dynamic> json) =>
+      _$PlaceDetailsFromJson(json);
+}
+
+/// Place opening hours (Google Places style)
+@freezed
+class PlaceOpeningHours with _$PlaceOpeningHours {
+  const factory PlaceOpeningHours({
+    required bool isOpen,
+    List<String>? weekdayText,
+    List<Period>? periods,
+  }) = _PlaceOpeningHours;
+
+  factory PlaceOpeningHours.fromJson(Map<String, dynamic> json) =>
+      _$PlaceOpeningHoursFromJson(json);
+}
+
+/// Period for opening hours
+@freezed
+class Period with _$Period {
+  const factory Period({
+    required TimeOfWeek open,
+    TimeOfWeek? close,
+  }) = _Period;
+
+  factory Period.fromJson(Map<String, dynamic> json) =>
+      _$PeriodFromJson(json);
+}
+
+/// Time of week
+@freezed
+class TimeOfWeek with _$TimeOfWeek {
+  const factory TimeOfWeek({
+    required int day,
+    required String time,
+  }) = _TimeOfWeek;
+
+  factory TimeOfWeek.fromJson(Map<String, dynamic> json) =>
+      _$TimeOfWeekFromJson(json);
+}
+
+/// Address component
+@freezed
+class AddressComponent with _$AddressComponent {
+  const factory AddressComponent({
+    required String longName,
+    required String shortName,
+    required List<String> types,
+  }) = _AddressComponent;
+
+  factory AddressComponent.fromJson(Map<String, dynamic> json) =>
+      _$AddressComponentFromJson(json);
+}
+

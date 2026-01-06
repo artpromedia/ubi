@@ -3,7 +3,15 @@
 /// Business logic for user profile operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/user.dart';
+import '../entities/location.dart';
+import '../entities/ride.dart';
+import '../entities/food_order.dart';
+import '../entities/delivery.dart';
+import '../entities/payment.dart';
+import '../repositories/user_repository.dart';
+import 'use_case.dart';
 
 /// Get current user
 class GetCurrentUserUseCase implements UseCase<User, NoParams> {
@@ -264,3 +272,4 @@ class DeleteAccountUseCase implements UseCase<void, String?> {
     return repository.deleteAccount(reason: reason);
   }
 }
+

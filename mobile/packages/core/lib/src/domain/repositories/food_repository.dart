@@ -3,7 +3,8 @@
 /// Contract for food ordering data operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/food_order.dart';
 
 /// Repository for food ordering operations
 abstract class FoodRepository {
@@ -75,3 +76,4 @@ abstract class FoodRepository {
   /// Stream order updates in real-time
   Stream<FoodOrder> watchOrder(String orderId);
 }
+

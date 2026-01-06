@@ -3,7 +3,8 @@
 /// Contract for location-related data operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/location.dart';
 
 /// Repository for location operations
 abstract class LocationRepository {
@@ -149,3 +150,4 @@ class DistanceInfo {
   final String? distanceText;
   final String? durationText;
 }
+

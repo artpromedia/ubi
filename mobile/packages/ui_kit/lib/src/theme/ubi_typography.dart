@@ -249,8 +249,8 @@ abstract final class UbiTypography {
     );
   }
   
-  /// Button text style
-  static TextStyle button({
+  /// Custom button text style with options
+  static TextStyle buttonCustom({
     double fontSize = 16,
     FontWeight fontWeight = FontWeight.w600,
     Color color = UbiColors.ubiWhite,
@@ -278,8 +278,8 @@ abstract final class UbiTypography {
     );
   }
   
-  /// Caption style
-  static TextStyle caption({
+  /// Custom caption style with color option
+  static TextStyle captionCustom({
     Color color = UbiColors.gray500,
   }) {
     return GoogleFonts.inter(

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme/ubi_colors.dart';
+import '../../theme/ubi_colors.dart';
 
 /// Logo variant options
 enum UbiLogoVariant {

@@ -3,7 +3,10 @@
 /// Business logic for notification operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/notification.dart';
+import '../repositories/notification_repository.dart';
+import 'use_case.dart';
 
 /// Register device for push notifications
 class RegisterDeviceUseCase implements UseCase<void, RegisterDeviceParams> {
@@ -186,3 +189,4 @@ class WatchUnreadCountUseCase implements StreamUseCase<int, NoParams> {
     return repository.watchUnreadCount();
   }
 }
+

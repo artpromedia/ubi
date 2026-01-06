@@ -3,7 +3,8 @@
 /// Contract for notification data operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/notification.dart';
 
 /// Repository for notification operations
 abstract class NotificationRepository {
@@ -55,3 +56,4 @@ abstract class NotificationRepository {
   /// Stream unread count updates
   Stream<int> watchUnreadCount();
 }
+

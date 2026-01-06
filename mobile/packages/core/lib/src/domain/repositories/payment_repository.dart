@@ -3,7 +3,8 @@
 /// Contract for payment and wallet data operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/payment.dart';
 
 /// Repository for payment operations
 abstract class PaymentRepository {
@@ -105,3 +106,4 @@ abstract class PaymentRepository {
     String? reason,
   });
 }
+

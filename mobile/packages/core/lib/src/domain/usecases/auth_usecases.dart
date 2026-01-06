@@ -3,7 +3,10 @@
 /// Business logic for authentication operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/user.dart';
+import '../repositories/auth_repository.dart';
+import 'use_case.dart';
 
 /// Request OTP for phone number
 class RequestOtpUseCase implements UseCase<void, RequestOtpParams> {
@@ -182,3 +185,4 @@ class RefreshTokenUseCase implements UseCase<void, NoParams> {
     return repository.refreshToken();
   }
 }
+

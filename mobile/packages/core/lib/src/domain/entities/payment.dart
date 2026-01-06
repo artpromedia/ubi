@@ -302,3 +302,4 @@ enum PromoType {
   final String value;
   final String suffix;
 }
+

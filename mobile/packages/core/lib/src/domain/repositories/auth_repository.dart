@@ -61,3 +61,4 @@ enum AuthState {
   authenticated,
   unauthenticated,
 }
+

@@ -3,7 +3,11 @@
 /// Business logic for food ordering operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/food_order.dart';
+import '../entities/location.dart';
+import '../repositories/food_repository.dart';
+import 'use_case.dart';
 
 /// Get nearby restaurants
 class GetNearbyRestaurantsUseCase implements UseCase<List<Restaurant>, GetNearbyRestaurantsParams> {
@@ -270,3 +274,4 @@ class WatchFoodOrderUseCase implements StreamUseCase<FoodOrder, String> {
     return repository.watchOrder(orderId);
   }
 }
+

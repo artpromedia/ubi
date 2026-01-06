@@ -273,3 +273,4 @@ class NotificationPreferences extends Equatable {
     );
   }
 }
+

@@ -3,7 +3,10 @@
 /// Business logic for payment and wallet operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/payment.dart';
+import '../repositories/payment_repository.dart';
+import 'use_case.dart';
 
 /// Process a payment
 class ProcessPaymentUseCase implements UseCase<Payment, ProcessPaymentParams> {
@@ -383,3 +386,4 @@ class RequestRefundParams {
   final double? amount;
   final String? reason;
 }
+

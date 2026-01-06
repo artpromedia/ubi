@@ -3,7 +3,11 @@
 /// Business logic for ride operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/location.dart';
+import '../entities/ride.dart';
+import '../repositories/ride_repository.dart';
+import 'use_case.dart';
 
 /// Get ride fare estimates
 class GetRideEstimatesUseCase implements UseCase<List<RideEstimate>, GetRideEstimatesParams> {
@@ -16,7 +20,6 @@ class GetRideEstimatesUseCase implements UseCase<List<RideEstimate>, GetRideEsti
     return repository.getEstimates(
       pickup: params.pickup,
       dropoff: params.dropoff,
-      vehicleType: params.vehicleType,
     );
   }
 }
@@ -278,3 +281,44 @@ class ReverseGeocodeUseCase implements UseCase<PlaceDetails, GeoLocation> {
     return repository.reverseGeocode(location);
   }
 }
+
+// === Type Aliases for Convenience ===
+// These provide shorter names for use in app code
+typedef GetRideEstimates = GetRideEstimatesUseCase;
+typedef RequestRide = RequestRideUseCase;
+typedef CancelRide = CancelRideUseCase;
+typedef RateRide = RateRideUseCase;
+typedef AddRideTip = UpdateRideTipUseCase;
+typedef GetNearbyDrivers = GetNearbyDriversUseCase;
+typedef SearchPlaces = SearchPlacesUseCase;
+
+/// Watch ride status stream
+class WatchRideStatus implements StreamUseCase<Ride, String> {
+  const WatchRideStatus(this.repository);
+
+  final RideRepository repository;
+
+  @override
+  Stream<Ride> call(String rideId) {
+    return repository.getRideStatusStream(rideId).map((result) => result.when(
+      success: (ride) => ride,
+      failure: (_) => throw Exception('Failed to watch ride status'),
+    ));
+  }
+}
+
+/// Watch driver location stream
+class WatchDriverLocation implements StreamUseCase<GeoLocation, String> {
+  const WatchDriverLocation(this.repository);
+
+  final RideRepository repository;
+
+  @override
+  Stream<GeoLocation> call(String rideId) {
+    return repository.getDriverLocationStream(rideId).map((result) => result.when(
+      success: (location) => location,
+      failure: (_) => throw Exception('Failed to watch driver location'),
+    ));
+  }
+}
+

@@ -343,3 +343,4 @@ class DeliveryFareBreakdown extends Equatable {
   @override
   List<Object?> get props => [baseFare, distanceFare, sizeFare];
 }
+

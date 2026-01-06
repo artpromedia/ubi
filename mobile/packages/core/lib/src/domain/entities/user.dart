@@ -95,3 +95,4 @@ class UserPreferences with _$UserPreferences {
   factory UserPreferences.fromJson(Map<String, dynamic> json) =>
       _$UserPreferencesFromJson(json);
 }
+

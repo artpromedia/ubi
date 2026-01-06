@@ -3,7 +3,11 @@
 /// Business logic for package delivery operations.
 library;
 
-import '../../../core.dart';
+import '../../core/result/result.dart';
+import '../entities/delivery.dart';
+import '../entities/location.dart';
+import '../repositories/delivery_repository.dart';
+import 'use_case.dart';
 
 /// Get delivery estimate
 class GetDeliveryEstimateUseCase implements UseCase<DeliveryEstimate, GetDeliveryEstimateParams> {
@@ -207,3 +211,4 @@ class WatchCourierLocationUseCase implements StreamUseCase<GeoLocation, String> 
     return repository.watchCourierLocation(deliveryId);
   }
 }
+

@@ -221,3 +221,4 @@ class RideRequest with _$RideRequest {
   factory RideRequest.fromJson(Map<String, dynamic> json) =>
       _$RideRequestFromJson(json);
 }
+
