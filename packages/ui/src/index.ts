@@ -105,17 +105,19 @@ export {
   SelectValue,
 } from "./components/select";
 
-export {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormFieldWrapper,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  useFormField,
-} from "./components/form";
+// Form components (requires react-hook-form as peer dependency)
+// Temporarily disabled due to React 19 compatibility issues
+// export {
+//   Form,
+//   FormControl,
+//   FormDescription,
+//   FormField,
+//   FormFieldWrapper,
+//   FormItem,
+//   FormLabel,
+//   FormMessage,
+//   useFormField,
+// } from "./components/form";
 
 export {
   Command,

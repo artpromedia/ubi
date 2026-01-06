@@ -2,17 +2,19 @@
  * Marketing Site Footer
  */
 
-import Link from "next/link";
+"use client";
+
+import { UbiLogo } from "@ubi/ui";
 import {
   Facebook,
-  Twitter,
   Instagram,
   Linkedin,
-  Youtube,
-  MapPin,
   Mail,
   Phone,
+  Twitter,
+  Youtube,
 } from "lucide-react";
+import Link from "next/link";
 
 const footerLinks = {
   services: {
@@ -58,8 +60,16 @@ const footerLinks = {
 const socialLinks = [
   { name: "Facebook", href: "https://facebook.com/ubiafrica", icon: Facebook },
   { name: "Twitter", href: "https://twitter.com/ubi_africa", icon: Twitter },
-  { name: "Instagram", href: "https://instagram.com/ubi.africa", icon: Instagram },
-  { name: "LinkedIn", href: "https://linkedin.com/company/ubiafrica", icon: Linkedin },
+  {
+    name: "Instagram",
+    href: "https://instagram.com/ubi.africa",
+    icon: Instagram,
+  },
+  {
+    name: "LinkedIn",
+    href: "https://linkedin.com/company/ubiafrica",
+    icon: Linkedin,
+  },
   { name: "YouTube", href: "https://youtube.com/@ubiafrica", icon: Youtube },
 ];
 
@@ -80,17 +90,14 @@ export function Footer() {
         <div className="grid gap-8 lg:grid-cols-6">
           {/* Brand & contact */}
           <div className="lg:col-span-2">
-            <div className="flex items-center gap-2 mb-6">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ubi-green">
-                <span className="text-lg font-bold text-white">UBI</span>
-              </div>
-              <span className="text-xl font-bold text-white">UBI</span>
+            <div className="mb-6">
+              <UbiLogo size={32} variant="white" />
             </div>
             <p className="mb-6 text-sm">
               Africa's mobility super-app. Book rides, order food, and send
               packages across the continent.
             </p>
-            
+
             {/* Contact */}
             <div className="space-y-2 text-sm">
               <a
@@ -136,10 +143,7 @@ export function Footer() {
               <ul className="space-y-2">
                 {section.links.map((link) => (
                   <li key={link.name}>
-                    <Link
-                      href={link.href}
-                      className="text-sm hover:text-white"
-                    >
+                    <Link href={link.href} className="text-sm hover:text-white">
                       {link.name}
                     </Link>
                   </li>
@@ -167,7 +171,9 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="mt-8 border-t border-gray-800 pt-8">
           <div className="flex flex-col items-center justify-between gap-4 text-sm lg:flex-row">
-            <p>&copy; {new Date().getFullYear()} UBI Africa. All rights reserved.</p>
+            <p>
+              &copy; {new Date().getFullYear()} UBI Africa. All rights reserved.
+            </p>
             <div className="flex gap-6">
               <Link href="/terms" className="hover:text-white">
                 Terms

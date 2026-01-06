@@ -5,6 +5,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 
 const cities = [
@@ -12,43 +13,82 @@ const cities = [
     city: "Lagos",
     country: "Nigeria",
     flag: "🇳🇬",
-    image: "/cities/lagos.jpg",
+    // Lagos skyline
+    image:
+      "https://images.unsplash.com/photo-1618828665011-0abd973f7bb8?w=800&q=80",
     riders: "2M+",
   },
   {
     city: "Nairobi",
     country: "Kenya",
     flag: "🇰🇪",
-    image: "/cities/nairobi.jpg",
+    // Nairobi skyline
+    image:
+      "https://images.unsplash.com/photo-1611348586804-61bf6c080437?w=800&q=80",
     riders: "1.5M+",
   },
   {
     city: "Johannesburg",
     country: "South Africa",
     flag: "🇿🇦",
-    image: "/cities/johannesburg.jpg",
+    // Johannesburg skyline
+    image:
+      "https://images.unsplash.com/photo-1577948000111-9c970dfe3743?w=800&q=80",
     riders: "1.2M+",
   },
   {
     city: "Accra",
     country: "Ghana",
     flag: "🇬🇭",
-    image: "/cities/accra.jpg",
+    // Accra cityscape
+    image:
+      "https://images.unsplash.com/photo-1567789884554-0b844b597180?w=800&q=80",
     riders: "800K+",
   },
   {
     city: "Kigali",
     country: "Rwanda",
     flag: "🇷🇼",
-    image: "/cities/kigali.jpg",
+    // Kigali city view
+    image:
+      "https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=800&q=80",
     riders: "400K+",
   },
   {
     city: "Addis Ababa",
     country: "Ethiopia",
     flag: "🇪🇹",
-    image: "/cities/addis.jpg",
+    // Addis Ababa cityscape
+    image:
+      "https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80",
     riders: "600K+",
+  },
+  {
+    city: "Abuja",
+    country: "Nigeria",
+    flag: "🇳🇬",
+    // Abuja city center
+    image:
+      "https://images.unsplash.com/photo-1606146485652-75b352ce408a?w=800&q=80",
+    riders: "750K+",
+  },
+  {
+    city: "Cotonou",
+    country: "Benin",
+    flag: "🇧🇯",
+    // African coastal city
+    image:
+      "https://images.unsplash.com/photo-1504681869696-d977211a5f4c?w=800&q=80",
+    riders: "300K+",
+  },
+  {
+    city: "Abidjan",
+    country: "Côte d'Ivoire",
+    flag: "🇨🇮",
+    // Abidjan skyline
+    image:
+      "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80",
+    riders: "900K+",
   },
 ];
 
@@ -81,7 +121,8 @@ export function CitiesSection() {
             transition={{ delay: 0.1 }}
             className="mt-4 text-lg text-gray-600 dark:text-gray-300"
           >
-            From major metropolises to growing cities, UBI is connecting millions across the continent.
+            From major metropolises to growing cities, UBI is connecting
+            millions across the continent.
           </motion.p>
         </div>
 
@@ -96,12 +137,15 @@ export function CitiesSection() {
               transition={{ delay: index * 0.1 }}
               className="group relative overflow-hidden rounded-2xl"
             >
-              {/* Background */}
-              <div className="aspect-[4/3] bg-gradient-to-br from-gray-700 to-gray-900">
-                {/* Placeholder for city image */}
-                <div className="absolute inset-0 flex items-center justify-center text-6xl opacity-30">
-                  {city.flag}
-                </div>
+              {/* Background Image */}
+              <div className="aspect-[4/3] relative">
+                <Image
+                  src={city.image}
+                  alt={`${city.city}, ${city.country}`}
+                  fill
+                  className="object-cover transition-transform duration-500 group-hover:scale-110"
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                />
               </div>
 
               {/* Overlay */}
@@ -113,8 +157,12 @@ export function CitiesSection() {
                   <span className="text-lg">{city.flag}</span>
                   <span className="text-sm text-gray-300">{city.country}</span>
                 </div>
-                <h3 className="text-2xl font-bold text-white mb-1">{city.city}</h3>
-                <p className="text-gray-300 text-sm">{city.riders} active riders</p>
+                <h3 className="text-2xl font-bold text-white mb-1">
+                  {city.city}
+                </h3>
+                <p className="text-gray-300 text-sm">
+                  {city.riders} active riders
+                </p>
               </div>
 
               {/* Hover effect */}
