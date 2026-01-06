@@ -86,7 +86,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         ));
       },
       failure: (failure) {
-        emit(AuthError(failure.message));
+        emit(AuthError(failure.message ?? 'Failed to send OTP'));
       },
     );
   }
@@ -109,13 +109,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       },
       failure: (failure) {
         // Check if user needs to register
-        if (failure is AuthFailure && failure.message.contains('not registered')) {
+        if (failure is AuthFailure && (failure.message?.contains('not registered') ?? false)) {
           emit(AuthNeedsRegistration(
             phoneNumber: event.phoneNumber,
             countryCode: event.countryCode,
           ));
         } else {
-          emit(AuthError(failure.message));
+          emit(AuthError(failure.message ?? 'OTP verification failed'));
         }
       },
     );
@@ -140,7 +140,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         emit(AuthAuthenticated(user));
       },
       failure: (failure) {
-        emit(AuthError(failure.message));
+        emit(AuthError(failure.message ?? 'Registration failed'));
       },
     );
   }
@@ -173,7 +173,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           emit(AuthAuthenticated(user));
         },
         failure: (failure) {
-          emit(AuthError(failure.message));
+          emit(AuthError(failure.message ?? 'Google sign in failed'));
         },
       );
     } catch (e) {
@@ -215,7 +215,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           emit(AuthAuthenticated(user));
         },
         failure: (failure) {
-          emit(AuthError(failure.message));
+          emit(AuthError(failure.message ?? 'Apple sign in failed'));
         },
       );
     } catch (e) {

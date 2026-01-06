@@ -53,8 +53,8 @@ class UserMapper {
   static UserPreferences fromUserPreferencesDto(UserPreferencesDto dto) {
     return UserPreferences(
       language: dto.language ?? 'en',
-      currency: dto.currency ?? 'KES',
-      notificationsEnabled: dto.notificationsEnabled ?? true,
+      currency: dto.currency ?? 'NGN',
+      pushNotifications: dto.notificationsEnabled ?? true,
       darkMode: dto.darkMode ?? false,
     );
   }
@@ -69,8 +69,7 @@ class UserMapper {
         latitude: dto.latitude,
         longitude: dto.longitude,
       ),
-      icon: dto.icon,
-      placeType: dto.placeType,
+      type: _mapPlaceType(dto.placeType),
     );
   }
 
@@ -87,11 +86,10 @@ class UserMapper {
   static CreateSavedPlaceDto toCreateSavedPlaceDto(SavedPlace place) {
     return CreateSavedPlaceDto(
       name: place.name,
-      address: place.address,
+      address: place.address ?? '',
       latitude: place.location.latitude,
       longitude: place.location.longitude,
-      icon: place.icon,
-      placeType: place.placeType,
+      placeType: place.type.value,
     );
   }
 
@@ -100,13 +98,28 @@ class UserMapper {
     switch (role?.toLowerCase()) {
       case 'driver':
         return UserRole.driver;
-      case 'restaurant':
-        return UserRole.restaurant;
-      case 'admin':
-        return UserRole.admin;
+      case 'both':
+        return UserRole.both;
       case 'rider':
       default:
         return UserRole.rider;
+    }
+  }
+
+  /// Map place type string to PlaceType enum
+  static PlaceType _mapPlaceType(String? type) {
+    switch (type?.toLowerCase()) {
+      case 'home':
+        return PlaceType.home;
+      case 'work':
+        return PlaceType.work;
+      case 'favorite':
+        return PlaceType.favorite;
+      case 'recent':
+        return PlaceType.recent;
+      case 'other':
+      default:
+        return PlaceType.other;
     }
   }
 }

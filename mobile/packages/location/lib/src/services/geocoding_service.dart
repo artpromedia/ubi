@@ -16,7 +16,7 @@ class GeocodingService {
       final locations = await geo.locationFromAddress(address);
 
       if (locations.isEmpty) {
-        return Result.failure(const ServerFailure('No location found for address'));
+        return Result.failure(const Failure.server(message: 'No location found for address'));
       }
 
       final location = locations.first;
@@ -25,9 +25,9 @@ class GeocodingService {
         longitude: location.longitude,
       ));
     } on geo.NoResultFoundException {
-      return Result.failure(const ServerFailure('No location found for address'));
+      return Result.failure(const Failure.server(message: 'No location found for address'));
     } catch (e) {
-      return Result.failure(ServerFailure('Geocoding failed: $e'));
+      return Result.failure(Failure.server(message: 'Geocoding failed: $e'));
     }
   }
 
@@ -40,7 +40,7 @@ class GeocodingService {
       final placemarks = await geo.placemarkFromCoordinates(latitude, longitude);
 
       if (placemarks.isEmpty) {
-        return Result.failure(const ServerFailure('No address found for location'));
+        return Result.failure(const Failure.server(message: 'No address found for location'));
       }
 
       final placemark = placemarks.first;
@@ -49,7 +49,7 @@ class GeocodingService {
       return Result.success(PlaceDetails(
         placeId: '${latitude}_$longitude',
         name: placemark.name ?? formattedAddress,
-        address: formattedAddress,
+        formattedAddress: formattedAddress,
         location: GeoLocation(
           latitude: latitude,
           longitude: longitude,
@@ -57,9 +57,9 @@ class GeocodingService {
         addressComponents: _extractComponents(placemark),
       ));
     } on geo.NoResultFoundException {
-      return Result.failure(const ServerFailure('No address found for location'));
+      return Result.failure(const Failure.server(message: 'No address found for location'));
     } catch (e) {
-      return Result.failure(ServerFailure('Reverse geocoding failed: $e'));
+      return Result.failure(Failure.server(message: 'Reverse geocoding failed: $e'));
     }
   }
 
@@ -90,29 +90,50 @@ class GeocodingService {
   }
 
   /// Extract address components from placemark
-  Map<String, String> _extractComponents(geo.Placemark placemark) {
-    final components = <String, String>{};
+  List<AddressComponent> _extractComponents(geo.Placemark placemark) {
+    final components = <AddressComponent>[];
 
     if (placemark.street?.isNotEmpty == true) {
-      components['street'] = placemark.street!;
+      components.add(AddressComponent(
+        longName: placemark.street!,
+        shortName: placemark.street!,
+        types: ['route'],
+      ));
     }
     if (placemark.subLocality?.isNotEmpty == true) {
-      components['subLocality'] = placemark.subLocality!;
+      components.add(AddressComponent(
+        longName: placemark.subLocality!,
+        shortName: placemark.subLocality!,
+        types: ['sublocality'],
+      ));
     }
     if (placemark.locality?.isNotEmpty == true) {
-      components['city'] = placemark.locality!;
+      components.add(AddressComponent(
+        longName: placemark.locality!,
+        shortName: placemark.locality!,
+        types: ['locality'],
+      ));
     }
     if (placemark.administrativeArea?.isNotEmpty == true) {
-      components['state'] = placemark.administrativeArea!;
+      components.add(AddressComponent(
+        longName: placemark.administrativeArea!,
+        shortName: placemark.administrativeArea!,
+        types: ['administrative_area_level_1'],
+      ));
     }
     if (placemark.postalCode?.isNotEmpty == true) {
-      components['postalCode'] = placemark.postalCode!;
+      components.add(AddressComponent(
+        longName: placemark.postalCode!,
+        shortName: placemark.postalCode!,
+        types: ['postal_code'],
+      ));
     }
     if (placemark.country?.isNotEmpty == true) {
-      components['country'] = placemark.country!;
-    }
-    if (placemark.isoCountryCode?.isNotEmpty == true) {
-      components['countryCode'] = placemark.isoCountryCode!;
+      components.add(AddressComponent(
+        longName: placemark.country!,
+        shortName: placemark.isoCountryCode ?? placemark.country!,
+        types: ['country'],
+      ));
     }
 
     return components;

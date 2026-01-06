@@ -8,7 +8,14 @@ import '../../../core/router/app_router.dart';
 
 /// Registration page for new users
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
+  final String phoneNumber;
+  final String countryCode;
+
+  const RegisterPage({
+    super.key,
+    required this.phoneNumber,
+    required this.countryCode,
+  });
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -43,6 +50,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
       context.read<AuthBloc>().add(
             AuthRegisterRequested(
+              phoneNumber: widget.phoneNumber,
+              countryCode: widget.countryCode,
               firstName: _firstNameController.text.trim(),
               lastName: _lastNameController.text.trim(),
               email: _emailController.text.trim().isNotEmpty

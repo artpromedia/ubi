@@ -69,22 +69,33 @@ class RideBloc extends Bloc<RideEvent, RideState> {
     );
 
     result.fold(
-      (failure) => emit(RideError(failure.message)),
-      (estimates) => emit(RideEstimatesLoaded(
+      onFailure: (failure) => emit(RideError(failure.userMessage)),
+      onSuccess: (estimates) => emit(RideEstimatesLoaded(
         pickup: event.pickup,
         dropoff: event.dropoff,
         estimates: estimates
-            .map((e) => RideEstimate(
-                  vehicleType: e.vehicleType,
-                  displayName: e.vehicleType, // TODO: Map to display name
-                  price: e.estimatedPrice,
+            .map((e) => RideEstimateUI(
+                  vehicleType: e.vehicleType.name,
+                  displayName: _getVehicleDisplayName(e.vehicleType),
+                  price: e.estimatedFare,
                   currency: e.currency,
-                  etaMinutes: e.estimatedDuration ~/ 60,
-                  surgeMultiplier: e.surgeMultiplier?.toString(),
+                  etaMinutes: e.etaMinutes,
+                  surgeMultiplier: e.surgePriceMultiplier?.toString(),
                 ))
             .toList(),
       )),
     );
+  }
+
+  /// Get display name for vehicle type
+  String _getVehicleDisplayName(VehicleType type) {
+    return switch (type) {
+      VehicleType.ubiX => 'UBI X',
+      VehicleType.ubiComfort => 'UBI Comfort',
+      VehicleType.ubiXL => 'UBI XL',
+      VehicleType.ubiLux => 'UBI Lux',
+      VehicleType.ubiMoto => 'UBI Moto',
+    };
   }
 
   Future<void> _onRideRequested(
@@ -103,8 +114,8 @@ class RideBloc extends Bloc<RideEvent, RideState> {
     );
 
     result.fold(
-      (failure) => emit(RideError(failure.message)),
-      (ride) {
+      onFailure: (failure) => emit(RideError(failure.userMessage)),
+      onSuccess: (ride) {
         emit(RideSearchingDriver(ride));
         // Start watching ride status
         add(RideWatchStarted(rideId: ride.id));
@@ -126,8 +137,8 @@ class RideBloc extends Bloc<RideEvent, RideState> {
     );
 
     result.fold(
-      (failure) => emit(RideError(failure.message)),
-      (_) {
+      onFailure: (failure) => emit(RideError(failure.userMessage)),
+      onSuccess: (_) {
         add(const RideWatchStopped());
         emit(RideCancelledState(
           rideId: event.rideId,
@@ -148,13 +159,13 @@ class RideBloc extends Bloc<RideEvent, RideState> {
       RateRideParams(
         rideId: event.rideId,
         rating: event.rating,
-        comment: event.comment,
+        review: event.comment,
       ),
     );
 
     result.fold(
-      (failure) => emit(RideError(failure.message)),
-      (_) => emit(RideCompleted(ride: currentState.ride, rated: true)),
+      onFailure: (failure) => emit(RideError(failure.userMessage)),
+      onSuccess: (_) => emit(RideCompleted(ride: currentState.ride, rated: true)),
     );
   }
 
@@ -170,8 +181,8 @@ class RideBloc extends Bloc<RideEvent, RideState> {
     );
 
     result.fold(
-      (failure) => emit(RideError(failure.message)),
-      (_) {
+      onFailure: (failure) => emit(RideError(failure.userMessage)),
+      onSuccess: (_) {
         // Tip added successfully, state remains the same
       },
     );
@@ -190,8 +201,8 @@ class RideBloc extends Bloc<RideEvent, RideState> {
     );
 
     rideResult.fold(
-      (failure) => emit(RideError(failure.message)),
-      (rideStream) {
+      onFailure: (failure) => emit(RideError(failure.userMessage)),
+      onSuccess: (rideStream) {
         _rideSubscription = rideStream.listen(
           (ride) => add(RideStatusUpdated(ride)),
           onError: (error) => add(RideCleared()),
@@ -205,10 +216,10 @@ class RideBloc extends Bloc<RideEvent, RideState> {
     );
 
     locationResult.fold(
-      (failure) {
+      onFailure: (failure) {
         // Driver location not available yet, that's OK
       },
-      (locationStream) {
+      onSuccess: (locationStream) {
         _driverLocationSubscription = locationStream.listen(
           (location) => add(DriverLocationUpdated(location)),
         );
@@ -239,13 +250,15 @@ class RideBloc extends Bloc<RideEvent, RideState> {
 
     switch (ride.status) {
       case RideStatus.pending:
+      case RideStatus.searching:
         emit(RideSearchingDriver(ride));
-      case RideStatus.accepted:
+      case RideStatus.driverAssigned:
+      case RideStatus.driverArriving:
         emit(RideDriverAssigned(
           ride: ride,
           driverLocation: currentDriverLocation,
         ));
-      case RideStatus.arrived:
+      case RideStatus.driverArrived:
         emit(RideDriverArrived(ride));
       case RideStatus.inProgress:
         emit(RideInProgress(
@@ -256,6 +269,7 @@ class RideBloc extends Bloc<RideEvent, RideState> {
         add(const RideWatchStopped());
         emit(RideCompleted(ride: ride));
       case RideStatus.cancelled:
+      case RideStatus.noDrivers:
         add(const RideWatchStopped());
         emit(RideCancelledState(rideId: ride.id));
     }
@@ -291,18 +305,18 @@ class RideBloc extends Bloc<RideEvent, RideState> {
     );
 
     result.fold(
-      (failure) {
+      onFailure: (failure) {
         // Silently fail for search - don't show error state
       },
-      (places) => emit(PlaceSearchResults(
+      onSuccess: (places) => emit(PlaceSearchResults(
         query: event.query,
         results: places
-            .map((p) => PlaceResult(
+            .map((p) => PlaceResultUI(
                   placeId: p.placeId ?? '',
                   name: p.name,
                   address: p.address ?? '',
-                  lat: p.latitude,
-                  lng: p.longitude,
+                  lat: p.location?.latitude ?? 0,
+                  lng: p.location?.longitude ?? 0,
                 ))
             .toList(),
       )),
@@ -318,10 +332,10 @@ class RideBloc extends Bloc<RideEvent, RideState> {
     );
 
     result.fold(
-      (failure) {
+      onFailure: (failure) {
         // Silently fail - drivers on map is optional
       },
-      (drivers) => emit(NearbyDriversLoaded(
+      onSuccess: (drivers) => emit(NearbyDriversLoaded(
         drivers.map((d) => d.currentLocation!).toList(),
       )),
     );

@@ -10,25 +10,25 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # Core package
   ubi_core:
     path: ../core
-  
+
   # Local Database
   isar: ^3.1.0+1
   isar_flutter_libs: ^3.1.0+1
-  
+
   # Secure Storage
   flutter_secure_storage: ^9.0.0
-  
+
   # Shared Preferences
   shared_preferences: ^2.2.2
-  
+
   # DI
   get_it: ^7.6.4
   injectable: ^2.3.2
-  
+
   # Utilities
   path_provider: ^2.1.1
   crypto: ^3.0.3

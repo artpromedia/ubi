@@ -103,7 +103,7 @@ class UbiFoodOrderCard extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: UbiColors.serviceFood.withValues(alpha: 0.1),
+                    color: UbiColors.serviceFood.withOpacity(0.1),
                     borderRadius: UbiRadius.smRadius,
                   ),
                   child: Icon(
@@ -159,7 +159,7 @@ class UbiFoodOrderCard extends StatelessWidget {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: UbiColors.serviceFood.withValues(alpha: 0.1),
+                    color: UbiColors.serviceFood.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   alignment: Alignment.center,
@@ -222,7 +222,7 @@ class UbiFoodOrderCard extends StatelessWidget {
               ),
               Text(
                 totalAmount,
-                style: UbiTypography.priceStyle.copyWith(
+                style: UbiTypography.price(
                   color: UbiColors.serviceFood,
                 ),
               ),
@@ -275,7 +275,7 @@ class UbiFoodOrderCard extends StatelessWidget {
                         vertical: UbiSpacing.xs,
                       ),
                       decoration: BoxDecoration(
-                        color: UbiColors.serviceFood.withValues(alpha: 0.1),
+                        color: UbiColors.serviceFood.withOpacity(0.1),
                         borderRadius: UbiRadius.chipRadius,
                       ),
                       child: Row(

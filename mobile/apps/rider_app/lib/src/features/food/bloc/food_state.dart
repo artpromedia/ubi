@@ -130,8 +130,8 @@ class FoodOrderPlacing extends FoodState {
 }
 
 /// Order placed successfully
-class FoodOrderPlaced extends FoodState {
-  const FoodOrderPlaced({
+class FoodOrderPlacedState extends FoodState {
+  const FoodOrderPlacedState({
     required this.order,
   });
 

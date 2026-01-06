@@ -1,44 +1,62 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:get_it/get_it.dart';
-import 'package:injectable/injectable.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:ubi_api_client/ubi_api_client.dart';
+import 'package:ubi_api_client/ubi_api_client.dart' as api_client;
+import 'package:ubi_core/ubi_core.dart';
 import 'package:ubi_location/ubi_location.dart';
-import 'package:ubi_storage/ubi_storage.dart';
+import 'package:ubi_storage/ubi_storage.dart' as storage;
 
+import '../../data/repositories/auth_repository_impl.dart';
+import '../../data/repositories/ride_repository_impl.dart';
 import '../../features/auth/bloc/auth_bloc.dart';
 import '../../features/connectivity/bloc/connectivity_bloc.dart';
 import '../../features/delivery/bloc/delivery_bloc.dart';
 import '../../features/food/bloc/food_bloc.dart';
 import '../../features/profile/bloc/profile_bloc.dart';
 import '../../features/ride/bloc/ride_bloc.dart';
-import 'injection.config.dart';
+
+import '../../data/repositories/auth_repository_impl.dart';
+import '../../data/repositories/ride_repository_impl.dart';
+import '../../features/auth/bloc/auth_bloc.dart';
+import '../../features/connectivity/bloc/connectivity_bloc.dart';
+import '../../features/delivery/bloc/delivery_bloc.dart';
+import '../../features/food/bloc/food_bloc.dart';
+import '../../features/profile/bloc/profile_bloc.dart';
+import '../../features/ride/bloc/ride_bloc.dart';
 
 final getIt = GetIt.instance;
 
-@InjectableInit(
-  initializerName: 'init',
-  preferRelativeImports: true,
-  asExtension: true,
-)
 Future<void> configureDependencies() async {
-  // Initialize storage first (async)
-  await initializeStorage(getIt);
-
-  // Register API module
-  registerApiModule(getIt);
-
-  // Register location module
-  registerLocationModule(getIt);
-
-  // Configure API client with token storage
-  final tokenStorage = getIt<TokenStorage>();
-  final apiConfig = ApiConfig.development(); // or staging/production
-
-  getIt.registerSingleton<ApiClient>(
-    ApiClient(
-      config: apiConfig,
-      tokenStorage: _TokenStorageAdapter(tokenStorage),
-    ),
+  // === External Dependencies ===
+  
+  // Connectivity checker
+  getIt.registerLazySingleton<ConnectivityChecker>(
+    () => _ConnectivityCheckerImpl(),
   );
+  
+  // Google Sign In
+  getIt.registerLazySingleton<GoogleSignIn>(
+    () => GoogleSignIn(scopes: ['email', 'profile']),
+  );
+
+  // === Storage Layer ===
+  await storage.initializeStorage(getIt);
+
+  // === API Layer ===
+  final storageTokenStorage = getIt<storage.TokenStorage>();
+  final apiTokenStorage = _TokenStorageAdapter(storageTokenStorage);
+  final connectivityChecker = getIt<ConnectivityChecker>();
+  
+  registerApiModule(
+    getIt,
+    tokenStorage: apiTokenStorage,
+    connectivityChecker: connectivityChecker,
+    config: ApiConfig.development(),
+  );
+
+  // === Location Layer ===
+  registerLocationModule(getIt);
 
   // Configure places service
   getIt<PlacesService>().configure(
@@ -48,59 +66,142 @@ Future<void> configureDependencies() async {
     ),
   );
 
-  // Register BLoCs
-  _registerBlocs();
+  // === Repository Layer ===
+  _registerRepositories();
 
-  // Initialize injectable modules
-  getIt.init();
+  // === Use Cases Layer ===
+  _registerUseCases();
+
+  // === BLoC Layer ===
+  _registerBlocs();
 }
 
-/// Register all BLoCs as lazy singletons
+/// Register repository implementations
+void _registerRepositories() {
+  // Auth Repository
+  getIt.registerLazySingleton<AuthRepository>(
+    () => AuthRepositoryImpl(
+      authService: getIt<AuthService>(),
+      tokenStorage: getIt<storage.TokenStorage>(),
+    ),
+  );
+
+  // Ride Repository
+  getIt.registerLazySingleton<RideRepository>(
+    () => RideRepositoryImpl(
+      rideService: getIt<RideService>(),
+    ),
+  );
+}
+
+/// Register use cases
+void _registerUseCases() {
+  final rideRepo = getIt<RideRepository>();
+
+  // Ride Use Cases
+  getIt.registerLazySingleton<GetRideEstimates>(
+    () => GetRideEstimatesUseCase(rideRepo),
+  );
+  getIt.registerLazySingleton<RequestRide>(
+    () => RequestRideUseCase(rideRepo),
+  );
+  getIt.registerLazySingleton<CancelRide>(
+    () => CancelRideUseCase(rideRepo),
+  );
+  getIt.registerLazySingleton<RateRide>(
+    () => RateRideUseCase(rideRepo),
+  );
+  getIt.registerLazySingleton<AddRideTip>(
+    () => AddRideTipUseCase(rideRepo),
+  );
+  getIt.registerLazySingleton<WatchRideStatus>(
+    () => WatchRideStatus(rideRepo),
+  );
+  getIt.registerLazySingleton<WatchDriverLocation>(
+    () => WatchDriverLocation(rideRepo),
+  );
+  getIt.registerLazySingleton<GetNearbyDrivers>(
+    () => GetNearbyDriversUseCase(rideRepo),
+  );
+  getIt.registerLazySingleton<SearchPlaces>(
+    () => SearchPlacesUseCase(rideRepo),
+  );
+}
+
+/// Register all BLoCs
 void _registerBlocs() {
   // Auth BLoC - singleton for app-wide auth state
-  getIt.registerLazySingleton<AuthBloc>(() => AuthBloc());
+  getIt.registerLazySingleton<AuthBloc>(
+    () => AuthBloc(
+      authRepository: getIt<AuthRepository>(),
+      tokenStorage: getIt<storage.TokenStorage>(),
+      googleSignIn: getIt<GoogleSignIn>(),
+    ),
+  );
 
   // Connectivity BLoC - singleton for network monitoring
   getIt.registerLazySingleton<ConnectivityBloc>(() => ConnectivityBloc());
 
+  // Ride BLoC - factory for fresh instances per screen
+  getIt.registerFactory<RideBloc>(
+    () => RideBloc(
+      getRideEstimates: getIt<GetRideEstimates>(),
+      requestRide: getIt<RequestRide>(),
+      cancelRide: getIt<CancelRide>(),
+      rateRide: getIt<RateRide>(),
+      addRideTip: getIt<AddRideTip>(),
+      watchRideStatus: getIt<WatchRideStatus>(),
+      watchDriverLocation: getIt<WatchDriverLocation>(),
+      getNearbyDrivers: getIt<GetNearbyDrivers>(),
+      searchPlaces: getIt<SearchPlaces>(),
+    ),
+  );
+
   // Feature BLoCs - factories for fresh instances per screen
-  getIt.registerFactory<RideBloc>(() => RideBloc());
   getIt.registerFactory<FoodBloc>(() => FoodBloc());
   getIt.registerFactory<DeliveryBloc>(() => DeliveryBloc());
   getIt.registerFactory<ProfileBloc>(() => ProfileBloc());
 }
 
-/// Adapter to bridge TokenStorage with API client interface
-class _TokenStorageAdapter implements TokenStorageInterface {
-  _TokenStorageAdapter(this._tokenStorage);
-
-  final TokenStorage _tokenStorage;
+/// Simple connectivity checker implementation
+class _ConnectivityCheckerImpl implements ConnectivityChecker {
+  final Connectivity _connectivity = Connectivity();
 
   @override
-  Future<String?> getAccessToken() => _tokenStorage.getAccessToken();
+  Future<bool> hasConnection() async {
+    final result = await _connectivity.checkConnectivity();
+    return result != ConnectivityResult.none;
+  }
 
   @override
-  Future<String?> getRefreshToken() => _tokenStorage.getRefreshToken();
+  Stream<bool> get connectivityStream {
+    return _connectivity.onConnectivityChanged.map(
+      (result) => result != ConnectivityResult.none,
+    );
+  }
+}
 
+/// Adapter to bridge storage.TokenStorage to api_client.TokenStorage interface
+class _TokenStorageAdapter implements api_client.TokenStorage {
+  _TokenStorageAdapter(this._storage);
+  
+  final storage.TokenStorage _storage;
+  
+  @override
+  Future<String?> getAccessToken() => _storage.getAccessToken();
+  
+  @override
+  Future<String?> getRefreshToken() => _storage.getRefreshToken();
+  
   @override
   Future<void> saveTokens({
     required String accessToken,
     required String refreshToken,
-  }) async {
-    await _tokenStorage.saveTokens(AuthTokens(
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-    ));
-  }
-
+  }) => _storage.saveTokens(
+    accessToken: accessToken,
+    refreshToken: refreshToken,
+  );
+  
   @override
-  Future<void> clearTokens() => _tokenStorage.clearTokens();
-}
-
-/// Interface expected by API client for token storage
-abstract class TokenStorageInterface {
-  Future<String?> getAccessToken();
-  Future<String?> getRefreshToken();
-  Future<void> saveTokens({required String accessToken, required String refreshToken});
-  Future<void> clearTokens();
+  Future<void> clearTokens() => _storage.clearTokens();
 }

@@ -12,10 +12,10 @@ class ConnectivityStarted extends ConnectivityEvent {
 }
 
 class ConnectivityChanged extends ConnectivityEvent {
-  const ConnectivityChanged(this.results);
+  const ConnectivityChanged(this.result);
 
-  final List<ConnectivityResult> results;
+  final ConnectivityResult result;
 
   @override
-  List<Object?> get props => [results];
+  List<Object?> get props => [result];
 }

@@ -40,8 +40,8 @@ sealed class Result<T> with _$Result<T> {
     );
   }
 
-  /// Map success value
-  Result<R> map<R>(R Function(T data) mapper) {
+  /// Map success value to a new type
+  Result<R> mapData<R>(R Function(T data) mapper) {
     return when(
       success: (data) => Result.success(mapper(data)),
       failure: (failure) => Result.failure(failure),
@@ -133,7 +133,7 @@ extension FutureResultExtension<T> on Future<Result<T>> {
   /// Map success value
   Future<Result<R>> mapSuccess<R>(R Function(T data) mapper) async {
     final result = await this;
-    return result.map(mapper);
+    return result.mapData(mapper);
   }
 
   /// Flat map success value

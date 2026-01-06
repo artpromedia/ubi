@@ -15,6 +15,7 @@ class RideMapper {
   static Ride fromRideDto(RideDto dto) {
     return Ride(
       id: dto.id,
+      riderId: '', // Not available in DTO, set empty
       status: _mapRideStatus(dto.status),
       pickupLocation: GeoLocation(
         latitude: dto.pickupLatitude,
@@ -30,21 +31,20 @@ class RideMapper {
       driver: dto.driver != null ? fromDriverDto(dto.driver!) : null,
       vehicle: dto.vehicle != null ? fromVehicleDto(dto.vehicle!) : null,
       estimatedFare: dto.estimatedFare,
-      finalFare: dto.finalFare,
+      actualFare: dto.finalFare,
       currency: dto.currency,
-      estimatedDuration: dto.duration != null 
-          ? Duration(seconds: dto.duration!) 
+      estimatedDurationMinutes: dto.duration != null 
+          ? (dto.duration! / 60).round() 
           : null,
-      estimatedDistance: dto.distance,
-      scheduledTime: dto.scheduledTime,
+      estimatedDistanceKm: dto.distance != null 
+          ? dto.distance! / 1000 
+          : null,
       startedAt: dto.startedAt,
       completedAt: dto.completedAt,
       cancelledAt: dto.cancelledAt,
       cancellationReason: dto.cancellationReason != null
           ? _mapCancellationReason(dto.cancellationReason!)
           : null,
-      rating: dto.rating,
-      createdAt: dto.createdAt,
     );
   }
 
@@ -52,12 +52,11 @@ class RideMapper {
   static Driver fromDriverDto(DriverDto dto) {
     return Driver(
       id: dto.id,
-      firstName: dto.firstName,
-      lastName: dto.lastName,
+      name: dto.fullName,
       profileImageUrl: dto.profileImageUrl,
       phoneNumber: dto.phoneNumber,
       rating: dto.rating,
-      totalRides: dto.totalRides,
+      totalTrips: dto.totalRides,
       currentLocation: dto.currentLatitude != null && dto.currentLongitude != null
           ? GeoLocation(
               latitude: dto.currentLatitude!,
@@ -76,7 +75,7 @@ class RideMapper {
       model: dto.model,
       year: dto.year,
       color: dto.color,
-      licensePlate: dto.licensePlate,
+      plateNumber: dto.licensePlate,
       imageUrl: dto.imageUrl,
     );
   }
@@ -85,17 +84,12 @@ class RideMapper {
   static RideEstimate fromRideEstimateDto(RideEstimateDto dto) {
     return RideEstimate(
       vehicleType: _mapVehicleType(dto.vehicleType),
-      vehicleName: dto.vehicleName,
-      minFare: dto.minFare,
-      maxFare: dto.maxFare,
+      estimatedFare: (dto.minFare + dto.maxFare) / 2,
       currency: dto.currency,
-      estimatedDuration: Duration(seconds: dto.estimatedDuration),
-      estimatedDistance: dto.estimatedDistance,
-      eta: Duration(seconds: dto.eta),
-      surgeMultiplier: dto.surgeMultiplier,
-      vehicleImageUrl: dto.vehicleImageUrl,
-      capacity: dto.capacity,
-      features: dto.features,
+      estimatedDurationMinutes: (dto.estimatedDuration / 60).round(),
+      estimatedDistanceKm: dto.estimatedDistance / 1000,
+      etaMinutes: (dto.eta / 60).round(),
+      surgePriceMultiplier: dto.surgeMultiplier,
     );
   }
 
@@ -108,7 +102,6 @@ class RideMapper {
       location: dto.latitude != null && dto.longitude != null
           ? GeoLocation(latitude: dto.latitude!, longitude: dto.longitude!)
           : null,
-      types: dto.types,
       distance: dto.distance,
     );
   }
@@ -118,15 +111,11 @@ class RideMapper {
     return PlaceDetails(
       placeId: dto.placeId,
       name: dto.name,
-      address: dto.address,
-      formattedAddress: dto.formattedAddress,
+      formattedAddress: dto.formattedAddress ?? dto.address,
       location: GeoLocation(
         latitude: dto.latitude,
         longitude: dto.longitude,
       ),
-      phoneNumber: dto.phoneNumber,
-      website: dto.website,
-      types: dto.types,
     );
   }
 
@@ -139,10 +128,8 @@ class RideMapper {
       dropoffLatitude: request.dropoffLocation.latitude,
       dropoffLongitude: request.dropoffLocation.longitude,
       dropoffAddress: request.dropoffAddress,
-      vehicleType: request.vehicleType.value,
-      paymentMethodId: request.paymentMethodId,
-      scheduledTime: request.scheduledTime,
-      notes: request.notes,
+      vehicleType: request.vehicleType.name,
+      paymentMethodId: request.paymentMethodId ?? 'cash',
       promoCode: request.promoCode,
     );
   }
@@ -154,12 +141,15 @@ class RideMapper {
         return RideStatus.pending;
       case 'searching':
         return RideStatus.searching;
+      case 'driver_assigned':
       case 'accepted':
-        return RideStatus.accepted;
+        return RideStatus.driverAssigned;
+      case 'driver_arriving':
       case 'arriving':
-        return RideStatus.arriving;
+        return RideStatus.driverArriving;
+      case 'driver_arrived':
       case 'arrived':
-        return RideStatus.arrived;
+        return RideStatus.driverArrived;
       case 'in_progress':
       case 'inprogress':
         return RideStatus.inProgress;
@@ -167,6 +157,8 @@ class RideMapper {
         return RideStatus.completed;
       case 'cancelled':
         return RideStatus.cancelled;
+      case 'no_drivers':
+        return RideStatus.noDrivers;
       default:
         return RideStatus.pending;
     }
@@ -175,20 +167,28 @@ class RideMapper {
   /// Map vehicle type string to VehicleType enum
   static VehicleType _mapVehicleType(String type) {
     switch (type.toLowerCase()) {
+      case 'ubi_x':
+      case 'ubix':
       case 'economy':
-        return VehicleType.economy;
+        return VehicleType.ubiX;
+      case 'ubi_comfort':
+      case 'ubicomfort':
       case 'comfort':
-        return VehicleType.comfort;
-      case 'premium':
-        return VehicleType.premium;
+        return VehicleType.ubiComfort;
+      case 'ubi_xl':
+      case 'ubixl':
       case 'xl':
-        return VehicleType.xl;
+        return VehicleType.ubiXL;
+      case 'ubi_lux':
+      case 'ubilux':
+      case 'premium':
+        return VehicleType.ubiLux;
+      case 'ubi_moto':
+      case 'ubimoto':
       case 'moto':
-        return VehicleType.moto;
-      case 'tuktuk':
-        return VehicleType.tuktuk;
+        return VehicleType.ubiMoto;
       default:
-        return VehicleType.economy;
+        return VehicleType.ubiX;
     }
   }
 
@@ -201,15 +201,9 @@ class RideMapper {
       case 'driver_too_far':
       case 'drivertooFar':
         return CancellationReason.driverTooFar;
+      case 'wrong_pickup':
       case 'wrong_location':
-      case 'wronglocation':
-        return CancellationReason.wrongLocation;
-      case 'price_too_high':
-      case 'pricetoohigh':
-        return CancellationReason.priceTooHigh;
-      case 'found_alternative':
-      case 'foundalternative':
-        return CancellationReason.foundAlternative;
+        return CancellationReason.wrongPickup;
       case 'driver_asked':
       case 'driverasked':
         return CancellationReason.driverAsked;

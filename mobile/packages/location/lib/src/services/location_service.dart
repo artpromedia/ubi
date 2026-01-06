@@ -60,11 +60,11 @@ class LocationService {
       // Check permission
       final permissionStatus = await _permissionService.checkLocationPermission();
       if (permissionStatus == LocationPermissionStatus.serviceDisabled) {
-        return Result.failure(const LocationFailure('Location services are disabled'));
+        return Result.failure(const Failure.location(message: 'Location services are disabled'));
       }
       if (permissionStatus == LocationPermissionStatus.denied ||
           permissionStatus == LocationPermissionStatus.deniedForever) {
-        return Result.failure(const LocationFailure('Location permission denied'));
+        return Result.failure(const Failure.location(message: 'Location permission denied'));
       }
 
       // Get position
@@ -87,11 +87,11 @@ class LocationService {
         timestamp: position.timestamp,
       ));
     } on TimeoutException {
-      return Result.failure(const LocationFailure('Location request timed out'));
+      return Result.failure(const Failure.location(message: 'Location request timed out'));
     } on LocationServiceDisabledException {
-      return Result.failure(const LocationFailure('Location services are disabled'));
+      return Result.failure(const Failure.location(message: 'Location services are disabled'));
     } catch (e) {
-      return Result.failure(LocationFailure('Failed to get location: $e'));
+      return Result.failure(Failure.location(message: 'Failed to get location: $e'));
     }
   }
 
@@ -113,7 +113,7 @@ class LocationService {
         timestamp: position.timestamp,
       ));
     } catch (e) {
-      return Result.failure(LocationFailure('Failed to get last known location: $e'));
+      return Result.failure(Failure.location(message: 'Failed to get last known location: $e'));
     }
   }
 
@@ -148,9 +148,6 @@ class LocationService {
             timestamp: position.timestamp,
           ),
           timestamp: position.timestamp ?? DateTime.now(),
-          accuracy: position.accuracy,
-          bearing: position.heading,
-          speed: position.speed,
         ));
       },
       onError: (error) {
@@ -170,7 +167,7 @@ class LocationService {
       // Check background permission
       final permissionStatus = await _permissionService.requestBackgroundPermission();
       if (permissionStatus != LocationPermissionStatus.granted) {
-        return Result.failure(const LocationFailure('Background location permission required'));
+        return Result.failure(const Failure.location(message: 'Background location permission required'));
       }
 
       // Start tracking
@@ -183,7 +180,7 @@ class LocationService {
       _isBackgroundTrackingActive = true;
       return Result.success(null);
     } catch (e) {
-      return Result.failure(LocationFailure('Failed to start background tracking: $e'));
+      return Result.failure(Failure.location(message: 'Failed to start background tracking: $e'));
     }
   }
 
@@ -195,7 +192,7 @@ class LocationService {
       _isBackgroundTrackingActive = false;
       return Result.success(null);
     } catch (e) {
-      return Result.failure(LocationFailure('Failed to stop background tracking: $e'));
+      return Result.failure(Failure.location(message: 'Failed to stop background tracking: $e'));
     }
   }
 

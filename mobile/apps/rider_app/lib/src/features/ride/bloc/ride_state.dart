@@ -23,7 +23,7 @@ class RideLoading extends RideState {
 class RideEstimatesLoaded extends RideState {
   final Location pickup;
   final Location dropoff;
-  final List<RideEstimate> estimates;
+  final List<RideEstimateUI> estimates;
 
   const RideEstimatesLoaded({
     required this.pickup,
@@ -100,7 +100,7 @@ class RideCompleted extends RideState {
 /// Ride cancelled
 class RideCancelledState extends RideState {
   final String rideId;
-  final String? reason;
+  final CancellationReason? reason;
 
   const RideCancelledState({
     required this.rideId,
@@ -114,7 +114,7 @@ class RideCancelledState extends RideState {
 /// Place search results
 class PlaceSearchResults extends RideState {
   final String query;
-  final List<PlaceResult> results;
+  final List<PlaceResultUI> results;
 
   const PlaceSearchResults({
     required this.query,
@@ -145,8 +145,8 @@ class RideError extends RideState {
   List<Object?> get props => [message];
 }
 
-/// Ride estimate model
-class RideEstimate {
+/// Local ride estimate model for UI display
+class RideEstimateUI {
   final String vehicleType;
   final String displayName;
   final double price;
@@ -154,7 +154,7 @@ class RideEstimate {
   final int etaMinutes;
   final String? surgeMultiplier;
 
-  const RideEstimate({
+  const RideEstimateUI({
     required this.vehicleType,
     required this.displayName,
     required this.price,
@@ -164,15 +164,15 @@ class RideEstimate {
   });
 }
 
-/// Place search result model
-class PlaceResult {
+/// Local place search result model for UI display
+class PlaceResultUI {
   final String placeId;
   final String name;
   final String address;
   final double? lat;
   final double? lng;
 
-  const PlaceResult({
+  const PlaceResultUI({
     required this.placeId,
     required this.name,
     required this.address,

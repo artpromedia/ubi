@@ -5,7 +5,7 @@ library;
 
 import 'dart:io';
 
-import 'package:geolocator/geolocator.dart';
+import 'package:geolocator/geolocator.dart' as geolocator;
 import 'package:injectable/injectable.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -33,30 +33,30 @@ class PermissionService {
   /// Check current location permission status
   Future<LocationPermissionStatus> checkLocationPermission() async {
     // First check if location services are enabled
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    final serviceEnabled = await geolocator.Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return LocationPermissionStatus.serviceDisabled;
     }
 
     // Check permission status
-    final permission = await Geolocator.checkPermission();
+    final permission = await geolocator.Geolocator.checkPermission();
     return _mapGeolocatorPermission(permission);
   }
 
   /// Request location permission
   Future<LocationPermissionStatus> requestLocationPermission() async {
     // First check if location services are enabled
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    final serviceEnabled = await geolocator.Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return LocationPermissionStatus.serviceDisabled;
     }
 
     // Check current permission
-    LocationPermission permission = await Geolocator.checkPermission();
+    geolocator.LocationPermission permission = await geolocator.Geolocator.checkPermission();
 
-    if (permission == LocationPermission.denied) {
+    if (permission == geolocator.LocationPermission.denied) {
       // Request permission
-      permission = await Geolocator.requestPermission();
+      permission = await geolocator.Geolocator.requestPermission();
     }
 
     return _mapGeolocatorPermission(permission);
@@ -89,38 +89,38 @@ class PermissionService {
 
   /// Check if location services are enabled on device
   Future<bool> isLocationServiceEnabled() async {
-    return await Geolocator.isLocationServiceEnabled();
+    return await geolocator.Geolocator.isLocationServiceEnabled();
   }
 
   /// Open device location settings
   Future<bool> openLocationSettings() async {
-    return await Geolocator.openLocationSettings();
+    return await geolocator.Geolocator.openLocationSettings();
   }
 
   /// Open app settings (for permission management)
   Future<bool> openAppSettings() async {
-    return await Geolocator.openAppSettings();
+    return await geolocator.Geolocator.openAppSettings();
   }
 
   /// Stream location service status changes
   Stream<bool> get serviceStatusStream {
-    return Geolocator.getServiceStatusStream().map(
-      (status) => status == ServiceStatus.enabled,
+    return geolocator.Geolocator.getServiceStatusStream().map(
+      (status) => status == geolocator.ServiceStatus.enabled,
     );
   }
 
   /// Map Geolocator permission to our enum
-  LocationPermissionStatus _mapGeolocatorPermission(LocationPermission permission) {
+  LocationPermissionStatus _mapGeolocatorPermission(geolocator.LocationPermission permission) {
     switch (permission) {
-      case LocationPermission.always:
+      case geolocator.LocationPermission.always:
         return LocationPermissionStatus.granted;
-      case LocationPermission.whileInUse:
+      case geolocator.LocationPermission.whileInUse:
         return LocationPermissionStatus.whileInUse;
-      case LocationPermission.denied:
+      case geolocator.LocationPermission.denied:
         return LocationPermissionStatus.denied;
-      case LocationPermission.deniedForever:
+      case geolocator.LocationPermission.deniedForever:
         return LocationPermissionStatus.deniedForever;
-      case LocationPermission.unableToDetermine:
+      case geolocator.LocationPermission.unableToDetermine:
         return LocationPermissionStatus.denied;
     }
   }

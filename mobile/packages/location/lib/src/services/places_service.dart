@@ -74,14 +74,14 @@ class PlacesService {
       final response = await _httpClient.get(uri);
 
       if (response.statusCode != 200) {
-        return Result.failure(ServerFailure('Places API error: ${response.statusCode}'));
+        return Result.failure(Failure.server(message: 'Places API error: ${response.statusCode}'));
       }
 
       final data = json.decode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String;
 
       if (status != 'OK' && status != 'ZERO_RESULTS') {
-        return Result.failure(ServerFailure('Places API error: $status'));
+        return Result.failure(Failure.server(message: 'Places API error: $status'));
       }
 
       final results = (data['results'] as List<dynamic>?)
@@ -91,7 +91,7 @@ class PlacesService {
 
       return Result.success(results);
     } catch (e) {
-      return Result.failure(ServerFailure('Place search failed: $e'));
+      return Result.failure(Failure.server(message: 'Place search failed: $e'));
     }
   }
 
@@ -133,14 +133,14 @@ class PlacesService {
       final response = await _httpClient.get(uri);
 
       if (response.statusCode != 200) {
-        return Result.failure(ServerFailure('Autocomplete API error: ${response.statusCode}'));
+        return Result.failure(Failure.server(message: 'Autocomplete API error: ${response.statusCode}'));
       }
 
       final data = json.decode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String;
 
       if (status != 'OK' && status != 'ZERO_RESULTS') {
-        return Result.failure(ServerFailure('Autocomplete API error: $status'));
+        return Result.failure(Failure.server(message: 'Autocomplete API error: $status'));
       }
 
       final predictions = (data['predictions'] as List<dynamic>?)
@@ -150,7 +150,7 @@ class PlacesService {
 
       return Result.success(predictions);
     } catch (e) {
-      return Result.failure(ServerFailure('Autocomplete failed: $e'));
+      return Result.failure(Failure.server(message: 'Autocomplete failed: $e'));
     }
   }
 
@@ -170,20 +170,20 @@ class PlacesService {
       final response = await _httpClient.get(uri);
 
       if (response.statusCode != 200) {
-        return Result.failure(ServerFailure('Place details API error: ${response.statusCode}'));
+        return Result.failure(Failure.server(message: 'Place details API error: ${response.statusCode}'));
       }
 
       final data = json.decode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String;
 
       if (status != 'OK') {
-        return Result.failure(ServerFailure('Place details API error: $status'));
+        return Result.failure(Failure.server(message: 'Place details API error: $status'));
       }
 
       final result = data['result'] as Map<String, dynamic>;
       return Result.success(_parsePlaceDetails(result));
     } catch (e) {
-      return Result.failure(ServerFailure('Get place details failed: $e'));
+      return Result.failure(Failure.server(message: 'Get place details failed: $e'));
     }
   }
 
@@ -215,14 +215,14 @@ class PlacesService {
       final response = await _httpClient.get(uri);
 
       if (response.statusCode != 200) {
-        return Result.failure(ServerFailure('Nearby search API error: ${response.statusCode}'));
+        return Result.failure(Failure.server(message: 'Nearby search API error: ${response.statusCode}'));
       }
 
       final data = json.decode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String;
 
       if (status != 'OK' && status != 'ZERO_RESULTS') {
-        return Result.failure(ServerFailure('Nearby search API error: $status'));
+        return Result.failure(Failure.server(message: 'Nearby search API error: $status'));
       }
 
       final results = (data['results'] as List<dynamic>?)
@@ -232,7 +232,7 @@ class PlacesService {
 
       return Result.success(results);
     } catch (e) {
-      return Result.failure(ServerFailure('Nearby search failed: $e'));
+      return Result.failure(Failure.server(message: 'Nearby search failed: $e'));
     }
   }
 
@@ -281,7 +281,7 @@ class PlacesService {
 
     // Parse address components
     final addressComponentsList = data['address_components'] as List<dynamic>?;
-    final components = <String, String>{};
+    final components = <AddressComponent>[];
 
     if (addressComponentsList != null) {
       for (final component in addressComponentsList) {
@@ -290,27 +290,12 @@ class PlacesService {
         final longName = comp['long_name'] as String?;
         final shortName = comp['short_name'] as String?;
 
-        if (types.contains('street_number') && longName != null) {
-          components['streetNumber'] = longName;
-        }
-        if (types.contains('route') && longName != null) {
-          components['street'] = longName;
-        }
-        if (types.contains('sublocality') && longName != null) {
-          components['subLocality'] = longName;
-        }
-        if (types.contains('locality') && longName != null) {
-          components['city'] = longName;
-        }
-        if (types.contains('administrative_area_level_1') && longName != null) {
-          components['state'] = longName;
-        }
-        if (types.contains('postal_code') && longName != null) {
-          components['postalCode'] = longName;
-        }
-        if (types.contains('country')) {
-          if (longName != null) components['country'] = longName;
-          if (shortName != null) components['countryCode'] = shortName;
+        if (longName != null && shortName != null) {
+          components.add(AddressComponent(
+            longName: longName,
+            shortName: shortName,
+            types: types,
+          ));
         }
       }
     }
@@ -318,14 +303,14 @@ class PlacesService {
     return PlaceDetails(
       placeId: data['place_id'] as String,
       name: data['name'] as String? ?? '',
-      address: data['formatted_address'] as String? ?? '',
+      formattedAddress: data['formatted_address'] as String? ?? '',
       location: location != null
           ? GeoLocation(
               latitude: (location['lat'] as num).toDouble(),
               longitude: (location['lng'] as num).toDouble(),
             )
           : const GeoLocation(latitude: 0, longitude: 0),
-      addressComponents: components,
+      addressComponents: components.isNotEmpty ? components : null,
       types: (data['types'] as List<dynamic>?)?.cast<String>(),
     );
   }

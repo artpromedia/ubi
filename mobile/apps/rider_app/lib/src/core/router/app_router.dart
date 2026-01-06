@@ -96,33 +96,39 @@ class AppRouter {
         builder: (context, state) {
           final extras = state.extra as Map<String, dynamic>?;
           return OtpPage(
-            verificationId: extras?['verificationId'] ?? '',
+            phoneNumber: extras?['phoneNumber'] ?? '',
+            countryCode: extras?['countryCode'] ?? '',
           );
         },
       ),
       GoRoute(
         path: Routes.register,
-        builder: (context, state) => const RegisterPage(),
+        builder: (context, state) {
+          final extras = state.extra as Map<String, dynamic>?;
+          return RegisterPage(
+            phoneNumber: extras?['phoneNumber'] ?? '',
+            countryCode: extras?['countryCode'] ?? '',
+          );
+        },
       ),
 
-      // Home (with shell for bottom navigation)
-      GoRoute(
-        path: Routes.home,
-        builder: (context, state) => const HomePage(),
+      // Home shell for bottom navigation
+      ShellRoute(
+        builder: (context, state, child) => HomePage(child: child),
         routes: [
           // Ride routes
           GoRoute(
-            path: 'ride/search',
+            path: Routes.rideSearch,
             builder: (context, state) => const RideSearchPage(),
           ),
           GoRoute(
-            path: 'ride/:rideId/tracking',
+            path: '${Routes.home}/ride/:rideId/tracking',
             builder: (context, state) => RideTrackingPage(
               rideId: state.pathParameters['rideId']!,
             ),
           ),
           GoRoute(
-            path: 'ride/:rideId/details',
+            path: '${Routes.home}/ride/:rideId/details',
             builder: (context, state) => RideDetailsPage(
               rideId: state.pathParameters['rideId']!,
             ),
@@ -130,27 +136,27 @@ class AppRouter {
 
           // Food routes
           GoRoute(
-            path: 'food/restaurants',
+            path: Routes.foodRestaurants,
             builder: (context, state) => const RestaurantsPage(),
           ),
           GoRoute(
-            path: 'food/restaurant/:restaurantId',
+            path: '${Routes.home}/food/restaurant/:restaurantId',
             builder: (context, state) => RestaurantDetailPage(
               restaurantId: state.pathParameters['restaurantId']!,
             ),
           ),
           GoRoute(
-            path: 'food/cart',
+            path: Routes.foodCart,
             builder: (context, state) => const CartPage(),
           ),
           GoRoute(
-            path: 'food/order/:orderId/tracking',
+            path: '${Routes.home}/food/order/:orderId/tracking',
             builder: (context, state) => OrderTrackingPage(
               orderId: state.pathParameters['orderId']!,
             ),
           ),
           GoRoute(
-            path: 'food/order/:orderId/details',
+            path: '${Routes.home}/food/order/:orderId/details',
             builder: (context, state) => OrderDetailsPage(
               orderId: state.pathParameters['orderId']!,
             ),
@@ -158,46 +164,46 @@ class AppRouter {
 
           // Delivery routes
           GoRoute(
-            path: 'delivery/new',
+            path: Routes.deliveryNew,
             builder: (context, state) => const DeliveryNewPage(),
           ),
           GoRoute(
-            path: 'delivery/:deliveryId/tracking',
+            path: '${Routes.home}/delivery/:deliveryId/tracking',
             builder: (context, state) => DeliveryTrackingPage(
               deliveryId: state.pathParameters['deliveryId']!,
             ),
           ),
           GoRoute(
-            path: 'delivery/:deliveryId/details',
+            path: '${Routes.home}/delivery/:deliveryId/details',
             builder: (context, state) => DeliveryDetailsPage(
               deliveryId: state.pathParameters['deliveryId']!,
             ),
           ),
+
+          // Profile routes (inside shell)
+          GoRoute(
+            path: Routes.profile,
+            builder: (context, state) => const ProfilePage(),
+          ),
         ],
       ),
 
-      // Profile routes
+      // Profile sub-routes (outside shell for full-screen)
       GoRoute(
-        path: Routes.profile,
-        builder: (context, state) => const ProfilePage(),
-        routes: [
-          GoRoute(
-            path: 'edit',
-            builder: (context, state) => const EditProfilePage(),
-          ),
-          GoRoute(
-            path: 'places',
-            builder: (context, state) => const SavedPlacesPage(),
-          ),
-          GoRoute(
-            path: 'payments',
-            builder: (context, state) => const PaymentMethodsPage(),
-          ),
-          GoRoute(
-            path: 'settings',
-            builder: (context, state) => const SettingsPage(),
-          ),
-        ],
+        path: '${Routes.profile}/edit',
+        builder: (context, state) => const EditProfilePage(),
+      ),
+      GoRoute(
+        path: '${Routes.profile}/places',
+        builder: (context, state) => const SavedPlacesPage(),
+      ),
+      GoRoute(
+        path: '${Routes.profile}/payments',
+        builder: (context, state) => const PaymentMethodsPage(),
+      ),
+      GoRoute(
+        path: '${Routes.profile}/settings',
+        builder: (context, state) => const SettingsPage(),
       ),
     ],
   );

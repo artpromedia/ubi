@@ -37,8 +37,11 @@ class _LoginPageState extends State<LoginPage> {
 
   void _onSubmit() {
     if (_formKey.currentState?.validate() ?? false) {
-      final phoneNumber = '$_selectedCountry${_phoneController.text}';
-      context.read<AuthBloc>().add(AuthPhoneLoginRequested(phoneNumber));
+      final phoneNumber = _phoneController.text;
+      context.read<AuthBloc>().add(AuthPhoneLoginRequested(
+        phoneNumber: phoneNumber,
+        countryCode: _selectedCountry,
+      ));
     }
   }
 
@@ -58,10 +61,19 @@ class _LoginPageState extends State<LoginPage> {
           if (state is AuthOtpSent) {
             context.go(
               Routes.otp,
-              extra: state.verificationId,
+              extra: {
+                'phoneNumber': state.phoneNumber,
+                'countryCode': state.countryCode,
+              },
             );
           } else if (state is AuthNeedsRegistration) {
-            context.go(Routes.register);
+            context.go(
+              Routes.register,
+              extra: {
+                'phoneNumber': state.phoneNumber,
+                'countryCode': state.countryCode,
+              },
+            );
           } else if (state is AuthAuthenticated) {
             context.go(Routes.home);
           } else if (state is AuthError) {

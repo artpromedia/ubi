@@ -19,20 +19,20 @@ class ConnectivityBloc extends Bloc<ConnectivityEvent, ConnectivityState> {
   }
 
   final Connectivity _connectivity;
-  StreamSubscription<List<ConnectivityResult>>? _subscription;
+  StreamSubscription<ConnectivityResult>? _subscription;
 
   Future<void> _onStarted(
     ConnectivityStarted event,
     Emitter<ConnectivityState> emit,
   ) async {
     // Check current status
-    final results = await _connectivity.checkConnectivity();
-    _emitStatus(results, emit);
+    final result = await _connectivity.checkConnectivity();
+    _emitStatus(result, emit);
 
     // Listen to changes
     _subscription?.cancel();
     _subscription = _connectivity.onConnectivityChanged.listen(
-      (results) => add(ConnectivityChanged(results)),
+      (result) => add(ConnectivityChanged(result)),
     );
   }
 
@@ -40,18 +40,12 @@ class ConnectivityBloc extends Bloc<ConnectivityEvent, ConnectivityState> {
     ConnectivityChanged event,
     Emitter<ConnectivityState> emit,
   ) {
-    _emitStatus(event.results, emit);
+    _emitStatus(event.result, emit);
   }
 
-  void _emitStatus(List<ConnectivityResult> results, Emitter<ConnectivityState> emit) {
-    final hasConnection = results.any((r) => r != ConnectivityResult.none);
-    
-    if (hasConnection) {
-      final connectionType = results.firstWhere(
-        (r) => r != ConnectivityResult.none,
-        orElse: () => ConnectivityResult.other,
-      );
-      emit(ConnectivityOnline(connectionType));
+  void _emitStatus(ConnectivityResult result, Emitter<ConnectivityState> emit) {
+    if (result != ConnectivityResult.none) {
+      emit(ConnectivityOnline(result));
     } else {
       emit(const ConnectivityOffline());
     }

@@ -63,7 +63,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   void _completeOnboarding() {
     final prefs = getIt<AppPreferences>();
-    prefs.setHasCompletedOnboarding(true);
+    prefs.setOnboardingCompleted(true);
     context.go(Routes.login);
   }
 

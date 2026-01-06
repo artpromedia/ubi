@@ -11,13 +11,13 @@ abstract class RideRepository {
   });
 
   /// Request a new ride
-  Future<Result<Ride>> requestRide(RideRequest request);
+  Future<Result<Ride>> requestRide({required RideRequest request});
 
   /// Get ride by ID
   Future<Result<Ride>> getRideById(String rideId);
 
   /// Get current active ride
-  Future<Result<Ride?>> getCurrentRide();
+  Future<Result<Ride?>> getActiveRide();
 
   /// Get ride history
   Future<Result<List<Ride>>> getRideHistory({
@@ -33,19 +33,34 @@ abstract class RideRepository {
   });
 
   /// Rate a completed ride
-  Future<Result<Ride>> rateRide(
-    String rideId, {
-    required double rating,
+  Future<Result<void>> rateRide({
+    required String rideId,
+    required int rating,
     String? review,
   });
 
-  /// Update ride tip
-  Future<Result<Ride>> updateTip(String rideId, double tipAmount);
+  /// Add tip to a ride
+  Future<Result<Ride>> addTip({
+    required String rideId,
+    required double amount,
+  });
 
-  /// Get driver location stream
+  /// Get nearby available drivers
+  Future<Result<List<Driver>>> getNearbyDrivers({
+    required GeoLocation location,
+    VehicleType? vehicleType,
+  });
+
+  /// Watch ride updates in real-time
+  Stream<Ride> watchRide(String rideId);
+
+  /// Watch driver location updates
+  Stream<GeoLocation> watchDriverLocation(String rideId);
+
+  /// Get driver location stream (returns Result for error handling)
   Stream<Result<GeoLocation>> getDriverLocationStream(String rideId);
 
-  /// Get ride status stream
+  /// Get ride status stream (returns Result for error handling)
   Stream<Result<Ride>> getRideStatusStream(String rideId);
 
   /// Get saved places
@@ -58,16 +73,23 @@ abstract class RideRepository {
   Future<Result<void>> removeSavedPlace(String placeId);
 
   /// Search places
-  Future<Result<List<PlaceSearchResult>>> searchPlaces(
-    String query, {
-    GeoLocation? nearLocation,
+  Future<Result<List<PlaceSearchResult>>> searchPlaces({
+    required String query,
+    GeoLocation? location,
+  });
+
+  /// Autocomplete places for search input
+  Future<Result<List<PlaceSearchResult>>> autocompletePlaces({
+    required String input,
+    required String sessionToken,
+    GeoLocation? location,
   });
 
   /// Get place details
   Future<Result<PlaceDetails>> getPlaceDetails(String placeId);
 
-  /// Reverse geocode location
-  Future<Result<String>> reverseGeocode(GeoLocation location);
+  /// Reverse geocode location to place details
+  Future<Result<PlaceDetails>> reverseGeocode(GeoLocation location);
 
   /// Get route polyline
   Future<Result<List<GeoLocation>>> getRoutePolyline(
@@ -75,6 +97,4 @@ abstract class RideRepository {
     GeoLocation dropoff,
   );
 }
-
-// Note: SavedPlace, PlaceSearchResult, PlaceDetails are defined in entities/location.dart
 

@@ -3,40 +3,64 @@ import '../entities/user.dart';
 
 /// Authentication repository interface
 abstract class AuthRepository {
-  /// Sign in with phone number (request OTP)
-  Future<Result<void>> signInWithPhone(String phoneNumber);
+  /// Request OTP for phone number authentication
+  Future<Result<void>> requestOtp({
+    required String phoneNumber,
+    required String countryCode,
+  });
 
-  /// Verify OTP
-  Future<Result<AuthResult>> verifyOtp(String phoneNumber, String otp);
+  /// Verify OTP and authenticate user
+  Future<Result<User>> verifyOtp({
+    required String phoneNumber,
+    required String countryCode,
+    required String code,
+  });
 
-  /// Resend OTP
-  Future<Result<void>> resendOtp(String phoneNumber);
+  /// Resend OTP to phone number
+  Future<Result<void>> resendOtp({
+    required String phoneNumber,
+    required String countryCode,
+  });
 
-  /// Sign in with Google
-  Future<Result<AuthResult>> signInWithGoogle();
+  /// Register new user after OTP verification
+  Future<Result<User>> register({
+    required String phoneNumber,
+    required String countryCode,
+    required String firstName,
+    required String lastName,
+    String? email,
+  });
 
-  /// Sign in with Apple
-  Future<Result<AuthResult>> signInWithApple();
+  /// Sign in with Google OAuth
+  Future<Result<User>> signInWithGoogle(String idToken);
 
-  /// Sign out
-  Future<Result<void>> signOut();
+  /// Sign in with Apple Sign-In
+  Future<Result<User>> signInWithApple({
+    required String identityToken,
+    required String authorizationCode,
+    String? firstName,
+    String? lastName,
+  });
 
-  /// Get current user
+  /// Log out current user
+  Future<Result<void>> logout();
+
+  /// Get current authenticated user
   Future<Result<User?>> getCurrentUser();
 
-  /// Check if user is authenticated
+  /// Check if user is currently authenticated
   Future<Result<bool>> isAuthenticated();
 
-  /// Refresh auth token
-  Future<Result<String>> refreshToken();
+  /// Refresh authentication tokens
+  Future<Result<void>> refreshToken();
 
-  /// Get current auth token
+  /// Get current access token
   Future<Result<String?>> getAuthToken();
 
-  /// Stream of auth state changes
-  Stream<AuthState> get authStateChanges;
+  /// Stream of authentication state changes
+  Stream<User?> authStateChanges();
 
-  /// Delete account
+  /// Delete user account
   Future<Result<void>> deleteAccount();
 }
 

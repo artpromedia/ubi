@@ -44,7 +44,7 @@ class RideRequested extends RideEvent {
 /// Cancel a pending or active ride
 class RideCancelled extends RideEvent {
   final String rideId;
-  final String? reason;
+  final CancellationReason? reason;
 
   const RideCancelled({
     required this.rideId,

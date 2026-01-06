@@ -52,7 +52,7 @@ export 'src/core/extensions/num_extensions.dart';
 // === Utils ===
 export 'src/core/utils/validators.dart';
 export 'src/core/utils/formatters.dart';
-export 'src/core/utils/logger.dart';
+export 'src/core/utils/logger.dart' show UbiLogger;
 
 // === DI ===
 export 'src/di/injection.dart';

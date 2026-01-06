@@ -10,11 +10,13 @@ import '../../../core/router/app_router.dart';
 
 /// OTP verification page
 class OtpPage extends StatefulWidget {
-  final String verificationId;
+  final String phoneNumber;
+  final String countryCode;
 
   const OtpPage({
     super.key,
-    required this.verificationId,
+    required this.phoneNumber,
+    required this.countryCode,
   });
 
   @override
@@ -95,8 +97,9 @@ class _OtpPageState extends State<OtpPage> {
     if (_otp.length == 6) {
       context.read<AuthBloc>().add(
             AuthOtpVerified(
-              verificationId: widget.verificationId,
-              otp: _otp,
+              phoneNumber: widget.phoneNumber,
+              countryCode: widget.countryCode,
+              code: _otp,
             ),
           );
     }

@@ -1,9 +1,9 @@
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 
-/// Logging utility
-class Logger {
-  Logger._();
+/// UBI Logging utility
+class UbiLogger {
+  UbiLogger._();
 
   static const String _tag = 'UBI';
 

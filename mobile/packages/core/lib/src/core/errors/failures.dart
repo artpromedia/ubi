@@ -136,3 +136,6 @@ enum LocationFailureReason {
   timeout,
   unknown,
 }
+
+// Type alias for backwards compatibility
+typedef AuthFailure = AuthenticationFailure;

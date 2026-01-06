@@ -450,14 +450,14 @@ class FoodBloc extends Bloc<FoodEvent, FoodState> {
         status: FoodOrderStatus.confirmed,
         restaurant: _cartRestaurant ?? _sampleRestaurants.first,
         items: List.from(_cartItems),
-        subtotal: _cartItems.fold(
-          0,
+        subtotal: _cartItems.fold<double>(
+          0.0,
           (sum, item) => sum + (item.menuItem.price * item.quantity),
         ),
         deliveryFee: _cartRestaurant?.deliveryFee ?? 100,
         serviceFee: 50,
-        total: _cartItems.fold(
-              0,
+        total: _cartItems.fold<double>(
+              0.0,
               (sum, item) => sum + (item.menuItem.price * item.quantity),
             ) +
             (_cartRestaurant?.deliveryFee ?? 100) +
@@ -477,7 +477,7 @@ class FoodBloc extends Bloc<FoodEvent, FoodState> {
       _promoCode = null;
       _discount = 0;
 
-      emit(FoodOrderPlaced(order: order));
+      emit(FoodOrderPlacedState(order: order));
     } catch (e) {
       emit(FoodError(message: e.toString()));
     }

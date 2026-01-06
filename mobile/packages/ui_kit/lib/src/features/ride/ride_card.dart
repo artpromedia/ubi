@@ -85,7 +85,7 @@ class UbiRideCard extends StatelessWidget {
       onTap: onTap,
       borderColor: isSelected ? UbiColors.serviceRide : null,
       backgroundColor: isSelected
-          ? UbiColors.serviceRide.withValues(alpha: isDark ? 0.15 : 0.05)
+          ? UbiColors.serviceRide.withOpacity(isDark ? 0.15 : 0.05)
           : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -147,7 +147,7 @@ class UbiRideCard extends StatelessWidget {
               const Spacer(),
               Text(
                 price,
-                style: UbiTypography.priceStyle.copyWith(
+                style: UbiTypography.price(
                   color: UbiColors.serviceRide,
                 ),
               ),
@@ -406,7 +406,7 @@ class UbiVehicleOptionCard extends StatelessWidget {
         isDisabled: !isAvailable,
         borderColor: isSelected ? UbiColors.serviceRide : null,
         backgroundColor: isSelected
-            ? UbiColors.serviceRide.withValues(alpha: isDark ? 0.15 : 0.05)
+            ? UbiColors.serviceRide.withOpacity(isDark ? 0.15 : 0.05)
             : null,
         padding: EdgeInsets.all(UbiSpacing.md),
         child: Row(
@@ -654,7 +654,7 @@ class UbiDriverInfoCard extends StatelessWidget {
                         color: UbiColors.serviceRide,
                       ),
                       style: IconButton.styleFrom(
-                        backgroundColor: UbiColors.serviceRide.withValues(alpha: 0.1),
+                        backgroundColor: UbiColors.serviceRide.withOpacity(0.1),
                       ),
                     ),
                   if (onCallPressed != null) ...[
@@ -666,7 +666,7 @@ class UbiDriverInfoCard extends StatelessWidget {
                         color: UbiColors.serviceRide,
                       ),
                       style: IconButton.styleFrom(
-                        backgroundColor: UbiColors.serviceRide.withValues(alpha: 0.1),
+                        backgroundColor: UbiColors.serviceRide.withOpacity(0.1),
                       ),
                     ),
                   ],

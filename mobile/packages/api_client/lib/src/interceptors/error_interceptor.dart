@@ -47,19 +47,19 @@ class ErrorInterceptor extends Interceptor {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        return const Failure.timeout('Request timed out. Please try again.');
+        return const Failure.timeout(message: 'Request timed out. Please try again.');
 
       case DioExceptionType.connectionError:
-        return const Failure.network('Unable to connect. Please check your internet connection.');
+        return const Failure.network(message: 'Unable to connect. Please check your internet connection.');
 
       case DioExceptionType.badCertificate:
-        return const Failure.server('Security error. Please update the app.');
+        return const Failure.server(message: 'Security error. Please update the app.');
 
       case DioExceptionType.badResponse:
         return _mapResponseError(err.response);
 
       case DioExceptionType.cancel:
-        return const Failure.unknown('Request was cancelled');
+        return const Failure.unknown(message: 'Request was cancelled');
 
       case DioExceptionType.unknown:
         return _mapUnknownError(err);
@@ -69,7 +69,7 @@ class ErrorInterceptor extends Interceptor {
   /// Map HTTP response errors to failures
   Failure _mapResponseError(Response? response) {
     if (response == null) {
-      return const Failure.server('Server error. Please try again.');
+      return const Failure.server(message: 'Server error. Please try again.');
     }
 
     final statusCode = response.statusCode ?? 500;
@@ -101,42 +101,42 @@ class ErrorInterceptor extends Interceptor {
     switch (statusCode) {
       case HttpStatus.badRequest: // 400
         return Failure.validation(
-          serverMessage ?? 'Invalid request',
-          fieldErrors ?? {},
+          message: serverMessage ?? 'Invalid request',
+          fieldErrors: fieldErrors,
         );
 
       case HttpStatus.unauthorized: // 401
         return Failure.authentication(
-          serverMessage ?? 'Please log in to continue',
+          message: serverMessage ?? 'Please log in to continue',
         );
 
       case HttpStatus.forbidden: // 403
         return Failure.authorization(
-          serverMessage ?? 'You do not have permission to perform this action',
+          message: serverMessage ?? 'You do not have permission to perform this action',
         );
 
       case HttpStatus.notFound: // 404
         return Failure.notFound(
-          serverMessage ?? 'Resource not found',
+          message: serverMessage ?? 'Resource not found',
         );
 
       case HttpStatus.conflict: // 409
         return Failure.server(
-          serverMessage ?? 'Conflict with existing data',
+          message: serverMessage ?? 'Conflict with existing data',
         );
 
       case HttpStatus.unprocessableEntity: // 422
         return Failure.validation(
-          serverMessage ?? 'Validation failed',
-          fieldErrors ?? {},
+          message: serverMessage ?? 'Validation failed',
+          fieldErrors: fieldErrors,
         );
 
       case HttpStatus.tooManyRequests: // 429
         final retryAfter = response.headers.value('retry-after');
         final seconds = retryAfter != null ? int.tryParse(retryAfter) ?? 60 : 60;
         return Failure.rateLimit(
-          serverMessage ?? 'Too many requests. Please wait and try again.',
-          Duration(seconds: seconds),
+          message: serverMessage ?? 'Too many requests. Please wait and try again.',
+          retryAfterSeconds: seconds,
         );
 
       case HttpStatus.internalServerError: // 500
@@ -144,17 +144,17 @@ class ErrorInterceptor extends Interceptor {
       case HttpStatus.serviceUnavailable: // 503
       case HttpStatus.gatewayTimeout: // 504
         return Failure.server(
-          serverMessage ?? 'Server error. Please try again later.',
+          message: serverMessage ?? 'Server error. Please try again later.',
         );
 
       default:
         if (statusCode >= 400 && statusCode < 500) {
           return Failure.server(
-            serverMessage ?? 'Request error ($statusCode)',
+            message: serverMessage ?? 'Request error ($statusCode)',
           );
         }
         return Failure.server(
-          serverMessage ?? 'Server error ($statusCode)',
+          message: serverMessage ?? 'Server error ($statusCode)',
         );
     }
   }
@@ -166,23 +166,23 @@ class ErrorInterceptor extends Interceptor {
     // Socket exceptions indicate network issues
     if (error is SocketException) {
       return const Failure.network(
-        'Unable to connect. Please check your internet connection.',
+        message: 'Unable to connect. Please check your internet connection.',
       );
     }
 
     // SSL/TLS errors
     if (error is HandshakeException) {
       return const Failure.server(
-        'Security error. Please update the app or try again.',
+        message: 'Security error. Please update the app or try again.',
       );
     }
 
     // Generic error with message
     if (error != null) {
-      return Failure.unknown(error.toString());
+      return Failure.unknown(message: error.toString());
     }
 
-    return const Failure.unknown('An unexpected error occurred');
+    return const Failure.unknown(message: 'An unexpected error occurred');
   }
 }
 
@@ -197,7 +197,7 @@ extension DioExceptionExtension on DioException {
     if (err is Failure) {
       return err;
     }
-    return Failure.server(message ?? 'An error occurred');
+    return Failure.server(message: message ?? 'An error occurred');
   }
 }
 

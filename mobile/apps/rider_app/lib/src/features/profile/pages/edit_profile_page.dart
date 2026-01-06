@@ -28,8 +28,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
   void _loadUserData() {
     final state = context.read<AuthBloc>().state;
     if (state is AuthAuthenticated) {
-      _firstNameController.text = state.user.firstName;
-      _lastNameController.text = state.user.lastName;
+      _firstNameController.text = state.user.firstName ?? '';
+      _lastNameController.text = state.user.lastName ?? '';
       _emailController.text = state.user.email ?? '';
     }
   }
@@ -165,7 +165,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               BlocBuilder<AuthBloc, AuthState>(
                 builder: (context, state) {
                   final phone = state is AuthAuthenticated
-                      ? state.user.phone
+                      ? state.user.phoneNumber
                       : '';
                   return TextFormField(
                     initialValue: phone,

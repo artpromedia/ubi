@@ -83,8 +83,8 @@ class LocationProvider {
   /// Get current location once
   Future<Result<GeoLocation>> getCurrentLocation() async {
     final result = await _locationService.getCurrentLocation();
-    if (result.isSuccess) {
-      _currentLocationSubject.add(result.data);
+    if (result.isSuccess && result.dataOrNull != null) {
+      _currentLocationSubject.add(result.dataOrNull!);
     }
     return result;
   }
@@ -174,7 +174,7 @@ class LocationProvider {
   Future<Result<PlaceDetails>> reverseGeocodeCurrentLocation() async {
     final location = currentLocation;
     if (location == null) {
-      return Result.failure(const LocationFailure('No current location available'));
+      return Result.failure(const Failure.location(message: 'No current location available'));
     }
     return reverseGeocode(
       latitude: location.latitude,
@@ -231,7 +231,7 @@ class LocationProvider {
   }) async {
     final location = currentLocation;
     if (location == null) {
-      return Result.failure(const LocationFailure('No current location available'));
+      return Result.failure(const Failure.location(message: 'No current location available'));
     }
     return _placesService.getNearbyPlaces(
       location: location,

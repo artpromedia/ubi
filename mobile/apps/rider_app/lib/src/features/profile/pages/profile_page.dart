@@ -42,7 +42,7 @@ class ProfilePage extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          user?.phone ?? '',
+                          user?.phoneNumber ?? '',
                           style: TextStyle(color: Colors.grey[600]),
                         ),
                         const SizedBox(height: 16),

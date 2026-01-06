@@ -3,6 +3,7 @@
 /// Business logic for ride operations.
 library;
 
+import '../../core/errors/failures.dart';
 import '../../core/result/result.dart';
 import '../entities/location.dart';
 import '../entities/ride.dart';
@@ -44,14 +45,54 @@ class RequestRideUseCase implements UseCase<Ride, RequestRideParams> {
 
   @override
   Future<Result<Ride>> call(RequestRideParams params) {
-    return repository.requestRide(request: params.request);
+    return repository.requestRide(request: params.toRideRequest());
   }
 }
 
 class RequestRideParams {
-  const RequestRideParams({required this.request});
+  const RequestRideParams({
+    required this.pickup,
+    required this.dropoff,
+    required this.vehicleType,
+    this.pickupAddress,
+    this.dropoffAddress,
+    this.paymentMethodId,
+    this.promoCode,
+    this.note,
+    this.stops,
+  });
 
-  final RideRequest request;
+  final GeoLocation pickup;
+  final GeoLocation dropoff;
+  final String vehicleType;
+  final String? pickupAddress;
+  final String? dropoffAddress;
+  final String? paymentMethodId;
+  final String? promoCode;
+  final String? note;
+  final List<GeoLocation>? stops;
+
+  /// Convert to RideRequest for repository
+  RideRequest toRideRequest() {
+    return RideRequest(
+      pickupLocation: pickup,
+      dropoffLocation: dropoff,
+      pickupAddress: pickupAddress ?? 'Current Location',
+      dropoffAddress: dropoffAddress ?? 'Destination',
+      vehicleType: _parseVehicleType(vehicleType),
+      paymentMethodId: paymentMethodId,
+      promoCode: promoCode,
+      note: note,
+      stops: stops,
+    );
+  }
+
+  VehicleType _parseVehicleType(String type) {
+    return VehicleType.values.firstWhere(
+      (v) => v.name == type || v.toString().contains(type),
+      orElse: () => VehicleType.ubiX,
+    );
+  }
 }
 
 /// Get ride details
@@ -155,6 +196,9 @@ class AddTipParams {
   final String rideId;
   final double amount;
 }
+
+// Type alias for backwards compatibility
+typedef AddRideTipParams = AddTipParams;
 
 /// Get nearby drivers
 class GetNearbyDriversUseCase implements UseCase<List<Driver>, GetNearbyDriversParams> {
@@ -288,37 +332,59 @@ typedef GetRideEstimates = GetRideEstimatesUseCase;
 typedef RequestRide = RequestRideUseCase;
 typedef CancelRide = CancelRideUseCase;
 typedef RateRide = RateRideUseCase;
-typedef AddRideTip = UpdateRideTipUseCase;
+typedef AddRideTip = AddRideTipUseCase;
 typedef GetNearbyDrivers = GetNearbyDriversUseCase;
 typedef SearchPlaces = SearchPlacesUseCase;
 
-/// Watch ride status stream
-class WatchRideStatus implements StreamUseCase<Ride, String> {
+/// Parameters for watching ride status
+class WatchRideStatusParams {
+  const WatchRideStatusParams({required this.rideId});
+  final String rideId;
+}
+
+/// Watch ride status stream - returns Result<Stream> for initial error handling
+class WatchRideStatus implements ResultStreamUseCase<Ride, WatchRideStatusParams> {
   const WatchRideStatus(this.repository);
 
   final RideRepository repository;
 
   @override
-  Stream<Ride> call(String rideId) {
-    return repository.getRideStatusStream(rideId).map((result) => result.when(
-      success: (ride) => ride,
-      failure: (_) => throw Exception('Failed to watch ride status'),
-    ));
+  Future<Result<Stream<Ride>>> call(WatchRideStatusParams params) async {
+    try {
+      final stream = repository.getRideStatusStream(params.rideId).map((result) => result.when(
+        success: (ride) => ride,
+        failure: (failure) => throw Exception(failure.userMessage),
+      ));
+      return Result.success(stream);
+    } catch (e) {
+      return Result.failure(Failure.unknown(message: e.toString()));
+    }
   }
 }
 
-/// Watch driver location stream
-class WatchDriverLocation implements StreamUseCase<GeoLocation, String> {
+/// Parameters for watching driver location
+class WatchDriverLocationParams {
+  const WatchDriverLocationParams({required this.rideId});
+  final String rideId;
+}
+
+/// Watch driver location stream - returns Result<Stream> for initial error handling
+class WatchDriverLocation implements ResultStreamUseCase<GeoLocation, WatchDriverLocationParams> {
   const WatchDriverLocation(this.repository);
 
   final RideRepository repository;
 
   @override
-  Stream<GeoLocation> call(String rideId) {
-    return repository.getDriverLocationStream(rideId).map((result) => result.when(
-      success: (location) => location,
-      failure: (_) => throw Exception('Failed to watch driver location'),
-    ));
+  Future<Result<Stream<GeoLocation>>> call(WatchDriverLocationParams params) async {
+    try {
+      final stream = repository.getDriverLocationStream(params.rideId).map((result) => result.when(
+        success: (location) => location,
+        failure: (failure) => throw Exception(failure.userMessage),
+      ));
+      return Result.success(stream);
+    } catch (e) {
+      return Result.failure(Failure.unknown(message: e.toString()));
+    }
   }
 }
 

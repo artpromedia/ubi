@@ -114,7 +114,7 @@ class UbiCard extends StatelessWidget {
       case UbiCardVariant.elevated:
         effectiveBackgroundColor = backgroundColor ??
             (isDark ? UbiColors.cardDark : UbiColors.white);
-        effectiveShadow = isDark ? UbiShadows.cardDark : UbiShadows.card;
+        effectiveShadow = isDark ? UbiShadows.darkSm : UbiShadows.card;
         if (isSelected) {
           effectiveBorderColor = UbiColors.ubiGreen;
         }
@@ -138,7 +138,7 @@ class UbiCard extends StatelessWidget {
 
     // Apply disabled state
     if (isDisabled) {
-      effectiveBackgroundColor = effectiveBackgroundColor.withValues(alpha: 0.5);
+      effectiveBackgroundColor = effectiveBackgroundColor.withOpacity(0.5);
     }
 
     Widget card = Container(
@@ -357,7 +357,7 @@ class UbiServiceCard extends StatelessWidget {
       isDisabled: isDisabled,
       borderColor: isSelected ? serviceColor : null,
       backgroundColor: isSelected
-          ? serviceColor.withValues(alpha: isDark ? 0.2 : 0.1)
+          ? serviceColor.withOpacity(isDark ? 0.2 : 0.1)
           : null,
       padding: EdgeInsets.all(UbiSpacing.lg),
       child: Column(
@@ -367,7 +367,7 @@ class UbiServiceCard extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: serviceColor.withValues(alpha: isDark ? 0.3 : 0.15),
+              color: serviceColor.withOpacity(isDark ? 0.3 : 0.15),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(
