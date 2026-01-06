@@ -1,15 +1,15 @@
 "use client";
 
-import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import * as React from "react";
 import { cn } from "../lib/utils";
 
 /**
  * Stack - Vertical spacing primitive
- * 
+ *
  * Stacks children vertically with consistent spacing.
  * Simpler alternative to Flex for vertical layouts.
- * 
+ *
  * @example
  * <Stack gap={4}>
  *   <Card>Item 1</Card>
@@ -63,23 +63,47 @@ const stackVariants = cva("flex flex-col", {
 });
 
 export interface StackProps
-  extends React.HTMLAttributes<HTMLElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof stackVariants> {
   /** Use a different HTML element */
-  as?: "div" | "section" | "article" | "aside" | "ul" | "ol" | "nav" | "form" | "fieldset";
+  as?:
+    | "div"
+    | "section"
+    | "article"
+    | "aside"
+    | "ul"
+    | "ol"
+    | "nav"
+    | "form"
+    | "fieldset";
   /** Add a divider between items */
   divider?: React.ReactNode;
 }
 
-const Stack = React.forwardRef<HTMLElement, StackProps>(
-  ({ as: Component = "div", className, gap, align, justify, divider, children, ...props }, ref) => {
+const Stack = React.forwardRef<HTMLDivElement, StackProps>(
+  (
+    {
+      as: Component = "div",
+      className,
+      gap,
+      align,
+      justify,
+      divider,
+      children,
+      ...props
+    },
+    ref
+  ) => {
     // If divider is provided, intersperse it between children
     const childArray = React.Children.toArray(children).filter(Boolean);
     const content = divider
       ? childArray.reduce<React.ReactNode[]>((acc, child, index) => {
           if (index > 0) {
             acc.push(
-              <React.Fragment key={`divider-${index}`}>{divider}</React.Fragment>
+              <React.Fragment key={`divider-${index}`}>
+                {divider}
+              </React.Fragment>
             );
           }
           acc.push(child);
@@ -89,7 +113,7 @@ const Stack = React.forwardRef<HTMLElement, StackProps>(
 
     return (
       <Component
-        ref={ref as React.Ref<never>}
+        ref={ref as React.Ref<Element>}
         className={cn(stackVariants({ gap, align, justify }), className)}
         {...props}
       >
@@ -102,9 +126,9 @@ Stack.displayName = "Stack";
 
 /**
  * HStack - Horizontal spacing primitive
- * 
+ *
  * Stacks children horizontally with consistent spacing.
- * 
+ *
  * @example
  * <HStack gap={2}>
  *   <Button>Cancel</Button>
@@ -159,7 +183,8 @@ const hstackVariants = cva("flex flex-row", {
 });
 
 export interface HStackProps
-  extends React.HTMLAttributes<HTMLElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof hstackVariants> {
   /** Use a different HTML element */
   as?: "div" | "section" | "nav" | "ul" | "ol";
@@ -167,14 +192,29 @@ export interface HStackProps
   divider?: React.ReactNode;
 }
 
-const HStack = React.forwardRef<HTMLElement, HStackProps>(
-  ({ as: Component = "div", className, gap, align, justify, wrap, divider, children, ...props }, ref) => {
+const HStack = React.forwardRef<HTMLDivElement, HStackProps>(
+  (
+    {
+      as: Component = "div",
+      className,
+      gap,
+      align,
+      justify,
+      wrap,
+      divider,
+      children,
+      ...props
+    },
+    ref
+  ) => {
     const childArray = React.Children.toArray(children).filter(Boolean);
     const content = divider
       ? childArray.reduce<React.ReactNode[]>((acc, child, index) => {
           if (index > 0) {
             acc.push(
-              <React.Fragment key={`divider-${index}`}>{divider}</React.Fragment>
+              <React.Fragment key={`divider-${index}`}>
+                {divider}
+              </React.Fragment>
             );
           }
           acc.push(child);
@@ -184,7 +224,7 @@ const HStack = React.forwardRef<HTMLElement, HStackProps>(
 
     return (
       <Component
-        ref={ref as React.Ref<never>}
+        ref={ref as React.Ref<Element>}
         className={cn(hstackVariants({ gap, align, justify, wrap }), className)}
         {...props}
       >
@@ -195,4 +235,4 @@ const HStack = React.forwardRef<HTMLElement, HStackProps>(
 );
 HStack.displayName = "HStack";
 
-export { Stack, HStack, stackVariants, hstackVariants };
+export { HStack, hstackVariants, Stack, stackVariants };

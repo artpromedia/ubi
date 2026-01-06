@@ -17,10 +17,11 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
+    "@amplitude/analytics-browser": "^2.33.1",
+    "@tanstack/react-query": "^5.62.7",
     "@ubi/api-client": "workspace:*",
     "@ubi/ui": "workspace:*",
     "@ubi/utils": "workspace:*",
-    "@tanstack/react-query": "^5.62.7",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.4",
     "framer-motion": "^11.15.0",
@@ -31,17 +32,18 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.6.0",
-    "zustand": "^5.0.2",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
-    "@ubi/eslint-config": "workspace:*",
-    "@ubi/typescript-config": "workspace:*",
     "@playwright/test": "^1.49.1",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.1",
+    "@ubi/eslint-config": "workspace:*",
+    "@ubi/testing": "workspace:^",
+    "@ubi/typescript-config": "workspace:*",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
