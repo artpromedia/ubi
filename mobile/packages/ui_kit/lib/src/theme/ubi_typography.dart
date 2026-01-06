@@ -23,7 +23,13 @@ abstract final class UbiTypography {
   static String get monoFamily => GoogleFonts.jetBrainsMono().fontFamily!;
   
   // === Text Theme for Light Mode ===
-  
+
+  /// Alias for light theme
+  static TextTheme get textTheme => lightTextTheme;
+
+  /// Alias for dark theme
+  static TextTheme get textThemeDark => darkTextTheme;
+
   static TextTheme get lightTextTheme => TextTheme(
     // Display styles (for hero sections, splash screens)
     displayLarge: _displayLarge,
@@ -186,8 +192,37 @@ abstract final class UbiTypography {
     color: UbiColors.gray600,
   );
   
+  // === Legacy Style Aliases (for backwards compatibility) ===
+
+  /// Headline 3 - maps to headline small
+  static TextStyle get headline3 => _headlineSmall;
+
+  /// Body 1 - maps to body large
+  static TextStyle get body1 => _bodyLarge;
+
+  /// Body 2 - maps to body medium
+  static TextStyle get body2 => _bodyMedium;
+
+  /// Caption style - static accessor
+  static TextStyle get caption => GoogleFonts.inter(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        color: UbiColors.gray500,
+        letterSpacing: 0.4,
+        height: 1.33,
+      );
+
+  /// Button text style - static accessor
+  static TextStyle get button => GoogleFonts.inter(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: UbiColors.ubiWhite,
+        letterSpacing: 0.5,
+        height: 1.25,
+      );
+
   // === Custom Text Styles ===
-  
+
   /// Price style - monospace for alignment
   static TextStyle price({
     double fontSize = 24,
