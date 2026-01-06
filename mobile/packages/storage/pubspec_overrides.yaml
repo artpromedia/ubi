@@ -1,0 +1,4 @@
+# melos_managed_dependency_overrides: ubi_core
+dependency_overrides:
+  ubi_core:
+    path: ..\\core
