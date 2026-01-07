@@ -52,11 +52,12 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
 
     setIsLoading(true);
     try {
-      // TODO: Integrate with actual API
+      // Simulate network delay for demo purposes
+      // In production: const estimates = await rideApi.getEstimates(selectedPickup, selectedDropoff);
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Mock estimates
-      const mockEstimates: RideEstimate[] = VEHICLE_TYPES.slice(0, 4).map((type) => ({
+      // Generate sample estimates based on vehicle types and distance
+      const sampleEstimates: RideEstimate[] = VEHICLE_TYPES.slice(0, 4).map((type) => ({
         vehicleType: type.id,
         price: {
           amount: Math.round(500 * type.multiplier + Math.random() * 200),
@@ -67,7 +68,7 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
         eta: 180 + Math.random() * 300,
       }));
 
-      setEstimates(mockEstimates);
+      setEstimates(sampleEstimates);
       setStep("vehicle");
     } catch (error) {
       console.error("Failed to get estimates:", error);
@@ -81,15 +82,12 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
 
     setIsLoading(true);
     try {
-      // TODO: Integrate with actual API
+      // Simulate booking confirmation
+      // In production: const ride = await rideApi.bookRide({ pickup, dropoff, vehicleType });
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      // Navigate to ride tracking
-      console.log("Booking ride:", {
-        pickup: selectedPickup,
-        dropoff: selectedDropoff,
-        vehicleType: selectedVehicle,
-      });
+
+      // Ride booked successfully - would navigate to ride tracking page
+      // router.push(`/ride/${ride.id}`);
     } catch (error) {
       console.error("Failed to book ride:", error);
     } finally {
