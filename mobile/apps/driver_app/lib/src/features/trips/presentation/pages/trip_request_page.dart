@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
-import '../../driver/bloc/driver_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../driver/bloc/driver_bloc.dart';
 
 /// Trip request page shown when a new trip request comes in
 class TripRequestPage extends StatefulWidget {
@@ -62,7 +62,7 @@ class _TripRequestPageState extends State<TripRequestPage>
   }
 
   void _onTimeout() {
-    context.read<DriverBloc>().add(TripRequestTimedOut(widget.requestId));
+    context.read<DriverBloc>().add(DriverTripRequestTimedOut(requestId: widget.requestId));
     if (mounted) {
       context.pop();
     }
@@ -76,12 +76,12 @@ class _TripRequestPageState extends State<TripRequestPage>
   }
 
   void _acceptRequest() {
-    context.read<DriverBloc>().add(TripRequestAccepted(widget.requestId));
+    context.read<DriverBloc>().add(DriverTripRequestAccepted(requestId: widget.requestId));
     context.go(AppRoutes.activeTrip, extra: widget.requestId);
   }
 
   void _declineRequest() {
-    context.read<DriverBloc>().add(TripRequestDeclined(widget.requestId));
+    context.read<DriverBloc>().add(DriverTripRequestDeclined(requestId: widget.requestId));
     context.pop();
   }
 

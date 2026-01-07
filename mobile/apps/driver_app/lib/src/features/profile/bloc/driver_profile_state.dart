@@ -81,8 +81,8 @@ class DriverProfileLoaded extends DriverProfileState {
 }
 
 /// Vehicle info loaded separately
-class DriverVehicleLoaded extends DriverProfileState {
-  const DriverVehicleLoaded({required this.vehicle});
+class DriverVehicleLoadedState extends DriverProfileState {
+  const DriverVehicleLoadedState({required this.vehicle});
 
   final DriverVehicle vehicle;
 
@@ -126,8 +126,8 @@ class DriverDocumentUploaded extends DriverProfileState {
 }
 
 /// Ratings loaded
-class DriverRatingsLoaded extends DriverProfileState {
-  const DriverRatingsLoaded({
+class DriverRatingsLoadedState extends DriverProfileState {
+  const DriverRatingsLoadedState({
     required this.summary,
     required this.ratings,
     required this.currentPage,
@@ -160,8 +160,8 @@ class DriverSettingsUpdated extends DriverProfileState {
 }
 
 /// Password changed
-class DriverPasswordChanged extends DriverProfileState {
-  const DriverPasswordChanged({required this.message});
+class DriverPasswordChangedState extends DriverProfileState {
+  const DriverPasswordChangedState({required this.message});
 
   final String message;
 
@@ -170,8 +170,8 @@ class DriverPasswordChanged extends DriverProfileState {
 }
 
 /// Logged out
-class DriverLoggedOut extends DriverProfileState {
-  const DriverLoggedOut();
+class DriverLoggedOutState extends DriverProfileState {
+  const DriverLoggedOutState();
 }
 
 /// Account deletion requested

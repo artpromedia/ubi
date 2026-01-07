@@ -231,7 +231,7 @@ class TripsBloc extends Bloc<TripsEvent, TripsState> {
       _etaTimer?.cancel();
       _locationSubscription?.cancel();
 
-      emit(TripsCancelled(
+      emit(TripsCancelledState(
         tripId: tripId,
         reason: event.reason,
         cancellationFee: 50.0, // Potential cancellation fee

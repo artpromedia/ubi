@@ -9,8 +9,8 @@ sealed class DriverProfileEvent extends Equatable {
 }
 
 /// Load driver profile
-class DriverProfileLoaded extends DriverProfileEvent {
-  const DriverProfileLoaded();
+class LoadDriverProfile extends DriverProfileEvent {
+  const LoadDriverProfile();
 }
 
 /// Update basic profile info
@@ -69,13 +69,13 @@ class DriverVehiclePhotoUpdated extends DriverProfileEvent {
 }
 
 /// Load documents
-class DriverDocumentsLoaded extends DriverProfileEvent {
-  const DriverDocumentsLoaded();
+class LoadDriverDocuments extends DriverProfileEvent {
+  const LoadDriverDocuments();
 }
 
 /// Upload document
-class DriverDocumentUploaded extends DriverProfileEvent {
-  const DriverDocumentUploaded({
+class UploadDriverDocument extends DriverProfileEvent {
+  const UploadDriverDocument({
     required this.documentType,
     required this.filePath,
     this.expiryDate,

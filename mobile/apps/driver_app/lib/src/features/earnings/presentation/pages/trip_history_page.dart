@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/earnings_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../bloc/earnings_bloc.dart';
 
 /// Trip history page showing paginated list of past trips
 class TripHistoryPage extends StatefulWidget {
@@ -15,12 +15,12 @@ class TripHistoryPage extends StatefulWidget {
 
 class _TripHistoryPageState extends State<TripHistoryPage> {
   final ScrollController _scrollController = ScrollController();
-  TripHistoryFilter _currentFilter = TripHistoryFilter.all;
+  String? _currentFilterType;
 
   @override
   void initState() {
     super.initState();
-    context.read<EarningsBloc>().add(const LoadTripHistory());
+    context.read<EarningsBloc>().add(const EarningsLoadTripHistory());
     _scrollController.addListener(_onScroll);
   }
 
@@ -34,7 +34,7 @@ class _TripHistoryPageState extends State<TripHistoryPage> {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       // Load more trips when near the end
-      context.read<EarningsBloc>().add(const LoadMoreTrips());
+      context.read<EarningsBloc>().add(const EarningsLoadMoreTrips());
     }
   }
 
@@ -62,13 +62,13 @@ class _TripHistoryPageState extends State<TripHistoryPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                _buildFilterChip(TripHistoryFilter.all, 'All'),
+                _buildFilterChip(null, 'All'),
                 const SizedBox(width: 8),
-                _buildFilterChip(TripHistoryFilter.rides, 'Rides'),
+                _buildFilterChip('ride', 'Rides'),
                 const SizedBox(width: 8),
-                _buildFilterChip(TripHistoryFilter.deliveries, 'Deliveries'),
+                _buildFilterChip('delivery', 'Deliveries'),
                 const SizedBox(width: 8),
-                _buildFilterChip(TripHistoryFilter.food, 'Food'),
+                _buildFilterChip('food', 'Food'),
               ],
             ),
           ),
@@ -115,16 +115,17 @@ class _TripHistoryPageState extends State<TripHistoryPage> {
     );
   }
 
-  Widget _buildFilterChip(TripHistoryFilter filter, String label) {
-    final isSelected = _currentFilter == filter;
+  Widget _buildFilterChip(String? filterType, String label) {
+    final isSelected = _currentFilterType == filterType;
     return FilterChip(
       label: Text(label),
       selected: isSelected,
       onSelected: (selected) {
         setState(() {
-          _currentFilter = filter;
+          _currentFilterType = filterType;
         });
-        context.read<EarningsBloc>().add(LoadTripHistory(filter: filter));
+        final filter = filterType != null ? TripHistoryFilter(tripType: filterType) : null;
+        context.read<EarningsBloc>().add(EarningsLoadTripHistory(filter: filter));
       },
       selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
       checkmarkColor: Theme.of(context).primaryColor,
@@ -137,7 +138,7 @@ class _TripHistoryPageState extends State<TripHistoryPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () => context.push(
-          AppRoutes.tripDetails.replaceAll(':id', trip.tripId),
+          AppRoutes.tripDetails.replaceAll(':tripId', trip.id),
         ),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
@@ -151,12 +152,12 @@ class _TripHistoryPageState extends State<TripHistoryPage> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _getTripTypeColor(trip.tripType).withOpacity(0.1),
+                      color: _getTripTypeColor(trip.type).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
-                      _getTripTypeIcon(trip.tripType),
-                      color: _getTripTypeColor(trip.tripType),
+                      _getTripTypeIcon(trip.type),
+                      color: _getTripTypeColor(trip.type),
                       size: 20,
                     ),
                   ),
@@ -166,16 +167,16 @@ class _TripHistoryPageState extends State<TripHistoryPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          trip.tripType.toUpperCase(),
+                          trip.type.toUpperCase(),
                           style: TextStyle(
-                            color: _getTripTypeColor(trip.tripType),
+                            color: _getTripTypeColor(trip.type),
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          trip.formattedDate,
+                          _formatTripDate(trip.completedAt),
                           style: TextStyle(
                             color: Colors.grey.shade600,
                             fontSize: 12,
@@ -264,12 +265,12 @@ class _TripHistoryPageState extends State<TripHistoryPage> {
                 children: [
                   _buildTripStat(
                     Icons.route,
-                    '${trip.distanceKm.toStringAsFixed(1)} km',
+                    '${trip.distance?.toStringAsFixed(1) ?? '0.0'} km',
                   ),
                   const SizedBox(width: 16),
                   _buildTripStat(
                     Icons.schedule,
-                    '${trip.durationMinutes} min',
+                    '${trip.duration ?? 0} min',
                   ),
                   const Spacer(),
                   Icon(
@@ -325,6 +326,13 @@ class _TripHistoryPageState extends State<TripHistoryPage> {
       default:
         return Colors.grey;
     }
+  }
+
+  String _formatTripDate(DateTime date) {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '${months[date.month - 1]} ${date.day}, $hour:${date.minute.toString().padLeft(2, '0')} $period';
   }
 
   Widget _buildEmptyState() {

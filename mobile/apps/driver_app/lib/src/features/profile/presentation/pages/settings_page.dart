@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/driver_profile_bloc.dart';
+import '../../bloc/driver_profile_bloc.dart';
 
 /// Settings page for driver app preferences
 class SettingsPage extends StatefulWidget {
@@ -16,7 +16,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
-    context.read<DriverProfileBloc>().add(const SettingsLoaded());
+    context.read<DriverProfileBloc>().add(const LoadDriverProfile());
   }
 
   @override
@@ -35,7 +35,7 @@ class _SettingsPageState extends State<SettingsPage> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (state is SettingsLoadedState) {
+          if (state is DriverProfileLoaded) {
             return SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,11 +109,11 @@ class _SettingsPageState extends State<SettingsPage> {
         SwitchListTile(
           title: const Text('Trip Requests'),
           subtitle: const Text('Notifications for new trip requests'),
-          value: settings.tripRequests,
+          value: settings.tripAlerts,
           onChanged: (value) {
             context.read<DriverProfileBloc>().add(
-                  NotificationSettingsUpdated(
-                    settings.copyWith(tripRequests: value),
+                  DriverNotificationSettingsUpdated(
+                    tripAlerts: value,
                   ),
                 );
           },
@@ -121,11 +121,11 @@ class _SettingsPageState extends State<SettingsPage> {
         SwitchListTile(
           title: const Text('Earnings Updates'),
           subtitle: const Text('Daily and weekly earnings summaries'),
-          value: settings.earningsUpdates,
+          value: settings.earningsAlerts,
           onChanged: (value) {
             context.read<DriverProfileBloc>().add(
-                  NotificationSettingsUpdated(
-                    settings.copyWith(earningsUpdates: value),
+                  DriverNotificationSettingsUpdated(
+                    earningsAlerts: value,
                   ),
                 );
           },
@@ -133,47 +133,47 @@ class _SettingsPageState extends State<SettingsPage> {
         SwitchListTile(
           title: const Text('Promotions'),
           subtitle: const Text('Special offers and incentives'),
-          value: settings.promotions,
+          value: settings.promoAlerts,
           onChanged: (value) {
             context.read<DriverProfileBloc>().add(
-                  NotificationSettingsUpdated(
-                    settings.copyWith(promotions: value),
+                  DriverNotificationSettingsUpdated(
+                    promoAlerts: value,
                   ),
                 );
           },
         ),
         SwitchListTile(
-          title: const Text('News & Updates'),
-          subtitle: const Text('App updates and announcements'),
-          value: settings.newsUpdates,
+          title: const Text('Push Notifications'),
+          subtitle: const Text('Enable push notifications'),
+          value: settings.pushEnabled,
           onChanged: (value) {
             context.read<DriverProfileBloc>().add(
-                  NotificationSettingsUpdated(
-                    settings.copyWith(newsUpdates: value),
+                  DriverNotificationSettingsUpdated(
+                    pushEnabled: value,
                   ),
                 );
           },
         ),
         SwitchListTile(
-          title: const Text('Sounds'),
-          subtitle: const Text('Play notification sounds'),
-          value: settings.sounds,
+          title: const Text('Email Notifications'),
+          subtitle: const Text('Receive email notifications'),
+          value: settings.emailEnabled,
           onChanged: (value) {
             context.read<DriverProfileBloc>().add(
-                  NotificationSettingsUpdated(
-                    settings.copyWith(sounds: value),
+                  DriverNotificationSettingsUpdated(
+                    emailEnabled: value,
                   ),
                 );
           },
         ),
         SwitchListTile(
-          title: const Text('Vibration'),
-          subtitle: const Text('Vibrate on notifications'),
-          value: settings.vibration,
+          title: const Text('SMS Notifications'),
+          subtitle: const Text('Receive SMS notifications'),
+          value: settings.smsEnabled,
           onChanged: (value) {
             context.read<DriverProfileBloc>().add(
-                  NotificationSettingsUpdated(
-                    settings.copyWith(vibration: value),
+                  DriverNotificationSettingsUpdated(
+                    smsEnabled: value,
                   ),
                 );
           },
@@ -217,12 +217,18 @@ class _SettingsPageState extends State<SettingsPage> {
     return Column(
       children: [
         // Theme
-        ListTile(
-          leading: const Icon(Icons.palette),
-          title: const Text('Theme'),
-          subtitle: Text(settings.theme.name.capitalize()),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showThemeDialog(context, settings),
+        SwitchListTile(
+          secondary: const Icon(Icons.palette),
+          title: const Text('Dark Mode'),
+          subtitle: const Text('Enable dark theme'),
+          value: settings.darkMode,
+          onChanged: (value) {
+            context.read<DriverProfileBloc>().add(
+                  DriverAppSettingsUpdated(
+                    darkMode: value,
+                  ),
+                );
+          },
         ),
         // Language
         ListTile(
@@ -232,21 +238,33 @@ class _SettingsPageState extends State<SettingsPage> {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _showLanguageDialog(context, settings),
         ),
-        // Map type
-        ListTile(
-          leading: const Icon(Icons.map),
-          title: const Text('Map Type'),
-          subtitle: Text(settings.mapType.capitalize()),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showMapTypeDialog(context, settings),
+        // Sound
+        SwitchListTile(
+          secondary: const Icon(Icons.volume_up),
+          title: const Text('Sound'),
+          subtitle: const Text('Enable app sounds'),
+          value: settings.soundEnabled,
+          onChanged: (value) {
+            context.read<DriverProfileBloc>().add(
+                  DriverAppSettingsUpdated(
+                    soundEnabled: value,
+                  ),
+                );
+          },
         ),
-        // Distance unit
-        ListTile(
-          leading: const Icon(Icons.straighten),
-          title: const Text('Distance Unit'),
-          subtitle: Text(settings.distanceUnit),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showDistanceUnitDialog(context, settings),
+        // Vibration
+        SwitchListTile(
+          secondary: const Icon(Icons.vibration),
+          title: const Text('Vibration'),
+          subtitle: const Text('Enable vibration feedback'),
+          value: settings.vibrationEnabled,
+          onChanged: (value) {
+            context.read<DriverProfileBloc>().add(
+                  DriverAppSettingsUpdated(
+                    vibrationEnabled: value,
+                  ),
+                );
+          },
         ),
         // Navigation voice
         SwitchListTile(
@@ -256,8 +274,8 @@ class _SettingsPageState extends State<SettingsPage> {
           value: settings.navigationVoice,
           onChanged: (value) {
             context.read<DriverProfileBloc>().add(
-                  AppSettingsUpdated(
-                    settings.copyWith(navigationVoice: value),
+                  DriverAppSettingsUpdated(
+                    navigationVoice: value,
                   ),
                 );
           },
@@ -270,8 +288,22 @@ class _SettingsPageState extends State<SettingsPage> {
           value: settings.autoAcceptTrips,
           onChanged: (value) {
             context.read<DriverProfileBloc>().add(
-                  AppSettingsUpdated(
-                    settings.copyWith(autoAcceptTrips: value),
+                  DriverAppSettingsUpdated(
+                    autoAcceptTrips: value,
+                  ),
+                );
+          },
+        ),
+        // Show earnings on home
+        SwitchListTile(
+          secondary: const Icon(Icons.attach_money),
+          title: const Text('Show Earnings'),
+          subtitle: const Text('Display earnings on home screen'),
+          value: settings.showEarningsOnHome,
+          onChanged: (value) {
+            context.read<DriverProfileBloc>().add(
+                  DriverAppSettingsUpdated(
+                    showEarningsOnHome: value,
                   ),
                 );
           },
@@ -363,109 +395,26 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildAboutSection(BuildContext context) {
-    return Column(
-      children: [
-        ListTile(
-          leading: const Icon(Icons.info),
-          title: const Text('App Version'),
-          subtitle: const Text('1.0.0 (Build 1)'),
-        ),
-        ListTile(
-          leading: const Icon(Icons.help),
-          title: const Text('Help Center'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Open help center
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.feedback),
-          title: const Text('Send Feedback'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Open feedback form
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.star),
-          title: const Text('Rate the App'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Open app store
-          },
-        ),
-      ],
-    );
-  }
-
-  void _showThemeDialog(BuildContext context, AppSettings settings) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Select Theme'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<ThemeOption>(
-              title: const Text('System'),
-              value: ThemeOption.system,
-              groupValue: settings.theme,
-              onChanged: (value) {
-                context.read<DriverProfileBloc>().add(
-                      AppSettingsUpdated(settings.copyWith(theme: value)),
-                    );
-                Navigator.pop(context);
-              },
-            ),
-            RadioListTile<ThemeOption>(
-              title: const Text('Light'),
-              value: ThemeOption.light,
-              groupValue: settings.theme,
-              onChanged: (value) {
-                context.read<DriverProfileBloc>().add(
-                      AppSettingsUpdated(settings.copyWith(theme: value)),
-                    );
-                Navigator.pop(context);
-              },
-            ),
-            RadioListTile<ThemeOption>(
-              title: const Text('Dark'),
-              value: ThemeOption.dark,
-              groupValue: settings.theme,
-              onChanged: (value) {
-                context.read<DriverProfileBloc>().add(
-                      AppSettingsUpdated(settings.copyWith(theme: value)),
-                    );
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showLanguageDialog(BuildContext context, AppSettings settings) {
-    final languages = ['English', 'Swahili', 'French', 'Arabic'];
+    final languages = ['en', 'sw', 'fr', 'ar'];
+    final languageNames = {'en': 'English', 'sw': 'Swahili', 'fr': 'French', 'ar': 'Arabic'};
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Select Language'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: languages
               .map((lang) => RadioListTile<String>(
-                    title: Text(lang),
+                    title: Text(languageNames[lang] ?? lang),
                     value: lang,
                     groupValue: settings.language,
                     onChanged: (value) {
                       context.read<DriverProfileBloc>().add(
-                            AppSettingsUpdated(
-                                settings.copyWith(language: value)),
+                            DriverAppSettingsUpdated(language: value),
                           );
-                      Navigator.pop(context);
+                      Navigator.pop(dialogContext);
                     },
                   ))
               .toList(),
@@ -474,59 +423,31 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  void _showMapTypeDialog(BuildContext context, AppSettings settings) {
-    final mapTypes = ['normal', 'satellite', 'terrain', 'hybrid'];
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Select Map Type'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: mapTypes
-              .map((type) => RadioListTile<String>(
-                    title: Text(type.capitalize()),
-                    value: type,
-                    groupValue: settings.mapType,
-                    onChanged: (value) {
-                      context.read<DriverProfileBloc>().add(
-                            AppSettingsUpdated(
-                                settings.copyWith(mapType: value)),
-                          );
-                      Navigator.pop(context);
-                    },
-                  ))
-              .toList(),
+  Widget _buildAboutSection(BuildContext context) {
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.info),
+          title: const Text('About'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            // Show about dialog
+            showAboutDialog(
+              context: context,
+              applicationName: 'Driver App',
+              applicationVersion: '1.0.0',
+            );
+          },
         ),
-      ),
-    );
-  }
-
-  void _showDistanceUnitDialog(BuildContext context, AppSettings settings) {
-    final units = ['km', 'miles'];
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Select Distance Unit'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: units
-              .map((unit) => RadioListTile<String>(
-                    title: Text(unit == 'km' ? 'Kilometers' : 'Miles'),
-                    value: unit,
-                    groupValue: settings.distanceUnit,
-                    onChanged: (value) {
-                      context.read<DriverProfileBloc>().add(
-                            AppSettingsUpdated(
-                                settings.copyWith(distanceUnit: value)),
-                          );
-                      Navigator.pop(context);
-                    },
-                  ))
-              .toList(),
+        ListTile(
+          leading: const Icon(Icons.help),
+          title: const Text('Help & Support'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            // Open help
+          },
         ),
-      ),
+      ],
     );
   }
 

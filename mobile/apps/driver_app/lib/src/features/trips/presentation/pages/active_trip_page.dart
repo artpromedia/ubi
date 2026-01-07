@@ -5,8 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/trips_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../bloc/trips_bloc.dart';
 
 /// Active trip page showing current trip with navigation and customer info
 class ActiveTripPage extends StatefulWidget {
@@ -25,7 +25,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
   @override
   void initState() {
     super.initState();
-    context.read<TripsBloc>().add(LoadActiveTrip(widget.tripId));
+    context.read<TripsBloc>().add(TripsLoadActive(tripId: widget.tripId));
   }
 
   @override
@@ -306,7 +306,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
           ),
           child: IconButton(
             icon: const Icon(Icons.phone, color: Colors.green),
-            onPressed: () => _callCustomer(customer?.phone),
+            onPressed: () => _callCustomer(customer?.phoneNumber),
           ),
         ),
         const SizedBox(width: 8),
@@ -318,7 +318,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
           ),
           child: IconButton(
             icon: const Icon(Icons.message, color: Colors.blue),
-            onPressed: () => _messageCustomer(customer?.phone),
+            onPressed: () => _messageCustomer(customer?.phoneNumber),
           ),
         ),
       ],
@@ -340,10 +340,10 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
       trip = state.trip;
     }
 
-    final pickup = trip?.pickupAddress ?? 'Pickup location';
-    final dropoff = trip?.dropoffAddress ?? 'Dropoff location';
-    final distance = trip?.distanceKm ?? 0.0;
-    final fare = trip?.estimatedFare ?? 0.0;
+    final pickup = trip?.stops.firstWhere((s) => s.type == StopType.pickup, orElse: () => trip!.currentStop).address ?? 'Pickup location';
+    final dropoff = trip?.stops.lastWhere((s) => s.type == StopType.dropoff, orElse: () => trip!.stops.last).address ?? 'Dropoff location';
+    final distance = trip?.distanceRemaining ?? 0.0;
+    final fare = trip?.fare ?? 0.0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -466,29 +466,29 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
     if (state is TripsEnRouteToPickup) {
       text = 'Arrived at Pickup';
       onPressed = () {
-        context.read<TripsBloc>().add(const ArrivedAtPickup());
+        context.read<TripsBloc>().add(const TripsArrivedAtPickup());
       };
     } else if (state is TripsArrivedPickup) {
       text = 'Start Trip';
       onPressed = () {
-        context.read<TripsBloc>().add(const TripStarted());
+        context.read<TripsBloc>().add(const TripsStarted());
       };
     } else if (state is TripsInProgress) {
       text = 'Complete Trip';
       onPressed = () {
-        context.read<TripsBloc>().add(const TripCompleted());
+        context.read<TripsBloc>().add(const TripsCompleted());
       };
     } else if (state is TripsArrivedDropoff) {
       text = 'Confirm Dropoff';
       onPressed = () {
-        context.read<TripsBloc>().add(const TripCompleted());
+        context.read<TripsBloc>().add(const TripsCompleted());
       };
     } else if (state is TripsCollectingCash) {
-      text = 'Cash Collected - KES ${state.trip.estimatedFare.toInt()}';
+      text = 'Cash Collected - KES ${state.trip.fare.toInt()}';
       color = Colors.green;
       onPressed = () {
         context.read<TripsBloc>().add(
-              CashCollected(state.trip.estimatedFare),
+              TripsCollectCash(amount: state.trip.fare),
             );
       };
     } else {
@@ -570,23 +570,23 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               ),
             ),
             const SizedBox(height: 24),
-            _buildSummaryRow('Fare', 'KES ${summary.fare.toInt()}'),
+            _buildSummaryRow('Fare', 'KES ${summary.totalFare.toInt()}'),
             _buildSummaryRow('Tips', 'KES ${summary.tips.toInt()}'),
-            _buildSummaryRow('Bonus', 'KES ${summary.bonus.toInt()}'),
+            _buildSummaryRow('Bonus', 'KES ${(summary.bonuses ?? 0).toInt()}'),
             const Divider(height: 24),
             _buildSummaryRow(
               'Total Earnings',
-              'KES ${summary.totalEarnings.toInt()}',
+              'KES ${summary.driverEarnings.toInt()}',
               isTotal: true,
             ),
             const SizedBox(height: 8),
             _buildSummaryRow(
               'Distance',
-              '${summary.distanceKm.toStringAsFixed(1)} km',
+              '${summary.distance.toStringAsFixed(1)} km',
             ),
             _buildSummaryRow(
               'Duration',
-              '${summary.durationMinutes} min',
+              '${summary.duration} min',
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -684,7 +684,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
             onPressed: () {
               Navigator.pop(context);
               context.read<TripsBloc>().add(
-                    const TripCancelled('Driver cancelled'),
+                    const TripsCancelled(reason: 'Driver cancelled'),
                   );
               context.go(AppRoutes.home);
             },
@@ -722,7 +722,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               onTap: () {
                 Navigator.pop(context);
                 context.read<TripsBloc>().add(
-                      const ReportIssue(TripIssueType.customerNotFound, ''),
+                      const TripsReportIssue(issueType: TripIssueType.riderNoShow),
                     );
               },
             ),
@@ -732,7 +732,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               onTap: () {
                 Navigator.pop(context);
                 context.read<TripsBloc>().add(
-                      const ReportIssue(TripIssueType.wrongLocation, ''),
+                      const TripsReportIssue(issueType: TripIssueType.wrongAddress),
                     );
               },
             ),
@@ -742,7 +742,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               onTap: () {
                 Navigator.pop(context);
                 context.read<TripsBloc>().add(
-                      const ReportIssue(TripIssueType.safetyIssue, ''),
+                      const TripsReportIssue(issueType: TripIssueType.safetyIssue),
                     );
               },
             ),
@@ -752,7 +752,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               onTap: () {
                 Navigator.pop(context);
                 context.read<TripsBloc>().add(
-                      const ReportIssue(TripIssueType.other, ''),
+                      const TripsReportIssue(issueType: TripIssueType.other),
                     );
               },
             ),

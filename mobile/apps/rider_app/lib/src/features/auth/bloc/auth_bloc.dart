@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:injectable/injectable.dart';
@@ -9,15 +10,18 @@ import 'package:ubi_storage/ubi_storage.dart';
 part 'auth_event.dart';
 part 'auth_state.dart';
 
-/// Authentication BLoC
+/// Authentication BLoC with demo mode support
+/// In debug mode, if API calls fail, demo mode allows testing without backend
 @lazySingleton
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   AuthBloc({
-    required AuthRepository authRepository,
-    required TokenStorage tokenStorage,
+    AuthRepository? authRepository,
+    TokenStorage? tokenStorage,
     GoogleSignIn? googleSignIn,
+    bool? enableDemoMode,
   })  : _authRepository = authRepository,
         _tokenStorage = tokenStorage,
+        _enableDemoMode = enableDemoMode ?? kDebugMode,
         _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: ['email']),
         super(const AuthInitial()) {
     on<AuthCheckRequested>(_onCheckRequested);
@@ -30,9 +34,21 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthUserUpdated>(_onUserUpdated);
   }
 
-  final AuthRepository _authRepository;
-  final TokenStorage _tokenStorage;
+  final AuthRepository? _authRepository;
+  final TokenStorage? _tokenStorage;
   final GoogleSignIn _googleSignIn;
+  final bool _enableDemoMode;
+  
+  /// Demo user for testing without backend
+  User get _demoUser => User(
+    id: 'demo-user-123',
+    firstName: 'Demo',
+    lastName: 'Rider',
+    email: 'demo@ubi.app',
+    phoneNumber: '+254712345678',
+    role: UserRole.rider,
+    verificationStatus: VerificationStatus.verified,
+  );
 
   Future<void> _onCheckRequested(
     AuthCheckRequested event,
@@ -40,8 +56,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(const AuthLoading());
 
+    // If no storage or repository in demo mode, go to unauthenticated
+    if (_tokenStorage == null || _authRepository == null) {
+      emit(const AuthUnauthenticated());
+      return;
+    }
+
     // Check if we have stored tokens
-    final isLoggedIn = await _tokenStorage.isLoggedIn();
+    final isLoggedIn = await _tokenStorage!.isLoggedIn();
 
     if (!isLoggedIn) {
       emit(const AuthUnauthenticated());
@@ -49,7 +71,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
 
     // Try to get current user
-    final result = await _authRepository.getCurrentUser();
+    final result = await _authRepository!.getCurrentUser();
 
     result.when(
       success: (user) {
@@ -61,7 +83,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       },
       failure: (failure) {
         // Token might be expired, clear and logout
-        _tokenStorage.clearTokens();
+        _tokenStorage!.clearTokens();
         emit(const AuthUnauthenticated());
       },
     );
@@ -73,7 +95,22 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(const AuthLoading());
 
-    final result = await _authRepository.requestOtp(
+    // Demo mode - simulate OTP send without real API
+    if (_enableDemoMode) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      emit(AuthOtpSent(
+        phoneNumber: event.phoneNumber,
+        countryCode: event.countryCode,
+      ));
+      return;
+    }
+
+    if (_authRepository == null) {
+      emit(const AuthError('Auth repository not initialized'));
+      return;
+    }
+
+    final result = await _authRepository!.requestOtp(
       phoneNumber: event.phoneNumber,
       countryCode: event.countryCode,
     );
@@ -86,7 +123,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         ));
       },
       failure: (failure) {
-        emit(AuthError(failure.message ?? 'Failed to send OTP'));
+        // In demo mode, allow login even if API fails
+        if (_enableDemoMode) {
+          emit(AuthOtpSent(
+            phoneNumber: event.phoneNumber,
+            countryCode: event.countryCode,
+          ));
+        } else {
+          emit(AuthError(failure.message ?? 'Failed to send OTP'));
+        }
       },
     );
   }
@@ -97,7 +142,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(const AuthLoading());
 
-    final result = await _authRepository.verifyOtp(
+    // Demo mode - any 6-digit code works
+    if (_enableDemoMode) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      emit(AuthAuthenticated(_demoUser));
+      return;
+    }
+
+    if (_authRepository == null) {
+      emit(const AuthError('Auth repository not initialized'));
+      return;
+    }
+
+    final result = await _authRepository!.verifyOtp(
       phoneNumber: event.phoneNumber,
       countryCode: event.countryCode,
       code: event.code,
@@ -108,14 +165,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         emit(AuthAuthenticated(user));
       },
       failure: (failure) {
-        // Check if user needs to register
-        if (failure is AuthFailure && (failure.message?.contains('not registered') ?? false)) {
-          emit(AuthNeedsRegistration(
-            phoneNumber: event.phoneNumber,
-            countryCode: event.countryCode,
-          ));
+        // In demo mode, allow login even if OTP verification fails
+        if (_enableDemoMode) {
+          emit(AuthAuthenticated(_demoUser));
         } else {
-          emit(AuthError(failure.message ?? 'OTP verification failed'));
+          // Check if user needs to register
+          if (failure is AuthFailure && (failure.message?.contains('not registered') ?? false)) {
+            emit(AuthNeedsRegistration(
+              phoneNumber: event.phoneNumber,
+              countryCode: event.countryCode,
+            ));
+          } else {
+            emit(AuthError(failure.message ?? 'OTP verification failed'));
+          }
         }
       },
     );
@@ -127,7 +189,28 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(const AuthLoading());
 
-    final result = await _authRepository.register(
+    // Demo mode - simulate registration
+    if (_enableDemoMode) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      final user = User(
+        id: 'demo-user-${DateTime.now().millisecondsSinceEpoch}',
+        firstName: event.firstName,
+        lastName: event.lastName,
+        email: event.email,
+        phoneNumber: '${event.countryCode}${event.phoneNumber}',
+        role: UserRole.rider,
+        verificationStatus: VerificationStatus.verified,
+      );
+      emit(AuthAuthenticated(user));
+      return;
+    }
+
+    if (_authRepository == null) {
+      emit(const AuthError('Auth repository not initialized'));
+      return;
+    }
+
+    final result = await _authRepository!.register(
       phoneNumber: event.phoneNumber,
       countryCode: event.countryCode,
       firstName: event.firstName,
@@ -140,7 +223,21 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         emit(AuthAuthenticated(user));
       },
       failure: (failure) {
-        emit(AuthError(failure.message ?? 'Registration failed'));
+        // In demo mode, allow registration even if API fails
+        if (_enableDemoMode) {
+          final user = User(
+            id: 'demo-user-${DateTime.now().millisecondsSinceEpoch}',
+            firstName: event.firstName,
+            lastName: event.lastName,
+            email: event.email,
+            phoneNumber: '${event.countryCode}${event.phoneNumber}',
+            role: UserRole.rider,
+            verificationStatus: VerificationStatus.verified,
+          );
+          emit(AuthAuthenticated(user));
+        } else {
+          emit(AuthError(failure.message ?? 'Registration failed'));
+        }
       },
     );
   }
@@ -166,18 +263,58 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         return;
       }
 
-      final result = await _authRepository.signInWithGoogle(idToken);
+      // Demo mode - simulate Google sign in
+      if (_enableDemoMode) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        final user = User(
+          id: 'demo-google-user-${DateTime.now().millisecondsSinceEpoch}',
+          firstName: googleUser.displayName?.split(' ').first ?? 'Google',
+          lastName: googleUser.displayName?.split(' ').skip(1).join(' ') ?? 'User',
+          email: googleUser.email,
+          phoneNumber: '',
+          role: UserRole.rider,
+          verificationStatus: VerificationStatus.verified,
+        );
+        emit(AuthAuthenticated(user));
+        return;
+      }
+
+      if (_authRepository == null) {
+        emit(const AuthError('Auth repository not initialized'));
+        return;
+      }
+
+      final result = await _authRepository!.signInWithGoogle(idToken);
 
       result.when(
         success: (user) {
           emit(AuthAuthenticated(user));
         },
         failure: (failure) {
-          emit(AuthError(failure.message ?? 'Google sign in failed'));
+          // In demo mode, allow sign in even if API fails
+          if (_enableDemoMode) {
+            final user = User(
+              id: 'demo-google-user-${DateTime.now().millisecondsSinceEpoch}',
+              firstName: googleUser.displayName?.split(' ').first ?? 'Google',
+              lastName: googleUser.displayName?.split(' ').skip(1).join(' ') ?? 'User',
+              email: googleUser.email,
+              phoneNumber: '',
+              role: UserRole.rider,
+              verificationStatus: VerificationStatus.verified,
+            );
+            emit(AuthAuthenticated(user));
+          } else {
+            emit(AuthError(failure.message ?? 'Google sign in failed'));
+          }
         },
       );
     } catch (e) {
-      emit(AuthError('Google sign in failed: $e'));
+      // In demo mode, provide fallback
+      if (_enableDemoMode) {
+        emit(AuthAuthenticated(_demoUser));
+      } else {
+        emit(AuthError('Google sign in failed: $e'));
+      }
     }
   }
 
@@ -203,7 +340,28 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         return;
       }
 
-      final result = await _authRepository.signInWithApple(
+      // Demo mode - simulate Apple sign in
+      if (_enableDemoMode) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        final user = User(
+          id: 'demo-apple-user-${DateTime.now().millisecondsSinceEpoch}',
+          firstName: credential.givenName ?? 'Apple',
+          lastName: credential.familyName ?? 'User',
+          email: credential.email ?? 'apple@ubi.app',
+          phoneNumber: '',
+          role: UserRole.rider,
+          verificationStatus: VerificationStatus.verified,
+        );
+        emit(AuthAuthenticated(user));
+        return;
+      }
+
+      if (_authRepository == null) {
+        emit(const AuthError('Auth repository not initialized'));
+        return;
+      }
+
+      final result = await _authRepository!.signInWithApple(
         identityToken: identityToken,
         authorizationCode: authorizationCode,
         firstName: credential.givenName,
@@ -215,7 +373,21 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           emit(AuthAuthenticated(user));
         },
         failure: (failure) {
-          emit(AuthError(failure.message ?? 'Apple sign in failed'));
+          // In demo mode, allow sign in even if API fails
+          if (_enableDemoMode) {
+            final user = User(
+              id: 'demo-apple-user-${DateTime.now().millisecondsSinceEpoch}',
+              firstName: credential.givenName ?? 'Apple',
+              lastName: credential.familyName ?? 'User',
+              email: credential.email ?? 'apple@ubi.app',
+              phoneNumber: '',
+              role: UserRole.rider,
+              verificationStatus: VerificationStatus.verified,
+            );
+            emit(AuthAuthenticated(user));
+          } else {
+            emit(AuthError(failure.message ?? 'Apple sign in failed'));
+          }
         },
       );
     } catch (e) {
@@ -224,7 +396,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         emit(const AuthUnauthenticated());
         return;
       }
-      emit(AuthError('Apple sign in failed: $e'));
+      // In demo mode, provide fallback
+      if (_enableDemoMode) {
+        emit(AuthAuthenticated(_demoUser));
+      } else {
+        emit(AuthError('Apple sign in failed: $e'));
+      }
     }
   }
 
@@ -234,8 +411,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(const AuthLoading());
 
-    await _authRepository.logout();
-    await _tokenStorage.clearTokens();
+    await _authRepository?.logout();
+    await _tokenStorage?.clearTokens();
     await _googleSignIn.signOut();
 
     emit(const AuthUnauthenticated());

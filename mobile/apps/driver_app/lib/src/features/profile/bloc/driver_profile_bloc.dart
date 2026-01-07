@@ -7,14 +7,14 @@ part 'driver_profile_state.dart';
 /// BLoC for managing driver profile, vehicle, and documents
 class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
   DriverProfileBloc() : super(const DriverProfileInitial()) {
-    on<DriverProfileLoaded>(_onProfileLoaded);
+    on<LoadDriverProfile>(_onProfileLoaded);
     on<DriverProfileUpdated>(_onProfileUpdated);
     on<DriverProfilePhotoUpdated>(_onProfilePhotoUpdated);
     on<DriverVehicleLoaded>(_onVehicleLoaded);
     on<DriverVehicleUpdated>(_onVehicleUpdated);
     on<DriverVehiclePhotoUpdated>(_onVehiclePhotoUpdated);
-    on<DriverDocumentsLoaded>(_onDocumentsLoaded);
-    on<DriverDocumentUploaded>(_onDocumentUploaded);
+    on<LoadDriverDocuments>(_onDocumentsLoaded);
+    on<UploadDriverDocument>(_onDocumentUploaded);
     on<DriverDocumentDeleted>(_onDocumentDeleted);
     on<DriverRatingsLoaded>(_onRatingsLoaded);
     on<DriverNotificationSettingsUpdated>(_onNotificationSettingsUpdated);
@@ -30,7 +30,7 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
   int _ratingsPage = 1;
 
   Future<void> _onProfileLoaded(
-    DriverProfileLoaded event,
+    LoadDriverProfile event,
     Emitter<DriverProfileState> emit,
   ) async {
     emit(const DriverProfileLoading(message: 'Loading profile...'));
@@ -219,7 +219,7 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
         features: ['AC', 'USB Charging', 'Leather Seats'],
       );
 
-      emit(const DriverVehicleLoaded(vehicle: vehicle));
+      emit(const DriverVehicleLoadedState(vehicle: vehicle));
     } catch (e) {
       emit(DriverProfileError(message: 'Failed to load vehicle: $e'));
     }
@@ -284,43 +284,21 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
   }
 
   Future<void> _onDocumentsLoaded(
-    DriverDocumentsLoaded event,
+    LoadDriverDocuments event,
     Emitter<DriverProfileState> emit,
   ) async {
     emit(const DriverProfileLoading(message: 'Loading documents...'));
 
     try {
+      // TODO: Replace with API call to user-service
+      // Example: final response = await _driverRepository.getDocuments();
+      // API Endpoint: GET /api/v1/drivers/me/documents
+      // Response: { documents: [...], requiredDocuments: [...] }
       await Future.delayed(const Duration(milliseconds: 500));
 
-      final documents = [
-        DriverDocument(
-          id: 'doc-1',
-          type: DocumentType.driverLicense,
-          status: DocumentStatus.approved,
-          uploadedAt: DateTime.now().subtract(const Duration(days: 90)),
-          expiryDate: DateTime.now().add(const Duration(days: 275)),
-        ),
-        DriverDocument(
-          id: 'doc-2',
-          type: DocumentType.nationalId,
-          status: DocumentStatus.approved,
-          uploadedAt: DateTime.now().subtract(const Duration(days: 90)),
-        ),
-        DriverDocument(
-          id: 'doc-3',
-          type: DocumentType.vehicleRegistration,
-          status: DocumentStatus.approved,
-          uploadedAt: DateTime.now().subtract(const Duration(days: 60)),
-          expiryDate: DateTime.now().add(const Duration(days: 305)),
-        ),
-        DriverDocument(
-          id: 'doc-4',
-          type: DocumentType.insurance,
-          status: DocumentStatus.expiringSoon,
-          uploadedAt: DateTime.now().subtract(const Duration(days: 335)),
-          expiryDate: DateTime.now().add(const Duration(days: 20)),
-        ),
-      ];
+      // MOCK DATA - Replace with API response
+      // In production, this data comes from backend document verification system
+      final documents = await _fetchDocumentsFromApi();
 
       const requiredDocuments = [
         DocumentType.driverLicense,
@@ -345,13 +323,64 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
     }
   }
 
+  /// Fetches documents from API
+  /// TODO: Move to DriverRepository when implementing API integration
+  Future<List<DriverDocument>> _fetchDocumentsFromApi() async {
+    // MOCK: Simulating API response structure
+    // In production, this would be:
+    // final response = await dio.get('/api/v1/drivers/me/documents');
+    // return response.data['documents'].map((d) => DriverDocument.fromJson(d)).toList();
+    
+    return [
+      DriverDocument(
+        id: 'doc-1',
+        type: DocumentType.driverLicense,
+        status: DocumentStatus.approved,
+        uploadedAt: DateTime.now().subtract(const Duration(days: 90)),
+        expiryDate: DateTime.now().add(const Duration(days: 275)),
+        // In production: fileUrl, thumbnailUrl, verifiedAt, verifiedBy
+      ),
+      DriverDocument(
+        id: 'doc-2',
+        type: DocumentType.nationalId,
+        status: DocumentStatus.approved,
+        uploadedAt: DateTime.now().subtract(const Duration(days: 90)),
+      ),
+      DriverDocument(
+        id: 'doc-3',
+        type: DocumentType.vehicleRegistration,
+        status: DocumentStatus.approved,
+        uploadedAt: DateTime.now().subtract(const Duration(days: 60)),
+        expiryDate: DateTime.now().add(const Duration(days: 305)),
+      ),
+      DriverDocument(
+        id: 'doc-4',
+        type: DocumentType.insurance,
+        status: DocumentStatus.expiringSoon,
+        uploadedAt: DateTime.now().subtract(const Duration(days: 335)),
+        expiryDate: DateTime.now().add(const Duration(days: 20)),
+      ),
+    ];
+  }
+
   Future<void> _onDocumentUploaded(
-    DriverDocumentUploaded event,
+    UploadDriverDocument event,
     Emitter<DriverProfileState> emit,
   ) async {
     emit(const DriverProfileLoading(message: 'Uploading document...'));
 
     try {
+      // TODO: Replace with API call to user-service
+      // API Endpoint: POST /api/v1/drivers/documents
+      // Request body: { documentType, fileData (base64 or multipart), expiryDate }
+      // Example:
+      // final formData = FormData.fromMap({
+      //   'documentType': event.documentType.name,
+      //   'file': await MultipartFile.fromFile(event.filePath),
+      //   'expiryDate': event.expiryDate?.toIso8601String(),
+      // });
+      // final response = await dio.post('/api/v1/drivers/documents', data: formData);
+      
       await Future.delayed(const Duration(seconds: 2));
 
       final newDocument = DriverDocument(
@@ -368,7 +397,7 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
       ));
 
       // Reload documents list
-      add(const DriverDocumentsLoaded());
+      add(const LoadDriverDocuments());
     } catch (e) {
       emit(DriverProfileError(message: 'Failed to upload document: $e'));
     }
@@ -383,7 +412,7 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
     try {
       await Future.delayed(const Duration(milliseconds: 500));
       // Reload documents list
-      add(const DriverDocumentsLoaded());
+      add(const LoadDriverDocuments());
     } catch (e) {
       emit(DriverProfileError(message: 'Failed to delete document: $e'));
     }
@@ -429,7 +458,7 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
       _ratingsCache.addAll(newRatings);
       _ratingsPage = event.page;
 
-      emit(DriverRatingsLoaded(
+      emit(DriverRatingsLoadedState(
         summary: summary,
         ratings: _ratingsCache,
         currentPage: event.page,
@@ -499,7 +528,7 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
 
     try {
       await Future.delayed(const Duration(seconds: 1));
-      emit(const DriverPasswordChanged(
+      emit(const DriverPasswordChangedState(
         message: 'Password changed successfully',
       ));
     } catch (e) {
@@ -534,7 +563,7 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
 
     try {
       await Future.delayed(const Duration(milliseconds: 500));
-      emit(const DriverLoggedOut());
+      emit(const DriverLoggedOutState());
     } catch (e) {
       emit(DriverProfileError(message: 'Failed to logout: $e'));
     }

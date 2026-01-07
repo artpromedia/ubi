@@ -21,6 +21,11 @@ import '../../features/ratings/presentation/pages/ratings_page.dart';
 import '../../features/splash/presentation/pages/splash_page.dart';
 import '../../features/trips/presentation/pages/trip_request_page.dart';
 import '../../features/trips/presentation/pages/active_trip_page.dart';
+import '../../features/wallet/presentation/pages/wallet_page.dart';
+import '../../features/wallet/presentation/pages/topup_page.dart';
+import '../../features/wallet/presentation/pages/withdraw_page.dart';
+import '../../features/wallet/presentation/pages/transactions_page.dart';
+import '../../features/wallet/presentation/pages/send_money_page.dart';
 
 /// Route names for navigation
 abstract class AppRoutes {
@@ -45,6 +50,14 @@ abstract class AppRoutes {
   static const tripDetails = '/earnings/trip/:tripId';
   static const payoutHistory = '/earnings/payouts';
 
+  // Wallet routes (UBI Pay)
+  static const wallet = '/wallet';
+  static const walletTopUp = '/wallet/topup';
+  static const walletWithdraw = '/wallet/withdraw';
+  static const walletTransactions = '/wallet/transactions';
+  static const walletSend = '/wallet/send';
+  static const walletPaymentMethods = '/wallet/payment-methods';
+
   // Profile routes
   static const profile = '/profile';
   static const editProfile = '/profile/edit';
@@ -55,8 +68,9 @@ abstract class AppRoutes {
   static const settings = '/settings';
 }
 
-/// App router configuration
-final appRouter = GoRouter(
+/// App router provider class
+class AppRouter {
+  static final router = GoRouter(
   initialLocation: AppRoutes.splash,
   debugLogDiagnostics: true,
   routes: [
@@ -106,8 +120,8 @@ final appRouter = GoRouter(
       path: AppRoutes.tripRequest,
       name: 'trip-request',
       builder: (context, state) {
-        final data = state.extra as Map<String, dynamic>?;
-        return TripRequestPage(requestData: data ?? {});
+        final requestId = state.extra as String? ?? '';
+        return TripRequestPage(requestId: requestId);
       },
     ),
     GoRoute(
@@ -122,8 +136,8 @@ final appRouter = GoRouter(
       path: AppRoutes.navigation,
       name: 'navigation',
       builder: (context, state) {
-        final data = state.extra as Map<String, dynamic>?;
-        return NavigationPage(navigationData: data ?? {});
+        final tripId = state.extra as String? ?? '';
+        return NavigationPage(tripId: tripId);
       },
     ),
 
@@ -150,6 +164,33 @@ final appRouter = GoRouter(
       path: AppRoutes.payoutHistory,
       name: 'payout-history',
       builder: (context, state) => const PayoutHistoryPage(),
+    ),
+
+    // Wallet routes (UBI Pay)
+    GoRoute(
+      path: AppRoutes.wallet,
+      name: 'wallet',
+      builder: (context, state) => const WalletPage(),
+    ),
+    GoRoute(
+      path: AppRoutes.walletTopUp,
+      name: 'wallet-topup',
+      builder: (context, state) => const TopUpPage(),
+    ),
+    GoRoute(
+      path: AppRoutes.walletWithdraw,
+      name: 'wallet-withdraw',
+      builder: (context, state) => const WithdrawPage(),
+    ),
+    GoRoute(
+      path: AppRoutes.walletTransactions,
+      name: 'wallet-transactions',
+      builder: (context, state) => const TransactionsPage(),
+    ),
+    GoRoute(
+      path: AppRoutes.walletSend,
+      name: 'wallet-send',
+      builder: (context, state) => const SendMoneyPage(),
     ),
 
     // Profile routes
@@ -241,3 +282,4 @@ final appRouter = GoRouter(
     return null;
   },
 );
+}

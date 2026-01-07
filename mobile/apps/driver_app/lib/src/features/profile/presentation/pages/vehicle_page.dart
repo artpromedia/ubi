@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/driver_profile_bloc.dart';
+import '../../bloc/driver_profile_bloc.dart';
 
 /// Vehicle management page showing vehicle details and photo
 class VehiclePage extends StatefulWidget {
@@ -16,7 +16,7 @@ class _VehiclePageState extends State<VehiclePage> {
   @override
   void initState() {
     super.initState();
-    context.read<DriverProfileBloc>().add(const VehicleLoaded());
+    context.read<DriverProfileBloc>().add(const DriverVehicleLoaded());
   }
 
   @override
@@ -35,26 +35,33 @@ class _VehiclePageState extends State<VehiclePage> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (state is DriverVehicleLoaded) {
+          DriverVehicle? vehicle;
+          if (state is DriverVehicleLoadedState) {
+            vehicle = state.vehicle;
+          } else if (state is DriverProfileLoaded) {
+            vehicle = state.vehicle;
+          }
+
+          if (vehicle != null) {
             return SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Vehicle photo
-                  _buildVehiclePhoto(context, state.vehicle),
+                  _buildVehiclePhoto(context, vehicle),
                   const SizedBox(height: 24),
 
                   // Vehicle info card
-                  _buildVehicleInfoCard(context, state.vehicle),
+                  _buildVehicleInfoCard(context, vehicle),
                   const SizedBox(height: 24),
 
                   // Service types
-                  _buildServiceTypes(context, state.vehicle),
+                  _buildServiceTypes(context, vehicle),
                   const SizedBox(height: 24),
 
                   // Vehicle stats
-                  _buildVehicleStats(context, state.vehicle),
+                  _buildVehicleStats(context, vehicle),
                   const SizedBox(height: 24),
 
                   // Edit button
@@ -62,7 +69,7 @@ class _VehiclePageState extends State<VehiclePage> {
                     width: double.infinity,
                     height: 48,
                     child: OutlinedButton.icon(
-                      onPressed: () => _showEditVehicleSheet(context, state.vehicle),
+                      onPressed: () => _showEditVehicleSheet(context, vehicle!),
                       icon: const Icon(Icons.edit),
                       label: const Text('Edit Vehicle Details'),
                     ),
@@ -225,14 +232,14 @@ class _VehiclePageState extends State<VehiclePage> {
               Expanded(
                 child: _buildInfoItem(
                   label: 'Category',
-                  value: vehicle.category,
+                  value: vehicle.vehicleType,
                   icon: Icons.category,
                 ),
               ),
               Expanded(
                 child: _buildInfoItem(
                   label: 'Capacity',
-                  value: '${vehicle.seatingCapacity} seats',
+                  value: '${vehicle.capacity ?? 4} seats',
                   icon: Icons.people,
                 ),
               ),
@@ -288,7 +295,7 @@ class _VehiclePageState extends State<VehiclePage> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: vehicle.enabledServices.map((service) {
+          children: vehicle.features.map((feature) {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
@@ -300,13 +307,13 @@ class _VehiclePageState extends State<VehiclePage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    _getServiceIcon(service),
+                    _getServiceIcon(feature),
                     size: 16,
                     color: Colors.green,
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    service,
+                    feature,
                     style: const TextStyle(
                       color: Colors.green,
                       fontWeight: FontWeight.w500,
@@ -350,18 +357,18 @@ class _VehiclePageState extends State<VehiclePage> {
             Expanded(
               child: _buildStatCard(
                 context,
-                icon: Icons.route,
-                value: '${vehicle.totalTrips}',
-                label: 'Total Trips',
+                icon: Icons.directions_car,
+                value: vehicle.displayName,
+                label: 'Vehicle',
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _buildStatCard(
                 context,
-                icon: Icons.straighten,
-                value: '${vehicle.totalDistanceKm.toStringAsFixed(0)} km',
-                label: 'Distance',
+                icon: Icons.confirmation_number,
+                value: vehicle.licensePlate,
+                label: 'Plate',
               ),
             ),
           ],
@@ -465,7 +472,7 @@ class _VehiclePageState extends State<VehiclePage> {
   void _showEditVehicleSheet(BuildContext context, DriverVehicle vehicle) {
     final colorController = TextEditingController(text: vehicle.color);
     final capacityController = TextEditingController(
-      text: vehicle.seatingCapacity.toString(),
+      text: (vehicle.capacity ?? 4).toString(),
     );
 
     showModalBottomSheet(
@@ -516,14 +523,21 @@ class _VehiclePageState extends State<VehiclePage> {
               height: 48,
               child: ElevatedButton(
                 onPressed: () {
-                  final updatedVehicle = vehicle.copyWith(
+                  final updatedVehicle = DriverVehicle(
+                    id: vehicle.id,
+                    make: vehicle.make,
+                    model: vehicle.model,
+                    year: vehicle.year,
                     color: colorController.text,
-                    seatingCapacity:
-                        int.tryParse(capacityController.text) ?? vehicle.seatingCapacity,
+                    licensePlate: vehicle.licensePlate,
+                    vehicleType: vehicle.vehicleType,
+                    photoUrl: vehicle.photoUrl,
+                    capacity: int.tryParse(capacityController.text) ?? vehicle.capacity,
+                    features: vehicle.features,
                   );
                   context
                       .read<DriverProfileBloc>()
-                      .add(VehicleUpdated(updatedVehicle));
+                      .add(DriverVehicleUpdated(vehicle: updatedVehicle));
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(

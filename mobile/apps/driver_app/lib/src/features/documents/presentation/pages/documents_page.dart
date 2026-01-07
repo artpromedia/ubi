@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/driver_profile_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../profile/bloc/driver_profile_bloc.dart';
 
 /// Documents management page showing document list with status
 class DocumentsPage extends StatefulWidget {
@@ -17,7 +17,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
   @override
   void initState() {
     super.initState();
-    context.read<DriverProfileBloc>().add(const DocumentsLoaded());
+    context.read<DriverProfileBloc>().add(const LoadDriverDocuments());
   }
 
   @override
@@ -46,32 +46,16 @@ class _DocumentsPageState extends State<DocumentsPage> {
                   _buildStatusSummary(context, state.documents),
                   const SizedBox(height: 24),
 
-                  // Required documents
+                  // All documents
                   Text(
-                    'Required Documents',
+                    'Your Documents',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                   ),
                   const SizedBox(height: 12),
                   ...state.documents
-                      .where((doc) => doc.isRequired)
                       .map((doc) => _buildDocumentCard(context, doc)),
-                  const SizedBox(height: 24),
-
-                  // Optional documents
-                  if (state.documents.any((doc) => !doc.isRequired)) ...[
-                    Text(
-                      'Optional Documents',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...state.documents
-                        .where((doc) => !doc.isRequired)
-                        .map((doc) => _buildDocumentCard(context, doc)),
-                  ],
                 ],
               ),
             );
@@ -85,10 +69,10 @@ class _DocumentsPageState extends State<DocumentsPage> {
 
   Widget _buildStatusSummary(
       BuildContext context, List<DriverDocument> documents) {
-    final verified = documents.where((d) => d.status == DocumentStatus.verified).length;
+    final approved = documents.where((d) => d.status == DocumentStatus.approved).length;
     final pending = documents.where((d) => d.status == DocumentStatus.pending).length;
     final rejected = documents.where((d) => d.status == DocumentStatus.rejected).length;
-    final missing = documents.where((d) => d.status == DocumentStatus.missing).length;
+    final expiringSoon = documents.where((d) => d.status == DocumentStatus.expiringSoon).length;
 
     Color statusColor;
     String statusText;
@@ -98,17 +82,17 @@ class _DocumentsPageState extends State<DocumentsPage> {
       statusColor = Colors.red;
       statusText = '$rejected document(s) rejected';
       statusIcon = Icons.error;
+    } else if (expiringSoon > 0) {
+      statusColor = Colors.orange;
+      statusText = '$expiringSoon document(s) expiring soon';
+      statusIcon = Icons.warning;
     } else if (pending > 0) {
       statusColor = Colors.orange;
       statusText = '$pending document(s) pending review';
       statusIcon = Icons.hourglass_empty;
-    } else if (missing > 0) {
-      statusColor = Colors.grey;
-      statusText = '$missing document(s) missing';
-      statusIcon = Icons.upload_file;
     } else {
       statusColor = Colors.green;
-      statusText = 'All documents verified';
+      statusText = 'All documents approved';
       statusIcon = Icons.check_circle;
     }
 
@@ -147,7 +131,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$verified of ${documents.length} verified',
+                  '$approved of ${documents.length} approved',
                   style: TextStyle(
                     color: Colors.grey.shade600,
                     fontSize: 12,
@@ -164,13 +148,13 @@ class _DocumentsPageState extends State<DocumentsPage> {
               alignment: Alignment.center,
               children: [
                 CircularProgressIndicator(
-                  value: verified / documents.length,
+                  value: approved / documents.length,
                   strokeWidth: 4,
                   backgroundColor: Colors.grey.shade200,
                   valueColor: AlwaysStoppedAnimation<Color>(statusColor),
                 ),
                 Text(
-                  '${((verified / documents.length) * 100).round()}%',
+                  '${((approved / documents.length) * 100).round()}%',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
@@ -194,7 +178,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
       ),
       child: InkWell(
         onTap: () {
-          if (document.status == DocumentStatus.missing ||
+          if (document.status == DocumentStatus.pending ||
               document.status == DocumentStatus.rejected ||
               document.status == DocumentStatus.expired) {
             context.push(
@@ -237,7 +221,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
                     if (document.expiryDate != null) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'Expires: ${document.expiryDate}',
+                        'Expires: ${_formatDate(document.expiryDate!)}',
                         style: TextStyle(
                           color: _isExpiringSoon(document.expiryDate!)
                               ? Colors.orange
@@ -287,18 +271,8 @@ class _DocumentsPageState extends State<DocumentsPage> {
 
   Widget _buildActionButton(BuildContext context, DriverDocument document) {
     switch (document.status) {
-      case DocumentStatus.missing:
-        return ElevatedButton(
-          onPressed: () => context.push(
-            AppRoutes.uploadDocument,
-            extra: document.type.name,
-          ),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            minimumSize: const Size(0, 36),
-          ),
-          child: const Text('Upload'),
-        );
+      case DocumentStatus.pending:
+        return const Icon(Icons.hourglass_empty, color: Colors.orange);
       case DocumentStatus.rejected:
       case DocumentStatus.expired:
         return OutlinedButton(
@@ -314,40 +288,40 @@ class _DocumentsPageState extends State<DocumentsPage> {
           ),
           child: const Text('Reupload'),
         );
-      case DocumentStatus.pending:
-        return const Icon(Icons.hourglass_empty, color: Colors.orange);
-      case DocumentStatus.verified:
+      case DocumentStatus.expiringSoon:
+        return const Icon(Icons.warning, color: Colors.orange);
+      case DocumentStatus.approved:
         return const Icon(Icons.check_circle, color: Colors.green);
     }
   }
 
   Color _getStatusColor(DocumentStatus status) {
     switch (status) {
-      case DocumentStatus.verified:
+      case DocumentStatus.approved:
         return Colors.green;
       case DocumentStatus.pending:
+        return Colors.orange;
+      case DocumentStatus.expiringSoon:
         return Colors.orange;
       case DocumentStatus.rejected:
         return Colors.red;
       case DocumentStatus.expired:
         return Colors.red;
-      case DocumentStatus.missing:
-        return Colors.grey;
     }
   }
 
   String _getStatusText(DocumentStatus status) {
     switch (status) {
-      case DocumentStatus.verified:
-        return 'VERIFIED';
+      case DocumentStatus.approved:
+        return 'APPROVED';
       case DocumentStatus.pending:
         return 'PENDING';
+      case DocumentStatus.expiringSoon:
+        return 'EXPIRING SOON';
       case DocumentStatus.rejected:
         return 'REJECTED';
       case DocumentStatus.expired:
         return 'EXPIRED';
-      case DocumentStatus.missing:
-        return 'MISSING';
     }
   }
 
@@ -363,12 +337,12 @@ class _DocumentsPageState extends State<DocumentsPage> {
         return Icons.security;
       case DocumentType.goodConduct:
         return Icons.verified_user;
-      case DocumentType.psv:
+      case DocumentType.psvBadge:
         return Icons.local_taxi;
+      case DocumentType.vehicleInspection:
+        return Icons.build;
       case DocumentType.profilePhoto:
         return Icons.person;
-      case DocumentType.vehiclePhoto:
-        return Icons.photo_camera;
     }
   }
 
@@ -384,17 +358,22 @@ class _DocumentsPageState extends State<DocumentsPage> {
         return 'Insurance Certificate';
       case DocumentType.goodConduct:
         return 'Good Conduct Certificate';
-      case DocumentType.psv:
-        return 'PSV License';
+      case DocumentType.psvBadge:
+        return 'PSV Badge';
+      case DocumentType.vehicleInspection:
+        return 'Vehicle Inspection';
       case DocumentType.profilePhoto:
         return 'Profile Photo';
-      case DocumentType.vehiclePhoto:
-        return 'Vehicle Photo';
     }
   }
 
-  bool _isExpiringSoon(String expiryDate) {
-    // Simple check - in real app would parse date
-    return expiryDate.contains('2024');
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  bool _isExpiringSoon(DateTime expiryDate) {
+    final now = DateTime.now();
+    final difference = expiryDate.difference(now).inDays;
+    return difference <= 30 && difference > 0;
   }
 }

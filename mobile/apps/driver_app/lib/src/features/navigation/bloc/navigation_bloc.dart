@@ -380,7 +380,7 @@ class NavigationBloc extends Bloc<NavigationEvent, NavigationState> {
     if (currentState is NavigationActive) {
       _etaTimer?.cancel();
 
-      emit(NavigationArrived(
+      emit(NavigationArrivedState(
         destination: currentState.destination,
         totalDistance: currentState.distanceRemaining,
         totalDuration: currentState.durationRemaining,

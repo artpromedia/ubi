@@ -8,6 +8,11 @@ import 'core/router/app_router.dart';
 import 'features/auth/bloc/auth_bloc.dart';
 import 'features/connectivity/bloc/connectivity_bloc.dart';
 import 'features/driver/bloc/driver_bloc.dart';
+import 'features/earnings/bloc/earnings_bloc.dart';
+import 'features/navigation/bloc/navigation_bloc.dart';
+import 'features/profile/bloc/driver_profile_bloc.dart';
+import 'features/trips/bloc/trips_bloc.dart';
+import 'features/wallet/bloc/wallet_bloc.dart';
 
 /// Main application widget for Driver App
 class UbiDriverApp extends StatelessWidget {
@@ -26,6 +31,21 @@ class UbiDriverApp extends StatelessWidget {
         ),
         BlocProvider(
           create: (_) => getIt<DriverBloc>(),
+        ),
+        BlocProvider(
+          create: (_) => getIt<EarningsBloc>(),
+        ),
+        BlocProvider(
+          create: (_) => getIt<NavigationBloc>(),
+        ),
+        BlocProvider(
+          create: (_) => getIt<DriverProfileBloc>(),
+        ),
+        BlocProvider(
+          create: (_) => getIt<TripsBloc>(),
+        ),
+        BlocProvider(
+          create: (_) => WalletBloc(),
         ),
       ],
       child: const _AppView(),
@@ -84,7 +104,7 @@ class _AppView extends StatelessWidget {
       useMaterial3: true,
       colorScheme: colorScheme,
       brightness: brightness,
-      fontFamily: 'Inter',
+      // fontFamily: 'Inter', // TODO: Add Inter font files to assets/fonts/
       
       appBarTheme: AppBarTheme(
         centerTitle: true,

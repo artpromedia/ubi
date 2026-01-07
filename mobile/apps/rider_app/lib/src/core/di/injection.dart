@@ -131,11 +131,18 @@ void _registerUseCases() {
 /// Register all BLoCs
 void _registerBlocs() {
   // Auth BLoC - singleton for app-wide auth state
+  // In debug mode, demo login works even without a backend
   getIt.registerLazySingleton<AuthBloc>(
     () => AuthBloc(
-      authRepository: getIt<AuthRepository>(),
-      tokenStorage: getIt<storage.TokenStorage>(),
+      // Pass repository if registered, otherwise demo mode will be used
+      authRepository: getIt.isRegistered<AuthRepository>() 
+          ? getIt<AuthRepository>() 
+          : null,
+      tokenStorage: getIt.isRegistered<storage.TokenStorage>()
+          ? getIt<storage.TokenStorage>()
+          : null,
       googleSignIn: getIt<GoogleSignIn>(),
+      enableDemoMode: true, // Enable demo mode for development
     ),
   );
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/driver_profile_bloc.dart';
+import '../../bloc/driver_profile_bloc.dart';
 
 /// Edit profile page for updating personal information
 class EditProfilePage extends StatefulWidget {
@@ -40,14 +40,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final state = context.read<DriverProfileBloc>().state;
     if (state is DriverProfileLoaded) {
       final profile = state.profile;
-      final names = profile.fullName.split(' ');
-      _firstNameController.text = names.isNotEmpty ? names.first : '';
-      _lastNameController.text = names.length > 1 ? names.sublist(1).join(' ') : '';
-      _emailController.text = profile.email ?? '';
-      _phoneController.text = profile.phone;
-      _addressController.text = profile.address ?? '';
-      _emergencyContactController.text = profile.emergencyContactName ?? '';
-      _emergencyPhoneController.text = profile.emergencyContactPhone ?? '';
+      _firstNameController.text = profile.firstName;
+      _lastNameController.text = profile.lastName;
+      _emailController.text = profile.email;
+      _phoneController.text = profile.phoneNumber;
+      _addressController.text = ''; // Address not in current model
+      _emergencyContactController.text = ''; // Not in current model
+      _emergencyPhoneController.text = ''; // Not in current model
     }
 
     // Listen for changes
@@ -84,21 +83,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     final currentState = context.read<DriverProfileBloc>().state;
     if (currentState is DriverProfileLoaded) {
-      final updatedProfile = currentState.profile.copyWith(
-        fullName:
-            '${_firstNameController.text} ${_lastNameController.text}'.trim(),
+      context.read<DriverProfileBloc>().add(DriverProfileUpdated(
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
         email: _emailController.text.isNotEmpty ? _emailController.text : null,
-        address:
-            _addressController.text.isNotEmpty ? _addressController.text : null,
-        emergencyContactName: _emergencyContactController.text.isNotEmpty
-            ? _emergencyContactController.text
-            : null,
-        emergencyContactPhone: _emergencyPhoneController.text.isNotEmpty
-            ? _emergencyPhoneController.text
-            : null,
-      );
-
-      context.read<DriverProfileBloc>().add(ProfileUpdated(updatedProfile));
+        phoneNumber: _phoneController.text.isNotEmpty ? _phoneController.text : null,
+      ));
     }
 
     // Simulate save
@@ -411,7 +401,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 Navigator.pop(context);
                 context
                     .read<DriverProfileBloc>()
-                    .add(const ProfilePhotoUpdated(null));
+                    .add(const DriverProfilePhotoUpdated(photoPath: ''));
               },
             ),
             const SizedBox(height: 8),
@@ -464,8 +454,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
             onPressed: () {
               Navigator.pop(context);
               context.read<DriverProfileBloc>().add(
-                    const AccountDeletionRequested(
-                      'User requested from edit profile',
+                    const DriverAccountDeletionRequested(
+                      reason: 'User requested from edit profile',
                     ),
                   );
             },

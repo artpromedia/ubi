@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
-import '../../driver/bloc/driver_bloc.dart';
-import '../../earnings/bloc/earnings_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../driver/bloc/driver_bloc.dart';
+import '../../../earnings/bloc/earnings_bloc.dart';
 
 /// Main home page for drivers with map, online/offline toggle, and stats
 class HomePage extends StatefulWidget {
@@ -38,7 +38,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     // Load initial data
     context.read<DriverBloc>().add(const DriverInitialized());
-    context.read<EarningsBloc>().add(const LoadTodayEarnings());
+    context.read<EarningsBloc>().add(const EarningsLoadToday());
   }
 
   @override
@@ -377,8 +377,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     double rating = 0;
 
     if (state is DriverOnline) {
-      trips = state.stats?.completedTrips ?? 0;
-      hours = state.stats?.hoursOnline ?? 0;
+      trips = state.stats?.todayTrips ?? 0;
+      hours = state.stats?.todayHoursOnline ?? 0;
       rating = state.stats?.rating ?? 0;
     }
 

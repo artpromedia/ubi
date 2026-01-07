@@ -5,8 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/driver_profile_bloc.dart';
+import '../../../profile/bloc/driver_profile_bloc.dart';
 
 /// Upload document page for submitting driver documents
 class UploadDocumentPage extends StatefulWidget {
@@ -73,15 +72,15 @@ class _UploadDocumentPageState extends State<UploadDocumentPage> {
         _requiresBackImage = false;
         _requiresNumber = true;
         _requiresExpiry = false;
-      case DocumentType.psv:
+      case DocumentType.psvBadge:
+        _requiresBackImage = false;
+        _requiresNumber = true;
+        _requiresExpiry = true;
+      case DocumentType.vehicleInspection:
         _requiresBackImage = false;
         _requiresNumber = true;
         _requiresExpiry = true;
       case DocumentType.profilePhoto:
-        _requiresBackImage = false;
-        _requiresNumber = false;
-        _requiresExpiry = false;
-      case DocumentType.vehiclePhoto:
         _requiresBackImage = false;
         _requiresNumber = false;
         _requiresExpiry = false;
@@ -107,10 +106,10 @@ class _UploadDocumentPageState extends State<UploadDocumentPage> {
       ),
       body: BlocListener<DriverProfileBloc, DriverProfileState>(
         listener: (context, state) {
-          if (state is DocumentUploadSuccess) {
+          if (state is DriverDocumentUploaded) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Document uploaded successfully'),
+              SnackBar(
+                content: Text(state.message),
                 backgroundColor: Colors.green,
               ),
             );
@@ -550,14 +549,22 @@ class _UploadDocumentPageState extends State<UploadDocumentPage> {
     });
 
     // Dispatch upload event
+    DateTime? expiryDate;
+    if (_requiresExpiry && _expiryDateController.text.isNotEmpty) {
+      final parts = _expiryDateController.text.split('/');
+      if (parts.length == 3) {
+        expiryDate = DateTime(
+          int.parse(parts[2]),
+          int.parse(parts[1]),
+          int.parse(parts[0]),
+        );
+      }
+    }
     context.read<DriverProfileBloc>().add(
-          DocumentUploaded(
-            type: _docType,
-            frontImagePath: _frontImage!.path,
-            backImagePath: _backImage?.path,
-            documentNumber:
-                _requiresNumber ? _documentNumberController.text : null,
-            expiryDate: _requiresExpiry ? _expiryDateController.text : null,
+          UploadDriverDocument(
+            documentType: _docType,
+            filePath: _frontImage!.path,
+            expiryDate: expiryDate,
           ),
         );
   }
@@ -574,12 +581,12 @@ class _UploadDocumentPageState extends State<UploadDocumentPage> {
         return 'Insurance Certificate';
       case DocumentType.goodConduct:
         return 'Good Conduct Certificate';
-      case DocumentType.psv:
-        return 'PSV License';
+      case DocumentType.psvBadge:
+        return 'PSV Badge';
+      case DocumentType.vehicleInspection:
+        return 'Vehicle Inspection';
       case DocumentType.profilePhoto:
         return 'Profile Photo';
-      case DocumentType.vehiclePhoto:
-        return 'Vehicle Photo';
     }
   }
 }

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/earnings_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../bloc/earnings_bloc.dart';
 
 /// Main earnings page showing today/week/month earnings with charts
 class EarningsPage extends StatefulWidget {
@@ -23,7 +23,7 @@ class _EarningsPageState extends State<EarningsPage>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_onTabChanged);
-    context.read<EarningsBloc>().add(const LoadTodayEarnings());
+    context.read<EarningsBloc>().add(const EarningsLoadToday());
   }
 
   void _onTabChanged() {
@@ -35,13 +35,13 @@ class _EarningsPageState extends State<EarningsPage>
 
     switch (_tabController.index) {
       case 0:
-        context.read<EarningsBloc>().add(const LoadTodayEarnings());
+        context.read<EarningsBloc>().add(const EarningsLoadToday());
         break;
       case 1:
-        context.read<EarningsBloc>().add(const LoadWeekEarnings());
+        context.read<EarningsBloc>().add(const EarningsLoadWeek());
         break;
       case 2:
-        context.read<EarningsBloc>().add(const LoadMonthEarnings());
+        context.read<EarningsBloc>().add(const EarningsLoadMonth());
         break;
     }
   }
@@ -183,19 +183,19 @@ class _EarningsPageState extends State<EarningsPage>
             children: [
               _buildMiniStat(
                 Icons.route,
-                '${summary.completedTrips}',
+                '${summary.tripCount}',
                 'Trips',
               ),
               const SizedBox(width: 24),
               _buildMiniStat(
                 Icons.schedule,
-                '${summary.hoursOnline.toStringAsFixed(1)}h',
+                '${summary.onlineHours.toStringAsFixed(1)}h',
                 'Online',
               ),
               const SizedBox(width: 24),
               _buildMiniStat(
                 Icons.trending_up,
-                'KES ${(summary.totalEarnings / (summary.hoursOnline > 0 ? summary.hoursOnline : 1)).toStringAsFixed(0)}',
+                'KES ${(summary.totalEarnings / (summary.onlineHours > 0 ? summary.onlineHours : 1)).toStringAsFixed(0)}',
                 'Per Hour',
               ),
             ],
@@ -247,6 +247,11 @@ class _EarningsPageState extends State<EarningsPage>
     }
   }
 
+  String _getDayLabel(DateTime date) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[date.weekday - 1];
+  }
+
   Widget _buildEarningsChart(BuildContext context, List<dynamic>? data) {
     return Container(
       height: 200,
@@ -295,7 +300,7 @@ class _EarningsPageState extends State<EarningsPage>
       if (item is HourlyEarnings) {
         value = item.earnings;
       } else if (item is DailyEarnings) {
-        value = item.totalEarnings;
+        value = item.earnings;
       }
       return value > max ? value : max;
     });
@@ -308,8 +313,8 @@ class _EarningsPageState extends State<EarningsPage>
       value = item.earnings;
       label = '${item.hour}:00';
     } else if (item is DailyEarnings) {
-      value = item.totalEarnings;
-      label = item.dayLabel;
+      value = item.earnings;
+      label = _getDayLabel(item.date);
     }
 
     final height = maxValue > 0 ? (value / maxValue) * 80 : 0.0;
@@ -356,7 +361,7 @@ class _EarningsPageState extends State<EarningsPage>
                 context,
                 icon: Icons.attach_money,
                 label: 'Trip Fares',
-                value: 'KES ${summary.tripFares.toStringAsFixed(0)}',
+                value: 'KES ${summary.tripEarnings.toStringAsFixed(0)}',
                 color: Colors.green,
               ),
             ),
@@ -389,8 +394,8 @@ class _EarningsPageState extends State<EarningsPage>
               child: _buildBreakdownCard(
                 context,
                 icon: Icons.local_offer,
-                label: 'Incentives',
-                value: 'KES ${summary.incentives.toStringAsFixed(0)}',
+                label: 'Surge Earnings',
+                value: 'KES ${summary.surgeEarnings.toStringAsFixed(0)}',
                 color: Colors.blue,
               ),
             ),
@@ -454,7 +459,7 @@ class _EarningsPageState extends State<EarningsPage>
         const SizedBox(width: 12),
         Expanded(
           child: ElevatedButton.icon(
-            onPressed: () => context.push(AppRoutes.payouts),
+            onPressed: () => context.push(AppRoutes.payoutHistory),
             icon: const Icon(Icons.account_balance_wallet),
             label: const Text('Payouts'),
             style: ElevatedButton.styleFrom(

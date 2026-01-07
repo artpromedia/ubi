@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/driver_profile_bloc.dart';
+import '../../../profile/bloc/driver_profile_bloc.dart';
 
 /// Ratings page showing driver's rating breakdown and reviews
 class RatingsPage extends StatefulWidget {
@@ -16,7 +16,7 @@ class _RatingsPageState extends State<RatingsPage> {
   @override
   void initState() {
     super.initState();
-    context.read<DriverProfileBloc>().add(const RatingsLoaded());
+    context.read<DriverProfileBloc>().add(const DriverRatingsLoaded());
   }
 
   @override
@@ -35,7 +35,7 @@ class _RatingsPageState extends State<RatingsPage> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (state is DriverRatingsLoaded) {
+          if (state is DriverRatingsLoadedState) {
             return SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -344,8 +344,8 @@ class _RatingsPageState extends State<RatingsPage> {
                 backgroundColor: Colors.grey.shade200,
                 radius: 20,
                 child: Text(
-                  rating.customerName.isNotEmpty
-                      ? rating.customerName[0].toUpperCase()
+                  (rating.riderName ?? 'Customer').isNotEmpty
+                      ? (rating.riderName ?? 'C')[0].toUpperCase()
                       : 'C',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
@@ -356,11 +356,11 @@ class _RatingsPageState extends State<RatingsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      rating.customerName,
+                      rating.riderName ?? 'Customer',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      rating.tripDate,
+                      _formatDate(rating.createdAt),
                       style: TextStyle(
                         color: Colors.grey.shade600,
                         fontSize: 12,
@@ -426,30 +426,7 @@ class _RatingsPageState extends State<RatingsPage> {
               ),
             ),
           ],
-          if (rating.tags != null && rating.tags!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: rating.tags!
-                  .map((tag) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          tag,
-                          style: TextStyle(
-                            color: Theme.of(context).primaryColor,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ))
-                  .toList(),
-            ),
-          ],
+          // Trip type indicator
           if (rating.tripType != null) ...[
             const SizedBox(height: 12),
             Row(
@@ -525,6 +502,21 @@ class _RatingsPageState extends State<RatingsPage> {
         'Be more courteous to customers',
         'Keep your vehicle clean',
       ];
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    
+    if (diff.inDays == 0) {
+      return 'Today';
+    } else if (diff.inDays == 1) {
+      return 'Yesterday';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays} days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
     }
   }
 

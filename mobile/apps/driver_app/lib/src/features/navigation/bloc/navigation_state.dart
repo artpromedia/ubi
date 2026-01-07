@@ -223,8 +223,8 @@ class NavigationArrivedWaypoint extends NavigationState {
 }
 
 /// Arrived at final destination
-class NavigationArrived extends NavigationState {
-  const NavigationArrived({
+class NavigationArrivedState extends NavigationState {
+  const NavigationArrivedState({
     required this.destination,
     required this.totalDistance,
     required this.totalDuration,

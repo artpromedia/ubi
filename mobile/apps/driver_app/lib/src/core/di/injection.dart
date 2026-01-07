@@ -1,7 +1,10 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:get_it/get_it.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:ubi_api_client/ubi_api_client.dart';
+import 'package:ubi_api_client/ubi_api_client.dart' as api_client;
 import 'package:ubi_location/ubi_location.dart';
-import 'package:ubi_storage/ubi_storage.dart';
+import 'package:ubi_storage/ubi_storage.dart' as storage;
 
 import '../../features/auth/bloc/auth_bloc.dart';
 import '../../features/connectivity/bloc/connectivity_bloc.dart';
@@ -15,25 +18,35 @@ final getIt = GetIt.instance;
 
 /// Configure all dependencies
 Future<void> configureDependencies() async {
-  // Initialize storage first (async)
-  await initializeStorage(getIt);
-
-  // Register API module
-  registerApiModule(getIt);
-
-  // Register location module
-  registerLocationModule(getIt);
-
-  // Configure API client with token storage
-  final tokenStorage = getIt<TokenStorage>();
-  final apiConfig = ApiConfig.development();
-
-  getIt.registerSingleton<ApiClient>(
-    ApiClient(
-      config: apiConfig,
-      tokenStorage: _TokenStorageAdapter(tokenStorage),
-    ),
+  // === External Dependencies ===
+  
+  // Connectivity checker
+  getIt.registerLazySingleton<ConnectivityChecker>(
+    () => _ConnectivityCheckerImpl(),
   );
+  
+  // Google Sign In
+  getIt.registerLazySingleton<GoogleSignIn>(
+    () => GoogleSignIn(scopes: ['email', 'profile']),
+  );
+
+  // === Storage Layer ===
+  await storage.initializeStorage(getIt);
+
+  // === API Layer ===
+  final storageTokenStorage = getIt<storage.TokenStorage>();
+  final apiTokenStorage = _TokenStorageAdapter(storageTokenStorage);
+  final connectivityChecker = getIt<ConnectivityChecker>();
+  
+  registerApiModule(
+    getIt,
+    tokenStorage: apiTokenStorage,
+    connectivityChecker: connectivityChecker,
+    config: ApiConfig.development(),
+  );
+
+  // === Location Layer ===
+  registerLocationModule(getIt);
 
   // Configure places service
   getIt<PlacesService>().configure(
@@ -43,7 +56,7 @@ Future<void> configureDependencies() async {
     ),
   );
 
-  // Register BLoCs
+  // === BLoC Layer ===
   _registerBlocs();
 }
 
@@ -65,37 +78,45 @@ void _registerBlocs() {
   getIt.registerFactory<DriverProfileBloc>(() => DriverProfileBloc());
 }
 
-/// Adapter to bridge TokenStorage with API client interface
-class _TokenStorageAdapter implements TokenStorageInterface {
-  _TokenStorageAdapter(this._tokenStorage);
-
-  final TokenStorage _tokenStorage;
+/// Simple connectivity checker implementation
+class _ConnectivityCheckerImpl implements ConnectivityChecker {
+  final Connectivity _connectivity = Connectivity();
 
   @override
-  Future<String?> getAccessToken() => _tokenStorage.getAccessToken();
+  Future<bool> hasConnection() async {
+    final result = await _connectivity.checkConnectivity();
+    return result != ConnectivityResult.none;
+  }
 
   @override
-  Future<String?> getRefreshToken() => _tokenStorage.getRefreshToken();
+  Stream<bool> get connectivityStream {
+    return _connectivity.onConnectivityChanged.map(
+      (result) => result != ConnectivityResult.none,
+    );
+  }
+}
 
+/// Adapter to bridge storage.TokenStorage to api_client.TokenStorage interface
+class _TokenStorageAdapter implements api_client.TokenStorage {
+  _TokenStorageAdapter(this._storage);
+  
+  final storage.TokenStorage _storage;
+  
+  @override
+  Future<String?> getAccessToken() => _storage.getAccessToken();
+  
+  @override
+  Future<String?> getRefreshToken() => _storage.getRefreshToken();
+  
   @override
   Future<void> saveTokens({
     required String accessToken,
     required String refreshToken,
-  }) async {
-    await _tokenStorage.saveTokens(AuthTokens(
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-    ));
-  }
-
+  }) => _storage.saveTokens(
+    accessToken: accessToken,
+    refreshToken: refreshToken,
+  );
+  
   @override
-  Future<void> clearTokens() => _tokenStorage.clearTokens();
-}
-
-/// Interface expected by API client for token storage
-abstract class TokenStorageInterface {
-  Future<String?> getAccessToken();
-  Future<String?> getRefreshToken();
-  Future<void> saveTokens({required String accessToken, required String refreshToken});
-  Future<void> clearTokens();
+  Future<void> clearTokens() => _storage.clearTokens();
 }

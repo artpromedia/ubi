@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/earnings_bloc.dart';
+import '../../bloc/earnings_bloc.dart';
 
 /// Payout history page showing past payouts and request payout
 class PayoutHistoryPage extends StatefulWidget {
@@ -16,7 +16,7 @@ class _PayoutHistoryPageState extends State<PayoutHistoryPage> {
   @override
   void initState() {
     super.initState();
-    context.read<EarningsBloc>().add(const LoadPayouts());
+    context.read<EarningsBloc>().add(const EarningsLoadPayouts());
   }
 
   @override
@@ -46,7 +46,7 @@ class _PayoutHistoryPageState extends State<PayoutHistoryPage> {
                   const SizedBox(height: 24),
 
                   // Bank account section
-                  _buildBankAccountSection(context, state.bankAccount),
+                  _buildBankAccountSection(context, state.bankAccounts.isNotEmpty ? state.bankAccounts.first : null),
                   const SizedBox(height: 24),
 
                   // Payout schedule
@@ -205,7 +205,7 @@ class _PayoutHistoryPageState extends State<PayoutHistoryPage> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            bankAccount.maskedAccountNumber,
+                            bankAccount.maskedNumber,
                             style: TextStyle(
                               color: Colors.grey.shade600,
                             ),
@@ -220,7 +220,7 @@ class _PayoutHistoryPageState extends State<PayoutHistoryPage> {
                         ],
                       ),
                     ),
-                    if (bankAccount.isVerified)
+                    if (bankAccount.isDefault)
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -240,7 +240,7 @@ class _PayoutHistoryPageState extends State<PayoutHistoryPage> {
                             ),
                             SizedBox(width: 4),
                             Text(
-                              'Verified',
+                              'Default',
                               style: TextStyle(
                                 color: Colors.green,
                                 fontSize: 12,
@@ -413,7 +413,7 @@ class _PayoutHistoryPageState extends State<PayoutHistoryPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  payout.formattedDate,
+                  _formatPayoutDate(payout.requestedAt),
                   style: TextStyle(
                     color: Colors.grey.shade600,
                     fontSize: 12,
@@ -468,6 +468,11 @@ class _PayoutHistoryPageState extends State<PayoutHistoryPage> {
     }
   }
 
+  String _formatPayoutDate(DateTime date) {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
   void _showPayoutDialog(BuildContext context, double balance) {
     final amountController = TextEditingController(
       text: balance.toStringAsFixed(0),
@@ -504,7 +509,7 @@ class _PayoutHistoryPageState extends State<PayoutHistoryPage> {
               final amount = double.tryParse(amountController.text) ?? 0;
               if (amount >= 500 && amount <= balance) {
                 Navigator.pop(context);
-                context.read<EarningsBloc>().add(RequestPayout(amount));
+                context.read<EarningsBloc>().add(EarningsRequestPayout(amount: amount));
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Payout request submitted'),

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/driver_profile_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../bloc/driver_profile_bloc.dart';
 
 /// Driver profile page with overview, ratings, and menu options
 class ProfilePage extends StatefulWidget {
@@ -17,7 +17,7 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    context.read<DriverProfileBloc>().add(const ProfileLoaded());
+    context.read<DriverProfileBloc>().add(const LoadDriverProfile());
   }
 
   @override
@@ -121,7 +121,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 4),
           Text(
-            profile.phone,
+            profile.phoneNumber,
             style: TextStyle(
               color: Colors.grey.shade600,
               fontSize: 16,
@@ -168,7 +168,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               _buildStatItem(
                 context,
-                '${profile.yearsActive}',
+                _calculateYearsActive(profile.memberSince),
                 'Years',
               ),
               Container(
@@ -178,14 +178,19 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               _buildStatItem(
                 context,
-                '${profile.acceptanceRate.toStringAsFixed(0)}%',
-                'Acceptance',
+                '${profile.rating.toStringAsFixed(1)}',
+                'Rating',
               ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  String _calculateYearsActive(DateTime memberSince) {
+    final years = DateTime.now().difference(memberSince).inDays ~/ 365;
+    return years > 0 ? '$years' : '<1';
   }
 
   Widget _buildStatItem(BuildContext context, String value, String label) {
@@ -259,7 +264,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${profile.totalRatings} ratings',
+                    '${profile.totalTrips} trips',
                     style: TextStyle(
                       color: Colors.grey.shade600,
                     ),
@@ -305,6 +310,14 @@ class _ProfilePageState extends State<ProfilePage> {
           title: 'Documents',
           subtitle: 'Upload and manage documents',
           onTap: () => context.push(AppRoutes.documents),
+        ),
+        _buildMenuItem(
+          context,
+          icon: Icons.account_balance_wallet,
+          title: 'UBI Pay',
+          subtitle: 'Wallet, transfers & payouts',
+          onTap: () => context.push(AppRoutes.wallet),
+          isHighlighted: true,
         ),
         const SizedBox(height: 24),
         Text(
@@ -366,31 +379,67 @@ class _ProfilePageState extends State<ProfilePage> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    bool isHighlighted = false,
   }) {
+    final primaryColor = isHighlighted 
+        ? const Color(0xFF667EEA) // UBI Pay purple
+        : Theme.of(context).primaryColor;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isHighlighted 
+            ? const Color(0xFF667EEA).withOpacity(0.05)
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(
+          color: isHighlighted 
+              ? const Color(0xFF667EEA).withOpacity(0.3)
+              : Colors.grey.shade200,
+        ),
       ),
       child: ListTile(
         leading: Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withOpacity(0.1),
+            color: primaryColor.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             icon,
-            color: Theme.of(context).primaryColor,
+            color: primaryColor,
             size: 20,
           ),
         ),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w500),
+        title: Row(
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: isHighlighted ? const Color(0xFF667EEA) : null,
+              ),
+            ),
+            if (isHighlighted) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF667EEA),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'NEW',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         subtitle: Text(
           subtitle,
@@ -416,7 +465,7 @@ class _ProfilePageState extends State<ProfilePage> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              context.read<DriverProfileBloc>().add(const LoggedOut());
+              context.read<DriverProfileBloc>().add(const DriverLoggedOut());
               context.go(AppRoutes.login);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),

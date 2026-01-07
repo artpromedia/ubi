@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/navigation_bloc.dart';
+import '../../bloc/navigation_bloc.dart';
 
 /// Turn-by-turn navigation page with voice guidance
 class NavigationPage extends StatefulWidget {
@@ -24,8 +24,9 @@ class _NavigationPageState extends State<NavigationPage> {
     // Start navigation for the trip
     context.read<NavigationBloc>().add(
           NavigationStarted(
-            tripId: widget.tripId,
-            destination: const LatLng(-1.2921, 36.8219), // Mock destination
+            destinationLatitude: -1.2921,
+            destinationLongitude: 36.8219,
+            destinationAddress: 'Destination', // Mock destination
             destinationType: DestinationType.dropoff,
           ),
         );
@@ -131,7 +132,7 @@ class _NavigationPageState extends State<NavigationPage> {
                         onPressed: () {
                           context
                               .read<NavigationBloc>()
-                              .add(VoiceGuidanceToggled(!voiceEnabled));
+                              .add(const NavigationVoiceToggled());
                         },
                       ),
                     );
@@ -194,7 +195,7 @@ class _NavigationPageState extends State<NavigationPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${instruction.distanceMeters.round()}m',
+                  '${instruction.distance.round()}m',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 24,
@@ -257,16 +258,16 @@ class _NavigationPageState extends State<NavigationPage> {
     String distance = '--';
 
     if (state is NavigationActive) {
-      final mins = state.etaMinutes;
+      final mins = state.durationRemaining ~/ 60;
       if (mins >= 60) {
         eta = '${mins ~/ 60}h ${mins % 60}m';
       } else {
         eta = '$mins min';
       }
-      final km = state.remainingDistanceMeters / 1000;
+      final km = state.distanceRemaining / 1000;
       distance = km >= 1
           ? '${km.toStringAsFixed(1)} km'
-          : '${state.remainingDistanceMeters.round()} m';
+          : '${state.distanceRemaining.round()} m';
     }
 
     return Container(
@@ -388,7 +389,7 @@ class _NavigationPageState extends State<NavigationPage> {
                     ),
                   ),
                   Text(
-                    '${state.nextInstruction!.distanceMeters.round()}m',
+                    '${state.nextInstruction!.distance.round()}m',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                     ),
@@ -398,15 +399,7 @@ class _NavigationPageState extends State<NavigationPage> {
             ),
           const SizedBox(height: 16),
 
-          // Alternative routes button
-          if (state is NavigationActive && state.alternativeRoutes.isNotEmpty)
-            TextButton.icon(
-              onPressed: () => _showAlternativeRoutes(context, state),
-              icon: const Icon(Icons.alt_route),
-              label: Text(
-                '${state.alternativeRoutes.length} alternative routes',
-              ),
-            ),
+          // Alternative routes are shown in NavigationReady state, not Active
         ],
       ),
     );
@@ -422,88 +415,26 @@ class _NavigationPageState extends State<NavigationPage> {
       case ManeuverType.turnSlightRight:
       case ManeuverType.turnSharpRight:
         return Icons.turn_right;
-      case ManeuverType.straight:
+      case ManeuverType.continueOnRoute:
+      case ManeuverType.depart:
         return Icons.straight;
-      case ManeuverType.uturnLeft:
+      case ManeuverType.uturn:
         return Icons.u_turn_left;
-      case ManeuverType.uturnRight:
-        return Icons.u_turn_right;
-      case ManeuverType.mergeLeft:
-      case ManeuverType.mergeRight:
+      case ManeuverType.merge:
+      case ManeuverType.keepLeft:
+      case ManeuverType.keepRight:
         return Icons.merge;
-      case ManeuverType.roundabout:
+      case ManeuverType.roundaboutLeft:
+      case ManeuverType.roundaboutRight:
         return Icons.roundabout_left;
-      case ManeuverType.rampLeft:
-        return Icons.ramp_left;
-      case ManeuverType.rampRight:
+      case ManeuverType.ramp:
+      case ManeuverType.exitLeft:
+      case ManeuverType.exitRight:
         return Icons.ramp_right;
       case ManeuverType.arrive:
         return Icons.flag;
-      default:
-        return Icons.navigation;
+      case ManeuverType.ferry:
+        return Icons.directions_boat;
     }
-  }
-
-  void _showAlternativeRoutes(BuildContext context, NavigationActive state) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Alternative Routes',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ...state.alternativeRoutes.map((route) => ListTile(
-                  leading: Icon(
-                    Icons.route,
-                    color: Theme.of(context).primaryColor,
-                  ),
-                  title: Text(route.name),
-                  subtitle: Text(
-                    '${route.durationMinutes} min • ${(route.distanceMeters / 1000).toStringAsFixed(1)} km',
-                  ),
-                  trailing: route.isFaster
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'Faster',
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        )
-                      : null,
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.read<NavigationBloc>().add(
-                          AlternativeRouteSelected(route.id),
-                        );
-                  },
-                )),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
   }
 }

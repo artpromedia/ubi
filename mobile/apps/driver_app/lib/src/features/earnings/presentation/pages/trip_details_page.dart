@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/earnings_bloc.dart';
+import '../../bloc/earnings_bloc.dart';
 
 /// Detailed view of a single trip's earnings breakdown
 class TripDetailsPage extends StatefulWidget {
@@ -21,7 +21,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   @override
   void initState() {
     super.initState();
-    context.read<EarningsBloc>().add(LoadTripDetails(widget.tripId));
+    context.read<EarningsBloc>().add(EarningsLoadTripDetails(tripId: widget.tripId));
   }
 
   @override
@@ -53,23 +53,23 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Header card
-                  _buildHeaderCard(context, state.details),
+                  _buildHeaderCard(context, state.trip),
                   const SizedBox(height: 24),
 
                   // Route details
-                  _buildRouteSection(context, state.details),
+                  _buildRouteSection(context, state.trip),
                   const SizedBox(height: 24),
 
                   // Customer info
-                  _buildCustomerSection(context, state.details),
+                  _buildCustomerSection(context, state.trip),
                   const SizedBox(height: 24),
 
                   // Earnings breakdown
-                  _buildEarningsBreakdown(context, state.details),
+                  _buildEarningsBreakdown(context, state.trip),
                   const SizedBox(height: 24),
 
                   // Trip stats
-                  _buildTripStats(context, state.details),
+                  _buildTripStats(context, state.trip),
                   const SizedBox(height: 24),
 
                   // Report issue button
@@ -109,7 +109,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              details.tripType.toUpperCase(),
+              details.type.toUpperCase(),
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -119,7 +119,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            'KES ${details.totalEarnings.toStringAsFixed(0)}',
+            'KES ${details.driverEarnings.toStringAsFixed(0)}',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 40,
@@ -128,7 +128,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            details.formattedDateTime,
+            _formatDateTime(details.dropoffTime),
             style: TextStyle(
               color: Colors.white.withOpacity(0.8),
             ),
@@ -235,7 +235,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                               style: const TextStyle(fontWeight: FontWeight.w500),
                             ),
                             Text(
-                              details.pickupTime,
+                              _formatTime(details.pickupTime),
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 12,
@@ -261,7 +261,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                               style: const TextStyle(fontWeight: FontWeight.w500),
                             ),
                             Text(
-                              details.dropoffTime,
+                              _formatTime(details.dropoffTime),
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 12,
@@ -313,13 +313,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      details.customerName,
+                      details.customer?.name ?? 'Customer',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
                       ),
                     ),
-                    if (details.customerRating > 0)
+                    if ((details.customer?.rating ?? 0) > 0)
                       Row(
                         children: [
                           const Icon(
@@ -329,7 +329,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            details.customerRating.toStringAsFixed(1),
+                            (details.customer?.rating ?? 0).toStringAsFixed(1),
                             style: TextStyle(color: Colors.grey.shade600),
                           ),
                         ],
@@ -394,28 +394,28 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           child: Column(
             children: [
               _buildBreakdownRow('Base Fare', details.baseFare),
-              _buildBreakdownRow('Distance (${details.distanceKm.toStringAsFixed(1)} km)', details.distanceCharge),
-              _buildBreakdownRow('Time (${details.durationMinutes} min)', details.timeCharge),
+              _buildBreakdownRow('Distance (${details.distance.toStringAsFixed(1)} km)', details.distanceFare),
+              _buildBreakdownRow('Time (${details.duration} min)', details.timeFare),
               if (details.surgeMultiplier > 1)
                 _buildBreakdownRow(
                   'Surge (${details.surgeMultiplier}x)',
-                  details.surgeAmount,
+                  (details.totalFare - details.baseFare - details.distanceFare - details.timeFare).clamp(0, double.infinity),
                   isHighlight: true,
                 ),
               if (details.tips > 0)
                 _buildBreakdownRow('Tip', details.tips, isHighlight: true),
-              if (details.bonus > 0)
-                _buildBreakdownRow('Bonus', details.bonus, isHighlight: true),
+              if (details.bonuses > 0)
+                _buildBreakdownRow('Bonus', details.bonuses, isHighlight: true),
               const Divider(height: 24),
               _buildBreakdownRow(
                 'Platform Fee',
-                -details.platformFee,
+                -details.deductions,
                 isDeduction: true,
               ),
               const Divider(height: 24),
               _buildBreakdownRow(
                 'Total Earnings',
-                details.totalEarnings,
+                details.driverEarnings,
                 isTotal: true,
               ),
             ],
@@ -481,7 +481,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               child: _buildStatCard(
                 context,
                 Icons.route,
-                '${details.distanceKm.toStringAsFixed(1)} km',
+                '${details.distance.toStringAsFixed(1)} km',
                 'Distance',
               ),
             ),
@@ -490,7 +490,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               child: _buildStatCard(
                 context,
                 Icons.schedule,
-                '${details.durationMinutes} min',
+                '${details.duration} min',
                 'Duration',
               ),
             ),
@@ -503,7 +503,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               child: _buildStatCard(
                 context,
                 Icons.hourglass_empty,
-                '${details.waitTimeMinutes} min',
+                '0 min',
                 'Wait Time',
               ),
             ),
@@ -572,6 +572,19 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         ),
       ),
     );
+  }
+
+  String _formatDateTime(DateTime date) {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '${months[date.month - 1]} ${date.day}, ${date.year} at $hour:${date.minute.toString().padLeft(2, '0')} $period';
+  }
+
+  String _formatTime(DateTime date) {
+    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:${date.minute.toString().padLeft(2, '0')} $period';
   }
 
   void _showHelpDialog(BuildContext context) {

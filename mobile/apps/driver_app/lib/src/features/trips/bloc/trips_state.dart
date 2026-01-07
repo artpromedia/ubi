@@ -162,8 +162,8 @@ class TripsComplete extends TripsState {
 }
 
 /// Trip cancelled
-class TripsCancelled extends TripsState {
-  const TripsCancelled({
+class TripsCancelledState extends TripsState {
+  const TripsCancelledState({
     required this.tripId,
     required this.reason,
     this.cancellationFee,

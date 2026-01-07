@@ -116,6 +116,11 @@ class AppRouter {
       ShellRoute(
         builder: (context, state, child) => HomePage(child: child),
         routes: [
+          // Default home route - shows ride search as default
+          GoRoute(
+            path: Routes.home,
+            builder: (context, state) => const RideSearchPage(),
+          ),
           // Ride routes
           GoRoute(
             path: Routes.rideSearch,

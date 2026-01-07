@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
+import '../../../../core/router/app_router.dart';
 
 /// OTP verification page for phone number authentication
 class OtpVerificationPage extends StatefulWidget {
