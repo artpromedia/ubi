@@ -61,11 +61,12 @@ export function LocationSearch({
     const searchPlaces = async () => {
       setIsLoading(true);
       try {
-        // TODO: Integrate with Google Places or similar API
-        // For now, simulate search results
+        // Simulate autocomplete search
+        // In production: const results = await placesApi.autocomplete(debouncedValue);
         await new Promise((resolve) => setTimeout(resolve, 300));
 
-        const mockResults: LocationResult[] = [
+        // Generate sample results based on search query
+        const sampleResults: LocationResult[] = [
           {
             id: "1",
             name: debouncedValue,
@@ -82,7 +83,7 @@ export function LocationSearch({
           },
         ];
 
-        setResults(mockResults);
+        setResults(sampleResults);
       } catch (error) {
         console.error("Search error:", error);
         setResults([]);

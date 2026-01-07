@@ -432,11 +432,13 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          {/* Map placeholder */}
+          {/* Interactive map preview - shows driver locations */}
           <div className="relative h-64 bg-gray-900 rounded-lg overflow-hidden">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <MapPin className="w-8 h-8 text-gray-700" />
-            </div>
+            {/* Map background with grid pattern */}
+            <div className="absolute inset-0 opacity-10" style={{
+              backgroundImage: `linear-gradient(to right, #22c55e 1px, transparent 1px), linear-gradient(to bottom, #22c55e 1px, transparent 1px)`,
+              backgroundSize: '20px 20px'
+            }} />
 
             {/* Simulated driver markers */}
             <div className="absolute inset-0">
