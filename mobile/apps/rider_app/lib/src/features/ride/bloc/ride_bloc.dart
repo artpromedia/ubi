@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ubi_core/ubi_core.dart';
 
+import '../../../core/services/haptic_service.dart';
 import 'ride_event.dart';
 import 'ride_state.dart';
 
@@ -248,28 +249,40 @@ class RideBloc extends Bloc<RideEvent, RideState> {
       _ => null,
     };
 
+    final haptics = HapticService.instance;
+
     switch (ride.status) {
       case RideStatus.pending:
       case RideStatus.searching:
         emit(RideSearchingDriver(ride));
       case RideStatus.driverAssigned:
       case RideStatus.driverArriving:
+        // Medium haptic for ride confirmed/driver assigned
+        haptics.onRideConfirmed();
         emit(RideDriverAssigned(
           ride: ride,
           driverLocation: currentDriverLocation,
         ));
       case RideStatus.driverArrived:
+        // Heavy haptic for driver arrived
+        haptics.onDriverArrived();
         emit(RideDriverArrived(ride));
       case RideStatus.inProgress:
+        // Heavy haptic for ride started
+        haptics.onRideStarted();
         emit(RideInProgress(
           ride: ride,
           driverLocation: currentDriverLocation,
         ));
       case RideStatus.completed:
+        // Success haptic for trip completed
+        haptics.onTripCompleted();
         add(const RideWatchStopped());
         emit(RideCompleted(ride: ride));
       case RideStatus.cancelled:
       case RideStatus.noDrivers:
+        // Error haptic for ride cancelled
+        haptics.onRideCancelled();
         add(const RideWatchStopped());
         emit(RideCancelledState(rideId: ride.id));
     }

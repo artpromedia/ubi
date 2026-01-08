@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/haptic_service.dart';
 import 'security_settings_page.dart';
 
 /// Settings page
@@ -18,6 +19,18 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _emailNotifications = true;
   bool _smsNotifications = false;
   bool _darkMode = false;
+  bool _hapticFeedback = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHapticPreference();
+  }
+
+  Future<void> _loadHapticPreference() async {
+    final enabled = HapticService.instance.isEnabled;
+    setState(() => _hapticFeedback = enabled);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,6 +104,19 @@ class _SettingsPageState extends State<SettingsPage> {
             value: _darkMode,
             onChanged: (value) {
               setState(() => _darkMode = value);
+            },
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.vibration),
+            title: const Text('Haptic Feedback'),
+            subtitle: const Text('Tactile responses for interactions'),
+            value: _hapticFeedback,
+            onChanged: (value) async {
+              await HapticService.instance.setEnabled(value);
+              setState(() => _hapticFeedback = value);
+              if (value) {
+                HapticService.instance.trigger(HapticType.light);
+              }
             },
           ),
 

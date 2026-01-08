@@ -57,6 +57,9 @@ dependencies:
   sign_in_with_apple: ^5.0.0
   local_auth: ^2.1.8
 
+  # Speech
+  speech_to_text: ^6.6.0
+
   # UI
   flutter_svg: ^2.0.9
   cached_network_image: ^3.3.1
