@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/router/app_router.dart';
+import '../../../../core/services/biometric_auth_service.dart';
+import '../../bloc/auth_bloc.dart';
 
 /// Login page for drivers
 class LoginPage extends StatefulWidget {
@@ -14,7 +19,27 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
+  final _biometricService = BiometricAuthService();
   bool _isLoading = false;
+  bool _biometricAvailable = false;
+  String? _biometricType;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometricAvailability();
+  }
+
+  Future<void> _checkBiometricAvailability() async {
+    // Check biometric status from BLoC state
+    final authState = context.read<AuthBloc>().state;
+    if (authState is AuthUnauthenticated) {
+      setState(() {
+        _biometricAvailable = authState.biometricAvailable;
+        _biometricType = authState.biometricType;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -38,26 +63,60 @@ class _LoginPageState extends State<LoginPage> {
     context.push(AppRoutes.otpVerification, extra: _phoneController.text);
   }
 
+  void _loginWithBiometric() {
+    context.read<AuthBloc>().add(const AuthBiometricLoginRequested());
+  }
+
+  IconData get _biometricIcon {
+    if (_biometricType?.toLowerCase().contains('face') == true) {
+      return Icons.face;
+    }
+    return Icons.fingerprint;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 40),
+    return BlocListener<AuthBloc, AuthState>(
+      listener: (context, state) {
+        if (state is AuthBiometricFailed) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.message),
+              backgroundColor: Colors.red,
+              action: state.canRetry
+                  ? SnackBarAction(
+                      label: 'Retry',
+                      textColor: Colors.white,
+                      onPressed: _loginWithBiometric,
+                    )
+                  : null,
+            ),
+          );
+        } else if (state is AuthUnauthenticated) {
+          setState(() {
+            _biometricAvailable = state.biometricAvailable;
+            _biometricType = state.biometricType;
+          });
+        }
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 40),
 
-                // Logo
-                Center(
-                  child: Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor,
+                  // Logo
+                  Center(
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Icon(
@@ -129,6 +188,39 @@ class _LoginPageState extends State<LoginPage> {
                         : const Text('Continue'),
                   ),
                 ),
+
+                // Biometric login button (if available)
+                if (_biometricAvailable) ...[
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: BlocBuilder<AuthBloc, AuthState>(
+                      buildWhen: (prev, curr) => curr is AuthBiometricInProgress || 
+                          curr is AuthUnauthenticated || 
+                          curr is AuthBiometricFailed,
+                      builder: (context, state) {
+                        final isAuthenticating = state is AuthBiometricInProgress;
+                        return OutlinedButton.icon(
+                          onPressed: isAuthenticating ? null : _loginWithBiometric,
+                          icon: isAuthenticating
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : Icon(_biometricIcon),
+                          label: Text(
+                            isAuthenticating 
+                                ? 'Authenticating...' 
+                                : 'Sign in with $_biometricType',
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 24),
 
                 // Divider
@@ -164,6 +256,21 @@ class _LoginPageState extends State<LoginPage> {
                     label: const Text('Continue with Google'),
                   ),
                 ),
+
+                // Use phone number instead link (shown when biometric is available)
+                if (_biometricAvailable) ...[
+                  const SizedBox(height: 16),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        // Focus on phone field
+                        FocusScope.of(context).requestFocus(FocusNode());
+                      },
+                      child: const Text('Use phone number instead'),
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 48),
 
                 // Register link
@@ -183,6 +290,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

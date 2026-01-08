@@ -20,17 +20,44 @@ class AuthLoading extends AuthState {
 
 /// User is authenticated
 class AuthAuthenticated extends AuthState {
-  const AuthAuthenticated(this.user);
+  const AuthAuthenticated(
+    this.user, {
+    this.showBiometricPrompt = false,
+    this.isFirstLogin = false,
+  });
 
   final User user;
+  final bool showBiometricPrompt;
+  final bool isFirstLogin;
 
   @override
-  List<Object?> get props => [user];
+  List<Object?> get props => [user, showBiometricPrompt, isFirstLogin];
+
+  AuthAuthenticated copyWith({
+    User? user,
+    bool? showBiometricPrompt,
+    bool? isFirstLogin,
+  }) {
+    return AuthAuthenticated(
+      user ?? this.user,
+      showBiometricPrompt: showBiometricPrompt ?? this.showBiometricPrompt,
+      isFirstLogin: isFirstLogin ?? this.isFirstLogin,
+    );
+  }
 }
 
 /// User is not authenticated
 class AuthUnauthenticated extends AuthState {
-  const AuthUnauthenticated();
+  const AuthUnauthenticated({
+    this.biometricAvailable = false,
+    this.biometricType,
+  });
+
+  final bool biometricAvailable;
+  final String? biometricType;
+
+  @override
+  List<Object?> get props => [biometricAvailable, biometricType];
 }
 
 /// OTP sent, awaiting verification
@@ -59,6 +86,41 @@ class AuthNeedsRegistration extends AuthState {
 
   @override
   List<Object?> get props => [phoneNumber, countryCode];
+}
+
+/// Biometric authentication in progress
+class AuthBiometricInProgress extends AuthState {
+  const AuthBiometricInProgress();
+}
+
+/// Biometric authentication failed
+class AuthBiometricFailed extends AuthState {
+  const AuthBiometricFailed({
+    required this.message,
+    this.canRetry = true,
+  });
+
+  final String message;
+  final bool canRetry;
+
+  @override
+  List<Object?> get props => [message, canRetry];
+}
+
+/// Biometric setup result
+class AuthBiometricSetupResult extends AuthState {
+  const AuthBiometricSetupResult({
+    required this.success,
+    required this.user,
+    this.message,
+  });
+
+  final bool success;
+  final User user;
+  final String? message;
+
+  @override
+  List<Object?> get props => [success, user, message];
 }
 
 /// Auth error occurred

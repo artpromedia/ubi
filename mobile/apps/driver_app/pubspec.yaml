@@ -62,6 +62,9 @@ dependencies:
   google_sign_in: ^6.2.1
   sign_in_with_apple: ^5.0.0
 
+  # Biometric Authentication
+  local_auth: ^2.1.8
+
   # UI Components
   cached_network_image: ^3.3.0
   shimmer: ^3.0.0

@@ -344,18 +344,17 @@ class _SettingsPageState extends State<SettingsPage> {
     return Column(
       children: [
         ListTile(
+          leading: const Icon(Icons.security),
+          title: const Text('Security'),
+          subtitle: const Text('Biometric login, device management'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push('/profile/settings/security'),
+        ),
+        ListTile(
           leading: const Icon(Icons.lock),
           title: const Text('Change Password'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _showChangePasswordDialog(context),
-        ),
-        ListTile(
-          leading: const Icon(Icons.fingerprint),
-          title: const Text('Biometric Login'),
-          trailing: Switch(
-            value: false,
-            onChanged: (value) {},
-          ),
         ),
         ListTile(
           leading: const Icon(Icons.location_on),

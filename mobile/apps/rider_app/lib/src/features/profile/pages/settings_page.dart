@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'security_settings_page.dart';
+
 /// Settings page
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -94,8 +96,17 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const Divider(),
 
-          // Privacy
-          const _SectionHeader(title: 'Privacy'),
+          // Privacy & Security
+          const _SectionHeader(title: 'Privacy & Security'),
+          ListTile(
+            leading: const Icon(Icons.security),
+            title: const Text('Security'),
+            subtitle: const Text('Biometric login, password'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SecuritySettingsPage()),
+            ),
+          ),
           ListTile(
             leading: const Icon(Icons.location_on),
             title: const Text('Location Permissions'),

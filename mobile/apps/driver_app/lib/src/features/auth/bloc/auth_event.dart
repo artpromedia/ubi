@@ -73,6 +73,31 @@ class AuthAppleLoginRequested extends AuthEvent {
   const AuthAppleLoginRequested();
 }
 
+/// Login with biometrics (Face ID, Touch ID, Fingerprint)
+class AuthBiometricLoginRequested extends AuthEvent {
+  const AuthBiometricLoginRequested();
+}
+
+/// Enable biometric authentication for the current user
+class AuthEnableBiometricRequested extends AuthEvent {
+  const AuthEnableBiometricRequested();
+}
+
+/// Disable biometric authentication
+class AuthDisableBiometricRequested extends AuthEvent {
+  const AuthDisableBiometricRequested();
+}
+
+/// Skip biometric setup prompt
+class AuthSkipBiometricSetup extends AuthEvent {
+  const AuthSkipBiometricSetup();
+}
+
+/// Check biometric availability and enrollment status
+class AuthCheckBiometricStatus extends AuthEvent {
+  const AuthCheckBiometricStatus();
+}
+
 /// Logout
 class AuthLogoutRequested extends AuthEvent {
   const AuthLogoutRequested();

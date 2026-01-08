@@ -7,6 +7,9 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:ubi_core/ubi_core.dart';
 import 'package:ubi_storage/ubi_storage.dart';
 
+import '../../../core/services/biometric_auth_service.dart';
+import '../data/repositories/biometric_repository.dart';
+
 part 'auth_event.dart';
 part 'auth_state.dart';
 
@@ -19,10 +22,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     TokenStorage? tokenStorage,
     GoogleSignIn? googleSignIn,
     bool? enableDemoMode,
+    BiometricAuthService? biometricAuthService,
+    BiometricRepository? biometricRepository,
   })  : _authRepository = authRepository,
         _tokenStorage = tokenStorage,
         _enableDemoMode = enableDemoMode ?? kDebugMode,
         _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: ['email']),
+        _biometricAuthService = biometricAuthService ?? BiometricAuthService(),
+        _biometricRepository = biometricRepository,
         super(const AuthInitial()) {
     on<AuthCheckRequested>(_onCheckRequested);
     on<AuthPhoneLoginRequested>(_onPhoneLoginRequested);
@@ -32,12 +39,20 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthAppleLoginRequested>(_onAppleLoginRequested);
     on<AuthLogoutRequested>(_onLogoutRequested);
     on<AuthUserUpdated>(_onUserUpdated);
+    // Biometric events
+    on<AuthBiometricLoginRequested>(_onBiometricLoginRequested);
+    on<AuthEnableBiometricRequested>(_onEnableBiometricRequested);
+    on<AuthDisableBiometricRequested>(_onDisableBiometricRequested);
+    on<AuthSkipBiometricSetup>(_onSkipBiometricSetup);
+    on<AuthCheckBiometricStatus>(_onCheckBiometricStatus);
   }
 
   final AuthRepository? _authRepository;
   final TokenStorage? _tokenStorage;
   final GoogleSignIn _googleSignIn;
   final bool _enableDemoMode;
+  final BiometricAuthService _biometricAuthService;
+  final BiometricRepository? _biometricRepository;
   
   /// Demo user for testing without backend
   User get _demoUser => User(
@@ -58,7 +73,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
     // If no storage or repository in demo mode, go to unauthenticated
     if (_tokenStorage == null || _authRepository == null) {
-      emit(const AuthUnauthenticated());
+      await _emitUnauthenticatedWithBiometricStatus(emit);
       return;
     }
 
@@ -66,7 +81,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     final isLoggedIn = await _tokenStorage!.isLoggedIn();
 
     if (!isLoggedIn) {
-      emit(const AuthUnauthenticated());
+      await _emitUnauthenticatedWithBiometricStatus(emit);
       return;
     }
 
@@ -78,13 +93,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         if (user != null) {
           emit(AuthAuthenticated(user));
         } else {
-          emit(const AuthUnauthenticated());
+          _emitUnauthenticatedWithBiometricStatus(emit);
         }
       },
-      failure: (failure) {
+      failure: (failure) async {
         // Token might be expired, clear and logout
-        _tokenStorage!.clearTokens();
-        emit(const AuthUnauthenticated());
+        await _tokenStorage!.clearTokens();
+        await _emitUnauthenticatedWithBiometricStatus(emit);
       },
     );
   }
@@ -145,7 +160,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     // Demo mode - any 6-digit code works
     if (_enableDemoMode) {
       await Future.delayed(const Duration(milliseconds: 500));
-      emit(AuthAuthenticated(_demoUser));
+      final showBiometricPrompt = await _shouldShowBiometricPrompt();
+      emit(AuthAuthenticated(
+        _demoUser,
+        showBiometricPrompt: showBiometricPrompt,
+        isFirstLogin: true,
+      ));
       return;
     }
 
@@ -160,14 +180,24 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       code: event.code,
     );
 
-    result.when(
-      success: (user) {
-        emit(AuthAuthenticated(user));
+    await result.when(
+      success: (user) async {
+        final showBiometricPrompt = await _shouldShowBiometricPrompt();
+        emit(AuthAuthenticated(
+          user,
+          showBiometricPrompt: showBiometricPrompt,
+          isFirstLogin: true,
+        ));
       },
-      failure: (failure) {
+      failure: (failure) async {
         // In demo mode, allow login even if OTP verification fails
         if (_enableDemoMode) {
-          emit(AuthAuthenticated(_demoUser));
+          final showBiometricPrompt = await _shouldShowBiometricPrompt();
+          emit(AuthAuthenticated(
+            _demoUser,
+            showBiometricPrompt: showBiometricPrompt,
+            isFirstLogin: true,
+          ));
         } else {
           // Check if user needs to register
           if (failure is AuthFailure && (failure.message?.contains('not registered') ?? false)) {
@@ -414,8 +444,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     await _authRepository?.logout();
     await _tokenStorage?.clearTokens();
     await _googleSignIn.signOut();
+    // Don't clear biometric on logout - user may want to use it again
 
-    emit(const AuthUnauthenticated());
+    await _emitUnauthenticatedWithBiometricStatus(emit);
   }
 
   void _onUserUpdated(
@@ -423,5 +454,267 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) {
     emit(AuthAuthenticated(event.user));
+  }
+
+  // ==================== Biometric Authentication ====================
+
+  /// Handle biometric login request
+  Future<void> _onBiometricLoginRequested(
+    AuthBiometricLoginRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthBiometricInProgress());
+
+    if (_biometricRepository == null) {
+      emit(const AuthBiometricFailed(
+        message: 'Biometric login is not available',
+        canRetry: false,
+      ));
+      return;
+    }
+
+    // Get current device key for biometric check
+    final deviceKey = DateTime.now().millisecondsSinceEpoch.toString();
+
+    // Check if biometric is enrolled
+    final status = await _biometricRepository!.checkBiometricLoginStatus(
+      currentDeviceKey: deviceKey,
+    );
+    if (status != BiometricLoginStatus.ready) {
+      emit(const AuthBiometricFailed(
+        message: 'Biometric login is not enabled',
+        canRetry: false,
+      ));
+      return;
+    }
+
+    // Authenticate using biometrics
+    final biometricType = await _biometricAuthService.getPrimaryBiometricType();
+    final biometricName = _biometricAuthService.getBiometricName(biometricType);
+    
+    final result = await _biometricAuthService.authenticate(
+      reason: 'Sign in to UBI',
+    );
+
+    if (!result.success) {
+      final canRetry = result.errorCode != 'permanently_locked_out' &&
+          result.errorCode != 'not_available' &&
+          result.errorCode != 'not_enrolled';
+      
+      emit(AuthBiometricFailed(
+        message: result.errorMessage ?? 'Biometric authentication failed',
+        canRetry: canRetry,
+      ));
+      return;
+    }
+
+    // Biometric successful - get user from stored tokens
+    final userId = await _biometricRepository!.getBiometricUserId();
+    if (userId == null) {
+      emit(const AuthBiometricFailed(
+        message: 'No saved credentials found',
+        canRetry: false,
+      ));
+      return;
+    }
+
+    // Record successful biometric login
+    await _biometricRepository!.recordBiometricLogin();
+
+    // Get current user from API using stored tokens
+    if (_authRepository != null) {
+      final userResult = await _authRepository!.getCurrentUser();
+      
+      userResult.when(
+        success: (user) {
+          if (user != null) {
+            emit(AuthAuthenticated(user));
+          } else {
+            // Tokens might be invalid, disable biometric
+            _biometricRepository!.disableBiometric();
+            emit(const AuthBiometricFailed(
+              message: 'Session expired. Please sign in again.',
+              canRetry: false,
+            ));
+          }
+        },
+        failure: (failure) {
+          // Tokens invalid, disable biometric
+          _biometricRepository!.disableBiometric();
+          emit(const AuthBiometricFailed(
+            message: 'Session expired. Please sign in again.',
+            canRetry: false,
+          ));
+        },
+      );
+    } else if (_enableDemoMode) {
+      // Demo mode - just log in as demo user
+      emit(AuthAuthenticated(_demoUser));
+    } else {
+      emit(const AuthBiometricFailed(
+        message: 'Authentication service unavailable',
+        canRetry: false,
+      ));
+    }
+  }
+
+  /// Handle enable biometric request (after successful login)
+  Future<void> _onEnableBiometricRequested(
+    AuthEnableBiometricRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is! AuthAuthenticated) {
+      emit(const AuthError('Must be logged in to enable biometric'));
+      return;
+    }
+
+    if (_biometricRepository == null) {
+      emit(AuthBiometricSetupResult(
+        success: false,
+        user: currentState.user,
+        message: 'Biometric not available',
+      ));
+      return;
+    }
+
+    // Verify biometrics first
+    final result = await _biometricAuthService.authenticate(
+      reason: 'Enable biometric login',
+    );
+
+    if (!result.success) {
+      emit(AuthBiometricSetupResult(
+        success: false,
+        user: currentState.user,
+        message: result.errorMessage ?? 'Biometric verification failed',
+      ));
+      return;
+    }
+
+    // Generate a device key based on current biometric setup
+    final deviceKey = DateTime.now().millisecondsSinceEpoch.toString();
+
+    // Store biometric enrollment
+    await _biometricRepository!.enableBiometric(
+      userId: currentState.user.id,
+      deviceKey: deviceKey,
+    );
+    await _biometricRepository!.markBiometricPromptShown();
+
+    emit(AuthBiometricSetupResult(
+      success: true,
+      user: currentState.user,
+      message: 'Biometric login enabled',
+    ));
+
+    // Return to authenticated state
+    emit(AuthAuthenticated(currentState.user, showBiometricPrompt: false));
+  }
+
+  /// Handle disable biometric request
+  Future<void> _onDisableBiometricRequested(
+    AuthDisableBiometricRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is! AuthAuthenticated) {
+      emit(const AuthError('Must be logged in to disable biometric'));
+      return;
+    }
+
+    await _biometricRepository?.disableBiometric();
+    
+    emit(AuthBiometricSetupResult(
+      success: true,
+      user: currentState.user,
+      message: 'Biometric login disabled',
+    ));
+
+    // Re-emit current state
+    emit(AuthAuthenticated(currentState.user, showBiometricPrompt: false));
+  }
+
+  /// Handle skip biometric setup
+  Future<void> _onSkipBiometricSetup(
+    AuthSkipBiometricSetup event,
+    Emitter<AuthState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is! AuthAuthenticated) return;
+
+    await _biometricRepository?.markBiometricSetupSkipped();
+    await _biometricRepository?.markBiometricPromptShown();
+
+    emit(AuthAuthenticated(currentState.user, showBiometricPrompt: false));
+  }
+
+  /// Check biometric status and update unauthenticated state
+  Future<void> _onCheckBiometricStatus(
+    AuthCheckBiometricStatus event,
+    Emitter<AuthState> emit,
+  ) async {
+    await _emitUnauthenticatedWithBiometricStatus(emit);
+  }
+
+  /// Helper to emit unauthenticated state with biometric info
+  Future<void> _emitUnauthenticatedWithBiometricStatus(
+    Emitter<AuthState> emit,
+  ) async {
+    final biometricStatus = await _checkBiometricAvailability();
+    emit(AuthUnauthenticated(
+      biometricAvailable: biometricStatus.available,
+      biometricType: biometricStatus.type,
+    ));
+  }
+
+  /// Check if biometrics are available and enabled
+  Future<({bool available, String? type})> _checkBiometricAvailability() async {
+    if (_biometricRepository == null) {
+      return (available: false, type: null);
+    }
+
+    // Get current device key
+    final deviceKey = DateTime.now().millisecondsSinceEpoch.toString();
+    
+    final status = await _biometricRepository!.checkBiometricLoginStatus(
+      currentDeviceKey: deviceKey,
+    );
+    if (status != BiometricLoginStatus.ready) {
+      return (available: false, type: null);
+    }
+
+    final isAvailable = await _biometricAuthService.isAvailable();
+    if (!isAvailable) {
+      return (available: false, type: null);
+    }
+
+    final biometricType = await _biometricAuthService.getPrimaryBiometricType();
+    return (
+      available: true,
+      type: _biometricAuthService.getBiometricName(biometricType),
+    );
+  }
+
+  /// Determine if we should show the biometric prompt after login
+  Future<bool> _shouldShowBiometricPrompt() async {
+    if (_biometricRepository == null) {
+      return false;
+    }
+
+    // Get current device key
+    final deviceKey = DateTime.now().millisecondsSinceEpoch.toString();
+    
+    // Check if already enrolled
+    final status = await _biometricRepository!.checkBiometricLoginStatus(
+      currentDeviceKey: deviceKey,
+    );
+    if (status == BiometricLoginStatus.ready) {
+      return false;
+    }
+
+    // Check if device supports biometrics
+    final isAvailable = await _biometricAuthService.isAvailable();
+    return isAvailable;
   }
 }

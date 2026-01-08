@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../bloc/ride_bloc.dart';
-import '../../../core/router/app_router.dart';
+import 'map_location_picker_page.dart';
 
 /// Ride search page with map and location selection
 class RideSearchPage extends StatefulWidget {
@@ -21,6 +18,10 @@ class _RideSearchPageState extends State<RideSearchPage> {
 
   // Default to Nairobi
   static const _initialPosition = LatLng(-1.2921, 36.8219);
+  
+  // Store selected locations
+  LatLng? _pickupLocation;
+  LatLng? _dropoffLocation;
 
   @override
   void dispose() {
@@ -43,6 +44,43 @@ class _RideSearchPageState extends State<RideSearchPage> {
       backgroundColor: Colors.transparent,
       builder: (context) => const _DestinationSearchSheet(),
     );
+  }
+
+  Future<void> _choosePickupOnMap() async {
+    final result = await MapLocationPickerPage.show(
+      context,
+      initialLocation: _pickupLocation ?? _initialPosition,
+      isPickup: true,
+      title: 'Set pickup location',
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _pickupLocation = result.location;
+        _pickupController.text = result.address;
+      });
+
+      // Center map on new pickup
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLng(result.location),
+      );
+    }
+  }
+
+  Future<void> _chooseDropoffOnMap() async {
+    final result = await MapLocationPickerPage.show(
+      context,
+      initialLocation: _dropoffLocation ?? _pickupLocation ?? _initialPosition,
+      isPickup: false,
+      title: 'Set drop-off location',
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _dropoffLocation = result.location;
+        _dropoffController.text = result.address;
+      });
+    }
   }
 
   @override
@@ -104,10 +142,16 @@ class _RideSearchPageState extends State<RideSearchPage> {
                                     border: InputBorder.none,
                                     contentPadding: EdgeInsets.zero,
                                   ),
-                                  onTap: () {
-                                    // Open pickup search
-                                  },
+                                  onTap: _choosePickupOnMap,
                                 ),
+                              ),
+                              // Map picker button for pickup
+                              IconButton(
+                                icon: const Icon(Icons.map_outlined, size: 20),
+                                onPressed: _choosePickupOnMap,
+                                tooltip: 'Choose on map',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
                               ),
                             ],
                           ),
@@ -139,6 +183,14 @@ class _RideSearchPageState extends State<RideSearchPage> {
                                   ),
                                   onTap: _searchDestination,
                                 ),
+                              ),
+                              // Map picker button for dropoff
+                              IconButton(
+                                icon: const Icon(Icons.map_outlined, size: 20),
+                                onPressed: _chooseDropoffOnMap,
+                                tooltip: 'Choose on map',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
                               ),
                             ],
                           ),
@@ -291,6 +343,22 @@ class _DestinationSearchSheetState extends State<_DestinationSearchSheet> {
     });
   }
 
+  Future<void> _openMapPicker({bool isPickup = false}) async {
+    Navigator.pop(context); // Close the search sheet first
+    
+    final result = await MapLocationPickerPage.show(
+      context,
+      isPickup: isPickup,
+      title: isPickup ? 'Set pickup location' : 'Set drop-off location',
+    );
+
+    if (result != null && context.mounted) {
+      // Handle the selected location
+      // In a real app, this would update the ride bloc state
+      debugPrint('Selected: ${result.address} at ${result.location}');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -333,6 +401,13 @@ class _DestinationSearchSheetState extends State<_DestinationSearchSheet> {
                 ),
               ),
 
+              // Choose on Map option
+              _ChooseOnMapTile(
+                onTap: () => _openMapPicker(isPickup: false),
+              ),
+
+              const Divider(height: 1),
+
               // Results
               Expanded(
                 child: ListView.builder(
@@ -356,6 +431,67 @@ class _DestinationSearchSheetState extends State<_DestinationSearchSheet> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Tile for the "Choose on Map" option
+class _ChooseOnMapTile extends StatelessWidget {
+  const _ChooseOnMapTile({
+    required this.onTap,
+  });
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: theme.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.map_outlined,
+                color: theme.primaryColor,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Choose on map',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'Drag pin to set exact location',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              color: Colors.grey[400],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

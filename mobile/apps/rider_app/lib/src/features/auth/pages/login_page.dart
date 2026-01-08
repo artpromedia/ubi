@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../bloc/auth_bloc.dart';
 import '../../../core/router/app_router.dart';
+import '../presentation/widgets/biometric_prompt_bottom_sheet.dart';
+import '../../../core/services/biometric_auth_service.dart';
 
 /// Login page with phone number input
 class LoginPage extends StatefulWidget {
@@ -17,7 +19,10 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
+  final _biometricService = BiometricAuthService();
   String _selectedCountry = '+254'; // Kenya
+  bool _showBiometricLogin = false;
+  AppBiometricType _biometricType = AppBiometricType.none;
 
   final List<CountryCode> _countryCodes = const [
     CountryCode(code: '+254', name: 'Kenya', flag: '🇰🇪'),
@@ -28,6 +33,21 @@ class _LoginPageState extends State<LoginPage> {
     CountryCode(code: '+233', name: 'Ghana', flag: '🇬🇭'),
     CountryCode(code: '+27', name: 'South Africa', flag: '🇿🇦'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometricAvailability();
+  }
+
+  Future<void> _checkBiometricAvailability() async {
+    final type = await _biometricService.getPrimaryBiometricType();
+    if (mounted) {
+      setState(() {
+        _biometricType = type;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -45,6 +65,10 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  void _onBiometricLogin() {
+    context.read<AuthBloc>().add(const AuthBiometricLoginRequested());
+  }
+
   void _onGoogleSignIn() {
     context.read<AuthBloc>().add(const AuthGoogleLoginRequested());
   }
@@ -53,11 +77,40 @@ class _LoginPageState extends State<LoginPage> {
     context.read<AuthBloc>().add(const AuthAppleLoginRequested());
   }
 
+  String get _biometricButtonText {
+    switch (_biometricType) {
+      case AppBiometricType.faceId:
+        return 'Sign in with Face ID';
+      case AppBiometricType.touchId:
+        return 'Sign in with Touch ID';
+      case AppBiometricType.fingerprint:
+        return 'Sign in with Fingerprint';
+      case AppBiometricType.iris:
+        return 'Sign in with Iris';
+      case AppBiometricType.none:
+        return 'Sign in with Biometrics';
+    }
+  }
+
+  IconData get _biometricIcon {
+    switch (_biometricType) {
+      case AppBiometricType.faceId:
+        return Icons.face;
+      case AppBiometricType.touchId:
+      case AppBiometricType.fingerprint:
+        return Icons.fingerprint;
+      case AppBiometricType.iris:
+        return Icons.remove_red_eye;
+      case AppBiometricType.none:
+        return Icons.security;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: BlocConsumer<AuthBloc, AuthState>(
-        listener: (context, state) {
+        listener: (context, state) async {
           if (state is AuthOtpSent) {
             context.go(
               Routes.otp,
@@ -75,7 +128,30 @@ class _LoginPageState extends State<LoginPage> {
               },
             );
           } else if (state is AuthAuthenticated) {
+            // Show biometric prompt if needed
+            if (state.showBiometricPrompt && state.isFirstLogin) {
+              await BiometricPromptBottomSheet.show(context, state.user);
+              if (!mounted) return;
+            }
             context.go(Routes.home);
+          } else if (state is AuthUnauthenticated) {
+            setState(() {
+              _showBiometricLogin = state.biometricAvailable;
+            });
+          } else if (state is AuthBiometricFailed) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: Colors.orange,
+                action: state.canRetry
+                    ? SnackBarAction(
+                        label: 'Retry',
+                        textColor: Colors.white,
+                        onPressed: _onBiometricLogin,
+                      )
+                    : null,
+              ),
+            );
           } else if (state is AuthError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -87,6 +163,12 @@ class _LoginPageState extends State<LoginPage> {
         },
         builder: (context, state) {
           final isLoading = state is AuthLoading;
+          final isBiometricInProgress = state is AuthBiometricInProgress;
+
+          // Update biometric availability from state
+          if (state is AuthUnauthenticated && state.biometricAvailable) {
+            _showBiometricLogin = true;
+          }
 
           return SafeArea(
             child: SingleChildScrollView(
@@ -114,6 +196,29 @@ class _LoginPageState extends State<LoginPage> {
                   ),
 
                   const SizedBox(height: 48),
+
+                  // Biometric login button (if available)
+                  if (_showBiometricLogin) ...[
+                    _buildBiometricLoginButton(
+                      isLoading: isLoading || isBiometricInProgress,
+                    ),
+                    const SizedBox(height: 24),
+                    // "Or use phone number" divider
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: Colors.grey[300])),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'or use phone number',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: Colors.grey[300])),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                  ],
 
                   // Phone form
                   Form(
@@ -191,7 +296,9 @@ class _LoginPageState extends State<LoginPage> {
 
                   // Continue button
                   ElevatedButton(
-                    onPressed: isLoading ? null : _onSubmit,
+                    onPressed: isLoading || isBiometricInProgress
+                        ? null
+                        : _onSubmit,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
@@ -277,6 +384,72 @@ class _LoginPageState extends State<LoginPage> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildBiometricLoginButton({required bool isLoading}) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: [
+            Theme.of(context).colorScheme.primaryContainer,
+            Theme.of(context).colorScheme.primaryContainer.withOpacity(0.7),
+          ],
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isLoading ? null : _onBiometricLogin,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: isLoading
+                      ? const Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          _biometricIcon,
+                          size: 32,
+                          color: Colors.white,
+                        ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _biometricButtonText,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Quick and secure sign in',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[600],
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
