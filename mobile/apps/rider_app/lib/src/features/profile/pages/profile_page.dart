@@ -88,17 +88,13 @@ class ProfilePage extends StatelessWidget {
                     icon: Icons.history,
                     title: 'Trip History',
                     subtitle: 'View past rides and orders',
-                    onTap: () {
-                      // Navigate to history
-                    },
+                    onTap: () => _showTripHistory(context),
                   ),
                   _ProfileMenuItem(
                     icon: Icons.local_offer_outlined,
                     title: 'Promotions',
                     subtitle: 'Enter promo code',
-                    onTap: () {
-                      // Navigate to promotions
-                    },
+                    onTap: () => _showPromotions(context),
                   ),
                   _ProfileMenuItem(
                     icon: Icons.notifications_outlined,
@@ -110,17 +106,13 @@ class ProfilePage extends StatelessWidget {
                     icon: Icons.help_outline,
                     title: 'Help & Support',
                     subtitle: 'FAQ, Contact us',
-                    onTap: () {
-                      // Navigate to help
-                    },
+                    onTap: () => _showHelpSupport(context),
                   ),
                   _ProfileMenuItem(
                     icon: Icons.info_outline,
                     title: 'About',
                     subtitle: 'Version 1.0.0',
-                    onTap: () {
-                      // Show about dialog
-                    },
+                    onTap: () => _showAbout(context),
                   ),
                   _ProfileMenuItem(
                     icon: Icons.settings_outlined,
@@ -191,6 +183,272 @@ class ProfilePage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showTripHistory(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) => SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Trip History',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: 5,
+                  itemBuilder: (context, index) => Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: index % 2 == 0 
+                            ? Colors.green.shade100 
+                            : Colors.orange.shade100,
+                        child: Icon(
+                          index % 2 == 0 ? Icons.local_taxi : Icons.restaurant,
+                          color: index % 2 == 0 ? Colors.green : Colors.orange,
+                        ),
+                      ),
+                      title: Text(index % 2 == 0 ? 'Ride to CBD' : 'Food Order'),
+                      subtitle: Text('${5 - index} days ago • KES ${(index + 1) * 350}'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Trip details coming soon')),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showPromotions(BuildContext context) {
+    final promoController = TextEditingController();
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Enter Promo Code',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Have a promo code? Enter it below to get discounts on your rides.',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: promoController,
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(
+                hintText: 'Enter promo code',
+                prefixIcon: const Icon(Icons.local_offer),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  if (promoController.text.isNotEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Promo code "${promoController.text}" applied!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Apply Code'),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showHelpSupport(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Help & Support',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 24),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.chat_bubble_outline, color: Colors.blue.shade700),
+                ),
+                title: const Text('Live Chat'),
+                subtitle: const Text('Chat with our support team'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Connecting to live chat...')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.phone_outlined, color: Colors.green.shade700),
+                ),
+                title: const Text('Call Support'),
+                subtitle: const Text('+254 700 123 456'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Opening phone dialer...')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.help_center_outlined, color: Colors.orange.shade700),
+                ),
+                title: const Text('FAQ'),
+                subtitle: const Text('Frequently asked questions'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Opening FAQ page...')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAbout(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: 'UBI Rider',
+      applicationVersion: '1.0.0',
+      applicationIcon: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: Theme.of(context).primaryColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.local_taxi, color: Colors.white, size: 32),
+      ),
+      applicationLegalese: '© 2024 UBI Technologies Ltd.\nAll rights reserved.',
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'UBI is your all-in-one super app for rides, food delivery, and package delivery.',
+        ),
+      ],
     );
   }
 }

@@ -11,10 +11,15 @@ import { useUIStore, type ServiceTab } from "@/store";
 import { motion } from "framer-motion";
 import { Car, Package, Utensils } from "lucide-react";
 
-const tabs: { id: ServiceTab; label: string; icon: typeof Car; color: string }[] = [
-  { id: "move", label: "Move", icon: Car, color: "var(--ubi-green)" },
-  { id: "bites", label: "Bites", icon: Utensils, color: "var(--ubi-bites)" },
-  { id: "send", label: "Send", icon: Package, color: "var(--ubi-send)" },
+const tabs: {
+  id: ServiceTab;
+  label: string;
+  icon: typeof Car;
+  color: string;
+}[] = [
+  { id: "move", label: "Move", icon: Car, color: "#1DB954" }, // UBI Green
+  { id: "bites", label: "Bites", icon: Utensils, color: "#FF7545" }, // UBI Orange
+  { id: "send", label: "Send", icon: Package, color: "#10AEBA" }, // UBI Teal
 ];
 
 interface ServiceTabsProps {

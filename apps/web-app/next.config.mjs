@@ -37,12 +37,8 @@ const nextConfig = {
     ],
   },
 
-  // Internationalization for African markets
-  i18n: {
-    locales: ["en", "sw", "zu", "ha", "am", "fr", "pt"],
-    defaultLocale: "en",
-    localeDetection: true,
-  },
+  // Note: i18n is handled by next-intl in App Router via [locale] folder structure
+  // Supported locales: en, sw, zu, ha, am, fr, pt
 
   // Headers for security and performance
   async headers() {

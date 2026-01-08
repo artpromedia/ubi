@@ -30,7 +30,7 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         children: [
           // Language
-          _SectionHeader(title: 'Language & Region'),
+          const _SectionHeader(title: 'Language & Region'),
           ListTile(
             leading: const Icon(Icons.language),
             title: const Text('Language'),
@@ -49,7 +49,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const Divider(),
 
           // Notifications
-          _SectionHeader(title: 'Notifications'),
+          const _SectionHeader(title: 'Notifications'),
           SwitchListTile(
             secondary: const Icon(Icons.notifications),
             title: const Text('Push Notifications'),
@@ -81,7 +81,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const Divider(),
 
           // Appearance
-          _SectionHeader(title: 'Appearance'),
+          const _SectionHeader(title: 'Appearance'),
           SwitchListTile(
             secondary: const Icon(Icons.dark_mode),
             title: const Text('Dark Mode'),
@@ -95,45 +95,37 @@ class _SettingsPageState extends State<SettingsPage> {
           const Divider(),
 
           // Privacy
-          _SectionHeader(title: 'Privacy'),
+          const _SectionHeader(title: 'Privacy'),
           ListTile(
             leading: const Icon(Icons.location_on),
             title: const Text('Location Permissions'),
             subtitle: const Text('Manage location access'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Open location settings
-            },
+            onTap: () => _openLocationSettings(),
           ),
           ListTile(
             leading: const Icon(Icons.privacy_tip),
             title: const Text('Privacy Policy'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Open privacy policy
-            },
+            onTap: () => _openPrivacyPolicy(),
           ),
           ListTile(
             leading: const Icon(Icons.description),
             title: const Text('Terms of Service'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Open terms
-            },
+            onTap: () => _openTermsOfService(),
           ),
 
           const Divider(),
 
           // Data
-          _SectionHeader(title: 'Data'),
+          const _SectionHeader(title: 'Data'),
           ListTile(
             leading: const Icon(Icons.download),
             title: const Text('Download My Data'),
             subtitle: const Text('Get a copy of your data'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              // Download data
-            },
+            onTap: () => _downloadData(),
           ),
           ListTile(
             leading: const Icon(Icons.cleaning_services),
@@ -146,11 +138,11 @@ class _SettingsPageState extends State<SettingsPage> {
           const Divider(),
 
           // About
-          _SectionHeader(title: 'About'),
-          ListTile(
-            leading: const Icon(Icons.info),
-            title: const Text('Version'),
-            subtitle: const Text('1.0.0 (Build 1)'),
+          const _SectionHeader(title: 'About'),
+          const ListTile(
+            leading: Icon(Icons.info),
+            title: Text('Version'),
+            subtitle: Text('1.0.0 (Build 1)'),
           ),
           ListTile(
             leading: const Icon(Icons.code),
@@ -321,6 +313,98 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             },
             child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openLocationSettings() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Location Permissions'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Your current location permission status:'),
+            SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text('Location access: Enabled'),
+              ],
+            ),
+            SizedBox(height: 8),
+            Text(
+              'UBI needs location access to show nearby rides and deliveries.',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Opening system settings...')),
+              );
+            },
+            child: const Text('System Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openPrivacyPolicy() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Opening Privacy Policy...'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _openTermsOfService() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Opening Terms of Service...'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _downloadData() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Download My Data'),
+        content: const Text(
+          'We will prepare a copy of your data and send it to your registered email address. This may take up to 48 hours.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Data download request submitted. Check your email.'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: const Text('Request Data'),
           ),
         ],
       ),

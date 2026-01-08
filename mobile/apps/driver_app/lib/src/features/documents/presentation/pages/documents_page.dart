@@ -177,16 +177,7 @@ class _DocumentsPageState extends State<DocumentsPage> {
         border: Border.all(color: Colors.grey.shade200),
       ),
       child: InkWell(
-        onTap: () {
-          if (document.status == DocumentStatus.pending ||
-              document.status == DocumentStatus.rejected ||
-              document.status == DocumentStatus.expired) {
-            context.push(
-              AppRoutes.uploadDocument,
-              extra: document.type.name,
-            );
-          }
-        },
+        onTap: () => _showDocumentDetails(context, document),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -375,5 +366,212 @@ class _DocumentsPageState extends State<DocumentsPage> {
     final now = DateTime.now();
     final difference = expiryDate.difference(now).inDays;
     return difference <= 30 && difference > 0;
+  }
+
+  void _showDocumentDetails(BuildContext context, DriverDocument document) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(document.status).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        _getDocumentIcon(document.type),
+                        color: _getStatusColor(document.status),
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getDocumentTitle(document.type),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _buildStatusBadge(document.status),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // Document details
+                _buildDetailRow(
+                  'Status',
+                  _getStatusText(document.status),
+                  _getStatusColor(document.status),
+                ),
+                if (document.expiryDate != null) ...[
+                  const SizedBox(height: 12),
+                  _buildDetailRow(
+                    'Expiry Date',
+                    _formatDate(document.expiryDate!),
+                    _isExpiringSoon(document.expiryDate!)
+                        ? Colors.orange
+                        : Colors.grey.shade700,
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  'Uploaded',
+                  _formatDate(document.uploadedAt),
+                  Colors.grey.shade700,
+                ),
+                if (document.rejectionReason != null) ...[
+                  const SizedBox(height: 12),
+                  _buildDetailRow(
+                    'Rejection Reason',
+                    document.rejectionReason!,
+                    Colors.red,
+                  ),
+                ],
+
+                const SizedBox(height: 24),
+
+                // Actions
+                if (document.status == DocumentStatus.rejected ||
+                    document.status == DocumentStatus.expired ||
+                    document.status == DocumentStatus.expiringSoon) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        context.push(
+                          AppRoutes.uploadDocument,
+                          extra: document.type.name,
+                        );
+                      },
+                      icon: const Icon(Icons.upload),
+                      label: Text(
+                        document.status == DocumentStatus.expiringSoon
+                            ? 'Upload New Document'
+                            : 'Reupload Document',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else if (document.status == DocumentStatus.pending) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.hourglass_empty, color: Colors.orange),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'This document is being reviewed. We\'ll notify you once it\'s approved.',
+                            style: TextStyle(
+                              color: Colors.orange.shade800,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (document.status == DocumentStatus.approved) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.green),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'This document has been verified and approved.',
+                            style: TextStyle(
+                              color: Colors.green.shade800,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, Color valueColor) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w500,
+              color: valueColor,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

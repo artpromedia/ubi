@@ -70,8 +70,8 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
           </Button>
         )}
         <Link href={ROUTES.home} className="flex items-center">
-          <UbiLogo size={24} className="dark:hidden" />
-          <UbiLogo size={24} variant="white" className="hidden dark:block" />
+          <UbiLogo size={32} className="dark:hidden" />
+          <UbiLogo size={32} variant="white" className="hidden dark:block" />
         </Link>
       </div>
 

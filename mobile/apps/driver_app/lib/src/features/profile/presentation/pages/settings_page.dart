@@ -320,21 +320,21 @@ class _SettingsPageState extends State<SettingsPage> {
           title: const Text('Theme'),
           subtitle: const Text('System'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {},
+          onTap: () => _showThemePicker(context),
         ),
         ListTile(
           leading: const Icon(Icons.language),
           title: const Text('Language'),
           subtitle: const Text('English'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {},
+          onTap: () => _showDefaultLanguagePicker(context),
         ),
         ListTile(
           leading: const Icon(Icons.map),
           title: const Text('Map Type'),
           subtitle: const Text('Normal'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {},
+          onTap: () => _showMapTypePicker(context),
         ),
       ],
     );
@@ -347,9 +347,7 @@ class _SettingsPageState extends State<SettingsPage> {
           leading: const Icon(Icons.lock),
           title: const Text('Change Password'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Navigate to change password
-          },
+          onTap: () => _showChangePasswordDialog(context),
         ),
         ListTile(
           leading: const Icon(Icons.fingerprint),
@@ -363,25 +361,19 @@ class _SettingsPageState extends State<SettingsPage> {
           leading: const Icon(Icons.location_on),
           title: const Text('Location Permissions'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Open location settings
-          },
+          onTap: () => _openLocationSettings(context),
         ),
         ListTile(
           leading: const Icon(Icons.privacy_tip),
           title: const Text('Privacy Policy'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Open privacy policy
-          },
+          onTap: () => _openPrivacyPolicy(context),
         ),
         ListTile(
           leading: const Icon(Icons.description),
           title: const Text('Terms of Service'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Open terms of service
-          },
+          onTap: () => _openTermsOfService(context),
         ),
         ListTile(
           leading: Icon(Icons.delete_forever, color: Colors.red.shade400),
@@ -443,9 +435,7 @@ class _SettingsPageState extends State<SettingsPage> {
           leading: const Icon(Icons.help),
           title: const Text('Help & Support'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Open help
-          },
+          onTap: () => _showHelpSupport(context),
         ),
       ],
     );
@@ -492,6 +482,348 @@ class _SettingsPageState extends State<SettingsPage> {
             child: const Text('Delete'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showThemePicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Select Theme',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.brightness_auto),
+                title: const Text('System'),
+                trailing: const Icon(Icons.check, color: Colors.green),
+                onTap: () => Navigator.pop(context),
+              ),
+              ListTile(
+                leading: const Icon(Icons.light_mode),
+                title: const Text('Light'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Light theme selected')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.dark_mode),
+                title: const Text('Dark'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Dark theme selected')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDefaultLanguagePicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Select Language',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                title: const Text('English'),
+                trailing: const Icon(Icons.check, color: Colors.green),
+                onTap: () => Navigator.pop(context),
+              ),
+              ListTile(
+                title: const Text('Kiswahili'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Language changed to Kiswahili')),
+                  );
+                },
+              ),
+              ListTile(
+                title: const Text('Français'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Language changed to Français')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMapTypePicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Select Map Type',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.map),
+                title: const Text('Normal'),
+                trailing: const Icon(Icons.check, color: Colors.green),
+                onTap: () => Navigator.pop(context),
+              ),
+              ListTile(
+                leading: const Icon(Icons.satellite),
+                title: const Text('Satellite'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Map type changed to Satellite')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.terrain),
+                title: const Text('Terrain'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Map type changed to Terrain')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showChangePasswordDialog(BuildContext context) {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: currentPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Current Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: newPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'New Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: confirmPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Confirm New Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Password changed successfully'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: const Text('Change'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openLocationSettings(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Location Permissions'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Your current location permission status:'),
+            SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text('Location access: Enabled'),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text('Background location: Enabled'),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Opening system settings...')),
+              );
+            },
+            child: const Text('System Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openPrivacyPolicy(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Opening Privacy Policy...'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _openTermsOfService(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Opening Terms of Service...'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showHelpSupport(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Help & Support',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 24),
+              ListTile(
+                leading: const Icon(Icons.chat_bubble_outline),
+                title: const Text('Live Chat'),
+                subtitle: const Text('Chat with our support team'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Connecting to live chat...')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.phone_outlined),
+                title: const Text('Call Support'),
+                subtitle: const Text('+254 700 123 456'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Opening phone dialer...')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.email_outlined),
+                title: const Text('Email Support'),
+                subtitle: const Text('support@ubi.co.ke'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Opening email client...')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.help_center_outlined),
+                title: const Text('FAQ'),
+                subtitle: const Text('Frequently asked questions'),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Opening FAQ page...')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
