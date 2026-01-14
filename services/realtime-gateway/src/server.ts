@@ -30,7 +30,6 @@ import {
 // Configuration
 const port = parseInt(process.env.PORT || "4010", 10);
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
-const jwtSecret = process.env.JWT_SECRET || "development-secret";
 
 // Custom config (can be overridden via environment)
 const wsConfig: Partial<WebSocketConfig> = {
@@ -153,8 +152,6 @@ app.get("/metrics/prometheus", async (c) => {
 app.post("/broadcast/user/:userId", async (c) => {
   const userId = c.req.param("userId");
   const message = await c.req.json();
-  const priority =
-    (c.req.query("priority") as "high" | "normal" | "low") || "normal";
 
   await connectionManager.sendToUser(userId, {
     ...message,
@@ -326,7 +323,7 @@ async function verifyToken(
       return { userId: null, expiresAt: undefined };
     }
 
-    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString());
+    const payload = JSON.parse(Buffer.from(parts[1] ?? "", "base64").toString());
     const userId = payload.userId || payload.sub;
     const expiresAt = payload.exp ? new Date(payload.exp * 1000) : undefined;
 

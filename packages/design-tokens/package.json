@@ -4,10 +4,17 @@
   "private": true,
   "description": "UBI Design System - Design tokens for all platforms",
   "sideEffects": false,
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
+  "main": "./dist/ts/tokens.js",
+  "module": "./dist/ts/tokens.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/ts/tokens.js",
+      "require": "./dist/ts/tokens.js"
+    },
+    "./types": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     },
