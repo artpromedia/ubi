@@ -2,9 +2,7 @@
   "extends": "@ubi/typescript-config/node-library.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
-    "module": "ESNext",
-    "moduleResolution": "bundler"
+    "rootDir": "src"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

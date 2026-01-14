@@ -3,6 +3,9 @@
  */
 
 import type { NetworkProfile, TestConfig } from "./types";
+import { AFRICAN_CITIES } from "./fixtures/locations.fixture";
+// Re-export AFRICAN_CITIES for backwards compatibility (used by location.factory.ts)
+export { AFRICAN_CITIES };
 
 // =============================================================================
 // Wait Utilities
@@ -274,25 +277,6 @@ export const PHONE_FORMATS: Record<string, { code: string; format: string }> = {
   ET: { code: "+251", format: "XXXXXXXXX" }, // Ethiopia
   TZ: { code: "+255", format: "XXXXXXXXX" }, // Tanzania
   UG: { code: "+256", format: "XXXXXXXXX" }, // Uganda
-};
-
-/**
- * African city coordinates for location testing
- */
-export const AFRICAN_CITIES: Record<
-  string,
-  { latitude: number; longitude: number; name: string; country: string }
-> = {
-  lagos: { latitude: 6.5244, longitude: 3.3792, name: "Lagos", country: "Nigeria" },
-  nairobi: { latitude: -1.2921, longitude: 36.8219, name: "Nairobi", country: "Kenya" },
-  accra: { latitude: 5.6037, longitude: -0.187, name: "Accra", country: "Ghana" },
-  johannesburg: { latitude: -26.2041, longitude: 28.0473, name: "Johannesburg", country: "South Africa" },
-  capetown: { latitude: -33.9249, longitude: 18.4241, name: "Cape Town", country: "South Africa" },
-  kigali: { latitude: -1.9403, longitude: 29.8739, name: "Kigali", country: "Rwanda" },
-  addisababa: { latitude: 9.0054, longitude: 38.7636, name: "Addis Ababa", country: "Ethiopia" },
-  daressalaam: { latitude: -6.7924, longitude: 39.2083, name: "Dar es Salaam", country: "Tanzania" },
-  kampala: { latitude: 0.3476, longitude: 32.5825, name: "Kampala", country: "Uganda" },
-  cairo: { latitude: 30.0444, longitude: 31.2357, name: "Cairo", country: "Egypt" },
 };
 
 /**

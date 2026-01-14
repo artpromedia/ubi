@@ -4,13 +4,15 @@
   "description": "ML-powered ETA prediction service using XGBoost",
   "private": true,
   "scripts": {
-    "install": "pip install -r requirements.txt",
+    "setup": "bash setup.sh",
+    "setup:deps": "pip install -r requirements.txt",
     "dev": "uvicorn app.main:app --reload --port 4020",
     "start": "uvicorn app.main:app --host 0.0.0.0 --port 4020",
     "train": "python -m app.training.train_model",
     "test": "pytest tests/ -v",
     "lint": "ruff check app/ tests/",
-    "format": "ruff format app/ tests/"
+    "format": "ruff format app/ tests/",
+    "typecheck": "mypy app/"
   },
   "keywords": [
     "eta",

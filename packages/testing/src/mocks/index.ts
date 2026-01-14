@@ -5,9 +5,9 @@
  */
 
 // Re-export MSW utilities for convenience
-export { handlers, createHandlers } from "../msw/handlers";
-export { setupMswServer } from "../msw/server";
-export { setupMswBrowser } from "../msw/browser";
+export { handlers } from "../msw/handlers";
+export { setupMswServer, server } from "../msw/server";
+export { worker, startMswWorker, stopMswWorker } from "../msw/browser";
 
 // Common mock implementations
 
