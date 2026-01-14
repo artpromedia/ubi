@@ -33,7 +33,6 @@ interface ConnectionStats {
 
 export class MetricsCollector {
   private redis: Redis;
-  private config: WebSocketConfig;
   private serverId: string;
 
   // In-memory counters for high-frequency updates
@@ -56,7 +55,6 @@ export class MetricsCollector {
 
   constructor(redis: Redis, config: WebSocketConfig, serverId: string) {
     this.redis = redis;
-    this.config = config;
     this.serverId = serverId;
     this.maxSamples = config.latencyWindowSize;
 
@@ -154,7 +152,7 @@ export class MetricsCollector {
   /**
    * Record an error
    */
-  recordError(errorType: string): void {
+  recordError(_errorType: string): void {
     this.globalStats.totalErrors++;
     const second = Math.floor(Date.now() / 1000);
     this.globalStats.errorsBySecond.set(
@@ -262,7 +260,7 @@ export class MetricsCollector {
     const p99Index = Math.floor(sorted.length * 0.99);
     const p99 = sorted[p99Index] || sorted[sorted.length - 1];
 
-    return { avg: Math.round(avg * 100) / 100, p99 };
+    return { avg: Math.round(avg * 100) / 100, p99: p99 ?? 0 };
   }
 
   /**

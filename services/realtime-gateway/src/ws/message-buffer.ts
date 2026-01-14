@@ -199,7 +199,7 @@ export class MessageBuffer {
   /**
    * Mark a message as delivered (increment attempts, remove if max reached)
    */
-  async markDeliveryAttempt(userId: string, seq: number): Promise<void> {
+  async markDeliveryAttempt(_userId: string, _seq: number): Promise<void> {
     // This is handled during the delivery process
     // Messages are removed on successful ack or expired
   }

@@ -11,7 +11,6 @@
 import { Context } from "hono";
 import { Redis } from "ioredis";
 import { nanoid } from "nanoid";
-import { MessageBuffer } from "./message-buffer.js";
 import type { UserType, WebSocketConfig, WebSocketMessage } from "./types.js";
 
 interface PollingSession {
@@ -35,8 +34,6 @@ interface PollResponse {
 
 export class PollingFallbackHandler {
   private redis: Redis;
-  private config: WebSocketConfig;
-  private messageBuffer: MessageBuffer;
   private sessions = new Map<string, PollingSession>();
 
   // Polling configuration
@@ -45,10 +42,8 @@ export class PollingFallbackHandler {
   private readonly MAX_POLL_INTERVAL_MS = 5000; // Maximum poll interval
   private readonly SESSION_TTL_MS = 300000; // 5 minutes
 
-  constructor(redis: Redis, config: WebSocketConfig) {
+  constructor(redis: Redis, _config: WebSocketConfig) {
     this.redis = redis;
-    this.config = config;
-    this.messageBuffer = new MessageBuffer(redis, config);
 
     // Cleanup expired sessions periodically
     setInterval(() => this.cleanupExpiredSessions(), 60000);

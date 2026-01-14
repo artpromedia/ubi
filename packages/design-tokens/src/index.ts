@@ -1,17 +1,14 @@
 /**
  * UBI Design System - Design Tokens
- * 
+ *
  * This module exports the design tokens for the UBI Design System.
  * Tokens are available in multiple formats:
  * - CSS Custom Properties (import '@ubi/design-tokens/css')
  * - TypeScript constants (import from '@ubi/design-tokens')
  * - Tailwind theme (import '@ubi/design-tokens/tailwind')
- * 
+ *
  * @packageDocumentation
  */
-
-// Re-export tokens
-export * from '../dist/ts/tokens';
 
 // Token types
 export interface ColorToken {

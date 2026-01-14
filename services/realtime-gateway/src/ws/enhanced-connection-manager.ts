@@ -17,14 +17,14 @@ import { nanoid } from "nanoid";
 import { WebSocket } from "ws";
 import { MessageBuffer } from "./message-buffer.js";
 import { MetricsCollector } from "./metrics-collector.js";
-import type {
-  ConnectionEvent,
+import {
   DEFAULT_CONFIG,
-  ServerMetrics,
-  UserType,
-  WebSocketConfig,
-  WebSocketConnection,
-  WebSocketMessage,
+  type ConnectionEvent,
+  type ServerMetrics,
+  type UserType,
+  type WebSocketConfig,
+  type WebSocketConnection,
+  type WebSocketMessage,
 } from "./types.js";
 
 interface PendingAck {
@@ -51,7 +51,6 @@ export class EnhancedConnectionManager {
   private websockets = new Map<string, WebSocket>();
   private pendingAcks = new Map<string, Map<number, PendingAck>>();
   private heartbeatIntervals = new Map<string, NodeJS.Timeout>();
-  private ackTimeouts = new Map<string, NodeJS.Timeout>();
 
   private redis: Redis;
   private redisSub: Redis;
@@ -111,14 +110,14 @@ export class EnhancedConnectionManager {
     try {
       // Extract userId from channel pattern ws:user:{userId}:messages
       const match = channel.match(/ws:user:([^:]+):messages/);
-      if (match) {
+      if (match && match[1]) {
         const userId = match[1];
         const parsedMessage = JSON.parse(message) as WebSocketMessage;
 
         // Only deliver if user is connected to this server
         const connectionIds = this.userConnections.get(userId);
         if (connectionIds && connectionIds.size > 0) {
-          for (const connId of connectionIds) {
+          for (const connId of Array.from(connectionIds)) {
             this.sendToConnection(connId, parsedMessage);
           }
         }
@@ -686,13 +685,9 @@ export class EnhancedConnectionManager {
   async sendToUser(userId: string, message: WebSocketMessage): Promise<void> {
     // Send to local connections
     const localConns = this.userConnections.get(userId);
-    let sentLocally = false;
-
     if (localConns) {
       for (const connId of localConns) {
-        if (this.sendToConnection(connId, message)) {
-          sentLocally = true;
-        }
+        this.sendToConnection(connId, message);
       }
     }
 
@@ -856,9 +851,9 @@ export class EnhancedConnectionManager {
     }
 
     // Clear delivered messages
-    const lastSeq = messages[messages.length - 1];
-    if ("seq" in lastSeq) {
-      await this.messageBuffer.clearBuffer(userId, lastSeq.seq);
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && "seq" in lastMsg) {
+      await this.messageBuffer.clearBuffer(userId, lastMsg.seq);
     }
   }
 
@@ -984,7 +979,7 @@ export class EnhancedConnectionManager {
    * Refresh access token (mock implementation)
    */
   private async refreshAccessToken(
-    refreshToken: string
+    _refreshToken: string
   ): Promise<{ accessToken: string; expiresIn: number } | null> {
     // TODO: Integrate with your auth service
     try {
