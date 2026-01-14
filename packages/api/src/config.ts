@@ -87,7 +87,7 @@ export function createKyOptions(config: ApiConfig): Options {
         },
       ],
       afterResponse: [
-        async (request, options, response) => {
+        async (request, _options, response) => {
           // Debug logging
           if (config.debug) {
             console.log(
@@ -116,7 +116,11 @@ export function createKyOptions(config: ApiConfig): Options {
 
           if (response) {
             try {
-              const body = await response.json();
+              const body = (await response.json()) as {
+                message?: string;
+                code?: string;
+                details?: Record<string, unknown>;
+              };
               const apiError: ApiError = {
                 status: response.status,
                 statusText: response.statusText,

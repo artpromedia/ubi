@@ -6,13 +6,13 @@
 
 import { type ApiClient, getApiClient } from "../client";
 import type {
+  Address,
+  ApiResponse,
+  Coordinates,
+  Money,
   PaginatedResponse,
   PaginationParams,
-  ApiResponse,
   Timestamps,
-  Coordinates,
-  Address,
-  Money,
 } from "../types";
 
 // Ride types
@@ -155,7 +155,9 @@ export class RideServiceApi {
   }
 
   // Ride estimates
-  async getEstimates(data: RideEstimateRequest): Promise<ApiResponse<RideEstimate[]>> {
+  async getEstimates(
+    data: RideEstimateRequest
+  ): Promise<ApiResponse<RideEstimate[]>> {
     return this.client.post(`${this.basePath}/estimate`, data);
   }
 
@@ -175,17 +177,26 @@ export class RideServiceApi {
   }
 
   // Rate a ride
-  async rateRide(id: string, data: RateRideRequest): Promise<ApiResponse<Ride>> {
+  async rateRide(
+    id: string,
+    data: RateRideRequest
+  ): Promise<ApiResponse<Ride>> {
     return this.client.post(`${this.basePath}/${id}/rate`, data);
   }
 
   // Get ride history (for riders)
-  async getRideHistory(filters?: RideFilters): Promise<PaginatedResponse<Ride>> {
-    return this.client.get(`${this.basePath}/history`, { searchParams: filters as any });
+  async getRideHistory(
+    filters?: RideFilters
+  ): Promise<PaginatedResponse<Ride>> {
+    return this.client.get(`${this.basePath}/history`, {
+      searchParams: filters as any,
+    });
   }
 
   // Get current active ride
-  async getActiveRide(): Promise<ApiResponse<(Ride & { driver?: Driver }) | null>> {
+  async getActiveRide(): Promise<
+    ApiResponse<(Ride & { driver?: Driver }) | null>
+  > {
     return this.client.get(`${this.basePath}/active`);
   }
 
@@ -205,7 +216,8 @@ export class RideServiceApi {
 
   // Subscribe to ride updates (returns WebSocket URL)
   getRideUpdatesUrl(rideId: string): string {
-    return `${this.client.getInstance().defaults.prefixUrl}/ws/rides/${rideId}`;
+    // WebSocket URL is constructed based on the API base URL
+    return `/ws/rides/${rideId}`;
   }
 
   // Driver endpoints
@@ -234,7 +246,10 @@ export class RideServiceApi {
     return this.client.post(`${this.basePath}/${id}/complete`);
   }
 
-  async updateLocation(id: string, location: RideLocationUpdate): Promise<ApiResponse<void>> {
+  async updateLocation(
+    id: string,
+    location: RideLocationUpdate
+  ): Promise<ApiResponse<void>> {
     return this.client.post(`${this.basePath}/${id}/location`, location);
   }
 
@@ -243,7 +258,10 @@ export class RideServiceApi {
     return this.client.get(this.basePath, { searchParams: filters as any });
   }
 
-  async getRideStats(dateFrom: string, dateTo: string): Promise<ApiResponse<RideStats>> {
+  async getRideStats(
+    dateFrom: string,
+    dateTo: string
+  ): Promise<ApiResponse<RideStats>> {
     return this.client.get(`${this.basePath}/stats`, {
       searchParams: { dateFrom, dateTo },
     });

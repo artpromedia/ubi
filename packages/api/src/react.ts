@@ -5,13 +5,13 @@
  */
 
 import {
-  useQuery,
-  useMutation,
-  useInfiniteQuery,
   QueryClient,
-  type UseQueryOptions,
-  type UseMutationOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
   type UseInfiniteQueryOptions,
+  type UseMutationOptions,
+  type UseQueryOptions,
 } from "@tanstack/react-query";
 import type { PaginatedResponse, PaginationParams } from "./types";
 
@@ -103,22 +103,15 @@ export function createInfiniteQueryOptions<TData>(
   queryFn: (params: PaginationParams) => Promise<PaginatedResponse<TData>>,
   baseKey: readonly unknown[],
   initialFilters?: Omit<PaginationParams, "page" | "cursor">
-): UseInfiniteQueryOptions<
-  PaginatedResponse<TData>,
-  Error,
-  { pages: PaginatedResponse<TData>[]; pageParams: number[] },
-  PaginatedResponse<TData>,
-  readonly unknown[],
-  number
-> {
+) {
   return {
     queryKey: [...baseKey, initialFilters],
-    queryFn: ({ pageParam = 1 }) =>
+    queryFn: ({ pageParam = 1 }: { pageParam: number }) =>
       queryFn({ ...initialFilters, page: pageParam }),
     initialPageParam: 1,
-    getNextPageParam: (lastPage) =>
+    getNextPageParam: (lastPage: PaginatedResponse<TData>) =>
       lastPage.meta.hasNextPage ? lastPage.meta.page + 1 : undefined,
-    getPreviousPageParam: (firstPage) =>
+    getPreviousPageParam: (firstPage: PaginatedResponse<TData>) =>
       firstPage.meta.hasPreviousPage ? firstPage.meta.page - 1 : undefined,
   };
 }
@@ -157,7 +150,10 @@ export function createOptimisticUpdate<TData, TVariables>(
 
       // Optimistically update
       if (previousData) {
-        queryClient.setQueryData<TData>(queryKey, updateFn(previousData, variables));
+        queryClient.setQueryData<TData>(
+          queryKey,
+          updateFn(previousData, variables)
+        );
       }
 
       return { previousData };
@@ -181,13 +177,13 @@ export function createOptimisticUpdate<TData, TVariables>(
 
 // Export hooks and utilities
 export {
-  useQuery,
-  useMutation,
-  useInfiniteQuery,
   QueryClient,
-  type UseQueryOptions,
-  type UseMutationOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
   type UseInfiniteQueryOptions,
+  type UseMutationOptions,
+  type UseQueryOptions,
 };
 
 export type { QueryKeyFactory };

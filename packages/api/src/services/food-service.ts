@@ -6,13 +6,13 @@
 
 import { type ApiClient, getApiClient } from "../client";
 import type {
+  Address,
+  ApiResponse,
+  Coordinates,
+  Money,
   PaginatedResponse,
   PaginationParams,
-  ApiResponse,
   Timestamps,
-  Coordinates,
-  Address,
-  Money,
 } from "../types";
 
 // Restaurant types
@@ -212,19 +212,28 @@ export class FoodServiceApi {
   }
 
   // Restaurants
-  async getRestaurants(filters?: RestaurantFilters): Promise<PaginatedResponse<Restaurant>> {
-    return this.client.get(`${this.basePath}/restaurants`, { searchParams: filters as any });
+  async getRestaurants(
+    filters?: RestaurantFilters
+  ): Promise<PaginatedResponse<Restaurant>> {
+    return this.client.get(`${this.basePath}/restaurants`, {
+      searchParams: filters as any,
+    });
   }
 
   async getRestaurant(idOrSlug: string): Promise<ApiResponse<Restaurant>> {
     return this.client.get(`${this.basePath}/restaurants/${idOrSlug}`);
   }
 
-  async getRestaurantMenu(restaurantId: string): Promise<ApiResponse<MenuCategory[]>> {
+  async getRestaurantMenu(
+    restaurantId: string
+  ): Promise<ApiResponse<MenuCategory[]>> {
     return this.client.get(`${this.basePath}/restaurants/${restaurantId}/menu`);
   }
 
-  async searchRestaurants(query: string, location?: Coordinates): Promise<ApiResponse<Restaurant[]>> {
+  async searchRestaurants(
+    query: string,
+    location?: Coordinates
+  ): Promise<ApiResponse<Restaurant[]>> {
     return this.client.get(`${this.basePath}/restaurants/search`, {
       searchParams: {
         q: query,
@@ -233,13 +242,20 @@ export class FoodServiceApi {
     });
   }
 
-  async getFeaturedRestaurants(location?: Coordinates): Promise<ApiResponse<Restaurant[]>> {
+  async getFeaturedRestaurants(
+    location?: Coordinates
+  ): Promise<ApiResponse<Restaurant[]>> {
     return this.client.get(`${this.basePath}/restaurants/featured`, {
-      searchParams: location && { lat: location.latitude, lng: location.longitude },
+      searchParams: location && {
+        lat: location.latitude,
+        lng: location.longitude,
+      },
     });
   }
 
-  async getCuisineTypes(): Promise<ApiResponse<{ id: string; name: string; imageUrl?: string }[]>> {
+  async getCuisineTypes(): Promise<
+    ApiResponse<{ id: string; name: string; imageUrl?: string }[]>
+  > {
     return this.client.get(`${this.basePath}/cuisine-types`);
   }
 
@@ -252,15 +268,22 @@ export class FoodServiceApi {
     return this.client.get(`${this.basePath}/orders/${id}`);
   }
 
-  async getOrderHistory(filters?: OrderFilters): Promise<PaginatedResponse<FoodOrder>> {
-    return this.client.get(`${this.basePath}/orders`, { searchParams: filters as any });
+  async getOrderHistory(
+    filters?: OrderFilters
+  ): Promise<PaginatedResponse<FoodOrder>> {
+    return this.client.get(`${this.basePath}/orders`, {
+      searchParams: filters as any,
+    });
   }
 
   async getActiveOrder(): Promise<ApiResponse<FoodOrder | null>> {
     return this.client.get(`${this.basePath}/orders/active`);
   }
 
-  async cancelOrder(id: string, reason?: string): Promise<ApiResponse<FoodOrder>> {
+  async cancelOrder(
+    id: string,
+    reason?: string
+  ): Promise<ApiResponse<FoodOrder>> {
     return this.client.post(`${this.basePath}/orders/${id}/cancel`, { reason });
   }
 
@@ -277,7 +300,8 @@ export class FoodServiceApi {
 
   // Order tracking
   getOrderTrackingUrl(orderId: string): string {
-    return `${this.client.getInstance().defaults.prefixUrl}/ws/food/orders/${orderId}`;
+    // WebSocket URL is constructed based on the API base URL
+    return `/ws/food/orders/${orderId}`;
   }
 
   // Cart/Checkout preview
@@ -308,23 +332,40 @@ export class FoodServiceApi {
   }
 
   // Restaurant portal endpoints
-  async getRestaurantOrders(filters?: OrderFilters): Promise<PaginatedResponse<FoodOrder>> {
-    return this.client.get(`${this.basePath}/restaurant/orders`, { searchParams: filters as any });
+  async getRestaurantOrders(
+    filters?: OrderFilters
+  ): Promise<PaginatedResponse<FoodOrder>> {
+    return this.client.get(`${this.basePath}/restaurant/orders`, {
+      searchParams: filters as any,
+    });
   }
 
-  async updateOrderStatus(orderId: string, status: OrderStatus): Promise<ApiResponse<FoodOrder>> {
-    return this.client.patch(`${this.basePath}/restaurant/orders/${orderId}/status`, { status });
+  async updateOrderStatus(
+    orderId: string,
+    status: OrderStatus
+  ): Promise<ApiResponse<FoodOrder>> {
+    return this.client.patch(
+      `${this.basePath}/restaurant/orders/${orderId}/status`,
+      { status }
+    );
   }
 
   async updateMenuItem(
     menuItemId: string,
     data: Partial<MenuItem>
   ): Promise<ApiResponse<MenuItem>> {
-    return this.client.patch(`${this.basePath}/restaurant/menu/${menuItemId}`, data);
+    return this.client.patch(
+      `${this.basePath}/restaurant/menu/${menuItemId}`,
+      data
+    );
   }
 
-  async toggleMenuItemAvailability(menuItemId: string): Promise<ApiResponse<MenuItem>> {
-    return this.client.post(`${this.basePath}/restaurant/menu/${menuItemId}/toggle-availability`);
+  async toggleMenuItemAvailability(
+    menuItemId: string
+  ): Promise<ApiResponse<MenuItem>> {
+    return this.client.post(
+      `${this.basePath}/restaurant/menu/${menuItemId}/toggle-availability`
+    );
   }
 }
 
