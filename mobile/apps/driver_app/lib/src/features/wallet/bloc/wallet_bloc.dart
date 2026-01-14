@@ -1,12 +1,16 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../data/wallet_repository.dart';
+
 part 'wallet_event.dart';
 part 'wallet_state.dart';
 
 /// BLoC for managing UBI Pay wallet functionality
 class WalletBloc extends Bloc<WalletEvent, WalletState> {
-  WalletBloc() : super(const WalletInitial()) {
+  WalletBloc({required WalletRepository walletRepository})
+      : _walletRepository = walletRepository,
+        super(const WalletInitial()) {
     on<WalletLoad>(_onLoad);
     on<WalletRefresh>(_onRefresh);
     on<WalletTopUp>(_onTopUp);
@@ -22,6 +26,8 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     on<WalletReset>(_onReset);
   }
 
+  final WalletRepository _walletRepository;
+
   // Cache for pagination
   List<WalletTransaction> _transactionsCache = [];
   int _currentPage = 1;
@@ -34,50 +40,38 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     emit(const WalletLoading(message: 'Loading wallet...'));
 
     try {
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Fetch wallet data, payment methods, and recent transactions in parallel
+      final results = await Future.wait([
+        _walletRepository.getWallet(),
+        _walletRepository.getPaymentMethods(),
+        _walletRepository.getTransactions(page: 1, limit: 5),
+      ]);
 
-      // TODO: Replace with API call
-      const wallet = WalletData(
-        balance: 12450.50,
-        pendingBalance: 1200.0,
-        availableBalance: 11250.50,
-        currency: 'KES',
-        accountNumber: 'UBI-7845632190',
-        tier: WalletTier.gold,
-        dailyLimit: 100000.0,
-        monthlyLimit: 500000.0,
-        dailyUsed: 15000.0,
-        monthlyUsed: 85000.0,
+      final walletData = results[0] as Map<String, dynamic>;
+      final paymentMethodsData = results[1] as List<Map<String, dynamic>>;
+      final transactionsData = results[2] as Map<String, dynamic>;
+
+      // Parse wallet data
+      final walletInfo = walletData['data'] as Map<String, dynamic>? ?? walletData;
+      final wallet = WalletData(
+        balance: (walletInfo['balance'] as num?)?.toDouble() ?? 0.0,
+        pendingBalance: (walletInfo['pendingBalance'] as num?)?.toDouble() ?? 0.0,
+        availableBalance: (walletInfo['availableBalance'] as num?)?.toDouble() ?? 0.0,
+        currency: walletInfo['currency'] as String? ?? 'KES',
+        accountNumber: walletInfo['accountNumber'] as String? ?? '',
+        tier: _parseTier(walletInfo['tier'] as String?),
+        dailyLimit: (walletInfo['dailyLimit'] as num?)?.toDouble() ?? 100000.0,
+        monthlyLimit: (walletInfo['monthlyLimit'] as num?)?.toDouble() ?? 500000.0,
+        dailyUsed: (walletInfo['dailyUsed'] as num?)?.toDouble() ?? 0.0,
+        monthlyUsed: (walletInfo['monthlyUsed'] as num?)?.toDouble() ?? 0.0,
       );
 
-      final paymentMethods = [
-        const PaymentMethodData(
-          id: 'pm-1',
-          type: PaymentMethodType.mpesa,
-          displayName: 'M-Pesa',
-          phoneNumber: '+254712345678',
-          isDefault: true,
-        ),
-        const PaymentMethodData(
-          id: 'pm-2',
-          type: PaymentMethodType.card,
-          displayName: 'Visa •••• 4242',
-          last4: '4242',
-          brand: 'visa',
-          expiryMonth: 12,
-          expiryYear: 2025,
-        ),
-        const PaymentMethodData(
-          id: 'pm-3',
-          type: PaymentMethodType.bank,
-          displayName: 'KCB Bank',
-          bankName: 'KCB Bank',
-          accountNumber: '****5678',
-        ),
-      ];
+      // Parse payment methods
+      final paymentMethods = paymentMethodsData.map((pm) => _parsePaymentMethod(pm)).toList();
 
-      // Recent transactions
-      final recentTransactions = _generateMockTransactions(5);
+      // Parse transactions
+      final transactionsList = (transactionsData['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final recentTransactions = transactionsList.map((tx) => _parseTransaction(tx)).toList();
       _transactionsCache = recentTransactions;
 
       emit(WalletLoaded(
@@ -112,44 +106,57 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     ));
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
+      // Call the actual API to process top-up
+      final result = await _walletRepository.topUp(
+        amount: event.amount,
+        paymentMethodId: event.paymentMethod.id,
+        currency: currentState.wallet.currency,
+      );
 
-      // TODO: Replace with API call
-      final newBalance = currentState.wallet.balance + event.amount;
-      final currentAvailable = currentState.wallet.availableBalance ?? currentState.wallet.balance;
+      if (result['success'] != true) {
+        throw Exception(result['error']?['message'] ?? 'Top up failed');
+      }
+
+      // Refresh wallet data to get updated balance
+      final walletData = await _walletRepository.getWallet();
+      final walletInfo = walletData['data'] as Map<String, dynamic>? ?? walletData;
+
       final updatedWallet = WalletData(
-        balance: newBalance,
-        pendingBalance: currentState.wallet.pendingBalance,
-        availableBalance: currentAvailable + event.amount,
+        balance: (walletInfo['balance'] as num?)?.toDouble() ?? currentState.wallet.balance,
+        pendingBalance: (walletInfo['pendingBalance'] as num?)?.toDouble() ?? currentState.wallet.pendingBalance,
+        availableBalance: (walletInfo['availableBalance'] as num?)?.toDouble() ?? currentState.wallet.availableBalance,
         currency: currentState.wallet.currency,
         accountNumber: currentState.wallet.accountNumber,
         tier: currentState.wallet.tier,
         dailyLimit: currentState.wallet.dailyLimit,
         monthlyLimit: currentState.wallet.monthlyLimit,
-        dailyUsed: currentState.wallet.dailyUsed + event.amount,
-        monthlyUsed: currentState.wallet.monthlyUsed + event.amount,
+        dailyUsed: (walletInfo['dailyUsed'] as num?)?.toDouble() ?? currentState.wallet.dailyUsed,
+        monthlyUsed: (walletInfo['monthlyUsed'] as num?)?.toDouble() ?? currentState.wallet.monthlyUsed,
       );
 
-      // Add transaction to list
-      final newTransaction = WalletTransaction(
-        id: 'txn-${DateTime.now().millisecondsSinceEpoch}',
-        type: WalletTransactionType.topUp,
-        amount: event.amount,
-        currency: currentState.wallet.currency,
-        status: 'completed',
-        description: 'Wallet top up via ${event.paymentMethod.displayName}',
-        createdAt: DateTime.now(),
-        balanceAfter: newBalance,
-      );
+      // Create transaction record from response
+      final txData = result['data']?['transaction'] as Map<String, dynamic>?;
+      final newTransaction = txData != null
+          ? _parseTransaction(txData)
+          : WalletTransaction(
+              id: 'txn-${DateTime.now().millisecondsSinceEpoch}',
+              type: WalletTransactionType.topUp,
+              amount: event.amount,
+              currency: currentState.wallet.currency,
+              status: 'completed',
+              description: 'Wallet top up via ${event.paymentMethod.displayName}',
+              createdAt: DateTime.now(),
+              balanceAfter: updatedWallet.balance,
+            );
 
-      final updatedTransactions = [newTransaction, ...currentState.recentTransactions];
+      final updatedTransactions = [newTransaction, ...currentState.recentTransactions.take(4)];
       _transactionsCache = [newTransaction, ..._transactionsCache];
 
       emit(WalletOperationSuccess(
-        message: 'Successfully topped up KES ${event.amount.toStringAsFixed(2)}',
+        message: 'Successfully topped up ${currentState.wallet.currency} ${event.amount.toStringAsFixed(2)}',
         wallet: updatedWallet,
         paymentMethods: currentState.paymentMethods,
-        recentTransactions: updatedTransactions.take(5).toList(),
+        recentTransactions: updatedTransactions,
       ));
 
       // Reset to normal loaded state after showing success
@@ -157,7 +164,7 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
       emit(WalletLoaded(
         wallet: updatedWallet,
         paymentMethods: currentState.paymentMethods,
-        recentTransactions: updatedTransactions.take(5).toList(),
+        recentTransactions: updatedTransactions,
       ));
     } catch (e) {
       emit(WalletOperationError(
@@ -195,14 +202,25 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     ));
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
+      // Call the actual API to process withdrawal
+      final result = await _walletRepository.withdraw(
+        amount: event.amount,
+        destinationId: event.destination.id,
+        currency: currentState.wallet.currency,
+      );
 
-      // TODO: Replace with API call
-      final newBalance = currentState.wallet.balance - event.amount;
+      if (result['success'] != true) {
+        throw Exception(result['error']?['message'] ?? 'Withdrawal failed');
+      }
+
+      // Refresh wallet data
+      final walletData = await _walletRepository.getWallet();
+      final walletInfo = walletData['data'] as Map<String, dynamic>? ?? walletData;
+
       final updatedWallet = WalletData(
-        balance: newBalance,
-        pendingBalance: currentState.wallet.pendingBalance,
-        availableBalance: currentAvailable - event.amount,
+        balance: (walletInfo['balance'] as num?)?.toDouble() ?? currentState.wallet.balance - event.amount,
+        pendingBalance: (walletInfo['pendingBalance'] as num?)?.toDouble() ?? currentState.wallet.pendingBalance,
+        availableBalance: (walletInfo['availableBalance'] as num?)?.toDouble() ?? currentAvailable - event.amount,
         currency: currentState.wallet.currency,
         accountNumber: currentState.wallet.accountNumber,
         tier: currentState.wallet.tier,
@@ -213,31 +231,31 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
       );
 
       final newTransaction = WalletTransaction(
-        id: 'txn-${DateTime.now().millisecondsSinceEpoch}',
+        id: result['data']?['transactionId'] ?? 'txn-${DateTime.now().millisecondsSinceEpoch}',
         type: WalletTransactionType.withdrawal,
         amount: event.amount,
         currency: currentState.wallet.currency,
         status: 'completed',
         description: 'Withdrawal to ${event.destination.displayName}',
         createdAt: DateTime.now(),
-        balanceAfter: newBalance,
+        balanceAfter: updatedWallet.balance,
       );
 
-      final updatedTransactions = [newTransaction, ...currentState.recentTransactions];
+      final updatedTransactions = [newTransaction, ...currentState.recentTransactions.take(4)];
       _transactionsCache = [newTransaction, ..._transactionsCache];
 
       emit(WalletOperationSuccess(
-        message: 'Successfully withdrew KES ${event.amount.toStringAsFixed(2)}',
+        message: 'Successfully withdrew ${currentState.wallet.currency} ${event.amount.toStringAsFixed(2)}',
         wallet: updatedWallet,
         paymentMethods: currentState.paymentMethods,
-        recentTransactions: updatedTransactions.take(5).toList(),
+        recentTransactions: updatedTransactions,
       ));
 
       await Future.delayed(const Duration(seconds: 2));
       emit(WalletLoaded(
         wallet: updatedWallet,
         paymentMethods: currentState.paymentMethods,
-        recentTransactions: updatedTransactions.take(5).toList(),
+        recentTransactions: updatedTransactions,
       ));
     } catch (e) {
       emit(WalletOperationError(
@@ -256,14 +274,29 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     emit(WalletTransactionsLoading(filter: event.filter));
 
     try {
-      await Future.delayed(const Duration(milliseconds: 500));
-
       _currentPage = 1;
-      _transactionsCache = _generateMockTransactions(20, filter: event.filter);
+
+      final filterString = event.filter == TransactionFilter.incoming
+          ? 'incoming'
+          : event.filter == TransactionFilter.outgoing
+              ? 'outgoing'
+              : null;
+
+      final result = await _walletRepository.getTransactions(
+        page: _currentPage,
+        limit: _pageSize,
+        filter: filterString,
+      );
+
+      final transactionsList = (result['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      _transactionsCache = transactionsList.map((tx) => _parseTransaction(tx)).toList();
+
+      final hasMore = (result['pagination']?['hasMore'] as bool?) ??
+          (transactionsList.length >= _pageSize);
 
       emit(WalletTransactionsLoaded(
         transactions: _transactionsCache,
-        hasMore: true,
+        hasMore: hasMore,
         filter: event.filter,
       ));
     } catch (e) {
@@ -281,14 +314,22 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     emit(currentState.copyWith(isLoadingMore: true));
 
     try {
-      await Future.delayed(const Duration(milliseconds: 500));
-
       _currentPage++;
-      final newTransactions = _generateMockTransactions(
-        _pageSize,
-        offset: _transactionsCache.length,
-        filter: currentState.filter,
+
+      final filterString = currentState.filter == TransactionFilter.incoming
+          ? 'incoming'
+          : currentState.filter == TransactionFilter.outgoing
+              ? 'outgoing'
+              : null;
+
+      final result = await _walletRepository.getTransactions(
+        page: _currentPage,
+        limit: _pageSize,
+        filter: filterString,
       );
+
+      final transactionsList = (result['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final newTransactions = transactionsList.map((tx) => _parseTransaction(tx)).toList();
 
       if (newTransactions.isEmpty) {
         emit(currentState.copyWith(hasMore: false, isLoadingMore: false));
@@ -322,9 +363,16 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     ));
 
     try {
-      await Future.delayed(const Duration(seconds: 1));
+      await _walletRepository.addPaymentMethod(
+        type: event.method.type.name,
+        phoneNumber: event.method.phoneNumber,
+        bankCode: event.method.bankName,
+        accountNumber: event.method.accountNumber,
+      );
 
-      final updatedMethods = [...currentState.paymentMethods, event.method];
+      // Refresh payment methods
+      final paymentMethodsData = await _walletRepository.getPaymentMethods();
+      final updatedMethods = paymentMethodsData.map((pm) => _parsePaymentMethod(pm)).toList();
 
       emit(WalletOperationSuccess(
         message: 'Payment method added successfully',
@@ -356,15 +404,26 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     final currentState = state;
     if (currentState is! WalletLoaded) return;
 
-    final updatedMethods = currentState.paymentMethods
-        .where((m) => m.id != event.methodId)
-        .toList();
+    try {
+      await _walletRepository.removePaymentMethod(event.methodId);
 
-    emit(WalletLoaded(
-      wallet: currentState.wallet,
-      paymentMethods: updatedMethods,
-      recentTransactions: currentState.recentTransactions,
-    ));
+      final updatedMethods = currentState.paymentMethods
+          .where((m) => m.id != event.methodId)
+          .toList();
+
+      emit(WalletLoaded(
+        wallet: currentState.wallet,
+        paymentMethods: updatedMethods,
+        recentTransactions: currentState.recentTransactions,
+      ));
+    } catch (e) {
+      emit(WalletOperationError(
+        message: 'Failed to remove payment method: ${e.toString()}',
+        wallet: currentState.wallet,
+        paymentMethods: currentState.paymentMethods,
+        recentTransactions: currentState.recentTransactions,
+      ));
+    }
   }
 
   Future<void> _onSetDefaultPaymentMethod(
@@ -374,27 +433,38 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     final currentState = state;
     if (currentState is! WalletLoaded) return;
 
-    final updatedMethods = currentState.paymentMethods.map((m) {
-      return PaymentMethodData(
-        id: m.id,
-        type: m.type,
-        displayName: m.displayName,
-        last4: m.last4,
-        brand: m.brand,
-        expiryMonth: m.expiryMonth,
-        expiryYear: m.expiryYear,
-        phoneNumber: m.phoneNumber,
-        bankName: m.bankName,
-        accountNumber: m.accountNumber,
-        isDefault: m.id == event.methodId,
-      );
-    }).toList();
+    try {
+      await _walletRepository.setDefaultPaymentMethod(event.methodId);
 
-    emit(WalletLoaded(
-      wallet: currentState.wallet,
-      paymentMethods: updatedMethods,
-      recentTransactions: currentState.recentTransactions,
-    ));
+      final updatedMethods = currentState.paymentMethods.map((m) {
+        return PaymentMethodData(
+          id: m.id,
+          type: m.type,
+          displayName: m.displayName,
+          last4: m.last4,
+          brand: m.brand,
+          expiryMonth: m.expiryMonth,
+          expiryYear: m.expiryYear,
+          phoneNumber: m.phoneNumber,
+          bankName: m.bankName,
+          accountNumber: m.accountNumber,
+          isDefault: m.id == event.methodId,
+        );
+      }).toList();
+
+      emit(WalletLoaded(
+        wallet: currentState.wallet,
+        paymentMethods: updatedMethods,
+        recentTransactions: currentState.recentTransactions,
+      ));
+    } catch (e) {
+      emit(WalletOperationError(
+        message: 'Failed to set default payment method: ${e.toString()}',
+        wallet: currentState.wallet,
+        paymentMethods: currentState.paymentMethods,
+        recentTransactions: currentState.recentTransactions,
+      ));
+    }
   }
 
   Future<void> _onTransferToBank(
@@ -412,7 +482,15 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     ));
 
     try {
-      await Future.delayed(const Duration(seconds: 3));
+      final result = await _walletRepository.transferToBank(
+        amount: event.amount,
+        bankAccountId: event.bankAccount.id,
+        currency: currentState.wallet.currency,
+      );
+
+      if (result['success'] != true) {
+        throw Exception(result['error']?['message'] ?? 'Bank transfer failed');
+      }
 
       emit(WalletOperationSuccess(
         message: 'Transfer initiated. Funds will arrive in 1-2 business days.',
@@ -459,10 +537,20 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     ));
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
+      final result = await _walletRepository.sendMoney(
+        amount: event.amount,
+        recipientIdentifier: event.recipient,
+        recipientType: event.recipientType ?? 'phone',
+        currency: currentState.wallet.currency,
+        note: event.note,
+      );
+
+      if (result['success'] != true) {
+        throw Exception(result['error']?['message'] ?? 'Failed to send money');
+      }
 
       emit(WalletOperationSuccess(
-        message: 'Successfully sent KES ${event.amount.toStringAsFixed(2)} to ${event.recipient}',
+        message: 'Successfully sent ${currentState.wallet.currency} ${event.amount.toStringAsFixed(2)} to ${event.recipient}',
         wallet: currentState.wallet,
         paymentMethods: currentState.paymentMethods,
         recentTransactions: currentState.recentTransactions,
@@ -495,7 +583,17 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     ));
 
     try {
-      await Future.delayed(const Duration(seconds: 1));
+      final result = await _walletRepository.requestMoney(
+        amount: event.amount,
+        fromIdentifier: event.fromUser,
+        fromType: event.fromType ?? 'phone',
+        currency: currentState.wallet.currency,
+        note: event.note,
+      );
+
+      if (result['success'] != true) {
+        throw Exception(result['error']?['message'] ?? 'Failed to send request');
+      }
 
       emit(WalletOperationSuccess(
         message: 'Request sent to ${event.fromUser}',
@@ -529,58 +627,103 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     emit(const WalletInitial());
   }
 
-  // Helper method to generate mock transactions
-  List<WalletTransaction> _generateMockTransactions(
-    int count, {
-    int offset = 0,
-    TransactionFilter? filter,
-  }) {
-    final types = WalletTransactionType.values;
-    final transactions = <WalletTransaction>[];
+  // Helper methods for parsing API responses
 
-    for (var i = 0; i < count; i++) {
-      final type = types[(i + offset) % types.length];
-      
-      // Apply filter
-      if (filter != null && filter != TransactionFilter.all) {
-        if (filter == TransactionFilter.incoming && !type.isPositive) continue;
-        if (filter == TransactionFilter.outgoing && type.isPositive) continue;
-      }
-
-      final isPositive = type.isPositive;
-      final amount = 100.0 + (i * 50) + (offset * 10);
-
-      transactions.add(WalletTransaction(
-        id: 'txn-${offset + i}',
-        type: type,
-        amount: amount,
-        currency: 'KES',
-        status: i % 10 == 0 ? 'pending' : 'completed',
-        description: _getTransactionDescription(type),
-        createdAt: DateTime.now().subtract(Duration(hours: i + offset)),
-        balanceAfter: isPositive ? 12450.50 + amount : 12450.50 - amount,
-      ));
+  WalletTier _parseTier(String? tier) {
+    switch (tier?.toLowerCase()) {
+      case 'bronze':
+        return WalletTier.bronze;
+      case 'silver':
+        return WalletTier.silver;
+      case 'gold':
+        return WalletTier.gold;
+      case 'platinum':
+        return WalletTier.platinum;
+      default:
+        return WalletTier.bronze;
     }
-
-    return transactions;
   }
 
-  String _getTransactionDescription(WalletTransactionType type) {
-    switch (type) {
-      case WalletTransactionType.topUp:
-        return 'Wallet top up via M-Pesa';
-      case WalletTransactionType.withdrawal:
-        return 'Withdrawal to M-Pesa';
-      case WalletTransactionType.earning:
-        return 'Trip earnings';
-      case WalletTransactionType.bonus:
-        return 'Weekly bonus reward';
-      case WalletTransactionType.credit:
-        return 'Payment received';
-      case WalletTransactionType.debit:
-        return 'Payment sent';
-      case WalletTransactionType.refund:
-        return 'Refund processed';
+  PaymentMethodData _parsePaymentMethod(Map<String, dynamic> data) {
+    final typeStr = data['type'] as String? ?? '';
+    final type = _parsePaymentMethodType(typeStr);
+
+    return PaymentMethodData(
+      id: data['id'] as String? ?? '',
+      type: type,
+      displayName: data['displayName'] as String? ?? data['name'] as String? ?? '',
+      last4: data['last4'] as String? ?? data['lastFour'] as String?,
+      brand: data['brand'] as String?,
+      expiryMonth: data['expiryMonth'] as int?,
+      expiryYear: data['expiryYear'] as int?,
+      phoneNumber: data['phoneNumber'] as String?,
+      bankName: data['bankName'] as String?,
+      accountNumber: data['accountNumber'] as String?,
+      isDefault: data['isDefault'] as bool? ?? false,
+    );
+  }
+
+  PaymentMethodType _parsePaymentMethodType(String type) {
+    switch (type.toLowerCase()) {
+      case 'mpesa':
+      case 'mobile_money':
+        return PaymentMethodType.mpesa;
+      case 'card':
+        return PaymentMethodType.card;
+      case 'bank':
+      case 'bank_account':
+        return PaymentMethodType.bank;
+      default:
+        return PaymentMethodType.mpesa;
+    }
+  }
+
+  WalletTransaction _parseTransaction(Map<String, dynamic> data) {
+    final typeStr = data['type'] as String? ?? '';
+    final type = _parseTransactionType(typeStr);
+
+    return WalletTransaction(
+      id: data['id'] as String? ?? '',
+      type: type,
+      amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
+      currency: data['currency'] as String? ?? 'KES',
+      status: data['status'] as String? ?? 'completed',
+      description: data['description'] as String? ?? '',
+      createdAt: data['createdAt'] != null
+          ? DateTime.parse(data['createdAt'] as String)
+          : DateTime.now(),
+      balanceAfter: (data['balanceAfter'] as num?)?.toDouble(),
+    );
+  }
+
+  WalletTransactionType _parseTransactionType(String type) {
+    switch (type.toLowerCase()) {
+      case 'topup':
+      case 'top_up':
+      case 'wallet_topup':
+        return WalletTransactionType.topUp;
+      case 'withdrawal':
+      case 'withdraw':
+        return WalletTransactionType.withdrawal;
+      case 'earning':
+      case 'earnings':
+      case 'driver_earning':
+        return WalletTransactionType.earning;
+      case 'bonus':
+      case 'incentive_bonus':
+        return WalletTransactionType.bonus;
+      case 'credit':
+      case 'receive':
+      case 'transfer_received':
+        return WalletTransactionType.credit;
+      case 'debit':
+      case 'send':
+      case 'transfer_sent':
+        return WalletTransactionType.debit;
+      case 'refund':
+        return WalletTransactionType.refund;
+      default:
+        return WalletTransactionType.credit;
     }
   }
 }

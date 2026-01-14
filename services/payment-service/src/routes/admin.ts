@@ -27,6 +27,338 @@ const payoutService = new PayoutService(prisma);
 const fraudService = new FraudDetectionService(prisma);
 
 // ============================================
+// Refund Processing Helper
+// ============================================
+
+interface RefundResult {
+  success: boolean;
+  providerReference?: string;
+  error?: string;
+  providerResponse?: any;
+}
+
+/**
+ * Process refund with the appropriate payment provider
+ */
+async function processRefundWithProvider(
+  transaction: any,
+  refundAmount: number,
+  refundId: string
+): Promise<RefundResult> {
+  const provider = transaction.provider;
+  const providerReference = transaction.providerReference;
+
+  if (!providerReference) {
+    return { success: false, error: "No provider reference found for transaction" };
+  }
+
+  switch (provider) {
+    case "PAYSTACK":
+      return processPaystackRefund(providerReference, refundAmount, transaction.currency, refundId);
+
+    case "MPESA":
+      return processMpesaRefund(providerReference, refundAmount, transaction.currency, refundId);
+
+    case "MTN_MOMO_GH":
+    case "MTN_MOMO_RW":
+    case "MTN_MOMO_UG":
+      return processMomoRefund(provider, providerReference, refundAmount, transaction.currency, refundId);
+
+    case "FLUTTERWAVE":
+      return processFlutterwaveRefund(providerReference, refundAmount, refundId);
+
+    default:
+      return { success: false, error: `Refunds not supported for provider: ${provider}` };
+  }
+}
+
+/**
+ * Process Paystack refund
+ */
+async function processPaystackRefund(
+  transactionReference: string,
+  amount: number,
+  currency: string,
+  refundId: string
+): Promise<RefundResult> {
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+  if (!secretKey) {
+    return { success: false, error: "Paystack not configured" };
+  }
+
+  try {
+    const response = await fetch("https://api.paystack.co/refund", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        transaction: transactionReference,
+        amount: Math.round(amount * 100), // Paystack expects kobo/cents
+        currency,
+        merchant_note: `Refund ${refundId}`,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.status) {
+      return {
+        success: false,
+        error: data.message || "Paystack refund failed",
+        providerResponse: data,
+      };
+    }
+
+    return {
+      success: true,
+      providerReference: data.data?.id || data.data?.refund_reference,
+      providerResponse: data.data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Paystack request failed",
+    };
+  }
+}
+
+/**
+ * Process M-Pesa reversal (B2C payment)
+ * Note: M-Pesa STK Push doesn't support direct refunds, so we do a B2C payment
+ */
+async function processMpesaRefund(
+  originalTransactionId: string,
+  amount: number,
+  _currency: string,
+  refundId: string
+): Promise<RefundResult> {
+  const consumerKey = process.env.MPESA_CONSUMER_KEY;
+  const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
+  const initiatorName = process.env.MPESA_INITIATOR_NAME;
+  const initiatorPassword = process.env.MPESA_INITIATOR_PASSWORD;
+  const shortcode = process.env.MPESA_SHORTCODE;
+  const callbackUrl = process.env.MPESA_B2C_CALLBACK_URL;
+
+  if (!consumerKey || !consumerSecret || !initiatorName || !shortcode) {
+    return { success: false, error: "M-Pesa B2C not configured" };
+  }
+
+  try {
+    // Get OAuth token
+    const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+    const tokenResponse = await fetch(
+      "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
+      {
+        headers: { Authorization: `Basic ${authString}` },
+      }
+    );
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    // Get original transaction to find the phone number
+    const originalTx = await prisma.paymentTransaction.findFirst({
+      where: { providerReference: originalTransactionId },
+      include: { user: { select: { phone: true } } },
+    });
+
+    if (!originalTx?.user?.phone) {
+      return { success: false, error: "Could not find customer phone number for refund" };
+    }
+
+    // Initiate B2C payment (refund)
+    const b2cResponse = await fetch(
+      "https://api.safaricom.co.ke/mpesa/b2c/v1/paymentrequest",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          InitiatorName: initiatorName,
+          SecurityCredential: initiatorPassword, // In production, this should be encrypted
+          CommandID: "BusinessPayment",
+          Amount: Math.round(amount),
+          PartyA: shortcode,
+          PartyB: originalTx.user.phone.replace(/^\+/, ""),
+          Remarks: `Refund for ${refundId}`,
+          QueueTimeOutURL: callbackUrl,
+          ResultURL: callbackUrl,
+          Occasion: `Refund-${refundId}`,
+        }),
+      }
+    );
+
+    const b2cData = await b2cResponse.json();
+
+    if (b2cData.ResponseCode === "0") {
+      return {
+        success: true,
+        providerReference: b2cData.ConversationID,
+        providerResponse: b2cData,
+      };
+    }
+
+    return {
+      success: false,
+      error: b2cData.ResponseDescription || "M-Pesa B2C failed",
+      providerResponse: b2cData,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "M-Pesa request failed",
+    };
+  }
+}
+
+/**
+ * Process MTN MoMo refund (disbursement)
+ */
+async function processMomoRefund(
+  provider: string,
+  originalTransactionId: string,
+  amount: number,
+  currency: string,
+  refundId: string
+): Promise<RefundResult> {
+  const country = provider.split("_")[2] || "GH";
+  const subscriptionKey = process.env[`MTN_MOMO_${country}_SUBSCRIPTION_KEY`];
+  const apiUserId = process.env[`MTN_MOMO_${country}_API_USER`];
+  const apiKey = process.env[`MTN_MOMO_${country}_API_KEY`];
+
+  if (!subscriptionKey || !apiUserId || !apiKey) {
+    return { success: false, error: `MoMo ${country} not configured` };
+  }
+
+  try {
+    // Get access token
+    const credentials = Buffer.from(`${apiUserId}:${apiKey}`).toString("base64");
+    const tokenResponse = await fetch(
+      `https://proxy.momoapi.mtn.com/disbursement/token/`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          "Ocp-Apim-Subscription-Key": subscriptionKey,
+        },
+      }
+    );
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    // Get original transaction to find the phone number
+    const originalTx = await prisma.paymentTransaction.findFirst({
+      where: { providerReference: originalTransactionId },
+      include: { user: { select: { phone: true } } },
+    });
+
+    if (!originalTx?.user?.phone) {
+      return { success: false, error: "Could not find customer phone number for refund" };
+    }
+
+    // Initiate disbursement (refund)
+    const disbursementResponse = await fetch(
+      `https://proxy.momoapi.mtn.com/disbursement/v1_0/transfer`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-Reference-Id": refundId,
+          "X-Target-Environment": process.env.NODE_ENV === "production" ? `mtn${country.toLowerCase()}` : "sandbox",
+          "Ocp-Apim-Subscription-Key": subscriptionKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: String(amount),
+          currency,
+          externalId: refundId,
+          payee: {
+            partyIdType: "MSISDN",
+            partyId: originalTx.user.phone.replace(/^\+/, ""),
+          },
+          payerMessage: `Refund for transaction ${originalTransactionId.slice(0, 8)}`,
+          payeeNote: `UBI Refund - ${refundId}`,
+        }),
+      }
+    );
+
+    if (disbursementResponse.status === 202) {
+      return {
+        success: true,
+        providerReference: refundId,
+      };
+    }
+
+    const errorData = await disbursementResponse.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errorData.message || "MoMo disbursement failed",
+      providerResponse: errorData,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "MoMo request failed",
+    };
+  }
+}
+
+/**
+ * Process Flutterwave refund
+ */
+async function processFlutterwaveRefund(
+  transactionId: string,
+  amount: number,
+  refundId: string
+): Promise<RefundResult> {
+  const secretKey = process.env.FLUTTERWAVE_SECRET_KEY;
+  if (!secretKey) {
+    return { success: false, error: "Flutterwave not configured" };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.flutterwave.com/v3/transactions/${transactionId}/refund`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount,
+          comments: `Refund ${refundId}`,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.status === "success") {
+      return {
+        success: true,
+        providerReference: data.data?.id,
+        providerResponse: data.data,
+      };
+    }
+
+    return {
+      success: false,
+      error: data.message || "Flutterwave refund failed",
+      providerResponse: data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Flutterwave request failed",
+    };
+  }
+}
+
+// ============================================
 // Dashboard Overview
 // ============================================
 
@@ -333,6 +665,20 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
 
   const refundAmount = parsed.data.amount || Number(transaction.amount);
 
+  // Check if partial refund is within limits
+  if (refundAmount > Number(transaction.amount)) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "INVALID_AMOUNT",
+          message: "Refund amount cannot exceed original transaction amount",
+        },
+      },
+      400
+    );
+  }
+
   // Create refund record
   const refund = await prisma.refund.create({
     data: {
@@ -345,17 +691,61 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
     },
   });
 
-  // TODO: Initiate actual refund with provider
+  // Initiate actual refund with provider
+  try {
+    const refundResult = await processRefundWithProvider(transaction, refundAmount, refund.id);
 
-  return c.json({
-    success: true,
-    data: {
-      refundId: refund.id,
-      amount: refundAmount,
-      status: "PENDING",
-      message: "Refund initiated",
-    },
-  });
+    // Update refund record with result
+    await prisma.refund.update({
+      where: { id: refund.id },
+      data: {
+        status: refundResult.success ? "PROCESSING" : "FAILED",
+        failureReason: refundResult.error,
+        metadata: refundResult.providerResponse ? { providerResponse: refundResult.providerResponse } : undefined,
+      },
+    });
+
+    if (!refundResult.success) {
+      return c.json({
+        success: false,
+        error: {
+          code: "REFUND_FAILED",
+          message: refundResult.error || "Failed to process refund with payment provider",
+        },
+        data: { refundId: refund.id },
+      }, 500);
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        refundId: refund.id,
+        amount: refundAmount,
+        status: "PROCESSING",
+        providerReference: refundResult.providerReference,
+        message: "Refund initiated successfully",
+      },
+    });
+  } catch (error) {
+    // Update refund as failed
+    await prisma.refund.update({
+      where: { id: refund.id },
+      data: {
+        status: "FAILED",
+        failureReason: error instanceof Error ? error.message : "Unknown error",
+      },
+    });
+
+    console.error("[Admin] Refund processing error:", error);
+    return c.json({
+      success: false,
+      error: {
+        code: "REFUND_ERROR",
+        message: "An error occurred while processing the refund",
+      },
+      data: { refundId: refund.id },
+    }, 500);
+  }
 });
 
 // ============================================

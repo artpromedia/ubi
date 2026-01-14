@@ -6,6 +6,7 @@
 import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { prisma } from "../lib/prisma";
+import { notificationClient } from "../lib/notification-client";
 import type {
   Loan,
   LoanApplication,
@@ -899,8 +900,44 @@ export class LoanService {
   }
 
   private async sendOverdueNotification(loanId: string): Promise<void> {
-    // TODO: Integrate with notification service
-    console.log(`[Loans] Overdue notification sent for loan ${loanId}`);
+    try {
+      const loan = await prisma.loan.findUnique({
+        where: { id: loanId },
+        include: {
+          scheduleItems: {
+            where: { status: "OVERDUE" },
+            orderBy: { dueDate: "asc" },
+            take: 1,
+          },
+        },
+      });
+
+      if (!loan) {
+        console.warn(`[Loans] Loan not found for notification: ${loanId}`);
+        return;
+      }
+
+      const overdueItem = loan.scheduleItems[0];
+      if (!overdueItem) {
+        return;
+      }
+
+      const daysOverdue = Math.floor(
+        (Date.now() - overdueItem.dueDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      await notificationClient.notifyLoanOverdue(
+        loan.userId,
+        loanId,
+        Number(overdueItem.amountDue) - Number(overdueItem.amountPaid),
+        loan.currency,
+        Math.max(1, daysOverdue)
+      );
+
+      console.log(`[Loans] Overdue notification sent for loan ${loanId} (${daysOverdue} days)`);
+    } catch (error) {
+      console.error(`[Loans] Failed to send overdue notification:`, error);
+    }
   }
 }
 

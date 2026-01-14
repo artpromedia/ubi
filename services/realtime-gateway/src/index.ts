@@ -136,18 +136,83 @@ process.on("SIGINT", () => {
 
 /**
  * Verify JWT token and extract userId
- * TODO: Integrate with your auth service
+ * Uses jose library for proper JWT verification
  */
 async function verifyToken(token: string): Promise<string | null> {
-  // Mock implementation - replace with actual JWT verification
-  // This should call your user-service or decode a JWT
   try {
-    // For development, extract userId from token
-    // In production, verify signature and decode properly
-    const decoded = Buffer.from(token.split(".")[1] || "", "base64").toString();
-    const payload = JSON.parse(decoded);
-    return payload.userId || payload.sub;
-  } catch {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error("[Auth] JWT_SECRET not configured");
+      return null;
+    }
+
+    // Import jose for JWT verification
+    const jose = await import("jose");
+
+    // Create secret key from environment variable
+    const secretKey = new TextEncoder().encode(jwtSecret);
+
+    // Verify the JWT token
+    const { payload } = await jose.jwtVerify(token, secretKey, {
+      issuer: "ubi.africa",
+      audience: "ubi-api",
+    });
+
+    // Extract userId from standard claims
+    const userId = payload.sub || (payload as any).userId;
+
+    if (!userId) {
+      console.warn("[Auth] Token missing userId/sub claim");
+      return null;
+    }
+
+    // Optionally validate token is not blacklisted (for logout support)
+    const tokenBlacklisted = await isTokenBlacklisted(token);
+    if (tokenBlacklisted) {
+      console.warn("[Auth] Token is blacklisted");
+      return null;
+    }
+
+    return userId as string;
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes("expired")) {
+        console.warn("[Auth] Token expired");
+      } else if (error.message.includes("signature")) {
+        console.warn("[Auth] Invalid token signature");
+      } else {
+        console.error("[Auth] Token verification failed:", error.message);
+      }
+    }
     return null;
+  }
+}
+
+// Redis client for token blacklist checking
+import { Redis } from "ioredis";
+const blacklistRedis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
+
+/**
+ * Check if token is blacklisted (e.g., after logout)
+ */
+async function isTokenBlacklisted(token: string): Promise<boolean> {
+  try {
+    const { createHash } = await import("crypto");
+
+    // Create a hash of the token to use as the key
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+
+    // Ensure Redis is connected
+    if (blacklistRedis.status !== "ready") {
+      await blacklistRedis.connect();
+    }
+
+    // Check Redis for blacklisted token
+    const blacklisted = await blacklistRedis.get(`token:blacklist:${tokenHash}`);
+    return blacklisted !== null;
+  } catch (error) {
+    // If Redis is unavailable, allow the token (fail open for availability)
+    console.warn("[Auth] Could not check token blacklist:", error);
+    return false;
   }
 }

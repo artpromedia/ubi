@@ -6,8 +6,15 @@ plugins {
     id "com.google.gms.google-services"
 }
 
+// Load keystore properties from file
+def keystorePropertiesFile = rootProject.file("key.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
-    namespace = "com.ubi.driver_app"
+    namespace = "africa.ubi.driver"
     compileSdk = 35
     ndkVersion = "25.1.8937393"
 
@@ -21,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.ubi.driver_app"
+        applicationId = "africa.ubi.driver"
         minSdk = 24
         targetSdk = 35
         versionCode = flutter.versionCode
@@ -29,9 +36,36 @@ android {
         multiDexEnabled true
     }
 
-    buildTypes {
+    signingConfigs {
         release {
-            signingConfig = signingConfigs.debug
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties['keyAlias']
+                keyPassword = keystoreProperties['keyPassword']
+                storeFile = file(keystoreProperties['storeFile'])
+                storePassword = keystoreProperties['storePassword']
+            } else if (System.getenv("ANDROID_KEYSTORE_PATH")) {
+                // CI/CD environment variables
+                storeFile = file(System.getenv("ANDROID_KEYSTORE_PATH"))
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        release {
+            signingConfig = keystorePropertiesFile.exists() || System.getenv("ANDROID_KEYSTORE_PATH")
+                ? signingConfigs.release
+                : signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

@@ -1,0 +1,18 @@
+# UBI Driver App Release Signing Configuration
+#
+# Copy this file to key.properties and fill in the values.
+# DO NOT commit key.properties to version control!
+#
+# For CI/CD, use environment variables instead:
+# - ANDROID_KEYSTORE_PATH
+# - ANDROID_KEYSTORE_PASSWORD
+# - ANDROID_KEY_ALIAS
+# - ANDROID_KEY_PASSWORD
+
+storePassword=your-keystore-password
+keyPassword=your-key-password
+keyAlias=ubi-driver-release
+storeFile=/path/to/ubi-driver-release.keystore
+
+# To generate a new keystore, run:
+# keytool -genkey -v -keystore ubi-driver-release.keystore -alias ubi-driver-release -keyalg RSA -keysize 2048 -validity 10000

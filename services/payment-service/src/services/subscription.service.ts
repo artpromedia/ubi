@@ -129,9 +129,31 @@ export class SubscriptionService {
 
     // Apply promo code discount if provided
     let discountApplied = false;
+    let discountAmount = 0;
+    let discountPercentage = 0;
+
     if (promoCode) {
-      // TODO: Validate promo code and apply discount
-      discountApplied = true;
+      const validPromo = await this.validatePromoCode(promoCode, userId, plan.id);
+      if (validPromo) {
+        discountApplied = true;
+        discountPercentage = validPromo.discountPercentage;
+        discountAmount = validPromo.discountAmount;
+
+        // Mark promo code as used
+        await prisma.promoCodeUsage.create({
+          data: {
+            promoCodeId: validPromo.id,
+            userId,
+            usedAt: new Date(),
+          },
+        });
+
+        // Increment usage count
+        await prisma.promoCode.update({
+          where: { id: validPromo.id },
+          data: { usageCount: { increment: 1 } },
+        });
+      }
     }
 
     const subscriptionId = `sub_${nanoid(16)}`;
@@ -152,6 +174,8 @@ export class SubscriptionService {
         metadata: {
           promoCode: promoCode || null,
           discountApplied,
+          discountPercentage: discountApplied ? discountPercentage : null,
+          discountAmount: discountApplied ? discountAmount : null,
         },
       },
       include: { plan: true },
@@ -634,6 +658,75 @@ export class SubscriptionService {
   // PRIVATE HELPERS
   // ===========================================
 
+  /**
+   * Validate promo code for subscription
+   */
+  private async validatePromoCode(
+    code: string,
+    userId: string,
+    planId: string
+  ): Promise<{
+    id: string;
+    discountPercentage: number;
+    discountAmount: number;
+  } | null> {
+    const now = new Date();
+
+    // Find the promo code
+    const promoCode = await prisma.promoCode.findFirst({
+      where: {
+        code: code.toUpperCase(),
+        isActive: true,
+        validFrom: { lte: now },
+        OR: [
+          { validUntil: null },
+          { validUntil: { gte: now } },
+        ],
+      },
+    });
+
+    if (!promoCode) {
+      return null;
+    }
+
+    // Check usage limit
+    if (promoCode.maxUsage && promoCode.usageCount >= promoCode.maxUsage) {
+      return null;
+    }
+
+    // Check if user already used this promo code
+    const existingUsage = await prisma.promoCodeUsage.findFirst({
+      where: {
+        promoCodeId: promoCode.id,
+        userId,
+      },
+    });
+
+    if (existingUsage && !promoCode.allowMultipleUse) {
+      return null;
+    }
+
+    // Check if promo code is valid for this plan
+    const applicablePlans = promoCode.applicablePlans as string[] | null;
+    if (applicablePlans && applicablePlans.length > 0 && !applicablePlans.includes(planId)) {
+      return null;
+    }
+
+    // Check minimum purchase requirement
+    if (promoCode.minimumPurchase) {
+      const plan = await this.getPlan(planId);
+      if (plan && plan.price < Number(promoCode.minimumPurchase)) {
+        return null;
+      }
+    }
+
+    return {
+      id: promoCode.id,
+      discountPercentage: promoCode.discountPercentage || 0,
+      discountAmount: Number(promoCode.discountAmount) || 0,
+    };
+  }
+
   private calculatePeriodEnd(start: Date, period: BillingPeriod): Date {
     const end = new Date(start);
 
@@ -677,13 +770,350 @@ export class SubscriptionService {
   }
 
   private async processPayment(
-    _subscriptionId: string,
-    _amount: number,
-    _currency: string
+    subscriptionId: string,
+    amount: number,
+    currency: string
   ): Promise<boolean> {
-    // TODO: Integrate with actual payment processor
-    // For now, simulate success
-    return true;
+    try {
+      // Get the subscription with user and payment method details
+      const subscription = await prisma.subscription.findUnique({
+        where: { id: subscriptionId },
+        include: {
+          user: {
+            include: {
+              paymentMethods: {
+                where: { isDefault: true },
+                take: 1,
+              },
+            },
+          },
+        },
+      });
+
+      if (!subscription || !subscription.user) {
+        console.error(`[Subscription] User not found for subscription ${subscriptionId}`);
+        return false;
+      }
+
+      const user = subscription.user;
+      const paymentMethod = user.paymentMethods[0];
+
+      // Create payment transaction record
+      const paymentTx = await prisma.paymentTransaction.create({
+        data: {
+          userId: user.id,
+          paymentMethodId: paymentMethod?.id,
+          provider: paymentMethod?.provider || "PAYSTACK",
+          amount: amount,
+          currency: currency as any,
+          status: "PENDING",
+          metadata: {
+            subscriptionId,
+            type: "subscription_renewal",
+          },
+        },
+      });
+
+      // If user has a saved payment method, charge it
+      if (paymentMethod && paymentMethod.token) {
+        // Use Paystack recurring charge for cards
+        if (paymentMethod.type === "CARD" && paymentMethod.provider === "PAYSTACK") {
+          const paystackResponse = await this.chargePaystackCard({
+            email: user.email,
+            amount: Math.round(amount * 100), // Paystack expects kobo/cents
+            currency,
+            authorizationCode: paymentMethod.token,
+            reference: paymentTx.id,
+            metadata: {
+              subscriptionId,
+              userId: user.id,
+            },
+          });
+
+          if (paystackResponse.status === "success") {
+            await prisma.paymentTransaction.update({
+              where: { id: paymentTx.id },
+              data: {
+                status: "COMPLETED",
+                providerReference: paystackResponse.reference,
+                confirmedAt: new Date(),
+              },
+            });
+            return true;
+          }
+        }
+
+        // Mobile money payment (M-Pesa, MTN MoMo)
+        if (paymentMethod.type === "MOBILE_MONEY") {
+          const mobileMoneyResponse = await this.chargeMobileMoney({
+            phoneNumber: paymentMethod.phoneNumber!,
+            amount,
+            currency,
+            provider: paymentMethod.provider,
+            reference: paymentTx.id,
+            description: `UBI+ Subscription Renewal`,
+          });
+
+          if (mobileMoneyResponse.status === "pending" || mobileMoneyResponse.status === "success") {
+            await prisma.paymentTransaction.update({
+              where: { id: paymentTx.id },
+              data: {
+                status: mobileMoneyResponse.status === "success" ? "COMPLETED" : "PROCESSING",
+                providerReference: mobileMoneyResponse.reference,
+              },
+            });
+            return mobileMoneyResponse.status === "success";
+          }
+        }
+      }
+
+      // Mark as failed if no valid payment method
+      await prisma.paymentTransaction.update({
+        where: { id: paymentTx.id },
+        data: {
+          status: "FAILED",
+          failureReason: "No valid payment method available",
+          failedAt: new Date(),
+        },
+      });
+
+      return false;
+    } catch (error) {
+      console.error(`[Subscription] Payment failed for ${subscriptionId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Charge a saved Paystack card using authorization code
+   */
+  private async chargePaystackCard(params: {
+    email: string;
+    amount: number;
+    currency: string;
+    authorizationCode: string;
+    reference: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ status: string; reference: string }> {
+    const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
+    if (!paystackSecretKey) {
+      throw new Error("PAYSTACK_SECRET_KEY not configured");
+    }
+
+    const response = await fetch("https://api.paystack.co/transaction/charge_authorization", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${paystackSecretKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: params.email,
+        amount: params.amount,
+        currency: params.currency,
+        authorization_code: params.authorizationCode,
+        reference: params.reference,
+        metadata: params.metadata,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.status) {
+      console.error("[Paystack] Charge failed:", data);
+      return { status: "failed", reference: params.reference };
+    }
+
+    return {
+      status: data.data?.status || "failed",
+      reference: data.data?.reference || params.reference,
+    };
+  }
+
+  /**
+   * Charge mobile money (M-Pesa or MTN MoMo)
+   */
+  private async chargeMobileMoney(params: {
+    phoneNumber: string;
+    amount: number;
+    currency: string;
+    provider: string;
+    reference: string;
+    description: string;
+  }): Promise<{ status: string; reference: string }> {
+    const { provider, phoneNumber, amount, currency, reference, description } = params;
+
+    // M-Pesa STK Push for Kenya
+    if (provider === "MPESA" && currency === "KES") {
+      return this.initiateMpesaStkPush({
+        phoneNumber,
+        amount,
+        reference,
+        description,
+      });
+    }
+
+    // MTN MoMo for Ghana, Rwanda, Uganda
+    if (provider.startsWith("MTN_MOMO")) {
+      return this.initiateMomoPayment({
+        phoneNumber,
+        amount,
+        currency,
+        reference,
+        description,
+        country: provider.split("_")[2] || "GH", // MTN_MOMO_GH -> GH
+      });
+    }
+
+    return { status: "failed", reference };
+  }
+
+  /**
+   * Initiate M-Pesa STK Push
+   */
+  private async initiateMpesaStkPush(params: {
+    phoneNumber: string;
+    amount: number;
+    reference: string;
+    description: string;
+  }): Promise<{ status: string; reference: string }> {
+    const consumerKey = process.env.MPESA_CONSUMER_KEY;
+    const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
+    const shortcode = process.env.MPESA_SHORTCODE;
+    const passkey = process.env.MPESA_PASSKEY;
+    const callbackUrl = process.env.MPESA_CALLBACK_URL;
+
+    if (!consumerKey || !consumerSecret || !shortcode || !passkey) {
+      console.error("[M-Pesa] Missing configuration");
+      return { status: "failed", reference: params.reference };
+    }
+
+    try {
+      // Get OAuth token
+      const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+      const tokenResponse = await fetch(
+        "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
+        {
+          headers: { Authorization: `Basic ${authString}` },
+        }
+      );
+      const tokenData = await tokenResponse.json();
+      const accessToken = tokenData.access_token;
+
+      // Generate timestamp and password
+      const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+      const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString("base64");
+
+      // Initiate STK Push
+      const stkResponse = await fetch(
+        "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            BusinessShortCode: shortcode,
+            Password: password,
+            Timestamp: timestamp,
+            TransactionType: "CustomerPayBillOnline",
+            Amount: Math.round(params.amount),
+            PartyA: params.phoneNumber.replace(/^\+/, ""),
+            PartyB: shortcode,
+            PhoneNumber: params.phoneNumber.replace(/^\+/, ""),
+            CallBackURL: callbackUrl,
+            AccountReference: params.reference.slice(0, 12),
+            TransactionDesc: params.description.slice(0, 13),
+          }),
+        }
+      );
+
+      const stkData = await stkResponse.json();
+
+      if (stkData.ResponseCode === "0") {
+        return { status: "pending", reference: stkData.CheckoutRequestID };
+      }
+
+      return { status: "failed", reference: params.reference };
+    } catch (error) {
+      console.error("[M-Pesa] STK Push error:", error);
+      return { status: "failed", reference: params.reference };
+    }
+  }
+
+  /**
+   * Initiate MTN MoMo payment
+   */
+  private async initiateMomoPayment(params: {
+    phoneNumber: string;
+    amount: number;
+    currency: string;
+    reference: string;
+    description: string;
+    country: string;
+  }): Promise<{ status: string; reference: string }> {
+    const subscriptionKey = process.env[`MTN_MOMO_${params.country}_SUBSCRIPTION_KEY`];
+    const apiUserId = process.env[`MTN_MOMO_${params.country}_API_USER`];
+    const apiKey = process.env[`MTN_MOMO_${params.country}_API_KEY`];
+    const callbackUrl = process.env.MTN_MOMO_CALLBACK_URL;
+
+    if (!subscriptionKey || !apiUserId || !apiKey) {
+      console.error(`[MoMo] Missing configuration for ${params.country}`);
+      return { status: "failed", reference: params.reference };
+    }
+
+    try {
+      // Get access token
+      const credentials = Buffer.from(`${apiUserId}:${apiKey}`).toString("base64");
+      const tokenResponse = await fetch(
+        `https://proxy.momoapi.mtn.com/collection/token/`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${credentials}`,
+            "Ocp-Apim-Subscription-Key": subscriptionKey,
+          },
+        }
+      );
+      const tokenData = await tokenResponse.json();
+      const accessToken = tokenData.access_token;
+
+      // Initiate payment request
+      const paymentResponse = await fetch(
+        `https://proxy.momoapi.mtn.com/collection/v1_0/requesttopay`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "X-Reference-Id": params.reference,
+            "X-Target-Environment": process.env.NODE_ENV === "production" ? "mtnghana" : "sandbox",
+            "Ocp-Apim-Subscription-Key": subscriptionKey,
+            "Content-Type": "application/json",
+            ...(callbackUrl && { "X-Callback-Url": callbackUrl }),
+          },
+          body: JSON.stringify({
+            amount: String(params.amount),
+            currency: params.currency,
+            externalId: params.reference,
+            payer: {
+              partyIdType: "MSISDN",
+              partyId: params.phoneNumber.replace(/^\+/, ""),
+            },
+            payerMessage: params.description,
+            payeeNote: `UBI Subscription - ${params.reference}`,
+          }),
+        }
+      );
+
+      if (paymentResponse.status === 202) {
+        return { status: "pending", reference: params.reference };
+      }
+
+      return { status: "failed", reference: params.reference };
+    } catch (error) {
+      console.error("[MoMo] Payment error:", error);
+      return { status: "failed", reference: params.reference };
+    }
   }
 
   private formatPlan(plan: {

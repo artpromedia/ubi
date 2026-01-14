@@ -6,6 +6,7 @@
 import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { prisma } from "../lib/prisma";
+import { notificationClient } from "../lib/notification-client";
 import type {
   Beneficiary,
   BeneficiaryParams,
@@ -957,23 +958,102 @@ export class P2PTransferService {
   }
 
   // ===========================================
-  // NOTIFICATIONS (stubs - implement with notification service)
+  // NOTIFICATIONS
   // ===========================================
 
   private async notifyTransferCompleted(transferId: string): Promise<void> {
-    // TODO: Integrate with notification service
-    console.log(`[P2P] Transfer completed: ${transferId}`);
+    try {
+      const transfer = await prisma.p2pTransfer.findUnique({
+        where: { id: transferId },
+        include: {
+          sender: { select: { id: true, firstName: true, lastName: true } },
+          recipient: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      if (!transfer || !transfer.sender || !transfer.recipient) {
+        console.warn(`[P2P] Transfer not found for notification: ${transferId}`);
+        return;
+      }
+
+      const recipientName = `${transfer.recipient.firstName} ${transfer.recipient.lastName}`.trim();
+
+      await notificationClient.notifyTransferCompleted(
+        transfer.senderId,
+        transfer.recipientId,
+        Number(transfer.amount),
+        transfer.currency,
+        recipientName
+      );
+
+      console.log(`[P2P] Transfer notification sent for ${transferId}`);
+    } catch (error) {
+      console.error(`[P2P] Failed to send transfer notification:`, error);
+    }
   }
 
   private async notifyMoneyRequest(
     requestId: string,
     payerUserId: string
   ): Promise<void> {
-    console.log(`[P2P] Money request ${requestId} sent to user ${payerUserId}`);
+    try {
+      const request = await prisma.moneyRequest.findUnique({
+        where: { id: requestId },
+        include: {
+          requester: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      if (!request || !request.requester) {
+        console.warn(`[P2P] Money request not found: ${requestId}`);
+        return;
+      }
+
+      const requesterName = `${request.requester.firstName} ${request.requester.lastName}`.trim();
+
+      await notificationClient.notifyMoneyRequest(
+        payerUserId,
+        request.requesterId,
+        Number(request.amount),
+        request.currency,
+        requesterName,
+        request.note || undefined
+      );
+
+      console.log(`[P2P] Money request notification sent for ${requestId}`);
+    } catch (error) {
+      console.error(`[P2P] Failed to send money request notification:`, error);
+    }
   }
 
   private async notifyRequestDeclined(requestId: string): Promise<void> {
-    console.log(`[P2P] Money request ${requestId} declined`);
+    try {
+      const request = await prisma.moneyRequest.findUnique({
+        where: { id: requestId },
+        include: {
+          requester: { select: { id: true } },
+          payer: { select: { firstName: true, lastName: true } },
+        },
+      });
+
+      if (!request || !request.requester || !request.payer) {
+        console.warn(`[P2P] Money request not found for decline: ${requestId}`);
+        return;
+      }
+
+      const payerName = `${request.payer.firstName} ${request.payer.lastName}`.trim();
+
+      await notificationClient.notifyRequestDeclined(
+        request.requesterId,
+        payerName,
+        Number(request.amount),
+        request.currency
+      );
+
+      console.log(`[P2P] Request declined notification sent for ${requestId}`);
+    } catch (error) {
+      console.error(`[P2P] Failed to send decline notification:`, error);
+    }
   }
 
   private async sendInviteNotification(
@@ -982,9 +1062,43 @@ export class P2PTransferService {
     amount: number,
     currency: Currency
   ): Promise<void> {
-    console.log(
-      `[P2P] Invite sent to ${type}:${identifier} for ${amount} ${currency}`
-    );
+    try {
+      // For now, log the invite - in production, this would send an SMS/email
+      console.log(`[P2P] Sending invite to ${type}:${identifier} for ${amount} ${currency}`);
+
+      // TODO: Integrate with SMS/Email service for user invites
+      // This would send a message like:
+      // "Someone wants to send you money on UBI! Download the app to receive your {amount} {currency}."
+
+      if (type === "phone") {
+        // Send SMS via notification service
+        const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:4006";
+        await fetch(`${NOTIFICATION_SERVICE_URL}/v1/sms/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: identifier,
+            message: `You've received a pending payment of ${currency} ${amount.toLocaleString()} on UBI! Download the app to claim it: https://ubi.africa/app`,
+            type: "transactional",
+          }),
+        });
+      } else if (type === "email") {
+        // Send email via notification service
+        const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:4006";
+        await fetch(`${NOTIFICATION_SERVICE_URL}/v1/email/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: identifier,
+            subject: `You've received ${currency} ${amount.toLocaleString()} on UBI!`,
+            template: "money_received_invite",
+            data: { amount, currency },
+          }),
+        });
+      }
+    } catch (error) {
+      console.error(`[P2P] Failed to send invite notification:`, error);
+    }
   }
 }
 

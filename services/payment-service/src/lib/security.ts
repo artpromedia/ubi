@@ -8,6 +8,7 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { Context, Next } from "hono";
 import { z } from "zod";
+import { redis } from "./redis";
 
 // ===========================================
 // INPUT VALIDATION SCHEMAS
@@ -247,13 +248,20 @@ export async function requireAdmin(c: Context, next: Next): Promise<Response | v
   return await next();
 }
 
+// Nonce configuration
+const NONCE_PREFIX = "nonce:";
+const NONCE_TTL = 5 * 60; // 5 minutes (matches timestamp window)
+
 /**
  * Middleware to prevent replay attacks
+ * Validates request timestamp and ensures nonce hasn't been used before
  */
 export async function preventReplay(c: Context, next: Next): Promise<Response | void> {
   const timestamp = c.req.header("X-Timestamp");
   const nonce = c.req.header("X-Nonce");
+  const signature = c.req.header("X-Signature");
 
+  // Validate timestamp
   if (timestamp) {
     const requestTime = parseInt(timestamp);
     const now = Date.now();
@@ -265,7 +273,7 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
           success: false,
           error: {
             code: "REQUEST_EXPIRED",
-            message: "Request timestamp is too old",
+            message: "Request timestamp is too old or invalid",
           },
         },
         400
@@ -273,12 +281,157 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
     }
   }
 
-  // Check nonce hasn't been used (would need Redis)
+  // Validate nonce (required for payment endpoints)
   if (nonce) {
-    // TODO: Check nonce in Redis
+    // Validate nonce format (should be UUID or similar unique identifier)
+    if (!isValidNonceFormat(nonce)) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "INVALID_NONCE",
+            message: "Nonce must be a valid unique identifier (UUID format)",
+          },
+        },
+        400
+      );
+    }
+
+    try {
+      // Check if nonce has been used before using Redis SETNX
+      const nonceKey = `${NONCE_PREFIX}${nonce}`;
+      const wasSet = await redis.set(nonceKey, "1", "EX", NONCE_TTL, "NX");
+
+      if (wasSet !== "OK") {
+        // Nonce was already used (potential replay attack)
+        console.warn(`[Security] Duplicate nonce detected: ${nonce.substring(0, 8)}...`);
+
+        // Log potential attack for monitoring
+        createAuditLog({
+          timestamp: new Date(),
+          userId: c.get("userId") || "unknown",
+          action: "REPLAY_ATTACK_BLOCKED",
+          resource: "payment",
+          ipAddress: c.req.header("X-Forwarded-For") || c.req.header("X-Real-IP"),
+          userAgent: c.req.header("User-Agent"),
+          result: "failure",
+          errorMessage: `Duplicate nonce: ${nonce.substring(0, 8)}...`,
+        });
+
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "DUPLICATE_REQUEST",
+              message: "This request has already been processed. Please generate a new nonce.",
+            },
+          },
+          400
+        );
+      }
+    } catch (error) {
+      // If Redis is unavailable, log but allow the request (fail open for availability)
+      // In high-security environments, you might want to fail closed instead
+      console.error("[Security] Nonce validation error:", error);
+
+      // Optionally fail closed for payment endpoints
+      const path = c.req.path;
+      if (path.includes("/payment") || path.includes("/transaction") || path.includes("/payout")) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "SECURITY_CHECK_FAILED",
+              message: "Unable to validate request. Please try again.",
+            },
+          },
+          503
+        );
+      }
+    }
+  }
+
+  // Validate request signature if provided
+  if (signature && timestamp && nonce) {
+    const isValidSignature = await validateRequestSignature(c, signature, timestamp, nonce);
+    if (!isValidSignature) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "INVALID_SIGNATURE",
+            message: "Request signature validation failed",
+          },
+        },
+        401
+      );
+    }
   }
 
   return await next();
+}
+
+/**
+ * Validate nonce format (UUID v4 or similar)
+ */
+function isValidNonceFormat(nonce: string): boolean {
+  // Accept UUID v4 format or alphanumeric string 16-64 chars
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const alphanumericRegex = /^[a-zA-Z0-9_-]{16,64}$/;
+
+  return uuidRegex.test(nonce) || alphanumericRegex.test(nonce);
+}
+
+/**
+ * Validate request signature for enhanced security
+ * Signature = HMAC-SHA256(timestamp + nonce + method + path + body_hash)
+ */
+async function validateRequestSignature(
+  c: Context,
+  signature: string,
+  timestamp: string,
+  nonce: string
+): Promise<boolean> {
+  const signingSecret = process.env.REQUEST_SIGNING_SECRET;
+  if (!signingSecret) {
+    // If no signing secret configured, skip signature validation
+    return true;
+  }
+
+  try {
+    const method = c.req.method;
+    const path = c.req.path;
+
+    // Get body hash if body exists
+    let bodyHash = "";
+    if (method !== "GET" && method !== "HEAD") {
+      try {
+        const body = await c.req.text();
+        if (body) {
+          bodyHash = createHash("sha256").update(body).digest("hex");
+        }
+      } catch {
+        // No body or unable to read
+      }
+    }
+
+    // Create the string to sign
+    const stringToSign = `${timestamp}\n${nonce}\n${method}\n${path}\n${bodyHash}`;
+
+    // Calculate expected signature
+    const expectedSignature = createHmac("sha256", signingSecret)
+      .update(stringToSign)
+      .digest("hex");
+
+    // Use timing-safe comparison
+    return timingSafeEqual(
+      Buffer.from(signature, "hex"),
+      Buffer.from(expectedSignature, "hex")
+    );
+  } catch (error) {
+    console.error("[Security] Signature validation error:", error);
+    return false;
+  }
 }
 
 /**

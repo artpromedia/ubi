@@ -6,6 +6,7 @@
 import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { prisma } from "../lib/prisma";
+import { notificationClient } from "../lib/notification-client";
 import type {
   AutoSaveConfig,
   AutoSaveFrequency,
@@ -910,8 +911,33 @@ export class SavingsService {
   }
 
   private async notifyTargetReached(pocketId: string): Promise<void> {
-    // TODO: Integrate with notification service
-    console.log(`[Savings] Target reached for pocket ${pocketId}`);
+    try {
+      const pocket = await prisma.savingsPocket.findUnique({
+        where: { id: pocketId },
+        select: {
+          userId: true,
+          name: true,
+          targetAmount: true,
+          currency: true,
+        },
+      });
+
+      if (!pocket) {
+        console.warn(`[Savings] Pocket not found for notification: ${pocketId}`);
+        return;
+      }
+
+      await notificationClient.notifySavingsTargetReached(
+        pocket.userId,
+        pocket.name,
+        Number(pocket.targetAmount),
+        pocket.currency
+      );
+
+      console.log(`[Savings] Target reached notification sent for pocket ${pocketId}`);
+    } catch (error) {
+      console.error(`[Savings] Failed to send target reached notification:`, error);
+    }
   }
 }
 
