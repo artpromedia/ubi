@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import * as utils from "../index";
 
 describe("@ubi/utils", () => {
@@ -11,7 +11,7 @@ describe("@ubi/utils", () => {
   });
 
   it("should export constants", () => {
-    expect(utils.SUPPORTED_COUNTRIES).toBeDefined();
+    expect(utils.UBI_COUNTRIES).toBeDefined();
     expect(utils.CURRENCIES).toBeDefined();
   });
 });
