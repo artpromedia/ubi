@@ -5,6 +5,7 @@
  */
 
 import { type ApiClient, getApiClient } from "../client";
+
 import type {
   Address,
   ApiResponse,
@@ -297,11 +298,11 @@ export class DeliveryServiceApi {
     }
   ): Promise<ApiResponse<Delivery>> {
     const formData = new FormData();
-    if (proof.photo) formData.append("photo", proof.photo);
-    if (proof.signature) formData.append("signature", proof.signature);
+    if (proof.photo) {formData.append("photo", proof.photo);}
+    if (proof.signature) {formData.append("signature", proof.signature);}
     if (proof.recipientName)
-      formData.append("recipientName", proof.recipientName);
-    if (proof.notes) formData.append("notes", proof.notes);
+      {formData.append("recipientName", proof.recipientName);}
+    if (proof.notes) {formData.append("notes", proof.notes);}
 
     return this.client
       .getInstance()

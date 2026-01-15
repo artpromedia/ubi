@@ -13,6 +13,7 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
+
 import type { PaginatedResponse, PaginationParams } from "./types";
 
 // Query key factory
@@ -170,7 +171,7 @@ export function createOptimisticUpdate<TData, TVariables>(
     },
     onSettled: () => {
       // Refetch after mutation
-      queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey });
     },
   };
 }

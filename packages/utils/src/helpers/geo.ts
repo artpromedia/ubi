@@ -281,7 +281,7 @@ export function getNeighborCells(cellId: string, k: number = 1): string[] {
 
   for (let i = -k; i <= k; i++) {
     for (let j = -k; j <= k; j++) {
-      if (i === 0 && j === 0) continue;
+      if (i === 0 && j === 0) {continue;}
       cells.push(`${lat + i}:${lng + j}:${res}`);
     }
   }

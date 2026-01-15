@@ -5,8 +5,4 @@ module.exports = {
     project: "./tsconfig.json",
     tsconfigRootDir: __dirname,
   },
-  rules: {
-    "@typescript-eslint/no-throw-literal": "off",
-    "import/no-cycle": "off",
-  },
 };

@@ -38,7 +38,7 @@ function isBrowser(): boolean {
  * Get the storage object
  */
 function getStorage(type: StorageType): Storage | null {
-  if (!isBrowser()) return null;
+  if (!isBrowser()) {return null;}
   return type === "local" ? window.localStorage : window.sessionStorage;
 }
 
@@ -53,7 +53,7 @@ export function setItem<T>(
   const { ttl, type = "local" } = options;
   const storage = getStorage(type);
 
-  if (!storage) return false;
+  if (!storage) {return false;}
 
   try {
     const item: StorageItem<T> = {
@@ -79,11 +79,11 @@ export function getItem<T>(
   const { type = "local" } = options;
   const storage = getStorage(type);
 
-  if (!storage) return null;
+  if (!storage) {return null;}
 
   try {
     const raw = storage.getItem(key);
-    if (!raw) return null;
+    if (!raw) {return null;}
 
     const item: StorageItem<T> = JSON.parse(raw);
 
@@ -110,7 +110,7 @@ export function removeItem(
   const { type = "local" } = options;
   const storage = getStorage(type);
 
-  if (!storage) return false;
+  if (!storage) {return false;}
 
   try {
     storage.removeItem(key);
@@ -141,7 +141,7 @@ export function getKeys(
   const { type = "local" } = options;
   const storage = getStorage(type);
 
-  if (!storage) return [];
+  if (!storage) {return [];}
 
   const keys: string[] = [];
   for (let i = 0; i < storage.length; i++) {

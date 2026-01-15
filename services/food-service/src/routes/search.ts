@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { cache } from "../lib/redis";
-import { CuisineType, RestaurantStatus } from "../types";
+import { CuisineType } from "../types";
 
 const searchRoutes = new Hono();
 
@@ -20,9 +20,7 @@ const searchSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90).optional(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
   radius: z.coerce.number().min(0.5).max(50).default(10), // km
-  city: z.string().optional(),
   cuisine: z.nativeEnum(CuisineType).optional(),
-  priceRange: z.coerce.number().min(1).max(4).optional(),
   minRating: z.coerce.number().min(0).max(5).optional(),
   isOpen: z.coerce.boolean().optional(),
   page: z.coerce.number().min(1).default(1),
@@ -79,13 +77,13 @@ searchRoutes.get(
     // Search restaurants by name
     const restaurants = await prisma.restaurant.findMany({
       where: {
-        status: RestaurantStatus.ACTIVE,
+        isOpen: true,
         OR: [
           { name: { contains: query, mode: "insensitive" } },
           { cuisineTypes: { has: query.toUpperCase() } },
         ],
       },
-      select: { id: true, name: true, cuisineTypes: true, logo: true },
+      select: { id: true, name: true, cuisineTypes: true, imageUrl: true },
       take: limit,
     });
 
@@ -95,14 +93,14 @@ searchRoutes.get(
         id: r.id,
         name: r.name,
         subtitle: r.cuisineTypes.join(", "),
-        image: r.logo,
+        image: r.imageUrl,
       }))
     );
 
     // Search menu items
     const menuItems = await prisma.menuItem.findMany({
       where: {
-        isActive: true,
+        isAvailable: true,
         OR: [
           { name: { contains: query, mode: "insensitive" } },
           { description: { contains: query, mode: "insensitive" } },
@@ -111,7 +109,8 @@ searchRoutes.get(
       select: {
         id: true,
         name: true,
-        image: true,
+        imageUrl: true,
+        restaurantId: true,
         restaurant: { select: { id: true, name: true } },
       },
       take: limit,
@@ -124,7 +123,7 @@ searchRoutes.get(
         name: item.name,
         subtitle: `at ${item.restaurant.name}`,
         restaurantId: item.restaurant.id,
-        image: item.image,
+        image: item.imageUrl,
       }))
     );
 
@@ -170,8 +169,7 @@ searchRoutes.get("/popular", async (c) => {
   const popularCuisines = await prisma.restaurant.groupBy({
     by: ["cuisineTypes"],
     where: {
-      status: RestaurantStatus.ACTIVE,
-      ...(city ? { city } : {}),
+      isOpen: true,
     },
     _count: { id: true },
     orderBy: { _count: { id: "desc" } },
@@ -181,16 +179,15 @@ searchRoutes.get("/popular", async (c) => {
   // Get trending restaurants
   const trendingRestaurants = await prisma.restaurant.findMany({
     where: {
-      status: RestaurantStatus.ACTIVE,
-      ...(city ? { city } : {}),
+      isOpen: true,
     },
-    orderBy: [{ averageRating: "desc" }, { totalOrders: "desc" }],
+    orderBy: [{ rating: "desc" }, { totalOrders: "desc" }],
     select: {
       id: true,
       name: true,
       cuisineTypes: true,
-      averageRating: true,
-      logo: true,
+      rating: true,
+      imageUrl: true,
     },
     take: 5,
   });
@@ -198,14 +195,12 @@ searchRoutes.get("/popular", async (c) => {
   // Get popular items
   const popularItems = await prisma.menuItem.findMany({
     where: {
-      isActive: true,
-      isPopular: true,
-      ...(city ? { restaurant: { city } } : {}),
+      isAvailable: true,
     },
     select: {
       id: true,
       name: true,
-      image: true,
+      imageUrl: true,
       restaurant: { select: { id: true, name: true } },
     },
     take: 5,
@@ -215,9 +210,15 @@ searchRoutes.get("/popular", async (c) => {
     cuisines: popularCuisines
       .map((c: (typeof popularCuisines)[number]) => c.cuisineTypes[0])
       .filter(Boolean),
-    restaurants: trendingRestaurants,
+    restaurants: trendingRestaurants.map((r) => ({
+      ...r,
+      averageRating: r.rating,
+      logo: r.imageUrl,
+    })),
     items: popularItems.map((item: (typeof popularItems)[number]) => ({
-      ...item,
+      id: item.id,
+      name: item.name,
+      image: item.imageUrl,
       restaurantName: item.restaurant.name,
       restaurantId: item.restaurant.id,
     })),
@@ -306,9 +307,9 @@ searchRoutes.get("/filters", async (c) => {
     return c.json({ success: true, data: cached });
   }
 
-  const where = city
-    ? { city, status: RestaurantStatus.ACTIVE }
-    : { status: RestaurantStatus.ACTIVE };
+  const where = {
+    isOpen: true,
+  };
 
   // Get all available cuisines
   const cuisines = await prisma.restaurant.findMany({
@@ -322,9 +323,9 @@ searchRoutes.get("/filters", async (c) => {
   );
   const uniqueCuisines = [...new Set<string>(allCuisineTypes)];
 
-  // Get price range distribution
-  const priceRanges = await prisma.restaurant.groupBy({
-    by: ["priceRange"],
+  // Get rating distribution instead of price range
+  const ratingDistribution = await prisma.restaurant.groupBy({
+    by: ["rating"],
     where,
     _count: { id: true },
   });
@@ -334,13 +335,12 @@ searchRoutes.get("/filters", async (c) => {
       value: c,
       label: c.charAt(0) + c.slice(1).toLowerCase().replaceAll("_", " "),
     })),
-    priceRanges: [1, 2, 3, 4].map((pr) => ({
-      value: pr,
-      label: "₦".repeat(pr),
-      count:
-        priceRanges.find(
-          (p: (typeof priceRanges)[number]) => p.priceRange === pr
-        )?._count?.id || 0,
+    ratings: [1, 2, 3, 4, 5].map((rating) => ({
+      value: rating,
+      label: `${rating}+ stars`,
+      count: ratingDistribution
+        .filter((r: (typeof ratingDistribution)[number]) => r.rating >= rating)
+        .reduce((sum, r) => sum + r._count.id, 0),
     })),
     sortOptions: [
       { value: "relevance", label: "Relevance" },
@@ -371,9 +371,7 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
     latitude,
     longitude,
     radius,
-    city,
     cuisine,
-    priceRange,
     minRating,
     isOpen,
     page,
@@ -384,17 +382,15 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
 
   // Build restaurant search
   const restaurantWhere: any = {
-    status: RestaurantStatus.ACTIVE,
+    isOpen: true,
     OR: [
       { name: { contains: query, mode: "insensitive" } },
       { description: { contains: query, mode: "insensitive" } },
     ],
   };
 
-  if (city) restaurantWhere.city = city;
   if (cuisine) restaurantWhere.cuisineTypes = { has: cuisine };
-  if (priceRange) restaurantWhere.priceRange = priceRange;
-  if (minRating) restaurantWhere.averageRating = { gte: minRating };
+  if (minRating) restaurantWhere.rating = { gte: minRating };
 
   // Location-based search
   let restaurants: any[] = [];
@@ -412,16 +408,14 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
           ST_MakePoint(${longitude}, ${latitude})::geography
         ) as distance
       FROM "Restaurant" r
-      WHERE r.status = 'ACTIVE'
+      WHERE r."isOpen" = true
       AND (
         r.name ILIKE ${"%" + query + "%"}
         OR r.description ILIKE ${"%" + query + "%"}
         OR ${"%" + query.toUpperCase() + "%"} = ANY(r."cuisineTypes")
       )
-      ${city ? prisma.$queryRaw`AND r.city = ${city}` : prisma.$queryRaw``}
       ${cuisine ? prisma.$queryRaw`AND ${cuisine} = ANY(r."cuisineTypes")` : prisma.$queryRaw``}
-      ${priceRange ? prisma.$queryRaw`AND r."priceRange" = ${priceRange}` : prisma.$queryRaw``}
-      ${minRating ? prisma.$queryRaw`AND r."averageRating" >= ${minRating}` : prisma.$queryRaw``}
+      ${minRating ? prisma.$queryRaw`AND r."rating" >= ${minRating}` : prisma.$queryRaw``}
       AND ST_DWithin(
         ST_MakePoint((r.location->>'longitude')::float, (r.location->>'latitude')::float)::geography,
         ST_MakePoint(${longitude}, ${latitude})::geography,
@@ -444,12 +438,12 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
         ) as distance
       FROM "MenuItem" mi
       JOIN "Restaurant" r ON mi."restaurantId" = r.id
-      WHERE mi."isActive" = true
+      WHERE mi."isAvailable" = true
       AND (
         mi.name ILIKE ${"%" + query + "%"}
         OR mi.description ILIKE ${"%" + query + "%"}
       )
-      AND r.status = 'ACTIVE'
+      AND r."isOpen" = true
       AND ST_DWithin(
         ST_MakePoint((r.location->>'longitude')::float, (r.location->>'latitude')::float)::geography,
         ST_MakePoint(${longitude}, ${latitude})::geography,
@@ -462,28 +456,29 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
     // Search without location
     restaurants = await prisma.restaurant.findMany({
       where: restaurantWhere,
-      orderBy: [{ averageRating: "desc" }, { totalOrders: "desc" }],
+      orderBy: [{ rating: "desc" }, { totalOrders: "desc" }],
       skip: offset,
       take: limit,
     });
 
     menuItems = await prisma.menuItem.findMany({
       where: {
-        isActive: true,
+        isAvailable: true,
         OR: [
           { name: { contains: query, mode: "insensitive" } },
           { description: { contains: query, mode: "insensitive" } },
         ],
+        restaurant: {
+          isOpen: true,
+        },
       },
       include: {
         restaurant: {
-          select: { id: true, name: true, status: true },
+          select: { id: true, name: true, isOpen: true },
         },
       },
       take: limit,
     });
-
-    menuItems = menuItems.filter((item) => item.restaurant.status === "ACTIVE");
   }
 
   // Filter by isOpen if requested
@@ -518,7 +513,7 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
       description: item.description,
       price: item.price,
       discountPrice: item.discountPrice,
-      image: item.image,
+      imageUrl: item.imageUrl,
       restaurantId: item.restaurant_id || item.restaurant?.id,
       restaurantName: item.restaurant_name || item.restaurant?.name,
       distance: item.distance ? Math.round(item.distance / 100) / 10 : null,

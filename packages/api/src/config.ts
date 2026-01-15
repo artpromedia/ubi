@@ -5,7 +5,10 @@
  * authentication, and request/response interceptors.
  */
 
-import type { Options } from "ky";
+import ky, {type  Options } from "ky";
+
+
+// Import ky for the afterResponse hook
 
 export interface ApiConfig {
   /** Base URL for the API Gateway */
@@ -154,6 +157,3 @@ export function createKyOptions(config: ApiConfig): Options {
     },
   };
 }
-
-// Import ky for the afterResponse hook
-import ky from "ky";

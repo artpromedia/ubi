@@ -8,7 +8,7 @@
  * Sleep for a given duration
  * @param ms - Milliseconds to sleep
  */
-export function sleep(ms: number): Promise<void> {
+export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -136,8 +136,10 @@ export async function mapWithConcurrency<T, R>(
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    if (item === undefined) continue;
-    
+    if (item === undefined) {
+      continue;
+    }
+
     const promise = fn(item, i).then((result) => {
       results[i] = result;
     });
@@ -171,7 +173,7 @@ export function debounce<T extends (...args: unknown[]) => Promise<unknown>>(
   let resolveFunction: ((value: ReturnType<T>) => void) | undefined;
   let rejectFunction: ((reason?: unknown) => void) | undefined;
 
-  return (...args: Parameters<T>): Promise<ReturnType<T>> => {
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
@@ -375,7 +377,7 @@ export class CircuitBreaker {
 /**
  * Run multiple promises and return results even if some fail
  */
-export async function settleAll<T>(
+export function settleAll<T>(
   promises: Promise<T>[]
 ): Promise<
   Array<

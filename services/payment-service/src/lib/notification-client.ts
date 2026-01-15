@@ -8,7 +8,8 @@
 import { prisma } from "./prisma";
 
 // Notification service configuration
-const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:4006";
+const NOTIFICATION_SERVICE_URL =
+  process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:4006";
 const NOTIFICATION_API_KEY = process.env.NOTIFICATION_SERVICE_API_KEY;
 
 // Types
@@ -89,38 +90,48 @@ class NotificationClient {
       }
 
       // Determine channels based on priority and user preferences
-      const channels = payload.channels || this.getDefaultChannels(payload.type, payload.priority);
+      const channels =
+        payload.channels ||
+        this.getDefaultChannels(payload.type, payload.priority);
 
       // Send via notification service
-      const response = await fetch(`${NOTIFICATION_SERVICE_URL}/v1/notifications/send`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(NOTIFICATION_API_KEY && { Authorization: `Bearer ${NOTIFICATION_API_KEY}` }),
-        },
-        body: JSON.stringify({
-          userId: payload.userId,
-          email: user.email,
-          phone: user.phone,
-          title: payload.title,
-          body: payload.body,
-          type: payload.type,
-          priority: payload.priority || NotificationPriority.NORMAL,
-          channels,
-          data: {
-            ...payload.data,
-            userName: `${user.firstName} ${user.lastName}`.trim(),
+      const response = await fetch(
+        `${NOTIFICATION_SERVICE_URL}/v1/notifications/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(NOTIFICATION_API_KEY && {
+              Authorization: `Bearer ${NOTIFICATION_API_KEY}`,
+            }),
           },
-        }),
-      });
+          body: JSON.stringify({
+            userId: payload.userId,
+            email: user.email,
+            phone: user.phone,
+            title: payload.title,
+            body: payload.body,
+            type: payload.type,
+            priority: payload.priority || NotificationPriority.NORMAL,
+            channels,
+            data: {
+              ...payload.data,
+              userName: `${user.firstName} ${user.lastName}`.trim(),
+            },
+          }),
+        }
+      );
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        const errorData = (await response.json().catch(() => ({}))) as any;
         console.error("[Notification] Service error:", errorData);
-        return { success: false, error: errorData.message || "Notification service error" };
+        return {
+          success: false,
+          error: errorData.message || "Notification service error",
+        };
       }
 
-      const result = await response.json();
+      const result = (await response.json()) as any;
       return {
         success: true,
         notificationId: result.data?.notificationId,
@@ -134,7 +145,10 @@ class NotificationClient {
 
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to send notification",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to send notification",
       };
     }
   }
@@ -142,7 +156,9 @@ class NotificationClient {
   /**
    * Send bulk notifications
    */
-  async sendBulk(payloads: NotificationPayload[]): Promise<{ sent: number; failed: number }> {
+  async sendBulk(
+    payloads: NotificationPayload[]
+  ): Promise<{ sent: number; failed: number }> {
     let sent = 0;
     let failed = 0;
 
@@ -194,15 +210,26 @@ class NotificationClient {
     priority?: NotificationPriority
   ): NotificationChannel[] {
     // High priority notifications go to all channels
-    if (priority === NotificationPriority.HIGH || priority === NotificationPriority.URGENT) {
-      return [NotificationChannel.PUSH, NotificationChannel.SMS, NotificationChannel.IN_APP];
+    if (
+      priority === NotificationPriority.HIGH ||
+      priority === NotificationPriority.URGENT
+    ) {
+      return [
+        NotificationChannel.PUSH,
+        NotificationChannel.SMS,
+        NotificationChannel.IN_APP,
+      ];
     }
 
     // Map notification types to appropriate channels
     switch (type) {
       case NotificationType.LOAN_OVERDUE:
       case NotificationType.PAYMENT_FAILED:
-        return [NotificationChannel.PUSH, NotificationChannel.SMS, NotificationChannel.EMAIL];
+        return [
+          NotificationChannel.PUSH,
+          NotificationChannel.SMS,
+          NotificationChannel.EMAIL,
+        ];
 
       case NotificationType.TRANSFER_RECEIVED:
       case NotificationType.MONEY_REQUEST:
@@ -210,7 +237,11 @@ class NotificationClient {
 
       case NotificationType.SAVINGS_TARGET_REACHED:
       case NotificationType.SUBSCRIPTION_RENEWED:
-        return [NotificationChannel.PUSH, NotificationChannel.IN_APP, NotificationChannel.EMAIL];
+        return [
+          NotificationChannel.PUSH,
+          NotificationChannel.IN_APP,
+          NotificationChannel.EMAIL,
+        ];
 
       case NotificationType.LOAN_DUE_REMINDER:
       case NotificationType.SUBSCRIPTION_EXPIRING:
@@ -228,7 +259,12 @@ class NotificationClient {
   /**
    * Notify user that savings target has been reached
    */
-  async notifySavingsTargetReached(userId: string, pocketName: string, targetAmount: number, currency: string): Promise<SendResult> {
+  async notifySavingsTargetReached(
+    userId: string,
+    pocketName: string,
+    targetAmount: number,
+    currency: string
+  ): Promise<SendResult> {
     return this.send({
       userId,
       title: "Savings Goal Achieved! 🎉",
@@ -242,7 +278,13 @@ class NotificationClient {
   /**
    * Notify user about overdue loan
    */
-  async notifyLoanOverdue(userId: string, loanId: string, amountDue: number, currency: string, daysOverdue: number): Promise<SendResult> {
+  async notifyLoanOverdue(
+    userId: string,
+    loanId: string,
+    amountDue: number,
+    currency: string,
+    daysOverdue: number
+  ): Promise<SendResult> {
     return this.send({
       userId,
       title: "Loan Payment Overdue",
@@ -307,7 +349,12 @@ class NotificationClient {
   /**
    * Notify user that their money request was declined
    */
-  async notifyRequestDeclined(requesterId: string, payerName: string, amount: number, currency: string): Promise<SendResult> {
+  async notifyRequestDeclined(
+    requesterId: string,
+    payerName: string,
+    amount: number,
+    currency: string
+  ): Promise<SendResult> {
     return this.send({
       userId: requesterId,
       title: "Request Declined",
@@ -320,7 +367,12 @@ class NotificationClient {
   /**
    * Notify user about successful refund
    */
-  async notifyRefundProcessed(userId: string, amount: number, currency: string, reason: string): Promise<SendResult> {
+  async notifyRefundProcessed(
+    userId: string,
+    amount: number,
+    currency: string,
+    reason: string
+  ): Promise<SendResult> {
     return this.send({
       userId,
       title: "Refund Processed",
@@ -333,7 +385,12 @@ class NotificationClient {
   /**
    * Notify driver about payout
    */
-  async notifyPayoutCompleted(userId: string, amount: number, currency: string, payoutMethod: string): Promise<SendResult> {
+  async notifyPayoutCompleted(
+    userId: string,
+    amount: number,
+    currency: string,
+    payoutMethod: string
+  ): Promise<SendResult> {
     return this.send({
       userId,
       title: "Payout Successful! 💵",

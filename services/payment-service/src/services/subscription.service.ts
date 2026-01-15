@@ -33,21 +33,23 @@ export class SubscriptionService {
       orderBy: { displayOrder: "asc" },
     });
 
-    return plans.map((p: {
-      id: string;
-      name: string;
-      slug: string;
-      description: string | null;
-      price: unknown;
-      currency: string;
-      billingPeriod: string;
-      trialDays: number;
-      features: unknown;
-      maxFamilyMembers: number;
-      isPopular: boolean;
-      displayOrder: number;
-      isActive: boolean;
-    }) => this.formatPlan(p));
+    return plans.map(
+      (p: {
+        id: string;
+        name: string;
+        slug: string;
+        description: string | null;
+        price: unknown;
+        currency: string;
+        billingPeriod: string;
+        trialDays: number;
+        features: unknown;
+        maxFamilyMembers: number;
+        isPopular: boolean;
+        displayOrder: number;
+        isActive: boolean;
+      }) => this.formatPlan(p)
+    );
   }
 
   /**
@@ -133,7 +135,11 @@ export class SubscriptionService {
     let discountPercentage = 0;
 
     if (promoCode) {
-      const validPromo = await this.validatePromoCode(promoCode, userId, plan.id);
+      const validPromo = await this.validatePromoCode(
+        promoCode,
+        userId,
+        plan.id
+      );
       if (validPromo) {
         discountApplied = true;
         discountPercentage = validPromo.discountPercentage;
@@ -633,25 +639,27 @@ export class SubscriptionService {
       take: limit,
     });
 
-    return invoices.map((inv: {
-      id: string;
-      amount: unknown;
-      currency: string;
-      status: string;
-      periodStart: Date;
-      periodEnd: Date;
-      paidAt: Date | null;
-      createdAt: Date;
-    }) => ({
-      id: inv.id,
-      amount: Number(inv.amount),
-      currency: inv.currency,
-      status: inv.status,
-      periodStart: inv.periodStart,
-      periodEnd: inv.periodEnd,
-      paidAt: inv.paidAt || undefined,
-      createdAt: inv.createdAt,
-    }));
+    return invoices.map(
+      (inv: {
+        id: string;
+        amount: unknown;
+        currency: string;
+        status: string;
+        periodStart: Date;
+        periodEnd: Date;
+        paidAt: Date | null;
+        createdAt: Date;
+      }) => ({
+        id: inv.id,
+        amount: Number(inv.amount),
+        currency: inv.currency,
+        status: inv.status,
+        periodStart: inv.periodStart,
+        periodEnd: inv.periodEnd,
+        paidAt: inv.paidAt || undefined,
+        createdAt: inv.createdAt,
+      })
+    );
   }
 
   // ===========================================
@@ -678,10 +686,7 @@ export class SubscriptionService {
         code: code.toUpperCase(),
         isActive: true,
         validFrom: { lte: now },
-        OR: [
-          { validUntil: null },
-          { validUntil: { gte: now } },
-        ],
+        OR: [{ validUntil: null }, { validUntil: { gte: now } }],
       },
     });
 
@@ -708,7 +713,11 @@ export class SubscriptionService {
 
     // Check if promo code is valid for this plan
     const applicablePlans = promoCode.applicablePlans as string[] | null;
-    if (applicablePlans && applicablePlans.length > 0 && !applicablePlans.includes(planId)) {
+    if (
+      applicablePlans &&
+      applicablePlans.length > 0 &&
+      !applicablePlans.includes(planId)
+    ) {
       return null;
     }
 
@@ -791,7 +800,9 @@ export class SubscriptionService {
       });
 
       if (!subscription || !subscription.user) {
-        console.error(`[Subscription] User not found for subscription ${subscriptionId}`);
+        console.error(
+          `[Subscription] User not found for subscription ${subscriptionId}`
+        );
         return false;
       }
 
@@ -817,7 +828,10 @@ export class SubscriptionService {
       // If user has a saved payment method, charge it
       if (paymentMethod && paymentMethod.token) {
         // Use Paystack recurring charge for cards
-        if (paymentMethod.type === "CARD" && paymentMethod.provider === "PAYSTACK") {
+        if (
+          paymentMethod.type === "CARD" &&
+          paymentMethod.provider === "PAYSTACK"
+        ) {
           const paystackResponse = await this.chargePaystackCard({
             email: user.email,
             amount: Math.round(amount * 100), // Paystack expects kobo/cents
@@ -854,11 +868,17 @@ export class SubscriptionService {
             description: `UBI+ Subscription Renewal`,
           });
 
-          if (mobileMoneyResponse.status === "pending" || mobileMoneyResponse.status === "success") {
+          if (
+            mobileMoneyResponse.status === "pending" ||
+            mobileMoneyResponse.status === "success"
+          ) {
             await prisma.paymentTransaction.update({
               where: { id: paymentTx.id },
               data: {
-                status: mobileMoneyResponse.status === "success" ? "COMPLETED" : "PROCESSING",
+                status:
+                  mobileMoneyResponse.status === "success"
+                    ? "COMPLETED"
+                    : "PROCESSING",
                 providerReference: mobileMoneyResponse.reference,
               },
             });
@@ -879,7 +899,10 @@ export class SubscriptionService {
 
       return false;
     } catch (error) {
-      console.error(`[Subscription] Payment failed for ${subscriptionId}:`, error);
+      console.error(
+        `[Subscription] Payment failed for ${subscriptionId}:`,
+        error
+      );
       return false;
     }
   }
@@ -900,23 +923,26 @@ export class SubscriptionService {
       throw new Error("PAYSTACK_SECRET_KEY not configured");
     }
 
-    const response = await fetch("https://api.paystack.co/transaction/charge_authorization", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${paystackSecretKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: params.email,
-        amount: params.amount,
-        currency: params.currency,
-        authorization_code: params.authorizationCode,
-        reference: params.reference,
-        metadata: params.metadata,
-      }),
-    });
+    const response = await fetch(
+      "https://api.paystack.co/transaction/charge_authorization",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${paystackSecretKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: params.email,
+          amount: params.amount,
+          currency: params.currency,
+          authorization_code: params.authorizationCode,
+          reference: params.reference,
+          metadata: params.metadata,
+        }),
+      }
+    );
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
 
     if (!response.ok || !data.status) {
       console.error("[Paystack] Charge failed:", data);
@@ -940,7 +966,8 @@ export class SubscriptionService {
     reference: string;
     description: string;
   }): Promise<{ status: string; reference: string }> {
-    const { provider, phoneNumber, amount, currency, reference, description } = params;
+    const { provider, phoneNumber, amount, currency, reference, description } =
+      params;
 
     // M-Pesa STK Push for Kenya
     if (provider === "MPESA" && currency === "KES") {
@@ -989,19 +1016,26 @@ export class SubscriptionService {
 
     try {
       // Get OAuth token
-      const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+      const authString = Buffer.from(
+        `${consumerKey}:${consumerSecret}`
+      ).toString("base64");
       const tokenResponse = await fetch(
         "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
         {
           headers: { Authorization: `Basic ${authString}` },
         }
       );
-      const tokenData = await tokenResponse.json();
+      const tokenData = (await tokenResponse.json()) as any;
       const accessToken = tokenData.access_token;
 
       // Generate timestamp and password
-      const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
-      const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString("base64");
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[-:TZ.]/g, "")
+        .slice(0, 14);
+      const password = Buffer.from(
+        `${shortcode}${passkey}${timestamp}`
+      ).toString("base64");
 
       // Initiate STK Push
       const stkResponse = await fetch(
@@ -1028,7 +1062,7 @@ export class SubscriptionService {
         }
       );
 
-      const stkData = await stkResponse.json();
+      const stkData = (await stkResponse.json()) as any;
 
       if (stkData.ResponseCode === "0") {
         return { status: "pending", reference: stkData.CheckoutRequestID };
@@ -1052,7 +1086,8 @@ export class SubscriptionService {
     description: string;
     country: string;
   }): Promise<{ status: string; reference: string }> {
-    const subscriptionKey = process.env[`MTN_MOMO_${params.country}_SUBSCRIPTION_KEY`];
+    const subscriptionKey =
+      process.env[`MTN_MOMO_${params.country}_SUBSCRIPTION_KEY`];
     const apiUserId = process.env[`MTN_MOMO_${params.country}_API_USER`];
     const apiKey = process.env[`MTN_MOMO_${params.country}_API_KEY`];
     const callbackUrl = process.env.MTN_MOMO_CALLBACK_URL;
@@ -1064,7 +1099,9 @@ export class SubscriptionService {
 
     try {
       // Get access token
-      const credentials = Buffer.from(`${apiUserId}:${apiKey}`).toString("base64");
+      const credentials = Buffer.from(`${apiUserId}:${apiKey}`).toString(
+        "base64"
+      );
       const tokenResponse = await fetch(
         `https://proxy.momoapi.mtn.com/collection/token/`,
         {
@@ -1075,7 +1112,7 @@ export class SubscriptionService {
           },
         }
       );
-      const tokenData = await tokenResponse.json();
+      const tokenData = (await tokenResponse.json()) as any;
       const accessToken = tokenData.access_token;
 
       // Initiate payment request
@@ -1086,7 +1123,8 @@ export class SubscriptionService {
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "X-Reference-Id": params.reference,
-            "X-Target-Environment": process.env.NODE_ENV === "production" ? "mtnghana" : "sandbox",
+            "X-Target-Environment":
+              process.env.NODE_ENV === "production" ? "mtnghana" : "sandbox",
             "Ocp-Apim-Subscription-Key": subscriptionKey,
             "Content-Type": "application/json",
             ...(callbackUrl && { "X-Callback-Url": callbackUrl }),

@@ -55,7 +55,7 @@ export function formatDuration(seconds: number): string {
  * Calculate speed from distance and time
  */
 export function calculateSpeed(meters: number, seconds: number): number {
-  if (seconds === 0) return 0;
+  if (seconds === 0) {return 0;}
   return meters / 1000 / (seconds / 3600); // km/h
 }
 

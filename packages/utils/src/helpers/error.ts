@@ -388,8 +388,8 @@ export function isOperationalError(error: Error): boolean {
 export function catchAsync<T extends (...args: unknown[]) => Promise<unknown>>(
   fn: T
 ): T {
-  return (async (...args: unknown[]) => {
-    return await fn(...args);
+  return ((...args: unknown[]) => {
+    return fn(...args);
   }) as T;
 }
 

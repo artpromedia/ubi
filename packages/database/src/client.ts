@@ -25,9 +25,6 @@ export const prisma =
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
-
-// Re-export PrismaClient for type usage
-export type { Prisma } from "@prisma/client";
 export { PrismaClient };
 
 /**

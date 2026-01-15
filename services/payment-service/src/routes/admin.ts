@@ -49,26 +49,52 @@ async function processRefundWithProvider(
   const providerReference = transaction.providerReference;
 
   if (!providerReference) {
-    return { success: false, error: "No provider reference found for transaction" };
+    return {
+      success: false,
+      error: "No provider reference found for transaction",
+    };
   }
 
   switch (provider) {
     case "PAYSTACK":
-      return processPaystackRefund(providerReference, refundAmount, transaction.currency, refundId);
+      return processPaystackRefund(
+        providerReference,
+        refundAmount,
+        transaction.currency,
+        refundId
+      );
 
     case "MPESA":
-      return processMpesaRefund(providerReference, refundAmount, transaction.currency, refundId);
+      return processMpesaRefund(
+        providerReference,
+        refundAmount,
+        transaction.currency,
+        refundId
+      );
 
     case "MTN_MOMO_GH":
     case "MTN_MOMO_RW":
     case "MTN_MOMO_UG":
-      return processMomoRefund(provider, providerReference, refundAmount, transaction.currency, refundId);
+      return processMomoRefund(
+        provider,
+        providerReference,
+        refundAmount,
+        transaction.currency,
+        refundId
+      );
 
     case "FLUTTERWAVE":
-      return processFlutterwaveRefund(providerReference, refundAmount, refundId);
+      return processFlutterwaveRefund(
+        providerReference,
+        refundAmount,
+        refundId
+      );
 
     default:
-      return { success: false, error: `Refunds not supported for provider: ${provider}` };
+      return {
+        success: false,
+        error: `Refunds not supported for provider: ${provider}`,
+      };
   }
 }
 
@@ -101,7 +127,7 @@ async function processPaystackRefund(
       }),
     });
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
 
     if (!response.ok || !data.status) {
       return {
@@ -147,14 +173,16 @@ async function processMpesaRefund(
 
   try {
     // Get OAuth token
-    const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+    const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString(
+      "base64"
+    );
     const tokenResponse = await fetch(
       "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
       {
         headers: { Authorization: `Basic ${authString}` },
       }
     );
-    const tokenData = await tokenResponse.json();
+    const tokenData = (await tokenResponse.json()) as any;
     const accessToken = tokenData.access_token;
 
     // Get original transaction to find the phone number
@@ -164,7 +192,10 @@ async function processMpesaRefund(
     });
 
     if (!originalTx?.user?.phone) {
-      return { success: false, error: "Could not find customer phone number for refund" };
+      return {
+        success: false,
+        error: "Could not find customer phone number for refund",
+      };
     }
 
     // Initiate B2C payment (refund)
@@ -191,7 +222,7 @@ async function processMpesaRefund(
       }
     );
 
-    const b2cData = await b2cResponse.json();
+    const b2cData = (await b2cResponse.json()) as any;
 
     if (b2cData.ResponseCode === "0") {
       return {
@@ -235,7 +266,9 @@ async function processMomoRefund(
 
   try {
     // Get access token
-    const credentials = Buffer.from(`${apiUserId}:${apiKey}`).toString("base64");
+    const credentials = Buffer.from(`${apiUserId}:${apiKey}`).toString(
+      "base64"
+    );
     const tokenResponse = await fetch(
       `https://proxy.momoapi.mtn.com/disbursement/token/`,
       {
@@ -246,7 +279,7 @@ async function processMomoRefund(
         },
       }
     );
-    const tokenData = await tokenResponse.json();
+    const tokenData = (await tokenResponse.json()) as any;
     const accessToken = tokenData.access_token;
 
     // Get original transaction to find the phone number
@@ -256,7 +289,10 @@ async function processMomoRefund(
     });
 
     if (!originalTx?.user?.phone) {
-      return { success: false, error: "Could not find customer phone number for refund" };
+      return {
+        success: false,
+        error: "Could not find customer phone number for refund",
+      };
     }
 
     // Initiate disbursement (refund)
@@ -267,7 +303,10 @@ async function processMomoRefund(
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "X-Reference-Id": refundId,
-          "X-Target-Environment": process.env.NODE_ENV === "production" ? `mtn${country.toLowerCase()}` : "sandbox",
+          "X-Target-Environment":
+            process.env.NODE_ENV === "production"
+              ? `mtn${country.toLowerCase()}`
+              : "sandbox",
           "Ocp-Apim-Subscription-Key": subscriptionKey,
           "Content-Type": "application/json",
         },
@@ -292,7 +331,9 @@ async function processMomoRefund(
       };
     }
 
-    const errorData = await disbursementResponse.json().catch(() => ({}));
+    const errorData = (await disbursementResponse
+      .json()
+      .catch(() => ({}))) as any;
     return {
       success: false,
       error: errorData.message || "MoMo disbursement failed",
@@ -335,7 +376,7 @@ async function processFlutterwaveRefund(
       }
     );
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
 
     if (data.status === "success") {
       return {
@@ -353,7 +394,8 @@ async function processFlutterwaveRefund(
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Flutterwave request failed",
+      error:
+        error instanceof Error ? error.message : "Flutterwave request failed",
     };
   }
 }
@@ -693,7 +735,11 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
 
   // Initiate actual refund with provider
   try {
-    const refundResult = await processRefundWithProvider(transaction, refundAmount, refund.id);
+    const refundResult = await processRefundWithProvider(
+      transaction,
+      refundAmount,
+      refund.id
+    );
 
     // Update refund record with result
     await prisma.refund.update({
@@ -701,19 +747,26 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
       data: {
         status: refundResult.success ? "PROCESSING" : "FAILED",
         failureReason: refundResult.error,
-        metadata: refundResult.providerResponse ? { providerResponse: refundResult.providerResponse } : undefined,
+        metadata: refundResult.providerResponse
+          ? { providerResponse: refundResult.providerResponse }
+          : undefined,
       },
     });
 
     if (!refundResult.success) {
-      return c.json({
-        success: false,
-        error: {
-          code: "REFUND_FAILED",
-          message: refundResult.error || "Failed to process refund with payment provider",
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "REFUND_FAILED",
+            message:
+              refundResult.error ||
+              "Failed to process refund with payment provider",
+          },
+          data: { refundId: refund.id },
         },
-        data: { refundId: refund.id },
-      }, 500);
+        500
+      );
     }
 
     return c.json({
@@ -737,14 +790,17 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
     });
 
     console.error("[Admin] Refund processing error:", error);
-    return c.json({
-      success: false,
-      error: {
-        code: "REFUND_ERROR",
-        message: "An error occurred while processing the refund",
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "REFUND_ERROR",
+          message: "An error occurred while processing the refund",
+        },
+        data: { refundId: refund.id },
       },
-      data: { refundId: refund.id },
-    }, 500);
+      500
+    );
   }
 });
 

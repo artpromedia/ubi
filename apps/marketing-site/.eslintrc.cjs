@@ -5,4 +5,11 @@ module.exports = {
     project: "./tsconfig.json",
     tsconfigRootDir: __dirname,
   },
+  rules: {
+    // Relax rules for marketing site - primarily static content
+    "import/order": "warn",
+    "react/function-component-definition": "warn",
+    "react/no-unescaped-entities": "warn",
+    curly: "warn",
+  },
 };
