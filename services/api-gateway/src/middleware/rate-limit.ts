@@ -6,9 +6,10 @@
  */
 
 import { createMiddleware } from "hono/factory";
-import type { Context, Next } from "hono";
 import Redis from "ioredis";
 import { RateLimiterRedis, RateLimiterMemory, type RateLimiterAbstract } from "rate-limiter-flexible";
+
+import type { Context, Next } from "hono";
 
 // Initialize Redis connection
 let redis: Redis | null = null;
@@ -95,7 +96,7 @@ export const rateLimitMiddleware = createMiddleware(async (c: Context, next: Nex
     c.header("X-RateLimit-Remaining", String(result.remainingPoints));
     c.header("X-RateLimit-Reset", String(Math.ceil(result.msBeforeNext / 1000)));
 
-    return next();
+    return await next();
   } catch (rejRes) {
     // Rate limit exceeded
     const retryAfter = Math.ceil(

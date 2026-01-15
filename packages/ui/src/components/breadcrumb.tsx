@@ -6,6 +6,7 @@
 
 import { ChevronRight, MoreHorizontal } from "lucide-react";
 import * as React from "react";
+
 import { cn } from "../lib/utils";
 
 const Breadcrumb = React.forwardRef<
@@ -48,8 +49,9 @@ const BreadcrumbLink = React.forwardRef<
   React.ComponentPropsWithoutRef<"a"> & {
     asChild?: boolean;
   }
->(({ asChild, className, ...props }, ref) => {
+>(({ asChild: _asChild, className, ...props }, ref) => {
   return (
+    // eslint-disable-next-line jsx-a11y/anchor-has-content
     <a
       ref={ref}
       className={cn("transition-colors hover:text-foreground", className)}

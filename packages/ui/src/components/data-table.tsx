@@ -33,7 +33,7 @@ import {
   Settings2,
 } from "lucide-react";
 import * as React from "react";
-import { cn } from "../lib/utils";
+
 import { Button } from "./button";
 import { Checkbox } from "./checkbox";
 import {
@@ -50,6 +50,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./select";
+import { cn } from "../lib/utils";
 
 // Base table components
 const Table = React.forwardRef<
@@ -165,11 +166,11 @@ interface DataTableColumnHeaderProps extends React.HTMLAttributes<HTMLDivElement
   title: string;
 }
 
-function DataTableColumnHeader({
+const DataTableColumnHeader = ({
   column,
   title,
   className,
-}: DataTableColumnHeaderProps) {
+}: DataTableColumnHeaderProps) => {
   if (!column.getCanSort()) {
     return <div className={cn(className)}>{title}</div>;
   }
@@ -227,6 +228,7 @@ interface DataTablePaginationProps<TData> {
   pageSizeOptions?: number[];
 }
 
+// eslint-disable-next-line react/function-component-definition
 function DataTablePagination<TData>({
   table,
   pageSizeOptions = [10, 20, 30, 40, 50],
@@ -310,6 +312,7 @@ interface DataTableViewOptionsProps<TData> {
   table: TanstackTable<TData>;
 }
 
+// eslint-disable-next-line react/function-component-definition
 function DataTableViewOptions<TData>({
   table,
 }: DataTableViewOptionsProps<TData>) {
@@ -356,11 +359,11 @@ interface DataTableSearchProps {
   placeholder?: string;
 }
 
-function DataTableSearch({
+const DataTableSearch = ({
   table,
   column,
   placeholder = "Search...",
-}: DataTableSearchProps) {
+}: DataTableSearchProps) => {
   return (
     <div className="relative">
       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -392,7 +395,7 @@ interface DataTableProps<TData, TValue> {
   isLoading?: boolean;
 }
 
-function DataTable<TData, TValue>({
+const DataTable = <TData, TValue>({
   columns,
   data,
   searchColumn,
@@ -405,7 +408,7 @@ function DataTable<TData, TValue>({
   toolbar,
   emptyMessage = "No results.",
   isLoading = false,
-}: DataTableProps<TData, TValue>) {
+}: DataTableProps<TData, TValue>) => {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []

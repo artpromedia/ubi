@@ -7,6 +7,7 @@
 
 import { createMiddleware } from "hono/factory";
 import * as jose from "jose";
+
 import type { Context, Next } from "hono";
 
 // Types
@@ -53,12 +54,12 @@ export const authMiddleware = createMiddleware(async (c: Context, next: Next) =>
 
   // Skip auth for public routes
   if (PUBLIC_ROUTES.some((route) => path.startsWith(route))) {
-    return next();
+    return await next();
   }
 
   // Skip auth for health checks
   if (path.startsWith("/health")) {
-    return next();
+    return await next();
   }
 
   // Get authorization header
@@ -120,7 +121,7 @@ export const authMiddleware = createMiddleware(async (c: Context, next: Next) =>
     // Log API key usage for auditing
     logApiKeyUsage(token, c.req.path, c.req.method);
 
-    return next();
+    return await next();
   }
 
   // Validate JWT token
@@ -141,7 +142,7 @@ export const authMiddleware = createMiddleware(async (c: Context, next: Next) =>
     };
 
     c.set("auth", auth);
-    return next();
+    return await next();
   } catch (error) {
     if (error instanceof jose.errors.JWTExpired) {
       return c.json(
@@ -345,7 +346,8 @@ export const requirePermission = (permission: string) => {
 
     // Service accounts have all permissions
     if (auth.role === "service" || auth.permissions.includes("*")) {
-      return next();
+      await next();
+      return;
     }
 
     // Check for specific permission
@@ -362,7 +364,7 @@ export const requirePermission = (permission: string) => {
       );
     }
 
-    return next();
+    await next();
   });
 };
 
@@ -400,6 +402,6 @@ export const requireRole = (...roles: string[]) => {
       );
     }
 
-    return next();
+    await next();
   });
 };

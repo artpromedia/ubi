@@ -9,10 +9,11 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { ChevronLeft, ChevronRight, Menu } from "lucide-react";
 import * as React from "react";
-import { cn } from "../lib/utils";
+
 import { Button } from "./button";
 import { Sheet, SheetContent, SheetTrigger } from "./sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
+import { cn } from "../lib/utils";
 
 // Sidebar context for managing collapsed state
 interface SidebarContextValue {

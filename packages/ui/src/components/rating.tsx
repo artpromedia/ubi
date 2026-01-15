@@ -1,7 +1,8 @@
 "use client";
 
-import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import * as React from "react";
+
 import { cn } from "../lib/utils";
 
 /**
@@ -168,7 +169,7 @@ const RatingInput = React.forwardRef<HTMLDivElement, RatingInputProps>(
     const displayValue = hoverValue ?? value;
 
     const handleMouseMove = (index: number, event: React.MouseEvent<HTMLButtonElement>) => {
-      if (disabled) return;
+      if (disabled) {return;}
       
       const rect = event.currentTarget.getBoundingClientRect();
       const position = (event.clientX - rect.left) / rect.width;
@@ -181,7 +182,7 @@ const RatingInput = React.forwardRef<HTMLDivElement, RatingInputProps>(
     };
 
     const handleClick = (index: number, event: React.MouseEvent<HTMLButtonElement>) => {
-      if (disabled) return;
+      if (disabled) {return;}
       
       const rect = event.currentTarget.getBoundingClientRect();
       const position = (event.clientX - rect.left) / rect.width;

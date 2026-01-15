@@ -8,6 +8,7 @@
 
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import * as React from "react";
+
 import { cn } from "../lib/utils";
 
 export interface SwitchProps

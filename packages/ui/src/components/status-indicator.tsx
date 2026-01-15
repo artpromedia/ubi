@@ -18,8 +18,11 @@ import {
     Utensils,
     XCircle
 } from "lucide-react";
-import * as React from "react";
+
 import { cn } from "../lib/utils";
+
+import type * as React from "react";
+
 
 // Status dot indicator
 const statusDotVariants = cva("rounded-full", {
@@ -111,7 +114,7 @@ const StatusBadge = ({
 };
 
 // Order/Delivery status timeline
-interface TimelineStep {
+interface StatusTimelineStep {
   status: "completed" | "active" | "pending";
   label: string;
   description?: string;
@@ -120,7 +123,7 @@ interface TimelineStep {
 }
 
 interface StatusTimelineProps {
-  steps: TimelineStep[];
+  steps: StatusTimelineStep[];
   orientation?: "horizontal" | "vertical";
   className?: string;
 }
@@ -299,7 +302,7 @@ const LiveLocation = ({
 );
 
 export {
-    LiveLocation, ServiceStatus, StatusBadge, statusBadgeVariants, StatusDot, statusDotVariants, StatusTimeline, type TimelineStep,
+    LiveLocation, ServiceStatus, StatusBadge, statusBadgeVariants, StatusDot, statusDotVariants, StatusTimeline, type StatusTimelineStep,
     type UBIServiceType
 };
 

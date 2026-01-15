@@ -6,9 +6,12 @@
 
 import { cva, type VariantProps } from "class-variance-authority";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
-import * as React from "react";
-import { cn } from "../lib/utils";
+
+
 import { Card, CardContent, CardHeader, CardTitle } from "./card";
+import { cn } from "../lib/utils";
+
+import type * as React from "react";
 
 const statsTrendVariants = cva(
   "inline-flex items-center gap-1 text-xs font-medium",

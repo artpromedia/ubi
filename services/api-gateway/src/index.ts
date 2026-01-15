@@ -15,16 +15,16 @@
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { compress } from "hono/compress";
 import { cors } from "hono/cors";
+import { etag } from "hono/etag";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
-import { compress } from "hono/compress";
-import { etag } from "hono/etag";
 
 import { authMiddleware } from "./middleware/auth";
-import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { errorHandler } from "./middleware/error-handler";
+import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { healthRoutes } from "./routes/health";
 import { proxyRoutes } from "./routes/proxy";
 

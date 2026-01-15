@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+
 import { cn } from "../lib/utils";
 
 /**
@@ -41,7 +42,7 @@ const Logo = React.forwardRef<HTMLDivElement, LogoProps>(
 
     // Calculate SVG height based on size
     const getHeight = () => {
-      if (isNumeric) return size as number;
+      if (isNumeric) {return size as number;}
       switch (size) {
         case "sm":
           return 24;

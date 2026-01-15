@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+
 import * as ui from "../index";
 
 describe("@ubi/ui", () => {

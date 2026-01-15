@@ -324,7 +324,7 @@ export {
   statusDotVariants,
 } from "./components/status-indicator";
 export type {
-  TimelineStep,
+  StatusTimelineStep,
   UBIServiceType,
 } from "./components/status-indicator";
 

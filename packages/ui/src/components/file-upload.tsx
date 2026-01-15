@@ -20,9 +20,10 @@ import {
   X,
 } from "lucide-react";
 import * as React from "react";
-import { cn } from "../lib/utils";
+
 import { Button } from "./button";
 import { Progress } from "./progress";
+import { cn } from "../lib/utils";
 
 const dropzoneVariants = cva(
   "relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors",
@@ -161,7 +162,7 @@ const FileUpload = ({
   };
 
   const processFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) {return;}
 
     const fileArray = Array.from(files);
     const { valid, errors } = validateFiles(fileArray);
@@ -171,7 +172,7 @@ const FileUpload = ({
       setTimeout(() => setError(null), 3000);
     }
 
-    if (valid.length === 0) return;
+    if (valid.length === 0) {return;}
 
     const newFiles: UploadedFile[] = valid.map((file) => ({
       file: Object.assign(file, {
@@ -196,7 +197,7 @@ const FileUpload = ({
       e.stopPropagation();
       setIsDragActive(false);
 
-      if (disabled) return;
+      if (disabled) {return;}
 
       await processFiles(e.dataTransfer.files);
     },
@@ -383,16 +384,16 @@ const FilePreview = ({ uploadedFile, onRemove }: FilePreviewProps) => {
 
 // Helpers
 function getFileIcon(mimeType: string) {
-  if (mimeType.startsWith("image/")) return ImageIcon;
-  if (mimeType.startsWith("video/")) return FileVideo;
-  if (mimeType.startsWith("audio/")) return FileAudio;
+  if (mimeType.startsWith("image/")) {return ImageIcon;}
+  if (mimeType.startsWith("video/")) {return FileVideo;}
+  if (mimeType.startsWith("audio/")) {return FileAudio;}
   if (mimeType.includes("pdf") || mimeType.includes("document"))
-    return FileText;
+    {return FileText;}
   return File;
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 Bytes";
+  if (bytes === 0) {return "0 Bytes";}
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));

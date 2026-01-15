@@ -112,7 +112,7 @@ const proxyToService = async (
           ? c.req.raw.body
           : undefined,
       signal: controller.signal,
-      // @ts-ignore - duplex is required for streaming bodies in Node.js
+      // @ts-expect-error - duplex is required for streaming bodies in Node.js
       duplex: "half",
     });
 
@@ -171,79 +171,79 @@ const proxyToService = async (
 // ===========================================
 
 // User Service routes
-proxyRoutes.all("/auth/*", (c) =>
-  proxyToService("auth", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/auth/*", async (c) =>
+  await proxyToService("auth", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/users/*", (c) =>
-  proxyToService("users", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/users/*", async (c) =>
+  await proxyToService("users", c.req.path.replace("/v1", ""), c)
 );
 
 // Ride Service routes
-proxyRoutes.all("/rides/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/rides/*", async (c) =>
+  await proxyToService("rides", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/drivers/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/drivers/*", async (c) =>
+  await proxyToService("rides", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/pricing/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/pricing/*", async (c) =>
+  await proxyToService("rides", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/locations/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/locations/*", async (c) =>
+  await proxyToService("rides", c.req.path.replace("/v1", ""), c)
 );
 
 // Food Service routes
-proxyRoutes.all("/food/*", (c) =>
-  proxyToService("food", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/food/*", async (c) =>
+  await proxyToService("food", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/restaurants/*", (c) =>
-  proxyToService("restaurants", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/restaurants/*", async (c) =>
+  await proxyToService("restaurants", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/menus/*", (c) =>
-  proxyToService("food", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/menus/*", async (c) =>
+  await proxyToService("food", c.req.path.replace("/v1", ""), c)
 );
 
 // Delivery Service routes
-proxyRoutes.all("/delivery/*", (c) =>
-  proxyToService("delivery", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/delivery/*", async (c) =>
+  await proxyToService("delivery", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/packages/*", (c) =>
-  proxyToService("packages", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/packages/*", async (c) =>
+  await proxyToService("packages", c.req.path.replace("/v1", ""), c)
 );
 
 // Payment Service routes
-proxyRoutes.all("/payments/*", (c) =>
-  proxyToService("payments", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/payments/*", async (c) =>
+  await proxyToService("payments", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/wallets/*", (c) =>
-  proxyToService("wallets", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/wallets/*", async (c) =>
+  await proxyToService("wallets", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/transactions/*", (c) =>
-  proxyToService("payments", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/transactions/*", async (c) =>
+  await proxyToService("payments", c.req.path.replace("/v1", ""), c)
 );
 
 // Notification Service routes
-proxyRoutes.all("/notifications/*", (c) =>
-  proxyToService("notifications", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/notifications/*", async (c) =>
+  await proxyToService("notifications", c.req.path.replace("/v1", ""), c)
 );
 
 // Analytics Service routes
-proxyRoutes.all("/analytics/*", (c) =>
-  proxyToService("analytics", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/analytics/*", async (c) =>
+  await proxyToService("analytics", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/reports/*", (c) =>
-  proxyToService("analytics", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/reports/*", async (c) =>
+  await proxyToService("analytics", c.req.path.replace("/v1", ""), c)
 );
 
 // CEERION Service routes (EV financing)
-proxyRoutes.all("/ceerion/*", (c) =>
-  proxyToService("ceerion", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/ceerion/*", async (c) =>
+  await proxyToService("ceerion", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/vehicles/*", (c) =>
-  proxyToService("vehicles", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/vehicles/*", async (c) =>
+  await proxyToService("vehicles", c.req.path.replace("/v1", ""), c)
 );
-proxyRoutes.all("/financing/*", (c) =>
-  proxyToService("ceerion", c.req.path.replace("/v1", ""), c)
+proxyRoutes.all("/financing/*", async (c) =>
+  await proxyToService("ceerion", c.req.path.replace("/v1", ""), c)
 );
 
 export { proxyRoutes };

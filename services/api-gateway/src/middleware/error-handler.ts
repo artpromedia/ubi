@@ -5,9 +5,10 @@
  * Logs errors for debugging and monitoring.
  */
 
+import { z } from "zod";
+
 import type { Context } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
-import { z } from "zod";
 
 // Error types
 interface ApiError {
