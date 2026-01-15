@@ -4,7 +4,6 @@
 
 "use client";
 
-import { UbiLogo } from "@ubi/ui";
 import {
   Facebook,
   Instagram,
@@ -15,6 +14,8 @@ import {
   Youtube,
 } from "lucide-react";
 import Link from "next/link";
+
+import { UbiLogo } from "@ubi/ui";
 
 const footerLinks = {
   services: {
@@ -82,7 +83,7 @@ const countries = [
   { name: "Ethiopia", flag: "🇪🇹" },
 ];
 
-export function Footer() {
+export const Footer = () => {
   return (
     <footer className="bg-gray-900 text-gray-300">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8">

@@ -40,7 +40,7 @@ const safetyFeatures = [
   },
 ];
 
-export function SafetySection() {
+export const SafetySection = () => {
   return (
     <section className="py-24 bg-white dark:bg-gray-900">
       <div className="mx-auto max-w-7xl px-4 lg:px-8">

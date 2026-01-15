@@ -22,7 +22,7 @@ const appFeatures = [
   "Family account sharing",
 ];
 
-export function DownloadSection() {
+export const DownloadSection = () => {
   return (
     <section className="py-24 bg-gray-50 dark:bg-gray-800">
       <div className="mx-auto max-w-7xl px-4 lg:px-8">

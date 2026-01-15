@@ -27,9 +27,15 @@ export function formatCurrency(
  * Format number with abbreviation (K, M, B)
  */
 export function formatNumber(num: number): string {
-  if (num >= 1e9) return `${(num / 1e9).toFixed(1)}B`;
-  if (num >= 1e6) return `${(num / 1e6).toFixed(1)}M`;
-  if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
+  if (num >= 1e9) {
+    return `${(num / 1e9).toFixed(1)}B`;
+  }
+  if (num >= 1e6) {
+    return `${(num / 1e6).toFixed(1)}M`;
+  }
+  if (num >= 1e3) {
+    return `${(num / 1e3).toFixed(1)}K`;
+  }
   return num.toLocaleString();
 }
 
@@ -44,10 +50,18 @@ export function formatRelativeTime(date: Date | string): string {
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) {
+    return "just now";
+  }
+  if (diffMins < 60) {
+    return `${diffMins}m ago`;
+  }
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
 
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -73,7 +87,9 @@ export function getDriverStatusClass(status: string): string {
  * Format distance in km
  */
 export function formatDistance(meters: number): string {
-  if (meters < 1000) return `${meters}m`;
+  if (meters < 1000) {
+    return `${meters}m`;
+  }
   return `${(meters / 1000).toFixed(1)}km`;
 }
 
@@ -81,7 +97,11 @@ export function formatDistance(meters: number): string {
  * Calculate acceptance rate color
  */
 export function getAcceptanceRateColor(rate: number): string {
-  if (rate >= 90) return "text-green-500";
-  if (rate >= 75) return "text-yellow-500";
+  if (rate >= 90) {
+    return "text-green-500";
+  }
+  if (rate >= 75) {
+    return "text-yellow-500";
+  }
   return "text-red-500";
 }

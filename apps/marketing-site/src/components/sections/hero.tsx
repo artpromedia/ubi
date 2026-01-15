@@ -4,12 +4,13 @@
 
 "use client";
 
-import { Button } from "@ubi/ui";
 import { motion } from "framer-motion";
 import { ArrowRight, Play } from "lucide-react";
 import Link from "next/link";
 
-export function HeroSection() {
+import { Button } from "@ubi/ui";
+
+export const HeroSection = () => {
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-gray-50 to-white pt-24 dark:from-gray-900 dark:to-gray-800">
       <div className="mx-auto max-w-7xl px-4 py-16 lg:px-8 lg:py-24">

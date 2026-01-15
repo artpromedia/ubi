@@ -5,6 +5,7 @@ module.exports = {
     project: "./tsconfig.json",
     tsconfigRootDir: __dirname,
   },
+  ignorePatterns: ["next-env.d.ts"],
   rules: {
     // Relax rules for marketing site - primarily static content
     "import/order": "warn",

@@ -1,7 +1,5 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { UbiIcon } from "@ubi/ui";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -23,6 +21,10 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+
+import { UbiIcon } from "@ubi/ui";
+
+import { cn } from "@/lib/utils";
 
 const navigation = [
   {
@@ -93,7 +95,7 @@ interface SidebarProps {
   onClose: () => void;
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
   const pathname = usePathname();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
@@ -113,8 +115,16 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Mobile overlay */}
       {isOpen && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Close navigation"
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={onClose}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              onClose?.();
+            }
+          }}
         />
       )}
 
@@ -272,7 +282,7 @@ interface FleetHeaderProps {
   title?: string;
 }
 
-export function FleetHeader({ onMenuClick, title }: FleetHeaderProps) {
+export const FleetHeader = ({ onMenuClick, title }: FleetHeaderProps) => {
   return (
     <header className="sticky top-0 z-30 h-16 bg-gray-950/80 backdrop-blur-sm border-b border-gray-800 flex items-center px-4 lg:px-6">
       <button

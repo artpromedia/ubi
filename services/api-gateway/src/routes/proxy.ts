@@ -112,9 +112,9 @@ const proxyToService = async (
           ? c.req.raw.body
           : undefined,
       signal: controller.signal,
-      // @ts-expect-error - duplex is required for streaming bodies in Node.js
+      // duplex is required for streaming bodies in Node.js
       duplex: "half",
-    });
+    } as RequestInit & { duplex: string });
 
     clearTimeout(timeoutId);
 

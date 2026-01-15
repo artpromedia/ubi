@@ -35,7 +35,7 @@ const partnerOptions = [
   },
 ];
 
-export function CTASection() {
+export const CTASection = () => {
   return (
     <section className="py-24 bg-ubi-black">
       <div className="mx-auto max-w-7xl px-4 lg:px-8">

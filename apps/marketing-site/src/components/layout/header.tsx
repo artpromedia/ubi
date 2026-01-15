@@ -4,12 +4,14 @@
 
 "use client";
 
-import { cn } from "@/lib/utils";
-import { Button, UbiLogo } from "@ubi/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+
+import { Button, UbiLogo } from "@ubi/ui";
+
+import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Ride", href: "/ride" },
@@ -29,7 +31,7 @@ const navigation = [
   { name: "Cities", href: "/cities" },
 ];
 
-export function Header() {
+export const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);

@@ -346,8 +346,7 @@ export const requirePermission = (permission: string) => {
 
     // Service accounts have all permissions
     if (auth.role === "service" || auth.permissions.includes("*")) {
-      await next();
-      return;
+      return await next();
     }
 
     // Check for specific permission
@@ -364,7 +363,7 @@ export const requirePermission = (permission: string) => {
       );
     }
 
-    await next();
+    return await next();
   });
 };
 
@@ -402,6 +401,6 @@ export const requireRole = (...roles: string[]) => {
       );
     }
 
-    await next();
+    return await next();
   });
 };
