@@ -10,7 +10,7 @@ interface LocationMatchers<R = unknown> {
   toBeValidCoordinates(): R;
   toBeWithinRadius(
     center: { latitude: number; longitude: number },
-    radiusKm: number
+    radiusKm: number,
   ): R;
   toBeInCity(city: string): R;
   toBeInOperationalArea(areaName: string): R;
@@ -29,7 +29,7 @@ function calculateDistance(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ): number {
   const R = 6371; // Earth's radius in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -77,7 +77,7 @@ export function toBeValidCoordinates(received: unknown) {
 export function toBeWithinRadius(
   received: unknown,
   center: { latitude: number; longitude: number },
-  radiusKm: number
+  radiusKm: number,
 ) {
   const location = received as { latitude: number; longitude: number };
 
@@ -97,7 +97,7 @@ export function toBeWithinRadius(
     location.latitude,
     location.longitude,
     center.latitude,
-    center.longitude
+    center.longitude,
   );
 
   const pass = distance <= radiusKm;
@@ -144,7 +144,7 @@ export function toBeInCity(received: unknown, city: string) {
     location.latitude,
     location.longitude,
     cityData.latitude,
-    cityData.longitude
+    cityData.longitude,
   );
 
   const pass = distance <= 50;
@@ -189,7 +189,7 @@ export function toBeInOperationalArea(received: unknown, areaName: string) {
     location.latitude,
     location.longitude,
     area.center.latitude,
-    area.center.longitude
+    area.center.longitude,
   );
 
   const pass = distance <= area.radiusKm;

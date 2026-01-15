@@ -11,8 +11,9 @@ import * as React from "react";
 
 import { cn } from "../lib/utils";
 
-export interface SwitchProps
-  extends React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root> {
+export interface SwitchProps extends React.ComponentPropsWithoutRef<
+  typeof SwitchPrimitive.Root
+> {
   /** Size variant */
   size?: "sm" | "md" | "lg";
   /** Label text */
@@ -37,7 +38,7 @@ const Switch = React.forwardRef<
           "h-6 w-11": size === "md",
           "h-7 w-14": size === "lg",
         },
-        className
+        className,
       )}
       {...props}
       ref={ref}
@@ -50,7 +51,7 @@ const Switch = React.forwardRef<
             "h-3 w-3 data-[state=checked]:translate-x-3": size === "sm",
             "h-5 w-5 data-[state=checked]:translate-x-5": size === "md",
             "h-6 w-6 data-[state=checked]:translate-x-7": size === "lg",
-          }
+          },
         )}
       />
     </SwitchPrimitive.Root>

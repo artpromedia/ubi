@@ -5,17 +5,20 @@ This document defines all domain events in the UBI platform.
 ## Event Architecture
 
 ### Event Infrastructure
+
 - **Broker:** Apache Kafka (production) / Redis Streams (development)
 - **Schema Registry:** Confluent Schema Registry
 - **Format:** JSON with schema validation
 - **Retention:** 7 days (configurable per topic)
 
 ### Topic Naming Convention
+
 ```
 ubi.<domain>.<entity>.<event>
 ```
 
 Examples:
+
 - `ubi.rides.ride.requested`
 - `ubi.payments.payment.completed`
 - `ubi.users.driver.location_updated`
@@ -30,28 +33,28 @@ Examples:
 interface BaseEvent<T> {
   // Unique event identifier
   eventId: string; // UUID v4
-  
+
   // Event type following naming convention
   eventType: string;
-  
+
   // Schema version for evolution
   version: string; // e.g., "1.0.0"
-  
+
   // When the event occurred
   timestamp: string; // ISO 8601
-  
+
   // Service that produced the event
   source: string;
-  
+
   // Correlation ID for tracing
   correlationId: string;
-  
+
   // Optional causation ID (parent event)
   causationId?: string;
-  
+
   // Event-specific payload
   data: T;
-  
+
   // Optional metadata
   metadata?: {
     userId?: string;
@@ -70,28 +73,31 @@ interface BaseEvent<T> {
 ### Topic: `ubi.users`
 
 #### user.registered
+
 ```typescript
 interface UserRegisteredEvent {
   userId: string;
   email: string;
   phone: string;
-  role: 'RIDER' | 'DRIVER' | 'RESTAURANT' | 'MERCHANT';
+  role: "RIDER" | "DRIVER" | "RESTAURANT" | "MERCHANT";
   country: string;
   referralCode?: string;
-  registrationMethod: 'phone' | 'email' | 'google' | 'apple';
+  registrationMethod: "phone" | "email" | "google" | "apple";
 }
 ```
 
 #### user.verified
+
 ```typescript
 interface UserVerifiedEvent {
   userId: string;
-  verificationType: 'email' | 'phone';
+  verificationType: "email" | "phone";
   verifiedAt: string;
 }
 ```
 
 #### user.profile_updated
+
 ```typescript
 interface UserProfileUpdatedEvent {
   userId: string;
@@ -102,6 +108,7 @@ interface UserProfileUpdatedEvent {
 ```
 
 #### driver.location_updated
+
 ```typescript
 interface DriverLocationUpdatedEvent {
   driverId: string;
@@ -118,6 +125,7 @@ interface DriverLocationUpdatedEvent {
 ```
 
 #### driver.approved
+
 ```typescript
 interface DriverApprovedEvent {
   driverId: string;
@@ -136,11 +144,12 @@ interface DriverApprovedEvent {
 ### Topic: `ubi.rides`
 
 #### ride.requested
+
 ```typescript
 interface RideRequestedEvent {
   rideId: string;
   riderId: string;
-  rideType: 'ECONOMY' | 'COMFORT' | 'PREMIUM' | 'XL' | 'MOTO';
+  rideType: "ECONOMY" | "COMFORT" | "PREMIUM" | "XL" | "MOTO";
   pickup: {
     address: string;
     latitude: number;
@@ -169,6 +178,7 @@ interface RideRequestedEvent {
 ```
 
 #### ride.driver_matched
+
 ```typescript
 interface RideDriverMatchedEvent {
   rideId: string;
@@ -194,6 +204,7 @@ interface RideDriverMatchedEvent {
 ```
 
 #### ride.driver_arriving
+
 ```typescript
 interface RideDriverArrivingEvent {
   rideId: string;
@@ -208,6 +219,7 @@ interface RideDriverArrivingEvent {
 ```
 
 #### ride.started
+
 ```typescript
 interface RideStartedEvent {
   rideId: string;
@@ -224,6 +236,7 @@ interface RideStartedEvent {
 ```
 
 #### ride.completed
+
 ```typescript
 interface RideCompletedEvent {
   rideId: string;
@@ -251,12 +264,13 @@ interface RideCompletedEvent {
 ```
 
 #### ride.cancelled
+
 ```typescript
 interface RideCancelledEvent {
   rideId: string;
   riderId: string;
   driverId?: string;
-  cancelledBy: 'rider' | 'driver' | 'system';
+  cancelledBy: "rider" | "driver" | "system";
   reason?: string;
   cancellationFee?: {
     amount: number;
@@ -273,6 +287,7 @@ interface RideCancelledEvent {
 ### Topic: `ubi.food`
 
 #### order.placed
+
 ```typescript
 interface OrderPlacedEvent {
   orderId: string;
@@ -305,6 +320,7 @@ interface OrderPlacedEvent {
 ```
 
 #### order.confirmed
+
 ```typescript
 interface OrderConfirmedEvent {
   orderId: string;
@@ -315,6 +331,7 @@ interface OrderConfirmedEvent {
 ```
 
 #### order.ready
+
 ```typescript
 interface OrderReadyEvent {
   orderId: string;
@@ -324,6 +341,7 @@ interface OrderReadyEvent {
 ```
 
 #### order.picked_up
+
 ```typescript
 interface OrderPickedUpEvent {
   orderId: string;
@@ -335,6 +353,7 @@ interface OrderPickedUpEvent {
 ```
 
 #### order.delivered
+
 ```typescript
 interface OrderDeliveredEvent {
   orderId: string;
@@ -352,6 +371,7 @@ interface OrderDeliveredEvent {
 ### Topic: `ubi.delivery`
 
 #### delivery.created
+
 ```typescript
 interface DeliveryCreatedEvent {
   deliveryId: string;
@@ -373,7 +393,7 @@ interface DeliveryCreatedEvent {
     phone: string;
   };
   package: {
-    size: 'small' | 'medium' | 'large' | 'xl';
+    size: "small" | "medium" | "large" | "xl";
     weight?: number;
     description: string;
     isFragile: boolean;
@@ -388,6 +408,7 @@ interface DeliveryCreatedEvent {
 ```
 
 #### delivery.assigned
+
 ```typescript
 interface DeliveryAssignedEvent {
   deliveryId: string;
@@ -403,6 +424,7 @@ interface DeliveryAssignedEvent {
 ```
 
 #### delivery.picked_up
+
 ```typescript
 interface DeliveryPickedUpEvent {
   deliveryId: string;
@@ -414,13 +436,14 @@ interface DeliveryPickedUpEvent {
 ```
 
 #### delivery.delivered
+
 ```typescript
 interface DeliveryDeliveredEvent {
   deliveryId: string;
   driverId: string;
   deliveredAt: string;
   proofOfDelivery: {
-    type: 'photo' | 'signature' | 'otp';
+    type: "photo" | "signature" | "otp";
     value: string; // URL or OTP code
   };
   recipientName?: string;
@@ -434,15 +457,16 @@ interface DeliveryDeliveredEvent {
 ### Topic: `ubi.payments`
 
 #### payment.initiated
+
 ```typescript
 interface PaymentInitiatedEvent {
   paymentId: string;
   userId: string;
   amount: number;
   currency: string;
-  method: 'CARD' | 'MPESA' | 'MTN_MOMO' | 'AIRTEL_MONEY' | 'WALLET';
+  method: "CARD" | "MPESA" | "MTN_MOMO" | "AIRTEL_MONEY" | "WALLET";
   reference: {
-    type: 'ride' | 'food_order' | 'delivery' | 'wallet_topup' | 'ceerion';
+    type: "ride" | "food_order" | "delivery" | "wallet_topup" | "ceerion";
     id: string;
   };
   provider: string;
@@ -451,6 +475,7 @@ interface PaymentInitiatedEvent {
 ```
 
 #### payment.completed
+
 ```typescript
 interface PaymentCompletedEvent {
   paymentId: string;
@@ -473,6 +498,7 @@ interface PaymentCompletedEvent {
 ```
 
 #### payment.failed
+
 ```typescript
 interface PaymentFailedEvent {
   paymentId: string;
@@ -491,13 +517,14 @@ interface PaymentFailedEvent {
 ```
 
 #### wallet.credited
+
 ```typescript
 interface WalletCreditedEvent {
   walletId: string;
   userId: string;
   amount: number;
   currency: string;
-  type: 'topup' | 'refund' | 'earning' | 'bonus' | 'cashback';
+  type: "topup" | "refund" | "earning" | "bonus" | "cashback";
   source?: string;
   previousBalance: number;
   newBalance: number;
@@ -505,13 +532,14 @@ interface WalletCreditedEvent {
 ```
 
 #### wallet.debited
+
 ```typescript
 interface WalletDebitedEvent {
   walletId: string;
   userId: string;
   amount: number;
   currency: string;
-  type: 'payment' | 'withdrawal' | 'fee' | 'deduction';
+  type: "payment" | "withdrawal" | "fee" | "deduction";
   reference?: string;
   previousBalance: number;
   newBalance: number;
@@ -519,12 +547,13 @@ interface WalletDebitedEvent {
 ```
 
 #### earning.credited
+
 ```typescript
 interface EarningCreditedEvent {
   driverId: string;
   amount: number;
   currency: string;
-  type: 'ride' | 'delivery' | 'tip' | 'bonus' | 'incentive';
+  type: "ride" | "delivery" | "tip" | "bonus" | "incentive";
   referenceId: string;
   deductions?: {
     platformFee: number;
@@ -542,6 +571,7 @@ interface EarningCreditedEvent {
 ### Topic: `ubi.ceerion`
 
 #### ceerion.payment_due
+
 ```typescript
 interface CeerionPaymentDueEvent {
   ceerionVehicleId: string;
@@ -556,6 +586,7 @@ interface CeerionPaymentDueEvent {
 ```
 
 #### ceerion.payment_success
+
 ```typescript
 interface CeerionPaymentSuccessEvent {
   ceerionVehicleId: string;
@@ -563,7 +594,7 @@ interface CeerionPaymentSuccessEvent {
   paymentId: string;
   amount: number;
   currency: string;
-  source: 'manual' | 'auto_deduction';
+  source: "manual" | "auto_deduction";
   paidAt: string;
   totalPaid: number;
   totalRemaining: number;
@@ -571,6 +602,7 @@ interface CeerionPaymentSuccessEvent {
 ```
 
 #### ceerion.payment_overdue
+
 ```typescript
 interface CeerionPaymentOverdueEvent {
   ceerionVehicleId: string;
@@ -590,13 +622,14 @@ interface CeerionPaymentOverdueEvent {
 ### Topic: `ubi.notifications`
 
 #### notification.sent
+
 ```typescript
 interface NotificationSentEvent {
   notificationId: string;
   userId: string;
-  channel: 'push' | 'sms' | 'email' | 'whatsapp' | 'in_app';
+  channel: "push" | "sms" | "email" | "whatsapp" | "in_app";
   template: string;
-  status: 'sent' | 'delivered' | 'failed';
+  status: "sent" | "delivered" | "failed";
   sentAt: string;
   provider: string;
   providerRef?: string;
@@ -608,6 +641,7 @@ interface NotificationSentEvent {
 ## Event Processing Guidelines
 
 ### Idempotency
+
 All event handlers must be idempotent. Use `eventId` for deduplication.
 
 ```typescript
@@ -616,20 +650,22 @@ async function handleEvent(event: BaseEvent<unknown>) {
   if (processed) {
     return; // Already processed
   }
-  
+
   // Process event...
-  
-  await redis.setex(`event:${event.eventId}`, 86400, '1');
+
+  await redis.setex(`event:${event.eventId}`, 86400, "1");
 }
 ```
 
 ### Ordering
+
 - Events within a partition are ordered
 - Use entity ID as partition key for ordering guarantees
 - Ride events keyed by `rideId`
 - User events keyed by `userId`
 
 ### Retry Policy
+
 ```typescript
 const retryPolicy = {
   maxRetries: 3,
@@ -640,12 +676,15 @@ const retryPolicy = {
 ```
 
 ### Dead Letter Queue
+
 Failed events after max retries go to DLQ:
+
 - `ubi.dlq.rides`
 - `ubi.dlq.payments`
 - etc.
 
 ### Consumer Groups
+
 ```
 ubi.rides.consumers.notification-service
 ubi.rides.consumers.analytics-service
@@ -666,7 +705,7 @@ ubi.payments.consumers.notification-service
 3. [Success] payment.completed
    → wallet.debited (rider)
    → earning.credited (driver)
-   
+
 3. [Failure] payment.failed
    → Retry with backup payment
    → If all fail, mark ride as payment_pending
@@ -699,12 +738,14 @@ ubi.payments.consumers.notification-service
 ## Monitoring & Alerting
 
 ### Key Metrics
+
 - Event processing latency (p50, p95, p99)
 - Consumer lag per partition
 - Dead letter queue size
 - Event throughput per topic
 
 ### Alerts
+
 - Consumer lag > 10,000 events
 - DLQ size > 100 events
 - Processing latency p99 > 5 seconds

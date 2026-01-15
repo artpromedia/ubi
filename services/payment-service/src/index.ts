@@ -89,7 +89,7 @@ app.use(
     exposeHeaders: ["X-Request-ID"],
     credentials: true,
     maxAge: 600,
-  })
+  }),
 );
 
 // Error handler
@@ -169,7 +169,7 @@ const driverServices = {
     prisma,
     redis,
     notificationServiceStub,
-    analyticsStub
+    analyticsStub,
   ),
   // DriverBenefitsService(db, redis, paymentService, notificationService, analyticsService)
   benefitsService: new DriverBenefitsService(
@@ -177,26 +177,26 @@ const driverServices = {
     redis,
     paymentServiceStub,
     notificationServiceStub,
-    analyticsStub
+    analyticsStub,
   ),
   // DriverCareerService(db, notificationService, analyticsService)
   careerService: new DriverCareerService(
     prisma,
     notificationServiceStub,
-    analyticsStub
+    analyticsStub,
   ),
   // TrainingService(db, notificationService, analyticsService)
   trainingService: new TrainingService(
     prisma,
     notificationServiceStub,
-    analyticsStub
+    analyticsStub,
   ),
   // CommunityService(db, redis, notificationService, analyticsService)
   communityService: new CommunityService(
     prisma,
     redis,
     notificationServiceStub,
-    analyticsStub
+    analyticsStub,
   ),
   // FleetOwnerService(db, redis, paymentService, notificationService, analyticsService)
   fleetService: new FleetOwnerService(
@@ -204,7 +204,7 @@ const driverServices = {
     redis,
     paymentServiceStub,
     notificationServiceStub,
-    analyticsStub
+    analyticsStub,
   ),
 };
 const driverRoutes = createDriverRoutes(driverServices);
@@ -220,7 +220,7 @@ app.notFound((c) => {
         message: "Resource not found",
       },
     },
-    404
+    404,
   );
 });
 
@@ -254,7 +254,7 @@ const shutdown = async (signal: string) => {
   }, 30000);
 };
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", async () => shutdown("SIGTERM"));
+process.on("SIGINT", async () => shutdown("SIGINT"));
 
 export default app;

@@ -26,7 +26,7 @@ const DialogOverlay = React.forwardRef<
     className={cn(
       "fixed inset-0 z-modal bg-black/50 backdrop-blur-sm",
       "data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out",
-      className
+      className,
     )}
     {...props}
   />
@@ -58,7 +58,7 @@ const DialogContent = React.forwardRef<
           "max-w-4xl": size === "xl",
           "max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)]": size === "full",
         },
-        className
+        className,
       )}
       {...props}
     >
@@ -81,7 +81,7 @@ const DialogHeader = ({
   <div
     className={cn(
       "flex flex-col space-y-1.5 text-center sm:text-left p-6 pb-4",
-      className
+      className,
     )}
     {...props}
   />
@@ -95,7 +95,7 @@ const DialogFooter = ({
   <div
     className={cn(
       "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-4 border-t",
-      className
+      className,
     )}
     {...props}
   />
@@ -110,7 +110,7 @@ const DialogTitle = React.forwardRef<
     ref={ref}
     className={cn(
       "text-lg font-semibold leading-none tracking-tight font-heading",
-      className
+      className,
     )}
     {...props}
   />

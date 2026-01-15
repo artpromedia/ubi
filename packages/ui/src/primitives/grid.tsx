@@ -7,9 +7,9 @@ import { cn } from "../lib/utils";
 
 /**
  * Grid - A CSS Grid layout primitive
- * 
+ *
  * Provides common grid patterns with responsive column support.
- * 
+ *
  * @example
  * <Grid cols={3} gap={4}>
  *   <Grid.Item colSpan={2}>Wide content</Grid.Item>
@@ -107,22 +107,46 @@ const gridVariants = cva("grid", {
 });
 
 export interface GridProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof gridVariants> {}
 
 const Grid = React.forwardRef<HTMLDivElement, GridProps>(
-  ({ className, cols, rows, gap, flow, align, justify, placeContent, inline, ...props }, ref) => {
+  (
+    {
+      className,
+      cols,
+      rows,
+      gap,
+      flow,
+      align,
+      justify,
+      placeContent,
+      inline,
+      ...props
+    },
+    ref,
+  ) => {
     return (
       <div
         ref={ref}
         className={cn(
-          gridVariants({ cols, rows, gap, flow, align, justify, placeContent, inline }),
-          className
+          gridVariants({
+            cols,
+            rows,
+            gap,
+            flow,
+            align,
+            justify,
+            placeContent,
+            inline,
+          }),
+          className,
         )}
         {...props}
       />
     );
-  }
+  },
 );
 Grid.displayName = "Grid";
 
@@ -197,19 +221,26 @@ const gridItemVariants = cva("", {
 });
 
 interface GridItemProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof gridItemVariants> {}
 
 const GridItem = React.forwardRef<HTMLDivElement, GridItemProps>(
-  ({ className, colSpan, rowSpan, colStart, colEnd, placeSelf, ...props }, ref) => {
+  (
+    { className, colSpan, rowSpan, colStart, colEnd, placeSelf, ...props },
+    ref,
+  ) => {
     return (
       <div
         ref={ref}
-        className={cn(gridItemVariants({ colSpan, rowSpan, colStart, colEnd, placeSelf }), className)}
+        className={cn(
+          gridItemVariants({ colSpan, rowSpan, colStart, colEnd, placeSelf }),
+          className,
+        )}
         {...props}
       />
     );
-  }
+  },
 );
 GridItem.displayName = "GridItem";
 

@@ -7,17 +7,18 @@
 
 import { EventEmitter } from "events";
 import { gzip, gunzip } from "zlib";
+
 import {
-  CompressedResponse,
-  DataUsageStats,
-  DeltaSyncRequest,
-  DeltaSyncResponse,
-  GeoLocation,
-  ILowBandwidthService,
-  LiteFareEstimate,
-  LiteTrip,
+  type CompressedResponse,
+  type DataUsageStats,
+  type DeltaSyncRequest,
+  type DeltaSyncResponse,
+  type GeoLocation,
+  type ILowBandwidthService,
+  type LiteFareEstimate,
+  type LiteTrip,
   NetworkType,
-  SyncState,
+  type SyncState,
   SyncStatus,
 } from "@/types/offline.types";
 
@@ -116,20 +117,26 @@ export class LowBandwidthService implements ILowBandwidthService {
     throw new Error(`Unknown encoding: ${response.encoding as string}`);
   }
 
-  private gzipCompress(data: string | Buffer): Promise<Buffer> {
+  private async gzipCompress(data: string | Buffer): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
       gzip(data, { level: 9 }, (err, result) => {
-        if (err) reject(err);
-        else resolve(result);
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
       });
     });
   }
 
-  private gzipDecompress(data: Buffer): Promise<Buffer> {
+  private async gzipDecompress(data: Buffer): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       gunzip(data, (err, result) => {
-        if (err) reject(err);
-        else resolve(result);
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
       });
     });
   }
@@ -283,7 +290,7 @@ export class LowBandwidthService implements ILowBandwidthService {
         userId,
         entity,
         Number(lastSyncVersion),
-        batchSize
+        batchSize,
       );
 
       for (const change of entityChanges) {
@@ -330,7 +337,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     syncState.serverVersion = newVersion;
     syncState.pendingChanges = Math.max(
       0,
-      syncState.pendingChanges - changes.length
+      syncState.pendingChanges - changes.length,
     );
     this.syncStates.set(userId, syncState);
 
@@ -356,7 +363,6 @@ export class LowBandwidthService implements ILowBandwidthService {
     }
   }
 
-
   private async initializeSyncState(userId: string): Promise<SyncState> {
     const state: SyncState = {
       userId,
@@ -376,7 +382,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     _userId: string,
     entity: string,
     sinceVersion: number,
-    limit: number
+    limit: number,
   ): Promise<
     Array<{
       entity: string;
@@ -401,7 +407,7 @@ export class LowBandwidthService implements ILowBandwidthService {
       const trips = await this.getTripsSinceVersion(
         _userId,
         sinceVersion,
-        limit
+        limit,
       );
       for (const trip of trips) {
         changes.push({
@@ -424,7 +430,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async getLiteFareEstimate(
     pickup: GeoLocation,
     dropoff: GeoLocation,
-    _networkType?: NetworkType
+    _networkType?: NetworkType,
   ): Promise<LiteFareEstimate> {
     // Get fare estimate with minimal data
     const estimate = await this.calculateFare(pickup, dropoff);
@@ -446,10 +452,12 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   async getLiteTrip(
     tripId: string,
-    _networkType?: NetworkType
+    _networkType?: NetworkType,
   ): Promise<LiteTrip | null> {
     const trip = await this.getTrip(tripId);
-    if (!trip) return null;
+    if (!trip) {
+      return null;
+    }
 
     return this.toLiteTrip(trip);
   }
@@ -457,7 +465,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async getLiteTrips(
     userId: string,
     limit: number = 10,
-    _networkType?: NetworkType
+    _networkType?: NetworkType,
   ): Promise<LiteTrip[]> {
     const trips = await this.getUserTrips(userId, limit);
     return trips.map((trip) => this.toLiteTrip(trip));
@@ -548,7 +556,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     userId: string,
     bytes: number,
     direction: "upload" | "download",
-    endpoint: string
+    endpoint: string,
   ): Promise<void> {
     this.eventEmitter.emit("data:usage", {
       userId,
@@ -593,7 +601,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async getOfflineMapRegion(
     regionId: string,
     zoomLevel: number,
-    networkType?: NetworkType
+    networkType?: NetworkType,
   ): Promise<{
     tiles: Array<{ x: number; y: number; z: number; data: string }>;
     boundingBox: { north: number; south: number; east: number; west: number };
@@ -619,7 +627,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   async getCachedPlacesForRegion(
     _regionId: string,
-    _limit: number = 100
+    _limit: number = 100,
   ): Promise<
     Array<{
       id: string;
@@ -640,7 +648,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   async getCachedResponse(
     cacheKey: string,
-    etag?: string
+    etag?: string,
   ): Promise<{ data: unknown; etag: string } | null> {
     const cached = this.compressedCache.get(cacheKey);
 
@@ -664,7 +672,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async setCachedResponse(
     cacheKey: string,
     data: unknown,
-    ttlSeconds: number = CACHE_TTL_SECONDS
+    ttlSeconds: number = CACHE_TTL_SECONDS,
   ): Promise<string> {
     const json = JSON.stringify(data);
     const compressed = await this.gzipCompress(json);
@@ -695,7 +703,9 @@ export class LowBandwidthService implements ILowBandwidthService {
   // ===========================================================================
 
   private truncateAddress(address: string, maxLength: number): string {
-    if (!address || address.length <= maxLength) return address;
+    if (!address || address.length <= maxLength) {
+      return address;
+    }
     return address.substring(0, maxLength - 3) + "...";
   }
 
@@ -705,7 +715,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   private async calculateFare(
     _pickup: GeoLocation,
-    _dropoff: GeoLocation
+    _dropoff: GeoLocation,
   ): Promise<any> {
     return {
       minFare: 300,
@@ -728,7 +738,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   private async getTripsSinceVersion(
     _userId: string,
     _version: number,
-    _limit: number
+    _limit: number,
   ): Promise<any[]> {
     return [];
   }
@@ -743,7 +753,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   private async getTilesForRegion(
     _region: any,
     _zoom: number,
-    _quality: string
+    _quality: string,
   ): Promise<any[]> {
     return [];
   }

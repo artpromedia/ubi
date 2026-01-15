@@ -7,16 +7,16 @@ import { cn } from "../lib/utils";
 
 /**
  * Divider - A visual separator primitive
- * 
+ *
  * Creates horizontal or vertical dividers between content.
- * 
+ *
  * @example
  * <Stack>
  *   <Item />
  *   <Divider />
  *   <Item />
  * </Stack>
- * 
+ *
  * <HStack>
  *   <Item />
  *   <Divider orientation="vertical" />
@@ -64,7 +64,8 @@ const dividerVariants = cva("shrink-0 bg-border", {
 });
 
 export interface DividerProps
-  extends React.HTMLAttributes<HTMLHRElement>,
+  extends
+    React.HTMLAttributes<HTMLHRElement>,
     VariantProps<typeof dividerVariants> {
   /** Content to display in the middle of the divider */
   label?: React.ReactNode;
@@ -73,7 +74,18 @@ export interface DividerProps
 }
 
 const Divider = React.forwardRef<HTMLHRElement, DividerProps>(
-  ({ className, orientation, variant, spacing, label, labelPosition = "center", ...props }, ref) => {
+  (
+    {
+      className,
+      orientation,
+      variant,
+      spacing,
+      label,
+      labelPosition = "center",
+      ...props
+    },
+    ref,
+  ) => {
     if (label && orientation !== "vertical") {
       return (
         <div
@@ -84,7 +96,7 @@ const Divider = React.forwardRef<HTMLHRElement, DividerProps>(
             spacing === "md" && "my-4",
             spacing === "lg" && "my-6",
             spacing === "xl" && "my-8",
-            className
+            className,
           )}
         >
           <div
@@ -92,7 +104,7 @@ const Divider = React.forwardRef<HTMLHRElement, DividerProps>(
               "h-px bg-border",
               labelPosition === "start" && "w-4",
               labelPosition === "center" && "flex-1",
-              labelPosition === "end" && "flex-1"
+              labelPosition === "end" && "flex-1",
             )}
           />
           <span className="px-3 text-sm text-muted-foreground">{label}</span>
@@ -101,7 +113,7 @@ const Divider = React.forwardRef<HTMLHRElement, DividerProps>(
               "h-px bg-border",
               labelPosition === "start" && "flex-1",
               labelPosition === "center" && "flex-1",
-              labelPosition === "end" && "w-4"
+              labelPosition === "end" && "w-4",
             )}
           />
         </div>
@@ -111,11 +123,14 @@ const Divider = React.forwardRef<HTMLHRElement, DividerProps>(
     return (
       <hr
         ref={ref}
-        className={cn(dividerVariants({ orientation, variant, spacing }), className)}
+        className={cn(
+          dividerVariants({ orientation, variant, spacing }),
+          className,
+        )}
         {...props}
       />
     );
-  }
+  },
 );
 Divider.displayName = "Divider";
 

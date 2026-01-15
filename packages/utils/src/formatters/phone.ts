@@ -42,16 +42,36 @@ export function formatPhoneNumber(phone: string, countryCode?: string): string {
 export function getCountryCodeFromPhone(phone: string): string | undefined {
   const digits = phone.replaceAll(/\D/g, "");
 
-  if (digits.startsWith("254")) {return "KE";}
-  if (digits.startsWith("234")) {return "NG";}
-  if (digits.startsWith("27")) {return "ZA";}
-  if (digits.startsWith("255")) {return "TZ";}
-  if (digits.startsWith("256")) {return "UG";}
-  if (digits.startsWith("250")) {return "RW";}
-  if (digits.startsWith("233")) {return "GH";}
-  if (digits.startsWith("237")) {return "CM";}
-  if (digits.startsWith("225")) {return "CI";}
-  if (digits.startsWith("221")) {return "SN";}
+  if (digits.startsWith("254")) {
+    return "KE";
+  }
+  if (digits.startsWith("234")) {
+    return "NG";
+  }
+  if (digits.startsWith("27")) {
+    return "ZA";
+  }
+  if (digits.startsWith("255")) {
+    return "TZ";
+  }
+  if (digits.startsWith("256")) {
+    return "UG";
+  }
+  if (digits.startsWith("250")) {
+    return "RW";
+  }
+  if (digits.startsWith("233")) {
+    return "GH";
+  }
+  if (digits.startsWith("237")) {
+    return "CM";
+  }
+  if (digits.startsWith("225")) {
+    return "CI";
+  }
+  if (digits.startsWith("221")) {
+    return "SN";
+  }
 
   return undefined;
 }
@@ -61,7 +81,7 @@ export function getCountryCodeFromPhone(phone: string): string | undefined {
  */
 export function normalizePhoneNumber(
   phone: string,
-  defaultCountryCode = "254"
+  defaultCountryCode = "254",
 ): string {
   const digits = phone.replaceAll(/\D/g, "");
 

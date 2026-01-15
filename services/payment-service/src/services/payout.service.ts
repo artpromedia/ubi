@@ -31,12 +31,13 @@ import {
   Currency,
   PaymentProvider,
   PayoutStatus,
-  PrismaClient,
+  type PrismaClient,
 } from "@prisma/client";
+
+import { WalletService } from "./wallet.service";
 import { MoMoService } from "../providers/momo.service";
 import { MpesaService } from "../providers/mpesa.service";
 import { PaystackService } from "../providers/paystack.service";
-import { WalletService } from "./wallet.service";
 
 export interface CashoutRequest {
   userId: string; // User ID (driver or merchant)
@@ -136,7 +137,7 @@ export class PayoutService {
   private async validatePayoutRequest(
     driverId: string,
     amount: number,
-    currency: Currency
+    currency: Currency,
   ): Promise<{ valid: boolean; error?: string }> {
     // Check minimum amount
     if (amount < this.config.minAmount) {
@@ -194,7 +195,7 @@ export class PayoutService {
     const balance = await this.walletService.getBalance(
       driver.userId,
       "DRIVER_WALLET" as any,
-      currency
+      currency,
     );
 
     if (balance.availableBalance < amount) {
@@ -211,7 +212,7 @@ export class PayoutService {
    * Create instant cashout payout
    */
   async createInstantCashout(
-    request: CreatePayoutRequest
+    request: CreatePayoutRequest,
   ): Promise<PayoutResult> {
     const {
       driverId,
@@ -227,7 +228,7 @@ export class PayoutService {
     const validation = await this.validatePayoutRequest(
       driverId,
       amount,
-      currency
+      currency,
     );
     if (!validation.valid) {
       throw new Error(validation.error);
@@ -384,7 +385,7 @@ export class PayoutService {
       });
 
       console.log(
-        `Payout ${payoutId} initiated with provider: ${providerResult.reference}`
+        `Payout ${payoutId} initiated with provider: ${providerResult.reference}`,
       );
     } catch (error: any) {
       console.error(`Payout processing failed for ${payoutId}:`, error);
@@ -404,7 +405,7 @@ export class PayoutService {
    * Initiate payout with provider (M-Pesa B2C, MoMo, etc.)
    */
   private async initiateProviderPayout(
-    payout: any
+    payout: any,
   ): Promise<{ reference: string; status: string }> {
     const payoutDetails = payout.payoutDetails as any;
 
@@ -429,7 +430,7 @@ export class PayoutService {
                   ? "production"
                   : "sandbox",
             },
-            this.prisma
+            this.prisma,
           );
 
           const b2cResponse = await mpesaService.initiateB2CPayment({
@@ -444,7 +445,7 @@ export class PayoutService {
           setTimeout(() => {
             // B2C callback will update the payout status automatically
             console.log(
-              `M-Pesa B2C initiated: ${b2cResponse.OriginatorConversationID}`
+              `M-Pesa B2C initiated: ${b2cResponse.OriginatorConversationID}`,
             );
           }, 0);
 
@@ -484,7 +485,7 @@ export class PayoutService {
               country,
               callbackUrl: process.env.MOMO_CALLBACK_URL,
             },
-            this.prisma
+            this.prisma,
           );
 
           const disbursementResponse = await momoService.initiateDisbursement({
@@ -500,7 +501,7 @@ export class PayoutService {
             momoService
               .pollDisbursementStatus(
                 disbursementResponse.referenceId,
-                payout.id
+                payout.id,
               )
               .catch((error) => {
                 console.error("MoMo disbursement polling error:", error);
@@ -523,7 +524,7 @@ export class PayoutService {
               environment:
                 process.env.PAYSTACK_ENVIRONMENT === "live" ? "live" : "test",
             },
-            this.prisma
+            this.prisma,
           );
 
           // Determine recipient type and bank code
@@ -549,7 +550,7 @@ export class PayoutService {
             },
             Number(payout.netAmount),
             payout.currency as any,
-            payout.reason || "Driver payout"
+            payout.reason || "Driver payout",
           );
 
           // Start background polling
@@ -569,7 +570,7 @@ export class PayoutService {
 
         default:
           throw new Error(
-            `Payout not supported for provider: ${payout.provider}`
+            `Payout not supported for provider: ${payout.provider}`,
           );
       }
     } catch (error) {
@@ -583,7 +584,7 @@ export class PayoutService {
    */
   async completePayout(
     payoutId: string,
-    providerReference?: string
+    providerReference?: string,
   ): Promise<void> {
     const payout = await this.prisma.payout.findUnique({
       where: { id: payoutId },
@@ -641,7 +642,7 @@ export class PayoutService {
     });
 
     console.log(
-      `Payout completed: ${payoutId} (${payout.currency} ${payout.netAmount} to ${payout.driver.user.phone})`
+      `Payout completed: ${payoutId} (${payout.currency} ${payout.netAmount} to ${payout.driver.user.phone})`,
     );
   }
 
@@ -725,7 +726,7 @@ export class PayoutService {
       limit?: number;
       offset?: number;
       status?: PayoutStatus;
-    } = {}
+    } = {},
   ): Promise<Array<any>> {
     const { limit = 20, offset = 0, status } = options;
 
@@ -758,7 +759,7 @@ export class PayoutService {
    */
   async getAvailableBalance(
     driverId: string,
-    currency: Currency
+    currency: Currency,
   ): Promise<{
     balance: number;
     availableForPayout: number;
@@ -776,7 +777,7 @@ export class PayoutService {
     const balance = await this.walletService.getBalance(
       driver.userId,
       "DRIVER_WALLET" as any,
-      currency
+      currency,
     );
 
     // Get pending payouts
@@ -890,7 +891,7 @@ export class PayoutService {
             const balance = await this.walletService.getBalance(
               driver.userId,
               "DRIVER_WALLET" as any,
-              currency
+              currency,
             );
 
             if (balance.availableBalance >= this.config.weeklyPayoutMinimum) {
@@ -925,7 +926,7 @@ export class PayoutService {
           } catch (error) {
             console.error(
               `Failed to process weekly payout for driver ${driver.id} (${currency}):`,
-              error
+              error,
             );
             failed++;
           }
@@ -937,7 +938,7 @@ export class PayoutService {
     }
 
     console.log(
-      `Weekly payouts: ${processed} processed, ${failed} failed, total: ${totalAmount}`
+      `Weekly payouts: ${processed} processed, ${failed} failed, total: ${totalAmount}`,
     );
 
     return { processed, failed, totalAmount };

@@ -158,11 +158,11 @@ function generateAfricanName(): { firstName: string; lastName: string } {
  * Generate a phone number for a specific country
  */
 function generatePhoneNumber(
-  country: keyof typeof PHONE_FORMATS = "NG"
+  country: keyof typeof PHONE_FORMATS = "NG",
 ): string {
   const format = PHONE_FORMATS[country] || PHONE_FORMATS.NG;
   const number = format.format.replace(/X/g, () =>
-    Math.floor(Math.random() * 10).toString()
+    Math.floor(Math.random() * 10).toString(),
   );
   return `${format.code}${number}`;
 }
@@ -329,7 +329,7 @@ export function createRider(options: RiderFactoryOptions = {}): TestRider {
  */
 export function createUsers(
   count: number,
-  options?: UserFactoryOptions
+  options?: UserFactoryOptions,
 ): TestUser[] {
   return Array.from({ length: count }, () => createUser(options));
 }
@@ -339,7 +339,7 @@ export function createUsers(
  */
 export function createDrivers(
   count: number,
-  options?: DriverFactoryOptions
+  options?: DriverFactoryOptions,
 ): TestDriver[] {
   return Array.from({ length: count }, () => createDriver(options));
 }
@@ -349,7 +349,7 @@ export function createDrivers(
  */
 export function createRiders(
   count: number,
-  options?: RiderFactoryOptions
+  options?: RiderFactoryOptions,
 ): TestRider[] {
   return Array.from({ length: count }, () => createRider(options));
 }

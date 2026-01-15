@@ -75,7 +75,7 @@ interface UbiFixtures {
    * Network throttling helper
    */
   setNetworkConditions: (
-    profile: keyof typeof NETWORK_PROFILES
+    profile: keyof typeof NETWORK_PROFILES,
   ) => Promise<void>;
 
   /**
@@ -89,7 +89,7 @@ interface UbiFixtures {
   mockApiResponse: (
     urlPattern: string | RegExp,
     response: unknown,
-    status?: number
+    status?: number,
   ) => Promise<void>;
 }
 
@@ -120,7 +120,7 @@ export const test = base.extend<UbiFixtures>({
           email: "adaobi@test.ubi.com",
           firstName: "Adaobi",
           lastName: "Eze",
-        })
+        }),
       );
     });
 
@@ -182,7 +182,7 @@ export const test = base.extend<UbiFixtures>({
     const mock = async (
       urlPattern: string | RegExp,
       response: unknown,
-      status = 200
+      status = 200,
     ) => {
       await page.route(urlPattern, (route) => {
         route.fulfill({
@@ -220,7 +220,7 @@ export async function waitForPageLoad(page: Page): Promise<void> {
  */
 export async function waitForApiResponse(
   page: Page,
-  urlPattern: string | RegExp
+  urlPattern: string | RegExp,
 ): Promise<unknown> {
   const response = await page.waitForResponse(urlPattern);
   return response.json();
@@ -231,7 +231,7 @@ export async function waitForApiResponse(
  */
 export async function takeTimestampedScreenshot(
   page: Page,
-  name: string
+  name: string,
 ): Promise<void> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   await page.screenshot({

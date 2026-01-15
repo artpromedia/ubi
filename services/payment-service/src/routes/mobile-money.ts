@@ -7,6 +7,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -128,7 +129,7 @@ async function initiateMpesaSTKPush(
   amount: number,
   reference: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _description: string
+  _description: string,
 ): Promise<MoMoTransactionResult> {
   // M-Pesa STK Push integration
   // This would integrate with Safaricom's Daraja API
@@ -175,7 +176,7 @@ async function initiateMtnMomoCollection(
   phone: string,
   amount: number,
   currency: Currency,
-  reference: string
+  reference: string,
 ): Promise<MoMoTransactionResult> {
   // MTN MoMo Collection API
   // NOTE: Additional credentials (MTN_MOMO_USER_ID, MTN_MOMO_SUBSCRIPTION_KEY)
@@ -215,7 +216,7 @@ async function initiateAirtelMoneyCollection(
   phone: string,
   amount: number,
   currency: Currency,
-  reference: string
+  reference: string,
 ): Promise<MoMoTransactionResult> {
   // NOTE: AIRTEL_SECRET_KEY will be used when implementing actual Airtel Money API calls
   const apiKey = process.env.AIRTEL_API_KEY;
@@ -314,7 +315,7 @@ mobileMoneyRoutes.post(
             message: "Invalid mobile money provider",
           },
         },
-        400
+        400,
       );
     }
 
@@ -327,7 +328,7 @@ mobileMoneyRoutes.post(
             message: `${provider} does not support ${currency}`,
           },
         },
-        400
+        400,
       );
     }
 
@@ -340,7 +341,7 @@ mobileMoneyRoutes.post(
             message: `Amount must be between ${config.minAmount} and ${config.maxAmount} ${currency}`,
           },
         },
-        400
+        400,
       );
     }
 
@@ -374,7 +375,7 @@ mobileMoneyRoutes.post(
           phone,
           amount,
           reference,
-          description || "UBI Payment"
+          description || "UBI Payment",
         );
         break;
 
@@ -383,7 +384,7 @@ mobileMoneyRoutes.post(
           phone,
           amount,
           currency,
-          reference
+          reference,
         );
         break;
 
@@ -392,7 +393,7 @@ mobileMoneyRoutes.post(
           phone,
           amount,
           currency,
-          reference
+          reference,
         );
         break;
 
@@ -428,7 +429,7 @@ mobileMoneyRoutes.post(
           currency,
           status: result.status,
           createdAt: new Date().toISOString(),
-        })
+        }),
       );
     } else {
       await prisma.payment.update({
@@ -457,12 +458,12 @@ mobileMoneyRoutes.post(
       await redis.setex(
         `idempotency:momo:${idempotencyKey}`,
         3600,
-        JSON.stringify(response)
+        JSON.stringify(response),
       );
     }
 
     return c.json(response, result.success ? 201 : 400);
-  }
+  },
 );
 
 /**
@@ -483,7 +484,7 @@ mobileMoneyRoutes.post(
           success: false,
           error: { code: "UNAUTHORIZED", message: "Internal endpoint" },
         },
-        403
+        403,
       );
     }
 
@@ -494,7 +495,7 @@ mobileMoneyRoutes.post(
           success: false,
           error: { code: "INVALID_PROVIDER", message: "Invalid provider" },
         },
-        400
+        400,
       );
     }
 
@@ -516,7 +517,7 @@ mobileMoneyRoutes.post(
     await redis.setex(
       `momo:disb:${reference}`,
       86400,
-      JSON.stringify(disbursement)
+      JSON.stringify(disbursement),
     );
 
     // In production, this would initiate the actual disbursement
@@ -530,7 +531,7 @@ mobileMoneyRoutes.post(
         message: "Disbursement initiated",
       },
     });
-  }
+  },
 );
 
 /**
@@ -547,7 +548,7 @@ mobileMoneyRoutes.get("/status/:transactionId", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Transaction not found" },
       },
-      404
+      404,
     );
   }
 
@@ -590,7 +591,7 @@ mobileMoneyRoutes.post("/callback/mpesa", async (c) => {
   if (!txnData) {
     console.error(
       "Transaction not found for M-Pesa callback:",
-      MerchantRequestID
+      MerchantRequestID,
     );
     return c.json({ success: true });
   }
@@ -609,10 +610,10 @@ mobileMoneyRoutes.post("/callback/mpesa", async (c) => {
         ...((await prisma.payment.findUnique({ where: { id: txn.paymentId } }))
           ?.metadata as object),
         mpesaReceiptNumber: CallbackMetadata?.Item?.find(
-          (i: any) => i.Name === "MpesaReceiptNumber"
+          (i: any) => i.Name === "MpesaReceiptNumber",
         )?.Value,
         transactionDate: CallbackMetadata?.Item?.find(
-          (i: any) => i.Name === "TransactionDate"
+          (i: any) => i.Name === "TransactionDate",
         )?.Value,
       },
     },

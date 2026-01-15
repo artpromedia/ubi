@@ -94,7 +94,7 @@ pushRoutes.post(
       success: true,
       message: "Device registered for push notifications",
     });
-  }
+  },
 );
 
 /**
@@ -139,7 +139,7 @@ pushRoutes.post(
             message: "User has no registered devices",
           },
         },
-        400
+        400,
       );
     }
 
@@ -187,7 +187,7 @@ pushRoutes.post(
         failureCount: result.failureCount,
       },
     });
-  }
+  },
 );
 
 /**
@@ -240,7 +240,7 @@ pushRoutes.post(
         totalUsers: userIds.length,
       },
     });
-  }
+  },
 );
 
 /**
@@ -264,7 +264,7 @@ pushRoutes.post(
       success: true,
       data: { messageId: result.messageId },
     });
-  }
+  },
 );
 
 /**

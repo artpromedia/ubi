@@ -6,15 +6,16 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
+
 import {
-  GeoLocation,
-  IncomingSMS,
-  ISMSService,
+  type GeoLocation,
+  type IncomingSMS,
+  type ISMSService,
   MessagePriority,
-  OutgoingSMS,
-  ParsedSMSCommand,
+  type OutgoingSMS,
+  type ParsedSMSCommand,
   SMSCommand,
-  SMSTemplate,
+  type SMSTemplate,
 } from "@/types/offline.types";
 
 // =============================================================================
@@ -212,7 +213,7 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [destination, pickup] = command.args;
 
@@ -220,7 +221,7 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("book.format", lang),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -229,7 +230,7 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("error.not_registered", lang),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -239,7 +240,7 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("error.address_not_found", lang, { address: destination }),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -251,7 +252,7 @@ export class SMSService implements ISMSService {
         return this.buildResponse(
           sms.sender,
           this.t("error.address_not_found", lang, { address: pickup }),
-          MessagePriority.HIGH
+          MessagePriority.HIGH,
         );
       }
     } else {
@@ -261,7 +262,7 @@ export class SMSService implements ISMSService {
         return this.buildResponse(
           sms.sender,
           this.t("book.need_pickup", lang),
-          MessagePriority.HIGH
+          MessagePriority.HIGH,
         );
       }
     }
@@ -269,7 +270,7 @@ export class SMSService implements ISMSService {
     // Get fare estimate
     const estimate = await this.getFareEstimate(
       pickupLocation.coords,
-      dropoffLocation.coords
+      dropoffLocation.coords,
     );
 
     // Store pending booking and generate confirmation code
@@ -296,20 +297,20 @@ export class SMSService implements ISMSService {
         eta: estimate.eta,
         code: confirmCode,
       }),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
   private async handleTrack(
     sms: IncomingSMS,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     if (!user) {
       return this.buildResponse(
         sms.sender,
         this.t("error.not_registered", lang),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -319,7 +320,7 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("track.no_active", lang),
-        MessagePriority.NORMAL
+        MessagePriority.NORMAL,
       );
     }
 
@@ -342,7 +343,7 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       statusMessages[trip.status] || this.t("track.status.unknown", lang),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
@@ -350,12 +351,12 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     if (!user) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.not_registered", lang)
+        this.t("error.not_registered", lang),
       );
     }
 
@@ -370,7 +371,7 @@ export class SMSService implements ISMSService {
 
     // Check if cancellation is allowed
     const canCancel = ["searching", "matched", "arriving"].includes(
-      trip.status
+      trip.status,
     );
     if (!canCancel) {
       return this.buildResponse(sms.sender, this.t("cancel.not_allowed", lang));
@@ -394,7 +395,7 @@ export class SMSService implements ISMSService {
           fee: this.formatCurrency(fee, lang),
           code: confirmCode,
         }),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -404,19 +405,19 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("cancel.success", lang),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
   private async handleBalance(
     sms: IncomingSMS,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     if (!user) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.not_registered", lang)
+        this.t("error.not_registered", lang),
       );
     }
 
@@ -441,7 +442,7 @@ export class SMSService implements ISMSService {
   private async handleHelp(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [topic] = command.args;
 
@@ -464,14 +465,14 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("help.general", lang),
-      MessagePriority.LOW
+      MessagePriority.LOW,
     );
   }
 
   private async handlePrice(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [pickup, destination] = command.args;
 
@@ -487,13 +488,13 @@ export class SMSService implements ISMSService {
         sms.sender,
         this.t("error.address_not_found", lang, {
           address: !pickupLocation ? pickup : destination,
-        })
+        }),
       );
     }
 
     const estimate = await this.getFareEstimate(
       pickupLocation.coords,
-      dropoffLocation.coords
+      dropoffLocation.coords,
     );
 
     return this.buildResponse(
@@ -504,14 +505,14 @@ export class SMSService implements ISMSService {
         fare: this.formatCurrency(estimate.fare, lang),
         distance: estimate.distance,
         eta: estimate.eta,
-      })
+      }),
     );
   }
 
   private async handleRegister(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [name] = command.args;
 
@@ -523,7 +524,7 @@ export class SMSService implements ISMSService {
     if (existing) {
       return this.buildResponse(
         sms.sender,
-        this.t("register.already_registered", lang, { name: existing.name })
+        this.t("register.already_registered", lang, { name: existing.name }),
       );
     }
 
@@ -537,7 +538,7 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("register.success", lang, { name: name.trim() }),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
@@ -545,7 +546,7 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     _user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [message] = command.args;
 
@@ -563,7 +564,7 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("feedback.thanks", lang),
-      MessagePriority.LOW
+      MessagePriority.LOW,
     );
   }
 
@@ -571,7 +572,7 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     _user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [code] = command.args;
 
@@ -579,7 +580,7 @@ export class SMSService implements ISMSService {
     const confirmKey = code
       ? `${sms.sender}:${code.toUpperCase()}`
       : Array.from(this.pendingConfirmations.keys()).find((k) =>
-          k.startsWith(sms.sender)
+          k.startsWith(sms.sender),
         );
 
     if (!confirmKey) {
@@ -610,7 +611,7 @@ export class SMSService implements ISMSService {
   private async handleDriver(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [plateNumber] = command.args;
 
@@ -631,7 +632,7 @@ export class SMSService implements ISMSService {
         plate: driver.vehiclePlate,
         rating: driver.rating.toFixed(1),
         trips: driver.totalTrips,
-      })
+      }),
     );
   }
 
@@ -639,12 +640,12 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     if (!user) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.not_registered", lang)
+        this.t("error.not_registered", lang),
       );
     }
 
@@ -655,7 +656,7 @@ export class SMSService implements ISMSService {
     if (!location) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.address_not_found", lang, { address: address || "" })
+        this.t("error.address_not_found", lang, { address: address || "" }),
       );
     }
 
@@ -670,18 +671,18 @@ export class SMSService implements ISMSService {
       sms.sender,
       this.t(`place.${placeType}_saved`, lang, {
         address: this.truncate(location.address, 40),
-      })
+      }),
     );
   }
 
   private async handleUnknown(
     sms: IncomingSMS,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     return this.buildResponse(
       sms.sender,
       this.t("error.unknown_command", lang),
-      MessagePriority.LOW
+      MessagePriority.LOW,
     );
   }
 
@@ -692,7 +693,7 @@ export class SMSService implements ISMSService {
   private async processBookingConfirmation(
     sms: IncomingSMS,
     data: Record<string, unknown>,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     try {
       const trip = await this.createTrip({
@@ -711,13 +712,13 @@ export class SMSService implements ISMSService {
           phone: trip.driverPhone,
           eta: trip.eta,
         }),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     } catch (error) {
       return this.buildResponse(
         sms.sender,
         this.t("error.no_drivers", lang),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
   }
@@ -725,7 +726,7 @@ export class SMSService implements ISMSService {
   private async processCancellationConfirmation(
     sms: IncomingSMS,
     data: Record<string, unknown>,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     await this.cancelTrip(data.tripId as string, "user_cancelled");
 
@@ -738,7 +739,7 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("cancel.success", lang),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
@@ -749,7 +750,7 @@ export class SMSService implements ISMSService {
   private buildResponse(
     recipient: string,
     message: string,
-    priority: MessagePriority = MessagePriority.NORMAL
+    priority: MessagePriority = MessagePriority.NORMAL,
   ): OutgoingSMS {
     // Split into multiple SMS if needed
     const parts = this.splitMessage(message);
@@ -803,7 +804,7 @@ export class SMSService implements ISMSService {
     templateId: string,
     recipient: string,
     variables: Record<string, string>,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const template =
       this.templates.get(`${templateId}_${lang}`) ||
@@ -917,7 +918,7 @@ export class SMSService implements ISMSService {
   private t(
     key: string,
     lang: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
   ): string {
     const translations = this.getTranslations(lang);
     let text = translations[key] || key;
@@ -1028,7 +1029,9 @@ export class SMSService implements ISMSService {
   }
 
   private truncate(text: string, maxLength: number): string {
-    if (text.length <= maxLength) return text;
+    if (text.length <= maxLength) {
+      return text;
+    }
     return text.substring(0, maxLength - 3) + "...";
   }
 
@@ -1054,11 +1057,17 @@ export class SMSService implements ISMSService {
   private calculateCancellationFee(trip: any): number {
     // Free cancellation within 2 minutes of booking
     const timeSinceBooking = Date.now() - trip.createdAt.getTime();
-    if (timeSinceBooking < 2 * 60 * 1000) return 0;
+    if (timeSinceBooking < 2 * 60 * 1000) {
+      return 0;
+    }
 
     // Fee if driver is already en route
-    if (trip.status === "arriving") return 100;
-    if (trip.status === "matched") return 50;
+    if (trip.status === "arriving") {
+      return 100;
+    }
+    if (trip.status === "matched") {
+      return 50;
+    }
 
     return 0;
   }
@@ -1076,20 +1085,20 @@ export class SMSService implements ISMSService {
   }
 
   private async geocodeAddress(
-    address: string
+    address: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
     return { coords: { lat: -1.2921, lng: 36.8219 }, address };
   }
 
   private async getDefaultPickup(
-    _userId: string
+    _userId: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
     return null;
   }
 
   private async getFareEstimate(
     _pickup: GeoLocation,
-    _dropoff: GeoLocation
+    _dropoff: GeoLocation,
   ): Promise<any> {
     return { fare: 350, eta: 5, distance: 7.2 };
   }
@@ -1116,7 +1125,7 @@ export class SMSService implements ISMSService {
 
   private async deductCancellationFee(
     _phone: string,
-    _fee: number
+    _fee: number,
   ): Promise<void> {}
 
   private async getWalletBalance(_userId: string): Promise<number> {
@@ -1125,7 +1134,7 @@ export class SMSService implements ISMSService {
 
   private async getRecentTransactions(
     _userId: string,
-    _limit: number
+    _limit: number,
   ): Promise<any[]> {
     return [];
   }
@@ -1154,7 +1163,7 @@ export class SMSService implements ISMSService {
     to: string,
     templateCode: string,
     data: Record<string, unknown>,
-    language?: string
+    language?: string,
   ): Promise<string> {
     const template = this.templates.get(`${templateCode}_${language || "en"}`);
     if (!template) {

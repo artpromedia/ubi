@@ -150,7 +150,7 @@ export class AppError extends Error {
   }
 
   static forbidden(
-    message = "You don't have permission to access this resource"
+    message = "You don't have permission to access this resource",
   ) {
     return new AppError("FORBIDDEN", message, 403);
   }

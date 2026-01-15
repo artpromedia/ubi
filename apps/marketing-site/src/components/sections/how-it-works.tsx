@@ -12,25 +12,29 @@ const steps = [
     number: "01",
     icon: MapPin,
     title: "Set your destination",
-    description: "Enter your pickup and dropoff locations. We'll show you the estimated fare upfront.",
+    description:
+      "Enter your pickup and dropoff locations. We'll show you the estimated fare upfront.",
   },
   {
     number: "02",
     icon: Car,
     title: "Choose your ride",
-    description: "Select from economy, comfort, or premium vehicles. Pick what fits your budget and style.",
+    description:
+      "Select from economy, comfort, or premium vehicles. Pick what fits your budget and style.",
   },
   {
     number: "03",
     icon: CreditCard,
     title: "Pay seamlessly",
-    description: "Pay with cash, card, mobile money, or UBI Wallet. Split fares with friends easily.",
+    description:
+      "Pay with cash, card, mobile money, or UBI Wallet. Split fares with friends easily.",
   },
   {
     number: "04",
     icon: CheckCircle,
     title: "Enjoy your ride",
-    description: "Track your driver in real-time, share trip status with loved ones, and arrive safely.",
+    description:
+      "Track your driver in real-time, share trip status with loved ones, and arrive safely.",
   },
 ];
 
@@ -107,4 +111,4 @@ export const HowItWorksSection = () => {
       </div>
     </section>
   );
-}
+};

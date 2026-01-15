@@ -137,7 +137,7 @@ function generateStreetAddress(city: string): string {
  * Create a test location
  */
 export function createLocation(
-  options: LocationFactoryOptions = {}
+  options: LocationFactoryOptions = {},
 ): TestLocation {
   const { city = "lagos", radiusKm = 10 } = options;
   const coords = randomLocationInCity(city, radiusKm);
@@ -156,7 +156,7 @@ export function createLocation(
  * Create a saved location (home, work, favorite)
  */
 export function createSavedLocation(
-  options: SavedLocationFactoryOptions = {}
+  options: SavedLocationFactoryOptions = {},
 ): TestSavedLocation {
   const { type = "home", city = "lagos", radiusKm = 10 } = options;
   const location = createLocation({ city, radiusKm });
@@ -205,7 +205,7 @@ export function createRideLocations(options: LocationFactoryOptions = {}): {
  */
 export function calculateDistance(
   loc1: { latitude: number; longitude: number },
-  loc2: { latitude: number; longitude: number }
+  loc2: { latitude: number; longitude: number },
 ): number {
   const R = 6371; // Earth's radius in km
   const dLat = ((loc2.latitude - loc1.latitude) * Math.PI) / 180;
@@ -251,7 +251,7 @@ export function getCityCoordinates(city: keyof typeof AFRICAN_CITIES): {
  */
 export function createLocations(
   count: number,
-  options?: LocationFactoryOptions
+  options?: LocationFactoryOptions,
 ): TestLocation[] {
   return Array.from({ length: count }, () => createLocation(options));
 }
@@ -261,7 +261,7 @@ export function createLocations(
  */
 export function createNearbyDriverLocation(
   origin: { latitude: number; longitude: number },
-  maxDistanceKm: number = 2
+  maxDistanceKm: number = 2,
 ): { latitude: number; longitude: number } {
   const kmPerDegree = 111;
   const offset = maxDistanceKm / kmPerDegree;

@@ -50,7 +50,7 @@ export const Header = () => {
         "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
         isScrolled
           ? "bg-white/95 backdrop-blur shadow-sm dark:bg-gray-900/95"
-          : "bg-transparent"
+          : "bg-transparent",
       )}
     >
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 lg:px-8">
@@ -68,7 +68,7 @@ export const Header = () => {
                 <button
                   onClick={() =>
                     setOpenDropdown(
-                      openDropdown === item.name ? null : item.name
+                      openDropdown === item.name ? null : item.name,
                     )
                   }
                   onMouseEnter={() => setOpenDropdown(item.name)}
@@ -196,4 +196,4 @@ export const Header = () => {
       </AnimatePresence>
     </header>
   );
-}
+};

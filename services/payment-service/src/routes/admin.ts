@@ -12,6 +12,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { prisma } from "../lib/prisma";
 import { FraudDetectionService } from "../services/fraud-detection.service";
 import { PayoutService } from "../services/payout.service";
@@ -43,7 +44,7 @@ interface RefundResult {
 async function processRefundWithProvider(
   transaction: any,
   refundAmount: number,
-  refundId: string
+  refundId: string,
 ): Promise<RefundResult> {
   const provider = transaction.provider;
   const providerReference = transaction.providerReference;
@@ -61,7 +62,7 @@ async function processRefundWithProvider(
         providerReference,
         refundAmount,
         transaction.currency,
-        refundId
+        refundId,
       );
 
     case "MPESA":
@@ -69,7 +70,7 @@ async function processRefundWithProvider(
         providerReference,
         refundAmount,
         transaction.currency,
-        refundId
+        refundId,
       );
 
     case "MTN_MOMO_GH":
@@ -80,14 +81,14 @@ async function processRefundWithProvider(
         providerReference,
         refundAmount,
         transaction.currency,
-        refundId
+        refundId,
       );
 
     case "FLUTTERWAVE":
       return processFlutterwaveRefund(
         providerReference,
         refundAmount,
-        refundId
+        refundId,
       );
 
     default:
@@ -105,7 +106,7 @@ async function processPaystackRefund(
   transactionReference: string,
   amount: number,
   currency: string,
-  refundId: string
+  refundId: string,
 ): Promise<RefundResult> {
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
   if (!secretKey) {
@@ -158,7 +159,7 @@ async function processMpesaRefund(
   originalTransactionId: string,
   amount: number,
   _currency: string,
-  refundId: string
+  refundId: string,
 ): Promise<RefundResult> {
   const consumerKey = process.env.MPESA_CONSUMER_KEY;
   const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
@@ -174,13 +175,13 @@ async function processMpesaRefund(
   try {
     // Get OAuth token
     const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString(
-      "base64"
+      "base64",
     );
     const tokenResponse = await fetch(
       "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
       {
         headers: { Authorization: `Basic ${authString}` },
-      }
+      },
     );
     const tokenData = (await tokenResponse.json()) as any;
     const accessToken = tokenData.access_token;
@@ -219,7 +220,7 @@ async function processMpesaRefund(
           ResultURL: callbackUrl,
           Occasion: `Refund-${refundId}`,
         }),
-      }
+      },
     );
 
     const b2cData = (await b2cResponse.json()) as any;
@@ -253,7 +254,7 @@ async function processMomoRefund(
   originalTransactionId: string,
   amount: number,
   currency: string,
-  refundId: string
+  refundId: string,
 ): Promise<RefundResult> {
   const country = provider.split("_")[2] || "GH";
   const subscriptionKey = process.env[`MTN_MOMO_${country}_SUBSCRIPTION_KEY`];
@@ -267,7 +268,7 @@ async function processMomoRefund(
   try {
     // Get access token
     const credentials = Buffer.from(`${apiUserId}:${apiKey}`).toString(
-      "base64"
+      "base64",
     );
     const tokenResponse = await fetch(
       `https://proxy.momoapi.mtn.com/disbursement/token/`,
@@ -277,7 +278,7 @@ async function processMomoRefund(
           Authorization: `Basic ${credentials}`,
           "Ocp-Apim-Subscription-Key": subscriptionKey,
         },
-      }
+      },
     );
     const tokenData = (await tokenResponse.json()) as any;
     const accessToken = tokenData.access_token;
@@ -321,7 +322,7 @@ async function processMomoRefund(
           payerMessage: `Refund for transaction ${originalTransactionId.slice(0, 8)}`,
           payeeNote: `UBI Refund - ${refundId}`,
         }),
-      }
+      },
     );
 
     if (disbursementResponse.status === 202) {
@@ -353,7 +354,7 @@ async function processMomoRefund(
 async function processFlutterwaveRefund(
   transactionId: string,
   amount: number,
-  refundId: string
+  refundId: string,
 ): Promise<RefundResult> {
   const secretKey = process.env.FLUTTERWAVE_SECRET_KEY;
   if (!secretKey) {
@@ -373,7 +374,7 @@ async function processFlutterwaveRefund(
           amount,
           comments: `Refund ${refundId}`,
         }),
-      }
+      },
     );
 
     const data = (await response.json()) as any;
@@ -644,7 +645,7 @@ adminRoutes.get("/transactions/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Transaction not found" },
       },
-      404
+      404,
     );
   }
 
@@ -674,7 +675,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
@@ -688,7 +689,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Transaction not found" },
       },
-      404
+      404,
     );
   }
 
@@ -701,7 +702,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
           message: "Can only refund completed transactions",
         },
       },
-      400
+      400,
     );
   }
 
@@ -717,7 +718,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
           message: "Refund amount cannot exceed original transaction amount",
         },
       },
-      400
+      400,
     );
   }
 
@@ -738,7 +739,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
     const refundResult = await processRefundWithProvider(
       transaction,
       refundAmount,
-      refund.id
+      refund.id,
     );
 
     // Update refund record with result
@@ -765,7 +766,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
           },
           data: { refundId: refund.id },
         },
-        500
+        500,
       );
     }
 
@@ -799,7 +800,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
         },
         data: { refundId: refund.id },
       },
-      500
+      500,
     );
   }
 });
@@ -883,14 +884,14 @@ adminRoutes.post("/reconciliations/run", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
   const result = await reconciliationService.runDailyReconciliation(
     parsed.data.provider as any,
     new Date(parsed.data.date),
-    parsed.data.currency as any
+    parsed.data.currency as any,
   );
 
   return c.json({
@@ -939,7 +940,7 @@ adminRoutes.post("/reconciliations/discrepancies/:id/resolve", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
@@ -949,13 +950,13 @@ adminRoutes.post("/reconciliations/discrepancies/:id/resolve", async (c) => {
     await reconciliationService.resolveDiscrepancy(
       id,
       parsed.data.resolution,
-      userId
+      userId,
     );
   } else {
     await reconciliationService.ignoreDiscrepancy(
       id,
       parsed.data.resolution,
-      userId
+      userId,
     );
   }
 
@@ -1048,7 +1049,7 @@ adminRoutes.post("/settlements/:id/retry", async (c) => {
           message: error instanceof Error ? error.message : "Retry failed",
         },
       },
-      400
+      400,
     );
   }
 });
@@ -1069,7 +1070,7 @@ adminRoutes.get("/settlements/summary", async (c) => {
   const summary = await settlementService.getSettlementSummary(
     startDate,
     endDate,
-    query.recipientType
+    query.recipientType,
   );
 
   return c.json({
@@ -1172,7 +1173,7 @@ adminRoutes.post("/payouts/:id/approve", async (c) => {
           message: error instanceof Error ? error.message : "Approval failed",
         },
       },
-      400
+      400,
     );
   }
 });
@@ -1196,7 +1197,7 @@ adminRoutes.post("/payouts/:id/cancel", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
@@ -1216,7 +1217,7 @@ adminRoutes.post("/payouts/:id/cancel", async (c) => {
           message: error instanceof Error ? error.message : "Cancel failed",
         },
       },
-      400
+      400,
     );
   }
 });
@@ -1286,7 +1287,7 @@ adminRoutes.post("/fraud/:assessmentId/review", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
@@ -1296,7 +1297,7 @@ adminRoutes.post("/fraud/:assessmentId/review", async (c) => {
     await fraudService.rejectTransaction(
       assessmentId,
       userId,
-      parsed.data.reason || "Rejected by admin"
+      parsed.data.reason || "Rejected by admin",
     );
   }
 
@@ -1338,7 +1339,7 @@ adminRoutes.get("/users/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "User not found" },
       },
-      404
+      404,
     );
   }
 
@@ -1367,7 +1368,7 @@ adminRoutes.post("/users/:id/block", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 

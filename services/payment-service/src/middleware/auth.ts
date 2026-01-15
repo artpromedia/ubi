@@ -4,7 +4,7 @@
  * Extracts user information from API Gateway headers
  */
 
-import { Context, Next } from "hono";
+import type { Context, Next } from "hono";
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -21,7 +21,7 @@ declare module "hono" {
  */
 export async function serviceAuth(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   // Headers set by API Gateway after authentication
   const userId = c.req.header("X-User-ID");
@@ -38,15 +38,21 @@ export async function serviceAuth(
           message: "Authentication required",
         },
       },
-      401
+      401,
     );
   }
 
   // Set context variables
   c.set("userId", userId);
-  if (userEmail) c.set("userEmail", userEmail);
-  if (userRole) c.set("userRole", userRole);
-  if (sessionId) c.set("sessionId", sessionId);
+  if (userEmail) {
+    c.set("userEmail", userEmail);
+  }
+  if (userRole) {
+    c.set("userRole", userRole);
+  }
+  if (sessionId) {
+    c.set("sessionId", sessionId);
+  }
 
   await next();
 }
@@ -63,9 +69,15 @@ export async function optionalAuth(c: Context, next: Next) {
 
   if (userId) {
     c.set("userId", userId);
-    if (userEmail) c.set("userEmail", userEmail);
-    if (userRole) c.set("userRole", userRole);
-    if (sessionId) c.set("sessionId", sessionId);
+    if (userEmail) {
+      c.set("userEmail", userEmail);
+    }
+    if (userRole) {
+      c.set("userRole", userRole);
+    }
+    if (sessionId) {
+      c.set("sessionId", sessionId);
+    }
   }
 
   await next();
@@ -77,7 +89,7 @@ export async function optionalAuth(c: Context, next: Next) {
  */
 export async function internalServiceAuth(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   const serviceKey = c.req.header("X-Service-Key");
 
@@ -90,7 +102,7 @@ export async function internalServiceAuth(
           message: "Internal endpoint",
         },
       },
-      403
+      403,
     );
   }
 
@@ -102,7 +114,7 @@ export async function internalServiceAuth(
  */
 export async function adminAuth(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   const userRole = c.req.header("X-User-Role");
 
@@ -115,7 +127,7 @@ export async function adminAuth(
           message: "Admin access required",
         },
       },
-      403
+      403,
     );
   }
 

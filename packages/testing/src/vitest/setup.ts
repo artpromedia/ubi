@@ -110,7 +110,7 @@ if (typeof globalThis.fetch === "undefined") {
       json: () => Promise.resolve({}),
       text: () => Promise.resolve(""),
       status: 200,
-    })
+    }),
   );
 }
 

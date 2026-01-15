@@ -6,13 +6,23 @@
 
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ArrowRight,
+  ArrowUpDown,
+  ChevronRight,
+  Clock,
+  Users,
+  Wallet,
+} from "lucide-react";
+import { useState } from "react";
+
+import { Button, Card, CardContent } from "@ubi/ui";
+
 import { VEHICLE_TYPES } from "@/lib/constants";
 import { cn, formatDuration, formatPrice } from "@/lib/utils";
 import { useLocationStore } from "@/store";
-import { Button, Card, CardContent } from "@ubi/ui";
-import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, ArrowUpDown, ChevronRight, Clock, Users, Wallet } from "lucide-react";
-import { useState } from "react";
+
 import { LocationSearch } from "../shared/location-search";
 
 interface RideEstimate {
@@ -31,8 +41,10 @@ interface RideBookingCardProps {
   className?: string;
 }
 
-export function RideBookingCard({ className }: RideBookingCardProps) {
-  const [step, setStep] = useState<"location" | "vehicle" | "confirm">("location");
+export const RideBookingCard = ({ className }: RideBookingCardProps) => {
+  const [step, setStep] = useState<"location" | "vehicle" | "confirm">(
+    "location",
+  );
   const [pickupInput, setPickupInput] = useState("");
   const [dropoffInput, setDropoffInput] = useState("");
   const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
@@ -48,7 +60,9 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
   } = useLocationStore();
 
   const handleGetEstimates = async () => {
-    if (!selectedPickup || !selectedDropoff) return;
+    if (!selectedPickup || !selectedDropoff) {
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -57,16 +71,18 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Generate sample estimates based on vehicle types and distance
-      const sampleEstimates: RideEstimate[] = VEHICLE_TYPES.slice(0, 4).map((type) => ({
-        vehicleType: type.id,
-        price: {
-          amount: Math.round(500 * type.multiplier + Math.random() * 200),
-          currency: "KES",
-        },
-        duration: 900 + Math.random() * 600,
-        distance: 5000 + Math.random() * 3000,
-        eta: 180 + Math.random() * 300,
-      }));
+      const sampleEstimates: RideEstimate[] = VEHICLE_TYPES.slice(0, 4).map(
+        (type) => ({
+          vehicleType: type.id,
+          price: {
+            amount: Math.round(500 * type.multiplier + Math.random() * 200),
+            currency: "KES",
+          },
+          duration: 900 + Math.random() * 600,
+          distance: 5000 + Math.random() * 3000,
+          eta: 180 + Math.random() * 300,
+        }),
+      );
 
       setEstimates(sampleEstimates);
       setStep("vehicle");
@@ -78,7 +94,9 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
   };
 
   const handleBookRide = async () => {
-    if (!selectedVehicle) return;
+    if (!selectedVehicle) {
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -102,7 +120,9 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
     setDropoffInput(tempInput);
   };
 
-  const selectedEstimate = estimates.find((e) => e.vehicleType === selectedVehicle);
+  const selectedEstimate = estimates.find(
+    (e) => e.vehicleType === selectedVehicle,
+  );
 
   return (
     <Card className={cn("overflow-hidden", className)}>
@@ -194,7 +214,9 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
                     <div className="ml-0.5 h-4 border-l-2 border-dashed border-gray-300" />
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-full bg-ubi-bites" />
-                      <span className="text-sm">{selectedDropoff?.address}</span>
+                      <span className="text-sm">
+                        {selectedDropoff?.address}
+                      </span>
                     </div>
                   </div>
                   <ChevronRight className="ml-auto h-5 w-5 text-gray-400" />
@@ -205,9 +227,11 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
               <div className="divide-y divide-gray-100 dark:divide-gray-700">
                 {estimates.map((estimate) => {
                   const vehicleInfo = VEHICLE_TYPES.find(
-                    (v) => v.id === estimate.vehicleType
+                    (v) => v.id === estimate.vehicleType,
                   );
-                  if (!vehicleInfo) return null;
+                  if (!vehicleInfo) {
+                    return null;
+                  }
 
                   const isSelected = selectedVehicle === estimate.vehicleType;
 
@@ -219,7 +243,7 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
                         "flex w-full items-center gap-4 p-4 text-left transition-colors",
                         isSelected
                           ? "bg-green-50 dark:bg-green-900/20"
-                          : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                          : "hover:bg-gray-50 dark:hover:bg-gray-800",
                       )}
                     >
                       {/* Vehicle icon placeholder */}
@@ -229,7 +253,9 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
 
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold">{vehicleInfo.name}</span>
+                          <span className="font-semibold">
+                            {vehicleInfo.name}
+                          </span>
                           <div className="flex items-center gap-1 text-sm text-gray-500">
                             <Users className="h-3.5 w-3.5" />
                             <span>{vehicleInfo.capacity}</span>
@@ -248,19 +274,32 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
 
                       <div className="text-right">
                         <p className="font-semibold">
-                          {formatPrice(estimate.price.amount, estimate.price.currency)}
+                          {formatPrice(
+                            estimate.price.amount,
+                            estimate.price.currency,
+                          )}
                         </p>
-                        {estimate.surgeMultiplier && estimate.surgeMultiplier > 1 && (
-                          <span className="text-xs text-yellow-600">
-                            {estimate.surgeMultiplier}x surge
-                          </span>
-                        )}
+                        {estimate.surgeMultiplier &&
+                          estimate.surgeMultiplier > 1 && (
+                            <span className="text-xs text-yellow-600">
+                              {estimate.surgeMultiplier}x surge
+                            </span>
+                          )}
                       </div>
 
                       {isSelected && (
                         <div className="h-4 w-4 rounded-full bg-ubi-green">
-                          <svg viewBox="0 0 16 16" fill="white" className="h-4 w-4">
-                            <path d="M13.5 4.5l-7 7L3 8" stroke="white" strokeWidth="2" fill="none" />
+                          <svg
+                            viewBox="0 0 16 16"
+                            fill="white"
+                            className="h-4 w-4"
+                          >
+                            <path
+                              d="M13.5 4.5l-7 7L3 8"
+                              stroke="white"
+                              strokeWidth="2"
+                              fill="none"
+                            />
                           </svg>
                         </div>
                       )}
@@ -299,4 +338,4 @@ export function RideBookingCard({ className }: RideBookingCardProps) {
       </CardContent>
     </Card>
   );
-}
+};

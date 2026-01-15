@@ -61,7 +61,7 @@ export class MetricsCollector {
     // Start periodic flush to Redis
     this.flushInterval = setInterval(
       () => this.flushToRedis(),
-      config.metricsIntervalMs
+      config.metricsIntervalMs,
     );
   }
 
@@ -93,7 +93,7 @@ export class MetricsCollector {
     const second = Math.floor(Date.now() / 1000);
     this.globalStats.reconnectsBySecond.set(
       second,
-      (this.globalStats.reconnectsBySecond.get(second) || 0) + 1
+      (this.globalStats.reconnectsBySecond.get(second) || 0) + 1,
     );
   }
 
@@ -110,7 +110,7 @@ export class MetricsCollector {
     const second = Math.floor(Date.now() / 1000);
     this.globalStats.messagesBySecond.set(
       second,
-      (this.globalStats.messagesBySecond.get(second) || 0) + 1
+      (this.globalStats.messagesBySecond.get(second) || 0) + 1,
     );
   }
 
@@ -157,7 +157,7 @@ export class MetricsCollector {
     const second = Math.floor(Date.now() / 1000);
     this.globalStats.errorsBySecond.set(
       second,
-      (this.globalStats.errorsBySecond.get(second) || 0) + 1
+      (this.globalStats.errorsBySecond.get(second) || 0) + 1,
     );
   }
 
@@ -199,7 +199,7 @@ export class MetricsCollector {
    */
   getServerMetrics(
     connections: Map<string, WebSocketConnection>,
-    bufferMemoryBytes: number
+    bufferMemoryBytes: number,
   ): ServerMetrics {
     const byType: Record<UserType, number> = {
       rider: 0,
@@ -218,13 +218,13 @@ export class MetricsCollector {
 
     const { avg, p99 } = this.calculatePercentiles(this.latencySamples);
     const messagesPerSecond = this.calculateRatePerSecond(
-      this.globalStats.messagesBySecond
+      this.globalStats.messagesBySecond,
     );
     const reconnectionRate = this.calculateRatePerSecond(
-      this.globalStats.reconnectsBySecond
+      this.globalStats.reconnectsBySecond,
     );
     const errorRate = this.calculateRatePerSecond(
-      this.globalStats.errorsBySecond
+      this.globalStats.errorsBySecond,
     );
 
     return {
@@ -290,11 +290,11 @@ export class MetricsCollector {
         timestamp: Date.now(),
         connections: this.connectionStats.size,
         messagesPerSecond: this.calculateRatePerSecond(
-          this.globalStats.messagesBySecond
+          this.globalStats.messagesBySecond,
         ),
         errorRate: this.calculateRatePerSecond(this.globalStats.errorsBySecond),
         reconnectionRate: this.calculateRatePerSecond(
-          this.globalStats.reconnectsBySecond
+          this.globalStats.reconnectsBySecond,
         ),
         latency: this.calculatePercentiles(this.latencySamples),
       };
@@ -303,7 +303,7 @@ export class MetricsCollector {
       await this.redis.hset(
         "ws:metrics:servers",
         this.serverId,
-        JSON.stringify(metrics)
+        JSON.stringify(metrics),
       );
       await this.redis.expire("ws:metrics:servers", 120); // 2 min TTL
 

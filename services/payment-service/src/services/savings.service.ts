@@ -3,10 +3,12 @@
  * Goal-based savings with interest, auto-save, and round-ups
  */
 
-import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
-import { prisma } from "../lib/prisma";
+
+import { enhancedWalletService } from "./enhanced-wallet.service";
 import { notificationClient } from "../lib/notification-client";
+import { prisma } from "../lib/prisma";
+
 import type {
   AutoSaveConfig,
   AutoSaveFrequency,
@@ -17,7 +19,7 @@ import type {
   SavingsTransaction,
   WalletTier,
 } from "../types/fintech.types";
-import { enhancedWalletService } from "./enhanced-wallet.service";
+import type { Currency } from "@prisma/client";
 
 // ===========================================
 // CONSTANTS
@@ -77,7 +79,7 @@ export class SavingsService {
     const maxPockets = MAX_POCKETS[wallet.tier];
     if (existingCount >= maxPockets) {
       throw new Error(
-        `Maximum ${maxPockets} savings pockets allowed for ${wallet.tier} tier`
+        `Maximum ${maxPockets} savings pockets allowed for ${wallet.tier} tier`,
       );
     }
 
@@ -175,14 +177,14 @@ export class SavingsService {
 
     if (pocket.status !== "ACTIVE") {
       throw new Error(
-        `Cannot deposit to ${pocket.status.toLowerCase()} pocket`
+        `Cannot deposit to ${pocket.status.toLowerCase()} pocket`,
       );
     }
 
     // Check wallet balance
     const balance = await enhancedWalletService.getBalance(
       walletId,
-      pocket.currency
+      pocket.currency,
     );
     if (balance.available < amount) {
       throw new Error("Insufficient balance");
@@ -333,7 +335,7 @@ export class SavingsService {
       targetDate?: Date;
       emoji?: string;
       color?: string;
-    }
+    },
   ): Promise<SavingsPocket> {
     const pocket = await prisma.savingsPocket.findUnique({
       where: { id: pocketId },
@@ -357,7 +359,7 @@ export class SavingsService {
   async configureAutoSave(
     pocketId: string,
     walletId: string,
-    config: AutoSaveConfig
+    config: AutoSaveConfig,
   ): Promise<SavingsPocket> {
     const pocket = await prisma.savingsPocket.findUnique({
       where: { id: pocketId },
@@ -399,7 +401,7 @@ export class SavingsService {
   async configureRoundUp(
     pocketId: string,
     walletId: string,
-    config: RoundUpConfig
+    config: RoundUpConfig,
   ): Promise<SavingsPocket> {
     const pocket = await prisma.savingsPocket.findUnique({
       where: { id: pocketId },
@@ -427,7 +429,7 @@ export class SavingsService {
   async lockPocket(
     pocketId: string,
     walletId: string,
-    unlockDate?: Date
+    unlockDate?: Date,
   ): Promise<void> {
     const pocket = await prisma.savingsPocket.findUnique({
       where: { id: pocketId },
@@ -452,7 +454,7 @@ export class SavingsService {
   async closePocket(
     pocketId: string,
     walletId: string,
-    pin: string
+    pin: string,
   ): Promise<{ withdrawnAmount: number }> {
     const pocket = await prisma.savingsPocket.findUnique({
       where: { id: pocketId },
@@ -468,7 +470,7 @@ export class SavingsService {
       pocket.lockedUntil > new Date()
     ) {
       throw new Error(
-        `Pocket is locked until ${pocket.lockedUntil.toLocaleDateString()}`
+        `Pocket is locked until ${pocket.lockedUntil.toLocaleDateString()}`,
       );
     }
 
@@ -508,12 +510,14 @@ export class SavingsService {
       type?: "DEPOSIT" | "WITHDRAWAL" | "INTEREST";
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ): Promise<{ transactions: SavingsTransaction[]; total: number }> {
     const { type, limit = 20, offset = 0 } = options;
 
     const where: Record<string, unknown> = { pocketId };
-    if (type) where.type = type;
+    if (type) {
+      where.type = type;
+    }
 
     const [transactions, total] = await Promise.all([
       prisma.savingsTransaction.findMany({
@@ -608,7 +612,7 @@ export class SavingsService {
         // Check wallet balance
         const balance = await enhancedWalletService.getBalance(
           pocket.walletId,
-          pocket.currency
+          pocket.currency,
         );
 
         const amount = Number(pocket.autoSaveAmount);
@@ -619,12 +623,12 @@ export class SavingsService {
             pocket.id,
             pocket.walletId,
             amount,
-            pocket.currency
+            pocket.currency,
           );
 
           // Calculate next auto-save date
           const nextDate = this.calculateNextAutoSaveDate(
-            pocket.autoSaveFrequency as AutoSaveFrequency
+            pocket.autoSaveFrequency as AutoSaveFrequency,
           );
 
           await prisma.savingsPocket.update({
@@ -661,7 +665,7 @@ export class SavingsService {
   async processRoundUp(
     walletId: string,
     transactionAmount: number,
-    category: string
+    category: string,
   ): Promise<void> {
     // Find pockets with round-up enabled
     const pockets = await prisma.savingsPocket.findMany({
@@ -696,7 +700,7 @@ export class SavingsService {
             walletId,
             roundUpAmount,
             pocket.currency,
-            "ROUND_UP"
+            "ROUND_UP",
           );
         } catch (error) {
           console.error(`Round-up failed for pocket ${pocket.id}:`, error);
@@ -815,14 +819,17 @@ export class SavingsService {
       interestEarned: Number(pocket.interestEarned),
       status: pocket.status as SavingsPocketStatus,
       progress: progress !== undefined ? Math.min(progress, 100) : 0,
-      autoSave: pocket.autoSaveEnabled && pocket.autoSaveAmount && pocket.autoSaveFrequency
-        ? ({
-            enabled: true as const,
-            amount: Number(pocket.autoSaveAmount),
-            frequency: pocket.autoSaveFrequency as AutoSaveFrequency,
-            nextDate: pocket.autoSaveNextDate || undefined,
-          } as AutoSaveConfig)
-        : ({ enabled: false as const } as AutoSaveConfig),
+      autoSave:
+        pocket.autoSaveEnabled &&
+        pocket.autoSaveAmount &&
+        pocket.autoSaveFrequency
+          ? ({
+              enabled: true as const,
+              amount: Number(pocket.autoSaveAmount),
+              frequency: pocket.autoSaveFrequency as AutoSaveFrequency,
+              nextDate: pocket.autoSaveNextDate || undefined,
+            } as AutoSaveConfig)
+          : ({ enabled: false as const } as AutoSaveConfig),
       roundUp: {
         enabled: pocket.roundUpEnabled,
         multiplier: pocket.roundUpMultiplier || 1,
@@ -857,10 +864,12 @@ export class SavingsService {
     interestRate: unknown;
     lastActivityAt: Date | null;
   }): number {
-    if (!pocket.lastActivityAt) return 0;
+    if (!pocket.lastActivityAt) {
+      return 0;
+    }
 
     const daysSinceActivity = Math.floor(
-      (Date.now() - pocket.lastActivityAt.getTime()) / (24 * 60 * 60 * 1000)
+      (Date.now() - pocket.lastActivityAt.getTime()) / (24 * 60 * 60 * 1000),
     );
 
     const dailyRate = Number(pocket.interestRate) / 365;
@@ -872,7 +881,7 @@ export class SavingsService {
     walletId: string,
     amount: number,
     currency: Currency,
-    source: string = "AUTO_SAVE"
+    source: string = "AUTO_SAVE",
   ): Promise<void> {
     const transactionId = `sav_${nanoid(16)}`;
 
@@ -923,7 +932,9 @@ export class SavingsService {
       });
 
       if (!pocket) {
-        console.warn(`[Savings] Pocket not found for notification: ${pocketId}`);
+        console.warn(
+          `[Savings] Pocket not found for notification: ${pocketId}`,
+        );
         return;
       }
 
@@ -931,12 +942,17 @@ export class SavingsService {
         pocket.userId,
         pocket.name,
         Number(pocket.targetAmount),
-        pocket.currency
+        pocket.currency,
       );
 
-      console.log(`[Savings] Target reached notification sent for pocket ${pocketId}`);
+      console.log(
+        `[Savings] Target reached notification sent for pocket ${pocketId}`,
+      );
     } catch (error) {
-      console.error(`[Savings] Failed to send target reached notification:`, error);
+      console.error(
+        `[Savings] Failed to send target reached notification:`,
+        error,
+      );
     }
   }
 }

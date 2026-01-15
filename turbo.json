@@ -183,12 +183,7 @@
       "dependsOn": ["build", "test", "lint"],
       "outputs": [],
       "cache": false,
-      "env": [
-        "AWS_REGION",
-        "AWS_ACCOUNT_ID",
-        "DEPLOY_ENV",
-        "VERCEL_TOKEN"
-      ]
+      "env": ["AWS_REGION", "AWS_ACCOUNT_ID", "DEPLOY_ENV", "VERCEL_TOKEN"]
     },
     "docker:build": {
       "dependsOn": ["build"],

@@ -316,7 +316,7 @@ class SMSService {
     // Fallback on failure
     if (!result.success) {
       console.log(
-        `Primary SMS provider failed (${primaryProvider}), trying fallback...`
+        `Primary SMS provider failed (${primaryProvider}), trying fallback...`,
       );
 
       if (primaryProvider === "africas_talking" && this.twilio.isConfigured()) {
@@ -384,7 +384,7 @@ class SMSService {
    * Get message status (Twilio only)
    */
   async getStatus(
-    messageId: string
+    messageId: string,
   ): Promise<{ status: string; error?: string }> {
     if (!this.twilio.isConfigured()) {
       return { status: "unknown", error: "Status check not available" };

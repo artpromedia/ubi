@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+
+import type { Metadata } from "next";
 import "@/styles/globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -9,7 +10,8 @@ export const metadata: Metadata = {
     default: "UBI Admin Dashboard",
     template: "%s | UBI Admin",
   },
-  description: "UBI internal operations, support, and fraud detection dashboard",
+  description:
+    "UBI internal operations, support, and fraud detection dashboard",
   robots: {
     index: false,
     follow: false,

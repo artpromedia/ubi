@@ -6,18 +6,20 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
+
 import {
-  ChurnFactor,
-  ChurnPrediction,
-  ChurnPredictionRequest,
+  type ChurnFactor,
+  type ChurnPrediction,
+  type ChurnPredictionRequest,
   ChurnRiskLevel,
   FeatureEntityType,
-  IChurnPredictionService,
+  type IChurnPredictionService,
   InterventionType,
-  RetentionCampaign,
-  RetentionAction,
+  type RetentionCampaign,
+  type RetentionAction,
 } from "../../types/ml.types";
-import { FeatureStoreService } from "./feature-store.service";
+
+import type { FeatureStoreService } from "./feature-store.service";
 
 // User segment types for churn prediction
 enum UserSegmentType {
@@ -94,7 +96,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   // ===========================================================================
 
   async predictChurn(
-    request: ChurnPredictionRequest
+    request: ChurnPredictionRequest,
   ): Promise<ChurnPrediction> {
     const predictionId = this.generateId();
 
@@ -111,7 +113,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     const { probability, factors } = this.calculateChurnProbability(
       features,
       engagement,
-      segment
+      segment,
     );
 
     // Determine risk level
@@ -121,21 +123,23 @@ export class ChurnPredictionService implements IChurnPredictionService {
     const recommendations = this.recommendInterventions(
       probability,
       segment,
-      factors
+      factors,
     );
 
     // Convert recommendations to RetentionAction format
-    const recommendedActions: RetentionAction[] = recommendations.map((rec) => ({
-      type: rec.type,
-      description: rec.message,
-      expectedImpact: rec.expectedLiftPercent / 100,
-      cost: rec.offerValue,
-      priority: rec.priority === "high" || rec.priority === "urgent" ? 1 : 2,
-      config: {
-        channel: rec.channel,
-        validityDays: rec.validityDays,
-      },
-    }));
+    const recommendedActions: RetentionAction[] = recommendations.map(
+      (rec) => ({
+        type: rec.type,
+        description: rec.message,
+        expectedImpact: rec.expectedLiftPercent / 100,
+        cost: rec.offerValue,
+        priority: rec.priority === "high" || rec.priority === "urgent" ? 1 : 2,
+        config: {
+          channel: rec.channel,
+          validityDays: rec.validityDays,
+        },
+      }),
+    );
 
     const prediction: ChurnPrediction = {
       id: predictionId,
@@ -152,7 +156,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     await this.featureStore.setFeatureValue(
       "user_churn_risk",
       request.userId,
-      probability
+      probability,
     );
 
     // Emit events for high-risk users
@@ -172,7 +176,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   }
 
   private async getUserFeatures(
-    userId: string
+    userId: string,
   ): Promise<Record<string, unknown>> {
     const featureNames = [
       "user_total_trips",
@@ -203,7 +207,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   }
 
   private calculateEngagementMetrics(
-    features: Record<string, unknown>
+    features: Record<string, unknown>,
   ): EngagementMetrics {
     const tripsLast7d = Number(features.user_trips_last_7d || 0);
 
@@ -219,7 +223,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private determineUserSegment(
     features: Record<string, unknown>,
-    engagement: EngagementMetrics
+    engagement: EngagementMetrics,
   ): UserSegmentType {
     const totalTrips = Number(features.user_total_trips || 0);
     const totalSpend = Number(features.user_total_spend || 0);
@@ -265,7 +269,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   private calculateChurnProbability(
     features: Record<string, unknown>,
     engagement: EngagementMetrics,
-    segment: UserSegmentType
+    segment: UserSegmentType,
   ): { probability: number; factors: ChurnFactor[] } {
     const factors: ChurnFactor[] = [];
     let riskScore = 0;
@@ -274,7 +278,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     // 1. Inactivity risk
     const inactivityRisk = this.calculateInactivityRisk(
       engagement.lastActivityDays,
-      segment
+      segment,
     );
     if (inactivityRisk.contribution > 0) {
       factors.push(inactivityRisk);
@@ -285,7 +289,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     // 2. Declining frequency
     const frequencyDecline = this.calculateFrequencyDecline(
       features,
-      engagement
+      engagement,
     );
     if (frequencyDecline.contribution > 0) {
       factors.push(frequencyDecline);
@@ -296,7 +300,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     // 3. Satisfaction decline
     const satisfactionRisk = this.calculateSatisfactionRisk(
       features,
-      engagement
+      engagement,
     );
     if (satisfactionRisk.contribution > 0) {
       factors.push(satisfactionRisk);
@@ -315,7 +319,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     // 5. App engagement decline
     const appEngagementRisk = this.calculateAppEngagementRisk(
       features,
-      engagement
+      engagement,
     );
     if (appEngagementRisk.contribution > 0) {
       factors.push(appEngagementRisk);
@@ -338,7 +342,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private calculateInactivityRisk(
     lastActivityDays: number,
-    segment: UserSegmentType
+    segment: UserSegmentType,
   ): ChurnFactor {
     // Different thresholds per segment
     const thresholds: Record<UserSegmentType, number> = {
@@ -375,7 +379,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private calculateFrequencyDecline(
     features: Record<string, unknown>,
-    engagement: EngagementMetrics
+    engagement: EngagementMetrics,
   ): ChurnFactor {
     const avgFrequency = Number(features.user_avg_trip_frequency || 1);
     const currentFrequency = engagement.tripFrequency;
@@ -397,14 +401,19 @@ export class ChurnPredictionService implements IChurnPredictionService {
       description: `Trip frequency declined from ${avgFrequency} to ${currentFrequency}`,
       contribution,
       value: currentFrequency,
-      trend: contribution > 0.5 ? "worsening" : contribution > 0.2 ? "worsening" : "stable",
+      trend:
+        contribution > 0.5
+          ? "worsening"
+          : contribution > 0.2
+            ? "worsening"
+            : "stable",
       benchmark: avgFrequency,
     };
   }
 
   private calculateSatisfactionRisk(
     features: Record<string, unknown>,
-    engagement: EngagementMetrics
+    engagement: EngagementMetrics,
   ): ChurnFactor {
     const avgRating = engagement.satisfactionScore;
     let contribution = 0;
@@ -457,11 +466,11 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private calculateAppEngagementRisk(
     features: Record<string, unknown>,
-    engagement: EngagementMetrics
+    engagement: EngagementMetrics,
   ): ChurnFactor {
     const appOpens = engagement.appOpenFrequency;
     const notificationRate = Number(
-      features.user_notification_open_rate || 0.5
+      features.user_notification_open_rate || 0.5,
     );
 
     let contribution = 0;
@@ -489,10 +498,15 @@ export class ChurnPredictionService implements IChurnPredictionService {
   // ===========================================================================
 
   private determineRiskLevel(probability: number): ChurnRiskLevel {
-    if (probability >= this.CRITICAL_RISK_THRESHOLD)
+    if (probability >= this.CRITICAL_RISK_THRESHOLD) {
       return ChurnRiskLevel.CRITICAL;
-    if (probability >= this.HIGH_RISK_THRESHOLD) return ChurnRiskLevel.HIGH;
-    if (probability >= this.MEDIUM_RISK_THRESHOLD) return ChurnRiskLevel.MEDIUM;
+    }
+    if (probability >= this.HIGH_RISK_THRESHOLD) {
+      return ChurnRiskLevel.HIGH;
+    }
+    if (probability >= this.MEDIUM_RISK_THRESHOLD) {
+      return ChurnRiskLevel.MEDIUM;
+    }
     return ChurnRiskLevel.LOW;
   }
 
@@ -503,7 +517,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   private recommendInterventions(
     probability: number,
     segment: UserSegmentType,
-    factors: ChurnFactor[]
+    factors: ChurnFactor[],
   ): RetentionRecommendation[] {
     const interventions: RetentionRecommendation[] = [];
 
@@ -515,7 +529,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
       const intervention = this.mapFactorToIntervention(
         factor,
         segment,
-        riskLevel
+        riskLevel,
       );
       if (intervention) {
         interventions.push(intervention);
@@ -525,7 +539,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     // Add segment-specific interventions
     const segmentInterventions = this.getSegmentInterventions(
       segment,
-      riskLevel
+      riskLevel,
     );
     for (const intervention of segmentInterventions) {
       if (!interventions.some((i) => i.type === intervention.type)) {
@@ -534,9 +548,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
     }
 
     // Sort by expected effectiveness
-    interventions.sort(
-      (a, b) => b.expectedLiftPercent - a.expectedLiftPercent
-    );
+    interventions.sort((a, b) => b.expectedLiftPercent - a.expectedLiftPercent);
 
     return interventions.slice(0, 3);
   }
@@ -544,7 +556,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   private mapFactorToIntervention(
     factor: ChurnFactor,
     segment: UserSegmentType,
-    riskLevel: ChurnRiskLevel
+    riskLevel: ChurnRiskLevel,
   ): RetentionRecommendation | null {
     const factorInterventions: Record<string, InterventionType> = {
       "Inactivity period": InterventionType.EMAIL,
@@ -555,7 +567,9 @@ export class ChurnPredictionService implements IChurnPredictionService {
     };
 
     const type = factorInterventions[factor.name];
-    if (!type) return null;
+    if (!type) {
+      return null;
+    }
 
     // Scale offer value based on risk level
     const offerMultiplier: Record<ChurnRiskLevel, number> = {
@@ -581,11 +595,14 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private getSegmentInterventions(
     segment: UserSegmentType,
-    riskLevel: ChurnRiskLevel
+    riskLevel: ChurnRiskLevel,
   ): RetentionRecommendation[] {
     const interventions: RetentionRecommendation[] = [];
 
-    if (segment === UserSegmentType.VIP || segment === UserSegmentType.POWER_USER) {
+    if (
+      segment === UserSegmentType.VIP ||
+      segment === UserSegmentType.POWER_USER
+    ) {
       interventions.push({
         id: this.generateId(),
         type: InterventionType.PERSONALIZED_CONTENT,
@@ -644,7 +661,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private generateInterventionMessage(
     type: InterventionType,
-    _segment: UserSegmentType
+    _segment: UserSegmentType,
   ): string {
     const messages: Record<InterventionType, string> = {
       [InterventionType.EMAIL]: "We miss you! Check out what's new",
@@ -654,7 +671,8 @@ export class ChurnPredictionService implements IChurnPredictionService {
       [InterventionType.DISCOUNT]: "Your exclusive discount is ready!",
       [InterventionType.OFFER]: "Welcome back! Special offer inside",
       [InterventionType.PERSONALIZED_CONTENT]: "We value you as a customer",
-      [InterventionType.IN_APP_MESSAGE]: "Check out your personalized recommendations",
+      [InterventionType.IN_APP_MESSAGE]:
+        "Check out your personalized recommendations",
       [InterventionType.LOYALTY_BONUS]: "Bonus points added to your account",
     };
     return messages[type] || "Special offer for you";
@@ -662,7 +680,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   private calculateOfferValue(
     segment: UserSegmentType,
-    multiplier: number
+    multiplier: number,
   ): number {
     const baseValues: Record<UserSegmentType, number> = {
       [UserSegmentType.VIP]: 2000,
@@ -683,7 +701,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   // ===========================================================================
 
   async createCampaign(
-    campaign: Partial<RetentionCampaign> & { name: string }
+    campaign: Partial<RetentionCampaign> & { name: string },
   ): Promise<RetentionCampaign> {
     const campaignId = this.generateId();
 
@@ -723,7 +741,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   async trackIntervention(
     userId: string,
     interventionId: string,
-    outcome: "delivered" | "opened" | "converted" | "ignored"
+    outcome: "delivered" | "opened" | "converted" | "ignored",
   ): Promise<void> {
     this.eventEmitter.emit("intervention:tracked", {
       userId,
@@ -760,9 +778,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   // BATCH PREDICTIONS
   // ===========================================================================
 
-  async batchPredictChurn(
-    userIds: string[]
-  ): Promise<ChurnPrediction[]> {
+  async batchPredictChurn(userIds: string[]): Promise<ChurnPrediction[]> {
     const results: ChurnPrediction[] = [];
 
     // Process in batches for efficiency
@@ -771,7 +787,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
       const batch = userIds.slice(i, i + batchSize);
 
       const predictions = await Promise.all(
-        batch.map((userId) => this.predictChurn({ userId }))
+        batch.map(async (userId) => this.predictChurn({ userId })),
       );
 
       results.push(...predictions);
@@ -782,7 +798,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
 
   async getHighRiskUsers(
     _segment?: UserSegmentType,
-    _limit: number = 100
+    _limit: number = 100,
   ): Promise<ChurnPrediction[]> {
     // In production, query pre-computed predictions from database
     // filtered by risk level and segment
@@ -853,8 +869,11 @@ export class ChurnPredictionService implements IChurnPredictionService {
     this.interventionEffectiveness.set(InterventionType.CALL, 0.12);
     this.interventionEffectiveness.set(InterventionType.DISCOUNT, 0.22);
     this.interventionEffectiveness.set(InterventionType.OFFER, 0.28);
-    this.interventionEffectiveness.set(InterventionType.PERSONALIZED_CONTENT, 0.15);
-    this.interventionEffectiveness.set(InterventionType.IN_APP_MESSAGE, 0.10);
+    this.interventionEffectiveness.set(
+      InterventionType.PERSONALIZED_CONTENT,
+      0.15,
+    );
+    this.interventionEffectiveness.set(InterventionType.IN_APP_MESSAGE, 0.1);
     this.interventionEffectiveness.set(InterventionType.LOYALTY_BONUS, 0.15);
   }
 

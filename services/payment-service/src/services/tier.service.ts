@@ -4,8 +4,10 @@
  */
 
 import { nanoid } from "nanoid";
+
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
+
 import type {
   LoyaltyTier,
   TierBenefits,
@@ -143,7 +145,7 @@ export class TierService {
       const now = new Date();
       daysUntilExpiry = Math.ceil(
         (account.tierExpiresAt.getTime() - now.getTime()) /
-          (1000 * 60 * 60 * 24)
+          (1000 * 60 * 60 * 24),
       );
     }
 
@@ -214,7 +216,7 @@ export class TierService {
             ? "unlimited"
             : Math.max(
                 0,
-                (benefits.freeDeliveries as number) - freeDeliveriesUsed
+                (benefits.freeDeliveries as number) - freeDeliveriesUsed,
               ),
         freeCancellationsUsed,
         freeCancellationsRemaining:
@@ -230,7 +232,7 @@ export class TierService {
    */
   async useBenefit(
     userId: string,
-    benefit: "freeDelivery" | "freeCancellation"
+    benefit: "freeDelivery" | "freeCancellation",
   ): Promise<{ success: boolean; remaining: number | "unlimited" }> {
     const { tier: _tier, benefits, usage } = await this.getUserBenefits(userId);
 
@@ -282,7 +284,7 @@ export class TierService {
    */
   async getSurgeDiscount(
     userId: string,
-    surgeMultiplier: number
+    surgeMultiplier: number,
   ): Promise<number> {
     const { benefits } = await this.getUserBenefits(userId);
 
@@ -420,7 +422,7 @@ export class TierService {
    */
   async getTierHistory(
     userId: string,
-    limit: number = 10
+    limit: number = 10,
   ): Promise<
     Array<{
       previousTier?: LoyaltyTier;
@@ -499,11 +501,16 @@ export class TierService {
     let downgradesThisMonth = 0;
 
     for (const change of tierChanges) {
-      if (!change.previousTier) continue;
+      if (!change.previousTier) {
+        continue;
+      }
       const prevIndex = tierOrder.indexOf(change.previousTier as LoyaltyTier);
       const newIndex = tierOrder.indexOf(change.newTier as LoyaltyTier);
-      if (newIndex > prevIndex) upgradesThisMonth++;
-      else if (newIndex < prevIndex) downgradesThisMonth++;
+      if (newIndex > prevIndex) {
+        upgradesThisMonth++;
+      } else if (newIndex < prevIndex) {
+        downgradesThisMonth++;
+      }
     }
 
     return {
@@ -521,7 +528,7 @@ export class TierService {
 
   private async incrementUsage(
     userId: string,
-    field: "freeDeliveriesUsed" | "freeCancellationsUsed"
+    field: "freeDeliveriesUsed" | "freeCancellationsUsed",
   ): Promise<void> {
     const startOfMonth = new Date();
     startOfMonth.setDate(1);

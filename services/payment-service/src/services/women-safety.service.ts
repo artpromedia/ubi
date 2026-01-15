@@ -13,7 +13,8 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
-import {
+
+import type {
   EmergencyContact,
   FemaleDriverMatch,
   GenderPreference,
@@ -55,7 +56,7 @@ export class WomenSafetyService extends EventEmitter {
 
   async updatePreferences(
     userId: string,
-    updates: Partial<WomenSafetyPreference>
+    updates: Partial<WomenSafetyPreference>,
   ): Promise<WomenSafetyPreference> {
     const current = await this.getPreferences(userId);
 
@@ -109,7 +110,7 @@ export class WomenSafetyService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async findFemaleDrivers(
-    params: FindFemaleDriversParams
+    params: FindFemaleDriversParams,
   ): Promise<FemaleDriverMatch[]> {
     const {
       location,
@@ -121,7 +122,9 @@ export class WomenSafetyService extends EventEmitter {
     const matches: FemaleDriverMatch[] = [];
 
     for (const driver of this.femaleDrivers.values()) {
-      if (!driver.isAvailable || !driver.isActive) continue;
+      if (!driver.isAvailable || !driver.isActive) {
+        continue;
+      }
 
       // Calculate distance
       const distance = this.calculateDistance(location, driver.currentLocation);
@@ -142,8 +145,12 @@ export class WomenSafetyService extends EventEmitter {
     return matches
       .sort((a, b) => {
         // Prefer verified drivers
-        if (a.verifiedFemale && !b.verifiedFemale) return -1;
-        if (!a.verifiedFemale && b.verifiedFemale) return 1;
+        if (a.verifiedFemale && !b.verifiedFemale) {
+          return -1;
+        }
+        if (!a.verifiedFemale && b.verifiedFemale) {
+          return 1;
+        }
         // Then by distance
         return a.distance - b.distance;
       })
@@ -152,7 +159,7 @@ export class WomenSafetyService extends EventEmitter {
 
   async registerFemaleDriver(
     driverId: string,
-    verification: FemaleDriverVerification
+    verification: FemaleDriverVerification,
   ): Promise<boolean> {
     // Verify gender through document verification or self-declaration + review
     const isVerified =
@@ -177,7 +184,7 @@ export class WomenSafetyService extends EventEmitter {
       "[WomenSafety] Female driver registered:",
       driverId,
       "Verified:",
-      isVerified
+      isVerified,
     );
 
     return true;
@@ -186,7 +193,7 @@ export class WomenSafetyService extends EventEmitter {
   async updateDriverAvailability(
     driverId: string,
     isAvailable: boolean,
-    location?: Location
+    location?: Location,
   ): Promise<void> {
     const driver = this.femaleDrivers.get(driverId);
 
@@ -200,7 +207,7 @@ export class WomenSafetyService extends EventEmitter {
 
   async checkGenderPreferenceMatch(
     riderId: string,
-    driverId: string
+    driverId: string,
   ): Promise<PreferenceMatchResult> {
     const prefs = await this.getPreferences(riderId);
 
@@ -231,14 +238,14 @@ export class WomenSafetyService extends EventEmitter {
 
   async generateTripPin(
     tripId: string,
-    riderId: string
+    riderId: string,
   ): Promise<TripPinVerification> {
     const prefs = await this.getPreferences(riderId);
 
     if (!prefs.pinVerificationEnabled) {
       // Generate anyway in case it's a night trip or high-risk area
       console.log(
-        "[WomenSafety] PIN generated despite preference off (safety override)"
+        "[WomenSafety] PIN generated despite preference off (safety override)",
       );
     }
 
@@ -265,7 +272,7 @@ export class WomenSafetyService extends EventEmitter {
 
   async verifyTripPin(
     tripId: string,
-    enteredPin: string
+    enteredPin: string,
   ): Promise<PinVerificationResult> {
     const verification = this.activePins.get(tripId);
 
@@ -293,25 +300,33 @@ export class WomenSafetyService extends EventEmitter {
 
   async shouldRequirePin(
     riderId: string,
-    tripDetails: TripDetails
+    tripDetails: TripDetails,
   ): Promise<boolean> {
     const prefs = await this.getPreferences(riderId);
 
     // Always require if preference is on
-    if (prefs.pinVerificationEnabled) return true;
+    if (prefs.pinVerificationEnabled) {
+      return true;
+    }
 
     // Check time-based rules
     const hour = new Date().getHours();
     const isNightTime = hour >= 22 || hour < 6;
 
     // Auto-enable for night trips
-    if (isNightTime) return true;
+    if (isNightTime) {
+      return true;
+    }
 
     // Check if route goes through high-risk areas
-    if (tripDetails.hasHighRiskZones) return true;
+    if (tripDetails.hasHighRiskZones) {
+      return true;
+    }
 
     // Check quiet hours
-    if (prefs.quietHoursEnabled && this.isInQuietHours(prefs)) return true;
+    if (prefs.quietHoursEnabled && this.isInQuietHours(prefs)) {
+      return true;
+    }
 
     return false;
   }
@@ -342,13 +357,13 @@ export class WomenSafetyService extends EventEmitter {
     console.log(
       "[WomenSafety] Auto-share configured with",
       contactIds.length,
-      "contacts"
+      "contacts",
     );
   }
 
   async autoShareTrip(
     tripId: string,
-    riderId: string
+    riderId: string,
   ): Promise<TripShareSession | null> {
     const prefs = await this.getPreferences(riderId);
 
@@ -377,7 +392,7 @@ export class WomenSafetyService extends EventEmitter {
     console.log(
       "[WomenSafety] Trip auto-shared with",
       prefs.autoShareContacts.length,
-      "contacts"
+      "contacts",
     );
 
     return session;
@@ -386,7 +401,7 @@ export class WomenSafetyService extends EventEmitter {
   async shareWithContact(
     tripId: string,
     riderId: string,
-    contactId: string
+    contactId: string,
   ): Promise<boolean> {
     const shareLink = await this.generateShareLink(tripId);
 
@@ -436,7 +451,7 @@ export class WomenSafetyService extends EventEmitter {
   private async notifyContactOfTripShare(
     contactId: string,
     _riderId: string,
-    _shareLink: string
+    _shareLink: string,
   ): Promise<void> {
     // In production, send SMS/WhatsApp with share link
     console.log("[WomenSafety] Contact notified of trip share:", contactId);
@@ -444,7 +459,7 @@ export class WomenSafetyService extends EventEmitter {
 
   private async notifyContactTripEnded(
     contactId: string,
-    _riderId: string
+    _riderId: string,
   ): Promise<void> {
     // In production, send notification that trip ended safely
     console.log("[WomenSafety] Contact notified trip ended safely:", contactId);
@@ -465,7 +480,7 @@ export class WomenSafetyService extends EventEmitter {
 
   async detectSafeWord(
     userId: string,
-    message: string
+    message: string,
   ): Promise<SafeWordDetectionResult> {
     const words = this.safeWords.get(userId) || [];
 
@@ -507,7 +522,7 @@ export class WomenSafetyService extends EventEmitter {
     userId: string,
     enabled: boolean,
     start?: string, // Format: "HH:MM"
-    end?: string
+    end?: string,
   ): Promise<void> {
     await this.updatePreferences(userId, {
       quietHoursEnabled: enabled,
@@ -517,7 +532,7 @@ export class WomenSafetyService extends EventEmitter {
 
     console.log(
       "[WomenSafety] Quiet hours configured:",
-      enabled ? `${start} - ${end}` : "disabled"
+      enabled ? `${start} - ${end}` : "disabled",
     );
   }
 
@@ -567,7 +582,7 @@ export class WomenSafetyService extends EventEmitter {
 
   async addTrustedContact(
     userId: string,
-    contact: TrustedContactInput
+    contact: TrustedContactInput,
   ): Promise<string> {
     const prefs = await this.getPreferences(userId);
 
@@ -586,10 +601,10 @@ export class WomenSafetyService extends EventEmitter {
     const prefs = await this.getPreferences(userId);
 
     prefs.trustedContacts = prefs.trustedContacts.filter(
-      (id) => id !== contactId
+      (id) => id !== contactId,
     );
     prefs.autoShareContacts = prefs.autoShareContacts.filter(
-      (id) => id !== contactId
+      (id) => id !== contactId,
     );
 
     this.userPreferences.set(userId, prefs);
@@ -606,7 +621,7 @@ export class WomenSafetyService extends EventEmitter {
 
   async checkVerifiedDriverRequirement(
     riderId: string,
-    driverId: string
+    driverId: string,
   ): Promise<VerifiedDriverCheckResult> {
     const prefs = await this.getPreferences(riderId);
 
@@ -634,7 +649,7 @@ export class WomenSafetyService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async getNightSafetyEnhancements(
-    riderId: string
+    riderId: string,
   ): Promise<NightSafetyConfig> {
     const prefs = await this.getPreferences(riderId);
     const hour = new Date().getHours();

@@ -13,7 +13,7 @@ export const redis = new Redis(
       const delay = Math.min(times * 100, 3000);
       return delay;
     },
-  }
+  },
 );
 
 // Separate client for subscriptions (Redis requires separate connections for pub/sub)
@@ -21,7 +21,7 @@ export const subscriber = new Redis(
   process.env.REDIS_URL || "redis://localhost:6379",
   {
     maxRetriesPerRequest: 3,
-  }
+  },
 );
 
 // Event handlers
@@ -83,7 +83,7 @@ export const cache = {
   async getOrSet<T>(
     key: string,
     fn: () => Promise<T>,
-    ttlSeconds: number
+    ttlSeconds: number,
   ): Promise<T> {
     const cached = await this.get<T>(key);
     if (cached !== null) return cached;
@@ -145,7 +145,7 @@ export function onEvent(event: string, handler: EventHandler): void {
  */
 export async function publishEvent(
   event: string,
-  data: unknown
+  data: unknown,
 ): Promise<number> {
   const message = JSON.stringify({ event, data, timestamp: Date.now() });
   return redis.publish("notifications", message);
@@ -194,7 +194,7 @@ export class RateLimiter {
    * Check if action is allowed
    */
   async isAllowed(
-    identifier: string
+    identifier: string,
   ): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
     const key = `${this.keyPrefix}:${identifier}`;
     const now = Date.now();
@@ -262,7 +262,7 @@ export const otpStore = {
   async set(
     identifier: string,
     otp: string,
-    ttlSeconds: number = 600
+    ttlSeconds: number = 600,
   ): Promise<void> {
     const key = `otp:${identifier}`;
     await redis.set(key, otp, "EX", ttlSeconds);

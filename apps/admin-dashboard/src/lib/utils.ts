@@ -12,9 +12,15 @@ export function cn(...inputs: ClassValue[]) {
  * Format number with abbreviation (K, M, B)
  */
 export function formatNumber(num: number): string {
-  if (num >= 1e9) return `${(num / 1e9).toFixed(1)}B`;
-  if (num >= 1e6) return `${(num / 1e6).toFixed(1)}M`;
-  if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
+  if (num >= 1e9) {
+    return `${(num / 1e9).toFixed(1)}B`;
+  }
+  if (num >= 1e6) {
+    return `${(num / 1e6).toFixed(1)}M`;
+  }
+  if (num >= 1e3) {
+    return `${(num / 1e3).toFixed(1)}K`;
+  }
   return num.toLocaleString();
 }
 
@@ -23,7 +29,7 @@ export function formatNumber(num: number): string {
  */
 export function formatCurrency(
   amount: number,
-  currency: string = "NGN"
+  currency: string = "NGN",
 ): string {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -58,10 +64,18 @@ export function formatRelativeTime(date: Date | string): string {
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) {
+    return "just now";
+  }
+  if (diffMins < 60) {
+    return `${diffMins}m ago`;
+  }
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
 
   return formatDate(d);
 }
@@ -70,7 +84,9 @@ export function formatRelativeTime(date: Date | string): string {
  * Calculate percentage change
  */
 export function calculateChange(current: number, previous: number): number {
-  if (previous === 0) return current > 0 ? 100 : 0;
+  if (previous === 0) {
+    return current > 0 ? 100 : 0;
+  }
   return ((current - previous) / previous) * 100;
 }
 
@@ -99,7 +115,9 @@ export function getStatusColor(status: string): string {
  * Truncate text
  */
 export function truncate(str: string, length: number): string {
-  if (str.length <= length) return str;
+  if (str.length <= length) {
+    return str;
+  }
   return `${str.slice(0, length)}...`;
 }
 

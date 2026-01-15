@@ -4,8 +4,10 @@
  */
 
 import { nanoid } from "nanoid";
+
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
+
 import type {
   BillingPeriod,
   CreateSubscriptionParams,
@@ -48,7 +50,7 @@ export class SubscriptionService {
         isPopular: boolean;
         displayOrder: number;
         isActive: boolean;
-      }) => this.formatPlan(p)
+      }) => this.formatPlan(p),
     );
   }
 
@@ -96,7 +98,7 @@ export class SubscriptionService {
    * Create new subscription
    */
   async createSubscription(
-    params: CreateSubscriptionParams
+    params: CreateSubscriptionParams,
   ): Promise<Subscription> {
     const { userId, planId, paymentMethodId, promoCode } = params;
 
@@ -104,7 +106,7 @@ export class SubscriptionService {
     const existing = await this.getSubscription(userId);
     if (existing) {
       throw new Error(
-        "User already has an active subscription. Cancel first or change plan."
+        "User already has an active subscription. Cancel first or change plan.",
       );
     }
 
@@ -116,7 +118,7 @@ export class SubscriptionService {
 
     // Calculate billing dates
     const now = new Date();
-    let periodStart = now;
+    const periodStart = now;
     let periodEnd: Date;
     let trialEnd: Date | undefined;
 
@@ -138,7 +140,7 @@ export class SubscriptionService {
       const validPromo = await this.validatePromoCode(
         promoCode,
         userId,
-        plan.id
+        plan.id,
       );
       if (validPromo) {
         discountApplied = true;
@@ -206,7 +208,7 @@ export class SubscriptionService {
    */
   async cancelSubscription(
     userId: string,
-    options: { immediately?: boolean; reason?: string } = {}
+    options: { immediately?: boolean; reason?: string } = {},
   ): Promise<Subscription> {
     const { immediately = false, reason } = options;
 
@@ -323,7 +325,7 @@ export class SubscriptionService {
     // Calculate proration if upgrading mid-cycle
     const daysRemaining = Math.ceil(
       (subscription.currentPeriodEnd.getTime() - new Date().getTime()) /
-        (1000 * 60 * 60 * 24)
+        (1000 * 60 * 60 * 24),
     );
 
     const updated = await prisma.subscription.update({
@@ -349,7 +351,7 @@ export class SubscriptionService {
    * Get subscription benefits usage
    */
   async getBenefitUsage(
-    userId: string
+    userId: string,
   ): Promise<SubscriptionBenefitUsage | null> {
     const subscription = await this.getSubscription(userId);
     if (!subscription || !subscription.plan) {
@@ -369,7 +371,7 @@ export class SubscriptionService {
           : Math.max(
               0,
               (features.freeCancellations as number) -
-                (used.freeCancellations || 0)
+                (used.freeCancellations || 0),
             ),
     };
   }
@@ -379,7 +381,7 @@ export class SubscriptionService {
    */
   async useBenefit(
     userId: string,
-    benefit: "freeDelivery" | "freeCancellation"
+    benefit: "freeDelivery" | "freeCancellation",
   ): Promise<{ success: boolean; remaining: number | "unlimited" }> {
     const subscription = await prisma.subscription.findFirst({
       where: {
@@ -484,14 +486,14 @@ export class SubscriptionService {
         const paymentSuccess = await this.processPayment(
           subscription.id,
           Number(subscription.plan.price),
-          subscription.plan.currency
+          subscription.plan.currency,
         );
 
         if (paymentSuccess) {
           const newPeriodStart = subscription.currentPeriodEnd;
           const newPeriodEnd = this.calculatePeriodEnd(
             newPeriodStart,
-            subscription.plan.billingPeriod as BillingPeriod
+            subscription.plan.billingPeriod as BillingPeriod,
           );
 
           await prisma.subscription.update({
@@ -544,7 +546,7 @@ export class SubscriptionService {
    */
   async addFamilyMember(
     userId: string,
-    memberId: string
+    memberId: string,
   ): Promise<{ success: boolean; membersCount: number }> {
     const subscription = await prisma.subscription.findFirst({
       where: {
@@ -568,7 +570,7 @@ export class SubscriptionService {
 
     if (subscription.familyMembers.length >= features.familyMembers) {
       throw new Error(
-        `Maximum ${features.familyMembers} family members allowed`
+        `Maximum ${features.familyMembers} family members allowed`,
       );
     }
 
@@ -612,7 +614,7 @@ export class SubscriptionService {
    */
   async getInvoices(
     userId: string,
-    limit: number = 12
+    limit: number = 12,
   ): Promise<
     Array<{
       id: string;
@@ -658,7 +660,7 @@ export class SubscriptionService {
         periodEnd: inv.periodEnd,
         paidAt: inv.paidAt || undefined,
         createdAt: inv.createdAt,
-      })
+      }),
     );
   }
 
@@ -672,7 +674,7 @@ export class SubscriptionService {
   private async validatePromoCode(
     code: string,
     userId: string,
-    planId: string
+    planId: string,
   ): Promise<{
     id: string;
     discountPercentage: number;
@@ -781,7 +783,7 @@ export class SubscriptionService {
   private async processPayment(
     subscriptionId: string,
     amount: number,
-    currency: string
+    currency: string,
   ): Promise<boolean> {
     try {
       // Get the subscription with user and payment method details
@@ -801,7 +803,7 @@ export class SubscriptionService {
 
       if (!subscription || !subscription.user) {
         console.error(
-          `[Subscription] User not found for subscription ${subscriptionId}`
+          `[Subscription] User not found for subscription ${subscriptionId}`,
         );
         return false;
       }
@@ -901,7 +903,7 @@ export class SubscriptionService {
     } catch (error) {
       console.error(
         `[Subscription] Payment failed for ${subscriptionId}:`,
-        error
+        error,
       );
       return false;
     }
@@ -939,7 +941,7 @@ export class SubscriptionService {
           reference: params.reference,
           metadata: params.metadata,
         }),
-      }
+      },
     );
 
     const data = (await response.json()) as any;
@@ -1017,13 +1019,13 @@ export class SubscriptionService {
     try {
       // Get OAuth token
       const authString = Buffer.from(
-        `${consumerKey}:${consumerSecret}`
+        `${consumerKey}:${consumerSecret}`,
       ).toString("base64");
       const tokenResponse = await fetch(
         "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
         {
           headers: { Authorization: `Basic ${authString}` },
-        }
+        },
       );
       const tokenData = (await tokenResponse.json()) as any;
       const accessToken = tokenData.access_token;
@@ -1034,7 +1036,7 @@ export class SubscriptionService {
         .replace(/[-:TZ.]/g, "")
         .slice(0, 14);
       const password = Buffer.from(
-        `${shortcode}${passkey}${timestamp}`
+        `${shortcode}${passkey}${timestamp}`,
       ).toString("base64");
 
       // Initiate STK Push
@@ -1059,7 +1061,7 @@ export class SubscriptionService {
             AccountReference: params.reference.slice(0, 12),
             TransactionDesc: params.description.slice(0, 13),
           }),
-        }
+        },
       );
 
       const stkData = (await stkResponse.json()) as any;
@@ -1100,7 +1102,7 @@ export class SubscriptionService {
     try {
       // Get access token
       const credentials = Buffer.from(`${apiUserId}:${apiKey}`).toString(
-        "base64"
+        "base64",
       );
       const tokenResponse = await fetch(
         `https://proxy.momoapi.mtn.com/collection/token/`,
@@ -1110,7 +1112,7 @@ export class SubscriptionService {
             Authorization: `Basic ${credentials}`,
             "Ocp-Apim-Subscription-Key": subscriptionKey,
           },
-        }
+        },
       );
       const tokenData = (await tokenResponse.json()) as any;
       const accessToken = tokenData.access_token;
@@ -1140,7 +1142,7 @@ export class SubscriptionService {
             payerMessage: params.description,
             payeeNote: `UBI Subscription - ${params.reference}`,
           }),
-        }
+        },
       );
 
       if (paymentResponse.status === 202) {

@@ -6,26 +6,28 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
+
 import {
-  DemandFactors,
-  DemandForecast,
-  DemandForecastRequest,
-  DemandForecastResponse,
-  DiscountComponent,
+  type DemandFactors,
+  type DemandForecast,
+  type DemandForecastRequest,
+  type DemandForecastResponse,
+  type DiscountComponent,
   FeatureEntityType,
-  GeoLocation,
-  IDemandForecastService,
-  IDynamicPricingService,
-  PriceBreakdown,
-  PriceQuote,
-  PriceQuoteRequest,
-  SupplyOptimization,
-  SupplyOptimizationRequest,
-  SupplyOptimizationResponse,
-  SurgeZoneState,
-  UpdateSurgeRequest,
+  type GeoLocation,
+  type IDemandForecastService,
+  type IDynamicPricingService,
+  type PriceBreakdown,
+  type PriceQuote,
+  type PriceQuoteRequest,
+  type SupplyOptimization,
+  type SupplyOptimizationRequest,
+  type SupplyOptimizationResponse,
+  type SurgeZoneState,
+  type UpdateSurgeRequest,
 } from "../../types/ml.types";
-import { FeatureStoreService } from "./feature-store.service";
+
+import type { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
 // H3 UTILITIES
@@ -76,7 +78,11 @@ function getH3Neighbors(h3Index: string): string[] {
   ];
 
   return offsets.map(([latOff, lngOff]) =>
-    latLngToH3(center.latitude + (latOff ?? 0), center.longitude + (lngOff ?? 0), resolution)
+    latLngToH3(
+      center.latitude + (latOff ?? 0),
+      center.longitude + (lngOff ?? 0),
+      resolution,
+    ),
   );
 }
 
@@ -117,7 +123,7 @@ export class DemandForecastService implements IDemandForecastService {
   // ===========================================================================
 
   async getForecast(
-    request: DemandForecastRequest
+    request: DemandForecastRequest,
   ): Promise<DemandForecastResponse> {
     const startTime = Date.now();
     const forecasts: DemandForecast[] = [];
@@ -129,7 +135,7 @@ export class DemandForecastService implements IDemandForecastService {
           h3Index,
           resolution,
           horizon,
-          request.includeConfidenceIntervals
+          request.includeConfidenceIntervals,
         );
         forecasts.push(forecast);
       }
@@ -147,7 +153,7 @@ export class DemandForecastService implements IDemandForecastService {
     h3Index: string,
     resolution: number,
     horizonMinutes: number,
-    includeConfidence?: boolean
+    includeConfidence?: boolean,
   ): Promise<DemandForecast> {
     // Check cache
     const cacheKey = `${h3Index}:${horizonMinutes}`;
@@ -194,7 +200,7 @@ export class DemandForecastService implements IDemandForecastService {
     const predictedSupply = this.predictSupply(
       h3Index,
       forecastTime,
-      currentSupply
+      currentSupply,
     );
 
     // Calculate confidence based on data availability and horizon
@@ -241,16 +247,24 @@ export class DemandForecastService implements IDemandForecastService {
 
     // Default baseline based on time
     const hour = forecastTime.getHours();
-    if (hour >= 7 && hour <= 9) return 25; // Morning rush
-    if (hour >= 17 && hour <= 19) return 30; // Evening rush
-    if (hour >= 12 && hour <= 14) return 20; // Lunch
-    if (hour >= 0 && hour <= 5) return 5; // Night
+    if (hour >= 7 && hour <= 9) {
+      return 25;
+    } // Morning rush
+    if (hour >= 17 && hour <= 19) {
+      return 30;
+    } // Evening rush
+    if (hour >= 12 && hour <= 14) {
+      return 20;
+    } // Lunch
+    if (hour >= 0 && hour <= 5) {
+      return 5;
+    } // Night
     return 15;
   }
 
   private calculateDemandFactors(
     forecastTime: Date,
-    features: Record<string, unknown>
+    features: Record<string, unknown>,
   ): DemandFactors {
     const hour = forecastTime.getHours();
     const dayOfWeek = forecastTime.getDay();
@@ -258,15 +272,23 @@ export class DemandForecastService implements IDemandForecastService {
 
     // Time of day factor
     let timeOfDay = 1.0;
-    if (hour >= 7 && hour <= 9) timeOfDay = 1.4;
-    else if (hour >= 17 && hour <= 19) timeOfDay = 1.5;
-    else if (hour >= 12 && hour <= 14) timeOfDay = 1.2;
-    else if (hour >= 0 && hour <= 5) timeOfDay = 0.3;
-    else if (hour >= 22 || hour <= 6) timeOfDay = 0.5;
+    if (hour >= 7 && hour <= 9) {
+      timeOfDay = 1.4;
+    } else if (hour >= 17 && hour <= 19) {
+      timeOfDay = 1.5;
+    } else if (hour >= 12 && hour <= 14) {
+      timeOfDay = 1.2;
+    } else if (hour >= 0 && hour <= 5) {
+      timeOfDay = 0.3;
+    } else if (hour >= 22 || hour <= 6) {
+      timeOfDay = 0.5;
+    }
 
     // Day of week factor
     let dayFactor = isWeekend ? 0.8 : 1.0;
-    if (dayOfWeek === 5) dayFactor = 1.2; // Friday
+    if (dayOfWeek === 5) {
+      dayFactor = 1.2;
+    } // Friday
 
     // Holiday factor (simplified - would use calendar API)
     const isHoliday = false;
@@ -313,17 +335,21 @@ export class DemandForecastService implements IDemandForecastService {
   private predictSupply(
     _h3Index: string,
     forecastTime: Date,
-    currentSupply: number
+    currentSupply: number,
   ): number {
     const hour = forecastTime.getHours();
 
     // Supply typically follows demand patterns with lag
     let supplyFactor = 1.0;
-    if (hour >= 7 && hour <= 9)
-      supplyFactor = 0.9; // Drivers still joining
-    else if (hour >= 17 && hour <= 19)
-      supplyFactor = 1.1; // Peak driver hours
-    else if (hour >= 0 && hour <= 5) supplyFactor = 0.3;
+    if (hour >= 7 && hour <= 9) {
+      supplyFactor = 0.9;
+    } // Drivers still joining
+    else if (hour >= 17 && hour <= 19) {
+      supplyFactor = 1.1;
+    } // Peak driver hours
+    else if (hour >= 0 && hour <= 5) {
+      supplyFactor = 0.3;
+    }
 
     return Math.max(1, currentSupply * supplyFactor);
   }
@@ -332,10 +358,18 @@ export class DemandForecastService implements IDemandForecastService {
     // Confidence decreases with forecast horizon
     let confidence = 0.95;
 
-    if (horizonMinutes > 15) confidence -= 0.05;
-    if (horizonMinutes > 30) confidence -= 0.05;
-    if (horizonMinutes > 60) confidence -= 0.1;
-    if (horizonMinutes > 120) confidence -= 0.1;
+    if (horizonMinutes > 15) {
+      confidence -= 0.05;
+    }
+    if (horizonMinutes > 30) {
+      confidence -= 0.05;
+    }
+    if (horizonMinutes > 60) {
+      confidence -= 0.1;
+    }
+    if (horizonMinutes > 120) {
+      confidence -= 0.1;
+    }
 
     // Adjust based on historical accuracy
     const accuracy = this.forecastAccuracy.get(h3Index);
@@ -352,7 +386,7 @@ export class DemandForecastService implements IDemandForecastService {
   // ===========================================================================
 
   async getSupplyOptimizations(
-    request: SupplyOptimizationRequest
+    request: SupplyOptimizationRequest,
   ): Promise<SupplyOptimizationResponse> {
     const startTime = Date.now();
     const optimizations: SupplyOptimization[] = [];
@@ -363,7 +397,7 @@ export class DemandForecastService implements IDemandForecastService {
       const forecast = await this.generateForecast(
         targetH3,
         7,
-        request.optimizationHorizon
+        request.optimizationHorizon,
       );
       const gap = forecast.predictedDemand - forecast.predictedSupply;
 
@@ -372,7 +406,7 @@ export class DemandForecastService implements IDemandForecastService {
         const optimization = await this.generateOptimization(
           targetH3,
           gap,
-          request.maxIncentiveBudget
+          request.maxIncentiveBudget,
         );
 
         if (optimization) {
@@ -393,7 +427,7 @@ export class DemandForecastService implements IDemandForecastService {
     // Calculate expected improvement
     const expectedImprovement = optimizations.reduce(
       (sum, opt) => sum + opt.expectedImpact,
-      0
+      0,
     );
 
     return {
@@ -407,7 +441,7 @@ export class DemandForecastService implements IDemandForecastService {
   private async generateOptimization(
     targetH3: string,
     driversNeeded: number,
-    maxBudget?: number
+    maxBudget?: number,
   ): Promise<SupplyOptimization | null> {
     // Find nearby cells with surplus drivers
     const neighbors = getH3Neighbors(targetH3);
@@ -438,7 +472,7 @@ export class DemandForecastService implements IDemandForecastService {
     const baseIncentive = 200; // Base bonus in NGN
     const incentiveAmount = Math.min(
       baseIncentive * (1 + urgency),
-      maxBudget || 500
+      maxBudget || 500,
     );
 
     const now = new Date();
@@ -463,7 +497,7 @@ export class DemandForecastService implements IDemandForecastService {
   async recordActual(
     forecastId: string,
     actualDemand: number,
-    actualSupply: number
+    actualSupply: number,
   ): Promise<void> {
     // In production, would update database and calculate accuracy
     this.eventEmitter.emit("forecast:actual", {
@@ -609,7 +643,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   constructor(
     featureStore: FeatureStoreService,
-    demandService: DemandForecastService
+    demandService: DemandForecastService,
   ) {
     this.featureStore = featureStore;
     this.demandService = demandService;
@@ -630,13 +664,13 @@ export class DynamicPricingService implements IDynamicPricingService {
     // Calculate route estimates
     const { distanceKm, durationMinutes } = this.calculateRouteEstimates(
       request.pickupLocation,
-      request.dropoffLocation
+      request.dropoffLocation,
     );
 
     // Get surge for pickup location
     const pickupH3 = latLngToH3(
       request.pickupLocation.latitude,
-      request.pickupLocation.longitude
+      request.pickupLocation.longitude,
     );
     const surgeState = await this.getSurgeZone(pickupH3);
 
@@ -672,7 +706,7 @@ export class DynamicPricingService implements IDynamicPricingService {
         bookingFee: config.bookingFeeNGN,
         tollEstimate: await this.estimateTolls(
           request.pickupLocation,
-          request.dropoffLocation
+          request.dropoffLocation,
         ),
         surgeComponents:
           surgeMultiplier > 1
@@ -687,7 +721,7 @@ export class DynamicPricingService implements IDynamicPricingService {
             : [],
         discountComponents: this.buildDiscountComponents(
           promotionDiscount,
-          subscriptionDiscount
+          subscriptionDiscount,
         ),
       };
     }
@@ -717,7 +751,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private calculateRouteEstimates(
     pickup: GeoLocation,
-    dropoff: GeoLocation
+    dropoff: GeoLocation,
   ): { distanceKm: number; durationMinutes: number } {
     // Haversine distance
     const R = 6371; // Earth's radius in km
@@ -751,7 +785,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private async getUserDiscounts(
     userId?: string,
-    _subtotal?: number
+    _subtotal?: number,
   ): Promise<{ promotionDiscount: number; subscriptionDiscount: number }> {
     if (!userId) {
       return { promotionDiscount: 0, subscriptionDiscount: 0 };
@@ -763,7 +797,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private async estimateTolls(
     _pickup: GeoLocation,
-    _dropoff: GeoLocation
+    _dropoff: GeoLocation,
   ): Promise<number> {
     // In production, check if route passes through toll roads
     return 0;
@@ -771,7 +805,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private buildDiscountComponents(
     promotionDiscount: number,
-    subscriptionDiscount: number
+    subscriptionDiscount: number,
   ): DiscountComponent[] {
     const components: DiscountComponent[] = [];
 
@@ -793,14 +827,22 @@ export class DynamicPricingService implements IDynamicPricingService {
   }
 
   private getSurgeReason(surgeState: SurgeZoneState): string | undefined {
-    if (surgeState.currentMultiplier <= 1.0) return undefined;
+    if (surgeState.currentMultiplier <= 1.0) {
+      return undefined;
+    }
 
     const ratio =
       surgeState.currentDemand / Math.max(1, surgeState.currentSupply);
 
-    if (ratio > 3) return "Very high demand";
-    if (ratio > 2) return "High demand in your area";
-    if (ratio > 1.5) return "Increased demand";
+    if (ratio > 3) {
+      return "Very high demand";
+    }
+    if (ratio > 2) {
+      return "High demand in your area";
+    }
+    if (ratio > 1.5) {
+      return "Increased demand";
+    }
     return "Moderate demand increase";
   }
 
@@ -830,19 +872,19 @@ export class DynamicPricingService implements IDynamicPricingService {
     const currentDemand = Number(locationFeatures.location_demand_current || 0);
     const currentSupply = Number(locationFeatures.location_supply_current || 0);
     const existingMultiplier = Number(
-      locationFeatures.location_surge_multiplier || 1.0
+      locationFeatures.location_surge_multiplier || 1.0,
     );
 
     // Calculate optimal surge multiplier
     const calculatedMultiplier = this.calculateSurgeMultiplier(
       currentDemand,
-      currentSupply
+      currentSupply,
     );
 
     // Smooth transition (don't jump too quickly)
     const smoothedMultiplier = this.smoothSurgeTransition(
       existingMultiplier,
-      calculatedMultiplier
+      calculatedMultiplier,
     );
 
     // Get forecast for trend
@@ -881,7 +923,7 @@ export class DynamicPricingService implements IDynamicPricingService {
     await this.featureStore.setFeatureValue(
       "location_surge_multiplier",
       h3Index,
-      smoothedMultiplier
+      smoothedMultiplier,
     );
 
     return surgeState;
@@ -891,7 +933,7 @@ export class DynamicPricingService implements IDynamicPricingService {
     // Calculate new surge based on demand/supply
     const multiplier = this.calculateSurgeMultiplier(
       request.demand,
-      request.supply
+      request.supply,
     );
 
     // Get current state
@@ -916,7 +958,7 @@ export class DynamicPricingService implements IDynamicPricingService {
     await this.featureStore.setFeatureValue(
       "location_surge_multiplier",
       request.h3Index,
-      smoothedMultiplier
+      smoothedMultiplier,
     );
 
     this.eventEmitter.emit("surge:updated", surgeState);
@@ -932,12 +974,24 @@ export class DynamicPricingService implements IDynamicPricingService {
     const ratio = demand / supply;
 
     // Piecewise linear surge function
-    if (ratio <= 0.5) return 1.0; // Oversupply - no surge
-    if (ratio <= 1.0) return 1.0;
-    if (ratio <= 1.5) return 1.0 + (ratio - 1.0) * 0.4; // 1.0 - 1.2x
-    if (ratio <= 2.0) return 1.2 + (ratio - 1.5) * 0.6; // 1.2 - 1.5x
-    if (ratio <= 3.0) return 1.5 + (ratio - 2.0) * 0.5; // 1.5 - 2.0x
-    if (ratio <= 5.0) return 2.0 + (ratio - 3.0) * 0.25; // 2.0 - 2.5x
+    if (ratio <= 0.5) {
+      return 1.0;
+    } // Oversupply - no surge
+    if (ratio <= 1.0) {
+      return 1.0;
+    }
+    if (ratio <= 1.5) {
+      return 1.0 + (ratio - 1.0) * 0.4;
+    } // 1.0 - 1.2x
+    if (ratio <= 2.0) {
+      return 1.2 + (ratio - 1.5) * 0.6;
+    } // 1.2 - 1.5x
+    if (ratio <= 3.0) {
+      return 1.5 + (ratio - 2.0) * 0.5;
+    } // 1.5 - 2.0x
+    if (ratio <= 5.0) {
+      return 2.0 + (ratio - 3.0) * 0.25;
+    } // 2.0 - 2.5x
 
     return 3.0; // Cap at 3.0x
   }

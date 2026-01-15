@@ -7,6 +7,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -47,7 +48,7 @@ const paginationSchema = z.object({
 
 async function getOrCreateWallet(
   userId: string,
-  currency: Currency = Currency.NGN
+  currency: Currency = Currency.NGN,
 ) {
   let wallet = await prisma.wallet.findFirst({
     where: { userId, currency },
@@ -195,7 +196,7 @@ walletRoutes.post("/me/topup", zValidator("json", topUpSchema), async (c) => {
     await redis.setex(
       `idempotency:${idempotencyKey}`,
       86400,
-      JSON.stringify(response)
+      JSON.stringify(response),
     );
   }
 
@@ -222,7 +223,7 @@ walletRoutes.post(
             message: "Cannot transfer to yourself",
           },
         },
-        400
+        400,
       );
     }
 
@@ -248,60 +249,58 @@ walletRoutes.post(
             message: "Insufficient wallet balance",
           },
         },
-        400
+        400,
       );
     }
 
     const reference = generateId("tfr");
 
     // Execute transfer in transaction
-    const result = await prisma.$transaction(
-      async (tx) => {
-        // Debit source wallet
-        await tx.wallet.update({
-          where: { id: sourceWallet.id },
-          data: { balance: { decrement: amount } },
-        });
+    const result = await prisma.$transaction(async (tx) => {
+      // Debit source wallet
+      await tx.wallet.update({
+        where: { id: sourceWallet.id },
+        data: { balance: { decrement: amount } },
+      });
 
-        // Credit destination wallet
-        await tx.wallet.update({
-          where: { id: destWallet.id },
-          data: { balance: { increment: amount } },
-        });
+      // Credit destination wallet
+      await tx.wallet.update({
+        where: { id: destWallet.id },
+        data: { balance: { increment: amount } },
+      });
 
-        // Record debit transaction
-        await tx.walletTransaction.create({
-          data: {
-            id: generateId("txn"),
-            walletId: sourceWallet.id,
-            type: TransactionType.DEBIT,
-            amount,
-            currency: sourceWallet.currency,
-            status: TransactionStatus.COMPLETED,
-            reference,
-            description: description || "Transfer to user",
-            metadata: { toUserId, toWalletId: destWallet.id },
-          },
-        });
+      // Record debit transaction
+      await tx.walletTransaction.create({
+        data: {
+          id: generateId("txn"),
+          walletId: sourceWallet.id,
+          type: TransactionType.DEBIT,
+          amount,
+          currency: sourceWallet.currency,
+          status: TransactionStatus.COMPLETED,
+          reference,
+          description: description || "Transfer to user",
+          metadata: { toUserId, toWalletId: destWallet.id },
+        },
+      });
 
-        // Record credit transaction
-        await tx.walletTransaction.create({
-          data: {
-            id: generateId("txn"),
-            walletId: destWallet.id,
-            type: TransactionType.CREDIT,
-            amount,
-            currency: destWallet.currency,
-            status: TransactionStatus.COMPLETED,
-            reference,
-            description: description || "Transfer from user",
-            metadata: { fromUserId: userId, fromWalletId: sourceWallet.id },
-          },
-        });
+      // Record credit transaction
+      await tx.walletTransaction.create({
+        data: {
+          id: generateId("txn"),
+          walletId: destWallet.id,
+          type: TransactionType.CREDIT,
+          amount,
+          currency: destWallet.currency,
+          status: TransactionStatus.COMPLETED,
+          reference,
+          description: description || "Transfer from user",
+          metadata: { fromUserId: userId, fromWalletId: sourceWallet.id },
+        },
+      });
 
-        return { reference };
-      }
-    );
+      return { reference };
+    });
 
     const response = {
       success: true,
@@ -317,12 +316,12 @@ walletRoutes.post(
       await redis.setex(
         `idempotency:${idempotencyKey}`,
         86400,
-        JSON.stringify(response)
+        JSON.stringify(response),
       );
     }
 
     return c.json(response);
-  }
+  },
 );
 
 /**
@@ -360,7 +359,7 @@ walletRoutes.get(
         totalPages: Math.ceil(total / limit),
       },
     });
-  }
+  },
 );
 
 /**
@@ -386,7 +385,7 @@ walletRoutes.post("/lock", async (c) => {
           message: "Insufficient balance",
         },
       },
-      400
+      400,
     );
   }
 
@@ -404,7 +403,7 @@ walletRoutes.post("/lock", async (c) => {
       amount,
       reason,
       lockedAt: new Date().toISOString(),
-    })
+    }),
   );
 
   return c.json({
@@ -429,7 +428,7 @@ walletRoutes.post("/unlock", async (c) => {
         success: false,
         error: { code: "LOCK_NOT_FOUND", message: "Lock not found or expired" },
       },
-      404
+      404,
     );
   }
 

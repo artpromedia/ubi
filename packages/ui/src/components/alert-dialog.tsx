@@ -24,7 +24,7 @@ const AlertDialogOverlay = React.forwardRef<
     className={cn(
       "fixed inset-0 z-modal bg-black/50 backdrop-blur-sm",
       "data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out",
-      className
+      className,
     )}
     {...props}
     ref={ref}
@@ -48,7 +48,7 @@ const AlertDialogContent = React.forwardRef<
         "data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]",
         "data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
         "rounded-lg sm:rounded-lg",
-        className
+        className,
       )}
       {...props}
     />
@@ -63,7 +63,7 @@ const AlertDialogHeader = ({
   <div
     className={cn(
       "flex flex-col space-y-2 text-center sm:text-left",
-      className
+      className,
     )}
     {...props}
   />
@@ -77,7 +77,7 @@ const AlertDialogFooter = ({
   <div
     className={cn(
       "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
-      className
+      className,
     )}
     {...props}
   />
@@ -130,7 +130,7 @@ const AlertDialogCancel = React.forwardRef<
     className={cn(
       buttonVariants({ variant: "outline" }),
       "mt-2 sm:mt-0",
-      className
+      className,
     )}
     {...props}
   />
@@ -178,7 +178,7 @@ const ConfirmDialog = ({
           onClick={onConfirm}
           className={cn(
             variant === "destructive" &&
-              "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              "bg-destructive text-destructive-foreground hover:bg-destructive/90",
           )}
         >
           {confirmText}
@@ -189,7 +189,16 @@ const ConfirmDialog = ({
 );
 
 export {
-    AlertDialog, AlertDialogAction,
-    AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, AlertDialogPortal, AlertDialogTitle, AlertDialogTrigger, ConfirmDialog
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogOverlay,
+  AlertDialogPortal,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+  ConfirmDialog,
 };
-

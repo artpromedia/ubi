@@ -7,7 +7,11 @@
 
 import { createMiddleware } from "hono/factory";
 import Redis from "ioredis";
-import { RateLimiterRedis, RateLimiterMemory, type RateLimiterAbstract } from "rate-limiter-flexible";
+import {
+  RateLimiterRedis,
+  RateLimiterMemory,
+  type RateLimiterAbstract,
+} from "rate-limiter-flexible";
 
 import type { Context, Next } from "hono";
 
@@ -32,7 +36,9 @@ const initializeRateLimiter = () => {
 
       console.info("✅ Rate limiter initialized with Redis backend");
     } catch {
-      console.warn("⚠️ Failed to connect to Redis, using memory-based rate limiter");
+      console.warn(
+        "⚠️ Failed to connect to Redis, using memory-based rate limiter",
+      );
       rateLimiter = new RateLimiterMemory({
         points: 100,
         duration: 60,
@@ -62,65 +68,79 @@ const RATE_LIMITS = {
 };
 
 // Higher limits for specific endpoints
-const ENDPOINT_OVERRIDES: Record<string, { points: number; duration: number }> = {
-  "/v1/rides/track": { points: 300, duration: 60 }, // Frequent polling for ride tracking
-  "/v1/locations/autocomplete": { points: 200, duration: 60 }, // Autocomplete needs more calls
-  "/v1/notifications": { points: 200, duration: 60 }, // Real-time notifications
-};
+const ENDPOINT_OVERRIDES: Record<string, { points: number; duration: number }> =
+  {
+    "/v1/rides/track": { points: 300, duration: 60 }, // Frequent polling for ride tracking
+    "/v1/locations/autocomplete": { points: 200, duration: 60 }, // Autocomplete needs more calls
+    "/v1/notifications": { points: 200, duration: 60 }, // Real-time notifications
+  };
 
-export const rateLimitMiddleware = createMiddleware(async (c: Context, next: Next) => {
-  const auth = c.get("auth") as { userId?: string; role?: string } | undefined;
-  const path = c.req.path;
-  const ip = c.req.header("x-forwarded-for")?.split(",")[0] || c.req.header("x-real-ip") || "unknown";
+export const rateLimitMiddleware = createMiddleware(
+  async (c: Context, next: Next) => {
+    const auth = c.get("auth") as
+      | { userId?: string; role?: string }
+      | undefined;
+    const path = c.req.path;
+    const ip =
+      c.req.header("x-forwarded-for")?.split(",")[0] ||
+      c.req.header("x-real-ip") ||
+      "unknown";
 
-  // Determine rate limit key
-  const key = auth?.userId || `ip:${ip}`;
-  const role = (auth?.role as keyof typeof RATE_LIMITS) || "anonymous";
+    // Determine rate limit key
+    const key = auth?.userId || `ip:${ip}`;
+    const role = (auth?.role as keyof typeof RATE_LIMITS) || "anonymous";
 
-  // Get rate limit config
-  let config = RATE_LIMITS[role] || RATE_LIMITS.anonymous;
+    // Get rate limit config
+    let config = RATE_LIMITS[role] || RATE_LIMITS.anonymous;
 
-  // Check for endpoint-specific overrides
-  for (const [endpoint, override] of Object.entries(ENDPOINT_OVERRIDES)) {
-    if (path.startsWith(endpoint)) {
-      config = { points: Math.max(config.points, override.points), duration: override.duration };
-      break;
+    // Check for endpoint-specific overrides
+    for (const [endpoint, override] of Object.entries(ENDPOINT_OVERRIDES)) {
+      if (path.startsWith(endpoint)) {
+        config = {
+          points: Math.max(config.points, override.points),
+          duration: override.duration,
+        };
+        break;
+      }
     }
-  }
 
-  try {
-    const result = await rateLimiter.consume(key, 1);
+    try {
+      const result = await rateLimiter.consume(key, 1);
 
-    // Add rate limit headers
-    c.header("X-RateLimit-Limit", String(config.points));
-    c.header("X-RateLimit-Remaining", String(result.remainingPoints));
-    c.header("X-RateLimit-Reset", String(Math.ceil(result.msBeforeNext / 1000)));
+      // Add rate limit headers
+      c.header("X-RateLimit-Limit", String(config.points));
+      c.header("X-RateLimit-Remaining", String(result.remainingPoints));
+      c.header(
+        "X-RateLimit-Reset",
+        String(Math.ceil(result.msBeforeNext / 1000)),
+      );
 
-    return await next();
-  } catch (rejRes) {
-    // Rate limit exceeded
-    const retryAfter = Math.ceil(
-      (rejRes as { msBeforeNext: number }).msBeforeNext / 1000
-    );
+      return await next();
+    } catch (rejRes) {
+      // Rate limit exceeded
+      const retryAfter = Math.ceil(
+        (rejRes as { msBeforeNext: number }).msBeforeNext / 1000,
+      );
 
-    c.header("X-RateLimit-Limit", String(config.points));
-    c.header("X-RateLimit-Remaining", "0");
-    c.header("X-RateLimit-Reset", String(retryAfter));
-    c.header("Retry-After", String(retryAfter));
+      c.header("X-RateLimit-Limit", String(config.points));
+      c.header("X-RateLimit-Remaining", "0");
+      c.header("X-RateLimit-Reset", String(retryAfter));
+      c.header("Retry-After", String(retryAfter));
 
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "RATE_LIMIT_EXCEEDED",
-          message: "Too many requests. Please try again later.",
-          retryAfter,
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "RATE_LIMIT_EXCEEDED",
+            message: "Too many requests. Please try again later.",
+            retryAfter,
+          },
         },
-      },
-      429
-    );
-  }
-});
+        429,
+      );
+    }
+  },
+);
 
 // Cleanup on process exit
 process.on("SIGTERM", () => {

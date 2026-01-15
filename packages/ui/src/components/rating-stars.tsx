@@ -55,7 +55,7 @@ const RatingStars = React.forwardRef<HTMLDivElement, RatingStarsProps>(
       onRatingChange,
       ...props
     },
-    ref
+    ref,
   ) => {
     const [hoverRating, setHoverRating] = React.useState<number | null>(null);
 
@@ -85,14 +85,11 @@ const RatingStars = React.forwardRef<HTMLDivElement, RatingStarsProps>(
         className={cn("inline-flex items-center gap-1", className)}
         {...props}
       >
-        <div
-          className="flex"
-          onMouseLeave={handleMouseLeave}
-        >
+        <div className="flex" onMouseLeave={handleMouseLeave}>
           {Array.from({ length: maxRating }, (_, index) => {
             const fillPercentage = Math.min(
               Math.max(displayRating - index, 0),
-              1
+              1,
             );
             const isFull = fillPercentage === 1;
             const isEmpty = fillPercentage === 0;
@@ -103,8 +100,9 @@ const RatingStars = React.forwardRef<HTMLDivElement, RatingStarsProps>(
                 type="button"
                 className={cn(
                   "relative",
-                  interactive && "cursor-pointer hover:scale-110 transition-transform",
-                  !interactive && "cursor-default"
+                  interactive &&
+                    "cursor-pointer hover:scale-110 transition-transform",
+                  !interactive && "cursor-default",
                 )}
                 onClick={() => handleClick(index)}
                 onMouseEnter={() => handleMouseEnter(index)}
@@ -114,7 +112,7 @@ const RatingStars = React.forwardRef<HTMLDivElement, RatingStarsProps>(
                 <svg
                   className={cn(
                     sizeClasses[size],
-                    "text-gray-200 dark:text-gray-600"
+                    "text-gray-200 dark:text-gray-600",
                   )}
                   viewBox="0 0 20 20"
                   fill="currentColor"
@@ -127,7 +125,7 @@ const RatingStars = React.forwardRef<HTMLDivElement, RatingStarsProps>(
                   <svg
                     className={cn(
                       sizeClasses[size],
-                      "absolute inset-0 text-yellow-400"
+                      "absolute inset-0 text-yellow-400",
                     )}
                     viewBox="0 0 20 20"
                     fill="currentColor"
@@ -152,15 +150,13 @@ const RatingStars = React.forwardRef<HTMLDivElement, RatingStarsProps>(
         )}
 
         {count !== undefined && (
-          <span
-            className={cn("text-muted-foreground", textSizeClasses[size])}
-          >
+          <span className={cn("text-muted-foreground", textSizeClasses[size])}>
             ({count.toLocaleString()})
           </span>
         )}
       </div>
     );
-  }
+  },
 );
 RatingStars.displayName = "RatingStars";
 

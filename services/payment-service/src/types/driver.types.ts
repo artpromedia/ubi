@@ -1399,12 +1399,12 @@ export interface IDriverEarningsService {
   getEarningsHistory(
     driverId: string,
     period: EarningsPeriodType,
-    count: number
+    count: number,
   ): Promise<DriverEarnings[]>;
   getTripsForPeriod(
     driverId: string,
     start: Date,
-    end: Date
+    end: Date,
   ): Promise<TripEarning[]>;
   getEarningsSuggestions(driverId: string): Promise<EarningSuggestion[]>;
   calculateEarningsProjection(driverId: string): Promise<EarningsProjection>;
@@ -1424,7 +1424,7 @@ export interface IDriverGoalsService {
   updateGoalProgress(
     driverId: string,
     goalId: string,
-    value: number
+    value: number,
   ): Promise<DriverGoalProgress>;
   claimReward(driverId: string, goalId: string): Promise<boolean>;
   getSuggestedGoals(driverId: string): Promise<CreateGoalInput[]>;
@@ -1434,11 +1434,11 @@ export interface IIncentiveService {
   getAvailableIncentives(driverId: string): Promise<DriverIncentive[]>;
   getIncentiveProgress(
     driverId: string,
-    incentiveId: string
+    incentiveId: string,
   ): Promise<DriverIncentiveProgress>;
   processTripForIncentives(
     driverId: string,
-    trip: TripEarning
+    trip: TripEarning,
   ): Promise<IncentiveUpdate[]>;
   getActiveStreaks(driverId: string): Promise<DriverStreak[]>;
   updateStreak(driverId: string, streakType: StreakType): Promise<DriverStreak>;
@@ -1449,18 +1449,18 @@ export interface IDriverBenefitsService {
   enrollInBenefit(
     driverId: string,
     packageId: string,
-    options?: EnrollmentOptions
+    options?: EnrollmentOptions,
   ): Promise<BenefitEnrollment>;
   cancelEnrollment(driverId: string, enrollmentId: string): Promise<boolean>;
   submitClaim(
     driverId: string,
     enrollmentId: string,
-    claim: ClaimInput
+    claim: ClaimInput,
   ): Promise<BenefitClaim>;
   getFuelDiscount(driverId: string): Promise<FuelDiscount>;
   getNearbyFuelStations(
     latitude: number,
-    longitude: number
+    longitude: number,
   ): Promise<FuelStation[]>;
 }
 
@@ -1483,12 +1483,12 @@ export interface IDriverCareerService {
   getProfile(driverId: string): Promise<DriverProfile>;
   updateProfile(
     driverId: string,
-    updates: Partial<DriverProfile>
+    updates: Partial<DriverProfile>,
   ): Promise<DriverProfile>;
   checkTierPromotion(driverId: string): Promise<TierPromotionResult>;
   getLeaderboard(
     city: string,
-    period: "week" | "month"
+    period: "week" | "month",
   ): Promise<LeaderboardEntry[]>;
 }
 
@@ -1517,12 +1517,12 @@ export interface ITrainingService {
   updateProgress(
     driverId: string,
     moduleId: string,
-    progress: number
+    progress: number,
   ): Promise<TrainingCompletion>;
   submitAssessment(
     driverId: string,
     moduleId: string,
-    answers: number[]
+    answers: number[],
   ): Promise<AssessmentResult>;
   getCertifications(driverId: string): Promise<DriverCertification[]>;
   getBadges(driverId: string): Promise<DriverBadge[]>;
@@ -1545,45 +1545,45 @@ export interface ICommunityService {
   createPost(driverId: string, input: CreatePostInput): Promise<ForumPost>;
   createComment(
     driverId: string,
-    input: CreateCommentInput
+    input: CreateCommentInput,
   ): Promise<ForumComment>;
   likePost(driverId: string, postId: string): Promise<boolean>;
   getEvents(driverId: string, city: string): Promise<DriverEvent[]>;
   registerForEvent(
     driverId: string,
-    eventId: string
+    eventId: string,
   ): Promise<EventRegistration>;
   getDriverOfMonth(city: string): Promise<DriverOfMonth>;
   getMentorship(driverId: string): Promise<MentorshipPair | null>;
   applyForMentorship(
     driverId: string,
-    asMentor: boolean
+    asMentor: boolean,
   ): Promise<MentorshipPair>;
 }
 
 export interface IFleetOwnerService {
   applyForFleetProgram(
     driverId: string,
-    application: FleetApplication
+    application: FleetApplication,
   ): Promise<FleetOwner>;
   getFleetDashboard(ownerId: string): Promise<FleetDashboard>;
   addVehicle(ownerId: string, vehicle: AddVehicleInput): Promise<FleetVehicle>;
   updateVehicle(
     ownerId: string,
     vehicleId: string,
-    updates: Partial<FleetVehicle>
+    updates: Partial<FleetVehicle>,
   ): Promise<FleetVehicle>;
   removeVehicle(ownerId: string, vehicleId: string): Promise<boolean>;
   assignDriver(ownerId: string, input: AssignDriverInput): Promise<FleetDriver>;
   unassignDriver(ownerId: string, driverId: string): Promise<boolean>;
   getFleetEarnings(
     ownerId: string,
-    period: "week" | "month"
+    period: "week" | "month",
   ): Promise<FleetEarnings>;
   scheduleMaintenance(
     ownerId: string,
     vehicleId: string,
-    maintenance: Partial<VehicleMaintenance>
+    maintenance: Partial<VehicleMaintenance>,
   ): Promise<VehicleMaintenance>;
 }
 

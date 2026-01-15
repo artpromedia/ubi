@@ -16,7 +16,8 @@ const badgeVariants = cva(
       variant: {
         default: "border-transparent bg-primary text-primary-foreground",
         secondary: "border-transparent bg-secondary text-secondary-foreground",
-        destructive: "border-transparent bg-destructive text-destructive-foreground",
+        destructive:
+          "border-transparent bg-destructive text-destructive-foreground",
         outline: "text-foreground",
         // UBI Service badges
         move: "border-transparent bg-ubi-move text-white",
@@ -41,11 +42,12 @@ const badgeVariants = cva(
       variant: "default",
       size: "md",
     },
-  }
+  },
 );
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof badgeVariants> {
   /** Optional icon to show before text */
   icon?: React.ReactNode;
@@ -56,7 +58,10 @@ export interface BadgeProps
 }
 
 const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
-  ({ className, variant, size, icon, dot, dotColor, children, ...props }, ref) => (
+  (
+    { className, variant, size, icon, dot, dotColor, children, ...props },
+    ref,
+  ) => (
     <div
       ref={ref}
       className={cn(badgeVariants({ variant, size }), className)}
@@ -66,7 +71,7 @@ const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
         <span
           className={cn(
             "mr-1.5 h-1.5 w-1.5 rounded-full",
-            dotColor || "bg-current"
+            dotColor || "bg-current",
           )}
           style={dotColor ? { backgroundColor: dotColor } : undefined}
         />
@@ -74,7 +79,7 @@ const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
       {icon && <span className="mr-1">{icon}</span>}
       {children}
     </div>
-  )
+  ),
 );
 Badge.displayName = "Badge";
 

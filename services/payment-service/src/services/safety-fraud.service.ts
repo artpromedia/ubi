@@ -14,7 +14,8 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
-import {
+
+import type {
   ATODetection,
   ATOSignal,
   AbuseDetection,
@@ -134,7 +135,7 @@ export class SafetyFraudService extends EventEmitter {
   async detectAccountTakeover(
     userId: string,
     _eventType: string,
-    deviceInfo?: DeviceInfo
+    deviceInfo?: DeviceInfo,
   ): Promise<ATODetection> {
     const signals: ATOSignal[] = [];
     let riskScore = 0;
@@ -222,10 +223,14 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private getATORecommendation(
-    score: number
+    score: number,
   ): "allow" | "challenge" | "block_and_verify" {
-    if (score >= 0.8) return "block_and_verify";
-    if (score >= 0.5) return "challenge";
+    if (score >= 0.8) {
+      return "block_and_verify";
+    }
+    if (score >= 0.5) {
+      return "challenge";
+    }
     return "allow";
   }
 
@@ -235,13 +240,13 @@ export class SafetyFraudService extends EventEmitter {
 
   async registerDevice(
     userId: string,
-    deviceInfo: DeviceInfo
+    deviceInfo: DeviceInfo,
   ): Promise<DeviceFingerprint> {
     const existingDevices = this.deviceFingerprints.get(userId) || [];
 
     // Check if device already registered
     const existing = existingDevices.find(
-      (d) => d.deviceId === deviceInfo.deviceId
+      (d) => d.deviceId === deviceInfo.deviceId,
     );
     if (existing) {
       existing.lastSeenAt = new Date();
@@ -278,7 +283,7 @@ export class SafetyFraudService extends EventEmitter {
 
   async analyzeDevice(
     userId: string,
-    deviceInfo: DeviceInfo
+    deviceInfo: DeviceInfo,
   ): Promise<RiskSignal[]> {
     const signals: RiskSignal[] = [];
 
@@ -342,14 +347,22 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private async calculateDeviceTrustScore(
-    deviceInfo: DeviceInfo
+    deviceInfo: DeviceInfo,
   ): Promise<number> {
     let score = 100;
 
-    if (deviceInfo.isEmulator) score -= 50;
-    if (deviceInfo.isRooted) score -= 30;
-    if (deviceInfo.hasMockLocation) score -= 40;
-    if (deviceInfo.hasVpn) score -= 10;
+    if (deviceInfo.isEmulator) {
+      score -= 50;
+    }
+    if (deviceInfo.isRooted) {
+      score -= 30;
+    }
+    if (deviceInfo.hasMockLocation) {
+      score -= 40;
+    }
+    if (deviceInfo.hasVpn) {
+      score -= 10;
+    }
 
     return Math.max(score / 100, 0);
   }
@@ -357,17 +370,25 @@ export class SafetyFraudService extends EventEmitter {
   private detectDeviceRiskFlags(deviceInfo: DeviceInfo): string[] {
     const flags: string[] = [];
 
-    if (deviceInfo.isEmulator) flags.push("emulator");
-    if (deviceInfo.isRooted) flags.push("rooted");
-    if (deviceInfo.hasMockLocation) flags.push("mock_location");
-    if (deviceInfo.hasVpn) flags.push("vpn");
+    if (deviceInfo.isEmulator) {
+      flags.push("emulator");
+    }
+    if (deviceInfo.isRooted) {
+      flags.push("rooted");
+    }
+    if (deviceInfo.hasMockLocation) {
+      flags.push("mock_location");
+    }
+    if (deviceInfo.hasVpn) {
+      flags.push("vpn");
+    }
 
     return flags;
   }
 
   private async isNewDevice(
     userId: string,
-    deviceInfo: DeviceInfo
+    deviceInfo: DeviceInfo,
   ): Promise<boolean> {
     const devices = this.deviceFingerprints.get(userId) || [];
     return !devices.some((d) => d.deviceId === deviceInfo.deviceId);
@@ -379,7 +400,7 @@ export class SafetyFraudService extends EventEmitter {
 
   async detectPromoAbuse(
     userId: string,
-    _promoCode: string
+    _promoCode: string,
   ): Promise<AbuseDetection> {
     const signals: AbuseSignal[] = [];
     let abuseScore = 0;
@@ -409,7 +430,7 @@ export class SafetyFraudService extends EventEmitter {
     // Check excessive promo usage
     const promoHistory = this.promoUsage.get(userId) || [];
     const recentPromos = promoHistory.filter(
-      (p) => Date.now() - p.usedAt.getTime() < 30 * 24 * 60 * 60 * 1000 // Last 30 days
+      (p) => Date.now() - p.usedAt.getTime() < 30 * 24 * 60 * 60 * 1000, // Last 30 days
     );
 
     if (recentPromos.length > 10) {
@@ -445,7 +466,7 @@ export class SafetyFraudService extends EventEmitter {
   async recordPromoUsage(
     userId: string,
     promoCode: string,
-    amount: number
+    amount: number,
   ): Promise<void> {
     const usage = this.promoUsage.get(userId) || [];
     usage.push({
@@ -457,25 +478,25 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private async checkMultiAccountDevice(
-    _userId: string
+    _userId: string,
   ): Promise<{ multiAccount: boolean; accountCount: number }> {
     // In production, check device-to-account mapping
     return { multiAccount: false, accountCount: 1 };
   }
 
   private async detectCircularReferral(
-    _userId: string
+    _userId: string,
   ): Promise<{ detected: boolean; chain?: string[] }> {
     // In production, trace referral chain
     return { detected: false };
   }
 
   private async checkPromoVelocity(
-    userId: string
+    userId: string,
   ): Promise<Record<string, any> | null> {
     const usage = this.promoUsage.get(userId) || [];
     const last24h = usage.filter(
-      (p) => Date.now() - p.usedAt.getTime() < 24 * 60 * 60 * 1000
+      (p) => Date.now() - p.usedAt.getTime() < 24 * 60 * 60 * 1000,
     );
 
     if (last24h.length > 5) {
@@ -486,11 +507,17 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private getAbuseRecommendation(
-    score: number
+    score: number,
   ): "allow" | "block_promo" | "flag_account" | "suspend" {
-    if (score >= 0.9) return "suspend";
-    if (score >= 0.7) return "flag_account";
-    if (score >= 0.5) return "block_promo";
+    if (score >= 0.9) {
+      return "suspend";
+    }
+    if (score >= 0.7) {
+      return "flag_account";
+    }
+    if (score >= 0.5) {
+      return "block_promo";
+    }
     return "allow";
   }
 
@@ -521,7 +548,7 @@ export class SafetyFraudService extends EventEmitter {
     // Check repeated pickup/dropoff locations
     const repeatedLocations = await this.checkRepeatedLocations(
       driverId,
-      patterns
+      patterns,
     );
     if (repeatedLocations) {
       signals.push({
@@ -574,7 +601,7 @@ export class SafetyFraudService extends EventEmitter {
 
   private async checkRepeatedLocations(
     _driverId: string,
-    _patterns: TripPatternRecord[]
+    _patterns: TripPatternRecord[],
   ): Promise<Record<string, any> | null> {
     // Group by location (within 100m)
     // In production, use actual clustering
@@ -583,7 +610,7 @@ export class SafetyFraudService extends EventEmitter {
 
   private async checkRiderCollusion(
     _driverId: string,
-    patterns: TripPatternRecord[]
+    patterns: TripPatternRecord[],
   ): Promise<{ detected: boolean; riders?: string[] }> {
     const riderCounts: Record<string, number> = {};
 
@@ -602,7 +629,7 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private async detectGPSSpoofing(
-    _driverId: string
+    _driverId: string,
   ): Promise<{ detected: boolean; details?: Record<string, any> }> {
     // In production, analyze location data for spoofing patterns:
     // - Perfect circles
@@ -613,16 +640,20 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private getFakeDriverRecommendation(
-    score: number
+    score: number,
   ): "clear" | "investigate" | "suspend" {
-    if (score >= 0.8) return "suspend";
-    if (score >= 0.5) return "investigate";
+    if (score >= 0.8) {
+      return "suspend";
+    }
+    if (score >= 0.5) {
+      return "investigate";
+    }
     return "clear";
   }
 
   async recordTripPattern(
     driverId: string,
-    pattern: TripPatternRecord
+    pattern: TripPatternRecord,
   ): Promise<void> {
     const patterns = this.tripPatterns.get(driverId) || [];
     patterns.push(pattern);
@@ -641,7 +672,7 @@ export class SafetyFraudService extends EventEmitter {
       for (let j = i + 1; j < suspectIds.length; j++) {
         const shared = await this.findSharedTrips(
           suspectIds[i] ?? "",
-          suspectIds[j] ?? ""
+          suspectIds[j] ?? "",
         );
         if (shared && shared.count > 3) {
           connections.push({
@@ -663,7 +694,7 @@ export class SafetyFraudService extends EventEmitter {
     const evidenceScore = this.calculateCollusionScore(
       connections,
       deviceSharing,
-      referralChain
+      referralChain,
     );
 
     let collusionType: CollusionDetection["collusionType"] = "driver_rider";
@@ -692,7 +723,7 @@ export class SafetyFraudService extends EventEmitter {
 
   private async findSharedTrips(
     _userId1: string,
-    _userId2: string
+    _userId2: string,
   ): Promise<{ count: number } | null> {
     // In production, query trip database
     return { count: 0 };
@@ -711,7 +742,9 @@ export class SafetyFraudService extends EventEmitter {
         const setJ = deviceSets[j];
         if (setI && setJ) {
           for (const device of setI) {
-            if (setJ.has(device)) return true;
+            if (setJ.has(device)) {
+              return true;
+            }
           }
         }
       }
@@ -728,7 +761,7 @@ export class SafetyFraudService extends EventEmitter {
   private calculateCollusionScore(
     connections: CollusionConnection[],
     deviceSharing: boolean,
-    referralChain: boolean
+    referralChain: boolean,
   ): number {
     let score = 0;
 
@@ -737,8 +770,12 @@ export class SafetyFraudService extends EventEmitter {
       score += connections.reduce((sum, c) => sum + c.evidenceStrength * 10, 0);
     }
 
-    if (deviceSharing) score += 30;
-    if (referralChain) score += 20;
+    if (deviceSharing) {
+      score += 30;
+    }
+    if (referralChain) {
+      score += 20;
+    }
 
     return Math.min(score / 100, 1);
   }
@@ -749,7 +786,7 @@ export class SafetyFraudService extends EventEmitter {
 
   async checkVelocity(
     userId: string,
-    eventType: string
+    eventType: string,
   ): Promise<RiskSignal[]> {
     const signals: RiskSignal[] = [];
 
@@ -762,7 +799,7 @@ export class SafetyFraudService extends EventEmitter {
     // Keep last 24 hours
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     const recentData = velocityData.filter(
-      (d) => d.timestamp.getTime() > cutoff
+      (d) => d.timestamp.getTime() > cutoff,
     );
     this.velocityTrackers.set(userId, recentData);
 
@@ -780,7 +817,7 @@ export class SafetyFraudService extends EventEmitter {
 
     // Check payment velocity
     const paymentCount = recentData.filter(
-      (d) => d.eventType === "payment"
+      (d) => d.eventType === "payment",
     ).length;
     if (paymentCount > 20) {
       signals.push({
@@ -794,7 +831,7 @@ export class SafetyFraudService extends EventEmitter {
 
     // Check failed payment velocity
     const failedPayments = recentData.filter(
-      (d) => d.eventType === "payment_failed"
+      (d) => d.eventType === "payment_failed",
     ).length;
     if (failedPayments > 5) {
       signals.push({
@@ -819,7 +856,7 @@ export class SafetyFraudService extends EventEmitter {
 
   private async analyzeLocation(
     userId: string,
-    _location: Location
+    _location: Location,
   ): Promise<RiskSignal[]> {
     const signals: RiskSignal[] = [];
 
@@ -839,7 +876,7 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private async detectImpossibleTravel(
-    _userId: string
+    _userId: string,
   ): Promise<Record<string, any> | null> {
     // In production, check recent locations for impossible travel speed
     return null;
@@ -851,7 +888,7 @@ export class SafetyFraudService extends EventEmitter {
 
   private async analyzeIP(
     _userId: string,
-    ipAddress: string
+    ipAddress: string,
   ): Promise<RiskSignal[]> {
     const signals: RiskSignal[] = [];
 
@@ -886,7 +923,7 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private async checkIPReputation(
-    _ipAddress: string
+    _ipAddress: string,
   ): Promise<IPReputationResult> {
     // In production, call IP reputation service (MaxMind, IPQualityScore, etc.)
     return {
@@ -903,7 +940,7 @@ export class SafetyFraudService extends EventEmitter {
 
   private async analyzeBehavior(
     _userId: string,
-    _eventType: string
+    _eventType: string,
   ): Promise<RiskSignal[]> {
     const signals: RiskSignal[] = [];
 
@@ -962,7 +999,7 @@ export class SafetyFraudService extends EventEmitter {
   private async updateRiskProfile(
     userId: string,
     newScore: number,
-    _signals: RiskSignal[]
+    _signals: RiskSignal[],
   ): Promise<void> {
     const profile = await this.getUserRiskProfile(userId);
 
@@ -1007,7 +1044,7 @@ export class SafetyFraudService extends EventEmitter {
       "[FraudService] Account restricted:",
       userId,
       "Reason:",
-      reason
+      reason,
     );
   }
 
@@ -1026,38 +1063,62 @@ export class SafetyFraudService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   private scoreToRiskLevel(score: number): RiskLevel {
-    if (score >= 0.9) return "CRITICAL";
-    if (score >= 0.8) return "VERY_HIGH";
-    if (score >= 0.6) return "HIGH";
-    if (score >= 0.4) return "MEDIUM";
-    if (score >= 0.2) return "LOW";
+    if (score >= 0.9) {
+      return "CRITICAL";
+    }
+    if (score >= 0.8) {
+      return "VERY_HIGH";
+    }
+    if (score >= 0.6) {
+      return "HIGH";
+    }
+    if (score >= 0.4) {
+      return "MEDIUM";
+    }
+    if (score >= 0.2) {
+      return "LOW";
+    }
     return "VERY_LOW";
   }
 
   private getRecommendation(
     score: number,
-    _signals: RiskSignal[]
+    _signals: RiskSignal[],
   ): FraudActionType {
-    if (score >= 0.9) return "TERMINATE";
-    if (score >= 0.8) return "SUSPEND";
-    if (score >= 0.7) return "RESTRICT";
-    if (score >= 0.6) return "FLAG_FOR_REVIEW";
-    if (score >= 0.4) return "CHALLENGE";
-    if (score >= 0.2) return "ALLOW";
+    if (score >= 0.9) {
+      return "TERMINATE";
+    }
+    if (score >= 0.8) {
+      return "SUSPEND";
+    }
+    if (score >= 0.7) {
+      return "RESTRICT";
+    }
+    if (score >= 0.6) {
+      return "FLAG_FOR_REVIEW";
+    }
+    if (score >= 0.4) {
+      return "CHALLENGE";
+    }
+    if (score >= 0.2) {
+      return "ALLOW";
+    }
     return "ALLOW";
   }
 
   private selectChallengeType(
-    signals: RiskSignal[]
+    signals: RiskSignal[],
   ): "otp" | "biometric" | "security_question" {
     const hasHighSeverity = signals.some(
-      (s) => s.severity === "high" || s.severity === "critical"
+      (s) => s.severity === "high" || s.severity === "critical",
     );
     const hasDeviceRisk = signals.some((s) =>
-      ["NEW_DEVICE", "DEVICE_REPUTATION", "EMULATOR"].includes(s.type)
+      ["NEW_DEVICE", "DEVICE_REPUTATION", "EMULATOR"].includes(s.type),
     );
 
-    if (hasHighSeverity || hasDeviceRisk) return "biometric";
+    if (hasHighSeverity || hasDeviceRisk) {
+      return "biometric";
+    }
     return "otp";
   }
 
@@ -1065,7 +1126,7 @@ export class SafetyFraudService extends EventEmitter {
     userId: string,
     event: FraudEvent,
     signals: RiskSignal[],
-    score: number
+    score: number,
   ): Promise<void> {
     const events = this.fraudEvents.get(userId) || [];
     events.push({
@@ -1079,14 +1140,14 @@ export class SafetyFraudService extends EventEmitter {
   }
 
   private async checkRecentPhoneChange(
-    _userId: string
+    _userId: string,
   ): Promise<{ daysAgo: number; previous: string } | null> {
     // In production, check user change history
     return null;
   }
 
   private async checkRecentPasswordReset(
-    _userId: string
+    _userId: string,
   ): Promise<{ daysAgo: number } | null> {
     // In production, check auth event history
     return null;
@@ -1102,7 +1163,7 @@ export class SafetyFraudService extends EventEmitter {
       () => {
         this.runBackgroundAnalysis();
       },
-      60 * 60 * 1000
+      60 * 60 * 1000,
     );
   }
 

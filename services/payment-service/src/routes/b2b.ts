@@ -11,12 +11,14 @@
  */
 
 import { Hono } from "hono";
+
 import { apiInfrastructureService } from "../services/api-infrastructure.service";
 import { billingService } from "../services/billing.service";
 import { corporateAccountsService } from "../services/corporate-accounts.service";
 import { deliveryApiService } from "../services/delivery-api.service";
 import { healthcareTransportService } from "../services/healthcare-transport.service";
 import { schoolTransportService } from "../services/school-transport.service";
+
 import type { ApiKeyScope } from "../types/b2b.types";
 
 // =============================================================================
@@ -45,7 +47,7 @@ const authenticateApiKey = (requiredScope?: ApiKeyScope) => {
           error: "unauthorized",
           message: "API key required. Use Authorization: Bearer <api_key>",
         },
-        401
+        401,
       );
     }
 
@@ -56,7 +58,7 @@ const authenticateApiKey = (requiredScope?: ApiKeyScope) => {
       const result = await apiInfrastructureService.validateApiKey(
         apiKey,
         clientIp,
-        requiredScope
+        requiredScope,
       );
 
       if (!result.valid || !result.apiKey) {
@@ -65,13 +67,13 @@ const authenticateApiKey = (requiredScope?: ApiKeyScope) => {
             error: "unauthorized",
             message: result.error || "Invalid API key",
           },
-          401
+          401,
         );
       }
 
       // Check rate limits
       const rateLimitResult = await apiInfrastructureService.checkRateLimit(
-        result.apiKey.id
+        result.apiKey.id,
       );
 
       if (!rateLimitResult.allowed) {
@@ -82,7 +84,7 @@ const authenticateApiKey = (requiredScope?: ApiKeyScope) => {
             retryAfter: rateLimitResult.retryAfter,
             limits: rateLimitResult.remaining,
           },
-          429
+          429,
         );
       }
 
@@ -100,7 +102,7 @@ const authenticateApiKey = (requiredScope?: ApiKeyScope) => {
           error: "internal_error",
           message: "Authentication failed",
         },
-        500
+        500,
       );
     }
   };
@@ -149,7 +151,7 @@ b2bRoutes.get(
     const orgId = c.get("organizationId");
     const org = await corporateAccountsService.getOrganization(orgId);
     return c.json({ data: org });
-  }
+  },
 );
 
 b2bRoutes.patch(
@@ -160,7 +162,7 @@ b2bRoutes.patch(
     const body = await c.req.json();
     const org = await corporateAccountsService.updateOrganization(orgId, body);
     return c.json({ data: org });
-  }
+  },
 );
 
 // Members
@@ -177,10 +179,10 @@ b2bRoutes.get(
       {
         page,
         limit,
-      }
+      },
     );
     return c.json(members);
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -192,10 +194,10 @@ b2bRoutes.post(
     const member = await corporateAccountsService.inviteMember(
       orgId,
       body,
-      "api"
+      "api",
     );
     return c.json({ data: member }, 201);
-  }
+  },
 );
 
 b2bRoutes.patch(
@@ -206,7 +208,7 @@ b2bRoutes.patch(
     const body = await c.req.json();
     const member = await corporateAccountsService.updateMember(memberId, body);
     return c.json({ data: member });
-  }
+  },
 );
 
 b2bRoutes.delete(
@@ -216,7 +218,7 @@ b2bRoutes.delete(
     const memberId = c.req.param("memberId");
     await corporateAccountsService.removeMember(memberId);
     return c.body(null, 204);
-  }
+  },
 );
 
 // Cost Centers
@@ -227,7 +229,7 @@ b2bRoutes.get(
     const orgId = c.get("organizationId");
     const costCenters = await corporateAccountsService.listCostCenters(orgId);
     return c.json({ data: costCenters });
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -238,10 +240,10 @@ b2bRoutes.post(
     const body = await c.req.json();
     const costCenter = await corporateAccountsService.createCostCenter(
       orgId,
-      body
+      body,
     );
     return c.json({ data: costCenter }, 201);
-  }
+  },
 );
 
 // =============================================================================
@@ -257,7 +259,7 @@ b2bRoutes.post(
     const body = await c.req.json();
     const quote = await deliveryApiService.getQuote(orgId, body);
     return c.json({ data: quote }, 201);
-  }
+  },
 );
 
 // Deliveries
@@ -279,7 +281,7 @@ b2bRoutes.post(
     });
 
     return c.json({ data: delivery }, 201);
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -300,7 +302,7 @@ b2bRoutes.post(
     });
 
     return c.json({ data: batch }, 201);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -321,10 +323,10 @@ b2bRoutes.get(
         dateFrom: dateFrom ? new Date(dateFrom) : undefined,
         dateTo: dateTo ? new Date(dateTo) : undefined,
       },
-      { page, limit }
+      { page, limit },
     );
     return c.json(deliveries);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -337,7 +339,7 @@ b2bRoutes.get(
       return c.json({ error: "not_found", message: "Delivery not found" }, 404);
     }
     return c.json({ data: delivery });
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -350,7 +352,7 @@ b2bRoutes.get(
       return c.json({ error: "not_found", message: "Tracking not found" }, 404);
     }
     return c.json({ data: tracking });
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -361,10 +363,10 @@ b2bRoutes.post(
     const body = await c.req.json();
     const delivery = await deliveryApiService.cancelDelivery(
       deliveryId,
-      body.reason
+      body.reason,
     );
     return c.json({ data: delivery });
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -377,10 +379,10 @@ b2bRoutes.get(
     const stats = await deliveryApiService.getDeliveryStats(
       orgId,
       new Date(dateFrom!),
-      new Date(dateTo!)
+      new Date(dateTo!),
     );
     return c.json({ data: stats });
-  }
+  },
 );
 
 // =============================================================================
@@ -397,10 +399,10 @@ b2bRoutes.post(
     const provider = await healthcareTransportService.registerProvider(
       orgId,
       body.providerType,
-      body.details || {}
+      body.details || {},
     );
     return c.json({ data: provider }, 201);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -408,11 +410,10 @@ b2bRoutes.get(
   authenticateApiKey("healthcare:read"),
   async (c) => {
     const orgId = c.get("organizationId");
-    const provider = await healthcareTransportService.getProviderByOrganization(
-      orgId
-    );
+    const provider =
+      await healthcareTransportService.getProviderByOrganization(orgId);
     return c.json({ data: provider });
-  }
+  },
 );
 
 // Medical Deliveries
@@ -424,7 +425,7 @@ b2bRoutes.post(
     const body = await c.req.json();
     const delivery = await healthcareTransportService.createMedicalDelivery(
       body.providerId,
-      body
+      body,
     );
 
     // Record usage
@@ -437,7 +438,7 @@ b2bRoutes.post(
     });
 
     return c.json({ data: delivery }, 201);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -453,10 +454,10 @@ b2bRoutes.get(
     const deliveries = await healthcareTransportService.listMedicalDeliveries(
       providerId as string,
       { status: status as any, deliveryType: deliveryType as any },
-      { page, limit }
+      { page, limit },
     );
     return c.json(deliveries);
-  }
+  },
 );
 
 // Patient Transport
@@ -468,7 +469,7 @@ b2bRoutes.post(
     const body = await c.req.json();
     const transport = await healthcareTransportService.createPatientTransport(
       body.providerId,
-      body
+      body,
     );
 
     // Record usage
@@ -481,7 +482,7 @@ b2bRoutes.post(
     });
 
     return c.json({ data: transport }, 201);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -496,10 +497,10 @@ b2bRoutes.get(
     const transports = await healthcareTransportService.listPatientTransports(
       providerId as string,
       { status: status as any },
-      { page, limit }
+      { page, limit },
     );
     return c.json(transports);
-  }
+  },
 );
 
 // =============================================================================
@@ -515,7 +516,7 @@ b2bRoutes.post(
     const body = await c.req.json();
     const school = await schoolTransportService.registerSchool(orgId, body);
     return c.json({ data: school }, 201);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -528,7 +529,7 @@ b2bRoutes.get(
       return c.json({ error: "not_found", message: "School not found" }, 404);
     }
     return c.json({ data: school });
-  }
+  },
 );
 
 // Students
@@ -540,10 +541,10 @@ b2bRoutes.post(
     const body = await c.req.json();
     const student = await schoolTransportService.registerStudent(
       schoolId,
-      body
+      body,
     );
     return c.json({ data: student }, 201);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -560,10 +561,10 @@ b2bRoutes.get(
     const students = await schoolTransportService.listStudents(
       schoolId,
       { grade, className, routeId },
-      { page, limit }
+      { page, limit },
     );
     return c.json(students);
-  }
+  },
 );
 
 // Routes
@@ -575,7 +576,7 @@ b2bRoutes.post(
     const body = await c.req.json();
     const route = await schoolTransportService.createRoute(schoolId, body);
     return c.json({ data: route }, 201);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -586,10 +587,10 @@ b2bRoutes.get(
     const type = c.req.query("type");
     const routes = await schoolTransportService.listRoutes(
       schoolId,
-      type as any
+      type as any,
     );
     return c.json({ data: routes });
-  }
+  },
 );
 
 // Active Routes
@@ -605,7 +606,7 @@ b2bRoutes.post(
       body.driverId,
       body.driverName,
       body.driverPhone,
-      body.vehiclePlate
+      body.vehiclePlate,
     );
 
     // Record usage
@@ -621,7 +622,7 @@ b2bRoutes.post(
     }
 
     return c.json({ data: activeRoute }, 201);
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -634,10 +635,10 @@ b2bRoutes.post(
       activeRouteId,
       body.studentId,
       body.verificationMethod,
-      body.photoUrl
+      body.photoUrl,
     );
     return c.json({ data: log }, 201);
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -650,10 +651,10 @@ b2bRoutes.post(
       activeRouteId,
       body.studentId,
       body.verificationMethod,
-      body.photoUrl
+      body.photoUrl,
     );
     return c.json({ data: log }, 201);
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -664,7 +665,7 @@ b2bRoutes.post(
     const activeRoute =
       await schoolTransportService.completeRoute(activeRouteId);
     return c.json({ data: activeRoute });
-  }
+  },
 );
 
 // Parent Features
@@ -675,7 +676,7 @@ b2bRoutes.get(
     const studentId = c.req.param("studentId");
     const location = await schoolTransportService.getStudentLocation(studentId);
     return c.json({ data: location });
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -688,10 +689,10 @@ b2bRoutes.get(
     const trips = await schoolTransportService.getStudentTripHistory(
       studentId,
       dateFrom ? new Date(dateFrom) : undefined,
-      dateTo ? new Date(dateTo) : undefined
+      dateTo ? new Date(dateTo) : undefined,
     );
     return c.json({ data: trips });
-  }
+  },
 );
 
 // =============================================================================
@@ -706,7 +707,7 @@ b2bRoutes.get(
     const orgId = c.get("organizationId");
     const subscription = await billingService.getSubscription(orgId);
     return c.json({ data: subscription });
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -717,10 +718,10 @@ b2bRoutes.post(
     const body = await c.req.json();
     const subscription = await billingService.createSubscription(
       orgId,
-      body.planId
+      body.planId,
     );
     return c.json({ data: subscription }, 201);
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -733,15 +734,15 @@ b2bRoutes.post(
     if (!subscription) {
       return c.json(
         { error: "not_found", message: "No active subscription" },
-        404
+        404,
       );
     }
     const cancelled = await billingService.cancelSubscription(
       subscription.id,
-      body.cancelImmediately
+      body.cancelImmediately,
     );
     return c.json({ data: cancelled });
-  }
+  },
 );
 
 // Usage
@@ -755,10 +756,10 @@ b2bRoutes.get(
     const summary = await billingService.getUsageSummary(
       orgId,
       new Date(periodStart!),
-      new Date(periodEnd!)
+      new Date(periodEnd!),
     );
     return c.json({ data: summary });
-  }
+  },
 );
 
 // Invoices
@@ -775,7 +776,7 @@ b2bRoutes.get(
       limit,
     });
     return c.json(invoices);
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -788,7 +789,7 @@ b2bRoutes.get(
       return c.json({ error: "not_found", message: "Invoice not found" }, 404);
     }
     return c.json({ data: invoice });
-  }
+  },
 );
 
 // Credits
@@ -799,7 +800,7 @@ b2bRoutes.get(
     const orgId = c.get("organizationId");
     const balance = await billingService.getCreditBalance(orgId);
     return c.json({ data: balance });
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -814,7 +815,7 @@ b2bRoutes.get(
       limit,
     });
     return c.json(transactions);
-  }
+  },
 );
 
 // Payment Methods
@@ -825,7 +826,7 @@ b2bRoutes.get(
     const orgId = c.get("organizationId");
     const methods = await billingService.listPaymentMethods(orgId);
     return c.json({ data: methods });
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -836,7 +837,7 @@ b2bRoutes.post(
     const body = await c.req.json();
     const method = await billingService.addPaymentMethod(orgId, body);
     return c.json({ data: method }, 201);
-  }
+  },
 );
 
 // =============================================================================
@@ -864,10 +865,10 @@ b2bRoutes.patch(
     const body = await c.req.json();
     const webhook = await apiInfrastructureService.updateWebhook(
       webhookId,
-      body
+      body,
     );
     return c.json({ data: webhook });
-  }
+  },
 );
 
 b2bRoutes.delete(
@@ -877,7 +878,7 @@ b2bRoutes.delete(
     const webhookId = c.req.param("webhookId");
     await apiInfrastructureService.deleteWebhook(webhookId);
     return c.body(null, 204);
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -887,7 +888,7 @@ b2bRoutes.post(
     const webhookId = c.req.param("webhookId");
     const delivery = await apiInfrastructureService.testWebhook(webhookId);
     return c.json({ data: delivery });
-  }
+  },
 );
 
 b2bRoutes.get(
@@ -899,10 +900,10 @@ b2bRoutes.get(
     const limit = parseInt(c.req.query("limit") || "20");
     const deliveries = await apiInfrastructureService.getWebhookDeliveries(
       webhookId,
-      { page, limit }
+      { page, limit },
     );
     return c.json(deliveries);
-  }
+  },
 );
 
 // =============================================================================
@@ -914,7 +915,7 @@ b2bRoutes.get("/api-keys", authenticateApiKey("api_keys:read"), async (c) => {
   const environment = c.req.query("environment");
   const keys = await apiInfrastructureService.listApiKeys(
     orgId,
-    environment as any
+    environment as any,
   );
   return c.json({ data: keys });
 });
@@ -928,7 +929,7 @@ b2bRoutes.post("/api-keys", authenticateApiKey("api_keys:write"), async (c) => {
       data: result.apiKey,
       secret: result.secret, // Only shown once
     },
-    201
+    201,
   );
 });
 
@@ -940,7 +941,7 @@ b2bRoutes.patch(
     const body = await c.req.json();
     const key = await apiInfrastructureService.updateApiKey(keyId, body);
     return c.json({ data: key });
-  }
+  },
 );
 
 b2bRoutes.post(
@@ -953,7 +954,7 @@ b2bRoutes.post(
       data: result.apiKey,
       secret: result.secret, // Only shown once
     });
-  }
+  },
 );
 
 b2bRoutes.delete(
@@ -963,7 +964,7 @@ b2bRoutes.delete(
     const keyId = c.req.param("keyId");
     await apiInfrastructureService.revokeApiKey(keyId);
     return c.body(null, 204);
-  }
+  },
 );
 
 export default b2bRoutes;

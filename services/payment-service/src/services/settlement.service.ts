@@ -19,7 +19,11 @@
  * - Ride (Driver): UBI 15%, CEERION 0.75% (5% of UBI's cut)
  */
 
-import { Currency, PaymentProvider, PrismaClient } from "@prisma/client";
+import {
+  type Currency,
+  PaymentProvider,
+  type PrismaClient,
+} from "@prisma/client";
 
 export interface SettlementConfig {
   // Settlement schedules
@@ -107,7 +111,7 @@ export class SettlementService {
    */
   calculateCommission(
     grossAmount: number,
-    recipientType: "RESTAURANT" | "MERCHANT" | "PARTNER" | "DRIVER"
+    recipientType: "RESTAURANT" | "MERCHANT" | "PARTNER" | "DRIVER",
   ): CommissionBreakdown {
     const rates = this.commissionRates[recipientType];
     if (!rates) {
@@ -140,12 +144,12 @@ export class SettlementService {
    * Create a settlement for a recipient
    */
   async createSettlement(
-    request: SettlementRequest
+    request: SettlementRequest,
   ): Promise<SettlementResult> {
     // Calculate commission
     const commission = this.calculateCommission(
       request.amount,
-      request.recipientType
+      request.recipientType,
     );
 
     // Create settlement record
@@ -171,7 +175,7 @@ export class SettlementService {
       settlement.id,
       commission,
       request.currency,
-      request.recipientType
+      request.recipientType,
     );
 
     return {
@@ -191,7 +195,7 @@ export class SettlementService {
     settlementId: string,
     commission: CommissionBreakdown,
     currency: Currency,
-    recipientType: string
+    recipientType: string,
   ): Promise<void> {
     // Get UBI revenue and CEERION accounts
     const [ubiRevenue, ceerionAccount] = await Promise.all([
@@ -320,13 +324,13 @@ export class SettlementService {
         const momoDetails = settlement.mobileMoneyDetails as any;
         providerReference = await this.initiateMobileMoneyPayout(
           settlement,
-          momoDetails
+          momoDetails,
         );
       } else {
         const bankDetails = settlement.bankDetails as any;
         providerReference = await this.initiateBankTransfer(
           settlement,
-          bankDetails
+          bankDetails,
         );
       }
 
@@ -358,7 +362,7 @@ export class SettlementService {
    */
   private async initiateMobileMoneyPayout(
     settlement: any,
-    momoDetails: { phoneNumber: string; provider: PaymentProvider }
+    momoDetails: { phoneNumber: string; provider: PaymentProvider },
   ): Promise<string> {
     // Use the appropriate provider
     switch (momoDetails.provider) {
@@ -374,7 +378,7 @@ export class SettlementService {
 
       default:
         throw new Error(
-          `Unsupported mobile money provider: ${momoDetails.provider}`
+          `Unsupported mobile money provider: ${momoDetails.provider}`,
         );
     }
   }
@@ -388,7 +392,7 @@ export class SettlementService {
       accountNumber: string;
       bankCode: string;
       accountName: string;
-    }
+    },
   ): Promise<string> {
     // Use Paystack for bank transfers
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
@@ -412,7 +416,7 @@ export class SettlementService {
           bank_code: bankDetails.bankCode,
           currency: settlement.currency,
         }),
-      }
+      },
     );
 
     const recipientData = (await recipientResponse.json()) as {
@@ -457,7 +461,7 @@ export class SettlementService {
    */
   async completeSettlement(
     settlementId: string,
-    providerReference?: string
+    providerReference?: string,
   ): Promise<void> {
     const settlement = await this.prisma.settlement.findUnique({
       where: { id: settlementId },
@@ -501,7 +505,7 @@ export class SettlementService {
    */
   async runDailyRestaurantSettlements(
     date: Date,
-    currency: Currency
+    currency: Currency,
   ): Promise<{
     restaurantsSettled: number;
     totalAmount: number;
@@ -552,7 +556,9 @@ export class SettlementService {
         },
       });
 
-      if (!restaurant) continue;
+      if (!restaurant) {
+        continue;
+      }
 
       // Create settlement
       const settlementResult = await this.createSettlement({
@@ -593,7 +599,7 @@ export class SettlementService {
     }
 
     console.log(
-      `[Settlement] Daily restaurant settlements: ${results.restaurantsSettled} restaurants, ${currency} ${results.totalAmount} total`
+      `[Settlement] Daily restaurant settlements: ${results.restaurantsSettled} restaurants, ${currency} ${results.totalAmount} total`,
     );
 
     return results;
@@ -610,7 +616,7 @@ export class SettlementService {
       status?: string;
       startDate?: Date;
       endDate?: Date;
-    }
+    },
   ): Promise<any[]> {
     const where: any = {
       recipientId,
@@ -644,7 +650,7 @@ export class SettlementService {
   async getSettlementSummary(
     startDate: Date,
     endDate: Date,
-    recipientType?: string
+    recipientType?: string,
   ): Promise<{
     totalSettlements: number;
     completedSettlements: number;
@@ -732,7 +738,8 @@ export class SettlementService {
         typeStats.count++;
         typeStats.grossAmount += Number(settlement.grossAmount);
         typeStats.commission +=
-          Number(settlement.ubiCommission) + Number(settlement.ceerionCommission);
+          Number(settlement.ubiCommission) +
+          Number(settlement.ceerionCommission);
         typeStats.netAmount += Number(settlement.netAmount);
       }
     }
@@ -775,15 +782,13 @@ let settlementServiceInstance: SettlementService | null = null;
 
 // Create new instance
 export function createSettlementService(
-  prisma: PrismaClient
+  prisma: PrismaClient,
 ): SettlementService {
   return new SettlementService(prisma);
 }
 
 // Get singleton instance
-export function getSettlementService(
-  prisma: PrismaClient
-): SettlementService {
+export function getSettlementService(prisma: PrismaClient): SettlementService {
   if (!settlementServiceInstance) {
     settlementServiceInstance = createSettlementService(prisma);
   }

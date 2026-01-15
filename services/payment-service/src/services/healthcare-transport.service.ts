@@ -11,7 +11,9 @@
  */
 
 import { EventEmitter } from "events";
+
 import { nanoid } from "nanoid";
+
 import type {
   ContactInfo,
   Coordinates,
@@ -123,7 +125,7 @@ export class HealthcareTransportService extends EventEmitter {
       certifications?: string[];
       operatingHours?: Record<string, { open: string; close: string }>;
       emergencyContact?: ContactInfo;
-    }
+    },
   ): Promise<HealthcareProvider> {
     const provider: HealthcareProvider = {
       id: nanoid(),
@@ -160,7 +162,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async updateProvider(
     providerId: string,
-    updates: Partial<HealthcareProvider>
+    updates: Partial<HealthcareProvider>,
   ): Promise<HealthcareProvider> {
     const provider = this.providers.get(providerId);
     if (!provider) {
@@ -184,11 +186,11 @@ export class HealthcareTransportService extends EventEmitter {
    * Get provider by organization ID
    */
   async getProviderByOrganization(
-    organizationId: string
+    organizationId: string,
   ): Promise<HealthcareProvider | null> {
     return (
       Array.from(this.providers.values()).find(
-        (p) => p.organizationId === organizationId
+        (p) => p.organizationId === organizationId,
       ) || null
     );
   }
@@ -202,7 +204,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async createMedicalDelivery(
     providerId: string,
-    request: CreateMedicalDeliveryRequest
+    request: CreateMedicalDeliveryRequest,
   ): Promise<MedicalDelivery> {
     const provider = this.providers.get(providerId);
     if (!provider) {
@@ -304,7 +306,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async recordPickupVerification(
     deliveryId: string,
-    verification: Omit<MedicalDeliveryVerification, "type" | "verifiedAt">
+    verification: Omit<MedicalDeliveryVerification, "type" | "verifiedAt">,
   ): Promise<MedicalDelivery> {
     const delivery = this.medicalDeliveries.get(deliveryId);
     if (!delivery) {
@@ -331,7 +333,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async recordDeliveryVerification(
     deliveryId: string,
-    verification: Omit<MedicalDeliveryVerification, "type" | "verifiedAt">
+    verification: Omit<MedicalDeliveryVerification, "type" | "verifiedAt">,
   ): Promise<MedicalDelivery> {
     const delivery = this.medicalDeliveries.get(deliveryId);
     if (!delivery) {
@@ -368,7 +370,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async recordTemperatureReading(
     deliveryId: string,
-    reading: Omit<TemperatureReading, "withinRange">
+    reading: Omit<TemperatureReading, "withinRange">,
   ): Promise<void> {
     const delivery = this.medicalDeliveries.get(deliveryId);
     if (!delivery) {
@@ -413,7 +415,7 @@ export class HealthcareTransportService extends EventEmitter {
    * Get medical delivery by ID
    */
   async getMedicalDelivery(
-    deliveryId: string
+    deliveryId: string,
   ): Promise<MedicalDelivery | null> {
     return this.medicalDeliveries.get(deliveryId) || null;
   }
@@ -424,7 +426,7 @@ export class HealthcareTransportService extends EventEmitter {
   async listMedicalDeliveries(
     organizationId: string,
     filters: MedicalDeliveryFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<MedicalDelivery>> {
     // Get provider for organization
     const provider = await this.getProviderByOrganization(organizationId);
@@ -433,18 +435,18 @@ export class HealthcareTransportService extends EventEmitter {
     }
 
     let deliveries = Array.from(this.medicalDeliveries.values()).filter(
-      (d) => d.providerId === provider.id
+      (d) => d.providerId === provider.id,
     );
 
     // Apply filters
     if (filters.providerId) {
       deliveries = deliveries.filter(
-        (d) => d.providerId === filters.providerId
+        (d) => d.providerId === filters.providerId,
       );
     }
     if (filters.deliveryType) {
       deliveries = deliveries.filter(
-        (d) => d.deliveryType === filters.deliveryType
+        (d) => d.deliveryType === filters.deliveryType,
       );
     }
     if (filters.status) {
@@ -455,7 +457,7 @@ export class HealthcareTransportService extends EventEmitter {
     }
     if (filters.requiresColdChain !== undefined) {
       deliveries = deliveries.filter(
-        (d) => d.requiresColdChain === filters.requiresColdChain
+        (d) => d.requiresColdChain === filters.requiresColdChain,
       );
     }
     if (filters.dateFrom) {
@@ -479,7 +481,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async createPatientTransport(
     providerId: string,
-    request: CreatePatientTransportRequest
+    request: CreatePatientTransportRequest,
   ): Promise<PatientTransport> {
     const provider = this.providers.get(providerId);
     if (!provider) {
@@ -491,7 +493,7 @@ export class HealthcareTransportService extends EventEmitter {
 
     // Calculate pickup time based on appointment
     const pickupTime = new Date(
-      request.appointmentTime.getTime() - 60 * 60 * 1000
+      request.appointmentTime.getTime() - 60 * 60 * 1000,
     ); // 1 hour before
 
     const transport: PatientTransport = {
@@ -538,7 +540,7 @@ export class HealthcareTransportService extends EventEmitter {
   async assignTransportDriver(
     transportId: string,
     driverId: string,
-    vehicleId: string
+    vehicleId: string,
   ): Promise<PatientTransport> {
     const transport = this.patientTransports.get(transportId);
     if (!transport) {
@@ -597,7 +599,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async recordPatientPickup(
     transportId: string,
-    notes?: string
+    notes?: string,
   ): Promise<PatientTransport> {
     const transport = this.patientTransports.get(transportId);
     if (!transport) {
@@ -646,7 +648,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async completeTransport(
     transportId: string,
-    actualPrice?: number
+    actualPrice?: number,
   ): Promise<PatientTransport> {
     const transport = this.patientTransports.get(transportId);
     if (!transport) {
@@ -671,7 +673,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async cancelTransport(
     transportId: string,
-    reason: string
+    reason: string,
   ): Promise<PatientTransport> {
     const transport = this.patientTransports.get(transportId);
     if (!transport) {
@@ -692,7 +694,7 @@ export class HealthcareTransportService extends EventEmitter {
    * Get patient transport by ID
    */
   async getPatientTransport(
-    transportId: string
+    transportId: string,
   ): Promise<PatientTransport | null> {
     return this.patientTransports.get(transportId) || null;
   }
@@ -701,11 +703,11 @@ export class HealthcareTransportService extends EventEmitter {
    * Get patient transport by booking reference
    */
   async getTransportByBookingReference(
-    bookingReference: string
+    bookingReference: string,
   ): Promise<PatientTransport | null> {
     return (
       Array.from(this.patientTransports.values()).find(
-        (t) => t.bookingReference === bookingReference
+        (t) => t.bookingReference === bookingReference,
       ) || null
     );
   }
@@ -716,7 +718,7 @@ export class HealthcareTransportService extends EventEmitter {
   async listPatientTransports(
     organizationId: string,
     filters: PatientTransportFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<PatientTransport>> {
     const provider = await this.getProviderByOrganization(organizationId);
     if (!provider) {
@@ -724,12 +726,12 @@ export class HealthcareTransportService extends EventEmitter {
     }
 
     let transports = Array.from(this.patientTransports.values()).filter(
-      (t) => t.providerId === provider.id
+      (t) => t.providerId === provider.id,
     );
 
     if (filters.providerId) {
       transports = transports.filter(
-        (t) => t.providerId === filters.providerId
+        (t) => t.providerId === filters.providerId,
       );
     }
     if (filters.status) {
@@ -737,17 +739,17 @@ export class HealthcareTransportService extends EventEmitter {
     }
     if (filters.appointmentDateFrom) {
       transports = transports.filter(
-        (t) => t.appointmentTime >= filters.appointmentDateFrom!
+        (t) => t.appointmentTime >= filters.appointmentDateFrom!,
       );
     }
     if (filters.appointmentDateTo) {
       transports = transports.filter(
-        (t) => t.appointmentTime <= filters.appointmentDateTo!
+        (t) => t.appointmentTime <= filters.appointmentDateTo!,
       );
     }
 
     transports.sort(
-      (a, b) => a.appointmentTime.getTime() - b.appointmentTime.getTime()
+      (a, b) => a.appointmentTime.getTime() - b.appointmentTime.getTime(),
     );
 
     return this.paginate(transports, pagination);
@@ -768,10 +770,10 @@ export class HealthcareTransportService extends EventEmitter {
           t.providerId === providerId &&
           t.appointmentTime >= today &&
           t.appointmentTime < tomorrow &&
-          t.status !== "cancelled"
+          t.status !== "cancelled",
       )
       .sort(
-        (a, b) => a.appointmentTime.getTime() - b.appointmentTime.getTime()
+        (a, b) => a.appointmentTime.getTime() - b.appointmentTime.getTime(),
       );
   }
 
@@ -783,7 +785,7 @@ export class HealthcareTransportService extends EventEmitter {
    * Register a medical vehicle
    */
   async registerMedicalVehicle(
-    vehicle: Omit<MedicalVehicle, "id">
+    vehicle: Omit<MedicalVehicle, "id">,
   ): Promise<MedicalVehicle> {
     const medicalVehicle: MedicalVehicle = {
       id: nanoid(),
@@ -800,7 +802,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async addDriverCertification(
     driverId: string,
-    certification: Omit<DriverCertification, "verified">
+    certification: Omit<DriverCertification, "verified">,
   ): Promise<void> {
     const certs = this.driverCertifications.get(driverId) || [];
 
@@ -817,7 +819,7 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async verifyDriverCertification(
     driverId: string,
-    certificateNumber: string
+    certificateNumber: string,
   ): Promise<void> {
     const certs = this.driverCertifications.get(driverId);
     if (!certs) {
@@ -838,17 +840,17 @@ export class HealthcareTransportService extends EventEmitter {
    */
   async isDriverCertified(
     driverId: string,
-    deliveryType: MedicalTransportType
+    deliveryType: MedicalTransportType,
   ): Promise<boolean> {
     const certs = this.driverCertifications.get(driverId) || [];
 
     const requiredCerts = this.getRequiredCertifications(deliveryType);
     const validCerts = certs.filter(
-      (c) => c.verified && c.expiresAt > new Date()
+      (c) => c.verified && c.expiresAt > new Date(),
     );
 
     return requiredCerts.every((required) =>
-      validCerts.some((c) => c.type === required)
+      validCerts.some((c) => c.type === required),
     );
   }
 
@@ -862,7 +864,7 @@ export class HealthcareTransportService extends EventEmitter {
   async getMedicalDeliveryStats(
     providerId: string,
     dateFrom: Date,
-    dateTo: Date
+    dateTo: Date,
   ): Promise<{
     totalDeliveries: number;
     completedDeliveries: number;
@@ -877,7 +879,7 @@ export class HealthcareTransportService extends EventEmitter {
       (d) =>
         d.providerId === providerId &&
         d.createdAt >= dateFrom &&
-        d.createdAt <= dateTo
+        d.createdAt <= dateTo,
     );
 
     const byType: Record<string, number> = {};
@@ -909,7 +911,7 @@ export class HealthcareTransportService extends EventEmitter {
       urgentDeliveries: deliveries.filter((d) => d.isUrgent).length,
       coldChainDeliveries: coldChainCount,
       controlledSubstanceDeliveries: deliveries.filter(
-        (d) => d.isControlledSubstance
+        (d) => d.isControlledSubstance,
       ).length,
       averageDeliveryTime:
         completedCount > 0
@@ -929,7 +931,7 @@ export class HealthcareTransportService extends EventEmitter {
   async getPatientTransportStats(
     providerId: string,
     dateFrom: Date,
-    dateTo: Date
+    dateTo: Date,
   ): Promise<{
     totalTransports: number;
     completedTransports: number;
@@ -943,7 +945,7 @@ export class HealthcareTransportService extends EventEmitter {
       (t) =>
         t.providerId === providerId &&
         t.appointmentTime >= dateFrom &&
-        t.appointmentTime <= dateTo
+        t.appointmentTime <= dateTo,
     );
 
     let onTimeCount = 0;
@@ -964,7 +966,7 @@ export class HealthcareTransportService extends EventEmitter {
       if (transport.pickedUpAt && transport.pickupTime) {
         completedWithPickup++;
         totalWaitTime += Math.abs(
-          transport.pickedUpAt.getTime() - transport.pickupTime.getTime()
+          transport.pickedUpAt.getTime() - transport.pickupTime.getTime(),
         );
       }
     }
@@ -997,7 +999,7 @@ export class HealthcareTransportService extends EventEmitter {
 
   private validateDeliveryType(
     provider: HealthcareProvider,
-    deliveryType: MedicalTransportType
+    deliveryType: MedicalTransportType,
   ): void {
     const allowedTypes: Record<
       HealthcareProvider["providerType"],
@@ -1028,13 +1030,13 @@ export class HealthcareTransportService extends EventEmitter {
     const allowed = allowedTypes[provider.providerType];
     if (!allowed.includes(deliveryType)) {
       throw new Error(
-        `${deliveryType} not allowed for ${provider.providerType}`
+        `${deliveryType} not allowed for ${provider.providerType}`,
       );
     }
   }
 
   private validateControlledSubstanceRequest(
-    request: CreateMedicalDeliveryRequest
+    request: CreateMedicalDeliveryRequest,
   ): void {
     if (!request.requiresIdVerification) {
       throw new Error("Controlled substances require ID verification");
@@ -1045,7 +1047,7 @@ export class HealthcareTransportService extends EventEmitter {
   }
 
   private determineVehicleRequirement(
-    request: CreateMedicalDeliveryRequest
+    request: CreateMedicalDeliveryRequest,
   ): VehicleRequirement {
     if (request.requiresColdChain) {
       return request.temperatureRange && request.temperatureRange.min < 0
@@ -1088,14 +1090,14 @@ export class HealthcareTransportService extends EventEmitter {
   }
 
   private async getProviderCoordinates(
-    _provider: HealthcareProvider
+    _provider: HealthcareProvider,
   ): Promise<Coordinates> {
     // In production, get from provider record
     return { lat: 6.5244, lng: 3.3792 };
   }
 
   private async findCertifiedDriver(
-    _delivery: MedicalDelivery
+    _delivery: MedicalDelivery,
   ): Promise<{ id: string } | null> {
     // In production, query driver pool
     return { id: nanoid() };
@@ -1104,7 +1106,7 @@ export class HealthcareTransportService extends EventEmitter {
   private scheduleDriverAssignment(transport: PatientTransport): void {
     // Schedule driver assignment 2 hours before pickup
     const assignmentTime = new Date(
-      transport.pickupTime.getTime() - 2 * 60 * 60 * 1000
+      transport.pickupTime.getTime() - 2 * 60 * 60 * 1000,
     );
     const delay = Math.max(0, assignmentTime.getTime() - Date.now());
 
@@ -1119,7 +1121,7 @@ export class HealthcareTransportService extends EventEmitter {
   }
 
   private getRequiredCertifications(
-    deliveryType: MedicalTransportType
+    deliveryType: MedicalTransportType,
   ): string[] {
     const requirements: Record<MedicalTransportType, string[]> = {
       PRESCRIPTION_DELIVERY: ["HIPAA"],
@@ -1141,13 +1143,13 @@ export class HealthcareTransportService extends EventEmitter {
     return delivery.temperatureLog.every(
       (reading) =>
         reading.temperature >= delivery.temperatureRange!.min &&
-        reading.temperature <= delivery.temperatureRange!.max
+        reading.temperature <= delivery.temperatureRange!.max,
     );
   }
 
   private paginate<T>(
     items: T[],
-    params: PaginationParams
+    params: PaginationParams,
   ): PaginatedResponse<T> {
     const page = params.page || 1;
     const limit = params.limit || 20;

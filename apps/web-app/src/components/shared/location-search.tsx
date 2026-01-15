@@ -6,11 +6,6 @@
 
 "use client";
 
-import { useDebounce, useGeolocation } from "@/hooks";
-import { cn } from "@/lib/utils";
-import { useUserStore } from "@/store";
-import { Input } from "@ubi/ui";
-import type { Coordinates } from "@ubi/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Clock,
@@ -22,6 +17,14 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { Input } from "@ubi/ui";
+
+import { useDebounce, useGeolocation } from "@/hooks";
+import { cn } from "@/lib/utils";
+import { useUserStore } from "@/store";
+
+import type { Coordinates } from "@ubi/utils";
 
 interface LocationResult {
   id: string;
@@ -41,7 +44,7 @@ interface LocationSearchProps {
   className?: string;
 }
 
-export function LocationSearch({
+export const LocationSearch = ({
   value,
   onChange,
   onSelect,
@@ -49,7 +52,7 @@ export function LocationSearch({
   label,
   type = "pickup",
   className,
-}: LocationSearchProps) {
+}: LocationSearchProps) => {
   const [isFocused, setIsFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<LocationResult[]>([]);
@@ -170,7 +173,7 @@ export function LocationSearch({
         <div
           className={cn(
             "absolute left-3 top-1/2 -translate-y-1/2",
-            type === "pickup" ? "text-ubi-green" : "text-ubi-bites"
+            type === "pickup" ? "text-ubi-green" : "text-ubi-bites",
           )}
         >
           <MapPin className="h-5 w-5" />
@@ -248,7 +251,7 @@ export function LocationSearch({
                         ? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
                         : result.type === "current"
                           ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400"
-                          : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                          : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400",
                   )}
                 >
                   {result.type === "saved" ? (
@@ -282,4 +285,4 @@ export function LocationSearch({
       </AnimatePresence>
     </div>
   );
-}
+};

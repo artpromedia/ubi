@@ -146,7 +146,7 @@ export class EnhancedConnectionManager {
     platform: "ios" | "android" | "web",
     metadata: Record<string, unknown> = {},
     tokenExpiresAt?: Date,
-    sessionId?: string // For reconnection
+    sessionId?: string, // For reconnection
   ): Promise<string> {
     const connectionId = nanoid();
     const now = new Date();
@@ -205,7 +205,7 @@ export class EnhancedConnectionManager {
         await this.closeConnection(
           oldestConnId,
           4008,
-          "Max connections exceeded"
+          "Max connections exceeded",
         );
       }
     }
@@ -262,7 +262,7 @@ export class EnhancedConnectionManager {
     }
 
     console.log(
-      `[${userType}] ${userId} ${isReconnect ? "re" : ""}connected (${connectionId})`
+      `[${userType}] ${userId} ${isReconnect ? "re" : ""}connected (${connectionId})`,
     );
 
     // Send connection confirmation
@@ -295,7 +295,7 @@ export class EnhancedConnectionManager {
         this.sendError(
           connectionId,
           "MESSAGE_TOO_LARGE",
-          "Message exceeds size limit"
+          "Message exceeds size limit",
         );
         return;
       }
@@ -308,7 +308,7 @@ export class EnhancedConnectionManager {
         this.sendError(
           connectionId,
           "INVALID_MESSAGE",
-          "Failed to parse message"
+          "Failed to parse message",
         );
         this.metrics.recordError("parse_error");
       }
@@ -316,7 +316,7 @@ export class EnhancedConnectionManager {
 
     ws.on("close", (code: number, reason: Buffer) => {
       console.log(
-        `Connection ${connectionId} closed: ${code} ${reason.toString()}`
+        `Connection ${connectionId} closed: ${code} ${reason.toString()}`,
       );
       this.handleDisconnection(connectionId);
     });
@@ -384,7 +384,7 @@ export class EnhancedConnectionManager {
    */
   private async handleMessage(
     connectionId: string,
-    message: WebSocketMessage
+    message: WebSocketMessage,
   ): Promise<void> {
     const connection = this.connections.get(connectionId);
     if (!connection) return;
@@ -401,13 +401,13 @@ export class EnhancedConnectionManager {
       // Check for out-of-order messages
       if (message.seq !== connection.inboundSequence + 1) {
         console.warn(
-          `Out of order message: expected ${connection.inboundSequence + 1}, got ${message.seq}`
+          `Out of order message: expected ${connection.inboundSequence + 1}, got ${message.seq}`,
         );
         // Could request retransmission here
       }
       connection.inboundSequence = Math.max(
         connection.inboundSequence,
-        message.seq
+        message.seq,
       );
     }
 
@@ -466,7 +466,7 @@ export class EnhancedConnectionManager {
 
     connection.lastAckedSequence = Math.max(
       connection.lastAckedSequence,
-      ackSeq
+      ackSeq,
     );
   }
 
@@ -475,13 +475,13 @@ export class EnhancedConnectionManager {
    */
   private async handleLocationUpdate(
     connection: WebSocketConnection,
-    payload: any
+    payload: any,
   ): Promise<void> {
     if (connection.userType !== "driver") {
       this.sendError(
         connection.id,
         "INVALID_USER_TYPE",
-        "Only drivers can send location updates"
+        "Only drivers can send location updates",
       );
       return;
     }
@@ -494,7 +494,7 @@ export class EnhancedConnectionManager {
         ...payload,
         timestamp: Date.now(),
         serverId: this.serverId,
-      })
+      }),
     );
   }
 
@@ -503,13 +503,13 @@ export class EnhancedConnectionManager {
    */
   private async handleDispatchResponse(
     connection: WebSocketConnection,
-    payload: any
+    payload: any,
   ): Promise<void> {
     if (connection.userType !== "driver") {
       this.sendError(
         connection.id,
         "INVALID_USER_TYPE",
-        "Only drivers can respond to dispatches"
+        "Only drivers can respond to dispatches",
       );
       return;
     }
@@ -521,12 +521,12 @@ export class EnhancedConnectionManager {
         driverId: connection.userId,
         ...payload,
         timestamp: Date.now(),
-      })
+      }),
     );
 
     await this.redisPub.publish(
       `dispatch:${payload.dispatchId}:response`,
-      JSON.stringify(payload)
+      JSON.stringify(payload),
     );
   }
 
@@ -535,7 +535,7 @@ export class EnhancedConnectionManager {
    */
   private async handleTokenRefresh(
     connectionId: string,
-    payload: any
+    payload: any,
   ): Promise<void> {
     const connection = this.connections.get(connectionId);
     if (!connection) return;
@@ -547,7 +547,7 @@ export class EnhancedConnectionManager {
 
       if (newToken) {
         connection.tokenExpiresAt = new Date(
-          Date.now() + newToken.expiresIn * 1000
+          Date.now() + newToken.expiresIn * 1000,
         );
 
         this.sendToConnection(connectionId, {
@@ -572,7 +572,7 @@ export class EnhancedConnectionManager {
         this.sendError(
           connectionId,
           "INVALID_REFRESH_TOKEN",
-          "Token refresh failed"
+          "Token refresh failed",
         );
       }
     } catch (error) {
@@ -580,7 +580,7 @@ export class EnhancedConnectionManager {
       this.sendError(
         connectionId,
         "TOKEN_REFRESH_ERROR",
-        "Token refresh failed"
+        "Token refresh failed",
       );
     }
   }
@@ -590,7 +590,7 @@ export class EnhancedConnectionManager {
    */
   private async forwardMessage(
     connection: WebSocketConnection,
-    message: WebSocketMessage
+    message: WebSocketMessage,
   ): Promise<void> {
     // Publish to appropriate channel for processing
     await this.redisPub.publish(
@@ -601,7 +601,7 @@ export class EnhancedConnectionManager {
         connectionId: connection.id,
         message,
         timestamp: Date.now(),
-      })
+      }),
     );
   }
 
@@ -671,7 +671,7 @@ export class EnhancedConnectionManager {
           this.messageBuffer.bufferMessage(
             connection.userId,
             ack.message,
-            "normal"
+            "normal",
           );
         }
         pending?.delete(seq);
@@ -694,7 +694,7 @@ export class EnhancedConnectionManager {
     // Publish to Redis for other servers
     await this.redisPub.publish(
       `ws:user:${userId}:messages`,
-      JSON.stringify(message)
+      JSON.stringify(message),
     );
 
     // If user has no active connections anywhere, buffer the message
@@ -741,7 +741,7 @@ export class EnhancedConnectionManager {
     connectionId: string,
     code: string,
     message: string,
-    retryable = false
+    retryable = false,
   ): void {
     const connection = this.connections.get(connectionId);
     if (!connection) return;
@@ -762,7 +762,7 @@ export class EnhancedConnectionManager {
     if (!connection) return;
 
     console.log(
-      `[${connection.userType}] ${connection.userId} disconnected (${connectionId})`
+      `[${connection.userType}] ${connection.userId} disconnected (${connectionId})`,
     );
 
     // Clear heartbeat
@@ -779,7 +779,7 @@ export class EnhancedConnectionManager {
         await this.messageBuffer.bufferMessage(
           connection.userId,
           ack.message,
-          "high"
+          "high",
         );
       }
       this.pendingAcks.delete(connectionId);
@@ -820,7 +820,7 @@ export class EnhancedConnectionManager {
   async closeConnection(
     connectionId: string,
     code: number,
-    reason: string
+    reason: string,
   ): Promise<void> {
     const ws = this.websockets.get(connectionId);
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -835,11 +835,11 @@ export class EnhancedConnectionManager {
   private async deliverBufferedMessages(
     connectionId: string,
     userId: string,
-    fromSeq: number
+    fromSeq: number,
   ): Promise<void> {
     const messages = await this.messageBuffer.getBufferedMessages(
       userId,
-      fromSeq
+      fromSeq,
     );
 
     if (messages.length === 0) return;
@@ -862,7 +862,7 @@ export class EnhancedConnectionManager {
    */
   private async registerConnection(
     connectionId: string,
-    connection: WebSocketConnection
+    connection: WebSocketConnection,
   ): Promise<void> {
     const pipeline = this.redis.pipeline();
 
@@ -894,7 +894,7 @@ export class EnhancedConnectionManager {
    */
   private async unregisterConnection(
     connectionId: string,
-    userId: string
+    userId: string,
   ): Promise<void> {
     const pipeline = this.redis.pipeline();
 
@@ -916,12 +916,12 @@ export class EnhancedConnectionManager {
    */
   private async saveSession(
     sessionId: string,
-    data: SessionData
+    data: SessionData,
   ): Promise<void> {
     await this.redis.setex(
       `ws:session:${sessionId}`,
       Math.ceil(this.config.sessionTtlMs / 1000),
-      JSON.stringify(data)
+      JSON.stringify(data),
     );
     this.sessions.set(sessionId, data);
   }
@@ -931,7 +931,7 @@ export class EnhancedConnectionManager {
    */
   private async getSession(
     sessionId: string,
-    userId: string
+    userId: string,
   ): Promise<SessionData | null> {
     // Check local cache first
     const local = this.sessions.get(sessionId);
@@ -955,7 +955,7 @@ export class EnhancedConnectionManager {
    * Update session sequence numbers
    */
   private async updateSessionSequence(
-    connection: WebSocketConnection
+    connection: WebSocketConnection,
   ): Promise<void> {
     const sessionId = connection.metadata.sessionId as string;
     if (!sessionId) return;
@@ -979,7 +979,7 @@ export class EnhancedConnectionManager {
    * Refresh access token (mock implementation)
    */
   private async refreshAccessToken(
-    _refreshToken: string
+    _refreshToken: string,
   ): Promise<{ accessToken: string; expiresIn: number } | null> {
     // TODO: Integrate with your auth service
     try {

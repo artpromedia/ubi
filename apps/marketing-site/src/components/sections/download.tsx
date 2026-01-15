@@ -76,7 +76,8 @@ export const DownloadSection = () => {
                       <span className="font-bold text-gray-900 dark:text-white">
                         {stat.value}
                       </span>
-                      {(stat.label === "App Store" || stat.label === "Play Store") && (
+                      {(stat.label === "App Store" ||
+                        stat.label === "Play Store") && (
                         <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                       )}
                     </div>
@@ -161,7 +162,8 @@ export const DownloadSection = () => {
             >
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Or text <span className="font-semibold">UBI</span> to{" "}
-                <span className="font-semibold">22122</span> to get the download link
+                <span className="font-semibold">22122</span> to get the download
+                link
               </p>
             </motion.div>
           </div>
@@ -189,10 +191,18 @@ export const DownloadSection = () => {
                     <div className="flex items-center justify-between px-6 py-2 bg-black text-white text-xs">
                       <span>9:41</span>
                       <div className="flex items-center gap-1">
-                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+                        <svg
+                          className="h-3 w-3"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                        >
                           <path d="M12 3v18m-9-9h18" />
                         </svg>
-                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+                        <svg
+                          className="h-3 w-3"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                        >
                           <rect x="1" y="7" width="4" height="10" rx="1" />
                           <rect x="7" y="4" width="4" height="13" rx="1" />
                           <rect x="13" y="2" width="4" height="15" rx="1" />
@@ -230,22 +240,43 @@ export const DownloadSection = () => {
                           </div>
                         </div>
                         {/* Decorative map lines */}
-                        <svg className="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 100 100">
-                          <path d="M0,50 Q25,30 50,50 T100,50" stroke="currentColor" strokeWidth="0.5" fill="none" className="text-gray-400" />
-                          <path d="M50,0 Q30,25 50,50 T50,100" stroke="currentColor" strokeWidth="0.5" fill="none" className="text-gray-400" />
+                        <svg
+                          className="absolute inset-0 w-full h-full opacity-30"
+                          viewBox="0 0 100 100"
+                        >
+                          <path
+                            d="M0,50 Q25,30 50,50 T100,50"
+                            stroke="currentColor"
+                            strokeWidth="0.5"
+                            fill="none"
+                            className="text-gray-400"
+                          />
+                          <path
+                            d="M50,0 Q30,25 50,50 T50,100"
+                            stroke="currentColor"
+                            strokeWidth="0.5"
+                            fill="none"
+                            className="text-gray-400"
+                          />
                         </svg>
                       </div>
 
                       {/* Service tabs */}
                       <div className="flex gap-2 mb-4">
                         <div className="flex-1 rounded-lg bg-ubi-green p-2 text-center">
-                          <span className="text-xs font-medium text-white">Move</span>
+                          <span className="text-xs font-medium text-white">
+                            Move
+                          </span>
                         </div>
                         <div className="flex-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-2 text-center">
-                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Bites</span>
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                            Bites
+                          </span>
                         </div>
                         <div className="flex-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-2 text-center">
-                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Send</span>
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                            Send
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -297,4 +328,4 @@ export const DownloadSection = () => {
       </div>
     </section>
   );
-}
+};

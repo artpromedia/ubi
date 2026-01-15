@@ -7,9 +7,9 @@ import { cn } from "../lib/utils";
 
 /**
  * ButtonGroup - Group related buttons together
- * 
+ *
  * Provides visual grouping with connected borders.
- * 
+ *
  * @example
  * <ButtonGroup>
  *   <Button variant="outline">Left</Button>
@@ -18,40 +18,40 @@ import { cn } from "../lib/utils";
  * </ButtonGroup>
  */
 
-const buttonGroupVariants = cva(
-  "inline-flex items-center",
-  {
-    variants: {
-      orientation: {
-        horizontal: "flex-row [&>*:not(:first-child)]:rounded-l-none [&>*:not(:last-child)]:rounded-r-none [&>*:not(:first-child)]:-ml-px",
-        vertical: "flex-col [&>*:not(:first-child)]:rounded-t-none [&>*:not(:last-child)]:rounded-b-none [&>*:not(:first-child)]:-mt-px",
-      },
-      attached: {
-        true: "",
-        false: "gap-2",
-      },
+const buttonGroupVariants = cva("inline-flex items-center", {
+  variants: {
+    orientation: {
+      horizontal:
+        "flex-row [&>*:not(:first-child)]:rounded-l-none [&>*:not(:last-child)]:rounded-r-none [&>*:not(:first-child)]:-ml-px",
+      vertical:
+        "flex-col [&>*:not(:first-child)]:rounded-t-none [&>*:not(:last-child)]:rounded-b-none [&>*:not(:first-child)]:-mt-px",
     },
-    compoundVariants: [
-      {
-        attached: false,
-        orientation: "horizontal",
-        className: "[&>*]:rounded-lg [&>*]:ml-0",
-      },
-      {
-        attached: false,
-        orientation: "vertical",
-        className: "[&>*]:rounded-lg [&>*]:mt-0",
-      },
-    ],
-    defaultVariants: {
+    attached: {
+      true: "",
+      false: "gap-2",
+    },
+  },
+  compoundVariants: [
+    {
+      attached: false,
       orientation: "horizontal",
-      attached: true,
+      className: "[&>*]:rounded-lg [&>*]:ml-0",
     },
-  }
-);
+    {
+      attached: false,
+      orientation: "vertical",
+      className: "[&>*]:rounded-lg [&>*]:mt-0",
+    },
+  ],
+  defaultVariants: {
+    orientation: "horizontal",
+    attached: true,
+  },
+});
 
 export interface ButtonGroupProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof buttonGroupVariants> {}
 
 const ButtonGroup = React.forwardRef<HTMLDivElement, ButtonGroupProps>(
@@ -60,11 +60,14 @@ const ButtonGroup = React.forwardRef<HTMLDivElement, ButtonGroupProps>(
       <div
         ref={ref}
         role="group"
-        className={cn(buttonGroupVariants({ orientation, attached }), className)}
+        className={cn(
+          buttonGroupVariants({ orientation, attached }),
+          className,
+        )}
         {...props}
       />
     );
-  }
+  },
 );
 ButtonGroup.displayName = "ButtonGroup";
 

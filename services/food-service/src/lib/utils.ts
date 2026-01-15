@@ -34,7 +34,7 @@ export function calculateOrderTotals(
     tip?: number;
     discount?: number;
     currency?: string;
-  }
+  },
 ): {
   subtotal: number;
   deliveryFee: number;
@@ -121,7 +121,7 @@ export function calculateDistance(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ): number {
   const R = 6371; // Earth's radius in km
   const dLat = toRad(lat2 - lat1);
@@ -163,7 +163,7 @@ export function isRestaurantOpen(
     open: string;
     close: string;
     isClosed: boolean;
-  }>
+  }>,
 ): boolean {
   const now = new Date();
   const days = [
@@ -262,7 +262,7 @@ export function isValidPhone(phone: string, countryCode?: string): boolean {
 export async function retry<T>(
   fn: () => Promise<T>,
   maxAttempts = 3,
-  delayMs = 1000
+  delayMs = 1000,
 ): Promise<T> {
   let lastError: Error | undefined;
 
@@ -296,7 +296,7 @@ export function chunk<T>(array: T[], size: number): T[][] {
  */
 export function deepMerge<T extends Record<string, any>>(
   target: T,
-  source: Partial<T>
+  source: Partial<T>,
 ): T {
   const result = { ...target };
 

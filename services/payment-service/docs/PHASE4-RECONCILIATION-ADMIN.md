@@ -49,7 +49,7 @@ enum DiscrepancyType {
 await reconciliationService.runDailyReconciliation(
   PaymentProvider.PAYSTACK,
   new Date("2024-01-15"),
-  Currency.NGN
+  Currency.NGN,
 );
 
 // Get pending discrepancies
@@ -64,14 +64,14 @@ const discrepancies = await reconciliationService.getPendingDiscrepancies({
 await reconciliationService.resolveDiscrepancy(
   discrepancyId,
   "Verified with provider - transaction processed",
-  adminUserId
+  adminUserId,
 );
 
 // Balance reconciliation
 await reconciliationService.runBalanceReconciliation(
   PaymentProvider.MTN_MOMO,
   new Date(),
-  Currency.GHS
+  Currency.GHS,
 );
 ```
 
@@ -140,7 +140,7 @@ await settlementService.processSettlement(settlement.id);
 // Run daily restaurant settlements
 await settlementService.runDailyRestaurantSettlements(
   new Date("2024-01-15"),
-  Currency.NGN
+  Currency.NGN,
 );
 
 // Get settlement summary
@@ -376,12 +376,12 @@ schedule("0 2 * * *", async () => {
       await reconciliationService.runDailyReconciliation(
         provider,
         yesterday,
-        currency
+        currency,
       );
       await reconciliationService.runBalanceReconciliation(
         provider,
         yesterday,
-        currency
+        currency,
       );
     }
   }
@@ -394,15 +394,15 @@ schedule("0 3 * * *", async () => {
 
   await settlementService.runDailyRestaurantSettlements(
     yesterday,
-    Currency.NGN
+    Currency.NGN,
   );
   await settlementService.runDailyRestaurantSettlements(
     yesterday,
-    Currency.KES
+    Currency.KES,
   );
   await settlementService.runDailyRestaurantSettlements(
     yesterday,
-    Currency.GHS
+    Currency.GHS,
   );
 });
 ```

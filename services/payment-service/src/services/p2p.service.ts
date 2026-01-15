@@ -3,10 +3,12 @@
  * Person-to-person money transfers with phone/email/username lookup
  */
 
-import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
-import { prisma } from "../lib/prisma";
+
+import { enhancedWalletService } from "./enhanced-wallet.service";
 import { notificationClient } from "../lib/notification-client";
+import { prisma } from "../lib/prisma";
+
 import type {
   Beneficiary,
   BeneficiaryParams,
@@ -16,7 +18,7 @@ import type {
   P2PTransferResult,
   TransferStatus,
 } from "../types/fintech.types";
-import { enhancedWalletService } from "./enhanced-wallet.service";
+import type { Currency } from "@prisma/client";
 
 // ===========================================
 // CONSTANTS
@@ -35,14 +37,8 @@ export class P2PTransferService {
    * Send money to another user
    */
   async sendMoney(params: P2PTransferParams): Promise<P2PTransferResult> {
-    const {
-      senderWalletId,
-      recipientIdentifier,
-      amount,
-      currency,
-      note,
-      pin,
-    } = params;
+    const { senderWalletId, recipientIdentifier, amount, currency, note, pin } =
+      params;
     const identifierType = (params as any).identifierType || "walletId";
 
     // Validate sender wallet
@@ -65,7 +61,7 @@ export class P2PTransferService {
     const limitCheck = await enhancedWalletService.checkLimit(
       senderWalletId,
       amount,
-      "p2p"
+      "p2p",
     );
     if (!limitCheck.allowed) {
       throw new Error(limitCheck.reason || "Transfer limit exceeded");
@@ -74,7 +70,7 @@ export class P2PTransferService {
     // Check sufficient balance
     const balance = await enhancedWalletService.getBalance(
       senderWalletId,
-      currency as Currency
+      currency as Currency,
     );
     const fee = this.calculateFee(amount);
     const totalDebit = amount + fee;
@@ -86,7 +82,7 @@ export class P2PTransferService {
     // Resolve recipient
     const recipient = await this.resolveRecipient(
       recipientIdentifier,
-      identifierType
+      identifierType,
     );
     const transferId = `p2p_${nanoid(16)}`;
 
@@ -122,7 +118,7 @@ export class P2PTransferService {
    */
   async claimPendingTransfer(
     transferId: string,
-    claimerWalletId: string
+    claimerWalletId: string,
   ): Promise<P2PTransferResult> {
     const transfer = await prisma.p2PTransfer.findUnique({
       where: { id: transferId },
@@ -191,7 +187,7 @@ export class P2PTransferService {
    */
   async cancelTransfer(
     transferId: string,
-    senderWalletId: string
+    senderWalletId: string,
   ): Promise<void> {
     const transfer = await prisma.p2PTransfer.findUnique({
       where: { id: transferId },
@@ -207,7 +203,7 @@ export class P2PTransferService {
 
     if (transfer.status !== "PENDING") {
       throw new Error(
-        `Cannot cancel ${transfer.status.toLowerCase()} transfer`
+        `Cannot cancel ${transfer.status.toLowerCase()} transfer`,
       );
     }
 
@@ -251,7 +247,7 @@ export class P2PTransferService {
       status?: TransferStatus;
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ): Promise<{ transfers: P2PTransferResult[]; total: number }> {
     const { direction = "all", status, limit = 20, offset = 0 } = options;
 
@@ -306,11 +302,7 @@ export class P2PTransferService {
    * Request money from another user
    */
   async requestMoney(params: MoneyRequestParams): Promise<MoneyRequestResult> {
-    const {
-      amount,
-      currency,
-      note,
-    } = params;
+    const { amount, currency, note } = params;
     const requesterWalletId = (params as any).requestorWalletId;
     const payerIdentifier = (params as any).responderIdentifier;
     const identifierType: "phone" | "email" | "username" = "phone";
@@ -333,7 +325,7 @@ export class P2PTransferService {
         note,
         status: "PENDING",
         expiresAt: new Date(
-          Date.now() + PENDING_TRANSFER_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+          Date.now() + PENDING_TRANSFER_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
         ),
       },
     });
@@ -360,7 +352,7 @@ export class P2PTransferService {
   async payMoneyRequest(
     requestId: string,
     payerWalletId: string,
-    pin: string
+    pin: string,
   ): Promise<P2PTransferResult> {
     const request = await prisma.moneyRequest.findUnique({
       where: { id: requestId },
@@ -410,7 +402,7 @@ export class P2PTransferService {
    */
   async declineMoneyRequest(
     requestId: string,
-    payerWalletId: string
+    payerWalletId: string,
   ): Promise<void> {
     const request = await prisma.moneyRequest.findUnique({
       where: { id: requestId },
@@ -462,7 +454,7 @@ export class P2PTransferService {
    */
   async cancelMoneyRequest(
     requestId: string,
-    requesterWalletId: string
+    requesterWalletId: string,
   ): Promise<void> {
     const request = await prisma.moneyRequest.findUnique({
       where: { id: requestId },
@@ -492,7 +484,7 @@ export class P2PTransferService {
   async getMoneyRequests(
     walletId: string,
     type: "sent" | "received",
-    options: { status?: string; limit?: number; offset?: number } = {}
+    options: { status?: string; limit?: number; offset?: number } = {},
   ): Promise<{ requests: MoneyRequestResult[]; total: number }> {
     const { status, limit = 20, offset = 0 } = options;
 
@@ -501,7 +493,9 @@ export class P2PTransferService {
         ? { requesterWalletId: walletId }
         : { payerWalletId: walletId };
 
-    if (status) where.status = status;
+    if (status) {
+      where.status = status;
+    }
 
     const [requests, total] = await Promise.all([
       prisma.moneyRequest.findMany({
@@ -585,12 +579,14 @@ export class P2PTransferService {
    */
   async getBeneficiaries(
     walletId: string,
-    options: { frequentOnly?: boolean; limit?: number; offset?: number } = {}
+    options: { frequentOnly?: boolean; limit?: number; offset?: number } = {},
   ): Promise<{ beneficiaries: Beneficiary[]; total: number }> {
     const { frequentOnly = false, limit = 50, offset = 0 } = options;
 
     const where: Record<string, unknown> = { walletId };
-    if (frequentOnly) where.isFrequent = true;
+    if (frequentOnly) {
+      where.isFrequent = true;
+    }
 
     const [beneficiaries, total] = await Promise.all([
       prisma.beneficiary.findMany({
@@ -618,7 +614,7 @@ export class P2PTransferService {
   async updateBeneficiary(
     beneficiaryId: string,
     walletId: string,
-    updates: { name?: string; isFrequent?: boolean }
+    updates: { name?: string; isFrequent?: boolean },
   ): Promise<Beneficiary> {
     const beneficiary = await prisma.beneficiary.findUnique({
       where: { id: beneficiaryId },
@@ -641,7 +637,7 @@ export class P2PTransferService {
    */
   async deleteBeneficiary(
     beneficiaryId: string,
-    walletId: string
+    walletId: string,
   ): Promise<void> {
     const beneficiary = await prisma.beneficiary.findUnique({
       where: { id: beneficiaryId },
@@ -662,7 +658,7 @@ export class P2PTransferService {
 
   private async resolveRecipient(
     identifier: string,
-    type: "phone" | "email" | "username" | "walletId"
+    type: "phone" | "email" | "username" | "walletId",
   ): Promise<{
     found: boolean;
     walletId?: string;
@@ -789,7 +785,7 @@ export class P2PTransferService {
     // Update beneficiary transfer count
     await this.updateBeneficiaryTransferCount(
       senderWalletId,
-      recipientWalletId
+      recipientWalletId,
     );
 
     // Send notifications
@@ -831,7 +827,7 @@ export class P2PTransferService {
     } = params;
 
     const expiresAt = new Date(
-      Date.now() + PENDING_TRANSFER_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+      Date.now() + PENDING_TRANSFER_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
     );
 
     // Hold funds from sender
@@ -864,7 +860,7 @@ export class P2PTransferService {
       recipientIdentifier,
       identifierType,
       amount,
-      currency
+      currency,
     );
 
     return {
@@ -896,7 +892,9 @@ export class P2PTransferService {
       where: { id: transferId },
     });
 
-    if (!transfer) return;
+    if (!transfer) {
+      return;
+    }
 
     // Refund sender
     await enhancedWalletService.credit({
@@ -918,7 +916,7 @@ export class P2PTransferService {
 
   private async updateBeneficiaryTransferCount(
     senderWalletId: string,
-    recipientWalletId: string
+    recipientWalletId: string,
   ): Promise<void> {
     await prisma.beneficiary.updateMany({
       where: {
@@ -972,18 +970,21 @@ export class P2PTransferService {
       });
 
       if (!transfer || !transfer.sender || !transfer.recipient) {
-        console.warn(`[P2P] Transfer not found for notification: ${transferId}`);
+        console.warn(
+          `[P2P] Transfer not found for notification: ${transferId}`,
+        );
         return;
       }
 
-      const recipientName = `${transfer.recipient.firstName} ${transfer.recipient.lastName}`.trim();
+      const recipientName =
+        `${transfer.recipient.firstName} ${transfer.recipient.lastName}`.trim();
 
       await notificationClient.notifyTransferCompleted(
         transfer.senderId,
         transfer.recipientId,
         Number(transfer.amount),
         transfer.currency,
-        recipientName
+        recipientName,
       );
 
       console.log(`[P2P] Transfer notification sent for ${transferId}`);
@@ -994,7 +995,7 @@ export class P2PTransferService {
 
   private async notifyMoneyRequest(
     requestId: string,
-    payerUserId: string
+    payerUserId: string,
   ): Promise<void> {
     try {
       const request = await prisma.moneyRequest.findUnique({
@@ -1009,7 +1010,8 @@ export class P2PTransferService {
         return;
       }
 
-      const requesterName = `${request.requester.firstName} ${request.requester.lastName}`.trim();
+      const requesterName =
+        `${request.requester.firstName} ${request.requester.lastName}`.trim();
 
       await notificationClient.notifyMoneyRequest(
         payerUserId,
@@ -1017,7 +1019,7 @@ export class P2PTransferService {
         Number(request.amount),
         request.currency,
         requesterName,
-        request.note || undefined
+        request.note || undefined,
       );
 
       console.log(`[P2P] Money request notification sent for ${requestId}`);
@@ -1041,13 +1043,14 @@ export class P2PTransferService {
         return;
       }
 
-      const payerName = `${request.payer.firstName} ${request.payer.lastName}`.trim();
+      const payerName =
+        `${request.payer.firstName} ${request.payer.lastName}`.trim();
 
       await notificationClient.notifyRequestDeclined(
         request.requesterId,
         payerName,
         Number(request.amount),
-        request.currency
+        request.currency,
       );
 
       console.log(`[P2P] Request declined notification sent for ${requestId}`);
@@ -1060,11 +1063,13 @@ export class P2PTransferService {
     identifier: string,
     type: "phone" | "email" | "username",
     amount: number,
-    currency: Currency
+    currency: Currency,
   ): Promise<void> {
     try {
       // For now, log the invite - in production, this would send an SMS/email
-      console.log(`[P2P] Sending invite to ${type}:${identifier} for ${amount} ${currency}`);
+      console.log(
+        `[P2P] Sending invite to ${type}:${identifier} for ${amount} ${currency}`,
+      );
 
       // TODO: Integrate with SMS/Email service for user invites
       // This would send a message like:
@@ -1072,7 +1077,9 @@ export class P2PTransferService {
 
       if (type === "phone") {
         // Send SMS via notification service
-        const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:4006";
+        const NOTIFICATION_SERVICE_URL =
+          process.env.NOTIFICATION_SERVICE_URL ||
+          "http://notification-service:4006";
         await fetch(`${NOTIFICATION_SERVICE_URL}/v1/sms/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1084,7 +1091,9 @@ export class P2PTransferService {
         });
       } else if (type === "email") {
         // Send email via notification service
-        const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:4006";
+        const NOTIFICATION_SERVICE_URL =
+          process.env.NOTIFICATION_SERVICE_URL ||
+          "http://notification-service:4006";
         await fetch(`${NOTIFICATION_SERVICE_URL}/v1/email/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

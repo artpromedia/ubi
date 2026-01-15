@@ -12,25 +12,26 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+
 import {
   COUNTRY_CONFIGS,
-  DocumentSubmission,
-  DocumentType,
-  ExtractedDocumentData,
-  FaceMatchResult,
-  LivenessResult,
-  ProviderVerifyParams,
-  ProviderVerifyResult,
-  SafetyEvent,
-  SelfieCapture,
-  UserVerification,
-  VerificationCapabilities,
-  VerificationLevel,
-  VerificationLevelConfig,
-  VerificationProvider,
-  VerificationResult,
-  VerificationStatus,
-  VerificationType,
+  type DocumentSubmission,
+  type DocumentType,
+  type ExtractedDocumentData,
+  type FaceMatchResult,
+  type LivenessResult,
+  type ProviderVerifyParams,
+  type ProviderVerifyResult,
+  type SafetyEvent,
+  type SelfieCapture,
+  type UserVerification,
+  type VerificationCapabilities,
+  type VerificationLevel,
+  type VerificationLevelConfig,
+  type VerificationProvider,
+  type VerificationResult,
+  type VerificationStatus,
+  type VerificationType,
 } from "../types/safety.types";
 
 // =============================================================================
@@ -72,7 +73,7 @@ export class VerificationService extends EventEmitter {
 
     console.log(
       "[VerificationService] Initialized with providers:",
-      Array.from(this.providers.keys())
+      Array.from(this.providers.keys()),
     );
   }
 
@@ -86,7 +87,7 @@ export class VerificationService extends EventEmitter {
   }
 
   async getVerificationLevelConfig(
-    level: VerificationLevel
+    level: VerificationLevel,
   ): Promise<VerificationLevelConfig> {
     return VERIFICATION_LEVEL_CONFIGS[level];
   }
@@ -99,7 +100,7 @@ export class VerificationService extends EventEmitter {
 
   async checkCapability(
     userId: string,
-    capability: keyof VerificationCapabilities
+    capability: keyof VerificationCapabilities,
   ): Promise<boolean> {
     const capabilities = await this.getUserCapabilities(userId);
     return !!capabilities[capability];
@@ -107,7 +108,7 @@ export class VerificationService extends EventEmitter {
 
   async getNextRequiredVerification(
     userId: string,
-    targetLevel: VerificationLevel
+    targetLevel: VerificationLevel,
   ): Promise<VerificationType[]> {
     const currentVerifications = await this.getUserVerifications(userId);
     const targetConfig = VERIFICATION_LEVEL_CONFIGS[targetLevel];
@@ -116,7 +117,7 @@ export class VerificationService extends EventEmitter {
     const completedTypes = new Set(
       currentVerifications
         .filter((v) => v.status === "APPROVED")
-        .map((v) => v.verificationType)
+        .map((v) => v.verificationType),
     );
 
     if (targetConfig.requirements.phone && !completedTypes.has("PHONE")) {
@@ -154,16 +155,16 @@ export class VerificationService extends EventEmitter {
   }
 
   private calculateVerificationLevel(
-    verifications: UserVerification[]
+    verifications: UserVerification[],
   ): VerificationLevel {
     const approved = new Set(
       verifications
         .filter(
           (v) =>
             v.status === "APPROVED" &&
-            (!v.expiresAt || v.expiresAt > new Date())
+            (!v.expiresAt || v.expiresAt > new Date()),
         )
-        .map((v) => v.verificationType)
+        .map((v) => v.verificationType),
     );
 
     // Check from highest to lowest
@@ -209,7 +210,7 @@ export class VerificationService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async submitDocument(
-    submission: DocumentSubmission
+    submission: DocumentSubmission,
   ): Promise<VerificationResult> {
     const {
       userId,
@@ -228,7 +229,7 @@ export class VerificationService extends EventEmitter {
         verification: this.createFailedVerification(
           userId,
           "GOVERNMENT_ID",
-          "Unsupported country"
+          "Unsupported country",
         ),
         confidenceScore: 0,
         issues: [
@@ -248,7 +249,7 @@ export class VerificationService extends EventEmitter {
         verification: this.createFailedVerification(
           userId,
           "GOVERNMENT_ID",
-          "Unsupported document type for country"
+          "Unsupported document type for country",
         ),
         confidenceScore: 0,
         issues: [
@@ -285,7 +286,7 @@ export class VerificationService extends EventEmitter {
     // Check attempt limits
     const attempts = await this.getVerificationAttempts(
       userId,
-      "GOVERNMENT_ID"
+      "GOVERNMENT_ID",
     );
     if (attempts >= 5) {
       return {
@@ -293,7 +294,7 @@ export class VerificationService extends EventEmitter {
         verification: this.createFailedVerification(
           userId,
           "GOVERNMENT_ID",
-          "Max attempts exceeded"
+          "Max attempts exceeded",
         ),
         confidenceScore: 0,
         issues: [
@@ -315,7 +316,7 @@ export class VerificationService extends EventEmitter {
         verification: this.createFailedVerification(
           userId,
           "GOVERNMENT_ID",
-          "No provider available"
+          "No provider available",
         ),
         confidenceScore: 0,
         issues: [
@@ -363,7 +364,7 @@ export class VerificationService extends EventEmitter {
           await this.storeDocumentData(
             userId,
             documentType,
-            result.extractedData
+            result.extractedData,
           );
         }
 
@@ -418,7 +419,7 @@ export class VerificationService extends EventEmitter {
 
       console.error(
         "[VerificationService] Document verification error:",
-        error
+        error,
       );
 
       return {
@@ -438,10 +439,12 @@ export class VerificationService extends EventEmitter {
 
   private selectProvider(
     country: string,
-    documentType: DocumentType
+    documentType: DocumentType,
   ): VerificationProvider | null {
     const countryConfig = COUNTRY_CONFIGS[country];
-    if (!countryConfig) return this.providers.get("onfido") || null;
+    if (!countryConfig) {
+      return this.providers.get("onfido") || null;
+    }
 
     // Try country-specific providers first
     for (const providerName of countryConfig.verificationProviders) {
@@ -462,7 +465,7 @@ export class VerificationService extends EventEmitter {
   async captureSelfie(
     userId: string,
     imageData: Buffer,
-    _deviceInfo?: Record<string, any>
+    _deviceInfo?: Record<string, any>,
   ): Promise<SelfieCapture | null> {
     // Basic image validation
     const imageAnalysis = await this.analyzeImage(imageData);
@@ -483,7 +486,7 @@ export class VerificationService extends EventEmitter {
     if (capture.multipleFaces) {
       console.warn(
         "[VerificationService] Multiple faces detected in selfie for user:",
-        userId
+        userId,
       );
     }
 
@@ -493,7 +496,7 @@ export class VerificationService extends EventEmitter {
   async performLivenessCheck(
     userId: string,
     videoData: Buffer,
-    challengeResponse: LivenessChallengeResponse
+    challengeResponse: LivenessChallengeResponse,
   ): Promise<LivenessResult> {
     // In production, this would use ML models or a provider like SmileID
     const checks: import("../types/safety.types").LivenessCheck[] = [];
@@ -508,7 +511,7 @@ export class VerificationService extends EventEmitter {
     // Head movement detection
     const headCheck = this.checkHeadMovement(
       videoData,
-      challengeResponse.headMovements
+      challengeResponse.headMovements,
     );
     checks.push(headCheck);
     totalScore += headCheck.score;
@@ -516,7 +519,7 @@ export class VerificationService extends EventEmitter {
     // Expression check
     const expressionCheck = this.checkExpression(
       videoData,
-      challengeResponse.expression
+      challengeResponse.expression,
     );
     checks.push(expressionCheck);
     totalScore += expressionCheck.score;
@@ -563,7 +566,7 @@ export class VerificationService extends EventEmitter {
   async matchFaceToDocument(
     userId: string,
     selfieId: string,
-    documentId: string
+    documentId: string,
   ): Promise<FaceMatchResult> {
     // Get selfie and document images
     const selfieCapture = await this.getSelfieCapture(selfieId);
@@ -582,7 +585,7 @@ export class VerificationService extends EventEmitter {
     // In production, this would use facial recognition APIs
     const matchResult = await this.compareFaces(
       selfieCapture.storagePath,
-      documentVerification.providerReference || ""
+      documentVerification.providerReference || "",
     );
 
     const threshold = 0.8; // 80% match required
@@ -614,7 +617,7 @@ export class VerificationService extends EventEmitter {
 
   async sendPhoneOTP(
     userId: string,
-    phoneNumber: string
+    phoneNumber: string,
   ): Promise<{ sent: boolean; expiresIn: number }> {
     // Rate limit check
     const recentOTPs = await this.getRecentOTPCount(userId, "phone");
@@ -638,12 +641,12 @@ export class VerificationService extends EventEmitter {
     // Send SMS (in production, use SMS provider)
     await this.sendSMS(
       phoneNumber,
-      `Your UBI verification code is: ${otp}. Valid for 5 minutes.`
+      `Your UBI verification code is: ${otp}. Valid for 5 minutes.`,
     );
 
     console.log(
       "[VerificationService] Phone OTP sent to:",
-      phoneNumber.slice(-4)
+      phoneNumber.slice(-4),
     );
 
     return { sent: true, expiresIn };
@@ -651,7 +654,7 @@ export class VerificationService extends EventEmitter {
 
   async sendEmailOTP(
     userId: string,
-    email: string
+    email: string,
   ): Promise<{ sent: boolean; expiresIn: number }> {
     // Rate limit check
     const recentOTPs = await this.getRecentOTPCount(userId, "email");
@@ -676,7 +679,7 @@ export class VerificationService extends EventEmitter {
     await this.sendEmail(
       email,
       "UBI Verification Code",
-      `Your verification code is: ${otp}`
+      `Your verification code is: ${otp}`,
     );
 
     return { sent: true, expiresIn };
@@ -685,7 +688,7 @@ export class VerificationService extends EventEmitter {
   async verifyOTP(
     userId: string,
     type: "phone" | "email",
-    code: string
+    code: string,
   ): Promise<{ verified: boolean; attemptsRemaining?: number }> {
     const key = `${userId}:${type}`;
     const otpRecord = this.otpStore.get(key);
@@ -743,7 +746,7 @@ export class VerificationService extends EventEmitter {
       backImage?: Buffer;
       licenseNumber: string;
       expiryDate: string;
-    }
+    },
   ): Promise<VerificationResult> {
     const countryConfig = COUNTRY_CONFIGS[country];
     if (!countryConfig) {
@@ -752,7 +755,7 @@ export class VerificationService extends EventEmitter {
         verification: this.createFailedVerification(
           userId,
           "DRIVERS_LICENSE",
-          "Unsupported country"
+          "Unsupported country",
         ),
         confidenceScore: 0,
         issues: [
@@ -776,7 +779,7 @@ export class VerificationService extends EventEmitter {
         verification: this.createFailedVerification(
           userId,
           "DRIVERS_LICENSE",
-          "License expired"
+          "License expired",
         ),
         confidenceScore: 0,
         issues: [
@@ -824,7 +827,7 @@ export class VerificationService extends EventEmitter {
 
   async getVerificationByType(
     userId: string,
-    type: VerificationType
+    type: VerificationType,
   ): Promise<UserVerification | null> {
     const verifications = await this.getUserVerifications(userId);
     return verifications.find((v) => v.verificationType === type) || null;
@@ -832,7 +835,7 @@ export class VerificationService extends EventEmitter {
 
   async getVerificationAttempts(
     userId: string,
-    type: VerificationType
+    type: VerificationType,
   ): Promise<number> {
     const verifications = await this.getUserVerifications(userId);
     return verifications
@@ -841,7 +844,7 @@ export class VerificationService extends EventEmitter {
   }
 
   async getVerificationStatus(
-    userId: string
+    userId: string,
   ): Promise<VerificationStatusSummary> {
     const verifications = await this.getUserVerifications(userId);
     const level = this.calculateVerificationLevel(verifications);
@@ -879,7 +882,7 @@ export class VerificationService extends EventEmitter {
         level !== "PREMIUM"
           ? await this.getNextRequiredVerification(
               userId,
-              this.getNextLevel(level)
+              this.getNextLevel(level),
             )
           : [],
     };
@@ -902,7 +905,7 @@ export class VerificationService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   private async createVerification(
-    data: Partial<UserVerification>
+    data: Partial<UserVerification>,
   ): Promise<UserVerification> {
     const verification: UserVerification = {
       id: this.generateId(),
@@ -934,7 +937,7 @@ export class VerificationService extends EventEmitter {
   private createFailedVerification(
     userId: string,
     type: VerificationType,
-    reason: string
+    reason: string,
   ): UserVerification {
     return {
       id: this.generateId(),
@@ -951,7 +954,9 @@ export class VerificationService extends EventEmitter {
   private async getVerification(id: string): Promise<UserVerification | null> {
     for (const [, verifications] of this.verificationCache) {
       const found = verifications.find((v) => v.id === id);
-      if (found) return found;
+      if (found) {
+        return found;
+      }
     }
     return null;
   }
@@ -962,9 +967,11 @@ export class VerificationService extends EventEmitter {
   }
 
   private sanitizeExtractedData(
-    data?: ExtractedDocumentData
+    data?: ExtractedDocumentData,
   ): ExtractedDocumentData | undefined {
-    if (!data) return undefined;
+    if (!data) {
+      return undefined;
+    }
 
     return {
       ...data,
@@ -975,14 +982,16 @@ export class VerificationService extends EventEmitter {
   }
 
   private maskDocumentNumber(number: string): string {
-    if (number.length <= 4) return "****";
+    if (number.length <= 4) {
+      return "****";
+    }
     return "*".repeat(number.length - 4) + number.slice(-4);
   }
 
   private async storeDocumentData(
     _userId: string,
     _documentType: DocumentType,
-    _data: ExtractedDocumentData
+    _data: ExtractedDocumentData,
   ): Promise<void> {
     // In production, encrypt and store securely
   }
@@ -990,7 +999,7 @@ export class VerificationService extends EventEmitter {
   private async storeSecurely(
     userId: string,
     type: string,
-    _data: Buffer
+    _data: Buffer,
   ): Promise<string> {
     // In production, encrypt and store in secure storage
     const path = `verifications/${userId}/${type}/${this.generateId()}`;
@@ -1012,7 +1021,7 @@ export class VerificationService extends EventEmitter {
 
   private checkBlink(
     _videoData: Buffer,
-    blinkTimes: number[]
+    blinkTimes: number[],
   ): import("../types/safety.types").LivenessCheck {
     // In production, analyze video frames for blinks
     return {
@@ -1025,7 +1034,7 @@ export class VerificationService extends EventEmitter {
 
   private checkHeadMovement(
     _videoData: Buffer,
-    movements: { direction: string; timestamp: number }[]
+    movements: { direction: string; timestamp: number }[],
   ): import("../types/safety.types").LivenessCheck {
     return {
       type: "head_movement",
@@ -1036,7 +1045,7 @@ export class VerificationService extends EventEmitter {
 
   private checkExpression(
     _videoData: Buffer,
-    _expression: string
+    _expression: string,
   ): import("../types/safety.types").LivenessCheck {
     return {
       type: "expression",
@@ -1046,7 +1055,7 @@ export class VerificationService extends EventEmitter {
   }
 
   private checkAntiSpoofing(
-    _videoData: Buffer
+    _videoData: Buffer,
   ): import("../types/safety.types").LivenessCheck {
     // In production, check for:
     // - 2D photo presentation
@@ -1062,7 +1071,7 @@ export class VerificationService extends EventEmitter {
 
   private async compareFaces(
     _selfiePath: string,
-    _documentRef: string
+    _documentRef: string,
   ): Promise<{ score: number; documentQuality: number }> {
     // In production, use facial recognition API
     return {
@@ -1081,7 +1090,7 @@ export class VerificationService extends EventEmitter {
 
   private async getRecentOTPCount(
     _userId: string,
-    _type: string
+    _type: string,
   ): Promise<number> {
     // In production, query database for recent OTPs
     return 0;
@@ -1094,7 +1103,7 @@ export class VerificationService extends EventEmitter {
   private async sendEmail(
     _email: string,
     _subject: string,
-    _body: string
+    _body: string,
   ): Promise<void> {
     // In production, use email provider
   }
@@ -1106,7 +1115,7 @@ export class VerificationService extends EventEmitter {
   private emitSafetyEvent(
     eventType: string,
     userId: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
   ): void {
     this.emit("safety_event", {
       eventType,
@@ -1145,7 +1154,7 @@ class SmileIDProvider implements VerificationProvider {
       "[SmileID] Verifying document:",
       params.documentType,
       "for country:",
-      params.country
+      params.country,
     );
 
     // Simulate API call
@@ -1162,7 +1171,7 @@ class SmileIDProvider implements VerificationProvider {
   }
 
   async checkStatus(
-    reference: string
+    reference: string,
   ): Promise<import("../types/safety.types").ProviderStatusResult> {
     return {
       reference,
@@ -1197,7 +1206,7 @@ class IPRSProvider implements VerificationProvider {
   }
 
   async checkStatus(
-    reference: string
+    reference: string,
   ): Promise<import("../types/safety.types").ProviderStatusResult> {
     return {
       reference,
@@ -1228,7 +1237,7 @@ class XDSProvider implements VerificationProvider {
   }
 
   async checkStatus(
-    reference: string
+    reference: string,
   ): Promise<import("../types/safety.types").ProviderStatusResult> {
     return {
       reference,
@@ -1254,7 +1263,7 @@ class HomeAffairsProvider implements VerificationProvider {
   }
 
   async checkStatus(
-    reference: string
+    reference: string,
   ): Promise<import("../types/safety.types").ProviderStatusResult> {
     return {
       reference,
@@ -1293,7 +1302,7 @@ class OnfidoProvider implements VerificationProvider {
   }
 
   async checkStatus(
-    reference: string
+    reference: string,
   ): Promise<import("../types/safety.types").ProviderStatusResult> {
     return {
       reference,
@@ -1316,7 +1325,7 @@ class YouVerifyProvider implements VerificationProvider {
   async verify(params: ProviderVerifyParams): Promise<ProviderVerifyResult> {
     console.log(
       "[YouVerify] Verifying Nigerian document:",
-      params.documentType
+      params.documentType,
     );
 
     return {
@@ -1332,7 +1341,7 @@ class YouVerifyProvider implements VerificationProvider {
   }
 
   async checkStatus(
-    reference: string
+    reference: string,
   ): Promise<import("../types/safety.types").ProviderStatusResult> {
     return {
       reference,

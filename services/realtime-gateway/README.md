@@ -121,7 +121,7 @@ pnpm start
 
 ```javascript
 const ws = new WebSocket(
-  "ws://localhost:4010/ws?token=JWT&userType=driver&deviceId=123&platform=ios"
+  "ws://localhost:4010/ws?token=JWT&userType=driver&deviceId=123&platform=ios",
 );
 
 ws.onopen = () => {
@@ -138,7 +138,7 @@ ws.onmessage = (event) => {
         JSON.stringify({
           type: "heartbeat_ack",
           payload: { timestamp: Date.now() },
-        })
+        }),
       );
       break;
 
@@ -163,7 +163,7 @@ setInterval(() => {
         timestamp: Date.now(),
         isAvailable: true,
       },
-    })
+    }),
   );
 }, 5000);
 ```

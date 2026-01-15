@@ -94,7 +94,7 @@ searchRoutes.get(
         name: r.name,
         subtitle: r.cuisineTypes.join(", "),
         image: r.imageUrl,
-      }))
+      })),
     );
 
     // Search menu items
@@ -124,12 +124,12 @@ searchRoutes.get(
         subtitle: `at ${item.restaurant.name}`,
         restaurantId: item.restaurant.id,
         image: item.imageUrl,
-      }))
+      })),
     );
 
     // Search cuisine types
     const cuisineMatches = Object.values(CuisineType).filter((c) =>
-      c.toLowerCase().includes(query.toLowerCase())
+      c.toLowerCase().includes(query.toLowerCase()),
     );
 
     suggestions.push(
@@ -140,7 +140,7 @@ searchRoutes.get(
           cuisine.charAt(0) +
           cuisine.slice(1).toLowerCase().replaceAll("_", " "),
         subtitle: "Cuisine type",
-      }))
+      })),
     );
 
     // Cache for 5 minutes
@@ -150,7 +150,7 @@ searchRoutes.get(
       success: true,
       data: suggestions.slice(0, limit),
     });
-  }
+  },
 );
 
 /**
@@ -247,7 +247,7 @@ searchRoutes.get("/nearby-categories", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", message: "Location required" },
       },
-      400
+      400,
     );
   }
 
@@ -319,7 +319,7 @@ searchRoutes.get("/filters", async (c) => {
   });
 
   const allCuisineTypes = cuisines.flatMap(
-    (r: (typeof cuisines)[number]) => r.cuisineTypes
+    (r: (typeof cuisines)[number]) => r.cuisineTypes,
   );
   const uniqueCuisines = [...new Set<string>(allCuisineTypes)];
 

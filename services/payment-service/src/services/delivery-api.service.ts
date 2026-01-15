@@ -11,7 +11,9 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+
 import { nanoid } from "nanoid";
+
 import type {
   BatchDeliveryRequest,
   BatchDeliveryResult,
@@ -149,7 +151,7 @@ export class DeliveryApiService extends EventEmitter {
    */
   async getQuote(
     organizationId: string,
-    request: DeliveryQuoteRequest
+    request: DeliveryQuoteRequest,
   ): Promise<DeliveryQuote> {
     const config = this.getPricingConfig(organizationId);
 
@@ -160,7 +162,7 @@ export class DeliveryApiService extends EventEmitter {
         : await this.geocodeAddress(request.pickup.address),
       request.dropoff.latitude && request.dropoff.longitude
         ? { lat: request.dropoff.latitude, lng: request.dropoff.longitude }
-        : await this.geocodeAddress(request.dropoff.address)
+        : await this.geocodeAddress(request.dropoff.address),
     );
 
     // Calculate pricing
@@ -178,7 +180,7 @@ export class DeliveryApiService extends EventEmitter {
     // Estimate duration based on distance and priority
     const estimatedDurationMins = this.estimateDeliveryDuration(
       distance,
-      priority
+      priority,
     );
 
     const quote: DeliveryQuote = {
@@ -210,7 +212,7 @@ export class DeliveryApiService extends EventEmitter {
   async getMultiQuote(
     organizationId: string,
     pickup: { address: string; latitude?: number; longitude?: number },
-    dropoffs: { address: string; latitude?: number; longitude?: number }[]
+    dropoffs: { address: string; latitude?: number; longitude?: number }[],
   ): Promise<{ quotes: DeliveryQuote[]; totalPrice: number }> {
     const quotes: DeliveryQuote[] = [];
     let totalPrice = 0;
@@ -239,7 +241,7 @@ export class DeliveryApiService extends EventEmitter {
   async createDelivery(
     organizationId: string,
     request: CreateDeliveryRequest,
-    _memberId?: string
+    _memberId?: string,
   ): Promise<Delivery> {
     // Generate tracking code
     const trackingCode = this.generateTrackingCode(organizationId);
@@ -337,7 +339,7 @@ export class DeliveryApiService extends EventEmitter {
       delivery.id,
       "PENDING",
       undefined,
-      "Delivery created"
+      "Delivery created",
     );
 
     this.emit("delivery:created", delivery);
@@ -351,7 +353,7 @@ export class DeliveryApiService extends EventEmitter {
   async createBatchDeliveries(
     organizationId: string,
     request: BatchDeliveryRequest,
-    memberId?: string
+    memberId?: string,
   ): Promise<BatchDeliveryResult> {
     const batch: DeliveryBatch = {
       id: nanoid(),
@@ -371,11 +373,13 @@ export class DeliveryApiService extends EventEmitter {
     for (let i = 0; i < request.deliveries.length; i++) {
       try {
         const deliveryRequest = request.deliveries[i];
-        if (!deliveryRequest) continue;
+        if (!deliveryRequest) {
+          continue;
+        }
         const delivery = await this.createDelivery(
           organizationId,
           deliveryRequest,
-          memberId
+          memberId,
         );
         batch.successfulDeliveries++;
         batch.deliveryIds.push(delivery.id);
@@ -431,7 +435,7 @@ export class DeliveryApiService extends EventEmitter {
       deliveryId,
       "CONFIRMED",
       undefined,
-      "Delivery confirmed"
+      "Delivery confirmed",
     );
 
     delivery.timestamps.confirmedAt = new Date();
@@ -450,7 +454,7 @@ export class DeliveryApiService extends EventEmitter {
    */
   async assignDriver(
     deliveryId: string,
-    driverInfo: DriverInfo
+    driverInfo: DriverInfo,
   ): Promise<Delivery> {
     const delivery = this.deliveries.get(deliveryId);
     if (!delivery) {
@@ -465,7 +469,7 @@ export class DeliveryApiService extends EventEmitter {
       deliveryId,
       "DRIVER_ASSIGNED",
       driverInfo.location,
-      `Driver ${driverInfo.name} assigned`
+      `Driver ${driverInfo.name} assigned`,
     );
 
     this.deliveries.set(deliveryId, delivery);
@@ -483,7 +487,7 @@ export class DeliveryApiService extends EventEmitter {
     newStatus: DeliveryStatus,
     location?: Coordinates,
     notes?: string,
-    updatedBy?: string
+    updatedBy?: string,
   ): Promise<Delivery> {
     const delivery = this.deliveries.get(deliveryId);
     if (!delivery) {
@@ -494,7 +498,7 @@ export class DeliveryApiService extends EventEmitter {
     const allowedTransitions = VALID_STATUS_TRANSITIONS[delivery.status];
     if (!allowedTransitions.includes(newStatus)) {
       throw new Error(
-        `Invalid status transition from ${delivery.status} to ${newStatus}`
+        `Invalid status transition from ${delivery.status} to ${newStatus}`,
       );
     }
 
@@ -518,7 +522,7 @@ export class DeliveryApiService extends EventEmitter {
       newStatus,
       location,
       notes,
-      updatedBy
+      updatedBy,
     );
 
     // Emit status change event
@@ -544,7 +548,7 @@ export class DeliveryApiService extends EventEmitter {
       signatureUrl?: string;
       otpVerified?: boolean;
       recipientName?: string;
-    }
+    },
   ): Promise<Delivery> {
     const delivery = this.deliveries.get(deliveryId);
     if (!delivery) {
@@ -576,7 +580,7 @@ export class DeliveryApiService extends EventEmitter {
       otpVerified?: boolean;
       recipientName?: string;
     },
-    finalLocation?: Coordinates
+    finalLocation?: Coordinates,
   ): Promise<Delivery> {
     const delivery = this.deliveries.get(deliveryId);
     if (!delivery) {
@@ -598,7 +602,7 @@ export class DeliveryApiService extends EventEmitter {
       deliveryId,
       "DELIVERED",
       finalLocation,
-      `Delivered to ${proof?.recipientName || delivery.recipient.name}`
+      `Delivered to ${proof?.recipientName || delivery.recipient.name}`,
     );
 
     this.emit("delivery:completed", delivery);
@@ -612,7 +616,7 @@ export class DeliveryApiService extends EventEmitter {
   async failDelivery(
     deliveryId: string,
     reason: string,
-    location?: Coordinates
+    location?: Coordinates,
   ): Promise<Delivery> {
     await this.updateDeliveryStatus(deliveryId, "FAILED", location, reason);
 
@@ -628,7 +632,7 @@ export class DeliveryApiService extends EventEmitter {
   async cancelDelivery(
     deliveryId: string,
     reason: string,
-    cancelledBy?: string
+    cancelledBy?: string,
   ): Promise<Delivery> {
     const delivery = this.deliveries.get(deliveryId);
     if (!delivery) {
@@ -650,7 +654,7 @@ export class DeliveryApiService extends EventEmitter {
       "CANCELLED",
       undefined,
       reason,
-      cancelledBy
+      cancelledBy,
     );
 
     this.emit("delivery:cancelled", { delivery, reason, cancelledBy });
@@ -673,11 +677,11 @@ export class DeliveryApiService extends EventEmitter {
    * Get delivery by tracking code
    */
   async getDeliveryByTrackingCode(
-    trackingCode: string
+    trackingCode: string,
   ): Promise<Delivery | null> {
     return (
       Array.from(this.deliveries.values()).find(
-        (d) => d.trackingCode === trackingCode
+        (d) => d.trackingCode === trackingCode,
       ) || null
     );
   }
@@ -687,12 +691,12 @@ export class DeliveryApiService extends EventEmitter {
    */
   async getDeliveryByExternalId(
     organizationId: string,
-    externalId: string
+    externalId: string,
   ): Promise<Delivery | null> {
     return (
       Array.from(this.deliveries.values()).find(
         (d) =>
-          d.organizationId === organizationId && d.externalId === externalId
+          d.organizationId === organizationId && d.externalId === externalId,
       ) || null
     );
   }
@@ -703,10 +707,10 @@ export class DeliveryApiService extends EventEmitter {
   async listDeliveries(
     organizationId: string,
     filters: DeliveryFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<Delivery>> {
     let deliveries = Array.from(this.deliveries.values()).filter(
-      (d) => d.organizationId === organizationId
+      (d) => d.organizationId === organizationId,
     );
 
     // Apply filters
@@ -727,14 +731,14 @@ export class DeliveryApiService extends EventEmitter {
     }
     if (filters.externalId) {
       deliveries = deliveries.filter(
-        (d) => d.externalId === filters.externalId
+        (d) => d.externalId === filters.externalId,
       );
     }
     if (filters.trackingCode) {
       deliveries = deliveries.filter((d) =>
         d.trackingCode
           .toLowerCase()
-          .includes(filters.trackingCode!.toLowerCase())
+          .includes(filters.trackingCode!.toLowerCase()),
       );
     }
 
@@ -748,7 +752,7 @@ export class DeliveryApiService extends EventEmitter {
    * Get delivery status history
    */
   async getDeliveryHistory(
-    deliveryId: string
+    deliveryId: string,
   ): Promise<DeliveryStatusHistory[]> {
     return this.statusHistory.get(deliveryId) || [];
   }
@@ -768,12 +772,12 @@ export class DeliveryApiService extends EventEmitter {
 
     return Array.from(this.deliveries.values())
       .filter(
-        (d) => d.driver?.id === driverId && activeStatuses.includes(d.status)
+        (d) => d.driver?.id === driverId && activeStatuses.includes(d.status),
       )
       .sort(
         (a, b) =>
           (a.timestamps.driverAssignedAt?.getTime() || 0) -
-          (b.timestamps.driverAssignedAt?.getTime() || 0)
+          (b.timestamps.driverAssignedAt?.getTime() || 0),
       );
   }
 
@@ -824,7 +828,7 @@ export class DeliveryApiService extends EventEmitter {
    */
   async updateDriverLocation(
     driverId: string,
-    location: Coordinates
+    location: Coordinates,
   ): Promise<void> {
     const activeDeliveries = await this.getDriverActiveDeliveries(driverId);
 
@@ -854,7 +858,7 @@ export class DeliveryApiService extends EventEmitter {
   async getDeliveryStats(
     organizationId: string,
     dateFrom: Date,
-    dateTo: Date
+    dateTo: Date,
   ): Promise<{
     total: number;
     delivered: number;
@@ -872,7 +876,7 @@ export class DeliveryApiService extends EventEmitter {
       (d) =>
         d.organizationId === organizationId &&
         d.createdAt >= dateFrom &&
-        d.createdAt <= dateTo
+        d.createdAt <= dateTo,
     );
 
     const byPriority: Record<string, number> = {};
@@ -936,7 +940,7 @@ export class DeliveryApiService extends EventEmitter {
       cancelled: byStatus["CANCELLED"] || 0,
       inProgress: inProgressStatuses.reduce(
         (sum, s) => sum + (byStatus[s] || 0),
-        0
+        0,
       ),
       avgDeliveryTime:
         deliveredCount > 0
@@ -964,7 +968,7 @@ export class DeliveryApiService extends EventEmitter {
    */
   setOrganizationPricing(
     organizationId: string,
-    config: Partial<DeliveryPricingConfig>
+    config: Partial<DeliveryPricingConfig>,
   ): void {
     const currentConfig = this.getPricingConfig(organizationId);
     this.pricingConfigs.set(organizationId, {
@@ -1019,7 +1023,7 @@ export class DeliveryApiService extends EventEmitter {
 
   private estimateDeliveryDuration(
     distanceKm: number,
-    priority: DeliveryPriority
+    priority: DeliveryPriority,
   ): number {
     const baseMinutes = {
       ECONOMY: 180,
@@ -1037,9 +1041,11 @@ export class DeliveryApiService extends EventEmitter {
   }
 
   private parseSchedule(
-    schedule?: CreateDeliveryRequest["schedule"]
+    schedule?: CreateDeliveryRequest["schedule"],
   ): DeliverySchedule | undefined {
-    if (!schedule) return undefined;
+    if (!schedule) {
+      return undefined;
+    }
 
     return {
       pickupTime: schedule.pickup_time
@@ -1065,7 +1071,7 @@ export class DeliveryApiService extends EventEmitter {
 
   private updateDeliveryTimestamp(
     delivery: Delivery,
-    status: DeliveryStatus
+    status: DeliveryStatus,
   ): void {
     const now = new Date();
     switch (status) {
@@ -1113,7 +1119,7 @@ export class DeliveryApiService extends EventEmitter {
     status: DeliveryStatus,
     location?: Coordinates,
     notes?: string,
-    updatedBy?: string
+    updatedBy?: string,
   ): Promise<void> {
     const history = this.statusHistory.get(deliveryId) || [];
 
@@ -1157,7 +1163,7 @@ export class DeliveryApiService extends EventEmitter {
     if (delivery.pricing.estimatedDurationMins) {
       return new Date(
         delivery.createdAt.getTime() +
-          delivery.pricing.estimatedDurationMins * 60 * 1000
+          delivery.pricing.estimatedDurationMins * 60 * 1000,
       );
     }
 
@@ -1183,7 +1189,7 @@ export class DeliveryApiService extends EventEmitter {
 
   private paginate<T>(
     items: T[],
-    params: PaginationParams
+    params: PaginationParams,
   ): PaginatedResponse<T> {
     const page = params.page || 1;
     const limit = params.limit || 20;

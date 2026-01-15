@@ -199,7 +199,7 @@ export class UbiError extends Error {
       cause?: Error;
       requestId?: string;
       isOperational?: boolean;
-    }
+    },
   ) {
     super(message);
 
@@ -241,7 +241,7 @@ export class UbiError extends Error {
   static withDetails(
     code: string,
     message: string,
-    details: unknown
+    details: unknown,
   ): UbiError {
     return new UbiError(code, message, { details });
   }
@@ -256,7 +256,7 @@ export class ValidationError extends UbiError {
   constructor(
     message: string,
     fieldErrors: Record<string, string[]>,
-    options?: { requestId?: string }
+    options?: { requestId?: string },
   ) {
     super(ErrorCodes.VALIDATION_ERROR, message, {
       details: { fieldErrors },
@@ -274,7 +274,7 @@ export class NotFoundError extends UbiError {
   constructor(
     resource: string,
     identifier?: string,
-    options?: { requestId?: string }
+    options?: { requestId?: string },
   ) {
     const message = identifier
       ? `${resource} with ID '${identifier}' not found`
@@ -294,7 +294,7 @@ export class NotFoundError extends UbiError {
 export class UnauthorizedError extends UbiError {
   constructor(
     message: string = "Authentication required",
-    options?: { requestId?: string }
+    options?: { requestId?: string },
   ) {
     super(ErrorCodes.UNAUTHORIZED, message, { requestId: options?.requestId });
     this.name = "UnauthorizedError";
@@ -307,7 +307,7 @@ export class UnauthorizedError extends UbiError {
 export class ForbiddenError extends UbiError {
   constructor(
     message: string = "You do not have permission to perform this action",
-    options?: { requestId?: string }
+    options?: { requestId?: string },
   ) {
     super(ErrorCodes.FORBIDDEN, message, { requestId: options?.requestId });
     this.name = "ForbiddenError";
@@ -327,7 +327,7 @@ export class RateLimitError extends UbiError {
       {
         details: { retryAfter },
         requestId: options?.requestId,
-      }
+      },
     );
     this.name = "RateLimitError";
     this.retryAfter = retryAfter;
@@ -341,7 +341,7 @@ export class PaymentError extends UbiError {
   constructor(
     code: string,
     message: string,
-    options?: { details?: unknown; requestId?: string }
+    options?: { details?: unknown; requestId?: string },
   ) {
     super(code, message, options);
     this.name = "PaymentError";
@@ -359,7 +359,7 @@ export class ExternalServiceError extends UbiError {
       cause?: Error;
       details?: Record<string, unknown>;
       requestId?: string;
-    }
+    },
   ) {
     const additionalDetails = options?.details ?? {};
     super(ErrorCodes.EXTERNAL_SERVICE_ERROR, message, {
@@ -386,7 +386,7 @@ export function isOperationalError(error: Error): boolean {
  * Returns the original function with proper error propagation
  */
 export function catchAsync<T extends (...args: unknown[]) => Promise<unknown>>(
-  fn: T
+  fn: T,
 ): T {
   return ((...args: unknown[]) => {
     return fn(...args);

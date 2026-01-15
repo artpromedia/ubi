@@ -17,7 +17,11 @@ const services = [
       "Book affordable, safe rides anytime. From economy to premium, we've got a vehicle for every journey.",
     icon: Car,
     color: "#1DB954",
-    features: ["24/7 Availability", "Real-time tracking", "Safe & vetted drivers"],
+    features: [
+      "24/7 Availability",
+      "Real-time tracking",
+      "Safe & vetted drivers",
+    ],
     href: "/ride",
   },
   {
@@ -73,7 +77,8 @@ export const ServicesSection = () => {
             transition={{ delay: 0.1 }}
             className="mt-4 text-lg text-gray-600 dark:text-gray-300"
           >
-            From rides to food to packages, UBI has you covered across all your daily needs.
+            From rides to food to packages, UBI has you covered across all your
+            daily needs.
           </motion.p>
         </div>
 
@@ -152,4 +157,4 @@ export const ServicesSection = () => {
       </div>
     </section>
   );
-}
+};

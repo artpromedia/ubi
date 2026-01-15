@@ -6,37 +6,58 @@
 
 "use client";
 
-import { useAuthStore, useUserStore } from "@/store";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
+
 import { createAnalytics } from "@ubi/analytics";
 import { AnalyticsProvider as AnalyticsContextProvider } from "@ubi/analytics/react";
 import { getDeviceInfo } from "@ubi/utils";
-import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+
+import { useAuthStore, useUserStore } from "@/store";
 
 // Create analytics instance
 const analytics = createAnalytics({
   providers: [
     // Console logging in development
-    ...(process.env.NODE_ENV === "development" ? [{ type: "console" as const }] : []),
+    ...(process.env.NODE_ENV === "development"
+      ? [{ type: "console" as const }]
+      : []),
     // Google Analytics 4
     ...(process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
-      ? [{ type: "ga4" as const, measurementId: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID }]
+      ? [
+          {
+            type: "ga4" as const,
+            measurementId: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+          },
+        ]
       : []),
     // Mixpanel
     ...(process.env.NEXT_PUBLIC_MIXPANEL_TOKEN
-      ? [{ type: "mixpanel" as const, token: process.env.NEXT_PUBLIC_MIXPANEL_TOKEN }]
+      ? [
+          {
+            type: "mixpanel" as const,
+            token: process.env.NEXT_PUBLIC_MIXPANEL_TOKEN,
+          },
+        ]
       : []),
     // Amplitude
     ...(process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY
-      ? [{ type: "amplitude" as const, apiKey: process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY }]
+      ? [
+          {
+            type: "amplitude" as const,
+            apiKey: process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY,
+          },
+        ]
       : []),
     // PostHog
     ...(process.env.NEXT_PUBLIC_POSTHOG_KEY
-      ? [{
-          type: "posthog" as const,
-          apiKey: process.env.NEXT_PUBLIC_POSTHOG_KEY,
-          host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-        }]
+      ? [
+          {
+            type: "posthog" as const,
+            apiKey: process.env.NEXT_PUBLIC_POSTHOG_KEY,
+            host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+          },
+        ]
       : []),
   ],
   debug: process.env.NODE_ENV === "development",
@@ -51,12 +72,13 @@ const analytics = createAnalytics({
 export { analytics };
 
 // Auto page view tracker component
-function PageViewTracker() {
+const PageViewTracker = () => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const url = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : "");
+    const url =
+      pathname + (searchParams.toString() ? `?${searchParams.toString()}` : "");
     analytics.page(url, {
       path: pathname,
       search: searchParams.toString(),
@@ -66,10 +88,10 @@ function PageViewTracker() {
   }, [pathname, searchParams]);
 
   return null;
-}
+};
 
 // User identification syncer
-function UserIdentifier() {
+const UserIdentifier = () => {
   const { isAuthenticated, userId } = useAuthStore();
   const { profile } = useUserStore();
 
@@ -89,13 +111,13 @@ function UserIdentifier() {
   }, [isAuthenticated, userId, profile]);
 
   return null;
-}
+};
 
 interface AnalyticsProviderProps {
   children: ReactNode;
 }
 
-export function AnalyticsProvider({ children }: AnalyticsProviderProps) {
+export const AnalyticsProvider = ({ children }: AnalyticsProviderProps) => {
   return (
     <AnalyticsContextProvider analytics={analytics}>
       <PageViewTracker />
@@ -103,4 +125,4 @@ export function AnalyticsProvider({ children }: AnalyticsProviderProps) {
       {children}
     </AnalyticsContextProvider>
   );
-}
+};

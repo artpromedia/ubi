@@ -71,9 +71,9 @@ const Icon = React.forwardRef<HTMLSpanElement, IconProps>(
           {
             className: cn(
               "h-full w-full",
-              (child.props as { className?: string }).className
+              (child.props as { className?: string }).className,
             ),
-          }
+          },
         )
       : children;
 
@@ -89,7 +89,7 @@ const Icon = React.forwardRef<HTMLSpanElement, IconProps>(
         {styledChild}
       </span>
     );
-  }
+  },
 );
 Icon.displayName = "Icon";
 

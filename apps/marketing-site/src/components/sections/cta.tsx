@@ -43,9 +43,23 @@ export const CTASection = () => {
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-ubi-green to-emerald-600 p-8 md:p-12 lg:p-16 mb-16">
           {/* Background pattern */}
           <div className="absolute inset-0 opacity-10">
-            <svg className="h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-                <path d="M 10 0 L 0 0 0 10" fill="none" stroke="white" strokeWidth="0.5" />
+            <svg
+              className="h-full w-full"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+            >
+              <pattern
+                id="grid"
+                width="10"
+                height="10"
+                patternUnits="userSpaceOnUse"
+              >
+                <path
+                  d="M 10 0 L 0 0 0 10"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="0.5"
+                />
               </pattern>
               <rect width="100%" height="100%" fill="url(#grid)" />
             </svg>
@@ -213,4 +227,4 @@ export const CTASection = () => {
       </div>
     </section>
   );
-}
+};

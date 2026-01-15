@@ -18,7 +18,10 @@ export function createMockRedis() {
   const store = new Map<string, string>();
   const sets = new Map<string, Set<string>>();
   const hashes = new Map<string, Map<string, string>>();
-  const subscribers = new Map<string, ((channel: string, message: string) => void)[]>();
+  const subscribers = new Map<
+    string,
+    ((channel: string, message: string) => void)[]
+  >();
 
   return {
     get: async (key: string) => store.get(key) ?? null,
@@ -63,7 +66,11 @@ export function createMockRedis() {
       const set = sets.get(key);
       return set ? Array.from(set) : [];
     },
-    hset: async (key: string, field: string | Record<string, string>, value?: string) => {
+    hset: async (
+      key: string,
+      field: string | Record<string, string>,
+      value?: string,
+    ) => {
       if (!hashes.has(key)) hashes.set(key, new Map());
       const hash = hashes.get(key)!;
       if (typeof field === "object") {
@@ -85,7 +92,10 @@ export function createMockRedis() {
       return Object.fromEntries(hash);
     },
     publish: async (_channel: string, _message: string) => 0,
-    subscribe: async (channel: string, callback?: (channel: string, message: string) => void) => {
+    subscribe: async (
+      channel: string,
+      callback?: (channel: string, message: string) => void,
+    ) => {
       if (callback) {
         if (!subscribers.has(channel)) subscribers.set(channel, []);
         subscribers.get(channel)!.push(callback);
@@ -93,7 +103,10 @@ export function createMockRedis() {
     },
     psubscribe: async (_pattern: string) => {},
     on: (_event: string, _callback: (...args: unknown[]) => void) => {},
-    pubsub: async (_subcommand: string, ..._args: string[]): Promise<(string | number)[]> => {
+    pubsub: async (
+      _subcommand: string,
+      ..._args: string[]
+    ): Promise<(string | number)[]> => {
       return ["", 0];
     },
     quit: async () => "OK",

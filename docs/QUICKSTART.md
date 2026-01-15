@@ -21,64 +21,64 @@ pnpm dev
 
 ### Development
 
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Start all apps/services in dev mode |
-| `pnpm dev:web` | Start web app on :3000 |
-| `pnpm dev:admin` | Start admin dashboard on :3001 |
-| `pnpm dev:services` | Start all backend services |
+| Command             | Description                         |
+| ------------------- | ----------------------------------- |
+| `pnpm dev`          | Start all apps/services in dev mode |
+| `pnpm dev:web`      | Start web app on :3000              |
+| `pnpm dev:admin`    | Start admin dashboard on :3001      |
+| `pnpm dev:services` | Start all backend services          |
 
 ### Building
 
-| Command | Description |
-|---------|-------------|
-| `pnpm build` | Build all packages |
-| `pnpm build --filter @ubi/web-app` | Build specific package |
+| Command                                | Description             |
+| -------------------------------------- | ----------------------- |
+| `pnpm build`                           | Build all packages      |
+| `pnpm build --filter @ubi/web-app`     | Build specific package  |
 | `pnpm build --filter=...[origin/main]` | Build affected packages |
 
 ### Testing
 
-| Command | Description |
-|---------|-------------|
-| `pnpm test` | Run all tests |
-| `pnpm test:watch` | Run tests in watch mode |
+| Command              | Description             |
+| -------------------- | ----------------------- |
+| `pnpm test`          | Run all tests           |
+| `pnpm test:watch`    | Run tests in watch mode |
 | `pnpm test:coverage` | Run tests with coverage |
 
 ### Code Quality
 
-| Command | Description |
-|---------|-------------|
-| `pnpm lint` | Run ESLint |
-| `pnpm lint:fix` | Fix ESLint issues |
+| Command          | Description           |
+| ---------------- | --------------------- |
+| `pnpm lint`      | Run ESLint            |
+| `pnpm lint:fix`  | Fix ESLint issues     |
 | `pnpm typecheck` | Run TypeScript checks |
-| `pnpm format` | Format with Prettier |
+| `pnpm format`    | Format with Prettier  |
 
 ### Database
 
-| Command | Description |
-|---------|-------------|
-| `pnpm db:migrate:dev` | Create/apply migrations |
-| `pnpm db:migrate` | Apply pending migrations |
-| `pnpm db:studio` | Open Prisma Studio |
-| `pnpm db:seed` | Seed database |
-| `pnpm db:reset` | Reset database |
+| Command               | Description              |
+| --------------------- | ------------------------ |
+| `pnpm db:migrate:dev` | Create/apply migrations  |
+| `pnpm db:migrate`     | Apply pending migrations |
+| `pnpm db:studio`      | Open Prisma Studio       |
+| `pnpm db:seed`        | Seed database            |
+| `pnpm db:reset`       | Reset database           |
 
 ### Docker
 
-| Command | Description |
-|---------|-------------|
-| `pnpm docker:up` | Start infrastructure |
-| `pnpm docker:down` | Stop infrastructure |
-| `pnpm docker:logs` | View container logs |
-| `pnpm docker:clean` | Remove volumes |
+| Command             | Description          |
+| ------------------- | -------------------- |
+| `pnpm docker:up`    | Start infrastructure |
+| `pnpm docker:down`  | Stop infrastructure  |
+| `pnpm docker:logs`  | View container logs  |
+| `pnpm docker:clean` | Remove volumes       |
 
 ### Code Generation
 
-| Command | Description |
-|---------|-------------|
+| Command                                    | Description        |
+| ------------------------------------------ | ------------------ |
 | `pnpm generate:package service my-service` | Create new service |
-| `pnpm generate:package app my-app` | Create new app |
-| `pnpm generate:package package my-lib` | Create new library |
+| `pnpm generate:package app my-app`         | Create new app     |
+| `pnpm generate:package package my-lib`     | Create new library |
 
 ## 📁 Project Structure
 
@@ -114,19 +114,20 @@ ubi-monorepo/
 
 ## 🔗 Local URLs
 
-| Service | URL |
-|---------|-----|
-| Web App | http://localhost:3000 |
+| Service         | URL                   |
+| --------------- | --------------------- |
+| Web App         | http://localhost:3000 |
 | Admin Dashboard | http://localhost:3001 |
-| API Gateway | http://localhost:8000 |
-| Prisma Studio | http://localhost:5555 |
+| API Gateway     | http://localhost:8000 |
+| Prisma Studio   | http://localhost:5555 |
 | Redis Commander | http://localhost:8081 |
-| MinIO Console | http://localhost:9001 |
-| MailHog | http://localhost:8025 |
+| MinIO Console   | http://localhost:9001 |
+| MailHog         | http://localhost:8025 |
 
 ## 🔧 VS Code Extensions
 
 Recommended extensions (auto-installed):
+
 - ESLint
 - Prettier
 - Tailwind CSS IntelliSense
@@ -175,12 +176,14 @@ pnpm turbo clean
 ## 🆘 Troubleshooting
 
 ### "Module not found" errors
+
 ```bash
 pnpm install
 pnpm build
 ```
 
 ### Database connection issues
+
 ```bash
 pnpm docker:up
 # Wait for PostgreSQL to be ready
@@ -188,6 +191,7 @@ pnpm db:migrate:dev
 ```
 
 ### Port already in use
+
 ```bash
 # Find process using port
 lsof -i :3000
@@ -196,6 +200,7 @@ kill -9 <PID>
 ```
 
 ### Clear everything and start fresh
+
 ```bash
 pnpm docker:clean
 rm -rf node_modules
@@ -209,6 +214,7 @@ pnpm db:migrate:dev
 ---
 
 For more detailed documentation, see:
+
 - [README.md](../README.md) - Project overview
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - Contribution guidelines
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md) - Architecture details

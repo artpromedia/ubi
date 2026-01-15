@@ -5,53 +5,59 @@
  */
 
 import { cva, type VariantProps } from "class-variance-authority";
-import { AlertCircle, FileQuestion, FolderOpen, Inbox, Search } from "lucide-react";
-
+import {
+  AlertCircle,
+  FileQuestion,
+  FolderOpen,
+  Inbox,
+  Search,
+} from "lucide-react";
 
 import { Button } from "./button";
 import { cn } from "../lib/utils";
 
 import type * as React from "react";
 
-const emptyStateVariants = cva("flex flex-col items-center justify-center text-center", {
+const emptyStateVariants = cva(
+  "flex flex-col items-center justify-center text-center",
+  {
+    variants: {
+      size: {
+        sm: "py-8",
+        default: "py-12",
+        lg: "py-16",
+      },
+    },
+    defaultVariants: {
+      size: "default",
+    },
+  },
+);
+
+const iconVariants = cva("rounded-full flex items-center justify-center mb-4", {
   variants: {
+    variant: {
+      default: "bg-muted text-muted-foreground",
+      primary: "bg-primary/10 text-primary",
+      success: "bg-success/10 text-success",
+      warning: "bg-warning/10 text-warning",
+      destructive: "bg-destructive/10 text-destructive",
+    },
     size: {
-      sm: "py-8",
-      default: "py-12",
-      lg: "py-16",
+      sm: "h-12 w-12",
+      default: "h-16 w-16",
+      lg: "h-20 w-20",
     },
   },
   defaultVariants: {
+    variant: "default",
     size: "default",
   },
 });
 
-const iconVariants = cva(
-  "rounded-full flex items-center justify-center mb-4",
-  {
-    variants: {
-      variant: {
-        default: "bg-muted text-muted-foreground",
-        primary: "bg-primary/10 text-primary",
-        success: "bg-success/10 text-success",
-        warning: "bg-warning/10 text-warning",
-        destructive: "bg-destructive/10 text-destructive",
-      },
-      size: {
-        sm: "h-12 w-12",
-        default: "h-16 w-16",
-        lg: "h-20 w-20",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
-  }
-);
-
 interface EmptyStateProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof emptyStateVariants> {
   icon?: React.ReactNode;
   iconVariant?: "default" | "primary" | "success" | "warning" | "destructive";
@@ -114,7 +120,10 @@ const EmptyState = ({
 };
 
 // Preset empty states for common use cases
-interface PresetEmptyStateProps extends Omit<EmptyStateProps, "icon" | "title"> {
+interface PresetEmptyStateProps extends Omit<
+  EmptyStateProps,
+  "icon" | "title"
+> {
   title?: string;
 }
 
@@ -185,6 +194,12 @@ const EmptyFolder = ({
 );
 
 export {
-    EmptyFolder, EmptyState, emptyStateVariants, ErrorState, iconVariants, NoData, NoResults, NotFound
+  EmptyFolder,
+  EmptyState,
+  emptyStateVariants,
+  ErrorState,
+  iconVariants,
+  NoData,
+  NoResults,
+  NotFound,
 };
-

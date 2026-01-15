@@ -201,7 +201,7 @@ export class UbiClient {
     method: string,
     path: string,
     data?: any,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
@@ -224,20 +224,20 @@ export class UbiClient {
         const response = await this.fetchWithTimeout(
           url,
           fetchOptions,
-          options?.timeout
+          options?.timeout,
         );
 
         if (!response.ok) {
-          const errorBody = await response.json().catch(() => ({})) as any;
+          const errorBody = (await response.json().catch(() => ({}))) as any;
           throw new UbiApiError(
             errorBody.message || `HTTP ${response.status}`,
             response.status,
             errorBody.error,
-            errorBody
+            errorBody,
           );
         }
 
-        const responseData = await response.json() as any;
+        const responseData = (await response.json()) as any;
         return responseData.data || responseData;
       } catch (error) {
         lastError = error as Error;
@@ -258,12 +258,12 @@ export class UbiClient {
   private async fetchWithTimeout(
     url: string,
     options: RequestInit,
-    timeout?: number
+    timeout?: number,
   ): Promise<Response> {
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
-      timeout || this.config.timeout
+      timeout || this.config.timeout,
     );
 
     try {
@@ -277,7 +277,7 @@ export class UbiClient {
     }
   }
 
-  private sleep(ms: number): Promise<void> {
+  private async sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
@@ -291,7 +291,7 @@ export class UbiApiError extends Error {
     message: string,
     public status: number,
     public code?: string,
-    public details?: any
+    public details?: any,
   ) {
     super(message);
     this.name = "UbiApiError";
@@ -348,21 +348,30 @@ export class DeliveryClient {
       dateFrom?: Date;
       dateTo?: Date;
     },
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<Delivery>> {
     const params = new URLSearchParams();
 
-    if (filters?.status) params.append("status", filters.status);
-    if (filters?.dateFrom)
+    if (filters?.status) {
+      params.append("status", filters.status);
+    }
+    if (filters?.dateFrom) {
       params.append("dateFrom", filters.dateFrom.toISOString());
-    if (filters?.dateTo) params.append("dateTo", filters.dateTo.toISOString());
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    }
+    if (filters?.dateTo) {
+      params.append("dateTo", filters.dateTo.toISOString());
+    }
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/delivery/deliveries${query ? `?${query}` : ""}`
+      `/delivery/deliveries${query ? `?${query}` : ""}`,
     );
   }
 
@@ -372,7 +381,7 @@ export class DeliveryClient {
   async track(trackingNumber: string): Promise<TrackingInfo> {
     return this.client.request(
       "GET",
-      `/delivery/deliveries/track/${trackingNumber}`
+      `/delivery/deliveries/track/${trackingNumber}`,
     );
   }
 
@@ -383,7 +392,7 @@ export class DeliveryClient {
     return this.client.request(
       "POST",
       `/delivery/deliveries/${deliveryId}/cancel`,
-      { reason }
+      { reason },
     );
   }
 
@@ -417,16 +426,20 @@ export class HealthcareClient {
    * List healthcare providers
    */
   async listProviders(
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/healthcare/providers${query ? `?${query}` : ""}`
+      `/healthcare/providers${query ? `?${query}` : ""}`,
     );
   }
 
@@ -442,20 +455,29 @@ export class HealthcareClient {
    */
   async listDeliveries(
     filters?: { providerId?: string; status?: string; deliveryType?: string },
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (filters?.providerId) params.append("providerId", filters.providerId);
-    if (filters?.status) params.append("status", filters.status);
-    if (filters?.deliveryType)
+    if (filters?.providerId) {
+      params.append("providerId", filters.providerId);
+    }
+    if (filters?.status) {
+      params.append("status", filters.status);
+    }
+    if (filters?.deliveryType) {
       params.append("deliveryType", filters.deliveryType);
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    }
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/healthcare/deliveries${query ? `?${query}` : ""}`
+      `/healthcare/deliveries${query ? `?${query}` : ""}`,
     );
   }
 
@@ -466,7 +488,7 @@ export class HealthcareClient {
     return this.client.request(
       "POST",
       "/healthcare/patient-transport",
-      transport
+      transport,
     );
   }
 
@@ -475,18 +497,26 @@ export class HealthcareClient {
    */
   async listPatientTransports(
     filters?: { providerId?: string; status?: string },
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (filters?.providerId) params.append("providerId", filters.providerId);
-    if (filters?.status) params.append("status", filters.status);
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (filters?.providerId) {
+      params.append("providerId", filters.providerId);
+    }
+    if (filters?.status) {
+      params.append("status", filters.status);
+    }
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/healthcare/patient-transport${query ? `?${query}` : ""}`
+      `/healthcare/patient-transport${query ? `?${query}` : ""}`,
     );
   }
 }
@@ -519,7 +549,7 @@ export class SchoolClient {
     return this.client.request(
       "POST",
       `/school/schools/${schoolId}/students`,
-      studentData
+      studentData,
     );
   }
 
@@ -529,19 +559,29 @@ export class SchoolClient {
   async listStudents(
     schoolId: string,
     filters?: { grade?: string; className?: string; routeId?: string },
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (filters?.grade) params.append("grade", filters.grade);
-    if (filters?.className) params.append("className", filters.className);
-    if (filters?.routeId) params.append("routeId", filters.routeId);
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (filters?.grade) {
+      params.append("grade", filters.grade);
+    }
+    if (filters?.className) {
+      params.append("className", filters.className);
+    }
+    if (filters?.routeId) {
+      params.append("routeId", filters.routeId);
+    }
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/school/schools/${schoolId}/students${query ? `?${query}` : ""}`
+      `/school/schools/${schoolId}/students${query ? `?${query}` : ""}`,
     );
   }
 
@@ -552,7 +592,7 @@ export class SchoolClient {
     return this.client.request(
       "POST",
       `/school/schools/${schoolId}/routes`,
-      routeData
+      routeData,
     );
   }
 
@@ -563,7 +603,7 @@ export class SchoolClient {
     const params = type ? `?type=${type}` : "";
     return this.client.request(
       "GET",
-      `/school/schools/${schoolId}/routes${params}`
+      `/school/schools/${schoolId}/routes${params}`,
     );
   }
 
@@ -574,7 +614,7 @@ export class SchoolClient {
     return this.client.request(
       "POST",
       `/school/routes/${routeId}/start`,
-      driverInfo
+      driverInfo,
     );
   }
 
@@ -585,7 +625,7 @@ export class SchoolClient {
     return this.client.request(
       "POST",
       `/school/active-routes/${activeRouteId}/pickup`,
-      data
+      data,
     );
   }
 
@@ -596,7 +636,7 @@ export class SchoolClient {
     return this.client.request(
       "POST",
       `/school/active-routes/${activeRouteId}/dropoff`,
-      data
+      data,
     );
   }
 
@@ -606,7 +646,7 @@ export class SchoolClient {
   async completeRoute(activeRouteId: string): Promise<any> {
     return this.client.request(
       "POST",
-      `/school/active-routes/${activeRouteId}/complete`
+      `/school/active-routes/${activeRouteId}/complete`,
     );
   }
 
@@ -623,16 +663,20 @@ export class SchoolClient {
   async getStudentTrips(
     studentId: string,
     dateFrom?: Date,
-    dateTo?: Date
+    dateTo?: Date,
   ): Promise<any[]> {
     const params = new URLSearchParams();
-    if (dateFrom) params.append("dateFrom", dateFrom.toISOString());
-    if (dateTo) params.append("dateTo", dateTo.toISOString());
+    if (dateFrom) {
+      params.append("dateFrom", dateFrom.toISOString());
+    }
+    if (dateTo) {
+      params.append("dateTo", dateTo.toISOString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/school/students/${studentId}/trips${query ? `?${query}` : ""}`
+      `/school/students/${studentId}/trips${query ? `?${query}` : ""}`,
     );
   }
 }
@@ -662,16 +706,20 @@ export class CorporateClient {
    * List members
    */
   async listMembers(
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/corporate/members${query ? `?${query}` : ""}`
+      `/corporate/members${query ? `?${query}` : ""}`,
     );
   }
 
@@ -689,7 +737,7 @@ export class CorporateClient {
     return this.client.request(
       "PATCH",
       `/corporate/members/${memberId}`,
-      updates
+      updates,
     );
   }
 
@@ -714,7 +762,7 @@ export class CorporateClient {
     return this.client.request(
       "POST",
       "/corporate/cost-centers",
-      costCenterData
+      costCenterData,
     );
   }
 }
@@ -765,17 +813,23 @@ export class BillingClient {
    */
   async listInvoices(
     status?: string,
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (status) params.append("status", status);
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (status) {
+      params.append("status", status);
+    }
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/billing/invoices${query ? `?${query}` : ""}`
+      `/billing/invoices${query ? `?${query}` : ""}`,
     );
   }
 
@@ -797,16 +851,20 @@ export class BillingClient {
    * Get credit transactions
    */
   async getCreditTransactions(
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/billing/credits/transactions${query ? `?${query}` : ""}`
+      `/billing/credits/transactions${query ? `?${query}` : ""}`,
     );
   }
 
@@ -877,16 +935,20 @@ export class WebhookClient {
    */
   async getDeliveries(
     webhookId: string,
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (pagination?.page) {
+      params.append("page", pagination.page.toString());
+    }
+    if (pagination?.limit) {
+      params.append("limit", pagination.limit.toString());
+    }
 
     const query = params.toString();
     return this.client.request(
       "GET",
-      `/webhooks/${webhookId}/deliveries${query ? `?${query}` : ""}`
+      `/webhooks/${webhookId}/deliveries${query ? `?${query}` : ""}`,
     );
   }
 
@@ -897,7 +959,7 @@ export class WebhookClient {
     payload: string,
     signature: string,
     secret: string,
-    tolerance: number = 300
+    tolerance: number = 300,
   ): boolean {
     try {
       const parts = signature.split(",");
@@ -927,7 +989,7 @@ export class WebhookClient {
       // Timing-safe comparison
       return crypto.timingSafeEqual(
         Buffer.from(expectedSignature),
-        Buffer.from(computedSignature)
+        Buffer.from(computedSignature),
       );
     } catch {
       return false;

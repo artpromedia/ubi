@@ -58,7 +58,7 @@ export interface UbiTestConfigOptions {
  * Create base Vitest configuration for UBI projects
  */
 export function createVitestConfig(
-  options: UbiTestConfigOptions = {}
+  options: UbiTestConfigOptions = {},
 ): UserConfig {
   const {
     root = process.cwd(),
@@ -161,7 +161,7 @@ export function createVitestConfig(
  * Create Vitest configuration for Node.js services
  */
 export function createServiceConfig(
-  options: Omit<UbiTestConfigOptions, "environment"> = {}
+  options: Omit<UbiTestConfigOptions, "environment"> = {},
 ): UserConfig {
   return createVitestConfig({
     ...options,
@@ -174,7 +174,7 @@ export function createServiceConfig(
  * Create Vitest configuration for React/Next.js applications
  */
 export function createWebAppConfig(
-  options: Omit<UbiTestConfigOptions, "environment"> = {}
+  options: Omit<UbiTestConfigOptions, "environment"> = {},
 ): UserConfig {
   return createVitestConfig({
     ...options,
@@ -191,7 +191,7 @@ export function createWebAppConfig(
  * Create Vitest configuration for integration tests
  */
 export function createIntegrationConfig(
-  options: Omit<UbiTestConfigOptions, "includeIntegration"> = {}
+  options: Omit<UbiTestConfigOptions, "includeIntegration"> = {},
 ): UserConfig {
   return createVitestConfig({
     ...options,

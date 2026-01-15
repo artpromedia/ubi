@@ -2,9 +2,9 @@
  * Redis Client
  */
 
-import Redis from 'ioredis';
+import Redis from "ioredis";
 
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
 export const redis = new Redis(redisUrl, {
   maxRetriesPerRequest: 3,
@@ -13,7 +13,7 @@ export const redis = new Redis(redisUrl, {
     return delay;
   },
   reconnectOnError(err) {
-    const targetError = 'READONLY';
+    const targetError = "READONLY";
     if (err.message.includes(targetError)) {
       return true;
     }
@@ -21,12 +21,12 @@ export const redis = new Redis(redisUrl, {
   },
 });
 
-redis.on('error', (err) => {
-  console.error('Redis Client Error:', err);
+redis.on("error", (err) => {
+  console.error("Redis Client Error:", err);
 });
 
-redis.on('connect', () => {
-  console.log('Redis Client Connected');
+redis.on("connect", () => {
+  console.log("Redis Client Connected");
 });
 
 /**
@@ -42,38 +42,41 @@ export async function disconnectRedis(): Promise<void> {
 export async function checkRedisConnection(): Promise<boolean> {
   try {
     const pong = await redis.ping();
-    return pong === 'PONG';
+    return pong === "PONG";
   } catch (error) {
-    console.error('Redis connection check failed:', error);
+    console.error("Redis connection check failed:", error);
     return false;
   }
 }
 
 /**
  * Distributed Lock Helper
- * 
+ *
  * Implements a simple Redis-based distributed lock
  */
 export class DistributedLock {
-  private readonly prefix = 'lock:';
+  private readonly prefix = "lock:";
   private readonly defaultTtl = 30; // seconds
 
-  async acquire(key: string, ttl: number = this.defaultTtl): Promise<string | null> {
+  async acquire(
+    key: string,
+    ttl: number = this.defaultTtl,
+  ): Promise<string | null> {
     const lockKey = this.prefix + key;
     const lockValue = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    
-    const result = await redis.set(lockKey, lockValue, 'EX', ttl, 'NX');
-    
-    if (result === 'OK') {
+
+    const result = await redis.set(lockKey, lockValue, "EX", ttl, "NX");
+
+    if (result === "OK") {
       return lockValue;
     }
-    
+
     return null;
   }
 
   async release(key: string, lockValue: string): Promise<boolean> {
     const lockKey = this.prefix + key;
-    
+
     // Use Lua script to ensure atomic check-and-delete
     const script = `
       if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -82,14 +85,18 @@ export class DistributedLock {
         return 0
       end
     `;
-    
+
     const result = await redis.eval(script, 1, lockKey, lockValue);
     return result === 1;
   }
 
-  async extend(key: string, lockValue: string, ttl: number = this.defaultTtl): Promise<boolean> {
+  async extend(
+    key: string,
+    lockValue: string,
+    ttl: number = this.defaultTtl,
+  ): Promise<boolean> {
     const lockKey = this.prefix + key;
-    
+
     const script = `
       if redis.call("get", KEYS[1]) == ARGV[1] then
         return redis.call("expire", KEYS[1], ARGV[2])
@@ -97,33 +104,37 @@ export class DistributedLock {
         return 0
       end
     `;
-    
+
     const result = await redis.eval(script, 1, lockKey, lockValue, ttl);
     return result === 1;
   }
 
   async withLock<T>(
-    key: string, 
-    fn: () => Promise<T>, 
-    options: { ttl?: number; retries?: number; retryDelay?: number } = {}
+    key: string,
+    fn: () => Promise<T>,
+    options: { ttl?: number; retries?: number; retryDelay?: number } = {},
   ): Promise<T> {
     const { ttl = this.defaultTtl, retries = 3, retryDelay = 100 } = options;
-    
+
     let lockValue: string | null = null;
     let attempts = 0;
-    
+
     while (attempts < retries) {
       lockValue = await this.acquire(key, ttl);
-      if (lockValue) break;
-      
+      if (lockValue) {
+        break;
+      }
+
       attempts++;
-      await new Promise(resolve => setTimeout(resolve, retryDelay * attempts));
+      await new Promise((resolve) =>
+        setTimeout(resolve, retryDelay * attempts),
+      );
     }
-    
+
     if (!lockValue) {
       throw new Error(`Failed to acquire lock for key: ${key}`);
     }
-    
+
     try {
       return await fn();
     } finally {
@@ -141,15 +152,17 @@ export class CacheHelper {
   private readonly prefix: string;
   private readonly defaultTtl: number;
 
-  constructor(prefix: string = 'cache:', defaultTtl: number = 300) {
+  constructor(prefix: string = "cache:", defaultTtl: number = 300) {
     this.prefix = prefix;
     this.defaultTtl = defaultTtl;
   }
 
   async get<T>(key: string): Promise<T | null> {
     const value = await redis.get(this.prefix + key);
-    if (!value) return null;
-    
+    if (!value) {
+      return null;
+    }
+
     try {
       return JSON.parse(value) as T;
     } catch {
@@ -158,7 +171,8 @@ export class CacheHelper {
   }
 
   async set(key: string, value: any, ttl?: number): Promise<void> {
-    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+    const serialized =
+      typeof value === "string" ? value : JSON.stringify(value);
     await redis.setex(this.prefix + key, ttl || this.defaultTtl, serialized);
   }
 
@@ -166,10 +180,16 @@ export class CacheHelper {
     await redis.del(this.prefix + key);
   }
 
-  async getOrSet<T>(key: string, fn: () => Promise<T>, ttl?: number): Promise<T> {
+  async getOrSet<T>(
+    key: string,
+    fn: () => Promise<T>,
+    ttl?: number,
+  ): Promise<T> {
     const cached = await this.get<T>(key);
-    if (cached !== null) return cached;
-    
+    if (cached !== null) {
+      return cached;
+    }
+
     const value = await fn();
     await this.set(key, value, ttl);
     return value;
@@ -177,8 +197,10 @@ export class CacheHelper {
 
   async invalidatePattern(pattern: string): Promise<number> {
     const keys = await redis.keys(this.prefix + pattern);
-    if (keys.length === 0) return 0;
-    
+    if (keys.length === 0) {
+      return 0;
+    }
+
     return redis.del(...keys);
   }
 }
@@ -189,12 +211,12 @@ export const cache = new CacheHelper();
  * Rate Limiter Helper
  */
 export class RateLimiter {
-  private readonly prefix = 'ratelimit:';
+  private readonly prefix = "ratelimit:";
 
   async check(
     key: string,
     limit: number,
-    windowSeconds: number
+    windowSeconds: number,
   ): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
     const fullKey = this.prefix + key;
     const now = Date.now();
@@ -206,15 +228,15 @@ export class RateLimiter {
     multi.zadd(fullKey, now, `${now}-${Math.random()}`);
     multi.zcard(fullKey);
     multi.pttl(fullKey);
-    
+
     const results = await multi.exec();
-    
+
     if (!results) {
       return { allowed: false, remaining: 0, resetIn: windowSeconds };
     }
 
-    const count = results[2]?.[1] as number || 0;
-    const ttl = results[3]?.[1] as number || 0;
+    const count = (results[2]?.[1] as number) || 0;
+    const ttl = (results[3]?.[1] as number) || 0;
 
     // Set expiry if not set
     if (ttl === -1) {

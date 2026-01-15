@@ -251,7 +251,7 @@ await payoutService.processWeeklyPayouts();
 // Daily reconciliation (runs at 4 AM)
 const report = await reconciliationService.runDailyReconciliation(
   new Date("2026-01-04"),
-  "PAYSTACK"
+  "PAYSTACK",
 );
 
 // Report shows:

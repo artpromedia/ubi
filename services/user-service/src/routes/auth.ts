@@ -4,16 +4,18 @@
  * Handles user registration, login, OTP verification, and token management.
  */
 
+import bcrypt from "bcrypt";
+import { Hono } from "hono";
+import * as jose from "jose";
+import { z } from "zod";
+
 import {
   ErrorCodes,
   generateOTP,
   generateReferralCode,
   UbiError,
 } from "@ubi/utils";
-import bcrypt from "bcrypt";
-import { Hono } from "hono";
-import * as jose from "jose";
-import { z } from "zod";
+
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 
@@ -66,7 +68,7 @@ const confirmResetPasswordSchema = z.object({
 // ===========================================
 
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "ubi-dev-secret-change-in-prod"
+  process.env.JWT_SECRET || "ubi-dev-secret-change-in-prod",
 );
 const JWT_ISSUER = "ubi.africa";
 const JWT_AUDIENCE = "ubi-api";
@@ -132,7 +134,7 @@ authRoutes.post("/register", async (c) => {
   if (existingUser) {
     throw new UbiError(
       ErrorCodes.DUPLICATE_ENTRY,
-      "A user with this phone number already exists"
+      "A user with this phone number already exists",
     );
   }
 
@@ -144,7 +146,7 @@ authRoutes.post("/register", async (c) => {
     if (existingEmail) {
       throw new UbiError(
         ErrorCodes.DUPLICATE_ENTRY,
-        "A user with this email already exists"
+        "A user with this email already exists",
       );
     }
   }
@@ -238,7 +240,7 @@ authRoutes.post("/login/otp", async (c) => {
   if (user?.status === "SUSPENDED") {
     throw new UbiError(
       ErrorCodes.ACCOUNT_SUSPENDED,
-      "Your account has been suspended"
+      "Your account has been suspended",
     );
   }
 
@@ -254,7 +256,7 @@ authRoutes.post("/login/otp", async (c) => {
   if (otpCount > 5) {
     throw new UbiError(
       ErrorCodes.RATE_LIMIT_EXCEEDED,
-      "Too many OTP requests. Please try again later."
+      "Too many OTP requests. Please try again later.",
     );
   }
 
@@ -284,7 +286,7 @@ authRoutes.post("/verify-otp", async (c) => {
   if (!storedOTP) {
     throw new UbiError(
       ErrorCodes.OTP_EXPIRED,
-      "OTP has expired. Please request a new one."
+      "OTP has expired. Please request a new one.",
     );
   }
 
@@ -295,7 +297,7 @@ authRoutes.post("/verify-otp", async (c) => {
       await redis.del(`otp:${phone}`);
       throw new UbiError(
         ErrorCodes.OTP_INVALID,
-        "Too many failed attempts. Please request a new OTP."
+        "Too many failed attempts. Please request a new OTP.",
       );
     }
     await redis.expire(`otp_attempts:${phone}`, 300);
@@ -320,7 +322,7 @@ authRoutes.post("/verify-otp", async (c) => {
   if (!user) {
     throw new UbiError(
       ErrorCodes.USER_NOT_FOUND,
-      "User not found. Please register first."
+      "User not found. Please register first.",
     );
   }
 
@@ -366,7 +368,7 @@ authRoutes.post("/verify-otp", async (c) => {
   await redis.setex(
     `session:${session.id}`,
     7 * 24 * 60 * 60,
-    JSON.stringify({ userId: user.id, role: user.role })
+    JSON.stringify({ userId: user.id, role: user.role }),
   );
 
   return c.json({
@@ -413,14 +415,14 @@ authRoutes.post("/login", async (c) => {
   if (!user?.passwordHash) {
     throw new UbiError(
       ErrorCodes.INVALID_CREDENTIALS,
-      "Invalid email or password"
+      "Invalid email or password",
     );
   }
 
   if (user.status === "SUSPENDED") {
     throw new UbiError(
       ErrorCodes.ACCOUNT_SUSPENDED,
-      "Your account has been suspended"
+      "Your account has been suspended",
     );
   }
 
@@ -429,7 +431,7 @@ authRoutes.post("/login", async (c) => {
   if (!validPassword) {
     throw new UbiError(
       ErrorCodes.INVALID_CREDENTIALS,
-      "Invalid email or password"
+      "Invalid email or password",
     );
   }
 
@@ -459,7 +461,7 @@ authRoutes.post("/login", async (c) => {
   await redis.setex(
     `session:${session.id}`,
     7 * 24 * 60 * 60,
-    JSON.stringify({ userId: user.id, role: user.role })
+    JSON.stringify({ userId: user.id, role: user.role }),
   );
 
   return c.json({
@@ -519,7 +521,7 @@ authRoutes.post("/refresh", async (c) => {
     if (!session) {
       throw new UbiError(
         ErrorCodes.SESSION_EXPIRED,
-        "Session expired. Please login again."
+        "Session expired. Please login again.",
       );
     }
 
@@ -554,7 +556,7 @@ authRoutes.post("/refresh", async (c) => {
     if (error instanceof jose.errors.JWTExpired) {
       throw new UbiError(
         ErrorCodes.TOKEN_EXPIRED,
-        "Refresh token expired. Please login again."
+        "Refresh token expired. Please login again.",
       );
     }
     throw new UbiError(ErrorCodes.INVALID_TOKEN, "Invalid refresh token");
@@ -621,7 +623,7 @@ authRoutes.post("/forgot-password", async (c) => {
 
     // NOTE: Email integration pending - notification-service will handle this
     console.log(
-      `[DEV] Password reset link: https://app.ubi.africa/reset-password?token=${resetToken}`
+      `[DEV] Password reset link: https://app.ubi.africa/reset-password?token=${resetToken}`,
     );
   }
 
@@ -647,7 +649,7 @@ authRoutes.post("/reset-password", async (c) => {
   if (!userId) {
     throw new UbiError(
       ErrorCodes.INVALID_TOKEN,
-      "Invalid or expired reset token"
+      "Invalid or expired reset token",
     );
   }
 

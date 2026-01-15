@@ -235,7 +235,7 @@ See [docs/integration/realtime-clients.md](./docs/integration/realtime-clients.m
 
 ```typescript
 const ws = new WebSocket(
-  "wss://api.ubi.africa/ws?token=JWT&userType=rider&deviceId=web&platform=web"
+  "wss://api.ubi.africa/ws?token=JWT&userType=rider&deviceId=web&platform=web",
 );
 
 ws.onmessage = (event) => {

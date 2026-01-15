@@ -184,4 +184,4 @@ export const CitiesSection = () => {
       </div>
     </section>
   );
-}
+};

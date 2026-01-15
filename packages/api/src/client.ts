@@ -6,7 +6,12 @@
 
 import ky, { type KyInstance, type Options } from "ky";
 
-import { createKyOptions, defaultConfig, type ApiConfig, type ApiError } from "./config";
+import {
+  createKyOptions,
+  defaultConfig,
+  type ApiConfig,
+  type ApiError,
+} from "./config";
 
 export class ApiClient {
   private client: KyInstance;
@@ -36,27 +41,21 @@ export class ApiClient {
    * POST request
    */
   async post<T>(url: string, data?: unknown, options?: Options): Promise<T> {
-    return this.client
-      .post(url, { json: data, ...options })
-      .json<T>();
+    return this.client.post(url, { json: data, ...options }).json<T>();
   }
 
   /**
    * PUT request
    */
   async put<T>(url: string, data?: unknown, options?: Options): Promise<T> {
-    return this.client
-      .put(url, { json: data, ...options })
-      .json<T>();
+    return this.client.put(url, { json: data, ...options }).json<T>();
   }
 
   /**
    * PATCH request
    */
   async patch<T>(url: string, data?: unknown, options?: Options): Promise<T> {
-    return this.client
-      .patch(url, { json: data, ...options })
-      .json<T>();
+    return this.client.patch(url, { json: data, ...options }).json<T>();
   }
 
   /**
@@ -74,7 +73,7 @@ export class ApiClient {
     file: File | Blob,
     fieldName = "file",
     additionalData?: Record<string, string>,
-    options?: Options
+    options?: Options,
   ): Promise<T> {
     const formData = new FormData();
     formData.append(fieldName, file);
@@ -85,9 +84,7 @@ export class ApiClient {
       });
     }
 
-    return this.client
-      .post(url, { body: formData, ...options })
-      .json<T>();
+    return this.client.post(url, { body: formData, ...options }).json<T>();
   }
 
   /**
@@ -100,7 +97,10 @@ export class ApiClient {
   /**
    * Stream response (for SSE or chunked responses)
    */
-  async stream(url: string, options?: Options): Promise<ReadableStream<Uint8Array>> {
+  async stream(
+    url: string,
+    options?: Options,
+  ): Promise<ReadableStream<Uint8Array>> {
     const response = await this.client.get(url, options);
     if (!response.body) {
       throw new Error("Response body is null");
@@ -131,7 +131,7 @@ export function initializeApiClient(config: ApiConfig): ApiClient {
 export function getApiClient(): ApiClient {
   if (!defaultClient) {
     throw new Error(
-      "API client not initialized. Call initializeApiClient() first."
+      "API client not initialized. Call initializeApiClient() first.",
     );
   }
   return defaultClient;

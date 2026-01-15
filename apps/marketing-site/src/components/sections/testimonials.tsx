@@ -99,7 +99,8 @@ export const TestimonialsSection = () => {
             transition={{ delay: 0.1 }}
             className="mt-4 text-lg text-gray-600 dark:text-gray-300"
           >
-            Don't just take our word for it. Here's what our community has to say.
+            Don't just take our word for it. Here's what our community has to
+            say.
           </motion.p>
         </div>
 
@@ -152,4 +153,4 @@ export const TestimonialsSection = () => {
       </div>
     </section>
   );
-}
+};

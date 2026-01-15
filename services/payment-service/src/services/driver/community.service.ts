@@ -5,16 +5,16 @@
 
 import {
   DRIVER_EVENTS,
-  DriverEvent,
-  DriverLeaderboard,
-  EventRegistration,
-  EventType,
-  ForumCategory,
-  ForumComment,
-  ForumPost,
-  LeaderboardEntry,
+  type DriverEvent,
+  type DriverLeaderboard,
+  type EventRegistration,
+  type EventType,
+  type ForumCategory,
+  type ForumComment,
+  type ForumPost,
+  type LeaderboardEntry,
   LeaderboardPeriod,
-  MentorshipPair,
+  type MentorshipPair,
   MentorshipStatus,
   PostType,
   RegistrationStatus,
@@ -32,7 +32,7 @@ export class CommunityService {
     private db: any,
     private redis: any,
     private notificationService: any,
-    private analyticsService: any
+    private analyticsService: any,
   ) {
     // this._eventEmitter = new EventEmitter();
   }
@@ -59,7 +59,7 @@ export class CommunityService {
         }),
         isActive: c.isActive,
         orderIndex: c.orderIndex,
-      }))
+      })),
     );
   }
 
@@ -70,10 +70,12 @@ export class CommunityService {
   async getForumPosts(
     categoryId?: string,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<{ posts: ForumPost[]; total: number; hasMore: boolean }> {
     const where: any = { isDeleted: false };
-    if (categoryId) where.categoryId = categoryId;
+    if (categoryId) {
+      where.categoryId = categoryId;
+    }
 
     const [posts, total] = await Promise.all([
       this.db.forumPost.findMany({
@@ -111,7 +113,9 @@ export class CommunityService {
       },
     });
 
-    if (!post) return null;
+    if (!post) {
+      return null;
+    }
 
     // Increment view count
     await this.db.forumPost.update({
@@ -165,7 +169,7 @@ export class CommunityService {
   async updatePost(
     driverId: string,
     postId: string,
-    data: Partial<{ title: string; content: string; tags: string[] }>
+    data: Partial<{ title: string; content: string; tags: string[] }>,
   ): Promise<ForumPost> {
     // Verify ownership
     const existing = await this.db.forumPost.findFirst({
@@ -264,7 +268,7 @@ export class CommunityService {
   async getPostComments(
     postId: string,
     page: number = 1,
-    limit: number = 50
+    limit: number = 50,
   ): Promise<{ comments: ForumComment[]; total: number }> {
     const [comments, total] = await Promise.all([
       this.db.forumComment.findMany({
@@ -300,7 +304,7 @@ export class CommunityService {
     driverId: string,
     postId: string,
     content: string,
-    parentId?: string
+    parentId?: string,
   ): Promise<ForumComment> {
     // Verify post exists and not locked
     const post = await this.db.forumPost.findUnique({
@@ -374,13 +378,15 @@ export class CommunityService {
 
   async getUpcomingEvents(
     city?: string,
-    limit: number = 10
+    limit: number = 10,
   ): Promise<DriverEvent[]> {
     const where: any = {
       eventDate: { gte: new Date() },
       status: "PUBLISHED",
     };
-    if (city) where.city = city;
+    if (city) {
+      where.city = city;
+    }
 
     const events = await this.db.driverEvent.findMany({
       where,
@@ -413,7 +419,7 @@ export class CommunityService {
 
   async createEvent(
     organizerId: string,
-    data: Omit<DriverEvent, "id" | "organizerId" | "registrationCount">
+    data: Omit<DriverEvent, "id" | "organizerId" | "registrationCount">,
   ): Promise<DriverEvent> {
     const event = await this.db.driverEvent.create({
       data: {
@@ -440,7 +446,7 @@ export class CommunityService {
 
   async registerForEvent(
     driverId: string,
-    eventId: string
+    eventId: string,
   ): Promise<EventRegistration> {
     // Check if already registered
     const existing = await this.db.eventRegistration.findUnique({
@@ -510,7 +516,7 @@ export class CommunityService {
 
   async cancelRegistration(
     driverId: string,
-    eventId: string
+    eventId: string,
   ): Promise<boolean> {
     const registration = await this.db.eventRegistration.findUnique({
       where: {
@@ -651,7 +657,7 @@ export class CommunityService {
 
   async getMentorshipStatus(driverId: string): Promise<MentorshipPair | null> {
     // Check if mentee
-    let mentorship = await this.db.mentorshipPair.findFirst({
+    const mentorship = await this.db.mentorshipPair.findFirst({
       where: {
         menteeId: driverId,
         status: { in: [MentorshipStatus.PENDING, MentorshipStatus.ACTIVE] },
@@ -690,7 +696,7 @@ export class CommunityService {
   async completeMentorTask(
     mentorshipId: string,
     taskCode: string,
-    notes?: string
+    notes?: string,
   ): Promise<boolean> {
     const mentorship = await this.db.mentorshipPair.findUnique({
       where: { id: mentorshipId },
@@ -869,11 +875,13 @@ export class CommunityService {
     type: string,
     period: LeaderboardPeriod,
     city?: string,
-    limit: number = 100
+    limit: number = 100,
   ): Promise<DriverLeaderboard> {
     const cacheKey = `leaderboard:${type}:${period}:${city || "all"}`;
     const cached = await this.getCached<DriverLeaderboard>(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
 
     const dateFilter = this.getDateFilter(period);
 
@@ -913,7 +921,7 @@ export class CommunityService {
   async getDriverRanking(
     driverId: string,
     type: string,
-    period: LeaderboardPeriod
+    period: LeaderboardPeriod,
   ): Promise<{
     rank: number;
     value: number;
@@ -938,7 +946,7 @@ export class CommunityService {
         const driverTrips = tripStats.find((s: any) => s.driverId === driverId);
         driverValue = driverTrips?._count || 0;
         driversAbove = tripStats.filter(
-          (s: any) => s._count > driverValue
+          (s: any) => s._count > driverValue,
         ).length;
         break;
 
@@ -951,11 +959,11 @@ export class CommunityService {
 
         totalDrivers = earningsStats.length;
         const driverEarnings = earningsStats.find(
-          (s: any) => s.driverId === driverId
+          (s: any) => s.driverId === driverId,
         );
         driverValue = parseFloat(driverEarnings?._sum.totalEarning || "0");
         driversAbove = earningsStats.filter(
-          (s: any) => parseFloat(s._sum.totalEarning) > driverValue
+          (s: any) => parseFloat(s._sum.totalEarning) > driverValue,
         ).length;
         break;
 
@@ -979,7 +987,7 @@ export class CommunityService {
   async nominateDriverOfMonth(
     nominatorId: string,
     nomineeId: string,
-    reason: string
+    reason: string,
   ): Promise<boolean> {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1019,7 +1027,7 @@ export class CommunityService {
     const monthStart = new Date(
       lastMonth.getFullYear(),
       lastMonth.getMonth(),
-      1
+      1,
     );
 
     const winner = await this.db.driverOfMonth.findFirst({
@@ -1054,7 +1062,7 @@ export class CommunityService {
   private async getTripsLeaderboard(
     dateFilter: Date,
     city: string | undefined,
-    limit: number
+    limit: number,
   ): Promise<LeaderboardEntry[]> {
     const stats = await this.db.tripEarning.groupBy({
       by: ["driverId"],
@@ -1090,7 +1098,7 @@ export class CommunityService {
   private async getEarningsLeaderboard(
     dateFilter: Date,
     city: string | undefined,
-    limit: number
+    limit: number,
   ): Promise<LeaderboardEntry[]> {
     const stats = await this.db.tripEarning.groupBy({
       by: ["driverId"],
@@ -1125,7 +1133,7 @@ export class CommunityService {
 
   private async getRatingLeaderboard(
     city: string | undefined,
-    limit: number
+    limit: number,
   ): Promise<LeaderboardEntry[]> {
     const profiles = await this.db.driverProfile.findMany({
       where: {
@@ -1153,7 +1161,7 @@ export class CommunityService {
 
   private async getPointsLeaderboard(
     city: string | undefined,
-    limit: number
+    limit: number,
   ): Promise<LeaderboardEntry[]> {
     const profiles = await this.db.driverProfile.findMany({
       where: city ? { driver: { city } } : {},
@@ -1300,7 +1308,7 @@ export class CommunityService {
   private async setCache(
     key: string,
     data: unknown,
-    ttl: number
+    ttl: number,
   ): Promise<void> {
     try {
       await this.redis?.setex(key, ttl, JSON.stringify(data));
@@ -1312,7 +1320,7 @@ export class CommunityService {
   private trackEvent(
     driverId: string,
     eventName: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
   ): void {
     this.analyticsService?.track({
       userId: driverId,

@@ -8,9 +8,9 @@
 
 import {
   AccountType,
-  Currency,
+  type Currency,
   EntryType,
-  PrismaClient,
+  type PrismaClient,
   TransactionStatus,
   TransactionType,
 } from "@prisma/client";
@@ -107,7 +107,7 @@ export class WalletService {
   async getOrCreateWalletAccount(
     userId: string,
     accountType: AccountType,
-    currency: Currency
+    currency: Currency,
   ) {
     // Try to find existing account
     let account = await this.prisma.walletAccount.findFirst({
@@ -141,7 +141,7 @@ export class WalletService {
   async getBalance(
     userId: string,
     accountType: AccountType,
-    currency: Currency
+    currency: Currency,
   ) {
     const account = await this.prisma.walletAccount.findFirst({
       where: {
@@ -190,7 +190,7 @@ export class WalletService {
       const userAccount = await this.getOrCreateWalletAccount(
         userId,
         AccountType.USER_WALLET,
-        currency
+        currency,
       );
 
       // Get UBI float account
@@ -614,7 +614,7 @@ export class WalletService {
       toAccountId: string;
       description?: string;
       metadata?: Record<string, any>;
-    }
+    },
   ) {
     return await this.prisma.$transaction(async (tx) => {
       const hold = await tx.balanceHold.findUnique({
@@ -777,7 +777,7 @@ export class WalletService {
       balanceAfter: number;
       description?: string;
       metadata?: Record<string, any>;
-    }
+    },
   ) {
     return await tx.ledgerEntry.create({
       data: {
@@ -802,15 +802,19 @@ export class WalletService {
       offset?: number;
       startDate?: Date;
       endDate?: Date;
-    }
+    },
   ) {
     const { limit = 50, offset = 0, startDate, endDate } = options || {};
 
     const where: any = { accountId };
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) where.createdAt.lte = endDate;
+      if (startDate) {
+        where.createdAt.gte = startDate;
+      }
+      if (endDate) {
+        where.createdAt.lte = endDate;
+      }
     }
 
     const entries = await this.prisma.ledgerEntry.findMany({

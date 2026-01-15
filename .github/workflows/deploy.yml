@@ -292,7 +292,13 @@ jobs:
   # ===========================================
   notify-deployment:
     name: Notify Deployment
-    needs: [deploy-web-app, deploy-admin-dashboard, deploy-api-gateway, deploy-ride-service]
+    needs:
+      [
+        deploy-web-app,
+        deploy-admin-dashboard,
+        deploy-api-gateway,
+        deploy-ride-service,
+      ]
     if: always()
     runs-on: ubuntu-latest
     steps:

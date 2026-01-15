@@ -1,6 +1,7 @@
 import "@/styles/globals.css";
-import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+
+import type { Metadata, Viewport } from "next";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -37,7 +38,7 @@ export const metadata: Metadata = {
     telephone: false,
   },
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL || "https://app.ubi.africa"
+    process.env.NEXT_PUBLIC_APP_URL || "https://app.ubi.africa",
   ),
   alternates: {
     canonical: "/",

@@ -49,7 +49,7 @@ describe("Web App - User Service Contract", () => {
                 rating: like(4.8),
                 createdAt: datetime(
                   "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                  "2024-01-15T10:30:00.000Z"
+                  "2024-01-15T10:30:00.000Z",
                 ),
               },
             },
@@ -57,7 +57,7 @@ describe("Web App - User Service Contract", () => {
               requestId: string("req_abc123"),
               timestamp: datetime(
                 "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                "2024-01-15T10:30:00.000Z"
+                "2024-01-15T10:30:00.000Z",
               ),
             },
           },
@@ -219,7 +219,7 @@ describe("Web App - User Service Contract", () => {
               Authorization: "Bearer valid_token",
               Accept: "application/json",
             },
-          }
+          },
         );
 
         const body = await response.json();
@@ -286,7 +286,7 @@ describe("Web App - User Service Contract", () => {
               latitude: 6.6018,
               longitude: 3.3515,
             }),
-          }
+          },
         );
 
         expect(response.status).toBe(201);

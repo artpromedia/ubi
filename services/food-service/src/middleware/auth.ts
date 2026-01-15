@@ -41,7 +41,7 @@ export async function auth(c: Context, next: Next): Promise<void | Response> {
           message: "Missing or invalid authorization header",
         },
       },
-      401
+      401,
     );
   }
 
@@ -56,13 +56,13 @@ export async function auth(c: Context, next: Next): Promise<void | Response> {
           success: false,
           error: { code: "TOKEN_REVOKED", message: "Token has been revoked" },
         },
-        401
+        401,
       );
     }
 
     const payload = verify(
       token,
-      process.env.JWT_SECRET || "secret"
+      process.env.JWT_SECRET || "secret",
     ) as TokenPayload;
 
     // Set user context
@@ -79,7 +79,7 @@ export async function auth(c: Context, next: Next): Promise<void | Response> {
           success: false,
           error: { code: "TOKEN_EXPIRED", message: "Token has expired" },
         },
-        401
+        401,
       );
     }
 
@@ -88,7 +88,7 @@ export async function auth(c: Context, next: Next): Promise<void | Response> {
         success: false,
         error: { code: "INVALID_TOKEN", message: "Invalid token" },
       },
-      401
+      401,
     );
   }
 }
@@ -98,7 +98,7 @@ export async function auth(c: Context, next: Next): Promise<void | Response> {
  */
 export async function restaurantOwner(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   const userRole = c.get("userRole");
   const userId = c.get("userId");
@@ -119,7 +119,7 @@ export async function restaurantOwner(
           message: "Restaurant owner access required",
         },
       },
-      403
+      403,
     );
   }
 
@@ -140,7 +140,7 @@ export async function restaurantOwner(
             message: "Not authorized for this restaurant",
           },
         },
-        403
+        403,
       );
     }
   }
@@ -153,7 +153,7 @@ export async function restaurantOwner(
  */
 export async function adminOnly(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   const userRole = c.get("userRole");
 
@@ -163,7 +163,7 @@ export async function adminOnly(
         success: false,
         error: { code: "FORBIDDEN", message: "Admin access required" },
       },
-      403
+      403,
     );
   }
 
@@ -175,7 +175,7 @@ export async function adminOnly(
  */
 export async function serviceAuth(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   const serviceKey = c.req.header("X-Service-Key");
 
@@ -185,7 +185,7 @@ export async function serviceAuth(
         success: false,
         error: { code: "FORBIDDEN", message: "Invalid service key" },
       },
-      403
+      403,
     );
   }
 
@@ -197,7 +197,7 @@ export async function serviceAuth(
  */
 export async function optionalAuth(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   const authHeader = c.req.header("Authorization");
 
@@ -209,7 +209,7 @@ export async function optionalAuth(
       if (!isBlacklisted) {
         const payload = verify(
           token,
-          process.env.JWT_SECRET || "secret"
+          process.env.JWT_SECRET || "secret",
         ) as TokenPayload;
         c.set("userId", payload.userId);
         c.set("userEmail", payload.email);

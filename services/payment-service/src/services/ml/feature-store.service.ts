@@ -6,19 +6,20 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
+
 import {
-  CreateFeatureDefinitionInput,
-  FeatureDefinition,
+  type CreateFeatureDefinitionInput,
+  type FeatureDefinition,
   FeatureEntityType,
   FeatureFreshness,
-  FeatureGroup,
+  type FeatureGroup,
   FeatureSource,
-  FeatureValue,
+  type FeatureValue,
   FeatureValueType,
-  FeatureVector,
-  GetFeaturesRequest,
-  GetFeaturesResponse,
-  IFeatureStoreService,
+  type FeatureVector,
+  type GetFeaturesRequest,
+  type GetFeaturesResponse,
+  type IFeatureStoreService,
 } from "../../types/ml.types";
 
 // =============================================================================
@@ -722,7 +723,7 @@ export class FeatureStoreService implements IFeatureStoreService {
   // ===========================================================================
 
   async createFeature(
-    input: CreateFeatureDefinitionInput
+    input: CreateFeatureDefinitionInput,
   ): Promise<FeatureDefinition> {
     const existing = await this.getFeatureDefinition(input.name);
     if (existing) {
@@ -762,7 +763,7 @@ export class FeatureStoreService implements IFeatureStoreService {
     await this.redisClient.hset(
       "feature:definitions",
       input.name,
-      JSON.stringify(feature)
+      JSON.stringify(feature),
     );
 
     this.eventEmitter.emit("feature:created", feature);
@@ -796,7 +797,7 @@ export class FeatureStoreService implements IFeatureStoreService {
   }
 
   async listFeatures(
-    entityType?: FeatureEntityType
+    entityType?: FeatureEntityType,
   ): Promise<FeatureDefinition[]> {
     const features = Array.from(this.featureDefinitions.values());
 
@@ -821,7 +822,7 @@ export class FeatureStoreService implements IFeatureStoreService {
     await this.redisClient.hset(
       "feature:definitions",
       name,
-      JSON.stringify(feature)
+      JSON.stringify(feature),
     );
 
     this.eventEmitter.emit("feature:deprecated", feature);
@@ -876,7 +877,7 @@ export class FeatureStoreService implements IFeatureStoreService {
         const realtimeValues = await this.getRealtimeFeatures(
           request.entityType,
           entityId,
-          realtimeFeatures
+          realtimeFeatures,
         );
 
         for (const [name, value] of Object.entries(realtimeValues)) {
@@ -884,7 +885,7 @@ export class FeatureStoreService implements IFeatureStoreService {
             features[name] = value.value;
             featureVersions[name] = definitions.get(name)!.version;
             staleness[name] = Math.floor(
-              (Date.now() - value.computedAt.getTime()) / 1000
+              (Date.now() - value.computedAt.getTime()) / 1000,
             );
 
             // Check staleness
@@ -911,7 +912,7 @@ export class FeatureStoreService implements IFeatureStoreService {
         const batchValues = await this.getBatchFeatures(
           request.entityType,
           entityId,
-          batchFeatures
+          batchFeatures,
         );
 
         for (const [name, value] of Object.entries(batchValues)) {
@@ -919,7 +920,7 @@ export class FeatureStoreService implements IFeatureStoreService {
             features[name] = value.value;
             featureVersions[name] = definitions.get(name)!.version;
             staleness[name] = Math.floor(
-              (Date.now() - value.computedAt.getTime()) / 1000
+              (Date.now() - value.computedAt.getTime()) / 1000,
             );
           } else {
             const def = definitions.get(name)!;
@@ -953,13 +954,13 @@ export class FeatureStoreService implements IFeatureStoreService {
   private async getRealtimeFeatures(
     entityType: FeatureEntityType,
     entityId: string,
-    featureNames: string[]
+    featureNames: string[],
   ): Promise<Record<string, FeatureValue | null>> {
     const result: Record<string, FeatureValue | null> = {};
 
     // Build Redis keys
     const keys = featureNames.map(
-      (name) => `feature:${entityType}:${entityId}:${name}`
+      (name) => `feature:${entityType}:${entityId}:${name}`,
     );
 
     // Batch get from Redis
@@ -981,7 +982,7 @@ export class FeatureStoreService implements IFeatureStoreService {
   private async getBatchFeatures(
     entityType: FeatureEntityType,
     entityId: string,
-    featureNames: string[]
+    featureNames: string[],
   ): Promise<Record<string, FeatureValue | null>> {
     // Same implementation for now - in production would query batch storage
     return this.getRealtimeFeatures(entityType, entityId, featureNames);
@@ -995,7 +996,7 @@ export class FeatureStoreService implements IFeatureStoreService {
     featureId: string,
     entityId: string,
     value: unknown,
-    options?: { ttl?: number; sourceEvent?: string }
+    options?: { ttl?: number; sourceEvent?: string },
   ): Promise<void> {
     const definition = await this.getFeatureDefinition(featureId);
     if (!definition) {
@@ -1031,7 +1032,7 @@ export class FeatureStoreService implements IFeatureStoreService {
 
   async computeFeature(
     featureName: string,
-    entityId: string
+    entityId: string,
   ): Promise<FeatureValue> {
     const definition = await this.getFeatureDefinition(featureName);
     if (!definition) {
@@ -1062,14 +1063,14 @@ export class FeatureStoreService implements IFeatureStoreService {
         value = await this.computeBatchFeature(
           definition,
           entityId,
-          dependencies
+          dependencies,
         );
         break;
       case FeatureSource.REQUEST_TIME:
         value = await this.computeRequestTimeFeature(
           definition,
           entityId,
-          dependencies
+          dependencies,
         );
         break;
       case FeatureSource.EXTERNAL:
@@ -1096,7 +1097,7 @@ export class FeatureStoreService implements IFeatureStoreService {
   private async computeBatchFeature(
     definition: FeatureDefinition,
     _entityId: string,
-    _dependencies: Record<string, unknown>
+    _dependencies: Record<string, unknown>,
   ): Promise<unknown> {
     // In production, this would execute the SQL or transformation code
     // For now, return default value
@@ -1106,7 +1107,7 @@ export class FeatureStoreService implements IFeatureStoreService {
   private async computeRequestTimeFeature(
     definition: FeatureDefinition,
     _entityId: string,
-    _dependencies: Record<string, unknown>
+    _dependencies: Record<string, unknown>,
   ): Promise<unknown> {
     // Compute request-time features based on current context
     const now = new Date();
@@ -1123,7 +1124,7 @@ export class FeatureStoreService implements IFeatureStoreService {
 
   private async computeExternalFeature(
     definition: FeatureDefinition,
-    _entityId: string
+    _entityId: string,
   ): Promise<unknown> {
     // Call external API
     // For now, return default value
@@ -1137,7 +1138,7 @@ export class FeatureStoreService implements IFeatureStoreService {
   async createFeatureGroup(
     name: string,
     featureNames: string[],
-    entityType: FeatureEntityType
+    entityType: FeatureEntityType,
   ): Promise<FeatureGroup> {
     // Validate all features exist and have correct entity type
     for (const featureName of featureNames) {
@@ -1147,7 +1148,7 @@ export class FeatureStoreService implements IFeatureStoreService {
       }
       if (def.entityType !== entityType) {
         throw new Error(
-          `Feature ${featureName} has entity type ${def.entityType}, expected ${entityType}`
+          `Feature ${featureName} has entity type ${def.entityType}, expected ${entityType}`,
         );
       }
     }
@@ -1218,7 +1219,7 @@ export class FeatureStoreService implements IFeatureStoreService {
 
   async runBatchComputation(
     featureNames: string[],
-    entityIds?: string[]
+    entityIds?: string[],
   ): Promise<{ computed: number; failed: number; duration: number }> {
     const startTime = Date.now();
     let computed = 0;
@@ -1263,7 +1264,7 @@ export class FeatureStoreService implements IFeatureStoreService {
     _modelId: string,
     entityType: FeatureEntityType,
     entityId: string,
-    featureNames: string[]
+    featureNames: string[],
   ): Promise<number[]> {
     const response = await this.getFeatures({
       entityType,
@@ -1325,7 +1326,7 @@ export class FeatureStoreService implements IFeatureStoreService {
       } catch (error) {
         // Feature may already exist
         console.log(
-          `Feature ${featureInput.name} already exists or failed to create`
+          `Feature ${featureInput.name} already exists or failed to create`,
         );
       }
     }
@@ -1439,7 +1440,7 @@ export class FeatureStoreService implements IFeatureStoreService {
         await this.createFeatureGroup(
           group.name,
           group.features,
-          group.entityType
+          group.entityType,
         );
       } catch (error) {
         // Group may already exist
@@ -1453,12 +1454,12 @@ export class FeatureStoreService implements IFeatureStoreService {
 
   private validateFeatureValue(
     definition: FeatureDefinition,
-    value: unknown
+    value: unknown,
   ): void {
     if (value === null || value === undefined) {
       if (!definition.isNullable) {
         throw new Error(
-          `Feature ${definition.name} does not allow null values`
+          `Feature ${definition.name} does not allow null values`,
         );
       }
       return;
@@ -1501,12 +1502,12 @@ export class FeatureStoreService implements IFeatureStoreService {
     if (typeof value === "number") {
       if (definition.minValue !== undefined && value < definition.minValue) {
         throw new Error(
-          `Feature ${definition.name} value ${value} below minimum ${definition.minValue}`
+          `Feature ${definition.name} value ${value} below minimum ${definition.minValue}`,
         );
       }
       if (definition.maxValue !== undefined && value > definition.maxValue) {
         throw new Error(
-          `Feature ${definition.name} value ${value} above maximum ${definition.maxValue}`
+          `Feature ${definition.name} value ${value} above maximum ${definition.maxValue}`,
         );
       }
     }
@@ -1515,7 +1516,7 @@ export class FeatureStoreService implements IFeatureStoreService {
     if (definition.allowedValues.length > 0) {
       if (!definition.allowedValues.includes(String(value))) {
         throw new Error(
-          `Feature ${definition.name} value ${value} not in allowed values`
+          `Feature ${definition.name} value ${value} not in allowed values`,
         );
       }
     }
@@ -1617,14 +1618,14 @@ export class FeatureComputationScheduler {
   private scheduleComputation(
     name: string,
     intervalMs: number,
-    features: string[]
+    features: string[],
   ): void {
     const timer: ReturnType<typeof setInterval> = setInterval(async () => {
       console.log(`Running ${name} feature computation...`);
       try {
         const result = await this.featureStore.runBatchComputation(features);
         console.log(
-          `${name} computation complete: ${result.computed} computed, ${result.failed} failed`
+          `${name} computation complete: ${result.computed} computed, ${result.failed} failed`,
         );
       } catch (error) {
         console.error(`${name} computation failed:`, error);

@@ -51,7 +51,7 @@ export interface BoundingBox {
 export function calculateDistance(
   from: Coordinate,
   to: Coordinate,
-  unit: "km" | "m" = "m"
+  unit: "km" | "m" = "m",
 ): number {
   const lat1 = toRadians(from.latitude);
   const lat2 = toRadians(to.latitude);
@@ -101,7 +101,7 @@ export function calculateBearing(from: Coordinate, to: Coordinate): number {
 export function destinationPoint(
   start: Coordinate,
   distance: number,
-  bearing: number
+  bearing: number,
 ): Coordinate {
   const lat1 = toRadians(start.latitude);
   const lng1 = toRadians(start.longitude);
@@ -110,14 +110,14 @@ export function destinationPoint(
 
   const lat2 = Math.asin(
     Math.sin(lat1) * Math.cos(angularDist) +
-      Math.cos(lat1) * Math.sin(angularDist) * Math.cos(brng)
+      Math.cos(lat1) * Math.sin(angularDist) * Math.cos(brng),
   );
 
   const lng2 =
     lng1 +
     Math.atan2(
       Math.sin(brng) * Math.sin(angularDist) * Math.cos(lat1),
-      Math.cos(angularDist) - Math.sin(lat1) * Math.sin(lat2)
+      Math.cos(angularDist) - Math.sin(lat1) * Math.sin(lat2),
     );
 
   return {
@@ -134,7 +134,7 @@ export function destinationPoint(
  */
 export function getBoundingBox(
   center: Coordinate,
-  radiusMeters: number
+  radiusMeters: number,
 ): BoundingBox {
   const north = destinationPoint(center, radiusMeters, 0);
   const south = destinationPoint(center, radiusMeters, 180);
@@ -157,7 +157,7 @@ export function getBoundingBox(
  */
 export function isWithinBoundingBox(
   point: Coordinate,
-  box: BoundingBox
+  box: BoundingBox,
 ): boolean {
   return (
     point.latitude <= box.north &&
@@ -177,7 +177,7 @@ export function isWithinBoundingBox(
 export function isWithinRadius(
   point: Coordinate,
   center: Coordinate,
-  radiusMeters: number
+  radiusMeters: number,
 ): boolean {
   const distance = calculateDistance(point, center, "m");
   return distance <= radiusMeters;
@@ -206,7 +206,7 @@ const VEHICLE_SPEEDS: Record<string, number> = {
 export function estimateTravelTime(
   distanceMeters: number,
   vehicleType: string = "ECONOMY",
-  trafficMultiplier: number = 1
+  trafficMultiplier: number = 1,
 ): number {
   const speedKmh = VEHICLE_SPEEDS[vehicleType] ?? VEHICLE_SPEEDS.ECONOMY ?? 40;
   const speedMs = (speedKmh * 1000) / 3600; // Convert to m/s
@@ -227,7 +227,7 @@ export function estimateETA(
   from: Coordinate,
   to: Coordinate,
   vehicleType: string = "ECONOMY",
-  trafficMultiplier: number = 1
+  trafficMultiplier: number = 1,
 ): { distance: number; duration: number; eta: Date } {
   const distance = calculateDistance(from, to, "m");
   const duration = estimateTravelTime(distance, vehicleType, trafficMultiplier);
@@ -281,7 +281,9 @@ export function getNeighborCells(cellId: string, k: number = 1): string[] {
 
   for (let i = -k; i <= k; i++) {
     for (let j = -k; j <= k; j++) {
-      if (i === 0 && j === 0) {continue;}
+      if (i === 0 && j === 0) {
+        continue;
+      }
       cells.push(`${lat + i}:${lng + j}:${res}`);
     }
   }
@@ -299,7 +301,7 @@ export function getNeighborCells(cellId: string, k: number = 1): string[] {
 export function isSameCell(
   coord1: Coordinate,
   coord2: Coordinate,
-  resolution: number = 8
+  resolution: number = 8,
 ): boolean {
   return getGridCell(coord1, resolution) === getGridCell(coord2, resolution);
 }
@@ -368,7 +370,7 @@ export const AFRICAN_CITIES: Record<string, Coordinate> = {
  */
 export function getSupportedCity(
   coord: Coordinate,
-  cityRadiusKm: number = 50
+  cityRadiusKm: number = 50,
 ): string | null {
   for (const [cityName, cityCoord] of Object.entries(AFRICAN_CITIES)) {
     const distance = calculateDistance(coord, cityCoord, "km");

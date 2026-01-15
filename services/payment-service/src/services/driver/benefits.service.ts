@@ -4,22 +4,23 @@
 // ===========================================
 
 import { EventEmitter } from "events";
+
 import {
-  BenefitClaim,
-  BenefitEnrollment,
+  type BenefitClaim,
+  type BenefitEnrollment,
   BenefitEnrollmentStatus,
-  BenefitPackage,
+  type BenefitPackage,
   BenefitType,
   BillingCycle,
-  ClaimInput,
+  type ClaimInput,
   ClaimStatus,
   DRIVER_EVENTS,
-  DriverBenefitPackage,
-  EnrollmentOptions,
-  FuelDiscount,
-  FuelStation,
-  FuelTransaction,
-  IDriverBenefitsService,
+  type DriverBenefitPackage,
+  type EnrollmentOptions,
+  type FuelDiscount,
+  type FuelStation,
+  type FuelTransaction,
+  type IDriverBenefitsService,
 } from "../../types/driver.types";
 
 // -----------------------------------------
@@ -51,7 +52,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     private _redis: any,
     private paymentService: any,
     private notificationService: any,
-    private analyticsService: any
+    private analyticsService: any,
   ) {
     this._eventEmitter = new EventEmitter();
   }
@@ -61,7 +62,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   // -----------------------------------------
 
   async getAvailableBenefits(
-    driverId: string
+    driverId: string,
   ): Promise<DriverBenefitPackage[]> {
     // Get driver profile
     const driver = await this.getDriverProfile(driverId);
@@ -77,7 +78,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       where: { driverId },
     });
     const enrollmentMap = new Map(
-      enrollments.map((e: any) => [e.packageId, e])
+      enrollments.map((e: any) => [e.packageId, e]),
     );
 
     // Map to driver-specific packages
@@ -116,7 +117,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   async enrollInBenefit(
     driverId: string,
     packageId: string,
-    options?: EnrollmentOptions
+    options?: EnrollmentOptions,
   ): Promise<BenefitEnrollment> {
     // Get package
     const pkg = await this.db.benefitPackage.findUnique({
@@ -150,7 +151,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
     const expiryDate = this.calculateExpiryDate(
       effectiveDate,
-      options?.billingCycle || BillingCycle.MONTHLY
+      options?.billingCycle || BillingCycle.MONTHLY,
     );
 
     // Process initial payment
@@ -158,7 +159,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     await this.processPayment(
       driverId,
       amount,
-      `Benefit enrollment: ${pkg.name}`
+      `Benefit enrollment: ${pkg.name}`,
     );
 
     // Create or update enrollment
@@ -226,7 +227,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   async cancelEnrollment(
     driverId: string,
-    enrollmentId: string
+    enrollmentId: string,
   ): Promise<boolean> {
     const enrollment = await this.db.benefitEnrollment.findFirst({
       where: { id: enrollmentId, driverId },
@@ -271,7 +272,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   async submitClaim(
     driverId: string,
     enrollmentId: string,
-    claim: ClaimInput
+    claim: ClaimInput,
   ): Promise<BenefitClaim> {
     // Verify enrollment
     const enrollment = await this.db.benefitEnrollment.findFirst({
@@ -341,7 +342,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   async getClaimDetails(
     driverId: string,
-    claimId: string
+    claimId: string,
   ): Promise<BenefitClaim | null> {
     const claim = await this.db.benefitClaim.findFirst({
       where: { id: claimId, driverId },
@@ -356,7 +357,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     reviewerId: string,
     approved: boolean,
     approvedAmount?: number,
-    notes?: string
+    notes?: string,
   ): Promise<BenefitClaim> {
     const existingClaim = await this.db.benefitClaim.findUnique({
       where: { id: claimId },
@@ -369,7 +370,9 @@ export class DriverBenefitsService implements IDriverBenefitsService {
         reviewedBy: reviewerId,
         reviewedAt: new Date(),
         reviewNotes: notes,
-        approvedAmount: approved ? approvedAmount || existingClaim.amount : null,
+        approvedAmount: approved
+          ? approvedAmount || existingClaim.amount
+          : null,
       },
     });
 
@@ -396,13 +399,15 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       where: { id: claimId },
     });
 
-    if (claim.status !== ClaimStatus.APPROVED) return;
+    if (claim.status !== ClaimStatus.APPROVED) {
+      return;
+    }
 
     // Credit to driver wallet
     await this.paymentService?.creditWallet(
       claim.driverId,
       claim.approvedAmount,
-      `Benefit claim payout: ${claim.claimType}`
+      `Benefit claim payout: ${claim.claimType}`,
     );
 
     // Update claim status
@@ -468,7 +473,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   async getNearbyFuelStations(
     latitude: number,
     longitude: number,
-    radius: number = 5
+    radius: number = 5,
   ): Promise<FuelStation[]> {
     // Get partner stations near location
     const stations = await this.db.fuelStation.findMany({
@@ -493,13 +498,13 @@ export class DriverBenefitsService implements IDriverBenefitsService {
           latitude,
           longitude,
           parseFloat(station.latitude),
-          parseFloat(station.longitude)
+          parseFloat(station.longitude),
         ),
       }))
       .filter((s: FuelStation) => (s.distance || 0) <= radius)
       .sort(
         (a: FuelStation, b: FuelStation) =>
-          (a.distance || 0) - (b.distance || 0)
+          (a.distance || 0) - (b.distance || 0),
       );
 
     return stationsWithDistance;
@@ -507,7 +512,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   async recordFuelTransaction(
     driverId: string,
-    transaction: Omit<FuelTransaction, "id">
+    transaction: Omit<FuelTransaction, "id">,
   ): Promise<FuelTransaction> {
     const discount = await this.getFuelDiscount(driverId);
 
@@ -569,7 +574,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   async getFuelTransactions(
     driverId: string,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<FuelTransaction[]> {
     const transactions = await this.db.fuelTransaction.findMany({
       where: { driverId },
@@ -672,20 +677,20 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   private async renewEnrollment(enrollment: any): Promise<void> {
     const amount = this.getPaymentAmount(
       enrollment.package,
-      enrollment.billingCycle
+      enrollment.billingCycle,
     );
 
     // Process payment
     await this.processPayment(
       enrollment.driverId,
       amount,
-      `Benefit renewal: ${enrollment.package.name}`
+      `Benefit renewal: ${enrollment.package.name}`,
     );
 
     // Update enrollment
     const newExpiryDate = this.calculateExpiryDate(
       enrollment.expiryDate,
-      enrollment.billingCycle
+      enrollment.billingCycle,
     );
 
     await this.db.benefitEnrollment.update({
@@ -711,7 +716,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   // -----------------------------------------
 
   private async getDriverProfile(
-    driverId: string
+    driverId: string,
   ): Promise<DriverProfileForBenefits> {
     const profile = await this.db.driverProfile.findUnique({
       where: { driverId },
@@ -737,7 +742,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
     const tenureDays = driver
       ? Math.floor(
-          (Date.now() - driver.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+          (Date.now() - driver.createdAt.getTime()) / (1000 * 60 * 60 * 24),
         )
       : 0;
 
@@ -753,7 +758,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   private checkEligibility(
     driver: DriverProfileForBenefits,
-    pkg: any
+    pkg: any,
   ): { eligible: boolean; reason?: string } {
     // Check minimum trips
     if (pkg.minTrips && driver.lifetimeTrips < pkg.minTrips) {
@@ -851,7 +856,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   private calculateExpiryDate(
     startDate: Date,
-    billingCycle: BillingCycle
+    billingCycle: BillingCycle,
   ): Date {
     const expiry = new Date(startDate);
 
@@ -883,7 +888,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   private async processPayment(
     driverId: string,
     amount: number,
-    description: string
+    description: string,
   ): Promise<void> {
     // Debit from driver wallet
     await this.paymentService?.debitWallet(driverId, amount, description);
@@ -893,7 +898,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     lat1: number,
     lng1: number,
     lat2: number,
-    lng2: number
+    lng2: number,
   ): number {
     const R = 6371; // Earth's radius in km
     const dLat = this.toRad(lat2 - lat1);
@@ -999,7 +1004,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   private trackEvent(
     driverId: string,
     eventName: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
   ): void {
     this.analyticsService?.track({
       userId: driverId,

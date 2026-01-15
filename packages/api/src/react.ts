@@ -103,7 +103,7 @@ type QueryKeyFactory = typeof queryKeys;
 export function createInfiniteQueryOptions<TData>(
   queryFn: (params: PaginationParams) => Promise<PaginatedResponse<TData>>,
   baseKey: readonly unknown[],
-  initialFilters?: Omit<PaginationParams, "page" | "cursor">
+  initialFilters?: Omit<PaginationParams, "page" | "cursor">,
 ) {
   return {
     queryKey: [...baseKey, initialFilters],
@@ -139,7 +139,7 @@ export function createQueryClient(): QueryClient {
 export function createOptimisticUpdate<TData, TVariables>(
   queryClient: QueryClient,
   queryKey: readonly unknown[],
-  updateFn: (oldData: TData, variables: TVariables) => TData
+  updateFn: (oldData: TData, variables: TVariables) => TData,
 ) {
   return {
     onMutate: async (variables: TVariables) => {
@@ -153,7 +153,7 @@ export function createOptimisticUpdate<TData, TVariables>(
       if (previousData) {
         queryClient.setQueryData<TData>(
           queryKey,
-          updateFn(previousData, variables)
+          updateFn(previousData, variables),
         );
       }
 
@@ -162,7 +162,7 @@ export function createOptimisticUpdate<TData, TVariables>(
     onError: (
       _err: Error,
       _variables: TVariables,
-      context: { previousData: TData | undefined } | undefined
+      context: { previousData: TData | undefined } | undefined,
     ) => {
       // Rollback on error
       if (context?.previousData) {

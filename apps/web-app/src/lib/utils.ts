@@ -18,7 +18,7 @@ export function cn(...inputs: ClassValue[]) {
 export function formatPrice(
   amount: number,
   currency: string = "KES",
-  locale: string = "en-KE"
+  locale: string = "en-KE",
 ): string {
   return new Intl.NumberFormat(locale, {
     style: "currency",
@@ -62,11 +62,19 @@ export function formatTimeAgo(date: Date | string): string {
   const then = new Date(date);
   const seconds = Math.floor((now.getTime() - then.getTime()) / 1000);
 
-  if (seconds < 60) return "Just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
-  
+  if (seconds < 60) {
+    return "Just now";
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)} min ago`;
+  }
+  if (seconds < 86400) {
+    return `${Math.floor(seconds / 3600)} hr ago`;
+  }
+  if (seconds < 604800) {
+    return `${Math.floor(seconds / 86400)} days ago`;
+  }
+
   return then.toLocaleDateString();
 }
 
@@ -76,7 +84,7 @@ export function formatTimeAgo(date: Date | string): string {
 export function formatPhoneDisplay(phone: string): string {
   // Remove non-digits
   const digits = phone.replace(/\D/g, "");
-  
+
   // Format based on length (assuming Kenyan format)
   if (digits.startsWith("254") && digits.length === 12) {
     return `+${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9)}`;
@@ -84,7 +92,7 @@ export function formatPhoneDisplay(phone: string): string {
   if (digits.startsWith("0") && digits.length === 10) {
     return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
   }
-  
+
   return phone;
 }
 
@@ -104,7 +112,9 @@ export function getInitials(name: string): string {
  * Truncate text with ellipsis
  */
 export function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
+  if (text.length <= maxLength) {
+    return text;
+  }
   return `${text.slice(0, maxLength - 3)}...`;
 }
 
@@ -176,8 +186,10 @@ export function vibrate(pattern: number | number[]): boolean {
  * Copy text to clipboard
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
-  if (!isClient()) return false;
-  
+  if (!isClient()) {
+    return false;
+  }
+
   try {
     await navigator.clipboard.writeText(text);
     return true;
@@ -189,7 +201,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
     textarea.style.left = "-9999px";
     document.body.appendChild(textarea);
     textarea.select();
-    
+
     try {
       document.execCommand("copy");
       return true;
@@ -205,8 +217,10 @@ export async function copyToClipboard(text: string): Promise<boolean> {
  * Share content using Web Share API
  */
 export async function share(data: ShareData): Promise<boolean> {
-  if (!isClient() || !navigator.share) return false;
-  
+  if (!isClient() || !navigator.share) {
+    return false;
+  }
+
   try {
     await navigator.share(data);
     return true;

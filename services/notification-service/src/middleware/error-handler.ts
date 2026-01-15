@@ -8,7 +8,7 @@ import { ZodError } from "zod";
 
 // Type guards for Prisma errors
 function isPrismaKnownRequestError(
-  error: unknown
+  error: unknown,
 ): error is { code: string; meta?: Record<string, unknown> } {
   return (
     typeof error === "object" &&
@@ -36,7 +36,7 @@ export class AppError extends Error {
     public code: string,
     message: string,
     public statusCode: number = 400,
-    public details?: Record<string, unknown>
+    public details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "AppError";
@@ -48,7 +48,7 @@ export class NotFoundError extends AppError {
     super(
       "NOT_FOUND",
       id ? `${resource} with ID ${id} not found` : `${resource} not found`,
-      404
+      404,
     );
   }
 }
@@ -215,7 +215,7 @@ export function errorHandler(err: Error, c: Context): Response {
 
   return c.json(
     response,
-    statusCode as 400 | 401 | 403 | 404 | 409 | 429 | 500 | 502
+    statusCode as 400 | 401 | 403 | 404 | 409 | 429 | 500 | 502,
   );
 }
 
@@ -232,6 +232,6 @@ export function notFoundHandler(c: Context): Response {
         message: `Route ${c.req.method} ${c.req.path} not found`,
       },
     },
-    404
+    404,
   );
 }

@@ -4,6 +4,8 @@
  * Built-in adapters for common analytics services.
  */
 
+/* eslint-disable require-await */
+
 import type {
   AnalyticsProvider,
   BaseEvent,
@@ -60,7 +62,7 @@ export class ConsoleProvider implements AnalyticsProvider {
     console.log(
       `${this.prefix} Page:`,
       event.properties.path,
-      event.properties
+      event.properties,
     );
   }
 
@@ -74,7 +76,9 @@ export class GoogleAnalytics4Provider implements AnalyticsProvider {
   name = "google_analytics_4";
 
   async initialize(config: { measurementId: string }): Promise<void> {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      return;
+    }
 
     // Load gtag script
     const script = document.createElement("script");
@@ -93,7 +97,9 @@ export class GoogleAnalytics4Provider implements AnalyticsProvider {
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).gtag) return;
+    if (typeof window === "undefined" || !(window as any).gtag) {
+      return;
+    }
 
     (window as any).gtag("set", { user_id: userId });
     if (traits) {
@@ -102,13 +108,17 @@ export class GoogleAnalytics4Provider implements AnalyticsProvider {
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).gtag) return;
+    if (typeof window === "undefined" || !(window as any).gtag) {
+      return;
+    }
 
     (window as any).gtag("event", event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).gtag) return;
+    if (typeof window === "undefined" || !(window as any).gtag) {
+      return;
+    }
 
     (window as any).gtag("event", "page_view", {
       page_path: event.properties.path,
@@ -118,13 +128,17 @@ export class GoogleAnalytics4Provider implements AnalyticsProvider {
   }
 
   async reset(): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).gtag) return;
+    if (typeof window === "undefined" || !(window as any).gtag) {
+      return;
+    }
 
     (window as any).gtag("set", { user_id: null });
   }
 
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).gtag) return;
+    if (typeof window === "undefined" || !(window as any).gtag) {
+      return;
+    }
 
     (window as any).gtag("set", "user_properties", properties);
   }
@@ -139,7 +153,9 @@ export class MixpanelProvider implements AnalyticsProvider {
     token: string;
     options?: Record<string, unknown>;
   }): Promise<void> {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      return;
+    }
 
     // Load Mixpanel library dynamically
     const { default: mixpanel } = await import("mixpanel-browser");
@@ -151,7 +167,9 @@ export class MixpanelProvider implements AnalyticsProvider {
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {
+      return;
+    }
 
     this.mixpanel.identify(userId);
     if (traits) {
@@ -160,25 +178,33 @@ export class MixpanelProvider implements AnalyticsProvider {
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {
+      return;
+    }
 
     this.mixpanel.track(event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {
+      return;
+    }
 
     this.mixpanel.track("Page View", event.properties);
   }
 
   async reset(): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {
+      return;
+    }
 
     this.mixpanel.reset();
   }
 
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {
+      return;
+    }
 
     this.mixpanel.people.set(properties);
   }
@@ -193,7 +219,9 @@ export class AmplitudeProvider implements AnalyticsProvider {
     apiKey: string;
     options?: Record<string, unknown>;
   }): Promise<void> {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      return;
+    }
 
     const { init } = await import("@amplitude/analytics-browser");
     this.amplitude = await import("@amplitude/analytics-browser");
@@ -201,7 +229,9 @@ export class AmplitudeProvider implements AnalyticsProvider {
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {
+      return;
+    }
 
     this.amplitude.setUserId(userId);
     if (traits) {
@@ -214,25 +244,33 @@ export class AmplitudeProvider implements AnalyticsProvider {
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {
+      return;
+    }
 
     this.amplitude.track(event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {
+      return;
+    }
 
     this.amplitude.track("Page View", event.properties);
   }
 
   async reset(): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {
+      return;
+    }
 
     this.amplitude.reset();
   }
 
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {
+      return;
+    }
 
     const identify = new this.amplitude.Identify();
     Object.entries(properties).forEach(([key, value]) => {
@@ -252,7 +290,9 @@ export class PostHogProvider implements AnalyticsProvider {
     host?: string;
     options?: Record<string, unknown>;
   }): Promise<void> {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      return;
+    }
 
     const posthog = (await import("posthog-js")).default as any;
     posthog.init(config.apiKey, {
@@ -264,31 +304,41 @@ export class PostHogProvider implements AnalyticsProvider {
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {
+      return;
+    }
 
     this.posthog.identify(userId, traits);
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {
+      return;
+    }
 
     this.posthog.capture(event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {
+      return;
+    }
 
     this.posthog.capture("$pageview", event.properties);
   }
 
   async reset(): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {
+      return;
+    }
 
     this.posthog.reset();
   }
 
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {
+      return;
+    }
 
     this.posthog.setPersonProperties(properties);
   }
@@ -299,13 +349,17 @@ export class SegmentProvider implements AnalyticsProvider {
   name = "segment";
 
   async initialize(config: { writeKey: string }): Promise<void> {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      return;
+    }
 
     // Load Segment analytics.js
     const analytics = ((window as any).analytics =
       (window as any).analytics || []);
     if (!analytics.initialize) {
-      if (analytics.invoked) return;
+      if (analytics.invoked) {
+        return;
+      }
       analytics.invoked = true;
       analytics.methods = [
         "trackSubmit",
@@ -359,25 +413,33 @@ export class SegmentProvider implements AnalyticsProvider {
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).analytics) return;
+    if (typeof window === "undefined" || !(window as any).analytics) {
+      return;
+    }
 
     (window as any).analytics.identify(userId, traits);
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).analytics) return;
+    if (typeof window === "undefined" || !(window as any).analytics) {
+      return;
+    }
 
     (window as any).analytics.track(event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).analytics) return;
+    if (typeof window === "undefined" || !(window as any).analytics) {
+      return;
+    }
 
     (window as any).analytics.page(event.properties.title, event.properties);
   }
 
   async reset(): Promise<void> {
-    if (typeof window === "undefined" || !(window as any).analytics) return;
+    if (typeof window === "undefined" || !(window as any).analytics) {
+      return;
+    }
 
     (window as any).analytics.reset();
   }
@@ -385,7 +447,7 @@ export class SegmentProvider implements AnalyticsProvider {
 
 // Create providers factory
 export function createProvider(
-  type: "console" | "ga4" | "mixpanel" | "amplitude" | "posthog" | "segment"
+  type: "console" | "ga4" | "mixpanel" | "amplitude" | "posthog" | "segment",
 ): AnalyticsProvider {
   switch (type) {
     case "console":

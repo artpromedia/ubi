@@ -13,7 +13,7 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatCurrency(
   amount: number,
-  currency: string = "NGN"
+  currency: string = "NGN",
 ): string {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",

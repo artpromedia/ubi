@@ -103,7 +103,7 @@ wss.on("connection", async (ws, req) => {
       {
         ip: req.socket.remoteAddress,
         userAgent: req.headers["user-agent"],
-      }
+      },
     );
 
     console.log(`✅ Connection established: ${connectionId}`);
@@ -190,7 +190,10 @@ async function verifyToken(token: string): Promise<string | null> {
 
 // Redis client for token blacklist checking
 import { Redis } from "ioredis";
-const blacklistRedis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1 });
+const blacklistRedis = new Redis(redisUrl, {
+  lazyConnect: true,
+  maxRetriesPerRequest: 1,
+});
 
 /**
  * Check if token is blacklisted (e.g., after logout)
@@ -208,7 +211,9 @@ async function isTokenBlacklisted(token: string): Promise<boolean> {
     }
 
     // Check Redis for blacklisted token
-    const blacklisted = await blacklistRedis.get(`token:blacklist:${tokenHash}`);
+    const blacklisted = await blacklistRedis.get(
+      `token:blacklist:${tokenHash}`,
+    );
     return blacklisted !== null;
   } catch (error) {
     // If Redis is unavailable, allow the token (fail open for availability)

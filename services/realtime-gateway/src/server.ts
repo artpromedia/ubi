@@ -35,7 +35,7 @@ const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const wsConfig: Partial<WebSocketConfig> = {
   heartbeatIntervalMs: parseInt(
     process.env.WS_HEARTBEAT_INTERVAL || "30000",
-    10
+    10,
   ),
   heartbeatTimeoutMs: parseInt(process.env.WS_HEARTBEAT_TIMEOUT || "90000", 10),
   maxConnectionsPerUser: parseInt(process.env.WS_MAX_CONNS_PER_USER || "5", 10),
@@ -129,7 +129,7 @@ app.get("/metrics/prometheus", async (c) => {
 
   for (const [type, count] of Object.entries(metrics.connectionsByType)) {
     lines.push(
-      `ws_connections_by_type{server="${metrics.serverId}",type="${type}"} ${count}`
+      `ws_connections_by_type{server="${metrics.serverId}",type="${type}"} ${count}`,
     );
   }
 
@@ -138,10 +138,10 @@ app.get("/metrics/prometheus", async (c) => {
   lines.push("# TYPE ws_connections_by_platform gauge");
 
   for (const [platform, count] of Object.entries(
-    metrics.connectionsByPlatform
+    metrics.connectionsByPlatform,
   )) {
     lines.push(
-      `ws_connections_by_platform{server="${metrics.serverId}",platform="${platform}"} ${count}`
+      `ws_connections_by_platform{server="${metrics.serverId}",platform="${platform}"} ${count}`,
     );
   }
 
@@ -269,11 +269,11 @@ wss.on("connection", async (ws: WebSocket, req) => {
         userAgent: req.headers["user-agent"],
       },
       expiresAt,
-      sessionId
+      sessionId,
     );
 
     console.log(
-      `✅ Connection established: ${connectionId} (${userType}/${userId})`
+      `✅ Connection established: ${connectionId} (${userType}/${userId})`,
     );
   } catch (error) {
     console.error("Connection error:", error);
@@ -311,7 +311,7 @@ process.on("SIGINT", shutdown);
  * Verify JWT token and extract user info
  */
 async function verifyToken(
-  token: string
+  token: string,
 ): Promise<{ userId: string | null; expiresAt: Date | undefined }> {
   try {
     // In production, use proper JWT verification
@@ -323,7 +323,9 @@ async function verifyToken(
       return { userId: null, expiresAt: undefined };
     }
 
-    const payload = JSON.parse(Buffer.from(parts[1] ?? "", "base64").toString());
+    const payload = JSON.parse(
+      Buffer.from(parts[1] ?? "", "base64").toString(),
+    );
     const userId = payload.userId || payload.sub;
     const expiresAt = payload.exp ? new Date(payload.exp * 1000) : undefined;
 

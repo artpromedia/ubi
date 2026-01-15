@@ -104,7 +104,7 @@ export class PaystackClient {
   private async request<T>(
     endpoint: string,
     method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
-    body?: any
+    body?: any,
   ): Promise<PaystackResponse<T>> {
     const response = await fetch(`${this.config.baseUrl}${endpoint}`, {
       method,
@@ -141,7 +141,7 @@ export class PaystackClient {
    * Verify a transaction
    */
   async verifyTransaction(
-    reference: string
+    reference: string,
   ): Promise<PaystackResponse<VerifyTransactionResponse>> {
     return this.request(`/transaction/verify/${reference}`);
   }
@@ -164,7 +164,7 @@ export class PaystackClient {
    */
   async submitOtp(
     reference: string,
-    otp: string
+    otp: string,
   ): Promise<PaystackResponse<any>> {
     return this.request("/transaction/submit_otp", "POST", {
       reference,
@@ -177,7 +177,7 @@ export class PaystackClient {
    */
   async submitPin(
     reference: string,
-    pin: string
+    pin: string,
   ): Promise<PaystackResponse<any>> {
     return this.request("/transaction/submit_pin", "POST", {
       reference,
@@ -209,7 +209,7 @@ export class PaystackClient {
    */
   async resolveAccount(
     accountNumber: string,
-    bankCode: string
+    bankCode: string,
   ): Promise<
     PaystackResponse<{
       account_number: string;
@@ -218,7 +218,7 @@ export class PaystackClient {
     }>
   > {
     return this.request(
-      `/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`
+      `/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
     );
   }
 
@@ -278,7 +278,7 @@ export class PaystackClient {
    */
   async finalizeTransfer(
     transferCode: string,
-    otp: string
+    otp: string,
   ): Promise<PaystackResponse<any>> {
     return this.request("/transfer/finalize_transfer", "POST", {
       transfer_code: transferCode,
@@ -298,7 +298,7 @@ export class PaystackClient {
    */
   async initiateRefund(
     reference: string,
-    amount?: number
+    amount?: number,
   ): Promise<
     PaystackResponse<{
       transaction: number;
@@ -316,7 +316,9 @@ export class PaystackClient {
     }>
   > {
     const body: any = { transaction: reference };
-    if (amount) body.amount = amount;
+    if (amount) {
+      body.amount = amount;
+    }
 
     return this.request("/refund", "POST", body);
   }

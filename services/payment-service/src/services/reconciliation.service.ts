@@ -23,7 +23,7 @@ import {
   Currency,
   PaymentProvider,
   PaymentStatus,
-  PrismaClient,
+  type PrismaClient,
 } from "@prisma/client";
 
 export interface ReconciliationConfig {
@@ -174,7 +174,7 @@ export class ReconciliationService {
   async runDailyReconciliation(
     provider: PaymentProvider,
     date: Date,
-    currency: Currency
+    currency: Currency,
   ): Promise<ReconciliationResult> {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
@@ -183,7 +183,7 @@ export class ReconciliationService {
     endOfDay.setHours(23, 59, 59, 999);
 
     console.log(
-      `[Reconciliation] Starting daily reconciliation for ${provider} on ${date.toISOString().split("T")[0]}`
+      `[Reconciliation] Starting daily reconciliation for ${provider} on ${date.toISOString().split("T")[0]}`,
     );
 
     // Create reconciliation record
@@ -208,7 +208,7 @@ export class ReconciliationService {
         provider,
         startOfDay,
         endOfDay,
-        currency
+        currency,
       );
 
       // Get provider transactions (from provider report or API)
@@ -216,7 +216,7 @@ export class ReconciliationService {
         provider,
         startOfDay,
         endOfDay,
-        currency
+        currency,
       );
 
       // Reconcile transactions
@@ -225,7 +225,7 @@ export class ReconciliationService {
         ubiTransactions,
         providerTransactions,
         provider,
-        currency
+        currency,
       );
 
       // Update reconciliation record
@@ -258,7 +258,7 @@ export class ReconciliationService {
       }
 
       console.log(
-        `[Reconciliation] Completed for ${provider}: ${result.matchedTransactions}/${result.totalTransactions} matched, ${result.discrepancies} discrepancies`
+        `[Reconciliation] Completed for ${provider}: ${result.matchedTransactions}/${result.totalTransactions} matched, ${result.discrepancies} discrepancies`,
       );
 
       return {
@@ -294,7 +294,7 @@ export class ReconciliationService {
     provider: PaymentProvider,
     startDate: Date,
     endDate: Date,
-    currency: Currency
+    currency: Currency,
   ): Promise<Map<string, any>> {
     const transactions = await this.prisma.paymentTransaction.findMany({
       where: {
@@ -337,7 +337,7 @@ export class ReconciliationService {
     provider: PaymentProvider,
     startDate: Date,
     endDate: Date,
-    currency: Currency
+    currency: Currency,
   ): Promise<Map<string, ProviderTransaction>> {
     // In production, this would:
     // 1. Download settlement report from provider (CSV/API)
@@ -360,7 +360,7 @@ export class ReconciliationService {
 
       default:
         console.warn(
-          `[Reconciliation] No provider implementation for ${provider}`
+          `[Reconciliation] No provider implementation for ${provider}`,
         );
         return transactions;
     }
@@ -371,7 +371,7 @@ export class ReconciliationService {
    */
   private async getMpesaTransactions(
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<Map<string, ProviderTransaction>> {
     const transactions = new Map<string, ProviderTransaction>();
 
@@ -417,7 +417,7 @@ export class ReconciliationService {
   private async getMomoTransactions(
     provider: PaymentProvider,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<Map<string, ProviderTransaction>> {
     const transactions = new Map<string, ProviderTransaction>();
 
@@ -458,7 +458,7 @@ export class ReconciliationService {
   private async getPaystackTransactions(
     startDate: Date,
     endDate: Date,
-    currency: Currency
+    currency: Currency,
   ): Promise<Map<string, ProviderTransaction>> {
     const transactions = new Map<string, ProviderTransaction>();
 
@@ -478,7 +478,7 @@ export class ReconciliationService {
           headers: {
             Authorization: `Bearer ${secretKey}`,
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -503,7 +503,7 @@ export class ReconciliationService {
     } catch (error) {
       console.error(
         "[Reconciliation] Failed to fetch Paystack transactions:",
-        error
+        error,
       );
     }
 
@@ -518,7 +518,7 @@ export class ReconciliationService {
     ubiTransactions: Map<string, any>,
     providerTransactions: Map<string, ProviderTransaction>,
     _provider: PaymentProvider,
-    _currency: Currency
+    _currency: Currency,
   ): Promise<{
     totalTransactions: number;
     matchedTransactions: number;
@@ -599,7 +599,7 @@ export class ReconciliationService {
       const amountDiff = Math.abs(Number(ubiTx.amount) - providerTx.amount);
       const amountTolerance = Math.max(
         Number(ubiTx.amount) * (this.config.amountTolerancePercent / 100),
-        this.config.amountToleranceFixed
+        this.config.amountToleranceFixed,
       );
 
       if (amountDiff > amountTolerance) {
@@ -626,7 +626,7 @@ export class ReconciliationService {
         if (amountDiff <= this.config.autoResolveLimit) {
           await this.autoResolveDiscrepancy(
             discrepancy.id,
-            "Amount within tolerance"
+            "Amount within tolerance",
           );
           result.autoResolved++;
         } else {
@@ -700,7 +700,7 @@ export class ReconciliationService {
       difference?: number;
       ubiStatus?: string;
       providerStatus?: string;
-    }
+    },
   ): Promise<{ id: string }> {
     return await this.prisma.reconciliationDiscrepancy.create({
       data: {
@@ -724,7 +724,7 @@ export class ReconciliationService {
    */
   private async autoResolveDiscrepancy(
     discrepancyId: string,
-    resolution: string
+    resolution: string,
   ): Promise<void> {
     await this.prisma.reconciliationDiscrepancy.update({
       where: { id: discrepancyId },
@@ -743,7 +743,7 @@ export class ReconciliationService {
   async resolveDiscrepancy(
     discrepancyId: string,
     resolution: string,
-    resolvedBy: string
+    resolvedBy: string,
   ): Promise<void> {
     await this.prisma.reconciliationDiscrepancy.update({
       where: { id: discrepancyId },
@@ -786,7 +786,7 @@ export class ReconciliationService {
   async ignoreDiscrepancy(
     discrepancyId: string,
     reason: string,
-    ignoredBy: string
+    ignoredBy: string,
   ): Promise<void> {
     await this.prisma.reconciliationDiscrepancy.update({
       where: { id: discrepancyId },
@@ -839,7 +839,7 @@ export class ReconciliationService {
   async getReconciliationSummary(
     startDate: Date,
     endDate: Date,
-    provider?: PaymentProvider
+    provider?: PaymentProvider,
   ): Promise<{
     totalReconciliations: number;
     completedReconciliations: number;
@@ -922,7 +922,7 @@ export class ReconciliationService {
    */
   async runBalanceReconciliation(
     provider: PaymentProvider,
-    currency: Currency
+    currency: Currency,
   ): Promise<{
     ubiBalance: number;
     providerBalance: number;
@@ -951,7 +951,7 @@ export class ReconciliationService {
       // Add other providers as needed
       default:
         console.warn(
-          `[Reconciliation] Balance check not implemented for ${provider}`
+          `[Reconciliation] Balance check not implemented for ${provider}`,
         );
     }
 
@@ -1020,7 +1020,7 @@ export class ReconciliationService {
    */
   private async sendCriticalAlert(
     reconciliationId: string,
-    result: ReconciliationResult
+    result: ReconciliationResult,
   ): Promise<void> {
     // In production, this would send alerts via:
     // - Slack webhook
@@ -1028,7 +1028,7 @@ export class ReconciliationService {
     // - PagerDuty for critical issues
 
     console.error(
-      `[CRITICAL ALERT] Reconciliation ${reconciliationId} has discrepancy amount: ${result.discrepancyAmount}`
+      `[CRITICAL ALERT] Reconciliation ${reconciliationId} has discrepancy amount: ${result.discrepancyAmount}`,
     );
 
     // Store alert in database
@@ -1054,7 +1054,7 @@ export class ReconciliationService {
    * Map UBI status to provider status
    */
   private mapUbiStatus(
-    status: PaymentStatus
+    status: PaymentStatus,
   ): "success" | "failed" | "pending" | "reversed" {
     switch (status) {
       case PaymentStatus.COMPLETED:
@@ -1072,7 +1072,7 @@ export class ReconciliationService {
    * Map M-Pesa result code to status
    */
   private mapMpesaStatus(
-    resultCode: number | string
+    resultCode: number | string,
   ): "success" | "failed" | "pending" {
     if (resultCode === 0 || resultCode === "0") {
       return "success";
@@ -1098,11 +1098,17 @@ export class ReconciliationService {
    * Calculate severity based on amount
    */
   private calculateSeverity(
-    amount: number
+    amount: number,
   ): ReconciliationDiscrepancy["severity"] {
-    if (amount >= 50000) return "CRITICAL";
-    if (amount >= 10000) return "HIGH";
-    if (amount >= 1000) return "MEDIUM";
+    if (amount >= 50000) {
+      return "CRITICAL";
+    }
+    if (amount >= 10000) {
+      return "HIGH";
+    }
+    if (amount >= 1000) {
+      return "MEDIUM";
+    }
     return "LOW";
   }
 
@@ -1129,7 +1135,7 @@ export class ReconciliationService {
         } catch (error) {
           console.error(
             `[Reconciliation] Failed for ${provider}/${currency}:`,
-            error
+            error,
           );
         }
       }
@@ -1142,14 +1148,14 @@ let reconciliationServiceInstance: ReconciliationService | null = null;
 
 // Create new instance
 export function createReconciliationService(
-  prisma: PrismaClient
+  prisma: PrismaClient,
 ): ReconciliationService {
   return new ReconciliationService(prisma);
 }
 
 // Get singleton instance
 export function getReconciliationService(
-  prisma: PrismaClient
+  prisma: PrismaClient,
 ): ReconciliationService {
   if (!reconciliationServiceInstance) {
     reconciliationServiceInstance = createReconciliationService(prisma);

@@ -23,7 +23,12 @@ import {
   Cell,
 } from "recharts";
 
-import { formatCurrency, cn, getDriverStatusClass, getAcceptanceRateColor } from "@/lib/utils";
+import {
+  formatCurrency,
+  cn,
+  getDriverStatusClass,
+  getAcceptanceRateColor,
+} from "@/lib/utils";
 
 // Mock data
 const stats = [
@@ -203,7 +208,9 @@ export default function DashboardPage() {
                       : stat.value}
                   </span>
                   {stat.total && (
-                    <span className="text-sm text-gray-500">/ {stat.total}</span>
+                    <span className="text-sm text-gray-500">
+                      / {stat.total}
+                    </span>
                   )}
                 </div>
               </div>
@@ -220,7 +227,7 @@ export default function DashboardPage() {
               <span
                 className={cn(
                   "text-sm font-medium",
-                  stat.change >= 0 ? "text-green-500" : "text-red-500"
+                  stat.change >= 0 ? "text-green-500" : "text-red-500",
                 )}
               >
                 {Math.abs(stat.change)}%
@@ -278,7 +285,11 @@ export default function DashboardPage() {
                   {driverPerformance.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
-                      fill={index === driverPerformance.length - 2 ? "#22c55e" : "#1f2937"}
+                      fill={
+                        index === driverPerformance.length - 2
+                          ? "#22c55e"
+                          : "#1f2937"
+                      }
                     />
                   ))}
                 </Bar>
@@ -313,7 +324,7 @@ export default function DashboardPage() {
                   "p-3 rounded-lg bg-gray-900 border-l-4",
                   alert.severity === "high" && "border-l-red-500",
                   alert.severity === "medium" && "border-l-yellow-500",
-                  alert.severity === "low" && "border-l-blue-500"
+                  alert.severity === "low" && "border-l-blue-500",
                 )}
               >
                 <div className="flex items-start gap-3">
@@ -322,7 +333,7 @@ export default function DashboardPage() {
                       "w-4 h-4 mt-0.5 flex-shrink-0",
                       alert.severity === "high" && "text-red-500",
                       alert.severity === "medium" && "text-yellow-500",
-                      alert.severity === "low" && "text-blue-500"
+                      alert.severity === "low" && "text-blue-500",
                     )}
                   />
                   <div className="flex-1 min-w-0">
@@ -380,7 +391,7 @@ export default function DashboardPage() {
                     <span
                       className={cn(
                         "fleet-badge",
-                        getDriverStatusClass(driver.status)
+                        getDriverStatusClass(driver.status),
                       )}
                     >
                       {driver.status}
@@ -394,7 +405,9 @@ export default function DashboardPage() {
                       {driver.rating}
                     </span>
                     <span>•</span>
-                    <span className={getAcceptanceRateColor(driver.acceptanceRate)}>
+                    <span
+                      className={getAcceptanceRateColor(driver.acceptanceRate)}
+                    >
                       {driver.acceptanceRate}% acceptance
                     </span>
                   </div>
@@ -434,10 +447,13 @@ export default function DashboardPage() {
           {/* Interactive map preview - shows driver locations */}
           <div className="relative h-64 bg-gray-900 rounded-lg overflow-hidden">
             {/* Map background with grid pattern */}
-            <div className="absolute inset-0 opacity-10" style={{
-              backgroundImage: `linear-gradient(to right, #22c55e 1px, transparent 1px), linear-gradient(to bottom, #22c55e 1px, transparent 1px)`,
-              backgroundSize: '20px 20px'
-            }} />
+            <div
+              className="absolute inset-0 opacity-10"
+              style={{
+                backgroundImage: `linear-gradient(to right, #22c55e 1px, transparent 1px), linear-gradient(to bottom, #22c55e 1px, transparent 1px)`,
+                backgroundSize: "20px 20px",
+              }}
+            />
 
             {/* Simulated driver markers */}
             <div className="absolute inset-0">
@@ -447,7 +463,7 @@ export default function DashboardPage() {
                   className={cn(
                     "absolute w-3 h-3 rounded-full",
                     driver.status === "online" && "bg-green-500",
-                    driver.status === "busy" && "bg-yellow-500"
+                    driver.status === "busy" && "bg-yellow-500",
                   )}
                   style={{
                     left: `${20 + index * 20}%`,

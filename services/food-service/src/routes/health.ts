@@ -2,19 +2,19 @@
  * Health Check Routes
  */
 
-import { Hono } from 'hono';
-import { checkConnection as checkPrisma, prisma } from '../lib/prisma';
-import { checkConnection as checkRedis, redis } from '../lib/redis';
+import { Hono } from "hono";
+import { checkConnection as checkPrisma, prisma } from "../lib/prisma";
+import { checkConnection as checkRedis, redis } from "../lib/redis";
 
 const healthRoutes = new Hono();
 
 /**
  * GET /health - Basic health check
  */
-healthRoutes.get('/', (c) => {
+healthRoutes.get("/", (c) => {
   return c.json({
-    status: 'healthy',
-    service: 'food-service',
+    status: "healthy",
+    service: "food-service",
     timestamp: new Date().toISOString(),
   });
 });
@@ -22,32 +22,34 @@ healthRoutes.get('/', (c) => {
 /**
  * GET /health/live - Liveness probe
  */
-healthRoutes.get('/live', (c) => {
-  return c.json({ status: 'alive' });
+healthRoutes.get("/live", (c) => {
+  return c.json({ status: "alive" });
 });
 
 /**
  * GET /health/ready - Readiness probe
  */
-healthRoutes.get('/ready', async (c) => {
-  const checks = await Promise.allSettled([
-    checkPrisma(),
-    checkRedis(),
-  ]);
+healthRoutes.get("/ready", async (c) => {
+  const checks = await Promise.allSettled([checkPrisma(), checkRedis()]);
 
   const [dbCheck, redisCheck] = checks;
-  const isReady = dbCheck.status === 'fulfilled' && redisCheck.status === 'fulfilled';
+  const isReady =
+    dbCheck.status === "fulfilled" && redisCheck.status === "fulfilled";
 
   const response = {
-    status: isReady ? 'ready' : 'not_ready',
+    status: isReady ? "ready" : "not_ready",
     checks: {
       database: {
-        status: dbCheck.status === 'fulfilled' ? 'healthy' : 'unhealthy',
-        error: dbCheck.status === 'rejected' ? dbCheck.reason?.message : undefined,
+        status: dbCheck.status === "fulfilled" ? "healthy" : "unhealthy",
+        error:
+          dbCheck.status === "rejected" ? dbCheck.reason?.message : undefined,
       },
       redis: {
-        status: redisCheck.status === 'fulfilled' ? 'healthy' : 'unhealthy',
-        error: redisCheck.status === 'rejected' ? redisCheck.reason?.message : undefined,
+        status: redisCheck.status === "fulfilled" ? "healthy" : "unhealthy",
+        error:
+          redisCheck.status === "rejected"
+            ? redisCheck.reason?.message
+            : undefined,
       },
     },
     timestamp: new Date().toISOString(),
@@ -59,12 +61,12 @@ healthRoutes.get('/ready', async (c) => {
 /**
  * GET /health/detailed - Detailed health check
  */
-healthRoutes.get('/detailed', async (c) => {
+healthRoutes.get("/detailed", async (c) => {
   const startTime = Date.now();
 
   // Check database with timing
   const dbStart = Date.now();
-  let dbStatus = 'healthy';
+  let dbStatus = "healthy";
   let dbLatency = 0;
   let dbError: string | undefined;
 
@@ -72,13 +74,13 @@ healthRoutes.get('/detailed', async (c) => {
     await prisma.$queryRaw`SELECT 1`;
     dbLatency = Date.now() - dbStart;
   } catch (error: any) {
-    dbStatus = 'unhealthy';
+    dbStatus = "unhealthy";
     dbError = error.message;
   }
 
   // Check Redis with timing
   const redisStart = Date.now();
-  let redisStatus = 'healthy';
+  let redisStatus = "healthy";
   let redisLatency = 0;
   let redisError: string | undefined;
 
@@ -86,7 +88,7 @@ healthRoutes.get('/detailed', async (c) => {
     await redis.ping();
     redisLatency = Date.now() - redisStart;
   } catch (error: any) {
-    redisStatus = 'unhealthy';
+    redisStatus = "unhealthy";
     redisError = error.message;
   }
 
@@ -103,9 +105,12 @@ healthRoutes.get('/detailed', async (c) => {
     .catch(() => 0);
 
   const response = {
-    status: dbStatus === 'healthy' && redisStatus === 'healthy' ? 'healthy' : 'degraded',
-    service: 'food-service',
-    version: process.env.SERVICE_VERSION || '1.0.0',
+    status:
+      dbStatus === "healthy" && redisStatus === "healthy"
+        ? "healthy"
+        : "degraded",
+    service: "food-service",
+    version: process.env.SERVICE_VERSION || "1.0.0",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     responseTime: Date.now() - startTime,

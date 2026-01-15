@@ -41,7 +41,7 @@ export const authHandlers = [
     if (!body.phone) {
       return HttpResponse.json(
         { error: "Phone number is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -57,7 +57,7 @@ export const authHandlers = [
     // Verify OTP
     if (body.otp === "123456") {
       const user = Object.values(TEST_USERS).find(
-        (u) => u.phone === body.phone
+        (u) => u.phone === body.phone,
       );
       return HttpResponse.json({
         success: true,
@@ -319,7 +319,7 @@ export const foodHandlers = [
 
     if (cuisine) {
       restaurants = restaurants.filter((r) =>
-        r.cuisine.some((c) => c.toLowerCase().includes(cuisine.toLowerCase()))
+        r.cuisine.some((c) => c.toLowerCase().includes(cuisine.toLowerCase())),
       );
     }
 
@@ -337,13 +337,13 @@ export const foodHandlers = [
   http.get(`${API_BASE_URL}/restaurants/:id`, async ({ params }) => {
     await delay(150);
     const restaurant = Object.values(TEST_RESTAURANTS).find(
-      (r) => r.id === params.id
+      (r) => r.id === params.id,
     );
 
     if (!restaurant) {
       return HttpResponse.json(
         { error: "Restaurant not found" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -357,7 +357,7 @@ export const foodHandlers = [
   http.get(`${API_BASE_URL}/restaurants/:id/menu`, async () => {
     await delay(200);
     const menuItems = Object.values(TEST_MENU_ITEMS).filter(
-      (item) => item.isAvailable
+      (item) => item.isAvailable,
     );
 
     return HttpResponse.json({
@@ -386,7 +386,7 @@ export const foodHandlers = [
   http.get(`${API_BASE_URL}/orders/:id`, async ({ params }) => {
     await delay(150);
     const order = Object.values(TEST_FOOD_ORDERS).find(
-      (o) => o.id === params.id
+      (o) => o.id === params.id,
     );
 
     if (!order) {
@@ -497,7 +497,7 @@ export const paymentHandlers = [
           error: "Payment failed",
           details: { reason: "Insufficient funds" },
         },
-        { status: 402 }
+        { status: 402 },
       );
     }
 

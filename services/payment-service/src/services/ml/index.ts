@@ -5,6 +5,22 @@
 // =============================================================================
 
 // Feature Store
+// =============================================================================
+// SERVICE FACTORY
+// =============================================================================
+
+import { ChurnPredictionService } from "./churn-prediction.service";
+import {
+  DemandForecastService,
+  DynamicPricingService,
+} from "./demand-pricing.service";
+import { ETAPredictionService, SupportNLPService } from "./eta-nlp.service";
+import { FeatureStoreService } from "./feature-store.service";
+import { FraudDetectionService } from "./fraud-detection.service";
+import { ABTestingService, MLOpsService } from "./mlops.service";
+import { RecommendationEngine } from "./recommendation.service";
+import { redis } from "../../lib/redis";
+
 export {
   FeatureComputationScheduler,
   FeatureStoreService,
@@ -34,22 +50,6 @@ export { ETAPredictionService, SupportNLPService } from "./eta-nlp.service";
 // MLOps & A/B Testing
 export { ABTestingService, MLOpsService } from "./mlops.service";
 
-// =============================================================================
-// SERVICE FACTORY
-// =============================================================================
-
-import { redis } from "../../lib/redis";
-import { ChurnPredictionService } from "./churn-prediction.service";
-import {
-  DemandForecastService,
-  DynamicPricingService,
-} from "./demand-pricing.service";
-import { ETAPredictionService, SupportNLPService } from "./eta-nlp.service";
-import { FeatureStoreService } from "./feature-store.service";
-import { FraudDetectionService } from "./fraud-detection.service";
-import { ABTestingService, MLOpsService } from "./mlops.service";
-import { RecommendationEngine } from "./recommendation.service";
-
 export interface MLServiceConfig {
   redisUrl?: string;
   postgresUrl?: string;
@@ -78,7 +78,7 @@ export class MLServiceFactory {
     this.demandService = new DemandForecastService(this.featureStore);
     this.pricingService = new DynamicPricingService(
       this.featureStore,
-      this.demandService
+      this.demandService,
     );
     this.fraudService = new FraudDetectionService(this.featureStore);
     this.churnService = new ChurnPredictionService(this.featureStore);

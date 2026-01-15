@@ -4,21 +4,22 @@
 // ===========================================
 
 import { EventEmitter } from "events";
+
 import {
   DRIVER_EVENTS,
-  DriverIncentive,
-  DriverIncentiveProgress,
-  DriverStreak,
-  IIncentiveService,
-  Incentive,
+  type DriverIncentive,
+  type DriverIncentiveProgress,
+  type DriverStreak,
+  type IIncentiveService,
+  type Incentive,
   IncentiveProgressStatus,
-  IncentiveRequirements,
+  type IncentiveRequirements,
   IncentiveType,
-  IncentiveUpdate,
-  RewardTier,
-  StreakMilestone,
+  type IncentiveUpdate,
+  type RewardTier,
+  type StreakMilestone,
   StreakType,
-  TripEarning,
+  type TripEarning,
 } from "../../types/driver.types";
 
 // -----------------------------------------
@@ -148,7 +149,7 @@ export class IncentiveService implements IIncentiveService {
     // @ts-expect-error - Reserved for future Redis integration
     private _redis: any,
     private notificationService: any,
-    private analyticsService: any
+    private analyticsService: any,
   ) {
     this.eventEmitter = new EventEmitter();
   }
@@ -160,7 +161,9 @@ export class IncentiveService implements IIncentiveService {
   async getAvailableIncentives(driverId: string): Promise<DriverIncentive[]> {
     const cacheKey = `incentives:${driverId}`;
     const cached = await this.getCached<DriverIncentive[]>(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
 
     // Get driver profile for targeting
     const driver = await this.getDriverProfile(driverId);
@@ -187,7 +190,9 @@ export class IncentiveService implements IIncentiveService {
 
     for (const incentive of incentives) {
       const eligibility = this.checkEligibility(driver, incentive);
-      if (!eligibility.eligible) continue;
+      if (!eligibility.eligible) {
+        continue;
+      }
 
       // Get or create progress
       let progress = await this.db.driverIncentiveProgress.findUnique({
@@ -206,7 +211,7 @@ export class IncentiveService implements IIncentiveService {
       const driverIncentive = this.mapToDriverIncentive(
         incentive,
         progress,
-        driver
+        driver,
       );
       driverIncentives.push(driverIncentive);
     }
@@ -226,7 +231,7 @@ export class IncentiveService implements IIncentiveService {
 
   async getIncentiveProgress(
     driverId: string,
-    incentiveId: string
+    incentiveId: string,
   ): Promise<DriverIncentiveProgress> {
     const progress = await this.db.driverIncentiveProgress.findUnique({
       where: {
@@ -250,7 +255,7 @@ export class IncentiveService implements IIncentiveService {
 
   async processTripForIncentives(
     driverId: string,
-    trip: TripEarning
+    trip: TripEarning,
   ): Promise<IncentiveUpdate[]> {
     const updates: IncentiveUpdate[] = [];
 
@@ -282,7 +287,7 @@ export class IncentiveService implements IIncentiveService {
         driverId,
         progress,
         trip,
-        incentive
+        incentive,
       );
       if (update) {
         updates.push(update);
@@ -297,7 +302,7 @@ export class IncentiveService implements IIncentiveService {
 
   private tripQualifiesForIncentive(
     trip: TripEarning,
-    incentive: any
+    incentive: any,
   ): boolean {
     const requirements: IncentiveRequirements = incentive.requirements;
 
@@ -321,7 +326,7 @@ export class IncentiveService implements IIncentiveService {
     driverId: string,
     progress: any,
     trip: TripEarning,
-    incentive: any
+    incentive: any,
   ): Promise<IncentiveUpdate | null> {
     const previousValue = parseFloat(progress.currentValue);
     let incrementValue = 0;
@@ -365,7 +370,9 @@ export class IncentiveService implements IIncentiveService {
         incrementValue = 1;
     }
 
-    if (incrementValue === 0) return null;
+    if (incrementValue === 0) {
+      return null;
+    }
 
     const newValue = previousValue + incrementValue;
     const rewardTiers: RewardTier[] = incentive.rewardTiers;
@@ -406,7 +413,7 @@ export class IncentiveService implements IIncentiveService {
 
       // Check if all tiers completed
       const allTiersCompleted = rewardTiers.every((t) =>
-        updatedProgress.tiersCompleted.includes(t.tier)
+        updatedProgress.tiersCompleted.includes(t.tier),
       );
 
       if (allTiersCompleted) {
@@ -449,7 +456,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async resetConsecutiveProgress(
     driverId: string,
-    incentiveId: string
+    incentiveId: string,
   ): Promise<void> {
     await this.db.driverIncentiveProgress.update({
       where: {
@@ -466,7 +473,7 @@ export class IncentiveService implements IIncentiveService {
   private async awardReward(
     driverId: string,
     incentive: any,
-    tier: RewardTier
+    tier: RewardTier,
   ): Promise<void> {
     switch (tier.rewardType) {
       case "cash":
@@ -521,7 +528,7 @@ export class IncentiveService implements IIncentiveService {
     const allStreakTypes = Object.values(StreakType);
     const existingTypes = streaks.map((s: any) => s.streakType);
     const missingTypes = allStreakTypes.filter(
-      (t) => !existingTypes.includes(t)
+      (t) => !existingTypes.includes(t),
     );
 
     for (const type of missingTypes) {
@@ -544,7 +551,7 @@ export class IncentiveService implements IIncentiveService {
 
   async updateStreak(
     driverId: string,
-    streakType: StreakType
+    streakType: StreakType,
   ): Promise<DriverStreak> {
     let streak = await this.db.driverStreak.findUnique({
       where: {
@@ -658,7 +665,7 @@ export class IncentiveService implements IIncentiveService {
 
   private getNextMilestone(
     currentCount: number,
-    milestones: StreakMilestone[]
+    milestones: StreakMilestone[],
   ): number {
     for (const milestone of milestones) {
       if (milestone.count > currentCount) {
@@ -671,7 +678,7 @@ export class IncentiveService implements IIncentiveService {
   private async awardStreakMilestone(
     driverId: string,
     streakType: StreakType,
-    milestone: StreakMilestone
+    milestone: StreakMilestone,
   ): Promise<void> {
     switch (milestone.reward.type) {
       case "cash":
@@ -714,7 +721,7 @@ export class IncentiveService implements IIncentiveService {
 
   async handleTripForStreaks(
     driverId: string,
-    trip: TripEarning
+    trip: TripEarning,
   ): Promise<void> {
     // Daily trips streak
     await this.updateStreak(driverId, StreakType.DAILY_TRIPS);
@@ -740,7 +747,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async resetStreak(
     driverId: string,
-    streakType: StreakType
+    streakType: StreakType,
   ): Promise<void> {
     const streak = await this.db.driverStreak.findUnique({
       where: {
@@ -798,7 +805,7 @@ export class IncentiveService implements IIncentiveService {
   // -----------------------------------------
 
   private async getDriverProfile(
-    driverId: string
+    driverId: string,
   ): Promise<DriverProfileForIncentive> {
     const profile = await this.db.driverProfile.findUnique({
       where: { driverId },
@@ -829,7 +836,7 @@ export class IncentiveService implements IIncentiveService {
 
   private checkEligibility(
     driver: DriverProfileForIncentive,
-    incentive: any
+    incentive: any,
   ): { eligible: boolean; reason?: string } {
     // Check tier
     if (
@@ -870,7 +877,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async createProgress(
     driverId: string,
-    incentiveId: string
+    incentiveId: string,
   ): Promise<any> {
     return this.db.driverIncentiveProgress.create({
       data: {
@@ -890,7 +897,7 @@ export class IncentiveService implements IIncentiveService {
   private mapToDriverIncentive(
     incentive: any,
     progress: any,
-    _driver: DriverProfileForIncentive
+    _driver: DriverProfileForIncentive,
   ): DriverIncentive {
     const rewardTiers: RewardTier[] = incentive.rewardTiers;
     const currentValue = parseFloat(progress.currentValue);
@@ -1006,7 +1013,9 @@ export class IncentiveService implements IIncentiveService {
   }
 
   private isDuringActiveHours(time: Date, activeHours: any): boolean {
-    if (!activeHours) return true;
+    if (!activeHours) {
+      return true;
+    }
 
     const hour = time.getHours();
     const minute = time.getMinutes();
@@ -1038,7 +1047,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async creditCashReward(
     driverId: string,
-    amount: number
+    amount: number,
   ): Promise<void> {
     // Credit to driver wallet
     console.log(`Crediting ₦${amount} to driver ${driverId}`);
@@ -1046,7 +1055,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async creditPointsReward(
     driverId: string,
-    points: number
+    points: number,
   ): Promise<void> {
     // Credit points
     console.log(`Crediting ${points} points to driver ${driverId}`);
@@ -1059,11 +1068,11 @@ export class IncentiveService implements IIncentiveService {
 
   private async applyCommissionReduction(
     driverId: string,
-    reduction: number
+    reduction: number,
   ): Promise<void> {
     // Apply commission reduction
     console.log(
-      `Applying ${reduction}% commission reduction to driver ${driverId}`
+      `Applying ${reduction}% commission reduction to driver ${driverId}`,
     );
   }
 
@@ -1079,7 +1088,7 @@ export class IncentiveService implements IIncentiveService {
   private async setCache(
     key: string,
     data: unknown,
-    ttl: number
+    ttl: number,
   ): Promise<void> {
     this.cache.set(key, { data, expiry: Date.now() + ttl });
   }
@@ -1091,7 +1100,7 @@ export class IncentiveService implements IIncentiveService {
   private trackEvent(
     driverId: string,
     eventName: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
   ): void {
     this.analyticsService?.track({
       userId: driverId,

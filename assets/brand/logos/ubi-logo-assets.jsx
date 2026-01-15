@@ -1,21 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 
 const UbiBouncyLogoAssets = () => {
   const [darkMode, setDarkMode] = useState(false);
-  
+
   const colors = {
-    ubiBlack: '#191414',
-    ubiGreen: '#1DB954',
-    ubiWhite: '#FFFFFF',
-    ubiGray: '#666666',
-    ubiLightGray: '#E5E5E5',
+    ubiBlack: "#191414",
+    ubiGreen: "#1DB954",
+    ubiWhite: "#FFFFFF",
+    ubiGray: "#666666",
+    ubiLightGray: "#E5E5E5",
   };
 
   // Main Bouncy Logo Component
-  const UbiLogo = ({ size = 60, color = colors.ubiBlack, dotColor = colors.ubiGreen }) => (
+  const UbiLogo = ({
+    size = 60,
+    color = colors.ubiBlack,
+    dotColor = colors.ubiGreen,
+  }) => (
     <svg width={size * 2} height={size} viewBox="0 0 120 60" fill="none">
       {/* U - sitting lower */}
-      <path 
+      <path
         d="M8 18 L8 42 Q8 54 20 54 Q32 54 32 42 L32 18"
         stroke={color}
         strokeWidth="9"
@@ -23,7 +27,7 @@ const UbiBouncyLogoAssets = () => {
         fill="none"
       />
       {/* b - bounced up */}
-      <path 
+      <path
         d="M46 4 L46 44 M46 26 Q46 18 56 18 Q68 18 68 31 Q68 44 56 44 Q46 44 46 36"
         stroke={color}
         strokeWidth="9"
@@ -32,17 +36,29 @@ const UbiBouncyLogoAssets = () => {
         fill="none"
       />
       {/* i - bounced down */}
-      <line x1="84" y1="24" x2="84" y2="52" stroke={color} strokeWidth="9" strokeLinecap="round"/>
+      <line
+        x1="84"
+        y1="24"
+        x2="84"
+        y2="52"
+        stroke={color}
+        strokeWidth="9"
+        strokeLinecap="round"
+      />
       {/* Green dot */}
-      <circle cx="84" cy="12" r="6" fill={dotColor}/>
+      <circle cx="84" cy="12" r="6" fill={dotColor} />
     </svg>
   );
 
   // Compact Icon (for app icon - just stylized "U" from the logo)
-  const UbiIcon = ({ size = 60, color = colors.ubiWhite, dotColor = colors.ubiGreen }) => (
+  const UbiIcon = ({
+    size = 60,
+    color = colors.ubiWhite,
+    dotColor = colors.ubiGreen,
+  }) => (
     <svg width={size} height={size} viewBox="0 0 60 60" fill="none">
       {/* Stylized U with bounce */}
-      <path 
+      <path
         d="M15 12 L15 38 Q15 52 30 52 Q45 52 45 38 L45 12"
         stroke={color}
         strokeWidth="10"
@@ -50,7 +66,7 @@ const UbiBouncyLogoAssets = () => {
         fill="none"
       />
       {/* Green dot accent */}
-      <circle cx="45" cy="8" r="6" fill={dotColor}/>
+      <circle cx="45" cy="8" r="6" fill={dotColor} />
     </svg>
   );
 
@@ -58,64 +74,85 @@ const UbiBouncyLogoAssets = () => {
   const UbiMove = ({ size = 40, color = colors.ubiBlack }) => (
     <div className="flex items-center gap-2">
       <UbiLogo size={size} color={color} />
-      <span style={{ 
-        fontSize: size * 0.6, 
-        fontWeight: 600, 
-        color: color,
-        fontFamily: 'system-ui, -apple-system, sans-serif'
-      }}>Move</span>
+      <span
+        style={{
+          fontSize: size * 0.6,
+          fontWeight: 600,
+          color: color,
+          fontFamily: "system-ui, -apple-system, sans-serif",
+        }}
+      >
+        Move
+      </span>
     </div>
   );
 
   const UbiBites = ({ size = 40, color = colors.ubiBlack }) => (
     <div className="flex items-center gap-2">
       <UbiLogo size={size} color={color} />
-      <span style={{ 
-        fontSize: size * 0.6, 
-        fontWeight: 600, 
-        color: color,
-        fontFamily: 'system-ui, -apple-system, sans-serif'
-      }}>Bites</span>
+      <span
+        style={{
+          fontSize: size * 0.6,
+          fontWeight: 600,
+          color: color,
+          fontFamily: "system-ui, -apple-system, sans-serif",
+        }}
+      >
+        Bites
+      </span>
     </div>
   );
 
   const UbiSend = ({ size = 40, color = colors.ubiBlack }) => (
     <div className="flex items-center gap-2">
       <UbiLogo size={size} color={color} />
-      <span style={{ 
-        fontSize: size * 0.6, 
-        fontWeight: 600, 
-        color: color,
-        fontFamily: 'system-ui, -apple-system, sans-serif'
-      }}>Send</span>
+      <span
+        style={{
+          fontSize: size * 0.6,
+          fontWeight: 600,
+          color: color,
+          fontFamily: "system-ui, -apple-system, sans-serif",
+        }}
+      >
+        Send
+      </span>
     </div>
   );
 
   const UbiCeerion = ({ size = 40, color = colors.ubiBlack }) => (
     <div className="flex items-center gap-2">
       <UbiLogo size={size} color={color} dotColor={colors.ubiGreen} />
-      <span style={{ 
-        fontSize: size * 0.5, 
-        fontWeight: 600, 
-        color: color,
-        fontFamily: 'system-ui, -apple-system, sans-serif'
-      }}>+ CEERION</span>
+      <span
+        style={{
+          fontSize: size * 0.5,
+          fontWeight: 600,
+          color: color,
+          fontFamily: "system-ui, -apple-system, sans-serif",
+        }}
+      >
+        + CEERION
+      </span>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
       <div className="max-w-6xl mx-auto">
-        
         {/* Header */}
         <div className="mb-12">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Ubi Logo Assets</h1>
-          <p className="text-gray-600">Bouncy wordmark — Complete brand asset kit</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Ubi Logo Assets
+          </h1>
+          <p className="text-gray-600">
+            Bouncy wordmark — Complete brand asset kit
+          </p>
         </div>
 
         {/* Primary Logo */}
         <section className="bg-white rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">Primary Logo</h2>
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            Primary Logo
+          </h2>
           <div className="flex items-center justify-center py-12">
             <UbiLogo size={80} />
           </div>
@@ -137,7 +174,9 @@ const UbiBouncyLogoAssets = () => {
 
         {/* Color Variations */}
         <section className="bg-white rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">Color Variations</h2>
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            Color Variations
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {/* Black on White */}
             <div className="text-center">
@@ -149,7 +188,10 @@ const UbiBouncyLogoAssets = () => {
             </div>
             {/* White on Black */}
             <div className="text-center">
-              <div className="rounded-xl p-6 flex items-center justify-center h-32" style={{ backgroundColor: colors.ubiBlack }}>
+              <div
+                className="rounded-xl p-6 flex items-center justify-center h-32"
+                style={{ backgroundColor: colors.ubiBlack }}
+              >
                 <UbiLogo size={45} color={colors.ubiWhite} />
               </div>
               <p className="text-xs text-gray-500 mt-2">White on Black</p>
@@ -157,16 +199,30 @@ const UbiBouncyLogoAssets = () => {
             </div>
             {/* White on Green */}
             <div className="text-center">
-              <div className="rounded-xl p-6 flex items-center justify-center h-32" style={{ backgroundColor: colors.ubiGreen }}>
-                <UbiLogo size={45} color={colors.ubiWhite} dotColor={colors.ubiWhite} />
+              <div
+                className="rounded-xl p-6 flex items-center justify-center h-32"
+                style={{ backgroundColor: colors.ubiGreen }}
+              >
+                <UbiLogo
+                  size={45}
+                  color={colors.ubiWhite}
+                  dotColor={colors.ubiWhite}
+                />
               </div>
               <p className="text-xs text-gray-500 mt-2">White on Green</p>
               <p className="text-xs text-gray-400">Brand moments</p>
             </div>
             {/* Green on Black */}
             <div className="text-center">
-              <div className="rounded-xl p-6 flex items-center justify-center h-32" style={{ backgroundColor: colors.ubiBlack }}>
-                <UbiLogo size={45} color={colors.ubiGreen} dotColor={colors.ubiGreen} />
+              <div
+                className="rounded-xl p-6 flex items-center justify-center h-32"
+                style={{ backgroundColor: colors.ubiBlack }}
+              >
+                <UbiLogo
+                  size={45}
+                  color={colors.ubiGreen}
+                  dotColor={colors.ubiGreen}
+                />
               </div>
               <p className="text-xs text-gray-500 mt-2">Green on Black</p>
               <p className="text-xs text-gray-400">Special use</p>
@@ -176,15 +232,17 @@ const UbiBouncyLogoAssets = () => {
 
         {/* App Icons */}
         <section className="bg-white rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">App Icons</h2>
-          
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            App Icons
+          </h2>
+
           {/* Main App Icon Options */}
           <div className="mb-8">
             <p className="text-xs text-gray-400 mb-4">Primary App Icon</p>
             <div className="flex gap-6 items-end flex-wrap">
               {/* Option 1: Full wordmark in black square */}
               <div className="text-center">
-                <div 
+                <div
                   className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg"
                   style={{ backgroundColor: colors.ubiBlack }}
                 >
@@ -195,7 +253,7 @@ const UbiBouncyLogoAssets = () => {
               </div>
               {/* Option 2: Icon only */}
               <div className="text-center">
-                <div 
+                <div
                   className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg"
                   style={{ backgroundColor: colors.ubiBlack }}
                 >
@@ -206,11 +264,15 @@ const UbiBouncyLogoAssets = () => {
               </div>
               {/* Option 3: Green background */}
               <div className="text-center">
-                <div 
+                <div
                   className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg"
                   style={{ backgroundColor: colors.ubiGreen }}
                 >
-                  <UbiLogo size={32} color={colors.ubiBlack} dotColor={colors.ubiBlack} />
+                  <UbiLogo
+                    size={32}
+                    color={colors.ubiBlack}
+                    dotColor={colors.ubiBlack}
+                  />
                 </div>
                 <p className="text-xs text-gray-500 mt-2">Green BG</p>
                 <p className="text-xs text-gray-400">Alternative</p>
@@ -223,22 +285,22 @@ const UbiBouncyLogoAssets = () => {
             <p className="text-xs text-gray-400 mb-4">Size Scale</p>
             <div className="flex gap-4 items-end flex-wrap">
               {[
-                { size: 80, label: '512px', desc: 'App Store' },
-                { size: 64, label: '180px', desc: 'iOS' },
-                { size: 48, label: '144px', desc: 'Android' },
-                { size: 40, label: '120px', desc: 'Spotlight' },
-                { size: 32, label: '80px', desc: 'Settings' },
-                { size: 24, label: '60px', desc: 'Notification' },
-                { size: 16, label: '32px', desc: 'Favicon' },
+                { size: 80, label: "512px", desc: "App Store" },
+                { size: 64, label: "180px", desc: "iOS" },
+                { size: 48, label: "144px", desc: "Android" },
+                { size: 40, label: "120px", desc: "Spotlight" },
+                { size: 32, label: "80px", desc: "Settings" },
+                { size: 24, label: "60px", desc: "Notification" },
+                { size: 16, label: "32px", desc: "Favicon" },
               ].map(({ size, label, desc }) => (
                 <div key={label} className="text-center">
-                  <div 
+                  <div
                     className="rounded-xl flex items-center justify-center shadow-md mx-auto"
-                    style={{ 
-                      width: size, 
-                      height: size, 
+                    style={{
+                      width: size,
+                      height: size,
                       backgroundColor: colors.ubiBlack,
-                      borderRadius: size * 0.22
+                      borderRadius: size * 0.22,
                     }}
                   >
                     <UbiLogo size={size * 0.4} color={colors.ubiWhite} />
@@ -253,7 +315,9 @@ const UbiBouncyLogoAssets = () => {
 
         {/* Service Logos */}
         <section className="bg-white rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">Service Logos</h2>
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            Service Logos
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <div className="text-center">
               <div className="bg-gray-50 rounded-xl p-6 flex items-center justify-center h-24">
@@ -287,16 +351,28 @@ const UbiBouncyLogoAssets = () => {
 
           {/* Dark versions */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-6">
-            <div className="rounded-xl p-6 flex items-center justify-center h-24" style={{ backgroundColor: colors.ubiBlack }}>
+            <div
+              className="rounded-xl p-6 flex items-center justify-center h-24"
+              style={{ backgroundColor: colors.ubiBlack }}
+            >
               <UbiMove size={35} color={colors.ubiWhite} />
             </div>
-            <div className="rounded-xl p-6 flex items-center justify-center h-24" style={{ backgroundColor: colors.ubiBlack }}>
+            <div
+              className="rounded-xl p-6 flex items-center justify-center h-24"
+              style={{ backgroundColor: colors.ubiBlack }}
+            >
               <UbiBites size={35} color={colors.ubiWhite} />
             </div>
-            <div className="rounded-xl p-6 flex items-center justify-center h-24" style={{ backgroundColor: colors.ubiBlack }}>
+            <div
+              className="rounded-xl p-6 flex items-center justify-center h-24"
+              style={{ backgroundColor: colors.ubiBlack }}
+            >
               <UbiSend size={35} color={colors.ubiWhite} />
             </div>
-            <div className="rounded-xl p-6 flex items-center justify-center h-24" style={{ backgroundColor: colors.ubiBlack }}>
+            <div
+              className="rounded-xl p-6 flex items-center justify-center h-24"
+              style={{ backgroundColor: colors.ubiBlack }}
+            >
               <UbiCeerion size={35} color={colors.ubiWhite} />
             </div>
           </div>
@@ -304,24 +380,54 @@ const UbiBouncyLogoAssets = () => {
 
         {/* Brand Colors */}
         <section className="bg-white rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">Brand Colors</h2>
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            Brand Colors
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {[
-              { name: 'Ubi Black', hex: '#191414', rgb: '25, 20, 20', usage: 'Primary text, backgrounds' },
-              { name: 'Ubi Green', hex: '#1DB954', rgb: '29, 185, 84', usage: 'Accent, CTAs, dot' },
-              { name: 'Ubi White', hex: '#FFFFFF', rgb: '255, 255, 255', usage: 'Backgrounds, reversed' },
-              { name: 'Ubi Gray', hex: '#666666', rgb: '102, 102, 102', usage: 'Secondary text' },
-              { name: 'Ubi Light', hex: '#E5E5E5', rgb: '229, 229, 229', usage: 'Borders, dividers' },
+              {
+                name: "Ubi Black",
+                hex: "#191414",
+                rgb: "25, 20, 20",
+                usage: "Primary text, backgrounds",
+              },
+              {
+                name: "Ubi Green",
+                hex: "#1DB954",
+                rgb: "29, 185, 84",
+                usage: "Accent, CTAs, dot",
+              },
+              {
+                name: "Ubi White",
+                hex: "#FFFFFF",
+                rgb: "255, 255, 255",
+                usage: "Backgrounds, reversed",
+              },
+              {
+                name: "Ubi Gray",
+                hex: "#666666",
+                rgb: "102, 102, 102",
+                usage: "Secondary text",
+              },
+              {
+                name: "Ubi Light",
+                hex: "#E5E5E5",
+                rgb: "229, 229, 229",
+                usage: "Borders, dividers",
+              },
             ].map((color) => (
               <div key={color.name}>
-                <div 
+                <div
                   className="h-24 rounded-xl mb-3 shadow-inner"
-                  style={{ 
+                  style={{
                     backgroundColor: color.hex,
-                    border: color.hex === '#FFFFFF' ? '1px solid #E5E5E5' : 'none'
+                    border:
+                      color.hex === "#FFFFFF" ? "1px solid #E5E5E5" : "none",
                   }}
                 />
-                <p className="font-medium text-sm text-gray-900">{color.name}</p>
+                <p className="font-medium text-sm text-gray-900">
+                  {color.name}
+                </p>
                 <p className="text-xs text-gray-500">{color.hex}</p>
                 <p className="text-xs text-gray-400">RGB: {color.rgb}</p>
                 <p className="text-xs text-gray-400 mt-1">{color.usage}</p>
@@ -332,25 +438,51 @@ const UbiBouncyLogoAssets = () => {
 
         {/* Typography */}
         <section className="bg-white rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">Typography Pairing</h2>
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            Typography Pairing
+          </h2>
           <div className="space-y-6">
             <div>
-              <p className="text-xs text-gray-400 mb-2">Headlines — Poppins Bold</p>
-              <p style={{ fontFamily: 'Poppins, system-ui, sans-serif', fontWeight: 700, fontSize: 32 }}>
+              <p className="text-xs text-gray-400 mb-2">
+                Headlines — Poppins Bold
+              </p>
+              <p
+                style={{
+                  fontFamily: "Poppins, system-ui, sans-serif",
+                  fontWeight: 700,
+                  fontSize: 32,
+                }}
+              >
                 Go anywhere with Ubi
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 mb-2">Subheadlines — Poppins SemiBold</p>
-              <p style={{ fontFamily: 'Poppins, system-ui, sans-serif', fontWeight: 600, fontSize: 20 }}>
+              <p className="text-xs text-gray-400 mb-2">
+                Subheadlines — Poppins SemiBold
+              </p>
+              <p
+                style={{
+                  fontFamily: "Poppins, system-ui, sans-serif",
+                  fontWeight: 600,
+                  fontSize: 20,
+                }}
+              >
                 Rides, food, packages — all in one app
               </p>
             </div>
             <div>
               <p className="text-xs text-gray-400 mb-2">Body — Inter Regular</p>
-              <p style={{ fontFamily: 'Inter, system-ui, sans-serif', fontWeight: 400, fontSize: 16, color: '#666' }}>
-                Ubi connects you to reliable rides, delicious food, and fast deliveries across Africa. 
-                Join millions who trust Ubi for their daily journeys.
+              <p
+                style={{
+                  fontFamily: "Inter, system-ui, sans-serif",
+                  fontWeight: 400,
+                  fontSize: 16,
+                  color: "#666",
+                }}
+              >
+                Ubi connects you to reliable rides, delicious food, and fast
+                deliveries across Africa. Join millions who trust Ubi for their
+                daily journeys.
               </p>
             </div>
           </div>
@@ -358,10 +490,14 @@ const UbiBouncyLogoAssets = () => {
 
         {/* Clear Space & Minimum Size */}
         <section className="bg-white rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">Clear Space & Minimum Size</h2>
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            Clear Space & Minimum Size
+          </h2>
           <div className="grid grid-cols-2 gap-8">
             <div>
-              <p className="text-xs text-gray-400 mb-4">Clear Space (use height of green dot)</p>
+              <p className="text-xs text-gray-400 mb-4">
+                Clear Space (use height of green dot)
+              </p>
               <div className="bg-gray-100 rounded-xl p-8 flex items-center justify-center relative">
                 <div className="border-2 border-dashed border-green-400 p-6 rounded">
                   <UbiLogo size={50} />
@@ -390,11 +526,13 @@ const UbiBouncyLogoAssets = () => {
 
         {/* Don'ts */}
         <section className="bg-white rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">Logo Don'ts</h2>
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            Logo Don'ts
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="bg-gray-100 rounded-xl p-6 flex items-center justify-center h-28 relative">
-                <div style={{ transform: 'rotate(15deg)' }}>
+                <div style={{ transform: "rotate(15deg)" }}>
                   <UbiLogo size={35} />
                 </div>
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -405,7 +543,7 @@ const UbiBouncyLogoAssets = () => {
             </div>
             <div className="text-center">
               <div className="bg-gray-100 rounded-xl p-6 flex items-center justify-center h-28 relative">
-                <div style={{ transform: 'scaleX(1.5)' }}>
+                <div style={{ transform: "scaleX(1.5)" }}>
                   <UbiLogo size={30} />
                 </div>
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -424,26 +562,42 @@ const UbiBouncyLogoAssets = () => {
               <p className="text-xs text-gray-500 mt-2">Don't recolor</p>
             </div>
             <div className="text-center">
-              <div className="bg-gray-100 rounded-xl p-6 flex items-center justify-center h-28 relative" style={{ opacity: 0.3 }}>
+              <div
+                className="bg-gray-100 rounded-xl p-6 flex items-center justify-center h-28 relative"
+                style={{ opacity: 0.3 }}
+              >
                 <UbiLogo size={35} />
               </div>
-              <div className="absolute inset-0 flex items-center justify-center" style={{ marginTop: -80 }}>
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{ marginTop: -80 }}
+              >
                 <span className="text-red-500 text-4xl">✕</span>
               </div>
-              <p className="text-xs text-gray-500 mt-2">Don't use low contrast</p>
+              <p className="text-xs text-gray-500 mt-2">
+                Don't use low contrast
+              </p>
             </div>
           </div>
         </section>
 
         {/* Usage Examples */}
         <section className="bg-white rounded-2xl p-8 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">Usage Examples</h2>
-          
+          <h2 className="text-sm font-semibold text-gray-500 mb-6 uppercase tracking-wide">
+            Usage Examples
+          </h2>
+
           {/* App Header Mock */}
           <div className="mb-8">
             <p className="text-xs text-gray-400 mb-4">App Header</p>
-            <div className="rounded-xl overflow-hidden shadow-lg" style={{ maxWidth: 375 }}>
-              <div className="px-4 py-3 flex items-center justify-between" style={{ backgroundColor: colors.ubiBlack }}>
+            <div
+              className="rounded-xl overflow-hidden shadow-lg"
+              style={{ maxWidth: 375 }}
+            >
+              <div
+                className="px-4 py-3 flex items-center justify-between"
+                style={{ backgroundColor: colors.ubiBlack }}
+              >
                 <UbiLogo size={24} color={colors.ubiWhite} />
                 <div className="flex gap-4">
                   <span style={{ color: colors.ubiWhite }}>🔔</span>
@@ -461,18 +615,23 @@ const UbiBouncyLogoAssets = () => {
           {/* Splash Screen Mock */}
           <div>
             <p className="text-xs text-gray-400 mb-4">Splash Screen</p>
-            <div 
+            <div
               className="rounded-xl overflow-hidden shadow-lg flex items-center justify-center"
-              style={{ maxWidth: 375, height: 300, backgroundColor: colors.ubiBlack }}
+              style={{
+                maxWidth: 375,
+                height: 300,
+                backgroundColor: colors.ubiBlack,
+              }}
             >
               <div className="text-center">
                 <UbiLogo size={60} color={colors.ubiWhite} />
-                <p className="mt-4 text-sm" style={{ color: colors.ubiGreen }}>Go anywhere</p>
+                <p className="mt-4 text-sm" style={{ color: colors.ubiGreen }}>
+                  Go anywhere
+                </p>
               </div>
             </div>
           </div>
         </section>
-
       </div>
     </div>
   );

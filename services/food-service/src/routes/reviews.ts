@@ -68,7 +68,7 @@ reviewRoutes.post("/", zValidator("json", createReviewSchema), async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Order not found" },
       },
-      404
+      404,
     );
   }
 
@@ -78,7 +78,7 @@ reviewRoutes.post("/", zValidator("json", createReviewSchema), async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not your order" },
       },
-      403
+      403,
     );
   }
 
@@ -91,7 +91,7 @@ reviewRoutes.post("/", zValidator("json", createReviewSchema), async (c) => {
           message: "Can only review delivered orders",
         },
       },
-      400
+      400,
     );
   }
 
@@ -106,7 +106,7 @@ reviewRoutes.post("/", zValidator("json", createReviewSchema), async (c) => {
         success: false,
         error: { code: "ALREADY_REVIEWED", message: "Order already reviewed" },
       },
-      400
+      400,
     );
   }
 
@@ -153,7 +153,7 @@ reviewRoutes.post("/", zValidator("json", createReviewSchema), async (c) => {
       success: true,
       data: review,
     },
-    201
+    201,
   );
 });
 
@@ -181,7 +181,7 @@ reviewRoutes.get("/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Review not found" },
       },
-      404
+      404,
     );
   }
 
@@ -209,7 +209,7 @@ reviewRoutes.put("/:id", zValidator("json", updateReviewSchema), async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Review not found" },
       },
-      404
+      404,
     );
   }
 
@@ -219,7 +219,7 @@ reviewRoutes.put("/:id", zValidator("json", updateReviewSchema), async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not your review" },
       },
-      403
+      403,
     );
   }
 
@@ -235,7 +235,7 @@ reviewRoutes.put("/:id", zValidator("json", updateReviewSchema), async (c) => {
           message: "Reviews can only be edited within 24 hours",
         },
       },
-      400
+      400,
     );
   }
 
@@ -292,7 +292,7 @@ reviewRoutes.delete("/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Review not found" },
       },
-      404
+      404,
     );
   }
 
@@ -302,7 +302,7 @@ reviewRoutes.delete("/:id", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not your review" },
       },
-      403
+      403,
     );
   }
 
@@ -412,7 +412,7 @@ reviewRoutes.post(
           success: false,
           error: { code: "NOT_FOUND", message: "Review not found" },
         },
-        404
+        404,
       );
     }
 
@@ -422,7 +422,7 @@ reviewRoutes.post(
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
@@ -452,14 +452,14 @@ reviewRoutes.post(
         type: "review_reply",
         title: "Restaurant replied to your review",
         body: reply.substring(0, 100) + (reply.length > 100 ? "..." : ""),
-      })
+      }),
     );
 
     return c.json({
       success: true,
       data: updated,
     });
-  }
+  },
 );
 
 /**
@@ -479,7 +479,7 @@ reviewRoutes.post("/:id/helpful", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Review not found" },
       },
-      404
+      404,
     );
   }
 
@@ -493,7 +493,7 @@ reviewRoutes.post("/:id/helpful", async (c) => {
         success: false,
         error: { code: "ALREADY_MARKED", message: "Already marked as helpful" },
       },
-      400
+      400,
     );
   }
 
@@ -532,7 +532,7 @@ reviewRoutes.post("/:id/report", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Review not found" },
       },
-      404
+      404,
     );
   }
 
@@ -638,7 +638,7 @@ async function updateDriverRating(driverId: string): Promise<void> {
       driverId,
       averageRating: stats._avg.deliveryRating || 0,
       totalReviews: stats._count.id,
-    })
+    }),
   );
 }
 
@@ -676,7 +676,7 @@ async function getReviewStats(restaurantId: string) {
         acc[d.rating] = Number(d.count);
         return acc;
       },
-      { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as Record<number, number>
+      { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as Record<number, number>,
     ),
   };
 }

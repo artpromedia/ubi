@@ -165,7 +165,7 @@ const Text = React.forwardRef(function Text<E extends React.ElementType = "p">(
     children,
     ...props
   }: TextProps<E>,
-  ref: React.ForwardedRef<Element>
+  ref: React.ForwardedRef<Element>,
 ) {
   const Component = asChild
     ? Slot
@@ -184,7 +184,7 @@ const Text = React.forwardRef(function Text<E extends React.ElementType = "p">(
           truncate,
           lineClamp,
         }),
-        className
+        className,
       )}
       {...(props as React.HTMLAttributes<HTMLElement>)}
     >
@@ -192,7 +192,7 @@ const Text = React.forwardRef(function Text<E extends React.ElementType = "p">(
     </Component>
   );
 }) as <E extends React.ElementType = "p">(
-  props: TextProps<E> & { ref?: React.ComponentPropsWithRef<E>["ref"] }
+  props: TextProps<E> & { ref?: React.ComponentPropsWithRef<E>["ref"] },
 ) => React.ReactElement | null;
 
 export { Text, textVariants };

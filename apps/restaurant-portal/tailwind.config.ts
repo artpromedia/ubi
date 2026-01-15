@@ -3,10 +3,7 @@ import sharedConfig from "@ubi/ui/tailwind.config";
 
 const config: Config = {
   presets: [sharedConfig],
-  content: [
-    "./src/**/*.{ts,tsx}",
-    "../../packages/ui/src/**/*.{ts,tsx}",
-  ],
+  content: ["./src/**/*.{ts,tsx}", "../../packages/ui/src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {

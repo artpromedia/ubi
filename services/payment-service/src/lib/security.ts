@@ -5,10 +5,24 @@
  * Security middleware and utilities
  */
 
-import { createHash, createHmac, timingSafeEqual } from "crypto";
-import { Context, Next } from "hono";
+import {
+  createHash,
+  createHmac,
+  timingSafeEqual,
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+} from "crypto";
+
 import { z } from "zod";
+
 import { redis } from "./redis";
+
+import type { Context, Next } from "hono";
+
+// ===========================================
+// ENCRYPTION UTILITIES
+// ===========================================
 
 // ===========================================
 // INPUT VALIDATION SCHEMAS
@@ -93,7 +107,7 @@ export const rateLimitConfigs = {
 export function verifyPaystackSignature(
   payload: string,
   signature: string,
-  secret: string
+  secret: string,
 ): boolean {
   try {
     const hash = createHmac("sha512", secret).update(payload).digest("hex");
@@ -110,7 +124,7 @@ export function verifyPaystackSignature(
  */
 export function verifyMpesaCallback(
   ip: string,
-  authHeader: string | undefined
+  authHeader: string | undefined,
 ): boolean {
   const allowedIPs = [
     "196.201.214.200",
@@ -136,7 +150,7 @@ export function verifyMpesaCallback(
   // Verify basic auth if provided
   if (authHeader) {
     const expectedAuth = Buffer.from(
-      `${process.env.MPESA_SHORTCODE}:${process.env.MPESA_PASSKEY}`
+      `${process.env.MPESA_SHORTCODE}:${process.env.MPESA_PASSKEY}`,
     ).toString("base64");
 
     if (authHeader !== `Basic ${expectedAuth}`) {
@@ -153,7 +167,7 @@ export function verifyMpesaCallback(
 export function verifyMomoSignature(
   payload: string,
   signature: string,
-  secret: string
+  secret: string,
 ): boolean {
   try {
     const hash = createHmac("sha256", secret).update(payload).digest("base64");
@@ -196,7 +210,9 @@ export async function sanitizeInput(c: Context, next: Next) {
 }
 
 function sanitizeObject(obj: unknown): unknown {
-  if (obj === null || obj === undefined) return obj;
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
 
   if (typeof obj === "string") {
     // Remove script tags and other XSS vectors
@@ -229,7 +245,10 @@ function sanitizeObject(obj: unknown): unknown {
 /**
  * Middleware to validate admin role
  */
-export async function requireAdmin(c: Context, next: Next): Promise<Response | void> {
+export async function requireAdmin(
+  c: Context,
+  next: Next,
+): Promise<Response | void> {
   const userRole = c.req.header("X-User-Role");
 
   if (!userRole || !["ADMIN", "SUPER_ADMIN", "FINANCE"].includes(userRole)) {
@@ -241,7 +260,7 @@ export async function requireAdmin(c: Context, next: Next): Promise<Response | v
           message: "Admin access required",
         },
       },
-      403
+      403,
     );
   }
 
@@ -256,7 +275,10 @@ const NONCE_TTL = 5 * 60; // 5 minutes (matches timestamp window)
  * Middleware to prevent replay attacks
  * Validates request timestamp and ensures nonce hasn't been used before
  */
-export async function preventReplay(c: Context, next: Next): Promise<Response | void> {
+export async function preventReplay(
+  c: Context,
+  next: Next,
+): Promise<Response | void> {
   const timestamp = c.req.header("X-Timestamp");
   const nonce = c.req.header("X-Nonce");
   const signature = c.req.header("X-Signature");
@@ -276,7 +298,7 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
             message: "Request timestamp is too old or invalid",
           },
         },
-        400
+        400,
       );
     }
   }
@@ -293,7 +315,7 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
             message: "Nonce must be a valid unique identifier (UUID format)",
           },
         },
-        400
+        400,
       );
     }
 
@@ -304,7 +326,9 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
 
       if (wasSet !== "OK") {
         // Nonce was already used (potential replay attack)
-        console.warn(`[Security] Duplicate nonce detected: ${nonce.substring(0, 8)}...`);
+        console.warn(
+          `[Security] Duplicate nonce detected: ${nonce.substring(0, 8)}...`,
+        );
 
         // Log potential attack for monitoring
         createAuditLog({
@@ -312,7 +336,8 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
           userId: c.get("userId") || "unknown",
           action: "REPLAY_ATTACK_BLOCKED",
           resource: "payment",
-          ipAddress: c.req.header("X-Forwarded-For") || c.req.header("X-Real-IP"),
+          ipAddress:
+            c.req.header("X-Forwarded-For") || c.req.header("X-Real-IP"),
           userAgent: c.req.header("User-Agent"),
           result: "failure",
           errorMessage: `Duplicate nonce: ${nonce.substring(0, 8)}...`,
@@ -323,10 +348,11 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
             success: false,
             error: {
               code: "DUPLICATE_REQUEST",
-              message: "This request has already been processed. Please generate a new nonce.",
+              message:
+                "This request has already been processed. Please generate a new nonce.",
             },
           },
-          400
+          400,
         );
       }
     } catch (error) {
@@ -336,7 +362,11 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
 
       // Optionally fail closed for payment endpoints
       const path = c.req.path;
-      if (path.includes("/payment") || path.includes("/transaction") || path.includes("/payout")) {
+      if (
+        path.includes("/payment") ||
+        path.includes("/transaction") ||
+        path.includes("/payout")
+      ) {
         return c.json(
           {
             success: false,
@@ -345,7 +375,7 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
               message: "Unable to validate request. Please try again.",
             },
           },
-          503
+          503,
         );
       }
     }
@@ -353,7 +383,12 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
 
   // Validate request signature if provided
   if (signature && timestamp && nonce) {
-    const isValidSignature = await validateRequestSignature(c, signature, timestamp, nonce);
+    const isValidSignature = await validateRequestSignature(
+      c,
+      signature,
+      timestamp,
+      nonce,
+    );
     if (!isValidSignature) {
       return c.json(
         {
@@ -363,7 +398,7 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
             message: "Request signature validation failed",
           },
         },
-        401
+        401,
       );
     }
   }
@@ -376,7 +411,8 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
  */
 function isValidNonceFormat(nonce: string): boolean {
   // Accept UUID v4 format or alphanumeric string 16-64 chars
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const alphanumericRegex = /^[a-zA-Z0-9_-]{16,64}$/;
 
   return uuidRegex.test(nonce) || alphanumericRegex.test(nonce);
@@ -390,7 +426,7 @@ async function validateRequestSignature(
   c: Context,
   signature: string,
   timestamp: string,
-  nonce: string
+  nonce: string,
 ): Promise<boolean> {
   const signingSecret = process.env.REQUEST_SIGNING_SECRET;
   if (!signingSecret) {
@@ -426,7 +462,7 @@ async function validateRequestSignature(
     // Use timing-safe comparison
     return timingSafeEqual(
       Buffer.from(signature, "hex"),
-      Buffer.from(expectedSignature, "hex")
+      Buffer.from(expectedSignature, "hex"),
     );
   } catch (error) {
     console.error("[Security] Signature validation error:", error);
@@ -477,12 +513,6 @@ function maskObject(obj: Record<string, unknown>): Record<string, unknown> {
   return masked;
 }
 
-// ===========================================
-// ENCRYPTION UTILITIES
-// ===========================================
-
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
-
 const ENCRYPTION_KEY =
   process.env.ENCRYPTION_KEY || randomBytes(32).toString("hex");
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
@@ -495,7 +525,7 @@ export function encryptSensitive(data: string): string {
   const cipher = createCipheriv(
     ENCRYPTION_ALGORITHM,
     Buffer.from(ENCRYPTION_KEY, "hex"),
-    iv
+    iv,
   );
 
   let encrypted = cipher.update(data, "utf8", "hex");
@@ -579,7 +609,7 @@ export function validateCardDataHandling(data: Record<string, unknown>): void {
   for (const field of cardFields) {
     if (data[field]) {
       throw new Error(
-        `PCI DSS Violation: ${field} should not be stored or logged`
+        `PCI DSS Violation: ${field} should not be stored or logged`,
       );
     }
   }
@@ -589,7 +619,9 @@ export function validateCardDataHandling(data: Record<string, unknown>): void {
  * Mask card number for display
  */
 export function maskCardNumber(cardNumber: string): string {
-  if (cardNumber.length < 8) return "****";
+  if (cardNumber.length < 8) {
+    return "****";
+  }
   return "**** **** **** " + cardNumber.slice(-4);
 }
 

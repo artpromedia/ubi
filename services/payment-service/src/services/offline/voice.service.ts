@@ -6,14 +6,15 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
+
 import {
-  AgentBookingRequest,
+  type AgentBookingRequest,
   AgentStatus,
-  CallCenterAgent,
-  GeoLocation,
-  IVRAction,
+  type CallCenterAgent,
+  type GeoLocation,
+  type IVRAction,
   IVRActionType,
-  IVRSession,
+  type IVRSession,
   IVRState,
 } from "@/types/offline.types";
 
@@ -53,7 +54,7 @@ export class VoiceService {
   async handleIncomingCall(
     callSid: string,
     from: string,
-    to: string
+    to: string,
   ): Promise<IVRAction[]> {
     const session = await this.createIVRSession(callSid, from, to);
 
@@ -101,7 +102,7 @@ export class VoiceService {
   async handleSpeechInput(
     callSid: string,
     transcript: string,
-    confidence: number
+    confidence: number,
   ): Promise<IVRAction[]> {
     const session = await this.getSession(callSid);
     if (!session) {
@@ -120,7 +121,7 @@ export class VoiceService {
       return [
         this.speak(
           this.t("confirm.speech", session.language, { text: transcript }),
-          session.language
+          session.language,
         ),
         this.gather("dtmf", 1, 5),
       ];
@@ -153,7 +154,7 @@ export class VoiceService {
 
   private async processInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     // Handle universal commands
     if (input === "0") {
@@ -217,7 +218,7 @@ export class VoiceService {
     return [
       this.speak(
         this.t("welcome.greeting", session.language),
-        session.language
+        session.language,
       ),
       ...this.buildMainMenuActions(session),
     ];
@@ -235,7 +236,7 @@ export class VoiceService {
 
   private async handleMainMenuInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     switch (input) {
       case "1": // Book a Ride
@@ -244,7 +245,7 @@ export class VoiceService {
         return [
           this.speak(
             this.t("book.method_prompt", session.language),
-            session.language
+            session.language,
           ),
           this.gather("dtmf speech", 1, 10),
         ];
@@ -261,7 +262,7 @@ export class VoiceService {
             this.t("wallet.balance_and_menu", session.language, {
               amount: this.formatCurrency(balance, session.language),
             }),
-            session.language
+            session.language,
           ),
           this.gather("dtmf", 1, 10),
         ];
@@ -279,7 +280,7 @@ export class VoiceService {
         return [
           this.speak(
             this.t("language.prompt", session.language),
-            session.language
+            session.language,
           ),
           this.gather("dtmf", 1, 10),
         ];
@@ -292,7 +293,7 @@ export class VoiceService {
         return [
           this.speak(
             this.t("error.invalid_option", session.language),
-            session.language
+            session.language,
           ),
           ...this.buildMainMenuActions(session),
         ];
@@ -301,7 +302,7 @@ export class VoiceService {
 
   private async handleLanguageInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const languages: Record<string, string> = {
       "1": "en",
@@ -334,7 +335,7 @@ export class VoiceService {
 
   private async handleBookRideInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -348,7 +349,7 @@ export class VoiceService {
           return [
             this.speak(
               this.t("book.pickup_set", lang, { address: location.address }),
-              lang
+              lang,
             ),
             this.speak(this.t("book.enter_destination", lang), lang),
             this.gather("speech", 1, 30),
@@ -413,7 +414,7 @@ export class VoiceService {
 
   private async handlePickupInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -440,7 +441,7 @@ export class VoiceService {
     return [
       this.speak(
         this.t("book.pickup_set", lang, { address: location.address }),
-        lang
+        lang,
       ),
       this.speak(this.t("book.enter_destination", lang), lang),
       this.gather("speech", 1, 30),
@@ -449,7 +450,7 @@ export class VoiceService {
 
   private async handleDestinationInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -487,7 +488,7 @@ export class VoiceService {
 
   private async showBookingConfirmation(
     session: IVRSession,
-    dropoff: { coords: GeoLocation; address: string }
+    dropoff: { coords: GeoLocation; address: string },
   ): Promise<IVRAction[]> {
     const lang = session.language;
     session.data = session.data || {};
@@ -495,10 +496,7 @@ export class VoiceService {
 
     // Get fare estimate
     const pickup = session.data?.pickup as any;
-    const estimate = await this.getFareEstimate(
-      pickup?.coords,
-      dropoff.coords
-    );
+    const estimate = await this.getFareEstimate(pickup?.coords, dropoff.coords);
 
     session.data = session.data || {};
     session.data.fareEstimate = estimate.fare;
@@ -514,7 +512,7 @@ export class VoiceService {
           fare: this.formatCurrency(estimate.fare, lang),
           eta: estimate.eta,
         }),
-        lang
+        lang,
       ),
       this.speak(this.t("book.confirm_prompt", lang), lang),
       this.gather("dtmf speech", 1, 10),
@@ -523,7 +521,7 @@ export class VoiceService {
 
   private async handleBookingConfirmation(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
     const confirmYes = ["1", "yes", "ndio", "yebo", "oui", "ee"];
@@ -545,7 +543,7 @@ export class VoiceService {
               vehicle: trip.vehiclePlate,
               eta: trip.eta,
             }),
-            lang
+            lang,
           ),
           this.speak(this.t("book.sms_sent", lang), lang),
           this.speak(this.t("book.thank_you", lang), lang),
@@ -612,7 +610,7 @@ export class VoiceService {
     return [
       this.speak(
         statusMessages[trip.status] || this.t("track.status.unknown", lang),
-        lang
+        lang,
       ),
       this.speak(this.t("track.options", lang), lang),
       this.gather("dtmf", 1, 10),
@@ -621,13 +619,15 @@ export class VoiceService {
 
   private async handleTripStatusInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
     switch (input) {
       case "1": // Refresh
-        const trip = await this.getTrip(session.data?.tripId as string | undefined);
+        const trip = await this.getTrip(
+          session.data?.tripId as string | undefined,
+        );
         if (trip) {
           return this.buildTripStatusActions(trip, lang);
         }
@@ -637,7 +637,9 @@ export class VoiceService {
         ];
 
       case "2": // Call driver
-        const tripForDriver = await this.getTrip(session.data?.tripId as string | undefined);
+        const tripForDriver = await this.getTrip(
+          session.data?.tripId as string | undefined,
+        );
         if (tripForDriver?.driverPhone) {
           return [
             this.speak(this.t("track.connecting_driver", lang), lang),
@@ -676,7 +678,7 @@ export class VoiceService {
           this.t("cancel.with_fee", lang, {
             fee: this.formatCurrency(fee, lang),
           }),
-          lang
+          lang,
         ),
         this.speak(this.t("cancel.confirm_prompt", lang), lang),
         this.gather("dtmf", 1, 10),
@@ -696,7 +698,7 @@ export class VoiceService {
 
   private async handleWalletMenuInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -710,7 +712,7 @@ export class VoiceService {
       case "2": // Recent transactions
         const transactions = await this.getRecentTransactions(
           session.userId!,
-          3
+          3,
         );
         if (transactions.length === 0) {
           return [
@@ -741,7 +743,7 @@ export class VoiceService {
 
   private async handleHelpInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -773,7 +775,7 @@ export class VoiceService {
   }
 
   private async handleTransferToAgent(
-    session: IVRSession
+    session: IVRSession,
   ): Promise<IVRAction[]> {
     const lang = session.language;
     session.state = IVRState.AWAITING_AGENT;
@@ -788,7 +790,7 @@ export class VoiceService {
       return [
         this.speak(
           this.t("agent.queue", lang, { position: queuePosition }),
-          lang
+          lang,
         ),
         this.speak(this.t("agent.hold_music", lang), lang),
         {
@@ -804,7 +806,7 @@ export class VoiceService {
 
   private async handleAwaitingAgentInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -833,7 +835,7 @@ export class VoiceService {
 
   private async transferToAgent(
     session: IVRSession,
-    agent: CallCenterAgent
+    agent: CallCenterAgent,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -874,7 +876,7 @@ export class VoiceService {
   // ===========================================================================
 
   async handleAgentBooking(
-    request: AgentBookingRequest
+    request: AgentBookingRequest,
   ): Promise<{ tripId: string }> {
     // Validate agent
     const agent = this.agents.get(request.agentId);
@@ -917,7 +919,7 @@ export class VoiceService {
   // NAVIGATION HELPERS
   // ===========================================================================
 
-  private handleGoBack(session: IVRSession): Promise<IVRAction[]> {
+  private async handleGoBack(session: IVRSession): Promise<IVRAction[]> {
     const parentStates: Record<string, IVRState> = {
       [IVRState.BOOK_RIDE]: IVRState.MAIN_MENU,
       [IVRState.ENTER_PICKUP]: IVRState.BOOK_RIDE,
@@ -934,13 +936,13 @@ export class VoiceService {
     return Promise.resolve(this.buildMainMenuActions(session));
   }
 
-  private handleMainMenu(session: IVRSession): Promise<IVRAction[]> {
+  private async handleMainMenu(session: IVRSession): Promise<IVRAction[]> {
     session.menuPath = [];
     session.data = {};
     return Promise.resolve(this.buildMainMenuActions(session));
   }
 
-  private handleRepeat(session: IVRSession): Promise<IVRAction[]> {
+  private async handleRepeat(session: IVRSession): Promise<IVRAction[]> {
     // Re-process empty input to repeat current menu
     return this.processInput(session, "");
   }
@@ -998,31 +1000,50 @@ export class VoiceService {
     const lower = transcript.toLowerCase().trim();
 
     // Universal commands
-    if (["back", "rudi", "retour"].includes(lower)) return "0";
-    if (["menu", "main menu", "menyu"].includes(lower)) return "*";
-    if (["repeat", "rudia", "repete"].includes(lower)) return "#";
-    if (["agent", "operator", "help me", "msaada"].includes(lower)) return "9";
+    if (["back", "rudi", "retour"].includes(lower)) {
+      return "0";
+    }
+    if (["menu", "main menu", "menyu"].includes(lower)) {
+      return "*";
+    }
+    if (["repeat", "rudia", "repete"].includes(lower)) {
+      return "#";
+    }
+    if (["agent", "operator", "help me", "msaada"].includes(lower)) {
+      return "9";
+    }
 
     // State-specific conversions
     if (state === IVRState.MAIN_MENU) {
-      if (["book", "ride", "safari", "reserve"].some((w) => lower.includes(w)))
+      if (
+        ["book", "ride", "safari", "reserve"].some((w) => lower.includes(w))
+      ) {
         return "1";
+      }
       if (
         ["track", "fuatilia", "where", "status"].some((w) => lower.includes(w))
-      )
+      ) {
         return "2";
-      if (["wallet", "balance", "money", "pesa"].some((w) => lower.includes(w)))
+      }
+      if (
+        ["wallet", "balance", "money", "pesa"].some((w) => lower.includes(w))
+      ) {
         return "3";
-      if (["help", "msaada", "aide"].some((w) => lower.includes(w))) return "4";
+      }
+      if (["help", "msaada", "aide"].some((w) => lower.includes(w))) {
+        return "4";
+      }
     }
 
     if (state === IVRState.CONFIRM_BOOKING) {
       if (
         ["yes", "ndio", "oui", "confirm", "book"].some((w) => lower.includes(w))
-      )
+      ) {
         return "1";
-      if (["no", "hapana", "non", "cancel"].some((w) => lower.includes(w)))
+      }
+      if (["no", "hapana", "non", "cancel"].some((w) => lower.includes(w))) {
         return "2";
+      }
     }
 
     // Return original for address input
@@ -1036,7 +1057,7 @@ export class VoiceService {
   async createIVRSession(
     callSid: string,
     from: string,
-    to: string
+    to: string,
   ): Promise<IVRSession> {
     const user = await this.getUserByPhone(from);
 
@@ -1123,7 +1144,7 @@ export class VoiceService {
   }
 
   private async findAvailableAgent(
-    language: string
+    language: string,
   ): Promise<CallCenterAgent | null> {
     for (const agent of this.agents.values()) {
       if (
@@ -1173,7 +1194,7 @@ export class VoiceService {
   private t(
     key: string,
     lang: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
   ): string {
     const translations = this.getTranslations(lang);
     let text = translations[key] || key;
@@ -1276,8 +1297,12 @@ export class VoiceService {
   }
 
   private calculateCancellationFee(trip: any): number {
-    if (trip.status === "arriving") return 100;
-    if (trip.status === "matched") return 50;
+    if (trip.status === "arriving") {
+      return 100;
+    }
+    if (trip.status === "matched") {
+      return 50;
+    }
     return 0;
   }
 
@@ -1298,7 +1323,7 @@ export class VoiceService {
   }
 
   private async geocodeAddress(
-    address: string
+    address: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
     return { coords: { lat: -1.2921, lng: 36.8219 }, address };
   }
@@ -1309,7 +1334,7 @@ export class VoiceService {
 
   private async getFareEstimate(
     _pickup: GeoLocation,
-    _dropoff: GeoLocation
+    _dropoff: GeoLocation,
   ): Promise<any> {
     return { fare: 350, eta: 5 };
   }
@@ -1340,20 +1365,20 @@ export class VoiceService {
 
   private async getRecentTransactions(
     _userId: string,
-    _limit: number
+    _limit: number,
   ): Promise<any[]> {
     return [];
   }
 
   private async updateUserLanguage(
     _userId?: string,
-    _lang?: string
+    _lang?: string,
   ): Promise<void> {}
 
   private async sendSMSConfirmation(
     _phone: string,
     _trip: any,
-    _lang: string
+    _lang: string,
   ): Promise<void> {}
 
   // ===========================================================================

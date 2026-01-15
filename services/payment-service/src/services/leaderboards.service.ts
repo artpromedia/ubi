@@ -16,7 +16,8 @@
  */
 
 import { prisma } from "../lib/prisma";
-import {
+
+import type {
   Leaderboard,
   LeaderboardEntry,
   LeaderboardPeriod,
@@ -190,7 +191,7 @@ export class LeaderboardsService {
       offset?: number;
       region?: string;
       tier?: LoyaltyTier;
-    }
+    },
   ): Promise<Leaderboard> {
     const config = LEADERBOARD_CONFIGS.find((c) => c.type === type);
     if (!config) {
@@ -216,14 +217,14 @@ export class LeaderboardsService {
       limit,
       offset,
       options?.region,
-      options?.tier
+      options?.tier,
     );
 
     // Get total participants
     const totalParticipants = await this.getTotalParticipants(
       type,
       startDate,
-      endDate
+      endDate,
     );
 
     return {
@@ -242,7 +243,7 @@ export class LeaderboardsService {
   async getUserRank(
     userId: string,
     type: LeaderboardType,
-    period: LeaderboardPeriod
+    period: LeaderboardPeriod,
   ): Promise<{
     rank: number;
     score: number;
@@ -264,7 +265,7 @@ export class LeaderboardsService {
       type,
       config.metricField,
       startDate,
-      endDate
+      endDate,
     );
 
     if (userScore === null || userScore === 0) {
@@ -275,14 +276,14 @@ export class LeaderboardsService {
     const totalParticipants = await this.getTotalParticipants(
       type,
       startDate,
-      endDate
+      endDate,
     );
     const usersAbove = await this.getUsersAboveScore(
       type,
       config.metricField,
       userScore,
       startDate,
-      endDate
+      endDate,
     );
 
     const rank = usersAbove + 1;
@@ -305,7 +306,7 @@ export class LeaderboardsService {
         config.metricField,
         rank - 1,
         startDate,
-        endDate
+        endDate,
       );
       if (score !== null) {
         nextRankScore = score;
@@ -373,10 +374,12 @@ export class LeaderboardsService {
   async updateUserEntry(
     userId: string,
     type: LeaderboardType,
-    incrementBy: number = 1
+    incrementBy: number = 1,
   ): Promise<void> {
     const config = LEADERBOARD_CONFIGS.find((c) => c.type === type);
-    if (!config) return;
+    if (!config) {
+      return;
+    }
 
     for (const period of config.periods) {
       const { startDate, endDate } = this.getPeriodBoundaries(period);
@@ -410,10 +413,12 @@ export class LeaderboardsService {
   async setUserScore(
     userId: string,
     type: LeaderboardType,
-    score: number
+    score: number,
   ): Promise<void> {
     const config = LEADERBOARD_CONFIGS.find((c) => c.type === type);
-    if (!config) return;
+    if (!config) {
+      return;
+    }
 
     for (const period of config.periods) {
       const { startDate, endDate } = this.getPeriodBoundaries(period);
@@ -443,7 +448,7 @@ export class LeaderboardsService {
    */
   async recalculateLeaderboard(
     type: LeaderboardType,
-    period: LeaderboardPeriod
+    period: LeaderboardPeriod,
   ): Promise<number> {
     const config = LEADERBOARD_CONFIGS.find((c) => c.type === type);
     if (!config) {
@@ -466,28 +471,28 @@ export class LeaderboardsService {
         count = await this.recalculatePointsLeaderboard(
           leaderboardId,
           startDate,
-          endDate
+          endDate,
         );
         break;
       case "RIDES_COMPLETED":
         count = await this.recalculateRidesLeaderboard(
           leaderboardId,
           startDate,
-          endDate
+          endDate,
         );
         break;
       case "FOOD_ORDERS":
         count = await this.recalculateFoodOrdersLeaderboard(
           leaderboardId,
           startDate,
-          endDate
+          endDate,
         );
         break;
       case "REFERRALS":
         count = await this.recalculateReferralsLeaderboard(
           leaderboardId,
           startDate,
-          endDate
+          endDate,
         );
         break;
       case "STREAK":
@@ -510,7 +515,7 @@ export class LeaderboardsService {
    */
   async processRewards(
     type: LeaderboardType,
-    period: LeaderboardPeriod
+    period: LeaderboardPeriod,
   ): Promise<{
     processedCount: number;
     totalPointsAwarded: number;
@@ -559,7 +564,9 @@ export class LeaderboardsService {
 
       // Find applicable reward
       const reward = config.rewards.find((r) => r.position >= rank);
-      if (!reward) continue;
+      if (!reward) {
+        continue;
+      }
 
       // Award points
       const pointsAccount = await prisma.pointsAccount.findUnique({
@@ -642,17 +649,25 @@ export class LeaderboardsService {
       orderBy: { awardedAt: "desc" },
     });
 
-    return rewards.map((r: { leaderboardId: string; rank: number; pointsAwarded: number; badgeAwarded: string | null; awardedAt: Date }) => {
-      const [type, period] = r.leaderboardId.split("_");
-      return {
-        leaderboardType: type,
-        period,
-        rank: r.rank,
-        pointsAwarded: r.pointsAwarded,
-        badgeAwarded: r.badgeAwarded || undefined,
-        awardedAt: r.awardedAt,
-      };
-    });
+    return rewards.map(
+      (r: {
+        leaderboardId: string;
+        rank: number;
+        pointsAwarded: number;
+        badgeAwarded: string | null;
+        awardedAt: Date;
+      }) => {
+        const [type, period] = r.leaderboardId.split("_");
+        return {
+          leaderboardType: type,
+          period,
+          rank: r.rank,
+          pointsAwarded: r.pointsAwarded,
+          badgeAwarded: r.badgeAwarded || undefined,
+          awardedAt: r.awardedAt,
+        };
+      },
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -665,7 +680,7 @@ export class LeaderboardsService {
   async getFriendsLeaderboard(
     userId: string,
     type: LeaderboardType,
-    period: LeaderboardPeriod
+    period: LeaderboardPeriod,
   ): Promise<LeaderboardEntry[]> {
     // Get user's friends (assuming a friends/contacts relationship exists)
     const friends = await prisma.referral.findMany({
@@ -712,14 +727,23 @@ export class LeaderboardsService {
       },
     });
 
-    return entries.map((entry: { userId: string; score: number; user?: { name?: string | null; avatar?: string | null } | null }, index: number) => ({
-      userId: entry.userId,
-      rank: index + 1,
-      score: entry.score,
-      displayName: entry.user?.name || "UBI User",
-      avatarUrl: entry.user?.avatar || undefined,
-      isCurrentUser: entry.userId === userId,
-    }));
+    return entries.map(
+      (
+        entry: {
+          userId: string;
+          score: number;
+          user?: { name?: string | null; avatar?: string | null } | null;
+        },
+        index: number,
+      ) => ({
+        userId: entry.userId,
+        rank: index + 1,
+        score: entry.score,
+        displayName: entry.user?.name || "UBI User",
+        avatarUrl: entry.user?.avatar || undefined,
+        isCurrentUser: entry.userId === userId,
+      }),
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -745,7 +769,7 @@ export class LeaderboardsService {
         const dayOfWeek = now.getDay();
         startDate = new Date(now);
         startDate.setDate(
-          now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1)
+          now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1),
         );
         startDate.setHours(0, 0, 0, 0);
         endDate = new Date(startDate);
@@ -775,7 +799,7 @@ export class LeaderboardsService {
     limit: number,
     offset: number,
     _region?: string,
-    _tier?: LoyaltyTier
+    _tier?: LoyaltyTier,
   ): Promise<LeaderboardEntry[]> {
     const leaderboardId = `${type}_${this.getPeriodKey(startDate)}_${startDate.toISOString().slice(0, 10)}`;
 
@@ -799,28 +823,43 @@ export class LeaderboardsService {
       },
     });
 
-    return entries.map((entry: { userId: string; score: number; user?: { name?: string | null; avatar?: string | null } | null }, index: number) => ({
-      userId: entry.userId,
-      rank: offset + index + 1,
-      score: entry.score,
-      displayName: entry.user?.name || "UBI User",
-      avatarUrl: entry.user?.avatar || undefined,
-      change: 0, // Would need historical data for this
-    }));
+    return entries.map(
+      (
+        entry: {
+          userId: string;
+          score: number;
+          user?: { name?: string | null; avatar?: string | null } | null;
+        },
+        index: number,
+      ) => ({
+        userId: entry.userId,
+        rank: offset + index + 1,
+        score: entry.score,
+        displayName: entry.user?.name || "UBI User",
+        avatarUrl: entry.user?.avatar || undefined,
+        change: 0, // Would need historical data for this
+      }),
+    );
   }
 
   private getPeriodKey(startDate: Date): string {
     // Determine period from start date pattern
-    if (startDate.getFullYear() === 2020) return "ALL_TIME";
-    if (startDate.getDate() === 1) return "MONTHLY";
-    if (startDate.getDay() === 1) return "WEEKLY";
+    if (startDate.getFullYear() === 2020) {
+      return "ALL_TIME";
+    }
+    if (startDate.getDate() === 1) {
+      return "MONTHLY";
+    }
+    if (startDate.getDay() === 1) {
+      return "WEEKLY";
+    }
     return "DAILY";
   }
 
   private async getTotalParticipants(
     _type: LeaderboardType,
     _startDate: Date,
-    _endDate: Date
+    _endDate: Date,
   ): Promise<number> {
     // For simplicity, count users with activity in the period
     // This would be more sophisticated in production
@@ -837,7 +876,7 @@ export class LeaderboardsService {
     type: LeaderboardType,
     _metricField: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<number | null> {
     switch (type) {
       case "POINTS_EARNED":
@@ -866,7 +905,7 @@ export class LeaderboardsService {
       default:
         // Check leaderboard entry directly
         const { startDate: periodStart } = this.getPeriodBoundaries(
-          this.detectPeriodFromDates(startDate, endDate)
+          this.detectPeriodFromDates(startDate, endDate),
         );
         const leaderboardId = `${type}_${this.detectPeriodFromDates(startDate, endDate)}_${periodStart.toISOString().slice(0, 10)}`;
 
@@ -881,13 +920,19 @@ export class LeaderboardsService {
 
   private detectPeriodFromDates(
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): LeaderboardPeriod {
     const daysDiff =
       (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysDiff <= 1) return "DAILY";
-    if (daysDiff <= 7) return "WEEKLY";
-    if (daysDiff <= 31) return "MONTHLY";
+    if (daysDiff <= 1) {
+      return "DAILY";
+    }
+    if (daysDiff <= 7) {
+      return "WEEKLY";
+    }
+    if (daysDiff <= 31) {
+      return "MONTHLY";
+    }
     return "ALL_TIME";
   }
 
@@ -896,7 +941,7 @@ export class LeaderboardsService {
     _metricField: string,
     score: number,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<number> {
     const period = this.detectPeriodFromDates(startDate, endDate);
     const { startDate: periodStart } = this.getPeriodBoundaries(period);
@@ -915,7 +960,7 @@ export class LeaderboardsService {
     _metricField: string,
     rank: number,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<number | null> {
     const period = this.detectPeriodFromDates(startDate, endDate);
     const { startDate: periodStart } = this.getPeriodBoundaries(period);
@@ -935,7 +980,7 @@ export class LeaderboardsService {
   private async recalculatePointsLeaderboard(
     leaderboardId: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<number> {
     const pointsByUser = await prisma.pointsTransaction.groupBy({
       by: ["accountId"],
@@ -971,7 +1016,7 @@ export class LeaderboardsService {
   private async recalculateRidesLeaderboard(
     leaderboardId: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<number> {
     // Would query ride-service data
     // For now, count RIDE source points transactions as proxy
@@ -1010,7 +1055,7 @@ export class LeaderboardsService {
   private async recalculateFoodOrdersLeaderboard(
     leaderboardId: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<number> {
     const foodByUser = await prisma.pointsTransaction.groupBy({
       by: ["accountId"],
@@ -1047,7 +1092,7 @@ export class LeaderboardsService {
   private async recalculateReferralsLeaderboard(
     leaderboardId: string,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
   ): Promise<number> {
     const referralsByUser = await prisma.referral.groupBy({
       by: ["referrerId"],
@@ -1075,7 +1120,7 @@ export class LeaderboardsService {
   }
 
   private async recalculateStreakLeaderboard(
-    leaderboardId: string
+    leaderboardId: string,
   ): Promise<number> {
     const streaks = await prisma.userStreak.findMany({
       where: { currentStreak: { gt: 0 } },
@@ -1099,7 +1144,7 @@ export class LeaderboardsService {
   }
 
   private async recalculateAchievementsLeaderboard(
-    leaderboardId: string
+    leaderboardId: string,
   ): Promise<number> {
     const achievementsByUser = await prisma.userAchievement.groupBy({
       by: ["userId"],

@@ -4,8 +4,12 @@
  */
 
 import { nanoid } from "nanoid";
+
+import { achievementsService } from "./achievements.service";
+import { pointsService } from "./points.service";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
+
 import type {
   Referral,
   ReferralCode,
@@ -14,8 +18,6 @@ import type {
   ReferralStats,
   ReferralStatus,
 } from "../types/loyalty.types";
-import { achievementsService } from "./achievements.service";
-import { pointsService } from "./points.service";
 
 // ===========================================
 // DEFAULT REFERRAL PROGRAM
@@ -90,7 +92,7 @@ export class ReferralsService {
    */
   async applyCode(
     newUserId: string,
-    code: string
+    code: string,
   ): Promise<{
     success: boolean;
     referral: Referral;
@@ -136,7 +138,7 @@ export class ReferralsService {
     // Calculate expiry
     const expiresAt = new Date();
     expiresAt.setDate(
-      expiresAt.getDate() + (program.qualificationCriteria.withinDays || 30)
+      expiresAt.getDate() + (program.qualificationCriteria.withinDays || 30),
     );
 
     // Create referral
@@ -310,7 +312,8 @@ export class ReferralsService {
 
     const stats: ReferralStats = {
       totalReferrals: referrals.length,
-      pendingReferrals: referrals.filter((r: any) => r.status === "PENDING").length,
+      pendingReferrals: referrals.filter((r: any) => r.status === "PENDING")
+        .length,
       qualifiedReferrals: referrals.filter((r: any) => r.status === "QUALIFIED")
         .length,
       rewardedReferrals: referrals.filter((r: any) => r.status === "REWARDED")
@@ -339,12 +342,14 @@ export class ReferralsService {
    */
   async getReferrals(
     userId: string,
-    options: { status?: ReferralStatus; limit?: number; offset?: number } = {}
+    options: { status?: ReferralStatus; limit?: number; offset?: number } = {},
   ): Promise<{ referrals: Referral[]; total: number }> {
     const { status, limit = 20, offset = 0 } = options;
 
     const where: Record<string, unknown> = { referrerId: userId };
-    if (status) where.status = status;
+    if (status) {
+      where.status = status;
+    }
 
     const [referrals, total] = await Promise.all([
       prisma.referral.findMany({
@@ -390,7 +395,7 @@ export class ReferralsService {
    */
   async getLeaderboard(
     period: "week" | "month" | "all" = "month",
-    limit: number = 10
+    limit: number = 10,
   ): Promise<
     Array<{
       userId: string;

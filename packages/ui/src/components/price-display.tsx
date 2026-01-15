@@ -17,7 +17,16 @@ export interface PriceDisplayProps extends React.HTMLAttributes<HTMLDivElement> 
   /** Price amount */
   amount: number;
   /** Currency code */
-  currency?: "NGN" | "KES" | "ZAR" | "GHS" | "RWF" | "ETB" | "USD" | "EUR" | "GBP";
+  currency?:
+    | "NGN"
+    | "KES"
+    | "ZAR"
+    | "GHS"
+    | "RWF"
+    | "ETB"
+    | "USD"
+    | "EUR"
+    | "GBP";
   /** Show cents/decimals */
   showCents?: boolean;
   /** Size variant */
@@ -59,10 +68,12 @@ const PriceDisplay = React.forwardRef<HTMLDivElement, PriceDisplayProps>(
       strikethrough = false,
       ...props
     },
-    ref
+    ref,
   ) => {
     const formatPrice = (value: number) => {
-      const formatted = showCents ? value.toFixed(2) : Math.floor(value).toLocaleString();
+      const formatted = showCents
+        ? value.toFixed(2)
+        : Math.floor(value).toLocaleString();
       return `${currencySymbols[currency]}${formatted}`;
     };
 
@@ -80,19 +91,20 @@ const PriceDisplay = React.forwardRef<HTMLDivElement, PriceDisplayProps>(
         <span
           className={cn(
             sizeClasses[size],
-            strikethrough && "line-through text-muted-foreground"
+            strikethrough && "line-through text-muted-foreground",
           )}
         >
           {formatPrice(amount)}
         </span>
         {originalAmount && originalAmount > amount && (
           <span className="text-xs font-medium text-green-600 bg-green-100 px-1.5 py-0.5 rounded">
-            {Math.round(((originalAmount - amount) / originalAmount) * 100)}% off
+            {Math.round(((originalAmount - amount) / originalAmount) * 100)}%
+            off
           </span>
         )}
       </div>
     );
-  }
+  },
 );
 PriceDisplay.displayName = "PriceDisplay";
 

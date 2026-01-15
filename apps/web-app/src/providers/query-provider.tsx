@@ -55,7 +55,7 @@ interface QueryProviderProps {
   children: ReactNode;
 }
 
-export function QueryProvider({ children }: QueryProviderProps) {
+export const QueryProvider = ({ children }: QueryProviderProps) => {
   const [queryClient] = useState(getQueryClient);
 
   return (
@@ -64,6 +64,6 @@ export function QueryProvider({ children }: QueryProviderProps) {
       <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
     </QueryClientProvider>
   );
-}
+};
 
 export { getQueryClient };

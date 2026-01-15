@@ -5,38 +5,51 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { AlertTriangle, Clock, MapPin, Phone, Shield, UserCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock,
+  MapPin,
+  Phone,
+  Shield,
+  UserCheck,
+} from "lucide-react";
 
 const safetyFeatures = [
   {
     icon: UserCheck,
     title: "Verified drivers",
-    description: "All drivers undergo thorough background checks and vehicle inspections.",
+    description:
+      "All drivers undergo thorough background checks and vehicle inspections.",
   },
   {
     icon: MapPin,
     title: "Real-time tracking",
-    description: "Share your trip with loved ones and let them track your journey live.",
+    description:
+      "Share your trip with loved ones and let them track your journey live.",
   },
   {
     icon: Phone,
     title: "24/7 support",
-    description: "Our safety team is available around the clock to help with any issues.",
+    description:
+      "Our safety team is available around the clock to help with any issues.",
   },
   {
     icon: Shield,
     title: "Insurance coverage",
-    description: "Every trip is covered by comprehensive insurance for your peace of mind.",
+    description:
+      "Every trip is covered by comprehensive insurance for your peace of mind.",
   },
   {
     icon: AlertTriangle,
     title: "Emergency button",
-    description: "In-app emergency button connects you directly to local emergency services.",
+    description:
+      "In-app emergency button connects you directly to local emergency services.",
   },
   {
     icon: Clock,
     title: "Trip verification",
-    description: "PIN verification ensures you get into the right vehicle with the right driver.",
+    description:
+      "PIN verification ensures you get into the right vehicle with the right driver.",
   },
 ];
 
@@ -70,8 +83,8 @@ export const SafetySection = () => {
               transition={{ delay: 0.1 }}
               className="mb-8 text-lg text-gray-600 dark:text-gray-300"
             >
-              We invest heavily in technology and processes to make every trip as safe as possible.
-              Your well-being is our top priority.
+              We invest heavily in technology and processes to make every trip
+              as safe as possible. Your well-being is our top priority.
             </motion.p>
 
             <motion.div
@@ -120,4 +133,4 @@ export const SafetySection = () => {
       </div>
     </section>
   );
-}
+};

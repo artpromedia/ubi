@@ -49,126 +49,128 @@ const getJWTSecret = () => {
   return new TextEncoder().encode(secret);
 };
 
-export const authMiddleware = createMiddleware(async (c: Context, next: Next) => {
-  const path = c.req.path;
+export const authMiddleware = createMiddleware(
+  async (c: Context, next: Next) => {
+    const path = c.req.path;
 
-  // Skip auth for public routes
-  if (PUBLIC_ROUTES.some((route) => path.startsWith(route))) {
-    return await next();
-  }
+    // Skip auth for public routes
+    if (PUBLIC_ROUTES.some((route) => path.startsWith(route))) {
+      return await next();
+    }
 
-  // Skip auth for health checks
-  if (path.startsWith("/health")) {
-    return await next();
-  }
+    // Skip auth for health checks
+    if (path.startsWith("/health")) {
+      return await next();
+    }
 
-  // Get authorization header
-  const authHeader = c.req.header("Authorization");
-  if (!authHeader) {
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Authorization header is required",
-        },
-      },
-      401
-    );
-  }
-
-  // Check for Bearer token
-  if (!authHeader.startsWith("Bearer ")) {
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "INVALID_TOKEN",
-          message: "Invalid authorization format. Use: Bearer <token>",
-        },
-      },
-      401
-    );
-  }
-
-  const token = authHeader.substring(7);
-
-  // Check for API key (service-to-service)
-  if (token.startsWith("ubi_sk_")) {
-    const apiKeyValidation = await validateApiKey(token);
-
-    if (!apiKeyValidation.valid) {
+    // Get authorization header
+    const authHeader = c.req.header("Authorization");
+    if (!authHeader) {
       return c.json(
         {
           success: false,
           error: {
-            code: "INVALID_API_KEY",
-            message: apiKeyValidation.error || "Invalid or expired API key",
+            code: "UNAUTHORIZED",
+            message: "Authorization header is required",
           },
         },
-        401
+        401,
       );
     }
 
-    const serviceAuth: AuthContext = {
-      userId: apiKeyValidation.serviceId || "service",
-      email: apiKeyValidation.serviceEmail || "service@ubi.africa",
-      role: "service",
-      permissions: apiKeyValidation.permissions || ["*"],
-    };
-    c.set("auth", serviceAuth);
-
-    // Log API key usage for auditing
-    logApiKeyUsage(token, c.req.path, c.req.method);
-
-    return await next();
-  }
-
-  // Validate JWT token
-  try {
-    const { payload } = await jose.jwtVerify(token, getJWTSecret(), {
-      issuer: "ubi.africa",
-      audience: "ubi-api",
-    });
-
-    const jwtPayload = payload as unknown as JWTPayload;
-
-    // Attach auth context to request
-    const auth: AuthContext = {
-      userId: jwtPayload.sub,
-      email: jwtPayload.email,
-      role: jwtPayload.role,
-      permissions: jwtPayload.permissions,
-    };
-
-    c.set("auth", auth);
-    return await next();
-  } catch (error) {
-    if (error instanceof jose.errors.JWTExpired) {
+    // Check for Bearer token
+    if (!authHeader.startsWith("Bearer ")) {
       return c.json(
         {
           success: false,
           error: {
-            code: "TOKEN_EXPIRED",
-            message: "Your session has expired. Please log in again.",
+            code: "INVALID_TOKEN",
+            message: "Invalid authorization format. Use: Bearer <token>",
           },
         },
-        401
+        401,
       );
     }
 
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "INVALID_TOKEN",
-          message: "Invalid or malformed token",
+    const token = authHeader.substring(7);
+
+    // Check for API key (service-to-service)
+    if (token.startsWith("ubi_sk_")) {
+      const apiKeyValidation = await validateApiKey(token);
+
+      if (!apiKeyValidation.valid) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "INVALID_API_KEY",
+              message: apiKeyValidation.error || "Invalid or expired API key",
+            },
+          },
+          401,
+        );
+      }
+
+      const serviceAuth: AuthContext = {
+        userId: apiKeyValidation.serviceId || "service",
+        email: apiKeyValidation.serviceEmail || "service@ubi.africa",
+        role: "service",
+        permissions: apiKeyValidation.permissions || ["*"],
+      };
+      c.set("auth", serviceAuth);
+
+      // Log API key usage for auditing
+      logApiKeyUsage(token, c.req.path, c.req.method);
+
+      return await next();
+    }
+
+    // Validate JWT token
+    try {
+      const { payload } = await jose.jwtVerify(token, getJWTSecret(), {
+        issuer: "ubi.africa",
+        audience: "ubi-api",
+      });
+
+      const jwtPayload = payload as unknown as JWTPayload;
+
+      // Attach auth context to request
+      const auth: AuthContext = {
+        userId: jwtPayload.sub,
+        email: jwtPayload.email,
+        role: jwtPayload.role,
+        permissions: jwtPayload.permissions,
+      };
+
+      c.set("auth", auth);
+      return await next();
+    } catch (error) {
+      if (error instanceof jose.errors.JWTExpired) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: "TOKEN_EXPIRED",
+              message: "Your session has expired. Please log in again.",
+            },
+          },
+          401,
+        );
+      }
+
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "INVALID_TOKEN",
+            message: "Invalid or malformed token",
+          },
         },
-      },
-      401
-    );
-  }
-});
+        401,
+      );
+    }
+  },
+);
 
 // API Key validation result type
 interface ApiKeyValidationResult {
@@ -181,7 +183,10 @@ interface ApiKeyValidationResult {
 }
 
 // In-memory cache for API keys (with TTL)
-const apiKeyCache = new Map<string, { data: ApiKeyValidationResult; expiresAt: number }>();
+const apiKeyCache = new Map<
+  string,
+  { data: ApiKeyValidationResult; expiresAt: number }
+>();
 const API_KEY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
@@ -223,14 +228,20 @@ async function validateApiKey(apiKey: string): Promise<ApiKeyValidationResult> {
           allowed_ips
         FROM api_keys
         WHERE key_hash = $1`,
-        [keyHash]
+        [keyHash],
       );
 
       await pool.end();
 
       if (result.rows.length === 0) {
-        const invalidResult: ApiKeyValidationResult = { valid: false, error: "API key not found" };
-        apiKeyCache.set(apiKey, { data: invalidResult, expiresAt: Date.now() + 60000 }); // Cache invalid for 1 min
+        const invalidResult: ApiKeyValidationResult = {
+          valid: false,
+          error: "API key not found",
+        };
+        apiKeyCache.set(apiKey, {
+          data: invalidResult,
+          expiresAt: Date.now() + 60000,
+        }); // Cache invalid for 1 min
         return invalidResult;
       }
 
@@ -255,7 +266,10 @@ async function validateApiKey(apiKey: string): Promise<ApiKeyValidationResult> {
       };
 
       // Cache the valid result
-      apiKeyCache.set(apiKey, { data: validResult, expiresAt: Date.now() + API_KEY_CACHE_TTL });
+      apiKeyCache.set(apiKey, {
+        data: validResult,
+        expiresAt: Date.now() + API_KEY_CACHE_TTL,
+      });
 
       return validResult;
     } catch (dbError) {
@@ -299,19 +313,22 @@ function logApiKeyUsage(apiKey: string, path: string, method: string): void {
           path,
           method,
           timestamp: new Date().toISOString(),
-        })
+        }),
       );
 
       // Optionally update last_used_at in database
       const databaseUrl = process.env.DATABASE_URL;
       if (databaseUrl) {
-        const keyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
+        const keyHash = crypto
+          .createHash("sha256")
+          .update(apiKey)
+          .digest("hex");
         const { Pool } = await import("pg");
         const pool = new Pool({ connectionString: databaseUrl, max: 1 });
 
         await pool.query(
           `UPDATE api_keys SET last_used_at = NOW(), usage_count = usage_count + 1 WHERE key_hash = $1`,
-          [keyHash]
+          [keyHash],
         );
 
         await pool.end();
@@ -340,7 +357,7 @@ export const requirePermission = (permission: string) => {
             message: "Authentication required",
           },
         },
-        401
+        401,
       );
     }
 
@@ -359,7 +376,7 @@ export const requirePermission = (permission: string) => {
             message: `You don't have permission to perform this action`,
           },
         },
-        403
+        403,
       );
     }
 
@@ -384,7 +401,7 @@ export const requireRole = (...roles: string[]) => {
             message: "Authentication required",
           },
         },
-        401
+        401,
       );
     }
 
@@ -397,7 +414,7 @@ export const requireRole = (...roles: string[]) => {
             message: `This action requires one of the following roles: ${roles.join(", ")}`,
           },
         },
-        403
+        403,
       );
     }
 

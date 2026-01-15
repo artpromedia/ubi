@@ -7,68 +7,68 @@
 // ============================================
 
 export enum Currency {
-  NGN = 'NGN', // Nigerian Naira
-  KES = 'KES', // Kenyan Shilling
-  GHS = 'GHS', // Ghanaian Cedi
-  UGX = 'UGX', // Ugandan Shilling
-  TZS = 'TZS', // Tanzanian Shilling
-  ZAR = 'ZAR', // South African Rand
-  XOF = 'XOF', // West African CFA Franc
-  RWF = 'RWF', // Rwandan Franc
-  ETB = 'ETB', // Ethiopian Birr
-  USD = 'USD', // US Dollar (for international)
+  NGN = "NGN", // Nigerian Naira
+  KES = "KES", // Kenyan Shilling
+  GHS = "GHS", // Ghanaian Cedi
+  UGX = "UGX", // Ugandan Shilling
+  TZS = "TZS", // Tanzanian Shilling
+  ZAR = "ZAR", // South African Rand
+  XOF = "XOF", // West African CFA Franc
+  RWF = "RWF", // Rwandan Franc
+  ETB = "ETB", // Ethiopian Birr
+  USD = "USD", // US Dollar (for international)
 }
 
 export enum PaymentMethod {
-  CARD = 'CARD',
-  WALLET = 'WALLET',
-  BANK_TRANSFER = 'BANK_TRANSFER',
-  MOBILE_MONEY = 'MOBILE_MONEY',
-  USSD = 'USSD',
-  QR = 'QR',
-  CASH = 'CASH',
+  CARD = "CARD",
+  WALLET = "WALLET",
+  BANK_TRANSFER = "BANK_TRANSFER",
+  MOBILE_MONEY = "MOBILE_MONEY",
+  USSD = "USSD",
+  QR = "QR",
+  CASH = "CASH",
 }
 
 export enum PaymentStatus {
-  PENDING = 'PENDING',
-  PROCESSING = 'PROCESSING',
-  COMPLETED = 'COMPLETED',
-  FAILED = 'FAILED',
-  CANCELLED = 'CANCELLED',
-  REFUNDED = 'REFUNDED',
-  PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
-  EXPIRED = 'EXPIRED',
+  PENDING = "PENDING",
+  PROCESSING = "PROCESSING",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+  CANCELLED = "CANCELLED",
+  REFUNDED = "REFUNDED",
+  PARTIALLY_REFUNDED = "PARTIALLY_REFUNDED",
+  EXPIRED = "EXPIRED",
 }
 
 export enum PaymentType {
-  RIDE_PAYMENT = 'RIDE_PAYMENT',
-  FOOD_ORDER = 'FOOD_ORDER',
-  DELIVERY_PAYMENT = 'DELIVERY_PAYMENT',
-  WALLET_TOPUP = 'WALLET_TOPUP',
-  SUBSCRIPTION = 'SUBSCRIPTION',
-  TIP = 'TIP',
-  PENALTY = 'PENALTY',
+  RIDE_PAYMENT = "RIDE_PAYMENT",
+  FOOD_ORDER = "FOOD_ORDER",
+  DELIVERY_PAYMENT = "DELIVERY_PAYMENT",
+  WALLET_TOPUP = "WALLET_TOPUP",
+  SUBSCRIPTION = "SUBSCRIPTION",
+  TIP = "TIP",
+  PENALTY = "PENALTY",
 }
 
 export enum TransactionType {
-  CREDIT = 'CREDIT',
-  DEBIT = 'DEBIT',
-  LOCK = 'LOCK',
-  UNLOCK = 'UNLOCK',
+  CREDIT = "CREDIT",
+  DEBIT = "DEBIT",
+  LOCK = "LOCK",
+  UNLOCK = "UNLOCK",
 }
 
 export enum TransactionStatus {
-  PENDING = 'PENDING',
-  COMPLETED = 'COMPLETED',
-  FAILED = 'FAILED',
-  REVERSED = 'REVERSED',
+  PENDING = "PENDING",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+  REVERSED = "REVERSED",
 }
 
 export enum WalletType {
-  MAIN = 'MAIN',
-  EARNINGS = 'EARNINGS',
-  BONUS = 'BONUS',
-  SAVINGS = 'SAVINGS',
+  MAIN = "MAIN",
+  EARNINGS = "EARNINGS",
+  BONUS = "BONUS",
+  SAVINGS = "SAVINGS",
 }
 
 // ============================================
@@ -207,7 +207,11 @@ export interface PaginationParams {
 // ============================================
 
 export interface PaymentEvent {
-  type: 'payment.created' | 'payment.completed' | 'payment.failed' | 'payment.refunded';
+  type:
+    | "payment.created"
+    | "payment.completed"
+    | "payment.failed"
+    | "payment.refunded";
   paymentId: string;
   userId: string;
   amount: number;
@@ -217,7 +221,11 @@ export interface PaymentEvent {
 }
 
 export interface WalletEvent {
-  type: 'wallet.credited' | 'wallet.debited' | 'wallet.locked' | 'wallet.unlocked';
+  type:
+    | "wallet.credited"
+    | "wallet.debited"
+    | "wallet.locked"
+    | "wallet.unlocked";
   walletId: string;
   userId: string;
   amount: number;
@@ -227,7 +235,11 @@ export interface WalletEvent {
 }
 
 export interface PayoutEvent {
-  type: 'payout.requested' | 'payout.processing' | 'payout.completed' | 'payout.failed';
+  type:
+    | "payout.requested"
+    | "payout.processing"
+    | "payout.completed"
+    | "payout.failed";
   payoutId: string;
   userId: string;
   amount: number;
@@ -252,91 +264,91 @@ export interface CurrencyConfig {
 export const CURRENCY_CONFIGS: Record<Currency, CurrencyConfig> = {
   [Currency.NGN]: {
     code: Currency.NGN,
-    name: 'Nigerian Naira',
-    symbol: '₦',
+    name: "Nigerian Naira",
+    symbol: "₦",
     decimals: 0,
-    country: 'NG',
+    country: "NG",
     minAmount: 100,
     maxAmount: 10000000,
   },
   [Currency.KES]: {
     code: Currency.KES,
-    name: 'Kenyan Shilling',
-    symbol: 'KSh',
+    name: "Kenyan Shilling",
+    symbol: "KSh",
     decimals: 0,
-    country: 'KE',
+    country: "KE",
     minAmount: 10,
     maxAmount: 500000,
   },
   [Currency.GHS]: {
     code: Currency.GHS,
-    name: 'Ghanaian Cedi',
-    symbol: 'GH₵',
+    name: "Ghanaian Cedi",
+    symbol: "GH₵",
     decimals: 2,
-    country: 'GH',
+    country: "GH",
     minAmount: 1,
     maxAmount: 100000,
   },
   [Currency.UGX]: {
     code: Currency.UGX,
-    name: 'Ugandan Shilling',
-    symbol: 'USh',
+    name: "Ugandan Shilling",
+    symbol: "USh",
     decimals: 0,
-    country: 'UG',
+    country: "UG",
     minAmount: 500,
     maxAmount: 20000000,
   },
   [Currency.TZS]: {
     code: Currency.TZS,
-    name: 'Tanzanian Shilling',
-    symbol: 'TSh',
+    name: "Tanzanian Shilling",
+    symbol: "TSh",
     decimals: 0,
-    country: 'TZ',
+    country: "TZ",
     minAmount: 1000,
     maxAmount: 50000000,
   },
   [Currency.ZAR]: {
     code: Currency.ZAR,
-    name: 'South African Rand',
-    symbol: 'R',
+    name: "South African Rand",
+    symbol: "R",
     decimals: 2,
-    country: 'ZA',
+    country: "ZA",
     minAmount: 10,
     maxAmount: 500000,
   },
   [Currency.XOF]: {
     code: Currency.XOF,
-    name: 'West African CFA Franc',
-    symbol: 'CFA',
+    name: "West African CFA Franc",
+    symbol: "CFA",
     decimals: 0,
-    country: 'CI', // Côte d'Ivoire (primary)
+    country: "CI", // Côte d'Ivoire (primary)
     minAmount: 100,
     maxAmount: 10000000,
   },
   [Currency.RWF]: {
     code: Currency.RWF,
-    name: 'Rwandan Franc',
-    symbol: 'FRw',
+    name: "Rwandan Franc",
+    symbol: "FRw",
     decimals: 0,
-    country: 'RW',
+    country: "RW",
     minAmount: 100,
     maxAmount: 10000000,
   },
   [Currency.ETB]: {
     code: Currency.ETB,
-    name: 'Ethiopian Birr',
-    symbol: 'Br',
+    name: "Ethiopian Birr",
+    symbol: "Br",
     decimals: 2,
-    country: 'ET',
+    country: "ET",
     minAmount: 10,
     maxAmount: 1000000,
   },
   [Currency.USD]: {
     code: Currency.USD,
-    name: 'US Dollar',
-    symbol: '$',
+    name: "US Dollar",
+    symbol: "$",
     decimals: 2,
-    country: 'US',
+    country: "US",
     minAmount: 1,
     maxAmount: 100000,
   },

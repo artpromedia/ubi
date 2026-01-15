@@ -6,27 +6,29 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
+
 import {
-  ABExperiment,
+  type ABExperiment,
   AlertSeverity,
   AlertType,
-  DataDriftReport,
-  ExperimentAssignment,
+  type DataDriftReport,
+  type ExperimentAssignment,
   ExperimentStatus,
   ExperimentType,
-  ExperimentVariant,
-  MLModel,
-  ModelAlert,
+  type ExperimentVariant,
+  type MLModel,
+  type ModelAlert,
   ModelFramework,
-  ModelPerformanceMetrics,
+  type ModelPerformanceMetrics,
   ModelStatus,
   ModelType,
   PipelineStatus,
-  ServingConfig,
-  TrainingConfig,
-  TrainingPipeline,
+  type ServingConfig,
+  type TrainingConfig,
+  type TrainingPipeline,
 } from "../../types/ml.types";
-import { FeatureStoreService } from "./feature-store.service";
+
+import type { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
 // MLOPS SERVICE
@@ -118,17 +120,17 @@ export class MLOpsService {
   // MODEL DEPLOYMENT
   // ===========================================================================
 
-  async deployModel(
-    modelId: string,
-    config: ServingConfig
-  ): Promise<void> {
+  async deployModel(modelId: string, config: ServingConfig): Promise<void> {
     const model = this.models.get(modelId);
     if (!model) {
       throw new Error(`Model ${modelId} not found`);
     }
 
     // Validate model is ready
-    if (model.status !== ModelStatus.STAGED && model.status !== ModelStatus.VALIDATING) {
+    if (
+      model.status !== ModelStatus.STAGED &&
+      model.status !== ModelStatus.VALIDATING
+    ) {
       throw new Error(`Model ${modelId} is not ready for deployment`);
     }
 
@@ -151,7 +153,8 @@ export class MLOpsService {
     // Find model with target version
     const models = Array.from(this.models.values()).filter(
       (m) =>
-        m.name === this.models.get(modelId)?.name && m.version === targetVersion
+        m.name === this.models.get(modelId)?.name &&
+        m.version === targetVersion,
     );
 
     if (models.length === 0) {
@@ -188,7 +191,7 @@ export class MLOpsService {
     latencyMs: number,
     success: boolean,
     prediction?: unknown,
-    actual?: unknown
+    actual?: unknown,
   ): Promise<void> {
     const metrics = this.modelMetrics.get(modelId) || [];
 
@@ -223,14 +226,14 @@ export class MLOpsService {
 
   async getModelMetrics(
     modelId: string,
-    timeRange?: { start: Date; end: Date }
+    timeRange?: { start: Date; end: Date },
   ): Promise<ModelPerformanceMetrics> {
     const metrics = this.modelMetrics.get(modelId) || [];
 
     let filteredMetrics = metrics;
     if (timeRange) {
       filteredMetrics = metrics.filter(
-        (m) => m.windowStart >= timeRange.start && m.windowEnd <= timeRange.end
+        (m) => m.windowStart >= timeRange.start && m.windowEnd <= timeRange.end,
       );
     }
 
@@ -254,22 +257,25 @@ export class MLOpsService {
       windowEnd: new Date(),
       p50Latency: this.calculatePercentile(
         filteredMetrics.map((m) => m.p50Latency || 0),
-        50
+        50,
       ),
       p99Latency: this.calculatePercentile(
         filteredMetrics.map((m) => m.p99Latency || 0),
-        99
+        99,
       ),
       errorRate:
         filteredMetrics.reduce((sum, m) => sum + m.errorRate, 0) /
         filteredMetrics.length,
-      predictionCount: filteredMetrics.reduce((sum, m) => sum + m.predictionCount, 0),
+      predictionCount: filteredMetrics.reduce(
+        (sum, m) => sum + m.predictionCount,
+        0,
+      ),
       errorCount: filteredMetrics.reduce((sum, m) => sum + m.errorCount, 0),
     };
 
     // Calculate accuracy if available
     const withAccuracy = filteredMetrics.filter(
-      (m) => m.accuracy !== undefined
+      (m) => m.accuracy !== undefined,
     );
     if (withAccuracy.length > 0) {
       aggregated.accuracy =
@@ -281,7 +287,9 @@ export class MLOpsService {
   }
 
   private calculatePercentile(values: number[], percentile: number): number {
-    if (values.length === 0) return 0;
+    if (values.length === 0) {
+      return 0;
+    }
 
     const sorted = [...values].sort((a, b) => a - b);
     const index = Math.ceil((percentile / 100) * sorted.length) - 1;
@@ -316,7 +324,8 @@ export class MLOpsService {
     // Check latency drift
     const recentLatency = this.calculateAverageLatency(recentMetrics);
     const baselineLatency = this.calculateAverageLatency(baselineMetrics);
-    const latencyDrift = (recentLatency - baselineLatency) / (baselineLatency || 1);
+    const latencyDrift =
+      (recentLatency - baselineLatency) / (baselineLatency || 1);
 
     if (latencyDrift > 0.2) {
       // 20% increase
@@ -337,13 +346,17 @@ export class MLOpsService {
       referenceEnd:
         baselineMetrics[baselineMetrics.length - 1]?.windowEnd || new Date(),
       currentStart: recentMetrics[0]?.windowStart || new Date(),
-      currentEnd: recentMetrics[recentMetrics.length - 1]?.windowEnd || new Date(),
+      currentEnd:
+        recentMetrics[recentMetrics.length - 1]?.windowEnd || new Date(),
       overallDriftScore,
       driftDetected: overallDriftScore > this.alertThresholds.driftScore,
       featureDrift: driftScores,
-      recommendations: overallDriftScore > this.alertThresholds.driftScore
-        ? [`Consider retraining model due to drift in: ${driftingFeatures.join(", ")}`]
-        : [],
+      recommendations:
+        overallDriftScore > this.alertThresholds.driftScore
+          ? [
+              `Consider retraining model due to drift in: ${driftingFeatures.join(", ")}`,
+            ]
+          : [],
       createdAt: new Date(),
     };
 
@@ -364,7 +377,9 @@ export class MLOpsService {
 
   private calculateAverageAccuracy(metrics: ModelPerformanceMetrics[]): number {
     const withAccuracy = metrics.filter((m) => m.accuracy !== undefined);
-    if (withAccuracy.length === 0) return 1;
+    if (withAccuracy.length === 0) {
+      return 1;
+    }
 
     return (
       withAccuracy.reduce((sum, m) => sum + (m.accuracy || 0), 0) /
@@ -373,9 +388,13 @@ export class MLOpsService {
   }
 
   private calculateAverageLatency(metrics: ModelPerformanceMetrics[]): number {
-    if (metrics.length === 0) return 0;
+    if (metrics.length === 0) {
+      return 0;
+    }
 
-    return metrics.reduce((sum, m) => sum + (m.p50Latency || 0), 0) / metrics.length;
+    return (
+      metrics.reduce((sum, m) => sum + (m.p50Latency || 0), 0) / metrics.length
+    );
   }
 
   // ===========================================================================
@@ -384,7 +403,7 @@ export class MLOpsService {
 
   private async checkModelAlerts(
     modelId: string,
-    metric: ModelPerformanceMetrics
+    metric: ModelPerformanceMetrics,
   ): Promise<void> {
     // Check latency
     if ((metric.p99Latency || 0) > this.alertThresholds.latencyP99Ms) {
@@ -435,7 +454,7 @@ export class MLOpsService {
 
   async triggerRetraining(
     modelId: string,
-    reason: string
+    reason: string,
   ): Promise<TrainingPipeline> {
     const model = this.models.get(modelId);
     if (!model) {
@@ -481,8 +500,15 @@ export class MLOpsService {
         type: ModelType.CLASSIFICATION,
         version: "1.0.0",
         framework: ModelFramework.XGBOOST,
-        inputFeatures: ["payment_velocity", "device_fingerprint", "location_risk"],
-        outputSchema: { type: "classification" as const, classes: ["fraud", "legitimate"] },
+        inputFeatures: [
+          "payment_velocity",
+          "device_fingerprint",
+          "location_risk",
+        ],
+        outputSchema: {
+          type: "classification" as const,
+          classes: ["fraud", "legitimate"],
+        },
       },
       {
         name: "demand-forecast",
@@ -506,7 +532,10 @@ export class MLOpsService {
         version: "1.0.0",
         framework: ModelFramework.XGBOOST,
         inputFeatures: ["last_activity", "frequency", "satisfaction"],
-        outputSchema: { type: "classification" as const, classes: ["low", "medium", "high"] },
+        outputSchema: {
+          type: "classification" as const,
+          classes: ["low", "medium", "high"],
+        },
       },
       {
         name: "recommendation",
@@ -566,7 +595,7 @@ export class ABTestingService {
   // ===========================================================================
 
   async createExperiment(
-    experiment: Partial<ABExperiment>
+    experiment: Partial<ABExperiment>,
   ): Promise<ABExperiment> {
     const experimentId = this.generateId("exp");
 
@@ -644,7 +673,7 @@ export class ABTestingService {
   async assignUser(
     experimentId: string,
     userId: string,
-    _context?: Record<string, unknown>
+    _context?: Record<string, unknown>,
   ): Promise<ExperimentAssignment> {
     const experiment = this.experiments.get(experimentId);
     if (!experiment) {
@@ -666,7 +695,9 @@ export class ABTestingService {
     // Check traffic allocation
     if (Math.random() * 100 > experiment.trafficPercentage) {
       // User not in experiment - return control
-      const controlVariant = experiment.variants.find(v => v.id === "control") || experiment.variants[0];
+      const controlVariant =
+        experiment.variants.find((v) => v.id === "control") ||
+        experiment.variants[0];
       if (!controlVariant) {
         throw new Error("No control variant found");
       }
@@ -722,13 +753,17 @@ export class ABTestingService {
 
   async getUserVariant(
     experimentId: string,
-    userId: string
+    userId: string,
   ): Promise<string | undefined> {
     const userAssignments = this.assignments.get(userId);
-    if (!userAssignments) return undefined;
+    if (!userAssignments) {
+      return undefined;
+    }
 
     const assignment = userAssignments.get(experimentId);
-    if (!assignment) return undefined;
+    if (!assignment) {
+      return undefined;
+    }
 
     return assignment.variantId;
   }
@@ -741,16 +776,22 @@ export class ABTestingService {
     experimentId: string,
     userId: string,
     metricName: string,
-    value: number
+    value: number,
   ): Promise<void> {
     const experiment = this.experiments.get(experimentId);
-    if (!experiment) return;
+    if (!experiment) {
+      return;
+    }
 
     const userAssignments = this.assignments.get(userId);
-    if (!userAssignments) return;
+    if (!userAssignments) {
+      return;
+    }
 
     const assignment = userAssignments.get(experimentId);
-    if (!assignment) return;
+    if (!assignment) {
+      return;
+    }
 
     // Store event for analysis
     this.eventEmitter.emit("experiment:event", {
@@ -790,9 +831,7 @@ export class ABTestingService {
     const sampleSize = experiment.minimumSampleSize || 100;
     const variants = experiment.variants.map((v: ExperimentVariant) => ({
       id: v.id,
-      sampleSize: Math.floor(
-        sampleSize / experiment.variants.length
-      ),
+      sampleSize: Math.floor(sampleSize / experiment.variants.length),
       mean: Math.random() * 0.1 + 0.05, // Placeholder conversion rate
       standardError: 0.01,
     }));
@@ -817,7 +856,7 @@ export class ABTestingService {
       sampleSize: number;
       mean: number;
       standardError: number;
-    }>
+    }>,
   ): { isSignificant: boolean; confidence: number; winner?: string } {
     if (variants.length < 2) {
       return { isSignificant: false, confidence: 0 };
@@ -839,7 +878,7 @@ export class ABTestingService {
 
     // Calculate z-score
     const pooledSE = Math.sqrt(
-      Math.pow(control.standardError, 2) + Math.pow(treatment.standardError, 2)
+      Math.pow(control.standardError, 2) + Math.pow(treatment.standardError, 2),
     );
 
     if (pooledSE === 0) {
@@ -876,13 +915,13 @@ export class ABTestingService {
   async isFeatureEnabled(
     featureKey: string,
     userId: string,
-    defaultValue: boolean = false
+    defaultValue: boolean = false,
   ): Promise<boolean> {
     // Check if feature is part of an experiment
     const experiments = Array.from(this.experiments.values()).filter(
       (e) =>
         e.status === ExperimentStatus.RUNNING &&
-        e.name.toLowerCase() === featureKey.toLowerCase()
+        e.name.toLowerCase() === featureKey.toLowerCase(),
     );
 
     if (experiments.length > 0) {
@@ -899,12 +938,12 @@ export class ABTestingService {
   async getFeatureVariant(
     featureKey: string,
     userId: string,
-    defaultVariant: string = "control"
+    defaultVariant: string = "control",
   ): Promise<string> {
     const experiments = Array.from(this.experiments.values()).filter(
       (e) =>
         e.status === ExperimentStatus.RUNNING &&
-        e.name.toLowerCase() === featureKey.toLowerCase()
+        e.name.toLowerCase() === featureKey.toLowerCase(),
     );
 
     if (experiments.length > 0) {

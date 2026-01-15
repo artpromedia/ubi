@@ -7,6 +7,19 @@
 // SERVICE EXPORTS
 // -----------------------------------------
 
+// -----------------------------------------
+// DRIVER EXPERIENCE PLATFORM
+// -----------------------------------------
+
+import { EventEmitter } from "events";
+
+import { DriverBenefitsService } from "./benefits.service";
+import { DriverCareerService, TrainingService } from "./career.service";
+import { CommunityService } from "./community.service";
+import { DriverEarningsService, DriverGoalsService } from "./earnings.service";
+import { FleetOwnerService } from "./fleet.service";
+import { IncentiveService } from "./incentives.service";
+
 export { DriverBenefitsService } from "./benefits.service";
 export { DriverCareerService, TrainingService } from "./career.service";
 export { CommunityService } from "./community.service";
@@ -19,18 +32,6 @@ export { IncentiveService } from "./incentives.service";
 // -----------------------------------------
 
 export * from "../../types/driver.types";
-
-// -----------------------------------------
-// DRIVER EXPERIENCE PLATFORM
-// -----------------------------------------
-
-import { EventEmitter } from "events";
-import { DriverBenefitsService } from "./benefits.service";
-import { DriverCareerService, TrainingService } from "./career.service";
-import { CommunityService } from "./community.service";
-import { DriverEarningsService, DriverGoalsService } from "./earnings.service";
-import { FleetOwnerService } from "./fleet.service";
-import { IncentiveService } from "./incentives.service";
 
 export interface DriverExperienceConfig {
   database: any;
@@ -61,20 +62,20 @@ export class DriverExperiencePlatform {
     this.earnings = new DriverEarningsService(
       config.database,
       config.redis,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.goals = new DriverGoalsService(
       config.database,
       this.earnings,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.incentives = new IncentiveService(
       config.database,
       config.redis,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.benefits = new DriverBenefitsService(
@@ -82,26 +83,26 @@ export class DriverExperiencePlatform {
       config.redis,
       config.paymentService,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.career = new DriverCareerService(
       config.database,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.training = new TrainingService(
       config.database,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.community = new CommunityService(
       config.database,
       config.redis,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.fleet = new FleetOwnerService(
@@ -109,7 +110,7 @@ export class DriverExperiencePlatform {
       config.redis,
       config.paymentService,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     // Set up cross-service event handlers
@@ -352,7 +353,7 @@ export class DriverExperiencePlatform {
 // -----------------------------------------
 
 export function createDriverExperiencePlatform(
-  config: DriverExperienceConfig
+  config: DriverExperienceConfig,
 ): DriverExperiencePlatform {
   return new DriverExperiencePlatform(config);
 }

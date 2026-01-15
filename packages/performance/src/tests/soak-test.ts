@@ -142,7 +142,7 @@ export default function () {
     // Calculate consistency score (how close to baseline)
     const consistency = Math.max(
       0,
-      1 - Math.abs(duration - baselineLatency) / baselineLatency
+      1 - Math.abs(duration - baselineLatency) / baselineLatency,
     );
     consistencyScore.add(consistency);
   }
@@ -165,13 +165,13 @@ export default function () {
 
 // Hourly checkpoint logging
 export function handleSummary(
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): Record<string, string> {
   const currentHour = getCurrentHour();
   console.log(`\n=== Hour ${currentHour} Checkpoint ===`);
   console.log(`Total requests: ${data.metrics?.http_reqs?.values?.count || 0}`);
   console.log(
-    `Error count: ${data.metrics?.cumulative_errors?.values?.count || 0}`
+    `Error count: ${data.metrics?.cumulative_errors?.values?.count || 0}`,
   );
 
   return {

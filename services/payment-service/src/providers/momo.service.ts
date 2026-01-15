@@ -30,11 +30,11 @@
  */
 
 import {
-  Currency,
+  type Currency,
   PaymentProvider,
   PaymentStatus,
-  Prisma,
-  PrismaClient,
+  type Prisma,
+  type PrismaClient,
 } from "@prisma/client";
 import { nanoid } from "nanoid";
 
@@ -123,7 +123,7 @@ export class MoMoService {
 
   constructor(
     private readonly config: MoMoConfig,
-    private readonly prisma: PrismaClient
+    private readonly prisma: PrismaClient,
   ) {
     this.baseUrl =
       config.environment === "production"
@@ -145,7 +145,7 @@ export class MoMoService {
     }
 
     const auth = Buffer.from(
-      `${this.config.apiUser}:${this.config.apiKey}`
+      `${this.config.apiUser}:${this.config.apiKey}`,
     ).toString("base64");
 
     const response = await fetch(`${this.baseUrl}/collection/token/`, {
@@ -233,7 +233,7 @@ export class MoMoService {
 
     if (!this.validatePhoneNumber(cleaned)) {
       throw new Error(
-        `Invalid phone number format for ${this.config.country}: ${phoneNumber}`
+        `Invalid phone number format for ${this.config.country}: ${phoneNumber}`,
       );
     }
 
@@ -260,7 +260,7 @@ export class MoMoService {
    * Sends payment request to customer's mobile money account
    */
   async requestToPay(
-    request: Omit<MoMoRequestToPayRequest, "currency">
+    request: Omit<MoMoRequestToPayRequest, "currency">,
   ): Promise<MoMoRequestToPayResponse> {
     const token = await this.getAccessToken();
     const referenceId = nanoid();
@@ -298,7 +298,7 @@ export class MoMoService {
           }),
         },
         body: JSON.stringify(payload),
-      }
+      },
     );
 
     // MoMo returns 202 Accepted on success
@@ -316,7 +316,7 @@ export class MoMoService {
    * Get transaction status
    */
   async getTransactionStatus(
-    referenceId: string
+    referenceId: string,
   ): Promise<MoMoTransactionStatus> {
     const token = await this.getAccessToken();
 
@@ -328,7 +328,7 @@ export class MoMoService {
           "X-Target-Environment": this.config.environment,
           "Ocp-Apim-Subscription-Key": this.config.subscriptionKey,
         },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -346,7 +346,7 @@ export class MoMoService {
   async pollTransactionStatus(
     referenceId: string,
     maxAttempts: number = 20,
-    intervalMs: number = 3000
+    intervalMs: number = 3000,
   ): Promise<MoMoTransactionStatus> {
     let attempts = 0;
 
@@ -366,7 +366,7 @@ export class MoMoService {
       } catch (error) {
         console.error(
           `Error polling MoMo transaction (attempt ${attempts}/${maxAttempts}):`,
-          error
+          error,
         );
 
         // Continue polling unless it's the last attempt
@@ -379,7 +379,7 @@ export class MoMoService {
     }
 
     throw new Error(
-      `Transaction polling timeout after ${maxAttempts} attempts`
+      `Transaction polling timeout after ${maxAttempts} attempts`,
     );
   }
 
@@ -430,7 +430,7 @@ export class MoMoService {
     this.startBackgroundPolling(momoResponse.referenceId, paymentTx.id).catch(
       (error) => {
         console.error("Background polling error:", error);
-      }
+      },
     );
 
     return {
@@ -445,7 +445,7 @@ export class MoMoService {
    */
   private async startBackgroundPolling(
     referenceId: string,
-    paymentTxId: string
+    paymentTxId: string,
   ): Promise<void> {
     // Initial delay (5 seconds)
     await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -466,7 +466,7 @@ export class MoMoService {
         });
 
         console.log(
-          `MoMo payment completed: ${paymentTxId} (TxID: ${status.financialTransactionId})`
+          `MoMo payment completed: ${paymentTxId} (TxID: ${status.financialTransactionId})`,
         );
       } else if (status.status === "FAILED") {
         await this.prisma.paymentTransaction.update({
@@ -480,7 +480,7 @@ export class MoMoService {
         });
 
         console.log(
-          `MoMo payment failed: ${paymentTxId} (Reason: ${status.reason?.message})`
+          `MoMo payment failed: ${paymentTxId} (Reason: ${status.reason?.message})`,
         );
       }
     } catch (error) {
@@ -556,7 +556,7 @@ export class MoMoService {
           "X-Target-Environment": this.config.environment,
           "Ocp-Apim-Subscription-Key": this.config.subscriptionKey,
         },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -581,14 +581,14 @@ export class MoMoService {
       !this.config.disbursementSubscriptionKey
     ) {
       throw new Error(
-        "Disbursement API credentials not configured. Please set disbursementApiUser, disbursementApiKey, and disbursementSubscriptionKey."
+        "Disbursement API credentials not configured. Please set disbursementApiUser, disbursementApiKey, and disbursementSubscriptionKey.",
       );
     }
 
     // Note: In production, you'd want separate token caching for disbursement
     // For simplicity, using same caching mechanism
     const auth = Buffer.from(
-      `${this.config.disbursementApiUser}:${this.config.disbursementApiKey}`
+      `${this.config.disbursementApiUser}:${this.config.disbursementApiKey}`,
     ).toString("base64");
 
     const response = await fetch(`${this.baseUrl}/disbursement/token/`, {
@@ -603,7 +603,7 @@ export class MoMoService {
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(
-        `Failed to get MoMo disbursement access token: ${errorText}`
+        `Failed to get MoMo disbursement access token: ${errorText}`,
       );
     }
 
@@ -622,7 +622,7 @@ export class MoMoService {
    * Used for driver payouts, merchant settlements, refunds
    */
   async initiateDisbursement(
-    request: MoMoDisbursementRequest
+    request: MoMoDisbursementRequest,
   ): Promise<MoMoDisbursementResponse> {
     if (!this.config.disbursementSubscriptionKey) {
       throw new Error("Disbursement subscription key not configured");
@@ -678,7 +678,7 @@ export class MoMoService {
    * Poll this endpoint until status is SUCCESSFUL or FAILED
    */
   async getDisbursementStatus(
-    referenceId: string
+    referenceId: string,
   ): Promise<MoMoDisbursementStatus> {
     if (!this.config.disbursementSubscriptionKey) {
       throw new Error("Disbursement subscription key not configured");
@@ -694,7 +694,7 @@ export class MoMoService {
           "X-Target-Environment": this.config.environment,
           "Ocp-Apim-Subscription-Key": this.config.disbursementSubscriptionKey,
         },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -729,7 +729,7 @@ export class MoMoService {
     referenceId: string,
     payoutId: string,
     maxAttempts: number = 30,
-    intervalMs: number = 2000
+    intervalMs: number = 2000,
   ): Promise<void> {
     let attempts = 0;
 
@@ -755,7 +755,7 @@ export class MoMoService {
           });
 
           console.log(
-            `MoMo disbursement ${payoutId} completed successfully. Reference: ${referenceId}`
+            `MoMo disbursement ${payoutId} completed successfully. Reference: ${referenceId}`,
           );
           return;
         }
@@ -790,7 +790,7 @@ export class MoMoService {
       } catch (error) {
         console.error(
           `Error polling MoMo disbursement status (attempt ${attempts + 1}):`,
-          error
+          error,
         );
         attempts++;
 
@@ -833,7 +833,7 @@ export class MoMoService {
           "X-Target-Environment": this.config.environment,
           "Ocp-Apim-Subscription-Key": this.config.disbursementSubscriptionKey,
         },
-      }
+      },
     );
 
     if (!response.ok) {

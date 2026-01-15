@@ -51,7 +51,7 @@ const rideCardVariants = cva(
       service: "move",
       interactive: false,
     },
-  }
+  },
 );
 
 const vehicleIcons = {
@@ -116,7 +116,7 @@ const RideCard = React.forwardRef<HTMLDivElement, RideCardProps>(
       onClick,
       ...props
     },
-    ref
+    ref,
   ) => {
     const VehicleIcon = vehicleIcons[vehicleType];
 
@@ -125,7 +125,7 @@ const RideCard = React.forwardRef<HTMLDivElement, RideCardProps>(
         ref={ref}
         className={cn(
           rideCardVariants({ service, interactive: interactive || !!onClick }),
-          className
+          className,
         )}
         onClick={onClick}
         role={onClick ? "button" : undefined}
@@ -141,7 +141,7 @@ const RideCard = React.forwardRef<HTMLDivElement, RideCardProps>(
                 service === "move" && "bg-ubi-move/10 text-ubi-move",
                 service === "bites" && "bg-ubi-bites/10 text-ubi-bites",
                 service === "send" && "bg-ubi-send/10 text-ubi-send",
-                service === "default" && "bg-primary/10 text-primary"
+                service === "default" && "bg-primary/10 text-primary",
               )}
             >
               <VehicleIcon className="h-4 w-4" />
@@ -231,7 +231,7 @@ const RideCard = React.forwardRef<HTMLDivElement, RideCardProps>(
         )}
       </div>
     );
-  }
+  },
 );
 RideCard.displayName = "RideCard";
 

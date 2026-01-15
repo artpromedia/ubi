@@ -29,7 +29,7 @@ const TabsList = React.forwardRef<
         "gap-1 border-b": variant === "outline",
         "gap-2": variant === "pills",
       },
-      className
+      className,
     )}
     {...props}
   />
@@ -57,7 +57,7 @@ const TabsTrigger = React.forwardRef<
         "rounded-full px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground":
           variant === "pills",
       },
-      className
+      className,
     )}
     {...props}
   />
@@ -74,7 +74,7 @@ const TabsContent = React.forwardRef<
       "mt-4 ring-offset-background",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
       "data-[state=inactive]:hidden",
-      className
+      className,
     )}
     {...props}
   />
@@ -82,4 +82,3 @@ const TabsContent = React.forwardRef<
 TabsContent.displayName = TabsPrimitive.Content.displayName;
 
 export { Tabs, TabsContent, TabsList, TabsTrigger };
-

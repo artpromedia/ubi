@@ -252,7 +252,12 @@ export interface ScheduledBillPayment {
 // QR PAYMENT TYPES
 // ===========================================
 
-export type QRCodeType = "static" | "dynamic" | "STATIC_FIXED" | "STATIC_VARIABLE" | "DYNAMIC";
+export type QRCodeType =
+  | "static"
+  | "dynamic"
+  | "STATIC_FIXED"
+  | "STATIC_VARIABLE"
+  | "DYNAMIC";
 
 export interface MerchantQRCode {
   id: string;

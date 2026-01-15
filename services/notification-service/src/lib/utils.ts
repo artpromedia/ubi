@@ -70,7 +70,7 @@ export function generateAlphanumericOTP(length: number = 6): string {
  */
 export function normalizePhone(
   phone: string,
-  defaultCountryCode: string = "+234"
+  defaultCountryCode: string = "+234",
 ): string {
   // Remove all non-digit characters except leading +
   let cleaned = phone.replace(/[^\d+]/g, "");
@@ -136,7 +136,7 @@ export function getCountryFromPhone(phone: string): string | null {
  */
 export function interpolateTemplate(
   template: string,
-  variables: Record<string, any>
+  variables: Record<string, any>,
 ): string {
   return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
     const value = variables[key];
@@ -161,7 +161,7 @@ export function extractTemplateVariables(template: string): string[] {
  */
 export function truncateForSMS(
   message: string,
-  maxLength: number = 160
+  maxLength: number = 160,
 ): string {
   if (message.length <= maxLength) return message;
   return message.slice(0, maxLength - 3) + "...";
@@ -230,7 +230,7 @@ export function formatDuration(minutes: number): string {
  */
 export function generateDeepLink(
   screen: string,
-  params: Record<string, string> = {}
+  params: Record<string, string> = {},
 ): string {
   const baseUrl = process.env.APP_DEEP_LINK_SCHEME || "ubi://";
   const queryString = Object.entries(params)
@@ -279,7 +279,7 @@ export function formatRelativeTime(date: Date): string {
 export function formatTimeInTimezone(
   date: Date,
   timezone: string,
-  format: "time" | "date" | "datetime" = "time"
+  format: "time" | "date" | "datetime" = "time",
 ): string {
   const options: Intl.DateTimeFormatOptions = {
     timeZone: timezone,

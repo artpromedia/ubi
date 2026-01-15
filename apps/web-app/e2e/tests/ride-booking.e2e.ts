@@ -18,7 +18,7 @@ test.describe("Ride Booking Flow", () => {
     // Set user location to Lagos
     await mockLocation(
       LAGOS_LOCATIONS.VICTORIA_ISLAND.latitude,
-      LAGOS_LOCATIONS.VICTORIA_ISLAND.longitude
+      LAGOS_LOCATIONS.VICTORIA_ISLAND.longitude,
     );
 
     await authenticatedPage.goto("/");
@@ -35,12 +35,12 @@ test.describe("Ride Booking Flow", () => {
 
     // Map should be visible
     await expect(
-      authenticatedPage.locator(".map-container, [data-testid='map']")
+      authenticatedPage.locator(".map-container, [data-testid='map']"),
     ).toBeVisible();
 
     // Current location marker should be visible
     await expect(
-      authenticatedPage.locator("[data-testid='current-location-marker']")
+      authenticatedPage.locator("[data-testid='current-location-marker']"),
     ).toBeVisible();
   });
 
@@ -59,7 +59,7 @@ test.describe("Ride Booking Flow", () => {
 
     // Should show search results
     await expect(
-      authenticatedPage.locator("[data-testid='search-results']")
+      authenticatedPage.locator("[data-testid='search-results']"),
     ).toBeVisible();
 
     // Should show Ikeja in results
@@ -160,7 +160,7 @@ test.describe("Ride Booking Flow", () => {
 
     // Should show searching state
     await expect(
-      authenticatedPage.getByText(/searching|finding|looking/i)
+      authenticatedPage.getByText(/searching|finding|looking/i),
     ).toBeVisible();
   });
 
@@ -230,7 +230,7 @@ test.describe("Ride Booking Flow", () => {
 
     // Should show cancellation confirmation or redirect
     await expect(
-      authenticatedPage.getByText(/cancelled|ride cancelled/i)
+      authenticatedPage.getByText(/cancelled|ride cancelled/i),
     ).toBeVisible();
   });
 });
@@ -255,7 +255,7 @@ test.describe("Ride Tracking", () => {
 
     // Should show driver marker on map
     await expect(
-      authenticatedPage.locator("[data-testid='driver-marker']")
+      authenticatedPage.locator("[data-testid='driver-marker']"),
     ).toBeVisible();
   });
 
@@ -266,7 +266,7 @@ test.describe("Ride Tracking", () => {
 
     // Status indicator should be visible
     await expect(
-      authenticatedPage.locator("[data-testid='ride-status']")
+      authenticatedPage.locator("[data-testid='ride-status']"),
     ).toBeVisible();
   });
 
@@ -294,7 +294,7 @@ test.describe("Ride Tracking", () => {
 
     // Should show trip details
     await expect(
-      authenticatedPage.getByText(/completed|trip complete/i)
+      authenticatedPage.getByText(/completed|trip complete/i),
     ).toBeVisible();
     await expect(authenticatedPage.getByText(/15\.2|15.2\s*km/i)).toBeVisible();
     await expect(authenticatedPage.getByText(/45\s*min/i)).toBeVisible();
@@ -318,12 +318,12 @@ test.describe("Rating and Feedback", () => {
 
     // Should show star rating
     await expect(
-      authenticatedPage.locator("[data-testid='star-rating']")
+      authenticatedPage.locator("[data-testid='star-rating']"),
     ).toBeVisible();
 
     // Should show comment input
     await expect(
-      authenticatedPage.getByPlaceholder(/comment|feedback/i)
+      authenticatedPage.getByPlaceholder(/comment|feedback/i),
     ).toBeVisible();
   });
 
@@ -367,7 +367,7 @@ test.describe("Network Resilience", () => {
 
     // Page should still load (may be slower)
     await expect(
-      authenticatedPage.locator(".map-container, [data-testid='map']")
+      authenticatedPage.locator(".map-container, [data-testid='map']"),
     ).toBeVisible({
       timeout: 30000,
     });
@@ -387,7 +387,7 @@ test.describe("Network Resilience", () => {
 
     // Should show offline indicator
     await expect(
-      authenticatedPage.getByText(/offline|no connection|network/i)
+      authenticatedPage.getByText(/offline|no connection|network/i),
     ).toBeVisible();
 
     // Restore connection

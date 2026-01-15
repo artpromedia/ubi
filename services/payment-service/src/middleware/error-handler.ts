@@ -2,10 +2,11 @@
  * Error Handler Middleware
  */
 
-import { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { ZodError } from "zod";
+
+import type { Context, Next } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 /**
  * Custom API Error
@@ -15,7 +16,7 @@ export class ApiError extends Error {
     public statusCode: number,
     public code: string,
     message: string,
-    public details?: Record<string, any>
+    public details?: Record<string, any>,
   ) {
     super(message);
     this.name = "ApiError";
@@ -24,14 +25,14 @@ export class ApiError extends Error {
   static badRequest(
     message: string,
     code: string = "BAD_REQUEST",
-    details?: Record<string, any>
+    details?: Record<string, any>,
   ) {
     return new ApiError(400, code, message, details);
   }
 
   static unauthorized(
     message: string = "Unauthorized",
-    code: string = "UNAUTHORIZED"
+    code: string = "UNAUTHORIZED",
   ) {
     return new ApiError(401, code, message);
   }
@@ -50,7 +51,7 @@ export class ApiError extends Error {
 
   static internal(
     message: string = "Internal server error",
-    code: string = "INTERNAL_ERROR"
+    code: string = "INTERNAL_ERROR",
   ) {
     return new ApiError(500, code, message);
   }
@@ -61,7 +62,7 @@ export class ApiError extends Error {
  */
 export async function errorHandler(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   try {
     await next();
@@ -84,7 +85,7 @@ export async function errorHandler(
             details: { fields: fieldErrors },
           },
         },
-        400
+        400,
       );
     }
 
@@ -99,7 +100,7 @@ export async function errorHandler(
             details: error.details,
           },
         },
-        error.statusCode as ContentfulStatusCode
+        error.statusCode as ContentfulStatusCode,
       );
     }
 
@@ -113,7 +114,7 @@ export async function errorHandler(
             message: error.message,
           },
         },
-        error.status
+        error.status,
       );
     }
 
@@ -133,7 +134,7 @@ export async function errorHandler(
                   details: { fields: prismaError.meta?.target },
                 },
               },
-              409
+              409,
             );
 
           case "P2025":
@@ -145,14 +146,14 @@ export async function errorHandler(
                   message: "Record not found",
                 },
               },
-              404
+              404,
             );
 
           default:
             console.error(
               "Prisma error:",
               prismaError.code,
-              prismaError.message
+              prismaError.message,
             );
         }
       }
@@ -173,7 +174,7 @@ export async function errorHandler(
               : "Unknown error",
         },
       },
-      500
+      500,
     );
   }
 }

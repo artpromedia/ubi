@@ -155,7 +155,7 @@ export class PaymentServiceApi {
 
   // Payments
   async initiatePayment(
-    data: InitiatePaymentRequest
+    data: InitiatePaymentRequest,
   ): Promise<ApiResponse<InitiatePaymentResponse>> {
     return this.client.post(this.basePath, data);
   }
@@ -164,7 +164,9 @@ export class PaymentServiceApi {
     return this.client.get(`${this.basePath}/${id}`);
   }
 
-  async getPaymentHistory(filters?: PaymentFilters): Promise<PaginatedResponse<Payment>> {
+  async getPaymentHistory(
+    filters?: PaymentFilters,
+  ): Promise<PaginatedResponse<Payment>> {
     return this.client.get(this.basePath, { searchParams: filters as any });
   }
 
@@ -176,7 +178,10 @@ export class PaymentServiceApi {
     return this.client.post(`${this.basePath}/${id}/cancel`);
   }
 
-  async requestRefund(id: string, reason?: string): Promise<ApiResponse<Payment>> {
+  async requestRefund(
+    id: string,
+    reason?: string,
+  ): Promise<ApiResponse<Payment>> {
     return this.client.post(`${this.basePath}/${id}/refund`, { reason });
   }
 
@@ -186,7 +191,7 @@ export class PaymentServiceApi {
   }
 
   async addPaymentMethod(
-    data: AddPaymentMethodRequest
+    data: AddPaymentMethodRequest,
   ): Promise<ApiResponse<PaymentMethodDetails>> {
     return this.client.post(`${this.basePath}/methods`, data);
   }
@@ -195,12 +200,19 @@ export class PaymentServiceApi {
     return this.client.delete(`${this.basePath}/methods/${id}`);
   }
 
-  async setDefaultPaymentMethod(id: string): Promise<ApiResponse<PaymentMethodDetails>> {
+  async setDefaultPaymentMethod(
+    id: string,
+  ): Promise<ApiResponse<PaymentMethodDetails>> {
     return this.client.post(`${this.basePath}/methods/${id}/default`);
   }
 
-  async verifyPaymentMethod(id: string, amounts: number[]): Promise<ApiResponse<boolean>> {
-    return this.client.post(`${this.basePath}/methods/${id}/verify`, { amounts });
+  async verifyPaymentMethod(
+    id: string,
+    amounts: number[],
+  ): Promise<ApiResponse<boolean>> {
+    return this.client.post(`${this.basePath}/methods/${id}/verify`, {
+      amounts,
+    });
   }
 
   // Wallet
@@ -208,28 +220,37 @@ export class PaymentServiceApi {
     return this.client.get(`${this.basePath}/wallet`);
   }
 
-  async topUpWallet(data: TopUpWalletRequest): Promise<ApiResponse<InitiatePaymentResponse>> {
+  async topUpWallet(
+    data: TopUpWalletRequest,
+  ): Promise<ApiResponse<InitiatePaymentResponse>> {
     return this.client.post(`${this.basePath}/wallet/topup`, data);
   }
 
   async getWalletTransactions(
-    filters?: WalletTransactionFilters
+    filters?: WalletTransactionFilters,
   ): Promise<PaginatedResponse<WalletTransaction>> {
     return this.client.get(`${this.basePath}/wallet/transactions`, {
       searchParams: filters as any,
     });
   }
 
-  async transferFromWallet(data: TransferRequest): Promise<ApiResponse<WalletTransaction>> {
+  async transferFromWallet(
+    data: TransferRequest,
+  ): Promise<ApiResponse<WalletTransaction>> {
     return this.client.post(`${this.basePath}/wallet/transfer`, data);
   }
 
   // Promo codes
   async validatePromoCode(
     code: string,
-    context: { type: PaymentType; amount: number }
-  ): Promise<ApiResponse<{ valid: boolean; discount?: Money; message?: string }>> {
-    return this.client.post(`${this.basePath}/promo/validate`, { code, ...context });
+    context: { type: PaymentType; amount: number },
+  ): Promise<
+    ApiResponse<{ valid: boolean; discount?: Money; message?: string }>
+  > {
+    return this.client.post(`${this.basePath}/promo/validate`, {
+      code,
+      ...context,
+    });
   }
 
   // Mobile money specific
@@ -240,11 +261,15 @@ export class PaymentServiceApi {
     currency: string;
     referenceId: string;
     type: PaymentType;
-  }): Promise<ApiResponse<{ paymentId: string; ussdCode?: string; promptSent: boolean }>> {
+  }): Promise<
+    ApiResponse<{ paymentId: string; ussdCode?: string; promptSent: boolean }>
+  > {
     return this.client.post(`${this.basePath}/mobile-money`, data);
   }
 
-  async checkMobileMoneyStatus(paymentId: string): Promise<ApiResponse<Payment>> {
+  async checkMobileMoneyStatus(
+    paymentId: string,
+  ): Promise<ApiResponse<Payment>> {
     return this.client.get(`${this.basePath}/mobile-money/${paymentId}/status`);
   }
 
@@ -261,7 +286,10 @@ export class PaymentServiceApi {
   }
 
   // Admin/Reporting
-  async getPaymentStats(dateFrom: string, dateTo: string): Promise<ApiResponse<PaymentStats>> {
+  async getPaymentStats(
+    dateFrom: string,
+    dateTo: string,
+  ): Promise<ApiResponse<PaymentStats>> {
     return this.client.get(`${this.basePath}/stats`, {
       searchParams: { dateFrom, dateTo },
     });

@@ -6,16 +6,38 @@
 
 "use client";
 
-import { RideBookingCard, ServiceTabs } from "@/components";
-import { useUIStore } from "@/store";
 import { AnimatePresence, motion } from "framer-motion";
 import { Clock, MapPin, Package, Search, Star, Utensils } from "lucide-react";
 
+import { RideBookingCard, ServiceTabs } from "@/components";
+import { useUIStore } from "@/store";
+
 // Sample restaurant data for Bites tab
 const featuredRestaurants = [
-  { id: 1, name: "Mama's Kitchen", cuisine: "Nigerian", rating: 4.8, deliveryTime: "25-35 min", image: "🍛" },
-  { id: 2, name: "Java House", cuisine: "Coffee & Breakfast", rating: 4.6, deliveryTime: "20-30 min", image: "☕" },
-  { id: 3, name: "Kilimanjaro", cuisine: "East African", rating: 4.7, deliveryTime: "30-40 min", image: "🥘" },
+  {
+    id: 1,
+    name: "Mama's Kitchen",
+    cuisine: "Nigerian",
+    rating: 4.8,
+    deliveryTime: "25-35 min",
+    image: "🍛",
+  },
+  {
+    id: 2,
+    name: "Java House",
+    cuisine: "Coffee & Breakfast",
+    rating: 4.6,
+    deliveryTime: "20-30 min",
+    image: "☕",
+  },
+  {
+    id: 3,
+    name: "Kilimanjaro",
+    cuisine: "East African",
+    rating: 4.7,
+    deliveryTime: "30-40 min",
+    image: "🥘",
+  },
 ];
 
 // Sample categories for Bites tab
@@ -61,7 +83,9 @@ export default function HomePage() {
                 exit={{ opacity: 0, y: -20 }}
                 className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
               >
-                <h2 className="mb-4 text-lg font-semibold">What&apos;s for dinner?</h2>
+                <h2 className="mb-4 text-lg font-semibold">
+                  What&apos;s for dinner?
+                </h2>
 
                 {/* Search bar */}
                 <div className="relative mb-4">
@@ -81,7 +105,9 @@ export default function HomePage() {
                       className="flex shrink-0 flex-col items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-3 transition-colors hover:border-ubi-bites hover:bg-ubi-bites/5 dark:border-gray-700 dark:bg-gray-900"
                     >
                       <span className="text-xl">{category.icon}</span>
-                      <span className="text-xs font-medium">{category.name}</span>
+                      <span className="text-xs font-medium">
+                        {category.name}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -102,7 +128,9 @@ export default function HomePage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium">{restaurant.name}</p>
-                        <p className="text-sm text-gray-500">{restaurant.cuisine}</p>
+                        <p className="text-sm text-gray-500">
+                          {restaurant.cuisine}
+                        </p>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="flex items-center gap-1 text-sm">
@@ -135,18 +163,24 @@ export default function HomePage() {
                   <button className="flex flex-col items-center gap-2 rounded-lg border-2 border-ubi-send bg-ubi-send/5 p-4 text-center">
                     <Package className="h-6 w-6 text-ubi-send" />
                     <span className="text-sm font-medium">Standard</span>
-                    <span className="text-xs text-gray-500">Same day delivery</span>
+                    <span className="text-xs text-gray-500">
+                      Same day delivery
+                    </span>
                   </button>
                   <button className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 p-4 text-center hover:border-ubi-send hover:bg-ubi-send/5 dark:border-gray-700">
                     <Package className="h-6 w-6 text-gray-400" />
                     <span className="text-sm font-medium">Express</span>
-                    <span className="text-xs text-gray-500">1-2 hour delivery</span>
+                    <span className="text-xs text-gray-500">
+                      1-2 hour delivery
+                    </span>
                   </button>
                 </div>
 
                 {/* Pickup location */}
                 <div className="mb-3">
-                  <label className="mb-1.5 block text-sm font-medium">Pickup from</label>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Pickup from
+                  </label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ubi-send" />
                     <input
@@ -159,7 +193,9 @@ export default function HomePage() {
 
                 {/* Dropoff location */}
                 <div className="mb-4">
-                  <label className="mb-1.5 block text-sm font-medium">Deliver to</label>
+                  <label className="mb-1.5 block text-sm font-medium">
+                    Deliver to
+                  </label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ubi-bites" />
                     <input
@@ -204,16 +240,38 @@ export default function HomePage() {
             {/* Stylized map background */}
             <div className="absolute inset-0">
               {/* Grid pattern */}
-              <div className="absolute inset-0 opacity-20" style={{
-                backgroundImage: `linear-gradient(to right, #10b981 1px, transparent 1px), linear-gradient(to bottom, #10b981 1px, transparent 1px)`,
-                backgroundSize: '40px 40px'
-              }} />
+              <div
+                className="absolute inset-0 opacity-20"
+                style={{
+                  backgroundImage: `linear-gradient(to right, #10b981 1px, transparent 1px), linear-gradient(to bottom, #10b981 1px, transparent 1px)`,
+                  backgroundSize: "40px 40px",
+                }}
+              />
 
               {/* Simulated roads */}
-              <svg className="absolute inset-0 h-full w-full opacity-30" viewBox="0 0 400 400" preserveAspectRatio="none">
-                <path d="M0,200 Q100,180 200,200 T400,180" stroke="#374151" strokeWidth="8" fill="none" />
-                <path d="M200,0 Q180,100 200,200 T220,400" stroke="#374151" strokeWidth="6" fill="none" />
-                <path d="M50,100 Q150,120 250,80 T400,100" stroke="#6b7280" strokeWidth="4" fill="none" />
+              <svg
+                className="absolute inset-0 h-full w-full opacity-30"
+                viewBox="0 0 400 400"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M0,200 Q100,180 200,200 T400,180"
+                  stroke="#374151"
+                  strokeWidth="8"
+                  fill="none"
+                />
+                <path
+                  d="M200,0 Q180,100 200,200 T220,400"
+                  stroke="#374151"
+                  strokeWidth="6"
+                  fill="none"
+                />
+                <path
+                  d="M50,100 Q150,120 250,80 T400,100"
+                  stroke="#6b7280"
+                  strokeWidth="4"
+                  fill="none"
+                />
               </svg>
 
               {/* Location markers */}
@@ -237,7 +295,11 @@ export default function HomePage() {
               </div>
 
               {/* Route line */}
-              <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <svg
+                className="absolute inset-0 h-full w-full"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
                 <path
                   d="M30,40 Q40,35 45,30 Q50,35 60,55"
                   stroke="#1db954"
@@ -257,7 +319,9 @@ export default function HomePage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">Nairobi, Kenya</p>
-                  <p className="text-xs text-gray-500">Westlands • 3 drivers nearby</p>
+                  <p className="text-xs text-gray-500">
+                    Westlands • 3 drivers nearby
+                  </p>
                 </div>
                 <button className="shrink-0 rounded-full bg-ubi-green px-3 py-1.5 text-xs font-medium text-white hover:bg-ubi-green/90">
                   Locate me
@@ -317,7 +381,7 @@ export default function HomePage() {
   );
 }
 
-function RecentItem({
+const RecentItem = ({
   icon,
   title,
   subtitle,
@@ -325,7 +389,7 @@ function RecentItem({
   icon: string;
   title: string;
   subtitle: string;
-}) {
+}) => {
   return (
     <button className="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700">
       <span className="text-xl">{icon}</span>
@@ -335,13 +399,13 @@ function RecentItem({
       </div>
     </button>
   );
-}
+};
 
-function QuickAction({ icon, label }: { icon: string; label: string }) {
+const QuickAction = ({ icon, label }: { icon: string; label: string }) => {
   return (
     <button className="flex flex-col items-center gap-1 rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-gray-700">
       <span className="text-2xl">{icon}</span>
       <span className="text-xs">{label}</span>
     </button>
   );
-}
+};

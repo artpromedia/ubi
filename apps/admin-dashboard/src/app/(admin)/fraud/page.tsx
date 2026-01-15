@@ -1,22 +1,19 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Search,
-  Filter,
   AlertTriangle,
-  Shield,
   Eye,
   CheckCircle,
-  XCircle,
   Clock,
   TrendingUp,
   CreditCard,
   User,
   MapPin,
-  AlertOctagon,
 } from "lucide-react";
+import { useState } from "react";
+
 import { formatCurrency, formatRelativeTime, cn } from "@/lib/utils";
 
 // Mock data
@@ -137,7 +134,7 @@ const statusColors = {
 };
 
 export default function FraudCenterPage() {
-  const [selectedAlert, setSelectedAlert] = useState<string | null>(null);
+  const [_selectedAlert, setSelectedAlert] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterSeverity, setFilterSeverity] = useState("all");
 
@@ -153,8 +150,8 @@ export default function FraudCenterPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
           </span>
           <span className="text-sm text-gray-400">Live monitoring active</span>
         </div>
@@ -173,7 +170,9 @@ export default function FraudCenterPage() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-gray-400">{stat.label}</p>
-                <p className="mt-2 text-2xl font-bold text-white">{stat.value}</p>
+                <p className="mt-2 text-2xl font-bold text-white">
+                  {stat.value}
+                </p>
               </div>
               <div className={cn("p-2 rounded-lg bg-gray-800")}>
                 <stat.icon className={cn("w-5 h-5", stat.color)} />
@@ -183,13 +182,13 @@ export default function FraudCenterPage() {
               <TrendingUp
                 className={cn(
                   "w-4 h-4",
-                  stat.change >= 0 ? "text-red-500" : "text-green-500"
+                  stat.change >= 0 ? "text-red-500" : "text-green-500",
                 )}
               />
               <span
                 className={cn(
                   "text-sm font-medium",
-                  stat.change >= 0 ? "text-red-500" : "text-green-500"
+                  stat.change >= 0 ? "text-red-500" : "text-green-500",
                 )}
               >
                 {Math.abs(stat.change)}%
@@ -248,7 +247,7 @@ export default function FraudCenterPage() {
               alert.severity === "critical" && "border-l-red-500",
               alert.severity === "high" && "border-l-orange-500",
               alert.severity === "medium" && "border-l-yellow-500",
-              alert.severity === "low" && "border-l-blue-500"
+              alert.severity === "low" && "border-l-blue-500",
             )}
             onClick={() => setSelectedAlert(alert.id)}
           >
@@ -259,7 +258,9 @@ export default function FraudCenterPage() {
                   <span
                     className={cn(
                       "admin-badge border",
-                      severityColors[alert.severity as keyof typeof severityColors]
+                      severityColors[
+                        alert.severity as keyof typeof severityColors
+                      ],
                     )}
                   >
                     {alert.severity}
@@ -267,7 +268,7 @@ export default function FraudCenterPage() {
                   <span
                     className={cn(
                       "admin-badge",
-                      statusColors[alert.status as keyof typeof statusColors]
+                      statusColors[alert.status as keyof typeof statusColors],
                     )}
                   >
                     {alert.status}
@@ -277,7 +278,9 @@ export default function FraudCenterPage() {
                 <h3 className="text-lg font-semibold text-white">
                   {alert.title}
                 </h3>
-                <p className="text-sm text-gray-400 mt-1">{alert.description}</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  {alert.description}
+                </p>
 
                 {/* Indicators */}
                 <div className="flex flex-wrap gap-2 mt-3">
@@ -321,7 +324,9 @@ export default function FraudCenterPage() {
                 </div>
                 <div className="flex items-center justify-end gap-2">
                   <MapPin className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-400">{alert.location}</span>
+                  <span className="text-sm text-gray-400">
+                    {alert.location}
+                  </span>
                 </div>
               </div>
 
@@ -347,7 +352,9 @@ export default function FraudCenterPage() {
         className="admin-card"
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Active Detection Rules</h2>
+          <h2 className="text-lg font-semibold text-white">
+            Active Detection Rules
+          </h2>
           <button className="text-sm text-green-500 hover:text-green-400">
             Manage Rules
           </button>
@@ -369,7 +376,7 @@ export default function FraudCenterPage() {
                 <div
                   className={cn(
                     "w-2 h-2 rounded-full",
-                    rule.active ? "bg-green-500" : "bg-gray-500"
+                    rule.active ? "bg-green-500" : "bg-gray-500",
                   )}
                 />
                 <div>

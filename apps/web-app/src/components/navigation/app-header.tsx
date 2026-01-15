@@ -6,11 +6,6 @@
 
 "use client";
 
-import { ROUTES } from "@/lib/constants";
-import { cn } from "@/lib/utils";
-import { useTheme } from "@/providers";
-import { useAuthStore, useUIStore, useUserStore } from "@/store";
-import { Button, UbiLogo } from "@ubi/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell,
@@ -30,12 +25,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Button, UbiLogo } from "@ubi/ui";
+
+import { ROUTES } from "@/lib/constants";
+import { cn } from "@/lib/utils";
+import { useTheme } from "@/providers";
+import { useAuthStore, useUIStore, useUserStore } from "@/store";
+
 interface AppHeaderProps {
   className?: string;
   showMenu?: boolean;
 }
 
-export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
+export const AppHeader = ({ className, showMenu = true }: AppHeaderProps) => {
   const router = useRouter();
   const { isAuthenticated, clearAuth } = useAuthStore();
   const { profile, clearUser } = useUserStore();
@@ -54,7 +56,7 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
     <header
       className={cn(
         "sticky top-0 z-50 flex h-14 items-center justify-between border-b border-gray-200 bg-white/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-gray-800 dark:bg-gray-900/95 dark:supports-[backdrop-filter]:bg-gray-900/60",
-        className
+        className,
       )}
     >
       {/* Left section */}
@@ -218,7 +220,7 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
       </div>
     </header>
   );
-}
+};
 
 interface MenuLinkProps {
   href: string;
@@ -226,7 +228,7 @@ interface MenuLinkProps {
   children: React.ReactNode;
 }
 
-function MenuLink({ href, icon: Icon, children }: MenuLinkProps) {
+const MenuLink = ({ href, icon: Icon, children }: MenuLinkProps) => {
   return (
     <Link
       href={href}
@@ -236,4 +238,4 @@ function MenuLink({ href, icon: Icon, children }: MenuLinkProps) {
       {children}
     </Link>
   );
-}
+};

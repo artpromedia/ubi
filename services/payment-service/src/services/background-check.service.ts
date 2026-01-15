@@ -12,14 +12,15 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+
 import {
-  BackgroundCheck,
-  BackgroundCheckFinding,
-  BackgroundCheckRequest,
-  BackgroundCheckStatus,
-  BackgroundCheckType,
+  type BackgroundCheck,
+  type BackgroundCheckFinding,
+  type BackgroundCheckRequest,
+  type BackgroundCheckStatus,
+  type BackgroundCheckType,
   COUNTRY_CONFIGS,
-  DocumentType,
+  type DocumentType,
 } from "../types/safety.types";
 
 // =============================================================================
@@ -63,7 +64,7 @@ export class BackgroundCheckService extends EventEmitter {
 
     console.log(
       "[BackgroundCheck] Initialized providers:",
-      Array.from(this.providers.keys())
+      Array.from(this.providers.keys()),
     );
   }
 
@@ -72,7 +73,7 @@ export class BackgroundCheckService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async initiateBackgroundCheck(
-    request: BackgroundCheckRequest
+    request: BackgroundCheckRequest,
   ): Promise<BackgroundCheckResult[]> {
     const {
       userId,
@@ -152,7 +153,7 @@ export class BackgroundCheckService extends EventEmitter {
           "[BackgroundCheck] Check initiated:",
           check.id,
           "Type:",
-          checkType
+          checkType,
         );
       } catch (error) {
         check.status = "COMPLETED_FAIL";
@@ -169,7 +170,7 @@ export class BackgroundCheckService extends EventEmitter {
 
   async checkStatus(
     userId: string,
-    checkType: BackgroundCheckType
+    checkType: BackgroundCheckType,
   ): Promise<BackgroundCheck | null> {
     const checks = this.backgroundChecks.get(userId) || [];
     const check = checks.find((c) => c.checkType === checkType);
@@ -192,7 +193,7 @@ export class BackgroundCheckService extends EventEmitter {
       if (statusResult.findings) {
         check.findings = statusResult.findings;
         check.hasCriticalFindings = statusResult.findings.some(
-          (f) => f.severity === "critical"
+          (f) => f.severity === "critical",
         );
       }
 
@@ -220,7 +221,7 @@ export class BackgroundCheckService extends EventEmitter {
 
   async getValidCheck(
     userId: string,
-    checkType: BackgroundCheckType
+    checkType: BackgroundCheckType,
   ): Promise<BackgroundCheck | null> {
     const checks = this.backgroundChecks.get(userId) || [];
 
@@ -230,7 +231,7 @@ export class BackgroundCheckService extends EventEmitter {
           c.checkType === checkType &&
           c.status === "COMPLETED_CLEAR" &&
           c.validUntil &&
-          c.validUntil > new Date()
+          c.validUntil > new Date(),
       ) || null
     );
   }
@@ -241,7 +242,7 @@ export class BackgroundCheckService extends EventEmitter {
   }
 
   async getBackgroundCheckSummary(
-    userId: string
+    userId: string,
   ): Promise<BackgroundCheckSummary> {
     const checks = await this.getUserBackgroundChecks(userId);
 
@@ -330,7 +331,7 @@ export class BackgroundCheckService extends EventEmitter {
   async disableContinuousMonitoring(userId: string): Promise<void> {
     console.log(
       "[BackgroundCheck] Continuous monitoring disabled for:",
-      userId
+      userId,
     );
   }
 
@@ -340,7 +341,7 @@ export class BackgroundCheckService extends EventEmitter {
       async () => {
         await this.runMonitoringCheck(userId);
       },
-      24 * 60 * 60 * 1000
+      24 * 60 * 60 * 1000,
     );
   }
 
@@ -348,7 +349,9 @@ export class BackgroundCheckService extends EventEmitter {
     const checks = await this.getUserBackgroundChecks(userId);
 
     for (const check of checks) {
-      if (!check.validUntil) continue;
+      if (!check.validUntil) {
+        continue;
+      }
 
       // Alert if check is expiring soon (within 30 days)
       const daysUntilExpiry =
@@ -378,7 +381,7 @@ export class BackgroundCheckService extends EventEmitter {
 
   private async createMonitoringAlert(
     userId: string,
-    alertData: MonitoringAlertData
+    alertData: MonitoringAlertData,
   ): Promise<void> {
     const alerts = this.monitoringAlerts.get(userId) || [];
 
@@ -399,7 +402,7 @@ export class BackgroundCheckService extends EventEmitter {
       "[BackgroundCheck] Monitoring alert:",
       alert.type,
       "User:",
-      userId
+      userId,
     );
   }
 
@@ -427,7 +430,7 @@ export class BackgroundCheckService extends EventEmitter {
       (c) =>
         c.validUntil &&
         c.validUntil < new Date() &&
-        c.status === "COMPLETED_CLEAR"
+        c.status === "COMPLETED_CLEAR",
     );
 
     if (expiredChecks.length === 0) {
@@ -437,7 +440,7 @@ export class BackgroundCheckService extends EventEmitter {
     // Get user's ID info from most recent check
     const latestCheck = checks.sort(
       (a, b) =>
-        (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0)
+        (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0),
     )[0];
 
     if (!latestCheck) {
@@ -465,7 +468,7 @@ export class BackgroundCheckService extends EventEmitter {
 
   async initiateDriverBackgroundCheck(
     driverId: string,
-    country: string
+    country: string,
   ): Promise<BackgroundCheckResult[]> {
     const requiredChecks: BackgroundCheckType[] = [
       "CRIMINAL_RECORD",
@@ -529,7 +532,7 @@ export class BackgroundCheckService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   private async createCheck(
-    data: Partial<BackgroundCheck>
+    data: Partial<BackgroundCheck>,
   ): Promise<BackgroundCheck> {
     const check: BackgroundCheck = {
       id: this.generateId(),
@@ -620,7 +623,7 @@ class NigeriaPoliceProvider implements BackgroundCheckProvider {
   name = "nigeria_police";
 
   async submitCheck(
-    params: ProviderCheckParams
+    params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
     console.log("[NigeriaPolice] Submitting check for:", params.firstName);
 
@@ -643,7 +646,7 @@ class KenyaPoliceProvider implements BackgroundCheckProvider {
   name = "kenya_police";
 
   async submitCheck(
-    _params: ProviderCheckParams
+    _params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
     console.log("[KenyaPolice] Submitting DCI check");
 
@@ -664,7 +667,7 @@ class SAPSProvider implements BackgroundCheckProvider {
   name = "saps";
 
   async submitCheck(
-    _params: ProviderCheckParams
+    _params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
     console.log("[SAPS] Submitting South African police check");
 
@@ -685,7 +688,7 @@ class GhanaPoliceProvider implements BackgroundCheckProvider {
   name = "ghana_police";
 
   async submitCheck(
-    _params: ProviderCheckParams
+    _params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
     console.log("[GhanaPolice] Submitting check");
 
@@ -706,7 +709,7 @@ class CheckrProvider implements BackgroundCheckProvider {
   name = "checkr";
 
   async submitCheck(
-    _params: ProviderCheckParams
+    _params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
     console.log("[Checkr] Submitting international check");
 

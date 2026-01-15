@@ -100,14 +100,14 @@ export function setup() {
   const otpResponse = http.post(
     `${env.baseUrl}/api/v1/auth/otp/request`,
     JSON.stringify({ phone }),
-    { headers: { "Content-Type": "application/json" } }
+    { headers: { "Content-Type": "application/json" } },
   );
 
   if (otpResponse.status === 200) {
     const verifyResponse = http.post(
       `${env.baseUrl}/api/v1/auth/otp/verify`,
       JSON.stringify({ phone, code: "123456" }),
-      { headers: { "Content-Type": "application/json" } }
+      { headers: { "Content-Type": "application/json" } },
     );
 
     if (verifyResponse.status === 200) {
@@ -133,7 +133,7 @@ export function authScenario() {
       `${env.baseUrl}/api/v1/auth/otp/request`,
       { phone },
       {},
-      { name: "otp_request" }
+      { name: "otp_request" },
     );
 
     check(response, {
@@ -168,7 +168,7 @@ export function searchScenario() {
       `${env.baseUrl}/api/v1/locations/search?q=${encodeURIComponent(query)}&lat=${coords.latitude}&lng=${coords.longitude}&limit=5`,
       null,
       {},
-      { name: "location_search" }
+      { name: "location_search" },
     );
 
     check(response, {
@@ -198,7 +198,7 @@ export function pricingScenario() {
         dropoff: { ...dropoff, address: "Test Dropoff" },
       },
       {},
-      { name: "ride_options" }
+      { name: "ride_options" },
     );
 
     check(response, {
@@ -230,7 +230,7 @@ export function profileScenario(data) {
       `${env.baseUrl}/api/v1/users/me`,
       null,
       headers,
-      { name: "get_profile" }
+      { name: "get_profile" },
     );
 
     check(response, {
@@ -247,7 +247,7 @@ export function profileScenario(data) {
       `${env.baseUrl}/api/v1/users/me/rides?limit=10&offset=0`,
       null,
       headers,
-      { name: "get_rides_history" }
+      { name: "get_rides_history" },
     );
 
     check(response, {
@@ -264,7 +264,7 @@ export function profileScenario(data) {
       `${env.baseUrl}/api/v1/users/me/payment-methods`,
       null,
       headers,
-      { name: "get_payment_methods" }
+      { name: "get_payment_methods" },
     );
 
     check(response, {

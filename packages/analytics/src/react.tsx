@@ -9,7 +9,13 @@ import React, {
   useCallback,
   type ReactNode,
 } from "react";
-import { Analytics, type AnalyticsConfig, type UBIEventName, type UserTraits } from "./analytics";
+
+import type {
+  Analytics,
+  AnalyticsConfig,
+  UBIEventName,
+  UserTraits,
+} from "./analytics";
 
 // Analytics context
 const AnalyticsContext = createContext<Analytics | null>(null);
@@ -45,10 +51,13 @@ export function useTrack() {
   const analytics = useAnalytics();
 
   return useCallback(
-    (eventName: UBIEventName | string, properties?: Record<string, unknown>) => {
-      analytics.track(eventName, properties);
+    (
+      eventName: UBIEventName | string,
+      properties?: Record<string, unknown>,
+    ) => {
+      void analytics.track(eventName, properties);
     },
-    [analytics]
+    [analytics],
   );
 }
 
@@ -58,9 +67,9 @@ export function useIdentify() {
 
   return useCallback(
     (userId: string, traits?: UserTraits) => {
-      analytics.identify(userId, traits);
+      void analytics.identify(userId, traits);
     },
-    [analytics]
+    [analytics],
   );
 }
 
@@ -70,9 +79,9 @@ export function usePage() {
 
   return useCallback(
     (path: string, properties?: Record<string, unknown>) => {
-      analytics.page(path, properties);
+      void analytics.page(path, properties);
     },
-    [analytics]
+    [analytics],
   );
 }
 
@@ -80,12 +89,12 @@ export function usePage() {
 export function usePageView(
   path: string,
   properties?: Record<string, unknown>,
-  dependencies: unknown[] = []
+  dependencies: unknown[] = [],
 ) {
   const analytics = useAnalytics();
 
   useEffect(() => {
-    analytics.page(path, properties);
+    void analytics.page(path, properties);
   }, [path, analytics, ...dependencies]);
 }
 
@@ -93,7 +102,7 @@ export function usePageView(
 export function useTrackOnMount(
   eventName: UBIEventName | string,
   properties?: Record<string, unknown>,
-  dependencies: unknown[] = []
+  dependencies: unknown[] = [],
 ) {
   const track = useTrack();
 
@@ -107,11 +116,15 @@ export function useTrackTiming() {
   const track = useTrack();
 
   return useCallback(
-    (eventName: UBIEventName | string, startTime: number, properties?: Record<string, unknown>) => {
+    (
+      eventName: UBIEventName | string,
+      startTime: number,
+      properties?: Record<string, unknown>,
+    ) => {
       const duration = Date.now() - startTime;
       track(eventName, { ...properties, duration_ms: duration });
     },
-    [track]
+    [track],
   );
 }
 
@@ -130,7 +143,7 @@ export function useTrackForm(formName: string) {
         error,
       });
     },
-    [track, formName]
+    [track, formName],
   );
 
   const trackFieldChange = useCallback(
@@ -140,7 +153,7 @@ export function useTrackForm(formName: string) {
         field_name: fieldName,
       });
     },
-    [track, formName]
+    [track, formName],
   );
 
   const trackAbandon = useCallback(() => {
@@ -158,7 +171,7 @@ export function useTrackForm(formName: string) {
 // Hook for tracking button clicks
 export function useTrackClick(
   eventName: UBIEventName | string,
-  properties?: Record<string, unknown>
+  properties?: Record<string, unknown>,
 ) {
   const track = useTrack();
 
@@ -171,7 +184,7 @@ export function useTrackClick(
 export function withPageTracking<P extends object>(
   WrappedComponent: React.ComponentType<P>,
   pageName: string,
-  properties?: Record<string, unknown>
+  properties?: Record<string, unknown>,
 ) {
   return function PageTrackedComponent(props: P) {
     usePageView(pageName, properties);

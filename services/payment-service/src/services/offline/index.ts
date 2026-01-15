@@ -5,16 +5,6 @@
 // =============================================================================
 
 // Services
-export { AccessibilityService } from "./accessibility.service";
-export { LowBandwidthService } from "./low-bandwidth.service";
-export { SMSService } from "./sms.service";
-export { TranslationService } from "./translation.service";
-export { USSDService } from "./ussd.service";
-export { VoiceService } from "./voice.service";
-
-// Re-export types for convenience
-export * from "../../types/offline.types";
-
 // =============================================================================
 // UNIFIED OFFLINE PLATFORM
 // =============================================================================
@@ -25,6 +15,16 @@ import { SMSService } from "./sms.service";
 import { TranslationService } from "./translation.service";
 import { USSDService } from "./ussd.service";
 import { VoiceService } from "./voice.service";
+
+export { AccessibilityService } from "./accessibility.service";
+export { LowBandwidthService } from "./low-bandwidth.service";
+export { SMSService } from "./sms.service";
+export { TranslationService } from "./translation.service";
+export { USSDService } from "./ussd.service";
+export { VoiceService } from "./voice.service";
+
+// Re-export types for convenience
+export * from "../../types/offline.types";
 
 /**
  * UBI Offline & Accessibility Platform

@@ -157,7 +157,7 @@ export class RideServiceApi {
 
   // Ride estimates
   async getEstimates(
-    data: RideEstimateRequest
+    data: RideEstimateRequest,
   ): Promise<ApiResponse<RideEstimate[]>> {
     return this.client.post(`${this.basePath}/estimate`, data);
   }
@@ -180,14 +180,14 @@ export class RideServiceApi {
   // Rate a ride
   async rateRide(
     id: string,
-    data: RateRideRequest
+    data: RateRideRequest,
   ): Promise<ApiResponse<Ride>> {
     return this.client.post(`${this.basePath}/${id}/rate`, data);
   }
 
   // Get ride history (for riders)
   async getRideHistory(
-    filters?: RideFilters
+    filters?: RideFilters,
   ): Promise<PaginatedResponse<Ride>> {
     return this.client.get(`${this.basePath}/history`, {
       searchParams: filters as any,
@@ -204,7 +204,7 @@ export class RideServiceApi {
   // Get nearby drivers (for showing on map)
   async getNearbyDrivers(
     location: Coordinates,
-    radius?: number
+    radius?: number,
   ): Promise<ApiResponse<{ drivers: Coordinates[]; count: number }>> {
     return this.client.get(`${this.basePath}/nearby-drivers`, {
       searchParams: {
@@ -249,7 +249,7 @@ export class RideServiceApi {
 
   async updateLocation(
     id: string,
-    location: RideLocationUpdate
+    location: RideLocationUpdate,
   ): Promise<ApiResponse<void>> {
     return this.client.post(`${this.basePath}/${id}/location`, location);
   }
@@ -261,7 +261,7 @@ export class RideServiceApi {
 
   async getRideStats(
     dateFrom: string,
-    dateTo: string
+    dateTo: string,
   ): Promise<ApiResponse<RideStats>> {
     return this.client.get(`${this.basePath}/stats`, {
       searchParams: { dateFrom, dateTo },

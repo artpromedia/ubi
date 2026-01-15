@@ -12,7 +12,8 @@
  */
 
 import { prisma } from "../lib/prisma";
-import {
+
+import type {
   Challenge,
   GameEvent,
   LoyaltyTier,
@@ -438,7 +439,7 @@ export class ChallengesService {
     });
 
     const activeChallengeIds = new Set(
-      activeUserChallenges.map((uc: any) => uc.challengeId)
+      activeUserChallenges.map((uc: any) => uc.challengeId),
     );
 
     // Filter challenges by tier and not already active
@@ -500,7 +501,7 @@ export class ChallengesService {
    */
   async getUserChallenges(
     userId: string,
-    status?: "ACTIVE" | "COMPLETED" | "EXPIRED" | "CLAIMED"
+    status?: "ACTIVE" | "COMPLETED" | "EXPIRED" | "CLAIMED",
   ): Promise<UserChallenge[]> {
     const where: any = { userId };
     if (status) {
@@ -540,12 +541,12 @@ export class ChallengesService {
     });
 
     const activeChallengeIds = new Set(
-      userDailyChallenges.map((uc: any) => uc.challengeId)
+      userDailyChallenges.map((uc: any) => uc.challengeId),
     );
 
     // Get available daily challenges not yet joined
     const availableDailies = DAILY_CHALLENGES.filter(
-      (c) => !activeChallengeIds.has(c.id)
+      (c) => !activeChallengeIds.has(c.id),
     ).map(
       (def) =>
         ({
@@ -562,7 +563,7 @@ export class ChallengesService {
           endsAt: tomorrow,
           currentParticipants: 0,
           isActive: true,
-        }) as Challenge
+        }) as Challenge,
     );
 
     return {
@@ -571,7 +572,9 @@ export class ChallengesService {
         .filter((uc: any) => uc.status === "ACTIVE")
         .map((uc: any) => this.mapUserChallenge(uc)),
       completed: userDailyChallenges
-        .filter((uc: any) => uc.status === "COMPLETED" || uc.status === "CLAIMED")
+        .filter(
+          (uc: any) => uc.status === "COMPLETED" || uc.status === "CLAIMED",
+        )
         .map((uc: any) => this.mapUserChallenge(uc)),
     };
   }
@@ -605,12 +608,12 @@ export class ChallengesService {
     });
 
     const activeChallengeIds = new Set(
-      userWeeklyChallenges.map((uc: any) => uc.challengeId)
+      userWeeklyChallenges.map((uc: any) => uc.challengeId),
     );
 
     // Get available weekly challenges
     const availableWeeklies = WEEKLY_CHALLENGES.filter(
-      (c) => !activeChallengeIds.has(c.id)
+      (c) => !activeChallengeIds.has(c.id),
     ).map(
       (def) =>
         ({
@@ -628,7 +631,7 @@ export class ChallengesService {
           targetTiers: def.minTier ? [def.minTier] : undefined,
           currentParticipants: 0,
           isActive: true,
-        }) as Challenge
+        }) as Challenge,
     );
 
     return {
@@ -637,7 +640,9 @@ export class ChallengesService {
         .filter((uc: any) => uc.status === "ACTIVE")
         .map((uc: any) => this.mapUserChallenge(uc)),
       completed: userWeeklyChallenges
-        .filter((uc: any) => uc.status === "COMPLETED" || uc.status === "CLAIMED")
+        .filter(
+          (uc: any) => uc.status === "COMPLETED" || uc.status === "CLAIMED",
+        )
         .map((uc: any) => this.mapUserChallenge(uc)),
     };
   }
@@ -651,7 +656,7 @@ export class ChallengesService {
    */
   async joinChallenge(
     userId: string,
-    challengeId: string
+    challengeId: string,
   ): Promise<UserChallenge> {
     // Find challenge definition
     const challengeDef = ALL_CHALLENGES.find((c) => c.id === challengeId);
@@ -671,7 +676,7 @@ export class ChallengesService {
         tierOrder.indexOf(userTier) < tierOrder.indexOf(challengeDef.minTier)
       ) {
         throw new Error(
-          `This challenge requires ${challengeDef.minTier} tier or higher`
+          `This challenge requires ${challengeDef.minTier} tier or higher`,
         );
       }
     }
@@ -711,7 +716,7 @@ export class ChallengesService {
           difficulty: challengeDef.difficulty,
           startDate: now,
           endDate: new Date(
-            now.getTime() + challengeDef.expiresInDays * 24 * 60 * 60 * 1000
+            now.getTime() + challengeDef.expiresInDays * 24 * 60 * 60 * 1000,
           ),
           isActive: true,
         },
@@ -730,7 +735,7 @@ export class ChallengesService {
         progressData: {},
         joinedAt: now,
         expiresAt: new Date(
-          now.getTime() + challengeDef.expiresInDays * 24 * 60 * 60 * 1000
+          now.getTime() + challengeDef.expiresInDays * 24 * 60 * 60 * 1000,
         ),
       },
       include: { challenge: true },
@@ -744,7 +749,7 @@ export class ChallengesService {
    */
   async processEvent(
     userId: string,
-    event: GameEvent
+    event: GameEvent,
   ): Promise<{
     updatedChallenges: UserChallenge[];
     completedChallenges: UserChallenge[];
@@ -843,10 +848,7 @@ export class ChallengesService {
           break;
 
         case "NEW_RESTAURANT":
-          if (
-            event.type === "FOOD_ORDERED" &&
-            event.data?.isNewRestaurant
-          ) {
+          if (event.type === "FOOD_ORDERED" && event.data?.isNewRestaurant) {
             newProgress = userChallenge.progress + 1;
             shouldUpdate = true;
           }
@@ -857,10 +859,13 @@ export class ChallengesService {
           const services = progressData.services || [];
           let serviceType: string | null = null;
 
-          if (event.type === "RIDE_COMPLETED") serviceType = "RIDE";
-          else if (event.type === "FOOD_ORDERED") serviceType = "FOOD";
-          else if (event.type === "DELIVERY_COMPLETED")
+          if (event.type === "RIDE_COMPLETED") {
+            serviceType = "RIDE";
+          } else if (event.type === "FOOD_ORDERED") {
+            serviceType = "FOOD";
+          } else if (event.type === "DELIVERY_COMPLETED") {
             serviceType = "DELIVERY";
+          }
 
           if (serviceType && !services.includes(serviceType)) {
             services.push(serviceType);
@@ -890,7 +895,7 @@ export class ChallengesService {
         case "TOTAL_SPEND":
           if (
             ["RIDE_COMPLETED", "FOOD_ORDERED", "DELIVERY_COMPLETED"].includes(
-              event.type
+              event.type,
             )
           ) {
             const amount = Number(event.data?.amount || 0);
@@ -990,7 +995,7 @@ export class ChallengesService {
    */
   async claimReward(
     userId: string,
-    userChallengeId: string
+    userChallengeId: string,
   ): Promise<{
     success: boolean;
     pointsAwarded: number;
@@ -1118,7 +1123,9 @@ export class ChallengesService {
       reward: { points: challenge.pointsReward },
       startsAt: challenge.startDate,
       endsAt: challenge.endDate,
-      targetTiers: challenge.minTier ? [challenge.minTier as LoyaltyTier] : undefined,
+      targetTiers: challenge.minTier
+        ? [challenge.minTier as LoyaltyTier]
+        : undefined,
       maxParticipants: challenge.maxParticipants || undefined,
       currentParticipants: 0,
       isActive: challenge.isActive,
@@ -1147,7 +1154,7 @@ export class ChallengesService {
    */
   async getChallengeLeaderboard(
     challengeId: string,
-    limit: number = 50
+    limit: number = 50,
   ): Promise<
     {
       userId: string;
@@ -1200,10 +1207,13 @@ export class ChallengesService {
 
     const totalParticipants = participants.length;
     const completedCount = participants.filter(
-      (p: any) => p.status === "COMPLETED" || p.status === "CLAIMED"
+      (p: any) => p.status === "COMPLETED" || p.status === "CLAIMED",
     ).length;
 
-    const totalProgress = participants.reduce((sum: number, p: any) => sum + p.progress, 0);
+    const totalProgress = participants.reduce(
+      (sum: number, p: any) => sum + p.progress,
+      0,
+    );
     const averageProgress =
       totalParticipants > 0 ? totalProgress / totalParticipants : 0;
     const completionRate =
@@ -1234,12 +1244,17 @@ export class ChallengesService {
             description: uc.challenge.description,
             icon: uc.challenge.iconUrl,
             type: uc.challenge.type,
-            criteria: { event: uc.challenge.targetType, count: uc.challenge.targetValue },
+            criteria: {
+              event: uc.challenge.targetType,
+              count: uc.challenge.targetValue,
+            },
             targetValue: uc.challenge.targetValue,
             reward: { points: uc.challenge.pointsReward },
             startsAt: uc.challenge.startDate,
             endsAt: uc.challenge.endDate,
-            targetTiers: uc.challenge.minTier ? [uc.challenge.minTier] : undefined,
+            targetTiers: uc.challenge.minTier
+              ? [uc.challenge.minTier]
+              : undefined,
             maxParticipants: uc.challenge.maxParticipants || undefined,
             currentParticipants: 0,
             isActive: uc.challenge.isActive,

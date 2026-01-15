@@ -26,7 +26,7 @@ const SheetOverlay = React.forwardRef<
     className={cn(
       "fixed inset-0 z-modal bg-black/50 backdrop-blur-sm",
       "data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out",
-      className
+      className,
     )}
     {...props}
     ref={ref}
@@ -100,11 +100,12 @@ const sheetVariants = cva(
       side: "right",
       size: "default",
     },
-  }
+  },
 );
 
 interface SheetContentProps
-  extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
+  extends
+    React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
     VariantProps<typeof sheetVariants> {
   hideClose?: boolean;
 }
@@ -139,7 +140,7 @@ const SheetHeader = ({
   <div
     className={cn(
       "flex flex-col space-y-2 text-center sm:text-left p-6 border-b",
-      className
+      className,
     )}
     {...props}
   />
@@ -161,7 +162,7 @@ const SheetFooter = ({
   <div
     className={cn(
       "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 border-t",
-      className
+      className,
     )}
     {...props}
   />
@@ -174,7 +175,10 @@ const SheetTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SheetPrimitive.Title
     ref={ref}
-    className={cn("text-lg font-semibold text-foreground font-heading", className)}
+    className={cn(
+      "text-lg font-semibold text-foreground font-heading",
+      className,
+    )}
     {...props}
   />
 ));
@@ -193,7 +197,15 @@ const SheetDescription = React.forwardRef<
 SheetDescription.displayName = SheetPrimitive.Description.displayName;
 
 export {
-    Sheet, SheetBody, SheetClose,
-    SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetOverlay, SheetPortal, SheetTitle, SheetTrigger
+  Sheet,
+  SheetBody,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetOverlay,
+  SheetPortal,
+  SheetTitle,
+  SheetTrigger,
 };
-

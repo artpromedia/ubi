@@ -64,15 +64,28 @@ app.use(
       "https://ubi.africa",
       // Development origins
       ...(NODE_ENV === "development"
-        ? ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
+        ? [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:3002",
+          ]
         : []),
     ],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "X-Idempotency-Key"],
-    exposeHeaders: ["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Request-ID",
+      "X-Idempotency-Key",
+    ],
+    exposeHeaders: [
+      "X-Request-ID",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+    ],
     maxAge: 86400,
     credentials: true,
-  })
+  }),
 );
 
 // Global error handler
@@ -112,7 +125,7 @@ app.notFound((c) => {
         message: "The requested resource was not found",
       },
     },
-    404
+    404,
   );
 });
 

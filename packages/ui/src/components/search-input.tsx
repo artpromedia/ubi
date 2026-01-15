@@ -47,7 +47,7 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
       size = "md",
       ...props
     },
-    ref
+    ref,
   ) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       onChange?.(e.target.value);
@@ -76,7 +76,7 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
             size === "sm" && "h-4 w-4",
             size === "md" && "h-5 w-5",
             size === "lg" && "h-6 w-6",
-            loading && "animate-pulse"
+            loading && "animate-pulse",
           )}
         />
         <input
@@ -88,7 +88,7 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
           className={cn(
             "flex w-full rounded-lg border border-input bg-background pl-10 pr-10 py-2 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
             sizeClasses[size],
-            className
+            className,
           )}
           {...props}
         />
@@ -100,7 +100,7 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
               "absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors",
               size === "sm" && "h-4 w-4",
               size === "md" && "h-5 w-5",
-              size === "lg" && "h-6 w-6"
+              size === "lg" && "h-6 w-6",
             )}
             aria-label="Clear search"
           >
@@ -109,7 +109,7 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
         )}
       </div>
     );
-  }
+  },
 );
 SearchInput.displayName = "SearchInput";
 

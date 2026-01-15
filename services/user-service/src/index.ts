@@ -55,9 +55,15 @@ app.use(
         : []),
     ],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "X-Auth-User-ID", "X-Auth-User-Role"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Request-ID",
+      "X-Auth-User-ID",
+      "X-Auth-User-Role",
+    ],
     credentials: true,
-  })
+  }),
 );
 
 // Global error handler
@@ -105,7 +111,7 @@ app.notFound((c) => {
         message: "The requested endpoint was not found",
       },
     },
-    404
+    404,
   );
 });
 

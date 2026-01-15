@@ -26,11 +26,19 @@
  * - Transaction stuck → Auto-query status after 60s
  */
 
-import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
+import {
+  PaymentProvider,
+  PaymentStatus,
+  type PrismaClient,
+} from "@prisma/client";
+
+import { type MoMoConfig, MoMoService } from "../providers/momo.service";
+import { type MpesaConfig, MpesaService } from "../providers/mpesa.service";
+import {
+  type PaystackConfig,
+  PaystackService,
+} from "../providers/paystack.service";
 import { WalletService } from "../services/wallet.service";
-import { MoMoConfig, MoMoService } from "../providers/momo.service";
-import { MpesaConfig, MpesaService } from "../providers/mpesa.service";
-import { PaystackConfig, PaystackService } from "../providers/paystack.service";
 
 export interface PaymentGatewayConfig {
   mpesa?: MpesaConfig;
@@ -94,7 +102,7 @@ export class PaymentGateway {
 
   constructor(
     config: PaymentGatewayConfig,
-    private prisma: PrismaClient
+    private prisma: PrismaClient,
   ) {
     // Initialize services
     if (config.mpesa) {
@@ -121,7 +129,7 @@ export class PaymentGateway {
    */
   private async selectProvider(
     currency: string,
-    paymentMethod: "mobile_money" | "card" | "auto"
+    paymentMethod: "mobile_money" | "card" | "auto",
   ): Promise<PaymentProvider | null> {
     // Currency-specific routing
     switch (currency) {
@@ -129,7 +137,7 @@ export class PaymentGateway {
         if (paymentMethod === "mobile_money" || paymentMethod === "auto") {
           // M-Pesa dominates Kenya (90%+ mobile money market share)
           const mpesaHealthy = await this.isProviderHealthy(
-            PaymentProvider.MPESA
+            PaymentProvider.MPESA,
           );
           if (mpesaHealthy && this.mpesaService) {
             return PaymentProvider.MPESA;
@@ -138,7 +146,7 @@ export class PaymentGateway {
         // Fallback to Paystack for cards
         if (paymentMethod === "card" || paymentMethod === "auto") {
           const paystackHealthy = await this.isProviderHealthy(
-            PaymentProvider.PAYSTACK
+            PaymentProvider.PAYSTACK,
           );
           if (paystackHealthy && this.paystackService) {
             return PaymentProvider.PAYSTACK;
@@ -150,7 +158,7 @@ export class PaymentGateway {
         if (paymentMethod === "mobile_money" || paymentMethod === "auto") {
           // MTN MoMo is dominant in Ghana
           const momoHealthy = await this.isProviderHealthy(
-            PaymentProvider.MTN_MOMO_GH
+            PaymentProvider.MTN_MOMO_GH,
           );
           if (momoHealthy && this.momoGhanaService) {
             return PaymentProvider.MTN_MOMO_GH;
@@ -159,7 +167,7 @@ export class PaymentGateway {
         // Fallback to Paystack
         if (paymentMethod === "card" || paymentMethod === "auto") {
           const paystackHealthy = await this.isProviderHealthy(
-            PaymentProvider.PAYSTACK
+            PaymentProvider.PAYSTACK,
           );
           if (paystackHealthy && this.paystackService) {
             return PaymentProvider.PAYSTACK;
@@ -170,7 +178,7 @@ export class PaymentGateway {
       case "RWF": // Rwanda
         if (paymentMethod === "mobile_money" || paymentMethod === "auto") {
           const momoHealthy = await this.isProviderHealthy(
-            PaymentProvider.MTN_MOMO_RW
+            PaymentProvider.MTN_MOMO_RW,
           );
           if (momoHealthy && this.momoRwandaService) {
             return PaymentProvider.MTN_MOMO_RW;
@@ -181,7 +189,7 @@ export class PaymentGateway {
       case "UGX": // Uganda
         if (paymentMethod === "mobile_money" || paymentMethod === "auto") {
           const momoHealthy = await this.isProviderHealthy(
-            PaymentProvider.MTN_MOMO_UG
+            PaymentProvider.MTN_MOMO_UG,
           );
           if (momoHealthy && this.momoUgandaService) {
             return PaymentProvider.MTN_MOMO_UG;
@@ -191,15 +199,17 @@ export class PaymentGateway {
 
       case "NGN": // Nigeria
       case "ZAR": // South Africa
-      case "USD": // International
+      case "USD": {
+        // International
         // Paystack for cards
         const paystackHealthy = await this.isProviderHealthy(
-          PaymentProvider.PAYSTACK
+          PaymentProvider.PAYSTACK,
         );
         if (paystackHealthy && this.paystackService) {
           return PaymentProvider.PAYSTACK;
         }
         break;
+      }
     }
 
     return null;
@@ -238,7 +248,7 @@ export class PaymentGateway {
     provider: PaymentProvider,
     isHealthy: boolean,
     responseTime?: number,
-    error?: string
+    error?: string,
   ): Promise<void> {
     const now = new Date();
 
@@ -279,7 +289,7 @@ export class PaymentGateway {
    * Initiate payment with smart provider routing
    */
   async initiatePayment(
-    request: InitiatePaymentRequest
+    request: InitiatePaymentRequest,
   ): Promise<InitiatePaymentResponse> {
     const {
       userId,
@@ -302,7 +312,7 @@ export class PaymentGateway {
     const provider = await this.selectProvider(currency, paymentMethod);
     if (!provider) {
       throw new Error(
-        `No available provider for ${currency} (${paymentMethod})`
+        `No available provider for ${currency} (${paymentMethod})`,
       );
     }
 
@@ -313,7 +323,7 @@ export class PaymentGateway {
 
       // Route to appropriate provider
       switch (provider) {
-        case PaymentProvider.MPESA:
+        case PaymentProvider.MPESA: {
           if (!this.mpesaService || !phoneNumber) {
             throw new Error("M-Pesa requires phone number");
           }
@@ -331,8 +341,9 @@ export class PaymentGateway {
             checkoutRequestId: mpesaResult.checkoutRequestId,
           };
           break;
+        }
 
-        case PaymentProvider.MTN_MOMO_GH:
+        case PaymentProvider.MTN_MOMO_GH: {
           if (!this.momoGhanaService || !phoneNumber) {
             throw new Error("MTN MoMo requires phone number");
           }
@@ -350,8 +361,9 @@ export class PaymentGateway {
             referenceId: momoGhResult.referenceId,
           };
           break;
+        }
 
-        case PaymentProvider.MTN_MOMO_RW:
+        case PaymentProvider.MTN_MOMO_RW: {
           if (!this.momoRwandaService || !phoneNumber) {
             throw new Error("MTN MoMo requires phone number");
           }
@@ -369,8 +381,9 @@ export class PaymentGateway {
             referenceId: momoRwResult.referenceId,
           };
           break;
+        }
 
-        case PaymentProvider.MTN_MOMO_UG:
+        case PaymentProvider.MTN_MOMO_UG: {
           if (!this.momoUgandaService || !phoneNumber) {
             throw new Error("MTN MoMo requires phone number");
           }
@@ -388,8 +401,9 @@ export class PaymentGateway {
             referenceId: momoUgResult.referenceId,
           };
           break;
+        }
 
-        case PaymentProvider.PAYSTACK:
+        case PaymentProvider.PAYSTACK: {
           if (!this.paystackService) {
             throw new Error("Paystack not configured");
           }
@@ -412,6 +426,7 @@ export class PaymentGateway {
             actionUrl: paystackResult.authorizationUrl,
           };
           break;
+        }
 
         default:
           throw new Error(`Unsupported provider: ${provider}`);
@@ -429,7 +444,7 @@ export class PaymentGateway {
         provider,
         false,
         responseTime,
-        error.message
+        error.message,
       );
 
       throw error;
@@ -440,7 +455,7 @@ export class PaymentGateway {
    * Get payment status
    */
   async getPaymentStatus(
-    paymentTransactionId: string
+    paymentTransactionId: string,
   ): Promise<PaymentStatusResponse> {
     const paymentTx = await this.prisma.paymentTransaction.findUnique({
       where: { id: paymentTransactionId },
@@ -468,7 +483,7 @@ export class PaymentGateway {
    */
   async completePaymentToWallet(
     paymentTransactionId: string,
-    accountType: "USER_WALLET" | "DRIVER_WALLET" = "USER_WALLET"
+    accountType: "USER_WALLET" | "DRIVER_WALLET" = "USER_WALLET",
   ): Promise<{ transactionId: string; newBalance: number }> {
     const paymentTx = await this.prisma.paymentTransaction.findUnique({
       where: { id: paymentTransactionId },
@@ -547,7 +562,7 @@ export class PaymentGateway {
         await this.updateProviderHealth(
           PaymentProvider.PAYSTACK,
           true,
-          responseTime
+          responseTime,
         );
 
         return {
@@ -563,7 +578,7 @@ export class PaymentGateway {
       }
 
       throw new Error(
-        `Saved cards not supported for provider: ${paymentMethod.provider}`
+        `Saved cards not supported for provider: ${paymentMethod.provider}`,
       );
     } catch (error: any) {
       // Update provider health
@@ -572,7 +587,7 @@ export class PaymentGateway {
         paymentMethod.provider,
         false,
         responseTime,
-        error.message
+        error.message,
       );
 
       throw error;

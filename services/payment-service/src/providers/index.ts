@@ -3,6 +3,10 @@
  */
 
 // Client classes for direct API calls
+import { Currency } from "../types";
+import { FlutterwaveClient } from "./flutterwave";
+import { PaystackClient } from "./paystack";
+
 export { FlutterwaveClient } from "./flutterwave";
 export { PaystackClient } from "./paystack";
 
@@ -10,10 +14,6 @@ export { PaystackClient } from "./paystack";
 export { MoMoService } from "./momo.service";
 export { MpesaService } from "./mpesa.service";
 export { PaystackService } from "./paystack.service";
-
-import { Currency } from "../types";
-import { FlutterwaveClient } from "./flutterwave";
-import { PaystackClient } from "./paystack";
 
 /**
  * Payment Provider Factory
@@ -56,7 +56,7 @@ export const PROVIDER_CAPABILITIES: Record<
  */
 export function getBestProvider(
   currency: Currency,
-  country?: string
+  country?: string,
 ): PaymentProvider {
   // Paystack is preferred for Nigeria due to better rates
   if (currency === Currency.NGN && (!country || country === "NG")) {
@@ -83,7 +83,7 @@ export function getBestProvider(
  * Create a provider client instance
  */
 export function createProviderClient(
-  provider: PaymentProvider
+  provider: PaymentProvider,
 ): PaystackClient | FlutterwaveClient {
   switch (provider) {
     case "paystack":

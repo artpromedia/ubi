@@ -6,7 +6,9 @@
  */
 
 import { EventEmitter } from "events";
+
 import { nanoid } from "nanoid";
+
 import type {
   ApprovalCondition,
   ApprovalPolicy,
@@ -183,13 +185,13 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async createOrganization(
     request: CreateOrganizationRequest,
-    creatorUserId: string
+    creatorUserId: string,
   ): Promise<Organization> {
     const slug = this.generateSlug(request.name);
 
     // Check for duplicate slug
     const existingSlug = Array.from(this.organizations.values()).find(
-      (org) => org.slug === slug
+      (org) => org.slug === slug,
     );
     if (existingSlug) {
       throw new Error("Organization name already exists");
@@ -251,7 +253,7 @@ export class CorporateAccountsService extends EventEmitter {
   async getOrganizationBySlug(slug: string): Promise<Organization | null> {
     return (
       Array.from(this.organizations.values()).find(
-        (org) => org.slug === slug
+        (org) => org.slug === slug,
       ) || null
     );
   }
@@ -261,7 +263,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async updateOrganization(
     organizationId: string,
-    updates: UpdateOrganizationRequest
+    updates: UpdateOrganizationRequest,
   ): Promise<Organization> {
     const organization = this.organizations.get(organizationId);
     if (!organization) {
@@ -288,7 +290,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async verifyOrganization(
     organizationId: string,
-    verifiedBy: string
+    verifiedBy: string,
   ): Promise<Organization> {
     const organization = this.organizations.get(organizationId);
     if (!organization) {
@@ -310,7 +312,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async suspendOrganization(
     organizationId: string,
-    reason: string
+    reason: string,
   ): Promise<Organization> {
     const organization = this.organizations.get(organizationId);
     if (!organization) {
@@ -331,7 +333,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async listOrganizations(
     filters: OrganizationFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<Organization>> {
     let orgs = Array.from(this.organizations.values());
 
@@ -353,7 +355,7 @@ export class CorporateAccountsService extends EventEmitter {
       orgs = orgs.filter(
         (o) =>
           o.name.toLowerCase().includes(search) ||
-          o.email.toLowerCase().includes(search)
+          o.email.toLowerCase().includes(search),
       );
     }
 
@@ -373,7 +375,7 @@ export class CorporateAccountsService extends EventEmitter {
   async inviteMember(
     organizationId: string,
     request: InviteMemberRequest,
-    invitedBy: string
+    invitedBy: string,
   ): Promise<OrganizationMember> {
     const organization = this.organizations.get(organizationId);
     if (!organization) {
@@ -382,7 +384,7 @@ export class CorporateAccountsService extends EventEmitter {
 
     // Check if member already exists
     const existing = Array.from(this.members.values()).find(
-      (m) => m.organizationId === organizationId && m.email === request.email
+      (m) => m.organizationId === organizationId && m.email === request.email,
     );
     if (existing) {
       throw new Error("Member already exists in this organization");
@@ -419,7 +421,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async acceptInvitation(
     memberId: string,
-    userId: string
+    userId: string,
   ): Promise<OrganizationMember> {
     const member = this.members.get(memberId);
     if (!member) {
@@ -446,7 +448,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async updateMember(
     memberId: string,
-    updates: UpdateMemberRequest
+    updates: UpdateMemberRequest,
   ): Promise<OrganizationMember> {
     const member = this.members.get(memberId);
     if (!member) {
@@ -472,7 +474,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async suspendMember(
     memberId: string,
-    reason: string
+    reason: string,
   ): Promise<OrganizationMember> {
     const member = this.members.get(memberId);
     if (!member) {
@@ -520,11 +522,11 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async getMemberByUserId(
     userId: string,
-    organizationId: string
+    organizationId: string,
   ): Promise<OrganizationMember | null> {
     return (
       Array.from(this.members.values()).find(
-        (m) => m.userId === userId && m.organizationId === organizationId
+        (m) => m.userId === userId && m.organizationId === organizationId,
       ) || null
     );
   }
@@ -535,10 +537,10 @@ export class CorporateAccountsService extends EventEmitter {
   async listMembers(
     organizationId: string,
     filters: MemberFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<OrganizationMember>> {
     let members = Array.from(this.members.values()).filter(
-      (m) => m.organizationId === organizationId
+      (m) => m.organizationId === organizationId,
     );
 
     if (filters.role) {
@@ -556,7 +558,7 @@ export class CorporateAccountsService extends EventEmitter {
         (m) =>
           m.firstName.toLowerCase().includes(search) ||
           m.lastName.toLowerCase().includes(search) ||
-          m.email.toLowerCase().includes(search)
+          m.email.toLowerCase().includes(search),
       );
     }
 
@@ -568,7 +570,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   hasPermission(
     member: OrganizationMember,
-    permission: MemberPermission
+    permission: MemberPermission,
   ): boolean {
     return member.permissions.includes(permission);
   }
@@ -578,7 +580,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async getUserOrganizations(userId: string): Promise<Organization[]> {
     const memberships = Array.from(this.members.values()).filter(
-      (m) => m.userId === userId && m.status === "ACTIVE"
+      (m) => m.userId === userId && m.status === "ACTIVE",
     );
 
     return memberships
@@ -595,11 +597,11 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async createCostCenter(
     organizationId: string,
-    request: CreateCostCenterRequest
+    request: CreateCostCenterRequest,
   ): Promise<CostCenter> {
     // Check for duplicate code
     const existing = Array.from(this.costCenters.values()).find(
-      (c) => c.organizationId === organizationId && c.code === request.code
+      (c) => c.organizationId === organizationId && c.code === request.code,
     );
     if (existing) {
       throw new Error("Cost center code already exists");
@@ -630,7 +632,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async updateCostCenter(
     costCenterId: string,
-    updates: Partial<CreateCostCenterRequest>
+    updates: Partial<CreateCostCenterRequest>,
   ): Promise<CostCenter> {
     const costCenter = this.costCenters.get(costCenterId);
     if (!costCenter) {
@@ -656,7 +658,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async listCostCenters(organizationId: string): Promise<CostCenter[]> {
     const costCenters = Array.from(this.costCenters.values()).filter(
-      (c) => c.organizationId === organizationId && c.isActive
+      (c) => c.organizationId === organizationId && c.isActive,
     );
 
     return this.buildCostCenterHierarchy(costCenters);
@@ -667,7 +669,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async recordSpending(
     costCenterId: string,
-    amount: number
+    amount: number,
   ): Promise<{ withinBudget: boolean; remainingBudget?: number }> {
     const costCenter = this.costCenters.get(costCenterId);
     if (!costCenter) {
@@ -710,7 +712,7 @@ export class CorporateAccountsService extends EventEmitter {
     name: string,
     code?: string,
     headId?: string,
-    parentId?: string
+    parentId?: string,
   ): Promise<Department> {
     const department: Department = {
       id: nanoid(),
@@ -733,13 +735,13 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async listDepartments(organizationId: string): Promise<Department[]> {
     const departments = Array.from(this.departments.values()).filter(
-      (d) => d.organizationId === organizationId && d.isActive
+      (d) => d.organizationId === organizationId && d.isActive,
     );
 
     // Count members per department
     for (const dept of departments) {
       dept.memberCount = Array.from(this.members.values()).filter(
-        (m) => m.departmentId === dept.id && m.status === "ACTIVE"
+        (m) => m.departmentId === dept.id && m.status === "ACTIVE",
       ).length;
     }
 
@@ -755,7 +757,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async createApprovalPolicy(
     organizationId: string,
-    policy: Omit<ApprovalPolicy, "id" | "organizationId">
+    policy: Omit<ApprovalPolicy, "id" | "organizationId">,
   ): Promise<ApprovalPolicy> {
     const approvalPolicy: ApprovalPolicy = {
       id: nanoid(),
@@ -774,7 +776,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async updateApprovalPolicy(
     policyId: string,
-    updates: Partial<ApprovalPolicy>
+    updates: Partial<ApprovalPolicy>,
   ): Promise<ApprovalPolicy> {
     const policy = this.approvalPolicies.get(policyId);
     if (!policy) {
@@ -792,7 +794,7 @@ export class CorporateAccountsService extends EventEmitter {
    * List approval policies for an organization
    */
   async listApprovalPolicies(
-    organizationId: string
+    organizationId: string,
   ): Promise<ApprovalPolicy[]> {
     return Array.from(this.approvalPolicies.values())
       .filter((p) => p.organizationId === organizationId && p.isActive)
@@ -810,7 +812,7 @@ export class CorporateAccountsService extends EventEmitter {
       vehicleType: string;
       isScheduled: boolean;
       purpose?: string;
-    }
+    },
   ): Promise<PolicyCheckResult> {
     const member = this.members.get(memberId);
     if (!member) {
@@ -877,7 +879,7 @@ export class CorporateAccountsService extends EventEmitter {
     entityId: string,
     amount: number,
     reason?: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
   ): Promise<ApprovalRequest> {
     const member = this.members.get(memberId);
     if (!member) {
@@ -912,7 +914,7 @@ export class CorporateAccountsService extends EventEmitter {
     requestId: string,
     approverId: string,
     approved: boolean,
-    notes?: string
+    notes?: string,
   ): Promise<ApprovalRequest> {
     const request = this.approvalRequests.get(requestId);
     if (!request) {
@@ -950,7 +952,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async getPendingApprovals(
     organizationId: string,
-    approverId: string
+    approverId: string,
   ): Promise<ApprovalRequest[]> {
     const approver = this.members.get(approverId);
     if (!approver) {
@@ -968,7 +970,7 @@ export class CorporateAccountsService extends EventEmitter {
           r.organizationId === organizationId &&
           r.status === "PENDING" &&
           r.expiresAt &&
-          r.expiresAt > new Date()
+          r.expiresAt > new Date(),
       )
       .sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
   }
@@ -983,7 +985,7 @@ export class CorporateAccountsService extends EventEmitter {
   async bookCorporateTrip(
     organizationId: string,
     memberId: string,
-    request: CreateCorporateTripRequest
+    request: CreateCorporateTripRequest,
   ): Promise<CorporateTrip> {
     const organization = this.organizations.get(organizationId);
     if (!organization) {
@@ -1012,7 +1014,7 @@ export class CorporateAccountsService extends EventEmitter {
     const estimatedCost = await this.estimateTripCost(
       request.pickupCoordinates,
       request.dropoffCoordinates,
-      request.vehicleType || "standard"
+      request.vehicleType || "standard",
     );
 
     // Check approval requirements
@@ -1024,7 +1026,7 @@ export class CorporateAccountsService extends EventEmitter {
         vehicleType: request.vehicleType || "standard",
         isScheduled: !!request.scheduledAt,
         purpose: request.purpose,
-      }
+      },
     );
 
     const trip: CorporateTrip = {
@@ -1069,7 +1071,7 @@ export class CorporateAccountsService extends EventEmitter {
         trip.id,
         estimatedCost,
         request.purpose,
-        { trip }
+        { trip },
       );
       trip.approvalRequestId = approvalRequest.id;
     } else {
@@ -1088,7 +1090,7 @@ export class CorporateAccountsService extends EventEmitter {
   async bookForEmployee(
     organizationId: string,
     bookerId: string,
-    request: BookForEmployeeRequest
+    request: BookForEmployeeRequest,
   ): Promise<CorporateTrip> {
     const booker = this.members.get(bookerId);
     if (!booker) {
@@ -1103,7 +1105,7 @@ export class CorporateAccountsService extends EventEmitter {
     const trip = await this.bookCorporateTrip(
       organizationId,
       request.employeeMemberId,
-      request
+      request,
     );
 
     trip.bookedById = bookerId;
@@ -1120,7 +1122,7 @@ export class CorporateAccountsService extends EventEmitter {
   async cancelCorporateTrip(
     tripId: string,
     cancelledBy: string,
-    reason: string
+    reason: string,
   ): Promise<CorporateTrip> {
     const trip = this.corporateTrips.get(tripId);
     if (!trip) {
@@ -1157,7 +1159,7 @@ export class CorporateAccountsService extends EventEmitter {
   async completeCorporateTrip(
     tripId: string,
     actualCost: number,
-    receiptUrl?: string
+    receiptUrl?: string,
   ): Promise<CorporateTrip> {
     const trip = this.corporateTrips.get(tripId);
     if (!trip) {
@@ -1201,10 +1203,10 @@ export class CorporateAccountsService extends EventEmitter {
   async listCorporateTrips(
     organizationId: string,
     filters: TripFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<CorporateTrip>> {
     let trips = Array.from(this.corporateTrips.values()).filter(
-      (t) => t.organizationId === organizationId
+      (t) => t.organizationId === organizationId,
     );
 
     if (filters.memberId) {
@@ -1236,7 +1238,7 @@ export class CorporateAccountsService extends EventEmitter {
    */
   async getMemberTrips(
     memberId: string,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<CorporateTrip>> {
     const member = this.members.get(memberId);
     if (!member) {
@@ -1246,7 +1248,7 @@ export class CorporateAccountsService extends EventEmitter {
     return this.listCorporateTrips(
       member.organizationId,
       { memberId },
-      pagination
+      pagination,
     );
   }
 
@@ -1304,7 +1306,7 @@ export class CorporateAccountsService extends EventEmitter {
   private async createOwnerMember(
     organizationId: string,
     userId: string,
-    email: string
+    email: string,
   ): Promise<OrganizationMember> {
     const member: OrganizationMember = {
       id: nanoid(),
@@ -1327,7 +1329,9 @@ export class CorporateAccountsService extends EventEmitter {
   }
 
   private buildCostCenterHierarchy(costCenters: CostCenter[]): CostCenter[] {
-    const map = new Map(costCenters.map((c) => [c.id, { ...c, children: [] as CostCenter[] }]));
+    const map = new Map(
+      costCenters.map((c) => [c.id, { ...c, children: [] as CostCenter[] }]),
+    );
     const roots: CostCenter[] = [];
 
     for (const costCenter of map.values()) {
@@ -1346,7 +1350,9 @@ export class CorporateAccountsService extends EventEmitter {
   }
 
   private buildDepartmentHierarchy(departments: Department[]): Department[] {
-    const map = new Map(departments.map((d) => [d.id, { ...d, children: [] as Department[] }]));
+    const map = new Map(
+      departments.map((d) => [d.id, { ...d, children: [] as Department[] }]),
+    );
     const roots: Department[] = [];
 
     for (const dept of map.values()) {
@@ -1367,7 +1373,7 @@ export class CorporateAccountsService extends EventEmitter {
   private evaluateConditions(
     conditions: ApprovalCondition[],
     tripDetails: Record<string, any>,
-    member: OrganizationMember
+    member: OrganizationMember,
   ): boolean {
     const context = { ...tripDetails, member };
 
@@ -1389,7 +1395,7 @@ export class CorporateAccountsService extends EventEmitter {
   private evaluateCondition(
     actual: any,
     operator: ApprovalCondition["operator"],
-    expected: any
+    expected: any,
   ): boolean {
     switch (operator) {
       case "eq":
@@ -1422,7 +1428,7 @@ export class CorporateAccountsService extends EventEmitter {
   private async estimateTripCost(
     pickup?: { lat: number; lng: number },
     dropoff?: { lat: number; lng: number },
-    vehicleType: string = "standard"
+    vehicleType: string = "standard",
   ): Promise<number> {
     // Simplified cost estimation
     const baseRate: Record<string, number> = {
@@ -1456,7 +1462,7 @@ export class CorporateAccountsService extends EventEmitter {
 
   private paginate<T>(
     items: T[],
-    params: PaginationParams
+    params: PaginationParams,
   ): PaginatedResponse<T> {
     const page = params.page || 1;
     const limit = params.limit || 20;

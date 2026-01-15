@@ -7,10 +7,10 @@ import { cn } from "../lib/utils";
 
 /**
  * Spacer - A flexible spacing primitive
- * 
+ *
  * Creates space between flex/grid items.
  * In flex containers, expands to fill available space.
- * 
+ *
  * @example
  * <HStack>
  *   <Logo />
@@ -57,7 +57,8 @@ const spacerVariants = cva("", {
 });
 
 export interface SpacerProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof spacerVariants> {}
 
 const Spacer = React.forwardRef<HTMLDivElement, SpacerProps>(
@@ -69,12 +70,12 @@ const Spacer = React.forwardRef<HTMLDivElement, SpacerProps>(
         className={cn(
           "flex-grow flex-shrink-0",
           spacerVariants({ axis, size }),
-          className
+          className,
         )}
         {...props}
       />
     );
-  }
+  },
 );
 Spacer.displayName = "Spacer";
 

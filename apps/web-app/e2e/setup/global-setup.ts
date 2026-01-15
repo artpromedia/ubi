@@ -44,7 +44,7 @@ async function waitForService(url: string, maxAttempts = 30): Promise<void> {
 
     if (attempt === maxAttempts) {
       throw new Error(
-        `Service at ${url} did not become ready after ${maxAttempts} attempts`
+        `Service at ${url} did not become ready after ${maxAttempts} attempts`,
       );
     }
 

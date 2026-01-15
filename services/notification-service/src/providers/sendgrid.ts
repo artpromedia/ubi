@@ -213,7 +213,7 @@ class EmailService {
   async sendTransactional(
     templateId: string,
     to: string,
-    data: Record<string, any>
+    data: Record<string, any>,
   ): Promise<EmailResult> {
     return this.send({
       to,
@@ -229,7 +229,7 @@ class EmailService {
   async sendVerification(
     to: string,
     code: string,
-    name: string
+    name: string,
   ): Promise<EmailResult> {
     const templateId = process.env.SENDGRID_VERIFICATION_TEMPLATE_ID;
 
@@ -268,7 +268,7 @@ class EmailService {
   async sendPasswordReset(
     to: string,
     resetLink: string,
-    name: string
+    name: string,
   ): Promise<EmailResult> {
     const templateId = process.env.SENDGRID_PASSWORD_RESET_TEMPLATE_ID;
 
@@ -317,7 +317,7 @@ class EmailService {
       total: number;
       currency: string;
       date: string;
-    }
+    },
   ): Promise<EmailResult> {
     const templateId = process.env.SENDGRID_RECEIPT_TEMPLATE_ID;
 
@@ -340,7 +340,7 @@ class EmailService {
               <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
               <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">${data.currency} ${item.price.toFixed(2)}</td>
             </tr>
-          `
+          `,
           )
           .join("")
       : "";

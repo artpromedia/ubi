@@ -12,6 +12,7 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+
 import type {
   ActiveSchoolRoute,
   Coordinates,
@@ -134,7 +135,7 @@ export class SchoolTransportService extends EventEmitter {
       timezone?: string;
       operatingDays?: number[];
       settings?: Partial<SchoolSettings>;
-    }
+    },
   ): Promise<School> {
     const school: School = {
       id: `school_${crypto.randomBytes(12).toString("hex")}`,
@@ -170,7 +171,7 @@ export class SchoolTransportService extends EventEmitter {
    */
   async updateSchool(
     schoolId: string,
-    updates: Partial<School>
+    updates: Partial<School>,
   ): Promise<School> {
     const school = this.schools.get(schoolId);
     if (!school) {
@@ -204,7 +205,7 @@ export class SchoolTransportService extends EventEmitter {
       startDate: Date;
       endDate: Date;
       holidays?: { date: Date; name: string }[];
-    }
+    },
   ): Promise<SchoolTerm> {
     const schoolTerm: SchoolTerm = {
       id: `term_${crypto.randomBytes(12).toString("hex")}`,
@@ -270,7 +271,7 @@ export class SchoolTransportService extends EventEmitter {
       specialNeeds?: string;
       medicalNotes?: string;
       subscriptionType: Student["subscriptionType"];
-    }
+    },
   ): Promise<Student> {
     const school = this.schools.get(schoolId);
     if (!school) {
@@ -321,7 +322,7 @@ export class SchoolTransportService extends EventEmitter {
    */
   async updateStudent(
     studentId: string,
-    updates: Partial<Student>
+    updates: Partial<Student>,
   ): Promise<Student> {
     const student = this.students.get(studentId);
     if (!student) {
@@ -354,7 +355,7 @@ export class SchoolTransportService extends EventEmitter {
    */
   async removeGuardian(
     studentId: string,
-    guardianPhone: string
+    guardianPhone: string,
   ): Promise<Student> {
     const student = this.students.get(studentId);
     if (!student) {
@@ -362,7 +363,7 @@ export class SchoolTransportService extends EventEmitter {
     }
 
     student.guardians = student.guardians.filter(
-      (g) => g.phone !== guardianPhone
+      (g) => g.phone !== guardianPhone,
     );
     this.students.set(studentId, student);
 
@@ -382,10 +383,10 @@ export class SchoolTransportService extends EventEmitter {
   async listStudents(
     schoolId: string,
     filters: StudentFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<Student>> {
     let students = Array.from(this.students.values()).filter(
-      (s) => s.schoolId === schoolId && s.isActive
+      (s) => s.schoolId === schoolId && s.isActive,
     );
 
     if (filters.grade) {
@@ -396,18 +397,18 @@ export class SchoolTransportService extends EventEmitter {
     }
     if (filters.subscriptionStatus) {
       students = students.filter(
-        (s) => s.subscriptionStatus === filters.subscriptionStatus
+        (s) => s.subscriptionStatus === filters.subscriptionStatus,
       );
     }
     if (filters.subscriptionType) {
       students = students.filter(
-        (s) => s.subscriptionType === filters.subscriptionType
+        (s) => s.subscriptionType === filters.subscriptionType,
       );
     }
     if (filters.routeId) {
       const assignments = this.routeAssignments.get(filters.routeId) || [];
       const studentIds = new Set(
-        assignments.filter((a) => a.isActive).map((a) => a.studentId)
+        assignments.filter((a) => a.isActive).map((a) => a.studentId),
       );
       students = students.filter((s) => studentIds.has(s.id));
     }
@@ -422,7 +423,7 @@ export class SchoolTransportService extends EventEmitter {
    */
   async pauseSubscription(
     studentId: string,
-    reason?: string
+    reason?: string,
   ): Promise<Student> {
     const student = this.students.get(studentId);
     if (!student) {
@@ -466,7 +467,7 @@ export class SchoolTransportService extends EventEmitter {
       type: SchoolRouteType;
       stops: RouteStop[];
       startTime?: string;
-    }
+    },
   ): Promise<SchoolRoute> {
     const route: SchoolRoute = {
       id: `route_${crypto.randomBytes(12).toString("hex")}`,
@@ -495,7 +496,7 @@ export class SchoolTransportService extends EventEmitter {
    */
   async updateRoute(
     routeId: string,
-    updates: Partial<SchoolRoute>
+    updates: Partial<SchoolRoute>,
   ): Promise<SchoolRoute> {
     const route = this.routes.get(routeId);
     if (!route) {
@@ -519,7 +520,7 @@ export class SchoolTransportService extends EventEmitter {
   async assignStudentToRoute(
     studentId: string,
     routeId: string,
-    stopOrder: number
+    stopOrder: number,
   ): Promise<void> {
     const student = this.students.get(studentId);
     if (!student) {
@@ -568,7 +569,7 @@ export class SchoolTransportService extends EventEmitter {
    */
   async removeStudentFromRoute(
     studentId: string,
-    routeId: string
+    routeId: string,
   ): Promise<void> {
     const assignments = this.routeAssignments.get(routeId) || [];
 
@@ -620,7 +621,7 @@ export class SchoolTransportService extends EventEmitter {
    */
   async applyRouteOptimization(
     routeId: string,
-    optimizedStops: RouteStop[]
+    optimizedStops: RouteStop[],
   ): Promise<SchoolRoute> {
     const route = this.routes.get(routeId);
     if (!route) {
@@ -647,10 +648,10 @@ export class SchoolTransportService extends EventEmitter {
    */
   async listRoutes(
     schoolId: string,
-    type?: SchoolRouteType
+    type?: SchoolRouteType,
   ): Promise<SchoolRoute[]> {
     let routes = Array.from(this.routes.values()).filter(
-      (r) => r.schoolId === schoolId && r.isActive
+      (r) => r.schoolId === schoolId && r.isActive,
     );
 
     if (type) {
@@ -690,7 +691,7 @@ export class SchoolTransportService extends EventEmitter {
     driverId: string,
     driverName: string,
     driverPhone: string,
-    vehiclePlate: string
+    vehiclePlate: string,
   ): Promise<ActiveSchoolRoute> {
     const route = this.routes.get(routeId);
     if (!route) {
@@ -733,7 +734,7 @@ export class SchoolTransportService extends EventEmitter {
    */
   async updateDriverLocation(
     activeRouteId: string,
-    location: Coordinates
+    location: Coordinates,
   ): Promise<ActiveSchoolRoute> {
     const activeRoute = this.activeRoutes.get(activeRouteId);
     if (!activeRoute) {
@@ -748,7 +749,9 @@ export class SchoolTransportService extends EventEmitter {
       const nextStop = route.stops[activeRoute.currentStopIndex];
       if (nextStop) {
         const etaMins = this.calculateETA(location, nextStop.coordinates);
-        activeRoute.estimatedArrival = new Date(Date.now() + etaMins * 60 * 1000);
+        activeRoute.estimatedArrival = new Date(
+          Date.now() + etaMins * 60 * 1000,
+        );
       }
     }
 
@@ -769,7 +772,7 @@ export class SchoolTransportService extends EventEmitter {
     activeRouteId: string,
     studentId: string,
     verificationMethod: StudentTripLog["verificationMethod"],
-    photoUrl?: string
+    photoUrl?: string,
   ): Promise<StudentTripLog> {
     const activeRoute = this.activeRoutes.get(activeRouteId);
     if (!activeRoute) {
@@ -816,7 +819,7 @@ export class SchoolTransportService extends EventEmitter {
     activeRouteId: string,
     studentId: string,
     verificationMethod: StudentTripLog["verificationMethod"],
-    photoUrl?: string
+    photoUrl?: string,
   ): Promise<StudentTripLog> {
     const activeRoute = this.activeRoutes.get(activeRouteId);
     if (!activeRoute) {
@@ -862,7 +865,7 @@ export class SchoolTransportService extends EventEmitter {
   async markStudentAbsent(
     activeRouteId: string,
     studentId: string,
-    notes?: string
+    notes?: string,
   ): Promise<StudentTripLog> {
     const activeRoute = this.activeRoutes.get(activeRouteId);
     if (!activeRoute) {
@@ -954,7 +957,7 @@ export class SchoolTransportService extends EventEmitter {
    * Get active route status
    */
   async getActiveRoute(
-    activeRouteId: string
+    activeRouteId: string,
   ): Promise<ActiveSchoolRoute | null> {
     return this.activeRoutes.get(activeRouteId) || null;
   }
@@ -963,14 +966,14 @@ export class SchoolTransportService extends EventEmitter {
    * Get current active routes for a school
    */
   async getActiveRoutesForSchool(
-    schoolId: string
+    schoolId: string,
   ): Promise<ActiveSchoolRoute[]> {
     const schoolRoutes = Array.from(this.routes.values())
       .filter((r) => r.schoolId === schoolId)
       .map((r) => r.id);
 
     return Array.from(this.activeRoutes.values()).filter(
-      (ar) => schoolRoutes.includes(ar.routeId) && ar.status === "in_progress"
+      (ar) => schoolRoutes.includes(ar.routeId) && ar.status === "in_progress",
     );
   }
 
@@ -994,7 +997,8 @@ export class SchoolTransportService extends EventEmitter {
 
     for (const assignment of assignments) {
       const activeRoute = Array.from(this.activeRoutes.values()).find(
-        (ar) => ar.routeId === assignment.routeId && ar.status === "in_progress"
+        (ar) =>
+          ar.routeId === assignment.routeId && ar.status === "in_progress",
       );
 
       if (activeRoute) {
@@ -1042,7 +1046,7 @@ export class SchoolTransportService extends EventEmitter {
   async getStudentTripHistory(
     studentId: string,
     dateFrom?: Date,
-    dateTo?: Date
+    dateTo?: Date,
   ): Promise<StudentTripLog[]> {
     const allLogs: StudentTripLog[] = [];
 
@@ -1061,7 +1065,7 @@ export class SchoolTransportService extends EventEmitter {
     }
 
     return filteredLogs.sort(
-      (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+      (a, b) => b.timestamp.getTime() - a.timestamp.getTime(),
     );
   }
 
@@ -1073,7 +1077,7 @@ export class SchoolTransportService extends EventEmitter {
     parentUserId: string,
     date: Date,
     tripType: "morning" | "afternoon" | "both",
-    reason?: string
+    reason?: string,
   ): Promise<void> {
     const student = this.students.get(studentId);
     if (!student) {
@@ -1082,7 +1086,7 @@ export class SchoolTransportService extends EventEmitter {
 
     // Verify parent is authorized
     const isAuthorized = student.guardians.some(
-      (g) => g.userId === parentUserId
+      (g) => g.userId === parentUserId,
     );
     if (!isAuthorized) {
       throw new Error("Not authorized for this student");
@@ -1093,7 +1097,7 @@ export class SchoolTransportService extends EventEmitter {
     const records = this.attendance.get(studentId) || [];
 
     let record = records.find(
-      (r) => r.date.toISOString().split("T")[0] === dateKey
+      (r) => r.date.toISOString().split("T")[0] === dateKey,
     );
 
     if (!record) {
@@ -1131,21 +1135,21 @@ export class SchoolTransportService extends EventEmitter {
 
   private async notifyRouteStarted(
     activeRoute: ActiveSchoolRoute,
-    students: Student[]
+    students: Student[],
   ): Promise<void> {
     for (const student of students) {
       await this.notifyGuardians(
         student,
         "pickup_soon",
         activeRoute,
-        `School bus has started the route. Estimated arrival at your stop soon.`
+        `School bus has started the route. Estimated arrival at your stop soon.`,
       );
     }
   }
 
   private async notifyUpcomingStop(
     activeRoute: ActiveSchoolRoute,
-    stop: RouteStop
+    stop: RouteStop,
   ): Promise<void> {
     for (const studentId of stop.studentIds) {
       const student = this.students.get(studentId);
@@ -1154,7 +1158,7 @@ export class SchoolTransportService extends EventEmitter {
           student,
           "pickup_soon",
           activeRoute,
-          `Bus arriving at stop in approximately ${stop.waitTimeMinutes} minutes`
+          `Bus arriving at stop in approximately ${stop.waitTimeMinutes} minutes`,
         );
       }
     }
@@ -1164,7 +1168,7 @@ export class SchoolTransportService extends EventEmitter {
     student: Student,
     type: ParentNotification["type"],
     activeRoute: ActiveSchoolRoute,
-    customMessage?: string
+    customMessage?: string,
   ): Promise<void> {
     const messages: Record<ParentNotification["type"], string> = {
       pickup_soon: `${student.firstName} will be picked up soon`,
@@ -1177,7 +1181,9 @@ export class SchoolTransportService extends EventEmitter {
     };
 
     for (const guardian of student.guardians) {
-      if (!guardian.userId) continue;
+      if (!guardian.userId) {
+        continue;
+      }
 
       const notification: ParentNotification = {
         id: `notif_${crypto.randomBytes(12).toString("hex")}`,
@@ -1207,7 +1213,7 @@ export class SchoolTransportService extends EventEmitter {
   async getSchoolStats(
     schoolId: string,
     dateFrom: Date,
-    dateTo: Date
+    dateTo: Date,
   ): Promise<{
     totalStudents: number;
     activeSubscriptions: number;
@@ -1220,11 +1226,11 @@ export class SchoolTransportService extends EventEmitter {
     averageRouteTime: number;
   }> {
     const students = Array.from(this.students.values()).filter(
-      (s) => s.schoolId === schoolId
+      (s) => s.schoolId === schoolId,
     );
 
     const routes = Array.from(this.routes.values()).filter(
-      (r) => r.schoolId === schoolId
+      (r) => r.schoolId === schoolId,
     );
 
     const completedRoutes = Array.from(this.activeRoutes.values()).filter(
@@ -1233,7 +1239,7 @@ export class SchoolTransportService extends EventEmitter {
         ar.status === "completed" &&
         ar.completedAt &&
         ar.completedAt >= dateFrom &&
-        ar.completedAt <= dateTo
+        ar.completedAt <= dateTo,
     );
 
     let totalPickups = 0;
@@ -1255,7 +1261,7 @@ export class SchoolTransportService extends EventEmitter {
     return {
       totalStudents: students.length,
       activeSubscriptions: students.filter(
-        (s) => s.subscriptionStatus === "active"
+        (s) => s.subscriptionStatus === "active",
       ).length,
       totalRoutes: routes.length,
       tripsCompleted: completedRoutes.length,
@@ -1284,7 +1290,7 @@ export class SchoolTransportService extends EventEmitter {
         // Travel time between stops
         const distance = this.calculateDistance(
           currentStop.coordinates,
-          nextStop.coordinates
+          nextStop.coordinates,
         );
         totalMinutes += Math.ceil(distance * 3); // ~3 min per km
         // Wait time at stop
@@ -1304,7 +1310,7 @@ export class SchoolTransportService extends EventEmitter {
       if (currentStop && nextStop) {
         totalKm += this.calculateDistance(
           currentStop.coordinates,
-          nextStop.coordinates
+          nextStop.coordinates,
         );
       }
     }
@@ -1335,10 +1341,14 @@ export class SchoolTransportService extends EventEmitter {
   }
 
   private optimizeStopOrder(stops: RouteStop[]): RouteStop[] {
-    if (stops.length <= 2) return stops;
+    if (stops.length <= 2) {
+      return stops;
+    }
 
     const firstStop = stops[0];
-    if (!firstStop) return stops;
+    if (!firstStop) {
+      return stops;
+    }
 
     // Simple nearest-neighbor algorithm
     const optimized: RouteStop[] = [firstStop];
@@ -1346,7 +1356,9 @@ export class SchoolTransportService extends EventEmitter {
 
     while (remaining.length > 0) {
       const lastStop = optimized[optimized.length - 1];
-      if (!lastStop) break;
+      if (!lastStop) {
+        break;
+      }
 
       let nearestIdx = 0;
       let nearestDist = Infinity;
@@ -1356,7 +1368,7 @@ export class SchoolTransportService extends EventEmitter {
         if (currentRemaining) {
           const dist = this.calculateDistance(
             lastStop.coordinates,
-            currentRemaining.coordinates
+            currentRemaining.coordinates,
           );
           if (dist < nearestDist) {
             nearestDist = dist;
@@ -1379,19 +1391,21 @@ export class SchoolTransportService extends EventEmitter {
   }
 
   private async recordAttendanceFromRoute(
-    activeRoute: ActiveSchoolRoute
+    activeRoute: ActiveSchoolRoute,
   ): Promise<void> {
     const logs = this.tripLogs.get(activeRoute.id) || [];
     const route = this.routes.get(activeRoute.routeId);
 
-    if (!route) return;
+    if (!route) {
+      return;
+    }
 
     const dateKey = activeRoute.date.toISOString().split("T")[0];
 
     for (const log of logs) {
       const records = this.attendance.get(log.studentId) || [];
       let record = records.find(
-        (r) => r.date.toISOString().split("T")[0] === dateKey
+        (r) => r.date.toISOString().split("T")[0] === dateKey,
       );
 
       if (!record) {
@@ -1421,7 +1435,7 @@ export class SchoolTransportService extends EventEmitter {
 
   private paginate<T>(
     items: T[],
-    params: PaginationParams
+    params: PaginationParams,
   ): PaginatedResponse<T> {
     const page = params.page || 1;
     const limit = params.limit || 20;

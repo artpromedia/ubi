@@ -108,7 +108,7 @@ function authenticateRider(vuId) {
     `${env.baseUrl}/api/v1/auth/otp/request`,
     { phone },
     {},
-    { name: "auth_request_otp" }
+    { name: "auth_request_otp" },
   );
 
   if (!checkResponse(otpResponse, 200, "OTP requested")) {
@@ -123,7 +123,7 @@ function authenticateRider(vuId) {
     `${env.baseUrl}/api/v1/auth/otp/verify`,
     { phone, code: "123456" },
     {},
-    { name: "auth_verify_otp" }
+    { name: "auth_verify_otp" },
   );
 
   if (checkResponse(verifyResponse, 200, "OTP verified")) {
@@ -147,7 +147,7 @@ function searchLocation(type) {
     `${env.baseUrl}/api/v1/locations/search?q=${encodeURIComponent(query)}&lat=${coords.lat}&lng=${coords.lng}`,
     null,
     tokenStore.getAuthHeader(),
-    { name: `search_${type}_location` }
+    { name: `search_${type}_location` },
   );
 
   customMetrics.searchDuration.add(Date.now() - startTime);
@@ -190,7 +190,7 @@ function getRideOptions(pickup, dropoff) {
       },
     },
     tokenStore.getAuthHeader(),
-    { name: "get_ride_options" }
+    { name: "get_ride_options" },
   );
 
   if (checkResponse(response, 200, "ride options retrieved")) {
@@ -228,7 +228,7 @@ function createBooking(pickup, dropoff, rideOption) {
       estimatedFare: rideOption.fare,
     },
     tokenStore.getAuthHeader(),
-    { name: "create_booking" }
+    { name: "create_booking" },
   );
 
   customMetrics.bookingDuration.add(Date.now() - startTime);
@@ -255,7 +255,7 @@ function waitForDriverMatch(bookingId) {
       `${env.baseUrl}/api/v1/rides/${bookingId}/status`,
       null,
       tokenStore.getAuthHeader(),
-      { name: "check_driver_match" }
+      { name: "check_driver_match" },
     );
 
     if (response.status === 200) {
@@ -294,7 +294,7 @@ function simulateRideProgress(bookingId) {
         `${env.baseUrl}/api/v1/rides/${bookingId}/status`,
         null,
         tokenStore.getAuthHeader(),
-        { name: "check_ride_status" }
+        { name: "check_ride_status" },
       );
 
       if (response.status === 200) {
@@ -329,7 +329,7 @@ function completeRideAndRate(bookingId) {
       `${env.baseUrl}/api/v1/rides/${bookingId}/status`,
       null,
       tokenStore.getAuthHeader(),
-      { name: "check_ride_completion" }
+      { name: "check_ride_completion" },
     );
 
     if (response.status === 200) {
@@ -366,7 +366,7 @@ function rateRide(bookingId) {
       feedback: "Load test feedback",
     },
     tokenStore.getAuthHeader(),
-    { name: "rate_ride" }
+    { name: "rate_ride" },
   );
 
   checkResponse(response, 200, "ride rated");

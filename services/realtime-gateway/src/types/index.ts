@@ -2,14 +2,14 @@
  * Real-Time Gateway Types
  */
 
-export type UserType = 'rider' | 'driver' | 'restaurant' | 'delivery_partner';
+export type UserType = "rider" | "driver" | "restaurant" | "delivery_partner";
 
 export interface WebSocketConnection {
   id: string;
   userId: string;
   userType: UserType;
   deviceId: string;
-  platform: 'ios' | 'android' | 'web';
+  platform: "ios" | "android" | "web";
   connectedAt: Date;
   lastHeartbeat: Date;
   subscriptions: Set<string>;
@@ -17,18 +17,18 @@ export interface WebSocketConnection {
 }
 
 export type WebSocketMessage =
-  | { type: 'heartbeat'; payload: { timestamp: number } }
-  | { type: 'heartbeat_ack'; payload: { timestamp: number } }
-  | { type: 'location_update'; payload: LocationUpdate }
-  | { type: 'ride_request'; payload: RideRequestPayload }
-  | { type: 'ride_status'; payload: RideStatusPayload }
-  | { type: 'driver_location'; payload: DriverLocationPayload }
-  | { type: 'eta_update'; payload: ETAUpdatePayload }
-  | { type: 'notification'; payload: NotificationPayload }
-  | { type: 'order_status'; payload: OrderStatusPayload }
-  | { type: 'dispatch_request'; payload: DispatchRequestPayload }
-  | { type: 'dispatch_response'; payload: DispatchResponsePayload }
-  | { type: 'error'; payload: ErrorPayload };
+  | { type: "heartbeat"; payload: { timestamp: number } }
+  | { type: "heartbeat_ack"; payload: { timestamp: number } }
+  | { type: "location_update"; payload: LocationUpdate }
+  | { type: "ride_request"; payload: RideRequestPayload }
+  | { type: "ride_status"; payload: RideStatusPayload }
+  | { type: "driver_location"; payload: DriverLocationPayload }
+  | { type: "eta_update"; payload: ETAUpdatePayload }
+  | { type: "notification"; payload: NotificationPayload }
+  | { type: "order_status"; payload: OrderStatusPayload }
+  | { type: "dispatch_request"; payload: DispatchRequestPayload }
+  | { type: "dispatch_response"; payload: DispatchResponsePayload }
+  | { type: "error"; payload: ErrorPayload };
 
 export interface LocationUpdate {
   latitude: number;
@@ -79,7 +79,7 @@ export interface ETAUpdatePayload {
   tripId: string;
   eta: number; // seconds
   distance: number; // meters
-  trafficLevel: 'low' | 'moderate' | 'heavy';
+  trafficLevel: "low" | "moderate" | "heavy";
 }
 
 export interface NotificationPayload {
@@ -87,7 +87,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   data?: Record<string, unknown>;
-  priority: 'high' | 'normal' | 'low';
+  priority: "high" | "normal" | "low";
   timestamp: number;
 }
 
@@ -127,7 +127,7 @@ export interface ErrorPayload {
 
 // Internal events
 export interface ConnectionEvent {
-  type: 'connect' | 'disconnect';
+  type: "connect" | "disconnect";
   connectionId: string;
   userId: string;
   userType: UserType;
@@ -153,15 +153,15 @@ export const REDIS_CHANNELS = {
   tripUpdates: (tripId: string) => `trip:${tripId}:updates`,
   orderUpdates: (orderId: string) => `order:${orderId}:updates`,
   zoneEvents: (h3Index: string) => `zone:${h3Index}:events`,
-  globalEvents: 'events:global',
+  globalEvents: "events:global",
 } as const;
 
 // Kafka topics
 export const KAFKA_TOPICS = {
-  driverLocations: 'driver-locations',
-  rideRequests: 'ride-requests',
-  tripEvents: 'trip-events',
-  orderEvents: 'order-events',
-  notifications: 'notifications',
-  connectionEvents: 'connection-events',
+  driverLocations: "driver-locations",
+  rideRequests: "ride-requests",
+  tripEvents: "trip-events",
+  orderEvents: "order-events",
+  notifications: "notifications",
+  connectionEvents: "connection-events",
 } as const;

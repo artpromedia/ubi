@@ -5,8 +5,7 @@
  * authentication, and request/response interceptors.
  */
 
-import ky, {type  Options } from "ky";
-
+import ky, { type Options } from "ky";
 
 // Import ky for the afterResponse hook
 
@@ -94,7 +93,7 @@ export function createKyOptions(config: ApiConfig): Options {
           // Debug logging
           if (config.debug) {
             console.log(
-              `[API] ${response.status} ${request.method} ${request.url}`
+              `[API] ${response.status} ${request.method} ${request.url}`,
             );
           }
 

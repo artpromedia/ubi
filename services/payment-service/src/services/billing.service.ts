@@ -11,7 +11,9 @@
  */
 
 import { EventEmitter } from "events";
+
 import { nanoid } from "nanoid";
+
 import type {
   BillingCycle,
   CreditBalance,
@@ -217,7 +219,7 @@ export class BillingService extends EventEmitter {
    */
   async createSubscription(
     organizationId: string,
-    planId: string
+    planId: string,
   ): Promise<Subscription> {
     const plan = this.plans.get(planId);
     if (!plan) {
@@ -267,7 +269,7 @@ export class BillingService extends EventEmitter {
    */
   async cancelSubscription(
     subscriptionId: string,
-    cancelImmediately: boolean = false
+    cancelImmediately: boolean = false,
   ): Promise<Subscription> {
     const subscription = this.subscriptions.get(subscriptionId);
     if (!subscription) {
@@ -293,7 +295,7 @@ export class BillingService extends EventEmitter {
    */
   async changePlan(
     subscriptionId: string,
-    newPlanId: string
+    newPlanId: string,
   ): Promise<Subscription> {
     const subscription = this.subscriptions.get(subscriptionId);
     if (!subscription) {
@@ -317,7 +319,7 @@ export class BillingService extends EventEmitter {
       const proratedAmount = this.calculateProration(
         newPlan.basePrice - oldPlan.basePrice,
         remainingDays,
-        subscription.currentPeriodEnd
+        subscription.currentPeriodEnd,
       );
 
       if (proratedAmount > 0) {
@@ -349,7 +351,7 @@ export class BillingService extends EventEmitter {
   async getSubscription(organizationId: string): Promise<Subscription | null> {
     return (
       Array.from(this.subscriptions.values()).find(
-        (s) => s.organizationId === organizationId && s.status === "active"
+        (s) => s.organizationId === organizationId && s.status === "active",
       ) || null
     );
   }
@@ -363,7 +365,7 @@ export class BillingService extends EventEmitter {
    */
   async setCustomPricing(
     organizationId: string,
-    tiers: PricingTier[]
+    tiers: PricingTier[],
   ): Promise<void> {
     this.pricingTiers.set(organizationId, tiers);
 
@@ -375,7 +377,7 @@ export class BillingService extends EventEmitter {
    */
   async getPricing(
     organizationId: string,
-    usageType: UsageType
+    usageType: UsageType,
   ): Promise<number> {
     const tiers = this.pricingTiers.get(organizationId);
 
@@ -416,7 +418,7 @@ export class BillingService extends EventEmitter {
       referenceType?: string;
       description?: string;
       metadata?: Record<string, string>;
-    }
+    },
   ): Promise<UsageRecord> {
     const unitPrice =
       usage.unitPrice ?? (await this.getPricing(organizationId, usage.type));
@@ -428,7 +430,12 @@ export class BillingService extends EventEmitter {
       organizationId,
       periodStart: now,
       periodEnd: now,
-      usageType: usage.type as "ride" | "delivery" | "api_call" | "sms" | "storage",
+      usageType: usage.type as
+        | "ride"
+        | "delivery"
+        | "api_call"
+        | "sms"
+        | "storage",
       quantity: usage.quantity,
       unitPrice,
       totalAmount,
@@ -459,12 +466,12 @@ export class BillingService extends EventEmitter {
     organizationId: string,
     periodStart: Date,
     periodEnd: Date,
-    usageType?: UsageType
+    usageType?: UsageType,
   ): Promise<UsageRecord[]> {
     let records = this.usageRecords.get(organizationId) || [];
 
     records = records.filter(
-      (r) => r.periodStart >= periodStart && r.periodStart <= periodEnd
+      (r) => r.periodStart >= periodStart && r.periodStart <= periodEnd,
     );
 
     if (usageType) {
@@ -480,7 +487,7 @@ export class BillingService extends EventEmitter {
   async getUsageSummary(
     organizationId: string,
     periodStart: Date,
-    periodEnd: Date
+    periodEnd: Date,
   ): Promise<{
     byType: Record<UsageType, { count: number; amount: number }>;
     total: number;
@@ -567,7 +574,7 @@ export class BillingService extends EventEmitter {
       }[];
       dueDate: Date;
       notes?: string;
-    }
+    },
   ): Promise<Invoice> {
     const lineItems: InvoiceLineItem[] = invoiceData.lineItems.map((item) => ({
       id: nanoid(),
@@ -618,12 +625,12 @@ export class BillingService extends EventEmitter {
   async generateInvoiceFromUsage(
     organizationId: string,
     periodStart: Date,
-    periodEnd: Date
+    periodEnd: Date,
   ): Promise<Invoice> {
     const summary = await this.getUsageSummary(
       organizationId,
       periodStart,
-      periodEnd
+      periodEnd,
     );
     const subscription = await this.getSubscription(organizationId);
 
@@ -651,7 +658,7 @@ export class BillingService extends EventEmitter {
       if (quantity > 0) {
         const unitPrice = await this.getPricing(
           organizationId,
-          usageType as UsageType
+          usageType as UsageType,
         );
         lineItems.push({
           description: `${this.formatUsageType(usageType as UsageType)} overage`,
@@ -674,7 +681,10 @@ export class BillingService extends EventEmitter {
     // Mark usage as invoiced
     const records = this.usageRecords.get(organizationId) || [];
     for (const record of records) {
-      if (record.periodStart >= periodStart && record.periodStart <= periodEnd) {
+      if (
+        record.periodStart >= periodStart &&
+        record.periodStart <= periodEnd
+      ) {
         record.invoiced = true;
         record.invoiceId = invoice.id;
       }
@@ -711,7 +721,7 @@ export class BillingService extends EventEmitter {
    */
   async markInvoicePaid(
     invoiceId: string,
-    _paymentReference?: string
+    _paymentReference?: string,
   ): Promise<Invoice> {
     const invoice = this.invoices.get(invoiceId);
     if (!invoice) {
@@ -764,10 +774,10 @@ export class BillingService extends EventEmitter {
   async listInvoices(
     organizationId: string,
     status?: InvoiceStatus,
-    pagination?: PaginationParams
+    pagination?: PaginationParams,
   ): Promise<PaginatedResponse<Invoice>> {
     let invoices = Array.from(this.invoices.values()).filter(
-      (i) => i.organizationId === organizationId
+      (i) => i.organizationId === organizationId,
     );
 
     if (status) {
@@ -785,7 +795,7 @@ export class BillingService extends EventEmitter {
   async getOverdueInvoices(organizationId?: string): Promise<Invoice[]> {
     const now = new Date();
     let invoices = Array.from(this.invoices.values()).filter(
-      (i) => i.status === "SENT" && i.dueDate && i.dueDate < now
+      (i) => i.status === "SENT" && i.dueDate && i.dueDate < now,
     );
 
     if (organizationId) {
@@ -809,7 +819,9 @@ export class BillingService extends EventEmitter {
    * Initialize credit balance
    */
   private initializeCreditBalance(organizationId: string): void {
-    if (this.creditBalances.has(organizationId)) return;
+    if (this.creditBalances.has(organizationId)) {
+      return;
+    }
 
     const balance: CreditBalance = {
       organizationId,
@@ -829,7 +841,7 @@ export class BillingService extends EventEmitter {
     organizationId: string,
     amount: number,
     description: string,
-    expiresAt?: Date
+    expiresAt?: Date,
   ): Promise<CreditTransaction> {
     this.initializeCreditBalance(organizationId);
 
@@ -864,7 +876,7 @@ export class BillingService extends EventEmitter {
     organizationId: string,
     amount: number,
     description: string,
-    referenceId?: string
+    referenceId?: string,
   ): Promise<CreditTransaction> {
     const balance = this.creditBalances.get(organizationId);
     if (!balance) {
@@ -902,7 +914,7 @@ export class BillingService extends EventEmitter {
    * Get credit balance
    */
   async getCreditBalance(
-    organizationId: string
+    organizationId: string,
   ): Promise<CreditBalance | null> {
     return this.creditBalances.get(organizationId) || null;
   }
@@ -912,7 +924,7 @@ export class BillingService extends EventEmitter {
    */
   async getCreditTransactions(
     organizationId: string,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<CreditTransaction>> {
     const transactions = this.creditTransactions.get(organizationId) || [];
     transactions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -926,7 +938,7 @@ export class BillingService extends EventEmitter {
   async applyCreditToInvoice(
     organizationId: string,
     invoiceId: string,
-    amount?: number
+    amount?: number,
   ): Promise<{ invoice: Invoice; creditUsed: number }> {
     const invoice = this.invoices.get(invoiceId);
     if (!invoice) {
@@ -945,7 +957,7 @@ export class BillingService extends EventEmitter {
     const amountToApply = Math.min(
       amount || invoice.total,
       invoice.total,
-      balance.balance
+      balance.balance,
     );
 
     // Deduct credit
@@ -953,7 +965,7 @@ export class BillingService extends EventEmitter {
       organizationId,
       amountToApply,
       `Applied to invoice ${invoice.invoiceNumber}`,
-      invoice.id
+      invoice.id,
     );
 
     // Update invoice
@@ -979,7 +991,7 @@ export class BillingService extends EventEmitter {
    */
   async addPaymentMethod(
     organizationId: string,
-    method: Omit<PaymentMethod, "id" | "organizationId" | "createdAt">
+    method: Omit<PaymentMethod, "id" | "organizationId" | "createdAt">,
   ): Promise<PaymentMethod> {
     const paymentMethod: PaymentMethod = {
       id: nanoid(),
@@ -1013,7 +1025,7 @@ export class BillingService extends EventEmitter {
    */
   async removePaymentMethod(
     organizationId: string,
-    paymentMethodId: string
+    paymentMethodId: string,
   ): Promise<void> {
     const methods = this.paymentMethods.get(organizationId) || [];
     const index = methods.findIndex((m) => m.id === paymentMethodId);
@@ -1042,7 +1054,7 @@ export class BillingService extends EventEmitter {
    */
   async setDefaultPaymentMethod(
     organizationId: string,
-    paymentMethodId: string
+    paymentMethodId: string,
   ): Promise<PaymentMethod> {
     const methods = this.paymentMethods.get(organizationId) || [];
 
@@ -1083,7 +1095,7 @@ export class BillingService extends EventEmitter {
   async getBillingStats(
     organizationId?: string,
     dateFrom?: Date,
-    dateTo?: Date
+    dateTo?: Date,
   ): Promise<BillingStats> {
     let invoices = Array.from(this.invoices.values());
 
@@ -1102,7 +1114,7 @@ export class BillingService extends EventEmitter {
     const paidInvoices = invoices.filter((i) => i.status === "PAID");
     const overdueInvoices = invoices.filter((i) => i.status === "OVERDUE");
     const outstandingInvoices = invoices.filter(
-      (i) => i.status === "SENT" || i.status === "OVERDUE"
+      (i) => i.status === "SENT" || i.status === "OVERDUE",
     );
 
     const totalRevenue = paidInvoices.reduce((sum, i) => sum + i.total, 0);
@@ -1112,7 +1124,7 @@ export class BillingService extends EventEmitter {
     const totalPaid = totalRevenue;
     const totalOutstanding = outstandingInvoices.reduce(
       (sum, i) => sum + i.total,
-      0
+      0,
     );
     const totalOverdue = overdueInvoices.reduce((sum, i) => sum + i.total, 0);
 
@@ -1172,14 +1184,14 @@ export class BillingService extends EventEmitter {
     const end = subscription.currentPeriodEnd;
     return Math.max(
       0,
-      Math.ceil((end.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+      Math.ceil((end.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)),
     );
   }
 
   private calculateProration(
     priceDifference: number,
     remainingDays: number,
-    _periodEnd: Date
+    _periodEnd: Date,
   ): number {
     const totalDays = 30; // Approximate month
     return Math.round((priceDifference / totalDays) * remainingDays);
@@ -1201,7 +1213,7 @@ export class BillingService extends EventEmitter {
 
   private paginate<T>(
     items: T[],
-    params: PaginationParams
+    params: PaginationParams,
   ): PaginatedResponse<T> {
     const page = params.page || 1;
     const limit = params.limit || 20;

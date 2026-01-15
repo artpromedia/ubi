@@ -76,7 +76,7 @@ describe("Web App - Ride Service Contract", () => {
               pickup: { latitude: 6.4281, longitude: 3.4219 },
               dropoff: { latitude: 6.6018, longitude: 3.3515 },
             }),
-          }
+          },
         );
 
         const body = await response.json();
@@ -89,7 +89,7 @@ describe("Web App - Ride Service Contract", () => {
     it("handles no drivers available", async () => {
       await provider
         .given(
-          PROVIDER_STATES.NO_DRIVERS_AVAILABLE.replace("%s", "remote_area")
+          PROVIDER_STATES.NO_DRIVERS_AVAILABLE.replace("%s", "remote_area"),
         )
         .uponReceiving("a request for estimates with no drivers")
         .withRequest({
@@ -139,7 +139,7 @@ describe("Web App - Ride Service Contract", () => {
               pickup: { latitude: 9.0765, longitude: 7.3986 },
               dropoff: { latitude: 9.0865, longitude: 7.4086 },
             }),
-          }
+          },
         );
 
         const body = await response.json();
@@ -189,7 +189,7 @@ describe("Web App - Ride Service Contract", () => {
                 id: string("ride_abc123"),
                 status: regex(
                   /^(searching|driver_assigned|driver_arrived|in_progress|completed|cancelled)$/,
-                  "searching"
+                  "searching",
                 ),
                 pickup: {
                   latitude: decimal(6.4281),
@@ -212,7 +212,7 @@ describe("Web App - Ride Service Contract", () => {
                 estimatedWait: integer(3),
                 createdAt: datetime(
                   "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                  "2024-01-15T10:30:00.000Z"
+                  "2024-01-15T10:30:00.000Z",
                 ),
               },
             },
@@ -319,7 +319,7 @@ describe("Web App - Ride Service Contract", () => {
               Authorization: "Bearer valid_token",
               Accept: "application/json",
             },
-          }
+          },
         );
 
         const body = await response.json();
@@ -362,7 +362,7 @@ describe("Web App - Ride Service Contract", () => {
               Authorization: "Bearer valid_token",
               Accept: "application/json",
             },
-          }
+          },
         );
 
         expect(response.status).toBe(404);
@@ -416,7 +416,7 @@ describe("Web App - Ride Service Contract", () => {
               Accept: "application/json",
             },
             body: JSON.stringify({ reason: "changed_mind" }),
-          }
+          },
         );
 
         const body = await response.json();
@@ -473,7 +473,7 @@ describe("Web App - Ride Service Contract", () => {
               Accept: "application/json",
             },
             body: JSON.stringify({ rating: 5, comment: "Great ride!" }),
-          }
+          },
         );
 
         expect(response.status).toBe(200);

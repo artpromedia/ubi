@@ -7,71 +7,71 @@
 // ============================================
 
 export enum RestaurantStatus {
-  PENDING = 'PENDING',
-  ACTIVE = 'ACTIVE',
-  SUSPENDED = 'SUSPENDED',
-  CLOSED = 'CLOSED',
+  PENDING = "PENDING",
+  ACTIVE = "ACTIVE",
+  SUSPENDED = "SUSPENDED",
+  CLOSED = "CLOSED",
 }
 
 export enum OrderStatus {
-  PENDING = 'PENDING',
-  CONFIRMED = 'CONFIRMED',
-  PREPARING = 'PREPARING',
-  READY_FOR_PICKUP = 'READY_FOR_PICKUP',
-  PICKED_UP = 'PICKED_UP',
-  DELIVERED = 'DELIVERED',
-  CANCELLED = 'CANCELLED',
-  REFUNDED = 'REFUNDED',
+  PENDING = "PENDING",
+  CONFIRMED = "CONFIRMED",
+  PREPARING = "PREPARING",
+  READY_FOR_PICKUP = "READY_FOR_PICKUP",
+  PICKED_UP = "PICKED_UP",
+  DELIVERED = "DELIVERED",
+  CANCELLED = "CANCELLED",
+  REFUNDED = "REFUNDED",
 }
 
 export enum OrderType {
-  DELIVERY = 'DELIVERY',
-  PICKUP = 'PICKUP',
-  DINE_IN = 'DINE_IN',
+  DELIVERY = "DELIVERY",
+  PICKUP = "PICKUP",
+  DINE_IN = "DINE_IN",
 }
 
 export enum PaymentStatus {
-  PENDING = 'PENDING',
-  PAID = 'PAID',
-  FAILED = 'FAILED',
-  REFUNDED = 'REFUNDED',
+  PENDING = "PENDING",
+  PAID = "PAID",
+  FAILED = "FAILED",
+  REFUNDED = "REFUNDED",
 }
 
 export enum ItemAvailability {
-  AVAILABLE = 'AVAILABLE',
-  OUT_OF_STOCK = 'OUT_OF_STOCK',
-  LIMITED = 'LIMITED',
+  AVAILABLE = "AVAILABLE",
+  OUT_OF_STOCK = "OUT_OF_STOCK",
+  LIMITED = "LIMITED",
 }
 
 export enum DayOfWeek {
-  MONDAY = 'MONDAY',
-  TUESDAY = 'TUESDAY',
-  WEDNESDAY = 'WEDNESDAY',
-  THURSDAY = 'THURSDAY',
-  FRIDAY = 'FRIDAY',
-  SATURDAY = 'SATURDAY',
-  SUNDAY = 'SUNDAY',
+  MONDAY = "MONDAY",
+  TUESDAY = "TUESDAY",
+  WEDNESDAY = "WEDNESDAY",
+  THURSDAY = "THURSDAY",
+  FRIDAY = "FRIDAY",
+  SATURDAY = "SATURDAY",
+  SUNDAY = "SUNDAY",
 }
 
 export enum CuisineType {
-  AFRICAN = 'AFRICAN',
-  NIGERIAN = 'NIGERIAN',
-  KENYAN = 'KENYAN',
-  GHANAIAN = 'GHANAIAN',
-  ETHIOPIAN = 'ETHIOPIAN',
-  SOUTH_AFRICAN = 'SOUTH_AFRICAN',
-  FAST_FOOD = 'FAST_FOOD',
-  CHINESE = 'CHINESE',
-  INDIAN = 'INDIAN',
-  ITALIAN = 'ITALIAN',
-  AMERICAN = 'AMERICAN',
-  MEXICAN = 'MEXICAN',
-  MIDDLE_EASTERN = 'MIDDLE_EASTERN',
-  SEAFOOD = 'SEAFOOD',
-  VEGETARIAN = 'VEGETARIAN',
-  DESSERTS = 'DESSERTS',
-  BEVERAGES = 'BEVERAGES',
-  OTHER = 'OTHER',
+  AFRICAN = "AFRICAN",
+  NIGERIAN = "NIGERIAN",
+  KENYAN = "KENYAN",
+  GHANAIAN = "GHANAIAN",
+  ETHIOPIAN = "ETHIOPIAN",
+  SOUTH_AFRICAN = "SOUTH_AFRICAN",
+  FAST_FOOD = "FAST_FOOD",
+  CHINESE = "CHINESE",
+  INDIAN = "INDIAN",
+  ITALIAN = "ITALIAN",
+  AMERICAN = "AMERICAN",
+  MEXICAN = "MEXICAN",
+  MIDDLE_EASTERN = "MIDDLE_EASTERN",
+  SEAFOOD = "SEAFOOD",
+  VEGETARIAN = "VEGETARIAN",
+  DESSERTS = "DESSERTS",
+  BEVERAGES = "BEVERAGES",
+  OTHER = "OTHER",
 }
 
 // ============================================
@@ -298,8 +298,8 @@ export interface SearchFilters {
   isOpen?: boolean;
   maxDeliveryFee?: number;
   maxDistance?: number;
-  sortBy?: 'rating' | 'distance' | 'deliveryTime' | 'price';
-  sortOrder?: 'asc' | 'desc';
+  sortBy?: "rating" | "distance" | "deliveryTime" | "price";
+  sortOrder?: "asc" | "desc";
 }
 
 // ============================================
@@ -308,13 +308,13 @@ export interface SearchFilters {
 
 export interface OrderEvent {
   type:
-    | 'order.created'
-    | 'order.confirmed'
-    | 'order.preparing'
-    | 'order.ready'
-    | 'order.picked_up'
-    | 'order.delivered'
-    | 'order.cancelled';
+    | "order.created"
+    | "order.confirmed"
+    | "order.preparing"
+    | "order.ready"
+    | "order.picked_up"
+    | "order.delivered"
+    | "order.cancelled";
   orderId: string;
   orderNumber: string;
   customerId: string;
@@ -325,7 +325,11 @@ export interface OrderEvent {
 }
 
 export interface RestaurantEvent {
-  type: 'restaurant.opened' | 'restaurant.closed' | 'restaurant.busy' | 'restaurant.updated';
+  type:
+    | "restaurant.opened"
+    | "restaurant.closed"
+    | "restaurant.busy"
+    | "restaurant.updated";
   restaurantId: string;
   timestamp: Date;
 }

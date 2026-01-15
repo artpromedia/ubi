@@ -24,7 +24,12 @@ export interface RideCardProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Dropoff location */
   dropoff: string;
   /** Ride status */
-  status?: "pending" | "driver-assigned" | "in-transit" | "completed" | "cancelled";
+  status?:
+    | "pending"
+    | "driver-assigned"
+    | "in-transit"
+    | "completed"
+    | "cancelled";
   /** Driver name */
   driverName?: string;
   /** Estimated arrival time */
@@ -64,7 +69,7 @@ const RideCard = React.forwardRef<HTMLDivElement, RideCardProps>(
       vehicleType,
       ...props
     },
-    ref
+    ref,
   ) => {
     return (
       <Card ref={ref} className={cn("w-full", className)} {...props}>
@@ -125,7 +130,7 @@ const RideCard = React.forwardRef<HTMLDivElement, RideCardProps>(
         </CardContent>
       </Card>
     );
-  }
+  },
 );
 RideCard.displayName = "RideCard";
 

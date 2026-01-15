@@ -174,7 +174,7 @@ loyaltyRoutes.get("/points/:userId", async (c) => {
         success: false,
         error: { code: "POINTS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -215,10 +215,10 @@ loyaltyRoutes.post(
           success: false,
           error: { code: "EARN_POINTS_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 /**
@@ -250,10 +250,10 @@ loyaltyRoutes.post(
           success: false,
           error: { code: "REDEEM_POINTS_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 /**
@@ -284,10 +284,10 @@ loyaltyRoutes.get(
           success: false,
           error: { code: "TRANSACTIONS_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 // ============================================================================
@@ -311,7 +311,7 @@ loyaltyRoutes.get("/tiers", async (c) => {
         success: false,
         error: { code: "TIERS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -344,7 +344,7 @@ loyaltyRoutes.get("/tiers/:userId", async (c) => {
         success: false,
         error: { code: "TIER_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -369,7 +369,7 @@ loyaltyRoutes.post("/tiers/:userId/use-benefit", async (c) => {
         success: false,
         error: { code: "USE_BENEFIT_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -385,7 +385,7 @@ loyaltyRoutes.get("/tiers/:userId/surge-discount", async (c) => {
   try {
     const discount = await tierService.getSurgeDiscount(
       userId,
-      surgeMultiplier
+      surgeMultiplier,
     );
     return c.json({
       success: true,
@@ -397,7 +397,7 @@ loyaltyRoutes.get("/tiers/:userId/surge-discount", async (c) => {
         success: false,
         error: { code: "SURGE_DISCOUNT_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -423,7 +423,7 @@ loyaltyRoutes.get("/subscriptions/plans", async (c) => {
         success: false,
         error: { code: "PLANS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -454,7 +454,7 @@ loyaltyRoutes.get("/subscriptions/:userId", async (c) => {
         success: false,
         error: { code: "SUBSCRIPTION_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -481,7 +481,7 @@ loyaltyRoutes.post(
           success: true,
           data: subscription,
         },
-        201
+        201,
       );
     } catch (error: any) {
       return c.json(
@@ -489,10 +489,10 @@ loyaltyRoutes.post(
           success: false,
           error: { code: "CREATE_SUBSCRIPTION_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 /**
@@ -518,7 +518,7 @@ loyaltyRoutes.post("/subscriptions/:userId/cancel", async (c) => {
         success: false,
         error: { code: "CANCEL_SUBSCRIPTION_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -542,7 +542,7 @@ loyaltyRoutes.post("/subscriptions/:userId/pause", async (c) => {
         success: false,
         error: { code: "PAUSE_SUBSCRIPTION_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -566,7 +566,7 @@ loyaltyRoutes.post("/subscriptions/:userId/resume", async (c) => {
         success: false,
         error: { code: "RESUME_SUBSCRIPTION_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -594,10 +594,10 @@ loyaltyRoutes.put(
           success: false,
           error: { code: "CHANGE_PLAN_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 /**
@@ -620,7 +620,7 @@ loyaltyRoutes.post("/subscriptions/:userId/use-benefit", async (c) => {
         success: false,
         error: { code: "USE_BENEFIT_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -640,7 +640,7 @@ loyaltyRoutes.get("/achievements", async (c) => {
     const achievements = category
       ? await achievementsService.getAchievementsByCategory(
           "system",
-          category as any
+          category as any,
         )
       : await achievementsService.getAchievements("system");
 
@@ -654,7 +654,7 @@ loyaltyRoutes.get("/achievements", async (c) => {
         success: false,
         error: { code: "ACHIEVEMENTS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -690,7 +690,7 @@ loyaltyRoutes.get("/achievements/:userId", async (c) => {
         success: false,
         error: { code: "USER_ACHIEVEMENTS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -715,7 +715,7 @@ loyaltyRoutes.post("/achievements/:userId/claim", async (c) => {
         success: false,
         error: { code: "CLAIM_ACHIEVEMENT_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -753,7 +753,7 @@ loyaltyRoutes.get("/streaks/:userId", async (c) => {
         success: false,
         error: { code: "STREAK_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -778,7 +778,7 @@ loyaltyRoutes.post("/streaks/:userId/record", async (c) => {
         success: false,
         error: { code: "RECORD_STREAK_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -802,7 +802,7 @@ loyaltyRoutes.post("/streaks/:userId/freeze", async (c) => {
         success: false,
         error: { code: "FREEZE_STREAK_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -814,10 +814,10 @@ loyaltyRoutes.post("/streaks/:userId/freeze", async (c) => {
 loyaltyRoutes.get("/streaks/:userId/calendar", async (c) => {
   const userId = c.req.param("userId");
   const month = parseInt(
-    c.req.query("month") || String(new Date().getMonth() + 1)
+    c.req.query("month") || String(new Date().getMonth() + 1),
   );
   const year = parseInt(
-    c.req.query("year") || String(new Date().getFullYear())
+    c.req.query("year") || String(new Date().getFullYear()),
   );
 
   try {
@@ -832,7 +832,7 @@ loyaltyRoutes.get("/streaks/:userId/calendar", async (c) => {
         success: false,
         error: { code: "CALENDAR_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -848,7 +848,7 @@ loyaltyRoutes.get("/streaks/leaderboard", async (c) => {
   try {
     const leaderboard = await streaksService.getLeaderboard(
       streakType || "current",
-      limit
+      limit,
     );
     return c.json({
       success: true,
@@ -860,7 +860,7 @@ loyaltyRoutes.get("/streaks/leaderboard", async (c) => {
         success: false,
         error: { code: "STREAK_LEADERBOARD_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -886,7 +886,7 @@ loyaltyRoutes.get("/referrals/program", async (c) => {
         success: false,
         error: { code: "PROGRAM_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -915,7 +915,7 @@ loyaltyRoutes.get("/referrals/:userId/code", async (c) => {
         success: false,
         error: { code: "REFERRAL_CODE_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -942,10 +942,10 @@ loyaltyRoutes.post(
           success: false,
           error: { code: "APPLY_REFERRAL_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 /**
@@ -967,7 +967,7 @@ loyaltyRoutes.post("/referrals/:referralId/complete", async (c) => {
         success: false,
         error: { code: "COMPLETE_REFERRAL_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -998,7 +998,7 @@ loyaltyRoutes.get("/referrals/:userId/stats", async (c) => {
         success: false,
         error: { code: "REFERRAL_STATS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1023,7 +1023,7 @@ loyaltyRoutes.get("/referrals/leaderboard", async (c) => {
         success: false,
         error: { code: "REFERRAL_LEADERBOARD_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1058,7 +1058,7 @@ loyaltyRoutes.get("/challenges/:userId", async (c) => {
         success: false,
         error: { code: "CHALLENGES_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1082,7 +1082,7 @@ loyaltyRoutes.get("/challenges/:userId/daily", async (c) => {
         success: false,
         error: { code: "DAILY_CHALLENGES_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1106,7 +1106,7 @@ loyaltyRoutes.get("/challenges/:userId/weekly", async (c) => {
         success: false,
         error: { code: "WEEKLY_CHALLENGES_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1128,7 +1128,7 @@ loyaltyRoutes.post(
           success: true,
           data: result,
         },
-        201
+        201,
       );
     } catch (error: any) {
       return c.json(
@@ -1136,10 +1136,10 @@ loyaltyRoutes.post(
           success: false,
           error: { code: "JOIN_CHALLENGE_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 /**
@@ -1162,7 +1162,7 @@ loyaltyRoutes.post("/challenges/:userChallengeId/claim", async (c) => {
         success: false,
         error: { code: "CLAIM_CHALLENGE_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1178,7 +1178,7 @@ loyaltyRoutes.get("/challenges/:challengeId/leaderboard", async (c) => {
   try {
     const leaderboard = await challengesService.getChallengeLeaderboard(
       challengeId,
-      limit
+      limit,
     );
     return c.json({
       success: true,
@@ -1190,7 +1190,7 @@ loyaltyRoutes.get("/challenges/:challengeId/leaderboard", async (c) => {
         success: false,
         error: { code: "CHALLENGE_LEADERBOARD_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1212,7 +1212,7 @@ loyaltyRoutes.post(
           success: true,
           data: challenge,
         },
-        201
+        201,
       );
     } catch (error: any) {
       return c.json(
@@ -1220,10 +1220,10 @@ loyaltyRoutes.post(
           success: false,
           error: { code: "CREATE_CHALLENGE_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 // ============================================================================
@@ -1247,7 +1247,7 @@ loyaltyRoutes.get("/leaderboards", async (c) => {
         success: false,
         error: { code: "LEADERBOARDS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1266,7 +1266,7 @@ loyaltyRoutes.get(
       const leaderboard = await leaderboardsService.getLeaderboard(
         type as any,
         period,
-        { limit, offset, region, tier }
+        { limit, offset, region, tier },
       );
       return c.json({
         success: true,
@@ -1278,10 +1278,10 @@ loyaltyRoutes.get(
           success: false,
           error: { code: "LEADERBOARD_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 /**
@@ -1305,7 +1305,7 @@ loyaltyRoutes.get("/leaderboards/:userId/rank", async (c) => {
         success: false,
         error: { code: "USER_RANK_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1329,7 +1329,7 @@ loyaltyRoutes.get("/leaderboards/:userId/summary", async (c) => {
         success: false,
         error: { code: "LEADERBOARD_SUMMARY_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1347,7 +1347,7 @@ loyaltyRoutes.get("/leaderboards/:userId/friends", async (c) => {
     const leaderboard = await leaderboardsService.getFriendsLeaderboard(
       userId,
       type,
-      period
+      period,
     );
     return c.json({
       success: true,
@@ -1359,7 +1359,7 @@ loyaltyRoutes.get("/leaderboards/:userId/friends", async (c) => {
         success: false,
         error: { code: "FRIENDS_LEADERBOARD_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1383,7 +1383,7 @@ loyaltyRoutes.get("/leaderboards/:userId/rewards", async (c) => {
         success: false,
         error: { code: "REWARDS_HISTORY_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1413,7 +1413,7 @@ loyaltyRoutes.post(
       if (event.eventType === "RIDE_COMPLETED") {
         await leaderboardsService.updateUserEntry(
           event.userId,
-          "RIDES_COMPLETED"
+          "RIDES_COMPLETED",
         );
       } else if (event.eventType === "FOOD_ORDERED") {
         await leaderboardsService.updateUserEntry(event.userId, "FOOD_ORDERS");
@@ -1434,10 +1434,10 @@ loyaltyRoutes.post(
           success: false,
           error: { code: "EVENT_PROCESSING_ERROR", message: error.message },
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 // ============================================================================
@@ -1468,7 +1468,7 @@ loyaltyRoutes.post("/admin/process-expirations", async (c) => {
         success: false,
         error: { code: "EXPIRATION_PROCESSING_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1490,7 +1490,7 @@ loyaltyRoutes.post("/admin/process-renewals", async (c) => {
         success: false,
         error: { code: "RENEWAL_PROCESSING_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1514,7 +1514,7 @@ loyaltyRoutes.post("/admin/process-leaderboard-rewards", async (c) => {
         success: false,
         error: { code: "LEADERBOARD_REWARDS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1529,7 +1529,7 @@ loyaltyRoutes.post("/admin/recalculate-leaderboard", async (c) => {
   try {
     const count = await leaderboardsService.recalculateLeaderboard(
       type,
-      period
+      period,
     );
     return c.json({
       success: true,
@@ -1541,7 +1541,7 @@ loyaltyRoutes.post("/admin/recalculate-leaderboard", async (c) => {
         success: false,
         error: { code: "RECALCULATE_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1563,7 +1563,7 @@ loyaltyRoutes.get("/admin/tier-analytics", async (c) => {
         success: false,
         error: { code: "TIER_ANALYTICS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });
@@ -1585,7 +1585,7 @@ loyaltyRoutes.get("/admin/at-risk-streaks", async (c) => {
         success: false,
         error: { code: "AT_RISK_STREAKS_ERROR", message: error.message },
       },
-      400
+      400,
     );
   }
 });

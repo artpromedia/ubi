@@ -97,7 +97,7 @@ export function riderConnection() {
             type: "subscribe",
             channel: "ride",
             rideId: rideId,
-          })
+          }),
         );
         wsMessagesSent.add(1);
 
@@ -107,7 +107,7 @@ export function riderConnection() {
             type: "subscribe",
             channel: "driver_location",
             rideId: rideId,
-          })
+          }),
         );
         wsMessagesSent.add(1);
       });
@@ -168,7 +168,7 @@ export function riderConnection() {
       socket.setTimeout(() => {
         socket.close();
       }, 120000); // 2 minutes
-    }
+    },
   );
 
   check(response, {
@@ -209,7 +209,7 @@ export function driverLocationUpdates() {
             driverId: driverId,
             location: currentLocation,
             vehicleType: "economy",
-          })
+          }),
         );
         wsMessagesSent.add(1);
       });
@@ -228,7 +228,7 @@ export function driverLocationUpdates() {
                 type: "accept_ride",
                 rideId: message.rideId,
                 driverId: driverId,
-              })
+              }),
             );
             wsMessagesSent.add(1);
           }
@@ -262,7 +262,7 @@ export function driverLocationUpdates() {
             speed: 30 + Math.random() * 40, // 30-70 km/h
             heading: Math.random() * 360,
             timestamp: Date.now(),
-          })
+          }),
         );
         wsMessagesSent.add(1);
         updatesSent++;
@@ -272,7 +272,7 @@ export function driverLocationUpdates() {
       socket.setTimeout(() => {
         socket.close();
       }, 120000);
-    }
+    },
   );
 
   check(response, {
@@ -287,7 +287,7 @@ function handleDriverLocation(socket, message) {
       JSON.stringify({
         type: "ack",
         messageId: message.messageId,
-      })
+      }),
     );
     wsMessagesSent.add(1);
   }

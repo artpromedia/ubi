@@ -47,32 +47,36 @@ A Flutter monorepo containing the UBI rider and driver mobile applications, alon
 ## 📱 Apps
 
 ### UBI Rider App
+
 Consumer app for booking rides, ordering food, and sending packages.
 
-### UBI Driver App  
+### UBI Driver App
+
 Partner app for drivers and delivery partners.
 
 ## 📦 Packages
 
-| Package | Description |
-|---------|-------------|
-| `ui_kit` | Shared design system with UBI branding |
-| `core` | Business logic, entities, and use cases |
-| `api_client` | HTTP client with authentication |
-| `location` | Location services and tracking |
-| `payments` | Mobile money and card payments |
-| `maps` | Google Maps integration |
-| `analytics` | Event tracking and analytics |
-| `storage` | Local database (Isar) |
+| Package      | Description                             |
+| ------------ | --------------------------------------- |
+| `ui_kit`     | Shared design system with UBI branding  |
+| `core`       | Business logic, entities, and use cases |
+| `api_client` | HTTP client with authentication         |
+| `location`   | Location services and tracking          |
+| `payments`   | Mobile money and card payments          |
+| `maps`       | Google Maps integration                 |
+| `analytics`  | Event tracking and analytics            |
+| `storage`    | Local database (Isar)                   |
 
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Flutter 3.16.0+
 - Dart 3.2.0+
 - Melos CLI
 
 ### Setup
+
 ```bash
 # Install Melos globally
 dart pub global activate melos
@@ -213,17 +217,18 @@ melos clean:deep
 
 ## 📊 Performance Targets
 
-| Metric | Target |
-|--------|--------|
-| Cold Start | < 3 seconds |
-| Frame Rate | 60fps |
-| App Size | < 50MB |
-| Memory | < 150MB |
-| Battery | < 5%/hour with location |
+| Metric     | Target                  |
+| ---------- | ----------------------- |
+| Cold Start | < 3 seconds             |
+| Frame Rate | 60fps                   |
+| App Size   | < 50MB                  |
+| Memory     | < 150MB                 |
+| Battery    | < 5%/hour with location |
 
 ## 🌍 Localization
 
 Supported languages:
+
 - English (default)
 - French
 - Swahili

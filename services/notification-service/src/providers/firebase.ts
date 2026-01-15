@@ -267,7 +267,7 @@ class FirebaseService {
    */
   async unsubscribeFromTopic(
     tokens: string[],
-    topic: string
+    topic: string,
   ): Promise<SendResult> {
     try {
       const messaging = getApp().messaging();
@@ -292,7 +292,7 @@ class FirebaseService {
    */
   async sendDataOnly(
     token: string,
-    data: Record<string, string>
+    data: Record<string, string>,
   ): Promise<SendResult> {
     try {
       const messaging = getApp().messaging();

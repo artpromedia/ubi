@@ -12,7 +12,12 @@ import * as React from "react";
 
 import { Button } from "./button";
 import { Sheet, SheetContent, SheetTrigger } from "./sheet";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./tooltip";
 import { cn } from "../lib/utils";
 
 // Sidebar context for managing collapsed state
@@ -23,7 +28,7 @@ interface SidebarContextValue {
 }
 
 const SidebarContext = React.createContext<SidebarContextValue | undefined>(
-  undefined
+  undefined,
 );
 
 export const useSidebar = () => {
@@ -99,7 +104,7 @@ const Sidebar = React.forwardRef<HTMLElement, SidebarProps>(
         className={cn(
           "relative flex h-full flex-col border-r bg-background transition-all duration-300",
           isCollapsed ? "w-16" : "w-64",
-          className
+          className,
         )}
         {...props}
       >
@@ -123,7 +128,7 @@ const Sidebar = React.forwardRef<HTMLElement, SidebarProps>(
         )}
       </aside>
     );
-  }
+  },
 );
 Sidebar.displayName = "Sidebar";
 
@@ -139,7 +144,7 @@ const SidebarHeader = React.forwardRef<
       className={cn(
         "flex h-16 items-center border-b px-4",
         isCollapsed && "justify-center px-2",
-        className
+        className,
       )}
       {...props}
     />
@@ -169,11 +174,7 @@ const SidebarFooter = React.forwardRef<
   return (
     <div
       ref={ref}
-      className={cn(
-        "border-t p-4",
-        isCollapsed && "px-2",
-        className
-      )}
+      className={cn("border-t p-4", isCollapsed && "px-2", className)}
       {...props}
     />
   );
@@ -201,7 +202,7 @@ const SidebarGroup = React.forwardRef<HTMLDivElement, SidebarGroupProps>(
         <div className="space-y-1">{children}</div>
       </div>
     );
-  }
+  },
 );
 SidebarGroup.displayName = "SidebarGroup";
 
@@ -224,11 +225,12 @@ const sidebarItemVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
+  },
 );
 
 interface SidebarItemProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof sidebarItemVariants> {
   icon?: React.ReactNode;
   label: string;
@@ -238,10 +240,7 @@ interface SidebarItemProps
 }
 
 const SidebarItem = React.forwardRef<HTMLButtonElement, SidebarItemProps>(
-  (
-    { className, variant, size, icon, label, badge, active, ...props },
-    ref
-  ) => {
+  ({ className, variant, size, icon, label, badge, active, ...props }, ref) => {
     const { isCollapsed } = useSidebar();
 
     const content = (
@@ -253,7 +252,7 @@ const SidebarItem = React.forwardRef<HTMLButtonElement, SidebarItemProps>(
             size,
           }),
           isCollapsed && "justify-center px-2",
-          className
+          className,
         )}
         {...props}
       >
@@ -284,13 +283,14 @@ const SidebarItem = React.forwardRef<HTMLButtonElement, SidebarItemProps>(
     }
 
     return content;
-  }
+  },
 );
 SidebarItem.displayName = "SidebarItem";
 
 // Sidebar link (anchor version)
 interface SidebarLinkProps
-  extends React.AnchorHTMLAttributes<HTMLAnchorElement>,
+  extends
+    React.AnchorHTMLAttributes<HTMLAnchorElement>,
     VariantProps<typeof sidebarItemVariants> {
   icon?: React.ReactNode;
   label: string;
@@ -311,7 +311,7 @@ const SidebarLink = React.forwardRef<HTMLAnchorElement, SidebarLinkProps>(
             size,
           }),
           isCollapsed && "justify-center px-2",
-          className
+          className,
         )}
         {...props}
       >
@@ -342,13 +342,17 @@ const SidebarLink = React.forwardRef<HTMLAnchorElement, SidebarLinkProps>(
     }
 
     return content;
-  }
+  },
 );
 SidebarLink.displayName = "SidebarLink";
 
 export {
-    Sidebar, SidebarContent,
-    SidebarFooter,
-    SidebarGroup, SidebarHeader, SidebarItem, sidebarItemVariants, SidebarLink
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarHeader,
+  SidebarItem,
+  sidebarItemVariants,
+  SidebarLink,
 };
-

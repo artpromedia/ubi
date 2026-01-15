@@ -84,7 +84,7 @@ const bulkUpdateAvailabilitySchema = z.object({
     z.object({
       id: z.string(),
       availability: z.nativeEnum(ItemAvailability),
-    })
+    }),
   ),
 });
 
@@ -141,7 +141,7 @@ menuRoutes.post(
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
@@ -157,7 +157,7 @@ menuRoutes.post(
     await cache.delete(`menu:${data.restaurantId}`);
 
     return c.json({ success: true, data: category }, 201);
-  }
+  },
 );
 
 /**
@@ -182,7 +182,7 @@ menuRoutes.put(
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
@@ -194,7 +194,7 @@ menuRoutes.put(
     await cache.delete(`menu:${category.restaurantId}`);
 
     return c.json({ success: true, data: updated });
-  }
+  },
 );
 
 /**
@@ -215,7 +215,7 @@ menuRoutes.delete("/categories/:id", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -254,7 +254,7 @@ menuRoutes.post("/categories/reorder", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -264,8 +264,8 @@ menuRoutes.post("/categories/reorder", async (c) => {
       prisma.menuCategory.update({
         where: { id },
         data: { sortOrder: index },
-      })
-    )
+      }),
+    ),
   );
 
   await cache.delete(`menu:${restaurantId}`);
@@ -299,7 +299,7 @@ menuRoutes.get("/items/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Menu item not found" },
       },
-      404
+      404,
     );
   }
 
@@ -326,7 +326,7 @@ menuRoutes.post(
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
@@ -358,7 +358,7 @@ menuRoutes.post(
     await cache.delete(`menu:${data.restaurantId}`);
 
     return c.json({ success: true, data: item }, 201);
-  }
+  },
 );
 
 /**
@@ -383,7 +383,7 @@ menuRoutes.put(
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
@@ -414,7 +414,7 @@ menuRoutes.put(
     await cache.delete(`menu:${item.restaurantId}`);
 
     return c.json({ success: true, data: updated });
-  }
+  },
 );
 
 /**
@@ -435,7 +435,7 @@ menuRoutes.delete("/items/:id", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -471,7 +471,7 @@ menuRoutes.put("/items/:id/availability", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -513,7 +513,7 @@ menuRoutes.post(
               message: "Not authorized for all items",
             },
           },
-          403
+          403,
         );
       }
       restaurantIds.add(item.restaurantId);
@@ -525,8 +525,8 @@ menuRoutes.post(
         prisma.menuItem.update({
           where: { id: item.id },
           data: { availability: item.availability },
-        })
-      )
+        }),
+      ),
     );
 
     // Invalidate all affected menus
@@ -538,7 +538,7 @@ menuRoutes.post(
       success: true,
       data: { updated: items.length },
     });
-  }
+  },
 );
 
 /**
@@ -562,7 +562,7 @@ menuRoutes.post("/items/reorder", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -571,8 +571,8 @@ menuRoutes.post("/items/reorder", async (c) => {
       prisma.menuItem.update({
         where: { id },
         data: { sortOrder: index },
-      })
-    )
+      }),
+    ),
   );
 
   await cache.delete(`menu:${category.restaurantId}`);

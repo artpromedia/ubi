@@ -3,10 +3,12 @@
  * Merchant QR codes, dynamic QR generation, and scan-to-pay
  */
 
-import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
+
+import { enhancedWalletService } from "./enhanced-wallet.service";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
+
 import type {
   DynamicQRParams,
   DynamicQRResult,
@@ -16,7 +18,7 @@ import type {
   QRPaymentParams,
   QRPaymentResult,
 } from "../types/fintech.types";
-import { enhancedWalletService } from "./enhanced-wallet.service";
+import type { Currency } from "@prisma/client";
 
 // ===========================================
 // CONSTANTS
@@ -58,7 +60,7 @@ export class QRPaymentService {
 
     if (existingCount >= MAX_MERCHANT_QR_CODES) {
       throw new Error(
-        `Maximum ${MAX_MERCHANT_QR_CODES} active QR codes allowed per merchant`
+        `Maximum ${MAX_MERCHANT_QR_CODES} active QR codes allowed per merchant`,
       );
     }
 
@@ -149,7 +151,7 @@ export class QRPaymentService {
         createdAt: new Date().toISOString(),
         expiresAt: expiresAt.toISOString(),
         used: false,
-      })
+      }),
     );
 
     return {
@@ -166,7 +168,7 @@ export class QRPaymentService {
    * Decode and validate a QR code
    */
   async decodeQR(
-    qrData: string
+    qrData: string,
   ): Promise<QRPayload & { valid: boolean; error?: string }> {
     try {
       const payload = this.decodeQRPayload(qrData);
@@ -263,7 +265,7 @@ export class QRPaymentService {
       await redis.setex(
         `dynamic_qr:${payload.qrId}`,
         60, // Keep for 1 minute for reference
-        JSON.stringify({ ...data, used: true })
+        JSON.stringify({ ...data, used: true }),
       );
     } else if (payload.type === "STATIC_FIXED") {
       // Fixed amount merchant QR
@@ -295,7 +297,7 @@ export class QRPaymentService {
     // Check balance
     const balance = await enhancedWalletService.getBalance(
       payerWalletId,
-      currency
+      currency,
     );
     if (balance.available < amount) {
       throw new Error("Insufficient balance");
@@ -384,37 +386,39 @@ export class QRPaymentService {
       orderBy: { createdAt: "desc" },
     });
 
-    return qrCodes.map((qr: {
-      id: string;
-      merchantId: string;
-      walletId: string;
-      name: string;
-      type: string;
-      qrData: string;
-      location: string | null;
-      defaultCurrency: Currency;
-      fixedAmount: number | null;
-      isActive: boolean;
-      totalTransactions: number;
-      totalAmount: number;
-      createdAt: Date;
-      lastUsedAt: Date | null;
-    }) => ({
-      id: qr.id,
-      merchantId: qr.merchantId,
-      walletId: qr.walletId,
-      name: qr.name,
-      type: qr.type as QRCodeType,
-      qrData: qr.qrData,
-      location: qr.location || undefined,
-      defaultCurrency: qr.defaultCurrency,
-      fixedAmount: qr.fixedAmount ? Number(qr.fixedAmount) : undefined,
-      isActive: qr.isActive,
-      totalTransactions: qr.totalTransactions,
-      totalAmount: Number(qr.totalAmount),
-      createdAt: qr.createdAt,
-      lastUsedAt: qr.lastUsedAt || undefined,
-    }));
+    return qrCodes.map(
+      (qr: {
+        id: string;
+        merchantId: string;
+        walletId: string;
+        name: string;
+        type: string;
+        qrData: string;
+        location: string | null;
+        defaultCurrency: Currency;
+        fixedAmount: number | null;
+        isActive: boolean;
+        totalTransactions: number;
+        totalAmount: number;
+        createdAt: Date;
+        lastUsedAt: Date | null;
+      }) => ({
+        id: qr.id,
+        merchantId: qr.merchantId,
+        walletId: qr.walletId,
+        name: qr.name,
+        type: qr.type as QRCodeType,
+        qrData: qr.qrData,
+        location: qr.location || undefined,
+        defaultCurrency: qr.defaultCurrency,
+        fixedAmount: qr.fixedAmount ? Number(qr.fixedAmount) : undefined,
+        isActive: qr.isActive,
+        totalTransactions: qr.totalTransactions,
+        totalAmount: Number(qr.totalAmount),
+        createdAt: qr.createdAt,
+        lastUsedAt: qr.lastUsedAt || undefined,
+      }),
+    );
   }
 
   /**
@@ -423,7 +427,7 @@ export class QRPaymentService {
   async updateMerchantQR(
     qrId: string,
     merchantId: string,
-    updates: { name?: string; location?: string; isActive?: boolean }
+    updates: { name?: string; location?: string; isActive?: boolean },
   ): Promise<MerchantQRCode> {
     const qrCode = await prisma.merchantQRCode.findUnique({
       where: { id: qrId },
@@ -482,7 +486,7 @@ export class QRPaymentService {
       role?: "payer" | "recipient" | "all";
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ): Promise<{ payments: QRPaymentResult[]; total: number }> {
     const { role = "all", limit = 20, offset = 0 } = options;
 
@@ -507,25 +511,27 @@ export class QRPaymentService {
     ]);
 
     return {
-      payments: payments.map((p: {
-        id: string;
-        status: string;
-        amount: number;
-        currency: Currency;
-        note: string | null;
-        payerWalletId: string;
-        createdAt: Date;
-        completedAt: Date | null;
-      }) => ({
-        paymentId: p.id,
-        status: p.status as "COMPLETED" | "FAILED",
-        amount: Number(p.amount),
-        currency: p.currency,
-        note: p.note || undefined,
-        direction: p.payerWalletId === walletId ? "sent" : "received",
-        createdAt: p.createdAt,
-        completedAt: p.completedAt || undefined,
-      })),
+      payments: payments.map(
+        (p: {
+          id: string;
+          status: string;
+          amount: number;
+          currency: Currency;
+          note: string | null;
+          payerWalletId: string;
+          createdAt: Date;
+          completedAt: Date | null;
+        }) => ({
+          paymentId: p.id,
+          status: p.status as "COMPLETED" | "FAILED",
+          amount: Number(p.amount),
+          currency: p.currency,
+          note: p.note || undefined,
+          direction: p.payerWalletId === walletId ? "sent" : "received",
+          createdAt: p.createdAt,
+          completedAt: p.completedAt || undefined,
+        }),
+      ),
       total,
     };
   }
@@ -536,7 +542,7 @@ export class QRPaymentService {
   async getQRAnalytics(
     merchantId: string,
     qrId?: string,
-    dateRange?: { start: Date; end: Date }
+    dateRange?: { start: Date; end: Date },
   ): Promise<{
     totalTransactions: number;
     totalAmount: number;
@@ -582,7 +588,10 @@ export class QRPaymentService {
 
     // Calculate totals
     const totalTransactions = payments.length;
-    const totalAmount = payments.reduce((sum: number, p: { amount: number }) => sum + Number(p.amount), 0);
+    const totalAmount = payments.reduce(
+      (sum: number, p: { amount: number }) => sum + Number(p.amount),
+      0,
+    );
     const averageAmount =
       totalTransactions > 0 ? totalAmount / totalTransactions : 0;
 
@@ -592,7 +601,9 @@ export class QRPaymentService {
       { name: string; transactions: number; amount: number }
     >();
     for (const payment of payments) {
-      if (!payment.qrCodeId) continue;
+      if (!payment.qrCodeId) {
+        continue;
+      }
       const existing = byQRCode.get(payment.qrCodeId) || {
         name: payment.qrCode?.name || "Unknown",
         transactions: 0,

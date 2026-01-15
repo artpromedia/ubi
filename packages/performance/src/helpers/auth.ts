@@ -7,12 +7,7 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
 import { getBaseUrl, generatePhoneNumber } from "../config";
-import {
-  createHeaders,
-  authSuccess,
-  authFailure,
-  ApiResponse,
-} from "./http";
+import { createHeaders, authSuccess, authFailure, ApiResponse } from "./http";
 
 export interface AuthTokens {
   accessToken: string;
@@ -53,11 +48,9 @@ export function requestOtp(phoneNumber: string): boolean {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/auth/otp/request`;
 
-  const response = http.post(
-    url,
-    JSON.stringify({ phoneNumber }),
-    { headers: createHeaders() }
-  );
+  const response = http.post(url, JSON.stringify({ phoneNumber }), {
+    headers: createHeaders(),
+  });
 
   const passed = check(response, {
     "OTP request - status is 200": (r) => r.status === 200,
@@ -81,18 +74,13 @@ export function requestOtp(phoneNumber: string): boolean {
 }
 
 // Verify OTP and get tokens
-export function verifyOtp(
-  phoneNumber: string,
-  otp: string
-): AuthTokens | null {
+export function verifyOtp(phoneNumber: string, otp: string): AuthTokens | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/auth/otp/verify`;
 
-  const response = http.post(
-    url,
-    JSON.stringify({ phoneNumber, otp }),
-    { headers: createHeaders() }
-  );
+  const response = http.post(url, JSON.stringify({ phoneNumber, otp }), {
+    headers: createHeaders(),
+  });
 
   const passed = check(response, {
     "OTP verify - status is 200": (r) => r.status === 200,
@@ -128,16 +116,14 @@ export function verifyOtp(
 // Login with phone and PIN (for returning users)
 export function loginWithPin(
   phoneNumber: string,
-  pin: string
+  pin: string,
 ): AuthTokens | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/auth/login`;
 
-  const response = http.post(
-    url,
-    JSON.stringify({ phoneNumber, pin }),
-    { headers: createHeaders() }
-  );
+  const response = http.post(url, JSON.stringify({ phoneNumber, pin }), {
+    headers: createHeaders(),
+  });
 
   const passed = check(response, {
     "Login - status is 200": (r) => r.status === 200,
@@ -175,11 +161,9 @@ export function refreshToken(refreshToken: string): AuthTokens | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/auth/refresh`;
 
-  const response = http.post(
-    url,
-    JSON.stringify({ refreshToken }),
-    { headers: createHeaders() }
-  );
+  const response = http.post(url, JSON.stringify({ refreshToken }), {
+    headers: createHeaders(),
+  });
 
   const passed = check(response, {
     "Token refresh - status is 200": (r) => r.status === 200,

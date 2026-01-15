@@ -161,7 +161,7 @@ export function rideBookingScenario() {
       tokenStore,
       pickup,
       dropoff,
-      options[0]
+      options[0],
     );
     if (bookingId) {
       customMetrics.bookingCreated.add(1);
@@ -196,7 +196,7 @@ export function foodOrderingScenario() {
       // Create order
       const items = selectRandomItems(
         menu.items,
-        Math.floor(Math.random() * 3) + 1
+        Math.floor(Math.random() * 3) + 1,
       );
       const orderId = createFoodOrder(tokenStore, restaurant.id, items);
 
@@ -295,7 +295,7 @@ export function websocketTrackingScenario() {
           type: "subscribe",
           channel: "location",
           entityId: trackingId,
-        })
+        }),
       );
     });
 
@@ -336,7 +336,7 @@ function authenticateUser(tokenStore, vuId) {
     "POST",
     `${env.baseUrl}/api/v1/auth/otp/request`,
     { phone },
-    {}
+    {},
   );
 
   if (otpResponse.status === 200) {
@@ -344,7 +344,7 @@ function authenticateUser(tokenStore, vuId) {
       "POST",
       `${env.baseUrl}/api/v1/auth/otp/verify`,
       { phone, code: "123456" },
-      {}
+      {},
     );
 
     if (verifyResponse.status === 200) {
@@ -362,7 +362,7 @@ function searchLocation(tokenStore, query) {
     "GET",
     `${env.baseUrl}/api/v1/locations/search?q=${encodeURIComponent(query)}&lat=${coords.latitude}&lng=${coords.longitude}`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 
   if (response.status === 200) {
@@ -378,7 +378,7 @@ function getRideOptions(tokenStore, pickup, dropoff) {
     "POST",
     `${env.baseUrl}/api/v1/rides/options`,
     { pickup, dropoff },
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 
   if (response.status === 200) {
@@ -399,7 +399,7 @@ function createRideBooking(tokenStore, pickup, dropoff, option) {
       rideType: option.type,
       paymentMethod: "cash",
     },
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 
   if (response.status === 201) {
@@ -416,7 +416,7 @@ function pollRideStatus(tokenStore, bookingId) {
       "GET",
       `${env.baseUrl}/api/v1/rides/${bookingId}/status`,
       null,
-      tokenStore.getAuthHeader()
+      tokenStore.getAuthHeader(),
     );
     sleepWithJitter(3);
   }
@@ -428,7 +428,7 @@ function getRestaurants(tokenStore) {
     "GET",
     `${env.baseUrl}/api/v1/food/restaurants?lat=${coords.latitude}&lng=${coords.longitude}&limit=20`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 
   if (response.status === 200) {
@@ -443,7 +443,7 @@ function getRestaurantMenu(tokenStore, restaurantId) {
     "GET",
     `${env.baseUrl}/api/v1/food/restaurants/${restaurantId}/menu`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 
   if (response.status === 200) {
@@ -479,7 +479,7 @@ function createFoodOrder(tokenStore, restaurantId, items) {
       },
       paymentMethod: "cash",
     },
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 
   if (response.status === 201) {
@@ -495,7 +495,7 @@ function pollOrderStatus(tokenStore, orderId) {
       "GET",
       `${env.baseUrl}/api/v1/food/orders/${orderId}/status`,
       null,
-      tokenStore.getAuthHeader()
+      tokenStore.getAuthHeader(),
     );
     sleepWithJitter(5);
   }
@@ -506,7 +506,7 @@ function getActiveDeliveries(tokenStore) {
     "GET",
     `${env.baseUrl}/api/v1/deliveries/active`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 
   if (response.status === 200) {
@@ -521,7 +521,7 @@ function getDeliveryStatus(tokenStore, deliveryId) {
     "GET",
     `${env.baseUrl}/api/v1/deliveries/${deliveryId}/status`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 }
 
@@ -530,7 +530,7 @@ function getProfile(tokenStore) {
     "GET",
     `${env.baseUrl}/api/v1/users/me`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 }
 
@@ -539,7 +539,7 @@ function getRideHistory(tokenStore) {
     "GET",
     `${env.baseUrl}/api/v1/users/me/rides?limit=10`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 }
 
@@ -548,7 +548,7 @@ function getPaymentMethods(tokenStore) {
     "GET",
     `${env.baseUrl}/api/v1/users/me/payment-methods`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 
   if (response.status === 200) {
@@ -563,7 +563,7 @@ function getSavedPlaces(tokenStore) {
     "GET",
     `${env.baseUrl}/api/v1/users/me/places`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 }
 
@@ -572,7 +572,7 @@ function verifyPayment(tokenStore, transactionId) {
     "GET",
     `${env.baseUrl}/api/v1/payments/verify/${transactionId}`,
     null,
-    tokenStore.getAuthHeader()
+    tokenStore.getAuthHeader(),
   );
 }
 

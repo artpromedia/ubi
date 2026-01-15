@@ -2,9 +2,9 @@
  * Rate Limiting Middleware
  */
 
-import type { Context, Next } from 'hono';
-import { HTTPException } from 'hono/http-exception';
-import { RateLimiter } from '../lib/redis';
+import type { Context, Next } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { RateLimiter } from "../lib/redis";
 
 // ============================================
 // Default Rate Limiters
@@ -12,35 +12,35 @@ import { RateLimiter } from '../lib/redis';
 
 // General API rate limiter
 export const apiRateLimiter = new RateLimiter({
-  keyPrefix: 'ratelimit:api',
+  keyPrefix: "ratelimit:api",
   limit: 100,
   windowSeconds: 60,
 });
 
 // SMS rate limiter (more restrictive)
 export const smsRateLimiter = new RateLimiter({
-  keyPrefix: 'ratelimit:sms',
+  keyPrefix: "ratelimit:sms",
   limit: 10,
   windowSeconds: 60,
 });
 
 // OTP rate limiter (very restrictive)
 export const otpRateLimiter = new RateLimiter({
-  keyPrefix: 'ratelimit:otp',
+  keyPrefix: "ratelimit:otp",
   limit: 3,
   windowSeconds: 600, // 10 minutes
 });
 
 // Email rate limiter
 export const emailRateLimiter = new RateLimiter({
-  keyPrefix: 'ratelimit:email',
+  keyPrefix: "ratelimit:email",
   limit: 20,
   windowSeconds: 60,
 });
 
 // Push notification rate limiter
 export const pushRateLimiter = new RateLimiter({
-  keyPrefix: 'ratelimit:push',
+  keyPrefix: "ratelimit:push",
   limit: 50,
   windowSeconds: 60,
 });
@@ -72,20 +72,29 @@ export function rateLimit(options: RateLimitOptions) {
     // Generate key (default to IP or user ID)
     const key = options.keyGenerator
       ? options.keyGenerator(c)
-      : c.get('userId') || c.req.header('X-Forwarded-For') || c.req.header('X-Real-IP') || 'unknown';
+      : c.get("userId") ||
+        c.req.header("X-Forwarded-For") ||
+        c.req.header("X-Real-IP") ||
+        "unknown";
 
     const result = await limiter.isAllowed(key);
 
     // Set rate limit headers
-    c.res.headers.set('X-RateLimit-Limit', options.limit.toString());
-    c.res.headers.set('X-RateLimit-Remaining', result.remaining.toString());
-    c.res.headers.set('X-RateLimit-Reset', new Date(result.resetAt).toISOString());
+    c.res.headers.set("X-RateLimit-Limit", options.limit.toString());
+    c.res.headers.set("X-RateLimit-Remaining", result.remaining.toString());
+    c.res.headers.set(
+      "X-RateLimit-Reset",
+      new Date(result.resetAt).toISOString(),
+    );
 
     if (!result.allowed) {
-      c.res.headers.set('Retry-After', Math.ceil((result.resetAt - Date.now()) / 1000).toString());
+      c.res.headers.set(
+        "Retry-After",
+        Math.ceil((result.resetAt - Date.now()) / 1000).toString(),
+      );
 
       throw new HTTPException(429, {
-        message: options.message || 'Too many requests, please try again later',
+        message: options.message || "Too many requests, please try again later",
       });
     }
 
@@ -99,7 +108,7 @@ export function rateLimit(options: RateLimitOptions) {
 export function createRateLimiter(
   endpoint: string,
   limit: number,
-  windowSeconds: number
+  windowSeconds: number,
 ) {
   return rateLimit({
     keyPrefix: `ratelimit:${endpoint}`,
@@ -116,17 +125,17 @@ export function createRateLimiter(
  * Strict rate limiter for sensitive operations
  */
 export const strictRateLimit = rateLimit({
-  keyPrefix: 'ratelimit:strict',
+  keyPrefix: "ratelimit:strict",
   limit: 5,
   windowSeconds: 300, // 5 minutes
-  message: 'Too many attempts. Please wait 5 minutes before trying again.',
+  message: "Too many attempts. Please wait 5 minutes before trying again.",
 });
 
 /**
  * Burst rate limiter (allows bursts but limits over time)
  */
 export const burstRateLimit = rateLimit({
-  keyPrefix: 'ratelimit:burst',
+  keyPrefix: "ratelimit:burst",
   limit: 30,
   windowSeconds: 10,
 });
@@ -135,7 +144,7 @@ export const burstRateLimit = rateLimit({
  * Daily rate limiter
  */
 export const dailyRateLimit = rateLimit({
-  keyPrefix: 'ratelimit:daily',
+  keyPrefix: "ratelimit:daily",
   limit: 1000,
   windowSeconds: 86400, // 24 hours
 });
@@ -149,10 +158,10 @@ export const dailyRateLimit = rateLimit({
  */
 export function getClientIP(c: Context): string {
   return (
-    c.req.header('CF-Connecting-IP') || // Cloudflare
-    c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() ||
-    c.req.header('X-Real-IP') ||
-    'unknown'
+    c.req.header("CF-Connecting-IP") || // Cloudflare
+    c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ||
+    c.req.header("X-Real-IP") ||
+    "unknown"
   );
 }
 
@@ -161,7 +170,7 @@ export function getClientIP(c: Context): string {
  */
 export function ipRateLimit(limit: number, windowSeconds: number) {
   return rateLimit({
-    keyPrefix: 'ratelimit:ip',
+    keyPrefix: "ratelimit:ip",
     limit,
     windowSeconds,
     keyGenerator: getClientIP,

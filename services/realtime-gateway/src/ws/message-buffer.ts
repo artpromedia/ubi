@@ -28,7 +28,7 @@ export class MessageBuffer {
   async bufferMessage(
     userId: string,
     message: WebSocketMessage,
-    priority: "high" | "normal" | "low" = "normal"
+    priority: "high" | "normal" | "low" = "normal",
   ): Promise<boolean> {
     const key = `ws:buffer:${userId}`;
 
@@ -91,7 +91,7 @@ export class MessageBuffer {
    */
   async getBufferedMessages(
     userId: string,
-    fromSeq?: number
+    fromSeq?: number,
   ): Promise<WebSocketMessage[]> {
     const key = `ws:buffer:${userId}`;
 
@@ -173,7 +173,7 @@ export class MessageBuffer {
           await this.redis.rpush(key, ...remaining);
           await this.redis.expire(
             key,
-            Math.ceil(this.config.bufferTtlMs / 1000)
+            Math.ceil(this.config.bufferTtlMs / 1000),
           );
         }
 

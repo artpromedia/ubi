@@ -13,12 +13,14 @@
  * - Rate limiting
  */
 
-import { Hono } from "hono";
 import { createHmac } from "node:crypto";
+
+import { Hono } from "hono";
+
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
-import { MpesaConfig, MpesaService } from "../providers/mpesa.service";
+import { type MpesaConfig, MpesaService } from "../providers/mpesa.service";
 import { PaymentStatus, TransactionStatus, TransactionType } from "../types";
 
 const webhookRoutes = new Hono();
@@ -29,7 +31,9 @@ const webhookRoutes = new Hono();
 
 function verifyPaystackSignature(body: string, signature: string): boolean {
   const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret) return false;
+  if (!secret) {
+    return false;
+  }
 
   const hash = createHmac("sha512", secret).update(body).digest("hex");
 
@@ -39,14 +43,18 @@ function verifyPaystackSignature(body: string, signature: string): boolean {
 function verifyFlutterwaveSignature(_body: string, signature: string): boolean {
   // NOTE: Flutterwave uses a secret hash comparison, not body-based signing
   const secret = process.env.FLUTTERWAVE_SECRET_HASH;
-  if (!secret) return false;
+  if (!secret) {
+    return false;
+  }
 
   return signature === secret;
 }
 
 function verifyStripeSignature(body: string, signature: string): boolean {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) return false;
+  if (!secret) {
+    return false;
+  }
 
   // Stripe uses a more complex signature verification
   // This is simplified - in production use Stripe SDK
@@ -54,7 +62,9 @@ function verifyStripeSignature(body: string, signature: string): boolean {
   const timestamp = elements.find((e) => e.startsWith("t="))?.slice(2);
   const hash = elements.find((e) => e.startsWith("v1="))?.slice(3);
 
-  if (!timestamp || !hash) return false;
+  if (!timestamp || !hash) {
+    return false;
+  }
 
   const payload = `${timestamp}.${body}`;
   const expectedHash = createHmac("sha256", secret)
@@ -78,7 +88,7 @@ webhookRoutes.post("/mpesa/callback", async (c) => {
 
     console.log(
       "[M-Pesa Webhook] Received callback:",
-      JSON.stringify(body, null, 2)
+      JSON.stringify(body, null, 2),
     );
 
     const mpesaConfig: MpesaConfig = {
@@ -129,7 +139,7 @@ webhookRoutes.post("/mpesa/b2c/result", async (c) => {
 
     console.log(
       "[M-Pesa B2C Result] Received callback:",
-      JSON.stringify(body, null, 2)
+      JSON.stringify(body, null, 2),
     );
 
     const mpesaConfig: MpesaConfig = {
@@ -168,7 +178,7 @@ webhookRoutes.post("/mpesa/b2c/result", async (c) => {
 
     if (!payout) {
       console.error(
-        `[M-Pesa B2C] Payout not found for reference: ${originatorConversationId}`
+        `[M-Pesa B2C] Payout not found for reference: ${originatorConversationId}`,
       );
       return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
     }
@@ -195,7 +205,7 @@ webhookRoutes.post("/mpesa/b2c/timeout", async (c) => {
 
     console.log(
       "[M-Pesa B2C Timeout] Received callback:",
-      JSON.stringify(body, null, 2)
+      JSON.stringify(body, null, 2),
     );
 
     const originatorConversationId = body.Result?.OriginatorConversationID;
@@ -460,13 +470,15 @@ async function processStripeEvent(event: WebhookEvent): Promise<void> {
 
 async function handleSuccessfulPayment(
   paymentId: string,
-  providerData: unknown
+  providerData: unknown,
 ): Promise<void> {
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
   });
 
-  if (!payment) return;
+  if (!payment) {
+    return;
+  }
 
   await prisma.$transaction(async (tx) => {
     // Update payment status
@@ -519,7 +531,7 @@ async function handleSuccessfulPayment(
         currency: payment.currency,
         type: payment.type,
         referenceId: payment.referenceId,
-      })
+      }),
     );
   });
 }
@@ -635,7 +647,7 @@ webhookRoutes.get("/events", async (c) => {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Internal endpoint" },
       },
-      403
+      403,
     );
   }
 
@@ -662,7 +674,7 @@ webhookRoutes.post("/replay/:eventId", async (c) => {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Internal endpoint" },
       },
-      403
+      403,
     );
   }
 
@@ -678,7 +690,7 @@ webhookRoutes.post("/replay/:eventId", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Event not found" },
       },
-      404
+      404,
     );
   }
 

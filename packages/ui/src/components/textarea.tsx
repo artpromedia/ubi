@@ -28,11 +28,12 @@ const textareaVariants = cva(
       variant: "default",
       resize: "vertical",
     },
-  }
+  },
 );
 
 export interface TextareaProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+  extends
+    React.TextareaHTMLAttributes<HTMLTextAreaElement>,
     VariantProps<typeof textareaVariants> {
   error?: boolean;
 }
@@ -46,13 +47,13 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             variant: error ? "error" : variant,
             resize,
             className,
-          })
+          }),
         )}
         ref={ref}
         {...props}
       />
     );
-  }
+  },
 );
 Textarea.displayName = "Textarea";
 
@@ -125,10 +126,10 @@ const TextareaWithCount = React.forwardRef<
 >(
   (
     { className, maxLength, showCount = true, value, defaultValue, ...props },
-    ref
+    ref,
   ) => {
     const [length, setLength] = React.useState(
-      String(value || defaultValue || "").length
+      String(value || defaultValue || "").length,
     );
 
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -153,7 +154,7 @@ const TextareaWithCount = React.forwardRef<
           <div
             className={cn(
               "absolute bottom-2 right-2 text-xs",
-              isOverLimit ? "text-destructive" : "text-muted-foreground"
+              isOverLimit ? "text-destructive" : "text-muted-foreground",
             )}
           >
             {length}/{maxLength}
@@ -161,9 +162,8 @@ const TextareaWithCount = React.forwardRef<
         )}
       </div>
     );
-  }
+  },
 );
 TextareaWithCount.displayName = "TextareaWithCount";
 
 export { AutoResizeTextarea, Textarea, textareaVariants, TextareaWithCount };
-

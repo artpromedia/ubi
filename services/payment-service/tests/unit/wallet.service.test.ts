@@ -64,12 +64,12 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       const result = await walletService.createWallet(
         testUser.id,
-        "USER_WALLET"
+        "USER_WALLET",
       );
 
       expect(result).toBeDefined();
@@ -82,7 +82,7 @@ describe("WalletService", () => {
       ).mockResolvedValue(testWallet);
 
       await expect(
-        walletService.createWallet(testUser.id, "USER_WALLET")
+        walletService.createWallet(testUser.id, "USER_WALLET"),
       ).rejects.toThrow("Wallet already exists");
     });
   });
@@ -115,7 +115,7 @@ describe("WalletService", () => {
       };
 
       (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
-        JSON.stringify(cachedBalance)
+        JSON.stringify(cachedBalance),
       );
 
       const result = await walletService.getBalance(testUser.id, Currency.KES);
@@ -131,7 +131,7 @@ describe("WalletService", () => {
       (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       await expect(
-        walletService.getBalance(testUser.id, Currency.KES)
+        walletService.getBalance(testUser.id, Currency.KES),
       ).rejects.toThrow("Account not found");
     });
   });
@@ -169,7 +169,7 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       const result = await walletService.credit({
@@ -194,7 +194,7 @@ describe("WalletService", () => {
           type: "WALLET_TOPUP",
           reference: "REF-CREDIT",
           description: "Test credit",
-        })
+        }),
       ).rejects.toThrow("Amount must be positive");
 
       await expect(
@@ -205,7 +205,7 @@ describe("WalletService", () => {
           type: "WALLET_TOPUP",
           reference: "REF-CREDIT",
           description: "Test credit",
-        })
+        }),
       ).rejects.toThrow("Amount must be positive");
     });
   });
@@ -243,7 +243,7 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       const result = await walletService.debit({
@@ -276,7 +276,7 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       await expect(
@@ -287,7 +287,7 @@ describe("WalletService", () => {
           type: "RIDE_PAYMENT",
           reference: "REF-DEBIT",
           description: "Test debit",
-        })
+        }),
       ).rejects.toThrow("Insufficient balance");
     });
   });
@@ -322,7 +322,7 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       const result = await walletService.createHold({
@@ -353,7 +353,7 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       await expect(
@@ -363,7 +363,7 @@ describe("WalletService", () => {
           currency: Currency.KES,
           reason: "Test hold",
           expiresAt: new Date(Date.now() + 3600000),
-        })
+        }),
       ).rejects.toThrow("Insufficient available balance");
     });
   });
@@ -404,7 +404,7 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       const result = await walletService.releaseHold("hold-123");
@@ -447,7 +447,7 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       const result = await walletService.transfer({
@@ -471,7 +471,7 @@ describe("WalletService", () => {
           currency: Currency.KES,
           reference: "REF-TRANSFER",
           description: "Test transfer",
-        })
+        }),
       ).rejects.toThrow("Cannot transfer to same account");
     });
   });
@@ -488,7 +488,7 @@ describe("WalletService", () => {
       };
 
       (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
-        JSON.stringify(cachedResult)
+        JSON.stringify(cachedResult),
       );
 
       const result = await walletService.credit({

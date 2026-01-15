@@ -11,14 +11,17 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+
 import { nanoid } from "nanoid";
+
+import { deliveryApiService } from "./delivery-api.service";
+
 import type {
   CreateDeliveryRequest,
   Integration,
   IntegrationSettings,
   IntegrationType,
 } from "../types/b2b.types";
-import { deliveryApiService } from "./delivery-api.service";
 
 // =============================================================================
 // INTERFACES
@@ -206,7 +209,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     type: IntegrationType,
     name: string,
     credentials: IntegrationCredentials,
-    settings?: Partial<IntegrationSettings>
+    settings?: Partial<IntegrationSettings>,
   ): Promise<Integration> {
     // Validate credentials based on type
     this.validateCredentials(type, credentials);
@@ -264,7 +267,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
       name?: string;
       settings?: Partial<IntegrationSettings>;
       isActive?: boolean;
-    }
+    },
   ): Promise<Integration> {
     const integration = this.integrations.get(integrationId);
     if (!integration) {
@@ -296,7 +299,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   async updateCredentials(
     integrationId: string,
-    credentials: Partial<IntegrationCredentials>
+    credentials: Partial<IntegrationCredentials>,
   ): Promise<void> {
     const integration = this.integrations.get(integrationId);
     if (!integration) {
@@ -306,7 +309,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     const existingCredentials = this.credentials.get(integrationId) || {};
     this.credentials.set(
       integrationId,
-      this.encryptCredentials({ ...existingCredentials, ...credentials })
+      this.encryptCredentials({ ...existingCredentials, ...credentials }),
     );
 
     // Re-test connection
@@ -355,7 +358,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   async listIntegrations(organizationId: string): Promise<Integration[]> {
     return Array.from(this.integrations.values()).filter(
-      (i) => i.organizationId === organizationId
+      (i) => i.organizationId === organizationId,
     );
   }
 
@@ -363,7 +366,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    * Test integration connection
    */
   async testConnection(
-    integrationId: string
+    integrationId: string,
   ): Promise<{ success: boolean; message: string }> {
     const integration = this.integrations.get(integrationId);
     if (!integration) {
@@ -392,7 +395,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
       }
     } catch (error) {
       throw new Error(
-        `Connection test failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        `Connection test failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
     }
   }
@@ -408,7 +411,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     integrationId: string,
     event: string,
     payload: ShopifyWebhookPayload,
-    signature: string
+    signature: string,
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     const integration = this.integrations.get(integrationId);
     if (!integration) {
@@ -425,7 +428,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
       !this.verifyShopifySignature(
         payload,
         signature,
-        credentials.webhookSecret!
+        credentials.webhookSecret!,
       )
     ) {
       throw new Error("Invalid webhook signature");
@@ -449,7 +452,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     integrationId: string,
     event: string,
     payload: WooCommerceOrder,
-    signature: string
+    signature: string,
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     const integration = this.integrations.get(integrationId);
     if (!integration) {
@@ -472,7 +475,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     integrationId: string,
     event: string,
     payload: JumiaOrder,
-    signature: string
+    signature: string,
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     const integration = this.integrations.get(integrationId);
     if (!integration) {
@@ -497,13 +500,13 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   private async processShopifyOrder(
     integration: Integration,
-    orderData: ShopifyWebhookPayload
+    orderData: ShopifyWebhookPayload,
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     // Check if order already processed
     const existingOrder = Array.from(this.orders.values()).find(
       (o) =>
         o.integrationId === integration.id &&
-        o.externalOrderId === String(orderData.id)
+        o.externalOrderId === String(orderData.id),
     );
 
     if (existingOrder) {
@@ -537,13 +540,13 @@ export class EcommerceIntegrationsService extends EventEmitter {
       // Convert to delivery request
       const deliveryRequest = this.shopifyOrderToDeliveryRequest(
         integration,
-        orderData
+        orderData,
       );
 
       // Create delivery
       const delivery = await deliveryApiService.createDelivery(
         integration.organizationId,
-        deliveryRequest
+        deliveryRequest,
       );
 
       order.status = "delivery_created";
@@ -584,7 +587,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   private async processWooCommerceOrder(
     integration: Integration,
-    orderData: WooCommerceOrder
+    orderData: WooCommerceOrder,
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     const order: IntegrationOrder = {
       id: nanoid(),
@@ -601,12 +604,12 @@ export class EcommerceIntegrationsService extends EventEmitter {
     try {
       const deliveryRequest = this.wooCommerceOrderToDeliveryRequest(
         integration,
-        orderData
+        orderData,
       );
 
       const delivery = await deliveryApiService.createDelivery(
         integration.organizationId,
-        deliveryRequest
+        deliveryRequest,
       );
 
       order.status = "delivery_created";
@@ -637,7 +640,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   private async processJumiaOrder(
     integration: Integration,
-    orderData: JumiaOrder
+    orderData: JumiaOrder,
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     const order: IntegrationOrder = {
       id: nanoid(),
@@ -654,12 +657,12 @@ export class EcommerceIntegrationsService extends EventEmitter {
     try {
       const deliveryRequest = this.jumiaOrderToDeliveryRequest(
         integration,
-        orderData
+        orderData,
       );
 
       const delivery = await deliveryApiService.createDelivery(
         integration.organizationId,
-        deliveryRequest
+        deliveryRequest,
       );
 
       order.status = "delivery_created";
@@ -694,7 +697,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   async syncShopifyOrders(
     integrationId: string,
-    _options?: { since?: Date; limit?: number }
+    _options?: { since?: Date; limit?: number },
   ): Promise<{ synced: number; failed: number }> {
     const integration = this.integrations.get(integrationId);
     if (!integration || integration.type !== "SHOPIFY") {
@@ -735,7 +738,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   async syncWooCommerceOrders(
     integrationId: string,
-    _options?: { since?: Date; limit?: number }
+    _options?: { since?: Date; limit?: number },
   ): Promise<{ synced: number; failed: number }> {
     const integration = this.integrations.get(integrationId);
     if (!integration || integration.type !== "WOOCOMMERCE") {
@@ -776,7 +779,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     integrationId: string,
     orderId: string,
     trackingNumber: string,
-    trackingUrl: string
+    trackingUrl: string,
   ): Promise<void> {
     const integration = this.integrations.get(integrationId);
     if (!integration || integration.type !== "SHOPIFY") {
@@ -812,7 +815,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
   async updateWooCommerceStatus(
     integrationId: string,
     orderId: string,
-    status: "completed" | "shipped"
+    status: "completed" | "shipped",
   ): Promise<void> {
     const integration = this.integrations.get(integrationId);
     if (!integration || integration.type !== "WOOCOMMERCE") {
@@ -835,13 +838,13 @@ export class EcommerceIntegrationsService extends EventEmitter {
    */
   async getOrderByExternalId(
     integrationId: string,
-    externalOrderId: string
+    externalOrderId: string,
   ): Promise<IntegrationOrder | null> {
     return (
       Array.from(this.orders.values()).find(
         (o) =>
           o.integrationId === integrationId &&
-          o.externalOrderId === externalOrderId
+          o.externalOrderId === externalOrderId,
       ) || null
     );
   }
@@ -855,10 +858,10 @@ export class EcommerceIntegrationsService extends EventEmitter {
       status?: IntegrationOrder["status"];
       dateFrom?: Date;
       dateTo?: Date;
-    }
+    },
   ): Promise<IntegrationOrder[]> {
     let orders = Array.from(this.orders.values()).filter(
-      (o) => o.integrationId === integrationId
+      (o) => o.integrationId === integrationId,
     );
 
     if (filters?.status) {
@@ -878,7 +881,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
    * Retry failed order
    */
   async retryFailedOrder(
-    orderId: string
+    orderId: string,
   ): Promise<{ processed: boolean; deliveryId?: string }> {
     const order = this.orders.get(orderId);
     if (!order) {
@@ -912,7 +915,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
 
   private validateCredentials(
     type: IntegrationType,
-    credentials: IntegrationCredentials
+    credentials: IntegrationCredentials,
   ): void {
     switch (type) {
       case "SHOPIFY":
@@ -936,7 +939,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
   }
 
   private encryptCredentials(
-    credentials: IntegrationCredentials
+    credentials: IntegrationCredentials,
   ): IntegrationCredentials {
     // In production, encrypt sensitive fields
     return credentials;
@@ -945,7 +948,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
   private verifyShopifySignature(
     payload: any,
     signature: string,
-    secret: string
+    secret: string,
   ): boolean {
     const computedSignature = crypto
       .createHmac("sha256", secret)
@@ -954,12 +957,12 @@ export class EcommerceIntegrationsService extends EventEmitter {
 
     return crypto.timingSafeEqual(
       Buffer.from(signature),
-      Buffer.from(computedSignature)
+      Buffer.from(computedSignature),
     );
   }
 
   private async testShopifyConnection(
-    _credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials,
   ): Promise<{ success: boolean; message: string }> {
     // In production, make API call to Shopify
     // GET https://{shop}.myshopify.com/admin/api/2024-01/shop.json
@@ -967,43 +970,47 @@ export class EcommerceIntegrationsService extends EventEmitter {
   }
 
   private async testWooCommerceConnection(
-    _credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials,
   ): Promise<{ success: boolean; message: string }> {
     // In production, make API call to WooCommerce
     return { success: true, message: "Connected to WooCommerce" };
   }
 
   private async testJumiaConnection(
-    _credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials,
   ): Promise<{ success: boolean; message: string }> {
     return { success: true, message: "Connected to Jumia Seller Center" };
   }
 
   private async testTakealotConnection(
-    _credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials,
   ): Promise<{ success: boolean; message: string }> {
     return { success: true, message: "Connected to Takealot Seller Portal" };
   }
 
   private async testKongaConnection(
-    _credentials: IntegrationCredentials
+    _credentials: IntegrationCredentials,
   ): Promise<{ success: boolean; message: string }> {
     return { success: true, message: "Connected to Konga Seller Hub" };
   }
 
   private passesOrderFilters(
     integration: Integration,
-    orderData: any
+    orderData: any,
   ): boolean {
     const filters = integration.settings.orderFilters;
-    if (!filters) return true;
+    if (!filters) {
+      return true;
+    }
 
     // Check minimum order value
     if (filters.minOrderValue) {
       const orderValue = parseFloat(
-        orderData.total_price || orderData.total || "0"
+        orderData.total_price || orderData.total || "0",
       );
-      if (orderValue < filters.minOrderValue) return false;
+      if (orderValue < filters.minOrderValue) {
+        return false;
+      }
     }
 
     // Check excluded tags (Shopify)
@@ -1012,7 +1019,9 @@ export class EcommerceIntegrationsService extends EventEmitter {
         .split(",")
         .map((t: string) => t.trim().toLowerCase());
       for (const excludeTag of filters.excludeTags) {
-        if (orderTags.includes(excludeTag.toLowerCase())) return false;
+        if (orderTags.includes(excludeTag.toLowerCase())) {
+          return false;
+        }
       }
     }
 
@@ -1026,9 +1035,11 @@ export class EcommerceIntegrationsService extends EventEmitter {
         .split(",")
         .map((t: string) => t.trim().toLowerCase());
       const hasIncludedTag = filters.includeTags.some((tag) =>
-        orderTags.includes(tag.toLowerCase())
+        orderTags.includes(tag.toLowerCase()),
       );
-      if (!hasIncludedTag) return false;
+      if (!hasIncludedTag) {
+        return false;
+      }
     }
 
     return true;
@@ -1036,7 +1047,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
 
   private shopifyOrderToDeliveryRequest(
     integration: Integration,
-    orderData: ShopifyWebhookPayload
+    orderData: ShopifyWebhookPayload,
   ): CreateDeliveryRequest {
     const shipping = orderData.shipping_address;
     const customer = orderData.customer;
@@ -1044,7 +1055,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     // Calculate total weight
     const totalWeightGrams = orderData.line_items.reduce(
       (sum, item) => sum + item.grams * item.quantity,
-      0
+      0,
     );
 
     return {
@@ -1087,14 +1098,14 @@ export class EcommerceIntegrationsService extends EventEmitter {
 
   private wooCommerceOrderToDeliveryRequest(
     integration: Integration,
-    orderData: WooCommerceOrder
+    orderData: WooCommerceOrder,
   ): CreateDeliveryRequest {
     const shipping = orderData.shipping;
     const billing = orderData.billing;
 
     const totalWeightKg = orderData.line_items.reduce(
       (sum, item) => sum + (item.weight || 0) * item.quantity,
-      0
+      0,
     );
 
     return {
@@ -1137,7 +1148,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
 
   private jumiaOrderToDeliveryRequest(
     integration: Integration,
-    orderData: JumiaOrder
+    orderData: JumiaOrder,
   ): CreateDeliveryRequest {
     const address = orderData.address;
     const customer = orderData.customer;
@@ -1180,12 +1191,20 @@ export class EcommerceIntegrationsService extends EventEmitter {
   }
 
   private estimatePackageSize(
-    weightGrams: number
+    weightGrams: number,
   ): "ENVELOPE" | "SMALL" | "MEDIUM" | "LARGE" | "XLARGE" {
-    if (weightGrams < 500) return "ENVELOPE";
-    if (weightGrams < 2000) return "SMALL";
-    if (weightGrams < 5000) return "MEDIUM";
-    if (weightGrams < 15000) return "LARGE";
+    if (weightGrams < 500) {
+      return "ENVELOPE";
+    }
+    if (weightGrams < 2000) {
+      return "SMALL";
+    }
+    if (weightGrams < 5000) {
+      return "MEDIUM";
+    }
+    if (weightGrams < 15000) {
+      return "LARGE";
+    }
     return "XLARGE";
   }
 
@@ -1193,7 +1212,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
     integrationId: string,
     event: string,
     payload: any,
-    signature?: string
+    signature?: string,
   ): Promise<void> {
     const logs = this.webhookLogs.get(integrationId) || [];
 

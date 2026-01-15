@@ -3,10 +3,11 @@
  * Multi-currency wallet with tiered limits, P2P transfers, and compliance
  */
 
-import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
+
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
+
 import type {
   KYCLevel,
   LimitCheckResult,
@@ -17,6 +18,7 @@ import type {
   WalletTier,
   WalletTierLimits,
 } from "../types/fintech.types";
+import type { Currency } from "@prisma/client";
 
 // ===========================================
 // CONSTANTS
@@ -182,7 +184,7 @@ export class EnhancedWalletService {
    */
   async getBalance(
     walletId: string,
-    currency: Currency
+    currency: Currency,
   ): Promise<WalletBalance> {
     const balance = await prisma.walletBalance.findUnique({
       where: {
@@ -272,7 +274,7 @@ export class EnhancedWalletService {
 
     if (currentBalance.total + amount > tierLimits.maxBalance) {
       throw new Error(
-        `Credit would exceed maximum balance of ${tierLimits.maxBalance}`
+        `Credit would exceed maximum balance of ${tierLimits.maxBalance}`,
       );
     }
 
@@ -523,7 +525,7 @@ export class EnhancedWalletService {
    */
   async captureHold(
     holdId: string,
-    amount?: number
+    amount?: number,
   ): Promise<{ captured: number }> {
     const hold = await prisma.balanceHold.findUnique({
       where: { id: holdId },
@@ -580,7 +582,7 @@ export class EnhancedWalletService {
   async checkLimit(
     walletId: string,
     amount: number,
-    type: "p2p" | "bills" | "cards" | "international"
+    type: "p2p" | "bills" | "cards" | "international",
   ): Promise<LimitCheckResult> {
     const wallet = await prisma.wallet.findUnique({
       where: { id: walletId },
@@ -800,7 +802,7 @@ export class EnhancedWalletService {
       endDate?: Date;
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ): Promise<{ transactions: WalletTransaction[]; total: number }> {
     const {
       currency,
@@ -813,12 +815,20 @@ export class EnhancedWalletService {
 
     const where: Record<string, unknown> = { walletId };
 
-    if (currency) where.currency = currency;
-    if (type) where.type = type;
+    if (currency) {
+      where.currency = currency;
+    }
+    if (type) {
+      where.type = type;
+    }
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) (where.createdAt as Record<string, Date>).gte = startDate;
-      if (endDate) (where.createdAt as Record<string, Date>).lte = endDate;
+      if (startDate) {
+        (where.createdAt as Record<string, Date>).gte = startDate;
+      }
+      if (endDate) {
+        (where.createdAt as Record<string, Date>).lte = endDate;
+      }
     }
 
     const [transactions, total] = await Promise.all([
@@ -908,13 +918,15 @@ export class EnhancedWalletService {
 
   private async updateLimitUsage(
     walletId: string,
-    amount: number
+    amount: number,
   ): Promise<void> {
     const wallet = await prisma.wallet.findUnique({
       where: { id: walletId },
     });
 
-    if (!wallet) return;
+    if (!wallet) {
+      return;
+    }
 
     const now = new Date();
     const updates: Record<string, unknown> = {};
@@ -934,7 +946,7 @@ export class EnhancedWalletService {
       updates.monthlyLimitResetAt = new Date(
         now.getFullYear(),
         now.getMonth() + 1,
-        1
+        1,
       );
     } else {
       updates.monthlyLimitUsed = { increment: amount };

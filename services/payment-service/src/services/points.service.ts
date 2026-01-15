@@ -4,8 +4,10 @@
  */
 
 import { nanoid } from "nanoid";
+
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
+
 import type {
   EarnPointsParams,
   LoyaltyTier,
@@ -107,7 +109,7 @@ export class PointsService {
 
     const expiringNext30Days = expiringBatches.reduce(
       (sum: number, batch: any) => sum + Number(batch.remainingPoints),
-      0
+      0,
     );
 
     return {
@@ -321,7 +323,7 @@ export class PointsService {
 
     if (account.availablePoints < points) {
       throw new Error(
-        `Insufficient points. Available: ${account.availablePoints}, Required: ${points}`
+        `Insufficient points. Available: ${account.availablePoints}, Required: ${points}`,
       );
     }
 
@@ -343,7 +345,9 @@ export class PointsService {
     const batchUpdates: Array<{ id: string; deduct: number }> = [];
 
     for (const batch of batches) {
-      if (remainingToDeduct <= 0) break;
+      if (remainingToDeduct <= 0) {
+        break;
+      }
 
       const batchPoints = Number(batch.remainingPoints);
       const deductFromBatch = Math.min(batchPoints, remainingToDeduct);
@@ -458,7 +462,7 @@ export class PointsService {
             type: "EXPIRE",
             points: BigInt(-expiredPoints),
             balanceAfter: BigInt(
-              Number(batch.account.availablePoints) - expiredPoints
+              Number(batch.account.availablePoints) - expiredPoints,
             ),
             description: "Points expired",
             batchId: batch.id,
@@ -485,14 +489,16 @@ export class PointsService {
       limit?: number;
       offset?: number;
       type?: PointsTransactionType;
-    } = {}
+    } = {},
   ): Promise<{ transactions: PointsTransaction[]; total: number }> {
     const { limit = 20, offset = 0, type } = options;
 
     const account = await this.getOrCreateAccount(userId);
 
     const where: Record<string, unknown> = { accountId: account.id };
-    if (type) where.type = type;
+    if (type) {
+      where.type = type;
+    }
 
     const [transactions, total] = await Promise.all([
       prisma.pointsTransaction.findMany({
@@ -548,7 +554,7 @@ export class PointsService {
     const percentToNext = Math.min(
       100,
       ((tierPoints - currentThreshold) / (nextThreshold - currentThreshold)) *
-        100
+        100,
     );
 
     return {

@@ -30,7 +30,7 @@ const PopoverContent = React.forwardRef<
         "data-[state=open]:animate-scale-in data-[state=closed]:animate-fade-out",
         "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
         "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-        className
+        className,
       )}
       {...props}
     />
@@ -39,4 +39,3 @@ const PopoverContent = React.forwardRef<
 PopoverContent.displayName = PopoverPrimitive.Content.displayName;
 
 export { Popover, PopoverAnchor, PopoverClose, PopoverContent, PopoverTrigger };
-

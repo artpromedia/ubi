@@ -35,12 +35,12 @@ test.describe("Restaurant Discovery", () => {
 
     // Should show restaurant listings
     await expect(
-      authenticatedPage.locator("[data-testid='restaurant-list']")
+      authenticatedPage.locator("[data-testid='restaurant-list']"),
     ).toBeVisible();
 
     // Should show restaurant names
     await expect(
-      authenticatedPage.getByText(/restaurant/i).first()
+      authenticatedPage.getByText(/restaurant/i).first(),
     ).toBeVisible();
   });
 
@@ -49,7 +49,7 @@ test.describe("Restaurant Discovery", () => {
 
     // Should show category filters
     await expect(
-      authenticatedPage.locator("[data-testid='category-filters']")
+      authenticatedPage.locator("[data-testid='category-filters']"),
     ).toBeVisible();
 
     // Common African food categories
@@ -80,7 +80,7 @@ test.describe("Restaurant Discovery", () => {
 
     // Should show search results
     await expect(
-      authenticatedPage.locator("[data-testid='search-results']")
+      authenticatedPage.locator("[data-testid='search-results']"),
     ).toBeVisible();
   });
 
@@ -116,19 +116,19 @@ test.describe("Restaurant Details", () => {
       {
         success: true,
         data: { menu: TEST_MENU_ITEMS },
-      }
+      },
     );
 
     await authenticatedPage.goto(`/food/restaurant/${restaurant.id}`);
 
     // Should show restaurant name
     await expect(
-      authenticatedPage.getByRole("heading", { level: 1 })
+      authenticatedPage.getByRole("heading", { level: 1 }),
     ).toBeVisible();
 
     // Should show menu items
     await expect(
-      authenticatedPage.locator("[data-testid='menu-items']")
+      authenticatedPage.locator("[data-testid='menu-items']"),
     ).toBeVisible();
   });
 
@@ -152,7 +152,7 @@ test.describe("Restaurant Details", () => {
 
     // Should show item modal/page
     await expect(
-      authenticatedPage.locator("[data-testid='item-details']")
+      authenticatedPage.locator("[data-testid='item-details']"),
     ).toBeVisible();
 
     // Should show price
@@ -166,7 +166,7 @@ test.describe("Restaurant Details", () => {
 
     // Should show rating
     await expect(
-      authenticatedPage.locator("[data-testid='restaurant-rating']")
+      authenticatedPage.locator("[data-testid='restaurant-rating']"),
     ).toBeVisible();
 
     // Should show delivery time estimate
@@ -199,7 +199,7 @@ test.describe("Cart Management", () => {
 
     // Should show cart indicator
     await expect(
-      authenticatedPage.locator("[data-testid='cart-indicator']")
+      authenticatedPage.locator("[data-testid='cart-indicator']"),
     ).toBeVisible();
   });
 
@@ -298,12 +298,12 @@ test.describe("Order Placement", () => {
 
     // Should show order summary
     await expect(
-      authenticatedPage.locator("[data-testid='order-summary']")
+      authenticatedPage.locator("[data-testid='order-summary']"),
     ).toBeVisible();
 
     // Should show delivery address section
     await expect(
-      authenticatedPage.getByText(/delivery|address/i)
+      authenticatedPage.getByText(/delivery|address/i),
     ).toBeVisible();
 
     // Should show payment section
@@ -384,7 +384,7 @@ test.describe("Order Placement", () => {
 
     // Should show error message
     await expect(
-      authenticatedPage.getByText(/payment|failed|error/i)
+      authenticatedPage.getByText(/payment|failed|error/i),
     ).toBeVisible();
   });
 });
@@ -413,12 +413,12 @@ test.describe("Order Tracking", () => {
 
     // Should show order timeline
     await expect(
-      authenticatedPage.locator("[data-testid='order-timeline']")
+      authenticatedPage.locator("[data-testid='order-timeline']"),
     ).toBeVisible();
 
     // Should show current status
     await expect(
-      authenticatedPage.getByText(/preparing|being prepared/i)
+      authenticatedPage.getByText(/preparing|being prepared/i),
     ).toBeVisible();
   });
 
@@ -451,7 +451,7 @@ test.describe("Order Tracking", () => {
 
     // Should show call button
     await expect(
-      authenticatedPage.getByRole("button", { name: /call|contact/i })
+      authenticatedPage.getByRole("button", { name: /call|contact/i }),
     ).toBeVisible();
   });
 
@@ -464,7 +464,7 @@ test.describe("Order Tracking", () => {
 
     // Status should update (via WebSocket or polling)
     await expect(
-      authenticatedPage.locator("[data-testid='order-status']")
+      authenticatedPage.locator("[data-testid='order-status']"),
     ).toBeVisible();
   });
 });
@@ -501,7 +501,7 @@ test.describe("Order History", () => {
 
     // Should show order history
     await expect(
-      authenticatedPage.locator("[data-testid='order-history']")
+      authenticatedPage.locator("[data-testid='order-history']"),
     ).toBeVisible();
 
     // Should show past orders
@@ -585,7 +585,7 @@ test.describe("Promotions and Discounts", () => {
 
     // Should show error
     await expect(
-      authenticatedPage.getByText(/invalid|expired|not found/i)
+      authenticatedPage.getByText(/invalid|expired|not found/i),
     ).toBeVisible();
   });
 });

@@ -6,14 +6,16 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
+
 import {
-  ETAPrediction,
-  ETAPredictionRequest,
+  type ETAPrediction,
+  type ETAPredictionRequest,
   FeatureEntityType,
-  GeoLocation,
-  TrafficCondition,
+  type GeoLocation,
+  type TrafficCondition,
 } from "../../types/ml.types";
-import { FeatureStoreService } from "./feature-store.service";
+
+import type { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
 // ETA MODELS
@@ -27,7 +29,10 @@ interface ETAComponent {
 
 interface IETAPredictionService {
   predictETA(request: ETAPredictionRequest): Promise<ETAPrediction>;
-  updateTrafficConditions(h3Index: string, condition: TrafficCondition): Promise<void>;
+  updateTrafficConditions(
+    h3Index: string,
+    condition: TrafficCondition,
+  ): Promise<void>;
 }
 
 interface TrafficData {
@@ -94,26 +99,26 @@ export class ETAPredictionService implements IETAPredictionService {
     // Calculate route distance
     const distanceKm = this.calculateDistance(
       request.origin,
-      request.destination
+      request.destination,
     );
 
     // Get base speed for route
     const baseSpeed = this.estimateAverageSpeed(
       request.origin,
-      request.destination
+      request.destination,
     );
 
     // Calculate ETA components
     const components = await this.calculateETAComponents(
       request,
       distanceKm,
-      baseSpeed
+      baseSpeed,
     );
 
     // Sum all components
     const totalSeconds = components.reduce(
       (sum, c) => sum + c.durationSeconds,
-      0
+      0,
     );
 
     // Calculate confidence based on data quality
@@ -126,16 +131,16 @@ export class ETAPredictionService implements IETAPredictionService {
       confidence,
       breakdown: {
         drivingTime: Math.round(
-          components.find((c) => c.type === "travel")?.durationSeconds || 0
+          components.find((c) => c.type === "travel")?.durationSeconds || 0,
         ),
         pickupTime: Math.round(
-          components.find((c) => c.type === "pickup")?.durationSeconds || 0
+          components.find((c) => c.type === "pickup")?.durationSeconds || 0,
         ),
         trafficDelay: Math.round(
-          components.find((c) => c.type === "traffic")?.durationSeconds || 0
+          components.find((c) => c.type === "traffic")?.durationSeconds || 0,
         ),
         weatherDelay: Math.round(
-          components.find((c) => c.type === "weather")?.durationSeconds || 0
+          components.find((c) => c.type === "weather")?.durationSeconds || 0,
         ),
         historicalAdjustment: 0,
       },
@@ -151,7 +156,7 @@ export class ETAPredictionService implements IETAPredictionService {
   private async calculateETAComponents(
     request: ETAPredictionRequest,
     distanceKm: number,
-    baseSpeed: number
+    baseSpeed: number,
   ): Promise<ETAComponent[]> {
     const components: ETAComponent[] = [];
 
@@ -166,7 +171,7 @@ export class ETAPredictionService implements IETAPredictionService {
     // 2. Traffic delay
     const trafficMultiplier = await this.getTrafficMultiplier(
       request.origin,
-      request.destination
+      request.destination,
     );
     const trafficDelay = baseTravelSeconds * (1 - trafficMultiplier);
     if (trafficDelay > 0) {
@@ -190,7 +195,8 @@ export class ETAPredictionService implements IETAPredictionService {
     }
 
     // 4. Weather impact
-    const weatherFactor = this.WEATHER_FACTORS[this.weatherCache.condition] || 1.0;
+    const weatherFactor =
+      this.WEATHER_FACTORS[this.weatherCache.condition] || 1.0;
     const weatherDelay = baseTravelSeconds * (1 / weatherFactor - 1);
     if (weatherDelay > 60) {
       components.push({
@@ -204,7 +210,7 @@ export class ETAPredictionService implements IETAPredictionService {
     if (request.vehicleType) {
       const pickupTime = await this.estimatePickupTime(
         request.origin,
-        request.vehicleType
+        request.vehicleType,
       );
       if (pickupTime > 0) {
         components.push({
@@ -224,7 +230,7 @@ export class ETAPredictionService implements IETAPredictionService {
 
   private async getTrafficMultiplier(
     _origin: GeoLocation,
-    _destination: GeoLocation
+    _destination: GeoLocation,
   ): Promise<number> {
     // In production, query real-time traffic data
     const timeOfDay = this.getTimeOfDay();
@@ -243,7 +249,7 @@ export class ETAPredictionService implements IETAPredictionService {
 
   async updateTrafficConditions(
     h3Index: string,
-    condition: TrafficCondition
+    condition: TrafficCondition,
   ): Promise<void> {
     this.trafficCache.set(h3Index, {
       segmentId: h3Index,
@@ -256,20 +262,38 @@ export class ETAPredictionService implements IETAPredictionService {
     this.eventEmitter.emit("traffic:updated", { h3Index, condition });
   }
 
-  private getCongestionLevelName(level: number): "free" | "light" | "moderate" | "heavy" | "severe" {
-    if (level < 0.2) return "free";
-    if (level < 0.4) return "light";
-    if (level < 0.6) return "moderate";
-    if (level < 0.8) return "heavy";
+  private getCongestionLevelName(
+    level: number,
+  ): "free" | "light" | "moderate" | "heavy" | "severe" {
+    if (level < 0.2) {
+      return "free";
+    }
+    if (level < 0.4) {
+      return "light";
+    }
+    if (level < 0.6) {
+      return "moderate";
+    }
+    if (level < 0.8) {
+      return "heavy";
+    }
     return "severe";
   }
 
   private conditionToMultiplier(condition: TrafficCondition): number {
     const congestionLevel = condition.congestionLevel;
-    if (congestionLevel < 0.2) return 1.0;
-    if (congestionLevel < 0.4) return 0.85;
-    if (congestionLevel < 0.6) return 0.65;
-    if (congestionLevel < 0.8) return 0.4;
+    if (congestionLevel < 0.2) {
+      return 1.0;
+    }
+    if (congestionLevel < 0.4) {
+      return 0.85;
+    }
+    if (congestionLevel < 0.6) {
+      return 0.65;
+    }
+    if (congestionLevel < 0.8) {
+      return 0.4;
+    }
     return 0.2;
   }
 
@@ -288,7 +312,7 @@ export class ETAPredictionService implements IETAPredictionService {
 
   private async estimatePickupTime(
     location: GeoLocation,
-    vehicleType: string
+    vehicleType: string,
   ): Promise<number> {
     // Get nearby driver density
     const locationFeatures = await this.featureStore.getFeatures({
@@ -320,7 +344,7 @@ export class ETAPredictionService implements IETAPredictionService {
   async updateLiveETA(
     _tripId: string,
     currentLocation: GeoLocation,
-    destination: GeoLocation
+    destination: GeoLocation,
   ): Promise<ETAPrediction> {
     return this.predictETA({
       origin: currentLocation,
@@ -334,7 +358,7 @@ export class ETAPredictionService implements IETAPredictionService {
 
   private calculateDistance(
     origin: GeoLocation,
-    destination: GeoLocation
+    destination: GeoLocation,
   ): number {
     // Haversine formula
     const R = 6371; // Earth's radius in km
@@ -362,7 +386,7 @@ export class ETAPredictionService implements IETAPredictionService {
 
   private estimateAverageSpeed(
     origin: GeoLocation,
-    destination: GeoLocation
+    destination: GeoLocation,
   ): number {
     // Estimate based on likely road mix
     const distance = this.calculateDistance(origin, destination);
@@ -382,28 +406,38 @@ export class ETAPredictionService implements IETAPredictionService {
   private getTimeOfDay(): string {
     const hour = new Date().getHours();
 
-    if (hour >= 22 || hour < 5) return "night";
-    if (hour >= 7 && hour < 9) return "morning_rush";
-    if (hour >= 11 && hour < 14) return "midday";
-    if (hour >= 17 && hour < 20) return "evening_rush";
+    if (hour >= 22 || hour < 5) {
+      return "night";
+    }
+    if (hour >= 7 && hour < 9) {
+      return "morning_rush";
+    }
+    if (hour >= 11 && hour < 14) {
+      return "midday";
+    }
+    if (hour >= 17 && hour < 20) {
+      return "evening_rush";
+    }
     return "normal";
   }
 
   private calculateConfidence(
     components: ETAComponent[],
-    _request: ETAPredictionRequest
+    _request: ETAPredictionRequest,
   ): number {
     // Weighted average of component confidences
     const totalDuration = components.reduce(
       (sum, c) => sum + c.durationSeconds,
-      0
+      0,
     );
 
-    if (totalDuration === 0) return 0.5;
+    if (totalDuration === 0) {
+      return 0.5;
+    }
 
     const weightedConfidence = components.reduce(
       (sum, c) => sum + (c.confidence * c.durationSeconds) / totalDuration,
-      0
+      0,
     );
 
     // Reduce confidence for:
@@ -532,7 +566,7 @@ export class SupportNLPService {
 
   async classifyIntent(
     text: string,
-    context?: { userId?: string; tripId?: string; previousIntents?: string[] }
+    context?: { userId?: string; tripId?: string; previousIntents?: string[] },
   ): Promise<IntentClassification> {
     const startTime = Date.now();
 
@@ -556,21 +590,21 @@ export class SupportNLPService {
       topIntent,
       sentiment,
       normalizedText,
-      context
+      context,
     );
 
     // Generate suggested response
     const suggestedResponse = this.generateResponse(
       topIntent?.intent,
       entities,
-      context
+      context,
     );
 
     // Determine priority
     const priority = this.determinePriority(
       topIntent?.intent,
       sentiment,
-      entities
+      entities,
     );
 
     const classification: IntentClassification = {
@@ -603,7 +637,7 @@ export class SupportNLPService {
   }
 
   private scoreIntents(
-    normalizedText: string
+    normalizedText: string,
   ): Array<{ intent: SupportIntent; score: number }> {
     const scores: Array<{ intent: SupportIntent; score: number }> = [];
 
@@ -622,7 +656,7 @@ export class SupportNLPService {
       for (const example of intent.examples) {
         const similarity = this.calculateSimilarity(
           normalizedText,
-          example.toLowerCase()
+          example.toLowerCase(),
         );
         matchScore = Math.max(matchScore, similarity);
       }
@@ -645,7 +679,9 @@ export class SupportNLPService {
 
     let overlap = 0;
     for (const word of words1) {
-      if (words2.has(word)) overlap++;
+      if (words2.has(word)) {
+        overlap++;
+      }
     }
 
     return overlap / Math.max(words1.size, words2.size);
@@ -680,7 +716,7 @@ export class SupportNLPService {
   // ===========================================================================
 
   private analyzeSentiment(
-    normalizedText: string
+    normalizedText: string,
   ): "positive" | "neutral" | "negative" | "angry" {
     const words = normalizedText.split(" ");
 
@@ -689,14 +725,26 @@ export class SupportNLPService {
     let angryCount = 0;
 
     for (const word of words) {
-      if (this.sentimentKeywords.positive.includes(word)) positiveCount++;
-      if (this.sentimentKeywords.negative.includes(word)) negativeCount++;
-      if (this.sentimentKeywords.angry.includes(word)) angryCount++;
+      if (this.sentimentKeywords.positive.includes(word)) {
+        positiveCount++;
+      }
+      if (this.sentimentKeywords.negative.includes(word)) {
+        negativeCount++;
+      }
+      if (this.sentimentKeywords.angry.includes(word)) {
+        angryCount++;
+      }
     }
 
-    if (angryCount > 0) return "angry";
-    if (negativeCount > positiveCount) return "negative";
-    if (positiveCount > negativeCount) return "positive";
+    if (angryCount > 0) {
+      return "angry";
+    }
+    if (negativeCount > positiveCount) {
+      return "negative";
+    }
+    if (positiveCount > negativeCount) {
+      return "positive";
+    }
     return "neutral";
   }
 
@@ -708,7 +756,7 @@ export class SupportNLPService {
     topIntent: { intent: SupportIntent; score: number } | undefined,
     sentiment: string,
     text: string,
-    context?: { previousIntents?: string[] }
+    context?: { previousIntents?: string[] },
   ): boolean {
     // Low confidence
     if (!topIntent || topIntent.score < 0.5) {
@@ -735,7 +783,7 @@ export class SupportNLPService {
     // Repeated issues (same intent multiple times)
     if (context?.previousIntents) {
       const sameIntentCount = context.previousIntents.filter(
-        (i) => i === topIntent.intent.id
+        (i) => i === topIntent.intent.id,
       ).length;
       if (sameIntentCount >= 2) {
         return true;
@@ -752,7 +800,7 @@ export class SupportNLPService {
   private generateResponse(
     intent: SupportIntent | undefined,
     entities: ExtractedEntity[],
-    context?: { userId?: string; tripId?: string }
+    context?: { userId?: string; tripId?: string },
   ): string {
     if (!intent) {
       return "I'm sorry, I didn't quite understand that. Could you please rephrase your question?";
@@ -760,17 +808,24 @@ export class SupportNLPService {
 
     // Get base response
     const response =
-      intent.responses[Math.floor(Math.random() * intent.responses.length)] || "";
+      intent.responses[Math.floor(Math.random() * intent.responses.length)] ||
+      "";
 
     // Replace entity placeholders
     let formattedResponse = response;
     for (const entity of entities) {
-      formattedResponse = formattedResponse.replace(`{${entity.type}}`, entity.value);
+      formattedResponse = formattedResponse.replace(
+        `{${entity.type}}`,
+        entity.value,
+      );
     }
 
     // Add context if available
     if (context?.tripId) {
-      formattedResponse = formattedResponse.replace("{trip_id}", context.tripId || "");
+      formattedResponse = formattedResponse.replace(
+        "{trip_id}",
+        context.tripId || "",
+      );
     }
 
     return formattedResponse;
@@ -783,9 +838,11 @@ export class SupportNLPService {
   private determinePriority(
     intent: SupportIntent | undefined,
     sentiment: string,
-    entities: ExtractedEntity[]
+    entities: ExtractedEntity[],
   ): "low" | "medium" | "high" | "urgent" {
-    if (!intent) return "medium";
+    if (!intent) {
+      return "medium";
+    }
 
     // Angry sentiment escalates priority
     if (sentiment === "angry") {
@@ -798,7 +855,7 @@ export class SupportNLPService {
 
     // Safety-related entities escalate
     const hasSafetyEntity = entities.some(
-      (e) => e.type === "safety_concern" || e.type === "emergency"
+      (e) => e.type === "safety_concern" || e.type === "emergency",
     );
     if (hasSafetyEntity) {
       return "urgent";

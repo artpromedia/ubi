@@ -36,13 +36,15 @@ const Logo = React.forwardRef<HTMLDivElement, LogoProps>(
       variant = "default",
       ...props
     },
-    ref
+    ref,
   ) => {
     const isNumeric = typeof size === "number";
 
     // Calculate SVG height based on size
     const getHeight = () => {
-      if (isNumeric) {return size as number;}
+      if (isNumeric) {
+        return size as number;
+      }
       switch (size) {
         case "sm":
           return 24;
@@ -105,7 +107,7 @@ const Logo = React.forwardRef<HTMLDivElement, LogoProps>(
         </svg>
       </div>
     );
-  }
+  },
 );
 Logo.displayName = "Logo";
 
@@ -147,7 +149,7 @@ const LogoIcon = React.forwardRef<SVGSVGElement, LogoIconProps>(
         <circle cx="45" cy="8" r="6" fill={dotColor} />
       </svg>
     );
-  }
+  },
 );
 LogoIcon.displayName = "LogoIcon";
 
@@ -208,7 +210,7 @@ const UbiLogo = React.forwardRef<HTMLDivElement, UbiLogoProps>(
         </svg>
       </div>
     );
-  }
+  },
 );
 UbiLogo.displayName = "UbiLogo";
 
@@ -243,7 +245,7 @@ const UbiIcon = React.forwardRef<SVGSVGElement, LogoIconProps>(
         <circle cx="45" cy="8" r="6" fill={dotColor} />
       </svg>
     );
-  }
+  },
 );
 UbiIcon.displayName = "UbiIcon";
 

@@ -61,7 +61,9 @@ export function generateId(): string {
  * @param maxLength - Maximum length
  */
 export function truncate(str: string, maxLength: number): string {
-  if (str.length <= maxLength) {return str;}
+  if (str.length <= maxLength) {
+    return str;
+  }
   return str.substring(0, maxLength - 3) + "...";
 }
 
@@ -119,7 +121,7 @@ export function toKebabCase(str: string): string {
 export function maskString(
   str: string,
   visibleStart: number = 3,
-  visibleEnd: number = 2
+  visibleEnd: number = 2,
 ): string {
   if (str.length <= visibleStart + visibleEnd) {
     return str;
@@ -140,7 +142,9 @@ export function maskEmail(email: string): string {
   const parts = email.split("@");
   const local = parts[0];
   const domain = parts[1];
-  if (!domain || !local) {return maskString(email);}
+  if (!domain || !local) {
+    return maskString(email);
+  }
 
   const maskedLocal =
     local.length > 2
@@ -156,7 +160,9 @@ export function maskEmail(email: string): string {
  */
 export function maskPhone(phone: string): string {
   const digits = phone.replaceAll(/\D/g, "");
-  if (digits.length <= 4) {return phone;}
+  if (digits.length <= 4) {
+    return phone;
+  }
 
   const masked = "*".repeat(digits.length - 4);
   const visible = digits.slice(-4);
@@ -170,7 +176,9 @@ export function maskPhone(phone: string): string {
  */
 export function maskCardNumber(cardNumber: string): string {
   const digits = cardNumber.replaceAll(/\D/g, "");
-  if (digits.length < 4) {return cardNumber;}
+  if (digits.length < 4) {
+    return cardNumber;
+  }
 
   return `****-****-****-${digits.slice(-4)}`;
 }
@@ -230,9 +238,11 @@ export function getInitials(name: string, maxInitials: number = 2): string {
 export function pluralize(
   count: number,
   singular: string,
-  plural?: string
+  plural?: string,
 ): string {
-  if (count === 1) {return singular;}
+  if (count === 1) {
+    return singular;
+  }
   return plural || `${singular}s`;
 }
 
@@ -241,9 +251,15 @@ export function pluralize(
  * @param items - Array of strings
  */
 export function joinWithComma(items: string[]): string {
-  if (items.length === 0) {return "";}
-  if (items.length === 1) {return items[0] ?? "";}
-  if (items.length === 2) {return items.join(" and ");}
+  if (items.length === 0) {
+    return "";
+  }
+  if (items.length === 1) {
+    return items[0] ?? "";
+  }
+  if (items.length === 2) {
+    return items.join(" and ");
+  }
 
   const last = items.at(-1) ?? "";
   const rest = items.slice(0, -1);
@@ -304,7 +320,9 @@ export function reverse(str: string): string {
  * @param searchStr - String to search for
  */
 export function countOccurrences(str: string, searchStr: string): number {
-  if (searchStr.length === 0) {return 0;}
+  if (searchStr.length === 0) {
+    return 0;
+  }
 
   let count = 0;
   let pos = 0;

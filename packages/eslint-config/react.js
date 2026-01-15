@@ -1,6 +1,6 @@
 /**
  * UBI React ESLint Configuration
- * 
+ *
  * For React library packages and components.
  * Extends base config with React-specific rules.
  */

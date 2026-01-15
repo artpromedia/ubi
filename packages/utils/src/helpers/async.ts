@@ -67,7 +67,7 @@ function calculateDelay(attempt: number, options: RetryOptions): number {
  */
 export async function retry<T>(
   fn: () => Promise<T>,
-  options: Partial<RetryOptions> = {}
+  options: Partial<RetryOptions> = {},
 ): Promise<T> {
   const opts: RetryOptions = { ...DEFAULT_RETRY_OPTIONS, ...options };
   let lastError: unknown;
@@ -111,7 +111,7 @@ export async function retry<T>(
 export async function timeout<T>(
   promise: Promise<T>,
   ms: number,
-  message: string = "Operation timed out"
+  message: string = "Operation timed out",
 ): Promise<T> {
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error(message)), ms);
@@ -129,7 +129,7 @@ export async function timeout<T>(
 export async function mapWithConcurrency<T, R>(
   items: T[],
   fn: (item: T, index: number) => Promise<R>,
-  concurrency: number = 5
+  concurrency: number = 5,
 ): Promise<R[]> {
   const results: R[] = [];
   const executing: Promise<void>[] = [];
@@ -166,7 +166,7 @@ export async function mapWithConcurrency<T, R>(
  */
 export function debounce<T extends (...args: unknown[]) => Promise<unknown>>(
   fn: T,
-  ms: number
+  ms: number,
 ): (...args: Parameters<T>) => Promise<ReturnType<T>> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let pendingPromise: Promise<ReturnType<T>> | undefined;
@@ -207,7 +207,7 @@ export function debounce<T extends (...args: unknown[]) => Promise<unknown>>(
  */
 export function throttle<T extends (...args: unknown[]) => Promise<unknown>>(
   fn: T,
-  ms: number
+  ms: number,
 ): (...args: Parameters<T>) => Promise<ReturnType<T> | undefined> {
   let lastCallTime = 0;
   let pendingPromise: Promise<ReturnType<T>> | undefined;
@@ -378,7 +378,7 @@ export class CircuitBreaker {
  * Run multiple promises and return results even if some fail
  */
 export function settleAll<T>(
-  promises: Promise<T>[]
+  promises: Promise<T>[],
 ): Promise<
   Array<
     { status: "fulfilled"; value: T } | { status: "rejected"; reason: unknown }

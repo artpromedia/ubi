@@ -31,14 +31,18 @@ export interface StorageOptions {
  * Check if we're in a browser environment
  */
 function isBrowser(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return (
+    typeof window !== "undefined" && typeof window.localStorage !== "undefined"
+  );
 }
 
 /**
  * Get the storage object
  */
 function getStorage(type: StorageType): Storage | null {
-  if (!isBrowser()) {return null;}
+  if (!isBrowser()) {
+    return null;
+  }
   return type === "local" ? window.localStorage : window.sessionStorage;
 }
 
@@ -48,12 +52,14 @@ function getStorage(type: StorageType): Storage | null {
 export function setItem<T>(
   key: string,
   value: T,
-  options: StorageOptions = {}
+  options: StorageOptions = {},
 ): boolean {
   const { ttl, type = "local" } = options;
   const storage = getStorage(type);
 
-  if (!storage) {return false;}
+  if (!storage) {
+    return false;
+  }
 
   try {
     const item: StorageItem<T> = {
@@ -74,16 +80,20 @@ export function setItem<T>(
  */
 export function getItem<T>(
   key: string,
-  options: Pick<StorageOptions, "type"> = {}
+  options: Pick<StorageOptions, "type"> = {},
 ): T | null {
   const { type = "local" } = options;
   const storage = getStorage(type);
 
-  if (!storage) {return null;}
+  if (!storage) {
+    return null;
+  }
 
   try {
     const raw = storage.getItem(key);
-    if (!raw) {return null;}
+    if (!raw) {
+      return null;
+    }
 
     const item: StorageItem<T> = JSON.parse(raw);
 
@@ -105,12 +115,14 @@ export function getItem<T>(
  */
 export function removeItem(
   key: string,
-  options: Pick<StorageOptions, "type"> = {}
+  options: Pick<StorageOptions, "type"> = {},
 ): boolean {
   const { type = "local" } = options;
   const storage = getStorage(type);
 
-  if (!storage) {return false;}
+  if (!storage) {
+    return false;
+  }
 
   try {
     storage.removeItem(key);
@@ -126,7 +138,7 @@ export function removeItem(
  */
 export function hasItem(
   key: string,
-  options: Pick<StorageOptions, "type"> = {}
+  options: Pick<StorageOptions, "type"> = {},
 ): boolean {
   return getItem(key, options) !== null;
 }
@@ -136,12 +148,14 @@ export function hasItem(
  */
 export function getKeys(
   prefix?: string,
-  options: Pick<StorageOptions, "type"> = {}
+  options: Pick<StorageOptions, "type"> = {},
 ): string[] {
   const { type = "local" } = options;
   const storage = getStorage(type);
 
-  if (!storage) {return [];}
+  if (!storage) {
+    return [];
+  }
 
   const keys: string[] = [];
   for (let i = 0; i < storage.length; i++) {
@@ -158,7 +172,7 @@ export function getKeys(
  */
 export function clearPrefix(
   prefix: string,
-  options: Pick<StorageOptions, "type"> = {}
+  options: Pick<StorageOptions, "type"> = {},
 ): number {
   const keys = getKeys(prefix, options);
   keys.forEach((key) => removeItem(key, options));
@@ -168,7 +182,10 @@ export function clearPrefix(
 /**
  * Create a namespaced storage instance
  */
-export function createNamespacedStorage(namespace: string, type: StorageType = "local") {
+export function createNamespacedStorage(
+  namespace: string,
+  type: StorageType = "local",
+) {
   const prefix = `${namespace}:`;
 
   return {

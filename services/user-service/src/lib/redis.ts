@@ -47,7 +47,7 @@ process.on("beforeExit", async () => {
 export async function getOrSet<T>(
   key: string,
   fetchFn: () => Promise<T>,
-  ttlSeconds: number = 300
+  ttlSeconds: number = 300,
 ): Promise<T> {
   const cached = await redis.get(key);
   if (cached) {

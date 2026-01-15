@@ -1,23 +1,21 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Search,
-  Filter,
   Download,
-  MoreHorizontal,
   Eye,
   Ban,
   Shield,
   ChevronLeft,
   ChevronRight,
-  User,
   Mail,
   Phone,
   MapPin,
   Calendar,
 } from "lucide-react";
+import { useState } from "react";
+
 import { formatDate, formatRelativeTime, cn, getInitials } from "@/lib/utils";
 
 // Mock data - replace with real API calls
@@ -147,7 +145,9 @@ export default function UsersPage() {
           >
             {userTypes.map((type) => (
               <option key={type} value={type}>
-                {type === "all" ? "All Types" : type.charAt(0).toUpperCase() + type.slice(1) + "s"}
+                {type === "all"
+                  ? "All Types"
+                  : type.charAt(0).toUpperCase() + type.slice(1) + "s"}
               </option>
             ))}
           </select>
@@ -206,8 +206,10 @@ export default function UsersPage() {
                       className={cn(
                         "admin-badge",
                         user.type === "rider" && "bg-blue-500/20 text-blue-400",
-                        user.type === "driver" && "bg-green-500/20 text-green-400",
-                        user.type === "courier" && "bg-cyan-500/20 text-cyan-400"
+                        user.type === "driver" &&
+                          "bg-green-500/20 text-green-400",
+                        user.type === "courier" &&
+                          "bg-cyan-500/20 text-cyan-400",
                       )}
                     >
                       {user.type}
@@ -219,7 +221,7 @@ export default function UsersPage() {
                         "admin-badge",
                         user.status === "active" && "admin-badge-success",
                         user.status === "suspended" && "admin-badge-warning",
-                        user.status === "blocked" && "admin-badge-danger"
+                        user.status === "blocked" && "admin-badge-danger",
                       )}
                     >
                       {user.status}
@@ -318,7 +320,9 @@ export default function UsersPage() {
           >
             {(() => {
               const user = users.find((u) => u.id === selectedUser);
-              if (!user) return null;
+              if (!user) {
+                return null;
+              }
 
               return (
                 <div className="p-6">
@@ -349,7 +353,7 @@ export default function UsersPage() {
                           "admin-badge mt-1",
                           user.status === "active" && "admin-badge-success",
                           user.status === "suspended" && "admin-badge-warning",
-                          user.status === "blocked" && "admin-badge-danger"
+                          user.status === "blocked" && "admin-badge-danger",
                         )}
                       >
                         {user.status}
@@ -432,7 +436,7 @@ export default function UsersPage() {
   );
 }
 
-function X({ className }: { className?: string }) {
+const X = ({ className }: { className?: string }) => {
   return (
     <svg
       className={className}
@@ -448,4 +452,4 @@ function X({ className }: { className?: string }) {
       />
     </svg>
   );
-}
+};

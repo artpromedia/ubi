@@ -93,7 +93,7 @@ healthRoutes.get("/ready", async (c) => {
       status: isHealthy ? "ready" : "not_ready",
       checks,
     },
-    isHealthy ? 200 : 503
+    isHealthy ? 200 : 503,
   );
 });
 
@@ -121,7 +121,7 @@ healthRoutes.get("/detailed", async (c) => {
         acc[s.status.toLowerCase()] = s._count.status;
         return acc;
       },
-      {} as Record<string, number>
+      {} as Record<string, number>,
     );
 
     checks.database = {
@@ -166,7 +166,7 @@ healthRoutes.get("/detailed", async (c) => {
         acc[s.channel.toLowerCase()] = s._count.channel;
         return acc;
       },
-      {} as Record<string, number>
+      {} as Record<string, number>,
     );
   } catch {
     checks.channelStats = { error: "Failed to fetch" };

@@ -960,7 +960,13 @@ export interface RetentionIntervention {
   openedAt?: Date;
   clickedAt?: Date;
   convertedAt?: Date;
-  status: "scheduled" | "delivered" | "opened" | "clicked" | "converted" | "failed";
+  status:
+    | "scheduled"
+    | "delivered"
+    | "opened"
+    | "clicked"
+    | "converted"
+    | "failed";
   campaignId?: string;
   churnPredictionId?: string;
   metadata?: Record<string, unknown>;
@@ -1301,7 +1307,7 @@ export interface RetrainingTrigger {
 export interface IFeatureStoreService {
   // Feature definitions
   createFeature(
-    input: CreateFeatureDefinitionInput
+    input: CreateFeatureDefinitionInput,
   ): Promise<FeatureDefinition>;
   getFeatureDefinition(name: string): Promise<FeatureDefinition | null>;
   listFeatures(entityType?: FeatureEntityType): Promise<FeatureDefinition[]>;
@@ -1312,7 +1318,7 @@ export interface IFeatureStoreService {
   setFeatureValue(
     featureId: string,
     entityId: string,
-    value: unknown
+    value: unknown,
   ): Promise<void>;
   computeFeature(featureName: string, entityId: string): Promise<FeatureValue>;
 
@@ -1320,7 +1326,7 @@ export interface IFeatureStoreService {
   createFeatureGroup(
     name: string,
     featureNames: string[],
-    entityType: FeatureEntityType
+    entityType: FeatureEntityType,
   ): Promise<FeatureGroup>;
   getFeatureGroup(name: string): Promise<FeatureGroup | null>;
 }
@@ -1337,7 +1343,7 @@ export interface IModelRegistryService {
 export interface IPredictionService {
   predict(request: PredictionRequest): Promise<PredictionResponse>;
   batchPredict(
-    request: BatchPredictionRequest
+    request: BatchPredictionRequest,
   ): Promise<BatchPredictionResponse>;
   recordOutcome(predictionId: string, outcome: unknown): Promise<void>;
 }
@@ -1347,47 +1353,47 @@ export interface IExperimentService {
   getExperiment(id: string): Promise<ABExperiment | null>;
   listExperiments(status?: ExperimentStatus): Promise<ABExperiment[]>;
   getAssignment(
-    request: GetExperimentAssignmentRequest
+    request: GetExperimentAssignmentRequest,
   ): Promise<ExperimentAssignment>;
   recordMetric(
     experimentId: string,
     userId: string,
     metric: string,
-    value: number
+    value: number,
   ): Promise<void>;
   analyzeExperiment(id: string): Promise<ExperimentResults>;
   concludeExperiment(
     id: string,
     winner?: string,
-    conclusion?: string
+    conclusion?: string,
   ): Promise<ABExperiment>;
 }
 
 export interface IRecommendationService {
   getRecommendations(
-    request: RecommendationRequest
+    request: RecommendationRequest,
   ): Promise<RecommendationResponse>;
   getUserPreferences(userId: string): Promise<UserPreferences>;
   updateUserPreferences(
     userId: string,
-    preferences: Partial<UserPreferences>
+    preferences: Partial<UserPreferences>,
   ): Promise<void>;
   recordInteraction(
     requestId: string,
     itemId: string,
-    interactionType: "impression" | "click" | "conversion"
+    interactionType: "impression" | "click" | "conversion",
   ): Promise<void>;
 }
 
 export interface IDemandForecastService {
   getForecast(request: DemandForecastRequest): Promise<DemandForecastResponse>;
   getSupplyOptimizations(
-    request: SupplyOptimizationRequest
+    request: SupplyOptimizationRequest,
   ): Promise<SupplyOptimizationResponse>;
   recordActual(
     forecastId: string,
     actualDemand: number,
-    actualSupply: number
+    actualSupply: number,
   ): Promise<void>;
 }
 
@@ -1401,17 +1407,17 @@ export interface IDynamicPricingService {
 export interface IFraudDetectionService {
   scoreEntity(request: FraudScoreRequest): Promise<FraudScore>;
   detectCollusion(
-    request: CollusionDetectionRequest
+    request: CollusionDetectionRequest,
   ): Promise<CollusionNetwork[]>;
   reportFraud(
     entityType: string,
     entityId: string,
-    fraudType: FraudType
+    fraudType: FraudType,
   ): Promise<void>;
   updateInvestigation(
     investigationId: string,
     status: string,
-    findings?: Record<string, unknown>
+    findings?: Record<string, unknown>,
   ): Promise<void>;
 }
 
@@ -1419,7 +1425,7 @@ export interface IChurnPredictionService {
   predictChurn(request: ChurnPredictionRequest): Promise<ChurnPrediction>;
   batchPredictChurn(userIds: string[]): Promise<ChurnPrediction[]>;
   createCampaign(
-    input: CreateRetentionCampaignInput
+    input: CreateRetentionCampaignInput,
   ): Promise<RetentionCampaign>;
   triggerIntervention(userId: string, campaignId: string): Promise<void>;
   recordOutcome(predictionId: string, churned: boolean): Promise<void>;
@@ -1433,13 +1439,13 @@ export interface IETAPredictionService {
 
 export interface ISupportNLPService {
   classifyIntent(
-    request: IntentClassificationRequest
+    request: IntentClassificationRequest,
   ): Promise<IntentClassification>;
   generateResponse(request: AutoResponseRequest): Promise<AutoResponse>;
   provideFeedback(
     classificationId: string,
     wasCorrect: boolean,
-    correctedIntent?: string
+    correctedIntent?: string,
   ): Promise<void>;
 }
 
@@ -1447,24 +1453,24 @@ export interface IMLOpsService {
   getModelMetrics(
     modelId: string,
     startTime: Date,
-    endTime: Date
+    endTime: Date,
   ): Promise<ModelPerformanceMetrics[]>;
   checkDrift(modelId: string): Promise<DataDriftReport>;
   createAlert(
     modelId: string,
     type: AlertType,
     severity: AlertSeverity,
-    message: string
+    message: string,
   ): Promise<ModelAlert>;
   acknowledgeAlert(alertId: string, userId: string): Promise<void>;
   resolveAlert(
     alertId: string,
     userId: string,
-    resolution: string
+    resolution: string,
   ): Promise<void>;
   triggerRetraining(
     modelName: string,
-    reason: string
+    reason: string,
   ): Promise<TrainingPipeline>;
   getTrainingPipelineStatus(pipelineId: string): Promise<TrainingPipeline>;
 }

@@ -40,14 +40,14 @@ type BoxRef<E extends React.ElementType = "div"> =
   React.ComponentPropsWithRef<E>["ref"];
 
 type BoxComponent = <E extends React.ElementType = "div">(
-  props: BoxProps<E> & { ref?: BoxRef<E> }
+  props: BoxProps<E> & { ref?: BoxRef<E> },
 ) => React.ReactElement | null;
 
 const Box: BoxComponent = React.forwardRef(function Box<
   E extends React.ElementType = "div",
 >(
   { as, asChild = false, className, children, ...props }: BoxProps<E>,
-  ref: React.ForwardedRef<Element>
+  ref: React.ForwardedRef<Element>,
 ) {
   const Component = asChild ? Slot : as || "div";
 

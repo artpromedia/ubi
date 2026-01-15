@@ -58,7 +58,7 @@ app.use(
     exposeHeaders: ["X-Request-ID"],
     credentials: true,
     maxAge: 600,
-  })
+  }),
 );
 
 // Error handler
@@ -92,7 +92,7 @@ app.notFound((c) => {
         message: "Resource not found",
       },
     },
-    404
+    404,
   );
 });
 

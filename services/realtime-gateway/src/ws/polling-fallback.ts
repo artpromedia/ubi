@@ -55,7 +55,7 @@ export class PollingFallbackHandler {
   async createSession(
     userId: string,
     userType: UserType,
-    deviceId: string
+    deviceId: string,
   ): Promise<{ sessionId: string; pollUrl: string }> {
     const sessionId = nanoid();
 
@@ -74,7 +74,7 @@ export class PollingFallbackHandler {
     await this.redis.setex(
       `poll:session:${sessionId}`,
       Math.ceil(this.SESSION_TTL_MS / 1000),
-      JSON.stringify(session)
+      JSON.stringify(session),
     );
 
     // Register session for user
@@ -104,7 +104,7 @@ export class PollingFallbackHandler {
     if (!session) {
       return c.json(
         { error: "Session not found or expired", code: "SESSION_EXPIRED" },
-        404
+        404,
       );
     }
 
@@ -117,7 +117,7 @@ export class PollingFallbackHandler {
           code: "RATE_LIMITED",
           retryAfterMs: this.MIN_POLL_INTERVAL_MS - timeSinceLastPoll,
         },
-        429
+        429,
       );
     }
 
@@ -171,7 +171,7 @@ export class PollingFallbackHandler {
     if (!session) {
       return c.json(
         { error: "Session not found or expired", code: "SESSION_EXPIRED" },
-        404
+        404,
       );
     }
 
@@ -183,7 +183,7 @@ export class PollingFallbackHandler {
       console.error("Error processing message:", error);
       return c.json(
         { error: "Failed to process message", code: "PROCESSING_ERROR" },
-        500
+        500,
       );
     }
   }
@@ -226,7 +226,7 @@ export class PollingFallbackHandler {
    */
   private async getMessagesForUser(
     userId: string,
-    fromSeq: number
+    fromSeq: number,
   ): Promise<WebSocketMessage[]> {
     const key = `poll:messages:${userId}`;
     const items = await this.redis.lrange(key, 0, -1);
@@ -255,7 +255,7 @@ export class PollingFallbackHandler {
    */
   private async waitForMessages(
     session: PollingSession,
-    timeoutMs: number
+    timeoutMs: number,
   ): Promise<{ messages: WebSocketMessage[] }> {
     return new Promise((resolve) => {
       // Set timeout
@@ -277,7 +277,7 @@ export class PollingFallbackHandler {
         subClient.on("message", async () => {
           const messages = await this.getMessagesForUser(
             session.userId,
-            session.lastSeq
+            session.lastSeq,
           );
           if (messages.length > 0) {
             cleanup();
@@ -293,7 +293,7 @@ export class PollingFallbackHandler {
    */
   private async handleIncomingMessage(
     session: PollingSession,
-    message: any
+    message: any,
   ): Promise<void> {
     // Publish to Redis for processing by services
     await this.redis.publish(
@@ -305,7 +305,7 @@ export class PollingFallbackHandler {
         message,
         timestamp: Date.now(),
         source: "polling",
-      })
+      }),
     );
   }
 
@@ -339,7 +339,7 @@ export class PollingFallbackHandler {
     await this.redis.setex(
       `poll:session:${session.sessionId}`,
       Math.ceil(this.SESSION_TTL_MS / 1000),
-      JSON.stringify(session)
+      JSON.stringify(session),
     );
     this.sessions.set(session.sessionId, session);
   }

@@ -16,7 +16,7 @@ export class AppError extends Error {
     message: string,
     statusCode = 500,
     code = "INTERNAL_ERROR",
-    details?: Record<string, any>
+    details?: Record<string, any>,
   ) {
     super(message);
     this.statusCode = statusCode;
@@ -32,7 +32,7 @@ export const NotFoundError = (resource: string) =>
 
 export const ValidationError = (
   message: string,
-  details?: Record<string, any>
+  details?: Record<string, any>,
 ) => new AppError(message, 400, "VALIDATION_ERROR", details);
 
 export const UnauthorizedError = (message = "Unauthorized") =>
@@ -52,7 +52,7 @@ export const RateLimitError = (retryAfter?: number) =>
  */
 export async function errorHandler(
   c: Context,
-  next: Next
+  next: Next,
 ): Promise<void | Response> {
   try {
     await next();
@@ -80,7 +80,7 @@ export async function errorHandler(
             },
           },
         },
-        400
+        400,
       );
     }
 
@@ -95,7 +95,7 @@ export async function errorHandler(
             details: error.details,
           },
         },
-        error.statusCode as ContentfulStatusCode
+        error.statusCode as ContentfulStatusCode,
       );
     }
 
@@ -109,7 +109,7 @@ export async function errorHandler(
             message: error.message,
           },
         },
-        error.status
+        error.status,
       );
     }
 
@@ -121,7 +121,7 @@ export async function errorHandler(
           success: false,
           error: prismaError,
         },
-        prismaError.statusCode as ContentfulStatusCode
+        prismaError.statusCode as ContentfulStatusCode,
       );
     }
 
@@ -137,7 +137,7 @@ export async function errorHandler(
               : error.message,
         },
       },
-      500
+      500,
     );
   }
 }
@@ -206,6 +206,6 @@ export function notFound(c: Context) {
         message: `Route ${c.req.method} ${c.req.path} not found`,
       },
     },
-    404
+    404,
   );
 }

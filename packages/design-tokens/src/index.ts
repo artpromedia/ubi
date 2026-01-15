@@ -13,43 +13,43 @@
 // Token types
 export interface ColorToken {
   $value: string;
-  $type: 'color';
+  $type: "color";
   $description?: string;
 }
 
 export interface DimensionToken {
   $value: string;
-  $type: 'dimension';
+  $type: "dimension";
   $description?: string;
 }
 
 export interface FontFamilyToken {
   $value: string;
-  $type: 'fontFamily';
+  $type: "fontFamily";
   $description?: string;
 }
 
 export interface FontWeightToken {
   $value: string | number;
-  $type: 'fontWeight';
+  $type: "fontWeight";
   $description?: string;
 }
 
 export interface DurationToken {
   $value: string;
-  $type: 'duration';
+  $type: "duration";
   $description?: string;
 }
 
 export interface CubicBezierToken {
   $value: string;
-  $type: 'cubicBezier';
+  $type: "cubicBezier";
   $description?: string;
 }
 
 export interface ShadowToken {
   $value: string;
-  $type: 'shadow';
+  $type: "shadow";
   $description?: string;
 }
 
@@ -64,21 +64,21 @@ export type Token =
 
 // CSS variable helper
 export function cssVar(tokenPath: string, fallback?: string): string {
-  const varName = `--ubi-${tokenPath.replace(/\./g, '-')}`;
+  const varName = `--ubi-${tokenPath.replace(/\./g, "-")}`;
   return fallback ? `var(${varName}, ${fallback})` : `var(${varName})`;
 }
 
 // Token categories
 export const tokenCategories = [
-  'color',
-  'spacing',
-  'font',
-  'radius',
-  'shadow',
-  'motion',
-  'breakpoint',
-  'zIndex',
-  'opacity',
+  "color",
+  "spacing",
+  "font",
+  "radius",
+  "shadow",
+  "motion",
+  "breakpoint",
+  "zIndex",
+  "opacity",
 ] as const;
 
-export type TokenCategory = typeof tokenCategories[number];
+export type TokenCategory = (typeof tokenCategories)[number];

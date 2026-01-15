@@ -6,7 +6,6 @@
 
 "use client";
 
-import { useUIStore } from "@/store";
 import {
   createContext,
   useContext,
@@ -14,6 +13,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+
+import { useUIStore } from "@/store";
 
 type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
@@ -31,10 +32,10 @@ interface ThemeProviderProps {
   defaultTheme?: Theme;
 }
 
-export function ThemeProvider({
+export const ThemeProvider = ({
   children,
   defaultTheme: _defaultTheme = "system",
-}: ThemeProviderProps) {
+}: ThemeProviderProps) => {
   const { theme, setTheme } = useUIStore();
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
   const [mounted, setMounted] = useState(false);
@@ -66,7 +67,9 @@ export function ThemeProvider({
 
   // Apply theme class to document
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     const root = document.documentElement;
     root.classList.remove("light", "dark");
@@ -77,7 +80,7 @@ export function ThemeProvider({
     if (metaThemeColor) {
       metaThemeColor.setAttribute(
         "content",
-        resolvedTheme === "dark" ? "#191414" : "#FFFFFF"
+        resolvedTheme === "dark" ? "#191414" : "#FFFFFF",
       );
     }
   }, [resolvedTheme, mounted]);
@@ -92,7 +95,7 @@ export function ThemeProvider({
       {children}
     </ThemeContext.Provider>
   );
-}
+};
 
 export function useTheme() {
   const context = useContext(ThemeContext);

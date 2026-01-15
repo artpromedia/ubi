@@ -8,10 +8,11 @@
 // Geolocation Hook
 // ===========================================
 
-import { useLocationStore } from "@/store";
-import type { Coordinates } from "@ubi/utils";
-import { supportsGeolocation } from "@ubi/utils";
 import { useCallback, useEffect, useState } from "react";
+
+import { supportsGeolocation, type Coordinates } from "@ubi/utils";
+
+import { useLocationStore } from "@/store";
 
 interface UseGeolocationOptions {
   enableHighAccuracy?: boolean;
@@ -63,7 +64,7 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
           name: "geolocation",
         });
         setLocationPermission(
-          permission.state as "granted" | "denied" | "prompt"
+          permission.state as "granted" | "denied" | "prompt",
         );
       }
 
@@ -74,7 +75,7 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
             timeout,
             maximumAge,
           });
-        }
+        },
       );
 
       const coords: Coordinates = {
@@ -118,7 +119,9 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
 
   // Watch position for real-time updates
   const watchLocation = useCallback(() => {
-    if (!isSupported) return () => {};
+    if (!isSupported) {
+      return () => {};
+    }
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
@@ -130,7 +133,7 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
       (error) => {
         console.warn("Watch location error:", error.message);
       },
-      { enableHighAccuracy, timeout, maximumAge }
+      { enableHighAccuracy, timeout, maximumAge },
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
@@ -231,10 +234,12 @@ export function useOnlineStatus(): boolean {
 
 export function useLocalStorage<T>(
   key: string,
-  initialValue: T
+  initialValue: T,
 ): [T, (value: T | ((prev: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
+    if (typeof window === "undefined") {
+      return initialValue;
+    }
 
     try {
       const item = window.localStorage.getItem(key);
@@ -257,7 +262,7 @@ export function useLocalStorage<T>(
         console.warn(`Error setting localStorage key "${key}":`, error);
       }
     },
-    [key, storedValue]
+    [key, storedValue],
   );
 
   return [storedValue, setValue];
@@ -287,7 +292,7 @@ export function useClipboard(options: UseClipboardOptions = {}) {
         return false;
       }
     },
-    [timeout]
+    [timeout],
   );
 
   return { copy, hasCopied };
@@ -299,7 +304,9 @@ export function useClipboard(options: UseClipboardOptions = {}) {
 
 export function useScrollLock(lock: boolean) {
   useEffect(() => {
-    if (!lock) return;
+    if (!lock) {
+      return;
+    }
 
     const originalStyle = window.getComputedStyle(document.body).overflow;
     document.body.style.overflow = "hidden";
@@ -334,7 +341,9 @@ export function useInterval(callback: () => void, delay: number | null) {
   const savedCallback = useCallback(callback, [callback]);
 
   useEffect(() => {
-    if (delay === null) return;
+    if (delay === null) {
+      return;
+    }
 
     const id = setInterval(savedCallback, delay);
     return () => clearInterval(id);

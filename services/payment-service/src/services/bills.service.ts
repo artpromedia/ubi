@@ -4,8 +4,11 @@
  */
 
 import { nanoid } from "nanoid";
+
+import { enhancedWalletService } from "./enhanced-wallet.service";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
+
 import type {
   BillCategory,
   BillInputField,
@@ -16,7 +19,6 @@ import type {
   BillValidationResult,
   ScheduledBillPayment,
 } from "../types/fintech.types";
-import { enhancedWalletService } from "./enhanced-wallet.service";
 
 // ===========================================
 // BILL PROVIDER CONFIGURATIONS
@@ -57,7 +59,7 @@ export class BillPaymentService {
    */
   async getProviders(
     category: BillCategory,
-    countryCode: string
+    countryCode: string,
   ): Promise<BillProvider[]> {
     const cacheKey = `bill_providers:${category}:${countryCode}`;
     const cached = await redis.get(cacheKey);
@@ -138,7 +140,7 @@ export class BillPaymentService {
   async validateAccount(
     providerId: string,
     accountNumber: string,
-    additionalFields?: Record<string, string>
+    additionalFields?: Record<string, string>,
   ): Promise<BillValidationResult> {
     const provider = await this.getProvider(providerId);
 
@@ -181,7 +183,7 @@ export class BillPaymentService {
     const validation = await this.callProviderValidation(
       provider,
       accountNumber,
-      additionalFields
+      additionalFields,
     );
 
     return validation;
@@ -193,7 +195,7 @@ export class BillPaymentService {
   async getBillAmount(
     providerId: string,
     _accountNumber: string,
-    _additionalFields?: Record<string, string>
+    _additionalFields?: Record<string, string>,
   ): Promise<{ amount: number; dueDate?: Date; customerName?: string } | null> {
     const provider = await this.getProvider(providerId);
 
@@ -227,8 +229,14 @@ export class BillPaymentService {
    * Pay a bill
    */
   async payBill(params: BillPaymentParams): Promise<BillPaymentResult> {
-    const { walletId, providerId, customerParams, amount, pin, idempotencyKey } =
-      params;
+    const {
+      walletId,
+      providerId,
+      customerParams,
+      amount,
+      pin,
+      idempotencyKey,
+    } = params;
 
     // Validate wallet
     const wallet = await enhancedWalletService.getWalletById(walletId);
@@ -259,13 +267,14 @@ export class BillPaymentService {
     }
 
     // Extract accountNumber from customerParams
-    const accountNumber = customerParams.accountNumber || customerParams.phoneNumber || "";
+    const accountNumber =
+      customerParams.accountNumber || customerParams.phoneNumber || "";
 
     // Check limits
     const limitCheck = await enhancedWalletService.checkLimit(
       walletId,
       amount,
-      "bills"
+      "bills",
     );
     if (!limitCheck.allowed) {
       throw new Error(limitCheck.reason || "Bill payment limit exceeded");
@@ -278,7 +287,7 @@ export class BillPaymentService {
     // Check balance
     const balance = await enhancedWalletService.getBalance(
       walletId,
-      provider.currency as any
+      provider.currency as any,
     );
     if (balance.available < totalAmount) {
       throw new Error("Insufficient balance");
@@ -381,14 +390,20 @@ export class BillPaymentService {
       status?: string;
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ): Promise<{ payments: BillPaymentResult[]; total: number }> {
     const { category, providerId, status, limit = 20, offset = 0 } = options;
 
     const where: Record<string, unknown> = { walletId };
-    if (category) where.category = category;
-    if (providerId) where.providerId = providerId;
-    if (status) where.status = status;
+    if (category) {
+      where.category = category;
+    }
+    if (providerId) {
+      where.providerId = providerId;
+    }
+    if (status) {
+      where.status = status;
+    }
 
     const [payments, total] = await Promise.all([
       prisma.billPayment.findMany({
@@ -438,7 +453,7 @@ export class BillPaymentService {
       startDate: Date;
       endDate?: Date;
       additionalFields?: Record<string, string>;
-    }
+    },
   ): Promise<ScheduledBillPayment> {
     const {
       providerId,
@@ -491,7 +506,7 @@ export class BillPaymentService {
    * Get scheduled payments
    */
   async getScheduledPayments(
-    walletId: string
+    walletId: string,
   ): Promise<ScheduledBillPayment[]> {
     const scheduled = await prisma.scheduledBillPayment.findMany({
       where: { walletId, isActive: true },
@@ -518,7 +533,7 @@ export class BillPaymentService {
    */
   async cancelScheduledPayment(
     scheduleId: string,
-    walletId: string
+    walletId: string,
   ): Promise<void> {
     const scheduled = await prisma.scheduledBillPayment.findUnique({
       where: { id: scheduleId },
@@ -568,7 +583,7 @@ export class BillPaymentService {
         // Update next payment date
         const nextDate = this.calculateNextPaymentDate(
           scheduled.nextPaymentDate,
-          scheduled.frequency as "weekly" | "monthly" | "custom"
+          scheduled.frequency as "weekly" | "monthly" | "custom",
         );
 
         await prisma.scheduledBillPayment.update({
@@ -585,7 +600,7 @@ export class BillPaymentService {
       } catch (error) {
         console.error(
           `Failed to process scheduled payment ${scheduled.id}:`,
-          error
+          error,
         );
 
         // Increment failed attempts
@@ -618,7 +633,7 @@ export class BillPaymentService {
   private async callProviderValidation(
     _provider: BillProvider,
     accountNumber: string,
-    _additionalFields?: Record<string, string>
+    _additionalFields?: Record<string, string>,
   ): Promise<BillValidationResult> {
     // In production, integrate with actual provider APIs
     // Simulate validation based on provider type
@@ -651,7 +666,7 @@ export class BillPaymentService {
       accountNumber: string;
       amount: number;
       additionalFields?: Record<string, string>;
-    }
+    },
   ): Promise<{
     reference: string;
     response: unknown;
@@ -709,7 +724,7 @@ export class BillPaymentService {
 
     const balance = await enhancedWalletService.getBalance(
       walletId,
-      provider.currency as any
+      provider.currency as any,
     );
     if (balance.available < totalAmount) {
       throw new Error("Insufficient balance");
@@ -775,7 +790,7 @@ export class BillPaymentService {
 
   private calculateNextPaymentDate(
     currentDate: Date,
-    frequency: "weekly" | "monthly" | "custom"
+    frequency: "weekly" | "monthly" | "custom",
   ): Date {
     const next = new Date(currentDate);
 

@@ -101,7 +101,7 @@ export function makeRequest(method, url, body, headers = {}, tags = {}) {
 export function checkResponse(
   response,
   expectedStatus = 200,
-  checkName = "status check"
+  checkName = "status check",
 ) {
   const success = check(response, {
     [checkName]: (r) => r.status === expectedStatus,

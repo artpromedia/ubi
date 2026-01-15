@@ -4,22 +4,26 @@
  * Catches and formats all errors consistently.
  */
 
-import { ErrorCodes, formatErrorForLogging, UbiError } from "@ubi/utils";
-import type { Context } from "hono";
 import { z } from "zod";
+
+import { ErrorCodes, formatErrorForLogging, UbiError } from "@ubi/utils";
+
+import type { Context } from "hono";
 
 export const errorHandler = (error: Error, c: Context) => {
   const isDev = process.env.NODE_ENV === "development";
   const requestId = c.req.header("x-request-id") || crypto.randomUUID();
 
   // Log error
-  console.error(JSON.stringify({
-    requestId,
-    ...formatErrorForLogging(error),
-    path: c.req.path,
-    method: c.req.method,
-    timestamp: new Date().toISOString(),
-  }));
+  console.error(
+    JSON.stringify({
+      requestId,
+      ...formatErrorForLogging(error),
+      path: c.req.path,
+      method: c.req.method,
+      timestamp: new Date().toISOString(),
+    }),
+  );
 
   // Handle UbiError
   if (error instanceof UbiError) {
@@ -40,14 +44,14 @@ export const errorHandler = (error: Error, c: Context) => {
           })),
         },
       },
-      400
+      400,
     );
   }
 
   // Handle Prisma errors
   if (error.name === "PrismaClientKnownRequestError") {
     const prismaError = error as Error & { code: string };
-    
+
     if (prismaError.code === "P2002") {
       return c.json(
         {
@@ -57,7 +61,7 @@ export const errorHandler = (error: Error, c: Context) => {
             message: "A record with this value already exists",
           },
         },
-        409
+        409,
       );
     }
 
@@ -70,7 +74,7 @@ export const errorHandler = (error: Error, c: Context) => {
             message: "Record not found",
           },
         },
-        404
+        404,
       );
     }
   }
@@ -85,6 +89,6 @@ export const errorHandler = (error: Error, c: Context) => {
         ...(isDev && { stack: error.stack }),
       },
     },
-    500
+    500,
   );
 };

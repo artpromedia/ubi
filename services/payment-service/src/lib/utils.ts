@@ -69,7 +69,7 @@ export function formatPhoneNumber(phone: string, countryCode: string): string {
  */
 export function isValidPhoneNumber(
   phone: string,
-  countryCode: string
+  countryCode: string,
 ): boolean {
   const patterns: Record<string, RegExp> = {
     NG: /^234[0-9]{10}$/,
@@ -81,7 +81,9 @@ export function isValidPhoneNumber(
   };
 
   const pattern = patterns[countryCode];
-  if (!pattern) return true; // Allow if no pattern defined
+  if (!pattern) {
+    return true;
+  } // Allow if no pattern defined
 
   const cleaned = phone.replace(/\D/g, "");
   return pattern.test(cleaned);
@@ -115,7 +117,7 @@ export function getCurrencyForCountry(countryCode: string): string {
  */
 export function calculatePercentage(
   amount: number,
-  percentage: number
+  percentage: number,
 ): number {
   return Math.round(amount * percentage) / 100;
 }
@@ -137,7 +139,7 @@ export function roundToCurrency(amount: number, currency: string): number {
 /**
  * Sleep utility
  */
-export function sleep(ms: number): Promise<void> {
+export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -151,7 +153,7 @@ export async function retry<T>(
     initialDelay?: number;
     maxDelay?: number;
     factor?: number;
-  } = {}
+  } = {},
 ): Promise<T> {
   const {
     maxRetries = 3,
@@ -184,7 +186,9 @@ export async function retry<T>(
  */
 export function maskCardNumber(cardNumber: string): string {
   const cleaned = cardNumber.replace(/\D/g, "");
-  if (cleaned.length < 8) return "****";
+  if (cleaned.length < 8) {
+    return "****";
+  }
 
   const first4 = cleaned.slice(0, 4);
   const last4 = cleaned.slice(-4);
@@ -195,7 +199,9 @@ export function maskCardNumber(cardNumber: string): string {
 
 export function maskPhoneNumber(phone: string): string {
   const cleaned = phone.replace(/\D/g, "");
-  if (cleaned.length < 6) return "***";
+  if (cleaned.length < 6) {
+    return "***";
+  }
 
   const first3 = cleaned.slice(0, 3);
   const last3 = cleaned.slice(-3);
@@ -206,7 +212,9 @@ export function maskPhoneNumber(phone: string): string {
 
 export function maskEmail(email: string): string {
   const [local, domain] = email.split("@");
-  if (!local || !domain) return "***@***";
+  if (!local || !domain) {
+    return "***@***";
+  }
 
   const maskedLocal =
     local.length <= 2
@@ -220,7 +228,9 @@ export function maskEmail(email: string): string {
  * Parse amount string to number
  */
 export function parseAmount(amount: string | number): number {
-  if (typeof amount === "number") return amount;
+  if (typeof amount === "number") {
+    return amount;
+  }
 
   // Remove currency symbols and commas
   const cleaned = amount.replace(/[^0-9.-]/g, "");

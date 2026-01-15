@@ -25,7 +25,7 @@ analyzer:
     cancel_subscriptions: error
     close_sinks: error
     invalid_annotation_target: ignore
-    
+
   language:
     strict-casts: true
     strict-inference: true
@@ -190,7 +190,7 @@ linter:
 
     # === Performance ===
     avoid_function_literals_in_foreach_calls: true
-    
+
     # === Style (disabled for flexibility) ===
     always_put_control_body_on_new_line: false
     always_put_required_named_parameters_first: false
@@ -240,5 +240,4 @@ linter:
     unnecessary_final: false
     unnecessary_library_directive: false
     unreachable_from_main: false
-    use_late_for_private_fields_and_variables: false
     use_to_and_as_if_applicable: false

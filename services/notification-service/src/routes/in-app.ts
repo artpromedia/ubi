@@ -112,7 +112,7 @@ inAppRoutes.get(
         },
       },
     });
-  }
+  },
 );
 
 /**
@@ -132,7 +132,7 @@ inAppRoutes.get("/:id", auth, async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Notification not found" },
       },
-      404
+      404,
     );
   }
 
@@ -163,7 +163,7 @@ inAppRoutes.post(
             message: "User has disabled in-app notifications",
           },
         },
-        400
+        400,
       );
     }
 
@@ -196,7 +196,7 @@ inAppRoutes.post(
     await redis.set(`user:${data.userId}:badge`, unreadCount, "EX", 86400);
 
     return c.json({ success: true, data: { notification } }, 201);
-  }
+  },
 );
 
 /**
@@ -216,7 +216,7 @@ inAppRoutes.post(
     });
 
     const disabledUserIds = new Set(
-      prefs.map((p: (typeof prefs)[number]) => p.userId)
+      prefs.map((p: (typeof prefs)[number]) => p.userId),
     );
     const eligibleUserIds = userIds.filter((id) => !disabledUserIds.has(id));
 
@@ -258,7 +258,7 @@ inAppRoutes.post(
         skipped: userIds.length - eligibleUserIds.length,
       },
     });
-  }
+  },
 );
 
 /**
@@ -278,7 +278,7 @@ inAppRoutes.patch("/:id/read", auth, async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Notification not found" },
       },
-      404
+      404,
     );
   }
 
@@ -337,7 +337,7 @@ inAppRoutes.delete("/:id", auth, async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Notification not found" },
       },
-      404
+      404,
     );
   }
 
@@ -381,7 +381,7 @@ inAppRoutes.get("/badge", auth, async (c) => {
     badgeCount = String(
       await prisma.inAppNotification.count({
         where: { userId, readAt: null },
-      })
+      }),
     );
     await redis.set(`user:${userId}:badge`, badgeCount, "EX", 86400);
   }

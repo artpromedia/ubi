@@ -94,7 +94,7 @@ const Stack = React.forwardRef<HTMLDivElement, StackProps>(
       children,
       ...props
     },
-    ref
+    ref,
   ) => {
     // If divider is provided, intersperse it between children
     const childArray = React.Children.toArray(children).filter(Boolean);
@@ -104,7 +104,7 @@ const Stack = React.forwardRef<HTMLDivElement, StackProps>(
             acc.push(
               <React.Fragment key={`divider-${index}`}>
                 {divider}
-              </React.Fragment>
+              </React.Fragment>,
             );
           }
           acc.push(child);
@@ -121,7 +121,7 @@ const Stack = React.forwardRef<HTMLDivElement, StackProps>(
         {content}
       </Component>
     );
-  }
+  },
 );
 Stack.displayName = "Stack";
 
@@ -206,7 +206,7 @@ const HStack = React.forwardRef<HTMLDivElement, HStackProps>(
       children,
       ...props
     },
-    ref
+    ref,
   ) => {
     const childArray = React.Children.toArray(children).filter(Boolean);
     const content = divider
@@ -215,7 +215,7 @@ const HStack = React.forwardRef<HTMLDivElement, HStackProps>(
             acc.push(
               <React.Fragment key={`divider-${index}`}>
                 {divider}
-              </React.Fragment>
+              </React.Fragment>,
             );
           }
           acc.push(child);
@@ -232,7 +232,7 @@ const HStack = React.forwardRef<HTMLDivElement, HStackProps>(
         {content}
       </Component>
     );
-  }
+  },
 );
 HStack.displayName = "HStack";
 

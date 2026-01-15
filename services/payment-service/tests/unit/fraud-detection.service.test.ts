@@ -128,7 +128,7 @@ describe("FraudDetectionService", () => {
             return Promise.resolve("1");
           }
           return Promise.resolve(null);
-        }
+        },
       );
       (
         mockPrismaClient.riskAssessment.create as ReturnType<typeof vi.fn>
@@ -211,7 +211,7 @@ describe("FraudDetectionService", () => {
       expect(result).toBeDefined();
       expect(result.action).toBe("BLOCK");
       expect(result.factors).toContainEqual(
-        expect.objectContaining({ factor: "velocity" })
+        expect.objectContaining({ factor: "velocity" }),
       );
     });
   });
@@ -254,7 +254,7 @@ describe("FraudDetectionService", () => {
 
       // Mock user's usual location
       (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
-        JSON.stringify({ country: "KE", city: "Nairobi" })
+        JSON.stringify({ country: "KE", city: "Nairobi" }),
       );
 
       const factor = await fraudService.calculateGeoRisk(request);
@@ -278,7 +278,7 @@ describe("FraudDetectionService", () => {
         expect.stringContaining("blacklist:ip:192.168.1.100"),
         expect.any(String),
         expect.anything(),
-        expect.anything()
+        expect.anything(),
       );
     });
 
@@ -291,7 +291,7 @@ describe("FraudDetectionService", () => {
         expect.stringContaining("blacklist:device:device-malicious"),
         expect.any(String),
         expect.anything(),
-        expect.anything()
+        expect.anything(),
       );
     });
 
@@ -366,7 +366,7 @@ describe("FraudDetectionService", () => {
         "risk-1",
         "approved",
         "admin-123",
-        "Manual review passed"
+        "Manual review passed",
       );
 
       expect(result.status).toBe("approved");
@@ -394,7 +394,7 @@ describe("FraudDetectionService", () => {
         "risk-1",
         "rejected",
         "admin-123",
-        "Confirmed fraud"
+        "Confirmed fraud",
       );
 
       expect(result.status).toBe("rejected");
@@ -424,7 +424,7 @@ describe("FraudDetectionService", () => {
       const patterns = await fraudService.detectPatterns(testUser.id);
 
       expect(patterns).toContainEqual(
-        expect.objectContaining({ pattern: "structuring" })
+        expect.objectContaining({ pattern: "structuring" }),
       );
     });
 
@@ -444,7 +444,7 @@ describe("FraudDetectionService", () => {
       const patterns = await fraudService.detectPatterns(testUser.id);
 
       expect(patterns).toContainEqual(
-        expect.objectContaining({ pattern: "round_amounts" })
+        expect.objectContaining({ pattern: "round_amounts" }),
       );
     });
   });

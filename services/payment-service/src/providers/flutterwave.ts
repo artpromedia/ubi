@@ -109,7 +109,7 @@ export class FlutterwaveClient {
   private async request<T>(
     endpoint: string,
     method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
-    body?: any
+    body?: any,
   ): Promise<FlutterwaveResponse<T>> {
     const response = await fetch(`${this.config.baseUrl}${endpoint}`, {
       method,
@@ -185,7 +185,7 @@ export class FlutterwaveClient {
    */
   async validateCharge(
     flwRef: string,
-    otp: string
+    otp: string,
   ): Promise<FlutterwaveResponse<any>> {
     return this.request("/validate-charge", "POST", {
       otp,
@@ -233,7 +233,7 @@ export class FlutterwaveClient {
       endpoint += "franco";
     } else {
       throw new Error(
-        `Mobile money not supported for currency: ${params.currency}`
+        `Mobile money not supported for currency: ${params.currency}`,
       );
     }
 
@@ -315,7 +315,7 @@ export class FlutterwaveClient {
    */
   async resolveAccount(
     accountNumber: string,
-    accountBank: string
+    accountBank: string,
   ): Promise<
     FlutterwaveResponse<{
       account_number: string;
@@ -382,7 +382,7 @@ export class FlutterwaveClient {
    */
   async getTransferFee(
     amount: number,
-    currency: string
+    currency: string,
   ): Promise<
     FlutterwaveResponse<
       {
@@ -400,7 +400,7 @@ export class FlutterwaveClient {
    */
   async createRefund(
     transactionId: number,
-    amount?: number
+    amount?: number,
   ): Promise<
     FlutterwaveResponse<{
       id: number;
@@ -416,7 +416,9 @@ export class FlutterwaveClient {
     }>
   > {
     const body: any = { id: transactionId };
-    if (amount) body.amount = amount;
+    if (amount) {
+      body.amount = amount;
+    }
 
     return this.request("/transactions/refund", "POST", body);
   }
@@ -432,7 +434,7 @@ export class FlutterwaveClient {
     const cipher = crypto.createCipheriv(
       "des-ede3",
       this.config.encryptionKey.slice(0, 24),
-      ""
+      "",
     );
 
     let encrypted = cipher.update(JSON.stringify(data), "utf8", "base64");
@@ -461,7 +463,7 @@ export class FlutterwaveClient {
    * Get mobile money network codes by country
    */
   static getMobileMoneyNetworks(
-    country: string
+    country: string,
   ): { code: string; name: string }[] {
     const networks: Record<string, { code: string; name: string }[]> = {
       GH: [

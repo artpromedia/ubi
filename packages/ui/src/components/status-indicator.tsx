@@ -6,23 +6,22 @@
 
 import { cva, type VariantProps } from "class-variance-authority";
 import {
-    AlertCircle,
-    Car,
-    CheckCircle2,
-    Circle,
-    CircleDot,
-    Clock,
-    Loader2,
-    MapPin,
-    Package,
-    Utensils,
-    XCircle
+  AlertCircle,
+  Car,
+  CheckCircle2,
+  Circle,
+  CircleDot,
+  Clock,
+  Loader2,
+  MapPin,
+  Package,
+  Utensils,
+  XCircle,
 } from "lucide-react";
 
 import { cn } from "../lib/utils";
 
 import type * as React from "react";
-
 
 // Status dot indicator
 const statusDotVariants = cva("rounded-full", {
@@ -49,11 +48,15 @@ const statusDotVariants = cva("rounded-full", {
 });
 
 interface StatusDotProps
-  extends React.HTMLAttributes<HTMLSpanElement>,
+  extends
+    React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof statusDotVariants> {}
 
 const StatusDot = ({ status, size, className, ...props }: StatusDotProps) => (
-  <span className={cn(statusDotVariants({ status, size }), className)} {...props} />
+  <span
+    className={cn(statusDotVariants({ status, size }), className)}
+    {...props}
+  />
 );
 
 // Status badge with icon
@@ -65,8 +68,10 @@ const statusBadgeVariants = cva(
         pending: "bg-warning/10 text-warning border border-warning/20",
         active: "bg-success/10 text-success border border-success/20",
         completed: "bg-success/10 text-success border border-success/20",
-        cancelled: "bg-destructive/10 text-destructive border border-destructive/20",
-        error: "bg-destructive/10 text-destructive border border-destructive/20",
+        cancelled:
+          "bg-destructive/10 text-destructive border border-destructive/20",
+        error:
+          "bg-destructive/10 text-destructive border border-destructive/20",
         inactive: "bg-muted text-muted-foreground border border-border",
         processing: "bg-primary/10 text-primary border border-primary/20",
       },
@@ -74,11 +79,12 @@ const statusBadgeVariants = cva(
     defaultVariants: {
       status: "inactive",
     },
-  }
+  },
 );
 
 interface StatusBadgeProps
-  extends React.HTMLAttributes<HTMLSpanElement>,
+  extends
+    React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof statusBadgeVariants> {
   label: string;
   showIcon?: boolean;
@@ -140,7 +146,7 @@ const StatusTimeline = ({
       className={cn(
         "flex",
         isVertical ? "flex-col" : "flex-row justify-between",
-        className
+        className,
       )}
     >
       {steps.map((step, index) => {
@@ -154,7 +160,7 @@ const StatusTimeline = ({
             className={cn(
               "flex",
               isVertical ? "flex-row" : "flex-col items-center",
-              !isLast && (isVertical ? "pb-8" : "flex-1")
+              !isLast && (isVertical ? "pb-8" : "flex-1"),
             )}
           >
             {/* Icon/dot */}
@@ -162,21 +168,22 @@ const StatusTimeline = ({
               <div
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors",
-                  isCompleted && "border-success bg-success text-success-foreground",
-                  isActive && "border-primary bg-primary text-primary-foreground",
+                  isCompleted &&
+                    "border-success bg-success text-success-foreground",
+                  isActive &&
+                    "border-primary bg-primary text-primary-foreground",
                   step.status === "pending" &&
-                    "border-muted-foreground/30 bg-background text-muted-foreground"
+                    "border-muted-foreground/30 bg-background text-muted-foreground",
                 )}
               >
-                {step.icon || (
-                  isCompleted ? (
+                {step.icon ||
+                  (isCompleted ? (
                     <CheckCircle2 className="h-4 w-4" />
                   ) : isActive ? (
                     <CircleDot className="h-4 w-4" />
                   ) : (
                     <Circle className="h-4 w-4" />
-                  )
-                )}
+                  ))}
               </div>
               {/* Connector line */}
               {!isLast && (
@@ -185,7 +192,7 @@ const StatusTimeline = ({
                     "absolute bg-border",
                     isVertical
                       ? "left-1/2 top-full h-8 w-0.5 -translate-x-1/2"
-                      : "left-full top-1/2 h-0.5 w-full -translate-y-1/2"
+                      : "left-full top-1/2 h-0.5 w-full -translate-y-1/2",
                   )}
                   style={{
                     backgroundColor: isCompleted
@@ -200,13 +207,13 @@ const StatusTimeline = ({
             <div
               className={cn(
                 isVertical ? "ml-4" : "mt-2 text-center",
-                "flex flex-col"
+                "flex flex-col",
               )}
             >
               <span
                 className={cn(
                   "text-sm font-medium",
-                  step.status === "pending" && "text-muted-foreground"
+                  step.status === "pending" && "text-muted-foreground",
                 )}
               >
                 {step.label}
@@ -255,7 +262,7 @@ const ServiceStatus = ({ service, status, className }: ServiceStatusProps) => (
     className={cn(
       "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium border",
       serviceColors[service],
-      className
+      className,
     )}
   >
     {serviceIcons[service]}
@@ -278,10 +285,8 @@ const LiveLocation = ({
   <div
     className={cn(
       "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
-      isLive
-        ? "bg-success/10 text-success"
-        : "bg-muted text-muted-foreground",
-      className
+      isLive ? "bg-success/10 text-success" : "bg-muted text-muted-foreground",
+      className,
     )}
   >
     {isLive ? (
@@ -302,7 +307,13 @@ const LiveLocation = ({
 );
 
 export {
-    LiveLocation, ServiceStatus, StatusBadge, statusBadgeVariants, StatusDot, statusDotVariants, StatusTimeline, type StatusTimelineStep,
-    type UBIServiceType
+  LiveLocation,
+  ServiceStatus,
+  StatusBadge,
+  statusBadgeVariants,
+  StatusDot,
+  statusDotVariants,
+  StatusTimeline,
+  type StatusTimelineStep,
+  type UBIServiceType,
 };
-

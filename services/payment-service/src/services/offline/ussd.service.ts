@@ -6,12 +6,13 @@
 // =============================================================================
 
 import { EventEmitter } from "events";
+
 import {
-  GeoLocation,
-  IUSSDService,
-  USSDRequest,
-  USSDResponse,
-  USSDSession,
+  type GeoLocation,
+  type IUSSDService,
+  type USSDRequest,
+  type USSDResponse,
+  type USSDSession,
   USSDState,
 } from "@/types/offline.types";
 
@@ -97,7 +98,7 @@ export class USSDService implements IUSSDService {
 
   private async processInput(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     // Handle back/cancel commands globally
     if (input === "0" || input.toLowerCase() === "back") {
@@ -165,7 +166,7 @@ export class USSDService implements IUSSDService {
 
   private async handleMainMenu(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -249,7 +250,7 @@ export class USSDService implements IUSSDService {
 
   private async handleBookingMethod(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
     session.bookingData = session.bookingData || {};
@@ -309,7 +310,7 @@ export class USSDService implements IUSSDService {
 
   private async handlePickupEntry(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -348,7 +349,7 @@ export class USSDService implements IUSSDService {
 
   private async handleDestinationEntry(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -359,7 +360,7 @@ export class USSDService implements IUSSDService {
         return this.setDestinationAndShowEstimate(
           session,
           home.coords,
-          home.address
+          home.address,
         );
       }
     }
@@ -369,7 +370,7 @@ export class USSDService implements IUSSDService {
         return this.setDestinationAndShowEstimate(
           session,
           work.coords,
-          work.address
+          work.address,
         );
       }
     }
@@ -396,14 +397,14 @@ export class USSDService implements IUSSDService {
     return this.setDestinationAndShowEstimate(
       session,
       location.coords,
-      location.address
+      location.address,
     );
   }
 
   private async setDestinationAndShowEstimate(
     session: USSDSession,
     coords: GeoLocation,
-    address: string
+    address: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
     session.bookingData = session.bookingData || {};
@@ -413,7 +414,7 @@ export class USSDService implements IUSSDService {
     // Get fare estimate
     const estimate = await this.getFareEstimate(
       session.bookingData.pickup!,
-      session.bookingData.dropoff
+      session.bookingData.dropoff,
     );
 
     session.bookingData.fareEstimate = estimate.fare;
@@ -448,7 +449,7 @@ export class USSDService implements IUSSDService {
 
   private async handleBookingConfirmation(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -504,7 +505,7 @@ export class USSDService implements IUSSDService {
 
   private async handleWalletMenu(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -547,7 +548,7 @@ export class USSDService implements IUSSDService {
 
   private async handleWalletTopup(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
     const amount = parseInt(input, 10);
@@ -582,7 +583,7 @@ export class USSDService implements IUSSDService {
 
   private async handleWalletSend(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
     session.walletData = session.walletData || {};
@@ -669,7 +670,7 @@ export class USSDService implements IUSSDService {
 
   private async handlePinEntry(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -693,7 +694,7 @@ export class USSDService implements IUSSDService {
       await this.processWalletTransfer(
         session.userId!,
         session.walletData.recipientPhone!,
-        session.walletData.amount!
+        session.walletData.amount!,
       );
 
       return {
@@ -765,7 +766,7 @@ export class USSDService implements IUSSDService {
           "2. " + this.t("option.call_driver", lang),
           "3. " + this.t("option.cancel_trip", lang),
           "0. " + this.t("option.back", lang),
-        ].filter(Boolean)
+        ].filter(Boolean),
       ),
       continueSession: true,
     };
@@ -773,7 +774,7 @@ export class USSDService implements IUSSDService {
 
   private async handleTrackRide(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     switch (input) {
       case "1": // Refresh
@@ -818,7 +819,7 @@ export class USSDService implements IUSSDService {
     session.state = USSDState.RECENT_TRIPS;
     const tripLines = trips.map(
       (trip, i) =>
-        `${i + 1}. ${this.truncateAddress(trip.destination, 20)} - ${this.formatCurrency(trip.fare, lang)}`
+        `${i + 1}. ${this.truncateAddress(trip.destination, 20)} - ${this.formatCurrency(trip.fare, lang)}`,
     );
 
     return {
@@ -835,7 +836,7 @@ export class USSDService implements IUSSDService {
 
   private async handleRecentTrips(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const index = parseInt(input, 10) - 1;
     const trips = await this.getRecentTrips(session.userId, 5);
@@ -853,7 +854,7 @@ export class USSDService implements IUSSDService {
       return this.setDestinationAndShowEstimate(
         session,
         trip.dropoff,
-        trip.dropoffAddress
+        trip.dropoffAddress,
       );
     }
 
@@ -866,7 +867,7 @@ export class USSDService implements IUSSDService {
 
   private async handleLanguageSelect(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const languages: Record<string, string> = {
       "1": "en",
@@ -896,7 +897,7 @@ export class USSDService implements IUSSDService {
 
   private async showSavedPlaces(
     session: USSDSession,
-    forType: "pickup" | "dropoff"
+    forType: "pickup" | "dropoff",
   ): Promise<USSDResponse> {
     const lang = session.language;
     const places = await this.getSavedPlaces(session.userId);
@@ -917,7 +918,7 @@ export class USSDService implements IUSSDService {
 
     const placeLines = places.map(
       (place, i) =>
-        `${i + 1}. ${place.name} - ${this.truncateAddress(place.address, 20)}`
+        `${i + 1}. ${place.name} - ${this.truncateAddress(place.address, 20)}`,
     );
 
     return {
@@ -934,7 +935,7 @@ export class USSDService implements IUSSDService {
 
   private async handleSavedPlaces(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const index = parseInt(input, 10) - 1;
     const places = await this.getSavedPlaces(session.userId);
@@ -964,7 +965,7 @@ export class USSDService implements IUSSDService {
         return this.setDestinationAndShowEstimate(
           session,
           place.coords,
-          place.address
+          place.address,
         );
       }
     }
@@ -978,7 +979,7 @@ export class USSDService implements IUSSDService {
 
   private async handleHelp(
     session: USSDSession,
-    _input: string
+    _input: string,
   ): Promise<USSDResponse> {
     return this.goBack(session);
   }
@@ -1118,7 +1119,9 @@ export class USSDService implements IUSSDService {
   }
 
   private truncateAddress(address: string, maxLength: number): string {
-    if (address.length <= maxLength) return address;
+    if (address.length <= maxLength) {
+      return address;
+    }
     return address.substring(0, maxLength - 3) + "...";
   }
 
@@ -1178,7 +1181,7 @@ export class USSDService implements IUSSDService {
   private t(
     key: string,
     lang: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
   ): string {
     const translations = this.getTranslations(lang);
     let text = translations[key] || key;
@@ -1323,21 +1326,21 @@ export class USSDService implements IUSSDService {
   // ===========================================================================
 
   private async getUserByPhone(
-    _phone: string
+    _phone: string,
   ): Promise<{ id: string; preferredLanguage: string } | null> {
     // Query user service
     return { id: "user_123", preferredLanguage: "en" };
   }
 
   private async getCurrentLocation(
-    _phone: string
+    _phone: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
     // Get from cell tower location or last GPS
     return null;
   }
 
   private async geocodeAddress(
-    address: string
+    address: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
     // Call geocoding service
     return {
@@ -1348,7 +1351,7 @@ export class USSDService implements IUSSDService {
 
   private async getFareEstimate(
     _pickup: GeoLocation,
-    _dropoff: GeoLocation
+    _dropoff: GeoLocation,
   ): Promise<{ fare: number; eta: number }> {
     return { fare: 350, eta: 5 };
   }
@@ -1366,7 +1369,7 @@ export class USSDService implements IUSSDService {
   private async sendSMSConfirmation(
     _phone: string,
     _trip: any,
-    _lang: string
+    _lang: string,
   ): Promise<void> {
     // Send via SMS service
   }
@@ -1378,7 +1381,7 @@ export class USSDService implements IUSSDService {
   private async initiateTopUp(
     _userId: string,
     _phone: string,
-    _amount: number
+    _amount: number,
   ): Promise<void> {
     // Initiate M-Pesa STK push
   }
@@ -1390,7 +1393,7 @@ export class USSDService implements IUSSDService {
   private async processWalletTransfer(
     _userId: string,
     _recipientPhone: string,
-    _amount: number
+    _amount: number,
   ): Promise<void> {
     // Process P2P transfer
   }
@@ -1405,7 +1408,7 @@ export class USSDService implements IUSSDService {
 
   private async getRecentTrips(
     _userId?: string,
-    _limit?: number
+    _limit?: number,
   ): Promise<any[]> {
     return [];
   }
@@ -1420,12 +1423,14 @@ export class USSDService implements IUSSDService {
 
   private async updateUserLanguage(
     _userId?: string,
-    _lang?: string
+    _lang?: string,
   ): Promise<void> {
     // Update user preferences
   }
 
-  private async showWalletHistory(_session: USSDSession): Promise<USSDResponse> {
+  private async showWalletHistory(
+    _session: USSDSession,
+  ): Promise<USSDResponse> {
     return {
       message: "Transaction history coming soon\n\n0. Back",
       continueSession: true,

@@ -12,6 +12,7 @@
  */
 
 import { Hono } from "hono";
+
 import { backgroundCheckService } from "../services/background-check.service";
 import { driverSafetyService } from "../services/driver-safety.service";
 import { safetyFraudService } from "../services/safety-fraud.service";
@@ -19,7 +20,8 @@ import { sosEmergencyService } from "../services/sos.service";
 import { tripMonitorService } from "../services/trip-monitor.service";
 import { verificationService } from "../services/verification.service";
 import { womenSafetyService } from "../services/women-safety.service";
-import { DocumentType } from "../types/safety.types";
+
+import type { DocumentType } from "../types/safety.types";
 
 export const safetyRoutes = new Hono();
 
@@ -43,7 +45,7 @@ safetyRoutes.post("/verification/document", async (c) => {
           error:
             "Missing required fields: userId, documentType, documentNumber",
         },
-        400
+        400,
       );
     }
 
@@ -65,7 +67,7 @@ safetyRoutes.post("/verification/document", async (c) => {
         success: false,
         error: error.message || "Failed to submit document",
       },
-      500
+      500,
     );
   }
 });
@@ -84,14 +86,14 @@ safetyRoutes.post("/verification/selfie", async (c) => {
           success: false,
           error: "Missing required fields: userId, selfieImage",
         },
-        400
+        400,
       );
     }
 
     const result = await verificationService.captureSelfie(
       userId,
       selfieImage,
-      livenessChallenge
+      livenessChallenge,
     );
 
     return c.json({
@@ -105,7 +107,7 @@ safetyRoutes.post("/verification/selfie", async (c) => {
         success: false,
         error: error.message || "Failed to capture selfie",
       },
-      500
+      500,
     );
   }
 });
@@ -124,14 +126,14 @@ safetyRoutes.post("/verification/liveness", async (c) => {
           success: false,
           error: "Missing required field: userId",
         },
-        400
+        400,
       );
     }
 
     const result = await verificationService.performLivenessCheck(
       userId,
       challengeResponse,
-      videoFrames
+      videoFrames,
     );
 
     return c.json({
@@ -145,7 +147,7 @@ safetyRoutes.post("/verification/liveness", async (c) => {
         success: false,
         error: error.message || "Failed to perform liveness check",
       },
-      500
+      500,
     );
   }
 });
@@ -164,14 +166,14 @@ safetyRoutes.post("/verification/face-match", async (c) => {
           success: false,
           error: "Missing required fields: userId, selfieImage, documentImage",
         },
-        400
+        400,
       );
     }
 
     const result = await verificationService.matchFaceToDocument(
       userId,
       selfieImage,
-      documentImage
+      documentImage,
     );
 
     return c.json({
@@ -185,7 +187,7 @@ safetyRoutes.post("/verification/face-match", async (c) => {
         success: false,
         error: error.message || "Failed to match face",
       },
-      500
+      500,
     );
   }
 });
@@ -204,7 +206,7 @@ safetyRoutes.post("/verification/phone-otp", async (c) => {
           success: false,
           error: "Missing required fields: userId, phoneNumber",
         },
-        400
+        400,
       );
     }
 
@@ -221,7 +223,7 @@ safetyRoutes.post("/verification/phone-otp", async (c) => {
         success: false,
         error: error.message || "Failed to send OTP",
       },
-      500
+      500,
     );
   }
 });
@@ -240,7 +242,7 @@ safetyRoutes.post("/verification/email-otp", async (c) => {
           success: false,
           error: "Missing required fields: userId, email",
         },
-        400
+        400,
       );
     }
 
@@ -257,7 +259,7 @@ safetyRoutes.post("/verification/email-otp", async (c) => {
         success: false,
         error: error.message || "Failed to send email OTP",
       },
-      500
+      500,
     );
   }
 });
@@ -276,7 +278,7 @@ safetyRoutes.post("/verification/verify-otp", async (c) => {
           success: false,
           error: "Missing required fields: userId, otp, type",
         },
-        400
+        400,
       );
     }
 
@@ -293,7 +295,7 @@ safetyRoutes.post("/verification/verify-otp", async (c) => {
         success: false,
         error: error.message || "Failed to verify OTP",
       },
-      500
+      500,
     );
   }
 });
@@ -324,7 +326,7 @@ safetyRoutes.get("/verification/status/:userId", async (c) => {
         success: false,
         error: error.message || "Failed to get verification status",
       },
-      500
+      500,
     );
   }
 });
@@ -347,7 +349,7 @@ safetyRoutes.post("/trip/monitor/start", async (c) => {
           success: false,
           error: "Missing required fields: tripId, riderId, driverId",
         },
-        400
+        400,
       );
     }
 
@@ -370,7 +372,7 @@ safetyRoutes.post("/trip/monitor/start", async (c) => {
         success: false,
         error: error.message || "Failed to start monitoring",
       },
-      500
+      500,
     );
   }
 });
@@ -390,7 +392,7 @@ safetyRoutes.post("/trip/location", async (c) => {
           success: false,
           error: "Missing required fields: tripId, latitude, longitude",
         },
-        400
+        400,
       );
     }
 
@@ -412,7 +414,7 @@ safetyRoutes.post("/trip/location", async (c) => {
         success: false,
         error: error.message || "Failed to process location",
       },
-      500
+      500,
     );
   }
 });
@@ -431,7 +433,7 @@ safetyRoutes.post("/trip/accelerometer", async (c) => {
           success: false,
           error: "Missing required fields: tripId, data",
         },
-        400
+        400,
       );
     }
 
@@ -447,7 +449,7 @@ safetyRoutes.post("/trip/accelerometer", async (c) => {
         success: false,
         error: error.message || "Failed to process accelerometer data",
       },
-      500
+      500,
     );
   }
 });
@@ -466,14 +468,14 @@ safetyRoutes.post("/trip/checkin/trigger", async (c) => {
           success: false,
           error: "Missing required field: tripId",
         },
-        400
+        400,
       );
     }
 
     const checkIn = await tripMonitorService.triggerSafetyCheck(
       tripId,
       tripId, // userId - would need to get from session
-      reason || "manual"
+      reason || "manual",
     );
 
     return c.json({
@@ -487,7 +489,7 @@ safetyRoutes.post("/trip/checkin/trigger", async (c) => {
         success: false,
         error: error.message || "Failed to trigger safety check",
       },
-      500
+      500,
     );
   }
 });
@@ -506,13 +508,13 @@ safetyRoutes.post("/trip/checkin/respond", async (c) => {
           success: false,
           error: "Missing required fields: checkInId, isOkay",
         },
-        400
+        400,
       );
     }
 
     await tripMonitorService.respondToSafetyCheck(
       checkInId,
-      isOkay ? "safe" : "need_help"
+      isOkay ? "safe" : "need_help",
     );
 
     return c.json({
@@ -525,7 +527,7 @@ safetyRoutes.post("/trip/checkin/respond", async (c) => {
         success: false,
         error: error.message || "Failed to respond to safety check",
       },
-      500
+      500,
     );
   }
 });
@@ -536,7 +538,11 @@ safetyRoutes.post("/trip/checkin/respond", async (c) => {
  */
 safetyRoutes.post("/trip/share", async (c) => {
   try {
-    const { tripId, shareWithContacts, expiresAt: _expiresAt } = await c.req.json();
+    const {
+      tripId,
+      shareWithContacts,
+      expiresAt: _expiresAt,
+    } = await c.req.json();
 
     if (!tripId) {
       return c.json(
@@ -544,14 +550,14 @@ safetyRoutes.post("/trip/share", async (c) => {
           success: false,
           error: "Missing required field: tripId",
         },
-        400
+        400,
       );
     }
 
     const share = await tripMonitorService.createTripShare(
       tripId,
       tripId, // userId - would need to get from session
-      shareWithContacts || []
+      shareWithContacts || [],
     );
 
     return c.json({
@@ -565,7 +571,7 @@ safetyRoutes.post("/trip/share", async (c) => {
         success: false,
         error: error.message || "Failed to create trip share",
       },
-      500
+      500,
     );
   }
 });
@@ -584,7 +590,7 @@ safetyRoutes.post("/trip/monitor/stop", async (c) => {
           success: false,
           error: "Missing required field: tripId",
         },
-        400
+        400,
       );
     }
 
@@ -600,7 +606,7 @@ safetyRoutes.post("/trip/monitor/stop", async (c) => {
         success: false,
         error: error.message || "Failed to stop monitoring",
       },
-      500
+      500,
     );
   }
 });
@@ -621,7 +627,7 @@ safetyRoutes.get("/trip/:tripId/status", async (c) => {
           success: false,
           error: "Trip not found",
         },
-        404
+        404,
       );
     }
 
@@ -636,7 +642,7 @@ safetyRoutes.get("/trip/:tripId/status", async (c) => {
         success: false,
         error: error.message || "Failed to get trip status",
       },
-      500
+      500,
     );
   }
 });
@@ -659,7 +665,7 @@ safetyRoutes.post("/sos/trigger", async (c) => {
           success: false,
           error: "Missing required fields: userId, trigger",
         },
-        400
+        400,
       );
     }
 
@@ -681,7 +687,7 @@ safetyRoutes.post("/sos/trigger", async (c) => {
         success: false,
         error: error.message || "Failed to trigger SOS",
       },
-      500
+      500,
     );
   }
 });
@@ -700,7 +706,7 @@ safetyRoutes.post("/sos/cancel", async (c) => {
           success: false,
           error: "Missing required fields: sosId, pin",
         },
-        400
+        400,
       );
     }
 
@@ -717,7 +723,7 @@ safetyRoutes.post("/sos/cancel", async (c) => {
         success: false,
         error: error.message || "Failed to cancel SOS",
       },
-      500
+      500,
     );
   }
 });
@@ -736,7 +742,7 @@ safetyRoutes.post("/sos/respond", async (c) => {
           success: false,
           error: "Missing required fields: sosId, agentId, response",
         },
-        400
+        400,
       );
     }
 
@@ -757,7 +763,7 @@ safetyRoutes.post("/sos/respond", async (c) => {
         success: false,
         error: error.message || "Failed to respond to SOS",
       },
-      500
+      500,
     );
   }
 });
@@ -776,7 +782,7 @@ safetyRoutes.post("/sos/false-alarm", async (c) => {
           success: false,
           error: "Missing required field: sosId",
         },
-        400
+        400,
       );
     }
 
@@ -792,7 +798,7 @@ safetyRoutes.post("/sos/false-alarm", async (c) => {
         success: false,
         error: error.message || "Failed to mark as false alarm",
       },
-      500
+      500,
     );
   }
 });
@@ -813,7 +819,7 @@ safetyRoutes.get("/sos/:sosId", async (c) => {
           success: false,
           error: "SOS not found",
         },
-        404
+        404,
       );
     }
 
@@ -828,7 +834,7 @@ safetyRoutes.get("/sos/:sosId", async (c) => {
         success: false,
         error: error.message || "Failed to get SOS",
       },
-      500
+      500,
     );
   }
 });
@@ -847,7 +853,7 @@ safetyRoutes.post("/emergency-contacts", async (c) => {
           success: false,
           error: "Missing required fields: userId, name, phone",
         },
-        400
+        400,
       );
     }
 
@@ -872,7 +878,7 @@ safetyRoutes.post("/emergency-contacts", async (c) => {
         success: false,
         error: error.message || "Failed to add contact",
       },
-      500
+      500,
     );
   }
 });
@@ -897,7 +903,7 @@ safetyRoutes.get("/emergency-contacts/:userId", async (c) => {
         success: false,
         error: error.message || "Failed to get contacts",
       },
-      500
+      500,
     );
   }
 });
@@ -920,7 +926,7 @@ safetyRoutes.post("/women/find-drivers", async (c) => {
           success: false,
           error: "Missing required fields: riderId, pickupLocation",
         },
-        400
+        400,
       );
     }
 
@@ -937,7 +943,7 @@ safetyRoutes.post("/women/find-drivers", async (c) => {
         success: false,
         error: error.message || "Failed to find drivers",
       },
-      500
+      500,
     );
   }
 });
@@ -956,7 +962,7 @@ safetyRoutes.post("/women/register-driver", async (c) => {
           success: false,
           error: "Missing required field: driverId",
         },
-        400
+        400,
       );
     }
 
@@ -974,7 +980,7 @@ safetyRoutes.post("/women/register-driver", async (c) => {
         success: false,
         error: error.message || "Failed to register driver",
       },
-      500
+      500,
     );
   }
 });
@@ -993,7 +999,7 @@ safetyRoutes.post("/women/trip-pin", async (c) => {
           success: false,
           error: "Missing required fields: tripId, riderId",
         },
-        400
+        400,
       );
     }
 
@@ -1011,7 +1017,7 @@ safetyRoutes.post("/women/trip-pin", async (c) => {
         success: false,
         error: error.message || "Failed to generate PIN",
       },
-      500
+      500,
     );
   }
 });
@@ -1030,7 +1036,7 @@ safetyRoutes.post("/women/verify-pin", async (c) => {
           success: false,
           error: "Missing required fields: tripId, pin",
         },
-        400
+        400,
       );
     }
 
@@ -1047,7 +1053,7 @@ safetyRoutes.post("/women/verify-pin", async (c) => {
         success: false,
         error: error.message || "Failed to verify PIN",
       },
-      500
+      500,
     );
   }
 });
@@ -1066,7 +1072,7 @@ safetyRoutes.post("/women/safe-words", async (c) => {
           success: false,
           error: "Missing required fields: userId, safeWords (array)",
         },
-        400
+        400,
       );
     }
 
@@ -1082,7 +1088,7 @@ safetyRoutes.post("/women/safe-words", async (c) => {
         success: false,
         error: error.message || "Failed to set safe words",
       },
-      500
+      500,
     );
   }
 });
@@ -1108,7 +1114,7 @@ safetyRoutes.put("/women/preferences/:userId", async (c) => {
         success: false,
         error: error.message || "Failed to update preferences",
       },
-      500
+      500,
     );
   }
 });
@@ -1134,7 +1140,7 @@ safetyRoutes.get("/women/preferences/:userId", async (c) => {
         success: false,
         error: error.message || "Failed to get preferences",
       },
-      500
+      500,
     );
   }
 });
@@ -1157,7 +1163,7 @@ safetyRoutes.post("/fraud/assess", async (c) => {
           success: false,
           error: "Missing required fields: userId, actionType",
         },
-        400
+        400,
       );
     }
 
@@ -1179,7 +1185,7 @@ safetyRoutes.post("/fraud/assess", async (c) => {
         success: false,
         error: error.message || "Failed to assess risk",
       },
-      500
+      500,
     );
   }
 });
@@ -1198,7 +1204,7 @@ safetyRoutes.post("/fraud/device/register", async (c) => {
           success: false,
           error: "Missing required fields: userId, deviceInfo",
         },
-        400
+        400,
       );
     }
 
@@ -1215,7 +1221,7 @@ safetyRoutes.post("/fraud/device/register", async (c) => {
         success: false,
         error: error.message || "Failed to register device",
       },
-      500
+      500,
     );
   }
 });
@@ -1236,7 +1242,7 @@ safetyRoutes.post("/fraud/report", async (c) => {
           error:
             "Missing required fields: reporterId, reportedUserId, fraudType",
         },
-        400
+        400,
       );
     }
 
@@ -1264,7 +1270,7 @@ safetyRoutes.post("/fraud/report", async (c) => {
         success: false,
         error: error.message || "Failed to report fraud",
       },
-      500
+      500,
     );
   }
 });
@@ -1290,7 +1296,7 @@ safetyRoutes.get("/fraud/risk/:userId", async (c) => {
         success: false,
         error: error.message || "Failed to get risk profile",
       },
-      500
+      500,
     );
   }
 });
@@ -1314,7 +1320,7 @@ safetyRoutes.post("/fraud/promo-check", async (c) => {
           success: false,
           error: "Missing required fields: userId, promoCode",
         },
-        400
+        400,
       );
     }
 
@@ -1331,7 +1337,7 @@ safetyRoutes.post("/fraud/promo-check", async (c) => {
         success: false,
         error: error.message || "Failed to check promo",
       },
-      500
+      500,
     );
   }
 });
@@ -1361,7 +1367,7 @@ safetyRoutes.get("/driver/:driverId/profile", async (c) => {
         success: false,
         error: error.message || "Failed to get driver profile",
       },
-      500
+      500,
     );
   }
 });
@@ -1380,7 +1386,7 @@ safetyRoutes.post("/driver/incident", async (c) => {
           success: false,
           error: "Missing required fields: driverId, incidentType",
         },
-        400
+        400,
       );
     }
 
@@ -1402,7 +1408,7 @@ safetyRoutes.post("/driver/incident", async (c) => {
         success: false,
         error: error.message || "Failed to report incident",
       },
-      500
+      500,
     );
   }
 });
@@ -1421,7 +1427,7 @@ safetyRoutes.post("/driver/risk-zone", async (c) => {
           success: false,
           error: "Missing required fields: latitude, longitude",
         },
-        400
+        400,
       );
     }
 
@@ -1441,7 +1447,7 @@ safetyRoutes.post("/driver/risk-zone", async (c) => {
         success: false,
         error: error.message || "Failed to check risk zone",
       },
-      500
+      500,
     );
   }
 });
@@ -1460,14 +1466,14 @@ safetyRoutes.post("/driver/cash-risk", async (c) => {
           success: false,
           error: "Missing required fields: driverId, riderId, tripDetails",
         },
-        400
+        400,
       );
     }
 
     const assessment = await driverSafetyService.assessCashTripRisk(
       driverId,
       riderId,
-      tripDetails
+      tripDetails,
     );
 
     return c.json({
@@ -1481,7 +1487,7 @@ safetyRoutes.post("/driver/cash-risk", async (c) => {
         success: false,
         error: error.message || "Failed to assess cash risk",
       },
-      500
+      500,
     );
   }
 });
@@ -1500,7 +1506,7 @@ safetyRoutes.post("/driver/fatigue-check", async (c) => {
           success: false,
           error: "Missing required field: driverId",
         },
-        400
+        400,
       );
     }
 
@@ -1517,7 +1523,7 @@ safetyRoutes.post("/driver/fatigue-check", async (c) => {
         success: false,
         error: error.message || "Failed to check fatigue",
       },
-      500
+      500,
     );
   }
 });
@@ -1544,7 +1550,7 @@ safetyRoutes.get("/driver/:driverId/recommendations", async (c) => {
         success: false,
         error: error.message || "Failed to get recommendations",
       },
-      500
+      500,
     );
   }
 });
@@ -1578,7 +1584,7 @@ safetyRoutes.post("/background/initiate", async (c) => {
           error:
             "Missing required fields: userId, checkTypes, country, consentGiven",
         },
-        400
+        400,
       );
     }
 
@@ -1605,7 +1611,7 @@ safetyRoutes.post("/background/initiate", async (c) => {
         success: false,
         error: error.message || "Failed to initiate background check",
       },
-      500
+      500,
     );
   }
 });
@@ -1621,7 +1627,7 @@ safetyRoutes.get("/background/:userId/:checkType", async (c) => {
 
     const check = await backgroundCheckService.checkStatus(
       userId,
-      checkType as any
+      checkType as any,
     );
 
     if (!check) {
@@ -1630,7 +1636,7 @@ safetyRoutes.get("/background/:userId/:checkType", async (c) => {
           success: false,
           error: "Background check not found",
         },
-        404
+        404,
       );
     }
 
@@ -1645,7 +1651,7 @@ safetyRoutes.get("/background/:userId/:checkType", async (c) => {
         success: false,
         error: error.message || "Failed to get background check status",
       },
-      500
+      500,
     );
   }
 });
@@ -1671,7 +1677,7 @@ safetyRoutes.get("/background/user/:userId", async (c) => {
         success: false,
         error: error.message || "Failed to get background checks",
       },
-      500
+      500,
     );
   }
 });
@@ -1698,7 +1704,7 @@ safetyRoutes.get("/background/user/:userId/summary", async (c) => {
         success: false,
         error: error.message || "Failed to get background summary",
       },
-      500
+      500,
     );
   }
 });
@@ -1724,7 +1730,7 @@ safetyRoutes.get("/background/driver/:driverId/cleared", async (c) => {
         success: false,
         error: error.message || "Failed to check driver clearance",
       },
-      500
+      500,
     );
   }
 });
@@ -1743,7 +1749,7 @@ safetyRoutes.post("/background/monitoring/enable", async (c) => {
           success: false,
           error: "Missing required field: userId",
         },
-        400
+        400,
       );
     }
 
@@ -1759,7 +1765,7 @@ safetyRoutes.post("/background/monitoring/enable", async (c) => {
         success: false,
         error: error.message || "Failed to enable monitoring",
       },
-      500
+      500,
     );
   }
 });
@@ -1785,7 +1791,7 @@ safetyRoutes.get("/background/monitoring/:userId/alerts", async (c) => {
         success: false,
         error: error.message || "Failed to get alerts",
       },
-      500
+      500,
     );
   }
 });

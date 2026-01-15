@@ -5,7 +5,14 @@
  * for Nigerian Naira, Kenyan Shilling, South African Rand, etc.
  */
 
-export type SupportedCurrency = "NGN" | "KES" | "ZAR" | "GHS" | "RWF" | "ETB" | "USD";
+export type SupportedCurrency =
+  | "NGN"
+  | "KES"
+  | "ZAR"
+  | "GHS"
+  | "RWF"
+  | "ETB"
+  | "USD";
 
 interface CurrencyConfig {
   code: SupportedCurrency;
@@ -80,7 +87,7 @@ export function formatCurrency(
   options: {
     showSymbol?: boolean;
     compact?: boolean;
-  } = {}
+  } = {},
 ): string {
   const { showSymbol = true, compact = false } = options;
   const config = CURRENCY_CONFIG[currency];
@@ -108,7 +115,7 @@ export function formatCurrency(
 export function formatCompactCurrency(
   amount: number,
   currency: SupportedCurrency = "NGN",
-  showSymbol: boolean = true
+  showSymbol: boolean = true,
 ): string {
   const config = CURRENCY_CONFIG[currency];
 
@@ -152,7 +159,7 @@ export function convertCurrency(
   amount: number,
   fromCurrency: SupportedCurrency,
   toCurrency: SupportedCurrency,
-  exchangeRates: Record<string, number>
+  exchangeRates: Record<string, number>,
 ): number {
   if (fromCurrency === toCurrency) {
     return amount;

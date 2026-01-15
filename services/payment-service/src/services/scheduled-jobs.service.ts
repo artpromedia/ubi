@@ -9,11 +9,12 @@
  * - Health checks
  */
 
-import { Currency, PaymentProvider, PrismaClient } from "@prisma/client";
-import { Redis } from "ioredis";
-import { PayoutService } from "./payout.service";
-import { ReconciliationService } from "./reconciliation.service";
-import { SettlementService } from "./settlement.service";
+import { Currency, PaymentProvider, type PrismaClient } from "@prisma/client";
+
+import type { PayoutService } from "./payout.service";
+import type { ReconciliationService } from "./reconciliation.service";
+import type { SettlementService } from "./settlement.service";
+import type { Redis } from "ioredis";
 
 // ===========================================
 // TYPES
@@ -58,7 +59,9 @@ export class ScheduledJobsService {
   private isRunning: boolean = false;
 
   // Provider-currency mappings
-  private readonly providerCurrencies: Partial<Record<PaymentProvider, Currency[]>> = {
+  private readonly providerCurrencies: Partial<
+    Record<PaymentProvider, Currency[]>
+  > = {
     [PaymentProvider.PAYSTACK]: [
       Currency.NGN,
       Currency.GHS,
@@ -76,7 +79,7 @@ export class ScheduledJobsService {
     redis: Redis,
     reconciliationService: ReconciliationService,
     settlementService: SettlementService,
-    _payoutService: PayoutService
+    _payoutService: PayoutService,
   ) {
     this.prisma = prisma;
     this.redis = redis;
@@ -223,13 +226,15 @@ export class ScheduledJobsService {
 
   private scheduleJob(jobName: string): void {
     const job = this.jobs.get(jobName);
-    if (!job) return;
+    if (!job) {
+      return;
+    }
 
     const nextRun = this.getNextRunTime(job.config.schedule);
     const delay = nextRun.getTime() - Date.now();
 
     console.log(
-      `Scheduling ${jobName} to run at ${nextRun.toISOString()} (in ${Math.round(delay / 1000 / 60)} minutes)`
+      `Scheduling ${jobName} to run at ${nextRun.toISOString()} (in ${Math.round(delay / 1000 / 60)} minutes)`,
     );
 
     job.timer = setTimeout(async () => {
@@ -250,7 +255,7 @@ export class ScheduledJobsService {
 
     const startTime = new Date();
     console.log(
-      `[${jobName}] Starting execution at ${startTime.toISOString()}`
+      `[${jobName}] Starting execution at ${startTime.toISOString()}`,
     );
 
     // Acquire distributed lock to prevent duplicate execution
@@ -347,12 +352,12 @@ export class ScheduledJobsService {
           await this.reconciliationService.runDailyReconciliation(
             provider,
             yesterday,
-            currency
+            currency,
           );
         } catch (error) {
           console.error(
             `Reconciliation failed for ${provider}/${currency}:`,
-            error
+            error,
           );
           // Continue with other providers
         }
@@ -377,16 +382,16 @@ export class ScheduledJobsService {
       for (const currency of currencies) {
         try {
           console.log(
-            `Running balance reconciliation for ${provider} / ${currency}`
+            `Running balance reconciliation for ${provider} / ${currency}`,
           );
           await this.reconciliationService.runBalanceReconciliation(
             provider,
-            currency
+            currency,
           );
         } catch (error) {
           console.error(
             `Balance reconciliation failed for ${provider}/${currency}:`,
-            error
+            error,
           );
         }
       }
@@ -405,7 +410,7 @@ export class ScheduledJobsService {
         console.log(`Running restaurant settlements for ${currency}`);
         await this.settlementService.runDailyRestaurantSettlements(
           yesterday,
-          currency
+          currency,
         );
       } catch (error) {
         console.error(`Restaurant settlements failed for ${currency}:`, error);
@@ -444,7 +449,7 @@ export class ScheduledJobsService {
         if (totalEarnings > 0) {
           // Create settlement (simplified)
           console.log(
-            `Creating settlement for merchant ${merchant.id}: ${totalEarnings}`
+            `Creating settlement for merchant ${merchant.id}: ${totalEarnings}`,
           );
         }
       } catch (error) {
@@ -472,20 +477,20 @@ export class ScheduledJobsService {
     });
 
     console.log(
-      `Found ${driversWithBalances.length} drivers with pending balances`
+      `Found ${driversWithBalances.length} drivers with pending balances`,
     );
 
     for (const account of driversWithBalances) {
       try {
         // Use payout service to process
         console.log(
-          `Processing payout for driver ${account.wallet.userId}: ${account.balance}`
+          `Processing payout for driver ${account.wallet.userId}: ${account.balance}`,
         );
         // await this.payoutService.requestInstantCashout(account.wallet.userId, ...);
       } catch (error) {
         console.error(
           `Weekly payout failed for driver ${account.wallet.userId}:`,
-          error
+          error,
         );
       }
     }
@@ -629,7 +634,7 @@ export class ScheduledJobsService {
       `report:daily:${report.date}`,
       JSON.stringify(report),
       "EX",
-      30 * 24 * 60 * 60 // 30 days
+      30 * 24 * 60 * 60, // 30 days
     );
   }
 
@@ -665,7 +670,7 @@ export class ScheduledJobsService {
         // Interval job - move to next interval
         const interval = parseInt(minute.substring(2), 10);
         next.setMinutes(
-          Math.ceil((now.getMinutes() + 1) / interval) * interval
+          Math.ceil((now.getMinutes() + 1) / interval) * interval,
         );
         if (next <= now) {
           next.setHours(next.getHours() + 1);
@@ -695,7 +700,7 @@ export class ScheduledJobsService {
     jobName: string,
     status: "success" | "failure",
     duration: number,
-    error?: string
+    error?: string,
   ): Promise<void> {
     const record = {
       jobName,
@@ -712,7 +717,7 @@ export class ScheduledJobsService {
 
   private async sendJobFailureAlert(
     jobName: string,
-    error: string
+    error: string,
   ): Promise<void> {
     await this.prisma.alert.create({
       data: {
@@ -725,9 +730,7 @@ export class ScheduledJobsService {
     });
   }
 
-  private async checkProviderHealth(
-    provider: PaymentProvider
-  ): Promise<{
+  private async checkProviderHealth(provider: PaymentProvider): Promise<{
     isHealthy: boolean;
     responseTime: number;
     successRate: number;
@@ -751,7 +754,7 @@ export class ScheduledJobsService {
     }
 
     const successful = recentTransactions.filter(
-      (t) => t.status === "COMPLETED"
+      (t) => t.status === "COMPLETED",
     ).length;
     const successRate = (successful / recentTransactions.length) * 100;
 
@@ -760,7 +763,8 @@ export class ScheduledJobsService {
       .filter((t) => t.confirmedAt && t.initiatedAt)
       .map(
         (t) =>
-          new Date(t.confirmedAt!).getTime() - new Date(t.initiatedAt).getTime()
+          new Date(t.confirmedAt!).getTime() -
+          new Date(t.initiatedAt).getTime(),
       );
 
     const avgResponseTime =
@@ -819,12 +823,12 @@ export class ScheduledJobsService {
 
   async getJobHistory(
     jobName: string,
-    limit: number = 10
+    limit: number = 10,
   ): Promise<JobResult[]> {
     const records = await this.redis.lrange(
       `job:history:${jobName}`,
       0,
-      limit - 1
+      limit - 1,
     );
     return records.map((r) => JSON.parse(r));
   }
@@ -841,7 +845,7 @@ export function createScheduledJobsService(
   redis: Redis,
   reconciliationService: ReconciliationService,
   settlementService: SettlementService,
-  _payoutService: PayoutService
+  _payoutService: PayoutService,
 ): ScheduledJobsService {
   if (!instance) {
     instance = new ScheduledJobsService(
@@ -849,7 +853,7 @@ export function createScheduledJobsService(
       redis,
       reconciliationService,
       settlementService,
-      _payoutService
+      _payoutService,
     );
   }
   return instance;

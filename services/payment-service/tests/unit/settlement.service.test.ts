@@ -25,7 +25,7 @@ describe("SettlementService", () => {
     resetMocks();
     settlementService = new SettlementService(
       mockPrismaClient,
-      mockRedisClient
+      mockRedisClient,
     );
   });
 
@@ -38,7 +38,7 @@ describe("SettlementService", () => {
       const grossAmount = 100000; // ₦100,000
       const result = settlementService.calculateCommission(
         grossAmount,
-        "RESTAURANT"
+        "RESTAURANT",
       );
 
       expect(result.grossAmount).toBe(100000);
@@ -52,7 +52,7 @@ describe("SettlementService", () => {
       const grossAmount = 50000; // ₦50,000
       const result = settlementService.calculateCommission(
         grossAmount,
-        "MERCHANT"
+        "MERCHANT",
       );
 
       expect(result.ubiCommission).toBe(1500); // 3%
@@ -65,7 +65,7 @@ describe("SettlementService", () => {
       const grossAmount = 25000; // ₦25,000
       const result = settlementService.calculateCommission(
         grossAmount,
-        "DRIVER"
+        "DRIVER",
       );
 
       expect(result.ubiCommission).toBe(3750); // 15%
@@ -78,7 +78,7 @@ describe("SettlementService", () => {
       const grossAmount = 200000; // ₦200,000
       const result = settlementService.calculateCommission(
         grossAmount,
-        "PARTNER"
+        "PARTNER",
       );
 
       expect(result.ubiCommission).toBe(20000); // 10%
@@ -91,7 +91,7 @@ describe("SettlementService", () => {
       const grossAmount = 1000; // Small amount
       const result = settlementService.calculateCommission(
         grossAmount,
-        "MERCHANT"
+        "MERCHANT",
       );
 
       // Fee should be at least ₦100 fixed
@@ -143,7 +143,7 @@ describe("SettlementService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
       const result = await settlementService.createSettlement(baseRequest);
@@ -161,7 +161,7 @@ describe("SettlementService", () => {
       };
 
       await expect(
-        settlementService.createSettlement(smallRequest)
+        settlementService.createSettlement(smallRequest),
       ).rejects.toThrow("below minimum");
     });
 
@@ -176,7 +176,7 @@ describe("SettlementService", () => {
       };
 
       await expect(
-        settlementService.createSettlement(invalidRequest)
+        settlementService.createSettlement(invalidRequest),
       ).rejects.toThrow("Bank code required");
     });
 
@@ -192,7 +192,7 @@ describe("SettlementService", () => {
       };
 
       await expect(
-        settlementService.createSettlement(mobileRequest)
+        settlementService.createSettlement(mobileRequest),
       ).rejects.toThrow("Phone number required");
     });
   });
@@ -224,7 +224,7 @@ describe("SettlementService", () => {
       // Mock bank transfer initiation
       vi.spyOn(
         settlementService as any,
-        "initiateBankTransfer"
+        "initiateBankTransfer",
       ).mockResolvedValue({
         success: true,
         reference: "PSTACK-TRF-123",
@@ -265,7 +265,7 @@ describe("SettlementService", () => {
 
       vi.spyOn(
         settlementService as any,
-        "initiateMobileMoneyPayout"
+        "initiateMobileMoneyPayout",
       ).mockResolvedValue({
         success: true,
         reference: "MPESA-B2C-123",
@@ -302,7 +302,7 @@ describe("SettlementService", () => {
 
       vi.spyOn(
         settlementService as any,
-        "initiateBankTransfer"
+        "initiateBankTransfer",
       ).mockRejectedValue(new Error("Invalid bank code"));
 
       (
@@ -330,7 +330,7 @@ describe("SettlementService", () => {
       });
 
       await expect(
-        settlementService.processSettlement("settlement-126")
+        settlementService.processSettlement("settlement-126"),
       ).rejects.toThrow("already completed");
     });
   });
@@ -403,7 +403,7 @@ describe("SettlementService", () => {
 
       const result = await settlementService.runDailyRestaurantSettlements(
         new Date("2024-01-15"),
-        Currency.NGN
+        Currency.NGN,
       );
 
       expect(result.settlementsCreated).toBe(2);
@@ -427,7 +427,7 @@ describe("SettlementService", () => {
 
       const result = await settlementService.runDailyRestaurantSettlements(
         new Date("2024-01-15"),
-        Currency.NGN
+        Currency.NGN,
       );
 
       expect(result.settlementsCreated).toBe(0);
@@ -512,7 +512,7 @@ describe("SettlementService", () => {
       });
 
       await expect(
-        settlementService.retrySettlement("set-completed")
+        settlementService.retrySettlement("set-completed"),
       ).rejects.toThrow("Cannot retry");
     });
 
@@ -526,7 +526,7 @@ describe("SettlementService", () => {
       });
 
       await expect(
-        settlementService.retrySettlement("set-max-retry")
+        settlementService.retrySettlement("set-max-retry"),
       ).rejects.toThrow("Maximum retries");
     });
   });

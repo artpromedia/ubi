@@ -120,7 +120,7 @@ export function toBeValidTransaction(received: unknown) {
  */
 export function toBeValidCurrency(
   received: unknown,
-  expectedCurrency?: string
+  expectedCurrency?: string,
 ) {
   const currency = received as string;
   const validCurrencies = Object.keys(CURRENCIES);

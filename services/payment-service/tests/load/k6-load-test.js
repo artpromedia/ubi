@@ -207,7 +207,7 @@ function requestPayout(user) {
       phone: user.phone,
       provider: "MPESA",
     }),
-    { headers: getHeaders(user.id) }
+    { headers: getHeaders(user.id) },
   );
 
   checkResponse(res, paymentSuccessRate, paymentLatency);
@@ -241,7 +241,7 @@ export function spikeTest() {
       amount: randomIntBetween(100, 5000),
       currency: "KES",
     }),
-    { headers: getHeaders(user.id) }
+    { headers: getHeaders(user.id) },
   );
 
   checkResponse(res, paymentSuccessRate, paymentLatency);
@@ -280,7 +280,7 @@ export function stressTest() {
         driverId: `driver-${randomIntBetween(1, 100)}`,
       },
     }),
-    { headers: getHeaders(user.id) }
+    { headers: getHeaders(user.id) },
   );
 
   checkResponse(res, paymentSuccessRate, paymentLatency);

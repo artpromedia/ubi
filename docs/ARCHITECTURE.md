@@ -5,6 +5,7 @@ This document provides an in-depth overview of UBI's technical architecture.
 ## System Overview
 
 UBI is built as a distributed microservices architecture optimized for:
+
 - High availability across African markets
 - Low latency for real-time operations
 - Horizontal scalability
@@ -52,6 +53,7 @@ UBI is built as a distributed microservices architecture optimized for:
 The API Gateway is the single entry point for all client requests.
 
 **Responsibilities:**
+
 - Request routing
 - Authentication/Authorization
 - Rate limiting
@@ -88,12 +90,14 @@ The API Gateway is the single entry point for all client requests.
 High-performance service for ride matching and tracking.
 
 **Key Features:**
+
 - Real-time driver matching with geospatial queries
 - ETA calculations
 - Surge pricing
 - Route optimization
 
 **Architecture:**
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   RIDE SERVICE                       │
@@ -141,6 +145,7 @@ Handles all financial transactions across multiple payment providers.
 | UBI Wallet | All |
 
 **Flow:**
+
 ```
 ┌──────────┐    ┌─────────────┐    ┌───────────────┐    ┌─────────────┐
 │  Client  │───▶│  API GW     │───▶│ Payment Svc   │───▶│  Provider   │
@@ -185,13 +190,13 @@ Handles all financial transactions across multiple payment providers.
 
 ### Caching Strategy
 
-| Data Type | Cache TTL | Strategy |
-|-----------|-----------|----------|
-| User Sessions | 24h | Write-through |
-| Driver Locations | 10s | Write-behind |
-| Ride Prices | 5min | Cache-aside |
-| Restaurant Menus | 1h | Cache-aside |
-| Config | 5min | Write-through |
+| Data Type        | Cache TTL | Strategy      |
+| ---------------- | --------- | ------------- |
+| User Sessions    | 24h       | Write-through |
+| Driver Locations | 10s       | Write-behind  |
+| Ride Prices      | 5min      | Cache-aside   |
+| Restaurant Menus | 1h        | Cache-aside   |
+| Config           | 5min      | Write-through |
 
 ### Event-Driven Architecture
 
@@ -245,14 +250,14 @@ Handles all financial transactions across multiple payment providers.
 
 ### Security Measures
 
-| Layer | Protection |
-|-------|------------|
-| Transport | TLS 1.3 |
-| Authentication | JWT (RS256) |
-| Authorization | RBAC + ABAC |
-| API | Rate limiting, request validation |
-| Data | Encryption at rest (AES-256) |
-| Secrets | AWS Secrets Manager |
+| Layer          | Protection                        |
+| -------------- | --------------------------------- |
+| Transport      | TLS 1.3                           |
+| Authentication | JWT (RS256)                       |
+| Authorization  | RBAC + ABAC                       |
+| API            | Rate limiting, request validation |
+| Data           | Encryption at rest (AES-256)      |
+| Secrets        | AWS Secrets Manager               |
 
 ## Infrastructure
 
@@ -303,31 +308,31 @@ Handles all financial transactions across multiple payment providers.
 
 ### Multi-Region Deployment
 
-| Region | Primary Use | Services |
-|--------|-------------|----------|
-| af-south-1 | South Africa | All |
-| eu-west-1 | West Africa | All |
-| me-south-1 | East Africa | CDN, DR |
+| Region     | Primary Use  | Services |
+| ---------- | ------------ | -------- |
+| af-south-1 | South Africa | All      |
+| eu-west-1  | West Africa  | All      |
+| me-south-1 | East Africa  | CDN, DR  |
 
 ## Performance Considerations
 
 ### Latency Targets
 
-| Operation | Target | P99 |
-|-----------|--------|-----|
-| API Gateway routing | 10ms | 50ms |
-| Driver matching | 100ms | 500ms |
-| Payment processing | 2s | 5s |
-| ETA calculation | 50ms | 200ms |
+| Operation           | Target | P99   |
+| ------------------- | ------ | ----- |
+| API Gateway routing | 10ms   | 50ms  |
+| Driver matching     | 100ms  | 500ms |
+| Payment processing  | 2s     | 5s    |
+| ETA calculation     | 50ms   | 200ms |
 
 ### Scaling Strategy
 
-| Service | Min | Max | Trigger |
-|---------|-----|-----|---------|
-| API Gateway | 3 | 50 | CPU > 70% |
-| Ride Service | 5 | 100 | Requests > 1k/s |
-| Payment Service | 3 | 30 | Queue depth |
-| Food Service | 2 | 20 | CPU > 70% |
+| Service         | Min | Max | Trigger         |
+| --------------- | --- | --- | --------------- |
+| API Gateway     | 3   | 50  | CPU > 70%       |
+| Ride Service    | 5   | 100 | Requests > 1k/s |
+| Payment Service | 3   | 30  | Queue depth     |
+| Food Service    | 2   | 20  | CPU > 70%       |
 
 ## Monitoring & Observability
 
@@ -359,19 +364,19 @@ Handles all financial transactions across multiple payment providers.
 
 ### RPO/RTO Targets
 
-| Tier | RPO | RTO | Services |
-|------|-----|-----|----------|
-| Tier 1 | 0 | 15min | Payments, Auth |
-| Tier 2 | 1h | 1h | Rides, Food |
-| Tier 3 | 4h | 4h | Analytics |
+| Tier   | RPO | RTO   | Services       |
+| ------ | --- | ----- | -------------- |
+| Tier 1 | 0   | 15min | Payments, Auth |
+| Tier 2 | 1h  | 1h    | Rides, Food    |
+| Tier 3 | 4h  | 4h    | Analytics      |
 
 ### Backup Strategy
 
-| Data | Frequency | Retention |
-|------|-----------|-----------|
-| Database | Continuous | 35 days |
-| Config | On change | 90 days |
-| Logs | Daily | 30 days |
+| Data     | Frequency  | Retention |
+| -------- | ---------- | --------- |
+| Database | Continuous | 35 days   |
+| Config   | On change  | 90 days   |
+| Logs     | Daily      | 30 days   |
 
 ---
 

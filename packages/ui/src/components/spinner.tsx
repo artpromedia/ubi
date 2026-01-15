@@ -35,7 +35,12 @@ const Spinner = React.forwardRef<SVGSVGElement, SpinnerProps>(
     return (
       <svg
         ref={ref}
-        className={cn("animate-spin", sizeMap[size], colorMap[variant], className)}
+        className={cn(
+          "animate-spin",
+          sizeMap[size],
+          colorMap[variant],
+          className,
+        )}
         xmlns="http://www.w3.org/2000/svg"
         fill="none"
         viewBox="0 0 24 24"
@@ -56,7 +61,7 @@ const Spinner = React.forwardRef<SVGSVGElement, SpinnerProps>(
         />
       </svg>
     );
-  }
+  },
 );
 Spinner.displayName = "Spinner";
 
@@ -96,7 +101,7 @@ const DotsSpinner = React.forwardRef<HTMLDivElement, DotsSpinnerProps>(
             className={cn(
               "rounded-full animate-bounce",
               dotSizeMap[size],
-              dotColorMap[variant]
+              dotColorMap[variant],
             )}
             style={{
               animationDelay: `${i * 0.15}s`,
@@ -106,7 +111,7 @@ const DotsSpinner = React.forwardRef<HTMLDivElement, DotsSpinnerProps>(
         ))}
       </div>
     );
-  }
+  },
 );
 DotsSpinner.displayName = "DotsSpinner";
 
@@ -135,19 +140,28 @@ const PulseSpinner = React.forwardRef<HTMLDivElement, PulseSpinnerProps>(
     };
 
     return (
-      <div ref={ref} className={cn("relative", sizeMap[size], className)} {...props}>
+      <div
+        ref={ref}
+        className={cn("relative", sizeMap[size], className)}
+        {...props}
+      >
         <div
           className={cn(
             "absolute inset-0 rounded-full opacity-75 animate-ping",
-            colorMap[variant]
+            colorMap[variant],
           )}
         />
-        <div className={cn("relative rounded-full", sizeMap[size], colorMap[variant])} />
+        <div
+          className={cn(
+            "relative rounded-full",
+            sizeMap[size],
+            colorMap[variant],
+          )}
+        />
       </div>
     );
-  }
+  },
 );
 PulseSpinner.displayName = "PulseSpinner";
 
 export { DotsSpinner, PulseSpinner, Spinner };
-

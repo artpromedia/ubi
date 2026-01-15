@@ -61,7 +61,7 @@ export function getPaymentMethods(accessToken: string): PaymentMethod[] | null {
 export function addPaymentMethod(
   accessToken: string,
   type: string,
-  details: Record<string, string>
+  details: Record<string, string>,
 ): PaymentMethod | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/users/me/payment-methods`;
@@ -117,7 +117,7 @@ export function getWalletBalance(accessToken: string): Wallet | null {
 export function topUpWallet(
   accessToken: string,
   amount: number,
-  paymentMethodId: string
+  paymentMethodId: string,
 ): Transaction | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/wallets/topup`;
@@ -151,7 +151,7 @@ export function initiatePayment(
   amount: number,
   currency: string,
   paymentMethodId: string,
-  reference: string
+  reference: string,
 ): { transactionId: string; status: string } | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/payments/initiate`;
@@ -164,7 +164,7 @@ export function initiatePayment(
       paymentMethodId,
       reference,
     }),
-    { headers: createHeaders(accessToken) }
+    { headers: createHeaders(accessToken) },
   );
 
   paymentRequests.add(1);
@@ -191,7 +191,7 @@ export function initiatePayment(
 export function getTransactionHistory(
   accessToken: string,
   page: number = 1,
-  limit: number = 20
+  limit: number = 20,
 ): Transaction[] | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/wallets/me/transactions?page=${page}&limit=${limit}`;
@@ -219,7 +219,7 @@ export function getTransactionHistory(
 // Verify payment
 export function verifyPayment(
   accessToken: string,
-  transactionId: string
+  transactionId: string,
 ): { status: string; amount: number } | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/payments/${transactionId}/verify`;

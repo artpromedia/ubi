@@ -176,7 +176,7 @@ export default function DashboardPage() {
               <span
                 className={cn(
                   "text-sm font-medium",
-                  stat.change >= 0 ? "text-green-500" : "text-red-500"
+                  stat.change >= 0 ? "text-green-500" : "text-red-500",
                 )}
               >
                 {Math.abs(stat.change)}%
@@ -198,7 +198,9 @@ export default function DashboardPage() {
         >
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-white">Active Orders</h2>
+              <h2 className="text-lg font-semibold text-white">
+                Active Orders
+              </h2>
               <span className="px-2 py-0.5 bg-orange-500/20 text-orange-500 text-xs font-medium rounded-full">
                 {activeOrders.length} orders
               </span>
@@ -220,7 +222,7 @@ export default function DashboardPage() {
                   "p-4 rounded-lg bg-gray-900 border-l-4 transition-all",
                   order.status === "new" && "border-l-blue-500 order-pulse",
                   order.status === "preparing" && "border-l-yellow-500",
-                  order.status === "ready" && "border-l-green-500"
+                  order.status === "ready" && "border-l-green-500",
                 )}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -231,7 +233,7 @@ export default function DashboardPage() {
                       <span
                         className={cn(
                           "restaurant-badge",
-                          getOrderStatusClass(order.status)
+                          getOrderStatusClass(order.status),
                         )}
                       >
                         {order.status}
@@ -338,7 +340,9 @@ export default function DashboardPage() {
       >
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-lg font-semibold text-white">Today's Revenue</h2>
+            <h2 className="text-lg font-semibold text-white">
+              Today's Revenue
+            </h2>
             <p className="text-sm text-gray-400 mt-1">
               Total: {formatCurrency(626000)}
             </p>
@@ -367,7 +371,10 @@ export default function DashboardPage() {
                   borderRadius: "0.5rem",
                 }}
                 labelStyle={{ color: "#f9fafb" }}
-                formatter={(value: number) => [formatCurrency(value), "Revenue"]}
+                formatter={(value: number) => [
+                  formatCurrency(value),
+                  "Revenue",
+                ]}
               />
               <Area
                 type="monotone"
@@ -394,7 +401,8 @@ export default function DashboardPage() {
             Menu items running low
           </p>
           <p className="text-xs text-yellow-500/70">
-            Jollof Rice and Chicken stock may run out in 2 hours based on current orders.
+            Jollof Rice and Chicken stock may run out in 2 hours based on
+            current orders.
           </p>
         </div>
         <Link

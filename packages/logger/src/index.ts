@@ -12,7 +12,11 @@ export interface LoggerConfig {
  * Create a structured logger instance
  */
 export function createLogger(config: LoggerConfig): PinoLogger {
-  const { name, level = "info", pretty = process.env.NODE_ENV !== "production" } = config;
+  const {
+    name,
+    level = "info",
+    pretty = process.env.NODE_ENV !== "production",
+  } = config;
 
   const options: LoggerOptions = {
     name,
@@ -45,7 +49,7 @@ export const logger = createLogger({
  */
 export function createChildLogger(
   parent: PinoLogger,
-  bindings: Record<string, unknown>
+  bindings: Record<string, unknown>,
 ): PinoLogger {
   return parent.child(bindings);
 }
@@ -66,7 +70,7 @@ export interface RequestLogContext {
  */
 export function createRequestLogger(
   parent: PinoLogger,
-  context: RequestLogContext
+  context: RequestLogContext,
 ): PinoLogger {
   return parent.child({
     requestId: context.requestId,

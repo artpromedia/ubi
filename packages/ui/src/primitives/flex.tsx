@@ -7,9 +7,9 @@ import { cn } from "../lib/utils";
 
 /**
  * Flex - A flexbox layout primitive
- * 
+ *
  * Provides common flexbox patterns with sensible defaults.
- * 
+ *
  * @example
  * <Flex direction="column" gap="4" align="center" justify="between">
  *   <Flex.Item grow>Content</Flex.Item>
@@ -80,21 +80,28 @@ const flexVariants = cva("flex", {
 });
 
 export interface FlexProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof flexVariants> {
   asChild?: boolean;
 }
 
 const Flex = React.forwardRef<HTMLDivElement, FlexProps>(
-  ({ className, direction, align, justify, wrap, gap, inline, ...props }, ref) => {
+  (
+    { className, direction, align, justify, wrap, gap, inline, ...props },
+    ref,
+  ) => {
     return (
       <div
         ref={ref}
-        className={cn(flexVariants({ direction, align, justify, wrap, gap, inline }), className)}
+        className={cn(
+          flexVariants({ direction, align, justify, wrap, gap, inline }),
+          className,
+        )}
         {...props}
       />
     );
-  }
+  },
 );
 Flex.displayName = "Flex";
 
@@ -132,7 +139,8 @@ const flexItemVariants = cva("", {
 });
 
 interface FlexItemProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof flexItemVariants> {}
 
 const FlexItem = React.forwardRef<HTMLDivElement, FlexItemProps>(
@@ -140,11 +148,14 @@ const FlexItem = React.forwardRef<HTMLDivElement, FlexItemProps>(
     return (
       <div
         ref={ref}
-        className={cn(flexItemVariants({ grow, shrink, basis, align }), className)}
+        className={cn(
+          flexItemVariants({ grow, shrink, basis, align }),
+          className,
+        )}
         {...props}
       />
     );
-  }
+  },
 );
 FlexItem.displayName = "FlexItem";
 

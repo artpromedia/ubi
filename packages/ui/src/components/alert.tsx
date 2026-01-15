@@ -22,14 +22,13 @@ const alertVariants = cva(
           "border-success/50 text-success dark:border-success [&>svg]:text-success bg-success/5",
         warning:
           "border-warning/50 text-warning dark:border-warning [&>svg]:text-warning bg-warning/5",
-        info:
-          "border-info/50 text-info dark:border-info [&>svg]:text-info bg-info/5",
+        info: "border-info/50 text-info dark:border-info [&>svg]:text-info bg-info/5",
       },
     },
     defaultVariants: {
       variant: "default",
     },
-  }
+  },
 );
 
 const Alert = React.forwardRef<
@@ -54,17 +53,24 @@ const Alert = React.forwardRef<
       children,
       ...props
     },
-    ref
+    ref,
   ) => {
     const [isDismissed, setIsDismissed] = React.useState(false);
 
-    if (isDismissed) {return null;}
+    if (isDismissed) {
+      return null;
+    }
 
-    const Icon = variant === "destructive" ? AlertCircle
-      : variant === "success" ? CheckCircle
-      : variant === "warning" ? AlertTriangle
-      : variant === "info" ? Info
-      : null;
+    const Icon =
+      variant === "destructive"
+        ? AlertCircle
+        : variant === "success"
+          ? CheckCircle
+          : variant === "warning"
+            ? AlertTriangle
+            : variant === "info"
+              ? Info
+              : null;
 
     const handleDismiss = () => {
       setIsDismissed(true);
@@ -91,7 +97,7 @@ const Alert = React.forwardRef<
         )}
       </div>
     );
-  }
+  },
 );
 Alert.displayName = "Alert";
 
@@ -121,4 +127,3 @@ const AlertDescription = React.forwardRef<
 AlertDescription.displayName = "AlertDescription";
 
 export { Alert, AlertDescription, AlertTitle, alertVariants };
-

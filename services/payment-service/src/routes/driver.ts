@@ -49,7 +49,7 @@ const BenefitEnrollmentSchema = z.object({
         name: z.string(),
         relationship: z.string(),
         dateOfBirth: z.string().datetime(),
-      })
+      }),
     )
     .optional(),
 });
@@ -227,7 +227,7 @@ export function createDriverRoutes(services: {
       driverId,
       period,
       startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined
+      endDate ? new Date(endDate) : undefined,
     );
     return c.json({ success: true, data: earnings });
   });
@@ -321,10 +321,10 @@ export function createDriverRoutes(services: {
           billingCycle: body.billingCycle,
           autoRenew: body.autoRenew,
           dependents: body.dependents,
-        }
+        },
       );
       return c.json({ success: true, data: enrollment }, 201);
-    }
+    },
   );
 
   app.delete("/benefits/enrollments/:enrollmentId", async (c) => {
@@ -343,7 +343,7 @@ export function createDriverRoutes(services: {
       {
         ...body,
         incidentDate: new Date(body.incidentDate),
-      }
+      },
     );
     return c.json({ success: true, data: claim }, 201);
   });
@@ -373,7 +373,7 @@ export function createDriverRoutes(services: {
     const stations = await services.benefitsService.getNearbyFuelStations(
       latitude,
       longitude,
-      radius
+      radius,
     );
     return c.json({ success: true, data: stations });
   });
@@ -386,10 +386,10 @@ export function createDriverRoutes(services: {
       const body = c.req.valid("json");
       const transaction = await services.benefitsService.recordFuelTransaction(
         driverId,
-        { ...body, transactedAt: new Date() }
+        { ...body, transactedAt: new Date() },
       );
       return c.json({ success: true, data: transaction }, 201);
-    }
+    },
   );
 
   app.get("/fuel/transactions", async (c) => {
@@ -397,7 +397,7 @@ export function createDriverRoutes(services: {
     const limit = parseInt(c.req.query("limit") || "20");
     const transactions = await services.benefitsService.getFuelTransactions(
       driverId,
-      limit
+      limit,
     );
     return c.json({ success: true, data: transactions });
   });
@@ -439,7 +439,7 @@ export function createDriverRoutes(services: {
     const category = c.req.query("category");
     const modules = await services.trainingService.getTrainingModules(
       driverId,
-      category
+      category,
     );
     return c.json({ success: true, data: modules });
   });
@@ -456,7 +456,7 @@ export function createDriverRoutes(services: {
     const moduleId = c.req.param("moduleId");
     const completion = await services.trainingService.startModule(
       driverId,
-      moduleId
+      moduleId,
     );
     return c.json({ success: true, data: completion }, 201);
   });
@@ -472,10 +472,10 @@ export function createDriverRoutes(services: {
         driverId,
         moduleId,
         body.progress,
-        body.lessonId
+        body.lessonId,
       );
       return c.json({ success: true, data: completion });
-    }
+    },
   );
 
   app.post(
@@ -488,10 +488,10 @@ export function createDriverRoutes(services: {
       const completion = await services.trainingService.completeModule(
         driverId,
         moduleId,
-        body.quizScore
+        body.quizScore,
       );
       return c.json({ success: true, data: completion });
-    }
+    },
   );
 
   app.get("/training/completions", async (c) => {
@@ -524,7 +524,7 @@ export function createDriverRoutes(services: {
     const result = await services.communityService.getForumPosts(
       categoryId as string,
       page,
-      limit
+      limit,
     );
     return c.json({ success: true, data: result });
   });
@@ -544,7 +544,7 @@ export function createDriverRoutes(services: {
     const post = await services.communityService.createPost(
       driverId,
       body.categoryId,
-      body
+      body,
     );
     return c.json({ success: true, data: post }, 201);
   });
@@ -570,7 +570,7 @@ export function createDriverRoutes(services: {
     const result = await services.communityService.getPostComments(
       postId,
       page,
-      limit
+      limit,
     );
     return c.json({ success: true, data: result });
   });
@@ -586,10 +586,10 @@ export function createDriverRoutes(services: {
         driverId,
         postId,
         body.content,
-        body.parentId
+        body.parentId,
       );
       return c.json({ success: true, data: comment }, 201);
-    }
+    },
   );
 
   // =============================================================================
@@ -601,7 +601,7 @@ export function createDriverRoutes(services: {
     const limit = parseInt(c.req.query("limit") || "10");
     const events = await services.communityService.getUpcomingEvents(
       city as string,
-      limit
+      limit,
     );
     return c.json({ success: true, data: events });
   });
@@ -631,7 +631,7 @@ export function createDriverRoutes(services: {
     const eventId = c.req.param("eventId");
     const registration = await services.communityService.registerForEvent(
       driverId,
-      eventId
+      eventId,
     );
     return c.json({ success: true, data: registration }, 201);
   });
@@ -687,7 +687,7 @@ export function createDriverRoutes(services: {
       type,
       period,
       city as string,
-      limit
+      limit,
     );
     return c.json({ success: true, data: leaderboard });
   });
@@ -699,7 +699,7 @@ export function createDriverRoutes(services: {
     const ranking = await services.communityService.getDriverRanking(
       driverId,
       type,
-      period
+      period,
     );
     return c.json({ success: true, data: ranking });
   });
@@ -716,10 +716,10 @@ export function createDriverRoutes(services: {
       const body = c.req.valid("json");
       const application = await services.fleetService.applyForFleetOwner(
         driverId,
-        body
+        body,
       );
       return c.json({ success: true, data: application }, 201);
-    }
+    },
   );
 
   app.get("/fleet/application", async (c) => {
@@ -759,7 +759,7 @@ export function createDriverRoutes(services: {
         registrationExpiry: new Date(body.registrationExpiry),
       });
       return c.json({ success: true, data: vehicle }, 201);
-    }
+    },
   );
 
   app.patch("/fleet/vehicles/:vehicleId", async (c) => {
@@ -769,7 +769,7 @@ export function createDriverRoutes(services: {
     const vehicle = await services.fleetService.updateVehicle(
       driverId,
       vehicleId,
-      body
+      body,
     );
     return c.json({ success: true, data: vehicle });
   });
@@ -793,7 +793,7 @@ export function createDriverRoutes(services: {
     const invitation = await services.fleetService.inviteDriver(
       fleetOwnerId,
       body.driverId,
-      body.vehicleId
+      body.vehicleId,
     );
     return c.json({ success: true, data: invitation }, 201);
   });
@@ -805,7 +805,7 @@ export function createDriverRoutes(services: {
     const result = await services.fleetService.respondToInvitation(
       driverId,
       invitationId,
-      body.accept
+      body.accept,
     );
     return c.json({ success: true, data: result });
   });
@@ -817,7 +817,7 @@ export function createDriverRoutes(services: {
     await services.fleetService.assignVehicleToDriver(
       fleetOwnerId,
       targetDriverId,
-      body.vehicleId
+      body.vehicleId,
     );
     return c.json({ success: true, message: "Vehicle assigned" });
   });
@@ -827,7 +827,7 @@ export function createDriverRoutes(services: {
     const targetDriverId = c.req.param("targetDriverId");
     await services.fleetService.removeDriverFromFleet(
       fleetOwnerId,
-      targetDriverId
+      targetDriverId,
     );
     return c.json({ success: true, message: "Driver removed from fleet" });
   });
@@ -839,7 +839,7 @@ export function createDriverRoutes(services: {
     const earnings = await services.fleetService.getFleetEarnings(
       driverId,
       new Date(startDate!),
-      new Date(endDate!)
+      new Date(endDate!),
     );
     return c.json({ success: true, data: earnings });
   });
@@ -864,10 +864,10 @@ export function createDriverRoutes(services: {
         {
           ...body,
           scheduledDate: new Date(body.scheduledDate),
-        }
+        },
       );
       return c.json({ success: true, data: maintenance }, 201);
-    }
+    },
   );
 
   app.get("/fleet/maintenance", async (c) => {
@@ -875,7 +875,7 @@ export function createDriverRoutes(services: {
     const vehicleId = c.req.query("vehicleId");
     const history = await services.fleetService.getMaintenanceHistory(
       driverId,
-      vehicleId as string
+      vehicleId as string,
     );
     return c.json({ success: true, data: history });
   });
@@ -895,7 +895,7 @@ export function createDriverRoutes(services: {
     const heatmap = await services.demandService?.getDemandHeatmap(
       city as string,
       latitude,
-      longitude
+      longitude,
     );
     return c.json({ success: true, data: heatmap });
   });
@@ -907,7 +907,7 @@ export function createDriverRoutes(services: {
     const guidance = await services.demandService?.getDriverGuidance(
       driverId,
       latitude,
-      longitude
+      longitude,
     );
     return c.json({ success: true, data: guidance });
   });

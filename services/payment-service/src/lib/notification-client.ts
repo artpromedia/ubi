@@ -119,7 +119,7 @@ class NotificationClient {
               userName: `${user.firstName} ${user.lastName}`.trim(),
             },
           }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -157,7 +157,7 @@ class NotificationClient {
    * Send bulk notifications
    */
   async sendBulk(
-    payloads: NotificationPayload[]
+    payloads: NotificationPayload[],
   ): Promise<{ sent: number; failed: number }> {
     let sent = 0;
     let failed = 0;
@@ -166,7 +166,7 @@ class NotificationClient {
     const batchSize = 50;
     for (let i = 0; i < payloads.length; i += batchSize) {
       const batch = payloads.slice(i, i + batchSize);
-      const results = await Promise.all(batch.map((p) => this.send(p)));
+      const results = await Promise.all(batch.map(async (p) => this.send(p)));
 
       for (const result of results) {
         if (result.success) {
@@ -207,7 +207,7 @@ class NotificationClient {
    */
   private getDefaultChannels(
     type: NotificationType,
-    priority?: NotificationPriority
+    priority?: NotificationPriority,
   ): NotificationChannel[] {
     // High priority notifications go to all channels
     if (
@@ -263,7 +263,7 @@ class NotificationClient {
     userId: string,
     pocketName: string,
     targetAmount: number,
-    currency: string
+    currency: string,
   ): Promise<SendResult> {
     return this.send({
       userId,
@@ -283,7 +283,7 @@ class NotificationClient {
     loanId: string,
     amountDue: number,
     currency: string,
-    daysOverdue: number
+    daysOverdue: number,
   ): Promise<SendResult> {
     return this.send({
       userId,
@@ -303,7 +303,7 @@ class NotificationClient {
     recipientId: string,
     amount: number,
     currency: string,
-    recipientName: string
+    recipientName: string,
   ): Promise<{ sender: SendResult; recipient: SendResult }> {
     const senderResult = await this.send({
       userId: senderId,
@@ -334,7 +334,7 @@ class NotificationClient {
     amount: number,
     currency: string,
     requesterName: string,
-    note?: string
+    note?: string,
   ): Promise<SendResult> {
     return this.send({
       userId: payerId,
@@ -353,7 +353,7 @@ class NotificationClient {
     requesterId: string,
     payerName: string,
     amount: number,
-    currency: string
+    currency: string,
   ): Promise<SendResult> {
     return this.send({
       userId: requesterId,
@@ -371,7 +371,7 @@ class NotificationClient {
     userId: string,
     amount: number,
     currency: string,
-    reason: string
+    reason: string,
   ): Promise<SendResult> {
     return this.send({
       userId,
@@ -389,7 +389,7 @@ class NotificationClient {
     userId: string,
     amount: number,
     currency: string,
-    payoutMethod: string
+    payoutMethod: string,
   ): Promise<SendResult> {
     return this.send({
       userId,

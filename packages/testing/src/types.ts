@@ -281,7 +281,14 @@ export interface TestWalletDetails {
 export interface TestPaymentMethod {
   id: string;
   userId: string;
-  type: "card" | "mpesa" | "mtn_momo" | "airtel_money" | "wallet" | "mobile_money" | "bank_account";
+  type:
+    | "card"
+    | "mpesa"
+    | "mtn_momo"
+    | "airtel_money"
+    | "wallet"
+    | "mobile_money"
+    | "bank_account";
   isDefault: boolean;
   lastFour?: string;
   provider?: string;
@@ -296,7 +303,18 @@ export interface TestPaymentMethod {
 export interface TestTransaction {
   id: string;
   userId: string;
-  type: "payment" | "refund" | "top_up" | "withdrawal" | "ride_payment" | "food_payment" | "delivery_payment" | "wallet_topup" | "wallet_withdrawal" | "driver_payout" | "restaurant_payout";
+  type:
+    | "payment"
+    | "refund"
+    | "top_up"
+    | "withdrawal"
+    | "ride_payment"
+    | "food_payment"
+    | "delivery_payment"
+    | "wallet_topup"
+    | "wallet_withdrawal"
+    | "driver_payout"
+    | "restaurant_payout";
   amount: number;
   currency: string;
   currencySymbol?: string;
