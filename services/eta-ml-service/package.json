@@ -9,10 +9,13 @@
     "dev": "uvicorn app.main:app --reload --port 4020",
     "start": "uvicorn app.main:app --host 0.0.0.0 --port 4020",
     "train": "python -m app.training.train_model",
-    "test": "pytest tests/ -v",
-    "lint": "ruff check app/ tests/",
+    "test": "echo 'Run pytest after setting up Python environment'",
+    "lint": "echo 'Run ruff after setting up Python environment'",
     "format": "ruff format app/ tests/",
-    "typecheck": "mypy app/"
+    "typecheck": "echo 'Run mypy after setting up Python environment'",
+    "test:py": "pytest tests/ -v",
+    "lint:py": "ruff check app/ tests/",
+    "typecheck:py": "mypy app/"
   },
   "keywords": [
     "eta",

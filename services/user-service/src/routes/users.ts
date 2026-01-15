@@ -71,7 +71,7 @@ userRoutes.get("/me", async (c) => {
           vehicle: true,
         },
       },
-      wallet: true,
+      walletAccounts: true,
     },
   });
 
@@ -190,7 +190,7 @@ userRoutes.get("/:id", async (c) => {
       driver: {
         include: { vehicle: true },
       },
-      wallet: true,
+      walletAccounts: true,
     },
   });
 

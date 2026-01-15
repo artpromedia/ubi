@@ -154,7 +154,7 @@ driverRoutes.post("/apply", async (c) => {
         });
       }
 
-      return [newVehicle, newDriver];
+      return [newVehicle, newDriver] as const;
     }
   );
 

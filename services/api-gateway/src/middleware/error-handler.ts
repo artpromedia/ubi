@@ -68,7 +68,9 @@ export const errorHandler = (error: Error, c: Context) => {
   // Handle known application errors
   if (error.name === "AppError" && "code" in error) {
     const appError = error as Error & { code: string; statusCode?: number };
-    const status = (appError.statusCode || ERROR_STATUS_MAP[appError.code] || 500) as StatusCode;
+    const status = (appError.statusCode ||
+      ERROR_STATUS_MAP[appError.code] ||
+      500) as 200 | 400 | 401 | 403 | 404 | 500 | 502 | 503;
 
     const response: ApiError = {
       success: false,
@@ -114,7 +116,9 @@ export const errorHandler = (error: Error, c: Context) => {
     success: false,
     error: {
       code: "INTERNAL_ERROR",
-      message: isDev ? error.message : "An unexpected error occurred. Please try again later.",
+      message: isDev
+        ? error.message
+        : "An unexpected error occurred. Please try again later.",
       ...(isDev && { stack: error.stack }),
     },
   };
@@ -144,7 +148,9 @@ export class AppError extends Error {
     return new AppError("UNAUTHORIZED", message, 401);
   }
 
-  static forbidden(message = "You don't have permission to access this resource") {
+  static forbidden(
+    message = "You don't have permission to access this resource"
+  ) {
     return new AppError("FORBIDDEN", message, 403);
   }
 
