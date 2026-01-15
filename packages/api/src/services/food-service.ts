@@ -277,7 +277,7 @@ export class FoodServiceApi {
 
   // Order tracking
   getOrderTrackingUrl(orderId: string): string {
-    return `${this.client.getInstance().defaults.prefixUrl}/ws/food/orders/${orderId}`;
+    return `${this.client.getBaseUrl()}/ws/food/orders/${orderId}`;
   }
 
   // Cart/Checkout preview

@@ -113,6 +113,13 @@ export class ApiClient {
   getInstance(): KyInstance {
     return this.client;
   }
+
+  /**
+   * Get the base URL for constructing WebSocket URLs
+   */
+  getBaseUrl(): string {
+    return this.config.baseUrl;
+  }
 }
 
 // Singleton instance for convenience

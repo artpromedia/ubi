@@ -34,6 +34,7 @@
   "devDependencies": {
     "@ubi/typescript-config": "workspace:*",
     "style-dictionary": "^4.2.0",
+    "tslib": "^2.8.1",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2"
   },

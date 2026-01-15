@@ -9,32 +9,32 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
     },
     "./vitest": {
-      "import": "./dist/vitest/index.mjs",
-      "types": "./dist/vitest/index.d.ts"
+      "types": "./dist/vitest/index.d.ts",
+      "import": "./dist/vitest/index.mjs"
     },
     "./mocks": {
-      "import": "./dist/mocks/index.mjs",
-      "types": "./dist/mocks/index.d.ts"
+      "types": "./dist/mocks/index.d.ts",
+      "import": "./dist/mocks/index.mjs"
     },
     "./fixtures": {
-      "import": "./dist/fixtures/index.mjs",
-      "types": "./dist/fixtures/index.d.ts"
+      "types": "./dist/fixtures/index.d.ts",
+      "import": "./dist/fixtures/index.mjs"
     },
     "./factories": {
-      "import": "./dist/factories/index.mjs",
-      "types": "./dist/factories/index.d.ts"
+      "types": "./dist/factories/index.d.ts",
+      "import": "./dist/factories/index.mjs"
     },
     "./matchers": {
-      "import": "./dist/matchers/index.mjs",
-      "types": "./dist/matchers/index.d.ts"
+      "types": "./dist/matchers/index.d.ts",
+      "import": "./dist/matchers/index.mjs"
     },
     "./msw": {
-      "import": "./dist/msw/index.mjs",
-      "types": "./dist/msw/index.d.ts"
+      "types": "./dist/msw/index.d.ts",
+      "import": "./dist/msw/index.mjs"
     }
   },
   "files": [

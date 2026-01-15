@@ -96,7 +96,7 @@ export function createVitestConfig(
   const coverageConfig = {
     enabled: coverage.enabled ?? false,
     provider: "v8" as const,
-    reporter: ["text", "json", "html", "lcov"] as const,
+    reporter: ["text", "json", "html", "lcov"],
     reportsDirectory: "./coverage",
     include: coverage.include ?? ["src/**/*.{ts,tsx}", "!src/**/*.d.ts"],
     exclude: [

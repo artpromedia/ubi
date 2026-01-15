@@ -181,7 +181,7 @@ export function freezeTime(date: Date = new Date()): () => void {
       }
     }
 
-    static now(): number {
+    static override now(): number {
       return frozenTime;
     }
   };
@@ -219,7 +219,7 @@ export function randomInt(min: number, max: number): number {
  * Pick a random item from an array
  */
 export function randomPick<T>(array: T[]): T {
-  return array[Math.floor(Math.random() * array.length)];
+  return array[Math.floor(Math.random() * array.length)] as T;
 }
 
 /**

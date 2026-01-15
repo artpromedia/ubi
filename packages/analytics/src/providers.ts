@@ -57,12 +57,9 @@ export class ConsoleProvider implements AnalyticsProvider {
 // Google Analytics 4 provider
 export class GoogleAnalytics4Provider implements AnalyticsProvider {
   name = "google_analytics_4";
-  private measurementId: string | null = null;
 
   async initialize(config: { measurementId: string }): Promise<void> {
     if (typeof window === "undefined") return;
-
-    this.measurementId = config.measurementId;
 
     // Load gtag script
     const script = document.createElement("script");
@@ -127,6 +124,7 @@ export class MixpanelProvider implements AnalyticsProvider {
     if (typeof window === "undefined") return;
 
     // Load Mixpanel library dynamically
+    // @ts-ignore - Optional peer dependency
     const { default: mixpanel } = await import("mixpanel-browser");
     mixpanel.init(config.token, {
       track_pageview: false, // We handle this manually
@@ -177,7 +175,9 @@ export class AmplitudeProvider implements AnalyticsProvider {
   async initialize(config: { apiKey: string; options?: Record<string, unknown> }): Promise<void> {
     if (typeof window === "undefined") return;
 
+    // @ts-ignore - Optional peer dependency
     const { init } = await import("@amplitude/analytics-browser");
+    // @ts-ignore - Optional peer dependency
     this.amplitude = await import("@amplitude/analytics-browser");
     init(config.apiKey, undefined, config.options);
   }
@@ -232,6 +232,7 @@ export class PostHogProvider implements AnalyticsProvider {
   async initialize(config: { apiKey: string; host?: string; options?: Record<string, unknown> }): Promise<void> {
     if (typeof window === "undefined") return;
 
+    // @ts-ignore - Optional peer dependency
     const posthog = (await import("posthog-js")).default;
     posthog.init(config.apiKey, {
       api_host: config.host || "https://app.posthog.com",
@@ -324,7 +325,11 @@ export class SegmentProvider implements AnalyticsProvider {
         script.async = true;
         script.src = `https://cdn.segment.com/analytics.js/v1/${key}/analytics.min.js`;
         const first = document.getElementsByTagName("script")[0];
-        first.parentNode?.insertBefore(script, first);
+        if (first?.parentNode) {
+          first.parentNode.insertBefore(script, first);
+        } else {
+          document.head.appendChild(script);
+        }
       };
       analytics.SNIPPET_VERSION = "4.13.1";
       analytics.load(config.writeKey);

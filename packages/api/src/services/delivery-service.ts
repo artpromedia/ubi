@@ -224,7 +224,7 @@ export class DeliveryServiceApi {
 
   // Real-time tracking
   getDeliveryTrackingUrl(deliveryId: string): string {
-    return `${this.client.getInstance().defaults.prefixUrl}/ws/deliveries/${deliveryId}`;
+    return `${this.client.getBaseUrl()}/ws/deliveries/${deliveryId}`;
   }
 
   // Driver/Courier endpoints

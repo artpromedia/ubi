@@ -103,22 +103,15 @@ export function createInfiniteQueryOptions<TData>(
   queryFn: (params: PaginationParams) => Promise<PaginatedResponse<TData>>,
   baseKey: readonly unknown[],
   initialFilters?: Omit<PaginationParams, "page" | "cursor">
-): UseInfiniteQueryOptions<
-  PaginatedResponse<TData>,
-  Error,
-  { pages: PaginatedResponse<TData>[]; pageParams: number[] },
-  PaginatedResponse<TData>,
-  readonly unknown[],
-  number
-> {
+) {
   return {
     queryKey: [...baseKey, initialFilters],
-    queryFn: ({ pageParam = 1 }) =>
+    queryFn: ({ pageParam }: { pageParam: number }) =>
       queryFn({ ...initialFilters, page: pageParam }),
     initialPageParam: 1,
-    getNextPageParam: (lastPage) =>
+    getNextPageParam: (lastPage: PaginatedResponse<TData>) =>
       lastPage.meta.hasNextPage ? lastPage.meta.page + 1 : undefined,
-    getPreviousPageParam: (firstPage) =>
+    getPreviousPageParam: (firstPage: PaginatedResponse<TData>) =>
       firstPage.meta.hasPreviousPage ? firstPage.meta.page - 1 : undefined,
   };
 }

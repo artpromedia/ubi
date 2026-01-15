@@ -9,15 +9,15 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./styles.css": "./dist/styles.css",
     "./tailwind.config": {
+      "types": "./tailwind.config.ts",
       "import": "./tailwind.config.ts",
-      "require": "./tailwind.config.ts",
-      "types": "./tailwind.config.ts"
+      "require": "./tailwind.config.ts"
     }
   },
   "scripts": {

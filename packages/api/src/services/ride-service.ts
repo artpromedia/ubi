@@ -205,7 +205,7 @@ export class RideServiceApi {
 
   // Subscribe to ride updates (returns WebSocket URL)
   getRideUpdatesUrl(rideId: string): string {
-    return `${this.client.getInstance().defaults.prefixUrl}/ws/rides/${rideId}`;
+    return `${this.client.getBaseUrl()}/ws/rides/${rideId}`;
   }
 
   // Driver endpoints
