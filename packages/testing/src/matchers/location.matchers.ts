@@ -6,7 +6,7 @@
 
 import { AFRICAN_CITIES, GEOFENCE_AREAS } from "../fixtures/locations.fixture";
 
-interface LocationMatchers<R = unknown> {
+export interface LocationMatchers<R = unknown> {
   toBeValidCoordinates(): R;
   toBeWithinRadius(
     center: { latitude: number; longitude: number },
@@ -15,11 +15,6 @@ interface LocationMatchers<R = unknown> {
   toBeInCity(city: string): R;
   toBeInOperationalArea(areaName: string): R;
   toBeValidAfricanPhoneNumber(): R;
-}
-
-declare module "vitest" {
-  interface Assertion<T = unknown> extends LocationMatchers<T> {}
-  interface AsymmetricMatchersContaining extends LocationMatchers {}
 }
 
 /**

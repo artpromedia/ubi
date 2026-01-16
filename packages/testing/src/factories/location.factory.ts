@@ -6,8 +6,8 @@
 
 import { faker } from "@faker-js/faker";
 import type { TestLocation, TestSavedLocation } from "../types";
+import { AFRICAN_CITIES } from "../fixtures/locations.fixture";
 import {
-  AFRICAN_CITIES,
   randomLocationInCity,
   randomPick,
   uuid,

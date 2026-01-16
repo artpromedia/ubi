@@ -4,20 +4,15 @@
  * Custom matchers for validating API responses.
  */
 
-import { expect } from "vitest";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import type { TestApiError, TestApiResponse } from "../types";
 
-interface ApiResponseMatchers<R = unknown> {
+export interface ApiResponseMatchers<R = unknown> {
   toBeSuccessResponse(): R;
   toBeErrorResponse(expectedStatus?: number): R;
   toHaveResponseData<T>(validator?: (data: T) => boolean): R;
   toMatchApiSchema(schema: Record<string, unknown>): R;
   toHavePagination(): R;
-}
-
-declare module "vitest" {
-  interface Assertion<T = unknown> extends ApiResponseMatchers<T> {}
-  interface AsymmetricMatchersContaining extends ApiResponseMatchers {}
 }
 
 /**
@@ -76,14 +71,15 @@ export function toHaveResponseData<T>(
 ) {
   const response = received as TestApiResponse<T>;
 
-  let pass =
+  let pass = !!(
     response &&
     typeof response === "object" &&
     "data" in response &&
     response.data !== null &&
-    response.data !== undefined;
+    response.data !== undefined
+  );
 
-  if (pass && validator) {
+  if (pass && validator && response.data !== undefined) {
     pass = validator(response.data);
   }
 
@@ -144,7 +140,7 @@ export function toMatchApiSchema(
 export function toHavePagination(received: unknown) {
   const response = received as TestApiResponse<unknown>;
 
-  const pass =
+  const pass = !!(
     response &&
     typeof response === "object" &&
     "meta" in response &&
@@ -152,7 +148,8 @@ export function toHavePagination(received: unknown) {
     typeof response.meta === "object" &&
     "page" in response.meta &&
     "limit" in response.meta &&
-    ("total" in response.meta || "totalPages" in response.meta);
+    ("total" in response.meta || "totalPages" in response.meta)
+  );
 
   return {
     pass,

@@ -200,7 +200,8 @@ export function freezeTime(date: Date = new Date()): () => void {
  * Generate a random string of specified length
  */
 export function randomString(length: number = 10): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let result = "";
   for (let i = 0; i < length; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -252,7 +253,10 @@ export function assertDefined<T>(
 /**
  * Assert that a condition is true
  */
-export function assert(condition: boolean, message?: string): asserts condition {
+export function assert(
+  condition: boolean,
+  message?: string
+): asserts condition {
   if (!condition) {
     throw new Error(message || "Assertion failed");
   }
@@ -278,31 +282,82 @@ export const PHONE_FORMATS: Record<string, { code: string; format: string }> = {
 
 /**
  * African city coordinates for location testing
+ * @internal - Use AFRICAN_CITIES from fixtures/locations.fixture.ts instead
  */
-export const AFRICAN_CITIES: Record<
+const CITY_COORDS: Record<
   string,
   { latitude: number; longitude: number; name: string; country: string }
 > = {
-  lagos: { latitude: 6.5244, longitude: 3.3792, name: "Lagos", country: "Nigeria" },
-  nairobi: { latitude: -1.2921, longitude: 36.8219, name: "Nairobi", country: "Kenya" },
-  accra: { latitude: 5.6037, longitude: -0.187, name: "Accra", country: "Ghana" },
-  johannesburg: { latitude: -26.2041, longitude: 28.0473, name: "Johannesburg", country: "South Africa" },
-  capetown: { latitude: -33.9249, longitude: 18.4241, name: "Cape Town", country: "South Africa" },
-  kigali: { latitude: -1.9403, longitude: 29.8739, name: "Kigali", country: "Rwanda" },
-  addisababa: { latitude: 9.0054, longitude: 38.7636, name: "Addis Ababa", country: "Ethiopia" },
-  daressalaam: { latitude: -6.7924, longitude: 39.2083, name: "Dar es Salaam", country: "Tanzania" },
-  kampala: { latitude: 0.3476, longitude: 32.5825, name: "Kampala", country: "Uganda" },
-  cairo: { latitude: 30.0444, longitude: 31.2357, name: "Cairo", country: "Egypt" },
+  lagos: {
+    latitude: 6.5244,
+    longitude: 3.3792,
+    name: "Lagos",
+    country: "Nigeria",
+  },
+  nairobi: {
+    latitude: -1.2921,
+    longitude: 36.8219,
+    name: "Nairobi",
+    country: "Kenya",
+  },
+  accra: {
+    latitude: 5.6037,
+    longitude: -0.187,
+    name: "Accra",
+    country: "Ghana",
+  },
+  johannesburg: {
+    latitude: -26.2041,
+    longitude: 28.0473,
+    name: "Johannesburg",
+    country: "South Africa",
+  },
+  capetown: {
+    latitude: -33.9249,
+    longitude: 18.4241,
+    name: "Cape Town",
+    country: "South Africa",
+  },
+  kigali: {
+    latitude: -1.9403,
+    longitude: 29.8739,
+    name: "Kigali",
+    country: "Rwanda",
+  },
+  addisababa: {
+    latitude: 9.0054,
+    longitude: 38.7636,
+    name: "Addis Ababa",
+    country: "Ethiopia",
+  },
+  daressalaam: {
+    latitude: -6.7924,
+    longitude: 39.2083,
+    name: "Dar es Salaam",
+    country: "Tanzania",
+  },
+  kampala: {
+    latitude: 0.3476,
+    longitude: 32.5825,
+    name: "Kampala",
+    country: "Uganda",
+  },
+  cairo: {
+    latitude: 30.0444,
+    longitude: 31.2357,
+    name: "Cairo",
+    country: "Egypt",
+  },
 };
 
 /**
  * Generate a random location within a city's bounds
  */
 export function randomLocationInCity(
-  city: keyof typeof AFRICAN_CITIES,
+  city: keyof typeof CITY_COORDS,
   radiusKm: number = 10
 ): { latitude: number; longitude: number } {
-  const cityData = AFRICAN_CITIES[city];
+  const cityData = CITY_COORDS[city];
   if (!cityData) {
     throw new Error(`Unknown city: ${city}`);
   }
@@ -325,7 +380,10 @@ export function randomLocationInCity(
 /**
  * African currency codes and symbols
  */
-export const CURRENCIES: Record<string, { code: string; symbol: string; name: string }> = {
+export const CURRENCIES: Record<
+  string,
+  { code: string; symbol: string; name: string }
+> = {
   NGN: { code: "NGN", symbol: "₦", name: "Nigerian Naira" },
   KES: { code: "KES", symbol: "KSh", name: "Kenyan Shilling" },
   GHS: { code: "GHS", symbol: "GH₵", name: "Ghanaian Cedi" },

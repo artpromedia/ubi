@@ -103,7 +103,9 @@ const nextConfig = {
   },
 
   // Output configuration for deployment
-  output: "standalone",
+  // Note: standalone disabled on Windows due to symlink permission issues
+  // Enable in production/CI environment
+  // output: "standalone",
 
   // Disable x-powered-by header for security
   poweredByHeader: false,

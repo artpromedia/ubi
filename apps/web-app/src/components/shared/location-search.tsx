@@ -12,7 +12,15 @@ import { useUserStore } from "@/store";
 import { Input } from "@ubi/ui";
 import type { Coordinates } from "@ubi/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import { Clock, Loader2, MapPin, Navigation, Search, Star, X } from "lucide-react";
+import {
+  Clock,
+  Loader2,
+  MapPin,
+  Navigation,
+  Search,
+  Star,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface LocationResult {
@@ -49,7 +57,11 @@ export function LocationSearch({
   const debouncedValue = useDebounce(value, 300);
 
   const { savedAddresses } = useUserStore();
-  const { currentLocation, requestLocation, isLoadingLocation } = useGeolocation();
+  const {
+    location: currentLocation,
+    requestLocation,
+    isLoading: isLoadingLocation,
+  } = useGeolocation();
 
   // Search for places when input changes
   useEffect(() => {
@@ -167,7 +179,9 @@ export function LocationSearch({
         <Input
           ref={inputRef}
           value={value}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            onChange(e.target.value)
+          }
           onFocus={() => setIsFocused(true)}
           onBlur={() => setTimeout(() => setIsFocused(false), 200)}
           placeholder={placeholder}
@@ -233,10 +247,10 @@ export function LocationSearch({
                     result.type === "saved"
                       ? "bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-400"
                       : result.type === "recent"
-                      ? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
-                      : result.type === "current"
-                      ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400"
-                      : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                        ? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                        : result.type === "current"
+                          ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400"
+                          : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
                   )}
                 >
                   {result.type === "saved" ? (
@@ -251,7 +265,9 @@ export function LocationSearch({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{result.name}</p>
-                  <p className="truncate text-sm text-gray-500">{result.address}</p>
+                  <p className="truncate text-sm text-gray-500">
+                    {result.address}
+                  </p>
                 </div>
               </button>
             ))}

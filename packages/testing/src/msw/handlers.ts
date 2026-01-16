@@ -128,7 +128,7 @@ export const userHandlers = [
   http.patch(`${API_BASE_URL}/users/:id`, async ({ params, request }) => {
     await delay(200);
     const { id } = params;
-    const updates = await request.json();
+    const updates = (await request.json()) as Record<string, unknown>;
 
     return HttpResponse.json({
       success: true,
@@ -141,14 +141,13 @@ export const userHandlers = [
   // Get saved addresses
   http.get(`${API_BASE_URL}/users/:id/addresses`, async () => {
     await delay(150);
+    const rider = TEST_RIDERS.ADAOBI_RIDER;
+    const addresses = rider
+      ? [rider.homeAddress, rider.workAddress].filter(Boolean)
+      : [];
     return HttpResponse.json({
       success: true,
-      data: {
-        addresses: [
-          TEST_RIDERS.ADAOBI_RIDER.homeAddress,
-          TEST_RIDERS.ADAOBI_RIDER.workAddress,
-        ],
-      },
+      data: { addresses },
     });
   }),
 ];
@@ -159,9 +158,8 @@ export const userHandlers = [
 
 export const rideHandlers = [
   // Get ride estimate
-  http.post(`${API_BASE_URL}/rides/estimate`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/rides/estimate`, async () => {
     await delay(300);
-    const body = (await request.json()) as any;
 
     return HttpResponse.json({
       success: true,
@@ -202,7 +200,7 @@ export const rideHandlers = [
     const body = (await request.json()) as any;
 
     const newRide = createRide({
-      status: "searching",
+      status: "matching",
       rideType: body.rideType || "economy",
       city: "lagos",
     });
@@ -287,9 +285,8 @@ export const rideHandlers = [
   }),
 
   // Get nearby drivers
-  http.get(`${API_BASE_URL}/rides/nearby-drivers`, async ({ request }) => {
+  http.get(`${API_BASE_URL}/rides/nearby-drivers`, async () => {
     await delay(300);
-    const url = new URL(request.url);
 
     const drivers = [
       { ...TEST_DRIVERS.EMEKA_DRIVER, eta: 3 },
@@ -319,7 +316,9 @@ export const foodHandlers = [
 
     if (cuisine) {
       restaurants = restaurants.filter((r) =>
-        r.cuisine.some((c) => c.toLowerCase().includes(cuisine.toLowerCase()))
+        r.cuisineTypes.some((c: string) =>
+          c.toLowerCase().includes(cuisine.toLowerCase())
+        )
       );
     }
 

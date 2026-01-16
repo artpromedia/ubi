@@ -257,7 +257,6 @@ export class PostHogProvider implements AnalyticsProvider {
   }): Promise<void> {
     if (typeof window === "undefined") return;
 
-    // @ts-expect-error - Optional peer dependency, dynamic import
     const posthogModule = await import("posthog-js");
     const posthog = posthogModule.default;
     (posthog as any).init(config.apiKey, {

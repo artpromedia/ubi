@@ -7,18 +7,13 @@
 import type { TestPaymentMethod, TestTransaction } from "../types";
 import { CURRENCIES } from "../utils";
 
-interface PaymentMatchers<R = unknown> {
+export interface PaymentMatchers<R = unknown> {
   toBeValidPaymentMethod(): R;
   toBeValidTransaction(): R;
   toBeValidCurrency(expectedCurrency?: string): R;
   toBePositiveAmount(): R;
   toBeValidCardNumber(): R;
   toHaveSuccessfulPaymentStatus(): R;
-}
-
-declare module "vitest" {
-  interface Assertion<T = unknown> extends PaymentMatchers<T> {}
-  interface AsymmetricMatchersContaining extends PaymentMatchers {}
 }
 
 /**
@@ -43,25 +38,28 @@ export function toBeValidPaymentMethod(received: unknown) {
   if (pass) {
     switch (pm.type) {
       case "card":
-        additionalCheck =
+        additionalCheck = !!(
           pm.card &&
           typeof pm.card.brand === "string" &&
           typeof pm.card.last4 === "string" &&
-          pm.card.last4.length === 4;
+          pm.card.last4.length === 4
+        );
         if (!additionalCheck) failureDetail = "Invalid card details";
         break;
       case "mobile_money":
-        additionalCheck =
+        additionalCheck = !!(
           pm.mobileMoney &&
           typeof pm.mobileMoney.provider === "string" &&
-          typeof pm.mobileMoney.phoneNumber === "string";
+          typeof pm.mobileMoney.phoneNumber === "string"
+        );
         if (!additionalCheck) failureDetail = "Invalid mobile money details";
         break;
       case "bank_account":
-        additionalCheck =
+        additionalCheck = !!(
           pm.bankAccount &&
           typeof pm.bankAccount.bankName === "string" &&
-          typeof pm.bankAccount.accountNumber === "string";
+          typeof pm.bankAccount.accountNumber === "string"
+        );
         if (!additionalCheck) failureDetail = "Invalid bank account details";
         break;
     }
@@ -95,23 +93,24 @@ export function toBeValidTransaction(received: unknown) {
 
   const validStatuses = ["pending", "completed", "failed", "refunded"];
 
-  const pass =
+  const pass = !!(
     txn &&
     typeof txn === "object" &&
     typeof txn.id === "string" &&
-    typeof txn.reference === "string" &&
+    typeof txn.referenceId === "string" &&
     validTypes.includes(txn.type) &&
     validStatuses.includes(txn.status) &&
     typeof txn.amount === "number" &&
     typeof txn.currency === "string" &&
-    txn.createdAt instanceof Date;
+    txn.createdAt instanceof Date
+  );
 
   return {
     pass,
     message: () =>
       pass
         ? `Expected ${JSON.stringify(received)} not to be a valid transaction`
-        : `Expected valid transaction with { id, reference, type, status, amount, currency, createdAt }`,
+        : `Expected valid transaction with { id, referenceId, type, status, amount, currency, createdAt }`,
   };
 }
 
@@ -193,7 +192,9 @@ export function toBeValidCardNumber(received: unknown) {
   let isEven = false;
 
   for (let i = cleaned.length - 1; i >= 0; i--) {
-    let digit = parseInt(cleaned[i], 10);
+    const char = cleaned[i];
+    if (!char) continue;
+    let digit = parseInt(char, 10);
 
     if (isEven) {
       digit *= 2;

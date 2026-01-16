@@ -20,7 +20,8 @@ const SERVICE_REGISTRY: Record<string, string> = {
   packages: process.env.DELIVERY_SERVICE_URL || "http://localhost:4004",
   payments: process.env.PAYMENT_SERVICE_URL || "http://localhost:4005",
   wallets: process.env.PAYMENT_SERVICE_URL || "http://localhost:4005",
-  notifications: process.env.NOTIFICATION_SERVICE_URL || "http://localhost:4006",
+  notifications:
+    process.env.NOTIFICATION_SERVICE_URL || "http://localhost:4006",
   analytics: process.env.ANALYTICS_SERVICE_URL || "http://localhost:4007",
   ceerion: process.env.CEERION_SERVICE_URL || "http://localhost:4008",
   vehicles: process.env.CEERION_SERVICE_URL || "http://localhost:4008",
@@ -84,7 +85,9 @@ const proxyToService = async (
   }
 
   // Add auth context if available
-  const auth = (c as unknown as { get: (key: string) => unknown }).get?.("auth");
+  const auth = (c as unknown as { get: (key: string) => unknown }).get?.(
+    "auth"
+  );
   if (auth) {
     forwardHeaders.set("x-auth-user-id", (auth as { userId: string }).userId);
     forwardHeaders.set("x-auth-user-role", (auth as { role: string }).role);
@@ -104,11 +107,13 @@ const proxyToService = async (
     const response = await fetch(targetUrl, {
       method: c.req.method,
       headers: forwardHeaders,
-      body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
+      body:
+        c.req.method !== "GET" && c.req.method !== "HEAD"
+          ? c.req.raw.body
+          : undefined,
       signal: controller.signal,
-      // @ts-expect-error - duplex is required for streaming bodies
       duplex: "half",
-    });
+    } as RequestInit);
 
     clearTimeout(timeoutId);
 
@@ -129,7 +134,7 @@ const proxyToService = async (
     }
 
     // Return the response
-    const data = await response.json();
+    const data = (await response.json()) as object;
     return c.json(data, response.status as 200);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -165,39 +170,79 @@ const proxyToService = async (
 // ===========================================
 
 // User Service routes
-proxyRoutes.all("/auth/*", (c) => proxyToService("auth", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/users/*", (c) => proxyToService("users", c.req.path.replace("/v1", ""), c));
+proxyRoutes.all("/auth/*", (c) =>
+  proxyToService("auth", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/users/*", (c) =>
+  proxyToService("users", c.req.path.replace("/v1", ""), c)
+);
 
 // Ride Service routes
-proxyRoutes.all("/rides/*", (c) => proxyToService("rides", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/drivers/*", (c) => proxyToService("rides", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/pricing/*", (c) => proxyToService("rides", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/locations/*", (c) => proxyToService("rides", c.req.path.replace("/v1", ""), c));
+proxyRoutes.all("/rides/*", (c) =>
+  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/drivers/*", (c) =>
+  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/pricing/*", (c) =>
+  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/locations/*", (c) =>
+  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+);
 
 // Food Service routes
-proxyRoutes.all("/food/*", (c) => proxyToService("food", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/restaurants/*", (c) => proxyToService("restaurants", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/menus/*", (c) => proxyToService("food", c.req.path.replace("/v1", ""), c));
+proxyRoutes.all("/food/*", (c) =>
+  proxyToService("food", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/restaurants/*", (c) =>
+  proxyToService("restaurants", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/menus/*", (c) =>
+  proxyToService("food", c.req.path.replace("/v1", ""), c)
+);
 
 // Delivery Service routes
-proxyRoutes.all("/delivery/*", (c) => proxyToService("delivery", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/packages/*", (c) => proxyToService("packages", c.req.path.replace("/v1", ""), c));
+proxyRoutes.all("/delivery/*", (c) =>
+  proxyToService("delivery", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/packages/*", (c) =>
+  proxyToService("packages", c.req.path.replace("/v1", ""), c)
+);
 
 // Payment Service routes
-proxyRoutes.all("/payments/*", (c) => proxyToService("payments", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/wallets/*", (c) => proxyToService("wallets", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/transactions/*", (c) => proxyToService("payments", c.req.path.replace("/v1", ""), c));
+proxyRoutes.all("/payments/*", (c) =>
+  proxyToService("payments", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/wallets/*", (c) =>
+  proxyToService("wallets", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/transactions/*", (c) =>
+  proxyToService("payments", c.req.path.replace("/v1", ""), c)
+);
 
 // Notification Service routes
-proxyRoutes.all("/notifications/*", (c) => proxyToService("notifications", c.req.path.replace("/v1", ""), c));
+proxyRoutes.all("/notifications/*", (c) =>
+  proxyToService("notifications", c.req.path.replace("/v1", ""), c)
+);
 
 // Analytics Service routes
-proxyRoutes.all("/analytics/*", (c) => proxyToService("analytics", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/reports/*", (c) => proxyToService("analytics", c.req.path.replace("/v1", ""), c));
+proxyRoutes.all("/analytics/*", (c) =>
+  proxyToService("analytics", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/reports/*", (c) =>
+  proxyToService("analytics", c.req.path.replace("/v1", ""), c)
+);
 
 // CEERION Service routes (EV financing)
-proxyRoutes.all("/ceerion/*", (c) => proxyToService("ceerion", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/vehicles/*", (c) => proxyToService("vehicles", c.req.path.replace("/v1", ""), c));
-proxyRoutes.all("/financing/*", (c) => proxyToService("ceerion", c.req.path.replace("/v1", ""), c));
+proxyRoutes.all("/ceerion/*", (c) =>
+  proxyToService("ceerion", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/vehicles/*", (c) =>
+  proxyToService("vehicles", c.req.path.replace("/v1", ""), c)
+);
+proxyRoutes.all("/financing/*", (c) =>
+  proxyToService("ceerion", c.req.path.replace("/v1", ""), c)
+);
 
 export { proxyRoutes };

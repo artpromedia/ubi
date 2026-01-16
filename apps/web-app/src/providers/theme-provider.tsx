@@ -7,7 +7,13 @@
 "use client";
 
 import { useUIStore } from "@/store";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
 type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
@@ -25,7 +31,10 @@ interface ThemeProviderProps {
   defaultTheme?: Theme;
 }
 
-export function ThemeProvider({ children, defaultTheme = "system" }: ThemeProviderProps) {
+export function ThemeProvider({
+  children,
+  defaultTheme: _defaultTheme = "system",
+}: ThemeProviderProps) {
   const { theme, setTheme } = useUIStore();
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
   const [mounted, setMounted] = useState(false);
@@ -75,11 +84,7 @@ export function ThemeProvider({ children, defaultTheme = "system" }: ThemeProvid
 
   // Prevent flash of wrong theme
   if (!mounted) {
-    return (
-      <div style={{ visibility: "hidden" }}>
-        {children}
-      </div>
-    );
+    return <div style={{ visibility: "hidden" }}>{children}</div>;
   }
 
   return (

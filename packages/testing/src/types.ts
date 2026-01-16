@@ -16,22 +16,63 @@ export interface TestUser {
   isVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
+  profilePicture?: string;
 }
 
 export interface TestDriver extends TestUser {
   role: "driver";
-  vehicleId: string;
-  licenseNumber: string;
+  vehicleId?: string;
+  licenseNumber?: string;
   rating: number;
-  totalTrips: number;
+  totalTrips?: number;
+  totalRides?: number;
   isOnline: boolean;
   currentLocation?: TestLocation;
+  vehicle?: {
+    type: string;
+    make: string;
+    model: string;
+    color: string;
+    plateNumber: string;
+    year: number;
+  };
+  location?: TestLocation;
+  documents?: {
+    driversLicense: string;
+    vehicleRegistration: string;
+    insurance: string;
+  };
 }
 
 export interface TestRider extends TestUser {
-  role: "rider";
+  role?: "rider";
   walletBalance: number;
-  savedLocations: TestSavedLocation[];
+  savedLocations?: TestSavedLocation[];
+  homeAddress?: TestSavedLocation;
+  workAddress?: TestSavedLocation;
+  preferredPaymentMethod?: string;
+  currency?: string;
+  totalRides?: number;
+  savedPaymentMethods?: TestPaymentMethodInfo[];
+}
+
+export interface TestPaymentMethodInfo {
+  id: string;
+  type: string;
+  isDefault: boolean;
+  card?: {
+    brand: string;
+    last4: string;
+    expiryMonth: number;
+    expiryYear: number;
+    cardholderName?: string;
+  };
+  mobileMoney?: {
+    provider: string;
+    providerName: string;
+    phoneNumber: string;
+    accountName?: string;
+  };
 }
 
 // =============================================================================
@@ -149,11 +190,36 @@ export type TestOrderStatus =
 export interface TestPaymentMethod {
   id: string;
   userId: string;
-  type: "card" | "mpesa" | "mtn_momo" | "airtel_money" | "wallet";
+  type:
+    | "card"
+    | "mpesa"
+    | "mtn_momo"
+    | "airtel_money"
+    | "wallet"
+    | "mobile_money"
+    | "bank_account";
   isDefault: boolean;
   lastFour?: string;
   provider?: string;
   phoneNumber?: string;
+  card?: {
+    brand: string;
+    last4: string;
+    expiryMonth: number;
+    expiryYear: number;
+    cardholderName?: string;
+  };
+  mobileMoney?: {
+    provider: string;
+    providerName: string;
+    phoneNumber: string;
+    accountName?: string;
+  };
+  bankAccount?: {
+    bankName: string;
+    accountNumber: string;
+    accountName?: string;
+  };
 }
 
 export interface TestTransaction {
@@ -164,8 +230,9 @@ export interface TestTransaction {
   currency: string;
   status: "pending" | "completed" | "failed" | "cancelled";
   paymentMethodId: string;
-  referenceId?: string;
+  referenceId: string;
   createdAt: Date;
+  completedAt?: Date;
 }
 
 // =============================================================================
@@ -182,6 +249,7 @@ export interface TestApiResponse<T> {
 export interface TestApiError {
   code: string;
   message: string;
+  status?: number;
   details?: Record<string, unknown>;
 }
 

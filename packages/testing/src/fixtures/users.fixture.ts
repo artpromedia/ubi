@@ -214,6 +214,7 @@ export const TEST_RIDERS: Record<string, TestRider> = {
     homeAddress: {
       id: "loc_001",
       name: "Home",
+      type: "home" as const,
       address: "15 Victoria Island, Lagos",
       latitude: 6.4281,
       longitude: 3.4219,
@@ -221,6 +222,7 @@ export const TEST_RIDERS: Record<string, TestRider> = {
     workAddress: {
       id: "loc_002",
       name: "Work",
+      type: "work" as const,
       address: "Ikeja City Mall, Lagos",
       latitude: 6.6018,
       longitude: 3.3515,
@@ -257,6 +259,7 @@ export const TEST_RIDERS: Record<string, TestRider> = {
     homeAddress: {
       id: "loc_003",
       name: "Home",
+      type: "home" as const,
       address: "Kilimani, Nairobi",
       latitude: -1.2864,
       longitude: 36.7834,
@@ -264,6 +267,7 @@ export const TEST_RIDERS: Record<string, TestRider> = {
     workAddress: {
       id: "loc_004",
       name: "Work",
+      type: "work" as const,
       address: "Westlands, Nairobi",
       latitude: -1.2635,
       longitude: 36.8026,

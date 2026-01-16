@@ -118,7 +118,7 @@ driverRoutes.post("/apply", async (c) => {
   }
 
   // Create vehicle and driver profile in transaction
-  const [vehicle, driver] = await prisma.$transaction(
+  const { vehicle, driver } = await prisma.$transaction(
     async (tx: Prisma.TransactionClient) => {
       // Create vehicle
       const newVehicle = await tx.vehicle.create({
@@ -154,7 +154,7 @@ driverRoutes.post("/apply", async (c) => {
         });
       }
 
-      return [newVehicle, newDriver];
+      return { vehicle: newVehicle, driver: newDriver };
     }
   );
 
@@ -162,8 +162,8 @@ driverRoutes.post("/apply", async (c) => {
     success: true,
     data: {
       driver: {
-        id: driver.id,
-        licenseNumber: driver.licenseNumber,
+        id: driver!.id,
+        licenseNumber: driver!.licenseNumber,
         status: "pending_verification",
         vehicle,
       },
