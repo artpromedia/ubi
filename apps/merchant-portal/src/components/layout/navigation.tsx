@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { UbiIcon } from "@ubi/ui";
+import { LogoIcon } from "@ubi/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BarChart3,
@@ -140,7 +140,7 @@ export function Sidebar() {
         {!isCollapsed && (
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center">
-              <UbiIcon size={22} variant="white" />
+              <LogoIcon className="h-5 w-5 text-white" />
             </div>
             <span className="text-lg font-bold text-white">UBI Send</span>
           </Link>
@@ -389,7 +389,7 @@ export function MobileSidebar() {
               <div className="h-16 flex items-center justify-between px-4 border-b border-border">
                 <Link href="/dashboard" className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center">
-                    <UbiIcon size={22} variant="white" />
+                    <LogoIcon className="h-5 w-5 text-white" />
                   </div>
                   <span className="text-lg font-bold text-white">UBI Send</span>
                 </Link>

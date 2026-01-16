@@ -12,8 +12,12 @@ async function globalSetup(config: FullConfig): Promise<void> {
   // Set timezone to UTC for consistent date handling
   process.env.TZ = "UTC";
 
-  // Set test environment
-  process.env.NODE_ENV = "test";
+  // Set test environment (using Object.defineProperty to avoid readonly error)
+  Object.defineProperty(process.env, "NODE_ENV", {
+    value: "test",
+    writable: true,
+    configurable: true,
+  });
 
   // Log test configuration
   console.log(`📍 Base URL: ${config.projects[0]?.use?.baseURL || "Not set"}`);

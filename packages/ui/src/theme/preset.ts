@@ -6,7 +6,15 @@
  */
 
 import type { Config } from "tailwindcss";
-import { animation, borderRadius, breakpoints, colors, shadows, typography, zIndex } from "./tokens";
+import {
+  animation,
+  borderRadius,
+  breakpoints,
+  colors,
+  shadows,
+  typography,
+  zIndex,
+} from "./tokens";
 
 export const ubiPreset: Partial<Config> = {
   darkMode: ["class"],
@@ -89,17 +97,17 @@ export const ubiPreset: Partial<Config> = {
       },
 
       fontFamily: {
-        heading: typography.fontFamily.heading,
-        body: typography.fontFamily.body,
-        sans: typography.fontFamily.body,
-        mono: typography.fontFamily.mono,
+        heading: [...typography.fontFamily.heading],
+        body: [...typography.fontFamily.body],
+        sans: [...typography.fontFamily.body],
+        mono: [...typography.fontFamily.mono],
       },
 
       borderRadius: {
+        ...borderRadius,
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-        ...borderRadius,
       },
 
       boxShadow: shadows,

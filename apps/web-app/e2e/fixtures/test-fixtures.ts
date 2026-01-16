@@ -144,7 +144,7 @@ export const test = base.extend<UbiFixtures>({
     const cdpSession = await page.context().newCDPSession(page);
 
     const setConditions = async (profile: keyof typeof NETWORK_PROFILES) => {
-      const conditions = NETWORK_PROFILES[profile];
+      const conditions = NETWORK_PROFILES[profile]!;
       await cdpSession.send("Network.emulateNetworkConditions", {
         offline: false,
         downloadThroughput: conditions.downloadThroughput,

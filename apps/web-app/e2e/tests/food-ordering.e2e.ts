@@ -27,7 +27,7 @@ test.describe("Restaurant Discovery", () => {
     await mockApiResponse(/\/api\/restaurants\/nearby/, {
       success: true,
       data: {
-        restaurants: TEST_RESTAURANTS.slice(0, 3),
+        restaurants: Object.values(TEST_RESTAURANTS).slice(0, 3),
       },
     });
 
@@ -66,7 +66,7 @@ test.describe("Restaurant Discovery", () => {
     await mockApiResponse(/\/api\/restaurants\/search/, {
       success: true,
       data: {
-        restaurants: [TEST_RESTAURANTS[0]],
+        restaurants: [TEST_RESTAURANTS.MAMA_PUTTS],
       },
     });
 
@@ -105,7 +105,7 @@ test.describe("Restaurant Details", () => {
     authenticatedPage,
     mockApiResponse,
   }) => {
-    const restaurant = TEST_RESTAURANTS[0];
+    const restaurant = TEST_RESTAURANTS.MAMA_PUTTS;
     await mockApiResponse(new RegExp(`/api/restaurants/${restaurant.id}`), {
       success: true,
       data: { restaurant },
@@ -115,7 +115,7 @@ test.describe("Restaurant Details", () => {
       new RegExp(`/api/restaurants/${restaurant.id}/menu`),
       {
         success: true,
-        data: { menu: TEST_MENU_ITEMS },
+        data: { menu: Object.values(TEST_MENU_ITEMS) },
       }
     );
 
@@ -136,7 +136,7 @@ test.describe("Restaurant Details", () => {
     authenticatedPage,
     mockApiResponse,
   }) => {
-    const menuItem = TEST_MENU_ITEMS[0];
+    const menuItem = TEST_MENU_ITEMS.JOLLOF_RICE;
     await mockApiResponse(new RegExp(`/api/menu-items/${menuItem.id}`), {
       success: true,
       data: { item: menuItem },
@@ -457,7 +457,7 @@ test.describe("Order Tracking", () => {
 
   test("should update order status in real-time", async ({
     authenticatedPage,
-    page,
+    page: _page,
   }) => {
     await authenticatedPage.goto("/food/order/order_001");
 

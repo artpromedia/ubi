@@ -3,13 +3,13 @@ const nextConfig = {
   // Enable React Strict Mode for better development experience
   reactStrictMode: true,
 
+  // Ignore ESLint during builds (run separately)
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // Transpile workspace packages
-  transpilePackages: [
-    "@ubi/ui",
-    "@ubi/utils",
-    "@ubi/api-client",
-    "@ubi/i18n",
-  ],
+  transpilePackages: ["@ubi/ui", "@ubi/utils", "@ubi/api-client", "@ubi/i18n"],
 
   // Image optimization configuration
   images: {
@@ -32,7 +32,7 @@ const nextConfig = {
   experimental: {
     // Enable Turbopack for faster development
     // turbo: {},
-    
+
     // Optimize package imports
     optimizePackageImports: [
       "@ubi/ui",

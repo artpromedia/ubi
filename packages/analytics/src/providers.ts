@@ -4,13 +4,24 @@
  * Built-in adapters for common analytics services.
  */
 
-import type { AnalyticsProvider, BaseEvent, PageViewEvent, UserTraits } from "./analytics";
+import type {
+  AnalyticsProvider,
+  BaseEvent,
+  PageViewEvent,
+  UserTraits,
+} from "./analytics";
 
 // Re-export AnalyticsProvider type for convenience
 export type { AnalyticsProvider };
 
 // Provider types
-export type ProviderType = "console" | "ga4" | "mixpanel" | "amplitude" | "posthog" | "segment";
+export type ProviderType =
+  | "console"
+  | "ga4"
+  | "mixpanel"
+  | "amplitude"
+  | "posthog"
+  | "segment";
 
 export interface ProviderConfig {
   type: ProviderType;
@@ -46,7 +57,11 @@ export class ConsoleProvider implements AnalyticsProvider {
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    console.log(`${this.prefix} Page:`, event.properties.path, event.properties);
+    console.log(
+      `${this.prefix} Page:`,
+      event.properties.path,
+      event.properties
+    );
   }
 
   async reset(): Promise<void> {
@@ -120,7 +135,10 @@ export class MixpanelProvider implements AnalyticsProvider {
   name = "mixpanel";
   private mixpanel: any = null;
 
-  async initialize(config: { token: string; options?: Record<string, unknown> }): Promise<void> {
+  async initialize(config: {
+    token: string;
+    options?: Record<string, unknown>;
+  }): Promise<void> {
     if (typeof window === "undefined") return;
 
     // Load Mixpanel library dynamically
@@ -172,7 +190,10 @@ export class AmplitudeProvider implements AnalyticsProvider {
   name = "amplitude";
   private amplitude: any = null;
 
-  async initialize(config: { apiKey: string; options?: Record<string, unknown> }): Promise<void> {
+  async initialize(config: {
+    apiKey: string;
+    options?: Record<string, unknown>;
+  }): Promise<void> {
     if (typeof window === "undefined") return;
 
     // @ts-ignore - Optional peer dependency
@@ -229,12 +250,17 @@ export class PostHogProvider implements AnalyticsProvider {
   name = "posthog";
   private posthog: any = null;
 
-  async initialize(config: { apiKey: string; host?: string; options?: Record<string, unknown> }): Promise<void> {
+  async initialize(config: {
+    apiKey: string;
+    host?: string;
+    options?: Record<string, unknown>;
+  }): Promise<void> {
     if (typeof window === "undefined") return;
 
-    // @ts-ignore - Optional peer dependency
-    const posthog = (await import("posthog-js")).default;
-    posthog.init(config.apiKey, {
+    // @ts-expect-error - Optional peer dependency, dynamic import
+    const posthogModule = await import("posthog-js");
+    const posthog = posthogModule.default;
+    (posthog as any).init(config.apiKey, {
       api_host: config.host || "https://app.posthog.com",
       capture_pageview: false, // We handle this manually
       ...config.options,
@@ -281,7 +307,8 @@ export class SegmentProvider implements AnalyticsProvider {
     if (typeof window === "undefined") return;
 
     // Load Segment analytics.js
-    const analytics = ((window as any).analytics = (window as any).analytics || []);
+    const analytics = ((window as any).analytics =
+      (window as any).analytics || []);
     if (!analytics.initialize) {
       if (analytics.invoked) return;
       analytics.invoked = true;

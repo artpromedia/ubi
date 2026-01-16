@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { UbiIcon } from "@ubi/ui";
+import { LogoIcon } from "@ubi/ui";
 import { motion } from "framer-motion";
 import {
   BarChart3,
@@ -119,7 +119,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
-              <UbiIcon size={22} variant="white" />
+              <LogoIcon className="h-5 w-5 text-white" />
             </div>
             <span className="font-bold text-white">UBI Bites</span>
           </Link>

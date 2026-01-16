@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@ubi/ui", "@ubi/utils", "@ubi/api-client"],
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     domains: ["ubi.africa", "api.ubi.africa", "images.ubi.africa"],
   },

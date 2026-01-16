@@ -5,7 +5,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Button, UbiLogo } from "@ubi/ui";
+import { Button, Logo } from "@ubi/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Menu, X } from "lucide-react";
 import Link from "next/link";
@@ -54,8 +54,8 @@ export function Header() {
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center">
-          <UbiLogo size={28} className="dark:hidden" />
-          <UbiLogo size={28} variant="white" className="hidden dark:block" />
+          <Logo size="md" className="dark:hidden" />
+          <Logo size="md" className="hidden dark:block" />
         </Link>
 
         {/* Desktop Navigation */}

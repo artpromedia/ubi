@@ -10,7 +10,7 @@ import { ROUTES } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers";
 import { useAuthStore, useUIStore, useUserStore } from "@/store";
-import { Button, UbiLogo } from "@ubi/ui";
+import { Button, Logo } from "@ubi/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell,
@@ -70,8 +70,8 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
           </Button>
         )}
         <Link href={ROUTES.home} className="flex items-center">
-          <UbiLogo size={24} className="dark:hidden" />
-          <UbiLogo size={24} variant="white" className="hidden dark:block" />
+          <Logo size="sm" className="dark:hidden" />
+          <Logo size="sm" className="hidden dark:block" />
         </Link>
       </div>
 

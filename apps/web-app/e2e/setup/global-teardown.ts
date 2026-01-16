@@ -6,7 +6,7 @@
 
 import { FullConfig } from "@playwright/test";
 
-async function globalTeardown(config: FullConfig): Promise<void> {
+async function globalTeardown(_config: FullConfig): Promise<void> {
   console.log("🧹 Cleaning up E2E test environment...");
 
   // Cleanup tasks can be added here:
