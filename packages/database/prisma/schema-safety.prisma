@@ -182,7 +182,8 @@ enum FraudActionType {
   TERMINATE
 }
 
-enum RiskLevel {
+// Note: Named SafetyRiskLevel to avoid conflict with core RiskLevel enum
+enum SafetyRiskLevel {
   VERY_LOW
   LOW
   MEDIUM
@@ -716,7 +717,7 @@ model FraudEvent {
   userId          String
   eventType       String // login, payment, promo_use, trip_request
   riskScore       Float
-  riskLevel       RiskLevel
+  riskLevel       SafetyRiskLevel
   action          FraudActionType
   signals         Json // Array of detected signals
   deviceInfo      Json?
@@ -793,7 +794,7 @@ model UserRiskProfile {
   id                  String            @id @default(uuid())
   userId              String            @unique
   overallRiskScore    Float             @default(0)
-  riskLevel           RiskLevel         @default(VERY_LOW)
+  riskLevel           SafetyRiskLevel         @default(VERY_LOW)
   accountAge          Int? // days
   verificationLevel   VerificationLevel @default(BASIC)
   totalTrips          Int               @default(0)
@@ -902,7 +903,7 @@ model RiskZone {
   geoJson        Json // Polygon definition
   center         Json // lat, lng
   radius         Float? // meters if circular
-  riskLevel      RiskLevel
+  riskLevel      SafetyRiskLevel
   riskFactors    String[] // robbery, assault, accident_prone
   incidentCount  Int       @default(0)
   lastIncidentAt DateTime?

@@ -69,7 +69,8 @@ enum ApprovalStatus {
   CANCELLED
 }
 
-enum DeliveryStatus {
+// Note: Named B2BDeliveryStatus to avoid conflict with core DeliveryStatus enum
+enum B2BDeliveryStatus {
   PENDING
   QUOTED
   CONFIRMED
@@ -160,7 +161,8 @@ enum InvoiceStatus {
   REFUNDED
 }
 
-enum BillingCycle {
+// Note: Named B2BBillingCycle to avoid conflict with driver BillingCycle enum
+enum B2BBillingCycle {
   WEEKLY
   BIWEEKLY
   MONTHLY
@@ -283,7 +285,7 @@ model B2BOrganization {
   verifiedBy String?
 
   // Billing
-  billingCycle    BillingCycle @default(MONTHLY)
+  billingCycle    B2BBillingCycle @default(MONTHLY)
   creditLimit     Decimal      @default(0) @db.Decimal(12, 2)
   currentBalance  Decimal      @default(0) @db.Decimal(12, 2)
   paymentTermDays Int          @default(30)
@@ -613,7 +615,7 @@ model B2BDelivery {
   trackingCode String  @unique
 
   // Status
-  status   DeliveryStatus   @default(PENDING)
+  status   B2BDeliveryStatus   @default(PENDING)
   priority DeliveryPriority @default(STANDARD)
 
   // Pickup details
@@ -733,7 +735,7 @@ model B2BDeliveryStatusHistory {
   deliveryId String
   delivery   B2BDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
 
-  status   DeliveryStatus
+  status   B2BDeliveryStatus
   location Json? // { lat, lng }
   notes    String?
   metadata Json           @default("{}")
@@ -1377,7 +1379,7 @@ model B2BMedicalDelivery {
   handlingInstructions String?
 
   // Status
-  status DeliveryStatus @default(PENDING)
+  status B2BDeliveryStatus @default(PENDING)
 
   // Assignment
   driverId   String?
