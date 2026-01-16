@@ -414,3 +414,8 @@ export function createProvider(
       throw new Error(`Unknown provider type: ${type}`);
   }
 }
+
+// Create provider from config object
+export function createProviderFromConfig(config: ProviderConfig): AnalyticsProvider {
+  return createProvider(config.type);
+}

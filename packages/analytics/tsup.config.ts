@@ -6,7 +6,7 @@ export default defineConfig({
     react: "src/react.tsx",
   },
   format: ["cjs", "esm"],
-  dts: false, // Temporarily disabled - external provider types need to be installed
+  dts: true,
   splitting: true,
   sourcemap: true,
   clean: true,

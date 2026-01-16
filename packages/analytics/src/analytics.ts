@@ -103,9 +103,20 @@ export interface AnalyticsProvider {
   setUserProperties?(properties: Record<string, unknown>): Promise<void>;
 }
 
+// Provider config types (for convenience)
+export interface ProviderConfigItem {
+  type: "console" | "ga4" | "mixpanel" | "amplitude" | "posthog" | "segment";
+  measurementId?: string;
+  token?: string;
+  apiKey?: string;
+  host?: string;
+  writeKey?: string;
+  options?: Record<string, unknown>;
+}
+
 // Analytics configuration
 export interface AnalyticsConfig {
-  providers: AnalyticsProvider[];
+  providers: ProviderConfigItem[];
   debug?: boolean;
   disabled?: boolean;
   defaultProperties?: Record<string, unknown>;
@@ -115,6 +126,7 @@ export interface AnalyticsConfig {
 // Analytics client
 export class Analytics {
   private providers: AnalyticsProvider[] = [];
+  private providerConfigs: ProviderConfigItem[] = [];
   private config: AnalyticsConfig;
   private userId: string | null = null;
   private userTraits: UserTraits = {};
@@ -123,24 +135,28 @@ export class Analytics {
 
   constructor(config: AnalyticsConfig) {
     this.config = config;
-    this.providers = config.providers;
+    this.providerConfigs = config.providers;
+    // Providers will be created during initialization
   }
 
   /**
-   * Initialize all providers
+   * Initialize all providers from configs
    */
-  async initialize(providerConfigs: Record<string, Record<string, unknown>>): Promise<void> {
+  async initialize(): Promise<void> {
     if (this.config.disabled) return;
+    if (this.initialized) return;
 
-    const initPromises = this.providers.map(async (provider) => {
-      const config = providerConfigs[provider.name];
-      if (config) {
-        try {
-          await provider.initialize(config);
-          this.log(`Initialized provider: ${provider.name}`);
-        } catch (error) {
-          this.handleError(error as Error, provider.name);
-        }
+    // Dynamically import provider classes
+    const { createProviderFromConfig } = await import("./providers.js");
+
+    const initPromises = this.providerConfigs.map(async (providerConfig) => {
+      try {
+        const provider = createProviderFromConfig(providerConfig);
+        await provider.initialize(providerConfig as unknown as Record<string, unknown>);
+        this.providers.push(provider);
+        this.log(`Initialized provider: ${provider.name}`);
+      } catch (error) {
+        this.handleError(error as Error, providerConfig.type);
       }
     });
 
@@ -326,6 +342,14 @@ let analyticsInstance: Analytics | null = null;
 
 export function createAnalytics(config: AnalyticsConfig): Analytics {
   analyticsInstance = new Analytics(config);
+  // Auto-initialize in browser environment
+  if (typeof window !== "undefined") {
+    analyticsInstance.initialize().catch((error) => {
+      if (config.debug) {
+        console.error("[Analytics] Auto-initialization failed:", error);
+      }
+    });
+  }
   return analyticsInstance;
 }
 

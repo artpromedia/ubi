@@ -58,7 +58,6 @@ function PageViewTracker() {
   useEffect(() => {
     const url = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : "");
     analytics.page(url, {
-      path: pathname,
       search: searchParams.toString(),
       title: document.title,
       referrer: document.referrer,

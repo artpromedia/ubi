@@ -29,13 +29,15 @@
     "test:watch": "vitest",
     "clean": "rm -rf dist .turbo node_modules"
   },
-  "dependencies": {},
   "devDependencies": {
-    "@ubi/eslint-config": "workspace:*",
-    "@ubi/typescript-config": "workspace:*",
+    "@amplitude/analytics-browser": "^2.33.4",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
+    "@ubi/eslint-config": "workspace:*",
+    "@ubi/typescript-config": "workspace:*",
     "eslint": "^8.57.1",
+    "mixpanel-browser": "^2.73.0",
+    "posthog-js": "^1.326.0",
     "react": "^19.0.0",
     "tslib": "^2.8.1",
     "tsup": "^8.3.5",
