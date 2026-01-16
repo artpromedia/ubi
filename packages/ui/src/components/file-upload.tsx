@@ -6,20 +6,20 @@
 
 "use client";
 
-import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import {
-  Upload,
-  X,
-  File,
-  Image as ImageIcon,
-  FileText,
-  FileVideo,
-  FileAudio,
   AlertCircle,
   CheckCircle2,
+  File,
+  FileAudio,
+  FileText,
+  FileVideo,
+  Image as ImageIcon,
   Loader2,
+  Upload,
+  X,
 } from "lucide-react";
+import * as React from "react";
 import { cn } from "../lib/utils";
 import { Button } from "./button";
 import { Progress } from "./progress";
@@ -59,8 +59,7 @@ interface UploadedFile {
   error?: string;
 }
 
-interface FileUploadProps
-  extends VariantProps<typeof dropzoneVariants> {
+interface FileUploadProps extends VariantProps<typeof dropzoneVariants> {
   accept?: Record<string, string[]>;
   maxSize?: number; // in bytes
   maxFiles?: number;
@@ -116,7 +115,9 @@ const FileUpload = ({
     e.stopPropagation();
   }, []);
 
-  const validateFiles = (files: File[]): { valid: File[]; errors: string[] } => {
+  const validateFiles = (
+    files: File[]
+  ): { valid: File[]; errors: string[] } => {
     const valid: File[] = [];
     const errors: string[] = [];
 
@@ -134,7 +135,9 @@ const FileUpload = ({
           if (mime.endsWith("/*")) {
             return fileType.startsWith(mime.replace("/*", ""));
           }
-          return fileType === mime || exts.some((ext) => file.name.endsWith(ext));
+          return (
+            fileType === mime || exts.some((ext) => file.name.endsWith(ext))
+          );
         });
         if (!isAccepted) {
           errors.push(`${file.name} is not an accepted file type`);
@@ -164,7 +167,7 @@ const FileUpload = ({
     const { valid, errors } = validateFiles(fileArray);
 
     if (errors.length > 0) {
-      setError(errors[0]);
+      setError(errors[0] ?? null);
       setTimeout(() => setError(null), 3000);
     }
 
@@ -176,7 +179,7 @@ const FileUpload = ({
           ? URL.createObjectURL(file)
           : undefined,
       }),
-      id: `${file.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       status: "pending" as const,
     }));
 
@@ -236,19 +239,23 @@ const FileUpload = ({
     };
   }, []);
 
+  // Determine dropzone state without nested ternaries
+  const getDropzoneState = () => {
+    if (disabled) return "disabled";
+    if (error) return "error";
+    if (isDragActive) return "active";
+    return "default";
+  };
+
   return (
     <div className={cn("space-y-4", className)}>
       {/* Dropzone */}
       <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
         className={cn(
           dropzoneVariants({
-            state: disabled
-              ? "disabled"
-              : error
-                ? "error"
-                : isDragActive
-                  ? "active"
-                  : "default",
+            state: getDropzoneState(),
             size,
           }),
           "cursor-pointer"
@@ -258,6 +265,12 @@ const FileUpload = ({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onClick={handleClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleClick();
+          }
+        }}
       >
         <input
           ref={inputRef}
@@ -277,15 +290,13 @@ const FileUpload = ({
             <p className="text-sm font-medium">
               {isDragActive ? "Drop files here" : "Drag & drop files here"}
             </p>
-            <p className="text-xs text-muted-foreground">
-              or click to browse
-            </p>
+            <p className="text-xs text-muted-foreground">or click to browse</p>
           </div>
           <p className="text-xs text-muted-foreground">
             {accept
               ? `Accepted: ${Object.values(accept).flat().join(", ")}`
               : "All file types accepted"}
-            {maxSize && ` • Max ${formatFileSize(maxSize)}`}
+            {maxSize ? ` • Max ${formatFileSize(maxSize)}` : null}
           </p>
         </div>
 
@@ -350,9 +361,7 @@ const FilePreview = ({ uploadedFile, onRemove }: FilePreviewProps) => {
         {status === "uploading" && progress !== undefined && (
           <Progress value={progress} size="sm" className="mt-1" />
         )}
-        {error && (
-          <p className="text-xs text-destructive mt-1">{error}</p>
-        )}
+        {error && <p className="text-xs text-destructive mt-1">{error}</p>}
       </div>
 
       {/* Status */}
@@ -387,7 +396,8 @@ function getFileIcon(mimeType: string) {
   if (mimeType.startsWith("image/")) return ImageIcon;
   if (mimeType.startsWith("video/")) return FileVideo;
   if (mimeType.startsWith("audio/")) return FileAudio;
-  if (mimeType.includes("pdf") || mimeType.includes("document")) return FileText;
+  if (mimeType.includes("pdf") || mimeType.includes("document"))
+    return FileText;
   return File;
 }
 
@@ -396,14 +406,14 @@ function formatFileSize(bytes: number): string {
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  return `${Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
 export {
-  FileUpload,
-  FilePreview,
   dropzoneVariants,
+  FilePreview,
+  FileUpload,
   formatFileSize,
-  type UploadedFile,
   type FileWithPreview,
+  type UploadedFile,
 };

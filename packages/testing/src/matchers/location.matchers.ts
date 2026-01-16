@@ -54,8 +54,8 @@ export function toBeValidCoordinates(received: unknown) {
     location.latitude <= 90 &&
     location.longitude >= -180 &&
     location.longitude <= 180 &&
-    !isNaN(location.latitude) &&
-    !isNaN(location.longitude);
+    !Number.isNaN(location.latitude) &&
+    !Number.isNaN(location.longitude);
 
   return {
     pass,
@@ -213,15 +213,15 @@ export function toBeValidAfricanPhoneNumber(received: unknown) {
 
   // African phone number patterns
   const patterns = [
-    /^\+234[0-9]{10}$/, // Nigeria
-    /^\+254[0-9]{9}$/, // Kenya
-    /^\+233[0-9]{9}$/, // Ghana
-    /^\+27[0-9]{9}$/, // South Africa
-    /^\+250[0-9]{9}$/, // Rwanda
-    /^\+251[0-9]{9}$/, // Ethiopia
-    /^\+255[0-9]{9}$/, // Tanzania
-    /^\+256[0-9]{9}$/, // Uganda
-    /^\+20[0-9]{10}$/, // Egypt
+    /^\+234\d{10}$/, // Nigeria
+    /^\+254\d{9}$/, // Kenya
+    /^\+233\d{9}$/, // Ghana
+    /^\+27\d{9}$/, // South Africa
+    /^\+250\d{9}$/, // Rwanda
+    /^\+251\d{9}$/, // Ethiopia
+    /^\+255\d{9}$/, // Tanzania
+    /^\+256\d{9}$/, // Uganda
+    /^\+20\d{10}$/, // Egypt
   ];
 
   const pass = patterns.some((pattern) => pattern.test(phone));

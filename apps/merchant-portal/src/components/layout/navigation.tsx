@@ -308,8 +308,6 @@ export function Sidebar() {
 
 // Header component
 export function MerchantHeader() {
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-
   return (
     <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6 sticky top-0 z-40">
       <div className="flex items-center gap-4 flex-1">
@@ -359,7 +357,6 @@ export function MerchantHeader() {
 // Mobile sidebar drawer
 export function MobileSidebar() {
   const [isOpen, setIsOpen] = useState(false);
-  const pathname = usePathname();
 
   return (
     <>

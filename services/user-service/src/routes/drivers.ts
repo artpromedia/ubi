@@ -4,11 +4,14 @@
  * Handles driver onboarding, verification, and profile management.
  */
 
-import { Prisma } from "@prisma/client";
-import { ErrorCodes, UbiError } from "@ubi/utils";
 import { Hono } from "hono";
 import { z } from "zod";
+
+import { ErrorCodes, UbiError } from "@ubi/utils";
+
 import { prisma } from "../lib/prisma";
+
+import type { Prisma } from "@prisma/client";
 
 const driverRoutes = new Hono();
 
@@ -162,8 +165,8 @@ driverRoutes.post("/apply", async (c) => {
     success: true,
     data: {
       driver: {
-        id: driver!.id,
-        licenseNumber: driver!.licenseNumber,
+        id: driver.id,
+        licenseNumber: driver.licenseNumber,
         status: "pending_verification",
         vehicle,
       },

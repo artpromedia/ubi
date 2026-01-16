@@ -11,7 +11,7 @@ import type { NetworkProfile, TestConfig } from "./types";
 /**
  * Wait for a specified amount of time
  */
-export function wait(ms: number): Promise<void> {
+export async function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -118,7 +118,9 @@ export const NETWORK_PROFILES: Record<string, NetworkProfile> = {
 /**
  * Simulate network delay
  */
-export function simulateNetworkDelay(profile: NetworkProfile): Promise<void> {
+export async function simulateNetworkDelay(
+  profile: NetworkProfile
+): Promise<void> {
   return wait(profile.latency);
 }
 
@@ -133,7 +135,7 @@ export function getTestConfig(): TestConfig {
   return {
     apiBaseUrl: process.env.TEST_API_URL || "http://localhost:3000",
     useRealServices: process.env.TEST_USE_REAL_SERVICES === "true",
-    timeout: parseInt(process.env.TEST_TIMEOUT || "5000", 10),
+    timeout: Number.parseInt(process.env.TEST_TIMEOUT || "5000", 10),
     databaseUrl: process.env.TEST_DATABASE_URL,
     redisUrl: process.env.TEST_REDIS_URL,
   };
@@ -166,12 +168,12 @@ export function relativeDate(
  */
 export function freezeTime(date: Date = new Date()): () => void {
   const originalNow = Date.now;
-  const originalDate = global.Date;
+  const originalDate = globalThis.Date;
 
   const frozenTime = date.getTime();
 
   // @ts-expect-error - Overriding Date
-  global.Date = class extends originalDate {
+  globalThis.Date = class extends originalDate {
     constructor(...args: unknown[]) {
       if (args.length === 0) {
         super(frozenTime);
@@ -187,7 +189,7 @@ export function freezeTime(date: Date = new Date()): () => void {
   };
 
   return () => {
-    global.Date = originalDate;
+    globalThis.Date = originalDate;
     Date.now = originalNow;
   };
 }
@@ -227,8 +229,8 @@ export function randomPick<T>(array: T[]): T {
  * Generate a UUID v4
  */
 export function uuid(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replaceAll(/[xy]/g, (c) => {
+    const r = Math.trunc(Math.random() * 16);
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });

@@ -95,7 +95,7 @@ export const authHandlers = [
     await delay(150);
     const authHeader = request.headers.get("Authorization");
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return HttpResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -228,8 +228,8 @@ export const rideHandlers = [
   http.get(`${API_BASE_URL}/rides`, async ({ request }) => {
     await delay(200);
     const url = new URL(request.url);
-    const page = parseInt(url.searchParams.get("page") || "1");
-    const limit = parseInt(url.searchParams.get("limit") || "10");
+    const page = Number.parseInt(url.searchParams.get("page") || "1");
+    const limit = Number.parseInt(url.searchParams.get("limit") || "10");
 
     const rides = createRides(limit, { status: "completed" });
 

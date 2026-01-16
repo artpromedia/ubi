@@ -31,11 +31,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 interface AppHeaderProps {
-  className?: string;
-  showMenu?: boolean;
+  readonly className?: string;
+  readonly showMenu?: boolean;
 }
 
-export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
+export function AppHeader({
+  className,
+  showMenu = true,
+}: Readonly<AppHeaderProps>) {
   const router = useRouter();
   const { isAuthenticated, clearAuth } = useAuthStore();
   const { profile, clearUser } = useUserStore();
@@ -144,8 +147,10 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
               <AnimatePresence>
                 {showUserMenu && (
                   <>
-                    <div
-                      className="fixed inset-0 z-40"
+                    <button
+                      type="button"
+                      aria-label="Close menu"
+                      className="fixed inset-0 z-40 cursor-default border-none bg-transparent"
                       onClick={() => setShowUserMenu(false)}
                     />
                     <motion.div
@@ -221,12 +226,12 @@ export function AppHeader({ className, showMenu = true }: AppHeaderProps) {
 }
 
 interface MenuLinkProps {
-  href: string;
-  icon: typeof User;
-  children: React.ReactNode;
+  readonly href: string;
+  readonly icon: typeof User;
+  readonly children: React.ReactNode;
 }
 
-function MenuLink({ href, icon: Icon, children }: MenuLinkProps) {
+function MenuLink({ href, icon: Icon, children }: Readonly<MenuLinkProps>) {
   return (
     <Link
       href={href}

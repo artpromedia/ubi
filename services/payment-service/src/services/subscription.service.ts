@@ -33,21 +33,23 @@ export class SubscriptionService {
       orderBy: { displayOrder: "asc" },
     });
 
-    return plans.map((p: {
-      id: string;
-      name: string;
-      slug: string;
-      description: string | null;
-      price: unknown;
-      currency: string;
-      billingPeriod: string;
-      trialDays: number;
-      features: unknown;
-      maxFamilyMembers: number;
-      isPopular: boolean;
-      displayOrder: number;
-      isActive: boolean;
-    }) => this.formatPlan(p));
+    return plans.map(
+      (p: {
+        id: string;
+        name: string;
+        slug: string;
+        description: string | null;
+        price: unknown;
+        currency: string;
+        billingPeriod: string;
+        trialDays: number;
+        features: unknown;
+        maxFamilyMembers: number;
+        isPopular: boolean;
+        displayOrder: number;
+        isActive: boolean;
+      }) => this.formatPlan(p)
+    );
   }
 
   /**
@@ -292,7 +294,7 @@ export class SubscriptionService {
 
     // Calculate proration if upgrading mid-cycle
     const daysRemaining = Math.ceil(
-      (subscription.currentPeriodEnd.getTime() - new Date().getTime()) /
+      (subscription.currentPeriodEnd.getTime() - Date.now()) /
         (1000 * 60 * 60 * 24)
     );
 
@@ -301,7 +303,7 @@ export class SubscriptionService {
       data: {
         planId: newPlan.id,
         metadata: {
-          ...((subscription.metadata as Record<string, unknown>) || {}),
+          ...(subscription.metadata as Record<string, unknown>),
           previousPlanId: subscription.planId,
           planChangedAt: new Date().toISOString(),
           proratedDays: daysRemaining,
@@ -322,24 +324,25 @@ export class SubscriptionService {
     userId: string
   ): Promise<SubscriptionBenefitUsage | null> {
     const subscription = await this.getSubscription(userId);
-    if (!subscription || !subscription.plan) {
+    if (!subscription?.plan) {
       return null;
     }
 
     const features = subscription.plan.features;
-    const used = (subscription.benefitsUsed || {}) as Record<string, number>;
+    const used =
+      (subscription.benefitsUsed as Record<string, number> | null) ?? {};
+    const freeCancellations = features.freeCancellations;
 
     return {
-      freeDeliveriesUsed: used.freeDeliveries || 0,
+      freeDeliveriesUsed: used.freeDeliveries ?? 0,
       freeDeliveriesRemaining: features.freeDelivery ? "unlimited" : 0,
-      freeCancellationsUsed: used.freeCancellations || 0,
+      freeCancellationsUsed: used.freeCancellations ?? 0,
       freeCancellationsRemaining:
-        features.freeCancellations === "unlimited"
+        freeCancellations === "unlimited"
           ? "unlimited"
           : Math.max(
               0,
-              (features.freeCancellations as number) -
-                (used.freeCancellations || 0)
+              Number(freeCancellations) - (used.freeCancellations ?? 0)
             ),
     };
   }
@@ -376,7 +379,7 @@ export class SubscriptionService {
         data: {
           benefitsUsed: {
             ...used,
-            freeDeliveries: (used.freeDeliveries || 0) + 1,
+            freeDeliveries: (used.freeDeliveries ?? 0) + 1,
           },
         },
       });
@@ -386,9 +389,10 @@ export class SubscriptionService {
 
     if (benefit === "freeCancellation") {
       const limit = features.freeCancellations;
-      const currentUsed = used.freeCancellations || 0;
+      const currentUsed = used.freeCancellations ?? 0;
+      const numericLimit = Number(limit);
 
-      if (limit !== "unlimited" && currentUsed >= (limit as number)) {
+      if (limit !== "unlimited" && currentUsed >= numericLimit) {
         return { success: false, remaining: 0 };
       }
 
@@ -405,9 +409,7 @@ export class SubscriptionService {
       return {
         success: true,
         remaining:
-          limit === "unlimited"
-            ? "unlimited"
-            : (limit as number) - currentUsed - 1,
+          limit === "unlimited" ? "unlimited" : numericLimit - currentUsed - 1,
       };
     }
 
@@ -609,25 +611,27 @@ export class SubscriptionService {
       take: limit,
     });
 
-    return invoices.map((inv: {
-      id: string;
-      amount: unknown;
-      currency: string;
-      status: string;
-      periodStart: Date;
-      periodEnd: Date;
-      paidAt: Date | null;
-      createdAt: Date;
-    }) => ({
-      id: inv.id,
-      amount: Number(inv.amount),
-      currency: inv.currency,
-      status: inv.status,
-      periodStart: inv.periodStart,
-      periodEnd: inv.periodEnd,
-      paidAt: inv.paidAt || undefined,
-      createdAt: inv.createdAt,
-    }));
+    return invoices.map(
+      (inv: {
+        id: string;
+        amount: unknown;
+        currency: string;
+        status: string;
+        periodStart: Date;
+        periodEnd: Date;
+        paidAt: Date | null;
+        createdAt: Date;
+      }) => ({
+        id: inv.id,
+        amount: Number(inv.amount),
+        currency: inv.currency,
+        status: inv.status,
+        periodStart: inv.periodStart,
+        periodEnd: inv.periodEnd,
+        paidAt: inv.paidAt || undefined,
+        createdAt: inv.createdAt,
+      })
+    );
   }
 
   // ===========================================

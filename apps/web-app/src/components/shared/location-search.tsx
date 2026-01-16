@@ -32,13 +32,13 @@ interface LocationResult {
 }
 
 interface LocationSearchProps {
-  value: string;
-  onChange: (value: string) => void;
-  onSelect: (result: LocationResult) => void;
-  placeholder?: string;
-  label?: string;
-  type?: "pickup" | "dropoff";
-  className?: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly onSelect: (result: LocationResult) => void;
+  readonly placeholder?: string;
+  readonly label?: string;
+  readonly type?: "pickup" | "dropoff";
+  readonly className?: string;
 }
 
 export function LocationSearch({
@@ -49,7 +49,7 @@ export function LocationSearch({
   label,
   type = "pickup",
   className,
-}: LocationSearchProps) {
+}: Readonly<LocationSearchProps>) {
   const [isFocused, setIsFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<LocationResult[]>([]);
@@ -235,42 +235,51 @@ export function LocationSearch({
             )}
 
             {/* Results */}
-            {displayResults.map((result) => (
-              <button
-                key={result.id}
-                onClick={() => handleSelect(result)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                <div
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-full",
-                    result.type === "saved"
-                      ? "bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-400"
-                      : result.type === "recent"
-                        ? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
-                        : result.type === "current"
-                          ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400"
-                          : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
-                  )}
+            {displayResults.map((result) => {
+              const iconClassMap: Record<string, string> = {
+                saved:
+                  "bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-400",
+                recent:
+                  "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400",
+                current:
+                  "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400",
+              };
+              const iconClass =
+                iconClassMap[result.type] ??
+                "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400";
+
+              const iconMap: Record<string, React.ReactNode> = {
+                saved: <Star className="h-5 w-5" />,
+                recent: <Clock className="h-5 w-5" />,
+                current: <Navigation className="h-5 w-5" />,
+              };
+              const icon = iconMap[result.type] ?? (
+                <MapPin className="h-5 w-5" />
+              );
+
+              return (
+                <button
+                  key={result.id}
+                  onClick={() => handleSelect(result)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
-                  {result.type === "saved" ? (
-                    <Star className="h-5 w-5" />
-                  ) : result.type === "recent" ? (
-                    <Clock className="h-5 w-5" />
-                  ) : result.type === "current" ? (
-                    <Navigation className="h-5 w-5" />
-                  ) : (
-                    <MapPin className="h-5 w-5" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{result.name}</p>
-                  <p className="truncate text-sm text-gray-500">
-                    {result.address}
-                  </p>
-                </div>
-              </button>
-            ))}
+                  <div
+                    className={cn(
+                      "flex h-10 w-10 items-center justify-center rounded-full",
+                      iconClass
+                    )}
+                  >
+                    {icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{result.name}</p>
+                    <p className="truncate text-sm text-gray-500">
+                      {result.address}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
 
             {/* No results */}
             {value.length > 1 && !isLoading && results.length === 0 && (

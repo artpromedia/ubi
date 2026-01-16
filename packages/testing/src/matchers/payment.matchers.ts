@@ -16,61 +16,83 @@ export interface PaymentMatchers<R = unknown> {
   toHaveSuccessfulPaymentStatus(): R;
 }
 
+const VALID_PAYMENT_TYPES = ["card", "mobile_money", "bank_account", "wallet"];
+
+/**
+ * Validate type-specific payment method details
+ */
+function validatePaymentMethodDetails(pm: TestPaymentMethod): {
+  valid: boolean;
+  failureDetail: string;
+} {
+  switch (pm.type) {
+    case "card":
+      if (
+        !(
+          pm.card &&
+          typeof pm.card.brand === "string" &&
+          typeof pm.card.last4 === "string" &&
+          pm.card.last4.length === 4
+        )
+      ) {
+        return { valid: false, failureDetail: "Invalid card details" };
+      }
+      break;
+    case "mobile_money":
+      if (
+        !(
+          pm.mobileMoney &&
+          typeof pm.mobileMoney.provider === "string" &&
+          typeof pm.mobileMoney.phoneNumber === "string"
+        )
+      ) {
+        return { valid: false, failureDetail: "Invalid mobile money details" };
+      }
+      break;
+    case "bank_account":
+      if (
+        !(
+          pm.bankAccount &&
+          typeof pm.bankAccount.bankName === "string" &&
+          typeof pm.bankAccount.accountNumber === "string"
+        )
+      ) {
+        return { valid: false, failureDetail: "Invalid bank account details" };
+      }
+      break;
+  }
+  return { valid: true, failureDetail: "" };
+}
+
 /**
  * Check if object is a valid payment method
  */
 export function toBeValidPaymentMethod(received: unknown) {
   const pm = received as TestPaymentMethod;
 
-  const validTypes = ["card", "mobile_money", "bank_account", "wallet"];
-
-  const pass =
+  const isValidBase =
     pm &&
     typeof pm === "object" &&
     typeof pm.id === "string" &&
     pm.id.length > 0 &&
-    validTypes.includes(pm.type) &&
+    VALID_PAYMENT_TYPES.includes(pm.type) &&
     typeof pm.isDefault === "boolean";
 
-  let additionalCheck = true;
-  let failureDetail = "";
+  const { valid: detailsValid, failureDetail } = isValidBase
+    ? validatePaymentMethodDetails(pm)
+    : { valid: true, failureDetail: "" };
 
-  if (pass) {
-    switch (pm.type) {
-      case "card":
-        additionalCheck = !!(
-          pm.card &&
-          typeof pm.card.brand === "string" &&
-          typeof pm.card.last4 === "string" &&
-          pm.card.last4.length === 4
-        );
-        if (!additionalCheck) failureDetail = "Invalid card details";
-        break;
-      case "mobile_money":
-        additionalCheck = !!(
-          pm.mobileMoney &&
-          typeof pm.mobileMoney.provider === "string" &&
-          typeof pm.mobileMoney.phoneNumber === "string"
-        );
-        if (!additionalCheck) failureDetail = "Invalid mobile money details";
-        break;
-      case "bank_account":
-        additionalCheck = !!(
-          pm.bankAccount &&
-          typeof pm.bankAccount.bankName === "string" &&
-          typeof pm.bankAccount.accountNumber === "string"
-        );
-        if (!additionalCheck) failureDetail = "Invalid bank account details";
-        break;
-    }
-  }
+  const pass = isValidBase && detailsValid;
 
   return {
-    pass: pass && additionalCheck,
-    message: () =>
-      pass && additionalCheck
-        ? `Expected ${JSON.stringify(received)} not to be a valid payment method`
-        : `Expected valid payment method with { id, type: ${validTypes.join("|")}, isDefault }${failureDetail ? `. ${failureDetail}` : ""}`,
+    pass,
+    message: () => {
+      if (pass) {
+        return `Expected ${JSON.stringify(received)} not to be a valid payment method`;
+      }
+      const baseMsg = `Expected valid payment method with { id, type: ${VALID_PAYMENT_TYPES.join("|")}, isDefault }`;
+      return failureDetail ? `${baseMsg}. ${failureDetail}` : baseMsg;
+    },
   };
 }
 
@@ -132,12 +154,15 @@ export function toBeValidCurrency(
 
   return {
     pass,
-    message: () =>
-      pass
-        ? `Expected ${currency} not to be a valid currency`
-        : expectedCurrency
-          ? `Expected currency to be ${expectedCurrency}, but got ${currency}`
-          : `Expected valid currency (${validCurrencies.join(", ")}), but got ${currency}`,
+    message: () => {
+      if (pass) {
+        return `Expected ${currency} not to be a valid currency`;
+      }
+      if (expectedCurrency) {
+        return `Expected currency to be ${expectedCurrency}, but got ${currency}`;
+      }
+      return `Expected valid currency (${validCurrencies.join(", ")}), but got ${currency}`;
+    },
   };
 }
 
@@ -150,8 +175,8 @@ export function toBePositiveAmount(received: unknown) {
   const pass =
     typeof amount === "number" &&
     amount > 0 &&
-    !isNaN(amount) &&
-    isFinite(amount);
+    !Number.isNaN(amount) &&
+    Number.isFinite(amount);
 
   return {
     pass,
@@ -176,7 +201,7 @@ export function toBeValidCardNumber(received: unknown) {
   }
 
   // Remove spaces and dashes
-  const cleaned = cardNumber.replace(/[\s-]/g, "");
+  const cleaned = cardNumber.replaceAll(/[\s-]/g, "");
 
   // Check length (13-19 digits for most cards)
   if (!/^\d{13,19}$/.test(cleaned)) {
@@ -194,7 +219,7 @@ export function toBeValidCardNumber(received: unknown) {
   for (let i = cleaned.length - 1; i >= 0; i--) {
     const char = cleaned[i];
     if (!char) continue;
-    let digit = parseInt(char, 10);
+    let digit = Number.parseInt(char, 10);
 
     if (isEven) {
       digit *= 2;

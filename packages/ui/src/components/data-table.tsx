@@ -8,47 +8,47 @@
 "use client";
 
 import {
-    flexRender,
-    getCoreRowModel,
-    getFilteredRowModel,
-    getPaginationRowModel,
-    getSortedRowModel,
-    useReactTable,
-    type ColumnDef,
-    type ColumnFiltersState,
-    type Row,
-    type SortingState,
-    type Table as TanstackTable,
-    type VisibilityState
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type ColumnFiltersState,
+  type Row,
+  type SortingState,
+  type Table as TanstackTable,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import {
-    ArrowDown,
-    ArrowUp,
-    ArrowUpDown,
-    ChevronLeft,
-    ChevronRight,
-    ChevronsLeft,
-    ChevronsRight,
-    Search,
-    Settings2,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Search,
+  Settings2,
 } from "lucide-react";
 import * as React from "react";
 import { cn } from "../lib/utils";
 import { Button } from "./button";
 import { Checkbox } from "./checkbox";
 import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
 } from "./dropdown-menu";
 import { Input } from "./input";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "./select";
 
 // Base table components
@@ -156,8 +156,7 @@ const TableCaption = React.forwardRef<
 TableCaption.displayName = "TableCaption";
 
 // Sortable column header
-interface DataTableColumnHeaderProps<TData, TValue>
-  extends React.HTMLAttributes<HTMLDivElement> {
+interface DataTableColumnHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   column: {
     getCanSort: () => boolean;
     getIsSorted: () => false | "asc" | "desc";
@@ -166,14 +165,26 @@ interface DataTableColumnHeaderProps<TData, TValue>
   title: string;
 }
 
-function DataTableColumnHeader<TData, TValue>({
+function DataTableColumnHeader({
   column,
   title,
   className,
-}: DataTableColumnHeaderProps<TData, TValue>) {
+}: Readonly<DataTableColumnHeaderProps>) {
   if (!column.getCanSort()) {
     return <div className={cn(className)}>{title}</div>;
   }
+
+  // Determine which sort icon to show
+  const getSortIcon = () => {
+    const sortDirection = column.getIsSorted();
+    if (sortDirection === "desc") {
+      return <ArrowDown className="ml-2 h-4 w-4" />;
+    }
+    if (sortDirection === "asc") {
+      return <ArrowUp className="ml-2 h-4 w-4" />;
+    }
+    return <ArrowUpDown className="ml-2 h-4 w-4" />;
+  };
 
   return (
     <Button
@@ -183,13 +194,7 @@ function DataTableColumnHeader<TData, TValue>({
       onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
     >
       <span>{title}</span>
-      {column.getIsSorted() === "desc" ? (
-        <ArrowDown className="ml-2 h-4 w-4" />
-      ) : column.getIsSorted() === "asc" ? (
-        <ArrowUp className="ml-2 h-4 w-4" />
-      ) : (
-        <ArrowUpDown className="ml-2 h-4 w-4" />
-      )}
+      {getSortIcon()}
     </Button>
   );
 }
@@ -224,8 +229,8 @@ function getSelectionColumn<TData>(): ColumnDef<TData> {
 
 // Pagination component
 interface DataTablePaginationProps<TData> {
-  table: TanstackTable<TData>;
-  pageSizeOptions?: number[];
+  readonly table: TanstackTable<TData>;
+  readonly pageSizeOptions?: number[];
 }
 
 function DataTablePagination<TData>({
@@ -308,7 +313,7 @@ function DataTablePagination<TData>({
 
 // Column visibility toggle
 interface DataTableViewOptionsProps<TData> {
-  table: TanstackTable<TData>;
+  readonly table: TanstackTable<TData>;
 }
 
 function DataTableViewOptions<TData>({
@@ -330,8 +335,7 @@ function DataTableViewOptions<TData>({
         {table
           .getAllColumns()
           .filter(
-            (column) =>
-              typeof column.accessorFn !== "undefined" && column.getCanHide()
+            (column) => column.accessorFn !== undefined && column.getCanHide()
           )
           .map((column) => {
             return (
@@ -352,9 +356,9 @@ function DataTableViewOptions<TData>({
 
 // Search input for filtering
 interface DataTableSearchProps {
-  table: TanstackTable<any>;
-  column: string;
-  placeholder?: string;
+  readonly table: TanstackTable<any>;
+  readonly column: string;
+  readonly placeholder?: string;
 }
 
 function DataTableSearch({
@@ -379,18 +383,18 @@ function DataTableSearch({
 
 // Main DataTable component
 interface DataTableProps<TData, TValue> {
-  columns: ColumnDef<TData, TValue>[];
-  data: TData[];
-  searchColumn?: string;
-  searchPlaceholder?: string;
-  enableRowSelection?: boolean;
-  enableColumnVisibility?: boolean;
-  enablePagination?: boolean;
-  pageSizeOptions?: number[];
-  onRowSelectionChange?: (rows: Row<TData>[]) => void;
-  toolbar?: React.ReactNode;
-  emptyMessage?: string;
-  isLoading?: boolean;
+  readonly columns: ColumnDef<TData, TValue>[];
+  readonly data: TData[];
+  readonly searchColumn?: string;
+  readonly searchPlaceholder?: string;
+  readonly enableRowSelection?: boolean;
+  readonly enableColumnVisibility?: boolean;
+  readonly enablePagination?: boolean;
+  readonly pageSizeOptions?: number[];
+  readonly onRowSelectionChange?: (rows: Row<TData>[]) => void;
+  readonly toolbar?: React.ReactNode;
+  readonly emptyMessage?: string;
+  readonly isLoading?: boolean;
 }
 
 function DataTable<TData, TValue>({
@@ -429,7 +433,9 @@ function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: enablePagination ? getPaginationRowModel() : undefined,
+    getPaginationRowModel: enablePagination
+      ? getPaginationRowModel()
+      : undefined,
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
@@ -488,43 +494,49 @@ function DataTable<TData, TValue>({
             ))}
           </TableHeader>
           <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={tableColumns.length}
-                  className="h-24 text-center"
-                >
-                  <div className="flex items-center justify-center">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
+            {(() => {
+              if (isLoading) {
+                return (
+                  <TableRow>
+                    <TableCell
+                      colSpan={tableColumns.length}
+                      className="h-24 text-center"
+                    >
+                      <div className="flex items-center justify-center">
+                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      </div>
                     </TableCell>
-                  ))}
+                  </TableRow>
+                );
+              }
+              if (table.getRowModel().rows?.length) {
+                return table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ));
+              }
+              return (
+                <TableRow>
+                  <TableCell
+                    colSpan={tableColumns.length}
+                    className="h-24 text-center"
+                  >
+                    {emptyMessage}
+                  </TableCell>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={tableColumns.length}
-                  className="h-24 text-center"
-                >
-                  {emptyMessage}
-                </TableCell>
-              </TableRow>
-            )}
+              );
+            })()}
           </TableBody>
         </Table>
       </div>
@@ -538,10 +550,18 @@ function DataTable<TData, TValue>({
 }
 
 export {
-    DataTable,
-    DataTableColumnHeader,
-    DataTablePagination, DataTableSearch, DataTableViewOptions, getSelectionColumn,
-    Table, TableBody, TableCaption, TableCell, TableFooter,
-    TableHead, TableHeader, TableRow
+  DataTable,
+  DataTableColumnHeader,
+  DataTablePagination,
+  DataTableSearch,
+  DataTableViewOptions,
+  getSelectionColumn,
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
 };
-

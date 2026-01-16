@@ -116,7 +116,11 @@ export function createKyOptions(config: ApiConfig): Options {
 
           if (response) {
             try {
-              const body = await response.json() as { message?: string; code?: string; details?: Record<string, unknown> };
+              const body: {
+                message?: string;
+                code?: string;
+                details?: Record<string, unknown>;
+              } = await response.json();
               const apiError: ApiError = {
                 status: response.status,
                 statusText: response.statusText,

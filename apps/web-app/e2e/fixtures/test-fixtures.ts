@@ -128,7 +128,7 @@ export const test = base.extend<UbiFixtures>({
   },
 
   // Authenticated rider fixture
-  rider: async ({}, use) => {
+  rider: async (_, use) => {
     const rider: AuthenticatedUser = {
       id: TEST_RIDERS.ADAOBI_RIDER.id,
       email: TEST_RIDERS.ADAOBI_RIDER.email,
@@ -198,7 +198,7 @@ export const test = base.extend<UbiFixtures>({
 // Custom Expect Matchers
 // =============================================================================
 
-export { expect };
+export { expect } from \"@playwright/test\";
 
 // =============================================================================
 // Page Object Helpers
@@ -230,7 +230,7 @@ export async function takeTimestampedScreenshot(
   page: Page,
   name: string
 ): Promise<void> {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const timestamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
   await page.screenshot({
     path: `./e2e-results/screenshots/${name}-${timestamp}.png`,
     fullPage: true,
@@ -238,18 +238,18 @@ export async function takeTimestampedScreenshot(
 }
 
 /**
- * Performance metrics helper
+ * Performance metrics helper (using modern Performance API)
  */
 export async function getPerformanceMetrics(page: Page) {
   return page.evaluate(() => {
-    const timing = performance.timing;
+    const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    const paints = performance.getEntriesByType("paint");
+    
     return {
-      domContentLoaded:
-        timing.domContentLoadedEventEnd - timing.navigationStart,
-      load: timing.loadEventEnd - timing.navigationStart,
-      firstPaint: performance.getEntriesByType("paint")[0]?.startTime || 0,
-      firstContentfulPaint:
-        performance.getEntriesByType("paint")[1]?.startTime || 0,
+      domContentLoaded: navigation?.domContentLoadedEventEnd ?? 0,
+      load: navigation?.loadEventEnd ?? 0,
+      firstPaint: paints.find(p => p.name === "first-paint")?.startTime ?? 0,
+      firstContentfulPaint: paints.find(p => p.name === "first-contentful-paint")?.startTime ?? 0,
     };
   });
 }

@@ -50,9 +50,11 @@ const iconVariants = cva("inline-flex items-center justify-center shrink-0", {
   },
 });
 
+type IconVariantProps = VariantProps<typeof iconVariants>;
+
 export interface IconProps
-  extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof iconVariants> {
+  extends Omit<React.HTMLAttributes<HTMLSpanElement>, "color">,
+    IconVariantProps {
   /** Accessible label for screen readers */
   label?: string;
   /** Children should be an SVG icon element */

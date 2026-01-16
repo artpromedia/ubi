@@ -168,7 +168,7 @@ export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia(query);
+    const mediaQuery = globalThis.matchMedia(query);
     setMatches(mediaQuery.matches);
 
     const handler = (event: MediaQueryListEvent) => setMatches(event.matches);
@@ -205,12 +205,12 @@ export function useOnlineStatus(): boolean {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
+    globalThis.addEventListener("online", handleOnline);
+    globalThis.addEventListener("offline", handleOffline);
 
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      globalThis.removeEventListener("online", handleOnline);
+      globalThis.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -226,10 +226,10 @@ export function useLocalStorage<T>(
   initialValue: T
 ): [T, (value: T | ((prev: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
+    if (globalThis.window === undefined) return initialValue;
 
     try {
-      const item = window.localStorage.getItem(key);
+      const item = globalThis.localStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
     } catch {
       return initialValue;
@@ -240,10 +240,12 @@ export function useLocalStorage<T>(
     (value: T | ((prev: T) => T)) => {
       try {
         const valueToStore =
-          value instanceof Function ? value(storedValue) : value;
+          typeof value === "function"
+            ? (value as (prev: T) => T)(storedValue)
+            : value;
         setStoredValue(valueToStore);
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        if (globalThis.window !== undefined) {
+          globalThis.localStorage.setItem(key, JSON.stringify(valueToStore));
         }
       } catch (error) {
         console.warn(`Error setting localStorage key "${key}":`, error);
@@ -293,7 +295,7 @@ export function useScrollLock(lock: boolean) {
   useEffect(() => {
     if (!lock) return;
 
-    const originalStyle = window.getComputedStyle(document.body).overflow;
+    const originalStyle = globalThis.getComputedStyle(document.body).overflow;
     document.body.style.overflow = "hidden";
 
     return () => {

@@ -11,6 +11,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -27,14 +28,14 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 interface ThemeProviderProps {
-  children: ReactNode;
-  defaultTheme?: Theme;
+  readonly children: ReactNode;
+  readonly defaultTheme?: Theme;
 }
 
 export function ThemeProvider({
   children,
   defaultTheme: _defaultTheme = "system",
-}: ThemeProviderProps) {
+}: Readonly<ThemeProviderProps>) {
   const { theme, setTheme } = useUIStore();
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
   const [mounted, setMounted] = useState(false);
@@ -43,7 +44,7 @@ export function ThemeProvider({
   useEffect(() => {
     setMounted(true);
 
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const mediaQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
 
     const resolveTheme = () => {
       if (theme === "system") {
@@ -82,13 +83,19 @@ export function ThemeProvider({
     }
   }, [resolvedTheme, mounted]);
 
+  // Memoize context value to prevent unnecessary re-renders
+  const contextValue = useMemo(
+    () => ({ theme, resolvedTheme, setTheme }),
+    [theme, resolvedTheme, setTheme]
+  );
+
   // Prevent flash of wrong theme
   if (!mounted) {
     return <div style={{ visibility: "hidden" }}>{children}</div>;
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );

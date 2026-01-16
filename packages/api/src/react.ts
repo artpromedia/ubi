@@ -4,15 +4,7 @@
  * TanStack Query integration for data fetching.
  */
 
-import {
-  useQuery,
-  useMutation,
-  useInfiniteQuery,
-  QueryClient,
-  type UseQueryOptions,
-  type UseMutationOptions,
-  type UseInfiniteQueryOptions,
-} from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import type { PaginatedResponse, PaginationParams } from "./types";
 
 // Query key factory
@@ -150,7 +142,10 @@ export function createOptimisticUpdate<TData, TVariables>(
 
       // Optimistically update
       if (previousData) {
-        queryClient.setQueryData<TData>(queryKey, updateFn(previousData, variables));
+        queryClient.setQueryData<TData>(
+          queryKey,
+          updateFn(previousData, variables)
+        );
       }
 
       return { previousData };
@@ -172,15 +167,15 @@ export function createOptimisticUpdate<TData, TVariables>(
   };
 }
 
-// Export hooks and utilities
+// Re-export hooks and utilities from TanStack Query
 export {
-  useQuery,
-  useMutation,
-  useInfiniteQuery,
   QueryClient,
-  type UseQueryOptions,
-  type UseMutationOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
   type UseInfiniteQueryOptions,
-};
+  type UseMutationOptions,
+  type UseQueryOptions,
+} from "@tanstack/react-query";
 
 export type { QueryKeyFactory };

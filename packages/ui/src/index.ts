@@ -11,10 +11,9 @@
 // Theme & Design Tokens
 // ===========================================
 export {
-  darkModeVariables,
+  cssVariables,
   generateCSSVariables,
   globalStyles,
-  lightModeVariables,
 } from "./theme/css-variables";
 export { ubiPreset } from "./theme/preset";
 export * from "./theme/tokens";
@@ -252,7 +251,6 @@ export {
   TabsContent,
   TabsList,
   TabsTrigger,
-  tabsListVariants,
 } from "./components/tabs";
 
 export {

@@ -6,13 +6,13 @@
 
 import { type ApiClient, getApiClient } from "../client";
 import type {
+  Address,
+  ApiResponse,
+  Coordinates,
+  Money,
   PaginatedResponse,
   PaginationParams,
-  ApiResponse,
   Timestamps,
-  Coordinates,
-  Address,
-  Money,
 } from "../types";
 
 // Delivery types
@@ -30,7 +30,11 @@ export type DeliveryStatus =
 
 export type PackageSize = "small" | "medium" | "large" | "extra_large";
 export type PackageType = "document" | "parcel" | "fragile" | "food" | "other";
-export type DeliveryPriority = "standard" | "express" | "same_day" | "scheduled";
+export type DeliveryPriority =
+  | "standard"
+  | "express"
+  | "same_day"
+  | "scheduled";
 
 export interface Delivery extends Timestamps {
   id: string;
@@ -120,7 +124,10 @@ export interface CreateDeliveryRequest {
     coordinates?: Coordinates;
     instructions?: string;
   };
-  package: Omit<PackageInfo, "isFragile" | "requiresSignature" | "insuranceRequired"> & {
+  package: Omit<
+    PackageInfo,
+    "isFragile" | "requiresSignature" | "insuranceRequired"
+  > & {
     isFragile?: boolean;
     requiresSignature?: boolean;
     insuranceRequired?: boolean;
@@ -163,20 +170,24 @@ export interface DeliveryFilters extends PaginationParams {
 
 // Delivery Service API
 export class DeliveryServiceApi {
-  private client: ApiClient;
-  private basePath = "deliveries";
+  private readonly client: ApiClient;
+  private readonly basePath = "deliveries";
 
   constructor(client?: ApiClient) {
     this.client = client ?? getApiClient();
   }
 
   // Estimates
-  async getEstimates(data: DeliveryEstimateRequest): Promise<ApiResponse<DeliveryEstimate[]>> {
+  async getEstimates(
+    data: DeliveryEstimateRequest
+  ): Promise<ApiResponse<DeliveryEstimate[]>> {
     return this.client.post(`${this.basePath}/estimate`, data);
   }
 
   // Create delivery
-  async createDelivery(data: CreateDeliveryRequest): Promise<ApiResponse<Delivery>> {
+  async createDelivery(
+    data: CreateDeliveryRequest
+  ): Promise<ApiResponse<Delivery>> {
     return this.client.post(this.basePath, data);
   }
 
@@ -191,7 +202,9 @@ export class DeliveryServiceApi {
   }
 
   // Get delivery history
-  async getDeliveryHistory(filters?: DeliveryFilters): Promise<PaginatedResponse<Delivery>> {
+  async getDeliveryHistory(
+    filters?: DeliveryFilters
+  ): Promise<PaginatedResponse<Delivery>> {
     return this.client.get(this.basePath, { searchParams: filters as any });
   }
 
@@ -201,7 +214,10 @@ export class DeliveryServiceApi {
   }
 
   // Cancel delivery
-  async cancelDelivery(id: string, reason?: string): Promise<ApiResponse<Delivery>> {
+  async cancelDelivery(
+    id: string,
+    reason?: string
+  ): Promise<ApiResponse<Delivery>> {
     return this.client.post(`${this.basePath}/${id}/cancel`, { reason });
   }
 
@@ -210,7 +226,9 @@ export class DeliveryServiceApi {
     id: string,
     scheduledPickupTime: string
   ): Promise<ApiResponse<Delivery>> {
-    return this.client.patch(`${this.basePath}/${id}/reschedule`, { scheduledPickupTime });
+    return this.client.patch(`${this.basePath}/${id}/reschedule`, {
+      scheduledPickupTime,
+    });
   }
 
   // Update delivery address
@@ -219,7 +237,10 @@ export class DeliveryServiceApi {
     type: "pickup" | "dropoff",
     address: Partial<Address>
   ): Promise<ApiResponse<Delivery>> {
-    return this.client.patch(`${this.basePath}/${id}/address`, { type, address });
+    return this.client.patch(`${this.basePath}/${id}/address`, {
+      type,
+      address,
+    });
   }
 
   // Real-time tracking
@@ -232,7 +253,9 @@ export class DeliveryServiceApi {
     return this.client.get(`${this.basePath}/assigned`);
   }
 
-  async getAvailableDeliveries(location: Coordinates): Promise<ApiResponse<Delivery[]>> {
+  async getAvailableDeliveries(
+    location: Coordinates
+  ): Promise<ApiResponse<Delivery[]>> {
     return this.client.get(`${this.basePath}/available`, {
       searchParams: { lat: location.latitude, lng: location.longitude },
     });
@@ -242,9 +265,16 @@ export class DeliveryServiceApi {
     return this.client.post(`${this.basePath}/${id}/accept`);
   }
 
-  async confirmPickup(id: string, photo?: File): Promise<ApiResponse<Delivery>> {
+  async confirmPickup(
+    id: string,
+    photo?: File
+  ): Promise<ApiResponse<Delivery>> {
     if (photo) {
-      return this.client.upload(`${this.basePath}/${id}/pickup`, photo, "photo");
+      return this.client.upload(
+        `${this.basePath}/${id}/pickup`,
+        photo,
+        "photo"
+      );
     }
     return this.client.post(`${this.basePath}/${id}/pickup`);
   }
@@ -268,12 +298,16 @@ export class DeliveryServiceApi {
     const formData = new FormData();
     if (proof.photo) formData.append("photo", proof.photo);
     if (proof.signature) formData.append("signature", proof.signature);
-    if (proof.recipientName) formData.append("recipientName", proof.recipientName);
+    if (proof.recipientName)
+      formData.append("recipientName", proof.recipientName);
     if (proof.notes) formData.append("notes", proof.notes);
 
-    return this.client.getInstance().post(`${this.basePath}/${id}/complete`, {
-      body: formData,
-    }).json();
+    return this.client
+      .getInstance()
+      .post(`${this.basePath}/${id}/complete`, {
+        body: formData,
+      })
+      .json();
   }
 
   async reportDeliveryIssue(
@@ -321,8 +355,6 @@ export interface DeliveryStats {
 let deliveryServiceApi: DeliveryServiceApi | null = null;
 
 export function getDeliveryServiceApi(): DeliveryServiceApi {
-  if (!deliveryServiceApi) {
-    deliveryServiceApi = new DeliveryServiceApi();
-  }
+  deliveryServiceApi ??= new DeliveryServiceApi();
   return deliveryServiceApi;
 }

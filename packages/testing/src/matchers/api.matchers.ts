@@ -55,10 +55,13 @@ export function toBeErrorResponse(received: unknown, expectedStatus?: number) {
 
   return {
     pass,
-    message: () =>
-      pass
-        ? `Expected response not to be an error response`
-        : `Expected response to be an error response${expectedStatus ? ` with status ${expectedStatus}` : ""}, but got ${JSON.stringify(received)}`,
+    message: () => {
+      if (pass) {
+        return `Expected response not to be an error response`;
+      }
+      const statusMsg = expectedStatus ? ` with status ${expectedStatus}` : "";
+      return `Expected response to be an error response${statusMsg}, but got ${JSON.stringify(received)}`;
+    },
   };
 }
 
@@ -85,10 +88,13 @@ export function toHaveResponseData<T>(
 
   return {
     pass,
-    message: () =>
-      pass
-        ? `Expected response not to have valid data`
-        : `Expected response to have valid data${validator ? " matching validator" : ""}, but got ${JSON.stringify(received)}`,
+    message: () => {
+      if (pass) {
+        return `Expected response not to have valid data`;
+      }
+      const validatorMsg = validator ? " matching validator" : "";
+      return `Expected response to have valid data${validatorMsg}, but got ${JSON.stringify(received)}`;
+    },
   };
 }
 

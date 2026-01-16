@@ -27,8 +27,8 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 // Re-export PrismaClient for type usage
+export { PrismaClient } from "@prisma/client";
 export type { Prisma } from "@prisma/client";
-export { PrismaClient };
 
 /**
  * Graceful database disconnect

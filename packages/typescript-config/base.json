@@ -2,6 +2,9 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "display": "UBI Base TypeScript Config",
   "compilerOptions": {
+    // Silence deprecation warnings for baseUrl/moduleResolution until full TS7 migration
+    "ignoreDeprecations": "5.0",
+
     // Type Checking
     "strict": true,
     "noImplicitAny": true,

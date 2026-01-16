@@ -103,11 +103,11 @@ const secondaryNavigation = [
 ];
 
 interface SidebarProps {
-  isOpen: boolean;
-  onClose: () => void;
+  readonly isOpen: boolean;
+  readonly onClose: () => void;
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
   const pathname = usePathname();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
@@ -126,8 +126,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     <>
       {/* Mobile overlay */}
       {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden cursor-default border-none"
           onClick={onClose}
         />
       )}
@@ -268,11 +270,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 }
 
 interface AdminHeaderProps {
-  onMenuClick: () => void;
-  title?: string;
+  readonly onMenuClick: () => void;
+  readonly title?: string;
 }
 
-export function AdminHeader({ onMenuClick, title }: AdminHeaderProps) {
+export function AdminHeader({
+  onMenuClick,
+  title,
+}: Readonly<AdminHeaderProps>) {
   return (
     <header className="sticky top-0 z-30 h-16 bg-gray-950/80 backdrop-blur-sm border-b border-gray-800 flex items-center px-4 lg:px-6">
       <button

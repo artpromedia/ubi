@@ -5,13 +5,11 @@
  */
 
 import { faker } from "@faker-js/faker";
-import type { TestLocation, TestSavedLocation } from "../types";
+
 import { AFRICAN_CITIES } from "../fixtures/locations.fixture";
-import {
-  randomLocationInCity,
-  randomPick,
-  uuid,
-} from "../utils";
+import { randomLocationInCity, randomPick, uuid } from "../utils";
+
+import type { TestLocation, TestSavedLocation } from "../types";
 
 // Popular landmarks and places in African cities
 const CITY_LANDMARKS: Record<string, string[]> = {
@@ -117,7 +115,7 @@ interface SavedLocationFactoryOptions extends LocationFactoryOptions {
  * Generate a realistic street address for a city
  */
 function generateStreetAddress(city: string): string {
-  const landmarks = CITY_LANDMARKS[city] || CITY_LANDMARKS.lagos;
+  const landmarks = CITY_LANDMARKS[city] ?? CITY_LANDMARKS.lagos ?? [];
   const landmark = randomPick(landmarks);
   const streetNumber = faker.number.int({ min: 1, max: 150 });
   const streetType = randomPick(STREET_TYPES);
@@ -175,12 +173,18 @@ export function createSavedLocation(
     ],
   };
 
+  // Map factory type to TestSavedLocation type
+  const locationTypeMap: Record<string, "home" | "work" | "other"> = {
+    home: "home",
+    work: "work",
+    favorite: "other",
+  };
+
   return {
     id: uuid(),
-    name: randomPick(names[type]),
+    name: randomPick(names[type] ?? names.home ?? []),
+    type: locationTypeMap[type] ?? "other",
     ...location,
-    isFavorite: type === "favorite",
-    createdAt: faker.date.past(),
   };
 }
 

@@ -28,7 +28,10 @@ const SERVICE_REGISTRY: Record<string, string> = {
 };
 
 // Request timeout in milliseconds
-const REQUEST_TIMEOUT = parseInt(process.env.PROXY_TIMEOUT || "30000", 10);
+const REQUEST_TIMEOUT = Number.parseInt(
+  process.env.PROXY_TIMEOUT || "30000",
+  10
+);
 
 /**
  * Generic proxy handler
