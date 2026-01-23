@@ -3,15 +3,16 @@
  * Handles connection lifecycle, subscriptions, and cross-server messaging
  */
 
-import { WebSocket } from 'ws';
-import { Redis } from 'ioredis';
-import { nanoid } from 'nanoid';
+import { Redis } from "ioredis";
+import { nanoid } from "nanoid";
+import { WebSocket } from "ws";
+import { connectionLogger as logger } from "./lib/logger.js";
 import type {
+  ConnectionEvent,
+  UserType,
   WebSocketConnection,
   WebSocketMessage,
-  UserType,
-  ConnectionEvent,
-} from './types/index.js';
+} from "./types/index.js";
 
 export class ConnectionManager {
   private connections = new Map<string, WebSocketConnection>();
@@ -30,26 +31,26 @@ export class ConnectionManager {
     this.setupRedisSubscriptions();
 
     // Cleanup on shutdown
-    process.on('SIGTERM', () => this.cleanup());
-    process.on('SIGINT', () => this.cleanup());
+    process.on("SIGTERM", () => this.cleanup());
+    process.on("SIGINT", () => this.cleanup());
   }
 
   private setupRedisSubscriptions() {
     // Subscribe to all user channels this server handles
-    this.redisSub.on('message', (channel: string, message: string) => {
+    this.redisSub.on("message", (channel: string, message: string) => {
       this.handleRedisMessage(channel, message);
     });
 
     // Pattern subscribe for user channels
-    this.redisSub.psubscribe('user:*').catch((err: Error) => {
-      console.error('Redis psubscribe error:', err);
+    this.redisSub.psubscribe("user:*").catch((err: Error) => {
+      logger.error({ err }, "Redis psubscribe error");
     });
   }
 
   private handleRedisMessage(channel: string, message: string) {
     try {
       // Extract userId from channel (format: user:{userId})
-      const userId = channel.split(':')[1];
+      const userId = channel.split(":")[1];
       if (!userId) return;
 
       const parsedMessage = JSON.parse(message) as WebSocketMessage;
@@ -57,7 +58,7 @@ export class ConnectionManager {
       // Send to all local connections for this user
       this.sendToUser(userId, parsedMessage);
     } catch (error) {
-      console.error('Error handling Redis message:', error);
+      logger.error({ error, channel }, "Error handling Redis message");
     }
   }
 
@@ -66,8 +67,8 @@ export class ConnectionManager {
     userId: string,
     userType: UserType,
     deviceId: string,
-    platform: 'ios' | 'android' | 'web',
-    metadata: Record<string, unknown> = {}
+    platform: "ios" | "android" | "web",
+    metadata: Record<string, unknown> = {},
   ): Promise<string> {
     const connectionId = nanoid();
 
@@ -113,35 +114,39 @@ export class ConnectionManager {
 
     // Emit connection event
     await this.emitConnectionEvent({
-      type: 'connect',
+      type: "connect",
       connectionId,
       userId,
       userType,
       timestamp: new Date(),
     });
 
-    console.log(`[${userType}] ${userId} connected (${connectionId}) on ${platform}`);
+    logger.info({ userType, userId, connectionId, platform }, "User connected");
 
     return connectionId;
   }
 
   private setupWebSocketHandlers(ws: WebSocket, connectionId: string) {
-    ws.on('message', async (data: Buffer) => {
+    ws.on("message", async (data: Buffer) => {
       try {
         const message = JSON.parse(data.toString()) as WebSocketMessage;
         await this.handleMessage(connectionId, message);
       } catch (error) {
-        console.error('Error parsing message:', error);
-        this.sendError(connectionId, 'INVALID_MESSAGE', 'Failed to parse message');
+        logger.warn({ connectionId, error }, "Error parsing WebSocket message");
+        this.sendError(
+          connectionId,
+          "INVALID_MESSAGE",
+          "Failed to parse message",
+        );
       }
     });
 
-    ws.on('close', () => {
+    ws.on("close", () => {
       this.handleDisconnection(connectionId);
     });
 
-    ws.on('error', (error) => {
-      console.error('WebSocket error:', error);
+    ws.on("error", (error) => {
+      logger.error({ connectionId, error }, "WebSocket error");
       this.handleDisconnection(connectionId);
     });
 
@@ -160,7 +165,7 @@ export class ConnectionManager {
       // Check if connection is stale (no heartbeat for 60 seconds)
       const staleTimeout = 60000;
       if (Date.now() - connection.lastHeartbeat.getTime() > staleTimeout) {
-        console.log(`Connection ${connectionId} stale, closing`);
+        logger.debug({ connectionId }, "Connection stale, closing");
         this.handleDisconnection(connectionId);
         clearInterval(interval);
         return;
@@ -168,7 +173,7 @@ export class ConnectionManager {
 
       // Send heartbeat
       this.send(connectionId, {
-        type: 'heartbeat',
+        type: "heartbeat",
         payload: { timestamp: Date.now() },
       });
     }, 30000); // Every 30 seconds
@@ -182,29 +187,36 @@ export class ConnectionManager {
     if (!connection) return;
 
     switch (message.type) {
-      case 'heartbeat_ack':
+      case "heartbeat_ack":
         connection.lastHeartbeat = new Date();
         break;
 
-      case 'location_update':
+      case "location_update":
         await this.handleLocationUpdate(connection, message.payload);
         break;
 
-      case 'dispatch_response':
+      case "dispatch_response":
         await this.handleDispatchResponse(connection, message.payload);
         break;
 
       default:
-        console.warn(`Unhandled message type: ${message.type}`);
+        logger.warn(
+          { connectionId, messageType: message.type },
+          "Unhandled message type",
+        );
     }
   }
 
   private async handleLocationUpdate(
     connection: WebSocketConnection,
-    payload: any
+    payload: any,
   ) {
-    if (connection.userType !== 'driver') {
-      this.sendError(connection.id, 'INVALID_USER_TYPE', 'Only drivers can send location updates');
+    if (connection.userType !== "driver") {
+      this.sendError(
+        connection.id,
+        "INVALID_USER_TYPE",
+        "Only drivers can send location updates",
+      );
       return;
     }
 
@@ -215,7 +227,7 @@ export class ConnectionManager {
         driverId: connection.userId,
         ...payload,
         timestamp: Date.now(),
-      })
+      }),
     );
 
     // Could also send to Kafka for processing/storage
@@ -223,10 +235,14 @@ export class ConnectionManager {
 
   private async handleDispatchResponse(
     connection: WebSocketConnection,
-    payload: any
+    payload: any,
   ) {
-    if (connection.userType !== 'driver') {
-      this.sendError(connection.id, 'INVALID_USER_TYPE', 'Only drivers can respond to dispatches');
+    if (connection.userType !== "driver") {
+      this.sendError(
+        connection.id,
+        "INVALID_USER_TYPE",
+        "Only drivers can respond to dispatches",
+      );
       return;
     }
 
@@ -238,13 +254,13 @@ export class ConnectionManager {
         driverId: connection.userId,
         ...payload,
         timestamp: Date.now(),
-      })
+      }),
     );
 
     // Publish event
     await this.redis.publish(
       `dispatch:${payload.dispatchId}:response`,
-      JSON.stringify(payload)
+      JSON.stringify(payload),
     );
   }
 
@@ -252,7 +268,14 @@ export class ConnectionManager {
     const connection = this.connections.get(connectionId);
     if (!connection) return;
 
-    console.log(`[${connection.userType}] ${connection.userId} disconnected (${connectionId})`);
+    logger.info(
+      {
+        userType: connection.userType,
+        userId: connection.userId,
+        connectionId,
+      },
+      "User disconnected",
+    );
 
     // Clear heartbeat
     const interval = (connection as any)._heartbeatInterval;
@@ -271,7 +294,10 @@ export class ConnectionManager {
     }
 
     // Remove from Redis
-    await this.redis.srem(`user:${connection.userId}:connections`, connectionId);
+    await this.redis.srem(
+      `user:${connection.userId}:connections`,
+      connectionId,
+    );
     await this.redis.del(`connection:${connectionId}`);
 
     // Unsubscribe if no more connections for this user on this server
@@ -281,7 +307,7 @@ export class ConnectionManager {
 
     // Emit disconnection event
     await this.emitConnectionEvent({
-      type: 'disconnect',
+      type: "disconnect",
       connectionId,
       userId: connection.userId,
       userType: connection.userType,
@@ -296,7 +322,7 @@ export class ConnectionManager {
     try {
       ws.send(JSON.stringify(message));
     } catch (error) {
-      console.error('Error sending message:', error);
+      logger.error({ connectionId, error }, "Error sending message");
     }
   }
 
@@ -319,14 +345,17 @@ export class ConnectionManager {
 
   sendError(connectionId: string, code: string, message: string) {
     this.send(connectionId, {
-      type: 'error',
+      type: "error",
       payload: { code, message },
     });
   }
 
   private async subscribeToChannel(channel: string) {
     // Check if already subscribed
-    const subscribers = await this.redis.pubsub('NUMSUB', channel) as [string, number];
+    const subscribers = (await this.redis.pubsub("NUMSUB", channel)) as [
+      string,
+      number,
+    ];
     if (subscribers[1] > 0) return;
 
     await this.redisSub.subscribe(channel);
@@ -337,14 +366,15 @@ export class ConnectionManager {
   }
 
   private async emitConnectionEvent(event: ConnectionEvent) {
-    await this.redis.publish('events:connections', JSON.stringify(event));
+    await this.redis.publish("events:connections", JSON.stringify(event));
   }
 
   getConnectionStats() {
     const statsByUserType: Record<string, number> = {};
 
     for (const conn of this.connections.values()) {
-      statsByUserType[conn.userType] = (statsByUserType[conn.userType] || 0) + 1;
+      statsByUserType[conn.userType] =
+        (statsByUserType[conn.userType] || 0) + 1;
     }
 
     return {
@@ -356,12 +386,12 @@ export class ConnectionManager {
     };
   }
 
-  private async cleanup() {
-    console.log('Cleaning up connections...');
+  async cleanup() {
+    logger.info("Cleaning up connections...");
 
     // Close all WebSockets
     for (const [connId, ws] of this.websockets.entries()) {
-      ws.close(1001, 'Server shutting down');
+      ws.close(1001, "Server shutting down");
       await this.handleDisconnection(connId);
     }
 
@@ -369,6 +399,6 @@ export class ConnectionManager {
     await this.redis.quit();
     await this.redisSub.quit();
 
-    console.log('Cleanup complete');
+    logger.info("Cleanup complete");
   }
 }

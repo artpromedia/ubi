@@ -7,11 +7,24 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { ConnectionManager } from "./connection-manager.js";
+import { isTokenExpired, verifyToken } from "./lib/auth.js";
+import { logger, wsLogger } from "./lib/logger.js";
 import type { UserType } from "./types/index.js";
 
 const app = new Hono();
 const port = Number.parseInt(process.env.PORT || "4010", 10);
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+
+// Validate critical environment variables in production
+if (process.env.NODE_ENV === "production") {
+  if (
+    !process.env.JWT_SECRET ||
+    process.env.JWT_SECRET.includes("dev-secret")
+  ) {
+    logger.fatal("JWT_SECRET must be set to a secure value in production");
+    process.exit(1);
+  }
+}
 
 // Initialize connection manager
 const connectionManager = new ConnectionManager(redisUrl);
@@ -47,7 +60,7 @@ const server = serve({
   port,
 });
 
-console.log(`🚀 Real-Time Gateway HTTP server running on port ${port}`);
+logger.info({ port }, "Real-Time Gateway HTTP server started");
 
 // Create WebSocket server on same port
 const wss = new WebSocketServer({
@@ -55,11 +68,12 @@ const wss = new WebSocketServer({
   path: "/ws",
 });
 
-console.log(`🔌 WebSocket server ready at ws://localhost:${port}/ws`);
+logger.info({ port, path: "/ws" }, "WebSocket server ready");
 
 // Handle WebSocket connections
 wss.on("connection", async (ws, req) => {
-  console.log("New WebSocket connection attempt");
+  const requestId = crypto.randomUUID().substring(0, 8);
+  wsLogger.debug({ requestId }, "New WebSocket connection attempt");
 
   // Extract auth and metadata from query params or headers
   const url = new URL(req.url || "", `http://${req.headers.host}`);
@@ -72,7 +86,15 @@ wss.on("connection", async (ws, req) => {
     (url.searchParams.get("platform") as "ios" | "android" | "web") || "web";
 
   if (!token) {
+    wsLogger.warn({ requestId }, "Connection rejected: missing token");
     ws.close(4001, "Missing authentication token");
+    return;
+  }
+
+  // Quick check for expired token before full verification
+  if (isTokenExpired(token)) {
+    wsLogger.warn({ requestId }, "Connection rejected: expired token");
+    ws.close(4003, "Token expired");
     return;
   }
 
@@ -80,18 +102,28 @@ wss.on("connection", async (ws, req) => {
     !userType ||
     !["rider", "driver", "restaurant", "delivery_partner"].includes(userType)
   ) {
+    wsLogger.warn(
+      { requestId, userType },
+      "Connection rejected: invalid userType",
+    );
     ws.close(4002, "Invalid or missing userType");
     return;
   }
 
   try {
-    // Verify token and get userId (you'd integrate with your auth service)
-    const userId = await verifyToken(token);
+    // Verify token cryptographically
+    const authResult = await verifyToken(token);
 
-    if (!userId) {
-      ws.close(4003, "Invalid authentication token");
+    if (!authResult.valid || !authResult.userId) {
+      wsLogger.warn(
+        { requestId, error: authResult.error },
+        "Connection rejected: token verification failed",
+      );
+      ws.close(4003, authResult.error || "Invalid authentication token");
       return;
     }
+
+    const userId = authResult.userId;
 
     // Register connection
     const connectionId = await connectionManager.handleConnection(
@@ -103,51 +135,51 @@ wss.on("connection", async (ws, req) => {
       {
         ip: req.socket.remoteAddress,
         userAgent: req.headers["user-agent"],
-      }
+      },
     );
 
-    console.log(`✅ Connection established: ${connectionId}`);
+    wsLogger.info(
+      {
+        requestId,
+        connectionId,
+        userId,
+        userType,
+        platform,
+      },
+      "Connection established",
+    );
   } catch (error) {
-    console.error("Connection error:", error);
+    wsLogger.error({ requestId, error }, "Connection error");
     ws.close(4000, "Internal server error");
   }
 });
 
 wss.on("error", (error) => {
-  console.error("WebSocket server error:", error);
+  wsLogger.error({ error }, "WebSocket server error");
 });
 
 // Graceful shutdown
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received, closing server...");
-  wss.close(() => {
-    console.log("WebSocket server closed");
-    process.exit(0);
-  });
-});
+async function gracefulShutdown(signal: string) {
+  logger.info({ signal }, "Shutdown signal received, closing connections...");
 
-process.on("SIGINT", () => {
-  console.log("SIGINT received, closing server...");
+  // Close WebSocket server (stops accepting new connections)
   wss.close(() => {
-    console.log("WebSocket server closed");
-    process.exit(0);
+    logger.info("WebSocket server closed");
   });
-});
 
-/**
- * Verify JWT token and extract userId
- * TODO: Integrate with your auth service
- */
-async function verifyToken(token: string): Promise<string | null> {
-  // Mock implementation - replace with actual JWT verification
-  // This should call your user-service or decode a JWT
-  try {
-    // For development, extract userId from token
-    // In production, verify signature and decode properly
-    const decoded = Buffer.from(token.split(".")[1] || "", "base64").toString();
-    const payload = JSON.parse(decoded);
-    return payload.userId || payload.sub;
-  } catch {
-    return null;
-  }
+  // Allow existing connections to finish (with timeout)
+  const shutdownTimeout = setTimeout(() => {
+    logger.warn("Shutdown timeout reached, forcing exit");
+    process.exit(1);
+  }, 10000);
+
+  // Clean up connection manager
+  await connectionManager.cleanup();
+
+  clearTimeout(shutdownTimeout);
+  logger.info("Graceful shutdown complete");
+  process.exit(0);
 }
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

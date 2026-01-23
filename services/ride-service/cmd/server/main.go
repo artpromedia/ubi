@@ -31,6 +31,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/geo"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/handler"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/pricing"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/redis"
@@ -60,16 +61,18 @@ type Config struct {
 
 // App holds all application dependencies
 type App struct {
-	config        *Config
-	db            *pgxpool.Pool
-	redisClient   *goredis.Client
-	driverPool    *redis.DriverPool
-	rideRepo      *repository.RideRepository
-	driverRepo    *repository.DriverRepository
-	pricingEngine *pricing.Engine
-	rideService   *service.RideService
-	driverService *service.DriverService
-	rideHandler   *handler.RideHandler
+	config          *Config
+	db              *pgxpool.Pool
+	redisClient     *goredis.Client
+	driverPool      *redis.DriverPool
+	rideRepo        *repository.RideRepository
+	driverRepo      *repository.DriverRepository
+	pricingEngine   *pricing.Engine
+	rideService     *service.RideService
+	driverService   *service.DriverService
+	rideHandler     *handler.RideHandler
+	locationHandler *handler.LocationHandler
+	mapsClient      *geo.MapsClient
 }
 
 func main() {
@@ -149,9 +152,10 @@ func main() {
 	})
 
 	r.Route("/locations", func(r chi.Router) {
-		r.Get("/autocomplete", autocompleteLocation)
-		r.Get("/geocode", geocodeAddress)
-		r.Get("/reverse", reverseGeocode)
+		r.Get("/autocomplete", app.locationHandler.AutocompleteLocation)
+		r.Get("/geocode", app.locationHandler.GeocodeAddress)
+		r.Get("/reverse", app.locationHandler.ReverseGeocode)
+		r.Get("/place", app.locationHandler.GetPlaceDetails)
 	})
 
 	// Create server
@@ -259,6 +263,18 @@ func initializeApp(config *Config) (*App, error) {
 		nil, // matching service injected later
 		app.pricingEngine,
 	)
+
+	// Initialize Google Maps client and location handler
+	app.mapsClient = geo.NewMapsClient(geo.MapsClientConfig{
+		APIKey: config.GoogleMapsKey,
+	})
+	app.locationHandler = handler.NewLocationHandler(app.mapsClient)
+
+	if config.GoogleMapsKey != "" {
+		log.Info().Msg("Google Maps API configured")
+	} else {
+		log.Warn().Msg("Google Maps API key not configured - location services will be unavailable")
+	}
 	
 	return app, nil
 }
@@ -381,28 +397,4 @@ func (a *App) healthDetailed(w http.ResponseWriter, r *http.Request) {
 			"redis": "%s"
 		}
 	}`, time.Now().UTC().Format(time.RFC3339), a.config.Environment, dbStatus, redisStatus)
-}
-
-// Location service handlers (Google Maps integration)
-// NOTE: Google Maps API integration pending - requires API key configuration
-
-func writeNotImplemented(w http.ResponseWriter) {
-	w.Header().Set(headerContentType, contentTypeJSON)
-	w.WriteHeader(http.StatusNotImplemented)
-	fmt.Fprintf(w, `{"error":"Not implemented - requires Google Maps API key"}`)
-}
-
-func autocompleteLocation(w http.ResponseWriter, r *http.Request) {
-	// Google Places autocomplete - pending API integration
-	writeNotImplemented(w)
-}
-
-func geocodeAddress(w http.ResponseWriter, r *http.Request) {
-	// Google Geocoding - pending API integration
-	writeNotImplemented(w)
-}
-
-func reverseGeocode(w http.ResponseWriter, r *http.Request) {
-	// Reverse geocoding - pending API integration
-	writeNotImplemented(w)
 }

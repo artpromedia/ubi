@@ -13,12 +13,19 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { logger as honoLogger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import { analyticsService } from "./lib/analytics";
+import { logger } from "./lib/logger";
 import { disconnectPrisma, prisma } from "./lib/prisma";
 import { disconnectRedis, redis } from "./lib/redis";
+import {
+  driverAnalyticsAdapter,
+  driverNotificationAdapter,
+  driverPaymentAdapter,
+} from "./lib/service-adapters";
 import {
   errorHandler,
   paymentRateLimit,
@@ -56,7 +63,7 @@ const app = new Hono();
 
 // Global middleware
 app.use("*", requestId());
-app.use("*", logger());
+app.use("*", honoLogger());
 app.use("*", secureHeaders());
 app.use("*", compress());
 
@@ -89,7 +96,7 @@ app.use(
     exposeHeaders: ["X-Request-ID"],
     credentials: true,
     maxAge: 600,
-  })
+  }),
 );
 
 // Error handler
@@ -136,75 +143,56 @@ app.route("/admin", adminRoutes);
 // B2B API routes (uses API key auth internally)
 app.route("/b2b", b2bRoutes);
 
-// Driver Experience routes - services require database, redis, and various service stubs
-// Create service stubs for dependencies
-const analyticsStub = {
-  track: async (event: string, properties: Record<string, unknown>) => {
-    console.log(`[Analytics] ${event}:`, properties);
-  },
-};
-
-const notificationServiceStub = {
-  send: async (userId: string, notification: unknown) => {
-    console.log(`[Notification] to ${userId}:`, notification);
-  },
-};
-
-const paymentServiceStub = {
-  process: async (payment: unknown) => {
-    console.log(`[Payment] Processing:`, payment);
-    return { success: true };
-  },
-};
-
+// Driver Experience routes - using real service adapters
 // Initialize earnings service first (other services depend on it)
-const earningsService = new DriverEarningsService(prisma, redis, analyticsStub);
+const earningsService = new DriverEarningsService(
+  prisma,
+  redis,
+  driverAnalyticsAdapter,
+);
 
 const driverServices = {
   earningsService,
-  // DriverGoalsService(db, earningsService, analyticsService)
-  goalsService: new DriverGoalsService(prisma, earningsService, analyticsStub),
-  // IncentiveService(db, redis, notificationService, analyticsService)
+  goalsService: new DriverGoalsService(
+    prisma,
+    earningsService,
+    driverAnalyticsAdapter,
+  ),
   incentiveService: new IncentiveService(
     prisma,
     redis,
-    notificationServiceStub,
-    analyticsStub
+    driverNotificationAdapter,
+    driverAnalyticsAdapter,
   ),
-  // DriverBenefitsService(db, redis, paymentService, notificationService, analyticsService)
   benefitsService: new DriverBenefitsService(
     prisma,
     redis,
-    paymentServiceStub,
-    notificationServiceStub,
-    analyticsStub
+    driverPaymentAdapter,
+    driverNotificationAdapter,
+    driverAnalyticsAdapter,
   ),
-  // DriverCareerService(db, notificationService, analyticsService)
   careerService: new DriverCareerService(
     prisma,
-    notificationServiceStub,
-    analyticsStub
+    driverNotificationAdapter,
+    driverAnalyticsAdapter,
   ),
-  // TrainingService(db, notificationService, analyticsService)
   trainingService: new TrainingService(
     prisma,
-    notificationServiceStub,
-    analyticsStub
+    driverNotificationAdapter,
+    driverAnalyticsAdapter,
   ),
-  // CommunityService(db, redis, notificationService, analyticsService)
   communityService: new CommunityService(
     prisma,
     redis,
-    notificationServiceStub,
-    analyticsStub
+    driverNotificationAdapter,
+    driverAnalyticsAdapter,
   ),
-  // FleetOwnerService(db, redis, paymentService, notificationService, analyticsService)
   fleetService: new FleetOwnerService(
     prisma,
     redis,
-    paymentServiceStub,
-    notificationServiceStub,
-    analyticsStub
+    driverPaymentAdapter,
+    driverNotificationAdapter,
+    driverAnalyticsAdapter,
   ),
 };
 const driverRoutes = createDriverRoutes(driverServices);
@@ -220,14 +208,14 @@ app.notFound((c) => {
         message: "Resource not found",
       },
     },
-    404
+    404,
   );
 });
 
 // Start server
 const port = Number.parseInt(process.env.PORT || "4003", 10);
 
-console.log(`💳 UBI Payment Service starting on port ${port}`);
+logger.info({ port }, "UBI Payment Service starting");
 
 const server = serve({
   fetch: app.fetch,
@@ -236,20 +224,24 @@ const server = serve({
 
 // Graceful shutdown
 const shutdown = async (signal: string) => {
-  console.log(`\n${signal} received. Shutting down gracefully...`);
+  logger.info({ signal }, "Shutdown signal received, closing gracefully...");
 
   server.close(async () => {
-    console.log("HTTP server closed");
+    logger.info("HTTP server closed");
 
-    await Promise.all([disconnectPrisma(), disconnectRedis()]);
+    await Promise.all([
+      disconnectPrisma(),
+      disconnectRedis(),
+      analyticsService.shutdown(),
+    ]);
 
-    console.log("All connections closed");
+    logger.info("All connections closed");
     process.exit(0);
   });
 
   // Force shutdown after 30s
   setTimeout(() => {
-    console.error("Forced shutdown after timeout");
+    logger.error("Forced shutdown after timeout");
     process.exit(1);
   }, 30000);
 };
