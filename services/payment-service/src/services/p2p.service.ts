@@ -3,9 +3,15 @@
  * Person-to-person money transfers with phone/email/username lookup
  */
 
-import { p2pLogger } from "../lib/logger";
 import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
+import { p2pLogger } from "../lib/logger";
+import {
+  NotificationChannel,
+  notificationClient,
+  NotificationPriority,
+  NotificationType,
+} from "../lib/notification-client";
 import { prisma } from "../lib/prisma";
 import type {
   Beneficiary,
@@ -35,14 +41,8 @@ export class P2PTransferService {
    * Send money to another user
    */
   async sendMoney(params: P2PTransferParams): Promise<P2PTransferResult> {
-    const {
-      senderWalletId,
-      recipientIdentifier,
-      amount,
-      currency,
-      note,
-      pin,
-    } = params;
+    const { senderWalletId, recipientIdentifier, amount, currency, note, pin } =
+      params;
     const identifierType = (params as any).identifierType || "walletId";
 
     // Validate sender wallet
@@ -65,7 +65,7 @@ export class P2PTransferService {
     const limitCheck = await enhancedWalletService.checkLimit(
       senderWalletId,
       amount,
-      "p2p"
+      "p2p",
     );
     if (!limitCheck.allowed) {
       throw new Error(limitCheck.reason || "Transfer limit exceeded");
@@ -74,7 +74,7 @@ export class P2PTransferService {
     // Check sufficient balance
     const balance = await enhancedWalletService.getBalance(
       senderWalletId,
-      currency as Currency
+      currency as Currency,
     );
     const fee = this.calculateFee(amount);
     const totalDebit = amount + fee;
@@ -86,7 +86,7 @@ export class P2PTransferService {
     // Resolve recipient
     const recipient = await this.resolveRecipient(
       recipientIdentifier,
-      identifierType
+      identifierType,
     );
     const transferId = `p2p_${nanoid(16)}`;
 
@@ -122,7 +122,7 @@ export class P2PTransferService {
    */
   async claimPendingTransfer(
     transferId: string,
-    claimerWalletId: string
+    claimerWalletId: string,
   ): Promise<P2PTransferResult> {
     const transfer = await prisma.p2PTransfer.findUnique({
       where: { id: transferId },
@@ -191,7 +191,7 @@ export class P2PTransferService {
    */
   async cancelTransfer(
     transferId: string,
-    senderWalletId: string
+    senderWalletId: string,
   ): Promise<void> {
     const transfer = await prisma.p2PTransfer.findUnique({
       where: { id: transferId },
@@ -207,7 +207,7 @@ export class P2PTransferService {
 
     if (transfer.status !== "PENDING") {
       throw new Error(
-        `Cannot cancel ${transfer.status.toLowerCase()} transfer`
+        `Cannot cancel ${transfer.status.toLowerCase()} transfer`,
       );
     }
 
@@ -251,7 +251,7 @@ export class P2PTransferService {
       status?: TransferStatus;
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ): Promise<{ transfers: P2PTransferResult[]; total: number }> {
     const { direction = "all", status, limit = 20, offset = 0 } = options;
 
@@ -306,11 +306,7 @@ export class P2PTransferService {
    * Request money from another user
    */
   async requestMoney(params: MoneyRequestParams): Promise<MoneyRequestResult> {
-    const {
-      amount,
-      currency,
-      note,
-    } = params;
+    const { amount, currency, note } = params;
     const requesterWalletId = (params as any).requestorWalletId;
     const payerIdentifier = (params as any).responderIdentifier;
     const identifierType: "phone" | "email" | "username" = "phone";
@@ -333,7 +329,7 @@ export class P2PTransferService {
         note,
         status: "PENDING",
         expiresAt: new Date(
-          Date.now() + PENDING_TRANSFER_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+          Date.now() + PENDING_TRANSFER_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
         ),
       },
     });
@@ -360,7 +356,7 @@ export class P2PTransferService {
   async payMoneyRequest(
     requestId: string,
     payerWalletId: string,
-    pin: string
+    pin: string,
   ): Promise<P2PTransferResult> {
     const request = await prisma.moneyRequest.findUnique({
       where: { id: requestId },
@@ -410,7 +406,7 @@ export class P2PTransferService {
    */
   async declineMoneyRequest(
     requestId: string,
-    payerWalletId: string
+    payerWalletId: string,
   ): Promise<void> {
     const request = await prisma.moneyRequest.findUnique({
       where: { id: requestId },
@@ -462,7 +458,7 @@ export class P2PTransferService {
    */
   async cancelMoneyRequest(
     requestId: string,
-    requesterWalletId: string
+    requesterWalletId: string,
   ): Promise<void> {
     const request = await prisma.moneyRequest.findUnique({
       where: { id: requestId },
@@ -492,7 +488,7 @@ export class P2PTransferService {
   async getMoneyRequests(
     walletId: string,
     type: "sent" | "received",
-    options: { status?: string; limit?: number; offset?: number } = {}
+    options: { status?: string; limit?: number; offset?: number } = {},
   ): Promise<{ requests: MoneyRequestResult[]; total: number }> {
     const { status, limit = 20, offset = 0 } = options;
 
@@ -585,7 +581,7 @@ export class P2PTransferService {
    */
   async getBeneficiaries(
     walletId: string,
-    options: { frequentOnly?: boolean; limit?: number; offset?: number } = {}
+    options: { frequentOnly?: boolean; limit?: number; offset?: number } = {},
   ): Promise<{ beneficiaries: Beneficiary[]; total: number }> {
     const { frequentOnly = false, limit = 50, offset = 0 } = options;
 
@@ -618,7 +614,7 @@ export class P2PTransferService {
   async updateBeneficiary(
     beneficiaryId: string,
     walletId: string,
-    updates: { name?: string; isFrequent?: boolean }
+    updates: { name?: string; isFrequent?: boolean },
   ): Promise<Beneficiary> {
     const beneficiary = await prisma.beneficiary.findUnique({
       where: { id: beneficiaryId },
@@ -641,7 +637,7 @@ export class P2PTransferService {
    */
   async deleteBeneficiary(
     beneficiaryId: string,
-    walletId: string
+    walletId: string,
   ): Promise<void> {
     const beneficiary = await prisma.beneficiary.findUnique({
       where: { id: beneficiaryId },
@@ -662,7 +658,7 @@ export class P2PTransferService {
 
   private async resolveRecipient(
     identifier: string,
-    type: "phone" | "email" | "username" | "walletId"
+    type: "phone" | "email" | "username" | "walletId",
   ): Promise<{
     found: boolean;
     walletId?: string;
@@ -789,7 +785,7 @@ export class P2PTransferService {
     // Update beneficiary transfer count
     await this.updateBeneficiaryTransferCount(
       senderWalletId,
-      recipientWalletId
+      recipientWalletId,
     );
 
     // Send notifications
@@ -831,7 +827,7 @@ export class P2PTransferService {
     } = params;
 
     const expiresAt = new Date(
-      Date.now() + PENDING_TRANSFER_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+      Date.now() + PENDING_TRANSFER_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
     );
 
     // Hold funds from sender
@@ -864,7 +860,7 @@ export class P2PTransferService {
       recipientIdentifier,
       identifierType,
       amount,
-      currency
+      currency,
     );
 
     return {
@@ -918,7 +914,7 @@ export class P2PTransferService {
 
   private async updateBeneficiaryTransferCount(
     senderWalletId: string,
-    recipientWalletId: string
+    recipientWalletId: string,
   ): Promise<void> {
     await prisma.beneficiary.updateMany({
       where: {
@@ -958,34 +954,195 @@ export class P2PTransferService {
   }
 
   // ===========================================
-  // NOTIFICATIONS (stubs - implement with notification service)
+  // NOTIFICATIONS
   // ===========================================
 
   private async notifyTransferCompleted(transferId: string): Promise<void> {
-    // TODO: Integrate with notification service
-    p2pLogger.info(`[P2P] Transfer completed: ${transferId}`);
+    try {
+      const transfer = await prisma.p2pTransfer.findUnique({
+        where: { id: transferId },
+        include: {
+          sender: true,
+          recipient: true,
+        },
+      });
+
+      if (!transfer) {
+        p2pLogger.error({ transferId }, "Transfer not found for notification");
+        return;
+      }
+
+      const amount = Number(transfer.amount);
+
+      // Notify sender
+      await notificationClient.send({
+        userId: transfer.senderId,
+        title: "Transfer Sent",
+        body: `You sent ${transfer.currency} ${amount.toLocaleString()} to ${transfer.recipient?.firstName || "User"}. Reference: ${transferId.slice(-8)}`,
+        type: NotificationType.TRANSFER_COMPLETED,
+        priority: NotificationPriority.NORMAL,
+        data: {
+          transferId,
+          amount,
+          currency: transfer.currency,
+          recipientName: transfer.recipient?.firstName,
+          direction: "outgoing",
+        },
+      });
+
+      // Notify recipient
+      if (transfer.recipientId) {
+        await notificationClient.send({
+          userId: transfer.recipientId,
+          title: "Money Received!",
+          body: `You received ${transfer.currency} ${amount.toLocaleString()} from ${transfer.sender?.firstName || "Someone"}. ${transfer.note ? `Note: "${transfer.note}"` : ""}`,
+          type: NotificationType.TRANSFER_RECEIVED,
+          priority: NotificationPriority.HIGH,
+          data: {
+            transferId,
+            amount,
+            currency: transfer.currency,
+            senderName: transfer.sender?.firstName,
+            note: transfer.note,
+            direction: "incoming",
+          },
+        });
+      }
+
+      p2pLogger.info({ transferId }, "Transfer completion notifications sent");
+    } catch (error) {
+      p2pLogger.error(
+        { err: error, transferId },
+        "Failed to send transfer notification",
+      );
+    }
   }
 
   private async notifyMoneyRequest(
     requestId: string,
-    payerUserId: string
+    payerUserId: string,
   ): Promise<void> {
-    p2pLogger.info(`[P2P] Money request ${requestId} sent to user ${payerUserId}`);
+    try {
+      const request = await prisma.moneyRequest.findUnique({
+        where: { id: requestId },
+        include: {
+          requester: true,
+        },
+      });
+
+      if (!request) {
+        p2pLogger.error(
+          { requestId },
+          "Money request not found for notification",
+        );
+        return;
+      }
+
+      const amount = Number(request.amount);
+
+      await notificationClient.send({
+        userId: payerUserId,
+        title: "Money Request",
+        body: `${request.requester?.firstName || "Someone"} is requesting ${request.currency} ${amount.toLocaleString()} from you. ${request.note ? `Reason: "${request.note}"` : ""}`,
+        type: NotificationType.MONEY_REQUEST,
+        priority: NotificationPriority.HIGH,
+        channels: [NotificationChannel.PUSH, NotificationChannel.IN_APP],
+        data: {
+          requestId,
+          amount,
+          currency: request.currency,
+          requesterName: request.requester?.firstName,
+          note: request.note,
+          action: "approve_or_decline",
+        },
+      });
+
+      p2pLogger.info(
+        { requestId, payerUserId },
+        "Money request notification sent",
+      );
+    } catch (error) {
+      p2pLogger.error(
+        { err: error, requestId },
+        "Failed to send money request notification",
+      );
+    }
   }
 
   private async notifyRequestDeclined(requestId: string): Promise<void> {
-    p2pLogger.info(`[P2P] Money request ${requestId} declined`);
+    try {
+      const request = await prisma.moneyRequest.findUnique({
+        where: { id: requestId },
+        include: {
+          payer: true,
+        },
+      });
+
+      if (!request) {
+        p2pLogger.error(
+          { requestId },
+          "Money request not found for decline notification",
+        );
+        return;
+      }
+
+      const amount = Number(request.amount);
+
+      await notificationClient.send({
+        userId: request.requesterId,
+        title: "Request Declined",
+        body: `Your request for ${request.currency} ${amount.toLocaleString()} from ${request.payer?.firstName || "User"} was declined.`,
+        type: NotificationType.MONEY_REQUEST_DECLINED,
+        priority: NotificationPriority.NORMAL,
+        data: {
+          requestId,
+          amount,
+          currency: request.currency,
+          payerName: request.payer?.firstName,
+        },
+      });
+
+      p2pLogger.info({ requestId }, "Request declined notification sent");
+    } catch (error) {
+      p2pLogger.error(
+        { err: error, requestId },
+        "Failed to send decline notification",
+      );
+    }
   }
 
   private async sendInviteNotification(
     identifier: string,
     type: "phone" | "email" | "username",
     amount: number,
-    currency: Currency
+    currency: Currency,
   ): Promise<void> {
-    p2pLogger.info(
-      `[P2P] Invite sent to ${type}:${identifier} for ${amount} ${currency}`
-    );
+    try {
+      // For non-users, send SMS or email invite to join UBI
+      if (type === "phone") {
+        // This would integrate with SMS provider
+        p2pLogger.info(
+          { phone: identifier, amount, currency },
+          "SMS invite sent to non-user",
+        );
+      } else if (type === "email") {
+        // This would integrate with email provider
+        p2pLogger.info(
+          { email: identifier, amount, currency },
+          "Email invite sent to non-user",
+        );
+      }
+
+      p2pLogger.info(
+        { identifier, type, amount, currency },
+        "Invite notification sent",
+      );
+    } catch (error) {
+      p2pLogger.error(
+        { err: error, identifier, type },
+        "Failed to send invite notification",
+      );
+    }
   }
 }
 

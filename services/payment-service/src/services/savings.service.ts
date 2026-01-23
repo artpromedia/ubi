@@ -6,6 +6,11 @@
 import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { savingsLogger } from "../lib/logger";
+import {
+  notificationClient,
+  NotificationPriority,
+  NotificationType,
+} from "../lib/notification-client";
 import { prisma } from "../lib/prisma";
 import type {
   AutoSaveConfig,
@@ -920,8 +925,55 @@ export class SavingsService {
   }
 
   private async notifyTargetReached(pocketId: string): Promise<void> {
-    // TODO: Integrate with notification service
-    savingsLogger.info(`[Savings] Target reached for pocket ${pocketId}`);
+    try {
+      // Get pocket with wallet and user details
+      const pocket = await prisma.savingsPocket.findUnique({
+        where: { id: pocketId },
+        include: {
+          wallet: {
+            include: { user: true },
+          },
+        },
+      });
+
+      if (!pocket || !pocket.wallet.user) {
+        savingsLogger.error(
+          { pocketId },
+          "Pocket or user not found for notification",
+        );
+        return;
+      }
+
+      const targetAmount = Number(pocket.targetAmount);
+      const currentBalance = Number(pocket.currentBalance);
+      const percentAchieved = Math.round((currentBalance / targetAmount) * 100);
+
+      await notificationClient.send({
+        userId: pocket.wallet.userId,
+        title: "🎉 Savings Goal Reached!",
+        body: `Congratulations! Your "${pocket.name}" savings pocket has reached its target of ${pocket.currency} ${targetAmount.toLocaleString()}. You've saved ${pocket.currency} ${currentBalance.toLocaleString()} (${percentAchieved}% of goal).`,
+        type: NotificationType.SAVINGS_TARGET_REACHED,
+        priority: NotificationPriority.HIGH,
+        data: {
+          pocketId,
+          pocketName: pocket.name,
+          targetAmount,
+          currentBalance,
+          currency: pocket.currency,
+          percentAchieved,
+        },
+      });
+
+      savingsLogger.info(
+        { pocketId, pocketName: pocket.name, targetAmount, currentBalance },
+        "Target reached notification sent",
+      );
+    } catch (error) {
+      savingsLogger.error(
+        { err: error, pocketId },
+        "Failed to send target reached notification",
+      );
+    }
   }
 }
 

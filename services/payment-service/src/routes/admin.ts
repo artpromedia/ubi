@@ -12,7 +12,13 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import {
+  notificationClient,
+  NotificationPriority,
+  NotificationType,
+} from "../lib/notification-client.js";
 import { prisma } from "../lib/prisma";
+import { PaystackService } from "../providers/paystack.service";
 import { FraudDetectionService } from "../services/fraud-detection.service";
 import { PayoutService } from "../services/payout.service";
 import { ReconciliationService } from "../services/reconciliation.service";
@@ -25,6 +31,19 @@ const reconciliationService = new ReconciliationService(prisma);
 const settlementService = new SettlementService(prisma);
 const payoutService = new PayoutService(prisma);
 const fraudService = new FraudDetectionService(prisma);
+
+// Initialize Paystack service for refunds
+const paystackService = new PaystackService(
+  {
+    secretKey: process.env.PAYSTACK_SECRET_KEY || "",
+    publicKey: process.env.PAYSTACK_PUBLIC_KEY || "",
+    webhookSecret: process.env.PAYSTACK_WEBHOOK_SECRET || "",
+    environment: (process.env.NODE_ENV === "production" ? "live" : "test") as
+      | "test"
+      | "live",
+  },
+  prisma,
+);
 
 // ============================================
 // Dashboard Overview
@@ -270,7 +289,7 @@ adminRoutes.get("/transactions/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Transaction not found" },
       },
-      404
+      404,
     );
   }
 
@@ -300,7 +319,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
@@ -314,7 +333,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Transaction not found" },
       },
-      404
+      404,
     );
   }
 
@@ -327,7 +346,7 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
           message: "Can only refund completed transactions",
         },
       },
-      400
+      400,
     );
   }
 
@@ -345,7 +364,76 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
     },
   });
 
-  // TODO: Initiate actual refund with provider
+  // Initiate actual refund with provider
+  try {
+    // Get the provider reference from transaction metadata
+    const metadata = transaction.metadata as Record<string, any> | null;
+    const paystackReference = metadata?.paystackReference || transaction.id;
+
+    if (transaction.provider === "PAYSTACK") {
+      const refundResult = await paystackService.createRefund({
+        transactionReference: paystackReference,
+        amount: refundAmount,
+        currency: transaction.currency,
+        merchantNote: parsed.data.reason,
+        customerNote: "Refund processed for your transaction",
+      });
+
+      if (refundResult.status) {
+        await prisma.refund.update({
+          where: { id: refund.id },
+          data: {
+            status: "PROCESSING",
+            providerRefundId: String(refundResult.data.id),
+            metadata: {
+              providerResponse: refundResult.data,
+              expectedAt: refundResult.data.expected_at,
+            },
+          },
+        });
+
+        // Notify user about refund
+        await notificationClient.send({
+          userId: transaction.userId,
+          title: "Refund Initiated",
+          body: `A refund of ${transaction.currency} ${refundAmount.toLocaleString()} has been initiated for your transaction. It may take 5-10 business days to reflect.`,
+          type: NotificationType.REFUND_PROCESSED,
+          priority: NotificationPriority.HIGH,
+          data: {
+            refundId: refund.id,
+            transactionId: transaction.id,
+            amount: refundAmount,
+            currency: transaction.currency,
+          },
+        });
+      }
+    } else {
+      // For other providers, mark as pending manual processing
+      await prisma.refund.update({
+        where: { id: refund.id },
+        data: {
+          status: "PENDING",
+          metadata: {
+            requiresManualProcessing: true,
+            provider: transaction.provider,
+          },
+        },
+      });
+    }
+  } catch (error) {
+    // Log error but don't fail - refund record is created for manual follow-up
+    await prisma.refund.update({
+      where: { id: refund.id },
+      data: {
+        status: "FAILED",
+        failureReason:
+          error instanceof Error ? error.message : "Provider refund failed",
+        metadata: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      },
+    });
+  }
 
   return c.json({
     success: true,
@@ -437,14 +525,14 @@ adminRoutes.post("/reconciliations/run", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
   const result = await reconciliationService.runDailyReconciliation(
     parsed.data.provider as any,
     new Date(parsed.data.date),
-    parsed.data.currency as any
+    parsed.data.currency as any,
   );
 
   return c.json({
@@ -493,7 +581,7 @@ adminRoutes.post("/reconciliations/discrepancies/:id/resolve", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
@@ -503,13 +591,13 @@ adminRoutes.post("/reconciliations/discrepancies/:id/resolve", async (c) => {
     await reconciliationService.resolveDiscrepancy(
       id,
       parsed.data.resolution,
-      userId
+      userId,
     );
   } else {
     await reconciliationService.ignoreDiscrepancy(
       id,
       parsed.data.resolution,
-      userId
+      userId,
     );
   }
 
@@ -602,7 +690,7 @@ adminRoutes.post("/settlements/:id/retry", async (c) => {
           message: error instanceof Error ? error.message : "Retry failed",
         },
       },
-      400
+      400,
     );
   }
 });
@@ -623,7 +711,7 @@ adminRoutes.get("/settlements/summary", async (c) => {
   const summary = await settlementService.getSettlementSummary(
     startDate,
     endDate,
-    query.recipientType
+    query.recipientType,
   );
 
   return c.json({
@@ -726,7 +814,7 @@ adminRoutes.post("/payouts/:id/approve", async (c) => {
           message: error instanceof Error ? error.message : "Approval failed",
         },
       },
-      400
+      400,
     );
   }
 });
@@ -750,7 +838,7 @@ adminRoutes.post("/payouts/:id/cancel", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
@@ -770,7 +858,7 @@ adminRoutes.post("/payouts/:id/cancel", async (c) => {
           message: error instanceof Error ? error.message : "Cancel failed",
         },
       },
-      400
+      400,
     );
   }
 });
@@ -840,7 +928,7 @@ adminRoutes.post("/fraud/:assessmentId/review", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 
@@ -850,7 +938,7 @@ adminRoutes.post("/fraud/:assessmentId/review", async (c) => {
     await fraudService.rejectTransaction(
       assessmentId,
       userId,
-      parsed.data.reason || "Rejected by admin"
+      parsed.data.reason || "Rejected by admin",
     );
   }
 
@@ -892,7 +980,7 @@ adminRoutes.get("/users/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "User not found" },
       },
-      404
+      404,
     );
   }
 
@@ -921,7 +1009,7 @@ adminRoutes.post("/users/:id/block", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
       },
-      400
+      400,
     );
   }
 

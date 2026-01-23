@@ -9,6 +9,7 @@ import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { Context, Next } from "hono";
 import { z } from "zod";
 import { securityLogger } from "./logger.js";
+import { redis } from "./redis.js";
 
 // ===========================================
 // INPUT VALIDATION SCHEMAS
@@ -280,9 +281,27 @@ export async function preventReplay(
     }
   }
 
-  // Check nonce hasn't been used (would need Redis)
+  // Check nonce hasn't been used (prevents replay attacks)
   if (nonce) {
-    // TODO: Check nonce in Redis
+    const nonceKey = `nonce:${nonce}`;
+    const nonceExists = await redis.get(nonceKey);
+
+    if (nonceExists) {
+      securityLogger.warn({ nonce }, "Nonce replay attempt detected");
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "NONCE_REUSED",
+            message: "Request nonce has already been used",
+          },
+        },
+        400,
+      );
+    }
+
+    // Store nonce with 1 hour TTL (longer than request window)
+    await redis.set(nonceKey, "1", "EX", 3600);
   }
 
   return await next();

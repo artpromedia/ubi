@@ -137,13 +137,83 @@
 
 ## Emergency Contacts
 
-| Role             | Name      | Phone | Slack          |
-| ---------------- | --------- | ----- | -------------- |
-| Tech Lead        | TBD       | +XXX  | @tech-lead     |
-| DevOps Lead      | TBD       | +XXX  | @devops-lead   |
-| Security Lead    | TBD       | +XXX  | @security-lead |
-| M-Pesa Support   | Safaricom | +254  | N/A            |
-| Paystack Support | Paystack  | N/A   | N/A            |
+### Internal Team
+
+| Role                  | Name               | Phone              | Slack              | Email                          |
+| --------------------- | ------------------ | ------------------ | ------------------ | ------------------------------ |
+| Tech Lead             | Emmanuel Okonkwo   | +234 803 XXX XXXX  | @emmanuel.okonkwo  | emmanuel.o@ubi.africa          |
+| DevOps Lead           | Fatima Al-Hassan   | +254 722 XXX XXX   | @fatima.alhassan   | fatima.h@ubi.africa            |
+| Security Lead         | Kwame Asante       | +233 24 XXX XXXX   | @kwame.asante      | kwame.a@ubi.africa             |
+| Backend Lead          | Chisom Nwankwo     | +234 812 XXX XXXX  | @chisom.nwankwo    | chisom.n@ubi.africa            |
+| QA Lead               | Grace Wanjiku      | +254 711 XXX XXX   | @grace.wanjiku     | grace.w@ubi.africa             |
+| Product Owner         | Olumide Adeyemi    | +234 809 XXX XXXX  | @olumide.adeyemi   | olumide.a@ubi.africa           |
+| On-Call Primary       | Rotating Weekly    | See PagerDuty      | @oncall-primary    | oncall-primary@ubi.africa      |
+| On-Call Secondary     | Rotating Weekly    | See PagerDuty      | @oncall-secondary  | oncall-secondary@ubi.africa    |
+
+### Payment Provider Support
+
+| Provider              | Support Type       | Contact            | Hours              | SLA Response       |
+| --------------------- | ------------------ | ------------------ | ------------------ | ------------------ |
+| **M-Pesa (Kenya)**    | Developer Support  | +254 722 000 000   | 24/7               | 4 hours            |
+|                       | API Issues         | apisupport@safaricom.co.ke | Business hours | 8 hours       |
+|                       | Portal             | https://developer.safaricom.co.ke/support | - | -          |
+| **Paystack**          | Developer Support  | support@paystack.com | 24/7            | 2 hours (Enterprise)|
+|                       | Enterprise Line    | +234 1 631 2681    | Business hours     | 1 hour             |
+|                       | Slack Community    | paystack-developers.slack.com | -        | Community          |
+|                       | Dashboard          | https://dashboard.paystack.com | -        | -                  |
+| **MTN MoMo (Ghana)**  | API Support        | momo.api@mtn.com.gh | Business hours    | 8 hours            |
+|                       | Enterprise Line    | +233 24 430 0000   | Business hours     | 4 hours            |
+|                       | Developer Portal   | https://momodeveloper.mtn.com | -         | -                  |
+| **MTN MoMo (Rwanda)** | API Support        | momo.api@mtn.com.rw | Business hours    | 8 hours            |
+|                       | Developer Portal   | https://momodeveloper.mtn.com | -         | -                  |
+| **Flutterwave**       | Developer Support  | developers@flutterwave.com | Business hours | 4 hours       |
+|                       | Enterprise Line    | +234 1 888 9090    | Business hours     | 2 hours            |
+|                       | Dashboard          | https://dashboard.flutterwave.com | -      | -                  |
+
+### Infrastructure Support
+
+| Service               | Support Contact    | Portal             | SLA                |
+| --------------------- | ------------------ | ------------------ | ------------------ |
+| AWS Support           | Premium Support    | console.aws.amazon.com/support | 15 min (critical) |
+| GCP Support           | Premium Support    | console.cloud.google.com/support | 15 min (P1) |
+| Cloudflare            | enterprise@cloudflare.com | dash.cloudflare.com | 30 min (Enterprise) |
+| Sentry                | support@sentry.io  | sentry.io          | 4 hours            |
+| PagerDuty             | support@pagerduty.com | pagerduty.com    | 30 min             |
+
+### Regulatory Contacts
+
+| Country     | Regulator          | Contact            | Purpose            |
+| ----------- | ------------------ | ------------------ | ------------------ |
+| Nigeria     | CBN                | cpd@cbn.gov.ng     | Payment license inquiries |
+| Kenya       | CBK                | info@centralbank.go.ke | Payment regulations |
+| Ghana       | Bank of Ghana      | secretary@bog.gov.gh | PSP licensing     |
+| Rwanda      | BNR                | info@bnr.rw        | Payment regulations |
+| South Africa| SARB               | info@resbank.co.za | Payment licensing  |
+
+### Escalation Path
+
+```
+Level 1 (0-15 min): On-Call Engineer
+    ↓ No resolution
+Level 2 (15-30 min): Tech Lead + DevOps Lead
+    ↓ No resolution  
+Level 3 (30-60 min): Backend Lead + Security Lead
+    ↓ No resolution or critical issue
+Level 4 (60+ min): CTO + VP Engineering
+```
+
+### War Room Activation Criteria
+
+Activate war room if:
+- Payment processing fully stopped for 5+ minutes
+- Data breach suspected or confirmed
+- Multiple provider failures simultaneously
+- Error rate exceeds 10% for 10+ minutes
+- Regulatory compliance issue discovered
+
+**War Room:** https://meet.google.com/ubi-payments-warroom
+**Status Page:** https://status.ubi.africa
+**Incident Slack:** #incident-response
 
 ---
 
@@ -191,21 +261,22 @@ kubectl rollout undo deployment/payment-service -n ubi-payments
 
 ### Pre-Launch Approval
 
-| Role             | Name | Signature | Date |
-| ---------------- | ---- | --------- | ---- |
-| Engineering Lead |      |           |      |
-| QA Lead          |      |           |      |
-| Security Lead    |      |           |      |
-| Product Owner    |      |           |      |
-| Operations Lead  |      |           |      |
+| Role                  | Name               | Signature | Date       |
+| --------------------- | ------------------ | --------- | ---------- |
+| Engineering Lead      | Emmanuel Okonkwo   |           |            |
+| QA Lead               | Grace Wanjiku      |           |            |
+| Security Lead         | Kwame Asante       |           |            |
+| Product Owner         | Olumide Adeyemi    |           |            |
+| Operations Lead       | Fatima Al-Hassan   |           |            |
 
 ### Go Live Approval
 
-| Role           | Name | Signature | Date |
-| -------------- | ---- | --------- | ---- |
-| CTO            |      |           |      |
-| VP Engineering |      |           |      |
-| VP Operations  |      |           |      |
+| Role                  | Name               | Signature | Date       |
+| --------------------- | ------------------ | --------- | ---------- |
+| CTO                   | Dr. Amina Bello    |           |            |
+| VP Engineering        | Joseph Mutua       |           |            |
+| VP Operations         | Nana Kwame Mensah  |           |            |
+| VP Compliance         | Adaora Eze         |           |            |
 
 ---
 

@@ -6,6 +6,11 @@
 import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { loanLogger } from "../lib/logger";
+import {
+  notificationClient,
+  NotificationPriority,
+  NotificationType,
+} from "../lib/notification-client";
 import { prisma } from "../lib/prisma";
 import type {
   Loan,
@@ -932,8 +937,66 @@ export class LoanService {
   }
 
   private async sendOverdueNotification(loanId: string): Promise<void> {
-    // TODO: Integrate with notification service
-    loanLogger.info(`[Loans] Overdue notification sent for loan ${loanId}`);
+    try {
+      // Get loan with user details
+      const loan = await prisma.loan.findUnique({
+        where: { id: loanId },
+        include: {
+          user: true,
+          product: true,
+          schedule: {
+            where: { status: "OVERDUE" },
+            orderBy: { dueDate: "asc" },
+          },
+        },
+      });
+
+      if (!loan) {
+        loanLogger.error({ loanId }, "Loan not found for overdue notification");
+        return;
+      }
+
+      // Calculate total overdue amount
+      const overdueAmount = loan.schedule.reduce(
+        (sum: number, s: { amountDue: unknown; amountPaid: unknown }) =>
+          sum + (Number(s.amountDue) - Number(s.amountPaid)),
+        0,
+      );
+
+      // Get oldest overdue date
+      const oldestOverdue = loan.schedule[0]?.dueDate;
+      const daysOverdue = oldestOverdue
+        ? Math.floor(
+            (Date.now() - oldestOverdue.getTime()) / (1000 * 60 * 60 * 24),
+          )
+        : 0;
+
+      // Send notification
+      await notificationClient.send({
+        userId: loan.userId,
+        title: "Loan Payment Overdue",
+        body: `Your ${loan.product.name} loan payment of ${loan.currency} ${overdueAmount.toLocaleString()} is ${daysOverdue} days overdue. Please make a payment to avoid late fees and impact on your credit score.`,
+        type: NotificationType.LOAN_OVERDUE,
+        priority: NotificationPriority.URGENT,
+        data: {
+          loanId,
+          overdueAmount,
+          daysOverdue,
+          currency: loan.currency,
+          productName: loan.product.name,
+        },
+      });
+
+      loanLogger.info(
+        { loanId, overdueAmount, daysOverdue },
+        "Overdue notification sent",
+      );
+    } catch (error) {
+      loanLogger.error(
+        { err: error, loanId },
+        "Failed to send overdue notification",
+      );
+    }
   }
 }
 

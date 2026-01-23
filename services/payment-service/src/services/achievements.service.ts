@@ -328,7 +328,13 @@ export class AchievementsService {
     });
 
     const progressMap = new Map(
-      userAchievements.map((ua: { achievementId: string; progress: number; unlockedAt: Date | null }) => [ua.achievementId, ua])
+      userAchievements.map(
+        (ua: {
+          achievementId: string;
+          progress: number;
+          unlockedAt: Date | null;
+        }) => [ua.achievementId, ua],
+      ),
     );
 
     // Filter and enrich achievements
@@ -342,11 +348,24 @@ export class AchievementsService {
     }).map((a) => ({
       ...a,
       userProgress: progressMap.get(a.id)
-        ? this.formatUserAchievement(progressMap.get(a.id) as { id: string; achievementId: string; progress: number; unlockedAt: Date | null; rewardClaimed: boolean; claimedAt: Date | null; timesUnlocked: number; achievement?: unknown })
+        ? this.formatUserAchievement(
+            progressMap.get(a.id) as {
+              id: string;
+              achievementId: string;
+              progress: number;
+              unlockedAt: Date | null;
+              rewardClaimed: boolean;
+              claimedAt: Date | null;
+              timesUnlocked: number;
+              achievement?: unknown;
+            },
+          )
         : undefined,
     }));
 
-    const unlocked = userAchievements.filter((ua: { unlockedAt: Date | null }) => ua.unlockedAt).length;
+    const unlocked = userAchievements.filter(
+      (ua: { unlockedAt: Date | null }) => ua.unlockedAt,
+    ).length;
     const total = ACHIEVEMENTS.filter((a) => !a.isHidden).length;
 
     return {
@@ -364,7 +383,7 @@ export class AchievementsService {
    */
   async getAchievementsByCategory(
     userId: string,
-    category: AchievementCategory
+    category: AchievementCategory,
   ): Promise<Array<Achievement & { userProgress?: UserAchievement }>> {
     const { achievements } = await this.getAchievements(userId);
     return achievements.filter((a) => a.category === category);
@@ -383,7 +402,18 @@ export class AchievementsService {
       orderBy: { unlockedAt: "desc" },
     });
 
-    return userAchievements.map((ua: { id: string; achievementId: string; progress: number; unlockedAt: Date | null; rewardClaimed: boolean; claimedAt: Date | null; timesUnlocked: number; achievement?: unknown }) => this.formatUserAchievement(ua));
+    return userAchievements.map(
+      (ua: {
+        id: string;
+        achievementId: string;
+        progress: number;
+        unlockedAt: Date | null;
+        rewardClaimed: boolean;
+        claimedAt: Date | null;
+        timesUnlocked: number;
+        achievement?: unknown;
+      }) => this.formatUserAchievement(ua),
+    );
   }
 
   /**
@@ -415,7 +445,7 @@ export class AchievementsService {
       const result = await this.checkAndUpdateProgress(
         userId,
         achievement,
-        event
+        event,
       );
 
       if (result.unlocked) {
@@ -437,7 +467,7 @@ export class AchievementsService {
    */
   async claimReward(
     userId: string,
-    achievementId: string
+    achievementId: string,
   ): Promise<{
     success: boolean;
     reward?: AchievementReward;
@@ -496,7 +526,7 @@ export class AchievementsService {
    */
   async getRecentUnlocks(
     userId: string,
-    since: Date
+    since: Date,
   ): Promise<Array<{ achievement: Achievement; unlockedAt: Date }>> {
     const recent = await prisma.userAchievement.findMany({
       where: {
@@ -507,10 +537,12 @@ export class AchievementsService {
       orderBy: { unlockedAt: "desc" },
     });
 
-    return recent.map((ua: { achievementId: string; unlockedAt: Date | null }) => ({
-      achievement: ACHIEVEMENTS.find((a) => a.id === ua.achievementId)!,
-      unlockedAt: ua.unlockedAt!,
-    }));
+    return recent.map(
+      (ua: { achievementId: string; unlockedAt: Date | null }) => ({
+        achievement: ACHIEVEMENTS.find((a) => a.id === ua.achievementId)!,
+        unlockedAt: ua.unlockedAt!,
+      }),
+    );
   }
 
   /**
@@ -530,16 +562,42 @@ export class AchievementsService {
       _count: { id: true },
     });
 
-    // Sort and add ranks
+    // Get user achievements with rewards to calculate points
+    const userAchievementsWithRewards = await prisma.userAchievement.findMany({
+      where: { unlockedAt: { not: null } },
+      select: {
+        userId: true,
+        achievementId: true,
+      },
+    });
+
+    // Calculate total points per user from achievement rewards
+    const userPoints = new Map<string, number>();
+    for (const ua of userAchievementsWithRewards) {
+      const achievement = ACHIEVEMENTS.find((a) => a.id === ua.achievementId);
+      if (achievement) {
+        const currentPoints = userPoints.get(ua.userId) || 0;
+        // Calculate points from reward (reward.points if it exists)
+        const points = achievement.reward.points || 0;
+        userPoints.set(ua.userId, currentPoints + points);
+      }
+    }
+
+    // Sort and add ranks with calculated points
     const sorted = leaderboard
-      .sort((a: { _count: { id: number } }, b: { _count: { id: number } }) => b._count.id - a._count.id)
+      .sort(
+        (a: { _count: { id: number } }, b: { _count: { id: number } }) =>
+          b._count.id - a._count.id,
+      )
       .slice(0, limit)
-      .map((entry: { userId: string; _count: { id: number } }, index: number) => ({
-        userId: entry.userId,
-        achievementCount: entry._count.id,
-        totalPoints: 0, // TODO: Calculate from rewards
-        rank: index + 1,
-      }));
+      .map(
+        (entry: { userId: string; _count: { id: number } }, index: number) => ({
+          userId: entry.userId,
+          achievementCount: entry._count.id,
+          totalPoints: userPoints.get(entry.userId) || 0,
+          rank: index + 1,
+        }),
+      );
 
     return sorted;
   }
@@ -551,7 +609,7 @@ export class AchievementsService {
   private async checkAndUpdateProgress(
     userId: string,
     achievement: Achievement,
-    event: GameEvent
+    event: GameEvent,
   ): Promise<{
     unlocked: boolean;
     progressUpdated: boolean;
@@ -667,7 +725,7 @@ export class AchievementsService {
 
   private eventMatchesCriteria(
     event: GameEvent,
-    criteria: AchievementCriteria
+    criteria: AchievementCriteria,
   ): boolean {
     // Check event type
     if (criteria.event !== event.type) {
@@ -681,9 +739,10 @@ export class AchievementsService {
       const hours = timeParts[0];
       const minutes = timeParts[1];
       if (
-        hours !== undefined && minutes !== undefined &&
+        hours !== undefined &&
+        minutes !== undefined &&
         (eventTime.getHours() > hours ||
-        (eventTime.getHours() === hours && eventTime.getMinutes() > minutes))
+          (eventTime.getHours() === hours && eventTime.getMinutes() > minutes))
       ) {
         return false;
       }

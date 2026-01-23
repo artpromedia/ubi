@@ -5,6 +5,11 @@
 
 import { nanoid } from "nanoid";
 import { subscriptionLogger } from "../lib/logger";
+import {
+  notificationClient,
+  NotificationPriority,
+  NotificationType,
+} from "../lib/notification-client";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import type {
@@ -16,6 +21,30 @@ import type {
   SubscriptionPlanFeatures,
   SubscriptionStatus,
 } from "../types/loyalty.types";
+
+// ===========================================
+// PROMO CODE TYPES
+// ===========================================
+
+interface PromoCode {
+  id: string;
+  code: string;
+  discountType: "percentage" | "fixed";
+  discountValue: number;
+  maxUses: number | null;
+  usedCount: number;
+  validFrom: Date;
+  validUntil: Date | null;
+  applicablePlanIds: string[] | null;
+  isActive: boolean;
+}
+
+interface PromoValidationResult {
+  valid: boolean;
+  promo?: PromoCode;
+  discountAmount?: number;
+  error?: string;
+}
 
 // ===========================================
 // SUBSCRIPTION SERVICE
@@ -94,6 +123,64 @@ export class SubscriptionService {
   }
 
   /**
+   * Validate and get promo code details
+   */
+  async validatePromoCode(
+    code: string,
+    planId: string,
+    planPrice: number,
+  ): Promise<PromoValidationResult> {
+    const promo = await prisma.promoCode.findFirst({
+      where: {
+        code: code.toUpperCase(),
+        isActive: true,
+      },
+    });
+
+    if (!promo) {
+      return { valid: false, error: "Invalid promo code" };
+    }
+
+    // Check validity period
+    const now = new Date();
+    if (promo.validFrom > now) {
+      return { valid: false, error: "Promo code is not yet active" };
+    }
+    if (promo.validUntil && promo.validUntil < now) {
+      return { valid: false, error: "Promo code has expired" };
+    }
+
+    // Check usage limit
+    if (promo.maxUses !== null && promo.usedCount >= promo.maxUses) {
+      return { valid: false, error: "Promo code usage limit reached" };
+    }
+
+    // Check if applicable to this plan
+    const applicablePlans = promo.applicablePlanIds as string[] | null;
+    if (
+      applicablePlans &&
+      applicablePlans.length > 0 &&
+      !applicablePlans.includes(planId)
+    ) {
+      return { valid: false, error: "Promo code not applicable to this plan" };
+    }
+
+    // Calculate discount
+    let discountAmount: number;
+    if (promo.discountType === "percentage") {
+      discountAmount = Math.round((planPrice * promo.discountValue) / 100);
+    } else {
+      discountAmount = Math.min(promo.discountValue, planPrice);
+    }
+
+    return {
+      valid: true,
+      promo: promo as unknown as PromoCode,
+      discountAmount,
+    };
+  }
+
+  /**
    * Create new subscription
    */
   async createSubscription(
@@ -132,12 +219,38 @@ export class SubscriptionService {
 
     // Apply promo code discount if provided
     let discountApplied = false;
+    let discountAmount = 0;
+    let promoId: string | undefined;
+
     if (promoCode) {
-      // TODO: Validate promo code and apply discount
+      const promoValidation = await this.validatePromoCode(
+        promoCode,
+        plan.id,
+        plan.price,
+      );
+
+      if (!promoValidation.valid) {
+        throw new Error(promoValidation.error || "Invalid promo code");
+      }
+
       discountApplied = true;
+      discountAmount = promoValidation.discountAmount || 0;
+      promoId = promoValidation.promo?.id;
+
+      // Increment promo code usage
+      await prisma.promoCode.update({
+        where: { id: promoId },
+        data: { usedCount: { increment: 1 } },
+      });
+
+      subscriptionLogger.info(
+        { promoCode, discountAmount, planId: plan.id },
+        "Promo code applied to subscription",
+      );
     }
 
     const subscriptionId = `sub_${nanoid(16)}`;
+    const finalPrice = Math.max(0, plan.price - discountAmount);
 
     const subscription = await prisma.subscription.create({
       data: {
@@ -154,7 +267,11 @@ export class SubscriptionService {
         benefitsUsed: {},
         metadata: {
           promoCode: promoCode || null,
+          promoId: promoId || null,
           discountApplied,
+          discountAmount,
+          originalPrice: plan.price,
+          finalPrice,
         },
       },
       include: { plan: true },
@@ -685,13 +802,133 @@ export class SubscriptionService {
   }
 
   private async processPayment(
-    _subscriptionId: string,
-    _amount: number,
-    _currency: string,
+    subscriptionId: string,
+    amount: number,
+    currency: string,
   ): Promise<boolean> {
-    // TODO: Integrate with actual payment processor
-    // For now, simulate success
-    return true;
+    try {
+      // Get the subscription with user and payment method details
+      const subscription = await prisma.subscription.findUnique({
+        where: { id: subscriptionId },
+        include: {
+          user: true,
+        },
+      });
+
+      if (!subscription) {
+        subscriptionLogger.error(
+          { subscriptionId },
+          "Subscription not found for payment",
+        );
+        return false;
+      }
+
+      // Get user's wallet
+      const wallet = await prisma.wallet.findFirst({
+        where: {
+          userId: subscription.userId,
+          currency,
+        },
+      });
+
+      if (!wallet) {
+        subscriptionLogger.error(
+          { subscriptionId, userId: subscription.userId, currency },
+          "Wallet not found for subscription payment",
+        );
+        return false;
+      }
+
+      // Check wallet balance
+      const walletBalance = Number(wallet.balance);
+      if (walletBalance < amount) {
+        subscriptionLogger.warn(
+          { subscriptionId, balance: walletBalance, required: amount },
+          "Insufficient wallet balance for subscription payment",
+        );
+
+        // Notify user about payment failure
+        await notificationClient.send({
+          userId: subscription.userId,
+          title: "Subscription Payment Failed",
+          body: `Your subscription payment of ${currency} ${amount.toLocaleString()} failed due to insufficient balance. Please top up your wallet to continue enjoying UBI+ benefits.`,
+          type: NotificationType.PAYMENT_FAILED,
+          priority: NotificationPriority.HIGH,
+          data: {
+            subscriptionId,
+            amount,
+            currency,
+            reason: "insufficient_balance",
+          },
+        });
+
+        return false;
+      }
+
+      // Debit wallet for subscription
+      await prisma.$transaction(async (tx) => {
+        // Deduct from wallet
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            balance: { decrement: amount },
+          },
+        });
+
+        // Create wallet transaction
+        await tx.walletTransaction.create({
+          data: {
+            id: `wtxn_${nanoid(16)}`,
+            walletId: wallet.id,
+            type: "SUBSCRIPTION",
+            amount: -amount,
+            balance: walletBalance - amount,
+            reference: `sub_${subscriptionId}_${Date.now()}`,
+            description: "UBI+ subscription payment",
+            status: "COMPLETED",
+          },
+        });
+
+        // Update the subscription invoice
+        await tx.subscriptionInvoice.updateMany({
+          where: {
+            subscriptionId,
+            status: "pending",
+          },
+          data: {
+            status: "paid",
+            paidAt: new Date(),
+          },
+        });
+      });
+
+      // Notify user about successful payment
+      await notificationClient.send({
+        userId: subscription.userId,
+        title: "Subscription Renewed",
+        body: `Your UBI+ subscription has been renewed for ${currency} ${amount.toLocaleString()}. Enjoy your premium benefits!`,
+        type: NotificationType.SUBSCRIPTION_RENEWED,
+        priority: NotificationPriority.NORMAL,
+        data: {
+          subscriptionId,
+          amount,
+          currency,
+        },
+      });
+
+      subscriptionLogger.info(
+        { subscriptionId, amount, currency },
+        "Subscription payment processed successfully",
+      );
+
+      return true;
+    } catch (error) {
+      subscriptionLogger.error(
+        { err: error, subscriptionId },
+        "Failed to process subscription payment",
+      );
+      return false;
+    }
   }
 
   private formatPlan(plan: {

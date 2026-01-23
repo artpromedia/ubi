@@ -376,6 +376,115 @@ export class PaystackService {
   }
 
   /**
+   * Create a refund for a transaction
+   * https://paystack.com/docs/api/refund/#create
+   */
+  async createRefund(request: {
+    transactionReference: string;
+    amount?: number; // Optional - partial refund amount in main currency unit
+    currency?: string;
+    customerNote?: string;
+    merchantNote?: string;
+  }): Promise<{
+    status: boolean;
+    message: string;
+    data: {
+      id: number;
+      integration: number;
+      domain: string;
+      transaction: number;
+      dispute: number | null;
+      amount: number;
+      deducted_amount: number;
+      currency: string;
+      channel: string;
+      fully_deducted: boolean;
+      refunded_by: string;
+      refunded_at: string;
+      expected_at: string;
+      settlement: any;
+      customer_note: string;
+      merchant_note: string;
+      created_at: string;
+      updated_at: string;
+      status: "pending" | "processed" | "processing" | "failed";
+    };
+  }> {
+    const payload: Record<string, unknown> = {
+      transaction: request.transactionReference,
+    };
+
+    if (request.amount) {
+      payload.amount = this.toSubunit(
+        request.amount,
+        request.currency || "NGN",
+      );
+    }
+    if (request.customerNote) {
+      payload.customer_note = request.customerNote;
+    }
+    if (request.merchantNote) {
+      payload.merchant_note = request.merchantNote;
+    }
+
+    const response = await this.makeRequest<{
+      status: boolean;
+      message: string;
+      data: {
+        id: number;
+        integration: number;
+        domain: string;
+        transaction: number;
+        dispute: number | null;
+        amount: number;
+        deducted_amount: number;
+        currency: string;
+        channel: string;
+        fully_deducted: boolean;
+        refunded_by: string;
+        refunded_at: string;
+        expected_at: string;
+        settlement: any;
+        customer_note: string;
+        merchant_note: string;
+        created_at: string;
+        updated_at: string;
+        status: "pending" | "processed" | "processing" | "failed";
+      };
+    }>("/refund", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    paystackLogger.info(
+      {
+        transactionRef: request.transactionReference,
+        refundId: response.data?.id,
+      },
+      "Paystack refund created",
+    );
+
+    return response;
+  }
+
+  /**
+   * Fetch a refund by ID
+   */
+  async getRefund(refundId: string): Promise<{
+    status: boolean;
+    message: string;
+    data: {
+      id: number;
+      amount: number;
+      currency: string;
+      status: string;
+      transaction: number;
+    };
+  }> {
+    return this.makeRequest(`/refund/${refundId}`, { method: "GET" });
+  }
+
+  /**
    * Verify webhook signature
    * CRITICAL: Always verify webhook signature to prevent fraud
    */
