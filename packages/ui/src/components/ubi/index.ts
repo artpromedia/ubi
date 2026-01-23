@@ -13,6 +13,11 @@ export {
 } from "./map-markers";
 export { RideCard, rideCardVariants, type RideCardProps } from "./ride-card";
 export {
+  TripStatusCard,
+  tripStatusCardVariants,
+  type TripStatusCardProps,
+} from "./trip-status-card";
+export {
   TripTimeline,
   type TimelineStep,
   type TripTimelineProps,
@@ -25,6 +30,14 @@ export {
   restaurantCardVariants,
   type RestaurantCardProps,
 } from "./restaurant-card";
+
+// Order Tracking
+export {
+  OrderTrackingCard,
+  orderTrackingCardVariants,
+  type OrderStatus,
+  type OrderTrackingCardProps,
+} from "./order-tracking-card";
 
 // Service Selection
 export {
@@ -43,3 +56,45 @@ export {
   type AddPaymentMethodProps,
   type PaymentMethodCardProps,
 } from "./payment-method";
+
+// Driver
+export {
+  DriverEarningsCard,
+  earningsCardVariants,
+  type DriverEarningsCardProps,
+} from "./driver-earnings-card";
+
+// Quick Actions
+export {
+  QuickAction,
+  QuickActionGrid,
+  iconVariants,
+  quickActionVariants,
+  type QuickActionGridProps,
+  type QuickActionProps,
+} from "./quick-action";
+
+// Address
+export {
+  AddressCard,
+  addressCardVariants,
+  type AddressCardProps,
+  type AddressType,
+} from "./address-card";
+
+// Safety
+export {
+  SOSButton,
+  SafetyAlert,
+  safetyAlertVariants,
+  type SOSButtonProps,
+  type SafetyAlertProps,
+} from "./safety-alert";
+
+// Mobile UI
+export { BottomSheet, type BottomSheetProps } from "./bottom-sheet";
+export {
+  PromoBanner,
+  promoBannerVariants,
+  type PromoBannerProps,
+} from "./promo-banner";
