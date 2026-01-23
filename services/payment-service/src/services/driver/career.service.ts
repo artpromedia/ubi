@@ -59,7 +59,10 @@ interface ExtendedTierProgress {
 }
 
 // Extended DriverCertification with code property
-interface ExtendedDriverCertification extends Omit<DriverCertification, 'certificationCode'> {
+interface ExtendedDriverCertification extends Omit<
+  DriverCertification,
+  "certificationCode"
+> {
   code: string;
   category: TrainingCategory;
   status: CertificationStatus;
@@ -349,14 +352,16 @@ class DriverCareerService implements IDriverCareerService {
   constructor(
     private db: any,
     private notificationService: any,
-    private analyticsService: any
+    private analyticsService: any,
   ) {}
 
   // -----------------------------------------
   // PROFILE MANAGEMENT
   // -----------------------------------------
 
-  async getDriverProfile(driverId: string): Promise<ExtendedDriverProfile | null> {
+  async getDriverProfile(
+    driverId: string,
+  ): Promise<ExtendedDriverProfile | null> {
     const profile = await this.db.driverProfile.findUnique({
       where: { driverId },
       include: {
@@ -411,7 +416,7 @@ class DriverCareerService implements IDriverCareerService {
 
   async createOrUpdateProfile(
     driverId: string,
-    data: Partial<ExtendedDriverProfile>
+    data: Partial<ExtendedDriverProfile>,
   ): Promise<ExtendedDriverProfile> {
     const existing = await this.db.driverProfile.findUnique({
       where: { driverId },
@@ -475,7 +480,7 @@ class DriverCareerService implements IDriverCareerService {
         required: nextRequirements.trips,
         progress: Math.min(
           100,
-          (profile.lifetimeTrips / nextRequirements.trips) * 100
+          (profile.lifetimeTrips / nextRequirements.trips) * 100,
         ),
       });
 
@@ -499,7 +504,8 @@ class DriverCareerService implements IDriverCareerService {
           progress:
             (profile.acceptanceRate || 0) >= nextRequirements.minAcceptanceRate
               ? 100
-              : ((profile.acceptanceRate || 0) / nextRequirements.minAcceptanceRate) *
+              : ((profile.acceptanceRate || 0) /
+                  nextRequirements.minAcceptanceRate) *
                 100,
         });
       }
@@ -513,7 +519,8 @@ class DriverCareerService implements IDriverCareerService {
           progress:
             (profile.completionRate || 0) >= nextRequirements.minCompletionRate
               ? 100
-              : ((profile.completionRate || 0) / nextRequirements.minCompletionRate) *
+              : ((profile.completionRate || 0) /
+                  nextRequirements.minCompletionRate) *
                 100,
         });
       }
@@ -521,7 +528,7 @@ class DriverCareerService implements IDriverCareerService {
       // Certifications progress
       if (nextRequirements.requiredCertifications) {
         const completedCerts = nextRequirements.requiredCertifications.filter(
-          (c: string) => certCodes.includes(c)
+          (c: string) => certCodes.includes(c),
         ).length;
         const totalRequired = nextRequirements.requiredCertifications.length;
 
@@ -548,7 +555,10 @@ class DriverCareerService implements IDriverCareerService {
       nextTierConfig: nextTier ? DRIVER_TIERS[nextTier] : null,
       metrics: progressMetrics,
       overallProgress,
-      estimatedDaysToNextTier: this.estimateDaysToNextTier(profile, nextTier || null),
+      estimatedDaysToNextTier: this.estimateDaysToNextTier(
+        profile,
+        nextTier || null,
+      ),
     };
   }
 
@@ -671,7 +681,7 @@ class DriverCareerService implements IDriverCareerService {
 
   async awardBadge(
     driverId: string,
-    badgeCode: string
+    badgeCode: string,
   ): Promise<ExtendedDriverBadge | null> {
     // Check if already has badge
     const existing = await this.db.driverBadge.findUnique({
@@ -819,7 +829,7 @@ class DriverCareerService implements IDriverCareerService {
   // -----------------------------------------
 
   private async calculateDriverStats(
-    driverId: string
+    driverId: string,
   ): Promise<Partial<ExtendedDriverProfile>> {
     // Get recent trip stats
     const thirtyDaysAgo = new Date();
@@ -844,7 +854,7 @@ class DriverCareerService implements IDriverCareerService {
 
     const tenureDays = driver
       ? Math.floor(
-          (Date.now() - driver.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+          (Date.now() - driver.createdAt.getTime()) / (1000 * 60 * 60 * 24),
         )
       : 0;
 
@@ -857,14 +867,26 @@ class DriverCareerService implements IDriverCareerService {
   private async meetsRequirements(
     profile: ExtendedDriverProfile,
     requirements: ExtendedTierRequirements,
-    driverId: string
+    driverId: string,
   ): Promise<boolean> {
     // Check basic requirements
     if (profile.lifetimeTrips < requirements.trips) return false;
     if ((profile.averageRating || 0) < requirements.rating) return false;
-    if (requirements.minAcceptanceRate && (profile.acceptanceRate || 0) < requirements.minAcceptanceRate) return false;
-    if (requirements.minCompletionRate && (profile.completionRate || 0) < requirements.minCompletionRate) return false;
-    if (requirements.minTenureDays && (profile.tenureDays || 0) < requirements.minTenureDays) return false;
+    if (
+      requirements.minAcceptanceRate &&
+      (profile.acceptanceRate || 0) < requirements.minAcceptanceRate
+    )
+      return false;
+    if (
+      requirements.minCompletionRate &&
+      (profile.completionRate || 0) < requirements.minCompletionRate
+    )
+      return false;
+    if (
+      requirements.minTenureDays &&
+      (profile.tenureDays || 0) < requirements.minTenureDays
+    )
+      return false;
 
     // Check certifications
     if (requirements.requiredCertifications?.length) {
@@ -883,7 +905,7 @@ class DriverCareerService implements IDriverCareerService {
 
   private estimateDaysToNextTier(
     profile: ExtendedDriverProfile,
-    nextTier: DriverTier | null
+    nextTier: DriverTier | null,
   ): number | undefined {
     if (!nextTier) return undefined;
 
@@ -899,7 +921,7 @@ class DriverCareerService implements IDriverCareerService {
   }
 
   private async getDriverCertifications(
-    driverId: string
+    driverId: string,
   ): Promise<ExtendedDriverCertification[]> {
     const certifications = await this.db.driverCertification.findMany({
       where: { driverId },
@@ -916,7 +938,9 @@ class DriverCareerService implements IDriverCareerService {
       issuedAt: c.issuedAt,
       expiresAt: c.expiresAt,
       isActive: c.isActive,
-      status: c.isActive ? CertificationStatus.ACTIVE : CertificationStatus.EXPIRED,
+      status: c.isActive
+        ? CertificationStatus.ACTIVE
+        : CertificationStatus.EXPIRED,
       certificateUrl: c.certificateUrl,
       verificationCode: c.verificationCode,
     }));
@@ -924,7 +948,7 @@ class DriverCareerService implements IDriverCareerService {
 
   private async awardTierBadge(
     driverId: string,
-    tier: DriverTier
+    tier: DriverTier,
   ): Promise<void> {
     const badgeCodes: Record<DriverTier, string> = {
       [DriverTier.STARTER]: "tier_starter",
@@ -966,7 +990,7 @@ class DriverCareerService implements IDriverCareerService {
   private trackEvent(
     driverId: string,
     eventName: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
   ): void {
     this.analyticsService?.track({
       userId: driverId,
@@ -979,24 +1003,110 @@ class DriverCareerService implements IDriverCareerService {
   }
 
   // Interface compatibility methods
-  async getCareerStatus(_driverId: string): Promise<any> {
-    throw new Error("Not implemented");
+  async getCareerStatus(driverId: string): Promise<any> {
+    const profile = await this.getDriverProfile(driverId);
+    if (!profile) {
+      throw new Error("Driver profile not found");
+    }
+    const tierProgress = await this.getTierProgress(driverId);
+    const badges = await this.getBadges(driverId);
+    const certifications = await this.getDriverCertifications(driverId);
+
+    return {
+      profile,
+      tierProgress,
+      badges,
+      certifications,
+      stats: {
+        lifetimeTrips: profile.lifetimeTrips,
+        lifetimeEarnings: profile.lifetimeEarnings,
+        averageRating: profile.averageRating,
+        acceptanceRate: profile.acceptanceRate,
+        completionRate: profile.completionRate,
+        onlineHours: profile.onlineHours,
+        currentStreak: profile.currentStreak,
+      },
+    };
   }
 
-  async getProfile(_driverId: string): Promise<DriverProfile> {
-    throw new Error("Not implemented");
+  async getProfile(driverId: string): Promise<DriverProfile> {
+    const profile = await this.getDriverProfile(driverId);
+    if (!profile) {
+      throw new Error("Driver profile not found");
+    }
+    return profile as DriverProfile;
   }
 
-  async updateProfile(_driverId: string, _updates: Partial<DriverProfile>): Promise<DriverProfile> {
-    throw new Error("Not implemented");
+  async updateProfile(
+    driverId: string,
+    updates: Partial<DriverProfile>,
+  ): Promise<DriverProfile> {
+    const updated = await this.createOrUpdateProfile(driverId, updates);
+    return updated as DriverProfile;
   }
 
-  async checkTierPromotion(_driverId: string): Promise<any> {
-    throw new Error("Not implemented");
+  async checkTierPromotion(driverId: string): Promise<any> {
+    const newTier = await this.checkTierUpgrade(driverId);
+    if (!newTier) {
+      return {
+        eligible: false,
+        currentTier: (await this.getDriverProfile(driverId))?.currentTier,
+      };
+    }
+
+    const profile = await this.getDriverProfile(driverId);
+    return {
+      eligible: true,
+      currentTier: profile?.currentTier,
+      newTier,
+      benefits: DRIVER_TIERS[newTier]?.benefits || [],
+    };
   }
 
-  async getLeaderboard(_city: string, _period: "week" | "month"): Promise<any[]> {
-    throw new Error("Not implemented");
+  async getLeaderboard(city: string, period: "week" | "month"): Promise<any[]> {
+    // Calculate date range based on period
+    const now = new Date();
+    const startDate = new Date();
+    if (period === "week") {
+      startDate.setDate(now.getDate() - 7);
+    } else {
+      startDate.setMonth(now.getMonth() - 1);
+    }
+
+    // Get drivers in the specified city with stats
+    const drivers = await this.db.driverProfile.findMany({
+      where: {
+        driver: {
+          city: city,
+          status: "ACTIVE",
+        },
+      },
+      include: {
+        driver: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            profileImageUrl: true,
+          },
+        },
+      },
+      orderBy: [{ totalPoints: "desc" }, { lifetimeTrips: "desc" }],
+      take: 100,
+    });
+
+    return drivers.map((d: any, index: number) => ({
+      rank: index + 1,
+      driverId: d.driverId,
+      name: `${d.driver?.firstName || "Driver"} ${d.driver?.lastName?.charAt(0) || ""}`.trim(),
+      profileImage: d.driver?.profileImageUrl,
+      tier: d.currentTier,
+      points: d.totalPoints || 0,
+      trips: d.lifetimeTrips,
+      rating: parseFloat(d.averageRating || "0"),
+      city,
+      period,
+    }));
   }
 }
 
@@ -1008,7 +1118,7 @@ class TrainingService implements ITrainingService {
   constructor(
     private db: any,
     private notificationService: any,
-    private analyticsService: any
+    private analyticsService: any,
   ) {}
 
   // -----------------------------------------
@@ -1017,7 +1127,7 @@ class TrainingService implements ITrainingService {
 
   async getTrainingModules(
     driverId: string,
-    category?: TrainingCategory
+    category?: TrainingCategory,
   ): Promise<ExtendedTrainingModule[]> {
     const where: any = { isActive: true };
     if (category) where.category = category;
@@ -1041,7 +1151,9 @@ class TrainingService implements ITrainingService {
     }));
   }
 
-  async getModuleDetails(moduleId: string): Promise<ExtendedTrainingModule | null> {
+  async getModuleDetails(
+    moduleId: string,
+  ): Promise<ExtendedTrainingModule | null> {
     const module = await this.db.trainingModule.findUnique({
       where: { id: moduleId },
     });
@@ -1049,7 +1161,9 @@ class TrainingService implements ITrainingService {
     return module ? this.mapModule(module) : null;
   }
 
-  async getRecommendedModules(driverId: string): Promise<ExtendedTrainingModule[]> {
+  async getRecommendedModules(
+    driverId: string,
+  ): Promise<ExtendedTrainingModule[]> {
     // Get driver profile
     const profile = await this.db.driverProfile.findUnique({
       where: { driverId },
@@ -1077,7 +1191,7 @@ class TrainingService implements ITrainingService {
       if (module.requiredTier) {
         const tierOrder = Object.values(DriverTier);
         const driverTierIndex = tierOrder.indexOf(
-          profile?.currentTier || DriverTier.STARTER
+          profile?.currentTier || DriverTier.STARTER,
         );
         const requiredIndex = tierOrder.indexOf(module.requiredTier);
         if (driverTierIndex < requiredIndex) continue;
@@ -1087,7 +1201,7 @@ class TrainingService implements ITrainingService {
       if (module.prerequisites?.length) {
         const hasPrereqs = module.prerequisites.every((p: string) => {
           const prereqCompletion = completions.find(
-            (c: any) => c.moduleCode === p && c.passed
+            (c: any) => c.moduleCode === p && c.passed,
           );
           return !!prereqCompletion;
         });
@@ -1117,10 +1231,7 @@ class TrainingService implements ITrainingService {
   // PROGRESS & COMPLETION
   // -----------------------------------------
 
-  async startModule(
-    driverId: string,
-    moduleId: string
-  ): Promise<any> {
+  async startModule(driverId: string, moduleId: string): Promise<any> {
     // Check if already started
     const existing = await this.db.trainingCompletion.findUnique({
       where: {
@@ -1156,7 +1267,7 @@ class TrainingService implements ITrainingService {
   async updateProgress(
     driverId: string,
     moduleId: string,
-    progress: number
+    progress: number,
   ): Promise<any> {
     const completion = await this.db.trainingCompletion.update({
       where: {
@@ -1173,7 +1284,7 @@ class TrainingService implements ITrainingService {
   async completeModule(
     driverId: string,
     moduleId: string,
-    quizScore?: number
+    quizScore?: number,
   ): Promise<ExtendedTrainingCompletion> {
     const module = await this.db.trainingModule.findUnique({
       where: { id: moduleId },
@@ -1231,7 +1342,9 @@ class TrainingService implements ITrainingService {
     return this.mapCompletion(completion);
   }
 
-  async getDriverCompletions(driverId: string): Promise<ExtendedTrainingCompletion[]> {
+  async getDriverCompletions(
+    driverId: string,
+  ): Promise<ExtendedTrainingCompletion[]> {
     const completions = await this.db.trainingCompletion.findMany({
       where: { driverId },
       include: { module: true },
@@ -1267,7 +1380,7 @@ class TrainingService implements ITrainingService {
 
   async renewCertification(
     driverId: string,
-    certificationId: string
+    certificationId: string,
   ): Promise<DriverCertification> {
     const cert = await this.db.driverCertification.findUnique({
       where: { id: certificationId },
@@ -1304,14 +1417,17 @@ class TrainingService implements ITrainingService {
 
   private async awardCertification(
     driverId: string,
-    module: any
+    module: any,
   ): Promise<void> {
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
 
     await this.db.driverCertification.upsert({
       where: {
-        driverId_certificationCode: { driverId, certificationCode: module.certificationCode },
+        driverId_certificationCode: {
+          driverId,
+          certificationCode: module.certificationCode,
+        },
       },
       update: {
         issuedAt: new Date(),
@@ -1335,8 +1451,111 @@ class TrainingService implements ITrainingService {
     return this.getTrainingModules(_driverId);
   }
 
-  async submitAssessment(_driverId: string, _moduleId: string, _answers: number[]): Promise<any> {
-    throw new Error("Not implemented");
+  async submitAssessment(
+    driverId: string,
+    moduleId: string,
+    answers: number[],
+  ): Promise<any> {
+    // Get the module with its quiz questions
+    const module = await this.db.trainingModule.findUnique({
+      where: { id: moduleId },
+      include: {
+        quizQuestions: {
+          orderBy: { orderIndex: "asc" },
+        },
+      },
+    });
+
+    if (!module) {
+      throw new Error("Training module not found");
+    }
+
+    if (!module.hasQuiz || !module.quizQuestions?.length) {
+      throw new Error("This module does not have a quiz");
+    }
+
+    // Calculate score based on correct answers
+    let correctCount = 0;
+    const totalQuestions = module.quizQuestions.length;
+
+    module.quizQuestions.forEach((question: any, index: number) => {
+      if (answers[index] === question.correctAnswer) {
+        correctCount++;
+      }
+    });
+
+    const score = Math.round((correctCount / totalQuestions) * 100);
+    const passed = score >= (module.passingScore || 70);
+
+    // Update or create completion record
+    const completion = await this.db.trainingCompletion.upsert({
+      where: {
+        driverId_moduleId: { driverId, moduleId },
+      },
+      update: {
+        quizScore: score,
+        attempts: { increment: 1 },
+        passed,
+        completedAt: passed ? new Date() : null,
+        progress: passed ? 100 : undefined,
+      },
+      create: {
+        driverId,
+        moduleId,
+        startedAt: new Date(),
+        quizScore: score,
+        attempts: 1,
+        passed,
+        completedAt: passed ? new Date() : null,
+        progress: passed ? 100 : 0,
+      },
+    });
+
+    // Award certification if passed and module has one
+    if (passed && module.certificationCode) {
+      await this.awardCertification(driverId, module);
+    }
+
+    // Award points if passed
+    if (passed && module.pointsReward) {
+      await this.db.driverProfile.update({
+        where: { driverId },
+        data: {
+          totalPoints: { increment: module.pointsReward },
+        },
+      });
+    }
+
+    // Track analytics
+    this.analyticsService?.track({
+      userId: driverId,
+      event: passed
+        ? DRIVER_EVENTS.TRAINING_COMPLETED
+        : "training_assessment_failed",
+      properties: {
+        moduleId,
+        score,
+        passed,
+        attempts: completion.attempts,
+      },
+    });
+
+    return {
+      score,
+      passed,
+      correctCount,
+      totalQuestions,
+      passingScore: module.passingScore || 70,
+      attempts: completion.attempts,
+      certification:
+        passed && module.certificationCode
+          ? {
+              code: module.certificationCode,
+              name: module.certificationName || module.title,
+            }
+          : null,
+      pointsAwarded: passed ? module.pointsReward : 0,
+    };
   }
 
   async getBadges(_driverId: string): Promise<DriverBadge[]> {

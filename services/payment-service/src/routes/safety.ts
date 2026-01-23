@@ -844,7 +844,16 @@ safetyRoutes.get("/sos/:sosId", async (c) => {
  */
 safetyRoutes.post("/emergency-contacts", async (c) => {
   try {
-    const { userId, name, phone, relationship } = await c.req.json();
+    const {
+      userId,
+      name,
+      phone,
+      relationship,
+      email,
+      isPrimary,
+      whatsappEnabled,
+      notifyOnTrip,
+    } = await c.req.json();
 
     if (!userId || !name || !phone) {
       return c.json(
@@ -856,15 +865,17 @@ safetyRoutes.post("/emergency-contacts", async (c) => {
       );
     }
 
-    const contact = {
-      id: `contact_${Date.now()}`,
-      userId,
+    const contact = await sosEmergencyService.addEmergencyContact(userId, {
       name,
-      phone,
-      relationship,
-      createdAt: new Date(),
-    };
-    // Note: addContact method needs to be implemented in SOSEmergencyService
+      phoneNumber: phone,
+      relationship: relationship || undefined,
+      email: email || undefined,
+      isPrimary: isPrimary ?? false,
+      whatsappEnabled: whatsappEnabled ?? false,
+      telegramEnabled: false,
+      emailEnabled: !!email,
+      notifyOnTrip: notifyOnTrip ?? true,
+    });
 
     return c.json({
       success: true,
@@ -888,19 +899,120 @@ safetyRoutes.post("/emergency-contacts", async (c) => {
  */
 safetyRoutes.get("/emergency-contacts/:userId", async (c) => {
   try {
-    const contacts: any[] = [];
-    // Note: getContacts method needs to be implemented in SOSEmergencyService
+    const userId = c.req.param("userId");
+
+    if (!userId) {
+      return c.json(
+        {
+          success: false,
+          error: "Missing userId parameter",
+        },
+        400,
+      );
+    }
+
+    const contacts = await sosEmergencyService.getEmergencyContacts(userId);
 
     return c.json({
       success: true,
       data: contacts,
     });
   } catch (error: any) {
-    safetyLogger.error({ err: error }, "Get contacts error");
+    safetyLogger.error(
+      { err: error, userId: c.req.param("userId") },
+      "Get contacts error",
+    );
     return c.json(
       {
         success: false,
         error: error.message || "Failed to get contacts",
+      },
+      500,
+    );
+  }
+});
+
+/**
+ * Update emergency contact
+ * PUT /emergency-contacts/:contactId
+ */
+safetyRoutes.put("/emergency-contacts/:contactId", async (c) => {
+  try {
+    const contactId = c.req.param("contactId");
+    const body = await c.req.json();
+
+    if (!contactId) {
+      return c.json(
+        {
+          success: false,
+          error: "Missing contactId parameter",
+        },
+        400,
+      );
+    }
+
+    const contact = await sosEmergencyService.updateEmergencyContact(
+      contactId,
+      {
+        name: body.name,
+        phoneNumber: body.phone || body.phoneNumber,
+        relationship: body.relationship,
+        isPrimary: body.isPrimary,
+      },
+    );
+
+    return c.json({
+      success: true,
+      data: contact,
+    });
+  } catch (error: any) {
+    safetyLogger.error(
+      { err: error, contactId: c.req.param("contactId") },
+      "Update contact error",
+    );
+    return c.json(
+      {
+        success: false,
+        error: error.message || "Failed to update contact",
+      },
+      500,
+    );
+  }
+});
+
+/**
+ * Delete emergency contact
+ * DELETE /emergency-contacts/:contactId
+ */
+safetyRoutes.delete("/emergency-contacts/:contactId", async (c) => {
+  try {
+    const contactId = c.req.param("contactId");
+
+    if (!contactId) {
+      return c.json(
+        {
+          success: false,
+          error: "Missing contactId parameter",
+        },
+        400,
+      );
+    }
+
+    await sosEmergencyService.deleteEmergencyContact(contactId);
+
+    return c.json({
+      success: true,
+      message: "Emergency contact deleted successfully",
+    });
+  } catch (error: any) {
+    safetyLogger.error(
+      { err: error, contactId: c.req.param("contactId") },
+      "Delete contact error",
+    );
+    return c.json(
+      {
+        success: false,
+        error: error.message || "Failed to delete contact",
       },
       500,
     );

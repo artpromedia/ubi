@@ -822,22 +822,206 @@ export class SOSEmergencyService extends EventEmitter {
   private async getUserEmergencyContacts(
     userId: string,
   ): Promise<EmergencyContact[]> {
-    // In production, query database
-    return [
-      {
-        id: "ec_1",
-        userId,
-        name: "Emergency Contact 1",
-        phoneNumber: "+2341234567890",
-        relationship: "Family",
-        isPrimary: true,
-        whatsappEnabled: true,
-        telegramEnabled: false,
-        emailEnabled: true,
-        notifyOnTrip: true,
-        isVerified: true,
-      },
-    ];
+    // Query database for user's emergency contacts
+    try {
+      const contacts = await this.getContactsFromDatabase(userId);
+      return contacts;
+    } catch (error) {
+      sosLogger.error(
+        { userId, error },
+        "Failed to fetch emergency contacts from database",
+      );
+      // Return empty array if database query fails
+      return [];
+    }
+  }
+
+  /**
+   * Get emergency contacts from database
+   */
+  private async getContactsFromDatabase(
+    userId: string,
+  ): Promise<EmergencyContact[]> {
+    // Import prisma client - in production this would be injected
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient();
+
+    try {
+      const dbContacts = await prisma.emergencyContact.findMany({
+        where: { userId, isActive: true },
+        orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+      });
+
+      return dbContacts.map((c: any) => ({
+        id: c.id,
+        userId: c.userId,
+        name: c.name,
+        phoneNumber: c.phoneNumber,
+        relationship: c.relationship || undefined,
+        isPrimary: c.isPrimary,
+        whatsappEnabled: c.whatsappEnabled ?? false,
+        telegramEnabled: c.telegramEnabled ?? false,
+        emailEnabled: c.emailEnabled ?? false,
+        email: c.email || undefined,
+        notifyOnTrip: c.notifyOnTrip ?? true,
+        isVerified: c.isVerified ?? false,
+      }));
+    } finally {
+      await prisma.$disconnect();
+    }
+  }
+
+  /**
+   * Add an emergency contact for a user
+   */
+  async addEmergencyContact(
+    userId: string,
+    contact: Omit<EmergencyContact, "id" | "userId" | "isVerified">,
+  ): Promise<EmergencyContact> {
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient();
+
+    try {
+      // If this is set as primary, unset other primary contacts
+      if (contact.isPrimary) {
+        await prisma.emergencyContact.updateMany({
+          where: { userId, isPrimary: true },
+          data: { isPrimary: false },
+        });
+      }
+
+      const created = await prisma.emergencyContact.create({
+        data: {
+          userId,
+          name: contact.name,
+          phoneNumber: contact.phoneNumber,
+          relationship: contact.relationship,
+          isPrimary: contact.isPrimary,
+          whatsappEnabled: contact.whatsappEnabled,
+          telegramEnabled: contact.telegramEnabled,
+          emailEnabled: contact.emailEnabled,
+          email: contact.email,
+          notifyOnTrip: contact.notifyOnTrip,
+          isVerified: false,
+          isActive: true,
+        },
+      });
+
+      sosLogger.info(
+        { userId, contactId: created.id },
+        "Emergency contact added",
+      );
+
+      return {
+        id: created.id,
+        userId: created.userId,
+        name: created.name,
+        phoneNumber: created.phoneNumber,
+        relationship: created.relationship || undefined,
+        isPrimary: created.isPrimary,
+        whatsappEnabled: created.whatsappEnabled ?? false,
+        telegramEnabled: created.telegramEnabled ?? false,
+        emailEnabled: created.emailEnabled ?? false,
+        email: created.email || undefined,
+        notifyOnTrip: created.notifyOnTrip ?? true,
+        isVerified: created.isVerified ?? false,
+      };
+    } finally {
+      await prisma.$disconnect();
+    }
+  }
+
+  /**
+   * Update an emergency contact
+   */
+  async updateEmergencyContact(
+    userId: string,
+    contactId: string,
+    updates: Partial<Omit<EmergencyContact, "id" | "userId">>,
+  ): Promise<EmergencyContact | null> {
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient();
+
+    try {
+      // Verify contact belongs to user
+      const existing = await prisma.emergencyContact.findFirst({
+        where: { id: contactId, userId },
+      });
+
+      if (!existing) {
+        return null;
+      }
+
+      // If setting as primary, unset other primary contacts
+      if (updates.isPrimary) {
+        await prisma.emergencyContact.updateMany({
+          where: { userId, isPrimary: true, id: { not: contactId } },
+          data: { isPrimary: false },
+        });
+      }
+
+      const updated = await prisma.emergencyContact.update({
+        where: { id: contactId },
+        data: {
+          name: updates.name,
+          phoneNumber: updates.phoneNumber,
+          relationship: updates.relationship,
+          isPrimary: updates.isPrimary,
+          whatsappEnabled: updates.whatsappEnabled,
+          telegramEnabled: updates.telegramEnabled,
+          emailEnabled: updates.emailEnabled,
+          email: updates.email,
+          notifyOnTrip: updates.notifyOnTrip,
+        },
+      });
+
+      return {
+        id: updated.id,
+        userId: updated.userId,
+        name: updated.name,
+        phoneNumber: updated.phoneNumber,
+        relationship: updated.relationship || undefined,
+        isPrimary: updated.isPrimary,
+        whatsappEnabled: updated.whatsappEnabled ?? false,
+        telegramEnabled: updated.telegramEnabled ?? false,
+        emailEnabled: updated.emailEnabled ?? false,
+        email: updated.email || undefined,
+        notifyOnTrip: updated.notifyOnTrip ?? true,
+        isVerified: updated.isVerified ?? false,
+      };
+    } finally {
+      await prisma.$disconnect();
+    }
+  }
+
+  /**
+   * Delete an emergency contact
+   */
+  async deleteEmergencyContact(
+    userId: string,
+    contactId: string,
+  ): Promise<boolean> {
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient();
+
+    try {
+      // Soft delete - mark as inactive
+      const result = await prisma.emergencyContact.updateMany({
+        where: { id: contactId, userId },
+        data: { isActive: false },
+      });
+
+      return result.count > 0;
+    } finally {
+      await prisma.$disconnect();
+    }
+  }
+
+  /**
+   * Get all emergency contacts for a user
+   */
+  async getEmergencyContacts(userId: string): Promise<EmergencyContact[]> {
+    return this.getUserEmergencyContacts(userId);
   }
 
   private async generateLiveLocationLink(_incidentId: string): Promise<string> {

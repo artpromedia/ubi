@@ -15,6 +15,10 @@ import { Hono } from "hono";
 import * as jose from "jose";
 import { z } from "zod";
 import { authLogger } from "../lib/logger.js";
+import {
+  notificationClient,
+  sendOTPFallback,
+} from "../lib/notification-client.js";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 
@@ -66,9 +70,15 @@ const confirmResetPasswordSchema = z.object({
 // JWT Configuration
 // ===========================================
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "ubi-dev-secret-change-in-prod",
-);
+const getJWTSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is required");
+  }
+  return new TextEncoder().encode(secret);
+};
+
+const JWT_SECRET = getJWTSecret();
 const JWT_ISSUER = "ubi.africa";
 const JWT_AUDIENCE = "ubi-api";
 const ACCESS_TOKEN_EXPIRY = "15m";
@@ -204,12 +214,24 @@ authRoutes.post("/register", async (c) => {
   const otp = generateOTP(6);
   await redis.setex(`otp:${data.phone}`, 300, otp); // 5 minute expiry
 
-  // NOTE: SMS integration pending - notification-service will handle this
-  if (process.env.NODE_ENV === "development") {
-    authLogger.debug(
-      { phone: data.phone, otp },
-      "[DEV] Registration OTP generated",
+  // Send OTP via notification service
+  try {
+    await notificationClient.sendSMS({
+      userId: user.id,
+      phone: data.phone,
+      message: `Your UBI verification code is: ${otp}. This code expires in 5 minutes. Do not share this code with anyone.`,
+    });
+    authLogger.info(
+      { phone: data.phone },
+      "Registration OTP sent successfully",
     );
+  } catch (error) {
+    // Fallback: OTP is already stored in Redis, log warning
+    authLogger.warn(
+      { phone: data.phone, error },
+      "Failed to send OTP via notification service, using fallback",
+    );
+    await sendOTPFallback(data.phone, otp, redis);
   }
 
   return c.json({
@@ -264,9 +286,21 @@ authRoutes.post("/login/otp", async (c) => {
     );
   }
 
-  // NOTE: SMS integration pending - notification-service will handle this
-  if (process.env.NODE_ENV === "development") {
-    authLogger.debug({ phone, otp }, "[DEV] Login OTP generated");
+  // Send OTP via notification service
+  try {
+    await notificationClient.sendSMS({
+      userId: user?.id,
+      phone,
+      message: `Your UBI login code is: ${otp}. This code expires in 5 minutes. Do not share this code with anyone.`,
+    });
+    authLogger.info({ phone }, "Login OTP sent successfully");
+  } catch (error) {
+    // Fallback: OTP is already stored in Redis, log warning
+    authLogger.warn(
+      { phone, error },
+      "Failed to send OTP via notification service, using fallback",
+    );
+    await sendOTPFallback(phone, otp, redis);
   }
 
   return c.json({
@@ -627,12 +661,38 @@ authRoutes.post("/forgot-password", async (c) => {
     const resetToken = crypto.randomUUID();
     await redis.setex(`password_reset:${resetToken}`, 3600, user.id); // 1 hour expiry
 
-    // NOTE: Email integration pending - notification-service will handle this
-    if (process.env.NODE_ENV === "development") {
-      authLogger.debug(
-        { resetToken, email },
-        "[DEV] Password reset link generated",
+    // Send password reset email via notification service
+    const resetUrl = `${process.env.APP_URL || "https://app.ubi.africa"}/reset-password?token=${resetToken}`;
+    try {
+      await notificationClient.sendEmail({
+        userId: user.id,
+        email: user.email,
+        subject: "Reset your UBI password",
+        body: `
+Hello ${user.firstName},
+
+You requested to reset your password. Click the link below to set a new password:
+
+${resetUrl}
+
+This link expires in 1 hour. If you didn't request this, please ignore this email.
+
+- The UBI Team
+        `.trim(),
+      });
+      authLogger.info({ email }, "Password reset email sent successfully");
+    } catch (error) {
+      authLogger.warn(
+        { email, error },
+        "Failed to send password reset email via notification service",
       );
+      // In development, log the reset token for testing
+      if (process.env.NODE_ENV === "development") {
+        authLogger.debug(
+          { resetToken, email, resetUrl },
+          "[FALLBACK] Password reset token generated - email not sent",
+        );
+      }
     }
   }
 
