@@ -23,12 +23,14 @@
  * Error Handling:
  * - Invalid card → Return clear error message
  * - Insufficient funds → Fail gracefully
+import { paystackLogger } from "../lib/logger";
  * - 3DS failure → Redirect to bank
  * - Webhook signature mismatch → Reject
  */
 
 import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
 import crypto from "crypto";
+import { paystackLogger } from "../lib/logger.js";
 
 export interface PaystackConfig {
   secretKey: string;
@@ -251,7 +253,7 @@ export class PaystackService {
 
   constructor(
     private config: PaystackConfig,
-    private prisma: PrismaClient
+    private prisma: PrismaClient,
   ) {
     this.baseUrl = "https://api.paystack.co";
   }
@@ -261,7 +263,7 @@ export class PaystackService {
    */
   private async makeRequest<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
   ): Promise<T> {
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
@@ -272,7 +274,10 @@ export class PaystackService {
       },
     });
 
-    const data = await response.json() as { status?: boolean; message?: string };
+    const data = (await response.json()) as {
+      status?: boolean;
+      message?: string;
+    };
 
     if (!response.ok || !data.status) {
       throw new Error(`Paystack API error: ${data.message || "Unknown error"}`);
@@ -302,7 +307,7 @@ export class PaystackService {
    * Customer will be redirected to Paystack to enter card details
    */
   async initializeTransaction(
-    request: PaystackInitializeRequest
+    request: PaystackInitializeRequest,
   ): Promise<PaystackInitializeResponse> {
     const payload = {
       email: request.email,
@@ -319,7 +324,7 @@ export class PaystackService {
       {
         method: "POST",
         body: JSON.stringify(payload),
-      }
+      },
     );
 
     return response;
@@ -334,7 +339,7 @@ export class PaystackService {
       `/transaction/verify/${reference}`,
       {
         method: "GET",
-      }
+      },
     );
 
     return response;
@@ -345,7 +350,7 @@ export class PaystackService {
    * Use for recurring payments or subsequent charges
    */
   async chargeAuthorization(
-    request: PaystackChargeAuthorizationRequest
+    request: PaystackChargeAuthorizationRequest,
   ): Promise<PaystackChargeAuthorizationResponse> {
     const authCodeParts = request.authorizationCode.split("_");
     const currency = authCodeParts[0] || "NGN";
@@ -364,7 +369,7 @@ export class PaystackService {
         {
           method: "POST",
           body: JSON.stringify(payload),
-        }
+        },
       );
 
     return response;
@@ -388,7 +393,7 @@ export class PaystackService {
    */
   async handleWebhook(
     payload: PaystackWebhookPayload,
-    signature: string
+    signature: string,
   ): Promise<void> {
     // Verify signature
     const payloadString = JSON.stringify(payload);
@@ -426,7 +431,7 @@ export class PaystackService {
         break;
 
       default:
-        console.log(`Unhandled Paystack webhook event: ${event}`);
+        paystackLogger.info({ event }, "Unhandled Paystack webhook event");
     }
   }
 
@@ -448,16 +453,17 @@ export class PaystackService {
     });
 
     if (!paymentTx) {
-      console.warn(
-        `Payment transaction not found for Paystack reference: ${reference}`
+      paystackLogger.warn(
+        { reference },
+        "Payment transaction not found for Paystack reference",
       );
       return;
     }
 
     // Already processed
     if (paymentTx.status !== PaymentStatus.PENDING) {
-      console.log(
-        `Payment transaction ${paymentTx.id} already processed (status: ${paymentTx.status})`
+      paystackLogger.info(
+        `Payment transaction ${paymentTx.id} already processed (status: ${paymentTx.status})`,
       );
       return;
     }
@@ -470,7 +476,7 @@ export class PaystackService {
       if (verification.data.authorization.reusable) {
         await this.savePaymentMethod(
           paymentTx.userId,
-          verification.data.authorization
+          verification.data.authorization,
         );
       }
 
@@ -497,8 +503,16 @@ export class PaystackService {
         },
       });
 
-      console.log(
-        `Paystack payment completed: ${paymentTx.id} (Amount: ${verification.data.currency} ${this.fromSubunit(verification.data.amount, verification.data.currency)})`
+      paystackLogger.info(
+        {
+          paymentId: paymentTx.id,
+          currency: verification.data.currency,
+          amount: this.fromSubunit(
+            verification.data.amount,
+            verification.data.currency,
+          ),
+        },
+        "Paystack payment completed",
       );
     }
   }
@@ -521,16 +535,18 @@ export class PaystackService {
     });
 
     if (!paymentTx) {
-      console.warn(
-        `Payment transaction not found for Paystack reference: ${reference}`
+      paystackLogger.warn(
+        { reference },
+        "Payment transaction not found for Paystack reference",
       );
       return;
     }
 
     // Already processed
     if (paymentTx.status !== PaymentStatus.PENDING) {
-      console.log(
-        `Payment transaction ${paymentTx.id} already processed (status: ${paymentTx.status})`
+      paystackLogger.info(
+        { paymentId: paymentTx.id, status: paymentTx.status },
+        "Payment transaction already processed",
       );
       return;
     }
@@ -558,8 +574,9 @@ export class PaystackService {
       },
     });
 
-    console.log(
-      `Paystack payment failed: ${paymentTx.id} (Reason: ${data.gateway_response})`
+    paystackLogger.info(
+      { paymentId: paymentTx.id, reason: data.gateway_response },
+      "Paystack payment failed",
     );
   }
 
@@ -568,7 +585,7 @@ export class PaystackService {
    */
   private async savePaymentMethod(
     userId: string,
-    authorization: any
+    authorization: any,
   ): Promise<void> {
     // Check if already saved
     const existing = await this.prisma.paymentMethodRecord.findFirst({
@@ -603,8 +620,9 @@ export class PaystackService {
       },
     });
 
-    console.log(
-      `Saved payment method for user ${userId}: ${authorization.brand} **** ${authorization.last4}`
+    paystackLogger.info(
+      { userId, brand: authorization.brand, last4: authorization.last4 },
+      "Saved payment method for user",
     );
   }
 
@@ -820,7 +838,7 @@ export class PaystackService {
    * Must be done before initiating transfer
    */
   async createTransferRecipient(
-    recipient: PaystackTransferRecipient
+    recipient: PaystackTransferRecipient,
   ): Promise<PaystackCreateRecipientResponse> {
     const response = await fetch(`${this.baseUrl}/transferrecipient`, {
       method: "POST",
@@ -831,11 +849,11 @@ export class PaystackService {
       body: JSON.stringify(recipient),
     });
 
-    const data = await response.json() as PaystackCreateRecipientResponse;
+    const data = (await response.json()) as PaystackCreateRecipientResponse;
 
     if (!data.status) {
       throw new Error(
-        `Failed to create Paystack transfer recipient: ${data.message}`
+        `Failed to create Paystack transfer recipient: ${data.message}`,
       );
     }
 
@@ -847,7 +865,7 @@ export class PaystackService {
    * Sends money from Paystack balance to recipient account
    */
   async initiateTransfer(
-    request: PaystackInitiateTransferRequest
+    request: PaystackInitiateTransferRequest,
   ): Promise<PaystackInitiateTransferResponse> {
     if (request.amount <= 0) {
       throw new Error("Transfer amount must be positive");
@@ -862,7 +880,7 @@ export class PaystackService {
       body: JSON.stringify(request),
     });
 
-    const data = await response.json() as PaystackInitiateTransferResponse;
+    const data = (await response.json()) as PaystackInitiateTransferResponse;
 
     if (!data.status) {
       throw new Error(`Failed to initiate Paystack transfer: ${data.message}`);
@@ -875,7 +893,7 @@ export class PaystackService {
    * Verify transfer status
    */
   async verifyTransfer(
-    reference: string
+    reference: string,
   ): Promise<PaystackVerifyTransferResponse> {
     const response = await fetch(
       `${this.baseUrl}/transfer/verify/${encodeURIComponent(reference)}`,
@@ -883,10 +901,10 @@ export class PaystackService {
         headers: {
           Authorization: `Bearer ${this.config.secretKey}`,
         },
-      }
+      },
     );
 
-    const data = await response.json() as PaystackVerifyTransferResponse;
+    const data = (await response.json()) as PaystackVerifyTransferResponse;
 
     if (!data.status) {
       throw new Error(`Failed to verify Paystack transfer: ${data.message}`);
@@ -909,7 +927,7 @@ export class PaystackService {
     },
     amount: number,
     currency: "NGN" | "GHS" | "ZAR" | "KES",
-    reason: string
+    reason: string,
   ): Promise<{ transferCode: string; recipientCode: string }> {
     try {
       // Step 1: Create transfer recipient
@@ -941,7 +959,10 @@ export class PaystackService {
         recipientCode,
       };
     } catch (error) {
-      console.error(`Failed to complete Paystack payout ${payoutId}:`, error);
+      paystackLogger.error(
+        { err: error, payoutId },
+        "Failed to complete Paystack payout",
+      );
       throw error;
     }
   }
@@ -952,7 +973,7 @@ export class PaystackService {
    */
   async handleTransferWebhook(
     payload: PaystackWebhookPayload,
-    signature: string
+    signature: string,
   ): Promise<void> {
     // Verify webhook signature
     if (!this.verifyWebhookSignature(JSON.stringify(payload), signature)) {
@@ -988,7 +1009,10 @@ export class PaystackService {
           },
         });
 
-        console.log(`Paystack transfer ${reference} completed successfully`);
+        paystackLogger.info(
+          { reference },
+          "Paystack transfer completed successfully",
+        );
       } else if (event === "transfer.failed") {
         // Transfer failed
         await this.prisma.payout.update({
@@ -1004,7 +1028,10 @@ export class PaystackService {
           },
         });
 
-        console.error(`Paystack transfer ${reference} failed: ${data.reason}`);
+        paystackLogger.error(
+          { reference, reason: data.reason },
+          "Paystack transfer failed",
+        );
       } else if (event === "transfer.reversed") {
         // Transfer reversed (usually due to invalid account)
         await this.prisma.payout.update({
@@ -1020,12 +1047,12 @@ export class PaystackService {
           },
         });
 
-        console.warn(`Paystack transfer ${reference} reversed`);
+        paystackLogger.warn({ reference }, "Paystack transfer reversed");
       }
     } catch (error) {
-      console.error(
-        `Failed to process Paystack transfer webhook for ${reference}:`,
-        error
+      paystackLogger.error(
+        { err: error, reference },
+        "Failed to process Paystack transfer webhook",
       );
       throw error;
     }
@@ -1039,7 +1066,7 @@ export class PaystackService {
     transferCode: string,
     payoutId: string,
     maxAttempts: number = 20,
-    intervalMs: number = 3000
+    intervalMs: number = 3000,
   ): Promise<void> {
     let attempts = 0;
 
@@ -1065,7 +1092,9 @@ export class PaystackService {
             },
           });
 
-          console.log(`Paystack transfer ${payoutId} completed successfully`);
+          paystackLogger.info(
+            `Paystack transfer ${payoutId} completed successfully`,
+          );
           return;
         }
 
@@ -1084,7 +1113,7 @@ export class PaystackService {
             },
           });
 
-          console.error(`Paystack transfer ${payoutId} ${status}`);
+          paystackLogger.error(`Paystack transfer ${payoutId} ${status}`);
           return;
         }
 
@@ -1092,9 +1121,9 @@ export class PaystackService {
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
         attempts++;
       } catch (error) {
-        console.error(
-          `Error polling Paystack transfer status (attempt ${attempts + 1}):`,
-          error
+        paystackLogger.error(
+          { err: error, attempt: attempts + 1 },
+          "Error polling Paystack transfer status",
         );
         attempts++;
 

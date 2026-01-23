@@ -8,6 +8,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Currency } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
+import { payoutLogger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -202,7 +203,7 @@ payoutRoutes.get("/me/earnings", async (c) => {
 async function calculateEarnings(
   walletId: string,
   from: Date,
-  to: Date
+  to: Date,
 ): Promise<number> {
   const result = await prisma.walletTransaction.aggregate({
     where: {
@@ -280,7 +281,7 @@ payoutRoutes.post(
           success: false,
           error: { code: "NO_WALLET", message: "Earnings wallet not found" },
         },
-        404
+        404,
       );
     }
 
@@ -294,7 +295,7 @@ payoutRoutes.post(
             message: `Insufficient balance. Available: ${availableBalance} ${currency}`,
           },
         },
-        400
+        400,
       );
     }
 
@@ -309,7 +310,7 @@ payoutRoutes.post(
             message: `Minimum payout amount is ${minimumPayout} ${currency}`,
           },
         },
-        400
+        400,
       );
     }
 
@@ -330,7 +331,7 @@ payoutRoutes.post(
             message: "You have a pending payout request",
           },
         },
-        400
+        400,
       );
     }
 
@@ -341,32 +342,30 @@ payoutRoutes.post(
     const netAmount = amount - fees.total;
 
     // Create payout and lock funds
-    const payout = await prisma.$transaction(
-      async (tx) => {
-        // Lock funds
-        await tx.wallet.update({
-          where: { id: wallet.id },
-          data: { lockedBalance: { increment: amount } },
-        });
+    const payout = await prisma.$transaction(async (tx) => {
+      // Lock funds
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { lockedBalance: { increment: amount } },
+      });
 
-        // Create payout record
-        return tx.payout.create({
-          data: {
-            id: payoutId,
-            userId,
-            walletId: wallet.id,
-            amount,
-            currency,
-            method,
-            status: PayoutStatus.PENDING,
-            fees: fees.total,
-            netAmount,
-            destination,
-            metadata: { fees },
-          },
-        });
-      }
-    );
+      // Create payout record
+      return tx.payout.create({
+        data: {
+          id: payoutId,
+          userId,
+          walletId: wallet.id,
+          amount,
+          currency,
+          method,
+          status: PayoutStatus.PENDING,
+          fees: fees.total,
+          netAmount,
+          destination,
+          metadata: { fees },
+        },
+      });
+    });
 
     // Queue payout for processing
     await redis.lpush(
@@ -377,7 +376,7 @@ payoutRoutes.post(
         destination,
         amount: netAmount,
         currency,
-      })
+      }),
     );
 
     return c.json(
@@ -394,9 +393,9 @@ payoutRoutes.post(
           estimatedArrival: getEstimatedArrival(method),
         },
       },
-      201
+      201,
     );
-  }
+  },
 );
 
 /**
@@ -428,7 +427,7 @@ payoutRoutes.put(
       const isValid = await validateBankAccount(
         settings.bankAccount.bankCode,
         settings.bankAccount.accountNumber,
-        settings.bankAccount.accountName
+        settings.bankAccount.accountName,
       );
 
       if (!isValid) {
@@ -440,7 +439,7 @@ payoutRoutes.put(
               message: "Bank account validation failed",
             },
           },
-          400
+          400,
         );
       }
     }
@@ -451,14 +450,14 @@ payoutRoutes.put(
       JSON.stringify({
         ...settings,
         updatedAt: new Date().toISOString(),
-      })
+      }),
     );
 
     return c.json({
       success: true,
       data: settings,
     });
-  }
+  },
 );
 
 /**
@@ -492,7 +491,7 @@ payoutRoutes.post("/verify-account", async (c) => {
   const verification = await verifyBankAccount(
     bankCode,
     accountNumber,
-    country
+    country,
   );
 
   return c.json({
@@ -531,7 +530,7 @@ payoutRoutes.get("/:payoutId", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Payout not found" },
       },
-      404
+      404,
     );
   }
 
@@ -541,7 +540,7 @@ payoutRoutes.get("/:payoutId", async (c) => {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -568,7 +567,7 @@ payoutRoutes.post("/:payoutId/cancel", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Payout not found" },
       },
-      404
+      404,
     );
   }
 
@@ -578,7 +577,7 @@ payoutRoutes.post("/:payoutId/cancel", async (c) => {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -591,7 +590,7 @@ payoutRoutes.post("/:payoutId/cancel", async (c) => {
           message: `Cannot cancel payout with status: ${payout.status}`,
         },
       },
-      400
+      400,
     );
   }
 
@@ -632,7 +631,7 @@ payoutRoutes.post("/process", async (c) => {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Internal endpoint" },
       },
-      403
+      403,
     );
   }
 
@@ -711,7 +710,10 @@ payoutRoutes.post("/process", async (c) => {
         error: result.error,
       });
     } catch (error) {
-      console.error(`Payout processing failed for ${payout.payoutId}:`, error);
+      payoutLogger.error(
+        { err: error, payoutId: payout.payoutId },
+        "Payout processing failed",
+      );
       results.push({
         payoutId: payout.payoutId,
         success: false,
@@ -749,7 +751,7 @@ function getMinimumPayout(currency: Currency): number {
 function calculatePayoutFees(
   amount: number,
   method: PayoutMethod,
-  currency: Currency
+  currency: Currency,
 ): { processing: number; transfer: number; total: number } {
   // Fee structure varies by method and currency
   const fees = {
@@ -806,21 +808,20 @@ function getEstimatedArrival(method: PayoutMethod): string {
 async function validateBankAccount(
   bankCode: string,
   accountNumber: string,
-  accountName: string
+  accountName: string,
 ): Promise<boolean> {
   // In production, verify via Paystack/Flutterwave
-  console.log("Validating bank account:", {
-    bankCode,
-    accountNumber,
-    accountName,
-  });
+  payoutLogger.info(
+    { bankCode, accountNumber, accountName },
+    "Validating bank account",
+  );
   return true;
 }
 
 async function verifyBankAccount(
   bankCode: string,
   accountNumber: string,
-  country: string
+  country: string,
 ): Promise<{
   success: boolean;
   accountName?: string;
@@ -828,7 +829,10 @@ async function verifyBankAccount(
   message?: string;
 }> {
   // In production, this would call payment provider API
-  console.log("Verifying bank account:", { bankCode, accountNumber, country });
+  payoutLogger.info(
+    { bankCode, accountNumber, country },
+    "Verifying bank account",
+  );
 
   // Simulated response
   const banks = BANK_CODES[country] || [];
@@ -852,7 +856,7 @@ async function processPayout(payout: {
   providerReference?: string;
   error?: string;
 }> {
-  console.log("Processing payout:", payout);
+  payoutLogger.info({ payout }, "Processing payout");
 
   // In production, this would call the appropriate provider API
   // Simulating successful payout
@@ -880,7 +884,7 @@ payoutRoutes.post(
       currency: z.nativeEnum(Currency),
       phoneNumber: z.string(),
       reason: z.string().optional(),
-    })
+    }),
   ),
   async (c) => {
     try {
@@ -908,7 +912,7 @@ payoutRoutes.post(
             riskScore: riskAssessment.riskScore,
             reasons: riskAssessment.reasons,
           },
-          403
+          403,
         );
       }
 
@@ -931,16 +935,16 @@ payoutRoutes.post(
         },
       });
     } catch (error: any) {
-      console.error("Instant cashout error:", error);
+      payoutLogger.error("Instant cashout error:", error);
       return c.json(
         {
           success: false,
           error: error.message || "Failed to process instant cashout",
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 /**
@@ -962,7 +966,7 @@ payoutRoutes.get("/:payoutId", async (c) => {
         success: false,
         error: error.message,
       },
-      404
+      404,
     );
   }
 });
@@ -992,7 +996,7 @@ payoutRoutes.get("/driver/:driverId/history", async (c) => {
         success: false,
         error: error.message,
       },
-      400
+      400,
     );
   }
 });
@@ -1018,7 +1022,7 @@ payoutRoutes.get("/driver/:driverId/balance/:currency", async (c) => {
         success: false,
         error: error.message,
       },
-      400
+      400,
     );
   }
 });

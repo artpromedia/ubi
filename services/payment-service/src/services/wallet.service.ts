@@ -15,6 +15,7 @@ import {
   TransactionType,
 } from "@prisma/client";
 import { nanoid } from "nanoid";
+import { walletLogger } from "../lib/logger";
 
 export interface TransferParams {
   fromAccountId: string;
@@ -107,7 +108,7 @@ export class WalletService {
   async getOrCreateWalletAccount(
     userId: string,
     accountType: AccountType,
-    currency: Currency
+    currency: Currency,
   ) {
     // Try to find existing account
     let account = await this.prisma.walletAccount.findFirst({
@@ -141,7 +142,7 @@ export class WalletService {
   async getBalance(
     userId: string,
     accountType: AccountType,
-    currency: Currency
+    currency: Currency,
   ) {
     const account = await this.prisma.walletAccount.findFirst({
       where: {
@@ -190,7 +191,7 @@ export class WalletService {
       const userAccount = await this.getOrCreateWalletAccount(
         userId,
         AccountType.USER_WALLET,
-        currency
+        currency,
       );
 
       // Get UBI float account
@@ -614,7 +615,7 @@ export class WalletService {
       toAccountId: string;
       description?: string;
       metadata?: Record<string, any>;
-    }
+    },
   ) {
     return await this.prisma.$transaction(async (tx) => {
       const hold = await tx.balanceHold.findUnique({
@@ -777,7 +778,7 @@ export class WalletService {
       balanceAfter: number;
       description?: string;
       metadata?: Record<string, any>;
-    }
+    },
   ) {
     return await tx.ledgerEntry.create({
       data: {
@@ -802,7 +803,7 @@ export class WalletService {
       offset?: number;
       startDate?: Date;
       endDate?: Date;
-    }
+    },
   ) {
     const { limit = 50, offset = 0, startDate, endDate } = options || {};
 
@@ -844,7 +845,10 @@ export class WalletService {
       try {
         await this.releaseFunds(hold.id);
       } catch (error) {
-        console.error(`Failed to release expired hold ${hold.id}:`, error);
+        walletLogger.error(
+          { err: error, holdId: hold.id },
+          "Failed to release expired hold",
+        );
       }
     }
 

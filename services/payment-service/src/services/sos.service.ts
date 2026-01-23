@@ -12,6 +12,7 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+import { sosLogger } from "../lib/logger";
 import {
   COUNTRY_CONFIGS,
   EmergencyContact,
@@ -118,13 +119,9 @@ export class SOSEmergencyService extends EventEmitter {
     // Emit event
     this.emit("sos_triggered", incident);
 
-    console.log(
-      "[SOSService] SOS triggered:",
-      incident.id,
-      "Method:",
-      triggerMethod,
-      "User:",
-      userId
+    sosLogger.info(
+      { incidentId: incident.id, triggerMethod, userId },
+      "[SOSService] SOS triggered",
     );
 
     return incident;
@@ -133,7 +130,7 @@ export class SOSEmergencyService extends EventEmitter {
   async cancelSOS(
     incidentId: string,
     userId: string,
-    reason?: string
+    reason?: string,
   ): Promise<{ success: boolean; verificationRequired?: boolean }> {
     const incident = this.activeIncidents.get(incidentId);
 
@@ -174,7 +171,7 @@ export class SOSEmergencyService extends EventEmitter {
 
     this.emit("sos_cancelled", incident);
 
-    console.log("[SOSService] SOS cancelled:", incidentId);
+    sosLogger.info({ incidentId }, "[SOSService] SOS cancelled");
 
     return { success: true };
   }
@@ -208,7 +205,7 @@ export class SOSEmergencyService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async respondToSOS(
-    response: SOSResponse
+    response: SOSResponse,
   ): Promise<{ success: boolean; incident?: SOSIncident }> {
     const { incidentId, agentId, action, notes, escalationReason } = response;
 
@@ -222,7 +219,7 @@ export class SOSEmergencyService extends EventEmitter {
       incident.firstResponseAt = new Date();
       incident.responseTimeSeconds = Math.floor(
         (incident.firstResponseAt.getTime() - incident.triggeredAt.getTime()) /
-          1000
+          1000,
       );
     }
 
@@ -244,7 +241,7 @@ export class SOSEmergencyService extends EventEmitter {
       case "escalate":
         await this.escalateIncident(
           incident,
-          escalationReason || "Agent escalation"
+          escalationReason || "Agent escalation",
         );
         break;
 
@@ -269,7 +266,7 @@ export class SOSEmergencyService extends EventEmitter {
   async markAsFalseAlarm(
     incidentId: string,
     agentId: string,
-    reason: string
+    reason: string,
   ): Promise<boolean> {
     const incident = this.activeIncidents.get(incidentId);
     if (!incident) return false;
@@ -303,25 +300,25 @@ export class SOSEmergencyService extends EventEmitter {
     // Level 1 -> Level 2
     setTimeout(
       () => this.checkAndEscalate(incident.id, "LEVEL_2"),
-      this.LEVEL_1_TIMEOUT * 1000
+      this.LEVEL_1_TIMEOUT * 1000,
     );
 
     // Level 2 -> Level 3
     setTimeout(
       () => this.checkAndEscalate(incident.id, "LEVEL_3"),
-      this.LEVEL_2_TIMEOUT * 1000
+      this.LEVEL_2_TIMEOUT * 1000,
     );
 
     // Level 3 -> Level 4
     setTimeout(
       () => this.checkAndEscalate(incident.id, "LEVEL_4"),
-      this.LEVEL_3_TIMEOUT * 1000
+      this.LEVEL_3_TIMEOUT * 1000,
     );
   }
 
   private async checkAndEscalate(
     incidentId: string,
-    targetLevel: SOSEscalationLevel
+    targetLevel: SOSEscalationLevel,
   ): Promise<void> {
     const incident = this.activeIncidents.get(incidentId);
 
@@ -345,13 +342,13 @@ export class SOSEmergencyService extends EventEmitter {
 
     await this.escalateIncident(
       incident,
-      `Auto-escalation: No resolution after ${this.getEscalationTime(targetLevel)}s`
+      `Auto-escalation: No resolution after ${this.getEscalationTime(targetLevel)}s`,
     );
   }
 
   private async escalateIncident(
     incident: SOSIncident,
-    reason: string
+    reason: string,
   ): Promise<void> {
     const levels: SOSEscalationLevel[] = [
       "LEVEL_1",
@@ -380,11 +377,9 @@ export class SOSEmergencyService extends EventEmitter {
       reason,
     });
 
-    console.log(
-      "[SOSService] Escalated incident:",
-      incident.id,
-      "to",
-      newLevel
+    sosLogger.info(
+      { incidentId: incident.id, newLevel },
+      "[SOSService] Escalated incident",
     );
 
     // Level-specific actions
@@ -431,7 +426,7 @@ export class SOSEmergencyService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async notifyEmergencyContacts(
-    incident: SOSIncident
+    incident: SOSIncident,
   ): Promise<EmergencyNotification[]> {
     const contacts = await this.getUserEmergencyContacts(incident.userId);
     const notifications: EmergencyNotification[] = [];
@@ -457,7 +452,7 @@ export class SOSEmergencyService extends EventEmitter {
           contact,
           incident,
           channel,
-          locationLink
+          locationLink,
         );
         notifications.push(notification);
       }
@@ -475,7 +470,7 @@ export class SOSEmergencyService extends EventEmitter {
     contact: EmergencyContact,
     incident: SOSIncident,
     channel: "sms" | "whatsapp" | "call" | "email" | "push",
-    locationLink: string
+    locationLink: string,
   ): Promise<EmergencyNotification> {
     const notification: EmergencyNotification = {
       contactId: contact.id,
@@ -491,14 +486,14 @@ export class SOSEmergencyService extends EventEmitter {
         await this.sendEmergencySMS(
           contact.phoneNumber,
           incident,
-          locationLink
+          locationLink,
         );
         break;
       case "whatsapp":
         await this.sendEmergencyWhatsApp(
           contact.phoneNumber,
           incident,
-          locationLink
+          locationLink,
         );
         break;
       case "call":
@@ -506,11 +501,9 @@ export class SOSEmergencyService extends EventEmitter {
         break;
     }
 
-    console.log(
-      "[SOSService] Emergency notification sent via",
-      channel,
-      "to:",
-      contact.name
+    sosLogger.info(
+      { channel, contactName: contact.name },
+      "[SOSService] Emergency notification sent",
     );
 
     return notification;
@@ -519,7 +512,7 @@ export class SOSEmergencyService extends EventEmitter {
   private async sendEmergencySMS(
     phone: string,
     _incident: SOSIncident,
-    locationLink: string
+    locationLink: string,
   ): Promise<void> {
     const message =
       `🚨 EMERGENCY: Your contact has triggered an SOS alert on UBI. ` +
@@ -527,29 +520,33 @@ export class SOSEmergencyService extends EventEmitter {
       `If you cannot reach them, call emergency services.`;
 
     // In production, use SMS provider
-    console.log(
-      "[SOSService] SMS to:",
-      phone.slice(-4),
-      "-",
-      message.substring(0, 50)
+    sosLogger.info(
+      { phoneLast4: phone.slice(-4), messagePreview: message.substring(0, 50) },
+      "[SOSService] Sending SMS",
     );
   }
 
   private async sendEmergencyWhatsApp(
     phone: string,
     _incident: SOSIncident,
-    _locationLink: string
+    _locationLink: string,
   ): Promise<void> {
     // In production, use WhatsApp Business API
-    console.log("[SOSService] WhatsApp to:", phone.slice(-4));
+    sosLogger.info(
+      { phoneLast4: phone.slice(-4) },
+      "[SOSService] WhatsApp sent",
+    );
   }
 
   private async initiateEmergencyCall(
     phone: string,
-    _incident: SOSIncident
+    _incident: SOSIncident,
   ): Promise<void> {
     // In production, use voice API (Twilio, Africa's Talking)
-    console.log("[SOSService] Initiating call to:", phone.slice(-4));
+    sosLogger.info(
+      { phoneLast4: phone.slice(-4) },
+      "[SOSService] Initiating call",
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -562,7 +559,9 @@ export class SOSEmergencyService extends EventEmitter {
     const config = COUNTRY_CONFIGS[userCountry];
 
     if (!config) {
-      console.log("[SOSService] Unknown country for law enforcement contact");
+      sosLogger.info(
+        "[SOSService] Unknown country for law enforcement contact",
+      );
       return;
     }
 
@@ -577,16 +576,14 @@ export class SOSEmergencyService extends EventEmitter {
     // 3. Potentially auto-dial emergency services
     // 4. Send location data to authorities
 
-    console.log(
-      "[SOSService] Contacting law enforcement for:",
-      incident.id,
-      "Number:",
-      config.emergencyNumber
+    sosLogger.info(
+      { incidentId: incident.id, emergencyNumber: config.emergencyNumber },
+      "[SOSService] Contacting law enforcement",
     );
   }
 
   private async dispatchEmergencyServices(
-    incident: SOSIncident
+    incident: SOSIncident,
   ): Promise<void> {
     this.addTimelineEntry(incident.id, "emergency_services_dispatched", {
       location: incident.currentLocation,
@@ -594,14 +591,17 @@ export class SOSEmergencyService extends EventEmitter {
 
     await this.contactLawEnforcement(incident);
 
-    console.log("[SOSService] Emergency services dispatched for:", incident.id);
+    sosLogger.info(
+      { incidentId: incident.id },
+      "[SOSService] Emergency services dispatched",
+    );
   }
 
   private async ensureEmergencyDispatch(incident: SOSIncident): Promise<void> {
     // Check if already dispatched
     const timeline = this.incidentTimelines.get(incident.id) || [];
     const dispatched = timeline.some(
-      (e) => e.type === "emergency_services_dispatched"
+      (e) => e.type === "emergency_services_dispatched",
     );
 
     if (!dispatched) {
@@ -615,7 +615,7 @@ export class SOSEmergencyService extends EventEmitter {
 
   private async startAudioRecording(
     incidentId: string,
-    userId: string
+    userId: string,
   ): Promise<AudioRecordingSession | null> {
     const session: AudioRecordingSession = {
       id: this.generateId(),
@@ -633,7 +633,7 @@ export class SOSEmergencyService extends EventEmitter {
     // 2. Stream audio to secure storage
     // 3. Enable two-way communication with safety team
 
-    console.log("[SOSService] Audio recording started for:", incidentId);
+    sosLogger.info({ incidentId }, "[SOSService] Audio recording started");
 
     return session;
   }
@@ -646,7 +646,7 @@ export class SOSEmergencyService extends EventEmitter {
       session.endedAt = new Date();
       this.audioRecordings.delete(incidentId);
 
-      console.log("[SOSService] Audio recording stopped for:", incidentId);
+      sosLogger.info({ incidentId }, "[SOSService] Audio recording stopped");
     }
   }
 
@@ -655,7 +655,10 @@ export class SOSEmergencyService extends EventEmitter {
 
     if (session && session.isActive) {
       // In production, append to storage
-      console.log("[SOSService] Audio chunk received:", chunk.length, "bytes");
+      sosLogger.info(
+        { chunkLength: chunk.length },
+        "[SOSService] Audio chunk received",
+      );
     }
   }
 
@@ -664,7 +667,7 @@ export class SOSEmergencyService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   private async assignToAgent(
-    incident: SOSIncident
+    incident: SOSIncident,
   ): Promise<SafetyAgent | null> {
     // Find available agent with lowest active incidents
     let bestAgent: SafetyAgent | null = null;
@@ -696,13 +699,16 @@ export class SOSEmergencyService extends EventEmitter {
   private async notifyAgent(
     agentId: string,
     type: string,
-    _incident: SOSIncident
+    _incident: SOSIncident,
   ): Promise<void> {
     const agent = this.safetyAgents.get(agentId);
     if (!agent) return;
 
     // In production, send push notification to agent dashboard
-    console.log("[SOSService] Notified agent:", agent.name, "Type:", type);
+    sosLogger.info(
+      { agentName: agent.name, type },
+      "[SOSService] Notified agent",
+    );
   }
 
   private async alertSeniorAgents(incident: SOSIncident): Promise<void> {
@@ -726,16 +732,22 @@ export class SOSEmergencyService extends EventEmitter {
       await this.notifyAgent(agent.id, "all_hands_alert", incident);
     }
 
-    console.log("[SOSService] ALL HANDS ALERT for incident:", incident.id);
+    sosLogger.info(
+      { incidentId: incident.id },
+      "[SOSService] ALL HANDS ALERT for incident",
+    );
   }
 
   private async initiateAgentCallback(
     incident: SOSIncident,
-    agentId: string
+    agentId: string,
   ): Promise<void> {
     // In production, initiate call between agent and user
     this.addTimelineEntry(incident.id, "callback_initiated", { agentId });
-    console.log("[SOSService] Callback initiated for:", incident.id);
+    sosLogger.info(
+      { incidentId: incident.id },
+      "[SOSService] Callback initiated",
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -761,7 +773,7 @@ export class SOSEmergencyService extends EventEmitter {
 
   async updateIncidentLocation(
     incidentId: string,
-    location: Location
+    location: Location,
   ): Promise<void> {
     const incident = this.activeIncidents.get(incidentId);
     if (incident) {
@@ -795,7 +807,7 @@ export class SOSEmergencyService extends EventEmitter {
   private addTimelineEntry(
     incidentId: string,
     type: string,
-    data: Record<string, any>
+    data: Record<string, any>,
   ): void {
     const timeline = this.incidentTimelines.get(incidentId) || [];
     timeline.push({
@@ -808,7 +820,7 @@ export class SOSEmergencyService extends EventEmitter {
   }
 
   private async getUserEmergencyContacts(
-    userId: string
+    userId: string,
   ): Promise<EmergencyContact[]> {
     // In production, query database
     return [
@@ -845,7 +857,10 @@ export class SOSEmergencyService extends EventEmitter {
 
   private async recordFalseAlarm(_userId: string): Promise<void> {
     // In production, update user's false alarm count
-    console.log("[SOSService] Recorded false alarm for user:", _userId);
+    sosLogger.info(
+      { userId: _userId },
+      "[SOSService] Recorded false alarm for user",
+    );
   }
 
   private generateId(): string {

@@ -6,6 +6,7 @@
  */
 
 import { Hono } from "hono";
+import { proxyLogger } from "../lib/logger.js";
 
 const proxyRoutes = new Hono();
 
@@ -30,7 +31,7 @@ const SERVICE_REGISTRY: Record<string, string> = {
 // Request timeout in milliseconds
 const REQUEST_TIMEOUT = Number.parseInt(
   process.env.PROXY_TIMEOUT || "30000",
-  10
+  10,
 );
 
 /**
@@ -48,7 +49,7 @@ const proxyToService = async (
     };
     json: (data: object, status?: number) => Response;
     header: (name: string, value: string) => void;
-  }
+  },
 ) => {
   const serviceUrl = SERVICE_REGISTRY[serviceName];
 
@@ -61,7 +62,7 @@ const proxyToService = async (
           message: `Service '${serviceName}' is not configured`,
         },
       },
-      503
+      503,
     );
   }
 
@@ -89,7 +90,7 @@ const proxyToService = async (
 
   // Add auth context if available
   const auth = (c as unknown as { get: (key: string) => unknown }).get?.(
-    "auth"
+    "auth",
   );
   if (auth) {
     forwardHeaders.set("x-auth-user-id", (auth as { userId: string }).userId);
@@ -149,11 +150,11 @@ const proxyToService = async (
             message: "The request took too long to process",
           },
         },
-        504
+        504,
       );
     }
 
-    console.error(`Proxy error to ${serviceName}:`, error);
+    proxyLogger.error({ err: error, serviceName }, "Proxy error");
 
     return c.json(
       {
@@ -163,7 +164,7 @@ const proxyToService = async (
           message: `Unable to reach ${serviceName} service`,
         },
       },
-      503
+      503,
     );
   }
 };
@@ -174,78 +175,78 @@ const proxyToService = async (
 
 // User Service routes
 proxyRoutes.all("/auth/*", (c) =>
-  proxyToService("auth", c.req.path.replace("/v1", ""), c)
+  proxyToService("auth", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/users/*", (c) =>
-  proxyToService("users", c.req.path.replace("/v1", ""), c)
+  proxyToService("users", c.req.path.replace("/v1", ""), c),
 );
 
 // Ride Service routes
 proxyRoutes.all("/rides/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+  proxyToService("rides", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/drivers/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+  proxyToService("rides", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/pricing/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+  proxyToService("rides", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/locations/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c)
+  proxyToService("rides", c.req.path.replace("/v1", ""), c),
 );
 
 // Food Service routes
 proxyRoutes.all("/food/*", (c) =>
-  proxyToService("food", c.req.path.replace("/v1", ""), c)
+  proxyToService("food", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/restaurants/*", (c) =>
-  proxyToService("restaurants", c.req.path.replace("/v1", ""), c)
+  proxyToService("restaurants", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/menus/*", (c) =>
-  proxyToService("food", c.req.path.replace("/v1", ""), c)
+  proxyToService("food", c.req.path.replace("/v1", ""), c),
 );
 
 // Delivery Service routes
 proxyRoutes.all("/delivery/*", (c) =>
-  proxyToService("delivery", c.req.path.replace("/v1", ""), c)
+  proxyToService("delivery", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/packages/*", (c) =>
-  proxyToService("packages", c.req.path.replace("/v1", ""), c)
+  proxyToService("packages", c.req.path.replace("/v1", ""), c),
 );
 
 // Payment Service routes
 proxyRoutes.all("/payments/*", (c) =>
-  proxyToService("payments", c.req.path.replace("/v1", ""), c)
+  proxyToService("payments", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/wallets/*", (c) =>
-  proxyToService("wallets", c.req.path.replace("/v1", ""), c)
+  proxyToService("wallets", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/transactions/*", (c) =>
-  proxyToService("payments", c.req.path.replace("/v1", ""), c)
+  proxyToService("payments", c.req.path.replace("/v1", ""), c),
 );
 
 // Notification Service routes
 proxyRoutes.all("/notifications/*", (c) =>
-  proxyToService("notifications", c.req.path.replace("/v1", ""), c)
+  proxyToService("notifications", c.req.path.replace("/v1", ""), c),
 );
 
 // Analytics Service routes
 proxyRoutes.all("/analytics/*", (c) =>
-  proxyToService("analytics", c.req.path.replace("/v1", ""), c)
+  proxyToService("analytics", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/reports/*", (c) =>
-  proxyToService("analytics", c.req.path.replace("/v1", ""), c)
+  proxyToService("analytics", c.req.path.replace("/v1", ""), c),
 );
 
 // CEERION Service routes (EV financing)
 proxyRoutes.all("/ceerion/*", (c) =>
-  proxyToService("ceerion", c.req.path.replace("/v1", ""), c)
+  proxyToService("ceerion", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/vehicles/*", (c) =>
-  proxyToService("vehicles", c.req.path.replace("/v1", ""), c)
+  proxyToService("vehicles", c.req.path.replace("/v1", ""), c),
 );
 proxyRoutes.all("/financing/*", (c) =>
-  proxyToService("ceerion", c.req.path.replace("/v1", ""), c)
+  proxyToService("ceerion", c.req.path.replace("/v1", ""), c),
 );
 
 export { proxyRoutes };

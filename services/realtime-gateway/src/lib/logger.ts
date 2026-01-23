@@ -5,12 +5,12 @@
  * Configured for production-ready logging with proper log levels.
  */
 
-import pino from "pino";
+import { pino, type LoggerOptions } from "pino";
 
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 const NODE_ENV = process.env.NODE_ENV || "development";
 
-export const logger = pino({
+const options: LoggerOptions = {
   name: "realtime-gateway",
   level: LOG_LEVEL,
 
@@ -49,7 +49,11 @@ export const logger = pino({
   // Custom serializers
   serializers: {
     err: pino.stdSerializers.err,
-    req: (req) => ({
+    req: (req: {
+      method?: string;
+      url?: string;
+      socket?: { remoteAddress?: string };
+    }) => ({
       method: req.method,
       url: req.url,
       remoteAddress: req.socket?.remoteAddress,
@@ -58,7 +62,9 @@ export const logger = pino({
 
   // Timestamp format
   timestamp: pino.stdTimeFunctions.isoTime,
-});
+};
+
+export const logger = pino(options);
 
 // Create child loggers for specific components
 export const connectionLogger = logger.child({

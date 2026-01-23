@@ -4,6 +4,7 @@
  */
 
 import { nanoid } from "nanoid";
+import { subscriptionLogger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import type {
@@ -48,7 +49,7 @@ export class SubscriptionService {
         isPopular: boolean;
         displayOrder: number;
         isActive: boolean;
-      }) => this.formatPlan(p)
+      }) => this.formatPlan(p),
     );
   }
 
@@ -96,7 +97,7 @@ export class SubscriptionService {
    * Create new subscription
    */
   async createSubscription(
-    params: CreateSubscriptionParams
+    params: CreateSubscriptionParams,
   ): Promise<Subscription> {
     const { userId, planId, paymentMethodId, promoCode } = params;
 
@@ -104,7 +105,7 @@ export class SubscriptionService {
     const existing = await this.getSubscription(userId);
     if (existing) {
       throw new Error(
-        "User already has an active subscription. Cancel first or change plan."
+        "User already has an active subscription. Cancel first or change plan.",
       );
     }
 
@@ -178,7 +179,7 @@ export class SubscriptionService {
    */
   async cancelSubscription(
     userId: string,
-    options: { immediately?: boolean; reason?: string } = {}
+    options: { immediately?: boolean; reason?: string } = {},
   ): Promise<Subscription> {
     const { immediately = false, reason } = options;
 
@@ -295,7 +296,7 @@ export class SubscriptionService {
     // Calculate proration if upgrading mid-cycle
     const daysRemaining = Math.ceil(
       (subscription.currentPeriodEnd.getTime() - Date.now()) /
-        (1000 * 60 * 60 * 24)
+        (1000 * 60 * 60 * 24),
     );
 
     const updated = await prisma.subscription.update({
@@ -321,7 +322,7 @@ export class SubscriptionService {
    * Get subscription benefits usage
    */
   async getBenefitUsage(
-    userId: string
+    userId: string,
   ): Promise<SubscriptionBenefitUsage | null> {
     const subscription = await this.getSubscription(userId);
     if (!subscription?.plan) {
@@ -342,7 +343,7 @@ export class SubscriptionService {
           ? "unlimited"
           : Math.max(
               0,
-              Number(freeCancellations) - (used.freeCancellations ?? 0)
+              Number(freeCancellations) - (used.freeCancellations ?? 0),
             ),
     };
   }
@@ -352,7 +353,7 @@ export class SubscriptionService {
    */
   async useBenefit(
     userId: string,
-    benefit: "freeDelivery" | "freeCancellation"
+    benefit: "freeDelivery" | "freeCancellation",
   ): Promise<{ success: boolean; remaining: number | "unlimited" }> {
     const subscription = await prisma.subscription.findFirst({
       where: {
@@ -456,14 +457,14 @@ export class SubscriptionService {
         const paymentSuccess = await this.processPayment(
           subscription.id,
           Number(subscription.plan.price),
-          subscription.plan.currency
+          subscription.plan.currency,
         );
 
         if (paymentSuccess) {
           const newPeriodStart = subscription.currentPeriodEnd;
           const newPeriodEnd = this.calculatePeriodEnd(
             newPeriodStart,
-            subscription.plan.billingPeriod as BillingPeriod
+            subscription.plan.billingPeriod as BillingPeriod,
           );
 
           await prisma.subscription.update({
@@ -496,7 +497,10 @@ export class SubscriptionService {
           failed++;
         }
       } catch (error) {
-        console.error(`Renewal failed for ${subscription.id}:`, error);
+        subscriptionLogger.error(
+          { err: error, subscriptionId: subscription.id },
+          "Renewal failed",
+        );
         failed++;
       }
 
@@ -516,7 +520,7 @@ export class SubscriptionService {
    */
   async addFamilyMember(
     userId: string,
-    memberId: string
+    memberId: string,
   ): Promise<{ success: boolean; membersCount: number }> {
     const subscription = await prisma.subscription.findFirst({
       where: {
@@ -540,7 +544,7 @@ export class SubscriptionService {
 
     if (subscription.familyMembers.length >= features.familyMembers) {
       throw new Error(
-        `Maximum ${features.familyMembers} family members allowed`
+        `Maximum ${features.familyMembers} family members allowed`,
       );
     }
 
@@ -584,7 +588,7 @@ export class SubscriptionService {
    */
   async getInvoices(
     userId: string,
-    limit: number = 12
+    limit: number = 12,
   ): Promise<
     Array<{
       id: string;
@@ -630,7 +634,7 @@ export class SubscriptionService {
         periodEnd: inv.periodEnd,
         paidAt: inv.paidAt || undefined,
         createdAt: inv.createdAt,
-      })
+      }),
     );
   }
 
@@ -683,7 +687,7 @@ export class SubscriptionService {
   private async processPayment(
     _subscriptionId: string,
     _amount: number,
-    _currency: string
+    _currency: string,
   ): Promise<boolean> {
     // TODO: Integrate with actual payment processor
     // For now, simulate success

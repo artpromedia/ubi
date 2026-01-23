@@ -3,6 +3,7 @@
  * Virtual and physical card management
  */
 
+import { cardsLogger } from "../lib/logger";
 import { nanoid } from "nanoid";
 import { prisma } from "../lib/prisma";
 import type {
@@ -727,7 +728,7 @@ export class CardService {
 
   private async initiateCardShipping(cardId: string): Promise<void> {
     // In production, integrate with card fulfillment provider
-    console.log(`[Cards] Initiated shipping for card ${cardId}`);
+    cardsLogger.info(`[Cards] Initiated shipping for card ${cardId}`);
   }
 }
 

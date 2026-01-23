@@ -8,6 +8,7 @@ import type {
   MulticastMessage,
   TopicMessage,
 } from "firebase-admin/messaging";
+import { pushLogger } from "../lib/logger.js";
 import { NotificationPriority } from "../types";
 
 // Initialize Firebase Admin
@@ -19,7 +20,7 @@ function getApp(): admin.app.App {
   const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
 
   if (!serviceAccount) {
-    console.warn("Firebase service account not configured");
+    pushLogger.warn("Firebase service account not configured");
     throw new Error("Firebase not configured");
   }
 
@@ -31,7 +32,7 @@ function getApp(): admin.app.App {
     });
     return app;
   } catch (error) {
-    console.error("Failed to initialize Firebase:", error);
+    pushLogger.error({ err: error }, "Failed to initialize Firebase");
     throw error;
   }
 }
@@ -142,7 +143,7 @@ class FirebaseService {
       const messageId = await messaging.send(message);
       return { success: true, messageId };
     } catch (error) {
-      console.error("Firebase send error:", error);
+      pushLogger.error({ err: error }, "Firebase send error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -201,7 +202,7 @@ class FirebaseService {
         failedTokens: failedTokens.length > 0 ? failedTokens : undefined,
       };
     } catch (error) {
-      console.error("Firebase multicast error:", error);
+      pushLogger.error({ err: error }, "Firebase multicast error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -232,7 +233,7 @@ class FirebaseService {
       const messageId = await messaging.send(message);
       return { success: true, messageId };
     } catch (error) {
-      console.error("Firebase topic send error:", error);
+      pushLogger.error({ err: error }, "Firebase topic send error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -254,7 +255,7 @@ class FirebaseService {
         failureCount: response.failureCount,
       };
     } catch (error) {
-      console.error("Firebase subscribe error:", error);
+      pushLogger.error({ err: error }, "Firebase subscribe error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -267,7 +268,7 @@ class FirebaseService {
    */
   async unsubscribeFromTopic(
     tokens: string[],
-    topic: string
+    topic: string,
   ): Promise<SendResult> {
     try {
       const messaging = getApp().messaging();
@@ -279,7 +280,7 @@ class FirebaseService {
         failureCount: response.failureCount,
       };
     } catch (error) {
-      console.error("Firebase unsubscribe error:", error);
+      pushLogger.error({ err: error }, "Firebase unsubscribe error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -292,7 +293,7 @@ class FirebaseService {
    */
   async sendDataOnly(
     token: string,
-    data: Record<string, string>
+    data: Record<string, string>,
   ): Promise<SendResult> {
     try {
       const messaging = getApp().messaging();
@@ -315,7 +316,7 @@ class FirebaseService {
       const messageId = await messaging.send(message);
       return { success: true, messageId };
     } catch (error) {
-      console.error("Firebase data message error:", error);
+      pushLogger.error({ err: error }, "Firebase data message error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",

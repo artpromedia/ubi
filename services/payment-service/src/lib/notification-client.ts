@@ -5,6 +5,7 @@
  * for sending push notifications, SMS, emails, and in-app messages.
  */
 
+import { notificationLogger } from "./logger.js";
 import { prisma } from "./prisma";
 
 // Notification service configuration
@@ -85,7 +86,10 @@ class NotificationClient {
       });
 
       if (!user) {
-        console.warn(`[Notification] User not found: ${payload.userId}`);
+        notificationLogger.warn(
+          { userId: payload.userId },
+          "User not found for notification",
+        );
         return { success: false, error: "User not found" };
       }
 
@@ -119,12 +123,15 @@ class NotificationClient {
               userName: `${user.firstName} ${user.lastName}`.trim(),
             },
           }),
-        }
+        },
       );
 
       if (!response.ok) {
         const errorData = (await response.json().catch(() => ({}))) as any;
-        console.error("[Notification] Service error:", errorData);
+        notificationLogger.error(
+          { err: errorData },
+          "Notification service error",
+        );
         return {
           success: false,
           error: errorData.message || "Notification service error",
@@ -138,7 +145,7 @@ class NotificationClient {
         channels: result.data?.channels,
       };
     } catch (error) {
-      console.error("[Notification] Send error:", error);
+      notificationLogger.error({ err: error }, "Failed to send notification");
 
       // Fallback: Store notification in database for later delivery
       await this.queueNotification(payload);
@@ -157,7 +164,7 @@ class NotificationClient {
    * Send bulk notifications
    */
   async sendBulk(
-    payloads: NotificationPayload[]
+    payloads: NotificationPayload[],
   ): Promise<{ sent: number; failed: number }> {
     let sent = 0;
     let failed = 0;
@@ -198,7 +205,7 @@ class NotificationClient {
         },
       });
     } catch (error) {
-      console.error("[Notification] Failed to queue notification:", error);
+      notificationLogger.error({ err: error }, "Failed to queue notification");
     }
   }
 
@@ -207,7 +214,7 @@ class NotificationClient {
    */
   private getDefaultChannels(
     type: NotificationType,
-    priority?: NotificationPriority
+    priority?: NotificationPriority,
   ): NotificationChannel[] {
     // High priority notifications go to all channels
     if (
@@ -263,7 +270,7 @@ class NotificationClient {
     userId: string,
     pocketName: string,
     targetAmount: number,
-    currency: string
+    currency: string,
   ): Promise<SendResult> {
     return this.send({
       userId,
@@ -283,7 +290,7 @@ class NotificationClient {
     loanId: string,
     amountDue: number,
     currency: string,
-    daysOverdue: number
+    daysOverdue: number,
   ): Promise<SendResult> {
     return this.send({
       userId,
@@ -303,7 +310,7 @@ class NotificationClient {
     recipientId: string,
     amount: number,
     currency: string,
-    recipientName: string
+    recipientName: string,
   ): Promise<{ sender: SendResult; recipient: SendResult }> {
     const senderResult = await this.send({
       userId: senderId,
@@ -334,7 +341,7 @@ class NotificationClient {
     amount: number,
     currency: string,
     requesterName: string,
-    note?: string
+    note?: string,
   ): Promise<SendResult> {
     const noteText = note ? `: "${note}"` : ".";
     return this.send({
@@ -354,7 +361,7 @@ class NotificationClient {
     requesterId: string,
     payerName: string,
     amount: number,
-    currency: string
+    currency: string,
   ): Promise<SendResult> {
     return this.send({
       userId: requesterId,
@@ -372,7 +379,7 @@ class NotificationClient {
     userId: string,
     amount: number,
     currency: string,
-    reason: string
+    reason: string,
   ): Promise<SendResult> {
     return this.send({
       userId,
@@ -390,7 +397,7 @@ class NotificationClient {
     userId: string,
     amount: number,
     currency: string,
-    payoutMethod: string
+    payoutMethod: string,
   ): Promise<SendResult> {
     return this.send({
       userId,

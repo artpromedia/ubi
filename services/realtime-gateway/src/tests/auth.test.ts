@@ -12,10 +12,13 @@ import {
   verifyTokenSafe,
 } from "../lib/auth.js";
 
-// Test JWT configuration matching the actual config
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "ubi-dev-secret-change-in-prod",
-);
+// Test JWT configuration - tests must set JWT_SECRET env var
+const TEST_SECRET = "test-secret-for-testing-only";
+
+// Ensure JWT_SECRET is set for tests
+process.env.JWT_SECRET = TEST_SECRET;
+
+const JWT_SECRET = new TextEncoder().encode(TEST_SECRET);
 const JWT_ISSUER = "ubi.africa";
 const JWT_AUDIENCE = "ubi-api";
 

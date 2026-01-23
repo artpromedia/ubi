@@ -12,6 +12,7 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+import { bgCheckLogger } from "../lib/logger";
 import {
   BackgroundCheck,
   BackgroundCheckFinding,
@@ -61,9 +62,9 @@ export class BackgroundCheckService extends EventEmitter {
     // Generic/International Provider (Checkr, Sterling, etc.)
     this.providers.set("checkr", new CheckrProvider());
 
-    console.log(
-      "[BackgroundCheck] Initialized providers:",
-      Array.from(this.providers.keys())
+    bgCheckLogger.info(
+      { providers: Array.from(this.providers.keys()) },
+      "[BackgroundCheck] Initialized providers",
     );
   }
 
@@ -72,7 +73,7 @@ export class BackgroundCheckService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async initiateBackgroundCheck(
-    request: BackgroundCheckRequest
+    request: BackgroundCheckRequest,
   ): Promise<BackgroundCheckResult[]> {
     const {
       userId,
@@ -148,11 +149,9 @@ export class BackgroundCheckService extends EventEmitter {
           reference: providerResult.reference,
         });
 
-        console.log(
-          "[BackgroundCheck] Check initiated:",
-          check.id,
-          "Type:",
-          checkType
+        bgCheckLogger.info(
+          { checkId: check.id, checkType },
+          "[BackgroundCheck] Check initiated",
         );
       } catch (error) {
         check.status = "COMPLETED_FAIL";
@@ -169,7 +168,7 @@ export class BackgroundCheckService extends EventEmitter {
 
   async checkStatus(
     userId: string,
-    checkType: BackgroundCheckType
+    checkType: BackgroundCheckType,
   ): Promise<BackgroundCheck | null> {
     const checks = this.backgroundChecks.get(userId) || [];
     const check = checks.find((c) => c.checkType === checkType);
@@ -192,7 +191,7 @@ export class BackgroundCheckService extends EventEmitter {
       if (statusResult.findings) {
         check.findings = statusResult.findings;
         check.hasCriticalFindings = statusResult.findings.some(
-          (f) => f.severity === "critical"
+          (f) => f.severity === "critical",
         );
       }
 
@@ -205,7 +204,10 @@ export class BackgroundCheckService extends EventEmitter {
 
       return check;
     } catch (error) {
-      console.error("[BackgroundCheck] Status check failed:", error);
+      bgCheckLogger.error(
+        { err: error },
+        "[BackgroundCheck] Status check failed",
+      );
       return check;
     }
   }
@@ -220,7 +222,7 @@ export class BackgroundCheckService extends EventEmitter {
 
   async getValidCheck(
     userId: string,
-    checkType: BackgroundCheckType
+    checkType: BackgroundCheckType,
   ): Promise<BackgroundCheck | null> {
     const checks = this.backgroundChecks.get(userId) || [];
 
@@ -230,7 +232,7 @@ export class BackgroundCheckService extends EventEmitter {
           c.checkType === checkType &&
           c.status === "COMPLETED_CLEAR" &&
           c.validUntil &&
-          c.validUntil > new Date()
+          c.validUntil > new Date(),
       ) || null
     );
   }
@@ -241,7 +243,7 @@ export class BackgroundCheckService extends EventEmitter {
   }
 
   async getBackgroundCheckSummary(
-    userId: string
+    userId: string,
   ): Promise<BackgroundCheckSummary> {
     const checks = await this.getUserBackgroundChecks(userId);
 
@@ -321,16 +323,19 @@ export class BackgroundCheckService extends EventEmitter {
 
   async enableContinuousMonitoring(userId: string): Promise<void> {
     // In production, register for continuous monitoring with providers
-    console.log("[BackgroundCheck] Continuous monitoring enabled for:", userId);
+    bgCheckLogger.info(
+      { userId },
+      "[BackgroundCheck] Continuous monitoring enabled",
+    );
 
     // Start monitoring job
     this.startMonitoringJob(userId);
   }
 
   async disableContinuousMonitoring(userId: string): Promise<void> {
-    console.log(
-      "[BackgroundCheck] Continuous monitoring disabled for:",
-      userId
+    bgCheckLogger.info(
+      { userId },
+      "[BackgroundCheck] Continuous monitoring disabled",
     );
   }
 
@@ -340,7 +345,7 @@ export class BackgroundCheckService extends EventEmitter {
       async () => {
         await this.runMonitoringCheck(userId);
       },
-      24 * 60 * 60 * 1000
+      24 * 60 * 60 * 1000,
     );
   }
 
@@ -378,7 +383,7 @@ export class BackgroundCheckService extends EventEmitter {
 
   private async createMonitoringAlert(
     userId: string,
-    alertData: MonitoringAlertData
+    alertData: MonitoringAlertData,
   ): Promise<void> {
     const alerts = this.monitoringAlerts.get(userId) || [];
 
@@ -395,11 +400,9 @@ export class BackgroundCheckService extends EventEmitter {
 
     this.emit("monitoring_alert", alert);
 
-    console.log(
-      "[BackgroundCheck] Monitoring alert:",
-      alert.type,
-      "User:",
-      userId
+    bgCheckLogger.info(
+      { alertType: alert.type, userId },
+      "[BackgroundCheck] Monitoring alert",
     );
   }
 
@@ -427,7 +430,7 @@ export class BackgroundCheckService extends EventEmitter {
       (c) =>
         c.validUntil &&
         c.validUntil < new Date() &&
-        c.status === "COMPLETED_CLEAR"
+        c.status === "COMPLETED_CLEAR",
     );
 
     if (expiredChecks.length === 0) {
@@ -437,7 +440,7 @@ export class BackgroundCheckService extends EventEmitter {
     // Get user's ID info from most recent check
     const latestCheck = checks.sort(
       (a, b) =>
-        (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0)
+        (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0),
     )[0];
 
     if (!latestCheck) {
@@ -465,7 +468,7 @@ export class BackgroundCheckService extends EventEmitter {
 
   async initiateDriverBackgroundCheck(
     driverId: string,
-    country: string
+    country: string,
   ): Promise<BackgroundCheckResult[]> {
     const requiredChecks: BackgroundCheckType[] = [
       "CRIMINAL_RECORD",
@@ -529,7 +532,7 @@ export class BackgroundCheckService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   private async createCheck(
-    data: Partial<BackgroundCheck>
+    data: Partial<BackgroundCheck>,
   ): Promise<BackgroundCheck> {
     const check: BackgroundCheck = {
       id: this.generateId(),
@@ -620,9 +623,12 @@ class NigeriaPoliceProvider implements BackgroundCheckProvider {
   name = "nigeria_police";
 
   async submitCheck(
-    params: ProviderCheckParams
+    params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
-    console.log("[NigeriaPolice] Submitting check for:", params.firstName);
+    bgCheckLogger.info(
+      { firstName: params.firstName },
+      "[NigeriaPolice] Submitting check",
+    );
 
     return {
       reference: `npf_${crypto.randomBytes(8).toString("hex")}`,
@@ -643,9 +649,9 @@ class KenyaPoliceProvider implements BackgroundCheckProvider {
   name = "kenya_police";
 
   async submitCheck(
-    _params: ProviderCheckParams
+    _params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
-    console.log("[KenyaPolice] Submitting DCI check");
+    bgCheckLogger.info("[KenyaPolice] Submitting DCI check");
 
     return {
       reference: `dci_${crypto.randomBytes(8).toString("hex")}`,
@@ -664,9 +670,9 @@ class SAPSProvider implements BackgroundCheckProvider {
   name = "saps";
 
   async submitCheck(
-    _params: ProviderCheckParams
+    _params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
-    console.log("[SAPS] Submitting South African police check");
+    bgCheckLogger.info("[SAPS] Submitting South African police check");
 
     return {
       reference: `saps_${crypto.randomBytes(8).toString("hex")}`,
@@ -685,9 +691,9 @@ class GhanaPoliceProvider implements BackgroundCheckProvider {
   name = "ghana_police";
 
   async submitCheck(
-    _params: ProviderCheckParams
+    _params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
-    console.log("[GhanaPolice] Submitting check");
+    bgCheckLogger.info("[GhanaPolice] Submitting check");
 
     return {
       reference: `gps_${crypto.randomBytes(8).toString("hex")}`,
@@ -706,9 +712,9 @@ class CheckrProvider implements BackgroundCheckProvider {
   name = "checkr";
 
   async submitCheck(
-    _params: ProviderCheckParams
+    _params: ProviderCheckParams,
   ): Promise<ProviderSubmitResult> {
-    console.log("[Checkr] Submitting international check");
+    bgCheckLogger.info("[Checkr] Submitting international check");
 
     return {
       reference: `checkr_${crypto.randomBytes(8).toString("hex")}`,

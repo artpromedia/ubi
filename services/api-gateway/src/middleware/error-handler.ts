@@ -8,6 +8,7 @@
 import type { Context } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
 import { z } from "zod";
+import { logger } from "../lib/logger.js";
 
 // Error types
 interface ApiError {
@@ -39,14 +40,15 @@ export const errorHandler = (error: Error, c: Context) => {
   const requestId = c.req.header("x-request-id") || crypto.randomUUID();
 
   // Log error
-  console.error({
-    requestId,
-    error: error.message,
-    stack: error.stack,
-    path: c.req.path,
-    method: c.req.method,
-    timestamp: new Date().toISOString(),
-  });
+  logger.error(
+    {
+      requestId,
+      err: error,
+      path: c.req.path,
+      method: c.req.method,
+    },
+    "Request error",
+  );
 
   // Handle Zod validation errors
   if (error instanceof z.ZodError) {
@@ -149,7 +151,7 @@ export class AppError extends Error {
   }
 
   static forbidden(
-    message = "You don't have permission to access this resource"
+    message = "You don't have permission to access this resource",
   ) {
     return new AppError("FORBIDDEN", message, 403);
   }

@@ -3,6 +3,7 @@
  */
 
 import sgMail from "@sendgrid/mail";
+import { emailLogger } from "../lib/logger.js";
 
 // Initialize SendGrid
 const apiKey = process.env.SENDGRID_API_KEY;
@@ -77,7 +78,7 @@ class EmailService {
    */
   async send(payload: EmailPayload): Promise<EmailResult> {
     if (!this.isConfigured()) {
-      console.warn("SendGrid not configured");
+      emailLogger.warn("SendGrid not configured");
       return { success: false, error: "Email service not configured" };
     }
 
@@ -126,7 +127,7 @@ class EmailService {
         messageId: response.headers["x-message-id"] as string,
       };
     } catch (error) {
-      console.error("SendGrid error:", error);
+      emailLogger.error({ err: error }, "SendGrid error");
 
       let errorMessage = "Unknown error";
       if (error instanceof Error) {
@@ -197,7 +198,7 @@ class EmailService {
         failureCount,
       };
     } catch (error) {
-      console.error("SendGrid batch error:", error);
+      emailLogger.error({ err: error }, "SendGrid batch error");
       return {
         success: false,
         total: payload.recipients.length,
@@ -213,7 +214,7 @@ class EmailService {
   async sendTransactional(
     templateId: string,
     to: string,
-    data: Record<string, any>
+    data: Record<string, any>,
   ): Promise<EmailResult> {
     return this.send({
       to,
@@ -229,7 +230,7 @@ class EmailService {
   async sendVerification(
     to: string,
     code: string,
-    name: string
+    name: string,
   ): Promise<EmailResult> {
     const templateId = process.env.SENDGRID_VERIFICATION_TEMPLATE_ID;
 
@@ -268,7 +269,7 @@ class EmailService {
   async sendPasswordReset(
     to: string,
     resetLink: string,
-    name: string
+    name: string,
   ): Promise<EmailResult> {
     const templateId = process.env.SENDGRID_PASSWORD_RESET_TEMPLATE_ID;
 
@@ -317,7 +318,7 @@ class EmailService {
       total: number;
       currency: string;
       date: string;
-    }
+    },
   ): Promise<EmailResult> {
     const templateId = process.env.SENDGRID_RECEIPT_TEMPLATE_ID;
 
@@ -340,7 +341,7 @@ class EmailService {
               <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
               <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">${data.currency} ${item.price.toFixed(2)}</td>
             </tr>
-          `
+          `,
           )
           .join("")
       : "";

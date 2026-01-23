@@ -3,6 +3,7 @@
  * Person-to-person money transfers with phone/email/username lookup
  */
 
+import { p2pLogger } from "../lib/logger";
 import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { prisma } from "../lib/prisma";
@@ -962,18 +963,18 @@ export class P2PTransferService {
 
   private async notifyTransferCompleted(transferId: string): Promise<void> {
     // TODO: Integrate with notification service
-    console.log(`[P2P] Transfer completed: ${transferId}`);
+    p2pLogger.info(`[P2P] Transfer completed: ${transferId}`);
   }
 
   private async notifyMoneyRequest(
     requestId: string,
     payerUserId: string
   ): Promise<void> {
-    console.log(`[P2P] Money request ${requestId} sent to user ${payerUserId}`);
+    p2pLogger.info(`[P2P] Money request ${requestId} sent to user ${payerUserId}`);
   }
 
   private async notifyRequestDeclined(requestId: string): Promise<void> {
-    console.log(`[P2P] Money request ${requestId} declined`);
+    p2pLogger.info(`[P2P] Money request ${requestId} declined`);
   }
 
   private async sendInviteNotification(
@@ -982,7 +983,7 @@ export class P2PTransferService {
     amount: number,
     currency: Currency
   ): Promise<void> {
-    console.log(
+    p2pLogger.info(
       `[P2P] Invite sent to ${type}:${identifier} for ${amount} ${currency}`
     );
   }

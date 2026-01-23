@@ -16,9 +16,10 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
+import { logger } from "./lib/logger.js";
 
 import { errorHandler } from "./middleware/error-handler";
 import { serviceAuthMiddleware } from "./middleware/service-auth";
@@ -41,7 +42,7 @@ const app = new Hono();
 
 app.use("*", secureHeaders());
 app.use("*", timing());
-app.use("*", logger());
+app.use("*", honoLogger());
 
 // CORS configuration
 app.use(
@@ -55,9 +56,15 @@ app.use(
         : []),
     ],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "X-Auth-User-ID", "X-Auth-User-Role"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Request-ID",
+      "X-Auth-User-ID",
+      "X-Auth-User-Role",
+    ],
     credentials: true,
-  })
+  }),
 );
 
 // Global error handler
@@ -105,23 +112,14 @@ app.notFound((c) => {
         message: "The requested endpoint was not found",
       },
     },
-    404
+    404,
   );
 });
 
 // ===========================================
 // Start Server
 // ===========================================
-console.info(`
-╔═══════════════════════════════════════════════════════╗
-║                                                       ║
-║   👤 UBI User Service                                 ║
-║   ────────────────────                                ║
-║   Environment: ${NODE_ENV.padEnd(40)}║
-║   Port: ${String(PORT).padEnd(47)}║
-║                                                       ║
-╚═══════════════════════════════════════════════════════╝
-`);
+logger.info({ port: PORT, environment: NODE_ENV }, "UBI User Service starting");
 
 serve({
   fetch: app.fetch,

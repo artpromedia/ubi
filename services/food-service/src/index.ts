@@ -13,9 +13,10 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { logger as honoLogger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
+import { logger } from "./lib/logger.js";
 
 import { disconnect as disconnectPrisma } from "./lib/prisma";
 import { disconnect as disconnectRedis } from "./lib/redis";
@@ -31,7 +32,7 @@ const app = new Hono();
 
 // Global middleware
 app.use("*", requestId());
-app.use("*", logger());
+app.use("*", honoLogger());
 app.use("*", secureHeaders());
 app.use("*", compress());
 
@@ -58,7 +59,7 @@ app.use(
     exposeHeaders: ["X-Request-ID"],
     credentials: true,
     maxAge: 600,
-  })
+  }),
 );
 
 // Error handler
@@ -92,14 +93,14 @@ app.notFound((c) => {
         message: "Resource not found",
       },
     },
-    404
+    404,
   );
 });
 
 // Start server
 const port = Number.parseInt(process.env.PORT || "4004", 10);
 
-console.log(`🍔 UBI Food Service starting on port ${port}`);
+logger.info({ port }, "UBI Food Service starting");
 
 const server = serve({
   fetch: app.fetch,
@@ -108,20 +109,20 @@ const server = serve({
 
 // Graceful shutdown
 const shutdown = async (signal: string) => {
-  console.log(`\n${signal} received. Shutting down gracefully...`);
+  logger.info({ signal }, "Shutdown signal received, closing gracefully...");
 
   server.close(async () => {
-    console.log("HTTP server closed");
+    logger.info("HTTP server closed");
 
     await Promise.all([disconnectPrisma(), disconnectRedis()]);
 
-    console.log("All connections closed");
+    logger.info("All connections closed");
     process.exit(0);
   });
 
   // Force shutdown after 30s
   setTimeout(() => {
-    console.error("Forced shutdown after timeout");
+    logger.error("Forced shutdown after timeout");
     process.exit(1);
   }, 30000);
 };

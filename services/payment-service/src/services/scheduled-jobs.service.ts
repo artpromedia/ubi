@@ -11,6 +11,7 @@
 
 import { Currency, PaymentProvider, PrismaClient } from "@prisma/client";
 import { Redis } from "ioredis";
+import { jobsLogger } from "../lib/logger";
 import { PayoutService } from "./payout.service";
 import { ReconciliationService } from "./reconciliation.service";
 import { SettlementService } from "./settlement.service";
@@ -58,7 +59,9 @@ export class ScheduledJobsService {
   private isRunning: boolean = false;
 
   // Provider-currency mappings
-  private readonly providerCurrencies: Partial<Record<PaymentProvider, Currency[]>> = {
+  private readonly providerCurrencies: Partial<
+    Record<PaymentProvider, Currency[]>
+  > = {
     [PaymentProvider.PAYSTACK]: [
       Currency.NGN,
       Currency.GHS,
@@ -76,7 +79,7 @@ export class ScheduledJobsService {
     redis: Redis,
     reconciliationService: ReconciliationService,
     settlementService: SettlementService,
-    _payoutService: PayoutService
+    _payoutService: PayoutService,
   ) {
     this.prisma = prisma;
     this.redis = redis;
@@ -192,11 +195,11 @@ export class ScheduledJobsService {
 
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.log("Scheduled jobs already running");
+      jobsLogger.info("Scheduled jobs already running");
       return;
     }
 
-    console.log("Starting scheduled jobs service...");
+    jobsLogger.info("Starting scheduled jobs service...");
     this.isRunning = true;
 
     for (const [name, job] of this.jobs) {
@@ -205,11 +208,11 @@ export class ScheduledJobsService {
       }
     }
 
-    console.log(`Started ${this.jobs.size} scheduled jobs`);
+    jobsLogger.info(`Started ${this.jobs.size} scheduled jobs`);
   }
 
   async stop(): Promise<void> {
-    console.log("Stopping scheduled jobs service...");
+    jobsLogger.info("Stopping scheduled jobs service...");
     this.isRunning = false;
 
     for (const [_, job] of this.jobs) {
@@ -218,7 +221,7 @@ export class ScheduledJobsService {
       }
     }
 
-    console.log("Scheduled jobs stopped");
+    jobsLogger.info("Scheduled jobs stopped");
   }
 
   private scheduleJob(jobName: string): void {
@@ -228,8 +231,8 @@ export class ScheduledJobsService {
     const nextRun = this.getNextRunTime(job.config.schedule);
     const delay = nextRun.getTime() - Date.now();
 
-    console.log(
-      `Scheduling ${jobName} to run at ${nextRun.toISOString()} (in ${Math.round(delay / 1000 / 60)} minutes)`
+    jobsLogger.info(
+      `Scheduling ${jobName} to run at ${nextRun.toISOString()} (in ${Math.round(delay / 1000 / 60)} minutes)`,
     );
 
     job.timer = setTimeout(async () => {
@@ -249,8 +252,8 @@ export class ScheduledJobsService {
     }
 
     const startTime = new Date();
-    console.log(
-      `[${jobName}] Starting execution at ${startTime.toISOString()}`
+    jobsLogger.info(
+      `[${jobName}] Starting execution at ${startTime.toISOString()}`,
     );
 
     // Acquire distributed lock to prevent duplicate execution
@@ -258,7 +261,7 @@ export class ScheduledJobsService {
     const lockAcquired = await this.acquireLock(lockKey, 3600); // 1 hour TTL
 
     if (!lockAcquired) {
-      console.log(`[${jobName}] Skipping - another instance is running`);
+      jobsLogger.info(`[${jobName}] Skipping - another instance is running`);
       return {
         jobName,
         startTime,
@@ -279,7 +282,7 @@ export class ScheduledJobsService {
       job.config.lastStatus = "success";
       job.config.lastError = undefined;
 
-      console.log(`[${jobName}] Completed successfully in ${duration}ms`);
+      jobsLogger.info(`[${jobName}] Completed successfully in ${duration}ms`);
 
       // Record job execution
       await this.recordJobExecution(jobName, "success", duration);
@@ -301,7 +304,7 @@ export class ScheduledJobsService {
       job.config.lastStatus = "failure";
       job.config.lastError = errorMessage;
 
-      console.error(`[${jobName}] Failed: ${errorMessage}`);
+      jobsLogger.error({ err: error }, `[${jobName}] Failed: ${errorMessage}`);
 
       // Record job execution
       await this.recordJobExecution(jobName, "failure", duration, errorMessage);
@@ -343,16 +346,19 @@ export class ScheduledJobsService {
 
       for (const currency of currencies) {
         try {
-          console.log(`Running reconciliation for ${provider} / ${currency}`);
+          jobsLogger.info(
+            `Running reconciliation for ${provider} / ${currency}`,
+          );
           await this.reconciliationService.runDailyReconciliation(
             provider,
             yesterday,
-            currency
+            currency,
           );
         } catch (error) {
-          console.error(
+          jobsLogger.error(
+            { err: error },
             `Reconciliation failed for ${provider}/${currency}:`,
-            error
+            error,
           );
           // Continue with other providers
         }
@@ -376,17 +382,18 @@ export class ScheduledJobsService {
 
       for (const currency of currencies) {
         try {
-          console.log(
-            `Running balance reconciliation for ${provider} / ${currency}`
+          jobsLogger.info(
+            `Running balance reconciliation for ${provider} / ${currency}`,
           );
           await this.reconciliationService.runBalanceReconciliation(
             provider,
-            currency
+            currency,
           );
         } catch (error) {
-          console.error(
+          jobsLogger.error(
+            { err: error },
             `Balance reconciliation failed for ${provider}/${currency}:`,
-            error
+            error,
           );
         }
       }
@@ -402,13 +409,17 @@ export class ScheduledJobsService {
 
     for (const currency of currencies) {
       try {
-        console.log(`Running restaurant settlements for ${currency}`);
+        jobsLogger.info(`Running restaurant settlements for ${currency}`);
         await this.settlementService.runDailyRestaurantSettlements(
           yesterday,
-          currency
+          currency,
         );
       } catch (error) {
-        console.error(`Restaurant settlements failed for ${currency}:`, error);
+        jobsLogger.error(
+          { err: error },
+          `Restaurant settlements failed for ${currency}:`,
+          error,
+        );
       }
     }
   }
@@ -443,18 +454,22 @@ export class ScheduledJobsService {
         const totalEarnings = earnings._sum.amount?.toNumber() || 0;
         if (totalEarnings > 0) {
           // Create settlement (simplified)
-          console.log(
-            `Creating settlement for merchant ${merchant.id}: ${totalEarnings}`
+          jobsLogger.info(
+            `Creating settlement for merchant ${merchant.id}: ${totalEarnings}`,
           );
         }
       } catch (error) {
-        console.error(`Merchant settlement failed for ${merchant.id}:`, error);
+        jobsLogger.error(
+          { err: error },
+          `Merchant settlement failed for ${merchant.id}:`,
+          error,
+        );
       }
     }
   }
 
   private async runWeeklyDriverPayouts(): Promise<void> {
-    console.log("Starting weekly driver payouts...");
+    jobsLogger.info("Starting weekly driver payouts...");
 
     // Get all drivers with pending balances
     const driversWithBalances = await this.prisma.walletAccount.findMany({
@@ -471,21 +486,22 @@ export class ScheduledJobsService {
       },
     });
 
-    console.log(
-      `Found ${driversWithBalances.length} drivers with pending balances`
+    jobsLogger.info(
+      `Found ${driversWithBalances.length} drivers with pending balances`,
     );
 
     for (const account of driversWithBalances) {
       try {
         // Use payout service to process
-        console.log(
-          `Processing payout for driver ${account.wallet.userId}: ${account.balance}`
+        jobsLogger.info(
+          `Processing payout for driver ${account.wallet.userId}: ${account.balance}`,
         );
         // await this.payoutService.requestInstantCashout(account.wallet.userId, ...);
       } catch (error) {
-        console.error(
+        jobsLogger.error(
+          { err: error },
           `Weekly payout failed for driver ${account.wallet.userId}:`,
-          error
+          error,
         );
       }
     }
@@ -522,7 +538,11 @@ export class ScheduledJobsService {
           },
         });
       } catch (error) {
-        console.error(`Health check failed for ${provider}:`, error);
+        jobsLogger.error(
+          { err: error },
+          `Health check failed for ${provider}:`,
+          error,
+        );
       }
     }
   }
@@ -538,7 +558,7 @@ export class ScheduledJobsService {
       },
     });
 
-    console.log(`Found ${expiredHolds.length} expired holds to release`);
+    jobsLogger.info(`Found ${expiredHolds.length} expired holds to release`);
 
     for (const hold of expiredHolds) {
       try {
@@ -550,7 +570,11 @@ export class ScheduledJobsService {
           },
         });
       } catch (error) {
-        console.error(`Failed to release hold ${hold.id}:`, error);
+        jobsLogger.error(
+          { err: error },
+          `Failed to release hold ${hold.id}:`,
+          error,
+        );
       }
     }
   }
@@ -568,14 +592,18 @@ export class ScheduledJobsService {
       take: 50,
     });
 
-    console.log(`Found ${failedPayouts.length} failed payouts to retry`);
+    jobsLogger.info(`Found ${failedPayouts.length} failed payouts to retry`);
 
     for (const payout of failedPayouts) {
       try {
-        console.log(`Retrying payout ${payout.id}`);
+        jobsLogger.info(`Retrying payout ${payout.id}`);
         // await this.payoutService.retryPayout(payout.id);
       } catch (error) {
-        console.error(`Retry failed for payout ${payout.id}:`, error);
+        jobsLogger.error(
+          { err: error },
+          `Retry failed for payout ${payout.id}:`,
+          error,
+        );
       }
     }
   }
@@ -622,14 +650,14 @@ export class ScheduledJobsService {
       }),
     };
 
-    console.log("Daily report generated:", JSON.stringify(report, null, 2));
+    jobsLogger.info({ report }, "Daily report generated");
 
     // Store report
     await this.redis.set(
       `report:daily:${report.date}`,
       JSON.stringify(report),
       "EX",
-      30 * 24 * 60 * 60 // 30 days
+      30 * 24 * 60 * 60, // 30 days
     );
   }
 
@@ -665,7 +693,7 @@ export class ScheduledJobsService {
         // Interval job - move to next interval
         const interval = parseInt(minute.substring(2), 10);
         next.setMinutes(
-          Math.ceil((now.getMinutes() + 1) / interval) * interval
+          Math.ceil((now.getMinutes() + 1) / interval) * interval,
         );
         if (next <= now) {
           next.setHours(next.getHours() + 1);
@@ -695,7 +723,7 @@ export class ScheduledJobsService {
     jobName: string,
     status: "success" | "failure",
     duration: number,
-    error?: string
+    error?: string,
   ): Promise<void> {
     const record = {
       jobName,
@@ -712,7 +740,7 @@ export class ScheduledJobsService {
 
   private async sendJobFailureAlert(
     jobName: string,
-    error: string
+    error: string,
   ): Promise<void> {
     await this.prisma.alert.create({
       data: {
@@ -725,9 +753,7 @@ export class ScheduledJobsService {
     });
   }
 
-  private async checkProviderHealth(
-    provider: PaymentProvider
-  ): Promise<{
+  private async checkProviderHealth(provider: PaymentProvider): Promise<{
     isHealthy: boolean;
     responseTime: number;
     successRate: number;
@@ -751,7 +777,7 @@ export class ScheduledJobsService {
     }
 
     const successful = recentTransactions.filter(
-      (t) => t.status === "COMPLETED"
+      (t) => t.status === "COMPLETED",
     ).length;
     const successRate = (successful / recentTransactions.length) * 100;
 
@@ -760,7 +786,8 @@ export class ScheduledJobsService {
       .filter((t) => t.confirmedAt && t.initiatedAt)
       .map(
         (t) =>
-          new Date(t.confirmedAt!).getTime() - new Date(t.initiatedAt).getTime()
+          new Date(t.confirmedAt!).getTime() -
+          new Date(t.initiatedAt).getTime(),
       );
 
     const avgResponseTime =
@@ -819,12 +846,12 @@ export class ScheduledJobsService {
 
   async getJobHistory(
     jobName: string,
-    limit: number = 10
+    limit: number = 10,
   ): Promise<JobResult[]> {
     const records = await this.redis.lrange(
       `job:history:${jobName}`,
       0,
-      limit - 1
+      limit - 1,
     );
     return records.map((r) => JSON.parse(r));
   }
@@ -841,7 +868,7 @@ export function createScheduledJobsService(
   redis: Redis,
   reconciliationService: ReconciliationService,
   settlementService: SettlementService,
-  _payoutService: PayoutService
+  _payoutService: PayoutService,
 ): ScheduledJobsService {
   if (!instance) {
     instance = new ScheduledJobsService(
@@ -849,7 +876,7 @@ export function createScheduledJobsService(
       redis,
       reconciliationService,
       settlementService,
-      _payoutService
+      _payoutService,
     );
   }
   return instance;

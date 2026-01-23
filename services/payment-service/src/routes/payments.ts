@@ -7,6 +7,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import { paymentLogger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -82,7 +83,7 @@ paymentRoutes.post(
             message: "A payment for this reference is already in progress",
           },
         },
-        409
+        409,
       );
     }
 
@@ -137,7 +138,7 @@ paymentRoutes.post(
                 message: "Insufficient wallet balance",
               },
             },
-            400
+            400,
           );
         }
 
@@ -153,7 +154,7 @@ paymentRoutes.post(
           JSON.stringify({
             walletId: wallet.id,
             amount,
-          })
+          }),
         );
 
         paymentData.status = "locked";
@@ -206,12 +207,12 @@ paymentRoutes.post(
       await redis.setex(
         `idempotency:payment:${idempotencyKey}`,
         86400,
-        JSON.stringify(response)
+        JSON.stringify(response),
       );
     }
 
     return c.json(response, 201);
-  }
+  },
 );
 
 /**
@@ -234,7 +235,7 @@ paymentRoutes.post(
           success: false,
           error: { code: "PAYMENT_NOT_FOUND", message: "Payment not found" },
         },
-        404
+        404,
       );
     }
 
@@ -247,7 +248,7 @@ paymentRoutes.post(
             message: "Not authorized to confirm this payment",
           },
         },
-        403
+        403,
       );
     }
 
@@ -260,7 +261,7 @@ paymentRoutes.post(
             message: `Payment is ${payment.status}`,
           },
         },
-        400
+        400,
       );
     }
 
@@ -273,7 +274,7 @@ paymentRoutes.post(
             success: false,
             error: { code: "LOCK_EXPIRED", message: "Payment lock expired" },
           },
-          400
+          400,
         );
       }
 
@@ -355,7 +356,7 @@ paymentRoutes.post(
           });
         }
       } catch (error) {
-        console.error("Card confirmation failed:", error);
+        paymentLogger.error({ err: error }, "Card confirmation failed");
       }
     }
 
@@ -367,9 +368,9 @@ paymentRoutes.post(
           message: "Payment confirmation failed",
         },
       },
-      400
+      400,
     );
-  }
+  },
 );
 
 /**
@@ -388,7 +389,7 @@ paymentRoutes.get("/:paymentId", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Payment not found" },
       },
-      404
+      404,
     );
   }
 
@@ -418,7 +419,7 @@ paymentRoutes.post("/:paymentId/refund", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Payment not found" },
       },
-      404
+      404,
     );
   }
 
@@ -431,7 +432,7 @@ paymentRoutes.post("/:paymentId/refund", async (c) => {
           message: "Can only refund completed payments",
         },
       },
-      400
+      400,
     );
   }
 
@@ -445,7 +446,7 @@ paymentRoutes.post("/:paymentId/refund", async (c) => {
           message: "Refund amount exceeds payment amount",
         },
       },
-      400
+      400,
     );
   }
 
@@ -496,7 +497,7 @@ paymentRoutes.post("/:paymentId/refund", async (c) => {
     const paystack = new PaystackClient();
     await paystack.initiateRefund(
       payment.providerReference || payment.id,
-      refundAmount * 100
+      refundAmount * 100,
     );
   }
 
@@ -541,7 +542,7 @@ paymentRoutes.post("/escrow/create", async (c) => {
           message: "Insufficient balance for escrow",
         },
       },
-      400
+      400,
     );
   }
 
@@ -567,7 +568,7 @@ paymentRoutes.post("/escrow/create", async (c) => {
   await redis.setex(
     `escrow:${escrowId}`,
     expiresIn || 7200,
-    JSON.stringify(escrowData)
+    JSON.stringify(escrowData),
   );
   await redis.setex(`escrow:ref:${referenceId}`, expiresIn || 7200, escrowId);
 
@@ -601,7 +602,7 @@ paymentRoutes.post("/escrow/release", async (c) => {
         success: false,
         error: { code: "ESCROW_NOT_FOUND", message: "Escrow not found" },
       },
-      404
+      404,
     );
   }
 
@@ -612,7 +613,7 @@ paymentRoutes.post("/escrow/release", async (c) => {
         success: false,
         error: { code: "ESCROW_EXPIRED", message: "Escrow has expired" },
       },
-      400
+      400,
     );
   }
 
@@ -626,7 +627,7 @@ paymentRoutes.post("/escrow/release", async (c) => {
           message: `Escrow is ${escrow.status}`,
         },
       },
-      400
+      400,
     );
   }
 
@@ -740,7 +741,7 @@ paymentRoutes.post("/escrow/cancel", async (c) => {
         success: false,
         error: { code: "ESCROW_NOT_FOUND", message: "Escrow not found" },
       },
-      404
+      404,
     );
   }
 
@@ -751,7 +752,7 @@ paymentRoutes.post("/escrow/cancel", async (c) => {
         success: false,
         error: { code: "ESCROW_EXPIRED", message: "Escrow has expired" },
       },
-      400
+      400,
     );
   }
 
@@ -765,7 +766,7 @@ paymentRoutes.post("/escrow/cancel", async (c) => {
           message: `Escrow is ${escrow.status}`,
         },
       },
-      400
+      400,
     );
   }
 

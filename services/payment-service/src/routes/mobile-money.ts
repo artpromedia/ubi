@@ -7,6 +7,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import { mobileMoneyLogger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -128,7 +129,7 @@ async function initiateMpesaSTKPush(
   amount: number,
   reference: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _description: string
+  _description: string,
 ): Promise<MoMoTransactionResult> {
   // M-Pesa STK Push integration
   // This would integrate with Safaricom's Daraja API
@@ -147,12 +148,15 @@ async function initiateMpesaSTKPush(
     .toISOString()
     .replaceAll(/[^\d]/g, "")
     .slice(0, 14);
-  console.log("[M-Pesa] Generated timestamp:", timestamp);
+  mobileMoneyLogger.info({ timestamp }, "[M-Pesa] Generated timestamp");
 
   try {
     // In production, this would make actual API calls
     // Simulating for development
-    console.log("[M-Pesa] Initiating STK Push:", { phone, amount, reference });
+    mobileMoneyLogger.info(
+      { phone, amount, reference },
+      "[M-Pesa] Initiating STK Push",
+    );
 
     return {
       success: true,
@@ -161,7 +165,7 @@ async function initiateMpesaSTKPush(
       message: "STK Push sent. Please enter your M-Pesa PIN.",
     };
   } catch (error) {
-    console.error("M-Pesa STK Push failed:", error);
+    mobileMoneyLogger.error({ err: error }, "M-Pesa STK Push failed");
     return {
       success: false,
       transactionId: "",
@@ -175,7 +179,7 @@ async function initiateMtnMomoCollection(
   phone: string,
   amount: number,
   currency: Currency,
-  reference: string
+  reference: string,
 ): Promise<MoMoTransactionResult> {
   // MTN MoMo Collection API
   // NOTE: Additional credentials (MTN_MOMO_USER_ID, MTN_MOMO_SUBSCRIPTION_KEY)
@@ -187,12 +191,10 @@ async function initiateMtnMomoCollection(
   }
 
   try {
-    console.log("[MTN MoMo] Initiating collection:", {
-      phone,
-      amount,
-      currency,
-      reference,
-    });
+    mobileMoneyLogger.info(
+      { phone, amount, currency, reference },
+      "[MTN MoMo] Initiating collection",
+    );
 
     return {
       success: true,
@@ -201,7 +203,7 @@ async function initiateMtnMomoCollection(
       message: "Payment request sent. Please approve on your phone.",
     };
   } catch (error) {
-    console.error("MTN MoMo collection failed:", error);
+    mobileMoneyLogger.error({ err: error }, "MTN MoMo collection failed");
     return {
       success: false,
       transactionId: "",
@@ -215,7 +217,7 @@ async function initiateAirtelMoneyCollection(
   phone: string,
   amount: number,
   currency: Currency,
-  reference: string
+  reference: string,
 ): Promise<MoMoTransactionResult> {
   // NOTE: AIRTEL_SECRET_KEY will be used when implementing actual Airtel Money API calls
   const apiKey = process.env.AIRTEL_API_KEY;
@@ -225,12 +227,10 @@ async function initiateAirtelMoneyCollection(
   }
 
   try {
-    console.log("[Airtel Money] Initiating collection:", {
-      phone,
-      amount,
-      currency,
-      reference,
-    });
+    mobileMoneyLogger.info(
+      { phone, amount, currency, reference },
+      "[Airtel Money] Initiating collection",
+    );
 
     return {
       success: true,
@@ -239,7 +239,7 @@ async function initiateAirtelMoneyCollection(
       message: "Payment request sent. Please approve on your phone.",
     };
   } catch (error) {
-    console.error("Airtel Money collection failed:", error);
+    mobileMoneyLogger.error({ err: error }, "Airtel Money collection failed");
     return {
       success: false,
       transactionId: "",
@@ -314,7 +314,7 @@ mobileMoneyRoutes.post(
             message: "Invalid mobile money provider",
           },
         },
-        400
+        400,
       );
     }
 
@@ -327,7 +327,7 @@ mobileMoneyRoutes.post(
             message: `${provider} does not support ${currency}`,
           },
         },
-        400
+        400,
       );
     }
 
@@ -340,7 +340,7 @@ mobileMoneyRoutes.post(
             message: `Amount must be between ${config.minAmount} and ${config.maxAmount} ${currency}`,
           },
         },
-        400
+        400,
       );
     }
 
@@ -374,7 +374,7 @@ mobileMoneyRoutes.post(
           phone,
           amount,
           reference,
-          description || "UBI Payment"
+          description || "UBI Payment",
         );
         break;
 
@@ -383,7 +383,7 @@ mobileMoneyRoutes.post(
           phone,
           amount,
           currency,
-          reference
+          reference,
         );
         break;
 
@@ -392,7 +392,7 @@ mobileMoneyRoutes.post(
           phone,
           amount,
           currency,
-          reference
+          reference,
         );
         break;
 
@@ -428,7 +428,7 @@ mobileMoneyRoutes.post(
           currency,
           status: result.status,
           createdAt: new Date().toISOString(),
-        })
+        }),
       );
     } else {
       await prisma.payment.update({
@@ -457,12 +457,12 @@ mobileMoneyRoutes.post(
       await redis.setex(
         `idempotency:momo:${idempotencyKey}`,
         3600,
-        JSON.stringify(response)
+        JSON.stringify(response),
       );
     }
 
     return c.json(response, result.success ? 201 : 400);
-  }
+  },
 );
 
 /**
@@ -483,7 +483,7 @@ mobileMoneyRoutes.post(
           success: false,
           error: { code: "UNAUTHORIZED", message: "Internal endpoint" },
         },
-        403
+        403,
       );
     }
 
@@ -494,7 +494,7 @@ mobileMoneyRoutes.post(
           success: false,
           error: { code: "INVALID_PROVIDER", message: "Invalid provider" },
         },
-        400
+        400,
       );
     }
 
@@ -516,11 +516,11 @@ mobileMoneyRoutes.post(
     await redis.setex(
       `momo:disb:${reference}`,
       86400,
-      JSON.stringify(disbursement)
+      JSON.stringify(disbursement),
     );
 
     // In production, this would initiate the actual disbursement
-    console.log("[MoMo Disbursement] Initiated:", disbursement);
+    mobileMoneyLogger.info({ disbursement }, "[MoMo Disbursement] Initiated");
 
     return c.json({
       success: true,
@@ -530,7 +530,7 @@ mobileMoneyRoutes.post(
         message: "Disbursement initiated",
       },
     });
-  }
+  },
 );
 
 /**
@@ -547,7 +547,7 @@ mobileMoneyRoutes.get("/status/:transactionId", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Transaction not found" },
       },
-      404
+      404,
     );
   }
 
@@ -575,7 +575,7 @@ mobileMoneyRoutes.get("/status/:transactionId", async (c) => {
 mobileMoneyRoutes.post("/callback/mpesa", async (c) => {
   const body = await c.req.json();
 
-  console.log("[M-Pesa Callback]:", JSON.stringify(body, null, 2));
+  mobileMoneyLogger.info({ body }, "[M-Pesa Callback] Received");
 
   const { Body } = body;
   if (!Body?.stkCallback) {
@@ -588,9 +588,9 @@ mobileMoneyRoutes.post("/callback/mpesa", async (c) => {
   // Find the payment by merchant request ID
   const txnData = await redis.get(`momo:txn:${MerchantRequestID}`);
   if (!txnData) {
-    console.error(
-      "Transaction not found for M-Pesa callback:",
-      MerchantRequestID
+    mobileMoneyLogger.error(
+      { MerchantRequestID },
+      "Transaction not found for M-Pesa callback",
     );
     return c.json({ success: true });
   }
@@ -609,10 +609,10 @@ mobileMoneyRoutes.post("/callback/mpesa", async (c) => {
         ...((await prisma.payment.findUnique({ where: { id: txn.paymentId } }))
           ?.metadata as object),
         mpesaReceiptNumber: CallbackMetadata?.Item?.find(
-          (i: any) => i.Name === "MpesaReceiptNumber"
+          (i: any) => i.Name === "MpesaReceiptNumber",
         )?.Value,
         transactionDate: CallbackMetadata?.Item?.find(
-          (i: any) => i.Name === "TransactionDate"
+          (i: any) => i.Name === "TransactionDate",
         )?.Value,
       },
     },
@@ -659,7 +659,7 @@ mobileMoneyRoutes.post("/callback/mpesa", async (c) => {
 mobileMoneyRoutes.post("/callback/mtn", async (c) => {
   const body = await c.req.json();
 
-  console.log("[MTN MoMo Callback]:", JSON.stringify(body, null, 2));
+  mobileMoneyLogger.info({ body }, "[MTN MoMo Callback] Received");
 
   // Process MTN MoMo callback
   // Similar structure to M-Pesa callback
@@ -673,7 +673,7 @@ mobileMoneyRoutes.post("/callback/mtn", async (c) => {
 mobileMoneyRoutes.post("/callback/airtel", async (c) => {
   const body = await c.req.json();
 
-  console.log("[Airtel Money Callback]:", JSON.stringify(body, null, 2));
+  mobileMoneyLogger.info({ body }, "[Airtel Money Callback] Received");
 
   // Process Airtel Money callback
 

@@ -12,6 +12,7 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+import { tripMonitorLogger } from "../lib/logger";
 import {
   AccelData,
   AnomalyDetails,
@@ -56,7 +57,7 @@ export class TripMonitorService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async startMonitoring(
-    params: StartMonitoringParams
+    params: StartMonitoringParams,
   ): Promise<TripSafetySession> {
     const {
       tripId,
@@ -72,7 +73,7 @@ export class TripMonitorService extends EventEmitter {
     const riskScore = await this.calculateInitialRiskScore(
       riderId,
       driverId,
-      expectedRoute
+      expectedRoute,
     );
 
     const session: TripSafetySession = {
@@ -106,11 +107,9 @@ export class TripMonitorService extends EventEmitter {
       riskScore,
     });
 
-    console.log(
-      "[TripMonitor] Started monitoring trip:",
-      tripId,
-      "Risk score:",
-      riskScore
+    tripMonitorLogger.info(
+      { tripId, riskScore },
+      "[TripMonitor] Started monitoring trip",
     );
 
     return session;
@@ -118,7 +117,7 @@ export class TripMonitorService extends EventEmitter {
 
   async stopMonitoring(
     tripId: string,
-    reason: "completed" | "cancelled" | "incident"
+    reason: "completed" | "cancelled" | "incident",
   ): Promise<void> {
     const session = this.activeSessions.get(tripId);
     if (!session) return;
@@ -137,11 +136,9 @@ export class TripMonitorService extends EventEmitter {
       reason === "completed" ? "trip_completed" : "trip_cancelled";
     this.emitSafetyEvent(eventType, session.riderId, { tripId, reason });
 
-    console.log(
-      "[TripMonitor] Stopped monitoring trip:",
-      tripId,
-      "Reason:",
-      reason
+    tripMonitorLogger.info(
+      { tripId, reason },
+      "[TripMonitor] Stopped monitoring trip",
     );
   }
 
@@ -155,7 +152,7 @@ export class TripMonitorService extends EventEmitter {
 
   async processLocationUpdate(
     tripId: string,
-    location: Location
+    location: Location,
   ): Promise<LocationProcessResult> {
     const session = this.activeSessions.get(tripId);
     if (!session) {
@@ -176,7 +173,7 @@ export class TripMonitorService extends EventEmitter {
       const jumpAnomaly = this.detectLocationJump(
         tripId,
         previousLocation,
-        location
+        location,
       );
       if (jumpAnomaly) anomalies.push(jumpAnomaly);
     }
@@ -185,7 +182,7 @@ export class TripMonitorService extends EventEmitter {
     const deviationAnomaly = this.detectRouteDeviation(
       tripId,
       session,
-      location
+      location,
     );
     if (deviationAnomaly) anomalies.push(deviationAnomaly);
 
@@ -230,13 +227,13 @@ export class TripMonitorService extends EventEmitter {
   private detectRouteDeviation(
     tripId: string,
     session: TripSafetySession,
-    currentLocation: Location
+    currentLocation: Location,
   ): TripAnomaly | null {
     if (!session.expectedRoute || session.expectedRoute.length < 2) return null;
 
     const distanceFromRoute = this.calculateDistanceFromRoute(
       currentLocation,
-      session.expectedRoute
+      session.expectedRoute,
     );
 
     if (distanceFromRoute > this.ROUTE_DEVIATION_THRESHOLD_METERS) {
@@ -250,7 +247,7 @@ export class TripMonitorService extends EventEmitter {
           distanceFromRoute,
           description: `${Math.round(distanceFromRoute)}m off expected route`,
         },
-        currentLocation
+        currentLocation,
       );
     }
 
@@ -259,7 +256,7 @@ export class TripMonitorService extends EventEmitter {
 
   private async detectUnexpectedStop(
     tripId: string,
-    history: Location[]
+    history: Location[],
   ): Promise<TripAnomaly | null> {
     if (history.length < 10) return null;
 
@@ -286,7 +283,7 @@ export class TripMonitorService extends EventEmitter {
       // Check if this is near expected stops (dropoff, pickup)
       const isExpectedStop = this.isNearExpectedStop(
         lastLoc!,
-        session.expectedRoute
+        session.expectedRoute,
       );
       if (isExpectedStop) return null;
 
@@ -298,7 +295,7 @@ export class TripMonitorService extends EventEmitter {
           stopDuration: timeDiffSeconds,
           description: `Vehicle stopped for ${Math.round(timeDiffSeconds / 60)} minutes`,
         },
-        lastLoc
+        lastLoc,
       );
     }
 
@@ -307,7 +304,7 @@ export class TripMonitorService extends EventEmitter {
 
   private detectSpeedAnomaly(
     tripId: string,
-    location: Location
+    location: Location,
   ): TripAnomaly | null {
     if (!location.speed) return null;
 
@@ -323,7 +320,7 @@ export class TripMonitorService extends EventEmitter {
           expectedSpeed: this.SPEED_ANOMALY_THRESHOLD_KMH,
           description: `Excessive speed: ${Math.round(speedKmh)} km/h`,
         },
-        location
+        location,
       );
     }
 
@@ -333,7 +330,7 @@ export class TripMonitorService extends EventEmitter {
   private detectLocationJump(
     tripId: string,
     previousLocation: Location,
-    currentLocation: Location
+    currentLocation: Location,
   ): TripAnomaly | null {
     const distance = this.calculateDistance(previousLocation, currentLocation);
     const timeDiff =
@@ -356,7 +353,7 @@ export class TripMonitorService extends EventEmitter {
           description: `Location jumped ${Math.round(distance)}m in ${Math.round(timeDiffSeconds)}s`,
           confidence: 0.9,
         },
-        currentLocation
+        currentLocation,
       );
     }
 
@@ -369,7 +366,7 @@ export class TripMonitorService extends EventEmitter {
 
   async processAccelerometerData(
     tripId: string,
-    data: AccelData
+    data: AccelData,
   ): Promise<CrashDetection | null> {
     const session = this.activeSessions.get(tripId);
     if (!session) return null;
@@ -414,7 +411,7 @@ export class TripMonitorService extends EventEmitter {
             speedDrop: crash.speedDrop,
             description: "Potential crash detected",
           },
-          data.location
+          data.location,
         );
 
         await this.handleAnomaly(session, anomaly);
@@ -423,12 +420,12 @@ export class TripMonitorService extends EventEmitter {
         await this.triggerSafetyCheck(
           tripId,
           session.riderId,
-          "Potential crash detected"
+          "Potential crash detected",
         );
         await this.triggerSafetyCheck(
           tripId,
           session.driverId,
-          "Potential crash detected"
+          "Potential crash detected",
         );
 
         this.emitSafetyEvent("crash_detected", session.riderId, {
@@ -437,11 +434,9 @@ export class TripMonitorService extends EventEmitter {
           driverId: session.driverId,
         });
 
-        console.log(
-          "[TripMonitor] CRASH DETECTED for trip:",
-          tripId,
-          "G-force:",
-          gForce
+        tripMonitorLogger.info(
+          { tripId, gForce },
+          "[TripMonitor] CRASH DETECTED",
         );
 
         return crash;
@@ -458,7 +453,7 @@ export class TripMonitorService extends EventEmitter {
   async triggerSafetyCheck(
     tripId: string,
     userId: string,
-    reason: string
+    reason: string,
   ): Promise<TripSafetyCheck> {
     const checkId = this.generateId();
 
@@ -480,7 +475,7 @@ export class TripMonitorService extends EventEmitter {
     // Schedule timeout
     setTimeout(
       () => this.handleSafetyCheckTimeout(checkId),
-      this.SAFETY_CHECK_TIMEOUT_SECONDS * 1000
+      this.SAFETY_CHECK_TIMEOUT_SECONDS * 1000,
     );
 
     this.emitSafetyEvent("safety_check_sent", userId, {
@@ -489,14 +484,17 @@ export class TripMonitorService extends EventEmitter {
       reason,
     });
 
-    console.log("[TripMonitor] Safety check sent:", checkId, "User:", userId);
+    tripMonitorLogger.info(
+      { checkId, userId },
+      "[TripMonitor] Safety check sent",
+    );
 
     return check;
   }
 
   async respondToSafetyCheck(
     checkId: string,
-    response: "safe" | "need_help"
+    response: "safe" | "need_help",
   ): Promise<{ success: boolean; escalated?: boolean }> {
     const check = this.safetyChecks.get(checkId);
     if (!check) {
@@ -520,7 +518,7 @@ export class TripMonitorService extends EventEmitter {
       await this.escalateToSafetyTeam(
         check.tripId,
         check.userId,
-        "User requested help via safety check"
+        "User requested help via safety check",
       );
 
       this.emitSafetyEvent("safety_check_responded", check.userId, {
@@ -539,13 +537,13 @@ export class TripMonitorService extends EventEmitter {
     check.status = "NO_RESPONSE";
     check.responseType = "no_response";
 
-    console.log("[TripMonitor] Safety check timeout:", checkId);
+    tripMonitorLogger.info({ checkId }, "[TripMonitor] Safety check timeout");
 
     // Escalate due to no response
     await this.escalateToSafetyTeam(
       check.tripId,
       check.userId,
-      "No response to safety check"
+      "No response to safety check",
     );
 
     this.emitSafetyEvent("safety_check_timeout", check.userId, {
@@ -561,7 +559,7 @@ export class TripMonitorService extends EventEmitter {
   async createTripShare(
     tripId: string,
     userId: string,
-    contactIds: string[]
+    contactIds: string[],
   ): Promise<TripShare[]> {
     const shares: TripShare[] = [];
 
@@ -591,10 +589,9 @@ export class TripMonitorService extends EventEmitter {
       session.sharedWithContacts = true;
     }
 
-    console.log(
-      "[TripMonitor] Trip shared with",
-      contactIds.length,
-      "contacts"
+    tripMonitorLogger.info(
+      { contactCount: contactIds.length },
+      "[TripMonitor] Trip shared",
     );
 
     return shares;
@@ -612,13 +609,12 @@ export class TripMonitorService extends EventEmitter {
 
   private async notifyTripShareContact(
     contactId: string,
-    _share: TripShare
+    _share: TripShare,
   ): Promise<void> {
     // In production, send SMS/WhatsApp/Email with share link
-    console.log(
-      "[TripMonitor] Notified contact:",
-      contactId,
-      "with share link"
+    tripMonitorLogger.info(
+      { contactId },
+      "[TripMonitor] Notified contact with share link",
     );
   }
 
@@ -628,7 +624,7 @@ export class TripMonitorService extends EventEmitter {
 
   private async handleAnomaly(
     session: TripSafetySession,
-    anomaly: TripAnomaly
+    anomaly: TripAnomaly,
   ): Promise<void> {
     const anomalies = this.anomalyStore.get(session.tripId) || [];
     anomalies.push(anomaly);
@@ -644,7 +640,7 @@ export class TripMonitorService extends EventEmitter {
       await this.escalateToSafetyTeam(
         session.tripId,
         session.riderId,
-        `Critical anomaly: ${anomaly.anomalyType}`
+        `Critical anomaly: ${anomaly.anomalyType}`,
       );
     } else if (
       anomaly.severity === "HIGH" &&
@@ -653,7 +649,7 @@ export class TripMonitorService extends EventEmitter {
       await this.escalateToSafetyTeam(
         session.tripId,
         session.riderId,
-        "Multiple high-severity anomalies detected"
+        "Multiple high-severity anomalies detected",
       );
     }
   }
@@ -661,13 +657,11 @@ export class TripMonitorService extends EventEmitter {
   private async escalateToSafetyTeam(
     tripId: string,
     userId: string,
-    reason: string
+    reason: string,
   ): Promise<void> {
-    console.log(
-      "[TripMonitor] ESCALATING to safety team:",
-      tripId,
-      "Reason:",
-      reason
+    tripMonitorLogger.info(
+      { tripId, reason },
+      "[TripMonitor] ESCALATING to safety team",
     );
 
     // In production, this would:
@@ -691,7 +685,7 @@ export class TripMonitorService extends EventEmitter {
   async reportPhoneActivity(
     tripId: string,
     userId: string,
-    isActive: boolean
+    isActive: boolean,
   ): Promise<void> {
     const session = this.activeSessions.get(tripId);
     if (!session) return;
@@ -711,7 +705,7 @@ export class TripMonitorService extends EventEmitter {
           await this.triggerSafetyCheck(
             tripId,
             userId,
-            "Phone inactivity detected"
+            "Phone inactivity detected",
           );
         }
       }, 120000);
@@ -725,7 +719,7 @@ export class TripMonitorService extends EventEmitter {
   private async calculateInitialRiskScore(
     _riderId: string,
     _driverId: string,
-    route: Location[]
+    route: Location[],
   ): Promise<number> {
     let riskScore = 0;
 
@@ -754,7 +748,7 @@ export class TripMonitorService extends EventEmitter {
 
   private recalculateRiskScore(
     session: TripSafetySession,
-    newAnomalies: TripAnomaly[]
+    newAnomalies: TripAnomaly[],
   ): number {
     let score = session.riskScore;
 
@@ -784,7 +778,7 @@ export class TripMonitorService extends EventEmitter {
 
   private calculateDistanceFromRoute(
     location: Location,
-    route: Location[]
+    route: Location[],
   ): number {
     let minDistance = Infinity;
 
@@ -792,7 +786,7 @@ export class TripMonitorService extends EventEmitter {
       const distance = this.pointToSegmentDistance(
         location,
         route[i],
-        route[i + 1]
+        route[i + 1],
       );
       minDistance = Math.min(minDistance, distance);
     }
@@ -803,7 +797,7 @@ export class TripMonitorService extends EventEmitter {
   private pointToSegmentDistance(
     point: Location,
     segStart: Location | undefined,
-    segEnd: Location | undefined
+    segEnd: Location | undefined,
   ): number {
     if (!segStart || !segEnd) return Infinity;
 
@@ -819,8 +813,8 @@ export class TripMonitorService extends EventEmitter {
       Math.min(
         1,
         ((point.lng - segStart.lng) * dx + (point.lat - segStart.lat) * dy) /
-          (dx * dx + dy * dy)
-      )
+          (dx * dx + dy * dy),
+      ),
     );
 
     const nearestPoint: Location = {
@@ -865,7 +859,10 @@ export class TripMonitorService extends EventEmitter {
     return "LOW";
   }
 
-  private isNearExpectedStop(location: Location, route: Location[] | undefined): boolean {
+  private isNearExpectedStop(
+    location: Location,
+    route: Location[] | undefined,
+  ): boolean {
     if (!route || route.length < 2) return false;
 
     const dropoff = route[route.length - 1];
@@ -886,7 +883,7 @@ export class TripMonitorService extends EventEmitter {
     type: TripAnomalyType,
     severity: IncidentSeverity,
     details: AnomalyDetails,
-    location?: Location
+    location?: Location,
   ): TripAnomaly {
     return {
       id: this.generateId(),
@@ -901,16 +898,22 @@ export class TripMonitorService extends EventEmitter {
 
   private async archiveSession(session: TripSafetySession): Promise<void> {
     // In production, store to database
-    console.log("[TripMonitor] Archived session:", session.tripId);
+    tripMonitorLogger.info(
+      { tripId: session.tripId },
+      "[TripMonitor] Archived session",
+    );
   }
 
   private async sendSafetyCheckNotification(
     userId: string,
     _checkId: string,
-    _reason: string
+    _reason: string,
   ): Promise<void> {
     // In production, send push notification
-    console.log("[TripMonitor] Sent safety check notification to:", userId);
+    tripMonitorLogger.info(
+      { userId },
+      "[TripMonitor] Sent safety check notification",
+    );
   }
 
   private generateId(): string {
@@ -920,7 +923,7 @@ export class TripMonitorService extends EventEmitter {
   private emitSafetyEvent(
     eventType: string,
     userId: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
   ): void {
     this.emit("safety_event", {
       eventType,
@@ -949,9 +952,9 @@ export class TripMonitorService extends EventEmitter {
 
         // If no location update for 5 minutes during active trip
         if (staleness > 300000 && session.status === "monitoring") {
-          console.log(
-            "[TripMonitor] Stale location detected for trip:",
-            tripId
+          tripMonitorLogger.info(
+            { tripId },
+            "[TripMonitor] Stale location detected",
           );
 
           const anomaly = this.createAnomaly(
@@ -961,7 +964,7 @@ export class TripMonitorService extends EventEmitter {
             {
               description: `No location update for ${Math.round(staleness / 60000)} minutes`,
             },
-            lastLocation
+            lastLocation,
           );
 
           this.handleAnomaly(session, anomaly);

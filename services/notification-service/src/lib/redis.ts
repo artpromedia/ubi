@@ -3,6 +3,7 @@
  */
 
 import Redis from "ioredis";
+import { redisLogger } from "./logger.js";
 
 // Create Redis clients
 export const redis = new Redis(
@@ -13,7 +14,7 @@ export const redis = new Redis(
       const delay = Math.min(times * 100, 3000);
       return delay;
     },
-  }
+  },
 );
 
 // Separate client for subscriptions (Redis requires separate connections for pub/sub)
@@ -21,20 +22,20 @@ export const subscriber = new Redis(
   process.env.REDIS_URL || "redis://localhost:6379",
   {
     maxRetriesPerRequest: 3,
-  }
+  },
 );
 
 // Event handlers
 redis.on("error", (error) => {
-  console.error("Redis error:", error);
+  redisLogger.error({ err: error }, "Redis error");
 });
 
 redis.on("connect", () => {
-  console.log("Redis connected");
+  redisLogger.info("Redis connected");
 });
 
 subscriber.on("error", (error) => {
-  console.error("Redis subscriber error:", error);
+  redisLogger.error({ err: error }, "Redis subscriber error");
 });
 
 // ============================================
@@ -83,7 +84,7 @@ export const cache = {
   async getOrSet<T>(
     key: string,
     fn: () => Promise<T>,
-    ttlSeconds: number
+    ttlSeconds: number,
   ): Promise<T> {
     const cached = await this.get<T>(key);
     if (cached !== null) return cached;
@@ -145,7 +146,7 @@ export function onEvent(event: string, handler: EventHandler): void {
  */
 export async function publishEvent(
   event: string,
-  data: unknown
+  data: unknown,
 ): Promise<number> {
   const message = JSON.stringify({ event, data, timestamp: Date.now() });
   return redis.publish("notifications", message);
@@ -162,12 +163,12 @@ subscriber.on("message", (_channel, message) => {
         try {
           handler(data);
         } catch (error) {
-          console.error(`Error in event handler for ${event}:`, error);
+          redisLogger.error({ err: error, event }, "Error in event handler");
         }
       });
     }
   } catch (error) {
-    console.error("Error processing pub/sub message:", error);
+    redisLogger.error({ err: error }, "Error processing pub/sub message");
   }
 });
 
@@ -194,7 +195,7 @@ export class RateLimiter {
    * Check if action is allowed
    */
   async isAllowed(
-    identifier: string
+    identifier: string,
   ): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
     const key = `${this.keyPrefix}:${identifier}`;
     const now = Date.now();
@@ -262,7 +263,7 @@ export const otpStore = {
   async set(
     identifier: string,
     otp: string,
-    ttlSeconds: number = 600
+    ttlSeconds: number = 600,
   ): Promise<void> {
     const key = `otp:${identifier}`;
     await redis.set(key, otp, "EX", ttlSeconds);

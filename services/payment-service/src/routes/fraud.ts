@@ -7,6 +7,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import { fraudLogger } from "../lib/logger.js";
 import { prisma } from "../lib/prisma";
 import { FraudDetectionService } from "../services/fraud-detection.service";
 
@@ -38,7 +39,7 @@ fraudRoutes.post(
         .optional(),
       paymentMethod: z.string().optional(),
       metadata: z.record(z.any()).optional(),
-    })
+    }),
   ),
   async (c) => {
     try {
@@ -50,16 +51,16 @@ fraudRoutes.post(
         data: result,
       });
     } catch (error: any) {
-      console.error("Risk assessment error:", error);
+      fraudLogger.error({ err: error }, "Risk assessment error");
       return c.json(
         {
           success: false,
           error: error.message || "Failed to assess risk",
         },
-        500
+        500,
       );
     }
-  }
+  },
 );
 
 /**
@@ -88,7 +89,7 @@ fraudRoutes.get("/review-queue", async (c) => {
         success: false,
         error: error.message,
       },
-      500
+      500,
     );
   }
 });
@@ -114,7 +115,7 @@ fraudRoutes.post("/approve/:assessmentId", async (c) => {
         success: false,
         error: error.message,
       },
-      400
+      400,
     );
   }
 });
@@ -129,7 +130,7 @@ fraudRoutes.post(
     "json",
     z.object({
       reason: z.string(),
-    })
+    }),
   ),
   async (c) => {
     try {
@@ -149,10 +150,10 @@ fraudRoutes.post(
           success: false,
           error: error.message,
         },
-        400
+        400,
       );
     }
-  }
+  },
 );
 
 export default fraudRoutes;

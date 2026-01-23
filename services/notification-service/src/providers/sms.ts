@@ -3,6 +3,7 @@
  */
 
 import Twilio from "twilio";
+import { smsLogger } from "../lib/logger.js";
 
 // ============================================
 // Types
@@ -110,7 +111,10 @@ class AfricasTalkingClient {
         error: data.SMSMessageData?.Recipients?.[0]?.status || "Unknown error",
       };
     } catch (error) {
-      console.error("Africa's Talking error:", error);
+      smsLogger.error(
+        { err: error, provider: "africas_talking" },
+        "SMS send error",
+      );
       return {
         success: false,
         provider: "africas_talking",
@@ -211,7 +215,7 @@ class TwilioClient {
         provider: "twilio",
       };
     } catch (error) {
-      console.error("Twilio error:", error);
+      smsLogger.error({ err: error, provider: "twilio" }, "SMS send error");
       return {
         success: false,
         provider: "twilio",
@@ -315,8 +319,9 @@ class SMSService {
 
     // Fallback on failure
     if (!result.success) {
-      console.log(
-        `Primary SMS provider failed (${primaryProvider}), trying fallback...`
+      smsLogger.info(
+        { primaryProvider },
+        "Primary SMS provider failed, trying fallback",
       );
 
       if (primaryProvider === "africas_talking" && this.twilio.isConfigured()) {
@@ -384,7 +389,7 @@ class SMSService {
    * Get message status (Twilio only)
    */
   async getStatus(
-    messageId: string
+    messageId: string,
   ): Promise<{ status: string; error?: string }> {
     if (!this.twilio.isConfigured()) {
       return { status: "unknown", error: "Status check not available" };

@@ -15,16 +15,17 @@
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { compress } from "hono/compress";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { etag } from "hono/etag";
+import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
-import { compress } from "hono/compress";
-import { etag } from "hono/etag";
+import { logger } from "./lib/logger.js";
 
 import { authMiddleware } from "./middleware/auth";
-import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { errorHandler } from "./middleware/error-handler";
+import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { healthRoutes } from "./routes/health";
 import { proxyRoutes } from "./routes/proxy";
 
@@ -52,7 +53,7 @@ app.use("*", etag());
 app.use("*", timing());
 
 // Request logging
-app.use("*", logger());
+app.use("*", honoLogger());
 
 // CORS configuration
 app.use(
@@ -64,15 +65,28 @@ app.use(
       "https://ubi.africa",
       // Development origins
       ...(NODE_ENV === "development"
-        ? ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
+        ? [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:3002",
+          ]
         : []),
     ],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Request-ID", "X-Idempotency-Key"],
-    exposeHeaders: ["X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Request-ID",
+      "X-Idempotency-Key",
+    ],
+    exposeHeaders: [
+      "X-Request-ID",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+    ],
     maxAge: 86400,
     credentials: true,
-  })
+  }),
 );
 
 // Global error handler
@@ -112,23 +126,14 @@ app.notFound((c) => {
         message: "The requested resource was not found",
       },
     },
-    404
+    404,
   );
 });
 
 // ===========================================
 // Start Server
 // ===========================================
-console.info(`
-╔═══════════════════════════════════════════════════════╗
-║                                                       ║
-║   🚀 UBI API Gateway                                  ║
-║   ─────────────────                                   ║
-║   Environment: ${NODE_ENV.padEnd(40)}║
-║   Port: ${String(PORT).padEnd(47)}║
-║                                                       ║
-╚═══════════════════════════════════════════════════════╝
-`);
+logger.info({ port: PORT, environment: NODE_ENV }, "UBI API Gateway starting");
 
 serve({
   fetch: app.fetch,

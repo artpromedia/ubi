@@ -5,6 +5,7 @@
 
 import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
+import { remittanceLogger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import type {
@@ -103,7 +104,7 @@ export class RemittanceService {
    */
   async getExchangeRate(
     sourceCurrency: Currency,
-    destinationCurrency: Currency
+    destinationCurrency: Currency,
   ): Promise<{
     rate: number;
     inverseRate: number;
@@ -120,7 +121,7 @@ export class RemittanceService {
     // In production, fetch from FX rate provider
     const rate = await this.fetchExchangeRate(
       sourceCurrency,
-      destinationCurrency
+      destinationCurrency,
     );
     const now = new Date();
     const result = {
@@ -160,7 +161,7 @@ export class RemittanceService {
 
     if (!corridor || !corridor.isActive) {
       throw new Error(
-        `Corridor ${sourceCurrency} to ${destinationCurrency} not available`
+        `Corridor ${sourceCurrency} to ${destinationCurrency} not available`,
       );
     }
 
@@ -175,14 +176,14 @@ export class RemittanceService {
       !(wallet.features as Record<string, boolean>).international
     ) {
       throw new Error(
-        "International transfers not enabled. Upgrade your account to access this feature."
+        "International transfers not enabled. Upgrade your account to access this feature.",
       );
     }
 
     // Get exchange rate
     const { rate: exchangeRate } = await this.getExchangeRate(
       sourceCurrency,
-      destinationCurrency
+      destinationCurrency,
     );
 
     // Calculate amounts
@@ -202,12 +203,12 @@ export class RemittanceService {
     // Validate amount limits
     if (calculatedSourceAmount < corridor.minAmount) {
       throw new Error(
-        `Minimum amount is ${corridor.minAmount} ${sourceCurrency}`
+        `Minimum amount is ${corridor.minAmount} ${sourceCurrency}`,
       );
     }
     if (calculatedSourceAmount > corridor.maxAmount) {
       throw new Error(
-        `Maximum amount is ${corridor.maxAmount} ${sourceCurrency}`
+        `Maximum amount is ${corridor.maxAmount} ${sourceCurrency}`,
       );
     }
 
@@ -218,7 +219,7 @@ export class RemittanceService {
           provider as RemittanceProvider,
           calculatedSourceAmount,
           sourceCurrency,
-          destinationCurrency
+          destinationCurrency,
         );
         return {
           provider: provider as RemittanceProvider,
@@ -226,7 +227,7 @@ export class RemittanceService {
           total: calculatedSourceAmount + fee,
           deliveryTime,
         };
-      })
+      }),
     );
 
     // Sort by total cost
@@ -239,7 +240,7 @@ export class RemittanceService {
 
     const quoteId = `quote_${nanoid(16)}`;
     const validUntil = new Date(
-      Date.now() + QUOTE_VALIDITY_MINUTES * 60 * 1000
+      Date.now() + QUOTE_VALIDITY_MINUTES * 60 * 1000,
     );
 
     // Store quote for later use
@@ -256,7 +257,7 @@ export class RemittanceService {
         provider: bestQuote.provider,
         fee: bestQuote.fee,
         userId,
-      })
+      }),
     );
 
     return {
@@ -269,7 +270,8 @@ export class RemittanceService {
       fee: bestQuote.fee,
       totalAmount: bestQuote.total,
       deliveryTime: bestQuote.deliveryTime,
-      deliveryMethod: corridor.providers.length > 0 ? "bank_transfer" : "bank_transfer",
+      deliveryMethod:
+        corridor.providers.length > 0 ? "bank_transfer" : "bank_transfer",
       expiresAt: validUntil,
     };
   }
@@ -322,18 +324,18 @@ export class RemittanceService {
     const limitCheck = await enhancedWalletService.checkLimit(
       walletId,
       quote.sourceAmount + quote.fee,
-      "international"
+      "international",
     );
     if (!limitCheck.allowed) {
       throw new Error(
-        limitCheck.reason || "International transfer limit exceeded"
+        limitCheck.reason || "International transfer limit exceeded",
       );
     }
 
     // Check balance
     const balance = await enhancedWalletService.getBalance(
       walletId,
-      quote.sourceCurrency
+      quote.sourceCurrency,
     );
     const totalAmount = quote.sourceAmount + quote.fee;
     if (balance.available < totalAmount) {
@@ -403,7 +405,11 @@ export class RemittanceService {
    */
   async getRemittances(
     userId: string,
-    options: { status?: RemittanceStatus; limit?: number; offset?: number } = {}
+    options: {
+      status?: RemittanceStatus;
+      limit?: number;
+      offset?: number;
+    } = {},
   ): Promise<{ remittances: Remittance[]; total: number }> {
     const { status, limit = 20, offset = 0 } = options;
 
@@ -421,29 +427,31 @@ export class RemittanceService {
     ]);
 
     return {
-      remittances: remittances.map((r: {
-        id: string;
-        userId: string;
-        sourceCurrency: string;
-        destinationCurrency: string;
-        sourceAmount: unknown;
-        destinationAmount: unknown;
-        exchangeRate: unknown;
-        fee: unknown;
-        totalCharged: unknown;
-        provider: string;
-        recipientName: string;
-        recipientCountry: string;
-        recipientPhone: string | null;
-        recipientEmail: string | null;
-        deliveryMethod: string;
-        purpose: string | null;
-        status: string;
-        providerReference: string | null;
-        createdAt: Date;
-        completedAt: Date | null;
-        failureReason: string | null;
-      }) => this.formatRemittance(r)),
+      remittances: remittances.map(
+        (r: {
+          id: string;
+          userId: string;
+          sourceCurrency: string;
+          destinationCurrency: string;
+          sourceAmount: unknown;
+          destinationAmount: unknown;
+          exchangeRate: unknown;
+          fee: unknown;
+          totalCharged: unknown;
+          provider: string;
+          recipientName: string;
+          recipientCountry: string;
+          recipientPhone: string | null;
+          recipientEmail: string | null;
+          deliveryMethod: string;
+          purpose: string | null;
+          status: string;
+          providerReference: string | null;
+          createdAt: Date;
+          completedAt: Date | null;
+          failureReason: string | null;
+        }) => this.formatRemittance(r),
+      ),
       total,
     };
   }
@@ -453,7 +461,7 @@ export class RemittanceService {
    */
   async cancelRemittance(
     remittanceId: string,
-    walletId: string
+    walletId: string,
   ): Promise<void> {
     const remittance = await prisma.remittance.findUnique({
       where: { id: remittanceId },
@@ -465,14 +473,14 @@ export class RemittanceService {
 
     if (remittance.status !== "PROCESSING" && remittance.status !== "PENDING") {
       throw new Error(
-        `Cannot cancel ${remittance.status.toLowerCase()} remittance`
+        `Cannot cancel ${remittance.status.toLowerCase()} remittance`,
       );
     }
 
     // Attempt to cancel with provider
     const cancelled = await this.cancelWithProvider(
       remittanceId,
-      remittance.provider
+      remittance.provider,
     );
 
     if (!cancelled) {
@@ -551,21 +559,23 @@ export class RemittanceService {
       orderBy: [{ lastUsedAt: "desc" }, { name: "asc" }],
     });
 
-    return recipients.map((r: {
-      id: string;
-      name: string;
-      country: string;
-      phone: string | null;
-      email: string | null;
-      lastUsedAt: Date | null;
-    }) => ({
-      id: r.id,
-      name: r.name,
-      country: r.country,
-      phone: r.phone || undefined,
-      email: r.email || undefined,
-      lastUsedAt: r.lastUsedAt || undefined,
-    }));
+    return recipients.map(
+      (r: {
+        id: string;
+        name: string;
+        country: string;
+        phone: string | null;
+        email: string | null;
+        lastUsedAt: Date | null;
+      }) => ({
+        id: r.id,
+        name: r.name,
+        country: r.country,
+        phone: r.phone || undefined,
+        email: r.email || undefined,
+        lastUsedAt: r.lastUsedAt || undefined,
+      }),
+    );
   }
 
   // ===========================================
@@ -574,7 +584,7 @@ export class RemittanceService {
 
   private async fetchExchangeRate(
     source: Currency,
-    destination: Currency
+    destination: Currency,
   ): Promise<number> {
     // In production, integrate with FX rate providers
     // For demo, return simulated rates
@@ -604,7 +614,7 @@ export class RemittanceService {
     provider: RemittanceProvider,
     amount: number,
     _sourceCurrency: Currency,
-    _destinationCurrency: Currency
+    _destinationCurrency: Currency,
   ): Promise<{ fee: number; deliveryTime: string }> {
     // Provider-specific fee structures
     const fees: Record<
@@ -657,9 +667,9 @@ export class RemittanceService {
           await this.handleFailedRemittance(remittanceId);
         }
       } catch (error) {
-        console.error(
-          `Remittance processing error for ${remittanceId}:`,
-          error
+        remittanceLogger.error(
+          { err: error, remittanceId },
+          "Remittance processing error",
         );
         await this.handleFailedRemittance(remittanceId);
       }
@@ -693,7 +703,7 @@ export class RemittanceService {
 
   private async cancelWithProvider(
     _remittanceId: string,
-    _provider: string
+    _provider: string,
   ): Promise<boolean> {
     // In production, call provider API to cancel
     // For demo, allow cancellation if processing

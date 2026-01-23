@@ -12,6 +12,7 @@
 
 import crypto from "crypto";
 import { EventEmitter } from "events";
+import { driverLogger } from "../lib/logger";
 import {
   DriverIncident,
   DriverSafetyProfile,
@@ -63,7 +64,7 @@ export class DriverSafetyService extends EventEmitter {
 
   async updateDriverSafetyProfile(
     driverId: string,
-    updates: Partial<DriverSafetyProfile>
+    updates: Partial<DriverSafetyProfile>,
   ): Promise<DriverSafetyProfile> {
     const profile = await this.getDriverSafetyProfile(driverId);
 
@@ -160,7 +161,7 @@ export class DriverSafetyService extends EventEmitter {
 
   async getRiskZonesInArea(
     center: Location,
-    radius: number
+    radius: number,
   ): Promise<RiskZone[]> {
     const zonesInArea: RiskZone[] = [];
 
@@ -192,14 +193,17 @@ export class DriverSafetyService extends EventEmitter {
 
     this.riskZones.set(newZone.id, newZone);
 
-    console.log("[DriverSafety] Risk zone created:", newZone.name);
+    driverLogger.info(
+      { zoneName: newZone.name },
+      "[DriverSafety] Risk zone created",
+    );
 
     return newZone;
   }
 
   async updateRiskZone(
     zoneId: string,
-    updates: Partial<RiskZone>
+    updates: Partial<RiskZone>,
   ): Promise<RiskZone | null> {
     const zone = this.riskZones.get(zoneId);
     if (!zone) return null;
@@ -277,10 +281,9 @@ export class DriverSafetyService extends EventEmitter {
       this.createRiskZone(zone);
     }
 
-    console.log(
-      "[DriverSafety] Initialized",
-      this.riskZones.size,
-      "risk zones"
+    driverLogger.info(
+      { zoneCount: this.riskZones.size },
+      "[DriverSafety] Initialized risk zones",
     );
   }
 
@@ -291,7 +294,7 @@ export class DriverSafetyService extends EventEmitter {
   async assessCashTripRisk(
     driverId: string,
     pickup: Location,
-    dropoff: Location
+    dropoff: Location,
   ): Promise<CashTripAssessment> {
     const profile = await this.getDriverSafetyProfile(driverId);
 
@@ -358,7 +361,10 @@ export class DriverSafetyService extends EventEmitter {
     profile.acceptsCash = false;
     this.driverProfiles.set(driverId, profile);
 
-    console.log("[DriverSafety] Driver enabled cashless-only mode:", driverId);
+    driverLogger.info(
+      { driverId },
+      "[DriverSafety] Driver enabled cashless-only mode",
+    );
   }
 
   async disableCashlessOnly(driverId: string): Promise<void> {
@@ -374,7 +380,7 @@ export class DriverSafetyService extends EventEmitter {
 
   async reportIncident(
     driverId: string,
-    report: DriverIncidentReport
+    report: DriverIncidentReport,
   ): Promise<DriverIncident> {
     const incident: DriverIncident = {
       id: this.generateId(),
@@ -405,11 +411,9 @@ export class DriverSafetyService extends EventEmitter {
     // Recalculate safety score
     await this.recalculateSafetyScore(driverId);
 
-    console.log(
-      "[DriverSafety] Incident reported:",
-      incident.id,
-      "Type:",
-      incident.incidentType
+    driverLogger.info(
+      { incidentId: incident.id, incidentType: incident.incidentType },
+      "[DriverSafety] Incident reported",
     );
 
     return incident;
@@ -418,7 +422,7 @@ export class DriverSafetyService extends EventEmitter {
   async updateIncidentStatus(
     incidentId: string,
     status: IncidentStatus,
-    resolution?: string
+    resolution?: string,
   ): Promise<DriverIncident | null> {
     for (const [driverId, incidents] of this.driverIncidents) {
       const incident = incidents.find((i) => i.id === incidentId);
@@ -455,7 +459,7 @@ export class DriverSafetyService extends EventEmitter {
     driverId: string,
     speed: number,
     limit: number,
-    location: Location
+    location: Location,
   ): Promise<void> {
     const profile = await this.getDriverSafetyProfile(driverId);
     profile.speedingIncidents++;
@@ -477,18 +481,16 @@ export class DriverSafetyService extends EventEmitter {
   async recordHardBraking(
     driverId: string,
     gForce: number,
-    _location: Location
+    _location: Location,
   ): Promise<void> {
     const profile = await this.getDriverSafetyProfile(driverId);
     profile.hardBrakingCount++;
     this.driverProfiles.set(driverId, profile);
 
     if (gForce > this.HARD_BRAKE_THRESHOLD_G * 2) {
-      console.log(
-        "[DriverSafety] Severe hard braking detected:",
-        driverId,
-        "G-force:",
-        gForce
+      driverLogger.info(
+        { driverId, gForce },
+        "[DriverSafety] Severe hard braking detected",
       );
     }
   }
@@ -520,7 +522,7 @@ export class DriverSafetyService extends EventEmitter {
 
   async endDrivingSession(
     driverId: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<DrivingSession | null> {
     const sessions = this.drivingHistory.get(driverId) || [];
     const session = sessions.find((s) => s.id === sessionId);
@@ -606,7 +608,7 @@ export class DriverSafetyService extends EventEmitter {
 
   private async createFatigueAlert(
     driverId: string,
-    assessment: FatigueAssessment
+    assessment: FatigueAssessment,
   ): Promise<void> {
     const alerts = this.fatigueAlerts.get(driverId) || [];
 
@@ -632,16 +634,14 @@ export class DriverSafetyService extends EventEmitter {
       this.emit("fatigue_warning", { driverId, assessment, alert });
     }
 
-    console.log(
-      "[DriverSafety] Fatigue alert created:",
-      driverId,
-      "Level:",
-      assessment.fatigueLevel
+    driverLogger.info(
+      { driverId, fatigueLevel: assessment.fatigueLevel },
+      "[DriverSafety] Fatigue alert created",
     );
   }
 
   private getFatigueRecommendation(
-    level: "low" | "medium" | "high" | "critical"
+    level: "low" | "medium" | "high" | "critical",
   ): string {
     switch (level) {
       case "critical":
@@ -677,7 +677,7 @@ export class DriverSafetyService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   async getDriverSafetyRecommendations(
-    driverId: string
+    driverId: string,
   ): Promise<SafetyRecommendation[]> {
     const recommendations: SafetyRecommendation[] = [];
     const profile = await this.getDriverSafetyProfile(driverId);
@@ -700,7 +700,7 @@ export class DriverSafetyService extends EventEmitter {
       const hasHighRiskTrips = incidents.some(
         (i) =>
           i.incidentType === "ROBBERY" ||
-          i.description?.toLowerCase().includes("cash")
+          i.description?.toLowerCase().includes("cash"),
       );
 
       if (hasHighRiskTrips) {
@@ -758,7 +758,9 @@ export class DriverSafetyService extends EventEmitter {
         medium: 2,
         low: 1,
       };
-      return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+      return (
+        (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0)
+      );
     });
   }
 
@@ -768,7 +770,7 @@ export class DriverSafetyService extends EventEmitter {
 
   private async calculateRouteRisk(
     pickup: Location,
-    dropoff: Location
+    dropoff: Location,
   ): Promise<{ score: number }> {
     // Check for risk zones along route
     // In production, use routing API to get actual route

@@ -8,6 +8,7 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { Context, Next } from "hono";
 import { z } from "zod";
+import { securityLogger } from "./logger.js";
 
 // ===========================================
 // INPUT VALIDATION SCHEMAS
@@ -92,7 +93,7 @@ export const rateLimitConfigs = {
 export function verifyPaystackSignature(
   payload: string,
   signature: string,
-  secret: string
+  secret: string,
 ): boolean {
   try {
     const hash = createHmac("sha512", secret).update(payload).digest("hex");
@@ -109,7 +110,7 @@ export function verifyPaystackSignature(
  */
 export function verifyMpesaCallback(
   ip: string,
-  authHeader: string | undefined
+  authHeader: string | undefined,
 ): boolean {
   const allowedIPs = [
     "196.201.214.200",
@@ -128,14 +129,14 @@ export function verifyMpesaCallback(
 
   // Check IP whitelist
   if (!allowedIPs.includes(ip)) {
-    console.warn(`M-Pesa callback from unauthorized IP: ${ip}`);
+    securityLogger.warn({ ip }, "M-Pesa callback from unauthorized IP");
     return false;
   }
 
   // Verify basic auth if provided
   if (authHeader) {
     const expectedAuth = Buffer.from(
-      `${process.env.MPESA_SHORTCODE}:${process.env.MPESA_PASSKEY}`
+      `${process.env.MPESA_SHORTCODE}:${process.env.MPESA_PASSKEY}`,
     ).toString("base64");
 
     if (authHeader !== `Basic ${expectedAuth}`) {
@@ -152,7 +153,7 @@ export function verifyMpesaCallback(
 export function verifyMomoSignature(
   payload: string,
   signature: string,
-  secret: string
+  secret: string,
 ): boolean {
   try {
     const hash = createHmac("sha256", secret).update(payload).digest("base64");
@@ -228,7 +229,10 @@ function sanitizeObject(obj: unknown): unknown {
 /**
  * Middleware to validate admin role
  */
-export async function requireAdmin(c: Context, next: Next): Promise<Response | void> {
+export async function requireAdmin(
+  c: Context,
+  next: Next,
+): Promise<Response | void> {
   const userRole = c.req.header("X-User-Role");
 
   if (!userRole || !["ADMIN", "SUPER_ADMIN", "FINANCE"].includes(userRole)) {
@@ -240,7 +244,7 @@ export async function requireAdmin(c: Context, next: Next): Promise<Response | v
           message: "Admin access required",
         },
       },
-      403
+      403,
     );
   }
 
@@ -250,7 +254,10 @@ export async function requireAdmin(c: Context, next: Next): Promise<Response | v
 /**
  * Middleware to prevent replay attacks
  */
-export async function preventReplay(c: Context, next: Next): Promise<Response | void> {
+export async function preventReplay(
+  c: Context,
+  next: Next,
+): Promise<Response | void> {
   const timestamp = c.req.header("X-Timestamp");
   const nonce = c.req.header("X-Nonce");
 
@@ -268,7 +275,7 @@ export async function preventReplay(c: Context, next: Next): Promise<Response | 
             message: "Request timestamp is too old",
           },
         },
-        400
+        400,
       );
     }
   }
@@ -342,7 +349,7 @@ export function encryptSensitive(data: string): string {
   const cipher = createCipheriv(
     ENCRYPTION_ALGORITHM,
     Buffer.from(ENCRYPTION_KEY, "hex"),
-    iv
+    iv,
   );
 
   let encrypted = cipher.update(data, "utf8", "hex");
@@ -409,7 +416,7 @@ export function createAuditLog(entry: AuditLogEntry): void {
   };
 
   // Log to stdout for collection by log aggregator
-  console.log(JSON.stringify({ type: "AUDIT", ...log }));
+  securityLogger.info({ type: "AUDIT", ...log }, "Audit log entry");
 }
 
 // ===========================================
@@ -426,7 +433,7 @@ export function validateCardDataHandling(data: Record<string, unknown>): void {
   for (const field of cardFields) {
     if (data[field]) {
       throw new Error(
-        `PCI DSS Violation: ${field} should not be stored or logged`
+        `PCI DSS Violation: ${field} should not be stored or logged`,
       );
     }
   }

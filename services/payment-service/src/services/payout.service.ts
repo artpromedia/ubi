@@ -33,6 +33,7 @@ import {
   PayoutStatus,
   PrismaClient,
 } from "@prisma/client";
+import { payoutLogger } from "../lib/logger";
 import { MoMoService } from "../providers/momo.service";
 import { MpesaService } from "../providers/mpesa.service";
 import { PaystackService } from "../providers/paystack.service";
@@ -136,7 +137,7 @@ export class PayoutService {
   private async validatePayoutRequest(
     driverId: string,
     amount: number,
-    currency: Currency
+    currency: Currency,
   ): Promise<{ valid: boolean; error?: string }> {
     // Check minimum amount
     if (amount < this.config.minAmount) {
@@ -194,7 +195,7 @@ export class PayoutService {
     const balance = await this.walletService.getBalance(
       driver.userId,
       "DRIVER_WALLET" as any,
-      currency
+      currency,
     );
 
     if (balance.availableBalance < amount) {
@@ -211,7 +212,7 @@ export class PayoutService {
    * Create instant cashout payout
    */
   async createInstantCashout(
-    request: CreatePayoutRequest
+    request: CreatePayoutRequest,
   ): Promise<PayoutResult> {
     const {
       driverId,
@@ -227,7 +228,7 @@ export class PayoutService {
     const validation = await this.validatePayoutRequest(
       driverId,
       amount,
-      currency
+      currency,
     );
     if (!validation.valid) {
       throw new Error(validation.error);
@@ -308,7 +309,7 @@ export class PayoutService {
     if (initialStatus === PayoutStatus.PROCESSING) {
       // Process in background
       this.processPayoutAsync(payout.id).catch((error) => {
-        console.error(`Failed to process payout ${payout.id}:`, error);
+        payoutLogger.error(`Failed to process payout ${payout.id}:`, error);
       });
     }
 
@@ -383,11 +384,11 @@ export class PayoutService {
         },
       });
 
-      console.log(
-        `Payout ${payoutId} initiated with provider: ${providerResult.reference}`
+      payoutLogger.info(
+        `Payout ${payoutId} initiated with provider: ${providerResult.reference}`,
       );
     } catch (error: any) {
-      console.error(`Payout processing failed for ${payoutId}:`, error);
+      payoutLogger.error(`Payout processing failed for ${payoutId}:`, error);
 
       // Mark as failed
       await this.prisma.payout.update({
@@ -404,9 +405,18 @@ export class PayoutService {
    * Initiate payout with provider (M-Pesa B2C, MoMo, etc.)
    */
   private async initiateProviderPayout(
-    payout: any
+    payout: any,
   ): Promise<{ reference: string; status: string }> {
     const payoutDetails = payout.payoutDetails as any;
+
+    // Helper to get required env var or throw
+    const requireEnv = (name: string): string => {
+      const value = process.env[name];
+      if (!value) {
+        throw new Error(`Required environment variable ${name} is not set`);
+      }
+      return value;
+    };
 
     try {
       switch (payout.provider) {
@@ -414,11 +424,11 @@ export class PayoutService {
           // M-Pesa B2C (Business to Customer)
           const mpesaService = new MpesaService(
             {
-              consumerKey: process.env.MPESA_CONSUMER_KEY || "",
-              consumerSecret: process.env.MPESA_CONSUMER_SECRET || "",
-              shortCode: process.env.MPESA_SHORT_CODE || "",
-              passkey: process.env.MPESA_PASSKEY || "",
-              callbackUrl: process.env.MPESA_CALLBACK_URL || "",
+              consumerKey: requireEnv("MPESA_CONSUMER_KEY"),
+              consumerSecret: requireEnv("MPESA_CONSUMER_SECRET"),
+              shortCode: requireEnv("MPESA_SHORT_CODE"),
+              passkey: requireEnv("MPESA_PASSKEY"),
+              callbackUrl: requireEnv("MPESA_CALLBACK_URL"),
               b2cShortCode: process.env.MPESA_B2C_SHORT_CODE,
               b2cInitiatorName: process.env.MPESA_B2C_INITIATOR_NAME,
               b2cSecurityCredential: process.env.MPESA_B2C_SECURITY_CREDENTIAL,
@@ -429,7 +439,7 @@ export class PayoutService {
                   ? "production"
                   : "sandbox",
             },
-            this.prisma
+            this.prisma,
           );
 
           const b2cResponse = await mpesaService.initiateB2CPayment({
@@ -443,8 +453,8 @@ export class PayoutService {
           // In production, you'd use a queue system (Bull, etc.)
           setTimeout(() => {
             // B2C callback will update the payout status automatically
-            console.log(
-              `M-Pesa B2C initiated: ${b2cResponse.OriginatorConversationID}`
+            payoutLogger.info(
+              `M-Pesa B2C initiated: ${b2cResponse.OriginatorConversationID}`,
             );
           }, 0);
 
@@ -484,7 +494,7 @@ export class PayoutService {
               country,
               callbackUrl: process.env.MOMO_CALLBACK_URL,
             },
-            this.prisma
+            this.prisma,
           );
 
           const disbursementResponse = await momoService.initiateDisbursement({
@@ -500,10 +510,10 @@ export class PayoutService {
             momoService
               .pollDisbursementStatus(
                 disbursementResponse.referenceId,
-                payout.id
+                payout.id,
               )
               .catch((error) => {
-                console.error("MoMo disbursement polling error:", error);
+                payoutLogger.error("MoMo disbursement polling error:", error);
               });
           }, 0);
 
@@ -517,13 +527,13 @@ export class PayoutService {
           // Paystack Transfer API
           const paystackService = new PaystackService(
             {
-              secretKey: process.env.PAYSTACK_SECRET_KEY || "",
-              publicKey: process.env.PAYSTACK_PUBLIC_KEY || "",
-              webhookSecret: process.env.PAYSTACK_WEBHOOK_SECRET || "",
+              secretKey: requireEnv("PAYSTACK_SECRET_KEY"),
+              publicKey: requireEnv("PAYSTACK_PUBLIC_KEY"),
+              webhookSecret: requireEnv("PAYSTACK_WEBHOOK_SECRET"),
               environment:
                 process.env.PAYSTACK_ENVIRONMENT === "live" ? "live" : "test",
             },
-            this.prisma
+            this.prisma,
           );
 
           // Determine recipient type and bank code
@@ -549,7 +559,7 @@ export class PayoutService {
             },
             Number(payout.netAmount),
             payout.currency as any,
-            payout.reason || "Driver payout"
+            payout.reason || "Driver payout",
           );
 
           // Start background polling
@@ -557,7 +567,7 @@ export class PayoutService {
             paystackService
               .pollTransferStatus(transferResult.transferCode, payout.id)
               .catch((error) => {
-                console.error("Paystack transfer polling error:", error);
+                payoutLogger.error("Paystack transfer polling error:", error);
               });
           }, 0);
 
@@ -569,11 +579,11 @@ export class PayoutService {
 
         default:
           throw new Error(
-            `Payout not supported for provider: ${payout.provider}`
+            `Payout not supported for provider: ${payout.provider}`,
           );
       }
     } catch (error) {
-      console.error("Provider payout initiation error:", error);
+      payoutLogger.error({ err: error }, "Provider payout initiation error");
       throw error;
     }
   }
@@ -581,9 +591,10 @@ export class PayoutService {
   /**
    * Complete payout (called by webhook)
    */
+
   async completePayout(
     payoutId: string,
-    providerReference?: string
+    providerReference?: string,
   ): Promise<void> {
     const payout = await this.prisma.payout.findUnique({
       where: { id: payoutId },
@@ -640,8 +651,8 @@ export class PayoutService {
       },
     });
 
-    console.log(
-      `Payout completed: ${payoutId} (${payout.currency} ${payout.netAmount} to ${payout.driver.user.phone})`
+    payoutLogger.info(
+      `Payout completed: ${payoutId} (${payout.currency} ${payout.netAmount} to ${payout.driver.user.phone})`,
     );
   }
 
@@ -669,7 +680,7 @@ export class PayoutService {
       try {
         await this.walletService.releaseFunds(holdId);
       } catch (error) {
-        console.error(`Failed to release hold ${holdId}:`, error);
+        payoutLogger.error({ err: error, holdId }, "Failed to release hold");
       }
     }
 
@@ -682,7 +693,7 @@ export class PayoutService {
       },
     });
 
-    console.log(`Payout failed: ${payoutId} - ${reason}`);
+    payoutLogger.info(`Payout failed: ${payoutId} - ${reason}`);
   }
 
   /**
@@ -725,7 +736,7 @@ export class PayoutService {
       limit?: number;
       offset?: number;
       status?: PayoutStatus;
-    } = {}
+    } = {},
   ): Promise<Array<any>> {
     const { limit = 20, offset = 0, status } = options;
 
@@ -758,7 +769,7 @@ export class PayoutService {
    */
   async getAvailableBalance(
     driverId: string,
-    currency: Currency
+    currency: Currency,
   ): Promise<{
     balance: number;
     availableForPayout: number;
@@ -776,7 +787,7 @@ export class PayoutService {
     const balance = await this.walletService.getBalance(
       driver.userId,
       "DRIVER_WALLET" as any,
-      currency
+      currency,
     );
 
     // Get pending payouts
@@ -828,7 +839,10 @@ export class PayoutService {
 
     // Process payout
     this.processPayoutAsync(payoutId).catch((error) => {
-      console.error(`Failed to process approved payout ${payoutId}:`, error);
+      payoutLogger.error(
+        `Failed to process approved payout ${payoutId}:`,
+        error,
+      );
     });
   }
 
@@ -890,7 +904,7 @@ export class PayoutService {
             const balance = await this.walletService.getBalance(
               driver.userId,
               "DRIVER_WALLET" as any,
-              currency
+              currency,
             );
 
             if (balance.availableBalance >= this.config.weeklyPayoutMinimum) {
@@ -923,21 +937,24 @@ export class PayoutService {
               totalAmount += balance.availableBalance;
             }
           } catch (error) {
-            console.error(
-              `Failed to process weekly payout for driver ${driver.id} (${currency}):`,
-              error
+            payoutLogger.error(
+              { err: error, driverId: driver.id, currency },
+              "Failed to process weekly payout",
             );
             failed++;
           }
         }
       } catch (error) {
-        console.error(`Failed to process driver ${driver.id}:`, error);
+        payoutLogger.error(
+          { err: error, driverId: driver.id },
+          "Failed to process driver",
+        );
         failed++;
       }
     }
 
-    console.log(
-      `Weekly payouts: ${processed} processed, ${failed} failed, total: ${totalAmount}`
+    payoutLogger.info(
+      `Weekly payouts: ${processed} processed, ${failed} failed, total: ${totalAmount}`,
     );
 
     return { processed, failed, totalAmount };

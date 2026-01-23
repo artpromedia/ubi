@@ -5,7 +5,7 @@
  * Configured for production-ready logging with proper log levels.
  */
 
-import pino from "pino";
+import { pino, stdSerializers } from "pino";
 
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 const NODE_ENV = process.env.NODE_ENV || "development";
@@ -58,13 +58,17 @@ export const logger = pino({
 
   // Custom serializers
   serializers: {
-    err: pino.stdSerializers.err,
-    req: (req) => ({
+    err: stdSerializers.err,
+    req: (req: {
+      method?: string;
+      url?: string;
+      socket?: { remoteAddress?: string };
+    }) => ({
       method: req.method,
       url: req.url,
       remoteAddress: req.socket?.remoteAddress,
     }),
-    res: (res) => ({
+    res: (res: { statusCode?: number }) => ({
       statusCode: res.statusCode,
     }),
   },
@@ -79,6 +83,35 @@ export const walletLogger = logger.child({ component: "wallet" });
 export const fraudLogger = logger.child({ component: "fraud" });
 export const webhookLogger = logger.child({ component: "webhook" });
 export const driverLogger = logger.child({ component: "driver" });
+
+// Additional component loggers
+export const dbLogger = logger.child({ component: "database" });
+export const redisLogger = logger.child({ component: "redis" });
+export const momoLogger = logger.child({ component: "momo" });
+export const mpesaLogger = logger.child({ component: "mpesa" });
+export const paystackLogger = logger.child({ component: "paystack" });
+export const payoutLogger = logger.child({ component: "payout" });
+export const safetyLogger = logger.child({ component: "safety" });
+export const bgCheckLogger = logger.child({ component: "background-check" });
+export const reconciliationLogger = logger.child({
+  component: "reconciliation",
+});
+export const jobsLogger = logger.child({ component: "jobs" });
+export const verificationLogger = logger.child({ component: "verification" });
+export const sosLogger = logger.child({ component: "sos" });
+export const tripMonitorLogger = logger.child({ component: "trip-monitor" });
+export const womenSafetyLogger = logger.child({ component: "women-safety" });
+export const p2pLogger = logger.child({ component: "p2p" });
+export const settlementLogger = logger.child({ component: "settlement" });
+export const securityLogger = logger.child({ component: "security" });
+export const notificationLogger = logger.child({ component: "notification" });
+export const mobileMoneyLogger = logger.child({ component: "mobile-money" });
+export const loanLogger = logger.child({ component: "loans" });
+export const savingsLogger = logger.child({ component: "savings" });
+export const billsLogger = logger.child({ component: "bills" });
+export const cardsLogger = logger.child({ component: "cards" });
+export const subscriptionLogger = logger.child({ component: "subscription" });
+export const remittanceLogger = logger.child({ component: "remittance" });
 
 // Log unhandled errors
 process.on("uncaughtException", (err) => {

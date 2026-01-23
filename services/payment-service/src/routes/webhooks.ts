@@ -15,6 +15,7 @@
 
 import { Hono } from "hono";
 import { createHmac } from "node:crypto";
+import { webhookLogger } from "../lib/logger.js";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -76,10 +77,7 @@ webhookRoutes.post("/mpesa/callback", async (c) => {
   try {
     const body = await c.req.json();
 
-    console.log(
-      "[M-Pesa Webhook] Received callback:",
-      JSON.stringify(body, null, 2)
-    );
+    webhookLogger.info({ body }, "M-Pesa webhook callback received");
 
     const mpesaConfig: MpesaConfig = {
       consumerKey: process.env.MPESA_CONSUMER_KEY!,
@@ -97,7 +95,7 @@ webhookRoutes.post("/mpesa/callback", async (c) => {
 
     return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (error: any) {
-    console.error("[M-Pesa Webhook] Error:", error);
+    webhookLogger.error({ err: error }, "M-Pesa webhook error");
     return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
 });
@@ -109,10 +107,10 @@ webhookRoutes.post("/mpesa/callback", async (c) => {
 webhookRoutes.post("/mpesa/timeout", async (c) => {
   try {
     const body = await c.req.json();
-    console.log("[M-Pesa Timeout] Received:", JSON.stringify(body, null, 2));
+    webhookLogger.info({ body }, "M-Pesa timeout received");
     return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (error: any) {
-    console.error("[M-Pesa Timeout] Error:", error);
+    webhookLogger.error({ err: error }, "M-Pesa timeout error");
     return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
 });
@@ -127,10 +125,7 @@ webhookRoutes.post("/mpesa/b2c/result", async (c) => {
   try {
     const body = await c.req.json();
 
-    console.log(
-      "[M-Pesa B2C Result] Received callback:",
-      JSON.stringify(body, null, 2)
-    );
+    webhookLogger.info({ body }, "M-Pesa B2C result callback received");
 
     const mpesaConfig: MpesaConfig = {
       consumerKey: process.env.MPESA_CONSUMER_KEY!,
@@ -155,7 +150,7 @@ webhookRoutes.post("/mpesa/b2c/result", async (c) => {
     const originatorConversationId = body.Result?.OriginatorConversationID;
 
     if (!originatorConversationId) {
-      console.error("[M-Pesa B2C] Missing OriginatorConversationID");
+      webhookLogger.error("M-Pesa B2C missing OriginatorConversationID");
       return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
     }
 
@@ -167,8 +162,9 @@ webhookRoutes.post("/mpesa/b2c/result", async (c) => {
     });
 
     if (!payout) {
-      console.error(
-        `[M-Pesa B2C] Payout not found for reference: ${originatorConversationId}`
+      webhookLogger.error(
+        { originatorConversationId },
+        "M-Pesa B2C payout not found for reference",
       );
       return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
     }
@@ -178,7 +174,7 @@ webhookRoutes.post("/mpesa/b2c/result", async (c) => {
 
     return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (error: any) {
-    console.error("[M-Pesa B2C Result] Error:", error);
+    webhookLogger.error({ err: error }, "M-Pesa B2C result error");
     return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
 });
@@ -193,10 +189,7 @@ webhookRoutes.post("/mpesa/b2c/timeout", async (c) => {
   try {
     const body = await c.req.json();
 
-    console.log(
-      "[M-Pesa B2C Timeout] Received callback:",
-      JSON.stringify(body, null, 2)
-    );
+    webhookLogger.info({ body }, "[M-Pesa B2C Timeout] Received callback");
 
     const originatorConversationId = body.Result?.OriginatorConversationID;
 
@@ -222,7 +215,7 @@ webhookRoutes.post("/mpesa/b2c/timeout", async (c) => {
 
     return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (error: any) {
-    console.error("[M-Pesa B2C Timeout] Error:", error);
+    webhookLogger.error("[M-Pesa B2C Timeout] Error:", error);
     return c.json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
 });
@@ -303,7 +296,9 @@ async function processPaystackEvent(event: WebhookEvent): Promise<void> {
 
         await payoutService.completePayout(payout.id, data.transfer_code);
 
-        console.log(`Paystack transfer ${payout.id} completed successfully`);
+        webhookLogger.info(
+          `Paystack transfer ${payout.id} completed successfully`,
+        );
       }
       break;
     }
@@ -327,7 +322,9 @@ async function processPaystackEvent(event: WebhookEvent): Promise<void> {
 
         await payoutService.failPayout(payout.id, reason);
 
-        console.log(`Paystack transfer ${payout.id} ${event.type}: ${reason}`);
+        webhookLogger.info(
+          `Paystack transfer ${payout.id} ${event.type}: ${reason}`,
+        );
       }
       break;
     }
@@ -460,7 +457,7 @@ async function processStripeEvent(event: WebhookEvent): Promise<void> {
 
 async function handleSuccessfulPayment(
   paymentId: string,
-  providerData: unknown
+  providerData: unknown,
 ): Promise<void> {
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
@@ -519,7 +516,7 @@ async function handleSuccessfulPayment(
         currency: payment.currency,
         type: payment.type,
         referenceId: payment.referenceId,
-      })
+      }),
     );
   });
 }
@@ -536,14 +533,18 @@ webhookRoutes.post("/paystack", async (c) => {
   const signature = c.req.header("x-paystack-signature");
 
   if (!signature || !verifyPaystackSignature(body, signature)) {
-    console.error("Invalid Paystack webhook signature");
+    webhookLogger.error("Invalid Paystack webhook signature");
     return c.json({ success: false }, 400);
   }
 
   try {
     const payload = JSON.parse(body);
 
-    console.log("[Paystack Webhook]", payload.event, payload.data?.reference);
+    webhookLogger.info(
+      "[Paystack Webhook]",
+      payload.event,
+      payload.data?.reference,
+    );
 
     await processWebhookEvent({
       id: payload.data?.id || generateId("evt"),
@@ -555,7 +556,7 @@ webhookRoutes.post("/paystack", async (c) => {
 
     return c.json({ success: true });
   } catch (error) {
-    console.error("Paystack webhook error:", error);
+    webhookLogger.error({ err: error }, "Paystack webhook error");
     return c.json({ success: false }, 500);
   }
 });
@@ -568,14 +569,18 @@ webhookRoutes.post("/flutterwave", async (c) => {
   const signature = c.req.header("verif-hash");
 
   if (!signature || !verifyFlutterwaveSignature(body, signature)) {
-    console.error("Invalid Flutterwave webhook signature");
+    webhookLogger.error("Invalid Flutterwave webhook signature");
     return c.json({ success: false }, 400);
   }
 
   try {
     const payload = JSON.parse(body);
 
-    console.log("[Flutterwave Webhook]", payload.event, payload.data?.tx_ref);
+    webhookLogger.info(
+      "[Flutterwave Webhook]",
+      payload.event,
+      payload.data?.tx_ref,
+    );
 
     await processWebhookEvent({
       id: payload.data?.id?.toString() || generateId("evt"),
@@ -587,7 +592,7 @@ webhookRoutes.post("/flutterwave", async (c) => {
 
     return c.json({ success: true });
   } catch (error) {
-    console.error("Flutterwave webhook error:", error);
+    webhookLogger.error({ err: error }, "Flutterwave webhook error");
     return c.json({ success: false }, 500);
   }
 });
@@ -600,14 +605,18 @@ webhookRoutes.post("/stripe", async (c) => {
   const signature = c.req.header("stripe-signature");
 
   if (!signature || !verifyStripeSignature(body, signature)) {
-    console.error("Invalid Stripe webhook signature");
+    webhookLogger.error("Invalid Stripe webhook signature");
     return c.json({ success: false }, 400);
   }
 
   try {
     const payload = JSON.parse(body);
 
-    console.log("[Stripe Webhook]", payload.type, payload.data?.object?.id);
+    webhookLogger.info(
+      "[Stripe Webhook]",
+      payload.type,
+      payload.data?.object?.id,
+    );
 
     await processWebhookEvent({
       id: payload.id,
@@ -619,7 +628,7 @@ webhookRoutes.post("/stripe", async (c) => {
 
     return c.json({ success: true });
   } catch (error) {
-    console.error("Stripe webhook error:", error);
+    webhookLogger.error({ err: error }, "Stripe webhook error");
     return c.json({ success: false }, 500);
   }
 });
@@ -635,7 +644,7 @@ webhookRoutes.get("/events", async (c) => {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Internal endpoint" },
       },
-      403
+      403,
     );
   }
 
@@ -662,7 +671,7 @@ webhookRoutes.post("/replay/:eventId", async (c) => {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Internal endpoint" },
       },
-      403
+      403,
     );
   }
 
@@ -678,7 +687,7 @@ webhookRoutes.post("/replay/:eventId", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Event not found" },
       },
-      404
+      404,
     );
   }
 

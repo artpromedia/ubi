@@ -13,6 +13,8 @@ import {
   NotificationPriority,
 } from "./notification-client.js";
 
+import type { Currency } from "@prisma/client";
+
 // ===========================================
 // Analytics Adapter
 // ===========================================
@@ -181,7 +183,10 @@ class DriverPaymentAdapter implements IDriverPaymentService {
   async process(payment: PaymentRequest): Promise<PaymentResult> {
     try {
       // Import dynamically to avoid circular dependencies
-      const { walletService } = await import("../services/wallet.service.js");
+      const { getWalletService } =
+        await import("../services/wallet.service.js");
+      const { prisma } = await import("./prisma.js");
+      const walletService = getWalletService(prisma);
 
       switch (payment.type) {
         case "withdrawal":
@@ -203,17 +208,15 @@ class DriverPaymentAdapter implements IDriverPaymentService {
 
         case "fee":
           // Deduct fee from wallet
-          const feeResult = await walletService.debit(
-            payment.userId,
-            payment.amount,
-            payment.currency,
-            "FEE",
-            payment.description || "Service fee",
-          );
+          const feeResult = await walletService.withdraw({
+            userId: payment.userId,
+            amount: payment.amount,
+            currency: payment.currency as Currency,
+            description: payment.description || "Service fee",
+          });
           return {
-            success: feeResult.success,
-            transactionId: feeResult.transactionId,
-            error: feeResult.error,
+            success: true,
+            transactionId: feeResult.transaction.id,
           };
 
         default:
@@ -238,20 +241,24 @@ class DriverPaymentAdapter implements IDriverPaymentService {
     method: string,
   ): Promise<PaymentResult> {
     try {
-      const { payoutService } = await import("../services/payout.service.js");
+      const { getPayoutService } =
+        await import("../services/payout.service.js");
+      const { prisma } = await import("./prisma.js");
+      const payoutService = getPayoutService(prisma);
+      const { Currency: CurrencyEnum } = await import("@prisma/client");
 
-      const result = await payoutService.initiatePayout({
-        userId,
+      const result = await payoutService.createInstantCashout({
+        driverId: userId,
         amount,
-        currency,
-        method: method as any,
-        description: "Driver withdrawal",
+        currency: currency as (typeof CurrencyEnum)[keyof typeof CurrencyEnum],
+        paymentMethod:
+          method === "mobile_money" ? "mobile_money" : "bank_transfer",
+        reason: "Driver withdrawal",
       });
 
       return {
-        success: result.success,
+        success: true,
         transactionId: result.payoutId,
-        error: result.error,
       };
     } catch (error) {
       logger.error({ error, userId, amount }, "Withdrawal failed");
@@ -269,35 +276,34 @@ class DriverPaymentAdapter implements IDriverPaymentService {
     currency: string,
   ): Promise<PaymentResult> {
     try {
-      const { walletService } = await import("../services/wallet.service.js");
+      const { getWalletService } =
+        await import("../services/wallet.service.js");
+      const { prisma } = await import("./prisma.js");
+      const walletService = getWalletService(prisma);
 
       // Debit from driver's wallet for benefit purchase
-      const result = await walletService.debit(
+      const result = await walletService.withdraw({
         userId,
         amount,
-        currency,
-        "BENEFIT_PURCHASE",
-        `Benefit purchase: ${benefitId}`,
+        currency: currency as Currency,
+        description: `Benefit purchase: ${benefitId}`,
+      });
+
+      // Track analytics
+      await analyticsService.track(
+        "driver.benefit_purchased",
+        {
+          driverId: userId,
+          benefitId,
+          amount,
+          currency,
+        },
+        userId,
       );
 
-      if (result.success) {
-        // Track analytics
-        await analyticsService.track(
-          "driver.benefit_purchased",
-          {
-            driverId: userId,
-            benefitId,
-            amount,
-            currency,
-          },
-          userId,
-        );
-      }
-
       return {
-        success: result.success,
-        transactionId: result.transactionId,
-        error: result.error,
+        success: true,
+        transactionId: result.transaction.id,
       };
     } catch (error) {
       logger.error({ error, userId, benefitId }, "Benefit purchase failed");

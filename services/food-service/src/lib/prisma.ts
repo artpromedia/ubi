@@ -2,7 +2,8 @@
  * Prisma Client Singleton
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "@prisma/client";
+import { dbLogger } from "./logger.js";
 
 declare global {
   var prisma: PrismaClient | undefined;
@@ -11,11 +12,14 @@ declare global {
 export const prisma =
   globalThis.prisma ||
   new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-    errorFormat: 'pretty',
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "error", "warn"]
+        : ["error"],
+    errorFormat: "pretty",
   });
 
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== "production") {
   globalThis.prisma = prisma;
 }
 
@@ -27,7 +31,7 @@ export async function checkConnection(): Promise<boolean> {
     await prisma.$queryRaw`SELECT 1`;
     return true;
   } catch (error) {
-    console.error('[Prisma] Connection check failed:', error);
+    dbLogger.error({ err: error }, "Connection check failed");
     throw error;
   }
 }
@@ -37,7 +41,7 @@ export async function checkConnection(): Promise<boolean> {
  */
 export async function disconnect(): Promise<void> {
   await prisma.$disconnect();
-  console.log('[Prisma] Disconnected from database');
+  dbLogger.info("Disconnected from database");
 }
 
 /**
@@ -46,7 +50,7 @@ export async function disconnect(): Promise<void> {
 export async function withRetry<T>(
   operation: () => Promise<T>,
   maxRetries = 3,
-  delay = 1000
+  delay = 1000,
 ): Promise<T> {
   let lastError: Error | undefined;
 
@@ -55,14 +59,14 @@ export async function withRetry<T>(
       return await operation();
     } catch (error: any) {
       lastError = error;
-      
+
       // Don't retry on validation errors
-      if (error.code === 'P2002' || error.code === 'P2025') {
+      if (error.code === "P2002" || error.code === "P2025") {
         throw error;
       }
 
       if (attempt < maxRetries) {
-        console.warn(`[Prisma] Attempt ${attempt} failed, retrying in ${delay}ms...`);
+        dbLogger.warn({ attempt, delay }, "Operation failed, retrying...");
         await new Promise((resolve) => setTimeout(resolve, delay));
         delay *= 2; // Exponential backoff
       }

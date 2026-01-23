@@ -30,6 +30,7 @@ import {
   Prisma,
   PrismaClient,
 } from "@prisma/client";
+import { mpesaLogger } from "../lib/logger.js";
 
 export interface MpesaConfig {
   consumerKey: string;
@@ -125,7 +126,7 @@ export class MpesaService {
 
   constructor(
     private readonly config: MpesaConfig,
-    private readonly prisma: PrismaClient
+    private readonly prisma: PrismaClient,
   ) {
     this.baseUrl =
       config.environment === "production"
@@ -147,7 +148,7 @@ export class MpesaService {
     }
 
     const auth = Buffer.from(
-      `${this.config.consumerKey}:${this.config.consumerSecret}`
+      `${this.config.consumerKey}:${this.config.consumerSecret}`,
     ).toString("base64");
 
     const response = await fetch(
@@ -156,12 +157,12 @@ export class MpesaService {
         headers: {
           Authorization: `Basic ${auth}`,
         },
-      }
+      },
     );
 
     if (!response.ok) {
       throw new Error(
-        `Failed to get M-Pesa access token: ${response.statusText}`
+        `Failed to get M-Pesa access token: ${response.statusText}`,
       );
     }
 
@@ -240,7 +241,7 @@ export class MpesaService {
    * Sends payment popup to customer's phone
    */
   async initiateSTKPush(
-    request: MpesaSTKPushRequest
+    request: MpesaSTKPushRequest,
   ): Promise<MpesaSTKPushResponse> {
     const token = await this.getAccessToken();
     const timestamp = this.generateTimestamp();
@@ -278,7 +279,7 @@ export class MpesaService {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
-      }
+      },
     );
 
     const data = (await response.json()) as MpesaSTKPushResponse & {
@@ -287,7 +288,7 @@ export class MpesaService {
 
     if (!response.ok || data.ResponseCode !== "0") {
       throw new Error(
-        `M-Pesa STK Push failed: ${data.ResponseDescription || data.errorMessage || "Unknown error"}`
+        `M-Pesa STK Push failed: ${data.ResponseDescription || data.errorMessage || "Unknown error"}`,
       );
     }
 
@@ -299,7 +300,7 @@ export class MpesaService {
    * Used to check status if webhook is not received
    */
   async queryTransactionStatus(
-    checkoutRequestId: string
+    checkoutRequestId: string,
   ): Promise<MpesaTransactionStatusResponse> {
     const token = await this.getAccessToken();
     const timestamp = this.generateTimestamp();
@@ -321,7 +322,7 @@ export class MpesaService {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
-      }
+      },
     );
 
     const data = (await response.json()) as MpesaTransactionStatusResponse & {
@@ -330,7 +331,7 @@ export class MpesaService {
 
     if (!response.ok) {
       throw new Error(
-        `Failed to query M-Pesa transaction: ${data.errorMessage || "Unknown error"}`
+        `Failed to query M-Pesa transaction: ${data.errorMessage || "Unknown error"}`,
       );
     }
 
@@ -374,16 +375,18 @@ export class MpesaService {
     });
 
     if (!paymentTx) {
-      console.warn(
-        `Payment transaction not found for M-Pesa MerchantRequestID: ${MerchantRequestID}`
+      mpesaLogger.warn(
+        { MerchantRequestID },
+        "Payment transaction not found for M-Pesa MerchantRequestID",
       );
       return;
     }
 
     // Already processed
     if (paymentTx.status !== PaymentStatus.PENDING) {
-      console.log(
-        `Payment transaction ${paymentTx.id} already processed (status: ${paymentTx.status})`
+      mpesaLogger.info(
+        { paymentId: paymentTx.id, status: paymentTx.status },
+        "Payment transaction already processed",
       );
       return;
     }
@@ -427,8 +430,9 @@ export class MpesaService {
         },
       });
 
-      console.log(
-        `M-Pesa payment completed: ${paymentTx.id} (Receipt: ${metadata.MpesaReceiptNumber})`
+      mpesaLogger.info(
+        { paymentId: paymentTx.id, receipt: metadata.MpesaReceiptNumber },
+        "M-Pesa payment completed",
       );
     }
     // Failure
@@ -461,8 +465,9 @@ export class MpesaService {
         },
       });
 
-      console.log(
-        `M-Pesa payment failed: ${paymentTx.id} (Reason: ${ResultDesc})`
+      mpesaLogger.info(
+        { paymentId: paymentTx.id, reason: ResultDesc },
+        "M-Pesa payment failed",
       );
     }
   }
@@ -474,7 +479,7 @@ export class MpesaService {
   async pollTransactionStatus(
     checkoutRequestId: string,
     maxAttempts: number = 20,
-    intervalMs: number = 3000
+    intervalMs: number = 3000,
   ): Promise<MpesaTransactionStatusResponse> {
     let attempts = 0;
 
@@ -492,9 +497,9 @@ export class MpesaService {
         // Still processing, wait and retry
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
       } catch (error) {
-        console.error(
-          `Error polling M-Pesa transaction (attempt ${attempts}/${maxAttempts}):`,
-          error
+        mpesaLogger.error(
+          { err: error, attempts, maxAttempts },
+          "Error polling M-Pesa transaction",
         );
 
         // Continue polling unless it's the last attempt
@@ -507,7 +512,7 @@ export class MpesaService {
     }
 
     throw new Error(
-      `Transaction polling timeout after ${maxAttempts} attempts`
+      `Transaction polling timeout after ${maxAttempts} attempts`,
     );
   }
 
@@ -556,9 +561,9 @@ export class MpesaService {
     // Start background polling (in case webhook fails)
     this.startBackgroundPolling(
       stkResponse.CheckoutRequestID,
-      paymentTx.id
+      paymentTx.id,
     ).catch((error) => {
-      console.error("Background polling error:", error);
+      mpesaLogger.error({ err: error }, "Background polling error");
     });
 
     return {
@@ -574,7 +579,7 @@ export class MpesaService {
    */
   private async startBackgroundPolling(
     checkoutRequestId: string,
-    paymentTxId: string
+    paymentTxId: string,
   ): Promise<void> {
     // Wait 60 seconds (typical STK Push timeout)
     await new Promise((resolve) => setTimeout(resolve, 60000));
@@ -615,7 +620,10 @@ export class MpesaService {
         });
       }
     } catch (error) {
-      console.error("Failed to poll M-Pesa transaction status:", error);
+      mpesaLogger.error(
+        { err: error },
+        "Failed to poll M-Pesa transaction status",
+      );
 
       // Mark as failed after polling timeout
       await this.prisma.paymentTransaction.update({
@@ -659,7 +667,7 @@ export class MpesaService {
    * Used for payouts - sending money from business to customer phone
    */
   async initiateB2CPayment(
-    request: MpesaB2CRequest
+    request: MpesaB2CRequest,
   ): Promise<MpesaB2CResponse> {
     if (
       !this.config.b2cShortCode ||
@@ -667,13 +675,13 @@ export class MpesaService {
       !this.config.b2cSecurityCredential
     ) {
       throw new Error(
-        "B2C configuration missing. Please configure b2cShortCode, b2cInitiatorName, and b2cSecurityCredential"
+        "B2C configuration missing. Please configure b2cShortCode, b2cInitiatorName, and b2cSecurityCredential",
       );
     }
 
     if (!this.config.b2cQueueTimeoutUrl || !this.config.b2cResultUrl) {
       throw new Error(
-        "B2C callback URLs missing. Please configure b2cQueueTimeoutUrl and b2cResultUrl"
+        "B2C callback URLs missing. Please configure b2cQueueTimeoutUrl and b2cResultUrl",
       );
     }
 
@@ -715,7 +723,7 @@ export class MpesaService {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
-      }
+      },
     );
 
     const data = (await response.json()) as MpesaB2CResponse & {
@@ -724,7 +732,7 @@ export class MpesaService {
 
     if (!response.ok || data.ResponseCode !== "0") {
       throw new Error(
-        `M-Pesa B2C failed: ${data.ResponseDescription || data.errorMessage || "Unknown error"}`
+        `M-Pesa B2C failed: ${data.ResponseDescription || data.errorMessage || "Unknown error"}`,
       );
     }
 
@@ -737,7 +745,7 @@ export class MpesaService {
    */
   async handleB2CCallback(
     callback: MpesaB2CCallback,
-    payoutId: string
+    payoutId: string,
   ): Promise<void> {
     const result = callback.Result;
     const isSuccess = result.ResultCode === 0;
@@ -783,8 +791,9 @@ export class MpesaService {
           },
         });
 
-        console.log(
-          `M-Pesa B2C payout ${payoutId} completed successfully. Transaction: ${transactionId}`
+        mpesaLogger.info(
+          { payoutId, transactionId },
+          "M-Pesa B2C payout completed successfully",
         );
       } else {
         // B2C payment failed
@@ -803,14 +812,15 @@ export class MpesaService {
           },
         });
 
-        console.error(
-          `M-Pesa B2C payout ${payoutId} failed: ${result.ResultDesc}`
+        mpesaLogger.error(
+          { payoutId, reason: result.ResultDesc },
+          "M-Pesa B2C payout failed",
         );
       }
     } catch (error) {
-      console.error(
-        `Failed to process M-Pesa B2C callback for payout ${payoutId}:`,
-        error
+      mpesaLogger.error(
+        { err: error, payoutId },
+        "Failed to process M-Pesa B2C callback",
       );
       throw error;
     }

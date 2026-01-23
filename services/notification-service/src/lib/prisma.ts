@@ -2,7 +2,8 @@
  * Prisma Client Singleton
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "@prisma/client";
+import { dbLogger } from "./logger.js";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -13,12 +14,12 @@ export const prisma =
   globalThis.prisma ||
   new PrismaClient({
     log:
-      process.env.NODE_ENV === 'development'
-        ? ['query', 'error', 'warn']
-        : ['error'],
+      process.env.NODE_ENV === "development"
+        ? ["query", "error", "warn"]
+        : ["error"],
   });
 
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== "production") {
   globalThis.prisma = prisma;
 }
 
@@ -46,7 +47,7 @@ export async function disconnect(): Promise<void> {
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  options: { retries?: number; delay?: number } = {}
+  options: { retries?: number; delay?: number } = {},
 ): Promise<T> {
   const { retries = 3, delay = 1000 } = options;
 
@@ -57,7 +58,10 @@ export async function withRetry<T>(
       return await fn();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      console.warn(`Attempt ${attempt}/${retries} failed:`, lastError.message);
+      dbLogger.warn(
+        { attempt, retries, error: lastError.message },
+        "Retry attempt failed",
+      );
 
       if (attempt < retries) {
         await new Promise((resolve) => setTimeout(resolve, delay * attempt));

@@ -3,6 +3,7 @@
  */
 
 import Redis from "ioredis";
+import { redisLogger } from "./logger.js";
 
 // Main Redis client
 export const redis = new Redis(
@@ -17,7 +18,7 @@ export const redis = new Redis(
       const targetError = "READONLY";
       return err.message.includes(targetError);
     },
-  }
+  },
 );
 
 // Subscriber client for pub/sub
@@ -25,15 +26,15 @@ export const subscriber = new Redis(
   process.env.REDIS_URL || "redis://localhost:6379",
   {
     maxRetriesPerRequest: 3,
-  }
+  },
 );
 
 redis.on("connect", () => {
-  console.log("[Redis] Connected to Redis");
+  redisLogger.info("Connected to Redis");
 });
 
 redis.on("error", (err) => {
-  console.error("[Redis] Connection error:", err);
+  redisLogger.error({ err }, "Redis connection error");
 });
 
 /**
@@ -44,7 +45,7 @@ export async function checkConnection(): Promise<boolean> {
     const result = await redis.ping();
     return result === "PONG";
   } catch (error) {
-    console.error("[Redis] Connection check failed:", error);
+    redisLogger.error({ err: error }, "Redis connection check failed");
     throw error;
   }
 }
@@ -55,7 +56,7 @@ export async function checkConnection(): Promise<boolean> {
 export async function disconnect(): Promise<void> {
   await redis.quit();
   await subscriber.quit();
-  console.log("[Redis] Disconnected");
+  redisLogger.info("Redis disconnected");
 }
 
 // ============================================
@@ -112,7 +113,7 @@ export const cache = {
   async getOrSet<T>(
     key: string,
     callback: () => Promise<T>,
-    ttlSeconds = 300
+    ttlSeconds = 300,
   ): Promise<T> {
     const cached = await this.get<T>(key);
     if (cached !== null) {
@@ -167,7 +168,7 @@ export class DistributedLock {
       this.lockValue,
       "EX",
       this.ttl,
-      "NX"
+      "NX",
     );
     return result === "OK";
   }
@@ -196,7 +197,7 @@ export class DistributedLock {
       1,
       this.key,
       this.lockValue,
-      Math.ceil(ttlMs / 1000)
+      Math.ceil(ttlMs / 1000),
     );
     return result === 1;
   }
@@ -208,7 +209,7 @@ export class DistributedLock {
 export async function withLock<T>(
   resource: string,
   callback: () => Promise<T>,
-  ttlMs = 10000
+  ttlMs = 10000,
 ): Promise<T> {
   const lock = new DistributedLock(resource, ttlMs);
   const acquired = await lock.acquire();
@@ -292,7 +293,7 @@ export const pubsub = {
    */
   async subscribe(
     channel: string,
-    handler: (message: any) => void
+    handler: (message: any) => void,
   ): Promise<void> {
     await subscriber.subscribe(channel);
     subscriber.on("message", (ch, message) => {
