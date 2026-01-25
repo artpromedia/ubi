@@ -5,7 +5,6 @@
 // Supports: DTMF input, speech recognition, agent transfer
 // =============================================================================
 
-import { EventEmitter } from "events";
 import {
   AgentBookingRequest,
   AgentStatus,
@@ -16,6 +15,27 @@ import {
   IVRSession,
   IVRState,
 } from "@/types/offline.types";
+import { Redis } from "ioredis";
+import { EventEmitter } from "node:events";
+
+// Redis client for session and cache management
+const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+
+// Phone number normalization helper
+function normalizePhone(phone: string): string {
+  const cleaned = phone.replaceAll(/[^\d+]/g, "");
+  const patterns: Record<string, { pattern: RegExp; code: string }> = {
+    KE: { pattern: /^(?:\+?254|0)?([17]\d{8})$/, code: "254" },
+    NG: { pattern: /^(?:\+?234|0)?([789][01]\d{8})$/, code: "234" },
+    GH: { pattern: /^(?:\+?233|0)?([235]\d{8})$/, code: "233" },
+    ZA: { pattern: /^(?:\+?27|0)?([6-8]\d{8})$/, code: "27" },
+  };
+  for (const { pattern, code } of Object.values(patterns)) {
+    const match = pattern.exec(cleaned);
+    if (match) return `+${code}${match[1]}`;
+  }
+  return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
+}
 
 // =============================================================================
 // IVR CONSTANTS
@@ -30,16 +50,16 @@ const TTS_RATE = 0.9; // Slower for accessibility
 // =============================================================================
 
 export class VoiceService {
-  private eventEmitter: EventEmitter;
+  private readonly eventEmitter: EventEmitter;
 
   // Sessions (Redis in production)
-  private sessions: Map<string, IVRSession> = new Map();
+  private readonly sessions: Map<string, IVRSession> = new Map();
 
   // Agent pool
-  private agents: Map<string, CallCenterAgent> = new Map();
+  private readonly agents: Map<string, CallCenterAgent> = new Map();
 
   // Agent queues by language
-  private queues: Map<string, string[]> = new Map();
+  private readonly queues: Map<string, string[]> = new Map();
 
   constructor() {
     this.eventEmitter = new EventEmitter();
@@ -53,7 +73,7 @@ export class VoiceService {
   async handleIncomingCall(
     callSid: string,
     from: string,
-    to: string
+    to: string,
   ): Promise<IVRAction[]> {
     const session = await this.createIVRSession(callSid, from, to);
 
@@ -101,7 +121,7 @@ export class VoiceService {
   async handleSpeechInput(
     callSid: string,
     transcript: string,
-    confidence: number
+    confidence: number,
   ): Promise<IVRAction[]> {
     const session = await this.getSession(callSid);
     if (!session) {
@@ -120,7 +140,7 @@ export class VoiceService {
       return [
         this.speak(
           this.t("confirm.speech", session.language, { text: transcript }),
-          session.language
+          session.language,
         ),
         this.gather("dtmf", 1, 5),
       ];
@@ -153,7 +173,7 @@ export class VoiceService {
 
   private async processInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     // Handle universal commands
     if (input === "0") {
@@ -217,7 +237,7 @@ export class VoiceService {
     return [
       this.speak(
         this.t("welcome.greeting", session.language),
-        session.language
+        session.language,
       ),
       ...this.buildMainMenuActions(session),
     ];
@@ -235,7 +255,7 @@ export class VoiceService {
 
   private async handleMainMenuInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     switch (input) {
       case "1": // Book a Ride
@@ -244,7 +264,7 @@ export class VoiceService {
         return [
           this.speak(
             this.t("book.method_prompt", session.language),
-            session.language
+            session.language,
           ),
           this.gather("dtmf speech", 1, 10),
         ];
@@ -252,7 +272,8 @@ export class VoiceService {
       case "2": // Track my Ride
         return this.handleTrackRide(session);
 
-      case "3": // My Wallet
+      case "3": {
+        // My Wallet
         session.state = IVRState.WALLET_MENU;
         session.menuPath.push("WALLET");
         const balance = await this.getWalletBalance(session.userId);
@@ -261,10 +282,11 @@ export class VoiceService {
             this.t("wallet.balance_and_menu", session.language, {
               amount: this.formatCurrency(balance, session.language),
             }),
-            session.language
+            session.language,
           ),
           this.gather("dtmf", 1, 10),
         ];
+      }
 
       case "4": // Help
         session.state = IVRState.HELP;
@@ -279,7 +301,7 @@ export class VoiceService {
         return [
           this.speak(
             this.t("language.prompt", session.language),
-            session.language
+            session.language,
           ),
           this.gather("dtmf", 1, 10),
         ];
@@ -292,7 +314,7 @@ export class VoiceService {
         return [
           this.speak(
             this.t("error.invalid_option", session.language),
-            session.language
+            session.language,
           ),
           ...this.buildMainMenuActions(session),
         ];
@@ -301,7 +323,7 @@ export class VoiceService {
 
   private async handleLanguageInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const languages: Record<string, string> = {
       "1": "en",
@@ -334,12 +356,13 @@ export class VoiceService {
 
   private async handleBookRideInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
     switch (input) {
-      case "1": // Current Location
+      case "1": {
+        // Current Location
         const location = await this.getCurrentLocation(session.callerPhone);
         if (location) {
           session.data = session.data || {};
@@ -348,7 +371,7 @@ export class VoiceService {
           return [
             this.speak(
               this.t("book.pickup_set", lang, { address: location.address }),
-              lang
+              lang,
             ),
             this.speak(this.t("book.enter_destination", lang), lang),
             this.gather("speech", 1, 30),
@@ -361,8 +384,10 @@ export class VoiceService {
           this.speak(this.t("book.enter_pickup", lang), lang),
           this.gather("speech", 1, 30),
         ];
+      }
 
-      case "2": // Home
+      case "2": {
+        // Home
         const home = await this.getSavedPlace(session.userId, "home");
         if (home) {
           session.data = { pickup: home };
@@ -378,8 +403,10 @@ export class VoiceService {
           this.speak(this.t("book.enter_pickup", lang), lang),
           this.gather("speech", 1, 30),
         ];
+      }
 
-      case "3": // Work
+      case "3": {
+        // Work
         const work = await this.getSavedPlace(session.userId, "work");
         if (work) {
           session.data = { pickup: work };
@@ -395,6 +422,7 @@ export class VoiceService {
           this.speak(this.t("book.enter_pickup", lang), lang),
           this.gather("speech", 1, 30),
         ];
+      }
 
       case "4": // Speak address
         session.state = IVRState.ENTER_PICKUP;
@@ -413,7 +441,7 @@ export class VoiceService {
 
   private async handlePickupInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -440,7 +468,7 @@ export class VoiceService {
     return [
       this.speak(
         this.t("book.pickup_set", lang, { address: location.address }),
-        lang
+        lang,
       ),
       this.speak(this.t("book.enter_destination", lang), lang),
       this.gather("speech", 1, 30),
@@ -449,7 +477,7 @@ export class VoiceService {
 
   private async handleDestinationInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -487,7 +515,7 @@ export class VoiceService {
 
   private async showBookingConfirmation(
     session: IVRSession,
-    dropoff: { coords: GeoLocation; address: string }
+    dropoff: { coords: GeoLocation; address: string },
   ): Promise<IVRAction[]> {
     const lang = session.language;
     session.data = session.data || {};
@@ -495,10 +523,7 @@ export class VoiceService {
 
     // Get fare estimate
     const pickup = session.data?.pickup as any;
-    const estimate = await this.getFareEstimate(
-      pickup?.coords,
-      dropoff.coords
-    );
+    const estimate = await this.getFareEstimate(pickup?.coords, dropoff.coords);
 
     session.data = session.data || {};
     session.data.fareEstimate = estimate.fare;
@@ -514,7 +539,7 @@ export class VoiceService {
           fare: this.formatCurrency(estimate.fare, lang),
           eta: estimate.eta,
         }),
-        lang
+        lang,
       ),
       this.speak(this.t("book.confirm_prompt", lang), lang),
       this.gather("dtmf speech", 1, 10),
@@ -523,7 +548,7 @@ export class VoiceService {
 
   private async handleBookingConfirmation(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
     const confirmYes = ["1", "yes", "ndio", "yebo", "oui", "ee"];
@@ -545,13 +570,14 @@ export class VoiceService {
               vehicle: trip.vehiclePlate,
               eta: trip.eta,
             }),
-            lang
+            lang,
           ),
           this.speak(this.t("book.sms_sent", lang), lang),
           this.speak(this.t("book.thank_you", lang), lang),
           { type: IVRActionType.HANGUP },
         ];
       } catch (error) {
+        console.error("Voice booking confirmation failed:", error);
         return [
           this.speak(this.t("error.no_drivers", lang), lang),
           this.speak(this.t("error.try_again_later", lang), lang),
@@ -612,7 +638,7 @@ export class VoiceService {
     return [
       this.speak(
         statusMessages[trip.status] || this.t("track.status.unknown", lang),
-        lang
+        lang,
       ),
       this.speak(this.t("track.options", lang), lang),
       this.gather("dtmf", 1, 10),
@@ -621,13 +647,16 @@ export class VoiceService {
 
   private async handleTripStatusInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
     switch (input) {
-      case "1": // Refresh
-        const trip = await this.getTrip(session.data?.tripId as string | undefined);
+      case "1": {
+        // Refresh
+        const trip = await this.getTrip(
+          session.data?.tripId as string | undefined,
+        );
         if (trip) {
           return this.buildTripStatusActions(trip, lang);
         }
@@ -635,9 +664,13 @@ export class VoiceService {
           this.speak(this.t("track.no_active", lang), lang),
           ...this.buildMainMenuActions(session),
         ];
+      }
 
-      case "2": // Call driver
-        const tripForDriver = await this.getTrip(session.data?.tripId as string | undefined);
+      case "2": {
+        // Call driver
+        const tripForDriver = await this.getTrip(
+          session.data?.tripId as string | undefined,
+        );
         if (tripForDriver?.driverPhone) {
           return [
             this.speak(this.t("track.connecting_driver", lang), lang),
@@ -649,8 +682,9 @@ export class VoiceService {
         }
         return [
           this.speak(this.t("track.no_driver_yet", lang), lang),
-          ...this.buildTripStatusActions(tripForDriver!, lang),
+          ...this.buildMainMenuActions(session),
         ];
+      }
 
       case "3": // Cancel
         return this.handleCancelTrip(session);
@@ -676,7 +710,7 @@ export class VoiceService {
           this.t("cancel.with_fee", lang, {
             fee: this.formatCurrency(fee, lang),
           }),
-          lang
+          lang,
         ),
         this.speak(this.t("cancel.confirm_prompt", lang), lang),
         this.gather("dtmf", 1, 10),
@@ -696,7 +730,7 @@ export class VoiceService {
 
   private async handleWalletMenuInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -707,10 +741,11 @@ export class VoiceService {
           { type: IVRActionType.HANGUP },
         ];
 
-      case "2": // Recent transactions
+      case "2": {
+        // Recent transactions
         const transactions = await this.getRecentTransactions(
           session.userId!,
-          3
+          3,
         );
         if (transactions.length === 0) {
           return [
@@ -729,6 +764,7 @@ export class VoiceService {
           this.speak(txText, lang),
           ...this.buildMainMenuActions(session),
         ];
+      }
 
       default:
         return this.buildMainMenuActions(session);
@@ -741,7 +777,7 @@ export class VoiceService {
 
   private async handleHelpInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -773,7 +809,7 @@ export class VoiceService {
   }
 
   private async handleTransferToAgent(
-    session: IVRSession
+    session: IVRSession,
   ): Promise<IVRAction[]> {
     const lang = session.language;
     session.state = IVRState.AWAITING_AGENT;
@@ -788,7 +824,7 @@ export class VoiceService {
       return [
         this.speak(
           this.t("agent.queue", lang, { position: queuePosition }),
-          lang
+          lang,
         ),
         this.speak(this.t("agent.hold_music", lang), lang),
         {
@@ -804,7 +840,7 @@ export class VoiceService {
 
   private async handleAwaitingAgentInput(
     session: IVRSession,
-    input: string
+    input: string,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -833,7 +869,7 @@ export class VoiceService {
 
   private async transferToAgent(
     session: IVRSession,
-    agent: CallCenterAgent
+    agent: CallCenterAgent,
   ): Promise<IVRAction[]> {
     const lang = session.language;
 
@@ -874,7 +910,7 @@ export class VoiceService {
   // ===========================================================================
 
   async handleAgentBooking(
-    request: AgentBookingRequest
+    request: AgentBookingRequest,
   ): Promise<{ tripId: string }> {
     // Validate agent
     const agent = this.agents.get(request.agentId);
@@ -994,35 +1030,51 @@ export class VoiceService {
   // SPEECH PROCESSING
   // ===========================================================================
 
-  private speechToCommand(transcript: string, state: IVRState): string {
-    const lower = transcript.toLowerCase().trim();
-
-    // Universal commands
+  private matchUniversalCommand(lower: string): string | null {
     if (["back", "rudi", "retour"].includes(lower)) return "0";
     if (["menu", "main menu", "menyu"].includes(lower)) return "*";
     if (["repeat", "rudia", "repete"].includes(lower)) return "#";
     if (["agent", "operator", "help me", "msaada"].includes(lower)) return "9";
+    return null;
+  }
+
+  private matchMainMenuCommand(lower: string): string | null {
+    if (["book", "ride", "safari", "reserve"].some((w) => lower.includes(w)))
+      return "1";
+    if (["track", "fuatilia", "where", "status"].some((w) => lower.includes(w)))
+      return "2";
+    if (["wallet", "balance", "money", "pesa"].some((w) => lower.includes(w)))
+      return "3";
+    if (["help", "msaada", "aide"].some((w) => lower.includes(w))) return "4";
+    return null;
+  }
+
+  private matchConfirmBookingCommand(lower: string): string | null {
+    if (
+      ["yes", "ndio", "oui", "confirm", "book"].some((w) => lower.includes(w))
+    )
+      return "1";
+    if (["no", "hapana", "non", "cancel"].some((w) => lower.includes(w)))
+      return "2";
+    return null;
+  }
+
+  private speechToCommand(transcript: string, state: IVRState): string {
+    const lower = transcript.toLowerCase().trim();
+
+    // Universal commands
+    const universalCommand = this.matchUniversalCommand(lower);
+    if (universalCommand) return universalCommand;
 
     // State-specific conversions
     if (state === IVRState.MAIN_MENU) {
-      if (["book", "ride", "safari", "reserve"].some((w) => lower.includes(w)))
-        return "1";
-      if (
-        ["track", "fuatilia", "where", "status"].some((w) => lower.includes(w))
-      )
-        return "2";
-      if (["wallet", "balance", "money", "pesa"].some((w) => lower.includes(w)))
-        return "3";
-      if (["help", "msaada", "aide"].some((w) => lower.includes(w))) return "4";
+      const menuCommand = this.matchMainMenuCommand(lower);
+      if (menuCommand) return menuCommand;
     }
 
     if (state === IVRState.CONFIRM_BOOKING) {
-      if (
-        ["yes", "ndio", "oui", "confirm", "book"].some((w) => lower.includes(w))
-      )
-        return "1";
-      if (["no", "hapana", "non", "cancel"].some((w) => lower.includes(w)))
-        return "2";
+      const confirmCommand = this.matchConfirmBookingCommand(lower);
+      if (confirmCommand) return confirmCommand;
     }
 
     // Return original for address input
@@ -1036,7 +1088,7 @@ export class VoiceService {
   async createIVRSession(
     callSid: string,
     from: string,
-    to: string
+    to: string,
   ): Promise<IVRSession> {
     const user = await this.getUserByPhone(from);
 
@@ -1123,7 +1175,7 @@ export class VoiceService {
   }
 
   private async findAvailableAgent(
-    language: string
+    language: string,
   ): Promise<CallCenterAgent | null> {
     for (const agent of this.agents.values()) {
       if (
@@ -1173,14 +1225,14 @@ export class VoiceService {
   private t(
     key: string,
     lang: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
   ): string {
     const translations = this.getTranslations(lang);
     let text = translations[key] || key;
 
     if (params) {
       for (const [param, value] of Object.entries(params)) {
-        text = text.replace(new RegExp(`\\{${param}\\}`, "g"), String(value));
+        text = text.replaceAll(`{${param}}`, String(value));
       }
     }
 
@@ -1268,7 +1320,9 @@ export class VoiceService {
       },
     };
 
-    return { ...translations.en, ...(translations[lang] || {}) };
+    return translations[lang]
+      ? { ...translations.en, ...translations[lang] }
+      : translations.en;
   }
 
   private formatCurrency(amount: number, _lang: string): string {
@@ -1282,79 +1336,431 @@ export class VoiceService {
   }
 
   private generateId(): string {
-    return `ivr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `ivr_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 2 + 9)}`;
   }
 
   // ===========================================================================
-  // EXTERNAL SERVICE STUBS
+  // EXTERNAL SERVICE IMPLEMENTATIONS
   // ===========================================================================
 
-  private async getUserByPhone(_phone: string): Promise<any> {
-    return { id: "user_123", preferredLanguage: "en" };
+  private async getUserByPhone(phone: string): Promise<any> {
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const user = await prisma.user.findUnique({
+        where: { phone: normalizedPhone },
+        include: {
+          rider: { include: { savedPlaces: true } },
+          walletAccounts: { where: { accountType: "USER_WALLET" } },
+        },
+      });
+
+      if (!user) return null;
+
+      return {
+        id: user.id,
+        name: user.firstName,
+        fullName: `${user.firstName} ${user.lastName}`,
+        preferredLanguage: user.language,
+        riderId: user.rider?.id,
+        walletId: user.walletAccounts?.[0]?.id,
+        currency: user.currency,
+      };
+    } catch (error) {
+      logger.error("Voice: Error fetching user by phone", { phone, error });
+      return null;
+    }
   }
 
-  private async getCurrentLocation(_phone: string): Promise<any> {
-    return null;
+  private async getCurrentLocation(phone: string): Promise<any> {
+    try {
+      const cacheKey = `location:cell:${normalizePhone(phone)}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const user = await this.getUserByPhone(phone);
+      if (!user?.riderId) return null;
+
+      const lastRide = await prisma.ride.findFirst({
+        where: { riderId: user.riderId },
+        orderBy: { requestedAt: "desc" },
+      });
+
+      if (
+        lastRide &&
+        lastRide.requestedAt > new Date(Date.now() - 24 * 60 * 60 * 1000)
+      ) {
+        return {
+          coords: {
+            lat: lastRide.pickupLatitude,
+            lng: lastRide.pickupLongitude,
+          },
+          address: lastRide.pickupAddress,
+        };
+      }
+      return null;
+    } catch (error) {
+      logger.error("Voice: Error getting current location", { phone, error });
+      return null;
+    }
   }
 
   private async geocodeAddress(
-    address: string
+    address: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
-    return { coords: { lat: -1.2921, lng: 36.8219 }, address };
+    try {
+      const cacheKey = `geocode:${address.toLowerCase().trim()}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const landmarks: Record<
+        string,
+        { lat: number; lng: number; address: string }
+      > = {
+        westlands: {
+          lat: -1.2673,
+          lng: 36.8028,
+          address: "Westlands, Nairobi",
+        },
+        cbd: { lat: -1.2864, lng: 36.8172, address: "CBD, Nairobi" },
+        jkia: { lat: -1.3192, lng: 36.9275, address: "JKIA Airport" },
+        vi: { lat: 6.4281, lng: 3.4219, address: "Victoria Island, Lagos" },
+        ikeja: { lat: 6.6018, lng: 3.3515, address: "Ikeja, Lagos" },
+      };
+
+      const normalizedAddress = address.toLowerCase().trim();
+      for (const [landmark, location] of Object.entries(landmarks)) {
+        if (normalizedAddress.includes(landmark)) {
+          const result = {
+            coords: { lat: location.lat, lng: location.lng },
+            address: location.address,
+          };
+          await redis.setex(cacheKey, 86400, JSON.stringify(result));
+          return result;
+        }
+      }
+
+      if (process.env.GEOCODE_API_URL) {
+        const response = await fetch(
+          `${process.env.GEOCODE_API_URL}?address=${encodeURIComponent(address)}&key=${process.env.GEOCODE_API_KEY}`,
+        );
+        const data = await response.json();
+        if (data.results?.[0]?.geometry?.location) {
+          const result = {
+            coords: {
+              lat: data.results[0].geometry.location.lat,
+              lng: data.results[0].geometry.location.lng,
+            },
+            address: data.results[0].formatted_address,
+          };
+          await redis.setex(cacheKey, 86400, JSON.stringify(result));
+          return result;
+        }
+      }
+      return null;
+    } catch (error) {
+      logger.error("Voice: Error geocoding address", { address, error });
+      return null;
+    }
   }
 
-  private async getSavedPlace(_userId?: string, _type?: string): Promise<any> {
-    return null;
+  private async getSavedPlace(userId?: string, type?: string): Promise<any> {
+    try {
+      if (!userId || !type) return null;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          rider: { include: { savedPlaces: { where: { type }, take: 1 } } },
+        },
+      });
+      const place = user?.rider?.savedPlaces?.[0];
+      if (!place) return null;
+      return {
+        id: place.id,
+        name: place.name,
+        type: place.type,
+        address: place.address,
+        coords: { lat: place.latitude, lng: place.longitude },
+      };
+    } catch (error) {
+      logger.error("Voice: Error getting saved place", { userId, type, error });
+      return null;
+    }
   }
 
   private async getFareEstimate(
-    _pickup: GeoLocation,
-    _dropoff: GeoLocation
-  ): Promise<any> {
-    return { fare: 350, eta: 5 };
+    pickup: GeoLocation,
+    dropoff: GeoLocation,
+  ): Promise<{
+    fare: number;
+    eta: number;
+    distance: number;
+    currency: string;
+  }> {
+    try {
+      const R = 6371;
+      const dLat = ((dropoff.lat - pickup.lat) * Math.PI) / 180;
+      const dLng = ((dropoff.lng - pickup.lng) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((pickup.lat * Math.PI) / 180) *
+          Math.cos((dropoff.lat * Math.PI) / 180) *
+          Math.sin(dLng / 2) ** 2;
+      const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      const pricing = (await redis.hgetall("pricing:config")) || {};
+      const baseFare = Number.parseFloat(pricing.baseFare) || 100;
+      const perKm = Number.parseFloat(pricing.perKm) || 50;
+      const currency = pricing.currency || "KES";
+      const estimatedMinutes = Math.ceil((distance / 25) * 60);
+      const fare = Math.round(
+        baseFare + distance * perKm + estimatedMinutes * 5,
+      );
+
+      const surgeKey = `surge:${Math.floor(pickup.lat * 100)}_${Math.floor(pickup.lng * 100)}`;
+      const surgeMultiplier = Number.parseFloat(
+        (await redis.get(surgeKey)) || "1.0",
+      );
+
+      return {
+        fare: Math.round(fare * surgeMultiplier),
+        eta: Math.ceil(estimatedMinutes),
+        distance: Math.round(distance * 10) / 10,
+        currency,
+      };
+    } catch (error) {
+      logger.error("Voice: Error calculating fare", { pickup, dropoff, error });
+      return { fare: 500, eta: 15, distance: 5, currency: "KES" };
+    }
   }
 
-  private async createTrip(_data: any): Promise<any> {
-    return {
-      id: "trip_" + Date.now(),
-      driverName: "John K.",
-      vehiclePlate: "KDA 123X",
-      driverPhone: "+254700123456",
-      eta: 5,
-    };
+  private async createTrip(data: any): Promise<any> {
+    try {
+      const ride = await prisma.ride.create({
+        data: {
+          riderId: data.riderId,
+          status: "PENDING",
+          rideType: "ECONOMY",
+          pickupAddress: data.pickupAddress || "Current Location",
+          pickupLatitude: data.pickupCoords?.lat || 0,
+          pickupLongitude: data.pickupCoords?.lng || 0,
+          dropoffAddress: data.dropoffAddress || "",
+          dropoffLatitude: data.dropoffCoords?.lat || 0,
+          dropoffLongitude: data.dropoffCoords?.lng || 0,
+          estimatedFare: data.fare || 0,
+          currency: data.currency || "KES",
+          estimatedDistance: 0,
+          estimatedDuration: 0,
+          paymentMethod: "WALLET",
+        },
+      });
+
+      this.eventEmitter.emit("ride:requested", {
+        rideId: ride.id,
+        source: "voice",
+      });
+
+      const nearestDriver = await prisma.driver.findFirst({
+        where: { isOnline: true, isAvailable: true },
+        include: { user: true, vehicle: true },
+      });
+
+      return {
+        id: ride.id,
+        driverName: nearestDriver?.user?.firstName || "Finding driver...",
+        vehiclePlate: nearestDriver?.vehicle?.plateNumber || "Pending",
+        driverPhone: nearestDriver?.user?.phone || "",
+        eta: 5,
+      };
+    } catch (error) {
+      logger.error("Voice: Error creating trip", { data, error });
+      throw error;
+    }
   }
 
-  private async getActiveTrip(_userId?: string): Promise<any> {
-    return null;
+  private async getActiveTrip(userId?: string): Promise<any> {
+    try {
+      if (!userId) return null;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { rider: true },
+      });
+      if (!user?.rider) return null;
+
+      const activeRide = await prisma.ride.findFirst({
+        where: {
+          riderId: user.rider.id,
+          status: {
+            in: [
+              "PENDING",
+              "SEARCHING",
+              "DRIVER_ASSIGNED",
+              "DRIVER_ARRIVING",
+              "DRIVER_ARRIVED",
+              "IN_PROGRESS",
+            ],
+          },
+        },
+        include: { driver: { include: { user: true, vehicle: true } } },
+        orderBy: { requestedAt: "desc" },
+      });
+
+      if (!activeRide) return null;
+
+      return {
+        id: activeRide.id,
+        status: activeRide.status,
+        driverName: activeRide.driver?.user?.firstName || "Finding...",
+        vehiclePlate: activeRide.driver?.vehicle?.plateNumber || "Pending",
+        driverPhone: activeRide.driver?.user?.phone || "",
+        pickup: activeRide.pickupAddress,
+        dropoff: activeRide.dropoffAddress,
+        fare: Number(activeRide.estimatedFare),
+        createdAt: activeRide.requestedAt,
+      };
+    } catch (error) {
+      logger.error("Voice: Error getting active trip", { userId, error });
+      return null;
+    }
   }
 
-  private async getTrip(_tripId?: string): Promise<any> {
-    return null;
+  private async getTrip(tripId?: string): Promise<any> {
+    try {
+      if (!tripId) return null;
+      const ride = await prisma.ride.findUnique({
+        where: { id: tripId },
+        include: { driver: { include: { user: true, vehicle: true } } },
+      });
+      if (!ride) return null;
+
+      return {
+        id: ride.id,
+        status: ride.status,
+        driverName: ride.driver?.user?.firstName,
+        vehiclePlate: ride.driver?.vehicle?.plateNumber,
+        driverPhone: ride.driver?.user?.phone,
+        pickup: ride.pickupAddress,
+        dropoff: ride.dropoffAddress,
+        fare: Number(ride.estimatedFare),
+      };
+    } catch (error) {
+      logger.error("Voice: Error getting trip", { tripId, error });
+      return null;
+    }
   }
 
-  private async cancelTrip(_tripId: string, _reason: string): Promise<void> {}
+  private async cancelTrip(tripId: string, reason: string): Promise<void> {
+    try {
+      await prisma.ride.update({
+        where: { id: tripId },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: new Date(),
+          cancellationReason: reason,
+          cancelledBy: "rider",
+        },
+      });
+      this.eventEmitter.emit("ride:cancelled", {
+        rideId: tripId,
+        reason,
+        source: "voice",
+      });
+      logger.info("Voice: Trip cancelled", { tripId, reason });
+    } catch (error) {
+      logger.error("Voice: Error cancelling trip", { tripId, reason, error });
+      throw error;
+    }
+  }
 
-  private async getWalletBalance(_userId?: string): Promise<number> {
-    return 1500;
+  private async getWalletBalance(userId?: string): Promise<number> {
+    try {
+      if (!userId) return 0;
+      const wallet = await prisma.walletAccount.findFirst({
+        where: { userId, accountType: "USER_WALLET" },
+      });
+      return wallet ? Number(wallet.availableBalance) : 0;
+    } catch (error) {
+      logger.error("Voice: Error getting wallet balance", { userId, error });
+      return 0;
+    }
   }
 
   private async getRecentTransactions(
-    _userId: string,
-    _limit: number
+    userId: string,
+    limit: number,
   ): Promise<any[]> {
-    return [];
+    try {
+      const wallet = await prisma.walletAccount.findFirst({
+        where: { userId, accountType: "USER_WALLET" },
+      });
+      if (!wallet) return [];
+
+      const entries = await prisma.ledgerEntry.findMany({
+        where: { accountId: wallet.id },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: { transaction: true },
+      });
+
+      return entries.map((entry) => ({
+        id: entry.id,
+        type: entry.entryType,
+        amount: Number(entry.amount),
+        description: entry.description || entry.transaction?.description,
+        date: entry.createdAt,
+      }));
+    } catch (error) {
+      logger.error("Voice: Error getting recent transactions", {
+        userId,
+        limit,
+        error,
+      });
+      return [];
+    }
   }
 
   private async updateUserLanguage(
-    _userId?: string,
-    _lang?: string
-  ): Promise<void> {}
+    userId?: string,
+    lang?: string,
+  ): Promise<void> {
+    try {
+      if (!userId || !lang) return;
+      await prisma.user.update({
+        where: { id: userId },
+        data: { language: lang },
+      });
+      await redis.hset(`user:${userId}:prefs`, "language", lang);
+      logger.info("Voice: User language updated", { userId, lang });
+    } catch (error) {
+      logger.error("Voice: Error updating user language", {
+        userId,
+        lang,
+        error,
+      });
+    }
+  }
 
   private async sendSMSConfirmation(
-    _phone: string,
-    _trip: any,
-    _lang: string
-  ): Promise<void> {}
+    phone: string,
+    trip: any,
+    lang: string,
+  ): Promise<void> {
+    try {
+      const messages: Record<string, string> = {
+        en: `UBI Booking Confirmed!\nTrip: ${trip.id.slice(-6)}\nDriver: ${trip.driverName}\nVehicle: ${trip.vehiclePlate}\nETA: ${trip.eta} min`,
+        sw: `UBI Imehifadhiwa!\nSafari: ${trip.id.slice(-6)}\nDereva: ${trip.driverName}\nGari: ${trip.vehiclePlate}\nETA: dakika ${trip.eta}`,
+      };
+      this.eventEmitter.emit("sms:send", {
+        to: phone,
+        message: messages[lang] || messages.en,
+        priority: "high",
+      });
+      logger.info("Voice: SMS confirmation sent", { phone, tripId: trip.id });
+    } catch (error) {
+      logger.error("Voice: Error sending SMS confirmation", { phone, error });
+    }
+  }
 
   // ===========================================================================
   // EVENT HANDLERS

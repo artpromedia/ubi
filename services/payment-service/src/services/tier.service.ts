@@ -27,7 +27,7 @@ const TIERS: Record<LoyaltyTier, TierConfig> = {
     qualificationPeriodMonths: 12,
     gracePeriodMonths: 3,
     benefits: {
-      pointsMultiplier: 1.0,
+      pointsMultiplier: 1,
       prioritySupport: false,
       priorityMatching: false,
       freeDeliveries: 0,
@@ -93,7 +93,7 @@ const TIERS: Record<LoyaltyTier, TierConfig> = {
     qualificationPeriodMonths: 12,
     gracePeriodMonths: 3,
     benefits: {
-      pointsMultiplier: 2.0,
+      pointsMultiplier: 2,
       prioritySupport: true,
       priorityMatching: true,
       freeDeliveries: "unlimited",
@@ -143,7 +143,7 @@ export class TierService {
       const now = new Date();
       daysUntilExpiry = Math.ceil(
         (account.tierExpiresAt.getTime() - now.getTime()) /
-          (1000 * 60 * 60 * 24)
+          (1000 * 60 * 60 * 24),
       );
     }
 
@@ -212,15 +212,12 @@ export class TierService {
         freeDeliveriesRemaining:
           benefits.freeDeliveries === "unlimited"
             ? "unlimited"
-            : Math.max(
-                0,
-                (benefits.freeDeliveries as number) - freeDeliveriesUsed
-              ),
+            : Math.max(0, benefits.freeDeliveries - freeDeliveriesUsed),
         freeCancellationsUsed,
-        freeCancellationsRemaining:
-          benefits.freeCancellations - freeCancellationsUsed > 0
-            ? benefits.freeCancellations - freeCancellationsUsed
-            : 0,
+        freeCancellationsRemaining: Math.max(
+          0,
+          benefits.freeCancellations - freeCancellationsUsed,
+        ),
       },
     };
   }
@@ -230,7 +227,7 @@ export class TierService {
    */
   async useBenefit(
     userId: string,
-    benefit: "freeDelivery" | "freeCancellation"
+    benefit: "freeDelivery" | "freeCancellation",
   ): Promise<{ success: boolean; remaining: number | "unlimited" }> {
     const { tier: _tier, benefits, usage } = await this.getUserBenefits(userId);
 
@@ -238,9 +235,11 @@ export class TierService {
       if (benefits.freeDeliveries === 0) {
         return { success: false, remaining: 0 };
       }
+
+      const freeDeliveriesLimit = benefits.freeDeliveries;
       if (
-        benefits.freeDeliveries !== "unlimited" &&
-        usage.freeDeliveriesUsed >= (benefits.freeDeliveries as number)
+        typeof freeDeliveriesLimit === "number" &&
+        usage.freeDeliveriesUsed >= freeDeliveriesLimit
       ) {
         return { success: false, remaining: 0 };
       }
@@ -250,11 +249,9 @@ export class TierService {
       return {
         success: true,
         remaining:
-          benefits.freeDeliveries === "unlimited"
+          freeDeliveriesLimit === "unlimited"
             ? "unlimited"
-            : (benefits.freeDeliveries as number) -
-              usage.freeDeliveriesUsed -
-              1,
+            : freeDeliveriesLimit - usage.freeDeliveriesUsed - 1,
       };
     }
 
@@ -282,7 +279,7 @@ export class TierService {
    */
   async getSurgeDiscount(
     userId: string,
-    surgeMultiplier: number
+    surgeMultiplier: number,
   ): Promise<number> {
     const { benefits } = await this.getUserBenefits(userId);
 
@@ -420,7 +417,7 @@ export class TierService {
    */
   async getTierHistory(
     userId: string,
-    limit: number = 10
+    limit: number = 10,
   ): Promise<
     Array<{
       previousTier?: LoyaltyTier;
@@ -521,7 +518,7 @@ export class TierService {
 
   private async incrementUsage(
     userId: string,
-    field: "freeDeliveriesUsed" | "freeCancellationsUsed"
+    field: "freeDeliveriesUsed" | "freeCancellationsUsed",
   ): Promise<void> {
     const startOfMonth = new Date();
     startOfMonth.setDate(1);

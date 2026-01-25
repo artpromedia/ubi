@@ -224,9 +224,9 @@ export function parseAmount(amount: string | number): number {
 
   // Remove currency symbols and commas
   const cleaned = amount.replace(/[^0-9.-]/g, "");
-  const parsed = parseFloat(cleaned);
+  const parsed = Number.parseFloat(cleaned);
 
-  if (isNaN(parsed)) {
+  if (Number.isNaN(parsed)) {
     throw new Error(`Invalid amount: ${amount}`);
   }
 

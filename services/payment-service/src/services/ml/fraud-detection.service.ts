@@ -5,7 +5,7 @@
 // Target: -80% fraud losses, <50ms scoring latency
 // =============================================================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   CollusionDetectionRequest,
   CollusionMember,
@@ -33,49 +33,38 @@ interface FraudRule {
   type: FraudType;
   condition: (
     features: Record<string, unknown>,
-    context?: FraudContext
+    context?: FraudContext,
   ) => boolean;
   score: number; // 0-1 contribution to fraud score
   weight: number;
   autoBlock: boolean;
 }
 
-// Reserved for future use
-// interface VelocityCheck {
-//   metric: string;
-//   windowMinutes: number;
-//   threshold: number;
-//   score: number;
-// }
+type CollusionClusterType = "ring" | "pair" | "cluster";
 
-// interface DeviceFingerprint {
-//   deviceId: string;
-//   userAgent: string;
-//   platform: string;
-//   screenResolution: string;
-//   timezone: string;
-//   language: string;
-//   plugins: string[];
-//   canvasHash: string;
-// }
+interface CollusionCluster {
+  members: CollusionMember[];
+  type: CollusionClusterType;
+  connectionCount: number;
+  totalTrips: number;
+  totalAmount: number;
+  patterns: CollusionPattern[];
+}
 
 // =============================================================================
 // FRAUD DETECTION SERVICE
 // =============================================================================
 
 export class FraudDetectionService implements IFraudDetectionService {
-  private featureStore: FeatureStoreService;
-  private eventEmitter: EventEmitter;
+  private readonly featureStore: FeatureStoreService;
+  private readonly eventEmitter: EventEmitter;
 
   // Rule-based fraud detection
   private fraudRules: FraudRule[] = [];
 
-  // Velocity tracking (in production, use Redis)
-  // private velocityCache: Map<string, { count: number; lastUpdate: number }[]> = new Map();
-
   // Known fraud patterns
-  private knownFraudDevices: Set<string> = new Set();
-  private knownFraudIPs: Set<string> = new Set();
+  private readonly knownFraudDevices: Set<string> = new Set();
+  private readonly knownFraudIPs: Set<string> = new Set();
   // private highRiskCountries: Set<string> = new Set(["XX"]); // Placeholder
 
   // Thresholds
@@ -100,7 +89,7 @@ export class FraudDetectionService implements IFraudDetectionService {
     // Get features from feature store
     const entityFeatures = await this.getEntityFeatures(
       request.entityType,
-      request.entityId
+      request.entityId,
     );
 
     // Merge with provided features
@@ -109,14 +98,14 @@ export class FraudDetectionService implements IFraudDetectionService {
     // Run through all fraud models
     const fraudTypeScores = await this.calculateFraudTypeScores(
       features,
-      request.context
+      request.context,
     );
 
     // Calculate aggregate score
     const { score, topFactors } = this.aggregateFraudScores(
       fraudTypeScores,
       features,
-      request.context
+      request.context,
     );
 
     // Determine risk level
@@ -143,7 +132,7 @@ export class FraudDetectionService implements IFraudDetectionService {
     await this.featureStore.setFeatureValue(
       `${request.entityType}_fraud_score`,
       request.entityId,
-      score
+      score,
     );
 
     // Emit event for logging/alerting
@@ -164,7 +153,7 @@ export class FraudDetectionService implements IFraudDetectionService {
 
   private async getEntityFeatures(
     entityType: string,
-    entityId: string
+    entityId: string,
   ): Promise<Record<string, unknown>> {
     const featureNames = this.getFraudFeatureNames(entityType);
 
@@ -216,14 +205,14 @@ export class FraudDetectionService implements IFraudDetectionService {
 
   private async calculateFraudTypeScores(
     features: Record<string, unknown>,
-    context?: FraudContext
+    context?: FraudContext,
   ): Promise<FraudTypeScore[]> {
     const scores: FraudTypeScore[] = [];
 
     // Payment Fraud
     const paymentFraudScore = this.calculatePaymentFraudScore(
       features,
-      context
+      context,
     );
     scores.push({
       type: FraudType.PAYMENT_FRAUD,
@@ -276,7 +265,7 @@ export class FraudDetectionService implements IFraudDetectionService {
 
   private calculatePaymentFraudScore(
     features: Record<string, unknown>,
-    context?: FraudContext
+    context?: FraudContext,
   ): number {
     let score = 0;
     let weights = 0;
@@ -336,7 +325,7 @@ export class FraudDetectionService implements IFraudDetectionService {
 
   private calculateAccountTakeoverScore(
     features: Record<string, unknown>,
-    context?: FraudContext
+    context?: FraudContext,
   ): number {
     let score = 0;
 
@@ -423,7 +412,7 @@ export class FraudDetectionService implements IFraudDetectionService {
 
   private calculateGPSSpoofingScore(
     features: Record<string, unknown>,
-    _context?: FraudContext
+    _context?: FraudContext,
   ): number {
     let score = 0;
 
@@ -489,11 +478,11 @@ export class FraudDetectionService implements IFraudDetectionService {
   private aggregateFraudScores(
     fraudTypeScores: FraudTypeScore[],
     features: Record<string, unknown>,
-    context?: FraudContext
+    context?: FraudContext,
   ): { score: number; topFactors: FraudFactor[] } {
     // Weight each fraud type
     const weights: Record<FraudType, number> = {
-      [FraudType.PAYMENT_FRAUD]: 1.0,
+      [FraudType.PAYMENT_FRAUD]: 1,
       [FraudType.ACCOUNT_TAKEOVER]: 0.9,
       [FraudType.COLLUSION]: 0.85,
       [FraudType.PROMO_ABUSE]: 0.6,
@@ -530,7 +519,7 @@ export class FraudDetectionService implements IFraudDetectionService {
     const topFactors = this.extractTopFactors(
       fraudTypeScores,
       features,
-      context
+      context,
     );
 
     return { score: finalScore, topFactors };
@@ -539,7 +528,7 @@ export class FraudDetectionService implements IFraudDetectionService {
   private extractTopFactors(
     fraudTypeScores: FraudTypeScore[],
     features: Record<string, unknown>,
-    context?: FraudContext
+    context?: FraudContext,
   ): FraudFactor[] {
     const factors: FraudFactor[] = [];
 
@@ -588,7 +577,9 @@ export class FraudDetectionService implements IFraudDetectionService {
     }
 
     // Sort by contribution and take top 5
-    return factors.sort((a, b) => b.contribution - a.contribution).slice(0, 5);
+    return factors
+      .toSorted((a, b) => b.contribution - a.contribution)
+      .slice(0, 5);
   }
 
   private fraudTypeToString(type: FraudType): string {
@@ -618,7 +609,7 @@ export class FraudDetectionService implements IFraudDetectionService {
 
   private determineRecommendation(
     score: number,
-    fraudTypeScores: FraudTypeScore[]
+    fraudTypeScores: FraudTypeScore[],
   ): "approve" | "review" | "block" {
     // Auto-block if score exceeds threshold
     if (score >= this.BLOCK_THRESHOLD) {
@@ -627,7 +618,7 @@ export class FraudDetectionService implements IFraudDetectionService {
 
     // Block if any fraud type is critical
     const hasCriticalType = fraudTypeScores.some(
-      (ft) => ft.isHighRisk && ft.score > 0.9
+      (ft) => ft.isHighRisk && ft.score > 0.9,
     );
     if (hasCriticalType) {
       return "block";
@@ -646,7 +637,7 @@ export class FraudDetectionService implements IFraudDetectionService {
   // ===========================================================================
 
   async detectCollusion(
-    request: CollusionDetectionRequest
+    request: CollusionDetectionRequest,
   ): Promise<CollusionNetwork[]> {
     const networks: CollusionNetwork[] = [];
     const lookbackDays = request.lookbackDays || 30;
@@ -656,7 +647,7 @@ export class FraudDetectionService implements IFraudDetectionService {
       request.driverId,
       request.userId,
       request.tripId,
-      lookbackDays
+      lookbackDays,
     );
 
     // Detect suspicious clusters
@@ -696,7 +687,7 @@ export class FraudDetectionService implements IFraudDetectionService {
     _driverId?: string,
     _userId?: string,
     _tripId?: string,
-    _lookbackDays: number = 30
+    _lookbackDays: number = 30,
   ): Promise<Map<string, Set<string>>> {
     // In production, query trip history and build driver-rider graph
     // For now, return empty graph
@@ -711,23 +702,9 @@ export class FraudDetectionService implements IFraudDetectionService {
   }
 
   private detectSuspiciousClusters(
-    _connections: Map<string, Set<string>>
-  ): Array<{
-    members: CollusionMember[];
-    type: "ring" | "pair" | "cluster";
-    connectionCount: number;
-    totalTrips: number;
-    totalAmount: number;
-    patterns: CollusionPattern[];
-  }> {
-    const clusters: Array<{
-      members: CollusionMember[];
-      type: "ring" | "pair" | "cluster";
-      connectionCount: number;
-      totalTrips: number;
-      totalAmount: number;
-      patterns: CollusionPattern[];
-    }> = [];
+    _connections: Map<string, Set<string>>,
+  ): CollusionCluster[] {
+    const clusters: CollusionCluster[] = [];
 
     // In production, use graph algorithms:
     // - Community detection
@@ -737,14 +714,7 @@ export class FraudDetectionService implements IFraudDetectionService {
     return clusters;
   }
 
-  private scoreCollusionCluster(cluster: {
-    members: CollusionMember[];
-    type: "ring" | "pair" | "cluster";
-    connectionCount: number;
-    totalTrips: number;
-    totalAmount: number;
-    patterns: CollusionPattern[];
-  }): number {
+  private scoreCollusionCluster(cluster: CollusionCluster): number {
     let score = 0;
 
     // Member count factor
@@ -778,7 +748,7 @@ export class FraudDetectionService implements IFraudDetectionService {
   async reportFraud(
     entityType: string,
     entityId: string,
-    fraudType: FraudType
+    fraudType: FraudType,
   ): Promise<void> {
     this.eventEmitter.emit("fraud:reported", {
       entityType,
@@ -791,14 +761,14 @@ export class FraudDetectionService implements IFraudDetectionService {
     await this.featureStore.setFeatureValue(
       `${entityType}_fraud_score`,
       entityId,
-      1.0 // Max fraud score for confirmed fraud
+      1, // Max fraud score for confirmed fraud
     );
   }
 
   async updateInvestigation(
     investigationId: string,
     status: string,
-    findings?: Record<string, unknown>
+    findings?: Record<string, unknown>,
   ): Promise<void> {
     this.eventEmitter.emit("investigation:updated", {
       investigationId,
@@ -820,10 +790,10 @@ export class FraudDetectionService implements IFraudDetectionService {
         type: FraudType.PAYMENT_FRAUD,
         condition: (_features, context) =>
           Boolean(
-            context?.deviceId && this.knownFraudDevices.has(context.deviceId)
+            context?.deviceId && this.knownFraudDevices.has(context.deviceId),
           ),
         score: 0.95,
-        weight: 1.0,
+        weight: 1,
         autoBlock: true,
       },
       {
@@ -832,7 +802,7 @@ export class FraudDetectionService implements IFraudDetectionService {
         type: FraudType.PAYMENT_FRAUD,
         condition: (_features, context) =>
           Boolean(
-            context?.ipAddress && this.knownFraudIPs.has(context.ipAddress)
+            context?.ipAddress && this.knownFraudIPs.has(context.ipAddress),
           ),
         score: 0.9,
         weight: 0.9,
@@ -878,7 +848,9 @@ export class FraudDetectionService implements IFraudDetectionService {
   // ===========================================================================
 
   private generateId(): string {
-    return `fraud_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `fraud_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 2 + 9)}`;
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {

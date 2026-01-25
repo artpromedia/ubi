@@ -100,7 +100,7 @@ export interface WithdrawalRequest {
 }
 
 export class WalletService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) {}
 
   /**
    * Get or create wallet account for user
@@ -866,8 +866,6 @@ export function createWalletService(prisma: PrismaClient): WalletService {
 
 // Get singleton instance
 export function getWalletService(prisma: PrismaClient): WalletService {
-  if (!walletServiceInstance) {
-    walletServiceInstance = createWalletService(prisma);
-  }
+  walletServiceInstance ??= createWalletService(prisma);
   return walletServiceInstance;
 }

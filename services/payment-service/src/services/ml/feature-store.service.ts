@@ -5,7 +5,7 @@
 // Target: Sub-10ms feature retrieval at scale
 // =============================================================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   CreateFeatureDefinitionInput,
   FeatureDefinition,
@@ -1543,7 +1543,7 @@ export class FeatureStoreService implements IFeatureStoreService {
   }
 
   private generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 2 + 9)}`;
   }
 
   // ===========================================================================

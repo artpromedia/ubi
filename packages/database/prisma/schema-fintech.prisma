@@ -664,6 +664,28 @@ model LoanRepayment {
   @@map("loan_repayments")
 }
 
+// Audit log for loan notifications (compliance requirement)
+model LoanNotificationLog {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  loanId      String    @map("loan_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  type        String // OVERDUE, DUE_REMINDER, PAYMENT_RECEIVED
+  daysOverdue Int?      @map("days_overdue")
+  amountDue   Decimal?  @map("amount_due") @db.Decimal(19, 4)
+  lateFee     Decimal?  @map("late_fee") @db.Decimal(19, 4)
+  channels    String[] // PUSH, SMS, EMAIL, WHATSAPP
+  status      String    @default("SENT") // SENT, FAILED, DELIVERED
+  sentAt      DateTime  @map("sent_at")
+  deliveredAt DateTime? @map("delivered_at")
+  metadata    Json?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([loanId, sentAt])
+  @@index([userId, sentAt])
+  @@index([type, sentAt])
+  @@map("loan_notification_logs")
+}
+
 // ===========================================
 // CARD ISSUANCE
 // ===========================================

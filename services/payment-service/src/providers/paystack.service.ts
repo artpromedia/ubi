@@ -29,7 +29,7 @@ import { paystackLogger } from "../lib/logger";
  */
 
 import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
-import crypto from "crypto";
+import crypto from "node:crypto";
 import { paystackLogger } from "../lib/logger.js";
 
 export interface PaystackConfig {
@@ -716,8 +716,8 @@ export class PaystackService {
         providerMethodId: authorization.authorization_code,
         type: "CARD",
         lastFour: authorization.last4,
-        expiryMonth: parseInt(authorization.exp_month),
-        expiryYear: parseInt(authorization.exp_year),
+        expiryMonth: Number.parseInt(authorization.exp_month),
+        expiryYear: Number.parseInt(authorization.exp_year),
         cardBrand: authorization.brand,
         cardBank: authorization.bank,
         isDefault: false, // User can set default later

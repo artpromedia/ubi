@@ -661,7 +661,7 @@ export class CardService {
     let sum = 0;
     let isEven = true;
     for (let i = cardNumber.length - 1; i >= 0; i--) {
-      let digit = parseInt(cardNumber[i] || "0", 10);
+      let digit = Number.parseInt(cardNumber[i] || "0", 10);
       if (isEven) {
         digit *= 2;
         if (digit > 9) digit -= 9;

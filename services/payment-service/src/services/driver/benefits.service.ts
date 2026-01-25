@@ -3,7 +3,7 @@
 // Benefits & Insurance Service
 // ===========================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   BenefitClaim,
   BenefitEnrollment,
@@ -39,21 +39,31 @@ const FUEL_DISCOUNT_TIERS = {
 // BENEFITS SERVICE
 // -----------------------------------------
 
+/**
+ * Reserved fields for future features - types defined but not yet connected
+ * @internal These will be wired up in future sprints for:
+ * - Event-driven architecture (eventEmitter)
+ * - Distributed caching (Redis)
+ * - Local cache fallback (_cache)
+ */
 export class DriverBenefitsService implements IDriverBenefitsService {
-  // @ts-expect-error - Reserved for future event handling
-  private _eventEmitter: EventEmitter;
-  // @ts-expect-error - Reserved for future caching
-  private _cache: Map<string, { data: unknown; expiry: number }> = new Map();
+  /** Reserved: Event emitter for pub/sub patterns - Sprint 5 */
+  private readonly _eventEmitter: EventEmitter;
+  /** Reserved: Local cache with TTL for fallback - Sprint 5 */
+  private readonly _cache: Map<string, { data: unknown; expiry: number }> =
+    new Map();
+  /** Reserved: Redis client for distributed caching - Sprint 5 */
+  private readonly _redis: unknown;
 
   constructor(
-    private db: any,
-    // @ts-expect-error - Reserved for future Redis integration
-    private _redis: any,
-    private paymentService: any,
-    private notificationService: any,
-    private analyticsService: any
+    private readonly db: any,
+    redis: unknown,
+    private readonly paymentService: any,
+    private readonly notificationService: any,
+    private readonly analyticsService: any,
   ) {
     this._eventEmitter = new EventEmitter();
+    this._redis = redis;
   }
 
   // -----------------------------------------
@@ -61,7 +71,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   // -----------------------------------------
 
   async getAvailableBenefits(
-    driverId: string
+    driverId: string,
   ): Promise<DriverBenefitPackage[]> {
     // Get driver profile
     const driver = await this.getDriverProfile(driverId);
@@ -77,7 +87,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       where: { driverId },
     });
     const enrollmentMap = new Map(
-      enrollments.map((e: any) => [e.packageId, e])
+      enrollments.map((e: any) => [e.packageId, e]),
     );
 
     // Map to driver-specific packages
@@ -116,7 +126,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   async enrollInBenefit(
     driverId: string,
     packageId: string,
-    options?: EnrollmentOptions
+    options?: EnrollmentOptions,
   ): Promise<BenefitEnrollment> {
     // Get package
     const pkg = await this.db.benefitPackage.findUnique({
@@ -150,7 +160,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
     const expiryDate = this.calculateExpiryDate(
       effectiveDate,
-      options?.billingCycle || BillingCycle.MONTHLY
+      options?.billingCycle || BillingCycle.MONTHLY,
     );
 
     // Process initial payment
@@ -158,7 +168,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     await this.processPayment(
       driverId,
       amount,
-      `Benefit enrollment: ${pkg.name}`
+      `Benefit enrollment: ${pkg.name}`,
     );
 
     // Create or update enrollment
@@ -217,7 +227,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     this.trackEvent(driverId, DRIVER_EVENTS.BENEFIT_ENROLLED, {
       packageId,
       benefitType: pkg.benefitType,
-      monthlyPrice: parseFloat(pkg.monthlyPrice),
+      monthlyPrice: Number.parseFloat(pkg.monthlyPrice),
       billingCycle: options?.billingCycle,
     });
 
@@ -226,7 +236,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   async cancelEnrollment(
     driverId: string,
-    enrollmentId: string
+    enrollmentId: string,
   ): Promise<boolean> {
     const enrollment = await this.db.benefitEnrollment.findFirst({
       where: { id: enrollmentId, driverId },
@@ -271,7 +281,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   async submitClaim(
     driverId: string,
     enrollmentId: string,
-    claim: ClaimInput
+    claim: ClaimInput,
   ): Promise<BenefitClaim> {
     // Verify enrollment
     const enrollment = await this.db.benefitEnrollment.findFirst({
@@ -341,7 +351,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   async getClaimDetails(
     driverId: string,
-    claimId: string
+    claimId: string,
   ): Promise<BenefitClaim | null> {
     const claim = await this.db.benefitClaim.findFirst({
       where: { id: claimId, driverId },
@@ -356,7 +366,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     reviewerId: string,
     approved: boolean,
     approvedAmount?: number,
-    notes?: string
+    notes?: string,
   ): Promise<BenefitClaim> {
     const existingClaim = await this.db.benefitClaim.findUnique({
       where: { id: claimId },
@@ -369,7 +379,9 @@ export class DriverBenefitsService implements IDriverBenefitsService {
         reviewedBy: reviewerId,
         reviewedAt: new Date(),
         reviewNotes: notes,
-        approvedAmount: approved ? approvedAmount || existingClaim.amount : null,
+        approvedAmount: approved
+          ? approvedAmount || existingClaim.amount
+          : null,
       },
     });
 
@@ -402,7 +414,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     await this.paymentService?.creditWallet(
       claim.driverId,
       claim.approvedAmount,
-      `Benefit claim payout: ${claim.claimType}`
+      `Benefit claim payout: ${claim.claimType}`,
     );
 
     // Update claim status
@@ -456,10 +468,10 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       id: discount.id,
       driverId: discount.driverId,
       discountTier: discount.discountTier,
-      discountPercent: parseFloat(discount.discountPercent),
-      monthlyLimit: parseFloat(discount.monthlyLimit),
-      usedThisMonth: parseFloat(discount.usedThisMonth),
-      totalSaved: parseFloat(discount.totalSaved),
+      discountPercent: Number.parseFloat(discount.discountPercent),
+      monthlyLimit: Number.parseFloat(discount.monthlyLimit),
+      usedThisMonth: Number.parseFloat(discount.usedThisMonth),
+      totalSaved: Number.parseFloat(discount.totalSaved),
       fuelCardNumber: discount.fuelCardNumber,
       cardStatus: discount.cardStatus,
     };
@@ -468,7 +480,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   async getNearbyFuelStations(
     latitude: number,
     longitude: number,
-    radius: number = 5
+    radius: number = 5,
   ): Promise<FuelStation[]> {
     // Get partner stations near location
     const stations = await this.db.fuelStation.findMany({
@@ -492,14 +504,14 @@ export class DriverBenefitsService implements IDriverBenefitsService {
         distance: this.calculateDistance(
           latitude,
           longitude,
-          parseFloat(station.latitude),
-          parseFloat(station.longitude)
+          Number.parseFloat(station.latitude),
+          Number.parseFloat(station.longitude),
         ),
       }))
       .filter((s: FuelStation) => (s.distance || 0) <= radius)
       .sort(
         (a: FuelStation, b: FuelStation) =>
-          (a.distance || 0) - (b.distance || 0)
+          (a.distance || 0) - (b.distance || 0),
       );
 
     return stationsWithDistance;
@@ -507,7 +519,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   async recordFuelTransaction(
     driverId: string,
-    transaction: Omit<FuelTransaction, "id">
+    transaction: Omit<FuelTransaction, "id">,
   ): Promise<FuelTransaction> {
     const discount = await this.getFuelDiscount(driverId);
 
@@ -557,11 +569,11 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       id: newTransaction.id,
       stationId: newTransaction.stationId,
       stationName: newTransaction.stationName,
-      liters: parseFloat(newTransaction.liters),
-      pricePerLiter: parseFloat(newTransaction.pricePerLiter),
-      originalAmount: parseFloat(newTransaction.originalAmount),
-      discountAmount: parseFloat(newTransaction.discountAmount),
-      finalAmount: parseFloat(newTransaction.finalAmount),
+      liters: Number.parseFloat(newTransaction.liters),
+      pricePerLiter: Number.parseFloat(newTransaction.pricePerLiter),
+      originalAmount: Number.parseFloat(newTransaction.originalAmount),
+      discountAmount: Number.parseFloat(newTransaction.discountAmount),
+      finalAmount: Number.parseFloat(newTransaction.finalAmount),
       currency: newTransaction.currency,
       transactedAt: newTransaction.transactedAt,
     };
@@ -569,7 +581,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   async getFuelTransactions(
     driverId: string,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<FuelTransaction[]> {
     const transactions = await this.db.fuelTransaction.findMany({
       where: { driverId },
@@ -581,11 +593,11 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       id: t.id,
       stationId: t.stationId,
       stationName: t.stationName,
-      liters: parseFloat(t.liters),
-      pricePerLiter: parseFloat(t.pricePerLiter),
-      originalAmount: parseFloat(t.originalAmount),
-      discountAmount: parseFloat(t.discountAmount),
-      finalAmount: parseFloat(t.finalAmount),
+      liters: Number.parseFloat(t.liters),
+      pricePerLiter: Number.parseFloat(t.pricePerLiter),
+      originalAmount: Number.parseFloat(t.originalAmount),
+      discountAmount: Number.parseFloat(t.discountAmount),
+      finalAmount: Number.parseFloat(t.finalAmount),
       currency: t.currency,
       transactedAt: t.transactedAt,
     }));
@@ -608,10 +620,10 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       id: discount.id,
       driverId: discount.driverId,
       discountTier: discount.discountTier,
-      discountPercent: parseFloat(discount.discountPercent),
-      monthlyLimit: parseFloat(discount.monthlyLimit),
-      usedThisMonth: parseFloat(discount.usedThisMonth),
-      totalSaved: parseFloat(discount.totalSaved),
+      discountPercent: Number.parseFloat(discount.discountPercent),
+      monthlyLimit: Number.parseFloat(discount.monthlyLimit),
+      usedThisMonth: Number.parseFloat(discount.usedThisMonth),
+      totalSaved: Number.parseFloat(discount.totalSaved),
       fuelCardNumber: discount.fuelCardNumber,
       cardStatus: discount.cardStatus,
     };
@@ -672,20 +684,20 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   private async renewEnrollment(enrollment: any): Promise<void> {
     const amount = this.getPaymentAmount(
       enrollment.package,
-      enrollment.billingCycle
+      enrollment.billingCycle,
     );
 
     // Process payment
     await this.processPayment(
       enrollment.driverId,
       amount,
-      `Benefit renewal: ${enrollment.package.name}`
+      `Benefit renewal: ${enrollment.package.name}`,
     );
 
     // Update enrollment
     const newExpiryDate = this.calculateExpiryDate(
       enrollment.expiryDate,
-      enrollment.billingCycle
+      enrollment.billingCycle,
     );
 
     await this.db.benefitEnrollment.update({
@@ -711,7 +723,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   // -----------------------------------------
 
   private async getDriverProfile(
-    driverId: string
+    driverId: string,
   ): Promise<DriverProfileForBenefits> {
     const profile = await this.db.driverProfile.findUnique({
       where: { driverId },
@@ -737,7 +749,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
     const tenureDays = driver
       ? Math.floor(
-          (Date.now() - driver.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+          (Date.now() - driver.createdAt.getTime()) / (1000 * 60 * 60 * 24),
         )
       : 0;
 
@@ -753,7 +765,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   private checkEligibility(
     driver: DriverProfileForBenefits,
-    pkg: any
+    pkg: any,
   ): { eligible: boolean; reason?: string } {
     // Check minimum trips
     if (pkg.minTrips && driver.lifetimeTrips < pkg.minTrips) {
@@ -835,14 +847,14 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   }
 
   private getPaymentAmount(pkg: any, billingCycle?: BillingCycle): number {
-    const monthlyPrice = parseFloat(pkg.monthlyPrice);
+    const monthlyPrice = Number.parseFloat(pkg.monthlyPrice);
 
     switch (billingCycle) {
       case BillingCycle.QUARTERLY:
         return monthlyPrice * 3 * 0.95; // 5% discount
       case BillingCycle.ANNUALLY:
         return pkg.annualPrice
-          ? parseFloat(pkg.annualPrice)
+          ? Number.parseFloat(pkg.annualPrice)
           : monthlyPrice * 12 * 0.85; // 15% discount
       default:
         return monthlyPrice;
@@ -851,7 +863,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
 
   private calculateExpiryDate(
     startDate: Date,
-    billingCycle: BillingCycle
+    billingCycle: BillingCycle,
   ): Date {
     const expiry = new Date(startDate);
 
@@ -870,7 +882,10 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   }
 
   private async generatePolicyNumber(enrollmentId: string): Promise<string> {
-    const policyNumber = `UBI-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    const policyNumber = `UBI-${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 2 + 9)
+      .toUpperCase()}`;
 
     await this.db.benefitEnrollment.update({
       where: { id: enrollmentId },
@@ -883,7 +898,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   private async processPayment(
     driverId: string,
     amount: number,
-    description: string
+    description: string,
   ): Promise<void> {
     // Debit from driver wallet
     await this.paymentService?.debitWallet(driverId, amount, description);
@@ -893,7 +908,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
     lat1: number,
     lng1: number,
     lat2: number,
-    lng2: number
+    lng2: number,
   ): number {
     const R = 6371; // Earth's radius in km
     const dLat = this.toRad(lat2 - lat1);
@@ -923,8 +938,10 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       coverageItems: pkg.coverageItems,
       exclusions: pkg.exclusions,
       waitingPeriod: pkg.waitingPeriod,
-      monthlyPrice: parseFloat(pkg.monthlyPrice),
-      annualPrice: pkg.annualPrice ? parseFloat(pkg.annualPrice) : undefined,
+      monthlyPrice: Number.parseFloat(pkg.monthlyPrice),
+      annualPrice: pkg.annualPrice
+        ? Number.parseFloat(pkg.annualPrice)
+        : undefined,
       currency: pkg.currency,
       minTrips: pkg.minTrips,
       minTier: pkg.minTier,
@@ -964,7 +981,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       driverId: claim.driverId,
       claimType: claim.claimType,
       description: claim.description,
-      amount: parseFloat(claim.amount),
+      amount: Number.parseFloat(claim.amount),
       currency: claim.currency,
       documents: claim.documents,
       incidentDate: claim.incidentDate,
@@ -973,9 +990,11 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       reviewedAt: claim.reviewedAt,
       reviewNotes: claim.reviewNotes,
       approvedAmount: claim.approvedAmount
-        ? parseFloat(claim.approvedAmount)
+        ? Number.parseFloat(claim.approvedAmount)
         : undefined,
-      paidAmount: claim.paidAmount ? parseFloat(claim.paidAmount) : undefined,
+      paidAmount: claim.paidAmount
+        ? Number.parseFloat(claim.paidAmount)
+        : undefined,
       paidAt: claim.paidAt,
     };
   }
@@ -987,9 +1006,9 @@ export class DriverBenefitsService implements IDriverBenefitsService {
       brand: station.brand,
       address: station.address,
       city: station.city,
-      latitude: parseFloat(station.latitude),
-      longitude: parseFloat(station.longitude),
-      discountPercent: parseFloat(station.discountPercent),
+      latitude: Number.parseFloat(station.latitude),
+      longitude: Number.parseFloat(station.longitude),
+      discountPercent: Number.parseFloat(station.discountPercent),
       amenities: station.amenities,
       operatingHours: station.operatingHours,
       is24Hours: station.is24Hours,
@@ -999,7 +1018,7 @@ export class DriverBenefitsService implements IDriverBenefitsService {
   private trackEvent(
     driverId: string,
     eventName: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
   ): void {
     this.analyticsService?.track({
       userId: driverId,

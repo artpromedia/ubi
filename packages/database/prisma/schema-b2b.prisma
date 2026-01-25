@@ -69,7 +69,7 @@ enum ApprovalStatus {
   CANCELLED
 }
 
-enum DeliveryStatus {
+enum B2BDeliveryStatus {
   PENDING
   QUOTED
   CONFIRMED
@@ -113,7 +113,7 @@ enum ProofOfDeliveryType {
   BARCODE_SCAN
 }
 
-enum WebhookEvent {
+enum B2BWebhookEvent {
   // Delivery events
   DELIVERY_CREATED
   DELIVERY_QUOTED
@@ -160,7 +160,7 @@ enum InvoiceStatus {
   REFUNDED
 }
 
-enum BillingCycle {
+enum B2BBillingCycle {
   WEEKLY
   BIWEEKLY
   MONTHLY
@@ -283,10 +283,10 @@ model B2BOrganization {
   verifiedBy String?
 
   // Billing
-  billingCycle    BillingCycle @default(MONTHLY)
-  creditLimit     Decimal      @default(0) @db.Decimal(12, 2)
-  currentBalance  Decimal      @default(0) @db.Decimal(12, 2)
-  paymentTermDays Int          @default(30)
+  billingCycle    B2BBillingCycle @default(MONTHLY)
+  creditLimit     Decimal         @default(0) @db.Decimal(12, 2)
+  currentBalance  Decimal         @default(0) @db.Decimal(12, 2)
+  paymentTermDays Int             @default(30)
 
   // Contract
   contractStartDate DateTime?
@@ -613,8 +613,8 @@ model B2BDelivery {
   trackingCode String  @unique
 
   // Status
-  status   DeliveryStatus   @default(PENDING)
-  priority DeliveryPriority @default(STANDARD)
+  status   B2BDeliveryStatus @default(PENDING)
+  priority DeliveryPriority  @default(STANDARD)
 
   // Pickup details
   pickupAddress      String
@@ -733,10 +733,10 @@ model B2BDeliveryStatusHistory {
   deliveryId String
   delivery   B2BDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
 
-  status   DeliveryStatus
+  status   B2BDeliveryStatus
   location Json? // { lat, lng }
   notes    String?
-  metadata Json           @default("{}")
+  metadata Json              @default("{}")
 
   createdAt DateTime @default(now())
 
@@ -864,7 +864,7 @@ model B2BWebhook {
   description String?
 
   // Events to subscribe to
-  events Json @default("[]") // Array of WebhookEvent
+  events Json @default("[]") // Array of B2BWebhookEvent
 
   // Security
   secret String // For signing payloads
@@ -1377,7 +1377,7 @@ model B2BMedicalDelivery {
   handlingInstructions String?
 
   // Status
-  status DeliveryStatus @default(PENDING)
+  status B2BDeliveryStatus @default(PENDING)
 
   // Assignment
   driverId   String?

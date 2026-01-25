@@ -211,7 +211,7 @@ export class RateLimiter {
       const oldestEntry = await redis.zrange(key, 0, 0, "WITHSCORES");
       const resetAt =
         oldestEntry.length >= 2 && oldestEntry[1]
-          ? parseInt(oldestEntry[1], 10) + this.windowSeconds * 1000
+          ? Number.parseInt(oldestEntry[1], 10) + this.windowSeconds * 1000
           : now + this.windowSeconds * 1000;
 
       return {
@@ -306,7 +306,7 @@ export const otpStore = {
   async getFailedAttempts(identifier: string): Promise<number> {
     const key = `otp:attempts:${identifier}`;
     const count = await redis.get(key);
-    return count ? parseInt(count, 10) : 0;
+    return count ? Number.parseInt(count, 10) : 0;
   },
 
   /**

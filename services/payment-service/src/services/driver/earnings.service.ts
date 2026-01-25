@@ -3,7 +3,7 @@
 // Earnings Dashboard Service
 // ===========================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   CreateGoalInput,
   DRIVER_EVENTS,
@@ -28,14 +28,15 @@ import {
 // -----------------------------------------
 
 export class DriverEarningsService implements IDriverEarningsService {
-  private eventEmitter: EventEmitter;
-  private cache: Map<string, { data: unknown; expiry: number }> = new Map();
+  private readonly eventEmitter: EventEmitter;
+  private readonly cache: Map<string, { data: unknown; expiry: number }> =
+    new Map();
   private readonly CACHE_TTL = 60 * 1000; // 1 minute
 
   constructor(
-    private db: any,
-    private redis: any,
-    private analyticsService: any
+    private readonly db: any,
+    private readonly redis: any,
+    private readonly analyticsService: any,
   ) {
     this.eventEmitter = new EventEmitter();
   }
@@ -74,7 +75,7 @@ export class DriverEarningsService implements IDriverEarningsService {
     const comparison = await this.getEarningsComparison(
       driverId,
       netEarnings,
-      trips.length
+      trips.length,
     );
 
     // Get suggestions
@@ -130,7 +131,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   private async getOnlineTime(
     driverId: string,
     start: Date,
-    end: Date
+    end: Date,
   ): Promise<number> {
     // Get online sessions from Redis or database
     const sessions = await this.db.driverSession.findMany({
@@ -179,7 +180,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   async getEarningsHistory(
     driverId: string,
     period: EarningsPeriodType,
-    count: number = 7
+    count: number = 7,
   ): Promise<DriverEarnings[]> {
     const earnings = await this.db.driverEarnings.findMany({
       where: {
@@ -198,7 +199,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   async getTripsForPeriod(
     driverId: string,
     start: Date,
-    end: Date
+    end: Date,
   ): Promise<TripEarning[]> {
     const trips = await this.db.tripEarning.findMany({
       where: {
@@ -223,7 +224,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   private async getEarningsComparison(
     driverId: string,
     todayEarnings: number,
-    _todayTrips: number
+    _todayTrips: number,
   ): Promise<EarningsComparison> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -248,7 +249,7 @@ export class DriverEarningsService implements IDriverEarningsService {
         earnings: yesterdayData.netEarnings,
         percentChange: this.calculatePercentChange(
           todayEarnings,
-          yesterdayData.netEarnings
+          yesterdayData.netEarnings,
         ),
         trips: yesterdayData.tripCount,
       },
@@ -256,7 +257,7 @@ export class DriverEarningsService implements IDriverEarningsService {
         earnings: lastWeekData.netEarnings,
         percentChange: this.calculatePercentChange(
           todayEarnings,
-          lastWeekData.netEarnings
+          lastWeekData.netEarnings,
         ),
         trips: lastWeekData.tripCount,
       },
@@ -264,7 +265,7 @@ export class DriverEarningsService implements IDriverEarningsService {
         earnings: averageData.netEarnings,
         percentChange: this.calculatePercentChange(
           todayEarnings,
-          averageData.netEarnings
+          averageData.netEarnings,
         ),
         trips: averageData.tripCount,
       },
@@ -273,7 +274,7 @@ export class DriverEarningsService implements IDriverEarningsService {
 
   private async getEarningsForDate(
     driverId: string,
-    date: Date
+    date: Date,
   ): Promise<{ netEarnings: number; tripCount: number }> {
     const nextDay = new Date(date);
     nextDay.setDate(nextDay.getDate() + 1);
@@ -300,7 +301,7 @@ export class DriverEarningsService implements IDriverEarningsService {
 
   private async getAverageEarnings(
     driverId: string,
-    days: number
+    days: number,
   ): Promise<{ netEarnings: number; tripCount: number }> {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -476,7 +477,7 @@ export class DriverEarningsService implements IDriverEarningsService {
       tripCount: recentTrips.length,
       isOnline: onlineStatus === "true",
       deliveryEnabled: recentTrips.some((t: any) =>
-        t.tripType.startsWith("DELIVERY")
+        t.tripType.startsWith("DELIVERY"),
       ),
     };
   }
@@ -504,7 +505,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   }
 
   private async getNearbyHighDemand(
-    driverId: string
+    driverId: string,
   ): Promise<NearbyDemand | null> {
     // Get driver's current location
     const location = await this.redis.get(`driver:location:${driverId}`);
@@ -532,16 +533,16 @@ export class DriverEarningsService implements IDriverEarningsService {
         lat,
         lng,
         area.latitude,
-        area.longitude
+        area.longitude,
       );
       if (distance <= 5) {
         // Within 5km
         return {
           areaName: area.areaName || "High demand area",
-          surgeMultiplier: parseFloat(area.surgeMultiplier),
+          surgeMultiplier: Number.parseFloat(area.surgeMultiplier),
           distanceKm: Math.round(distance * 10) / 10,
-          latitude: parseFloat(area.latitude),
-          longitude: parseFloat(area.longitude),
+          latitude: Number.parseFloat(area.latitude),
+          longitude: Number.parseFloat(area.longitude),
         };
       }
     }
@@ -570,9 +571,9 @@ export class DriverEarningsService implements IDriverEarningsService {
     return {
       id: quest.incentive.id,
       name: quest.incentive.name,
-      current: parseFloat(quest.currentValue),
+      current: Number.parseFloat(quest.currentValue),
       target: targetTier.threshold,
-      progress: parseFloat(quest.currentValue) / targetTier.threshold,
+      progress: Number.parseFloat(quest.currentValue) / targetTier.threshold,
       reward: targetTier.rewardValue,
       endsAt: quest.incentive.endTime,
     };
@@ -583,7 +584,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   // -----------------------------------------
 
   async calculateEarningsProjection(
-    driverId: string
+    driverId: string,
   ): Promise<EarningsProjection> {
     // Get historical data
     const thirtyDaysAgo = new Date();
@@ -610,19 +611,19 @@ export class DriverEarningsService implements IDriverEarningsService {
     // Calculate averages
     const avgDailyEarnings =
       historicalEarnings.reduce(
-        (sum: number, e: any) => sum + parseFloat(e.netEarnings),
-        0
+        (sum: number, e: any) => sum + Number.parseFloat(e.netEarnings),
+        0,
       ) / historicalEarnings.length;
 
     const avgOnlineHours =
       historicalEarnings.reduce(
         (sum: number, e: any) => sum + e.onlineMinutes / 60,
-        0
+        0,
       ) / historicalEarnings.length;
 
     // Calculate confidence based on data consistency
     const stdDev = this.calculateStdDev(
-      historicalEarnings.map((e: any) => parseFloat(e.netEarnings))
+      historicalEarnings.map((e: any) => Number.parseFloat(e.netEarnings)),
     );
     const confidence = Math.max(0, Math.min(1, 1 - stdDev / avgDailyEarnings));
 
@@ -703,7 +704,7 @@ export class DriverEarningsService implements IDriverEarningsService {
 
   async aggregateDailyEarnings(
     driverId: string,
-    date: Date
+    date: Date,
   ): Promise<DriverEarnings> {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
@@ -725,7 +726,7 @@ export class DriverEarningsService implements IDriverEarningsService {
     const onlineMinutes = await this.getOnlineTime(
       driverId,
       startOfDay,
-      endOfDay
+      endOfDay,
     );
 
     // Get profile for commission rate
@@ -773,7 +774,7 @@ export class DriverEarningsService implements IDriverEarningsService {
         rideTrips: trips.filter((t: any) => t.tripType.startsWith("RIDE"))
           .length,
         deliveryTrips: trips.filter((t: any) =>
-          t.tripType.startsWith("DELIVERY")
+          t.tripType.startsWith("DELIVERY"),
         ).length,
         onlineMinutes: Math.round(onlineMinutes),
         activeMinutes: this.sum(trips, "duration"),
@@ -799,7 +800,7 @@ export class DriverEarningsService implements IDriverEarningsService {
         rideTrips: trips.filter((t: any) => t.tripType.startsWith("RIDE"))
           .length,
         deliveryTrips: trips.filter((t: any) =>
-          t.tripType.startsWith("DELIVERY")
+          t.tripType.startsWith("DELIVERY"),
         ).length,
         onlineMinutes: Math.round(onlineMinutes),
         activeMinutes: this.sum(trips, "duration"),
@@ -820,7 +821,7 @@ export class DriverEarningsService implements IDriverEarningsService {
 
   private sum(items: any[], field: string): number {
     return items.reduce((total, item) => {
-      const value = parseFloat(item[field]) || 0;
+      const value = Number.parseFloat(item[field]) || 0;
       return total + value;
     }, 0);
   }
@@ -834,7 +835,7 @@ export class DriverEarningsService implements IDriverEarningsService {
     lat1: number,
     lng1: number,
     lat2: number,
-    lng2: number
+    lng2: number,
   ): number {
     const R = 6371; // Earth's radius in km
     const dLat = this.toRad(lat2 - lat1);
@@ -867,19 +868,19 @@ export class DriverEarningsService implements IDriverEarningsService {
       driverId: trip.driverId,
       tripId: trip.tripId,
       tripType: trip.tripType as TripEarningType,
-      baseFare: parseFloat(trip.baseFare),
-      distanceFare: parseFloat(trip.distanceFare),
-      timeFare: parseFloat(trip.timeFare),
-      surgeFare: parseFloat(trip.surgeFare),
-      surgeMultiplier: parseFloat(trip.surgeMultiplier),
-      tollsCollected: parseFloat(trip.tollsCollected),
-      grossFare: parseFloat(trip.grossFare),
-      tip: parseFloat(trip.tip),
-      incentiveBonus: parseFloat(trip.incentiveBonus),
-      commission: parseFloat(trip.commission),
-      commissionRate: parseFloat(trip.commissionRate),
-      netEarnings: parseFloat(trip.netEarnings),
-      distance: parseFloat(trip.distance),
+      baseFare: Number.parseFloat(trip.baseFare),
+      distanceFare: Number.parseFloat(trip.distanceFare),
+      timeFare: Number.parseFloat(trip.timeFare),
+      surgeFare: Number.parseFloat(trip.surgeFare),
+      surgeMultiplier: Number.parseFloat(trip.surgeMultiplier),
+      tollsCollected: Number.parseFloat(trip.tollsCollected),
+      grossFare: Number.parseFloat(trip.grossFare),
+      tip: Number.parseFloat(trip.tip),
+      incentiveBonus: Number.parseFloat(trip.incentiveBonus),
+      commission: Number.parseFloat(trip.commission),
+      commissionRate: Number.parseFloat(trip.commissionRate),
+      netEarnings: Number.parseFloat(trip.netEarnings),
+      distance: Number.parseFloat(trip.distance),
       duration: trip.duration,
       pickupLocation: trip.pickupLocation,
       dropoffLocation: trip.dropoffLocation,
@@ -896,25 +897,25 @@ export class DriverEarningsService implements IDriverEarningsService {
       periodStart: earnings.periodStart,
       periodEnd: earnings.periodEnd,
       periodType: earnings.periodType as EarningsPeriodType,
-      grossEarnings: parseFloat(earnings.grossEarnings),
-      tips: parseFloat(earnings.tips),
-      incentives: parseFloat(earnings.incentives),
-      bonuses: parseFloat(earnings.bonuses || 0),
-      surgeEarnings: parseFloat(earnings.surgeEarnings),
-      commission: parseFloat(earnings.commission),
-      commissionRate: parseFloat(earnings.commissionRate),
-      ceerionDeduction: parseFloat(earnings.ceerionDeduction || 0),
-      otherDeductions: parseFloat(earnings.otherDeductions || 0),
-      netEarnings: parseFloat(earnings.netEarnings),
+      grossEarnings: Number.parseFloat(earnings.grossEarnings),
+      tips: Number.parseFloat(earnings.tips),
+      incentives: Number.parseFloat(earnings.incentives),
+      bonuses: Number.parseFloat(earnings.bonuses || 0),
+      surgeEarnings: Number.parseFloat(earnings.surgeEarnings),
+      commission: Number.parseFloat(earnings.commission),
+      commissionRate: Number.parseFloat(earnings.commissionRate),
+      ceerionDeduction: Number.parseFloat(earnings.ceerionDeduction || 0),
+      otherDeductions: Number.parseFloat(earnings.otherDeductions || 0),
+      netEarnings: Number.parseFloat(earnings.netEarnings),
       tripCount: earnings.tripCount,
       rideTrips: earnings.rideTrips,
       deliveryTrips: earnings.deliveryTrips,
       onlineMinutes: earnings.onlineMinutes,
       activeMinutes: earnings.activeMinutes,
-      totalDistance: parseFloat(earnings.totalDistance),
-      acceptanceRate: parseFloat(earnings.acceptanceRate),
-      completionRate: parseFloat(earnings.completionRate),
-      averageRating: parseFloat(earnings.averageRating),
+      totalDistance: Number.parseFloat(earnings.totalDistance),
+      acceptanceRate: Number.parseFloat(earnings.acceptanceRate),
+      completionRate: Number.parseFloat(earnings.completionRate),
+      averageRating: Number.parseFloat(earnings.averageRating),
       currency: earnings.currency,
     };
   }
@@ -922,11 +923,13 @@ export class DriverEarningsService implements IDriverEarningsService {
   private calculateGoalProgress(goal: any): DriverGoalProgress {
     const progress =
       goal.targetValue > 0
-        ? parseFloat(goal.currentValue) / parseFloat(goal.targetValue)
+        ? Number.parseFloat(goal.currentValue) /
+          Number.parseFloat(goal.targetValue)
         : 0;
     const remaining = Math.max(
       0,
-      parseFloat(goal.targetValue) - parseFloat(goal.currentValue)
+      Number.parseFloat(goal.targetValue) -
+        Number.parseFloat(goal.currentValue),
     );
     const onTrack =
       progress >= this.getExpectedProgress(goal.periodStart, goal.periodEnd);
@@ -936,17 +939,17 @@ export class DriverEarningsService implements IDriverEarningsService {
         id: goal.id,
         driverId: goal.driverId,
         goalType: goal.goalType as DriverGoalType,
-        targetValue: parseFloat(goal.targetValue),
-        currentValue: parseFloat(goal.currentValue),
+        targetValue: Number.parseFloat(goal.targetValue),
+        currentValue: Number.parseFloat(goal.currentValue),
         targetUnit: goal.targetUnit,
         periodStart: goal.periodStart,
         periodEnd: goal.periodEnd,
         achieved: goal.achieved,
         achievedAt: goal.achievedAt,
-        progress: parseFloat(goal.progress),
+        progress: Number.parseFloat(goal.progress),
         rewardType: goal.rewardType,
         rewardValue: goal.rewardValue
-          ? parseFloat(goal.rewardValue)
+          ? Number.parseFloat(goal.rewardValue)
           : undefined,
         rewardClaimed: goal.rewardClaimed,
         isActive: goal.isActive,
@@ -976,7 +979,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   private async setCache(
     key: string,
     data: unknown,
-    ttl: number
+    ttl: number,
   ): Promise<void> {
     this.cache.set(key, { data, expiry: Date.now() + ttl });
   }
@@ -988,7 +991,7 @@ export class DriverEarningsService implements IDriverEarningsService {
   private trackEvent(
     driverId: string,
     eventName: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
   ): void {
     this.analyticsService?.track({
       userId: driverId,
@@ -1011,9 +1014,9 @@ export class DriverEarningsService implements IDriverEarningsService {
 
 export class DriverGoalsService implements IDriverGoalsService {
   constructor(
-    private db: any,
-    private earningsService: DriverEarningsService,
-    private analyticsService: any
+    private readonly db: any,
+    private readonly earningsService: DriverEarningsService,
+    private readonly analyticsService: any,
   ) {}
 
   async getActiveGoals(driverId: string): Promise<DriverGoalProgress[]> {
@@ -1088,7 +1091,7 @@ export class DriverGoalsService implements IDriverGoalsService {
   async updateGoalProgress(
     driverId: string,
     goalId: string,
-    value: number
+    value: number,
   ): Promise<DriverGoalProgress> {
     const goal = await this.db.driverGoal.findFirst({
       where: { id: goalId, driverId },
@@ -1098,10 +1101,10 @@ export class DriverGoalsService implements IDriverGoalsService {
       throw new Error("Goal not found");
     }
 
-    const newValue = parseFloat(goal.currentValue) + value;
+    const newValue = Number.parseFloat(goal.currentValue) + value;
     const progress =
-      goal.targetValue > 0 ? newValue / parseFloat(goal.targetValue) : 0;
-    const achieved = newValue >= parseFloat(goal.targetValue);
+      goal.targetValue > 0 ? newValue / Number.parseFloat(goal.targetValue) : 0;
+    const achieved = newValue >= Number.parseFloat(goal.targetValue);
 
     const updated = await this.db.driverGoal.update({
       where: { id: goalId },
@@ -1120,7 +1123,7 @@ export class DriverGoalsService implements IDriverGoalsService {
         event: DRIVER_EVENTS.GOAL_ACHIEVED,
         properties: {
           goalType: goal.goalType,
-          targetValue: parseFloat(goal.targetValue),
+          targetValue: Number.parseFloat(goal.targetValue),
           achievedValue: newValue,
         },
       });
@@ -1141,7 +1144,7 @@ export class DriverGoalsService implements IDriverGoalsService {
     // Process reward based on type
     if (goal.rewardType === "cash" && goal.rewardValue) {
       // Credit reward to driver wallet
-      await this.creditReward(driverId, parseFloat(goal.rewardValue));
+      await this.creditReward(driverId, Number.parseFloat(goal.rewardValue));
     }
 
     await this.db.driverGoal.update({
@@ -1198,7 +1201,7 @@ export class DriverGoalsService implements IDriverGoalsService {
   // Update goals when trip is completed
   async processTripForGoals(
     driverId: string,
-    trip: TripEarning
+    trip: TripEarning,
   ): Promise<void> {
     const activeGoals = await this.db.driverGoal.findMany({
       where: {
@@ -1233,16 +1236,18 @@ export class DriverGoalsService implements IDriverGoalsService {
 
   private calculateProgress(goal: any): DriverGoalProgress {
     const progress =
-      parseFloat(goal.targetValue) > 0
-        ? parseFloat(goal.currentValue) / parseFloat(goal.targetValue)
+      Number.parseFloat(goal.targetValue) > 0
+        ? Number.parseFloat(goal.currentValue) /
+          Number.parseFloat(goal.targetValue)
         : 0;
     const remaining = Math.max(
       0,
-      parseFloat(goal.targetValue) - parseFloat(goal.currentValue)
+      Number.parseFloat(goal.targetValue) -
+        Number.parseFloat(goal.currentValue),
     );
     const expectedProgress = this.getExpectedProgress(
       goal.periodStart,
-      goal.periodEnd
+      goal.periodEnd,
     );
     const onTrack = progress >= expectedProgress;
 
@@ -1255,28 +1260,23 @@ export class DriverGoalsService implements IDriverGoalsService {
     };
   }
 
-  private getExpectedProgress(start: Date, end: Date): number {
-    const now = Date.now();
-    const total = end.getTime() - start.getTime();
-    const elapsed = now - start.getTime();
-    return Math.min(1, elapsed / total);
-  }
-
   private mapGoal(goal: any): DriverGoal {
     return {
       id: goal.id,
       driverId: goal.driverId,
       goalType: goal.goalType as DriverGoalType,
-      targetValue: parseFloat(goal.targetValue),
-      currentValue: parseFloat(goal.currentValue),
+      targetValue: Number.parseFloat(goal.targetValue),
+      currentValue: Number.parseFloat(goal.currentValue),
       targetUnit: goal.targetUnit,
       periodStart: goal.periodStart,
       periodEnd: goal.periodEnd,
       achieved: goal.achieved,
       achievedAt: goal.achievedAt,
-      progress: parseFloat(goal.progress),
+      progress: Number.parseFloat(goal.progress),
       rewardType: goal.rewardType,
-      rewardValue: goal.rewardValue ? parseFloat(goal.rewardValue) : undefined,
+      rewardValue: goal.rewardValue
+        ? Number.parseFloat(goal.rewardValue)
+        : undefined,
       rewardClaimed: goal.rewardClaimed,
       isActive: goal.isActive,
     };

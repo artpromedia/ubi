@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 
+import '../../../../core/services/image_picker_service.dart';
 import '../bloc/driver_profile_bloc.dart';
 
 /// Vehicle management page showing vehicle details and photo
@@ -13,6 +17,9 @@ class VehiclePage extends StatefulWidget {
 }
 
 class _VehiclePageState extends State<VehiclePage> {
+  final ImagePickerService _imagePickerService = ImagePickerService();
+  bool _isUploadingPhoto = false;
+
   @override
   void initState() {
     super.initState();
@@ -424,6 +431,14 @@ class _VehiclePageState extends State<VehiclePage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Take a clear photo of your vehicle\'s exterior',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+            ),
             const SizedBox(height: 24),
             ListTile(
               leading: Container(
@@ -435,9 +450,10 @@ class _VehiclePageState extends State<VehiclePage> {
                 child: const Icon(Icons.camera_alt, color: Colors.blue),
               ),
               title: const Text('Take Photo'),
+              subtitle: const Text('Use camera to take a new photo'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Implement camera
+                _captureVehiclePhoto(context, fromCamera: true);
               },
             ),
             ListTile(
@@ -450,14 +466,160 @@ class _VehiclePageState extends State<VehiclePage> {
                 child: const Icon(Icons.photo_library, color: Colors.green),
               ),
               title: const Text('Choose from Gallery'),
+              subtitle: const Text('Select an existing photo'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Implement gallery picker
+                _captureVehiclePhoto(context, fromCamera: false);
               },
             ),
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _captureVehiclePhoto(
+    BuildContext context, {
+    required bool fromCamera,
+  }) async {
+    // Show loading indicator
+    setState(() => _isUploadingPhoto = true);
+
+    try {
+      final result = await _imagePickerService.pickVehiclePhoto(
+        fromCamera: fromCamera,
+      );
+
+      if (!mounted) return;
+
+      if (result.permissionDenied) {
+        _showPermissionDeniedDialog(context, fromCamera);
+        return;
+      }
+
+      if (result.isFailure) {
+        if (result.error != 'No image selected') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.error ?? 'Failed to pick image'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Show preview before upload
+      final confirmed = await _showPhotoPreviewDialog(context, result.file!);
+
+      if (confirmed == true && mounted) {
+        // Upload the photo
+        context.read<DriverProfileBloc>().add(VehiclePhotoUpdated(result.file!));
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Vehicle photo updated'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingPhoto = false);
+      }
+    }
+  }
+
+  Future<bool?> _showPhotoPreviewDialog(BuildContext context, File imageFile) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: Image.file(
+                imageFile,
+                height: 250,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text(
+                    'Use this photo?',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Make sure the vehicle is clearly visible and well-lit',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Retake'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Use Photo'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPermissionDeniedDialog(BuildContext context, bool isCamera) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isCamera ? 'Camera Permission' : 'Photo Permission'),
+        content: Text(
+          isCamera
+              ? 'Camera access is required to take photos. Please enable it in your device settings.'
+              : 'Photo library access is required to select images. Please enable it in your device settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
       ),
     );
   }

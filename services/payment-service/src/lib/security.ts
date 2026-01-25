@@ -5,8 +5,15 @@
  * Security middleware and utilities
  */
 
-import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { Context, Next } from "hono";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 import { z } from "zod";
 import { securityLogger } from "./logger.js";
 import { redis } from "./redis.js";
@@ -47,18 +54,24 @@ export const IdempotencyKeySchema = z
 export const rateLimitConfigs = {
   // Standard API endpoints
   default: {
-    windowMs: 60 * 1000, // 1 minute
+    requests: 100,
+    window: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     max: 100,
   },
 
   // Payment operations (stricter)
   payment: {
+    requests: 30,
+    window: 60 * 1000,
     windowMs: 60 * 1000,
     max: 30,
   },
 
   // STK Push (very strict to prevent abuse)
   stkPush: {
+    requests: 5,
+    window: 60 * 1000,
     windowMs: 60 * 1000,
     max: 5,
     perUser: true,
@@ -66,21 +79,44 @@ export const rateLimitConfigs = {
 
   // Webhook endpoints (higher limit)
   webhook: {
+    requests: 1000,
+    window: 60 * 1000,
     windowMs: 60 * 1000,
     max: 1000,
   },
 
   // Admin endpoints
   admin: {
+    requests: 200,
+    window: 60 * 1000,
     windowMs: 60 * 1000,
     max: 200,
   },
 
-  // Auth/login attempts
+  // Auth/login attempts (strict to prevent brute force)
   auth: {
-    windowMs: 15 * 60 * 1000, // 15 minutes
+    requests: 5,
+    window: 15 * 60 * 1000, // 15 minutes
+    windowMs: 15 * 60 * 1000,
     max: 5,
     blockDuration: 60 * 60 * 1000, // 1 hour block after exceeded
+  },
+
+  // Login attempts alias
+  login: {
+    requests: 5,
+    window: 15 * 60 * 1000,
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+  },
+
+  // OTP requests (very strict)
+  otp: {
+    requests: 3,
+    window: 60 * 1000,
+    windowMs: 60 * 1000,
+    max: 3,
+    perUser: true,
   },
 };
 
@@ -178,10 +214,10 @@ export async function sanitizeInput(c: Context, next: Next) {
     try {
       const body = await c.req.json();
 
-      // Remove prototype pollution attempts
-      delete body.__proto__;
-      delete body.constructor;
-      delete body.prototype;
+      // Remove prototype pollution attempts using Reflect.deleteProperty
+      Reflect.deleteProperty(body, "__proto__");
+      Reflect.deleteProperty(body, "constructor");
+      Reflect.deleteProperty(body, "prototype");
 
       // Sanitize string fields
       const sanitized = sanitizeObject(body);
@@ -202,9 +238,9 @@ function sanitizeObject(obj: unknown): unknown {
   if (typeof obj === "string") {
     // Remove script tags and other XSS vectors
     return obj
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-      .replace(/javascript:/gi, "")
-      .replace(/on\w+=/gi, "")
+      .replaceAll(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replaceAll(/javascript:/gi, "")
+      .replaceAll(/on\w+=/gi, "")
       .trim();
   }
 
@@ -263,11 +299,11 @@ export async function preventReplay(
   const nonce = c.req.header("X-Nonce");
 
   if (timestamp) {
-    const requestTime = parseInt(timestamp);
+    const requestTime = Number.parseInt(timestamp);
     const now = Date.now();
     const maxAge = 5 * 60 * 1000; // 5 minutes
 
-    if (isNaN(requestTime) || Math.abs(now - requestTime) > maxAge) {
+    if (Number.isNaN(requestTime) || Math.abs(now - requestTime) > maxAge) {
       return c.json(
         {
           success: false,
@@ -308,53 +344,249 @@ export async function preventReplay(
 }
 
 /**
+ * Comprehensive list of sensitive field patterns for PII/financial data masking
+ */
+const SENSITIVE_FIELD_PATTERNS: RegExp[] = [
+  // Financial data
+  /^(account|card|bank).*number$/i,
+  /^(cvv|cvc|cvv2|cvc2)$/i,
+  /^(pin|otp|verification.?code)$/i,
+  /^(routing|iban|swift|bic).*$/i,
+  /^mpesa.*pin$/i,
+  /^(momo|mobile.?money).*secret$/i,
+
+  // Authentication tokens
+  /^(password|secret|key|token)$/i,
+  /^(access|refresh|bearer|auth).?token$/i,
+  /^api.?key$/i,
+  /^(session|csrf).?token$/i,
+  /^(private|secret).?key$/i,
+
+  // PII - African context included
+  /^(national|voter|passport|bvn|nin).?(id|number)?$/i,
+  /^(drivers?.?license|id.?card|kra.?pin).*$/i,
+  /^(ssn|social.?security)$/i,
+  /^(date.?of.?birth|dob|birth.?date)$/i,
+
+  // Contact info
+  /^(phone|mobile|cell|telephone).*$/i,
+  /^(email|e.?mail).*$/i,
+  /^(address|street|postal|zip).*$/i,
+
+  // M-Pesa specific
+  /^(initiator|security).?credential$/i,
+  /^(consumer|api).?(key|secret)$/i,
+  /^passkey$/i,
+];
+
+/**
+ * Check if a field name matches sensitive patterns
+ */
+function isSensitiveField(fieldName: string): boolean {
+  return SENSITIVE_FIELD_PATTERNS.some((pattern) => pattern.test(fieldName));
+}
+
+/**
+ * Mask phone number - show country code + last 3
+ */
+function maskPhoneNumber(value: string): string | null {
+  const cleanPhone = value.replaceAll(/\D/g, "");
+  if (cleanPhone.length >= 10) {
+    return (
+      cleanPhone.slice(0, 4) +
+      "*".repeat(cleanPhone.length - 7) +
+      cleanPhone.slice(-3)
+    );
+  }
+  return null;
+}
+
+/**
+ * Mask email - show first char + domain
+ */
+function maskEmail(value: string): string | null {
+  const [local, domain] = value.split("@");
+  if (local && domain) {
+    return local[0] + "***@" + domain;
+  }
+  return null;
+}
+
+/**
+ * Mask with last 4 visible
+ */
+function maskShowLast4(value: string): string {
+  if (value.length > 4) {
+    return "*".repeat(value.length - 4) + value.slice(-4);
+  }
+  return "****";
+}
+
+/**
+ * Mask token - show first 8 chars for debugging
+ */
+function maskToken(value: string): string {
+  return value.slice(0, 8) + "*".repeat(value.length - 8);
+}
+
+/**
+ * Mask a string value based on its type
+ */
+function maskValue(value: string, fieldName: string): string {
+  const lowerField = fieldName.toLowerCase();
+
+  // Full masking for highly sensitive fields
+  if (
+    /(password|secret|pin|cvv|cvc|otp|key|credential|passkey)/.test(lowerField)
+  ) {
+    return "********";
+  }
+
+  // Phone number masking
+  if (/(phone|mobile|cell)/.test(lowerField) && value.length >= 10) {
+    const masked = maskPhoneNumber(value);
+    if (masked) return masked;
+  }
+
+  // Email masking
+  if (/(email)/.test(lowerField) && value.includes("@")) {
+    const masked = maskEmail(value);
+    if (masked) return masked;
+  }
+
+  // Card/account number masking - show last 4
+  if (/(card|account|iban).*number/.test(lowerField)) {
+    return maskShowLast4(value);
+  }
+
+  // Token masking - show first 8 chars for debugging
+  if (/(token|key|secret)/.test(lowerField) && value.length > 12) {
+    return maskToken(value);
+  }
+
+  // National ID masking (BVN, NIN, KRA PIN)
+  if (/(bvn|nin|kra|national.*id|passport)/.test(lowerField)) {
+    return maskShowLast4(value);
+  }
+
+  // Default masking
+  return maskShowLast4(value);
+}
+
+/**
+ * Recursively mask sensitive data in an object
+ */
+function maskObject(
+  obj: Record<string, unknown>,
+  depth: number = 0,
+): Record<string, unknown> {
+  // Prevent infinite recursion
+  if (depth > 10) return obj;
+
+  const masked: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) {
+      masked[key] = value;
+      continue;
+    }
+
+    // Check if this field should be masked
+    if (isSensitiveField(key) && typeof value === "string") {
+      masked[key] = maskValue(value, key);
+      continue;
+    }
+
+    // Recursively process nested objects
+    if (
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      !(value instanceof Date)
+    ) {
+      masked[key] = maskObject(value as Record<string, unknown>, depth + 1);
+      continue;
+    }
+
+    // Process arrays
+    if (Array.isArray(value)) {
+      masked[key] = value.map((item) => {
+        if (
+          typeof item === "object" &&
+          item !== null &&
+          !(item instanceof Date)
+        ) {
+          return maskObject(item as Record<string, unknown>, depth + 1);
+        }
+        return item;
+      });
+      continue;
+    }
+
+    // Pass through non-sensitive values
+    masked[key] = value;
+  }
+
+  return masked;
+}
+
+/**
  * Middleware to mask sensitive data in responses
+ * Implements comprehensive PII masking for GDPR/POPIA compliance
  */
 export async function maskSensitiveData(c: Context, next: Next) {
   await next();
 
   // Get response body
   const body = c.res.body;
-  if (body && typeof body === "object" && !(body instanceof ReadableStream)) {
-    // maskObject would be used to replace response body
-    // Currently just a placeholder for future implementation
-    maskObject(body as Record<string, unknown>);
+
+  if (!body || body instanceof ReadableStream) {
+    return;
+  }
+
+  // Only mask JSON responses
+  const contentType = c.res.headers.get("content-type");
+  if (!contentType?.includes("application/json")) {
+    return;
+  }
+
+  try {
+    if (typeof body === "object") {
+      const maskedBody = maskObject(body as Record<string, unknown>);
+
+      // Create new response with masked body
+      c.res = new Response(JSON.stringify(maskedBody), {
+        status: c.res.status,
+        headers: c.res.headers,
+      });
+    }
+  } catch (error) {
+    // Log error but don't break response
+    securityLogger.warn(
+      { err: error },
+      "Failed to mask sensitive data in response",
+    );
   }
 }
 
-function maskObject(obj: Record<string, unknown>): Record<string, unknown> {
-  const sensitiveFields = [
-    "accountNumber",
-    "cardNumber",
-    "cvv",
-    "pin",
-    "password",
-    "secret",
-    "accessToken",
-    "refreshToken",
-  ];
+/**
+ * Utility to mask data for logging (synchronous)
+ */
+export function maskForLogging(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  return maskObject(data);
+}
 
-  const masked = { ...obj };
-
-  for (const field of sensitiveFields) {
-    if (masked[field] && typeof masked[field] === "string") {
-      const value = masked[field] as string;
-      if (value.length > 4) {
-        masked[field] = "*".repeat(value.length - 4) + value.slice(-4);
-      } else {
-        masked[field] = "****";
-      }
-    }
-  }
-
-  return masked;
+/**
+ * Utility to check if data contains sensitive fields
+ */
+export function containsSensitiveData(obj: Record<string, unknown>): boolean {
+  return Object.keys(obj).some((key) => isSensitiveField(key));
 }
 
 // ===========================================
 // ENCRYPTION UTILITIES
 // ===========================================
-
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
 const ENCRYPTION_KEY =
   process.env.ENCRYPTION_KEY || randomBytes(32).toString("hex");
@@ -540,6 +772,10 @@ export const security = {
     maskCardNumber,
   },
   headers: securityHeadersConfig,
+  masking: {
+    maskForLogging,
+    containsSensitiveData,
+  },
 };
 
 export default security;

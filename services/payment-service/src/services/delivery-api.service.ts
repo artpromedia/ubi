@@ -9,9 +9,9 @@
  * - Driver assignment
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
 import { nanoid } from "nanoid";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { logger } from "../lib/logger";
 import type {
   BatchDeliveryRequest,
@@ -55,11 +55,11 @@ const DEFAULT_PRICING_CONFIG: DeliveryPricingConfig = {
     SCHEDULED: 700,
   },
   sizeMultipliers: {
-    ENVELOPE: 1.0,
+    ENVELOPE: 1,
     SMALL: 1.2,
     MEDIUM: 1.5,
-    LARGE: 2.0,
-    XLARGE: 3.0,
+    LARGE: 2,
+    XLARGE: 3,
     CUSTOM: 2.5,
   },
   perKmRate: 50,
@@ -130,15 +130,41 @@ interface DeliveryFilters {
 // =============================================================================
 
 export class DeliveryApiService extends EventEmitter {
-  private deliveries: Map<string, Delivery> = new Map();
-  private statusHistory: Map<string, DeliveryStatusHistory[]> = new Map();
-  private batches: Map<string, DeliveryBatch> = new Map();
-  private quotes: Map<string, DeliveryQuote> = new Map();
-  private pricingConfigs: Map<string, DeliveryPricingConfig> = new Map();
+  private readonly deliveries: Map<string, Delivery> = new Map();
+  private readonly statusHistory: Map<string, DeliveryStatusHistory[]> =
+    new Map();
+  private readonly batches: Map<string, DeliveryBatch> = new Map();
+  private readonly quotes: Map<string, DeliveryQuote> = new Map();
+  private readonly pricingConfigs: Map<string, DeliveryPricingConfig> =
+    new Map();
 
   constructor() {
     super();
     this.setMaxListeners(100);
+  }
+
+  // ===========================================================================
+  // HELPER METHODS
+  // ===========================================================================
+
+  private calculatePriorityFee(priority: DeliveryPriority): number {
+    switch (priority) {
+      case "INSTANT":
+        return 500;
+      case "EXPRESS":
+        return 300;
+      default:
+        return 0;
+    }
+  }
+
+  private determineBatchStatus(
+    batch: DeliveryBatch,
+  ): "completed" | "partial_failure" {
+    if (batch.failedDeliveries === 0) {
+      return "completed";
+    }
+    return "partial_failure";
   }
 
   // ===========================================================================
@@ -192,8 +218,7 @@ export class DeliveryApiService extends EventEmitter {
       breakdown: {
         basePrice: Math.round(basePrice * sizeMultiplier),
         distancePrice: Math.round(distancePrice),
-        priorityFee:
-          priority === "INSTANT" ? 500 : priority === "EXPRESS" ? 300 : 0,
+        priorityFee: this.calculatePriorityFee(priority),
         insuranceFee: 0,
         tax: Math.round(tax),
       },
@@ -292,8 +317,8 @@ export class DeliveryApiService extends EventEmitter {
         instructions: request.dropoff.instructions,
       },
       recipient: {
-        name: request.recipient?.name || request.dropoff.contact_name!,
-        phone: request.recipient?.phone || request.dropoff.contact_phone!,
+        name: request.recipient?.name || request.dropoff.contact_name || "",
+        phone: request.recipient?.phone || request.dropoff.contact_phone || "",
         email: request.recipient?.email,
       },
       package: {
@@ -395,12 +420,7 @@ export class DeliveryApiService extends EventEmitter {
       }
     }
 
-    batch.status =
-      batch.failedDeliveries === 0
-        ? "completed"
-        : batch.successfulDeliveries === 0
-          ? "partial_failure"
-          : "partial_failure";
+    batch.status = this.determineBatchStatus(batch);
     batch.completedAt = new Date();
 
     this.batches.set(batch.id, batch);
@@ -758,19 +778,17 @@ export class DeliveryApiService extends EventEmitter {
    * Get active deliveries for a driver
    */
   async getDriverActiveDeliveries(driverId: string): Promise<Delivery[]> {
-    const activeStatuses: DeliveryStatus[] = [
+    const activeStatuses = new Set<DeliveryStatus>([
       "DRIVER_ASSIGNED",
       "PICKUP_EN_ROUTE",
       "AT_PICKUP",
       "PICKED_UP",
       "IN_TRANSIT",
       "AT_DROPOFF",
-    ];
+    ]);
 
     return Array.from(this.deliveries.values())
-      .filter(
-        (d) => d.driver?.id === driverId && activeStatuses.includes(d.status),
-      )
+      .filter((d) => d.driver?.id === driverId && activeStatuses.has(d.status))
       .sort(
         (a, b) =>
           (a.timestamps.driverAssignedAt?.getTime() || 0) -
@@ -992,12 +1010,86 @@ export class DeliveryApiService extends EventEmitter {
     return `${prefix}${timestamp}${random}`;
   }
 
-  private async geocodeAddress(_address: string): Promise<Coordinates> {
-    // Simplified geocoding - in production, use actual geocoding service
-    // Return placeholder coordinates for Lagos
+  /**
+   * Geocode an address to coordinates
+   * Uses OpenStreetMap Nominatim API with African city fallbacks
+   *
+   * @param address - The address string to geocode
+   * @returns Coordinates with lat/lng
+   */
+  private async geocodeAddress(address: string): Promise<Coordinates> {
+    // African city coordinate fallbacks for common locations
+    const CITY_COORDINATES: Record<string, Coordinates> = {
+      // Nigeria
+      lagos: { lat: 6.5244, lng: 3.3792 },
+      abuja: { lat: 9.0765, lng: 7.3986 },
+      kano: { lat: 12.0022, lng: 8.5919 },
+      ibadan: { lat: 7.3775, lng: 3.947 },
+      "port harcourt": { lat: 4.8156, lng: 7.0498 },
+      // Kenya
+      nairobi: { lat: -1.2921, lng: 36.8219 },
+      mombasa: { lat: -4.0435, lng: 39.6682 },
+      kisumu: { lat: -0.1022, lng: 34.7617 },
+      nakuru: { lat: -0.3031, lng: 36.08 },
+      // Ghana
+      accra: { lat: 5.6037, lng: -0.187 },
+      kumasi: { lat: 6.6666, lng: -1.6163 },
+      // South Africa
+      johannesburg: { lat: -26.2041, lng: 28.0473 },
+      "cape town": { lat: -33.9249, lng: 18.4241 },
+      durban: { lat: -29.8587, lng: 31.0218 },
+      // Uganda
+      kampala: { lat: 0.3476, lng: 32.5825 },
+      // Tanzania
+      "dar es salaam": { lat: -6.7924, lng: 39.2083 },
+    };
+
+    const normalizedAddress = address.toLowerCase().trim();
+
+    // Check for known city names in the address
+    for (const [city, coords] of Object.entries(CITY_COORDINATES)) {
+      if (normalizedAddress.includes(city)) {
+        // Add small random offset for unique addresses within city
+        return {
+          lat: coords.lat + (Math.random() - 0.5) * 0.02, // ~1km variance
+          lng: coords.lng + (Math.random() - 0.5) * 0.02,
+        };
+      }
+    }
+
+    // Try OpenStreetMap Nominatim API for unknown addresses
+    try {
+      const encodedAddress = encodeURIComponent(address);
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodedAddress}&format=json&limit=1&countrycodes=ng,ke,gh,za,ug,tz`,
+        {
+          headers: {
+            "User-Agent": "UBI-Delivery-Service/1.0",
+            "Accept-Language": "en",
+          },
+        },
+      );
+
+      if (response.ok) {
+        const results = await response.json();
+        if (results.length > 0 && results[0].lat && results[0].lon) {
+          return {
+            lat: Number.parseFloat(results[0].lat),
+            lng: Number.parseFloat(results[0].lon),
+          };
+        }
+      }
+    } catch (error) {
+      // Log but don't fail - fall back to default
+      console.warn(`Geocoding failed for "${address}":`, error);
+    }
+
+    // Default fallback: Lagos, Nigeria (most common market)
+    // Log for monitoring so we can improve coverage
+    console.info(`Using default coordinates for unknown address: "${address}"`);
     return {
-      lat: 6.5244 + (Math.random() - 0.5) * 0.1,
-      lng: 3.3792 + (Math.random() - 0.5) * 0.1,
+      lat: 6.5244 + (Math.random() - 0.5) * 0.05,
+      lng: 3.3792 + (Math.random() - 0.5) * 0.05,
     };
   }
 

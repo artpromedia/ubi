@@ -9,7 +9,7 @@
  * - Billing
  */
 
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 // =============================================================================
 // TYPES
@@ -908,7 +908,7 @@ export class WebhookClient {
         return false;
       }
 
-      const timestamp = parseInt(timestampPart.substring(2), 10);
+      const timestamp = Number.parseInt(timestampPart.substring(2), 10);
       const expectedSignature = signaturePart.substring(3);
 
       // Check timestamp tolerance

@@ -300,7 +300,7 @@ StyleDictionary.registerFormat({
           }
         } else if (token.$type === "dimension" || token.type === "dimension") {
           // Convert to double
-          const numValue = parseFloat(value);
+          const numValue = Number.parseFloat(value);
           output += `  static const double ${camelName} = ${numValue};\n`;
         } else if (
           token.$type === "fontWeight" ||

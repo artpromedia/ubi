@@ -424,7 +424,7 @@ describe("ReconciliationService", () => {
       );
 
       expect(result.status).toBe("matched");
-      expect(parseFloat(result.difference)).toBe(0);
+      expect(Number.parseFloat(result.difference)).toBe(0);
     });
 
     it("should flag significant balance discrepancy", async () => {

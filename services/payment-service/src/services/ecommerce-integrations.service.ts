@@ -9,8 +9,8 @@
  * - Custom API integrations
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import type {
   CreateDeliveryRequest,
@@ -1000,7 +1000,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
 
     // Check minimum order value
     if (filters.minOrderValue) {
-      const orderValue = parseFloat(
+      const orderValue = Number.parseFloat(
         orderData.total_price || orderData.total || "0"
       );
       if (orderValue < filters.minOrderValue) return false;
@@ -1071,7 +1071,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
         description: orderData.line_items
           .map((i) => `${i.quantity}x ${i.title}`)
           .join(", "),
-        value: parseFloat(orderData.total_price),
+        value: Number.parseFloat(orderData.total_price),
       },
       options: {
         priority: integration.settings.defaultPriority,
@@ -1121,7 +1121,7 @@ export class EcommerceIntegrationsService extends EventEmitter {
         description: orderData.line_items
           .map((i) => `${i.quantity}x ${i.name}`)
           .join(", "),
-        value: parseFloat(orderData.total),
+        value: Number.parseFloat(orderData.total),
       },
       options: {
         priority: integration.settings.defaultPriority,

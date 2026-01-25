@@ -5,7 +5,7 @@
 // Target: 50M+ users via USSD, <3 second response times
 // =============================================================================
 
-import { EventEmitter } from "events";
+import { logger } from "@/lib/logger";
 import {
   GeoLocation,
   IUSSDService,
@@ -14,6 +14,30 @@ import {
   USSDSession,
   USSDState,
 } from "@/types/offline.types";
+import { prisma } from "@ubi/database";
+import { Redis } from "ioredis";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
+
+// Redis client for session management and caching
+const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+
+// Phone number normalization
+function normalizePhone(phone: string): string {
+  const cleaned = phone.replaceAll(/[^\d+]/g, "");
+  const patterns: Record<string, { pattern: RegExp; code: string }> = {
+    KE: { pattern: /^(?:\+?254|0)?([17]\d{8})$/, code: "254" },
+    NG: { pattern: /^(?:\+?234|0)?([789][01]\d{8})$/, code: "234" },
+    GH: { pattern: /^(?:\+?233|0)?([235]\d{8})$/, code: "233" },
+    ZA: { pattern: /^(?:\+?27|0)?([6-8]\d{8})$/, code: "27" },
+  };
+
+  for (const { pattern, code } of Object.values(patterns)) {
+    const match = pattern.exec(cleaned);
+    if (match) return `+${code}${match[1]}`;
+  }
+  return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
+}
 
 // =============================================================================
 // USSD CONSTANTS
@@ -28,10 +52,10 @@ const MAX_MESSAGE_LENGTH = 182; // USSD max characters
 // =============================================================================
 
 export class USSDService implements IUSSDService {
-  private eventEmitter: EventEmitter;
+  private readonly eventEmitter: EventEmitter;
 
   // Session storage (Redis in production)
-  private sessions: Map<string, USSDSession> = new Map();
+  private readonly sessions: Map<string, USSDSession> = new Map();
 
   // Menu definitions
   // private _menus: Map<string, USSDMenu> = new Map();
@@ -52,13 +76,13 @@ export class USSDService implements IUSSDService {
       // Get or create session
       let session = await this.getSession(request.sessionId);
 
-      if (!session) {
-        session = await this.createSession(request);
-      } else {
+      if (session) {
         // Update session with new input
         session.lastInput = request.input;
         session.inputHistory.push(request.input);
         session.updatedAt = new Date();
+      } else {
+        session = await this.createSession(request);
       }
 
       // Process input based on current state
@@ -97,7 +121,7 @@ export class USSDService implements IUSSDService {
 
   private async processInput(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     // Handle back/cancel commands globally
     if (input === "0" || input.toLowerCase() === "back") {
@@ -165,7 +189,7 @@ export class USSDService implements IUSSDService {
 
   private async handleMainMenu(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -188,7 +212,8 @@ export class USSDService implements IUSSDService {
       case "2": // Track My Ride
         return this.showActiveTrip(session);
 
-      case "3": // My Wallet
+      case "3": {
+        // My Wallet
         session.state = USSDState.WALLET_MENU;
         session.menuPath.push("WALLET");
         const balance = await this.getWalletBalance(session.userId);
@@ -207,6 +232,7 @@ export class USSDService implements IUSSDService {
           ]),
           continueSession: true,
         };
+      }
 
       case "4": // Recent Trips
         return this.showRecentTrips(session);
@@ -249,13 +275,14 @@ export class USSDService implements IUSSDService {
 
   private async handleBookingMethod(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
     session.bookingData = session.bookingData || {};
 
     switch (input) {
-      case "1": // Current Location
+      case "1": {
+        // Current Location
         // Use last known GPS location or cell tower location
         const location = await this.getCurrentLocation(session.phoneNumber);
         if (location) {
@@ -286,6 +313,7 @@ export class USSDService implements IUSSDService {
             continueSession: true,
           };
         }
+      }
 
       case "2": // Enter Pickup
         session.state = USSDState.ENTER_PICKUP;
@@ -309,7 +337,7 @@ export class USSDService implements IUSSDService {
 
   private async handlePickupEntry(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -348,7 +376,7 @@ export class USSDService implements IUSSDService {
 
   private async handleDestinationEntry(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -359,7 +387,7 @@ export class USSDService implements IUSSDService {
         return this.setDestinationAndShowEstimate(
           session,
           home.coords,
-          home.address
+          home.address,
         );
       }
     }
@@ -369,7 +397,7 @@ export class USSDService implements IUSSDService {
         return this.setDestinationAndShowEstimate(
           session,
           work.coords,
-          work.address
+          work.address,
         );
       }
     }
@@ -396,14 +424,14 @@ export class USSDService implements IUSSDService {
     return this.setDestinationAndShowEstimate(
       session,
       location.coords,
-      location.address
+      location.address,
     );
   }
 
   private async setDestinationAndShowEstimate(
     session: USSDSession,
     coords: GeoLocation,
-    address: string
+    address: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
     session.bookingData = session.bookingData || {};
@@ -413,7 +441,7 @@ export class USSDService implements IUSSDService {
     // Get fare estimate
     const estimate = await this.getFareEstimate(
       session.bookingData.pickup!,
-      session.bookingData.dropoff
+      session.bookingData.dropoff,
     );
 
     session.bookingData.fareEstimate = estimate.fare;
@@ -448,7 +476,7 @@ export class USSDService implements IUSSDService {
 
   private async handleBookingConfirmation(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -480,6 +508,7 @@ export class USSDService implements IUSSDService {
           continueSession: false,
         };
       } catch (error) {
+        console.error("Booking confirmation failed:", error);
         return {
           message: this.formatMenu([
             this.t("error.no_drivers", lang),
@@ -504,7 +533,7 @@ export class USSDService implements IUSSDService {
 
   private async handleWalletMenu(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -547,12 +576,12 @@ export class USSDService implements IUSSDService {
 
   private async handleWalletTopup(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
-    const amount = parseInt(input, 10);
+    const amount = Number.parseInt(input, 10);
 
-    if (isNaN(amount) || amount < 100) {
+    if (Number.isNaN(amount) || amount < 100) {
       return {
         message: this.formatMenu([
           this.t("error.invalid_amount", lang),
@@ -582,7 +611,7 @@ export class USSDService implements IUSSDService {
 
   private async handleWalletSend(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
     session.walletData = session.walletData || {};
@@ -616,8 +645,8 @@ export class USSDService implements IUSSDService {
 
     // Second input: amount
     if (!session.walletData.amount) {
-      const amount = parseInt(input, 10);
-      if (isNaN(amount) || amount < 50) {
+      const amount = Number.parseInt(input, 10);
+      if (Number.isNaN(amount) || amount < 50) {
         return {
           message: this.formatMenu([
             this.t("error.invalid_amount", lang),
@@ -669,7 +698,7 @@ export class USSDService implements IUSSDService {
 
   private async handlePinEntry(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const lang = session.language;
 
@@ -693,7 +722,7 @@ export class USSDService implements IUSSDService {
       await this.processWalletTransfer(
         session.userId!,
         session.walletData.recipientPhone!,
-        session.walletData.amount!
+        session.walletData.amount!,
       );
 
       return {
@@ -765,7 +794,7 @@ export class USSDService implements IUSSDService {
           "2. " + this.t("option.call_driver", lang),
           "3. " + this.t("option.cancel_trip", lang),
           "0. " + this.t("option.back", lang),
-        ].filter(Boolean)
+        ].filter(Boolean),
       ),
       continueSession: true,
     };
@@ -773,13 +802,14 @@ export class USSDService implements IUSSDService {
 
   private async handleTrackRide(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     switch (input) {
       case "1": // Refresh
         return this.showActiveTrip(session);
 
-      case "2": // Call Driver
+      case "2": {
+        // Call Driver
         const trip = await this.getTrip(session.bookingData?.tripId);
         if (trip?.driverPhone) {
           // Send callback request or show number
@@ -791,6 +821,7 @@ export class USSDService implements IUSSDService {
           };
         }
         return this.showActiveTrip(session);
+      }
 
       case "3": // Cancel
         return this.confirmCancelTrip(session);
@@ -818,7 +849,7 @@ export class USSDService implements IUSSDService {
     session.state = USSDState.RECENT_TRIPS;
     const tripLines = trips.map(
       (trip, i) =>
-        `${i + 1}. ${this.truncateAddress(trip.destination, 20)} - ${this.formatCurrency(trip.fare, lang)}`
+        `${i + 1}. ${this.truncateAddress(trip.destination, 20)} - ${this.formatCurrency(trip.fare, lang)}`,
     );
 
     return {
@@ -835,9 +866,9 @@ export class USSDService implements IUSSDService {
 
   private async handleRecentTrips(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
-    const index = parseInt(input, 10) - 1;
+    const index = Number.parseInt(input, 10) - 1;
     const trips = await this.getRecentTrips(session.userId, 5);
 
     if (index >= 0 && index < trips.length) {
@@ -853,7 +884,7 @@ export class USSDService implements IUSSDService {
       return this.setDestinationAndShowEstimate(
         session,
         trip.dropoff,
-        trip.dropoffAddress
+        trip.dropoffAddress,
       );
     }
 
@@ -866,7 +897,7 @@ export class USSDService implements IUSSDService {
 
   private async handleLanguageSelect(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
     const languages: Record<string, string> = {
       "1": "en",
@@ -896,7 +927,7 @@ export class USSDService implements IUSSDService {
 
   private async showSavedPlaces(
     session: USSDSession,
-    forType: "pickup" | "dropoff"
+    forType: "pickup" | "dropoff",
   ): Promise<USSDResponse> {
     const lang = session.language;
     const places = await this.getSavedPlaces(session.userId);
@@ -917,7 +948,7 @@ export class USSDService implements IUSSDService {
 
     const placeLines = places.map(
       (place, i) =>
-        `${i + 1}. ${place.name} - ${this.truncateAddress(place.address, 20)}`
+        `${i + 1}. ${place.name} - ${this.truncateAddress(place.address, 20)}`,
     );
 
     return {
@@ -934,9 +965,9 @@ export class USSDService implements IUSSDService {
 
   private async handleSavedPlaces(
     session: USSDSession,
-    input: string
+    input: string,
   ): Promise<USSDResponse> {
-    const index = parseInt(input, 10) - 1;
+    const index = Number.parseInt(input, 10) - 1;
     const places = await this.getSavedPlaces(session.userId);
     const forType = session.tempData?.forType as "pickup" | "dropoff";
 
@@ -964,7 +995,7 @@ export class USSDService implements IUSSDService {
         return this.setDestinationAndShowEstimate(
           session,
           place.coords,
-          place.address
+          place.address,
         );
       }
     }
@@ -978,7 +1009,7 @@ export class USSDService implements IUSSDService {
 
   private async handleHelp(
     session: USSDSession,
-    _input: string
+    _input: string,
   ): Promise<USSDResponse> {
     return this.goBack(session);
   }
@@ -1147,7 +1178,7 @@ export class USSDService implements IUSSDService {
 
   private normalizePhoneNumber(phone: string): string {
     // Remove all non-digits
-    const digits = phone.replace(/\D/g, "");
+    const digits = phone.replaceAll(/\D/g, "");
 
     // Handle different formats
     if (digits.startsWith("0")) {
@@ -1168,7 +1199,9 @@ export class USSDService implements IUSSDService {
   }
 
   private generateId(): string {
-    return `ussd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `ussd_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 2 + 9)}`;
   }
 
   // ===========================================================================
@@ -1178,7 +1211,7 @@ export class USSDService implements IUSSDService {
   private t(
     key: string,
     lang: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
   ): string {
     const translations = this.getTranslations(lang);
     let text = translations[key] || key;
@@ -1319,117 +1352,639 @@ export class USSDService implements IUSSDService {
   }
 
   // ===========================================================================
-  // EXTERNAL SERVICE STUBS
+  // EXTERNAL SERVICE IMPLEMENTATIONS
   // ===========================================================================
 
-  private async getUserByPhone(
-    _phone: string
-  ): Promise<{ id: string; preferredLanguage: string } | null> {
-    // Query user service
-    return { id: "user_123", preferredLanguage: "en" };
+  private async getUserByPhone(phone: string): Promise<{
+    id: string;
+    preferredLanguage: string;
+    riderId?: string;
+    walletId?: string;
+    currency?: string;
+  } | null> {
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const user = await prisma.user.findUnique({
+        where: { phone: normalizedPhone },
+        include: {
+          rider: true,
+          walletAccounts: {
+            where: { accountType: "USER_WALLET" },
+          },
+        },
+      });
+
+      if (!user) return null;
+
+      return {
+        id: user.id,
+        preferredLanguage: user.language,
+        riderId: user.rider?.id,
+        walletId: user.walletAccounts?.[0]?.id,
+        currency: user.currency,
+      };
+    } catch (error) {
+      logger.error("USSD: Error fetching user by phone", { phone, error });
+      return null;
+    }
   }
 
   private async getCurrentLocation(
-    _phone: string
+    phone: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
-    // Get from cell tower location or last GPS
-    return null;
+    try {
+      const cacheKey = `location:cell:${normalizePhone(phone)}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const user = await this.getUserByPhone(phone);
+      if (!user?.riderId) return null;
+
+      const lastRide = await prisma.ride.findFirst({
+        where: { riderId: user.riderId },
+        orderBy: { requestedAt: "desc" },
+      });
+
+      if (
+        lastRide &&
+        lastRide.requestedAt > new Date(Date.now() - 24 * 60 * 60 * 1000)
+      ) {
+        return {
+          coords: {
+            lat: lastRide.pickupLatitude,
+            lng: lastRide.pickupLongitude,
+          },
+          address: lastRide.pickupAddress,
+        };
+      }
+      return null;
+    } catch (error) {
+      logger.error("USSD: Error getting current location", { phone, error });
+      return null;
+    }
   }
 
   private async geocodeAddress(
-    address: string
+    address: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
-    // Call geocoding service
-    return {
-      coords: { lat: -1.2921, lng: 36.8219 },
-      address: address,
-    };
+    try {
+      const cacheKey = `geocode:${address.toLowerCase().trim()}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const landmarks: Record<
+        string,
+        { lat: number; lng: number; address: string }
+      > = {
+        westlands: {
+          lat: -1.2673,
+          lng: 36.8028,
+          address: "Westlands, Nairobi",
+        },
+        cbd: { lat: -1.2864, lng: 36.8172, address: "CBD, Nairobi" },
+        jkia: { lat: -1.3192, lng: 36.9275, address: "JKIA Airport" },
+        vi: { lat: 6.4281, lng: 3.4219, address: "Victoria Island, Lagos" },
+        ikeja: { lat: 6.6018, lng: 3.3515, address: "Ikeja, Lagos" },
+        lekki: { lat: 6.4698, lng: 3.5852, address: "Lekki, Lagos" },
+      };
+
+      const normalizedAddress = address.toLowerCase().trim();
+      for (const [landmark, location] of Object.entries(landmarks)) {
+        if (normalizedAddress.includes(landmark)) {
+          const result = {
+            coords: { lat: location.lat, lng: location.lng },
+            address: location.address,
+          };
+          await redis.setex(cacheKey, 86400, JSON.stringify(result));
+          return result;
+        }
+      }
+
+      if (process.env.GEOCODE_API_URL) {
+        const response = await fetch(
+          `${process.env.GEOCODE_API_URL}?address=${encodeURIComponent(address)}&key=${process.env.GEOCODE_API_KEY}`,
+        );
+        const data = await response.json();
+        if (data.results?.[0]?.geometry?.location) {
+          const result = {
+            coords: {
+              lat: data.results[0].geometry.location.lat,
+              lng: data.results[0].geometry.location.lng,
+            },
+            address: data.results[0].formatted_address,
+          };
+          await redis.setex(cacheKey, 86400, JSON.stringify(result));
+          return result;
+        }
+      }
+      return null;
+    } catch (error) {
+      logger.error("USSD: Error geocoding address", { address, error });
+      return null;
+    }
   }
 
   private async getFareEstimate(
-    _pickup: GeoLocation,
-    _dropoff: GeoLocation
-  ): Promise<{ fare: number; eta: number }> {
-    return { fare: 350, eta: 5 };
+    pickup: GeoLocation,
+    dropoff: GeoLocation,
+  ): Promise<{
+    fare: number;
+    eta: number;
+    distance: number;
+    currency: string;
+  }> {
+    try {
+      const R = 6371;
+      const dLat = ((dropoff.lat - pickup.lat) * Math.PI) / 180;
+      const dLng = ((dropoff.lng - pickup.lng) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((pickup.lat * Math.PI) / 180) *
+          Math.cos((dropoff.lat * Math.PI) / 180) *
+          Math.sin(dLng / 2) ** 2;
+      const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      const pricing = (await redis.hgetall("pricing:config")) || {};
+      const baseFare = Number.parseFloat(pricing.baseFare) || 100;
+      const perKm = Number.parseFloat(pricing.perKm) || 50;
+      const currency = pricing.currency || "NGN";
+      const estimatedMinutes = Math.ceil((distance / 25) * 60);
+      const fare = Math.round(
+        baseFare + distance * perKm + estimatedMinutes * 5,
+      );
+
+      const surgeKey = `surge:${Math.floor(pickup.lat * 100)}_${Math.floor(pickup.lng * 100)}`;
+      const surgeMultiplier = Number.parseFloat(
+        (await redis.get(surgeKey)) || "1.0",
+      );
+
+      return {
+        fare: Math.round(fare * surgeMultiplier),
+        eta: Math.ceil(estimatedMinutes),
+        distance: Math.round(distance * 10) / 10,
+        currency,
+      };
+    } catch (error) {
+      logger.error("USSD: Error calculating fare", { pickup, dropoff, error });
+      return { fare: 500, eta: 15, distance: 5, currency: "NGN" };
+    }
   }
 
-  private async createTrip(_session: USSDSession): Promise<any> {
-    return {
-      id: "trip_" + Date.now(),
-      driverName: "John K.",
-      vehiclePlate: "KDA 123X",
-      driverPhone: "+254700123456",
-      eta: 5,
-    };
+  private async createTrip(session: USSDSession): Promise<any> {
+    try {
+      const user = await this.getUserByPhone(session.phoneNumber);
+      if (!user?.riderId) throw new Error("User not found or not a rider");
+
+      const ride = await prisma.ride.create({
+        data: {
+          riderId: user.riderId,
+          status: "PENDING",
+          rideType: "ECONOMY",
+          pickupAddress: session.data.pickupAddress || "Current Location",
+          pickupLatitude: session.data.pickup?.lat || 0,
+          pickupLongitude: session.data.pickup?.lng || 0,
+          dropoffAddress: session.data.dropoffAddress || "",
+          dropoffLatitude: session.data.dropoff?.lat || 0,
+          dropoffLongitude: session.data.dropoff?.lng || 0,
+          estimatedFare: session.data.fare || 0,
+          currency: (user.currency as any) || "NGN",
+          estimatedDistance: session.data.distance || 0,
+          estimatedDuration: (session.data.eta || 0) * 60,
+          paymentMethod: (session.data.paymentMethod as any) || "WALLET",
+        },
+      });
+
+      this.eventEmitter.emit("ride:requested", {
+        rideId: ride.id,
+        source: "ussd",
+      });
+
+      const nearestDriver = await prisma.driver.findFirst({
+        where: { isOnline: true, isAvailable: true },
+        include: { user: true, vehicle: true },
+      });
+
+      return {
+        id: ride.id,
+        driverName: nearestDriver?.user?.firstName || "Finding driver...",
+        vehiclePlate: nearestDriver?.vehicle?.plateNumber || "Pending",
+        driverPhone: nearestDriver?.user?.phone || "",
+        eta: session.data.eta || 5,
+      };
+    } catch (error) {
+      logger.error("USSD: Error creating trip", { session: session.id, error });
+      throw error;
+    }
   }
 
   private async sendSMSConfirmation(
-    _phone: string,
-    _trip: any,
-    _lang: string
+    phone: string,
+    trip: any,
+    lang: string,
   ): Promise<void> {
-    // Send via SMS service
+    try {
+      const messages: Record<string, string> = {
+        en: `UBI Booking Confirmed!\nTrip: ${trip.id.slice(-6)}\nDriver: ${trip.driverName}\nVehicle: ${trip.vehiclePlate}\nETA: ${trip.eta} min`,
+        sw: `UBI Imehifadhiwa!\nSafari: ${trip.id.slice(-6)}\nDereva: ${trip.driverName}\nGari: ${trip.vehiclePlate}\nETA: dakika ${trip.eta}`,
+      };
+      this.eventEmitter.emit("sms:send", {
+        to: phone,
+        message: messages[lang] || messages.en,
+        priority: "high",
+      });
+      logger.info("USSD: SMS confirmation sent", { phone, tripId: trip.id });
+    } catch (error) {
+      logger.error("USSD: Error sending SMS confirmation", { phone, error });
+    }
   }
 
-  private async getWalletBalance(_userId?: string): Promise<number> {
-    return 1500;
+  private async getWalletBalance(userId?: string): Promise<number> {
+    try {
+      if (!userId) return 0;
+      const wallet = await prisma.walletAccount.findFirst({
+        where: { userId, accountType: "USER_WALLET" },
+      });
+      return wallet ? Number(wallet.availableBalance) : 0;
+    } catch (error) {
+      logger.error("USSD: Error getting wallet balance", { userId, error });
+      return 0;
+    }
   }
 
   private async initiateTopUp(
-    _userId: string,
-    _phone: string,
-    _amount: number
-  ): Promise<void> {
-    // Initiate M-Pesa STK push
+    userId: string,
+    phone: string,
+    amount: number,
+  ): Promise<{ reference: string; status: string }> {
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const reference = `TOPUP_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+      let provider: "MPESA" | "MTN_MOMO_GH" | "AIRTEL_MONEY" = "MPESA";
+      if (normalizedPhone.startsWith("+234")) provider = "AIRTEL_MONEY";
+      else if (normalizedPhone.startsWith("+233")) provider = "MTN_MOMO_GH";
+
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      await prisma.paymentTransaction.create({
+        data: {
+          userId,
+          provider,
+          providerReference: reference,
+          amount,
+          currency: user?.currency || "NGN",
+          status: "PENDING",
+        },
+      });
+
+      this.eventEmitter.emit("payment:topup:initiated", {
+        reference,
+        userId,
+        phone: normalizedPhone,
+        amount,
+        provider,
+      });
+      logger.info("USSD: TopUp initiated", { userId, amount, reference });
+      return { reference, status: "pending" };
+    } catch (error) {
+      logger.error("USSD: Error initiating topup", { userId, amount, error });
+      throw error;
+    }
   }
 
-  private async verifyPin(_userId: string, pin: string): Promise<boolean> {
-    return pin === "1234";
+  private async verifyPin(userId: string, pin: string): Promise<boolean> {
+    try {
+      const storedHash = await redis.get(`pin:${userId}`);
+      if (!storedHash) {
+        const wallet = await prisma.walletAccount.findFirst({
+          where: { userId, accountType: "USER_WALLET" },
+        });
+        if (!wallet?.metadata) return false;
+        const metadata = wallet.metadata as any;
+        if (!metadata.pinHash) return false;
+        const inputHash = crypto
+          .createHash("sha256")
+          .update(pin + userId)
+          .digest("hex");
+        return inputHash === metadata.pinHash;
+      }
+      const inputHash = crypto
+        .createHash("sha256")
+        .update(pin + userId)
+        .digest("hex");
+      return inputHash === storedHash;
+    } catch (error) {
+      logger.error("USSD: Error verifying PIN", { userId, error });
+      return false;
+    }
   }
 
   private async processWalletTransfer(
-    _userId: string,
-    _recipientPhone: string,
-    _amount: number
-  ): Promise<void> {
-    // Process P2P transfer
+    userId: string,
+    recipientPhone: string,
+    amount: number,
+  ): Promise<{ success: boolean; reference?: string; error?: string }> {
+    try {
+      const normalizedRecipient = normalizePhone(recipientPhone);
+      const sender = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { walletAccounts: { where: { accountType: "USER_WALLET" } } },
+      });
+      const recipient = await prisma.user.findUnique({
+        where: { phone: normalizedRecipient },
+        include: { walletAccounts: { where: { accountType: "USER_WALLET" } } },
+      });
+
+      if (!sender?.walletAccounts?.[0] || !recipient?.walletAccounts?.[0]) {
+        return { success: false, error: "Invalid accounts" };
+      }
+
+      const senderWallet = sender.walletAccounts[0];
+      const recipientWallet = recipient.walletAccounts[0];
+
+      if (Number(senderWallet.availableBalance) < amount) {
+        return { success: false, error: "Insufficient balance" };
+      }
+
+      const idempotencyKey = `transfer_${userId}_${Date.now()}`;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.walletAccount.update({
+          where: { id: senderWallet.id },
+          data: {
+            balance: { decrement: amount },
+            availableBalance: { decrement: amount },
+          },
+        });
+        await tx.walletAccount.update({
+          where: { id: recipientWallet.id },
+          data: {
+            balance: { increment: amount },
+            availableBalance: { increment: amount },
+          },
+        });
+
+        const transaction = await tx.transaction.create({
+          data: {
+            idempotencyKey,
+            transactionType: "INTERNAL_TRANSFER",
+            status: "COMPLETED",
+            amount,
+            currency: sender.currency,
+            description: `Transfer to ${recipient.firstName}`,
+            completedAt: new Date(),
+          },
+        });
+
+        await tx.ledgerEntry.createMany({
+          data: [
+            {
+              transactionId: transaction.id,
+              accountId: senderWallet.id,
+              entryType: "DEBIT",
+              amount,
+              balanceAfter: Number(senderWallet.availableBalance) - amount,
+              description: `Transfer to ${normalizedRecipient}`,
+            },
+            {
+              transactionId: transaction.id,
+              accountId: recipientWallet.id,
+              entryType: "CREDIT",
+              amount,
+              balanceAfter: Number(recipientWallet.availableBalance) + amount,
+              description: `Transfer from ${sender.phone}`,
+            },
+          ],
+        });
+      });
+
+      logger.info("USSD: Wallet transfer completed", {
+        userId,
+        recipientPhone: normalizedRecipient,
+        amount,
+      });
+      return { success: true, reference: idempotencyKey };
+    } catch (error) {
+      logger.error("USSD: Error processing wallet transfer", {
+        userId,
+        recipientPhone,
+        amount,
+        error,
+      });
+      return { success: false, error: "Transfer failed" };
+    }
   }
 
-  private async getActiveTrip(_userId?: string): Promise<any> {
-    return null;
+  private async getActiveTrip(userId?: string): Promise<any> {
+    try {
+      if (!userId) return null;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { rider: true },
+      });
+      if (!user?.rider) return null;
+
+      const activeRide = await prisma.ride.findFirst({
+        where: {
+          riderId: user.rider.id,
+          status: {
+            in: [
+              "PENDING",
+              "SEARCHING",
+              "DRIVER_ASSIGNED",
+              "DRIVER_ARRIVING",
+              "DRIVER_ARRIVED",
+              "IN_PROGRESS",
+            ],
+          },
+        },
+        include: { driver: { include: { user: true, vehicle: true } } },
+        orderBy: { requestedAt: "desc" },
+      });
+
+      if (!activeRide) return null;
+
+      return {
+        id: activeRide.id,
+        status: activeRide.status,
+        driverName: activeRide.driver?.user?.firstName || "Finding...",
+        vehiclePlate: activeRide.driver?.vehicle?.plateNumber || "Pending",
+        driverPhone: activeRide.driver?.user?.phone || "",
+        pickup: activeRide.pickupAddress,
+        dropoff: activeRide.dropoffAddress,
+        fare: Number(activeRide.estimatedFare),
+      };
+    } catch (error) {
+      logger.error("USSD: Error getting active trip", { userId, error });
+      return null;
+    }
   }
 
-  private async getTrip(_tripId?: string): Promise<any> {
-    return null;
+  private async getTrip(tripId?: string): Promise<any> {
+    try {
+      if (!tripId) return null;
+      const ride = await prisma.ride.findUnique({
+        where: { id: tripId },
+        include: { driver: { include: { user: true, vehicle: true } } },
+      });
+      if (!ride) return null;
+
+      return {
+        id: ride.id,
+        status: ride.status,
+        driverName: ride.driver?.user?.firstName,
+        vehiclePlate: ride.driver?.vehicle?.plateNumber,
+        driverPhone: ride.driver?.user?.phone,
+        pickup: ride.pickupAddress,
+        dropoff: ride.dropoffAddress,
+        fare: Number(ride.estimatedFare),
+      };
+    } catch (error) {
+      logger.error("USSD: Error getting trip", { tripId, error });
+      return null;
+    }
   }
 
   private async getRecentTrips(
-    _userId?: string,
-    _limit?: number
+    userId?: string,
+    limit: number = 5,
   ): Promise<any[]> {
-    return [];
+    try {
+      if (!userId) return [];
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { rider: true },
+      });
+      if (!user?.rider) return [];
+
+      const rides = await prisma.ride.findMany({
+        where: { riderId: user.rider.id },
+        orderBy: { requestedAt: "desc" },
+        take: limit,
+      });
+      return rides.map((ride) => ({
+        id: ride.id,
+        pickup: ride.pickupAddress,
+        dropoff: ride.dropoffAddress,
+        fare: Number(ride.estimatedFare),
+        date: ride.requestedAt,
+        status: ride.status,
+      }));
+    } catch (error) {
+      logger.error("USSD: Error getting recent trips", { userId, error });
+      return [];
+    }
   }
 
-  private async getSavedPlaces(_userId?: string): Promise<any[]> {
-    return [];
+  private async getSavedPlaces(userId?: string): Promise<any[]> {
+    try {
+      if (!userId) return [];
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { rider: { include: { savedPlaces: true } } },
+      });
+      return (
+        user?.rider?.savedPlaces?.map((place) => ({
+          id: place.id,
+          name: place.name,
+          type: place.type,
+          address: place.address,
+          coords: { lat: place.latitude, lng: place.longitude },
+        })) || []
+      );
+    } catch (error) {
+      logger.error("USSD: Error getting saved places", { userId, error });
+      return [];
+    }
   }
 
-  private async getSavedPlace(_userId?: string, _type?: string): Promise<any> {
-    return null;
+  private async getSavedPlace(userId?: string, type?: string): Promise<any> {
+    try {
+      if (!userId || !type) return null;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          rider: { include: { savedPlaces: { where: { type }, take: 1 } } },
+        },
+      });
+      const place = user?.rider?.savedPlaces?.[0];
+      if (!place) return null;
+      return {
+        id: place.id,
+        name: place.name,
+        type: place.type,
+        address: place.address,
+        coords: { lat: place.latitude, lng: place.longitude },
+      };
+    } catch (error) {
+      logger.error("USSD: Error getting saved place", { userId, type, error });
+      return null;
+    }
   }
 
   private async updateUserLanguage(
-    _userId?: string,
-    _lang?: string
+    userId?: string,
+    lang?: string,
   ): Promise<void> {
-    // Update user preferences
+    try {
+      if (!userId || !lang) return;
+      await prisma.user.update({
+        where: { id: userId },
+        data: { language: lang },
+      });
+      await redis.hset(`user:${userId}:prefs`, "language", lang);
+      logger.info("USSD: User language updated", { userId, lang });
+    } catch (error) {
+      logger.error("USSD: Error updating user language", {
+        userId,
+        lang,
+        error,
+      });
+    }
   }
 
-  private async showWalletHistory(_session: USSDSession): Promise<USSDResponse> {
-    return {
-      message: "Transaction history coming soon\n\n0. Back",
-      continueSession: true,
-    };
+  private async showWalletHistory(session: USSDSession): Promise<USSDResponse> {
+    try {
+      const user = await this.getUserByPhone(session.phoneNumber);
+      if (!user?.walletId)
+        return { message: "No wallet found\n\n0. Back", continueSession: true };
+
+      const entries = await prisma.ledgerEntry.findMany({
+        where: { accountId: user.walletId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: { transaction: true },
+      });
+
+      if (entries.length === 0)
+        return {
+          message: "No transactions yet\n\n0. Back",
+          continueSession: true,
+        };
+
+      const lang = session.language || "en";
+      const lines = entries.map((e, i) => {
+        const symbol = e.entryType === "CREDIT" ? "+" : "-";
+        const desc =
+          e.description?.slice(0, 15) ||
+          e.transaction?.transactionType ||
+          "Transaction";
+        return `${i + 1}. ${symbol}${Number(e.amount)} - ${desc}`;
+      });
+
+      const title = lang === "sw" ? "Historia ya Mkoba" : "Wallet History";
+      return {
+        message: `${title}:\n${lines.join("\n")}\n\n0. Back`,
+        continueSession: true,
+      };
+    } catch (error) {
+      logger.error("USSD: Error showing wallet history", {
+        session: session.id,
+        error,
+      });
+      return {
+        message: "Error loading history\n\n0. Back",
+        continueSession: true,
+      };
+    }
   }
 
   // ===========================================================================

@@ -197,7 +197,7 @@ function verifyServiceToken(token: string): VerifyTokenResult {
   const [, serviceId, providedHmac] = parts;
 
   // Compute expected HMAC
-  const crypto = require("crypto");
+  const crypto = require("node:crypto");
   const expectedHmac = crypto
     .createHmac("sha256", SERVICE_SECRET)
     .update(`svc_${serviceId}`)

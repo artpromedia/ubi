@@ -5,7 +5,7 @@
 // Target: 99.9% model uptime, automated drift detection, statistical significance
 // =============================================================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   ABExperiment,
   AlertSeverity,
@@ -29,23 +29,40 @@ import {
 import { FeatureStoreService } from "./feature-store.service";
 
 // =============================================================================
+// SHARED UTILITIES
+// =============================================================================
+
+function generateUniqueId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random()
+    .toString(36)
+    .substring(2, 2 + 9)}`;
+}
+
+// =============================================================================
 // MLOPS SERVICE
 // =============================================================================
 
+/**
+ * MLOps Service for model lifecycle management
+ *
+ * Handles model registry, deployment, monitoring, and A/B testing.
+ * Feature store integration is planned for Sprint 6.
+ */
 export class MLOpsService {
-  // @ts-expect-error - Reserved for future feature store integration
-  private _featureStore: FeatureStoreService;
-  private eventEmitter: EventEmitter;
+  /** Feature store for ML features - to be fully integrated in Sprint 6 */
+  private readonly featureStore: FeatureStoreService;
+  private readonly eventEmitter: EventEmitter;
 
   // Model registry (in production, use dedicated model registry)
-  private models: Map<string, MLModel> = new Map();
-  private deployedModels: Map<string, MLModel> = new Map();
+  private readonly models: Map<string, MLModel> = new Map();
+  private readonly deployedModels: Map<string, MLModel> = new Map();
 
   // Metrics storage
-  private modelMetrics: Map<string, ModelPerformanceMetrics[]> = new Map();
+  private readonly modelMetrics: Map<string, ModelPerformanceMetrics[]> =
+    new Map();
 
   // Alert thresholds
-  private alertThresholds = {
+  private readonly alertThresholds = {
     latencyP99Ms: 100,
     errorRate: 0.01,
     driftScore: 0.15,
@@ -53,7 +70,7 @@ export class MLOpsService {
   };
 
   constructor(featureStore: FeatureStoreService) {
-    this._featureStore = featureStore;
+    this.featureStore = featureStore;
     this.eventEmitter = new EventEmitter();
     this.initializeDefaultModels();
   }
@@ -118,17 +135,17 @@ export class MLOpsService {
   // MODEL DEPLOYMENT
   // ===========================================================================
 
-  async deployModel(
-    modelId: string,
-    config: ServingConfig
-  ): Promise<void> {
+  async deployModel(modelId: string, config: ServingConfig): Promise<void> {
     const model = this.models.get(modelId);
     if (!model) {
       throw new Error(`Model ${modelId} not found`);
     }
 
     // Validate model is ready
-    if (model.status !== ModelStatus.STAGED && model.status !== ModelStatus.VALIDATING) {
+    if (
+      model.status !== ModelStatus.STAGED &&
+      model.status !== ModelStatus.VALIDATING
+    ) {
       throw new Error(`Model ${modelId} is not ready for deployment`);
     }
 
@@ -151,7 +168,8 @@ export class MLOpsService {
     // Find model with target version
     const models = Array.from(this.models.values()).filter(
       (m) =>
-        m.name === this.models.get(modelId)?.name && m.version === targetVersion
+        m.name === this.models.get(modelId)?.name &&
+        m.version === targetVersion,
     );
 
     if (models.length === 0) {
@@ -188,7 +206,7 @@ export class MLOpsService {
     latencyMs: number,
     success: boolean,
     prediction?: unknown,
-    actual?: unknown
+    actual?: unknown,
   ): Promise<void> {
     const metrics = this.modelMetrics.get(modelId) || [];
 
@@ -223,14 +241,14 @@ export class MLOpsService {
 
   async getModelMetrics(
     modelId: string,
-    timeRange?: { start: Date; end: Date }
+    timeRange?: { start: Date; end: Date },
   ): Promise<ModelPerformanceMetrics> {
     const metrics = this.modelMetrics.get(modelId) || [];
 
     let filteredMetrics = metrics;
     if (timeRange) {
       filteredMetrics = metrics.filter(
-        (m) => m.windowStart >= timeRange.start && m.windowEnd <= timeRange.end
+        (m) => m.windowStart >= timeRange.start && m.windowEnd <= timeRange.end,
       );
     }
 
@@ -254,22 +272,25 @@ export class MLOpsService {
       windowEnd: new Date(),
       p50Latency: this.calculatePercentile(
         filteredMetrics.map((m) => m.p50Latency || 0),
-        50
+        50,
       ),
       p99Latency: this.calculatePercentile(
         filteredMetrics.map((m) => m.p99Latency || 0),
-        99
+        99,
       ),
       errorRate:
         filteredMetrics.reduce((sum, m) => sum + m.errorRate, 0) /
         filteredMetrics.length,
-      predictionCount: filteredMetrics.reduce((sum, m) => sum + m.predictionCount, 0),
+      predictionCount: filteredMetrics.reduce(
+        (sum, m) => sum + m.predictionCount,
+        0,
+      ),
       errorCount: filteredMetrics.reduce((sum, m) => sum + m.errorCount, 0),
     };
 
     // Calculate accuracy if available
     const withAccuracy = filteredMetrics.filter(
-      (m) => m.accuracy !== undefined
+      (m) => m.accuracy !== undefined,
     );
     if (withAccuracy.length > 0) {
       aggregated.accuracy =
@@ -316,7 +337,8 @@ export class MLOpsService {
     // Check latency drift
     const recentLatency = this.calculateAverageLatency(recentMetrics);
     const baselineLatency = this.calculateAverageLatency(baselineMetrics);
-    const latencyDrift = (recentLatency - baselineLatency) / (baselineLatency || 1);
+    const latencyDrift =
+      (recentLatency - baselineLatency) / (baselineLatency || 1);
 
     if (latencyDrift > 0.2) {
       // 20% increase
@@ -334,16 +356,18 @@ export class MLOpsService {
       id: this.generateId("drift"),
       modelId,
       referenceStart: baselineMetrics[0]?.windowStart || new Date(),
-      referenceEnd:
-        baselineMetrics[baselineMetrics.length - 1]?.windowEnd || new Date(),
+      referenceEnd: baselineMetrics.at(-1)?.windowEnd || new Date(),
       currentStart: recentMetrics[0]?.windowStart || new Date(),
-      currentEnd: recentMetrics[recentMetrics.length - 1]?.windowEnd || new Date(),
+      currentEnd: recentMetrics.at(-1)?.windowEnd || new Date(),
       overallDriftScore,
       driftDetected: overallDriftScore > this.alertThresholds.driftScore,
       featureDrift: driftScores,
-      recommendations: overallDriftScore > this.alertThresholds.driftScore
-        ? [`Consider retraining model due to drift in: ${driftingFeatures.join(", ")}`]
-        : [],
+      recommendations:
+        overallDriftScore > this.alertThresholds.driftScore
+          ? [
+              `Consider retraining model due to drift in: ${driftingFeatures.join(", ")}`,
+            ]
+          : [],
       createdAt: new Date(),
     };
 
@@ -375,7 +399,9 @@ export class MLOpsService {
   private calculateAverageLatency(metrics: ModelPerformanceMetrics[]): number {
     if (metrics.length === 0) return 0;
 
-    return metrics.reduce((sum, m) => sum + (m.p50Latency || 0), 0) / metrics.length;
+    return (
+      metrics.reduce((sum, m) => sum + (m.p50Latency || 0), 0) / metrics.length
+    );
   }
 
   // ===========================================================================
@@ -384,7 +410,7 @@ export class MLOpsService {
 
   private async checkModelAlerts(
     modelId: string,
-    metric: ModelPerformanceMetrics
+    metric: ModelPerformanceMetrics,
   ): Promise<void> {
     // Check latency
     if ((metric.p99Latency || 0) > this.alertThresholds.latencyP99Ms) {
@@ -435,7 +461,7 @@ export class MLOpsService {
 
   async triggerRetraining(
     modelId: string,
-    reason: string
+    reason: string,
   ): Promise<TrainingPipeline> {
     const model = this.models.get(modelId);
     if (!model) {
@@ -481,8 +507,15 @@ export class MLOpsService {
         type: ModelType.CLASSIFICATION,
         version: "1.0.0",
         framework: ModelFramework.XGBOOST,
-        inputFeatures: ["payment_velocity", "device_fingerprint", "location_risk"],
-        outputSchema: { type: "classification" as const, classes: ["fraud", "legitimate"] },
+        inputFeatures: [
+          "payment_velocity",
+          "device_fingerprint",
+          "location_risk",
+        ],
+        outputSchema: {
+          type: "classification" as const,
+          classes: ["fraud", "legitimate"],
+        },
       },
       {
         name: "demand-forecast",
@@ -506,7 +539,10 @@ export class MLOpsService {
         version: "1.0.0",
         framework: ModelFramework.XGBOOST,
         inputFeatures: ["last_activity", "frequency", "satisfaction"],
-        outputSchema: { type: "classification" as const, classes: ["low", "medium", "high"] },
+        outputSchema: {
+          type: "classification" as const,
+          classes: ["low", "medium", "high"],
+        },
       },
       {
         name: "recommendation",
@@ -531,7 +567,7 @@ export class MLOpsService {
   // ===========================================================================
 
   private generateId(prefix: string): string {
-    return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return generateUniqueId(prefix);
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {
@@ -544,13 +580,13 @@ export class MLOpsService {
 // =============================================================================
 
 export class ABTestingService {
-  private eventEmitter: EventEmitter;
+  private readonly eventEmitter: EventEmitter;
 
   // Experiment registry
-  private experiments: Map<string, ABExperiment> = new Map();
+  private readonly experiments: Map<string, ABExperiment> = new Map();
 
   // User assignments
-  private assignments: Map<string, Map<string, ExperimentAssignment>> =
+  private readonly assignments: Map<string, Map<string, ExperimentAssignment>> =
     new Map();
 
   // Statistical parameters
@@ -566,7 +602,7 @@ export class ABTestingService {
   // ===========================================================================
 
   async createExperiment(
-    experiment: Partial<ABExperiment>
+    experiment: Partial<ABExperiment>,
   ): Promise<ABExperiment> {
     const experimentId = this.generateId("exp");
 
@@ -644,7 +680,7 @@ export class ABTestingService {
   async assignUser(
     experimentId: string,
     userId: string,
-    _context?: Record<string, unknown>
+    _context?: Record<string, unknown>,
   ): Promise<ExperimentAssignment> {
     const experiment = this.experiments.get(experimentId);
     if (!experiment) {
@@ -666,7 +702,9 @@ export class ABTestingService {
     // Check traffic allocation
     if (Math.random() * 100 > experiment.trafficPercentage) {
       // User not in experiment - return control
-      const controlVariant = experiment.variants.find(v => v.id === "control") || experiment.variants[0];
+      const controlVariant =
+        experiment.variants.find((v) => v.id === "control") ||
+        experiment.variants[0];
       if (!controlVariant) {
         throw new Error("No control variant found");
       }
@@ -722,7 +760,7 @@ export class ABTestingService {
 
   async getUserVariant(
     experimentId: string,
-    userId: string
+    userId: string,
   ): Promise<string | undefined> {
     const userAssignments = this.assignments.get(userId);
     if (!userAssignments) return undefined;
@@ -741,7 +779,7 @@ export class ABTestingService {
     experimentId: string,
     userId: string,
     metricName: string,
-    value: number
+    value: number,
   ): Promise<void> {
     const experiment = this.experiments.get(experimentId);
     if (!experiment) return;
@@ -767,6 +805,88 @@ export class ABTestingService {
   // STATISTICAL ANALYSIS
   // ===========================================================================
 
+  /**
+   * Experiment metrics storage
+   * In production, this would be backed by a time-series database
+   */
+  private readonly experimentMetrics: Map<
+    string,
+    Map<string, { values: number[]; count: number; sum: number }>
+  > = new Map();
+
+  /**
+   * Record a metric event for an experiment variant
+   */
+  recordMetricEvent(
+    experimentId: string,
+    variantId: string,
+    metricName: string,
+    value: number,
+  ): void {
+    const experimentKey = `${experimentId}:${variantId}:${metricName}`;
+
+    if (!this.experimentMetrics.has(experimentKey)) {
+      this.experimentMetrics.set(experimentKey, new Map());
+    }
+
+    const metrics = this.experimentMetrics.get(experimentKey)!;
+    if (!metrics.has(metricName)) {
+      metrics.set(metricName, { values: [], count: 0, sum: 0 });
+    }
+
+    const metric = metrics.get(metricName)!;
+    metric.values.push(value);
+    metric.count++;
+    metric.sum += value;
+
+    // Keep only last 10000 values to prevent memory bloat
+    if (metric.values.length > 10000) {
+      const removed = metric.values.shift()!;
+      metric.sum -= removed;
+      metric.count--;
+    }
+  }
+
+  /**
+   * Get aggregated metrics for a variant
+   */
+  private getVariantMetrics(
+    experimentId: string,
+    variantId: string,
+    metricName: string = "conversion",
+  ): {
+    sampleSize: number;
+    mean: number;
+    standardError: number;
+  } {
+    const experimentKey = `${experimentId}:${variantId}:${metricName}`;
+    const metrics = this.experimentMetrics.get(experimentKey);
+
+    if (!metrics?.has(metricName)) {
+      // Return default for variants with no data yet
+      return { sampleSize: 0, mean: 0, standardError: 0 };
+    }
+
+    const metric = metrics.get(metricName)!;
+    const n = metric.count;
+
+    if (n === 0) {
+      return { sampleSize: 0, mean: 0, standardError: 0 };
+    }
+
+    const mean = metric.sum / n;
+
+    // Calculate standard deviation
+    const squaredDiffs = metric.values.map((v) => Math.pow(v - mean, 2));
+    const variance = squaredDiffs.reduce((a, b) => a + b, 0) / n;
+    const stdDev = Math.sqrt(variance);
+
+    // Standard error = stdDev / sqrt(n)
+    const standardError = n > 0 ? stdDev / Math.sqrt(n) : 0;
+
+    return { sampleSize: n, mean, standardError };
+  }
+
   async analyzeExperiment(experimentId: string): Promise<{
     variants: Array<{
       id: string;
@@ -785,19 +905,40 @@ export class ABTestingService {
       throw new Error(`Experiment ${experimentId} not found`);
     }
 
-    // In production, aggregate real metrics from event store
-    // For now, return placeholder analysis
-    const sampleSize = experiment.minimumSampleSize || 100;
-    const variants = experiment.variants.map((v: ExperimentVariant) => ({
-      id: v.id,
-      sampleSize: Math.floor(
-        sampleSize / experiment.variants.length
-      ),
-      mean: Math.random() * 0.1 + 0.05, // Placeholder conversion rate
-      standardError: 0.01,
-    }));
+    // Aggregate real metrics from tracked events
+    const variants = experiment.variants.map((v: ExperimentVariant) => {
+      const metrics = this.getVariantMetrics(
+        experimentId,
+        v.id,
+        experiment.primaryMetric || "conversion",
+      );
+      return {
+        id: v.id,
+        sampleSize: metrics.sampleSize,
+        mean: metrics.mean,
+        standardError: metrics.standardError,
+      };
+    });
 
-    // Calculate statistical significance
+    // Check if we have enough data
+    const totalSampleSize = variants.reduce((sum, v) => sum + v.sampleSize, 0);
+    const minRequired = experiment.minimumSampleSize || this.MIN_SAMPLE_SIZE;
+
+    if (totalSampleSize < minRequired) {
+      // Not enough data yet - return current state without winner
+      return {
+        variants,
+        confidence: 0,
+        isSignificant: false,
+        minimumDetectableEffect: this.calculateMDE(
+          variants,
+          experiment.minimumSampleSize || 1000,
+        ),
+        powerAnalysis: this.calculatePower(variants),
+      };
+    }
+
+    // Calculate statistical significance with real data
     const { isSignificant, confidence, winner } =
       this.calculateSignificance(variants);
 
@@ -806,9 +947,97 @@ export class ABTestingService {
       winner: isSignificant ? winner : undefined,
       confidence,
       isSignificant,
-      minimumDetectableEffect: 0.02,
-      powerAnalysis: 0.8,
+      minimumDetectableEffect: this.calculateMDE(
+        variants,
+        experiment.minimumSampleSize || 1000,
+      ),
+      powerAnalysis: this.calculatePower(variants),
     };
+  }
+
+  /**
+   * Calculate Minimum Detectable Effect (MDE) given current sample size
+   */
+  private calculateMDE(
+    variants: Array<{ sampleSize: number; standardError: number }>,
+    targetSampleSize: number,
+  ): number {
+    if (variants.length < 2) return 0;
+
+    const control = variants[0];
+    if (control.sampleSize === 0) return 0.1; // Default MDE when no data
+
+    // MDE = 2.8 * sqrt(2 * variance / n) for 80% power, 5% significance
+    const avgSE =
+      variants.reduce((sum, v) => sum + v.standardError, 0) / variants.length;
+    const effectiveSampleSize = Math.min(control.sampleSize, targetSampleSize);
+
+    if (effectiveSampleSize === 0) return 0.1;
+
+    return 2.8 * avgSE * Math.sqrt(2 / effectiveSampleSize);
+  }
+
+  /**
+   * Calculate statistical power given current sample sizes
+   */
+  private calculatePower(
+    variants: Array<{
+      sampleSize: number;
+      mean: number;
+      standardError: number;
+    }>,
+  ): number {
+    if (variants.length < 2) return 0;
+
+    const control = variants.find((v) => v.id === "control") || variants[0];
+    const treatment = variants.find((v) => v.id !== "control") || variants[1];
+
+    if (
+      !control ||
+      !treatment ||
+      control.sampleSize < 30 ||
+      treatment.sampleSize < 30
+    ) {
+      return 0; // Not enough data for meaningful power calculation
+    }
+
+    // Effect size (Cohen's d)
+    const pooledSE = Math.sqrt(
+      Math.pow(control.standardError, 2) + Math.pow(treatment.standardError, 2),
+    );
+    if (pooledSE === 0) return 0;
+
+    const effectSize = Math.abs(treatment.mean - control.mean) / pooledSE;
+
+    // Approximate power using effect size
+    // Power ≈ Φ(|d| * sqrt(n/2) - 1.96) for α=0.05
+    const ncp =
+      effectSize *
+      Math.sqrt(Math.min(control.sampleSize, treatment.sampleSize) / 2);
+    const power = this.normalCDF(ncp - 1.96);
+
+    return Math.min(Math.max(power, 0), 1);
+  }
+
+  /**
+   * Standard normal CDF approximation
+   */
+  private normalCDF(x: number): number {
+    const a1 = 0.254829592;
+    const a2 = -0.284496736;
+    const a3 = 1.421413741;
+    const a4 = -1.453152027;
+    const a5 = 1.061405429;
+    const p = 0.3275911;
+
+    const sign = x < 0 ? -1 : 1;
+    x = Math.abs(x) / Math.sqrt(2);
+
+    const t = 1 / (1 + p * x);
+    const y =
+      1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+
+    return 0.5 * (1 + sign * y);
   }
 
   private calculateSignificance(
@@ -817,7 +1046,7 @@ export class ABTestingService {
       sampleSize: number;
       mean: number;
       standardError: number;
-    }>
+    }>,
   ): { isSignificant: boolean; confidence: number; winner?: string } {
     if (variants.length < 2) {
       return { isSignificant: false, confidence: 0 };
@@ -839,7 +1068,7 @@ export class ABTestingService {
 
     // Calculate z-score
     const pooledSE = Math.sqrt(
-      Math.pow(control.standardError, 2) + Math.pow(treatment.standardError, 2)
+      Math.pow(control.standardError, 2) + Math.pow(treatment.standardError, 2),
     );
 
     if (pooledSE === 0) {
@@ -853,11 +1082,10 @@ export class ABTestingService {
 
     // Determine winner
     const isSignificant = confidence >= this.DEFAULT_CONFIDENCE;
-    const winner = isSignificant
-      ? treatment.mean > control.mean
-        ? treatment.id
-        : control.id
-      : undefined;
+    let winner: string | undefined;
+    if (isSignificant) {
+      winner = treatment.mean > control.mean ? treatment.id : control.id;
+    }
 
     return { isSignificant, confidence, winner };
   }
@@ -876,13 +1104,13 @@ export class ABTestingService {
   async isFeatureEnabled(
     featureKey: string,
     userId: string,
-    defaultValue: boolean = false
+    defaultValue: boolean = false,
   ): Promise<boolean> {
     // Check if feature is part of an experiment
     const experiments = Array.from(this.experiments.values()).filter(
       (e) =>
         e.status === ExperimentStatus.RUNNING &&
-        e.name.toLowerCase() === featureKey.toLowerCase()
+        e.name.toLowerCase() === featureKey.toLowerCase(),
     );
 
     if (experiments.length > 0) {
@@ -899,12 +1127,12 @@ export class ABTestingService {
   async getFeatureVariant(
     featureKey: string,
     userId: string,
-    defaultVariant: string = "control"
+    defaultVariant: string = "control",
   ): Promise<string> {
     const experiments = Array.from(this.experiments.values()).filter(
       (e) =>
         e.status === ExperimentStatus.RUNNING &&
-        e.name.toLowerCase() === featureKey.toLowerCase()
+        e.name.toLowerCase() === featureKey.toLowerCase(),
     );
 
     if (experiments.length > 0) {
@@ -923,7 +1151,7 @@ export class ABTestingService {
   // ===========================================================================
 
   private generateId(prefix: string): string {
-    return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return generateUniqueId(prefix);
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {

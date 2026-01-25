@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import '../widgets/otp_support_chat.dart';
 
 /// OTP verification page for phone number authentication
 class OtpVerificationPage extends StatefulWidget {
@@ -268,28 +269,10 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                     ),
                     TextButton(
                       onPressed: () {
-                        // Show help dialog
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Need Help?'),
-                            content: const Text(
-                              'Make sure your phone number is correct and you have a stable network connection. If the problem persists, please contact support.',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('OK'),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  // TODO: Open support chat
-                                },
-                                child: const Text('Contact Support'),
-                              ),
-                            ],
-                          ),
+                        showOtpSupportChat(
+                          context,
+                          phoneNumber: widget.phoneNumber,
+                          onResendRequested: _resendOtp,
                         );
                       },
                       child: const Text('Get Help'),

@@ -100,13 +100,13 @@ export class FraudDetectionService {
   // High-risk amount thresholds (normalized to USD equivalent)
   private readonly HIGH_AMOUNT_THRESHOLD = 1000; // $1000 USD
 
-  constructor(private prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) {}
 
   /**
    * Assess transaction risk
    */
   async assessRisk(
-    request: RiskAssessmentRequest
+    request: RiskAssessmentRequest,
   ): Promise<RiskAssessmentResult> {
     const factors: Array<{ name: string; score: number; description: string }> =
       [];
@@ -115,7 +115,7 @@ export class FraudDetectionService {
     // Factor 1: Velocity check (40% weight)
     const velocityScore = await this.checkVelocity(
       request.userId,
-      request.amount
+      request.amount,
     );
     factors.push({
       name: "velocity",
@@ -130,7 +130,7 @@ export class FraudDetectionService {
     // Factor 2: Amount anomaly (25% weight)
     const amountScore = await this.checkAmountAnomaly(
       request.userId,
-      request.amount
+      request.amount,
     );
     factors.push({
       name: "amount",
@@ -145,7 +145,7 @@ export class FraudDetectionService {
     // Factor 3: Geographic anomaly (15% weight)
     const geoScore = await this.checkGeographicAnomaly(
       request.userId,
-      request.location
+      request.location,
     );
     factors.push({
       name: "geography",
@@ -161,7 +161,7 @@ export class FraudDetectionService {
     const deviceScore = await this.checkDevice(
       request.userId,
       request.deviceId,
-      request.ipAddress
+      request.ipAddress,
     );
     factors.push({
       name: "device",
@@ -261,7 +261,10 @@ export class FraudDetectionService {
   /**
    * Check velocity (transaction frequency)
    */
-  private async checkVelocity(userId: string, _amount: number): Promise<number> {
+  private async checkVelocity(
+    userId: string,
+    _amount: number,
+  ): Promise<number> {
     const now = new Date();
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -313,22 +316,22 @@ export class FraudDetectionService {
     // Frequency score
     const hourFreqScore = Math.min(
       (hourCount / this.VELOCITY_LIMITS.transactionsPerHour) * 100,
-      100
+      100,
     );
     const dayFreqScore = Math.min(
       (dayCount / this.VELOCITY_LIMITS.transactionsPerDay) * 100,
-      100
+      100,
     );
     score += Math.max(hourFreqScore, dayFreqScore) * 0.5;
 
     // Amount score
     const hourAmountScore = Math.min(
       (hourAmount / this.VELOCITY_LIMITS.amountPerHour) * 100,
-      100
+      100,
     );
     const dayAmountScore = Math.min(
       (dayAmount / this.VELOCITY_LIMITS.amountPerDay) * 100,
-      100
+      100,
     );
     score += Math.max(hourAmountScore, dayAmountScore) * 0.5;
 
@@ -340,7 +343,7 @@ export class FraudDetectionService {
    */
   private async checkAmountAnomaly(
     userId: string,
-    amount: number
+    amount: number,
   ): Promise<number> {
     // Get user's average transaction amount
     const stats = await this.prisma.paymentTransaction.aggregate({
@@ -397,7 +400,7 @@ export class FraudDetectionService {
    */
   private async checkGeographicAnomaly(
     userId: string,
-    location?: { latitude: number; longitude: number; country?: string }
+    location?: { latitude: number; longitude: number; country?: string },
   ): Promise<number> {
     if (!location) {
       return 0; // No location data, can't assess
@@ -426,8 +429,10 @@ export class FraudDetectionService {
     let maxDistance = 0;
 
     for (const tx of recentTransactions) {
-      const txMetadata = tx.metadata as any;
-      const txLocation = txMetadata?.location;
+      const txMetadata = tx.metadata;
+      const txLocation = (txMetadata as Record<string, unknown>)?.location as
+        | { country?: string; lat?: number; lng?: number }
+        | undefined;
 
       if (txLocation) {
         // Check country
@@ -444,7 +449,7 @@ export class FraudDetectionService {
           location.latitude,
           location.longitude,
           txLocation.latitude,
-          txLocation.longitude
+          txLocation.longitude,
         );
 
         maxDistance = Math.max(maxDistance, distance);
@@ -475,7 +480,7 @@ export class FraudDetectionService {
   private async checkDevice(
     userId: string,
     deviceId?: string,
-    ipAddress?: string
+    ipAddress?: string,
   ): Promise<number> {
     if (!deviceId && !ipAddress) {
       return 30; // No device data is suspicious
@@ -581,7 +586,7 @@ export class FraudDetectionService {
     lat1: number,
     lon1: number,
     lat2: number,
-    lon2: number
+    lon2: number,
   ): number {
     const R = 6371; // Earth's radius in km
     const dLat = this.toRad(lat2 - lat1);
@@ -607,7 +612,7 @@ export class FraudDetectionService {
    */
   private generateReasons(
     factors: Array<{ name: string; score: number; description: string }>,
-    riskLevel: RiskLevel
+    riskLevel: RiskLevel,
   ): string[] {
     const reasons: string[] = [];
 
@@ -620,7 +625,7 @@ export class FraudDetectionService {
     // Add risk level context
     if (riskLevel === RiskLevel.CRITICAL) {
       reasons.push(
-        "Transaction flagged as high risk - requires immediate review"
+        "Transaction flagged as high risk - requires immediate review",
       );
     } else if (riskLevel === RiskLevel.HIGH) {
       reasons.push("Transaction requires manual review before processing");
@@ -641,7 +646,7 @@ export class FraudDetectionService {
       limit?: number;
       offset?: number;
       minRiskScore?: number;
-    } = {}
+    } = {},
   ): Promise<Array<any>> {
     const { limit = 20, offset = 0, minRiskScore = 50 } = options;
 
@@ -686,7 +691,7 @@ export class FraudDetectionService {
    */
   async approveTransaction(
     assessmentId: string,
-    reviewedBy: string
+    reviewedBy: string,
   ): Promise<void> {
     await this.prisma.riskAssessment.update({
       where: { id: assessmentId },
@@ -707,7 +712,7 @@ export class FraudDetectionService {
   async rejectTransaction(
     assessmentId: string,
     reviewedBy: string,
-    reason: string
+    reason: string,
   ): Promise<void> {
     await this.prisma.riskAssessment.update({
       where: { id: assessmentId },
@@ -728,17 +733,15 @@ let fraudDetectionServiceInstance: FraudDetectionService | null = null;
 
 // Create new instance
 export function createFraudDetectionService(
-  prisma: PrismaClient
+  prisma: PrismaClient,
 ): FraudDetectionService {
   return new FraudDetectionService(prisma);
 }
 
 // Get singleton instance
 export function getFraudDetectionService(
-  prisma: PrismaClient
+  prisma: PrismaClient,
 ): FraudDetectionService {
-  if (!fraudDetectionServiceInstance) {
-    fraudDetectionServiceInstance = createFraudDetectionService(prisma);
-  }
+  fraudDetectionServiceInstance ??= createFraudDetectionService(prisma);
   return fraudDetectionServiceInstance;
 }

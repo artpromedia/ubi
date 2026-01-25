@@ -31,7 +31,7 @@ export function createHeaders(token?: string): AuthHeaders {
     Authorization: token ? `Bearer ${token}` : "",
     "Content-Type": "application/json",
     Accept: "application/json",
-    "X-Request-ID": `k6-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    "X-Request-ID": `k6-${Date.now()}-${Math.random().toString(36).substring(2, 2 + 9)}`,
     "X-Client-Version": "1.0.0",
     "X-Device-Type": "web",
   };

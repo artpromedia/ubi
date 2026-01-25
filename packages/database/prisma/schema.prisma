@@ -1122,3 +1122,339 @@ model Notification {
   @@index([userId, read, createdAt])
   @@map("notifications")
 }
+
+// ===========================================
+// SPLIT FARE MODELS
+// ===========================================
+
+enum FareSplitStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  PARTIALLY_PAID
+  CANCELLED
+  EXPIRED
+}
+
+enum FareSplitParticipantStatus {
+  INVITED
+  ACCEPTED
+  DECLINED
+  PAID
+  FAILED
+  REFUNDED
+  PENDING_FALLBACK
+}
+
+enum SplitType {
+  EQUAL
+  CUSTOM
+  PERCENTAGE
+}
+
+model FareSplit {
+  id                          String          @id
+  rideId                      String          @map("ride_id")
+  orderId                     String?         @map("order_id")
+  initiatorUserId             String          @map("initiator_user_id") @db.Uuid
+  totalAmount                 Decimal         @map("total_amount") @db.Decimal(19, 4)
+  currency                    Currency
+  splitType                   SplitType       @default(EQUAL) @map("split_type")
+  status                      FareSplitStatus @default(PENDING)
+  participantCount            Int             @map("participant_count")
+  paidCount                   Int             @default(0) @map("paid_count")
+  amountCollected             Decimal         @default(0) @map("amount_collected") @db.Decimal(19, 4)
+  amountPending               Decimal         @map("amount_pending") @db.Decimal(19, 4)
+  primaryPayerFallbackEnabled Boolean         @default(true) @map("primary_payer_fallback_enabled")
+  fallbackAmount              Decimal?        @map("fallback_amount") @db.Decimal(19, 4)
+  invitationExpiresAt         DateTime        @map("invitation_expires_at")
+  paymentDeadline             DateTime?       @map("payment_deadline")
+  completedAt                 DateTime?       @map("completed_at")
+  cancelledAt                 DateTime?       @map("cancelled_at")
+  cancelReason                String?         @map("cancel_reason")
+  metadata                    Json?
+  createdAt                   DateTime        @default(now()) @map("created_at")
+  updatedAt                   DateTime        @updatedAt @map("updated_at")
+
+  participants FareSplitParticipant[]
+
+  @@index([rideId])
+  @@index([initiatorUserId])
+  @@index([status, createdAt])
+  @@index([invitationExpiresAt])
+  @@map("fare_splits")
+}
+
+model FareSplitParticipant {
+  id                   String                     @id
+  fareSplitId          String                     @map("fare_split_id")
+  userId               String?                    @map("user_id") @db.Uuid
+  phone                String
+  name                 String?
+  email                String?
+  amount               Decimal                    @db.Decimal(19, 4)
+  percentage           Decimal?                   @db.Decimal(5, 2)
+  status               FareSplitParticipantStatus @default(INVITED)
+  invitationToken      String                     @unique @map("invitation_token")
+  invitationSentAt     DateTime?                  @map("invitation_sent_at")
+  invitationAcceptedAt DateTime?                  @map("invitation_accepted_at")
+  paymentId            String?                    @map("payment_id")
+  paidAt               DateTime?                  @map("paid_at")
+  declinedAt           DateTime?                  @map("declined_at")
+  declineReason        String?                    @map("decline_reason")
+  notificationChannel  String                     @map("notification_channel") @db.VarChar(20)
+  reminderCount        Int                        @default(0) @map("reminder_count")
+  lastReminderAt       DateTime?                  @map("last_reminder_at")
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+
+  fareSplit FareSplit @relation(fields: [fareSplitId], references: [id], onDelete: Cascade)
+
+  @@index([fareSplitId])
+  @@index([userId])
+  @@index([phone])
+  @@index([invitationToken])
+  @@index([status])
+  @@map("fare_split_participants")
+}
+
+// ===========================================
+// VEHICLE FINANCING MODELS
+// ===========================================
+
+enum VehicleFinancingStatus {
+  AVAILABLE
+  RESERVED
+  FINANCED
+  PAID_OFF
+  DEFAULTED
+  REPOSSESSED
+}
+
+enum FinancingApplicationStatus {
+  PENDING
+  REVIEWING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum FinancingPlanType {
+  LEASE_TO_OWN
+  RENT_TO_OWN
+  LOAN
+}
+
+model VehicleMarketplaceListing {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  make           String
+  model          String
+  year           Int
+  color          String
+  mileage        Int?
+  condition      String      @db.VarChar(20) // NEW, USED, CERTIFIED
+  vehicleType    VehicleType @map("vehicle_type")
+  fuelType       String      @map("fuel_type") @db.VarChar(20) // PETROL, DIESEL, ELECTRIC, HYBRID
+  transmission   String      @db.VarChar(20) // AUTOMATIC, MANUAL
+  engineCapacity String?     @map("engine_capacity") @db.VarChar(20)
+  description    String?
+  images         String[] // Array of image URLs
+
+  // Pricing
+  listPrice Decimal  @map("list_price") @db.Decimal(19, 4)
+  currency  Currency
+
+  // Financing options
+  financingAvailable Boolean  @default(true) @map("financing_available")
+  minDownPayment     Decimal? @map("min_down_payment") @db.Decimal(19, 4)
+  maxFinancingTerm   Int?     @map("max_financing_term") // in months
+
+  // Location
+  location  String
+  latitude  Float?
+  longitude Float?
+
+  // Status
+  status VehicleFinancingStatus @default(AVAILABLE)
+
+  // Seller info
+  sellerId   String? @map("seller_id") @db.Uuid
+  sellerType String  @map("seller_type") @db.VarChar(20) // UBI, DEALER, PRIVATE
+
+  viewCount Int @default(0) @map("view_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  financingApplications VehicleFinancingApplication[]
+
+  @@index([status])
+  @@index([make, model])
+  @@index([vehicleType])
+  @@index([listPrice])
+  @@index([location])
+  @@map("vehicle_marketplace_listings")
+}
+
+model VehicleFinancingApplication {
+  id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicantUserId  String @map("applicant_user_id") @db.Uuid
+  vehicleListingId String @map("vehicle_listing_id") @db.Uuid
+
+  // Application details
+  requestedAmount     Decimal           @map("requested_amount") @db.Decimal(19, 4)
+  downPaymentAmount   Decimal           @map("down_payment_amount") @db.Decimal(19, 4)
+  requestedTermMonths Int               @map("requested_term_months")
+  planType            FinancingPlanType @map("plan_type")
+  currency            Currency
+
+  // Applicant info
+  monthlyIncome          Decimal? @map("monthly_income") @db.Decimal(19, 4)
+  employmentStatus       String?  @map("employment_status") @db.VarChar(50)
+  drivingExperienceYears Int?     @map("driving_experience_years")
+  ubiDriverId            String?  @map("ubi_driver_id") @db.Uuid
+
+  // Credit assessment
+  creditScore Int?    @map("credit_score")
+  creditGrade String? @map("credit_grade") @db.VarChar(10)
+  riskLevel   String? @map("risk_level") @db.VarChar(20)
+
+  // UBI earning history (for alternative credit scoring)
+  avgMonthlyEarnings    Decimal? @map("avg_monthly_earnings") @db.Decimal(19, 4)
+  totalEarningsLast12Mo Decimal? @map("total_earnings_last_12mo") @db.Decimal(19, 4)
+  onTimePaymentRate     Decimal? @map("on_time_payment_rate") @db.Decimal(5, 2)
+  platformTenureMonths  Int?     @map("platform_tenure_months")
+
+  // Decision
+  status               FinancingApplicationStatus @default(PENDING)
+  approvedAmount       Decimal?                   @map("approved_amount") @db.Decimal(19, 4)
+  approvedTermMonths   Int?                       @map("approved_term_months")
+  approvedInterestRate Decimal?                   @map("approved_interest_rate") @db.Decimal(5, 4)
+  monthlyPaymentAmount Decimal?                   @map("monthly_payment_amount") @db.Decimal(19, 4)
+  rejectionReason      String?                    @map("rejection_reason")
+  reviewedAt           DateTime?                  @map("reviewed_at")
+  reviewedBy           String?                    @map("reviewed_by") @db.Uuid
+  expiresAt            DateTime?                  @map("expires_at")
+
+  documents Json? // Array of document URLs/metadata
+  notes     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vehicleListing VehicleMarketplaceListing @relation(fields: [vehicleListingId], references: [id])
+  financing      VehicleFinancing?
+
+  @@index([applicantUserId])
+  @@index([vehicleListingId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("vehicle_financing_applications")
+}
+
+model VehicleFinancing {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicationId String  @unique @map("application_id") @db.Uuid
+  driverUserId  String  @map("driver_user_id") @db.Uuid
+  vehicleId     String? @map("vehicle_id") @db.Uuid // Created after financing approved
+
+  // Financing details
+  planType        FinancingPlanType @map("plan_type")
+  principalAmount Decimal           @map("principal_amount") @db.Decimal(19, 4)
+  downPaymentPaid Decimal           @map("down_payment_paid") @db.Decimal(19, 4)
+  interestRate    Decimal           @map("interest_rate") @db.Decimal(5, 4)
+  termMonths      Int               @map("term_months")
+  monthlyPayment  Decimal           @map("monthly_payment") @db.Decimal(19, 4)
+  totalInterest   Decimal           @map("total_interest") @db.Decimal(19, 4)
+  totalPayable    Decimal           @map("total_payable") @db.Decimal(19, 4)
+  currency        Currency
+
+  // Payment tracking
+  amountPaid        Decimal   @default(0) @map("amount_paid") @db.Decimal(19, 4)
+  amountRemaining   Decimal   @map("amount_remaining") @db.Decimal(19, 4)
+  nextPaymentDue    DateTime? @map("next_payment_due")
+  nextPaymentAmount Decimal?  @map("next_payment_amount") @db.Decimal(19, 4)
+  paymentsCompleted Int       @default(0) @map("payments_completed")
+  paymentsRemaining Int       @map("payments_remaining")
+  missedPayments    Int       @default(0) @map("missed_payments")
+  latePayments      Int       @default(0) @map("late_payments")
+
+  // Auto-deduction settings
+  autoDeductEnabled    Boolean  @default(true) @map("auto_deduct_enabled")
+  autoDeductPercentage Decimal? @map("auto_deduct_percentage") @db.Decimal(5, 2)
+  autoDeductDay        Int?     @map("auto_deduct_day") // Day of month
+  minEarningsThreshold Decimal? @map("min_earnings_threshold") @db.Decimal(19, 4)
+
+  // Status
+  status          VehicleFinancingStatus @default(FINANCED)
+  startDate       DateTime               @map("start_date")
+  expectedEndDate DateTime               @map("expected_end_date")
+  actualEndDate   DateTime?              @map("actual_end_date")
+  defaultedAt     DateTime?              @map("defaulted_at")
+
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  application VehicleFinancingApplication @relation(fields: [applicationId], references: [id])
+  payments    VehicleFinancingPayment[]
+
+  @@index([driverUserId])
+  @@index([status])
+  @@index([nextPaymentDue])
+  @@map("vehicle_financings")
+}
+
+model VehicleFinancingPayment {
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  financingId   String @map("financing_id") @db.Uuid
+  paymentNumber Int    @map("payment_number")
+
+  // Amounts
+  principalAmount Decimal  @map("principal_amount") @db.Decimal(19, 4)
+  interestAmount  Decimal  @map("interest_amount") @db.Decimal(19, 4)
+  lateFee         Decimal  @default(0) @map("late_fee") @db.Decimal(19, 4)
+  totalAmount     Decimal  @map("total_amount") @db.Decimal(19, 4)
+  amountPaid      Decimal  @default(0) @map("amount_paid") @db.Decimal(19, 4)
+  currency        Currency
+
+  // Dates
+  dueDate         DateTime  @map("due_date")
+  paidAt          DateTime? @map("paid_at")
+  gracePeriodEnds DateTime? @map("grace_period_ends")
+
+  // Payment source
+  paymentSource String? @map("payment_source") @db.VarChar(50) // AUTO_DEDUCT, WALLET, MPESA, CARD, MANUAL
+  transactionId String? @map("transaction_id")
+
+  // Status
+  status         String  @default("PENDING") @db.VarChar(20) // PENDING, PARTIAL, PAID, OVERDUE, WAIVED
+  isAutoDeducted Boolean @default(false) @map("is_auto_deducted")
+
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  financing VehicleFinancing @relation(fields: [financingId], references: [id])
+
+  @@index([financingId])
+  @@index([dueDate])
+  @@index([status])
+  @@map("vehicle_financing_payments")
+}
+
+// Device tokens for push notifications
+model DeviceToken {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String
+  platform  String   @db.VarChar(20) // ios, android, web
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, token])
+  @@index([userId, isActive])
+  @@map("device_tokens")
+}

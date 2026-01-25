@@ -77,7 +77,7 @@ export interface CommissionBreakdown {
 }
 
 export class SettlementService {
-  private config: SettlementConfig = {
+  private readonly config: SettlementConfig = {
     restaurantSettlementHour: 6, // 6 AM
     merchantSettlementDay: 1, // Monday
     partnerSettlementDay: 1, // 1st of month
@@ -91,7 +91,7 @@ export class SettlementService {
   };
 
   // Commission rates by recipient type
-  private commissionRates: Record<
+  private readonly commissionRates: Record<
     string,
     { ubiPercent: number; ceerionPercent: number }
   > = {
@@ -101,7 +101,7 @@ export class SettlementService {
     DRIVER: { ubiPercent: 15, ceerionPercent: 0.75 }, // UBI 15%, CEERION 0.75%
   };
 
-  constructor(private prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) {}
 
   /**
    * Calculate commission breakdown for a settlement
@@ -722,14 +722,12 @@ export class SettlementService {
 
       // Group by recipient type
       const recipientType = settlement.recipientType;
-      if (!summary.byRecipientType[recipientType]) {
-        summary.byRecipientType[recipientType] = {
-          count: 0,
-          grossAmount: 0,
-          commission: 0,
-          netAmount: 0,
-        };
-      }
+      summary.byRecipientType[recipientType] ??= {
+        count: 0,
+        grossAmount: 0,
+        commission: 0,
+        netAmount: 0,
+      };
 
       const typeStats = summary.byRecipientType[recipientType];
       if (typeStats) {
@@ -787,8 +785,6 @@ export function createSettlementService(
 
 // Get singleton instance
 export function getSettlementService(prisma: PrismaClient): SettlementService {
-  if (!settlementServiceInstance) {
-    settlementServiceInstance = createSettlementService(prisma);
-  }
+  settlementServiceInstance ??= createSettlementService(prisma);
   return settlementServiceInstance;
 }

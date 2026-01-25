@@ -7,6 +7,7 @@ import type { Currency } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { loanLogger } from "../lib/logger";
 import {
+  NotificationChannel,
   notificationClient,
   NotificationPriority,
   NotificationType,
@@ -41,6 +42,44 @@ export interface LoanRepaymentResult {
 
 const LATE_PAYMENT_PENALTY_RATE = 0.05; // 5% of amount due
 const GRACE_PERIOD_DAYS = 3; // Days before late fees apply
+
+// ===========================================
+// HELPER FUNCTIONS
+// ===========================================
+
+/** Format title for due reminder notification */
+function formatDueReminderTitle(daysUntilDue: number): string {
+  if (daysUntilDue === 0) return "Loan Payment Due Today";
+  const plural = daysUntilDue > 1 ? "s" : "";
+  return `Loan Payment Due in ${daysUntilDue} Day${plural}`;
+}
+
+/** Format body for due reminder notification */
+function formatDueReminderBody(
+  productName: string,
+  currency: string,
+  amountDue: number,
+  daysUntilDue: number,
+): string {
+  const amountFormatted = `${currency} ${amountDue.toLocaleString()}`;
+  let dueText: string;
+  if (daysUntilDue === 0) {
+    dueText = "today";
+  } else {
+    const plural = daysUntilDue > 1 ? "s" : "";
+    dueText = `in ${daysUntilDue} day${plural}`;
+  }
+  return `Your ${productName} payment of ${amountFormatted} is due ${dueText}. Tap to pay now.`;
+}
+
+/** Determine escalation level based on days overdue */
+function getEscalationLevel(
+  daysOverdue: number,
+): "reminder" | "warning" | "critical" {
+  if (daysOverdue <= 3) return "reminder";
+  if (daysOverdue <= 14) return "warning";
+  return "critical";
+}
 
 // ===========================================
 // LOAN SERVICE
@@ -109,7 +148,7 @@ export class LoanService {
       where: { id: productId },
     });
 
-    if (!product || !product.isActive) {
+    if (!product?.isActive) {
       throw new Error("Loan product not found");
     }
 
@@ -259,7 +298,11 @@ export class LoanService {
       include: { schedule: true },
     });
 
-    return this.formatLoan(updatedLoan!);
+    if (!updatedLoan) {
+      throw new Error("Loan not found after update");
+    }
+
+    return this.formatLoan(updatedLoan);
   }
 
   /**
@@ -579,9 +622,10 @@ export class LoanService {
   // ===========================================
 
   /**
-   * Check for overdue loans
+   * Check for overdue loans and send notifications
+   * Called by scheduled job (recommend: every 6 hours)
    */
-  async checkOverdueLoans(): Promise<{ updated: number }> {
+  async checkOverdueLoans(): Promise<{ updated: number; notified: number }> {
     const now = new Date();
 
     // Find active loans with overdue payments
@@ -598,7 +642,7 @@ export class LoanService {
     const loanIds = overdueSchedules.map((s: { loanId: string }) => s.loanId);
 
     if (loanIds.length === 0) {
-      return { updated: 0 };
+      return { updated: 0, notified: 0 };
     }
 
     await prisma.loan.updateMany({
@@ -606,12 +650,279 @@ export class LoanService {
       data: { status: "OVERDUE" },
     });
 
-    // TODO: Send overdue notifications
+    // Send overdue notifications with escalating urgency
+    let notified = 0;
     for (const loanId of loanIds) {
-      await this.sendOverdueNotification(loanId);
+      const success = await this.sendOverdueNotification(loanId);
+      if (success) notified++;
     }
 
-    return { updated: loanIds.length };
+    loanLogger.info(
+      { updated: loanIds.length, notified },
+      "Processed overdue loans",
+    );
+
+    return { updated: loanIds.length, notified };
+  }
+
+  /**
+   * Send payment due reminders
+   * Called by scheduled job daily at configurable time
+   * Sends reminders at: 3 days before, 1 day before, and day of due date
+   */
+  async sendDueReminders(): Promise<{
+    reminded: number;
+    failed: number;
+  }> {
+    const now = new Date();
+    const oneDayFromNow = new Date(now);
+    oneDayFromNow.setDate(oneDayFromNow.getDate() + 1);
+    const threeDaysFromNow = new Date(now);
+    threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
+
+    // Find upcoming payments
+    const upcomingPayments = await prisma.loanSchedule.findMany({
+      where: {
+        status: "PENDING",
+        dueDate: {
+          gte: now,
+          lte: threeDaysFromNow,
+        },
+        loan: { status: "ACTIVE" },
+      },
+      include: {
+        loan: {
+          include: {
+            user: true,
+            product: true,
+          },
+        },
+      },
+    });
+
+    let reminded = 0;
+    let failed = 0;
+
+    for (const schedule of upcomingPayments) {
+      try {
+        const daysUntilDue = Math.ceil(
+          (schedule.dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+        );
+        const amountDue =
+          Number(schedule.amountDue) - Number(schedule.amountPaid);
+
+        // Only send reminders at specific intervals: 3 days, 1 day, 0 days
+        if (daysUntilDue !== 3 && daysUntilDue !== 1 && daysUntilDue !== 0) {
+          continue;
+        }
+
+        // Build payment link
+        const paymentLink = `${process.env.WEB_APP_URL || "https://app.ubi.africa"}/loans/${schedule.loanId}/pay`;
+
+        await notificationClient.send({
+          userId: schedule.loan.userId,
+          title: formatDueReminderTitle(daysUntilDue),
+          body: formatDueReminderBody(
+            schedule.loan.product.name,
+            schedule.loan.currency,
+            amountDue,
+            daysUntilDue,
+          ),
+          type: NotificationType.LOAN_DUE_REMINDER,
+          priority:
+            daysUntilDue === 0
+              ? NotificationPriority.HIGH
+              : NotificationPriority.NORMAL,
+          data: {
+            loanId: schedule.loanId,
+            scheduleId: schedule.id,
+            amountDue,
+            currency: schedule.loan.currency,
+            dueDate: schedule.dueDate.toISOString(),
+            daysUntilDue,
+            paymentLink,
+          },
+        });
+
+        reminded++;
+      } catch (error) {
+        loanLogger.error(
+          { err: error, scheduleId: schedule.id },
+          "Failed to send due reminder",
+        );
+        failed++;
+      }
+    }
+
+    return { reminded, failed };
+  }
+
+  /**
+   * Build notification content based on days overdue
+   */
+  private buildOverdueNotification(
+    loan: any,
+    totalOverdue: number,
+    lateFee: number,
+    daysOverdue: number,
+  ): { title: string; body: string; priority: NotificationPriority } {
+    if (daysOverdue <= 3) {
+      const plural = daysOverdue > 1 ? "s" : "";
+      return {
+        priority: NotificationPriority.HIGH,
+        title: `Payment ${daysOverdue} Day${plural} Overdue`,
+        body: `Your ${loan.product.name} payment of ${loan.currency} ${totalOverdue.toLocaleString()} is ${daysOverdue} day${plural} overdue. Pay now to avoid late fees.`,
+      };
+    }
+
+    if (daysOverdue <= 14) {
+      const lateFeeText =
+        lateFee > 0
+          ? ` + ${loan.currency} ${lateFee.toLocaleString()} late fee`
+          : "";
+      return {
+        priority: NotificationPriority.URGENT,
+        title: "⚠️ Urgent: Loan Payment Overdue",
+        body: `Your ${loan.product.name} payment is ${daysOverdue} days overdue. Amount: ${loan.currency} ${totalOverdue.toLocaleString()}${lateFeeText}. This may affect your credit score.`,
+      };
+    }
+
+    return {
+      priority: NotificationPriority.URGENT,
+      title: "🚨 Critical: Loan Account in Default",
+      body: `Your loan account is ${daysOverdue} days overdue. Total due: ${loan.currency} ${(totalOverdue + lateFee).toLocaleString()}. Please contact support to arrange payment.`,
+    };
+  }
+
+  /**
+   * Get notification channels based on days overdue
+   */
+  private getOverdueNotificationChannels(
+    daysOverdue: number,
+  ): NotificationChannel[] {
+    const channels: NotificationChannel[] = [
+      NotificationChannel.PUSH,
+      NotificationChannel.SMS,
+    ];
+    if (daysOverdue >= 7) channels.push(NotificationChannel.EMAIL);
+    if (daysOverdue >= 14) channels.push(NotificationChannel.WHATSAPP);
+    return channels;
+  }
+
+  /**
+   * Send escalating overdue notifications
+   * Called by scheduled job (recommend: daily at 10am user time)
+   * Escalation schedule: 1 day, 3 days, 7 days, 14 days, 30 days overdue
+   */
+  async sendEscalatingOverdueNotifications(): Promise<{
+    notified: number;
+    failed: number;
+  }> {
+    const now = new Date();
+
+    // Find all overdue loans with their schedules
+    const overdueLoans = await prisma.loan.findMany({
+      where: { status: "OVERDUE" },
+      include: {
+        user: true,
+        product: true,
+        schedule: {
+          where: { status: { in: ["PENDING", "PARTIAL", "OVERDUE"] } },
+          orderBy: { dueDate: "asc" },
+        },
+      },
+    });
+
+    let notified = 0;
+    let failed = 0;
+
+    for (const loan of overdueLoans) {
+      try {
+        if (loan.schedule.length === 0) continue;
+
+        const oldestOverdue = loan.schedule[0];
+        const daysOverdue = Math.floor(
+          (now.getTime() - oldestOverdue.dueDate.getTime()) /
+            (1000 * 60 * 60 * 24),
+        );
+
+        // Only notify at specific escalation points
+        const escalationDays = [1, 3, 7, 14, 30];
+        if (!escalationDays.includes(daysOverdue)) {
+          continue;
+        }
+
+        // Calculate total overdue amount
+        const totalOverdue = loan.schedule.reduce(
+          (sum: number, s: { amountDue: unknown; amountPaid: unknown }) =>
+            sum + (Number(s.amountDue) - Number(s.amountPaid)),
+          0,
+        );
+
+        // Calculate late fee (if applicable after grace period)
+        const lateFee =
+          daysOverdue > GRACE_PERIOD_DAYS
+            ? Math.round(totalOverdue * LATE_PAYMENT_PENALTY_RATE * 100) / 100
+            : 0;
+
+        const paymentLink = `${process.env.WEB_APP_URL || "https://app.ubi.africa"}/loans/${loan.id}/pay`;
+        const notification = this.buildOverdueNotification(
+          loan,
+          totalOverdue,
+          lateFee,
+          daysOverdue,
+        );
+
+        await notificationClient.send({
+          userId: loan.userId,
+          title: notification.title,
+          body: notification.body,
+          type: NotificationType.LOAN_OVERDUE,
+          priority: notification.priority,
+          channels: this.getOverdueNotificationChannels(daysOverdue),
+          data: {
+            loanId: loan.id,
+            productName: loan.product.name,
+            totalOverdue,
+            lateFee,
+            totalDue: totalOverdue + lateFee,
+            currency: loan.currency,
+            daysOverdue,
+            paymentLink,
+            escalationLevel: getEscalationLevel(daysOverdue),
+          },
+        });
+
+        // Log for audit trail
+        await prisma.loanNotificationLog.create({
+          data: {
+            id: `notif_${nanoid(12)}`,
+            loanId: loan.id,
+            userId: loan.userId,
+            type: "OVERDUE",
+            daysOverdue,
+            amountDue: totalOverdue,
+            lateFee,
+            sentAt: now,
+          },
+        });
+
+        notified++;
+      } catch (error) {
+        loanLogger.error(
+          { err: error, loanId: loan.id },
+          "Failed to send escalating notification",
+        );
+        failed++;
+      }
+    }
+
+    loanLogger.info(
+      { notified, failed },
+      "Processed escalating overdue notifications",
+    );
+
+    return { notified, failed };
   }
 
   /**

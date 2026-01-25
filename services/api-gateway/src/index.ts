@@ -30,7 +30,7 @@ import { healthRoutes } from "./routes/health";
 import { proxyRoutes } from "./routes/proxy";
 
 // Environment configuration
-const PORT = parseInt(process.env.PORT || "4000", 10);
+const PORT = Number.parseInt(process.env.PORT || "4000", 10);
 const NODE_ENV = process.env.NODE_ENV || "development";
 
 // Create Hono app

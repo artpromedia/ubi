@@ -828,16 +828,18 @@ export class MpesaService {
 
   /**
    * Query B2C transaction status
-   * Used when callback is not received within timeout period
+   * M-Pesa B2C doesn't have a direct status query API, so we implement:
+   * 1. Check our database for callback result
+   * 2. If pending too long, use Transaction Status Query API
+   * 3. Fallback to manual reconciliation queue
    */
   async queryB2CStatus(originatorConversationId: string): Promise<{
-    status: "COMPLETED" | "FAILED" | "PENDING";
+    status: "COMPLETED" | "FAILED" | "PENDING" | "TIMEOUT";
     description: string;
+    transactionId?: string;
+    shouldRetry?: boolean;
   }> {
-    // Note: M-Pesa doesn't have a direct B2C status query API like STK Push
-    // You typically need to wait for the callback or implement your own tracking
-    // This is a placeholder that would need custom implementation based on your tracking
-
+    // First, check our database for the payout
     const payout = await this.prisma.payout.findFirst({
       where: {
         metadata: {
@@ -850,14 +852,18 @@ export class MpesaService {
     if (!payout) {
       return {
         status: "PENDING",
-        description: "Payout not found in database",
+        description: "Payout not found in database - may still be processing",
+        shouldRetry: true,
       };
     }
 
+    // If we have a final status from callback, return it
     if (payout.status === "COMPLETED") {
+      const metadata = payout.providerMetadata as Record<string, unknown>;
       return {
         status: "COMPLETED",
         description: "Payout completed successfully",
+        transactionId: metadata?.transactionId as string | undefined,
       };
     }
 
@@ -865,12 +871,154 @@ export class MpesaService {
       return {
         status: "FAILED",
         description: payout.failureReason || "Payout failed",
+        shouldRetry: this.isRetryableError(payout.failureReason || ""),
       };
+    }
+
+    // Check if payout has been pending too long (over 5 minutes)
+    const pendingDuration = Date.now() - new Date(payout.createdAt).getTime();
+    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+    if (pendingDuration > TIMEOUT_MS) {
+      // Try Transaction Status Query API as fallback
+      try {
+        const statusResult = await this.queryB2CTransactionStatus(
+          originatorConversationId,
+          payout,
+        );
+        return statusResult;
+      } catch (error) {
+        mpesaLogger.warn(
+          { err: error, originatorConversationId },
+          "Transaction status query failed, marking for manual reconciliation",
+        );
+
+        // Queue for manual reconciliation
+        await this.queueForReconciliation(payout.id, originatorConversationId);
+
+        return {
+          status: "TIMEOUT",
+          description:
+            "Callback not received within timeout. Queued for manual reconciliation.",
+          shouldRetry: false,
+        };
+      }
     }
 
     return {
       status: "PENDING",
-      description: "Payout is still processing",
+      description: "Payout is still processing - awaiting M-Pesa callback",
+      shouldRetry: true,
     };
+  }
+
+  /**
+   * Use M-Pesa Transaction Status Query API for B2C
+   * This is a fallback when callback is not received
+   */
+  private async queryB2CTransactionStatus(
+    originatorConversationId: string,
+    payout: { id: string; amount: number },
+  ): Promise<{
+    status: "COMPLETED" | "FAILED" | "PENDING";
+    description: string;
+    transactionId?: string;
+    shouldRetry?: boolean;
+  }> {
+    const token = await this.getAccessToken();
+
+    const payload = {
+      Initiator: this.config.b2cInitiatorName,
+      SecurityCredential: this.config.b2cSecurityCredential,
+      CommandID: "TransactionStatusQuery",
+      TransactionID: "", // We don't have this yet
+      OriginatorConversationID: originatorConversationId,
+      PartyA: this.config.b2cShortCode,
+      IdentifierType: "4", // Shortcode identifier
+      ResultURL: this.config.b2cResultUrl, // Reuse result URL
+      QueueTimeOutURL: this.config.b2cQueueTimeoutUrl,
+      Remarks: "Status query for B2C payout",
+      Occasion: `Payout ${payout.id}`,
+    };
+
+    const response = await fetch(
+      `${this.baseUrl}/mpesa/transactionstatus/v1/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Transaction status query failed: ${response.status}`);
+    }
+
+    const data = (await response.json()) as {
+      ResponseCode: string;
+      ResponseDescription: string;
+      OriginatorConversationID: string;
+      ConversationID: string;
+    };
+
+    if (data.ResponseCode === "0") {
+      // Query accepted - result will come via callback
+      mpesaLogger.info(
+        { originatorConversationId, conversationId: data.ConversationID },
+        "Transaction status query submitted",
+      );
+
+      return {
+        status: "PENDING",
+        description: "Status query submitted, awaiting result callback",
+        shouldRetry: true,
+      };
+    }
+
+    throw new Error(`Status query rejected: ${data.ResponseDescription}`);
+  }
+
+  /**
+   * Queue a payout for manual reconciliation
+   */
+  private async queueForReconciliation(
+    payoutId: string,
+    originatorConversationId: string,
+  ): Promise<void> {
+    await this.prisma.payout.update({
+      where: { id: payoutId },
+      data: {
+        status: "PENDING_RECONCILIATION",
+        metadata: {
+          originatorConversationId,
+          reconciliationQueuedAt: new Date().toISOString(),
+          requiresManualReview: true,
+        },
+      },
+    });
+
+    mpesaLogger.warn(
+      { payoutId, originatorConversationId },
+      "Payout queued for manual reconciliation",
+    );
+  }
+
+  /**
+   * Check if an error is retryable
+   */
+  private isRetryableError(errorMessage: string): boolean {
+    const retryablePatterns = [
+      /timeout/i,
+      /temporary/i,
+      /try again/i,
+      /service unavailable/i,
+      /connection/i,
+      /network/i,
+    ];
+
+    return retryablePatterns.some((pattern) => pattern.test(errorMessage));
   }
 }

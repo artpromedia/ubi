@@ -3,7 +3,7 @@
 // Fleet Owner Management Service
 // ===========================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   ApplicationStatus,
   AssignDriverInput,
@@ -48,48 +48,62 @@ const FLEET_VEHICLE_LIMITS = {
 // FLEET OWNER SERVICE
 // -----------------------------------------
 
+/**
+ * Fleet Owner Service for managing fleet programs
+ *
+ * Reserved fields for future distributed architecture:
+ * - _eventEmitter: For pub/sub patterns across microservices
+ * - _redis: For distributed caching and state management
+ */
 export class FleetOwnerService implements IFleetOwnerService {
-  // @ts-expect-error - EventEmitter reserved for future event-driven features
-  private _eventEmitter: EventEmitter;
+  /** Reserved: Event emitter for fleet events - Sprint 5 */
+  private readonly _eventEmitter: EventEmitter;
+  /** Reserved: Redis client for distributed caching - Sprint 5 */
+  private readonly _redis: unknown;
 
   constructor(
-    private db: any,
-    // @ts-expect-error - Redis reserved for future caching features
-    private _redis: any,
-    private paymentService: any,
-    private notificationService: any,
-    private analyticsService: any
+    private readonly db: any,
+    redis: unknown,
+    private readonly paymentService: any,
+    private readonly notificationService: any,
+    private readonly analyticsService: any,
   ) {
     this._eventEmitter = new EventEmitter();
+    this._redis = redis;
   }
 
   // -----------------------------------------
   // FLEET OWNER APPLICATION
   // -----------------------------------------
 
+  /**
+   * Apply for the fleet owner program
+   * This creates an application that requires admin approval.
+   * The fleet owner record is created upon approval via reviewApplication().
+   *
+   * @param driverId - The driver's ID
+   * @param application - Fleet application details
+   * @returns The submitted application (not a FleetOwner - that comes after approval)
+   * @throws Error if driver is ineligible or already has pending application
+   */
   async applyForFleetProgram(
     driverId: string,
-    application: FleetApplication
-  ): Promise<FleetOwner> {
-    // Apply for fleet owner program
-    await this.applyForFleetOwner(driverId, application);
+    application: FleetApplication,
+  ): Promise<FleetApplication> {
+    // Submit the application
+    const submittedApplication = await this.applyForFleetOwner(
+      driverId,
+      application,
+    );
 
-    // Wait for the fleet owner record to be created (this happens in reviewApplication when approved)
-    // For now, return a placeholder that will be created upon approval
-    const fleet = await this.db.fleetOwner.findUnique({
-      where: { driverId },
-    });
-
-    if (!fleet) {
-      throw new Error("Fleet owner record not created. Application pending review.");
-    }
-
-    return this.mapFleetOwner(fleet);
+    // Return the application - user must wait for admin approval
+    // The FleetOwner record is created in reviewApplication when approved
+    return submittedApplication;
   }
 
   async applyForFleetOwner(
     driverId: string,
-    application: FleetApplication
+    application: FleetApplication,
   ): Promise<FleetApplication> {
     // Check eligibility
     const profile = await this.db.driverProfile.findUnique({
@@ -166,7 +180,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   }
 
   async getApplicationStatus(
-    driverId: string
+    driverId: string,
   ): Promise<FleetApplication | null> {
     const application = await this.db.fleetOwnerApplication.findFirst({
       where: { driverId },
@@ -181,7 +195,7 @@ export class FleetOwnerService implements IFleetOwnerService {
     applicationId: string,
     reviewerId: string,
     approved: boolean,
-    notes?: string
+    notes?: string,
   ): Promise<FleetApplication> {
     const application = await this.db.fleetOwnerApplication.update({
       where: { id: applicationId },
@@ -217,7 +231,7 @@ export class FleetOwnerService implements IFleetOwnerService {
 
   private async createFleetOwner(
     driverId: string,
-    application: any
+    application: any,
   ): Promise<void> {
     await this.db.fleetOwner.create({
       data: {
@@ -286,7 +300,7 @@ export class FleetOwnerService implements IFleetOwnerService {
     const lastWeekEarnings = await this.getEarningsForPeriod(
       fleet.id,
       lastWeek,
-      today
+      today,
     );
 
     // Note: Additional metrics like weekly change, top vehicles/drivers, and maintenance alerts
@@ -316,8 +330,8 @@ export class FleetOwnerService implements IFleetOwnerService {
       },
       monthStats: {
         totalTrips: 0,
-        grossEarnings: parseFloat(fleet.totalEarnings),
-        netEarnings: parseFloat(fleet.totalEarnings),
+        grossEarnings: Number.parseFloat(fleet.totalEarnings),
+        netEarnings: Number.parseFloat(fleet.totalEarnings),
         activeVehicles,
         activeDrivers: 0,
         averageRating: 0,
@@ -334,7 +348,7 @@ export class FleetOwnerService implements IFleetOwnerService {
 
   async addVehicle(
     driverId: string,
-    vehicle: Omit<FleetVehicle, "id" | "fleetId">
+    vehicle: Omit<FleetVehicle, "id" | "fleetId">,
   ): Promise<FleetVehicle> {
     const fleet = await this.db.fleetOwner.findUnique({
       where: { driverId },
@@ -347,7 +361,7 @@ export class FleetOwnerService implements IFleetOwnerService {
     // Check vehicle limit
     if (fleet.totalVehicles >= fleet.maxVehicles) {
       throw new Error(
-        `Vehicle limit reached (${fleet.maxVehicles}). Upgrade to add more vehicles.`
+        `Vehicle limit reached (${fleet.maxVehicles}). Upgrade to add more vehicles.`,
       );
     }
 
@@ -409,7 +423,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   async updateVehicle(
     driverId: string,
     vehicleId: string,
-    updates: Partial<FleetVehicle>
+    updates: Partial<FleetVehicle>,
   ): Promise<FleetVehicle> {
     const fleet = await this.db.fleetOwner.findUnique({
       where: { driverId },
@@ -490,7 +504,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   async inviteDriver(
     fleetOwnerId: string,
     driverId: string,
-    vehicleId?: string
+    vehicleId?: string,
   ): Promise<FleetDriver> {
     const fleet = await this.db.fleetOwner.findUnique({
       where: { driverId: fleetOwnerId },
@@ -564,10 +578,14 @@ export class FleetOwnerService implements IFleetOwnerService {
   async respondToInvitation(
     driverId: string,
     invitationId: string,
-    accept: boolean
+    accept: boolean,
   ): Promise<FleetDriver> {
     const invitation = await this.db.fleetDriver.findFirst({
-      where: { id: invitationId, driverId, status: FleetDriverStatus.SUSPENDED },
+      where: {
+        id: invitationId,
+        driverId,
+        status: FleetDriverStatus.SUSPENDED,
+      },
       include: { fleet: true },
     });
 
@@ -578,7 +596,9 @@ export class FleetOwnerService implements IFleetOwnerService {
     const fleetDriver = await this.db.fleetDriver.update({
       where: { id: invitationId },
       data: {
-        status: accept ? FleetDriverStatus.ACTIVE : FleetDriverStatus.TERMINATED,
+        status: accept
+          ? FleetDriverStatus.ACTIVE
+          : FleetDriverStatus.TERMINATED,
         respondedAt: new Date(),
         ...(accept && { joinedAt: new Date() }),
       },
@@ -652,7 +672,7 @@ export class FleetOwnerService implements IFleetOwnerService {
 
   async assignDriver(
     fleetOwnerId: string,
-    input: AssignDriverInput
+    input: AssignDriverInput,
   ): Promise<FleetDriver> {
     // Invite the driver first
     await this.inviteDriver(fleetOwnerId, input.driverId, input.vehicleId);
@@ -691,14 +711,17 @@ export class FleetOwnerService implements IFleetOwnerService {
     return this.mapFleetDriver(fleetDriver);
   }
 
-  async unassignDriver(fleetOwnerId: string, driverId: string): Promise<boolean> {
+  async unassignDriver(
+    fleetOwnerId: string,
+    driverId: string,
+  ): Promise<boolean> {
     return this.removeDriverFromFleet(fleetOwnerId, driverId);
   }
 
   async assignVehicleToDriver(
     fleetOwnerId: string,
     driverId: string,
-    vehicleId: string
+    vehicleId: string,
   ): Promise<boolean> {
     const fleet = await this.db.fleetOwner.findUnique({
       where: { driverId: fleetOwnerId },
@@ -765,7 +788,7 @@ export class FleetOwnerService implements IFleetOwnerService {
 
   async removeDriverFromFleet(
     fleetOwnerId: string,
-    driverId: string
+    driverId: string,
   ): Promise<boolean> {
     const fleet = await this.db.fleetOwner.findUnique({
       where: { driverId: fleetOwnerId },
@@ -831,7 +854,7 @@ export class FleetOwnerService implements IFleetOwnerService {
 
   async getFleetEarnings(
     fleetOwnerId: string,
-    period: "week" | "month"
+    period: "week" | "month",
   ): Promise<FleetEarnings> {
     const fleet = await this.db.fleetOwner.findUnique({
       where: { driverId: fleetOwnerId },
@@ -871,52 +894,56 @@ export class FleetOwnerService implements IFleetOwnerService {
 
     for (const earning of earnings) {
       const dateKey = earning.date.toISOString().split("T")[0];
-      if (!dailyBreakdown[dateKey]) {
-        dailyBreakdown[dateKey] = {
-          date: earning.date,
-          totalEarnings: 0,
-          ownerShare: 0,
-          driverShare: 0,
-          platformFee: 0,
-          trips: 0,
-        };
-      }
+      dailyBreakdown[dateKey] ??= {
+        date: earning.date,
+        totalEarnings: 0,
+        ownerShare: 0,
+        driverShare: 0,
+        platformFee: 0,
+        trips: 0,
+      };
 
-      dailyBreakdown[dateKey].totalEarnings += parseFloat(
-        earning.totalEarnings
+      dailyBreakdown[dateKey].totalEarnings += Number.parseFloat(
+        earning.totalEarnings,
       );
-      dailyBreakdown[dateKey].ownerShare += parseFloat(earning.ownerShare);
-      dailyBreakdown[dateKey].driverShare += parseFloat(earning.driverShare);
-      dailyBreakdown[dateKey].platformFee += parseFloat(earning.platformFee);
+      dailyBreakdown[dateKey].ownerShare += Number.parseFloat(
+        earning.ownerShare,
+      );
+      dailyBreakdown[dateKey].driverShare += Number.parseFloat(
+        earning.driverShare,
+      );
+      dailyBreakdown[dateKey].platformFee += Number.parseFloat(
+        earning.platformFee,
+      );
       dailyBreakdown[dateKey].trips += earning.trips;
     }
 
     // Calculate totals
     const totalEarnings = Object.values(dailyBreakdown).reduce(
       (sum, d) => sum + d.totalEarnings,
-      0
+      0,
     );
     const ownerShare = Object.values(dailyBreakdown).reduce(
       (sum, d) => sum + d.ownerShare,
-      0
+      0,
     );
     const totalTrips = Object.values(dailyBreakdown).reduce(
       (sum, d) => sum + d.trips,
-      0
+      0,
     );
 
     // Get vehicle breakdown
     const vehicleBreakdown = await this.getVehicleEarningsBreakdown(
       fleet.id,
       startDate,
-      endDate
+      endDate,
     );
 
     // Get driver breakdown
     const driverBreakdown = await this.getDriverEarningsBreakdown(
       fleet.id,
       startDate,
-      endDate
+      endDate,
     );
 
     return {
@@ -926,7 +953,7 @@ export class FleetOwnerService implements IFleetOwnerService {
       ownerShare,
       totalTrips,
       dailyBreakdown: Object.values(dailyBreakdown).sort(
-        (a, b) => a.date.getTime() - b.date.getTime()
+        (a, b) => a.date.getTime() - b.date.getTime(),
       ),
       vehicleBreakdown,
       driverBreakdown,
@@ -936,7 +963,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   async processFleetTrip(
     _tripId: string,
     driverId: string,
-    tripEarning: number
+    tripEarning: number,
   ): Promise<void> {
     // Check if driver is in a fleet
     const fleetDriver = await this.db.fleetDriver.findFirst({
@@ -1025,7 +1052,7 @@ export class FleetOwnerService implements IFleetOwnerService {
       throw new Error("Fleet owner not found");
     }
 
-    if (parseFloat(fleet.balance) < amount) {
+    if (Number.parseFloat(fleet.balance) < amount) {
       throw new Error("Insufficient balance");
     }
 
@@ -1039,7 +1066,7 @@ export class FleetOwnerService implements IFleetOwnerService {
     await this.paymentService?.creditWallet(
       fleetOwnerId,
       amount,
-      "Fleet owner payout"
+      "Fleet owner payout",
     );
 
     // Record payout
@@ -1062,7 +1089,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   async scheduleMaintenance(
     fleetOwnerId: string,
     vehicleId: string,
-    maintenance: Omit<VehicleMaintenance, "id" | "vehicleId">
+    maintenance: Omit<VehicleMaintenance, "id" | "vehicleId">,
   ): Promise<VehicleMaintenance> {
     const fleet = await this.db.fleetOwner.findUnique({
       where: { driverId: fleetOwnerId },
@@ -1103,7 +1130,7 @@ export class FleetOwnerService implements IFleetOwnerService {
 
   async getMaintenanceHistory(
     fleetOwnerId: string,
-    vehicleId?: string
+    vehicleId?: string,
   ): Promise<VehicleMaintenance[]> {
     const fleet = await this.db.fleetOwner.findUnique({
       where: { driverId: fleetOwnerId },
@@ -1132,7 +1159,7 @@ export class FleetOwnerService implements IFleetOwnerService {
       notes?: string;
       nextServiceMileage?: number;
       nextServiceDate?: Date;
-    }
+    },
   ): Promise<VehicleMaintenance> {
     const record = await this.db.vehicleMaintenance.update({
       where: { id: maintenanceId },
@@ -1171,7 +1198,7 @@ export class FleetOwnerService implements IFleetOwnerService {
       _sum: { ownerShare: true },
     });
 
-    return parseFloat(result._sum.ownerShare || "0");
+    return Number.parseFloat(result._sum.ownerShare || "0");
   }
 
   private async getTodayTrips(fleetId: string): Promise<number> {
@@ -1189,7 +1216,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   private async getEarningsForPeriod(
     fleetId: string,
     start: Date,
-    end: Date
+    end: Date,
   ): Promise<number> {
     const result = await this.db.fleetEarnings.aggregate({
       where: {
@@ -1199,7 +1226,7 @@ export class FleetOwnerService implements IFleetOwnerService {
       _sum: { ownerShare: true },
     });
 
-    return parseFloat(result._sum.ownerShare || "0");
+    return Number.parseFloat(result._sum.ownerShare || "0");
   }
 
   // Helper methods removed - to be reimplemented when needed for dashboard enhancements
@@ -1207,7 +1234,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   private async getVehicleEarningsBreakdown(
     fleetId: string,
     start: Date,
-    end: Date
+    end: Date,
   ): Promise<
     {
       vehicleId: string;
@@ -1237,7 +1264,7 @@ export class FleetOwnerService implements IFleetOwnerService {
       return {
         vehicleId: e.vehicleId,
         licensePlate: vehicle?.plateNumber || "Unknown",
-        earnings: parseFloat(e._sum.totalEarnings || "0"),
+        earnings: Number.parseFloat(e._sum.totalEarnings || "0"),
         trips: e._sum.trips || 0,
       };
     });
@@ -1246,7 +1273,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   private async getDriverEarningsBreakdown(
     fleetId: string,
     start: Date,
-    end: Date
+    end: Date,
   ): Promise<
     { driverId: string; name: string; earnings: number; trips: number }[]
   > {
@@ -1271,7 +1298,7 @@ export class FleetOwnerService implements IFleetOwnerService {
       return {
         driverId: e.driverId,
         name: driver?.name || "Unknown",
-        earnings: parseFloat(e._sum.driverShare || "0"),
+        earnings: Number.parseFloat(e._sum.driverShare || "0"),
         trips: e._sum.trips || 0,
       };
     });
@@ -1289,7 +1316,7 @@ export class FleetOwnerService implements IFleetOwnerService {
       status: f.status as FleetStatus,
       approvedAt: f.approvedAt,
       fleetTier: f.fleetTier || FleetTier.STARTER,
-      commissionRate: parseFloat(f.commissionRate),
+      commissionRate: Number.parseFloat(f.commissionRate),
       vehicleCount: f.totalVehicles,
       activeDrivers: f.activeDrivers,
       contactEmail: f.contactEmail || "",
@@ -1333,10 +1360,14 @@ export class FleetOwnerService implements IFleetOwnerService {
       vehicle: d.vehicle ? this.mapFleetVehicle(d.vehicle) : undefined,
       assignedAt: d.assignedAt || d.invitedAt || d.joinedAt || new Date(),
       status: d.status as FleetDriverStatus,
-      revenueSharePercent: parseFloat(d.commissionRate || d.revenueSharePercent || "0"),
+      revenueSharePercent: Number.parseFloat(
+        d.commissionRate || d.revenueSharePercent || "0",
+      ),
       weeklyTarget: d.weeklyTarget,
       monthlyTrips: d.monthlyTrips || d.totalTrips || 0,
-      monthlyEarnings: parseFloat(d.monthlyEarnings || d.totalEarnings || "0"),
+      monthlyEarnings: Number.parseFloat(
+        d.monthlyEarnings || d.totalEarnings || "0",
+      ),
     };
   }
 
@@ -1363,7 +1394,10 @@ export class FleetOwnerService implements IFleetOwnerService {
       description: m.description,
       scheduledDate: m.scheduledDate,
       completedDate: m.completedDate || m.completedAt,
-      cost: m.cost || m.actualCost ? parseFloat(m.cost || m.actualCost) : undefined,
+      cost:
+        m.cost || m.actualCost
+          ? Number.parseFloat(m.cost || m.actualCost)
+          : undefined,
       currency: m.currency,
       provider: m.provider || m.serviceProvider,
       odometerAtService: m.odometerAtService,
@@ -1376,7 +1410,7 @@ export class FleetOwnerService implements IFleetOwnerService {
   private trackEvent(
     driverId: string,
     eventName: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
   ): void {
     this.analyticsService?.track({
       userId: driverId,

@@ -5,7 +5,7 @@
 // ML-powered surge pricing optimization
 // =============================================================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   DemandFactors,
   DemandForecast,
@@ -49,9 +49,9 @@ function latLngToH3(lat: number, lng: number, resolution: number = 7): string {
 
 function h3ToLatLng(h3Index: string): GeoLocation {
   // Simplified reverse lookup
-  const resolution = parseInt(h3Index[0] || "7", 10);
-  const latBucket = parseInt(h3Index.substring(1, 5), 16);
-  const lngBucket = parseInt(h3Index.substring(5, 9), 16);
+  const resolution = Number.parseInt(h3Index[0] || "7", 10);
+  const latBucket = Number.parseInt(h3Index.substring(1, 5), 16);
+  const lngBucket = Number.parseInt(h3Index.substring(5, 9), 16);
   return {
     latitude: latBucket / 100 - 90,
     longitude: lngBucket / 100 - 180,
@@ -63,7 +63,7 @@ function h3ToLatLng(h3Index: string): GeoLocation {
 function getH3Neighbors(h3Index: string): string[] {
   // Simplified neighbor calculation
   const center = h3ToLatLng(h3Index);
-  const resolution = parseInt(h3Index[0] || "7", 10);
+  const resolution = Number.parseInt(h3Index[0] || "7", 10);
   const offsets = [
     [0.01, 0],
     [0, 0.01],
@@ -503,7 +503,7 @@ export class DemandForecastService implements IDemandForecastService {
   }
 
   private generateId(): string {
-    return `fcst_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `fcst_${Date.now()}_${Math.random().toString(36).substring(2, 2 + 9)}`;
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {
@@ -983,7 +983,7 @@ export class DynamicPricingService implements IDynamicPricingService {
   }
 
   private generateId(): string {
-    return `quote_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `quote_${Date.now()}_${Math.random().toString(36).substring(2, 2 + 9)}`;
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {

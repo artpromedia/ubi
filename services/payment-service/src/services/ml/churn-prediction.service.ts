@@ -5,7 +5,7 @@
 // Target: +20% retention, identify at-risk users 14 days before churn
 // =============================================================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   ChurnFactor,
   ChurnPrediction,
@@ -863,7 +863,7 @@ export class ChurnPredictionService implements IChurnPredictionService {
   // ===========================================================================
 
   private generateId(): string {
-    return `churn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `churn_${Date.now()}_${Math.random().toString(36).substring(2, 2 + 9)}`;
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {

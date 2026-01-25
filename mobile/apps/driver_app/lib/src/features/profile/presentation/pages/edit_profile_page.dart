@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 
+import '../../../../core/services/image_picker_service.dart';
 import '../bloc/driver_profile_bloc.dart';
 
 /// Edit profile page for updating personal information
@@ -14,6 +18,7 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
+  final ImagePickerService _imagePickerService = ImagePickerService();
   late TextEditingController _firstNameController;
   late TextEditingController _lastNameController;
   late TextEditingController _emailController;
@@ -366,6 +371,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Choose a clear, front-facing photo',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+            ),
             const SizedBox(height: 24),
             ListTile(
               leading: Container(
@@ -377,9 +390,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 child: const Icon(Icons.camera_alt, color: Colors.blue),
               ),
               title: const Text('Take Photo'),
+              subtitle: const Text('Use front camera'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Implement camera
+                _captureProfilePhoto(fromCamera: true);
               },
             ),
             ListTile(
@@ -392,9 +406,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 child: const Icon(Icons.photo_library, color: Colors.green),
               ),
               title: const Text('Choose from Gallery'),
+              subtitle: const Text('Select an existing photo'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Implement gallery picker
+                _captureProfilePhoto(fromCamera: false);
               },
             ),
             ListTile(
@@ -407,16 +422,187 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 child: const Icon(Icons.delete, color: Colors.red),
               ),
               title: const Text('Remove Photo'),
+              subtitle: const Text('Delete current profile photo'),
               onTap: () {
                 Navigator.pop(context);
-                context
-                    .read<DriverProfileBloc>()
-                    .add(const ProfilePhotoUpdated(null));
+                _removeProfilePhoto();
               },
             ),
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _captureProfilePhoto({required bool fromCamera}) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final result = await _imagePickerService.pickProfilePhoto(
+        fromCamera: fromCamera,
+      );
+
+      if (!mounted) return;
+
+      if (result.permissionDenied) {
+        _showPermissionDeniedDialog(fromCamera);
+        return;
+      }
+
+      if (result.isFailure) {
+        if (result.error != 'No image selected') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.error ?? 'Failed to pick image'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Show preview before upload
+      final confirmed = await _showPhotoPreviewDialog(result.file!);
+
+      if (confirmed == true && mounted) {
+        // Upload the photo
+        context.read<DriverProfileBloc>().add(ProfilePhotoUpdated(result.file!));
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile photo updated'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        setState(() => _hasChanges = true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<bool?> _showPhotoPreviewDialog(File imageFile) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            const Text(
+              'Preview',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ClipOval(
+              child: Image.file(
+                imageFile,
+                height: 200,
+                width: 200,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'This photo will be visible to customers',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Retake'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Use Photo'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _removeProfilePhoto() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Photo?'),
+        content: const Text(
+          'Your profile photo will be removed. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.read<DriverProfileBloc>().add(const ProfilePhotoUpdated(null));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Profile photo removed'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+              setState(() => _hasChanges = true);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPermissionDeniedDialog(bool isCamera) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isCamera ? 'Camera Permission' : 'Photo Permission'),
+        content: Text(
+          isCamera
+              ? 'Camera access is required to take photos. Please enable it in your device settings.'
+              : 'Photo library access is required to select images. Please enable it in your device settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
       ),
     );
   }

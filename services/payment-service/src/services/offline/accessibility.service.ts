@@ -5,7 +5,6 @@
 // Supports: Screen readers, voice control, motor impairments, cognitive aids
 // =============================================================================
 
-import { EventEmitter } from "events";
 import {
   AccessibilityPreferences,
   ColorBlindMode,
@@ -14,6 +13,20 @@ import {
   VoiceCommand,
   WCAGLevel,
 } from "@/types/offline.types";
+import { EventEmitter } from "node:events";
+
+// =============================================================================
+// ACCESSIBILITY TYPES
+// =============================================================================
+
+type AuditIssueSeverity = "critical" | "major" | "minor";
+
+interface AuditIssue {
+  severity: AuditIssueSeverity;
+  criterion: string;
+  description: string;
+  element?: string;
+}
 
 // =============================================================================
 // ACCESSIBILITY CONSTANTS
@@ -21,9 +34,9 @@ import {
 
 // WCAG 2.1 Contrast Ratios
 const CONTRAST_REQUIREMENTS = {
-  [WCAGLevel.A]: { normalText: 3.0, largeText: 3.0 },
-  [WCAGLevel.AA]: { normalText: 4.5, largeText: 3.0 },
-  [WCAGLevel.AAA]: { normalText: 7.0, largeText: 4.5 },
+  [WCAGLevel.A]: { normalText: 3, largeText: 3 },
+  [WCAGLevel.AA]: { normalText: 4.5, largeText: 3 },
+  [WCAGLevel.AAA]: { normalText: 7, largeText: 4.5 },
 };
 
 // Touch target sizes (in pixels)
@@ -50,10 +63,11 @@ const VOICE_INTENTS = {
 // =============================================================================
 
 export class AccessibilityService implements IAccessibilityService {
-  private eventEmitter: EventEmitter;
+  private readonly eventEmitter: EventEmitter;
 
   // User preferences cache
-  private preferencesCache: Map<string, AccessibilityPreferences> = new Map();
+  private readonly preferencesCache: Map<string, AccessibilityPreferences> =
+    new Map();
 
   constructor() {
     this.eventEmitter = new EventEmitter();
@@ -76,7 +90,7 @@ export class AccessibilityService implements IAccessibilityService {
 
   async updatePreferences(
     userId: string,
-    updates: Partial<AccessibilityPreferences>
+    updates: Partial<AccessibilityPreferences>,
   ): Promise<void> {
     const current = await this.getPreferences(userId);
     const updated = { ...current, ...updates };
@@ -97,7 +111,7 @@ export class AccessibilityService implements IAccessibilityService {
   private validatePreferences(prefs: AccessibilityPreferences): void {
     // Font size constraints
     if (prefs.fontSize !== undefined) {
-      prefs.fontSize = Math.max(0.75, Math.min(3.0, prefs.fontSize));
+      prefs.fontSize = Math.max(0.75, Math.min(3, prefs.fontSize));
     }
 
     // Ensure valid combinations
@@ -107,7 +121,7 @@ export class AccessibilityService implements IAccessibilityService {
   }
 
   private async loadPreferences(
-    _userId: string
+    _userId: string,
   ): Promise<AccessibilityPreferences> {
     // In production, load from database
     return this.getDefaultPreferences();
@@ -115,7 +129,7 @@ export class AccessibilityService implements IAccessibilityService {
 
   private async savePreferences(
     _userId: string,
-    _prefs: AccessibilityPreferences
+    _prefs: AccessibilityPreferences,
   ): Promise<void> {
     // In production, save to database
   }
@@ -124,7 +138,7 @@ export class AccessibilityService implements IAccessibilityService {
     return {
       screenReaderEnabled: false,
       voiceControlEnabled: false,
-      fontSize: 1.0,
+      fontSize: 1,
       highContrast: false,
       colorBlindMode: ColorBlindMode.NONE,
       reduceMotion: false,
@@ -134,7 +148,7 @@ export class AccessibilityService implements IAccessibilityService {
       audioDescriptions: false,
       captionsEnabled: false,
       simplifiedInterface: false,
-      readingSpeed: 1.0,
+      readingSpeed: 1,
       preferredInputMethod: "touch",
     };
   }
@@ -152,7 +166,7 @@ export class AccessibilityService implements IAccessibilityService {
 
     for (const [intentName, keywords] of Object.entries(VOICE_INTENTS)) {
       const matchCount = keywords.filter((kw) =>
-        normalized.includes(kw)
+        normalized.includes(kw),
       ).length;
       const intentConfidence = matchCount / keywords.length;
 
@@ -179,10 +193,15 @@ export class AccessibilityService implements IAccessibilityService {
     return this.refineCommandByContext(command);
   }
 
+  /**
+   * Extract entities from transcribed text
+   * @param text - The normalized text to extract entities from
+   * @param _intent - The detected intent (reserved for context-aware extraction in Sprint 6)
+   * @returns Record of extracted entities (pickup, destination, amount, etc.)
+   */
   private extractEntities(
     text: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _intent: string
+    _intent: string,
   ): Record<string, string> {
     const entities: Record<string, string> = {};
 
@@ -194,8 +213,8 @@ export class AccessibilityService implements IAccessibilityService {
     ];
 
     for (const pattern of locationPatterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
+      const match = pattern.exec(text);
+      if (match?.[1]) {
         if (
           pattern.source.includes("from") ||
           pattern.source.includes("pick")
@@ -208,14 +227,16 @@ export class AccessibilityService implements IAccessibilityService {
     }
 
     // Simple location (just a place name after "to")
-    const toMatch = text.match(/(?:to|going to|go to)\s+(.+)/i);
-    if (toMatch && toMatch[1] && !entities.destination) {
+    const toPattern = /(?:to|going to|go to)\s+(.+)/i;
+    const toMatch = toPattern.exec(text);
+    if (toMatch?.[1] && !entities.destination) {
       entities.destination = toMatch[1].trim();
     }
 
     // Number extraction (for amounts, ratings, etc.)
-    const numberMatch = text.match(/(\d+(?:\.\d+)?)/);
-    if (numberMatch && numberMatch[1]) {
+    const numberPattern = /(\d+(?:\.\d+)?)/;
+    const numberMatch = numberPattern.exec(text);
+    if (numberMatch?.[1]) {
       entities.number = numberMatch[1];
     }
 
@@ -230,7 +251,7 @@ export class AccessibilityService implements IAccessibilityService {
       case "booking_confirmation":
         if (
           ["yes", "confirm", "okay", "ndio", "oui"].some((w) =>
-            normalized.includes(w)
+            normalized.includes(w),
           )
         ) {
           command.intent = "CONFIRM";
@@ -244,14 +265,16 @@ export class AccessibilityService implements IAccessibilityService {
         }
         break;
 
-      case "rating":
-        const ratingMatch = normalized.match(/(\d)\s*(?:star|stars)?/);
-        if (ratingMatch && ratingMatch[1]) {
+      case "rating": {
+        const ratingPattern = /(\d)\s*(?:star|stars)?/;
+        const ratingMatch = ratingPattern.exec(normalized);
+        if (ratingMatch?.[1]) {
           command.entities.rating = ratingMatch[1];
           command.intent = "RATE";
           command.confidence = 0.95;
         }
         break;
+      }
 
       case "address_input":
         // Treat entire phrase as location
@@ -286,7 +309,7 @@ export class AccessibilityService implements IAccessibilityService {
   generateAnnouncement(
     type: "navigation" | "status" | "action" | "error" | "notification",
     content: string,
-    priority: "polite" | "assertive" = "polite"
+    priority: "polite" | "assertive" = "polite",
   ): ScreenReaderAnnouncement {
     return {
       text: content,
@@ -409,7 +432,9 @@ export class AccessibilityService implements IAccessibilityService {
 
     // Locations
     const pickupAddress = trip.pickupAddress ? String(trip.pickupAddress) : "";
-    const dropoffAddress = trip.dropoffAddress ? String(trip.dropoffAddress) : "";
+    const dropoffAddress = trip.dropoffAddress
+      ? String(trip.dropoffAddress)
+      : "";
 
     if (pickupAddress) {
       parts.push(`Picking up from ${pickupAddress}`);
@@ -432,7 +457,7 @@ export class AccessibilityService implements IAccessibilityService {
 
   adjustColorsForColorBlindness(
     colors: Record<string, string>,
-    mode: ColorBlindMode
+    mode: ColorBlindMode,
   ): Record<string, string> {
     if (mode === ColorBlindMode.NONE) {
       return colors;
@@ -478,7 +503,7 @@ export class AccessibilityService implements IAccessibilityService {
 
   checkContrast(
     foreground: string,
-    background: string
+    background: string,
   ): {
     ratio: number;
     passesAA: boolean;
@@ -487,7 +512,10 @@ export class AccessibilityService implements IAccessibilityService {
   } {
     const fgLuminance = this.getRelativeLuminance(foreground);
 
-    const lighter = Math.max(fgLuminance, this.getRelativeLuminance(background));
+    const lighter = Math.max(
+      fgLuminance,
+      this.getRelativeLuminance(background),
+    );
     const darker = Math.min(fgLuminance, this.getRelativeLuminance(background));
     const ratio = (lighter + 0.05) / (darker + 0.05);
 
@@ -497,8 +525,8 @@ export class AccessibilityService implements IAccessibilityService {
     return {
       ratio: Math.round(ratio * 100) / 100,
       passesAA: ratio >= (aaRequirements?.normalText || 4.5),
-      passesAAA: ratio >= (aaaRequirements?.normalText || 7.0),
-      passesLargeTextAA: ratio >= (aaRequirements?.largeText || 3.0),
+      passesAAA: ratio >= (aaaRequirements?.normalText || 7),
+      passesLargeTextAA: ratio >= (aaRequirements?.largeText || 3),
     };
   }
 
@@ -507,9 +535,9 @@ export class AccessibilityService implements IAccessibilityService {
     const color = hex.replace("#", "");
 
     // Parse RGB
-    const r = parseInt(color.substr(0, 2), 16) / 255;
-    const g = parseInt(color.substr(2, 2), 16) / 255;
-    const b = parseInt(color.substr(4, 2), 16) / 255;
+    const r = Number.parseInt(color.substring(0, 0 + 2), 16) / 255;
+    const g = Number.parseInt(color.substring(2, 2 + 2), 16) / 255;
+    const b = Number.parseInt(color.substring(4, 4 + 2), 16) / 255;
 
     // Apply gamma correction
     const sRGB = [r, g, b].map((c) => {
@@ -517,12 +545,16 @@ export class AccessibilityService implements IAccessibilityService {
     });
 
     // Calculate luminance
-    return 0.2126 * (sRGB[0] || 0) + 0.7152 * (sRGB[1] || 0) + 0.0722 * (sRGB[2] || 0);
+    return (
+      0.2126 * (sRGB[0] || 0) +
+      0.7152 * (sRGB[1] || 0) +
+      0.0722 * (sRGB[2] || 0)
+    );
   }
 
   suggestContrastingColor(
     background: string,
-    targetRatio: number = 4.5
+    targetRatio: number = 4.5,
   ): string {
     // Try white first
     const whiteContrast = this.checkContrast("#FFFFFF", background);
@@ -552,7 +584,7 @@ export class AccessibilityService implements IAccessibilityService {
   }
 
   calculateSwipeThreshold(
-    motorImpairmentLevel?: "mild" | "moderate" | "severe"
+    motorImpairmentLevel?: "mild" | "moderate" | "severe",
   ): {
     minDistance: number;
     maxDuration: number;
@@ -607,7 +639,7 @@ export class AccessibilityService implements IAccessibilityService {
 
   simplifyText(
     text: string,
-    _targetLevel: "basic" | "simple" | "standard"
+    _targetLevel: "basic" | "simple" | "standard",
   ): string {
     // In production, use NLP to simplify
     // This is a simplified example
@@ -626,7 +658,7 @@ export class AccessibilityService implements IAccessibilityService {
 
     let simplified = text;
     for (const [complex, simple] of Object.entries(simplifications)) {
-      simplified = simplified.replace(new RegExp(complex, "gi"), simple);
+      simplified = simplified.replaceAll(new RegExp(complex, "gi"), simple);
     }
 
     return simplified;
@@ -670,6 +702,75 @@ export class AccessibilityService implements IAccessibilityService {
   // WCAG AUDIT
   // ===========================================================================
 
+  /**
+   * Audit images for alt text accessibility
+   */
+  private auditImages(
+    images: Array<{ hasAlt: boolean; alt?: string }>,
+    issues: AuditIssue[],
+  ): void {
+    for (const img of images) {
+      if (!img.hasAlt) {
+        issues.push({
+          severity: "critical",
+          criterion: "1.1.1 Non-text Content",
+          description: "Image missing alt text",
+        });
+      }
+    }
+  }
+
+  /**
+   * Audit color contrast accessibility
+   */
+  private auditColors(
+    colors: Array<{ foreground: string; background: string }>,
+    issues: AuditIssue[],
+  ): void {
+    for (const color of colors) {
+      const contrast = this.checkContrast(color.foreground, color.background);
+      if (!contrast.passesAA) {
+        issues.push({
+          severity: contrast.ratio < 3 ? "critical" : "major",
+          criterion: "1.4.3 Contrast (Minimum)",
+          description: `Insufficient contrast ratio: ${contrast.ratio}:1`,
+        });
+      }
+    }
+  }
+
+  /**
+   * Audit form accessibility
+   */
+  private auditForms(
+    forms: Array<{ hasLabels: boolean; hasErrors: boolean }>,
+    issues: AuditIssue[],
+  ): void {
+    for (const form of forms) {
+      if (!form.hasLabels) {
+        issues.push({
+          severity: "critical",
+          criterion: "1.3.1 Info and Relationships",
+          description: "Form inputs missing labels",
+        });
+      }
+    }
+  }
+
+  /**
+   * Determine WCAG level based on issues
+   */
+  private determineWCAGLevel(issues: AuditIssue[]): WCAGLevel {
+    const criticalCount = issues.filter(
+      (i) => i.severity === "critical",
+    ).length;
+    const majorCount = issues.filter((i) => i.severity === "major").length;
+
+    if (criticalCount > 0) return WCAGLevel.A;
+    if (majorCount > 2) return WCAGLevel.AA;
+    return WCAGLevel.AAA;
+  }
+
   async auditPage(pageData: {
     elements: Array<{
       type: string;
@@ -683,78 +784,23 @@ export class AccessibilityService implements IAccessibilityService {
   }): Promise<{
     level: WCAGLevel;
     score: number;
-    issues: Array<{
-      severity: "critical" | "major" | "minor";
-      criterion: string;
-      description: string;
-      element?: string;
-    }>;
+    issues: AuditIssue[];
     recommendations: string[];
   }> {
-    const issues: Array<{
-      severity: "critical" | "major" | "minor";
-      criterion: string;
-      description: string;
-      element?: string;
-    }> = [];
+    const issues: AuditIssue[] = [];
 
-    // Check images for alt text
-    for (const img of pageData.images) {
-      if (!img.hasAlt) {
-        issues.push({
-          severity: "critical",
-          criterion: "1.1.1 Non-text Content",
-          description: "Image missing alt text",
-        });
-      }
-    }
+    this.auditImages(pageData.images, issues);
+    this.auditColors(pageData.colors, issues);
+    this.auditForms(pageData.forms, issues);
 
-    // Check color contrast
-    for (const color of pageData.colors) {
-      const contrast = this.checkContrast(color.foreground, color.background);
-      if (!contrast.passesAA) {
-        issues.push({
-          severity: contrast.ratio < 3 ? "critical" : "major",
-          criterion: "1.4.3 Contrast (Minimum)",
-          description: `Insufficient contrast ratio: ${contrast.ratio}:1`,
-        });
-      }
-    }
-
-    // Check form accessibility
-    for (const form of pageData.forms) {
-      if (!form.hasLabels) {
-        issues.push({
-          severity: "critical",
-          criterion: "1.3.1 Info and Relationships",
-          description: "Form inputs missing labels",
-        });
-      }
-    }
-
-    // Check for interactive element focus
-    const interactiveElements = pageData.elements.filter((e) =>
-      ["button", "link", "input", "select", "textarea"].includes(e.type)
-    );
-    for (const element of interactiveElements) {
-      if (!element.attributes["tabindex"] && !element.attributes["href"]) {
-        // Elements should be focusable
-      }
-    }
-
-    // Calculate score and level
+    const level = this.determineWCAGLevel(issues);
     const criticalCount = issues.filter(
-      (i) => i.severity === "critical"
+      (i) => i.severity === "critical",
     ).length;
     const majorCount = issues.filter((i) => i.severity === "major").length;
-
-    let level = WCAGLevel.AAA;
-    if (criticalCount > 0) level = WCAGLevel.A;
-    else if (majorCount > 2) level = WCAGLevel.AA;
-
     const score = Math.max(
       0,
-      100 - criticalCount * 20 - majorCount * 10 - issues.length * 2
+      100 - criticalCount * 20 - majorCount * 10 - issues.length * 2,
     );
 
     return {
@@ -765,9 +811,7 @@ export class AccessibilityService implements IAccessibilityService {
     };
   }
 
-  private generateRecommendations(
-    issues: Array<{ criterion: string }>
-  ): string[] {
+  private generateRecommendations(issues: AuditIssue[]): string[] {
     const recommendations: string[] = [];
     const criteria = new Set(issues.map((i) => i.criterion));
 
@@ -776,12 +820,12 @@ export class AccessibilityService implements IAccessibilityService {
     }
     if (criteria.has("1.4.3 Contrast (Minimum)")) {
       recommendations.push(
-        "Increase contrast between text and background colors"
+        "Increase contrast between text and background colors",
       );
     }
     if (criteria.has("1.3.1 Info and Relationships")) {
       recommendations.push(
-        "Associate labels with form inputs using for/id attributes"
+        "Associate labels with form inputs using for/id attributes",
       );
     }
 
@@ -792,7 +836,10 @@ export class AccessibilityService implements IAccessibilityService {
   // EVENT HANDLERS
   // ===========================================================================
 
-  async getScreenReaderText(_screenName: string, _language: string): Promise<string> {
+  async getScreenReaderText(
+    _screenName: string,
+    _language: string,
+  ): Promise<string> {
     // Implementation for screen reader text
     return "";
   }

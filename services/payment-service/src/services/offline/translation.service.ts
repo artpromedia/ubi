@@ -5,12 +5,12 @@
 // Supports: English, Swahili, Yoruba, Hausa, Amharic, Arabic, French, Portuguese, Zulu
 // =============================================================================
 
-import { EventEmitter } from "events";
 import {
   ITranslationService,
   Language,
   TranslationRequest,
 } from "@/types/offline.types";
+import { EventEmitter } from "node:events";
 
 // =============================================================================
 // SUPPORTED LANGUAGES
@@ -452,13 +452,13 @@ const TRANSLATIONS: Record<
 // =============================================================================
 
 export class TranslationService implements ITranslationService {
-  private eventEmitter: EventEmitter;
-  private languages: Map<string, Language> = new Map();
-  private translations: Map<
+  private readonly eventEmitter: EventEmitter;
+  private readonly languages: Map<string, Language> = new Map();
+  private readonly translations: Map<
     string,
     Record<string, string | Record<string, string>>
   > = new Map();
-  private defaultLanguage: string = "en";
+  private readonly defaultLanguage: string = "en";
   private currentLanguage: string = "en";
 
   constructor() {
@@ -486,7 +486,7 @@ export class TranslationService implements ITranslationService {
   t(
     key: string,
     params?: Record<string, string | number>,
-    options?: { language?: string; count?: number; context?: string }
+    options?: { language?: string; count?: number; context?: string },
   ): string {
     const lang = options?.language || this.currentLanguage;
 
@@ -526,7 +526,7 @@ export class TranslationService implements ITranslationService {
 
   private getTranslation(
     key: string,
-    lang: string
+    lang: string,
   ): string | Record<string, string> | undefined {
     const dict = this.translations.get(lang);
     if (!dict) return undefined;
@@ -535,13 +535,13 @@ export class TranslationService implements ITranslationService {
 
   private interpolate(
     text: string,
-    params?: Record<string, string | number>
+    params?: Record<string, string | number>,
   ): string {
     if (!params) return text;
 
     let result = text;
     for (const [key, value] of Object.entries(params)) {
-      result = result.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
+      result = result.replaceAll(`{${key}}`, String(value));
     }
     return result;
   }
@@ -592,7 +592,6 @@ export class TranslationService implements ITranslationService {
     }
   }
 
-
   // ===========================================================================
   // LANGUAGE MANAGEMENT
   // ===========================================================================
@@ -629,7 +628,7 @@ export class TranslationService implements ITranslationService {
   formatDate(
     date: Date,
     lang?: string,
-    format?: "short" | "long" | "relative"
+    format?: "short" | "long" | "relative",
   ): string {
     if (format === "relative") {
       return this.formatRelativeDate(date, lang);
@@ -643,7 +642,7 @@ export class TranslationService implements ITranslationService {
 
     return new Intl.DateTimeFormat(
       lang || this.currentLanguage,
-      options
+      options,
     ).format(date);
   }
 
@@ -658,7 +657,7 @@ export class TranslationService implements ITranslationService {
 
     return new Intl.DateTimeFormat(
       lang || this.currentLanguage,
-      options
+      options,
     ).format(date);
   }
 
@@ -676,21 +675,21 @@ export class TranslationService implements ITranslationService {
       return this.t(
         "time.minutes_ago",
         { count: diffMins },
-        { language: lang, count: diffMins }
+        { language: lang, count: diffMins },
       );
     }
     if (diffHours < 24) {
       return this.t(
         "time.hours_ago",
         { count: diffHours },
-        { language: lang, count: diffHours }
+        { language: lang, count: diffHours },
       );
     }
     if (diffDays < 7) {
       return this.t(
         "time.days_ago",
         { count: diffDays },
-        { language: lang, count: diffDays }
+        { language: lang, count: diffDays },
       );
     }
 
@@ -733,7 +732,7 @@ export class TranslationService implements ITranslationService {
       return this.t(
         "booking.minutes",
         { count: minutes },
-        { language: lang, count: minutes }
+        { language: lang, count: minutes },
       );
     }
 
@@ -744,7 +743,7 @@ export class TranslationService implements ITranslationService {
       return this.t(
         "time.hours",
         { count: hours },
-        { language: lang, count: hours }
+        { language: lang, count: hours },
       );
     }
 
@@ -783,7 +782,7 @@ export class TranslationService implements ITranslationService {
   // ===========================================================================
 
   async translateBatch(
-    requests: TranslationRequest[]
+    requests: TranslationRequest[],
   ): Promise<Record<string, string>> {
     const results: Record<string, string> = {};
 
@@ -823,7 +822,7 @@ export class TranslationService implements ITranslationService {
     if (totalKeys === 0) return 100;
 
     const translatedKeys = Object.keys(targetDict).filter(
-      (k) => k in defaultDict
+      (k) => k in defaultDict,
     ).length;
     return Math.round((translatedKeys / totalKeys) * 100);
   }
@@ -871,7 +870,7 @@ export class TranslationService implements ITranslationService {
 
   async getNamespace(
     _namespace: string,
-    language: string
+    language: string,
   ): Promise<Record<string, string>> {
     const dict = this.translations.get(language) || {};
     const result: Record<string, string> = {};

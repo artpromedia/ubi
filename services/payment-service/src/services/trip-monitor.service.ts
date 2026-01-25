@@ -10,8 +10,8 @@
  * - Automatic escalation
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { tripMonitorLogger } from "../lib/logger";
 import {
   AccelData,
@@ -32,17 +32,17 @@ import {
 // =============================================================================
 
 export class TripMonitorService extends EventEmitter {
-  private activeSessions: Map<string, TripSafetySession> = new Map();
-  private locationHistory: Map<string, Location[]> = new Map();
-  private anomalyStore: Map<string, TripAnomaly[]> = new Map();
-  private safetyChecks: Map<string, TripSafetyCheck> = new Map();
-  private crashBuffer: Map<string, AccelData[]> = new Map();
+  private readonly activeSessions: Map<string, TripSafetySession> = new Map();
+  private readonly locationHistory: Map<string, Location[]> = new Map();
+  private readonly anomalyStore: Map<string, TripAnomaly[]> = new Map();
+  private readonly safetyChecks: Map<string, TripSafetyCheck> = new Map();
+  private readonly crashBuffer: Map<string, AccelData[]> = new Map();
 
   // Thresholds
   private readonly ROUTE_DEVIATION_THRESHOLD_METERS = 500;
   private readonly UNEXPECTED_STOP_THRESHOLD_SECONDS = 180; // 3 minutes
   private readonly SPEED_ANOMALY_THRESHOLD_KMH = 120;
-  private readonly CRASH_G_FORCE_THRESHOLD = 4.0;
+  private readonly CRASH_G_FORCE_THRESHOLD = 4;
   private readonly CRASH_SPEED_DROP_THRESHOLD = 30; // km/h
   private readonly SAFETY_CHECK_TIMEOUT_SECONDS = 60;
   private readonly LOCATION_JUMP_THRESHOLD_METERS = 1000;
@@ -160,7 +160,7 @@ export class TripMonitorService extends EventEmitter {
     }
 
     const history = this.locationHistory.get(tripId) || [];
-    const previousLocation = history[history.length - 1];
+    const previousLocation = history.at(-1);
 
     // Store location
     history.push(location);
@@ -262,7 +262,7 @@ export class TripMonitorService extends EventEmitter {
 
     const recentLocations = history.slice(-10);
     const firstLoc = recentLocations[0];
-    const lastLoc = recentLocations[recentLocations.length - 1];
+    const lastLoc = recentLocations.at(-1);
 
     // Check if vehicle has been stationary
     if (!firstLoc || !lastLoc) return null;
@@ -282,7 +282,7 @@ export class TripMonitorService extends EventEmitter {
 
       // Check if this is near expected stops (dropoff, pickup)
       const isExpectedStop = this.isNearExpectedStop(
-        lastLoc!,
+        lastLoc,
         session.expectedRoute,
       );
       if (isExpectedStop) return null;
@@ -379,7 +379,7 @@ export class TripMonitorService extends EventEmitter {
     this.crashBuffer.set(tripId, buffer);
 
     // Calculate G-force
-    const gForce = Math.sqrt(data.x ** 2 + data.y ** 2 + data.z ** 2) / 9.81;
+    const gForce = Math.hypot(data.x, data.y, data.z) / 9.81;
 
     // Detect sudden deceleration
     if (gForce >= this.CRASH_G_FORCE_THRESHOLD) {
@@ -532,7 +532,7 @@ export class TripMonitorService extends EventEmitter {
 
   private async handleSafetyCheckTimeout(checkId: string): Promise<void> {
     const check = this.safetyChecks.get(checkId);
-    if (!check || check.status !== "SENT") return;
+    if (check?.status !== "SENT") return;
 
     check.status = "NO_RESPONSE";
     check.responseType = "no_response";
@@ -701,7 +701,7 @@ export class TripMonitorService extends EventEmitter {
       // Trigger safety check after 2 minutes of inactivity
       setTimeout(async () => {
         const currentSession = this.activeSessions.get(tripId);
-        if (currentSession && currentSession.status === "monitoring") {
+        if (currentSession?.status === "monitoring") {
           await this.triggerSafetyCheck(
             tripId,
             userId,
@@ -865,7 +865,7 @@ export class TripMonitorService extends EventEmitter {
   ): boolean {
     if (!route || route.length < 2) return false;
 
-    const dropoff = route[route.length - 1];
+    const dropoff = route.at(-1);
     if (!dropoff) return false;
 
     const distanceToDropoff = this.calculateDistance(location, dropoff);
@@ -945,7 +945,7 @@ export class TripMonitorService extends EventEmitter {
 
     for (const [tripId, session] of this.activeSessions) {
       const history = this.locationHistory.get(tripId) || [];
-      const lastLocation = history[history.length - 1];
+      const lastLocation = history.at(-1);
 
       if (lastLocation?.timestamp) {
         const staleness = now - lastLocation.timestamp.getTime();

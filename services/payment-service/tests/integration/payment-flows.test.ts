@@ -85,7 +85,7 @@ describe("Payment Flow Integration Tests", () => {
 
       expect(balanceResponse.status).toBe(200);
       const balanceData = await balanceResponse.json();
-      expect(parseFloat(balanceData.data.balance)).toBeGreaterThanOrEqual(1000);
+      expect(Number.parseFloat(balanceData.data.balance)).toBeGreaterThanOrEqual(1000);
     });
 
     it("should handle failed M-Pesa payment", async () => {
@@ -535,7 +535,7 @@ describe("Payment Flow Integration Tests", () => {
       const createData = await createResponse.json();
       expect(createData.data.id).toBeDefined();
       expect(createData.data.netAmount).toBeDefined();
-      expect(parseFloat(createData.data.netAmount)).toBeLessThan(500000); // After commission
+      expect(Number.parseFloat(createData.data.netAmount)).toBeLessThan(500000); // After commission
 
       // Process settlement
       const processResponse = await app.request(

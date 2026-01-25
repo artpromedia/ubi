@@ -5,7 +5,7 @@
 // Supports: BOOK, TRACK, CANCEL, BALANCE, HELP commands
 // =============================================================================
 
-import { EventEmitter } from "events";
+import { logger } from "@/lib/logger";
 import {
   GeoLocation,
   IncomingSMS,
@@ -16,6 +16,47 @@ import {
   SMSCommand,
   SMSTemplate,
 } from "@/types/offline.types";
+import { prisma } from "@ubi/database";
+import { Redis } from "ioredis";
+import { EventEmitter } from "node:events";
+
+// Redis client for geocoding cache and rate limiting
+const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+
+// Phone number validation patterns for African markets
+const PHONE_PATTERNS = {
+  KE: /^(?:\+?254|0)?([17]\d{8})$/, // Kenya
+  NG: /^(?:\+?234|0)?([789][01]\d{8})$/, // Nigeria
+  GH: /^(?:\+?233|0)?([235]\d{8})$/, // Ghana
+  ZA: /^(?:\+?27|0)?([6-8]\d{8})$/, // South Africa
+  RW: /^(?:\+?250|0)?([78]\d{8})$/, // Rwanda
+  UG: /^(?:\+?256|0)?(7\d{8})$/, // Uganda
+};
+
+// Normalize phone to E.164 format
+function normalizePhone(phone: string): string {
+  // Remove all non-digit characters except leading +
+  const cleaned = phone.replaceAll(/[^\d+]/g, "");
+
+  // Try to detect country and normalize
+  for (const [country, pattern] of Object.entries(PHONE_PATTERNS)) {
+    const match = pattern.exec(cleaned);
+    if (match) {
+      const countryCode = {
+        KE: "254",
+        NG: "234",
+        GH: "233",
+        ZA: "27",
+        RW: "250",
+        UG: "256",
+      }[country];
+      return `+${countryCode}${match[1]}`;
+    }
+  }
+
+  // Return with + if not already present
+  return cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
+}
 
 // =============================================================================
 // SMS CONSTANTS
@@ -69,10 +110,10 @@ const COMMAND_PATTERNS = {
 // =============================================================================
 
 export class SMSService implements ISMSService {
-  private eventEmitter: EventEmitter;
+  private readonly eventEmitter: EventEmitter;
 
   // Pending confirmations (Redis in production)
-  private pendingConfirmations: Map<
+  private readonly pendingConfirmations: Map<
     string,
     {
       action: string;
@@ -82,7 +123,7 @@ export class SMSService implements ISMSService {
   > = new Map();
 
   // SMS Templates
-  private templates: Map<string, SMSTemplate> = new Map();
+  private readonly templates: Map<string, SMSTemplate> = new Map();
 
   constructor() {
     this.eventEmitter = new EventEmitter();
@@ -186,7 +227,7 @@ export class SMSService implements ISMSService {
 
     // Check each pattern
     for (const [command, pattern] of Object.entries(COMMAND_PATTERNS)) {
-      const match = text.match(pattern);
+      const match = pattern.exec(text);
       if (match) {
         return {
           command: command as SMSCommand,
@@ -212,7 +253,7 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [destination, pickup] = command.args;
 
@@ -220,7 +261,7 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("book.format", lang),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -229,7 +270,7 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("error.not_registered", lang),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -239,7 +280,7 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("error.address_not_found", lang, { address: destination }),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -251,7 +292,7 @@ export class SMSService implements ISMSService {
         return this.buildResponse(
           sms.sender,
           this.t("error.address_not_found", lang, { address: pickup }),
-          MessagePriority.HIGH
+          MessagePriority.HIGH,
         );
       }
     } else {
@@ -261,7 +302,7 @@ export class SMSService implements ISMSService {
         return this.buildResponse(
           sms.sender,
           this.t("book.need_pickup", lang),
-          MessagePriority.HIGH
+          MessagePriority.HIGH,
         );
       }
     }
@@ -269,7 +310,7 @@ export class SMSService implements ISMSService {
     // Get fare estimate
     const estimate = await this.getFareEstimate(
       pickupLocation.coords,
-      dropoffLocation.coords
+      dropoffLocation.coords,
     );
 
     // Store pending booking and generate confirmation code
@@ -296,20 +337,20 @@ export class SMSService implements ISMSService {
         eta: estimate.eta,
         code: confirmCode,
       }),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
   private async handleTrack(
     sms: IncomingSMS,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     if (!user) {
       return this.buildResponse(
         sms.sender,
         this.t("error.not_registered", lang),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -319,7 +360,7 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("track.no_active", lang),
-        MessagePriority.NORMAL
+        MessagePriority.NORMAL,
       );
     }
 
@@ -342,7 +383,7 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       statusMessages[trip.status] || this.t("track.status.unknown", lang),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
@@ -350,12 +391,12 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     if (!user) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.not_registered", lang)
+        this.t("error.not_registered", lang),
       );
     }
 
@@ -370,7 +411,7 @@ export class SMSService implements ISMSService {
 
     // Check if cancellation is allowed
     const canCancel = ["searching", "matched", "arriving"].includes(
-      trip.status
+      trip.status,
     );
     if (!canCancel) {
       return this.buildResponse(sms.sender, this.t("cancel.not_allowed", lang));
@@ -394,7 +435,7 @@ export class SMSService implements ISMSService {
           fee: this.formatCurrency(fee, lang),
           code: confirmCode,
         }),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
 
@@ -404,19 +445,19 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("cancel.success", lang),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
   private async handleBalance(
     sms: IncomingSMS,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     if (!user) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.not_registered", lang)
+        this.t("error.not_registered", lang),
       );
     }
 
@@ -441,7 +482,7 @@ export class SMSService implements ISMSService {
   private async handleHelp(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [topic] = command.args;
 
@@ -464,14 +505,14 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("help.general", lang),
-      MessagePriority.LOW
+      MessagePriority.LOW,
     );
   }
 
   private async handlePrice(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [pickup, destination] = command.args;
 
@@ -486,14 +527,14 @@ export class SMSService implements ISMSService {
       return this.buildResponse(
         sms.sender,
         this.t("error.address_not_found", lang, {
-          address: !pickupLocation ? pickup : destination,
-        })
+          address: pickupLocation ? destination : pickup,
+        }),
       );
     }
 
     const estimate = await this.getFareEstimate(
       pickupLocation.coords,
-      dropoffLocation.coords
+      dropoffLocation.coords,
     );
 
     return this.buildResponse(
@@ -504,14 +545,14 @@ export class SMSService implements ISMSService {
         fare: this.formatCurrency(estimate.fare, lang),
         distance: estimate.distance,
         eta: estimate.eta,
-      })
+      }),
     );
   }
 
   private async handleRegister(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [name] = command.args;
 
@@ -523,7 +564,7 @@ export class SMSService implements ISMSService {
     if (existing) {
       return this.buildResponse(
         sms.sender,
-        this.t("register.already_registered", lang, { name: existing.name })
+        this.t("register.already_registered", lang, { name: existing.name }),
       );
     }
 
@@ -537,7 +578,7 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("register.success", lang, { name: name.trim() }),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
@@ -545,7 +586,7 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     _user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [message] = command.args;
 
@@ -563,7 +604,7 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("feedback.thanks", lang),
-      MessagePriority.LOW
+      MessagePriority.LOW,
     );
   }
 
@@ -571,7 +612,7 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     _user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [code] = command.args;
 
@@ -579,7 +620,7 @@ export class SMSService implements ISMSService {
     const confirmKey = code
       ? `${sms.sender}:${code.toUpperCase()}`
       : Array.from(this.pendingConfirmations.keys()).find((k) =>
-          k.startsWith(sms.sender)
+          k.startsWith(sms.sender),
         );
 
     if (!confirmKey) {
@@ -610,7 +651,7 @@ export class SMSService implements ISMSService {
   private async handleDriver(
     sms: IncomingSMS,
     command: ParsedSMSCommand,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const [plateNumber] = command.args;
 
@@ -631,7 +672,7 @@ export class SMSService implements ISMSService {
         plate: driver.vehiclePlate,
         rating: driver.rating.toFixed(1),
         trips: driver.totalTrips,
-      })
+      }),
     );
   }
 
@@ -639,12 +680,12 @@ export class SMSService implements ISMSService {
     sms: IncomingSMS,
     command: ParsedSMSCommand,
     user: any,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     if (!user) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.not_registered", lang)
+        this.t("error.not_registered", lang),
       );
     }
 
@@ -655,7 +696,7 @@ export class SMSService implements ISMSService {
     if (!location) {
       return this.buildResponse(
         sms.sender,
-        this.t("error.address_not_found", lang, { address: address || "" })
+        this.t("error.address_not_found", lang, { address: address || "" }),
       );
     }
 
@@ -670,18 +711,18 @@ export class SMSService implements ISMSService {
       sms.sender,
       this.t(`place.${placeType}_saved`, lang, {
         address: this.truncate(location.address, 40),
-      })
+      }),
     );
   }
 
   private async handleUnknown(
     sms: IncomingSMS,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     return this.buildResponse(
       sms.sender,
       this.t("error.unknown_command", lang),
-      MessagePriority.LOW
+      MessagePriority.LOW,
     );
   }
 
@@ -692,7 +733,7 @@ export class SMSService implements ISMSService {
   private async processBookingConfirmation(
     sms: IncomingSMS,
     data: Record<string, unknown>,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     try {
       const trip = await this.createTrip({
@@ -711,13 +752,14 @@ export class SMSService implements ISMSService {
           phone: trip.driverPhone,
           eta: trip.eta,
         }),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     } catch (error) {
+      console.error("SMS booking confirmation failed:", error);
       return this.buildResponse(
         sms.sender,
         this.t("error.no_drivers", lang),
-        MessagePriority.HIGH
+        MessagePriority.HIGH,
       );
     }
   }
@@ -725,7 +767,7 @@ export class SMSService implements ISMSService {
   private async processCancellationConfirmation(
     sms: IncomingSMS,
     data: Record<string, unknown>,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     await this.cancelTrip(data.tripId as string, "user_cancelled");
 
@@ -738,7 +780,7 @@ export class SMSService implements ISMSService {
     return this.buildResponse(
       sms.sender,
       this.t("cancel.success", lang),
-      MessagePriority.HIGH
+      MessagePriority.HIGH,
     );
   }
 
@@ -749,7 +791,7 @@ export class SMSService implements ISMSService {
   private buildResponse(
     recipient: string,
     message: string,
-    priority: MessagePriority = MessagePriority.NORMAL
+    priority: MessagePriority = MessagePriority.NORMAL,
   ): OutgoingSMS {
     // Split into multiple SMS if needed
     const parts = this.splitMessage(message);
@@ -789,9 +831,9 @@ export class SMSService implements ISMSService {
   }
 
   private detectEncoding(text: string): "gsm7" | "ucs2" {
-    // GSM-7 character set (simplified check)
+    // GSM-7 character set (simplified check - includes basic Latin, common symbols, and GSM special chars)
     const gsm7Regex =
-      /^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&'()*+,\-./0-9:;<=>?¡A-Z ÄÖÑÜ§¿a-zäöñüà\u000C^{}\\[~\]|€]*$/;
+      /^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&'()*+,\-./0-9:;<=>?¡A-ZÄÖÑÜ§¿a-zäöñüà^{}\\[\]~|€]*$/;
     return gsm7Regex.test(text) ? "gsm7" : "ucs2";
   }
 
@@ -803,7 +845,7 @@ export class SMSService implements ISMSService {
     templateId: string,
     recipient: string,
     variables: Record<string, string>,
-    lang: string
+    lang: string,
   ): Promise<OutgoingSMS> {
     const template =
       this.templates.get(`${templateId}_${lang}`) ||
@@ -815,7 +857,7 @@ export class SMSService implements ISMSService {
 
     let body = template.template;
     for (const [key, value] of Object.entries(variables)) {
-      body = body.replace(new RegExp(`\\{${key}\\}`, "g"), value);
+      body = body.replaceAll(`{${key}}`, value);
     }
 
     return this.buildResponse(recipient, body, template.priority);
@@ -917,14 +959,14 @@ export class SMSService implements ISMSService {
   private t(
     key: string,
     lang: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
   ): string {
     const translations = this.getTranslations(lang);
     let text = translations[key] || key;
 
     if (params) {
       for (const [param, value] of Object.entries(params)) {
-        text = text.replace(new RegExp(`\\{${param}\\}`, "g"), String(value));
+        text = text.replaceAll(`{${param}}`, String(value));
       }
     }
 
@@ -1012,7 +1054,9 @@ export class SMSService implements ISMSService {
       },
     };
 
-    return { ...translations.en, ...(translations[lang] || {}) };
+    return translations[lang]
+      ? { ...translations.en, ...translations[lang] }
+      : translations.en;
   }
 
   private detectLanguage(text: string): string {
@@ -1044,7 +1088,9 @@ export class SMSService implements ISMSService {
   }
 
   private generateId(): string {
-    return `sms_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `sms_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 2 + 9)}`;
   }
 
   private generateConfirmCode(): string {
@@ -1064,79 +1110,802 @@ export class SMSService implements ISMSService {
   }
 
   // ===========================================================================
-  // EXTERNAL SERVICE STUBS
+  // EXTERNAL SERVICE IMPLEMENTATIONS
   // ===========================================================================
 
-  private async getUserByPhone(_phone: string): Promise<any> {
-    return { id: "user_123", name: "John", preferredLanguage: "en" };
+  private async getUserByPhone(phone: string): Promise<any> {
+    try {
+      const normalizedPhone = normalizePhone(phone);
+      const user = await prisma.user.findUnique({
+        where: { phone: normalizedPhone },
+        include: {
+          rider: {
+            include: {
+              savedPlaces: true,
+            },
+          },
+          walletAccounts: {
+            where: { accountType: "USER_WALLET" },
+          },
+        },
+      });
+
+      if (!user) return null;
+
+      return {
+        id: user.id,
+        name: user.firstName,
+        fullName: `${user.firstName} ${user.lastName}`,
+        phone: user.phone,
+        preferredLanguage: user.language,
+        currency: user.currency,
+        riderId: user.rider?.id,
+        savedPlaces: user.rider?.savedPlaces || [],
+        walletId: user.walletAccounts?.[0]?.id,
+      };
+    } catch (error) {
+      logger.error("Error fetching user by phone", { phone, error });
+      return null;
+    }
   }
 
-  private async createUser(_data: any): Promise<any> {
-    return { id: "user_" + Date.now(), ..._data };
+  private async createUser(data: {
+    phone: string;
+    name: string;
+    language?: string;
+    country?: string;
+  }): Promise<any> {
+    try {
+      const normalizedPhone = normalizePhone(data.phone);
+
+      // Detect country from phone number
+      let country = data.country || "NG";
+      for (const [countryCode, pattern] of Object.entries(PHONE_PATTERNS)) {
+        if (pattern.test(normalizedPhone)) {
+          country = countryCode;
+          break;
+        }
+      }
+
+      const currencyMap: Record<string, any> = {
+        NG: "NGN",
+        KE: "KES",
+        GH: "GHS",
+        ZA: "ZAR",
+        RW: "RWF",
+        UG: "UGX",
+      };
+
+      const user = await prisma.user.create({
+        data: {
+          phone: normalizedPhone,
+          email: `sms_${Date.now()}@placeholder.ubi`, // Placeholder until user provides email
+          firstName: data.name.split(" ")[0],
+          lastName: data.name.split(" ").slice(1).join(" ") || "",
+          passwordHash: "", // SMS users don't have passwords initially
+          language: data.language || "en",
+          country,
+          currency: currencyMap[country] || "NGN",
+          phoneVerified: true, // Verified by SMS registration
+          role: "RIDER",
+          status: "ACTIVE",
+          rider: {
+            create: {
+              referralCode: `UBI${Date.now().toString(36).toUpperCase()}`,
+            },
+          },
+          walletAccounts: {
+            create: {
+              accountType: "USER_WALLET",
+              currency: currencyMap[country] || "NGN",
+            },
+          },
+        },
+        include: {
+          rider: true,
+          walletAccounts: true,
+        },
+      });
+
+      logger.info("Created new SMS user", {
+        userId: user.id,
+        phone: normalizedPhone,
+      });
+
+      return {
+        id: user.id,
+        name: user.firstName,
+        fullName: `${user.firstName} ${user.lastName}`,
+        phone: user.phone,
+        preferredLanguage: user.language,
+        riderId: user.rider?.id,
+        walletId: user.walletAccounts?.[0]?.id,
+      };
+    } catch (error) {
+      logger.error("Error creating user", { data, error });
+      throw error;
+    }
   }
 
   private async geocodeAddress(
-    address: string
+    address: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
-    return { coords: { lat: -1.2921, lng: 36.8219 }, address };
+    try {
+      // Check cache first
+      const cacheKey = `geocode:${address.toLowerCase().trim()}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+
+      // Common landmarks and areas for African cities
+      const landmarks: Record<
+        string,
+        { lat: number; lng: number; address: string }
+      > = {
+        // Kenya - Nairobi
+        westlands: {
+          lat: -1.2673,
+          lng: 36.8028,
+          address: "Westlands, Nairobi",
+        },
+        cbd: { lat: -1.2864, lng: 36.8172, address: "CBD, Nairobi" },
+        kilimani: { lat: -1.2911, lng: 36.7869, address: "Kilimani, Nairobi" },
+        jkia: { lat: -1.3192, lng: 36.9275, address: "JKIA Airport, Nairobi" },
+        karen: { lat: -1.3226, lng: 36.7109, address: "Karen, Nairobi" },
+        kiambu: { lat: -1.1714, lng: 36.8356, address: "Kiambu Town" },
+        // Nigeria - Lagos
+        vi: { lat: 6.4281, lng: 3.4219, address: "Victoria Island, Lagos" },
+        ikeja: { lat: 6.6018, lng: 3.3515, address: "Ikeja, Lagos" },
+        lekki: { lat: 6.4698, lng: 3.5852, address: "Lekki, Lagos" },
+        ikoyi: { lat: 6.4541, lng: 3.4361, address: "Ikoyi, Lagos" },
+        yaba: { lat: 6.5095, lng: 3.3711, address: "Yaba, Lagos" },
+        airport: {
+          lat: 6.5774,
+          lng: 3.3212,
+          address: "Murtala Muhammed Airport, Lagos",
+        },
+        // Ghana - Accra
+        "airport accra": {
+          lat: 5.6052,
+          lng: -0.1668,
+          address: "Kotoka Airport, Accra",
+        },
+        osu: { lat: 5.5571, lng: -0.1818, address: "Osu, Accra" },
+        "east legon": {
+          lat: 5.6351,
+          lng: -0.1517,
+          address: "East Legon, Accra",
+        },
+      };
+
+      const normalizedAddress = address.toLowerCase().trim();
+
+      // Check for known landmarks
+      for (const [landmark, location] of Object.entries(landmarks)) {
+        if (normalizedAddress.includes(landmark)) {
+          const result = {
+            coords: { lat: location.lat, lng: location.lng },
+            address: location.address,
+          };
+          await redis.setex(cacheKey, 86400, JSON.stringify(result)); // Cache for 24 hours
+          return result;
+        }
+      }
+
+      // Call external geocoding service (Google Maps, OpenCage, etc.)
+      const geocodeUrl = process.env.GEOCODE_API_URL;
+      if (geocodeUrl) {
+        const response = await fetch(
+          `${geocodeUrl}?address=${encodeURIComponent(address)}&key=${process.env.GEOCODE_API_KEY}`,
+        );
+        const data = await response.json();
+        if (data.results?.[0]?.geometry?.location) {
+          const result = {
+            coords: {
+              lat: data.results[0].geometry.location.lat,
+              lng: data.results[0].geometry.location.lng,
+            },
+            address: data.results[0].formatted_address,
+          };
+          await redis.setex(cacheKey, 86400, JSON.stringify(result));
+          return result;
+        }
+      }
+
+      // Fallback: Try fuzzy matching with stored places
+      const places = await prisma.savedPlace.findMany({
+        where: {
+          address: { contains: address, mode: "insensitive" },
+        },
+        take: 1,
+      });
+
+      if (places.length > 0) {
+        const result = {
+          coords: { lat: places[0].latitude, lng: places[0].longitude },
+          address: places[0].address,
+        };
+        await redis.setex(cacheKey, 86400, JSON.stringify(result));
+        return result;
+      }
+
+      return null;
+    } catch (error) {
+      logger.error("Error geocoding address", { address, error });
+      return null;
+    }
   }
 
   private async getDefaultPickup(
-    _userId: string
+    userId: string,
   ): Promise<{ coords: GeoLocation; address: string } | null> {
-    return null;
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          rider: {
+            include: {
+              savedPlaces: {
+                where: { type: "home" },
+                take: 1,
+              },
+            },
+          },
+        },
+      });
+
+      const homePlace = user?.rider?.savedPlaces?.[0];
+      if (homePlace) {
+        return {
+          coords: { lat: homePlace.latitude, lng: homePlace.longitude },
+          address: homePlace.address,
+        };
+      }
+
+      // Check last completed ride pickup location
+      const lastRide = await prisma.ride.findFirst({
+        where: { riderId: user?.rider?.id, status: "COMPLETED" },
+        orderBy: { completedAt: "desc" },
+      });
+
+      if (lastRide) {
+        return {
+          coords: {
+            lat: lastRide.pickupLatitude,
+            lng: lastRide.pickupLongitude,
+          },
+          address: lastRide.pickupAddress,
+        };
+      }
+
+      return null;
+    } catch (error) {
+      logger.error("Error getting default pickup", { userId, error });
+      return null;
+    }
   }
 
   private async getFareEstimate(
-    _pickup: GeoLocation,
-    _dropoff: GeoLocation
-  ): Promise<any> {
-    return { fare: 350, eta: 5, distance: 7.2 };
+    pickup: GeoLocation,
+    dropoff: GeoLocation,
+  ): Promise<{
+    fare: number;
+    eta: number;
+    distance: number;
+    currency: string;
+  }> {
+    try {
+      // Calculate distance using Haversine formula
+      const R = 6371; // Earth's radius in km
+      const dLat = ((dropoff.lat - pickup.lat) * Math.PI) / 180;
+      const dLng = ((dropoff.lng - pickup.lng) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((pickup.lat * Math.PI) / 180) *
+          Math.cos((dropoff.lat * Math.PI) / 180) *
+          Math.sin(dLng / 2) *
+          Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c;
+
+      // Pricing based on distance (configurable per market)
+      const pricing = (await redis.hgetall("pricing:config")) || {};
+      const baseFare = Number.parseFloat(pricing.baseFare) || 100;
+      const perKm = Number.parseFloat(pricing.perKm) || 50;
+      const perMinute = Number.parseFloat(pricing.perMinute) || 5;
+      const currency = pricing.currency || "NGN";
+
+      // Estimate travel time (assume 25 km/h average in city traffic)
+      const estimatedMinutes = Math.ceil((distance / 25) * 60);
+
+      // Calculate fare
+      const fare = Math.round(
+        baseFare + distance * perKm + estimatedMinutes * perMinute,
+      );
+
+      // Check for surge pricing
+      const surgeKey = `surge:${Math.floor(pickup.lat * 100)}_${Math.floor(pickup.lng * 100)}`;
+      const surgeMultiplier = Number.parseFloat(
+        (await redis.get(surgeKey)) || "1.0",
+      );
+
+      return {
+        fare: Math.round(fare * surgeMultiplier),
+        eta: Math.ceil(estimatedMinutes),
+        distance: Math.round(distance * 10) / 10,
+        currency,
+      };
+    } catch (error) {
+      logger.error("Error calculating fare estimate", {
+        pickup,
+        dropoff,
+        error,
+      });
+      // Return fallback estimate
+      return { fare: 500, eta: 15, distance: 5, currency: "NGN" };
+    }
   }
 
-  private async createTrip(_data: any): Promise<any> {
-    return {
-      id: "trip_" + Date.now(),
-      driverName: "John K.",
-      vehiclePlate: "KDA 123X",
-      driverPhone: "+254700123456",
-      eta: 5,
-    };
+  private async createTrip(data: {
+    userId: string;
+    riderId: string;
+    pickupCoords: GeoLocation;
+    pickupAddress: string;
+    dropoffCoords: GeoLocation;
+    dropoffAddress: string;
+    fare: number;
+    currency: string;
+    paymentMethod?: string;
+  }): Promise<any> {
+    try {
+      // Create the ride in pending state
+      const ride = await prisma.ride.create({
+        data: {
+          riderId: data.riderId,
+          status: "PENDING",
+          rideType: "ECONOMY",
+          pickupAddress: data.pickupAddress,
+          pickupLatitude: data.pickupCoords.lat,
+          pickupLongitude: data.pickupCoords.lng,
+          dropoffAddress: data.dropoffAddress,
+          dropoffLatitude: data.dropoffCoords.lat,
+          dropoffLongitude: data.dropoffCoords.lng,
+          estimatedFare: data.fare,
+          currency: (data.currency as any) || "NGN",
+          estimatedDistance: 0, // Will be calculated by ride service
+          estimatedDuration: 0,
+          paymentMethod: (data.paymentMethod as any) || "WALLET",
+        },
+      });
+
+      // Emit event for ride matching service
+      this.eventEmitter.emit("ride:requested", {
+        rideId: ride.id,
+        pickup: data.pickupCoords,
+        dropoff: data.dropoffCoords,
+      });
+
+      // Find nearest available driver for ETA
+      const nearestDriver = await prisma.driver.findFirst({
+        where: {
+          isOnline: true,
+          isAvailable: true,
+          currentLatitude: { not: null },
+        },
+        include: {
+          user: true,
+          vehicle: true,
+        },
+        orderBy: {
+          lastLocationUpdate: "desc",
+        },
+      });
+
+      return {
+        id: ride.id,
+        driverName: nearestDriver?.user?.firstName || "Finding driver...",
+        vehiclePlate: nearestDriver?.vehicle?.plateNumber || "Pending",
+        driverPhone: nearestDriver?.user?.phone || "",
+        eta: 5, // Default ETA, will be updated by matching service
+        status: ride.status,
+      };
+    } catch (error) {
+      logger.error("Error creating trip", { data, error });
+      throw error;
+    }
   }
 
-  private async getActiveTrip(_userId: string): Promise<any> {
-    return null;
+  private async getActiveTrip(userId: string): Promise<any> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { rider: true },
+      });
+
+      if (!user?.rider) return null;
+
+      const activeRide = await prisma.ride.findFirst({
+        where: {
+          riderId: user.rider.id,
+          status: {
+            in: [
+              "PENDING",
+              "SEARCHING",
+              "DRIVER_ASSIGNED",
+              "DRIVER_ARRIVING",
+              "DRIVER_ARRIVED",
+              "IN_PROGRESS",
+            ],
+          },
+        },
+        include: {
+          driver: {
+            include: {
+              user: true,
+              vehicle: true,
+            },
+          },
+        },
+        orderBy: { requestedAt: "desc" },
+      });
+
+      if (!activeRide) return null;
+
+      return {
+        id: activeRide.id,
+        status: activeRide.status.toLowerCase().replace("_", " "),
+        driverName: activeRide.driver?.user?.firstName || "Finding driver...",
+        vehiclePlate: activeRide.driver?.vehicle?.plateNumber || "Pending",
+        driverPhone: activeRide.driver?.user?.phone || "",
+        driverLocation: activeRide.driver
+          ? {
+              lat: activeRide.driver.currentLatitude,
+              lng: activeRide.driver.currentLongitude,
+            }
+          : null,
+        pickup: activeRide.pickupAddress,
+        dropoff: activeRide.dropoffAddress,
+        fare: Number(activeRide.estimatedFare),
+        createdAt: activeRide.requestedAt,
+      };
+    } catch (error) {
+      logger.error("Error getting active trip", { userId, error });
+      return null;
+    }
   }
 
-  private async getTrip(_tripId: string): Promise<any> {
-    return null;
+  private async getTrip(tripId: string): Promise<any> {
+    try {
+      const ride = await prisma.ride.findUnique({
+        where: { id: tripId },
+        include: {
+          driver: {
+            include: {
+              user: true,
+              vehicle: true,
+            },
+          },
+          rider: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      });
+
+      if (!ride) return null;
+
+      return {
+        id: ride.id,
+        status: ride.status.toLowerCase().replace("_", " "),
+        driverName: ride.driver?.user?.firstName,
+        vehiclePlate: ride.driver?.vehicle?.plateNumber,
+        driverPhone: ride.driver?.user?.phone,
+        riderPhone: ride.rider?.user?.phone,
+        pickup: ride.pickupAddress,
+        dropoff: ride.dropoffAddress,
+        fare: Number(ride.estimatedFare),
+        actualFare: ride.actualFare ? Number(ride.actualFare) : null,
+        createdAt: ride.requestedAt,
+        completedAt: ride.completedAt,
+      };
+    } catch (error) {
+      logger.error("Error getting trip", { tripId, error });
+      return null;
+    }
   }
 
-  private async cancelTrip(_tripId: string, _reason: string): Promise<void> {}
+  private async cancelTrip(tripId: string, reason: string): Promise<void> {
+    try {
+      await prisma.ride.update({
+        where: { id: tripId },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: new Date(),
+          cancellationReason: reason,
+          cancelledBy: "rider",
+        },
+      });
+
+      this.eventEmitter.emit("ride:cancelled", { rideId: tripId, reason });
+
+      logger.info("Trip cancelled via SMS", { tripId, reason });
+    } catch (error) {
+      logger.error("Error cancelling trip", { tripId, reason, error });
+      throw error;
+    }
+  }
 
   private async deductCancellationFee(
-    _phone: string,
-    _fee: number
-  ): Promise<void> {}
+    phone: string,
+    fee: number,
+  ): Promise<void> {
+    try {
+      if (fee <= 0) return;
 
-  private async getWalletBalance(_userId: string): Promise<number> {
-    return 1500;
+      const user = await this.getUserByPhone(phone);
+      if (!user?.walletId) {
+        logger.warn("No wallet found for cancellation fee deduction", {
+          phone,
+        });
+        return;
+      }
+
+      // Create transaction for cancellation fee
+      const idempotencyKey = `cancel_fee_${user.id}_${Date.now()}`;
+
+      await prisma.$transaction(async (tx) => {
+        // Debit user wallet
+        await tx.walletAccount.update({
+          where: { id: user.walletId },
+          data: {
+            balance: { decrement: fee },
+            availableBalance: { decrement: fee },
+          },
+        });
+
+        // Create transaction record
+        const transaction = await tx.transaction.create({
+          data: {
+            idempotencyKey,
+            transactionType: "RIDE_PAYMENT",
+            status: "COMPLETED",
+            amount: fee,
+            currency: user.currency || "NGN",
+            description: "Ride cancellation fee",
+            completedAt: new Date(),
+          },
+        });
+
+        // Create ledger entry
+        await tx.ledgerEntry.create({
+          data: {
+            transactionId: transaction.id,
+            accountId: user.walletId,
+            entryType: "DEBIT",
+            amount: fee,
+            balanceAfter: 0, // Will be calculated
+            description: "Cancellation fee",
+          },
+        });
+      });
+
+      logger.info("Cancellation fee deducted", { phone, fee });
+    } catch (error) {
+      logger.error("Error deducting cancellation fee", { phone, fee, error });
+    }
+  }
+
+  private async getWalletBalance(userId: string): Promise<number> {
+    try {
+      const wallet = await prisma.walletAccount.findFirst({
+        where: {
+          userId,
+          accountType: "USER_WALLET",
+        },
+      });
+
+      return wallet ? Number(wallet.availableBalance) : 0;
+    } catch (error) {
+      logger.error("Error getting wallet balance", { userId, error });
+      return 0;
+    }
   }
 
   private async getRecentTransactions(
-    _userId: string,
-    _limit: number
+    userId: string,
+    limit: number,
   ): Promise<any[]> {
-    return [];
+    try {
+      const wallet = await prisma.walletAccount.findFirst({
+        where: {
+          userId,
+          accountType: "USER_WALLET",
+        },
+      });
+
+      if (!wallet) return [];
+
+      const entries = await prisma.ledgerEntry.findMany({
+        where: { accountId: wallet.id },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: {
+          transaction: true,
+        },
+      });
+
+      return entries.map((entry) => ({
+        id: entry.id,
+        type: entry.entryType,
+        amount: Number(entry.amount),
+        description: entry.description || entry.transaction?.description,
+        date: entry.createdAt,
+        balanceAfter: Number(entry.balanceAfter),
+      }));
+    } catch (error) {
+      logger.error("Error getting recent transactions", {
+        userId,
+        limit,
+        error,
+      });
+      return [];
+    }
   }
 
-  private async getDriverByPlate(_plate: string): Promise<any> {
-    return null;
+  private async getDriverByPlate(plate: string): Promise<any> {
+    try {
+      const normalizedPlate = plate
+        .toUpperCase()
+        .replaceAll(/\s+/g, " ")
+        .trim();
+
+      const vehicle = await prisma.vehicle.findFirst({
+        where: {
+          plateNumber: { contains: normalizedPlate, mode: "insensitive" },
+        },
+        include: {
+          drivers: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      });
+
+      if (!vehicle || vehicle.drivers.length === 0) return null;
+
+      const driver = vehicle.drivers[0];
+      return {
+        id: driver.id,
+        name: driver.user.firstName,
+        fullName: `${driver.user.firstName} ${driver.user.lastName}`,
+        phone: driver.user.phone,
+        rating: driver.rating,
+        vehiclePlate: vehicle.plateNumber,
+        vehicleModel: `${vehicle.make} ${vehicle.model}`,
+        vehicleColor: vehicle.color,
+      };
+    } catch (error) {
+      logger.error("Error getting driver by plate", { plate, error });
+      return null;
+    }
   }
 
-  private async savePlace(_userId: string, _place: any): Promise<void> {}
+  private async savePlace(
+    userId: string,
+    place: {
+      name: string;
+      address: string;
+      coords: GeoLocation;
+      type: "home" | "work" | "other";
+    },
+  ): Promise<void> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { rider: true },
+      });
 
-  private async submitFeedback(_data: any): Promise<void> {}
+      if (!user?.rider) {
+        throw new Error("User is not a rider");
+      }
+
+      // Upsert saved place
+      const existingPlace = await prisma.savedPlace.findFirst({
+        where: {
+          riderId: user.rider.id,
+          type: place.type,
+        },
+      });
+
+      if (existingPlace) {
+        await prisma.savedPlace.update({
+          where: { id: existingPlace.id },
+          data: {
+            name: place.name,
+            address: place.address,
+            latitude: place.coords.lat,
+            longitude: place.coords.lng,
+          },
+        });
+      } else {
+        await prisma.savedPlace.create({
+          data: {
+            riderId: user.rider.id,
+            name: place.name,
+            address: place.address,
+            latitude: place.coords.lat,
+            longitude: place.coords.lng,
+            type: place.type,
+          },
+        });
+      }
+
+      logger.info("Saved place for user", { userId, type: place.type });
+    } catch (error) {
+      logger.error("Error saving place", { userId, place, error });
+      throw error;
+    }
+  }
+
+  private async submitFeedback(data: {
+    userId: string;
+    tripId?: string;
+    driverId?: string;
+    rating?: number;
+    message: string;
+  }): Promise<void> {
+    try {
+      // If feedback is for a specific trip, update the ride rating
+      if (data.tripId && data.rating) {
+        await prisma.ride.update({
+          where: { id: data.tripId },
+          data: {
+            driverRating: data.rating,
+            notes: data.message,
+          },
+        });
+
+        // Update driver's average rating
+        if (data.driverId) {
+          const driverRides = await prisma.ride.aggregate({
+            where: {
+              driverId: data.driverId,
+              driverRating: { not: null },
+            },
+            _avg: { driverRating: true },
+            _count: true,
+          });
+
+          if (driverRides._avg.driverRating) {
+            await prisma.driver.update({
+              where: { id: data.driverId },
+              data: { rating: driverRides._avg.driverRating },
+            });
+          }
+        }
+      }
+
+      // Store general feedback
+      this.eventEmitter.emit("feedback:submitted", {
+        userId: data.userId,
+        tripId: data.tripId,
+        rating: data.rating,
+        message: data.message,
+        source: "sms",
+        timestamp: new Date(),
+      });
+
+      logger.info("Feedback submitted via SMS", {
+        userId: data.userId,
+        tripId: data.tripId,
+      });
+    } catch (error) {
+      logger.error("Error submitting feedback", { data, error });
+    }
+  }
 
   // ===========================================================================
   // INTERFACE METHODS
@@ -1154,7 +1923,7 @@ export class SMSService implements ISMSService {
     to: string,
     templateCode: string,
     data: Record<string, unknown>,
-    language?: string
+    language?: string,
   ): Promise<string> {
     const template = this.templates.get(`${templateCode}_${language || "en"}`);
     if (!template) {
@@ -1163,7 +1932,7 @@ export class SMSService implements ISMSService {
 
     let message = template.template;
     for (const [key, value] of Object.entries(data)) {
-      message = message.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
+      message = message.replaceAll(`{${key}}`, String(value));
     }
 
     return this.send({ message, recipient: to });

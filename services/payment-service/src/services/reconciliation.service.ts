@@ -27,6 +27,9 @@ import {
 } from "@prisma/client";
 import { reconciliationLogger } from "../lib/logger";
 
+/** Status of a balance reconciliation result */
+type BalanceReconciliationStatus = "MATCHED" | "DISCREPANCY" | "ERROR";
+
 export interface ReconciliationConfig {
   // Thresholds
   amountTolerancePercent: number; // 0.1% tolerance for amount matching
@@ -157,7 +160,7 @@ export interface DiscrepancyDetails {
 }
 
 export class ReconciliationService {
-  private config: ReconciliationConfig = {
+  private readonly config: ReconciliationConfig = {
     amountTolerancePercent: 0.1, // 0.1% tolerance
     amountToleranceFixed: 10, // ₦10 fixed tolerance
     autoResolveLimit: 100, // Auto-resolve below ₦100
@@ -167,7 +170,7 @@ export class ReconciliationService {
     missingTransactionAlertDelay: 4, // Alert after 4 hours
   };
 
-  constructor(private prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) {}
 
   /**
    * Run daily reconciliation for a specific provider and date
@@ -398,7 +401,7 @@ export class ReconciliationService {
 
     for (const tx of paymentTxs) {
       if (tx.providerReference) {
-        const providerResponse = tx.providerResponse as any;
+        const providerResponse = tx.providerResponse;
         transactions.set(tx.providerReference, {
           reference: tx.providerReference,
           amount: Number(tx.amount),
@@ -439,7 +442,7 @@ export class ReconciliationService {
 
     for (const tx of paymentTxs) {
       if (tx.providerReference) {
-        const providerResponse = tx.providerResponse as any;
+        const providerResponse = tx.providerResponse;
         transactions.set(tx.providerReference, {
           reference: tx.providerReference,
           amount: Number(tx.amount),
@@ -930,6 +933,8 @@ export class ReconciliationService {
     providerBalance: number;
     difference: number;
     status: "MATCHED" | "DISCREPANCY";
+    lastReconciled: Date;
+    retryCount: number;
   }> {
     // Get UBI float balance
     const ubiFloat = await this.prisma.walletAccount.findFirst({
@@ -943,19 +948,31 @@ export class ReconciliationService {
       throw new Error(`UBI_FLOAT account not found for ${currency}`);
     }
 
-    // Get provider balance (implementation varies by provider)
+    // Get provider balance with retry logic
     let providerBalance = 0;
+    let retryCount = 0;
+    const maxRetries = 3;
 
-    switch (provider) {
-      case PaymentProvider.PAYSTACK:
-        providerBalance = await this.getPaystackBalance(currency);
+    while (retryCount < maxRetries) {
+      try {
+        providerBalance = await this.getProviderBalance(provider, currency);
         break;
-      // Add other providers as needed
-      default:
+      } catch (error) {
+        retryCount++;
         reconciliationLogger.warn(
-          { provider },
-          "Balance check not implemented for provider",
+          { provider, currency, retryCount, error },
+          `[Reconciliation] Retry ${retryCount}/${maxRetries} for balance fetch`,
         );
+        if (retryCount >= maxRetries) {
+          throw new Error(
+            `Failed to fetch ${provider} balance after ${maxRetries} retries`,
+          );
+        }
+        // Exponential backoff
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.pow(2, retryCount) * 1000),
+        );
+      }
     }
 
     const ubiBalance = Number(ubiFloat.balance);
@@ -964,6 +981,8 @@ export class ReconciliationService {
       difference <= this.config.amountToleranceFixed
         ? "MATCHED"
         : "DISCREPANCY";
+
+    const lastReconciled = new Date();
 
     // Log balance reconciliation
     await this.prisma.balanceReconciliation.create({
@@ -974,15 +993,101 @@ export class ReconciliationService {
         providerBalance,
         difference,
         status,
+        metadata: {
+          retryCount,
+          lastReconciled: lastReconciled.toISOString(),
+        },
       },
     });
+
+    // Create alert for discrepancies
+    if (status === "DISCREPANCY") {
+      await this.createBalanceDiscrepancyAlert(
+        provider,
+        currency,
+        ubiBalance,
+        providerBalance,
+        difference,
+      );
+    }
 
     return {
       ubiBalance,
       providerBalance,
       difference,
       status,
+      lastReconciled,
+      retryCount,
     };
+  }
+
+  /**
+   * Get provider balance - routes to appropriate provider implementation
+   */
+  private async getProviderBalance(
+    provider: PaymentProvider,
+    currency: Currency,
+  ): Promise<number> {
+    switch (provider) {
+      case PaymentProvider.PAYSTACK:
+        return await this.getPaystackBalance(currency);
+      case PaymentProvider.MPESA:
+        return await this.getMpesaBalance();
+      case PaymentProvider.MTN_MOMO_GH:
+        return await this.getMoMoBalance("GH", currency);
+      case PaymentProvider.MTN_MOMO_RW:
+        return await this.getMoMoBalance("RW", currency);
+      case PaymentProvider.MTN_MOMO_UG:
+        return await this.getMoMoBalance("UG", currency);
+      case PaymentProvider.AIRTEL_MONEY_KE:
+      case PaymentProvider.AIRTEL_MONEY_UG:
+      case PaymentProvider.AIRTEL_MONEY_TZ:
+        return await this.getAirtelMoneyBalance(provider, currency);
+      case PaymentProvider.FLUTTERWAVE:
+        return await this.getFlutterwaveBalance(currency);
+      default:
+        reconciliationLogger.warn(
+          { provider },
+          "Balance check not implemented for provider",
+        );
+        return 0;
+    }
+  }
+
+  /**
+   * Create balance discrepancy alert
+   */
+  private async createBalanceDiscrepancyAlert(
+    provider: PaymentProvider,
+    currency: Currency,
+    ubiBalance: number,
+    providerBalance: number,
+    difference: number,
+  ): Promise<void> {
+    const severity = this.calculateSeverity(difference);
+
+    await this.prisma.alert.create({
+      data: {
+        type: "BALANCE_DISCREPANCY",
+        severity,
+        title: `Balance Discrepancy Detected for ${provider}`,
+        message: `UBI balance (${currency} ${ubiBalance.toFixed(2)}) differs from provider balance (${currency} ${providerBalance.toFixed(2)}) by ${currency} ${difference.toFixed(2)}`,
+        metadata: {
+          provider,
+          currency,
+          ubiBalance,
+          providerBalance,
+          difference,
+          timestamp: new Date().toISOString(),
+        },
+        status: "PENDING",
+      },
+    });
+
+    reconciliationLogger.error(
+      { provider, currency, ubiBalance, providerBalance, difference },
+      `[ALERT] Balance discrepancy detected`,
+    );
   }
 
   /**
@@ -1019,6 +1124,608 @@ export class ReconciliationService {
     }
 
     return 0;
+  }
+
+  /**
+   * Get M-Pesa account balance via Safaricom B2C API
+   * Uses the Account Balance API endpoint
+   */
+  private async getMpesaBalance(): Promise<number> {
+    const consumerKey = process.env.MPESA_CONSUMER_KEY;
+    const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
+    const shortcode = process.env.MPESA_SHORTCODE;
+    const initiatorName = process.env.MPESA_INITIATOR_NAME;
+    const initiatorPassword = process.env.MPESA_INITIATOR_PASSWORD;
+    const securityCredential = process.env.MPESA_SECURITY_CREDENTIAL;
+
+    if (!consumerKey || !consumerSecret || !shortcode) {
+      reconciliationLogger.warn("M-Pesa credentials not configured");
+      return 0;
+    }
+
+    const isSandbox = process.env.MPESA_ENVIRONMENT !== "production";
+    const baseUrl = isSandbox
+      ? "https://sandbox.safaricom.co.ke"
+      : "https://api.safaricom.co.ke";
+
+    try {
+      // Get OAuth token
+      const authString = Buffer.from(
+        `${consumerKey}:${consumerSecret}`,
+      ).toString("base64");
+
+      const tokenResponse = await fetch(
+        `${baseUrl}/oauth/v1/generate?grant_type=client_credentials`,
+        {
+          headers: {
+            Authorization: `Basic ${authString}`,
+          },
+        },
+      );
+
+      if (!tokenResponse.ok) {
+        throw new Error(`M-Pesa OAuth error: ${tokenResponse.status}`);
+      }
+
+      const tokenData = (await tokenResponse.json()) as {
+        access_token: string;
+      };
+      const accessToken = tokenData.access_token;
+
+      // Call Account Balance API
+      const balanceResponse = await fetch(
+        `${baseUrl}/mpesa/accountbalance/v1/query`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            Initiator: initiatorName,
+            SecurityCredential: securityCredential || initiatorPassword,
+            CommandID: "AccountBalance",
+            PartyA: shortcode,
+            IdentifierType: "4", // Shortcode
+            Remarks: "Balance reconciliation query",
+            QueueTimeOutURL: `${process.env.API_BASE_URL}/webhooks/mpesa/timeout`,
+            ResultURL: `${process.env.API_BASE_URL}/webhooks/mpesa/balance-result`,
+          }),
+        },
+      );
+
+      if (!balanceResponse.ok) {
+        throw new Error(`M-Pesa Balance API error: ${balanceResponse.status}`);
+      }
+
+      const balanceData = (await balanceResponse.json()) as any;
+
+      // Note: M-Pesa Account Balance is asynchronous
+      // The actual balance comes via callback to ResultURL
+      // For now, we query our stored balance from the last callback
+      const storedBalance = await this.prisma.providerBalance.findFirst({
+        where: {
+          provider: PaymentProvider.MPESA,
+          currency: Currency.KES,
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+
+      if (storedBalance) {
+        return Number(storedBalance.balance);
+      }
+
+      reconciliationLogger.info(
+        { conversationId: balanceData.ConversationID },
+        "[M-Pesa] Balance query initiated, awaiting callback",
+      );
+
+      return 0;
+    } catch (error) {
+      reconciliationLogger.error(
+        { err: error },
+        "[Reconciliation] Failed to get M-Pesa balance",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get MTN MoMo account balance
+   * Uses the Collection Account Balance API
+   */
+  private async getMoMoBalance(
+    country: "GH" | "RW" | "UG" | "ZM" | "CI",
+    currency: Currency,
+  ): Promise<number> {
+    const subscriptionKey = process.env[`MTN_MOMO_${country}_SUBSCRIPTION_KEY`];
+    const apiUserId = process.env[`MTN_MOMO_${country}_API_USER`];
+    const apiKey = process.env[`MTN_MOMO_${country}_API_KEY`];
+    const targetEnvironment = process.env.MTN_MOMO_ENVIRONMENT || "sandbox";
+
+    if (!subscriptionKey || !apiUserId || !apiKey) {
+      reconciliationLogger.warn(
+        { country },
+        `MTN MoMo ${country} credentials not configured`,
+      );
+      return 0;
+    }
+
+    const baseUrl =
+      targetEnvironment === "sandbox"
+        ? "https://sandbox.momodeveloper.mtn.com"
+        : `https://proxy.momoapi.mtn.com/${country.toLowerCase()}`;
+
+    try {
+      // Generate access token
+      const authString = Buffer.from(`${apiUserId}:${apiKey}`).toString(
+        "base64",
+      );
+
+      const tokenResponse = await fetch(`${baseUrl}/collection/token/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${authString}`,
+          "Ocp-Apim-Subscription-Key": subscriptionKey,
+        },
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error(`MoMo OAuth error: ${tokenResponse.status}`);
+      }
+
+      const tokenData = (await tokenResponse.json()) as {
+        access_token: string;
+      };
+      const accessToken = tokenData.access_token;
+
+      // Get account balance
+      const balanceResponse = await fetch(
+        `${baseUrl}/collection/v1_0/account/balance`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "X-Target-Environment": targetEnvironment,
+            "Ocp-Apim-Subscription-Key": subscriptionKey,
+          },
+        },
+      );
+
+      if (!balanceResponse.ok) {
+        throw new Error(`MoMo Balance API error: ${balanceResponse.status}`);
+      }
+
+      const balanceData = (await balanceResponse.json()) as {
+        availableBalance: string;
+        currency: string;
+      };
+
+      // Store balance for historical tracking
+      await this.prisma.providerBalance.upsert({
+        where: {
+          provider_currency: {
+            provider: this.getMoMoProvider(country),
+            currency,
+          },
+        },
+        update: {
+          balance: Number.parseFloat(balanceData.availableBalance),
+          updatedAt: new Date(),
+        },
+        create: {
+          provider: this.getMoMoProvider(country),
+          currency,
+          balance: Number.parseFloat(balanceData.availableBalance),
+        },
+      });
+
+      return Number.parseFloat(balanceData.availableBalance);
+    } catch (error) {
+      reconciliationLogger.error(
+        { err: error, country },
+        "[Reconciliation] Failed to get MoMo balance",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Helper to get MoMo provider enum from country code
+   */
+  private getMoMoProvider(
+    country: "GH" | "RW" | "UG" | "ZM" | "CI",
+  ): PaymentProvider {
+    const providerMap: Record<string, PaymentProvider> = {
+      GH: PaymentProvider.MTN_MOMO_GH,
+      RW: PaymentProvider.MTN_MOMO_RW,
+      UG: PaymentProvider.MTN_MOMO_UG,
+      ZM: PaymentProvider.MTN_MOMO_ZM,
+      CI: PaymentProvider.MTN_MOMO_CI,
+    };
+    return providerMap[country] || PaymentProvider.MTN_MOMO_GH;
+  }
+
+  /**
+   * Get Airtel Money account balance
+   * Uses the Airtel Money Africa API
+   */
+  private async getAirtelMoneyBalance(
+    provider: PaymentProvider,
+    currency: Currency,
+  ): Promise<number> {
+    const countryCode = this.getAirtelCountryCode(provider);
+    const clientId = process.env[`AIRTEL_MONEY_${countryCode}_CLIENT_ID`];
+    const clientSecret =
+      process.env[`AIRTEL_MONEY_${countryCode}_CLIENT_SECRET`];
+
+    if (!clientId || !clientSecret) {
+      reconciliationLogger.warn(
+        { provider },
+        "Airtel Money credentials not configured",
+      );
+      return 0;
+    }
+
+    const baseUrl =
+      process.env.AIRTEL_MONEY_ENVIRONMENT === "production"
+        ? "https://openapi.airtel.africa"
+        : "https://openapiuat.airtel.africa";
+
+    try {
+      // Get OAuth token
+      const tokenResponse = await fetch(`${baseUrl}/auth/oauth2/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "client_credentials",
+        }),
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error(`Airtel OAuth error: ${tokenResponse.status}`);
+      }
+
+      const tokenData = (await tokenResponse.json()) as {
+        access_token: string;
+      };
+      const accessToken = tokenData.access_token;
+
+      // Get account balance
+      const balanceResponse = await fetch(
+        `${baseUrl}/standard/v1/users/balance`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "X-Country": countryCode,
+            "X-Currency": currency,
+          },
+        },
+      );
+
+      if (!balanceResponse.ok) {
+        throw new Error(`Airtel Balance API error: ${balanceResponse.status}`);
+      }
+
+      const balanceData = (await balanceResponse.json()) as {
+        data: {
+          balance: string;
+          currency: string;
+        };
+        status: {
+          success: boolean;
+        };
+      };
+
+      if (balanceData.status.success) {
+        const balance = Number.parseFloat(balanceData.data.balance);
+
+        // Store balance for historical tracking
+        await this.prisma.providerBalance.upsert({
+          where: {
+            provider_currency: {
+              provider,
+              currency,
+            },
+          },
+          update: {
+            balance,
+            updatedAt: new Date(),
+          },
+          create: {
+            provider,
+            currency,
+            balance,
+          },
+        });
+
+        return balance;
+      }
+
+      return 0;
+    } catch (error) {
+      reconciliationLogger.error(
+        { err: error, provider },
+        "[Reconciliation] Failed to get Airtel Money balance",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Helper to get Airtel country code from provider
+   */
+  private getAirtelCountryCode(provider: PaymentProvider): string {
+    const countryMap: Record<string, string> = {
+      [PaymentProvider.AIRTEL_MONEY_KE]: "KE",
+      [PaymentProvider.AIRTEL_MONEY_UG]: "UG",
+      [PaymentProvider.AIRTEL_MONEY_TZ]: "TZ",
+    };
+    return countryMap[provider] || "KE";
+  }
+
+  /**
+   * Get Flutterwave account balance
+   * Uses the Flutterwave Balance API
+   */
+  private async getFlutterwaveBalance(currency: Currency): Promise<number> {
+    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY;
+
+    if (!secretKey) {
+      reconciliationLogger.warn("Flutterwave secret key not configured");
+      return 0;
+    }
+
+    const baseUrl = "https://api.flutterwave.com/v3";
+
+    try {
+      const response = await fetch(`${baseUrl}/balances/${currency}`, {
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        // Try alternative endpoint for all balances
+        const allBalancesResponse = await fetch(`${baseUrl}/balances`, {
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!allBalancesResponse.ok) {
+          throw new Error(`Flutterwave Balance API error: ${response.status}`);
+        }
+
+        const allData = (await allBalancesResponse.json()) as {
+          status: string;
+          data: Array<{
+            currency: string;
+            available_balance: number;
+            ledger_balance: number;
+          }>;
+        };
+
+        if (allData.status === "success" && allData.data) {
+          const currencyBalance = allData.data.find(
+            (b) => b.currency === currency,
+          );
+          if (currencyBalance) {
+            const balance = currencyBalance.available_balance;
+
+            // Store balance for historical tracking
+            await this.prisma.providerBalance.upsert({
+              where: {
+                provider_currency: {
+                  provider: PaymentProvider.FLUTTERWAVE,
+                  currency,
+                },
+              },
+              update: {
+                balance,
+                updatedAt: new Date(),
+              },
+              create: {
+                provider: PaymentProvider.FLUTTERWAVE,
+                currency,
+                balance,
+              },
+            });
+
+            return balance;
+          }
+        }
+
+        return 0;
+      }
+
+      const data = (await response.json()) as {
+        status: string;
+        data: {
+          currency: string;
+          available_balance: number;
+          ledger_balance: number;
+        };
+      };
+
+      if (data.status === "success" && data.data) {
+        const balance = data.data.available_balance;
+
+        // Store balance for historical tracking
+        await this.prisma.providerBalance.upsert({
+          where: {
+            provider_currency: {
+              provider: PaymentProvider.FLUTTERWAVE,
+              currency,
+            },
+          },
+          update: {
+            balance,
+            updatedAt: new Date(),
+          },
+          create: {
+            provider: PaymentProvider.FLUTTERWAVE,
+            currency,
+            balance,
+          },
+        });
+
+        return balance;
+      }
+
+      return 0;
+    } catch (error) {
+      reconciliationLogger.error(
+        { err: error },
+        "[Reconciliation] Failed to get Flutterwave balance",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Run comprehensive balance reconciliation for all providers
+   */
+  async runAllProvidersBalanceReconciliation(): Promise<{
+    results: Array<{
+      provider: PaymentProvider;
+      currency: Currency;
+      ubiBalance: number;
+      providerBalance: number;
+      difference: number;
+      status: BalanceReconciliationStatus;
+      error?: string;
+    }>;
+    summary: {
+      totalProviders: number;
+      matched: number;
+      discrepancies: number;
+      errors: number;
+      totalDifference: number;
+    };
+  }> {
+    const providerCurrencyPairs: Array<{
+      provider: PaymentProvider;
+      currency: Currency;
+    }> = [
+      { provider: PaymentProvider.MPESA, currency: Currency.KES },
+      { provider: PaymentProvider.PAYSTACK, currency: Currency.NGN },
+      { provider: PaymentProvider.MTN_MOMO_GH, currency: Currency.GHS },
+      { provider: PaymentProvider.MTN_MOMO_RW, currency: Currency.RWF },
+      { provider: PaymentProvider.MTN_MOMO_UG, currency: Currency.UGX },
+      { provider: PaymentProvider.AIRTEL_MONEY_KE, currency: Currency.KES },
+      { provider: PaymentProvider.AIRTEL_MONEY_UG, currency: Currency.UGX },
+      { provider: PaymentProvider.AIRTEL_MONEY_TZ, currency: Currency.TZS },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.NGN },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.KES },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.GHS },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.ZAR },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.USD },
+    ];
+
+    const results: Array<{
+      provider: PaymentProvider;
+      currency: Currency;
+      ubiBalance: number;
+      providerBalance: number;
+      difference: number;
+      status: BalanceReconciliationStatus;
+      error?: string;
+    }> = [];
+
+    for (const { provider, currency } of providerCurrencyPairs) {
+      try {
+        const result = await this.runBalanceReconciliation(provider, currency);
+        results.push({
+          provider,
+          currency,
+          ubiBalance: result.ubiBalance,
+          providerBalance: result.providerBalance,
+          difference: result.difference,
+          status: result.status,
+        });
+      } catch (error) {
+        reconciliationLogger.error(
+          { err: error, provider, currency },
+          "[Reconciliation] Balance check failed",
+        );
+        results.push({
+          provider,
+          currency,
+          ubiBalance: 0,
+          providerBalance: 0,
+          difference: 0,
+          status: "ERROR",
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    const summary = {
+      totalProviders: results.length,
+      matched: results.filter((r) => r.status === "MATCHED").length,
+      discrepancies: results.filter((r) => r.status === "DISCREPANCY").length,
+      errors: results.filter((r) => r.status === "ERROR").length,
+      totalDifference: results.reduce((sum, r) => sum + r.difference, 0),
+    };
+
+    // Generate reconciliation report
+    await this.generateBalanceReconciliationReport(results, summary);
+
+    return { results, summary };
+  }
+
+  /**
+   * Generate balance reconciliation report
+   */
+  private async generateBalanceReconciliationReport(
+    results: Array<{
+      provider: PaymentProvider;
+      currency: Currency;
+      ubiBalance: number;
+      providerBalance: number;
+      difference: number;
+      status: BalanceReconciliationStatus;
+      error?: string;
+    }>,
+    summary: {
+      totalProviders: number;
+      matched: number;
+      discrepancies: number;
+      errors: number;
+      totalDifference: number;
+    },
+  ): Promise<void> {
+    await this.prisma.reconciliationReport.create({
+      data: {
+        type: "BALANCE",
+        date: new Date(),
+        status:
+          summary.discrepancies > 0 || summary.errors > 0
+            ? "ISSUES_FOUND"
+            : "CLEAN",
+        summary: {
+          ...summary,
+          generatedAt: new Date().toISOString(),
+        },
+        details: results,
+      },
+    });
+
+    reconciliationLogger.info(
+      {
+        matched: summary.matched,
+        discrepancies: summary.discrepancies,
+        errors: summary.errors,
+        totalDifference: summary.totalDifference,
+      },
+      "[Reconciliation] Balance reconciliation completed",
+    );
   }
 
   /**
@@ -1120,26 +1827,64 @@ export class ReconciliationService {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
 
-    const providers = [
-      PaymentProvider.MPESA,
-      PaymentProvider.PAYSTACK,
-      PaymentProvider.MTN_MOMO_GH,
+    // Transaction reconciliation for all providers
+    const providerCurrencyPairs: Array<{
+      provider: PaymentProvider;
+      currency: Currency;
+    }> = [
+      { provider: PaymentProvider.MPESA, currency: Currency.KES },
+      { provider: PaymentProvider.PAYSTACK, currency: Currency.NGN },
+      { provider: PaymentProvider.PAYSTACK, currency: Currency.GHS },
+      { provider: PaymentProvider.MTN_MOMO_GH, currency: Currency.GHS },
+      { provider: PaymentProvider.MTN_MOMO_RW, currency: Currency.RWF },
+      { provider: PaymentProvider.MTN_MOMO_UG, currency: Currency.UGX },
+      { provider: PaymentProvider.AIRTEL_MONEY_KE, currency: Currency.KES },
+      { provider: PaymentProvider.AIRTEL_MONEY_UG, currency: Currency.UGX },
+      { provider: PaymentProvider.AIRTEL_MONEY_TZ, currency: Currency.TZS },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.NGN },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.KES },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.GHS },
+      { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.ZAR },
     ];
 
-    const currencies = [Currency.NGN, Currency.KES, Currency.GHS];
+    reconciliationLogger.info(
+      { date: yesterday.toISOString() },
+      "[Reconciliation] Starting daily reconciliation",
+    );
 
-    for (const provider of providers) {
-      for (const currency of currencies) {
-        try {
-          await this.runDailyReconciliation(provider, yesterday, currency);
-        } catch (error) {
-          reconciliationLogger.error(
-            { err: error, provider, currency },
-            "[Reconciliation] Failed",
-          );
-        }
+    // Run transaction reconciliation
+    for (const { provider, currency } of providerCurrencyPairs) {
+      try {
+        await this.runDailyReconciliation(provider, yesterday, currency);
+      } catch (error) {
+        reconciliationLogger.error(
+          { err: error, provider, currency },
+          "[Reconciliation] Transaction reconciliation failed",
+        );
       }
     }
+
+    // Run balance reconciliation
+    try {
+      const balanceResults = await this.runAllProvidersBalanceReconciliation();
+      reconciliationLogger.info(
+        {
+          matched: balanceResults.summary.matched,
+          discrepancies: balanceResults.summary.discrepancies,
+          errors: balanceResults.summary.errors,
+        },
+        "[Reconciliation] Balance reconciliation completed",
+      );
+    } catch (error) {
+      reconciliationLogger.error(
+        { err: error },
+        "[Reconciliation] Balance reconciliation failed",
+      );
+    }
+
+    reconciliationLogger.info(
+      "[Reconciliation] Daily reconciliation completed",
+    );
   }
 }
 
@@ -1157,8 +1902,6 @@ export function createReconciliationService(
 export function getReconciliationService(
   prisma: PrismaClient,
 ): ReconciliationService {
-  if (!reconciliationServiceInstance) {
-    reconciliationServiceInstance = createReconciliationService(prisma);
-  }
+  reconciliationServiceInstance ??= createReconciliationService(prisma);
   return reconciliationServiceInstance;
 }

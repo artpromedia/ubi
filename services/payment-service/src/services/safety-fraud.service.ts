@@ -12,8 +12,8 @@
  * - Risk scoring & decisioning
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { safetyLogger } from "../lib/logger";
 import {
   ATODetection,

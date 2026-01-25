@@ -388,7 +388,7 @@ inAppRoutes.get("/badge", auth, async (c) => {
 
   return c.json({
     success: true,
-    data: { unreadCount: parseInt(badgeCount, 10) },
+    data: { unreadCount: Number.parseInt(badgeCount, 10) },
   });
 });
 

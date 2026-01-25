@@ -10,8 +10,8 @@
  * - Usage tracking
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import type {
   ApiKeyEnvironment,
@@ -890,7 +890,7 @@ export class ApiInfrastructureService extends EventEmitter {
         return false;
       }
 
-      const timestamp = parseInt(timestampPart.substring(2), 10);
+      const timestamp = Number.parseInt(timestampPart.substring(2), 10);
       const expectedSignature = signaturePart.substring(3);
 
       // Check timestamp tolerance
@@ -943,7 +943,7 @@ export class ApiInfrastructureService extends EventEmitter {
 
     if (!range || !bits) return false;
 
-    const mask = ~(2 ** (32 - parseInt(bits)) - 1);
+    const mask = ~(2 ** (32 - Number.parseInt(bits)) - 1);
 
     const ipNum = this.ipToNumber(ip);
     const rangeNum = this.ipToNumber(range);

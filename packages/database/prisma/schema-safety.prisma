@@ -182,7 +182,7 @@ enum FraudActionType {
   TERMINATE
 }
 
-enum RiskLevel {
+enum SafetyRiskLevel {
   VERY_LOW
   LOW
   MEDIUM
@@ -716,7 +716,7 @@ model FraudEvent {
   userId          String
   eventType       String // login, payment, promo_use, trip_request
   riskScore       Float
-  riskLevel       RiskLevel
+  riskLevel       SafetyRiskLevel
   action          FraudActionType
   signals         Json // Array of detected signals
   deviceInfo      Json?
@@ -793,7 +793,7 @@ model UserRiskProfile {
   id                  String            @id @default(uuid())
   userId              String            @unique
   overallRiskScore    Float             @default(0)
-  riskLevel           RiskLevel         @default(VERY_LOW)
+  riskLevel           SafetyRiskLevel   @default(VERY_LOW)
   accountAge          Int? // days
   verificationLevel   VerificationLevel @default(BASIC)
   totalTrips          Int               @default(0)
@@ -896,23 +896,23 @@ model DriverSafetyProfile {
 
 /// High-risk area zones
 model RiskZone {
-  id             String    @id @default(uuid())
+  id             String          @id @default(uuid())
   name           String
   description    String?
   geoJson        Json // Polygon definition
   center         Json // lat, lng
   radius         Float? // meters if circular
-  riskLevel      RiskLevel
+  riskLevel      SafetyRiskLevel
   riskFactors    String[] // robbery, assault, accident_prone
-  incidentCount  Int       @default(0)
+  incidentCount  Int             @default(0)
   lastIncidentAt DateTime?
-  isActive       Boolean   @default(true)
+  isActive       Boolean         @default(true)
   advisoryText   String?
   restrictions   Json? // cash_restricted, night_restricted
-  country        String    @db.VarChar(2)
+  country        String          @db.VarChar(2)
   city           String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   @@index([country])
   @@index([city])

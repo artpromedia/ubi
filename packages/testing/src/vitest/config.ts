@@ -4,7 +4,7 @@
  * Base configuration for all UBI services and applications.
  */
 
-import path from "path";
+import path from "node:path";
 import { defineConfig, type UserConfig } from "vitest/config";
 
 export interface UbiTestConfigOptions {

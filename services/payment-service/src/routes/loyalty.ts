@@ -380,7 +380,7 @@ loyaltyRoutes.post("/tiers/:userId/use-benefit", async (c) => {
  */
 loyaltyRoutes.get("/tiers/:userId/surge-discount", async (c) => {
   const userId = c.req.param("userId");
-  const surgeMultiplier = parseFloat(c.req.query("surgeMultiplier") || "1.0");
+  const surgeMultiplier = Number.parseFloat(c.req.query("surgeMultiplier") || "1.0");
 
   try {
     const discount = await tierService.getSurgeDiscount(
@@ -813,10 +813,10 @@ loyaltyRoutes.post("/streaks/:userId/freeze", async (c) => {
  */
 loyaltyRoutes.get("/streaks/:userId/calendar", async (c) => {
   const userId = c.req.param("userId");
-  const month = parseInt(
+  const month = Number.parseInt(
     c.req.query("month") || String(new Date().getMonth() + 1)
   );
-  const year = parseInt(
+  const year = Number.parseInt(
     c.req.query("year") || String(new Date().getFullYear())
   );
 
@@ -842,7 +842,7 @@ loyaltyRoutes.get("/streaks/:userId/calendar", async (c) => {
  * Get streak leaderboard
  */
 loyaltyRoutes.get("/streaks/leaderboard", async (c) => {
-  const limit = parseInt(c.req.query("limit") || "50");
+  const limit = Number.parseInt(c.req.query("limit") || "50");
   const streakType = c.req.query("type") as "current" | "longest" | undefined;
 
   try {
@@ -1009,7 +1009,7 @@ loyaltyRoutes.get("/referrals/:userId/stats", async (c) => {
  */
 loyaltyRoutes.get("/referrals/leaderboard", async (c) => {
   const period = (c.req.query("period") || "MONTHLY") as any;
-  const limit = parseInt(c.req.query("limit") || "50");
+  const limit = Number.parseInt(c.req.query("limit") || "50");
 
   try {
     const leaderboard = await referralsService.getLeaderboard(period, limit);
@@ -1173,7 +1173,7 @@ loyaltyRoutes.post("/challenges/:userChallengeId/claim", async (c) => {
  */
 loyaltyRoutes.get("/challenges/:challengeId/leaderboard", async (c) => {
   const challengeId = c.req.param("challengeId");
-  const limit = parseInt(c.req.query("limit") || "50");
+  const limit = Number.parseInt(c.req.query("limit") || "50");
 
   try {
     const leaderboard = await challengesService.getChallengeLeaderboard(

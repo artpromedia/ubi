@@ -169,8 +169,8 @@ b2bRoutes.get(
   authenticateApiKey("organizations:read"),
   async (c) => {
     const orgId = c.get("organizationId");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
     const members = await corporateAccountsService.listMembers(
       orgId,
       {},
@@ -311,8 +311,8 @@ b2bRoutes.get(
     const status = c.req.query("status");
     const dateFrom = c.req.query("dateFrom");
     const dateTo = c.req.query("dateTo");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
 
     const deliveries = await deliveryApiService.listDeliveries(
       orgId,
@@ -447,8 +447,8 @@ b2bRoutes.get(
     const providerId = c.req.query("providerId");
     const status = c.req.query("status");
     const deliveryType = c.req.query("deliveryType");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
 
     const deliveries = await healthcareTransportService.listMedicalDeliveries(
       providerId as string,
@@ -490,8 +490,8 @@ b2bRoutes.get(
   async (c) => {
     const providerId = c.req.query("providerId");
     const status = c.req.query("status");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
 
     const transports = await healthcareTransportService.listPatientTransports(
       providerId as string,
@@ -554,8 +554,8 @@ b2bRoutes.get(
     const grade = c.req.query("grade");
     const className = c.req.query("className");
     const routeId = c.req.query("routeId");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
 
     const students = await schoolTransportService.listStudents(
       schoolId,
@@ -768,8 +768,8 @@ b2bRoutes.get(
   async (c) => {
     const orgId = c.get("organizationId");
     const status = c.req.query("status");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
     const invoices = await billingService.listInvoices(orgId, status as any, {
       page,
       limit,
@@ -807,8 +807,8 @@ b2bRoutes.get(
   authenticateApiKey("billing:read"),
   async (c) => {
     const orgId = c.get("organizationId");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
     const transactions = await billingService.getCreditTransactions(orgId, {
       page,
       limit,
@@ -895,8 +895,8 @@ b2bRoutes.get(
   authenticateApiKey("webhooks:read"),
   async (c) => {
     const webhookId = c.req.param("webhookId");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
     const deliveries = await apiInfrastructureService.getWebhookDeliveries(
       webhookId,
       { page, limit }

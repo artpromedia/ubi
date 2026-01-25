@@ -10,8 +10,8 @@
  * - Safety team dashboard integration
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { sosLogger } from "../lib/logger";
 import {
   COUNTRY_CONFIGS,

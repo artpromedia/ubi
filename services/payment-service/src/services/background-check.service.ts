@@ -10,8 +10,8 @@
  * - Country-specific checks
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { bgCheckLogger } from "../lib/logger";
 import {
   BackgroundCheck,

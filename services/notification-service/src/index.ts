@@ -52,7 +52,7 @@ app.route("/api/v1/preferences", preferencesRoutes);
 // 404 handler
 app.notFound(notFoundHandler);
 
-const port = parseInt(process.env.PORT || "4006", 10);
+const port = Number.parseInt(process.env.PORT || "4006", 10);
 
 // Start server
 const server = serve({

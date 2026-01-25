@@ -5,7 +5,7 @@
 // Target: 90% accuracy within 2-minute window, <100ms latency
 // =============================================================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   ETAPrediction,
   ETAPredictionRequest,
@@ -429,7 +429,7 @@ export class ETAPredictionService implements IETAPredictionService {
   }
 
   private generateId(): string {
-    return `eta_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `eta_${Date.now()}_${Math.random().toString(36).substring(2, 2 + 9)}`;
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {

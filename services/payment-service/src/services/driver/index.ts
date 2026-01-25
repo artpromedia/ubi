@@ -24,7 +24,7 @@ export * from "../../types/driver.types";
 // DRIVER EXPERIENCE PLATFORM
 // -----------------------------------------
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import { DriverBenefitsService } from "./benefits.service";
 import { DriverCareerService, TrainingService } from "./career.service";
 import { CommunityService } from "./community.service";
@@ -52,7 +52,7 @@ export class DriverExperiencePlatform {
   public fleet: FleetOwnerService;
 
   // Event System
-  private eventEmitter: EventEmitter;
+  private readonly eventEmitter: EventEmitter;
 
   constructor(config: DriverExperienceConfig) {
     this.eventEmitter = new EventEmitter();
@@ -61,20 +61,20 @@ export class DriverExperiencePlatform {
     this.earnings = new DriverEarningsService(
       config.database,
       config.redis,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.goals = new DriverGoalsService(
       config.database,
       this.earnings,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.incentives = new IncentiveService(
       config.database,
       config.redis,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.benefits = new DriverBenefitsService(
@@ -82,26 +82,26 @@ export class DriverExperiencePlatform {
       config.redis,
       config.paymentService,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.career = new DriverCareerService(
       config.database,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.training = new TrainingService(
       config.database,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.community = new CommunityService(
       config.database,
       config.redis,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     this.fleet = new FleetOwnerService(
@@ -109,7 +109,7 @@ export class DriverExperiencePlatform {
       config.redis,
       config.paymentService,
       config.notificationService,
-      config.analyticsService
+      config.analyticsService,
     );
 
     // Set up cross-service event handlers
@@ -331,14 +331,23 @@ export class DriverExperiencePlatform {
     // Check each service (simplified)
     try {
       // Add actual health checks for each service
-      const allHealthy = Object.values(services).every((s) => s);
-      const someHealthy = Object.values(services).some((s) => s);
+      const allHealthy = Object.values(services).every(Boolean);
+      const someHealthy = Object.values(services).some(Boolean);
+
+      let status: "healthy" | "degraded" | "unhealthy";
+      if (allHealthy) {
+        status = "healthy";
+      } else if (someHealthy) {
+        status = "degraded";
+      } else {
+        status = "unhealthy";
+      }
 
       return {
-        status: allHealthy ? "healthy" : someHealthy ? "degraded" : "unhealthy",
+        status,
         services,
       };
-    } catch (error) {
+    } catch {
       return {
         status: "unhealthy",
         services,
@@ -352,7 +361,7 @@ export class DriverExperiencePlatform {
 // -----------------------------------------
 
 export function createDriverExperiencePlatform(
-  config: DriverExperienceConfig
+  config: DriverExperienceConfig,
 ): DriverExperiencePlatform {
   return new DriverExperiencePlatform(config);
 }

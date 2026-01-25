@@ -10,7 +10,7 @@
  * - Controlled substance handling
  */
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import type {
   ContactInfo,

@@ -10,8 +10,8 @@
  * - Field trip management
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import type {
   ActiveSchoolRoute,
   Coordinates,

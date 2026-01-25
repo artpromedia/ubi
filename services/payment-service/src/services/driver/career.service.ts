@@ -350,9 +350,9 @@ const BADGE_DEFINITIONS: Record<string, BadgeDefinition> = {
 
 class DriverCareerService implements IDriverCareerService {
   constructor(
-    private db: any,
-    private notificationService: any,
-    private analyticsService: any,
+    private readonly db: any,
+    private readonly notificationService: any,
+    private readonly analyticsService: any,
   ) {}
 
   // -----------------------------------------
@@ -389,8 +389,8 @@ class DriverCareerService implements IDriverCareerService {
       tierSince: profile.tierHistory[0]?.achievedAt || profile.createdAt,
       tierProgress: 0,
       lifetimeTrips: profile.lifetimeTrips,
-      lifetimeEarnings: parseFloat(profile.lifetimeEarnings),
-      lifetimeRating: parseFloat(profile.averageRating || "5"),
+      lifetimeEarnings: Number.parseFloat(profile.lifetimeEarnings),
+      lifetimeRating: Number.parseFloat(profile.averageRating || "5"),
       totalRatings: profile.totalRatings,
       commissionRate: 0.25,
       preferredAreas: [],
@@ -398,12 +398,12 @@ class DriverCareerService implements IDriverCareerService {
       certifications: [],
       badges: [],
       // Extended fields
-      averageRating: parseFloat(profile.averageRating || "0"),
-      acceptanceRate: parseFloat(profile.acceptanceRate || "0"),
-      completionRate: parseFloat(profile.completionRate || "0"),
-      cancellationRate: parseFloat(profile.cancellationRate || "0"),
+      averageRating: Number.parseFloat(profile.averageRating || "0"),
+      acceptanceRate: Number.parseFloat(profile.acceptanceRate || "0"),
+      completionRate: Number.parseFloat(profile.completionRate || "0"),
+      cancellationRate: Number.parseFloat(profile.cancellationRate || "0"),
       totalPoints: profile.totalPoints || 0,
-      onlineHours: parseFloat(profile.onlineHours || "0"),
+      onlineHours: Number.parseFloat(profile.onlineHours || "0"),
       currentStreak: profile.currentStreak || 0,
       longestStreak: profile.longestStreak || 0,
       badgeCount: profile.badgeCount || 0,
@@ -448,6 +448,92 @@ class DriverCareerService implements IDriverCareerService {
   // TIER MANAGEMENT
   // -----------------------------------------
 
+  private calculateTierProgressMetrics(
+    profile: ExtendedDriverProfile,
+    nextRequirements: any,
+    certCodes: Set<string>,
+  ): Array<{
+    name: string;
+    current: number;
+    required: number;
+    progress: number;
+  }> {
+    const metrics: Array<{
+      name: string;
+      current: number;
+      required: number;
+      progress: number;
+    }> = [
+      // Trips progress
+      {
+        name: "Trips Completed",
+        current: profile.lifetimeTrips,
+        required: nextRequirements.trips,
+        progress: Math.min(
+          100,
+          (profile.lifetimeTrips / nextRequirements.trips) * 100,
+        ),
+      },
+      // Rating progress
+      {
+        name: "Average Rating",
+        current: profile.averageRating || 0,
+        required: nextRequirements.rating,
+        progress:
+          (profile.averageRating || 0) >= nextRequirements.rating
+            ? 100
+            : ((profile.averageRating || 0) / nextRequirements.rating) * 100,
+      },
+    ];
+
+    // Optional: Acceptance rate progress
+    if (nextRequirements.minAcceptanceRate) {
+      metrics.push({
+        name: "Acceptance Rate",
+        current: profile.acceptanceRate || 0,
+        required: nextRequirements.minAcceptanceRate,
+        progress:
+          (profile.acceptanceRate || 0) >= nextRequirements.minAcceptanceRate
+            ? 100
+            : ((profile.acceptanceRate || 0) /
+                nextRequirements.minAcceptanceRate) *
+              100,
+      });
+    }
+
+    // Optional: Completion rate progress
+    if (nextRequirements.minCompletionRate) {
+      metrics.push({
+        name: "Completion Rate",
+        current: profile.completionRate || 0,
+        required: nextRequirements.minCompletionRate,
+        progress:
+          (profile.completionRate || 0) >= nextRequirements.minCompletionRate
+            ? 100
+            : ((profile.completionRate || 0) /
+                nextRequirements.minCompletionRate) *
+              100,
+      });
+    }
+
+    // Optional: Certifications progress
+    if (nextRequirements.requiredCertifications) {
+      const completedCerts = nextRequirements.requiredCertifications.filter(
+        (c: string) => certCodes.has(c),
+      ).length;
+      const totalRequired = nextRequirements.requiredCertifications.length;
+
+      metrics.push({
+        name: "Certifications",
+        current: completedCerts,
+        required: totalRequired,
+        progress: (completedCerts / totalRequired) * 100,
+      });
+    }
+
+    return metrics;
+  }
+
   async getTierProgress(driverId: string): Promise<ExtendedTierProgress> {
     const profile = await this.getDriverProfile(driverId);
     if (!profile) {
@@ -460,8 +546,7 @@ class DriverCareerService implements IDriverCareerService {
     const nextTier =
       currentIndex < tierOrder.length - 1 ? tierOrder[currentIndex + 1] : null;
 
-    // Calculate progress metrics
-    const progressMetrics: Array<{
+    let progressMetrics: Array<{
       name: string;
       current: number;
       required: number;
@@ -471,74 +556,12 @@ class DriverCareerService implements IDriverCareerService {
     if (nextTier) {
       const nextRequirements = TIER_REQUIREMENTS[nextTier];
       const certifications = await this.getDriverCertifications(driverId);
-      const certCodes = certifications.map((c) => c.code);
-
-      // Trips progress
-      progressMetrics.push({
-        name: "Trips Completed",
-        current: profile.lifetimeTrips,
-        required: nextRequirements.trips,
-        progress: Math.min(
-          100,
-          (profile.lifetimeTrips / nextRequirements.trips) * 100,
-        ),
-      });
-
-      // Rating progress
-      progressMetrics.push({
-        name: "Average Rating",
-        current: profile.averageRating || 0,
-        required: nextRequirements.rating,
-        progress:
-          (profile.averageRating || 0) >= nextRequirements.rating
-            ? 100
-            : ((profile.averageRating || 0) / nextRequirements.rating) * 100,
-      });
-
-      // Acceptance rate progress
-      if (nextRequirements.minAcceptanceRate) {
-        progressMetrics.push({
-          name: "Acceptance Rate",
-          current: profile.acceptanceRate || 0,
-          required: nextRequirements.minAcceptanceRate,
-          progress:
-            (profile.acceptanceRate || 0) >= nextRequirements.minAcceptanceRate
-              ? 100
-              : ((profile.acceptanceRate || 0) /
-                  nextRequirements.minAcceptanceRate) *
-                100,
-        });
-      }
-
-      // Completion rate progress
-      if (nextRequirements.minCompletionRate) {
-        progressMetrics.push({
-          name: "Completion Rate",
-          current: profile.completionRate || 0,
-          required: nextRequirements.minCompletionRate,
-          progress:
-            (profile.completionRate || 0) >= nextRequirements.minCompletionRate
-              ? 100
-              : ((profile.completionRate || 0) /
-                  nextRequirements.minCompletionRate) *
-                100,
-        });
-      }
-
-      // Certifications progress
-      if (nextRequirements.requiredCertifications) {
-        const completedCerts = nextRequirements.requiredCertifications.filter(
-          (c: string) => certCodes.includes(c),
-        ).length;
-        const totalRequired = nextRequirements.requiredCertifications.length;
-
-        progressMetrics.push({
-          name: "Certifications",
-          current: completedCerts,
-          required: totalRequired,
-          progress: (completedCerts / totalRequired) * 100,
-        });
-      }
+      const certCodes = new Set(certifications.map((c) => c.code));
+      progressMetrics = this.calculateTierProgressMetrics(
+        profile,
+        nextRequirements,
+        certCodes,
+      );
     }
 
     // Overall progress
@@ -588,7 +611,7 @@ class DriverCareerService implements IDriverCareerService {
 
     // If they passed all checks, they qualify for max tier
     if (currentIndex < tierOrder.length - 1) {
-      return tierOrder[tierOrder.length - 1] as DriverTier;
+      return tierOrder.at(-1) as DriverTier;
     }
 
     return null;
@@ -661,8 +684,8 @@ class DriverCareerService implements IDriverCareerService {
       previousTier: h.previousTier as DriverTier | undefined,
       achievedAt: h.achievedAt,
       tripsAtUpgrade: h.tripsAtUpgrade,
-      ratingAtUpgrade: parseFloat(h.ratingAtUpgrade),
-      earningsAtUpgrade: parseFloat(h.earningsAtUpgrade),
+      ratingAtUpgrade: Number.parseFloat(h.ratingAtUpgrade),
+      earningsAtUpgrade: Number.parseFloat(h.earningsAtUpgrade),
     }));
   }
 
@@ -775,6 +798,39 @@ class DriverCareerService implements IDriverCareerService {
     }));
   }
 
+  private checkTripMilestones(
+    earnedCodes: Set<string>,
+    lifetimeTrips: number,
+  ): string[] {
+    const milestones = [
+      { code: "first_trip", threshold: 1 },
+      { code: "century", threshold: 100 },
+      { code: "five_hundred", threshold: 500 },
+      { code: "thousand", threshold: 1000 },
+      { code: "five_thousand", threshold: 5000 },
+      { code: "ten_thousand", threshold: 10000 },
+    ];
+
+    return milestones
+      .filter((m) => !earnedCodes.has(m.code) && lifetimeTrips >= m.threshold)
+      .map((m) => m.code);
+  }
+
+  private checkStreakBadges(
+    earnedCodes: Set<string>,
+    longestStreak: number,
+  ): string[] {
+    const streakMilestones = [
+      { code: "streak_7", threshold: 7 },
+      { code: "streak_30", threshold: 30 },
+      { code: "streak_90", threshold: 90 },
+    ];
+
+    return streakMilestones
+      .filter((s) => !earnedCodes.has(s.code) && longestStreak >= s.threshold)
+      .map((s) => s.code);
+  }
+
   async checkBadgeEligibility(driverId: string): Promise<string[]> {
     const profile = await this.getDriverProfile(driverId);
     if (!profile) return [];
@@ -785,43 +841,10 @@ class DriverCareerService implements IDriverCareerService {
     });
     const earnedCodes = new Set(earnedBadges.map((b: any) => b.badgeCode));
 
-    const eligibleBadges: string[] = [];
-
-    // Check trip milestones
-    if (!earnedCodes.has("first_trip") && profile.lifetimeTrips >= 1) {
-      eligibleBadges.push("first_trip");
-    }
-    if (!earnedCodes.has("century") && profile.lifetimeTrips >= 100) {
-      eligibleBadges.push("century");
-    }
-    if (!earnedCodes.has("five_hundred") && profile.lifetimeTrips >= 500) {
-      eligibleBadges.push("five_hundred");
-    }
-    if (!earnedCodes.has("thousand") && profile.lifetimeTrips >= 1000) {
-      eligibleBadges.push("thousand");
-    }
-    if (!earnedCodes.has("five_thousand") && profile.lifetimeTrips >= 5000) {
-      eligibleBadges.push("five_thousand");
-    }
-    if (!earnedCodes.has("ten_thousand") && profile.lifetimeTrips >= 10000) {
-      eligibleBadges.push("ten_thousand");
-    }
-
-    // Check streak badges
-    if (!earnedCodes.has("streak_7") && (profile.longestStreak || 0) >= 7) {
-      eligibleBadges.push("streak_7");
-    }
-    if (!earnedCodes.has("streak_30") && (profile.longestStreak || 0) >= 30) {
-      eligibleBadges.push("streak_30");
-    }
-    if (!earnedCodes.has("streak_90") && (profile.longestStreak || 0) >= 90) {
-      eligibleBadges.push("streak_90");
-    }
-
-    // Check rating badges (would need more detailed trip data)
-    // These would typically be checked after each trip
-
-    return eligibleBadges;
+    return [
+      ...this.checkTripMilestones(earnedCodes, profile.lifetimeTrips),
+      ...this.checkStreakBadges(earnedCodes, profile.longestStreak || 0),
+    ];
   }
 
   // -----------------------------------------
@@ -891,12 +914,14 @@ class DriverCareerService implements IDriverCareerService {
     // Check certifications
     if (requirements.requiredCertifications?.length) {
       const certifications = await this.getDriverCertifications(driverId);
-      const certCodes = certifications
-        .filter((c) => c.status === CertificationStatus.ACTIVE)
-        .map((c) => c.code);
+      const certCodes = new Set(
+        certifications
+          .filter((c) => c.status === CertificationStatus.ACTIVE)
+          .map((c) => c.code),
+      );
 
       for (const required of requirements.requiredCertifications) {
-        if (!certCodes.includes(required)) return false;
+        if (!certCodes.has(required)) return false;
       }
     }
 
@@ -1103,7 +1128,7 @@ class DriverCareerService implements IDriverCareerService {
       tier: d.currentTier,
       points: d.totalPoints || 0,
       trips: d.lifetimeTrips,
-      rating: parseFloat(d.averageRating || "0"),
+      rating: Number.parseFloat(d.averageRating || "0"),
       city,
       period,
     }));
@@ -1116,9 +1141,9 @@ class DriverCareerService implements IDriverCareerService {
 
 class TrainingService implements ITrainingService {
   constructor(
-    private db: any,
-    private notificationService: any,
-    private analyticsService: any,
+    private readonly db: any,
+    private readonly notificationService: any,
+    private readonly analyticsService: any,
   ) {}
 
   // -----------------------------------------
@@ -1213,7 +1238,7 @@ class TrainingService implements ITrainingService {
 
     // Sort by priority
     return recommendations
-      .sort((a, b) => {
+      .toSorted((a, b) => {
         // Prioritize onboarding for new drivers
         if (profile?.lifetimeTrips < 10) {
           if (a.category === TrainingCategory.ONBOARDING) return -1;
@@ -1319,10 +1344,13 @@ class TrainingService implements ITrainingService {
       });
 
       // Send notification
+      const pointsMessage = module.pointsReward
+        ? ` and earned ${module.pointsReward} points!`
+        : "";
       await this.notificationService?.send({
         userId: driverId,
         title: "🎓 Training Complete!",
-        body: `You've completed "${module.title}"${module.pointsReward ? ` and earned ${module.pointsReward} points!` : ""}`,
+        body: `You've completed "${module.title}"${pointsMessage}`,
         data: { type: "training_completed", moduleId },
       });
 

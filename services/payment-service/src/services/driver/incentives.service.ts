@@ -3,7 +3,7 @@
 // Incentives & Bonuses Service
 // ===========================================
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import {
   DRIVER_EVENTS,
   DriverIncentive,
@@ -138,19 +138,28 @@ const STREAK_MILESTONES: Record<StreakType, StreakMilestone[]> = {
 // INCENTIVE SERVICE
 // -----------------------------------------
 
+/**
+ * Incentive Service for driver rewards and gamification
+ *
+ * Reserved fields for future distributed architecture:
+ * - _redis: Distributed cache for cross-instance state
+ */
 export class IncentiveService implements IIncentiveService {
-  private eventEmitter: EventEmitter;
-  private cache: Map<string, { data: unknown; expiry: number }> = new Map();
+  private readonly eventEmitter: EventEmitter;
+  private readonly cache: Map<string, { data: unknown; expiry: number }> =
+    new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  /** Reserved: Redis client for distributed caching - Sprint 5 */
+  private readonly _redis: unknown;
 
   constructor(
-    private db: any,
-    // @ts-expect-error - Reserved for future Redis integration
-    private _redis: any,
-    private notificationService: any,
-    private analyticsService: any
+    private readonly db: any,
+    redis: unknown,
+    private readonly notificationService: any,
+    private readonly analyticsService: any,
   ) {
     this.eventEmitter = new EventEmitter();
+    this._redis = redis;
   }
 
   // -----------------------------------------
@@ -206,7 +215,7 @@ export class IncentiveService implements IIncentiveService {
       const driverIncentive = this.mapToDriverIncentive(
         incentive,
         progress,
-        driver
+        driver,
       );
       driverIncentives.push(driverIncentive);
     }
@@ -226,7 +235,7 @@ export class IncentiveService implements IIncentiveService {
 
   async getIncentiveProgress(
     driverId: string,
-    incentiveId: string
+    incentiveId: string,
   ): Promise<DriverIncentiveProgress> {
     const progress = await this.db.driverIncentiveProgress.findUnique({
       where: {
@@ -250,7 +259,7 @@ export class IncentiveService implements IIncentiveService {
 
   async processTripForIncentives(
     driverId: string,
-    trip: TripEarning
+    trip: TripEarning,
   ): Promise<IncentiveUpdate[]> {
     const updates: IncentiveUpdate[] = [];
 
@@ -282,7 +291,7 @@ export class IncentiveService implements IIncentiveService {
         driverId,
         progress,
         trip,
-        incentive
+        incentive,
       );
       if (update) {
         updates.push(update);
@@ -297,7 +306,7 @@ export class IncentiveService implements IIncentiveService {
 
   private tripQualifiesForIncentive(
     trip: TripEarning,
-    incentive: any
+    incentive: any,
   ): boolean {
     const requirements: IncentiveRequirements = incentive.requirements;
 
@@ -317,55 +326,57 @@ export class IncentiveService implements IIncentiveService {
     return true;
   }
 
+  /**
+   * Calculate increment value for incentive progress
+   */
+  private async calculateIncentiveIncrement(
+    driverId: string,
+    trip: TripEarning,
+    incentive: any,
+  ): Promise<number | null> {
+    switch (incentive.incentiveType as IncentiveType) {
+      case IncentiveType.TRIP_COUNT:
+      case IncentiveType.QUEST:
+        return 1;
+
+      case IncentiveType.CONSECUTIVE_TRIPS:
+        if (trip.surgeMultiplier >= 1) {
+          return 1;
+        }
+        await this.resetConsecutiveProgress(driverId, incentive.id);
+        return null;
+
+      case IncentiveType.PEAK_HOUR:
+        return this.isDuringActiveHours(new Date(), incentive.activeHours)
+          ? 1
+          : 0;
+
+      case IncentiveType.AREA_BONUS:
+        return 1;
+
+      case IncentiveType.RATING_BONUS:
+        return trip.rating === 5 ? 1 : 0;
+
+      default:
+        return 1;
+    }
+  }
+
   private async updateProgress(
     driverId: string,
     progress: any,
     trip: TripEarning,
-    incentive: any
+    incentive: any,
   ): Promise<IncentiveUpdate | null> {
-    const previousValue = parseFloat(progress.currentValue);
-    let incrementValue = 0;
+    const previousValue = Number.parseFloat(progress.currentValue);
 
-    // Calculate increment based on incentive type
-    switch (incentive.incentiveType as IncentiveType) {
-      case IncentiveType.TRIP_COUNT:
-      case IncentiveType.QUEST:
-        incrementValue = 1;
-        break;
+    const incrementValue = await this.calculateIncentiveIncrement(
+      driverId,
+      trip,
+      incentive,
+    );
 
-      case IncentiveType.CONSECUTIVE_TRIPS:
-        // Check if trip was accepted immediately
-        if (trip.surgeMultiplier >= 1) {
-          incrementValue = 1;
-        } else {
-          // Reset if declined
-          await this.resetConsecutiveProgress(driverId, incentive.id);
-          return null;
-        }
-        break;
-
-      case IncentiveType.PEAK_HOUR:
-        if (this.isDuringActiveHours(new Date(), incentive.activeHours)) {
-          incrementValue = 1;
-        }
-        break;
-
-      case IncentiveType.AREA_BONUS:
-        // Area bonus is typically per-trip
-        incrementValue = 1;
-        break;
-
-      case IncentiveType.RATING_BONUS:
-        if (trip.rating === 5) {
-          incrementValue = 1;
-        }
-        break;
-
-      default:
-        incrementValue = 1;
-    }
-
-    if (incrementValue === 0) return null;
+    if (incrementValue === null || incrementValue === 0) return null;
 
     const newValue = previousValue + incrementValue;
     const rewardTiers: RewardTier[] = incentive.rewardTiers;
@@ -385,16 +396,17 @@ export class IncentiveService implements IIncentiveService {
     }
 
     // Update progress
+    const newTiersCompleted =
+      tierCompleted === undefined
+        ? progress.tiersCompleted
+        : [...progress.tiersCompleted, tierCompleted];
+
     const updatedProgress = await this.db.driverIncentiveProgress.update({
       where: { id: progress.id },
       data: {
         currentValue: newValue,
-        currentTier:
-          tierCompleted !== undefined ? tierCompleted : progress.currentTier,
-        tiersCompleted:
-          tierCompleted !== undefined
-            ? [...progress.tiersCompleted, tierCompleted]
-            : progress.tiersCompleted,
+        currentTier: tierCompleted ?? progress.currentTier,
+        tiersCompleted: newTiersCompleted,
         tripIds: [...progress.tripIds, trip.tripId],
         lastUpdated: new Date(),
       },
@@ -406,7 +418,7 @@ export class IncentiveService implements IIncentiveService {
 
       // Check if all tiers completed
       const allTiersCompleted = rewardTiers.every((t) =>
-        updatedProgress.tiersCompleted.includes(t.tier)
+        updatedProgress.tiersCompleted.includes(t.tier),
       );
 
       if (allTiersCompleted) {
@@ -449,7 +461,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async resetConsecutiveProgress(
     driverId: string,
-    incentiveId: string
+    incentiveId: string,
   ): Promise<void> {
     await this.db.driverIncentiveProgress.update({
       where: {
@@ -466,7 +478,7 @@ export class IncentiveService implements IIncentiveService {
   private async awardReward(
     driverId: string,
     incentive: any,
-    tier: RewardTier
+    tier: RewardTier,
   ): Promise<void> {
     switch (tier.rewardType) {
       case "cash":
@@ -519,10 +531,8 @@ export class IncentiveService implements IIncentiveService {
 
     // Initialize missing streaks
     const allStreakTypes = Object.values(StreakType);
-    const existingTypes = streaks.map((s: any) => s.streakType);
-    const missingTypes = allStreakTypes.filter(
-      (t) => !existingTypes.includes(t)
-    );
+    const existingTypes = new Set(streaks.map((s: any) => s.streakType));
+    const missingTypes = allStreakTypes.filter((t) => !existingTypes.has(t));
 
     for (const type of missingTypes) {
       const newStreak = await this.db.driverStreak.create({
@@ -542,9 +552,52 @@ export class IncentiveService implements IIncentiveService {
     return streaks.map(this.mapStreak);
   }
 
+  /**
+   * Check if streak is still valid based on streak type
+   */
+  private isStreakValid(
+    streakType: StreakType,
+    hoursSinceActivity: number,
+  ): boolean {
+    switch (streakType) {
+      case StreakType.DAILY_ACTIVE:
+      case StreakType.DAILY_TRIPS:
+        return hoursSinceActivity <= 48;
+      case StreakType.FIVE_STAR:
+      case StreakType.ACCEPTANCE:
+      case StreakType.COMPLETION:
+        return true;
+      default:
+        return true;
+    }
+  }
+
+  /**
+   * Calculate new streak count based on validity and streak type
+   */
+  private calculateNewStreakCount(
+    streakType: StreakType,
+    currentCount: number,
+    lastActivity: Date,
+    now: Date,
+    streakValid: boolean,
+  ): number {
+    if (!streakValid) return 1;
+
+    if (
+      streakType === StreakType.DAILY_ACTIVE ||
+      streakType === StreakType.DAILY_TRIPS
+    ) {
+      const isSameDay = lastActivity.toDateString() === now.toDateString();
+      return isSameDay ? currentCount : currentCount + 1;
+    }
+
+    return currentCount + 1;
+  }
+
   async updateStreak(
     driverId: string,
-    streakType: StreakType
+    streakType: StreakType,
   ): Promise<DriverStreak> {
     let streak = await this.db.driverStreak.findUnique({
       where: {
@@ -571,38 +624,17 @@ export class IncentiveService implements IIncentiveService {
     const hoursSinceActivity =
       (now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60);
 
-    // Determine streak validity window
-    let streakValid = false;
-    switch (streakType) {
-      case StreakType.DAILY_ACTIVE:
-      case StreakType.DAILY_TRIPS:
-        // Valid if last activity was within 24-48 hours
-        streakValid = hoursSinceActivity <= 48;
-        break;
-      case StreakType.FIVE_STAR:
-      case StreakType.ACCEPTANCE:
-      case StreakType.COMPLETION:
-        // These are continuous streaks
-        streakValid = true;
-        break;
-    }
+    const streakValid = this.isStreakValid(streakType, hoursSinceActivity);
 
-    let newCount: number;
-    if (streakValid) {
-      // Check if already counted today for daily streaks
-      if (
-        streakType === StreakType.DAILY_ACTIVE ||
-        streakType === StreakType.DAILY_TRIPS
-      ) {
-        const isSameDay = lastActivity.toDateString() === now.toDateString();
-        newCount = isSameDay ? streak.currentCount : streak.currentCount + 1;
-      } else {
-        newCount = streak.currentCount + 1;
-      }
-    } else {
-      // Streak broken
-      newCount = 1;
+    const newCount = this.calculateNewStreakCount(
+      streakType,
+      streak.currentCount,
+      lastActivity,
+      now,
+      streakValid,
+    );
 
+    if (!streakValid) {
       this.trackEvent(driverId, DRIVER_EVENTS.STREAK_BROKEN, {
         streakType,
         previousCount: streak.currentCount,
@@ -658,20 +690,20 @@ export class IncentiveService implements IIncentiveService {
 
   private getNextMilestone(
     currentCount: number,
-    milestones: StreakMilestone[]
+    milestones: StreakMilestone[],
   ): number {
     for (const milestone of milestones) {
       if (milestone.count > currentCount) {
         return milestone.count;
       }
     }
-    return milestones[milestones.length - 1]?.count || currentCount + 1;
+    return milestones.at(-1)?.count || currentCount + 1;
   }
 
   private async awardStreakMilestone(
     driverId: string,
     streakType: StreakType,
-    milestone: StreakMilestone
+    milestone: StreakMilestone,
   ): Promise<void> {
     switch (milestone.reward.type) {
       case "cash":
@@ -714,7 +746,7 @@ export class IncentiveService implements IIncentiveService {
 
   async handleTripForStreaks(
     driverId: string,
-    trip: TripEarning
+    trip: TripEarning,
   ): Promise<void> {
     // Daily trips streak
     await this.updateStreak(driverId, StreakType.DAILY_TRIPS);
@@ -740,7 +772,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async resetStreak(
     driverId: string,
-    streakType: StreakType
+    streakType: StreakType,
   ): Promise<void> {
     const streak = await this.db.driverStreak.findUnique({
       where: {
@@ -798,7 +830,7 @@ export class IncentiveService implements IIncentiveService {
   // -----------------------------------------
 
   private async getDriverProfile(
-    driverId: string
+    driverId: string,
   ): Promise<DriverProfileForIncentive> {
     const profile = await this.db.driverProfile.findUnique({
       where: { driverId },
@@ -819,7 +851,7 @@ export class IncentiveService implements IIncentiveService {
       driverId,
       tier: profile?.currentTier || "STARTER",
       lifetimeTrips: profile?.lifetimeTrips || 0,
-      lifetimeRating: parseFloat(profile?.lifetimeRating) || 5,
+      lifetimeRating: Number.parseFloat(profile?.lifetimeRating) || 5,
       city: driver?.city || "lagos",
       vehicleType: driver?.vehicleType || "SEDAN",
       certifications:
@@ -829,7 +861,7 @@ export class IncentiveService implements IIncentiveService {
 
   private checkEligibility(
     driver: DriverProfileForIncentive,
-    incentive: any
+    incentive: any,
   ): { eligible: boolean; reason?: string } {
     // Check tier
     if (
@@ -870,7 +902,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async createProgress(
     driverId: string,
-    incentiveId: string
+    incentiveId: string,
   ): Promise<any> {
     return this.db.driverIncentiveProgress.create({
       data: {
@@ -890,10 +922,10 @@ export class IncentiveService implements IIncentiveService {
   private mapToDriverIncentive(
     incentive: any,
     progress: any,
-    _driver: DriverProfileForIncentive
+    _driver: DriverProfileForIncentive,
   ): DriverIncentive {
     const rewardTiers: RewardTier[] = incentive.rewardTiers;
-    const currentValue = parseFloat(progress.currentValue);
+    const currentValue = Number.parseFloat(progress.currentValue);
 
     // Calculate potential earnings
     const potentialEarnings = rewardTiers.reduce((total, tier) => {
@@ -938,9 +970,9 @@ export class IncentiveService implements IIncentiveService {
       requirements: incentive.requirements,
       rewardTiers,
       totalBudget: incentive.totalBudget
-        ? parseFloat(incentive.totalBudget)
+        ? Number.parseFloat(incentive.totalBudget)
         : undefined,
-      spentBudget: parseFloat(incentive.spentBudget),
+      spentBudget: Number.parseFloat(incentive.spentBudget),
       isActive: incentive.isActive,
       progress: this.mapProgress(progress),
       potentialEarnings,
@@ -968,9 +1000,9 @@ export class IncentiveService implements IIncentiveService {
       requirements: incentive.requirements,
       rewardTiers: incentive.rewardTiers,
       totalBudget: incentive.totalBudget
-        ? parseFloat(incentive.totalBudget)
+        ? Number.parseFloat(incentive.totalBudget)
         : undefined,
-      spentBudget: parseFloat(incentive.spentBudget),
+      spentBudget: Number.parseFloat(incentive.spentBudget),
       isActive: incentive.isActive,
     };
   }
@@ -980,11 +1012,11 @@ export class IncentiveService implements IIncentiveService {
       id: progress.id,
       driverId: progress.driverId,
       incentiveId: progress.incentiveId,
-      currentValue: parseFloat(progress.currentValue),
+      currentValue: Number.parseFloat(progress.currentValue),
       currentTier: progress.currentTier,
       tiersCompleted: progress.tiersCompleted,
-      totalEarned: parseFloat(progress.totalEarned),
-      pendingPayout: parseFloat(progress.pendingPayout),
+      totalEarned: Number.parseFloat(progress.totalEarned),
+      pendingPayout: Number.parseFloat(progress.pendingPayout),
       status: progress.status as IncentiveProgressStatus,
       tripIds: progress.tripIds,
     };
@@ -1038,7 +1070,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async creditCashReward(
     driverId: string,
-    amount: number
+    amount: number,
   ): Promise<void> {
     // Credit to driver wallet
     console.log(`Crediting ₦${amount} to driver ${driverId}`);
@@ -1046,7 +1078,7 @@ export class IncentiveService implements IIncentiveService {
 
   private async creditPointsReward(
     driverId: string,
-    points: number
+    points: number,
   ): Promise<void> {
     // Credit points
     console.log(`Crediting ${points} points to driver ${driverId}`);
@@ -1059,11 +1091,11 @@ export class IncentiveService implements IIncentiveService {
 
   private async applyCommissionReduction(
     driverId: string,
-    reduction: number
+    reduction: number,
   ): Promise<void> {
     // Apply commission reduction
     console.log(
-      `Applying ${reduction}% commission reduction to driver ${driverId}`
+      `Applying ${reduction}% commission reduction to driver ${driverId}`,
     );
   }
 
@@ -1079,7 +1111,7 @@ export class IncentiveService implements IIncentiveService {
   private async setCache(
     key: string,
     data: unknown,
-    ttl: number
+    ttl: number,
   ): Promise<void> {
     this.cache.set(key, { data, expiry: Date.now() + ttl });
   }
@@ -1091,7 +1123,7 @@ export class IncentiveService implements IIncentiveService {
   private trackEvent(
     driverId: string,
     eventName: string,
-    properties: Record<string, unknown>
+    properties: Record<string, unknown>,
   ): void {
     this.analyticsService?.track({
       userId: driverId,

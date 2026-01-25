@@ -5,8 +5,7 @@
 // Target: 90% reduction in data usage, sub-second response times
 // =============================================================================
 
-import { EventEmitter } from "events";
-import { gzip, gunzip } from "zlib";
+import { logger } from "@/lib/logger";
 import {
   CompressedResponse,
   DataUsageStats,
@@ -20,6 +19,13 @@ import {
   SyncState,
   SyncStatus,
 } from "@/types/offline.types";
+import { prisma } from "@ubi/database";
+import { Redis } from "ioredis";
+import { EventEmitter } from "node:events";
+import { gunzip, gzip } from "node:zlib";
+
+// Redis client for caching
+const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 // =============================================================================
 // COMPRESSION CONSTANTS
@@ -31,17 +37,24 @@ const SYNC_BATCH_SIZE = 50; // Max records per sync
 const CACHE_TTL_SECONDS = 300; // 5 minutes default cache
 
 // =============================================================================
+// TYPE ALIASES
+// =============================================================================
+
+/** Quality level for images and map tiles */
+type QualityLevel = "low" | "medium" | "high";
+
+// =============================================================================
 // LOW-BANDWIDTH SERVICE
 // =============================================================================
 
 export class LowBandwidthService implements ILowBandwidthService {
-  private eventEmitter: EventEmitter;
+  private readonly eventEmitter: EventEmitter;
 
   // User sync states (Redis in production)
-  private syncStates: Map<string, SyncState> = new Map();
+  private readonly syncStates: Map<string, SyncState> = new Map();
 
   // Compressed cache
-  private compressedCache: Map<
+  private readonly compressedCache: Map<
     string,
     { data: Buffer; etag: string; expiresAt: Date }
   > = new Map();
@@ -262,9 +275,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
     // Get user's sync state
     let syncState = this.syncStates.get(userId);
-    if (!syncState) {
-      syncState = await this.initializeSyncState(userId);
-    }
+    syncState ??= await this.initializeSyncState(userId);
 
     // Determine batch size based on network
     const batchSize = this.getBatchSize(networkType);
@@ -283,7 +294,7 @@ export class LowBandwidthService implements ILowBandwidthService {
         userId,
         entity,
         Number(lastSyncVersion),
-        batchSize
+        batchSize,
       );
 
       for (const change of entityChanges) {
@@ -330,7 +341,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     syncState.serverVersion = newVersion;
     syncState.pendingChanges = Math.max(
       0,
-      syncState.pendingChanges - changes.length
+      syncState.pendingChanges - changes.length,
     );
     this.syncStates.set(userId, syncState);
 
@@ -356,7 +367,6 @@ export class LowBandwidthService implements ILowBandwidthService {
     }
   }
 
-
   private async initializeSyncState(userId: string): Promise<SyncState> {
     const state: SyncState = {
       userId,
@@ -376,7 +386,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     _userId: string,
     entity: string,
     sinceVersion: number,
-    limit: number
+    limit: number,
   ): Promise<
     Array<{
       entity: string;
@@ -401,7 +411,7 @@ export class LowBandwidthService implements ILowBandwidthService {
       const trips = await this.getTripsSinceVersion(
         _userId,
         sinceVersion,
-        limit
+        limit,
       );
       for (const trip of trips) {
         changes.push({
@@ -424,7 +434,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async getLiteFareEstimate(
     pickup: GeoLocation,
     dropoff: GeoLocation,
-    _networkType?: NetworkType
+    _networkType?: NetworkType,
   ): Promise<LiteFareEstimate> {
     // Get fare estimate with minimal data
     const estimate = await this.calculateFare(pickup, dropoff);
@@ -446,7 +456,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   async getLiteTrip(
     tripId: string,
-    _networkType?: NetworkType
+    _networkType?: NetworkType,
   ): Promise<LiteTrip | null> {
     const trip = await this.getTrip(tripId);
     if (!trip) return null;
@@ -457,7 +467,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async getLiteTrips(
     userId: string,
     limit: number = 10,
-    _networkType?: NetworkType
+    _networkType?: NetworkType,
   ): Promise<LiteTrip[]> {
     const trips = await this.getUserTrips(userId, limit);
     return trips.map((trip) => this.toLiteTrip(trip));
@@ -528,7 +538,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     );
   }
 
-  getImageQuality(networkType: NetworkType): "low" | "medium" | "high" {
+  getImageQuality(networkType: NetworkType): QualityLevel {
     switch (networkType) {
       case NetworkType.GPRS:
       case NetworkType.EDGE_2G:
@@ -548,7 +558,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     userId: string,
     bytes: number,
     direction: "upload" | "download",
-    endpoint: string
+    endpoint: string,
   ): Promise<void> {
     this.eventEmitter.emit("data:usage", {
       userId,
@@ -593,7 +603,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async getOfflineMapRegion(
     regionId: string,
     zoomLevel: number,
-    networkType?: NetworkType
+    networkType?: NetworkType,
   ): Promise<{
     tiles: Array<{ x: number; y: number; z: number; data: string }>;
     boundingBox: { north: number; south: number; east: number; west: number };
@@ -619,7 +629,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   async getCachedPlacesForRegion(
     _regionId: string,
-    _limit: number = 100
+    _limit: number = 100,
   ): Promise<
     Array<{
       id: string;
@@ -640,7 +650,7 @@ export class LowBandwidthService implements ILowBandwidthService {
 
   async getCachedResponse(
     cacheKey: string,
-    etag?: string
+    etag?: string,
   ): Promise<{ data: unknown; etag: string } | null> {
     const cached = this.compressedCache.get(cacheKey);
 
@@ -664,7 +674,7 @@ export class LowBandwidthService implements ILowBandwidthService {
   async setCachedResponse(
     cacheKey: string,
     data: unknown,
-    ttlSeconds: number = CACHE_TTL_SECONDS
+    ttlSeconds: number = CACHE_TTL_SECONDS,
   ): Promise<string> {
     const json = JSON.stringify(data);
     const compressed = await this.gzipCompress(json);
@@ -683,7 +693,7 @@ export class LowBandwidthService implements ILowBandwidthService {
     // Simple hash for ETag
     let hash = 0;
     for (let i = 0; i < data.length; i++) {
-      const char = data.charCodeAt(i);
+      const char = data.codePointAt(i) ?? 0;
       hash = (hash << 5) - hash + char;
       hash = hash & hash;
     }
@@ -700,52 +710,431 @@ export class LowBandwidthService implements ILowBandwidthService {
   }
 
   // ===========================================================================
-  // EXTERNAL SERVICE STUBS
+  // EXTERNAL SERVICE IMPLEMENTATIONS
   // ===========================================================================
 
   private async calculateFare(
-    _pickup: GeoLocation,
-    _dropoff: GeoLocation
-  ): Promise<any> {
-    return {
-      minFare: 300,
-      maxFare: 400,
-      eta: 5,
-      distance: 7.2,
-      currency: "KES",
-      surgeMultiplier: 1,
-    };
+    pickup: GeoLocation,
+    dropoff: GeoLocation,
+  ): Promise<{
+    minFare: number;
+    maxFare: number;
+    eta: number;
+    distance: number;
+    currency: string;
+    surgeMultiplier: number;
+  }> {
+    try {
+      // Calculate distance using Haversine formula
+      const R = 6371; // Earth's radius in km
+      const dLat = ((dropoff.lat - pickup.lat) * Math.PI) / 180;
+      const dLng = ((dropoff.lng - pickup.lng) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((pickup.lat * Math.PI) / 180) *
+          Math.cos((dropoff.lat * Math.PI) / 180) *
+          Math.sin(dLng / 2) ** 2;
+      const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      // Get pricing config from Redis
+      const pricing = (await redis.hgetall("pricing:config")) || {};
+      const baseFare = Number.parseFloat(pricing.baseFare) || 100;
+      const perKm = Number.parseFloat(pricing.perKm) || 50;
+      const perMinute = Number.parseFloat(pricing.perMinute) || 5;
+      const currency = pricing.currency || "KES";
+
+      // Estimate travel time (assume 25 km/h average in city traffic)
+      const estimatedMinutes = Math.ceil((distance / 25) * 60);
+
+      // Calculate fare
+      const baseCost =
+        baseFare + distance * perKm + estimatedMinutes * perMinute;
+
+      // Check for surge pricing
+      const surgeKey = `surge:${Math.floor(pickup.lat * 100)}_${Math.floor(pickup.lng * 100)}`;
+      const surgeMultiplier = Number.parseFloat(
+        (await redis.get(surgeKey)) || "1.0",
+      );
+
+      // Calculate min/max range (±10%)
+      const fare = baseCost * surgeMultiplier;
+      const minFare = Math.round(fare * 0.9);
+      const maxFare = Math.round(fare * 1.1);
+
+      return {
+        minFare,
+        maxFare,
+        eta: Math.ceil(estimatedMinutes),
+        distance: Math.round(distance * 10) / 10,
+        currency,
+        surgeMultiplier,
+      };
+    } catch (error) {
+      logger.error("LowBandwidth: Error calculating fare", {
+        pickup,
+        dropoff,
+        error,
+      });
+      // Return fallback estimate
+      return {
+        minFare: 300,
+        maxFare: 400,
+        eta: 15,
+        distance: 5,
+        currency: "KES",
+        surgeMultiplier: 1,
+      };
+    }
   }
 
-  private async getTrip(_tripId: string): Promise<any> {
-    return null;
+  private async getTrip(tripId: string): Promise<LiteTrip | null> {
+    try {
+      const ride = await prisma.ride.findUnique({
+        where: { id: tripId },
+        include: {
+          driver: {
+            include: {
+              user: { select: { firstName: true, phone: true } },
+              vehicle: {
+                select: {
+                  plateNumber: true,
+                  make: true,
+                  model: true,
+                  color: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!ride) return null;
+
+      // Return lite version for low bandwidth
+      return {
+        id: ride.id,
+        status: ride.status,
+        pickupAddress: this.truncateAddress(ride.pickupAddress, 30),
+        dropoffAddress: this.truncateAddress(ride.dropoffAddress, 30),
+        fare: Number(ride.estimatedFare),
+        currency: ride.currency,
+        driverName: ride.driver?.user?.firstName || "",
+        driverPhone: ride.driver?.user?.phone || "",
+        vehiclePlate: ride.driver?.vehicle?.plateNumber || "",
+        vehicleDescription: ride.driver?.vehicle
+          ? `${ride.driver.vehicle.color} ${ride.driver.vehicle.make}`
+          : "",
+        driverLocation: ride.driver?.currentLatitude
+          ? {
+              lat: ride.driver.currentLatitude,
+              lng: ride.driver.currentLongitude || 0,
+            }
+          : undefined,
+        createdAt: ride.requestedAt.toISOString(),
+        updatedAt: ride.updatedAt.toISOString(),
+      };
+    } catch (error) {
+      logger.error("LowBandwidth: Error getting trip", { tripId, error });
+      return null;
+    }
   }
 
-  private async getUserTrips(_userId: string, _limit: number): Promise<any[]> {
-    return [];
+  private async getUserTrips(
+    userId: string,
+    limit: number,
+  ): Promise<LiteTrip[]> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { rider: true },
+      });
+
+      if (!user?.rider) return [];
+
+      const rides = await prisma.ride.findMany({
+        where: { riderId: user.rider.id },
+        orderBy: { requestedAt: "desc" },
+        take: limit,
+        include: {
+          driver: {
+            include: {
+              user: { select: { firstName: true, phone: true } },
+              vehicle: {
+                select: { plateNumber: true, make: true, color: true },
+              },
+            },
+          },
+        },
+      });
+
+      return rides.map((ride) => ({
+        id: ride.id,
+        status: ride.status,
+        pickupAddress: this.truncateAddress(ride.pickupAddress, 25),
+        dropoffAddress: this.truncateAddress(ride.dropoffAddress, 25),
+        fare: Number(ride.estimatedFare),
+        currency: ride.currency,
+        driverName: ride.driver?.user?.firstName || "",
+        driverPhone: ride.driver?.user?.phone || "",
+        vehiclePlate: ride.driver?.vehicle?.plateNumber || "",
+        createdAt: ride.requestedAt.toISOString(),
+        updatedAt: ride.updatedAt.toISOString(),
+      }));
+    } catch (error) {
+      logger.error("LowBandwidth: Error getting user trips", {
+        userId,
+        limit,
+        error,
+      });
+      return [];
+    }
   }
 
   private async getTripsSinceVersion(
-    _userId: string,
-    _version: number,
-    _limit: number
-  ): Promise<any[]> {
-    return [];
+    userId: string,
+    version: number,
+    limit: number,
+  ): Promise<LiteTrip[]> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { rider: true },
+      });
+
+      if (!user?.rider) return [];
+
+      // Version is timestamp-based for delta sync
+      const sinceDate = new Date(version);
+
+      const rides = await prisma.ride.findMany({
+        where: {
+          riderId: user.rider.id,
+          updatedAt: { gt: sinceDate },
+        },
+        orderBy: { updatedAt: "asc" },
+        take: limit,
+        include: {
+          driver: {
+            include: {
+              user: { select: { firstName: true, phone: true } },
+              vehicle: { select: { plateNumber: true } },
+            },
+          },
+        },
+      });
+
+      return rides.map((ride) => ({
+        id: ride.id,
+        status: ride.status,
+        pickupAddress: this.truncateAddress(ride.pickupAddress, 25),
+        dropoffAddress: this.truncateAddress(ride.dropoffAddress, 25),
+        fare: Number(ride.estimatedFare),
+        currency: ride.currency,
+        driverName: ride.driver?.user?.firstName || "",
+        driverPhone: ride.driver?.user?.phone || "",
+        vehiclePlate: ride.driver?.vehicle?.plateNumber || "",
+        createdAt: ride.requestedAt.toISOString(),
+        updatedAt: ride.updatedAt.toISOString(),
+      }));
+    } catch (error) {
+      logger.error("LowBandwidth: Error getting trips since version", {
+        userId,
+        version,
+        error,
+      });
+      return [];
+    }
   }
 
-  private async getRegionDefinition(_regionId: string): Promise<any> {
-    return {
-      id: _regionId,
-      boundingBox: { north: -1.2, south: -1.4, east: 37.0, west: 36.7 },
-    };
+  private async getRegionDefinition(regionId: string): Promise<{
+    id: string;
+    name: string;
+    boundingBox: { north: number; south: number; east: number; west: number };
+    center: GeoLocation;
+    zoom: number;
+  }> {
+    try {
+      // Check Redis cache first
+      const cacheKey = `region:${regionId}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      // Define known regions
+      const regions: Record<string, any> = {
+        nairobi: {
+          id: "nairobi",
+          name: "Nairobi",
+          boundingBox: { north: -1.15, south: -1.45, east: 37.05, west: 36.65 },
+          center: { lat: -1.2921, lng: 36.8219 },
+          zoom: 12,
+        },
+        lagos: {
+          id: "lagos",
+          name: "Lagos",
+          boundingBox: { north: 6.7, south: 6.35, east: 3.7, west: 3.1 },
+          center: { lat: 6.5244, lng: 3.3792 },
+          zoom: 11,
+        },
+        accra: {
+          id: "accra",
+          name: "Accra",
+          boundingBox: { north: 5.75, south: 5.45, east: -0.05, west: -0.35 },
+          center: { lat: 5.6037, lng: -0.187 },
+          zoom: 12,
+        },
+        johannesburg: {
+          id: "johannesburg",
+          name: "Johannesburg",
+          boundingBox: { north: -26, south: -26.4, east: 28.2, west: 27.8 },
+          center: { lat: -26.2041, lng: 28.0473 },
+          zoom: 11,
+        },
+        kigali: {
+          id: "kigali",
+          name: "Kigali",
+          boundingBox: { north: -1.85, south: -2.05, east: 30.15, west: 29.95 },
+          center: { lat: -1.9403, lng: 29.8739 },
+          zoom: 13,
+        },
+      };
+
+      const region = regions[regionId.toLowerCase()] || regions.nairobi;
+
+      // Cache for 24 hours
+      await redis.setex(cacheKey, 86400, JSON.stringify(region));
+
+      return region;
+    } catch (error) {
+      logger.error("LowBandwidth: Error getting region definition", {
+        regionId,
+        error,
+      });
+      return {
+        id: regionId,
+        name: "Default Region",
+        boundingBox: { north: -1.2, south: -1.4, east: 37, west: 36.7 },
+        center: { lat: -1.3, lng: 36.85 },
+        zoom: 12,
+      };
+    }
   }
 
   private async getTilesForRegion(
-    _region: any,
-    _zoom: number,
-    _quality: string
-  ): Promise<any[]> {
-    return [];
+    region: {
+      boundingBox: { north: number; south: number; east: number; west: number };
+    },
+    zoom: number,
+    quality: string,
+  ): Promise<
+    Array<{
+      x: number;
+      y: number;
+      z: number;
+      url: string;
+      size: number;
+      hash: string;
+    }>
+  > {
+    try {
+      const tiles: Array<{
+        x: number;
+        y: number;
+        z: number;
+        url: string;
+        size: number;
+        hash: string;
+      }> = [];
+
+      // Calculate tile coordinates from bounding box
+      const tileXMin = this.lonToTile(region.boundingBox.west, zoom);
+      const tileXMax = this.lonToTile(region.boundingBox.east, zoom);
+      const tileYMin = this.latToTile(region.boundingBox.north, zoom);
+      const tileYMax = this.latToTile(region.boundingBox.south, zoom);
+
+      // Limit tiles based on quality setting
+      const maxTiles = this.getMaxTilesByQuality(quality);
+      let tileCount = 0;
+
+      const tileServer = process.env.TILE_SERVER_URL || "https://tiles.ubi.com";
+
+      for (let x = tileXMin; x <= tileXMax && tileCount < maxTiles; x++) {
+        for (let y = tileYMin; y <= tileYMax && tileCount < maxTiles; y++) {
+          // Generate tile URL and metadata
+          const tileUrl = `${tileServer}/${zoom}/${x}/${y}.${quality === "low" ? "png8" : "png"}`;
+          const tileHash = `${zoom}_${x}_${y}_${quality}`;
+
+          // Estimate tile size based on quality
+          const estimatedSize = this.getEstimatedTileSize(quality);
+
+          tiles.push({
+            x,
+            y,
+            z: zoom,
+            url: tileUrl,
+            size: estimatedSize,
+            hash: tileHash,
+          });
+          tileCount++;
+        }
+      }
+
+      logger.debug("LowBandwidth: Generated tiles for region", {
+        region: region.boundingBox,
+        zoom,
+        quality,
+        tileCount: tiles.length,
+      });
+
+      return tiles;
+    } catch (error) {
+      logger.error("LowBandwidth: Error getting tiles for region", {
+        region,
+        zoom,
+        quality,
+        error,
+      });
+      return [];
+    }
+  }
+
+  // Helper methods for quality-based tile settings
+  private getMaxTilesByQuality(quality: QualityLevel): number {
+    switch (quality) {
+      case "low":
+        return 20;
+      case "medium":
+        return 50;
+      default:
+        return 100;
+    }
+  }
+
+  private getEstimatedTileSize(quality: QualityLevel): number {
+    switch (quality) {
+      case "low":
+        return 8000;
+      case "medium":
+        return 20000;
+      default:
+        return 40000;
+    }
+  }
+
+  // Helper methods for tile calculations
+  private lonToTile(lon: number, zoom: number): number {
+    return Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
+  }
+
+  private latToTile(lat: number, zoom: number): number {
+    return Math.floor(
+      ((1 -
+        Math.log(
+          Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180),
+        ) /
+          Math.PI) /
+        2) *
+        Math.pow(2, zoom),
+    );
   }
 
   // ===========================================================================

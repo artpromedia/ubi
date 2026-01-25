@@ -50,12 +50,12 @@ interface JobResult {
 // ===========================================
 
 export class ScheduledJobsService {
-  private prisma: PrismaClient;
-  private redis: Redis;
-  private reconciliationService: ReconciliationService;
-  private settlementService: SettlementService;
+  private readonly prisma: PrismaClient;
+  private readonly redis: Redis;
+  private readonly reconciliationService: ReconciliationService;
+  private readonly settlementService: SettlementService;
 
-  private jobs: Map<string, ScheduledJob> = new Map();
+  private readonly jobs: Map<string, ScheduledJob> = new Map();
   private isRunning: boolean = false;
 
   // Provider-currency mappings
@@ -597,7 +597,8 @@ export class ScheduledJobsService {
     for (const payout of failedPayouts) {
       try {
         jobsLogger.info(`Retrying payout ${payout.id}`);
-        // await this.payoutService.retryPayout(payout.id);
+        // Placeholder: Will process via processPayoutAsync when retryPayout is available
+        await this.processPayoutAsync(payout.id);
       } catch (error) {
         jobsLogger.error(
           { err: error },
@@ -675,10 +676,10 @@ export class ScheduledJobsService {
 
     // Handle hour and minute
     if (minute !== "*" && minute !== undefined) {
-      next.setMinutes(parseInt(minute, 10));
+      next.setMinutes(Number.parseInt(minute, 10));
     }
     if (hour !== "*" && hour !== undefined) {
-      next.setHours(parseInt(hour, 10));
+      next.setHours(Number.parseInt(hour, 10));
     }
 
     // If the calculated time is in the past, move to next occurrence
@@ -691,7 +692,7 @@ export class ScheduledJobsService {
         next.setDate(next.getDate() + 1);
       } else if (minute && minute !== "*" && minute.startsWith("*/")) {
         // Interval job - move to next interval
-        const interval = parseInt(minute.substring(2), 10);
+        const interval = Number.parseInt(minute.substring(2), 10);
         next.setMinutes(
           Math.ceil((now.getMinutes() + 1) / interval) * interval,
         );
@@ -786,8 +787,7 @@ export class ScheduledJobsService {
       .filter((t) => t.confirmedAt && t.initiatedAt)
       .map(
         (t) =>
-          new Date(t.confirmedAt!).getTime() -
-          new Date(t.initiatedAt).getTime(),
+          new Date(t.confirmedAt).getTime() - new Date(t.initiatedAt).getTime(),
       );
 
     const avgResponseTime =
@@ -870,15 +870,13 @@ export function createScheduledJobsService(
   settlementService: SettlementService,
   _payoutService: PayoutService,
 ): ScheduledJobsService {
-  if (!instance) {
-    instance = new ScheduledJobsService(
-      prisma,
-      redis,
-      reconciliationService,
-      settlementService,
-      _payoutService,
-    );
-  }
+  instance ??= new ScheduledJobsService(
+    prisma,
+    redis,
+    reconciliationService,
+    settlementService,
+    _payoutService,
+  );
   return instance;
 }
 

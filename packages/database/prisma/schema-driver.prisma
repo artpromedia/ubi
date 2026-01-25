@@ -355,10 +355,10 @@ model BenefitEnrollment {
   expiryDate    DateTime?               @map("expiry_date")
 
   // Payment
-  billingCycle  BillingCycle @default(MONTHLY) @map("billing_cycle")
-  lastPaymentAt DateTime?    @map("last_payment_at")
-  nextPaymentAt DateTime?    @map("next_payment_at")
-  autoRenew     Boolean      @default(true) @map("auto_renew")
+  billingCycle  DriverBillingCycle @default(MONTHLY) @map("billing_cycle")
+  lastPaymentAt DateTime?          @map("last_payment_at")
+  nextPaymentAt DateTime?          @map("next_payment_at")
+  autoRenew     Boolean            @default(true) @map("auto_renew")
 
   // Dependents (for family plans)
   dependents Json?
@@ -386,7 +386,7 @@ enum BenefitEnrollmentStatus {
   EXPIRED
 }
 
-enum BillingCycle {
+enum DriverBillingCycle {
   MONTHLY
   QUARTERLY
   ANNUALLY
@@ -1053,9 +1053,9 @@ model FleetVehicle {
   vin         String? @unique
 
   // Classification
-  vehicleType     VehicleType @map("vehicle_type")
-  fuelType        FuelType    @map("fuel_type")
-  seatingCapacity Int         @map("seating_capacity")
+  vehicleType     FleetVehicleType @map("vehicle_type")
+  fuelType        FuelType         @map("fuel_type")
+  seatingCapacity Int              @map("seating_capacity")
 
   // Documents
   registrationDoc String? @map("registration_doc")
@@ -1085,7 +1085,7 @@ model FleetVehicle {
   @@map("fleet_vehicles")
 }
 
-enum VehicleType {
+enum FleetVehicleType {
   SEDAN
   SUV
   HATCHBACK

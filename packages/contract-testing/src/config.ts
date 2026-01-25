@@ -4,7 +4,7 @@
  * Centralized configuration for contract testing.
  */
 
-import path from "path";
+import path from "node:path";
 
 // Pact broker configuration
 export const PACT_BROKER_CONFIG = {

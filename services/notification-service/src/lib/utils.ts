@@ -2,7 +2,7 @@
  * Utility Functions
  */
 
-import { randomBytes } from "crypto";
+import { randomBytes } from "node:crypto";
 
 // ============================================
 // ID Generation

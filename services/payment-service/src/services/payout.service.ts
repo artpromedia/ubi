@@ -99,9 +99,9 @@ export interface PayoutConfig {
 }
 
 export class PayoutService {
-  private walletService: WalletService;
+  private readonly walletService: WalletService;
 
-  private config: PayoutConfig = {
+  private readonly config: PayoutConfig = {
     minAmount: 100, // Min ₦100 / KES 100
     maxAmountPerDay: 50000, // Max ₦50,000 / KES 50,000 per day
     maxAmountPerTransaction: 20000, // Max ₦20,000 / KES 20,000 per transaction
@@ -113,7 +113,7 @@ export class PayoutService {
     manualReviewLimit: 50000, // Manual review above ₦50,000
   };
 
-  constructor(private prisma: PrismaClient) {
+  constructor(private readonly prisma: PrismaClient) {
     this.walletService = new WalletService(prisma);
   }
 
@@ -209,6 +209,41 @@ export class PayoutService {
   }
 
   /**
+   * Determine payment provider based on currency and method
+   */
+  private determineProvider(
+    paymentMethod: string,
+    currency: string,
+  ): PaymentProvider {
+    if (paymentMethod !== "mobile_money") {
+      return PaymentProvider.PAYSTACK;
+    }
+
+    const providerMap: Record<string, PaymentProvider> = {
+      KES: PaymentProvider.MPESA,
+      GHS: PaymentProvider.MTN_MOMO_GH,
+      RWF: PaymentProvider.MTN_MOMO_RW,
+      USD: PaymentProvider.PAYSTACK,
+    };
+
+    const provider = providerMap[currency];
+    if (!provider) {
+      throw new Error(`Mobile money not supported for ${currency}`);
+    }
+    return provider;
+  }
+
+  /**
+   * Determine initial payout status based on amount
+   */
+  private determineInitialPayoutStatus(amount: number): PayoutStatus {
+    if (amount <= this.config.autoApprovalLimit) {
+      return PayoutStatus.PROCESSING;
+    }
+    return PayoutStatus.PENDING;
+  }
+
+  /**
    * Create instant cashout payout
    */
   async createInstantCashout(
@@ -257,33 +292,8 @@ export class PayoutService {
       throw new Error("Driver not found");
     }
 
-    // Determine provider based on currency and method
-    let provider: PaymentProvider;
-    if (paymentMethod === "mobile_money") {
-      if (currency === "KES") {
-        provider = PaymentProvider.MPESA;
-      } else if (currency === "GHS") {
-        provider = PaymentProvider.MTN_MOMO_GH;
-      } else if (currency === Currency.RWF) {
-        provider = PaymentProvider.MTN_MOMO_RW;
-      } else if (currency === Currency.USD) {
-        // Use default provider for USD
-        provider = PaymentProvider.PAYSTACK;
-      } else {
-        throw new Error(`Mobile money not supported for ${currency}`);
-      }
-    } else {
-      // Bank transfer via Paystack
-      provider = PaymentProvider.PAYSTACK;
-    }
-
-    // Determine initial status
-    let initialStatus = PayoutStatus.PENDING;
-    if (amount > this.config.manualReviewLimit) {
-      initialStatus = PayoutStatus.PENDING; // Will require manual approval
-    } else if (amount <= this.config.autoApprovalLimit) {
-      initialStatus = PayoutStatus.PROCESSING; // Auto-approve
-    }
+    const provider = this.determineProvider(paymentMethod, currency);
+    const initialStatus = this.determineInitialPayoutStatus(amount);
 
     // Create payout record
     const payout = await this.prisma.payout.create({
@@ -402,134 +412,147 @@ export class PayoutService {
   }
 
   /**
+   * Initiate M-Pesa B2C payout
+   */
+  private async initiateMpesaPayout(
+    payout: any,
+    payoutDetails: any,
+  ): Promise<{ reference: string; status: string }> {
+    const mpesaService = new MpesaService(
+      {
+        consumerKey: this.requireEnv("MPESA_CONSUMER_KEY"),
+        consumerSecret: this.requireEnv("MPESA_CONSUMER_SECRET"),
+        shortCode: this.requireEnv("MPESA_SHORT_CODE"),
+        passkey: this.requireEnv("MPESA_PASSKEY"),
+        callbackUrl: this.requireEnv("MPESA_CALLBACK_URL"),
+        b2cShortCode: process.env.MPESA_B2C_SHORT_CODE,
+        b2cInitiatorName: process.env.MPESA_B2C_INITIATOR_NAME,
+        b2cSecurityCredential: process.env.MPESA_B2C_SECURITY_CREDENTIAL,
+        b2cQueueTimeoutUrl: process.env.MPESA_B2C_QUEUE_TIMEOUT_URL,
+        b2cResultUrl: process.env.MPESA_B2C_RESULT_URL,
+        environment:
+          process.env.MPESA_ENVIRONMENT === "production"
+            ? "production"
+            : "sandbox",
+      },
+      this.prisma,
+    );
+
+    const b2cResponse = await mpesaService.initiateB2CPayment({
+      phoneNumber: payoutDetails.phoneNumber,
+      amount: Number(payout.netAmount),
+      occasion: payout.reason || "Driver payout",
+      remarks: `Payout for driver ${payout.driverId}`,
+    });
+
+    setTimeout(() => {
+      payoutLogger.info(
+        `M-Pesa B2C initiated: ${b2cResponse.OriginatorConversationID}`,
+      );
+    }, 0);
+
+    return {
+      reference: b2cResponse.OriginatorConversationID,
+      status: "processing",
+    };
+  }
+
+  /**
+   * Get MoMo country code from provider
+   */
+  private getMomoCountry(provider: PaymentProvider): "GH" | "RW" | "UG" {
+    if (provider === PaymentProvider.MTN_MOMO_GH) return "GH";
+    if (provider === PaymentProvider.MTN_MOMO_RW) return "RW";
+    return "UG";
+  }
+
+  /**
+   * Initiate MoMo disbursement payout
+   */
+  private async initiateMomoPayout(
+    payout: any,
+    payoutDetails: any,
+  ): Promise<{ reference: string; status: string }> {
+    const country = this.getMomoCountry(payout.provider);
+
+    const momoService = new MoMoService(
+      {
+        subscriptionKey: process.env[`MOMO_${country}_SUBSCRIPTION_KEY`] || "",
+        apiUser: process.env[`MOMO_${country}_API_USER`] || "",
+        apiKey: process.env[`MOMO_${country}_API_KEY`] || "",
+        disbursementSubscriptionKey:
+          process.env[`MOMO_${country}_DISBURSEMENT_SUBSCRIPTION_KEY`],
+        disbursementApiUser:
+          process.env[`MOMO_${country}_DISBURSEMENT_API_USER`],
+        disbursementApiKey: process.env[`MOMO_${country}_DISBURSEMENT_API_KEY`],
+        environment:
+          process.env.MOMO_ENVIRONMENT === "production"
+            ? "production"
+            : "sandbox",
+        country,
+        callbackUrl: process.env.MOMO_CALLBACK_URL,
+      },
+      this.prisma,
+    );
+
+    const disbursementResponse = await momoService.initiateDisbursement({
+      phoneNumber: payoutDetails.phoneNumber,
+      amount: Number(payout.netAmount),
+      currency: payout.currency,
+      externalId: payout.id,
+      payeeNote: payout.reason || "Driver payout",
+    });
+
+    setTimeout(() => {
+      momoService
+        .pollDisbursementStatus(disbursementResponse.referenceId, payout.id)
+        .catch((error) => {
+          payoutLogger.error("MoMo disbursement polling error:", error);
+        });
+    }, 0);
+
+    return {
+      reference: disbursementResponse.referenceId,
+      status: "processing",
+    };
+  }
+
+  /**
+   * Get required environment variable or throw
+   */
+  private requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+      throw new Error(`Required environment variable ${name} is not set`);
+    }
+    return value;
+  }
+
+  /**
    * Initiate payout with provider (M-Pesa B2C, MoMo, etc.)
    */
   private async initiateProviderPayout(
     payout: any,
   ): Promise<{ reference: string; status: string }> {
-    const payoutDetails = payout.payoutDetails as any;
-
-    // Helper to get required env var or throw
-    const requireEnv = (name: string): string => {
-      const value = process.env[name];
-      if (!value) {
-        throw new Error(`Required environment variable ${name} is not set`);
-      }
-      return value;
-    };
+    const payoutDetails = payout.payoutDetails;
 
     try {
       switch (payout.provider) {
-        case PaymentProvider.MPESA: {
-          // M-Pesa B2C (Business to Customer)
-          const mpesaService = new MpesaService(
-            {
-              consumerKey: requireEnv("MPESA_CONSUMER_KEY"),
-              consumerSecret: requireEnv("MPESA_CONSUMER_SECRET"),
-              shortCode: requireEnv("MPESA_SHORT_CODE"),
-              passkey: requireEnv("MPESA_PASSKEY"),
-              callbackUrl: requireEnv("MPESA_CALLBACK_URL"),
-              b2cShortCode: process.env.MPESA_B2C_SHORT_CODE,
-              b2cInitiatorName: process.env.MPESA_B2C_INITIATOR_NAME,
-              b2cSecurityCredential: process.env.MPESA_B2C_SECURITY_CREDENTIAL,
-              b2cQueueTimeoutUrl: process.env.MPESA_B2C_QUEUE_TIMEOUT_URL,
-              b2cResultUrl: process.env.MPESA_B2C_RESULT_URL,
-              environment:
-                process.env.MPESA_ENVIRONMENT === "production"
-                  ? "production"
-                  : "sandbox",
-            },
-            this.prisma,
-          );
-
-          const b2cResponse = await mpesaService.initiateB2CPayment({
-            phoneNumber: payoutDetails.phoneNumber,
-            amount: Number(payout.netAmount),
-            occasion: payout.reason || "Driver payout",
-            remarks: `Payout for driver ${payout.driverId}`,
-          });
-
-          // Start background polling for B2C result
-          // In production, you'd use a queue system (Bull, etc.)
-          setTimeout(() => {
-            // B2C callback will update the payout status automatically
-            payoutLogger.info(
-              `M-Pesa B2C initiated: ${b2cResponse.OriginatorConversationID}`,
-            );
-          }, 0);
-
-          return {
-            reference: b2cResponse.OriginatorConversationID,
-            status: "processing",
-          };
-        }
+        case PaymentProvider.MPESA:
+          return this.initiateMpesaPayout(payout, payoutDetails);
 
         case PaymentProvider.MTN_MOMO_GH:
         case PaymentProvider.MTN_MOMO_RW:
-        case PaymentProvider.MTN_MOMO_UG: {
-          // MTN MoMo Disbursement API
-          const country =
-            payout.provider === PaymentProvider.MTN_MOMO_GH
-              ? "GH"
-              : payout.provider === PaymentProvider.MTN_MOMO_RW
-                ? "RW"
-                : "UG";
-
-          const momoService = new MoMoService(
-            {
-              subscriptionKey:
-                process.env[`MOMO_${country}_SUBSCRIPTION_KEY`] || "",
-              apiUser: process.env[`MOMO_${country}_API_USER`] || "",
-              apiKey: process.env[`MOMO_${country}_API_KEY`] || "",
-              disbursementSubscriptionKey:
-                process.env[`MOMO_${country}_DISBURSEMENT_SUBSCRIPTION_KEY`],
-              disbursementApiUser:
-                process.env[`MOMO_${country}_DISBURSEMENT_API_USER`],
-              disbursementApiKey:
-                process.env[`MOMO_${country}_DISBURSEMENT_API_KEY`],
-              environment:
-                process.env.MOMO_ENVIRONMENT === "production"
-                  ? "production"
-                  : "sandbox",
-              country,
-              callbackUrl: process.env.MOMO_CALLBACK_URL,
-            },
-            this.prisma,
-          );
-
-          const disbursementResponse = await momoService.initiateDisbursement({
-            phoneNumber: payoutDetails.phoneNumber,
-            amount: Number(payout.netAmount),
-            currency: payout.currency as any,
-            externalId: payout.id,
-            payeeNote: payout.reason || "Driver payout",
-          });
-
-          // Start background polling
-          setTimeout(() => {
-            momoService
-              .pollDisbursementStatus(
-                disbursementResponse.referenceId,
-                payout.id,
-              )
-              .catch((error) => {
-                payoutLogger.error("MoMo disbursement polling error:", error);
-              });
-          }, 0);
-
-          return {
-            reference: disbursementResponse.referenceId,
-            status: "processing",
-          };
-        }
+        case PaymentProvider.MTN_MOMO_UG:
+          return this.initiateMomoPayout(payout, payoutDetails);
 
         case PaymentProvider.PAYSTACK: {
           // Paystack Transfer API
           const paystackService = new PaystackService(
             {
-              secretKey: requireEnv("PAYSTACK_SECRET_KEY"),
-              publicKey: requireEnv("PAYSTACK_PUBLIC_KEY"),
-              webhookSecret: requireEnv("PAYSTACK_WEBHOOK_SECRET"),
+              secretKey: this.requireEnv("PAYSTACK_SECRET_KEY"),
+              publicKey: this.requireEnv("PAYSTACK_PUBLIC_KEY"),
+              webhookSecret: this.requireEnv("PAYSTACK_WEBHOOK_SECRET"),
               environment:
                 process.env.PAYSTACK_ENVIRONMENT === "live" ? "live" : "test",
             },
@@ -971,8 +994,6 @@ export function createPayoutService(prisma: PrismaClient): PayoutService {
 
 // Get singleton instance
 export function getPayoutService(prisma: PrismaClient): PayoutService {
-  if (!payoutServiceInstance) {
-    payoutServiceInstance = createPayoutService(prisma);
-  }
+  payoutServiceInstance ??= createPayoutService(prisma);
   return payoutServiceInstance;
 }

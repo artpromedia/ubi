@@ -155,7 +155,7 @@ export const VEHICLE_TYPES = [
     description: "Affordable, everyday rides",
     icon: "car",
     capacity: 4,
-    multiplier: 1.0,
+    multiplier: 1,
   },
   {
     id: "comfort",
@@ -210,7 +210,7 @@ export const PACKAGE_SIZES = [
     description: "Fits in a backpack",
     maxWeight: "5 kg",
     maxDimensions: "30×30×30 cm",
-    multiplier: 1.0,
+    multiplier: 1,
   },
   {
     id: "medium",
@@ -226,7 +226,7 @@ export const PACKAGE_SIZES = [
     description: "Requires a car",
     maxWeight: "30 kg",
     maxDimensions: "100×80×60 cm",
-    multiplier: 2.0,
+    multiplier: 2,
   },
   {
     id: "extra-large",

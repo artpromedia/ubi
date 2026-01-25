@@ -5,7 +5,7 @@
  * and corporate trip bookings.
  */
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import { nanoid } from "nanoid";
 import type {
   ApprovalCondition,

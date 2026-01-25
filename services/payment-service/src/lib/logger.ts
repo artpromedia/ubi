@@ -112,6 +112,10 @@ export const billsLogger = logger.child({ component: "bills" });
 export const cardsLogger = logger.child({ component: "cards" });
 export const subscriptionLogger = logger.child({ component: "subscription" });
 export const remittanceLogger = logger.child({ component: "remittance" });
+export const splitFareLogger = logger.child({ component: "split-fare" });
+export const vehicleFinancingLogger = logger.child({
+  component: "vehicle-financing",
+});
 
 // Log unhandled errors
 process.on("uncaughtException", (err) => {

@@ -141,7 +141,7 @@ export function formatCompactCurrency(
 export function parseCurrency(value: string): number {
   // Remove all non-numeric characters except decimal point
   const cleaned = value.replace(/[^0-9.]/g, "");
-  return parseFloat(cleaned) || 0;
+  return Number.parseFloat(cleaned) || 0;
 }
 
 /**

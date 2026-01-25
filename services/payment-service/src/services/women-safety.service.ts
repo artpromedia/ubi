@@ -11,8 +11,8 @@
  * - Enhanced monitoring during night hours
  */
 
-import crypto from "crypto";
-import { EventEmitter } from "events";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { womenSafetyLogger } from "../lib/logger";
 import {
   EmergencyContact,
@@ -28,11 +28,12 @@ import {
 // =============================================================================
 
 export class WomenSafetyService extends EventEmitter {
-  private userPreferences: Map<string, WomenSafetyPreference> = new Map();
-  private activePins: Map<string, TripPinVerification> = new Map();
-  private safeWords: Map<string, string[]> = new Map();
-  private femaleDrivers: Map<string, FemaleDriverProfile> = new Map();
-  private tripShareSessions: Map<string, TripShareSession> = new Map();
+  private readonly userPreferences: Map<string, WomenSafetyPreference> =
+    new Map();
+  private readonly activePins: Map<string, TripPinVerification> = new Map();
+  private readonly safeWords: Map<string, string[]> = new Map();
+  private readonly femaleDrivers: Map<string, FemaleDriverProfile> = new Map();
+  private readonly tripShareSessions: Map<string, TripShareSession> = new Map();
 
   constructor() {
     super();
@@ -112,12 +113,7 @@ export class WomenSafetyService extends EventEmitter {
   async findFemaleDrivers(
     params: FindFemaleDriversParams,
   ): Promise<FemaleDriverMatch[]> {
-    const {
-      location,
-      radius = 5000,
-      minRating = 4.0,
-      maxResults = 10,
-    } = params;
+    const { location, radius = 5000, minRating = 4, maxResults = 10 } = params;
 
     const matches: FemaleDriverMatch[] = [];
 
@@ -140,15 +136,15 @@ export class WomenSafetyService extends EventEmitter {
     }
 
     // Sort by distance and verified status
-    return matches
-      .sort((a, b) => {
-        // Prefer verified drivers
-        if (a.verifiedFemale && !b.verifiedFemale) return -1;
-        if (!a.verifiedFemale && b.verifiedFemale) return 1;
-        // Then by distance
-        return a.distance - b.distance;
-      })
-      .slice(0, maxResults);
+    const sorted = matches.toSorted((a, b) => {
+      // Prefer verified drivers
+      if (a.verifiedFemale && !b.verifiedFemale) return -1;
+      if (!a.verifiedFemale && b.verifiedFemale) return 1;
+      // Then by distance
+      return a.distance - b.distance;
+    });
+
+    return sorted.slice(0, maxResults);
   }
 
   async registerFemaleDriver(
@@ -168,7 +164,7 @@ export class WomenSafetyService extends EventEmitter {
       isActive: true,
       isAvailable: false,
       currentLocation: { lat: 0, lng: 0 },
-      rating: 5.0,
+      rating: 5,
       tripsCompleted: 0,
     };
 
@@ -659,15 +655,16 @@ export class WomenSafetyService extends EventEmitter {
     const enhancements: string[] = [];
 
     if (isNightTime) {
-      enhancements.push("pin_verification");
-      enhancements.push("auto_share_contacts");
-      enhancements.push("enhanced_monitoring");
-      enhancements.push("prefer_verified_drivers");
+      enhancements.push(
+        "pin_verification",
+        "auto_share_contacts",
+        "enhanced_monitoring",
+        "prefer_verified_drivers",
+      );
     }
 
     if (prefs.womenSafetyModeEnabled) {
-      enhancements.push("female_driver_preference");
-      enhancements.push("safe_word_detection");
+      enhancements.push("female_driver_preference", "safe_word_detection");
     }
 
     return {

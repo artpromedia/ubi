@@ -3,7 +3,7 @@
   "display": "UBI Base TypeScript Config",
   "compilerOptions": {
     // Silence deprecation warnings for baseUrl/moduleResolution until full TS7 migration
-    "ignoreDeprecations": "5.0",
+    "ignoreDeprecations": "6.0",
 
     // Type Checking
     "strict": true,

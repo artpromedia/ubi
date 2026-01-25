@@ -365,10 +365,10 @@ export function createDriverRoutes(services: {
   });
 
   app.get("/fuel/stations", async (c) => {
-    const latitude = parseFloat(c.req.query("latitude") || "0");
-    const longitude = parseFloat(c.req.query("longitude") || "0");
+    const latitude = Number.parseFloat(c.req.query("latitude") || "0");
+    const longitude = Number.parseFloat(c.req.query("longitude") || "0");
     const radius = c.req.query("radius")
-      ? parseFloat(c.req.query("radius")!)
+      ? Number.parseFloat(c.req.query("radius")!)
       : undefined;
     const stations = await services.benefitsService.getNearbyFuelStations(
       latitude,
@@ -394,7 +394,7 @@ export function createDriverRoutes(services: {
 
   app.get("/fuel/transactions", async (c) => {
     const driverId = c.get("driver").id;
-    const limit = parseInt(c.req.query("limit") || "20");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
     const transactions = await services.benefitsService.getFuelTransactions(
       driverId,
       limit
@@ -519,8 +519,8 @@ export function createDriverRoutes(services: {
 
   app.get("/forum/posts", async (c) => {
     const categoryId = c.req.query("categoryId");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "20");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "20");
     const result = await services.communityService.getForumPosts(
       categoryId as string,
       page,
@@ -565,8 +565,8 @@ export function createDriverRoutes(services: {
 
   app.get("/forum/posts/:postId/comments", async (c) => {
     const postId = c.req.param("postId");
-    const page = parseInt(c.req.query("page") || "1");
-    const limit = parseInt(c.req.query("limit") || "50");
+    const page = Number.parseInt(c.req.query("page") || "1");
+    const limit = Number.parseInt(c.req.query("limit") || "50");
     const result = await services.communityService.getPostComments(
       postId,
       page,
@@ -598,7 +598,7 @@ export function createDriverRoutes(services: {
 
   app.get("/events", async (c) => {
     const city = c.req.query("city");
-    const limit = parseInt(c.req.query("limit") || "10");
+    const limit = Number.parseInt(c.req.query("limit") || "10");
     const events = await services.communityService.getUpcomingEvents(
       city as string,
       limit
@@ -682,7 +682,7 @@ export function createDriverRoutes(services: {
     const type = c.req.query("type") || "trips";
     const period = c.req.query("period") || "MONTHLY";
     const city = c.req.query("city");
-    const limit = parseInt(c.req.query("limit") || "100");
+    const limit = Number.parseInt(c.req.query("limit") || "100");
     const leaderboard = await services.communityService.getLeaderboard(
       type,
       period,
@@ -887,10 +887,10 @@ export function createDriverRoutes(services: {
   app.get("/demand/heatmap", async (c) => {
     const city = c.req.query("city");
     const latitude = c.req.query("latitude")
-      ? parseFloat(c.req.query("latitude")!)
+      ? Number.parseFloat(c.req.query("latitude")!)
       : undefined;
     const longitude = c.req.query("longitude")
-      ? parseFloat(c.req.query("longitude")!)
+      ? Number.parseFloat(c.req.query("longitude")!)
       : undefined;
     const heatmap = await services.demandService?.getDemandHeatmap(
       city as string,
@@ -902,8 +902,8 @@ export function createDriverRoutes(services: {
 
   app.get("/guidance", async (c) => {
     const driverId = c.get("driver").id;
-    const latitude = parseFloat(c.req.query("latitude") || "0");
-    const longitude = parseFloat(c.req.query("longitude") || "0");
+    const latitude = Number.parseFloat(c.req.query("latitude") || "0");
+    const longitude = Number.parseFloat(c.req.query("longitude") || "0");
     const guidance = await services.demandService?.getDriverGuidance(
       driverId,
       latitude,
