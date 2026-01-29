@@ -29,15 +29,26 @@ enum RideStatus {
 /// Vehicle type for rides
 enum VehicleType {
   @JsonValue('ubi_x')
-  ubiX,
+  ubiX('UBI X', 'Affordable everyday rides', 4),
   @JsonValue('ubi_comfort')
-  ubiComfort,
+  ubiComfort('UBI Comfort', 'Newer cars with extra legroom', 4),
   @JsonValue('ubi_xl')
-  ubiXL,
+  ubiXL('UBI XL', 'Larger vehicles for groups', 6),
   @JsonValue('ubi_lux')
-  ubiLux,
+  ubiLux('UBI Lux', 'Premium rides with top-rated drivers', 4),
   @JsonValue('ubi_moto')
-  ubiMoto,
+  ubiMoto('UBI Moto', 'Affordable motorcycle rides', 1);
+
+  const VehicleType(this.displayName, this.description, this.capacity);
+
+  /// Human-readable display name (e.g., "UBI X")
+  final String displayName;
+
+  /// Description of the vehicle type
+  final String description;
+
+  /// Maximum passenger capacity
+  final int capacity;
 }
 
 /// Cancellation reason

@@ -10,24 +10,27 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # Typography
   google_fonts: ^6.1.0
-  
+
   # Icons
   flutter_svg: ^2.0.9
-  
+
   # Animations
   flutter_animate: ^4.3.0
-  
+
   # Image handling
   cached_network_image: ^3.3.1
-  
+
   # Shimmer loading
   shimmer: ^3.0.0
-  
+
   # Responsive
   flutter_screenutil: ^5.9.0
+
+  # Maps
+  google_maps_flutter: ^2.5.0
 
 dev_dependencies:
   flutter_test:

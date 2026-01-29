@@ -15,6 +15,7 @@ import '../interceptors/auth_interceptor.dart';
 import '../interceptors/error_interceptor.dart';
 import '../interceptors/retry_interceptor.dart';
 import '../interceptors/connectivity_interceptor.dart';
+import '../services/app_version_service.dart';
 
 /// Token storage interface for managing auth tokens
 abstract class TokenStorage {
@@ -58,6 +59,7 @@ class ApiClient {
     required this.config,
     required this.tokenStorage,
     required this.connectivityChecker,
+    this.versionService,
     Logger? logger,
   }) : _logger = logger ?? Logger() {
     _dio = _createDio();
@@ -73,6 +75,9 @@ class ApiClient {
   /// Connectivity checker for offline detection
   final ConnectivityChecker connectivityChecker;
 
+  /// App version service for client version headers
+  final AppVersionService? versionService;
+
   /// Logger instance
   final Logger _logger;
 
@@ -86,6 +91,9 @@ class ApiClient {
 
   /// Create and configure Dio instance
   Dio _createDio() {
+    final clientVersion = versionService?.apiVersion ?? '1.0.0';
+    final userAgent = versionService?.userAgent ?? 'UBI-Mobile/1.0.0';
+
     final dio = Dio(
       BaseOptions(
         baseUrl: config.apiUrl,
@@ -96,7 +104,8 @@ class ApiClient {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-Client-Platform': defaultTargetPlatform.name,
-          'X-Client-Version': '1.0.0', // TODO: Get from package info
+          'X-Client-Version': clientVersion,
+          'User-Agent': userAgent,
         },
         validateStatus: (status) => status != null && status < 500,
       ),

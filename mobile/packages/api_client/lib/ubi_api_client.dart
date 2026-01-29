@@ -23,6 +23,7 @@ export 'src/services/food_service.dart';
 export 'src/services/delivery_service.dart';
 export 'src/services/payment_service.dart';
 export 'src/services/notification_service.dart';
+export 'src/services/app_version_service.dart';
 
 // === DTOs ===
 export 'src/dtos/auth_dto.dart';

@@ -44,11 +44,10 @@ export 'src/features/food/food_card.dart';
 // export 'src/features/address/address_tile.dart';
 
 // Map Components
-// TODO: Implement map components
-// export 'src/maps/ubi_map.dart';
-// export 'src/maps/ubi_marker.dart';
-// export 'src/maps/ubi_route_polyline.dart';
-// export 'src/maps/ubi_driver_marker.dart';
+export 'src/maps/ubi_map.dart';
+export 'src/maps/ubi_marker.dart';
+export 'src/maps/ubi_route_polyline.dart';
+export 'src/maps/ubi_driver_marker.dart';
 
 // Utilities
 export 'src/utils/responsive.dart';
