@@ -118,12 +118,15 @@ async function checkProviderHealth(
     await providerHealthCache.recordLatency(endpoint.name, latencyMs);
     await providerHealthCache.recordResult(endpoint.name, false);
 
-    const errorMessage =
-      error instanceof Error
-        ? error.name === "AbortError"
+    let errorMessage: string;
+    if (error instanceof Error) {
+      errorMessage =
+        error.name === "AbortError"
           ? `Timeout after ${endpoint.timeout}ms`
-          : error.message
-        : "Unknown error";
+          : error.message;
+    } else {
+      errorMessage = "Unknown error";
+    }
 
     const status: ProviderHealthStatus = {
       provider: endpoint.name,
@@ -154,12 +157,17 @@ export async function checkAllProvidersHealth(): Promise<
   const results = new Map<ProviderName, ProviderHealthStatus>();
 
   const checks = await Promise.allSettled(
+    // eslint-disable-next-line require-await -- checkProviderHealth returns a Promise
     PROVIDER_ENDPOINTS.map(async (endpoint) => checkProviderHealth(endpoint)),
   );
 
   for (let i = 0; i < checks.length; i++) {
     const check = checks[i];
     const endpoint = PROVIDER_ENDPOINTS[i];
+
+    if (!check || !endpoint) {
+      continue;
+    }
 
     if (check.status === "fulfilled") {
       results.set(endpoint.name, check.value);
@@ -171,7 +179,7 @@ export async function checkAllProvidersHealth(): Promise<
         latencyMs: 0,
         successRate: 0,
         lastChecked: new Date(),
-        errorMessage: check.reason?.message || "Health check failed",
+        errorMessage: (check.reason as Error)?.message || "Health check failed",
       });
     }
   }
@@ -397,6 +405,7 @@ for (const endpoint of PROVIDER_ENDPOINTS) {
 /**
  * Execute provider call with circuit breaker and metrics
  */
+// eslint-disable-next-line require-await -- returns Promise from withProviderMetrics
 export async function executeProviderCall<T>(
   provider: ProviderName,
   operation: string,
@@ -408,7 +417,10 @@ export async function executeProviderCall<T>(
     return withProviderMetrics(provider, operation, fn);
   }
 
-  return withProviderMetrics(provider, operation, async () =>
-    circuitBreaker.execute(fn),
+  return withProviderMetrics(
+    provider,
+    operation,
+    // eslint-disable-next-line @typescript-eslint/promise-function-async -- conflicting with require-await
+    () => circuitBreaker.execute(fn),
   );
 }

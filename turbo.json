@@ -17,7 +17,12 @@
     "REDIS_URL",
     "AWS_REGION",
     "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY"
+    "AWS_SECRET_ACCESS_KEY",
+    "MPESA_API_URL",
+    "MTN_MOMO_API_URL",
+    "AIRTEL_MONEY_API_URL",
+    "TELEBIRR_API_URL",
+    "ORANGE_MONEY_API_URL"
   ],
   "globalPassThroughEnv": [
     "GITHUB_TOKEN",
@@ -183,12 +188,7 @@
       "dependsOn": ["build", "test", "lint"],
       "outputs": [],
       "cache": false,
-      "env": [
-        "AWS_REGION",
-        "AWS_ACCOUNT_ID",
-        "DEPLOY_ENV",
-        "VERCEL_TOKEN"
-      ]
+      "env": ["AWS_REGION", "AWS_ACCOUNT_ID", "DEPLOY_ENV", "VERCEL_TOKEN"]
     },
     "docker:build": {
       "dependsOn": ["build"],

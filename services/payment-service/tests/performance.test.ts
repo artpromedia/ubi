@@ -17,7 +17,7 @@ import {
   PerformanceMonitor,
   ProviderHealthCache,
   WalletCache,
-} from "../lib/performance.js";
+} from "../src/lib/performance.js";
 
 // Mock Redis
 const mockRedis = {
@@ -165,7 +165,9 @@ describe("PaymentMethodsCache", () => {
   });
 
   it("should set payment methods with proper TTL", async () => {
-    const methods = [{ id: "pm1", type: "MOBILE_MONEY" }];
+    const methods = [
+      { id: "pm1", type: "MOBILE_MONEY", provider: "mpesa", isDefault: false },
+    ];
 
     await cache.set("user123", methods);
 
@@ -210,7 +212,7 @@ describe("ProviderHealthCache", () => {
   it("should record latency samples", async () => {
     await healthCache.recordLatency("mpesa", 200);
 
-    const multiMock = mockRedis.multi();
+    const _multiMock = mockRedis.multi();
     expect(mockRedis.multi).toHaveBeenCalled();
   });
 
@@ -242,7 +244,7 @@ describe("PerformanceMonitor", () => {
   it("should record timing metrics", async () => {
     await monitor.recordTiming("payment.process", 250);
 
-    const multiMock = mockRedis.multi();
+    const _multiMock = mockRedis.multi();
     expect(mockRedis.multi).toHaveBeenCalled();
   });
 
@@ -283,7 +285,7 @@ describe("PerformanceMonitor", () => {
   it("should record cache metrics", async () => {
     await monitor.recordCacheMetric("wallet_balance", true);
 
-    const multiMock = mockRedis.multi();
+    const _multiMock = mockRedis.multi();
     expect(mockRedis.multi).toHaveBeenCalled();
   });
 
@@ -356,7 +358,7 @@ describe("BatchProcessor", () => {
     const promise1 = batch.add({ id: "1", data: { value: 1 } });
     const promise2 = batch.add({ id: "2", data: { value: 2 } });
 
-    const [result1, result2] = await Promise.all([promise1, promise2]);
+    const [_result1, _result2] = await Promise.all([promise1, promise2]);
 
     expect(processor).toHaveBeenCalledTimes(1);
   });

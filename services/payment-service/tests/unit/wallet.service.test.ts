@@ -176,6 +176,7 @@ describe("WalletService", () => {
       (
         mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
       ).mockImplementation(
+        // eslint-disable-next-line require-await
         async (callback: (tx: unknown) => Promise<unknown>) => {
           const mockTx = {
             walletAccount: {
@@ -262,6 +263,7 @@ describe("WalletService", () => {
       (
         mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
       ).mockImplementation(
+        // eslint-disable-next-line require-await
         async (callback: (tx: unknown) => Promise<unknown>) => {
           const mockTx = {
             walletAccount: {

@@ -7,12 +7,6 @@
  * - Batch transaction processing
  */
 
-import {
-  type AccountType,
-  type Currency,
-  type TransactionStatus,
-} from "@prisma/client";
-
 import { perfLogger } from "../lib/logger.js";
 import {
   BatchProcessor,
@@ -20,6 +14,8 @@ import {
   walletCache,
 } from "../lib/performance.js";
 import { prisma } from "../lib/prisma.js";
+
+import type { AccountType, Currency, TransactionStatus } from "@prisma/client";
 
 // =============================================================================
 // BATCH WALLET BALANCE LOOKUP
@@ -53,10 +49,12 @@ const walletBalanceBatch = new BatchProcessor<
     const groups = new Map<string, string[]>();
     for (const item of items) {
       const groupKey = `${item.data.accountType}:${item.data.currency}`;
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, []);
+      const existing = groups.get(groupKey);
+      if (existing) {
+        existing.push(item.data.userId);
+      } else {
+        groups.set(groupKey, [item.data.userId]);
       }
-      groups.get(groupKey)!.push(item.data.userId);
     }
 
     // Query each group
@@ -83,7 +81,7 @@ const walletBalanceBatch = new BatchProcessor<
       // Map results
       for (const account of accounts) {
         const result: WalletBalanceResult = {
-          userId: account.userId!,
+          userId: account.userId ?? "",
           balance: Number(account.balance),
           availableBalance: Number(account.availableBalance),
           heldBalance: Number(account.heldBalance),
@@ -158,6 +156,7 @@ const walletBalanceBatch = new BatchProcessor<
 /**
  * Get wallet balance with batching
  */
+// eslint-disable-next-line require-await -- returns a Promise from BatchProcessor.add()
 export async function getBatchedWalletBalance(
   userId: string,
   accountType: AccountType,
@@ -286,12 +285,13 @@ export async function bulkGetWalletBalances(
 
   for (const req of requests) {
     const groupKey = `${req.accountType}:${req.currency}`;
-    if (!groups.has(groupKey)) {
-      groups.set(groupKey, { userIds: [], requests: [] });
+    const existing = groups.get(groupKey);
+    if (existing) {
+      existing.userIds.push(req.userId);
+      existing.requests.push(req);
+    } else {
+      groups.set(groupKey, { userIds: [req.userId], requests: [req] });
     }
-    const group = groups.get(groupKey)!;
-    group.userIds.push(req.userId);
-    group.requests.push(req);
   }
 
   // Query each group in parallel

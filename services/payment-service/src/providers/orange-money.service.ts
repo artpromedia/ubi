@@ -40,6 +40,9 @@ import { nanoid } from "nanoid";
 
 import { orangeMoneyLogger } from "../lib/logger.js";
 
+/** Orange Money transaction status values */
+export type OrangeMoneyStatus = "SUCCESS" | "FAILED" | "PENDING" | "CANCELLED";
+
 export interface OrangeMoneyConfig {
   merchantKey: string; // Merchant API key
   merchantSecret: string; // Merchant secret for OAuth
@@ -71,7 +74,7 @@ const COUNTRY_CONFIG: Record<
     },
     currency: Currency.XOF,
     phonePrefix: "225",
-    provider: PaymentProvider.ORANGE_MONEY_CI,
+    provider: PaymentProvider.ORANGE_MONEY,
   },
   SN: {
     baseUrl: {
@@ -80,7 +83,7 @@ const COUNTRY_CONFIG: Record<
     },
     currency: Currency.XOF,
     phonePrefix: "221",
-    provider: PaymentProvider.ORANGE_MONEY_SN,
+    provider: PaymentProvider.ORANGE_MONEY,
   },
   CM: {
     baseUrl: {
@@ -89,7 +92,7 @@ const COUNTRY_CONFIG: Record<
     },
     currency: Currency.XOF,
     phonePrefix: "237",
-    provider: PaymentProvider.ORANGE_MONEY_CM,
+    provider: PaymentProvider.ORANGE_MONEY,
   },
   ML: {
     baseUrl: {
@@ -98,7 +101,7 @@ const COUNTRY_CONFIG: Record<
     },
     currency: Currency.XOF,
     phonePrefix: "223",
-    provider: PaymentProvider.ORANGE_MONEY_ML,
+    provider: PaymentProvider.ORANGE_MONEY,
   },
   BF: {
     baseUrl: {
@@ -107,7 +110,7 @@ const COUNTRY_CONFIG: Record<
     },
     currency: Currency.XOF,
     phonePrefix: "226",
-    provider: PaymentProvider.ORANGE_MONEY_CI, // Fallback to CI
+    provider: PaymentProvider.ORANGE_MONEY,
   },
   GN: {
     baseUrl: {
@@ -116,7 +119,7 @@ const COUNTRY_CONFIG: Record<
     },
     currency: Currency.XOF,
     phonePrefix: "224",
-    provider: PaymentProvider.ORANGE_MONEY_CI, // Fallback to CI
+    provider: PaymentProvider.ORANGE_MONEY,
   },
 };
 
@@ -128,7 +131,7 @@ export interface OrangeMoneyPaymentRequest {
   reference?: string; // Additional reference
   customerName?: string; // Customer name for display
   customerEmail?: string; // Customer email for receipt
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface OrangeMoneyPaymentResponse {
@@ -165,7 +168,7 @@ export interface OrangeMoneyDisbursementResponse {
 export interface OrangeMoneyCallbackData {
   notifToken: string;
   txnid: string;
-  status: "SUCCESS" | "FAILED" | "PENDING" | "CANCELLED";
+  status: OrangeMoneyStatus;
   orderId: string;
   payToken: string;
   amount: string;
@@ -179,7 +182,7 @@ export interface OrangeMoneyTransactionStatus {
     orderId: string;
     txnid: string;
     amount: string;
-    status: "SUCCESS" | "FAILED" | "PENDING" | "CANCELLED";
+    status: OrangeMoneyStatus;
     createtime: string;
     txnmode: string;
   };
@@ -194,9 +197,20 @@ export interface OrangeMoneyBalanceResponse {
   };
 }
 
+/** Type for country configuration */
+type CountryConfigType = {
+  baseUrl: {
+    sandbox: string;
+    production: string;
+  };
+  currency: Currency;
+  phonePrefix: string;
+  provider: PaymentProvider;
+};
+
 export class OrangeMoneyService {
   private readonly baseUrl: string;
-  private readonly countryConfig: (typeof COUNTRY_CONFIG)[string];
+  private readonly countryConfig: CountryConfigType;
   private accessToken?: string;
   private tokenExpiresAt?: Date;
 
@@ -204,7 +218,11 @@ export class OrangeMoneyService {
     private readonly config: OrangeMoneyConfig,
     private readonly prisma: PrismaClient,
   ) {
-    this.countryConfig = COUNTRY_CONFIG[config.country];
+    const countryConfig = COUNTRY_CONFIG[config.country];
+    if (!countryConfig) {
+      throw new Error(`Unsupported Orange Money country: ${config.country}`);
+    }
+    this.countryConfig = countryConfig;
     this.baseUrl =
       this.countryConfig.baseUrl[config.environment] ||
       this.countryConfig.baseUrl.sandbox;
@@ -278,7 +296,7 @@ export class OrangeMoneyService {
    */
   private validatePhoneNumber(phoneNumber: string): string {
     const prefix = this.countryConfig.phonePrefix;
-    let normalized = phoneNumber.replace(/\D/g, "");
+    let normalized = phoneNumber.replaceAll(/\D/g, "");
 
     // Add country prefix if missing
     if (!normalized.startsWith(prefix)) {
@@ -498,7 +516,7 @@ export class OrangeMoneyService {
           data: {
             status: this.mapTransactionStatus(data.data.status),
             providerTransactionId: data.data.txnid,
-            providerResponse: data as any,
+            providerResponse: data as unknown as Record<string, unknown>,
             updatedAt: new Date(),
           },
         });
@@ -667,7 +685,7 @@ export class OrangeMoneyService {
       data: {
         status,
         providerTransactionId: callbackData.txnid,
-        providerResponse: callbackData as any,
+        providerResponse: callbackData as unknown as Record<string, unknown>,
         completedAt:
           status === PaymentStatus.COMPLETED ? new Date() : undefined,
         updatedAt: new Date(),
@@ -685,9 +703,7 @@ export class OrangeMoneyService {
   /**
    * Map Orange Money status to internal status
    */
-  private mapTransactionStatus(
-    omStatus: "SUCCESS" | "FAILED" | "PENDING" | "CANCELLED",
-  ): PaymentStatus {
+  private mapTransactionStatus(omStatus: OrangeMoneyStatus): PaymentStatus {
     switch (omStatus) {
       case "SUCCESS":
         return PaymentStatus.COMPLETED;

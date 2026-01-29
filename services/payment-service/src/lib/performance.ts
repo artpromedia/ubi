@@ -11,7 +11,7 @@
  */
 
 import { perfLogger } from "./logger.js";
-import { cache as baseCache, redis } from "./redis.js";
+import { redis } from "./redis.js";
 
 // =============================================================================
 // CACHE KEY PREFIXES AND TTLs
@@ -264,7 +264,9 @@ export class ProviderHealthCache {
     }
 
     const values = await redis.mget(...keys);
-    return values.filter((v): v is string => v !== null).map((v) => JSON.parse(v));
+    return values
+      .filter((v): v is string => v !== null)
+      .map((v) => JSON.parse(v));
   }
 
   /**
@@ -352,7 +354,7 @@ export interface BatchResult<T, R> {
 }
 
 export class BatchProcessor<T, R> {
-  private queue: Array<
+  private readonly queue: Array<
     BatchItem<T> & {
       resolve: (value: R) => void;
       reject: (error: unknown) => void;
@@ -373,8 +375,9 @@ export class BatchProcessor<T, R> {
   ) {}
 
   /**
-   * Add item to batch
+   * Add item to batch and return result when processed
    */
+  // eslint-disable-next-line @typescript-eslint/promise-function-async
   add(item: BatchItem<T>): Promise<R> {
     return new Promise<R>((resolve, reject) => {
       const wrappedItem = {
@@ -388,9 +391,9 @@ export class BatchProcessor<T, R> {
       // Process immediately if batch is full
       if (this.queue.length >= this.options.maxBatchSize) {
         void this.flush();
-      } else if (!this.timer) {
+      } else {
         // Start timer for partial batch
-        this.timer = setTimeout(
+        this.timer ??= setTimeout(
           () => void this.flush(),
           this.options.maxWaitMs,
         );
@@ -420,10 +423,10 @@ export class BatchProcessor<T, R> {
 
       for (const item of batch) {
         const result = results.get(item.id);
-        if (result !== undefined) {
-          item.resolve(result);
-        } else {
+        if (result === undefined) {
           item.reject(new Error(`No result for item ${item.id}`));
+        } else {
+          item.resolve(result);
         }
       }
     } catch (error) {
@@ -511,7 +514,9 @@ export class PerformanceMonitor {
       return { count: 0, avg: 0, p50: 0, p95: 0, p99: 0, min: 0, max: 0 };
     }
 
-    const numbers = values.map((v) => parseInt(v, 10)).sort((a, b) => a - b);
+    const numbers = values
+      .map((v) => Number.parseInt(v, 10))
+      .sort((a, b) => a - b);
     const count = numbers.length;
 
     return {
@@ -554,7 +559,7 @@ export class PerformanceMonitor {
     const dayKey = (date || new Date()).toISOString().slice(0, 10);
 
     const value = await redis.hget(`${key}:${dayKey}`, "total");
-    return parseInt(value || "0", 10);
+    return Number.parseInt(value || "0", 10);
   }
 
   /**
@@ -586,11 +591,11 @@ export class PerformanceMonitor {
       "hits",
     );
 
-    if (!total || parseInt(total, 10) === 0) {
+    if (!total || Number.parseInt(total, 10) === 0) {
       return 0;
     }
 
-    return parseInt(hits || "0", 10) / parseInt(total, 10);
+    return Number.parseInt(hits || "0", 10) / Number.parseInt(total, 10);
   }
 
   private getBucket(value: number): string {
@@ -693,16 +698,13 @@ export function buildCursorQuery(params: CursorPagination): {
 // =============================================================================
 
 export const DATABASE_POOL_CONFIG = {
-  // Connection limits
-  connectionLimit: parseInt(process.env.DATABASE_POOL_SIZE || "25", 10),
-  minConnections: parseInt(process.env.DATABASE_POOL_MIN || "5", 10),
+  // Connection limits (configurable via DATABASE_URL params)
+  connectionLimit: 25,
+  minConnections: 5,
 
   // Timeouts
-  connectionTimeoutMs: parseInt(
-    process.env.DATABASE_CONNECT_TIMEOUT || "10000",
-    10,
-  ),
-  idleTimeoutMs: parseInt(process.env.DATABASE_IDLE_TIMEOUT || "300000", 10),
+  connectionTimeoutMs: 10_000,
+  idleTimeoutMs: 300_000,
 
   // Query settings
   statementCacheSize: 100,
@@ -729,4 +731,4 @@ export const REDIS_POOL_CONFIG = {
 // EXPORTS
 // =============================================================================
 
-export { baseCache as cache };
+export { cache } from "./redis.js";
