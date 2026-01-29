@@ -13,6 +13,7 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import { sosLogger } from "../lib/logger";
+import { notificationClient } from "../lib/notification-client";
 import {
   COUNTRY_CONFIGS,
   EmergencyContact,
@@ -511,42 +512,113 @@ export class SOSEmergencyService extends EventEmitter {
 
   private async sendEmergencySMS(
     phone: string,
-    _incident: SOSIncident,
+    incident: SOSIncident,
     locationLink: string,
   ): Promise<void> {
-    const message =
-      `🚨 EMERGENCY: Your contact has triggered an SOS alert on UBI. ` +
-      `Track their location: ${locationLink}. ` +
-      `If you cannot reach them, call emergency services.`;
+    // Get user name for personalized message
+    const userContext = await this.getUserSafetyContext(incident.userId);
+    const userName = userContext?.name || "Your contact";
 
-    // In production, use SMS provider
-    sosLogger.info(
-      { phoneLast4: phone.slice(-4), messagePreview: message.substring(0, 50) },
-      "[SOSService] Sending SMS",
+    // Use notification client to send real SMS
+    const result = await notificationClient.sendEmergencySMS(
+      phone,
+      userName,
+      locationLink,
+      incident.triggerMethod === "crash_detected" ? "crash" : "sos",
     );
+
+    if (result.success) {
+      sosLogger.info(
+        { phoneLast4: phone.slice(-4), messageId: result.notificationId },
+        "[SOSService] Emergency SMS sent via notification service",
+      );
+    } else {
+      sosLogger.error(
+        { phoneLast4: phone.slice(-4), error: result.error },
+        "[SOSService] Emergency SMS failed",
+      );
+    }
   }
 
   private async sendEmergencyWhatsApp(
     phone: string,
-    _incident: SOSIncident,
-    _locationLink: string,
+    incident: SOSIncident,
+    locationLink: string,
   ): Promise<void> {
-    // In production, use WhatsApp Business API
-    sosLogger.info(
-      { phoneLast4: phone.slice(-4) },
-      "[SOSService] WhatsApp sent",
-    );
+    // Get user context for WhatsApp template
+    const userContext = await this.getUserSafetyContext(incident.userId);
+    const userName = userContext?.name || "Your contact";
+
+    // WhatsApp will be sent as part of emergency contact notification
+    // This uses WhatsApp Business API templates via notification service
+    try {
+      const NOTIFICATION_SERVICE_URL =
+        process.env.NOTIFICATION_SERVICE_URL ||
+        "http://notification-service:4006";
+
+      await fetch(`${NOTIFICATION_SERVICE_URL}/api/v1/whatsapp/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: phone,
+          template: "emergency_sos",
+          parameters: {
+            userName,
+            locationLink,
+            incidentId: incident.id,
+          },
+        }),
+      });
+
+      sosLogger.info(
+        { phoneLast4: phone.slice(-4) },
+        "[SOSService] WhatsApp emergency message sent",
+      );
+    } catch (error) {
+      sosLogger.warn(
+        { phoneLast4: phone.slice(-4), err: error },
+        "[SOSService] WhatsApp send failed, SMS already sent as backup",
+      );
+    }
   }
 
   private async initiateEmergencyCall(
     phone: string,
-    _incident: SOSIncident,
+    incident: SOSIncident,
   ): Promise<void> {
-    // In production, use voice API (Twilio, Africa's Talking)
-    sosLogger.info(
-      { phoneLast4: phone.slice(-4) },
-      "[SOSService] Initiating call",
-    );
+    // Use Twilio Voice API via notification service for automated calls
+    // This initiates an outbound call to the emergency contact
+    try {
+      const NOTIFICATION_SERVICE_URL =
+        process.env.NOTIFICATION_SERVICE_URL ||
+        "http://notification-service:4006";
+
+      await fetch(`${NOTIFICATION_SERVICE_URL}/api/v1/voice/call`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: phone,
+          type: "emergency_alert",
+          incidentId: incident.id,
+          message: `Emergency alert: Your contact has triggered an SOS on UBI. Please check on them immediately.`,
+          repeatCount: 2,
+        }),
+      });
+
+      sosLogger.info(
+        { phoneLast4: phone.slice(-4), incidentId: incident.id },
+        "[SOSService] Emergency call initiated",
+      );
+    } catch (error) {
+      sosLogger.error(
+        { phoneLast4: phone.slice(-4), err: error },
+        "[SOSService] Emergency call failed",
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

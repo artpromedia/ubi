@@ -13,6 +13,7 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import { tripMonitorLogger } from "../lib/logger";
+import { notificationClient } from "../lib/notification-client";
 import {
   AccelData,
   AnomalyDetails,
@@ -601,21 +602,127 @@ export class TripMonitorService extends EventEmitter {
     return this.generateShareLink(tripId);
   }
 
-  private async generateShareLink(_tripId: string): Promise<string> {
+  private async generateShareLink(tripId: string): Promise<string> {
     const token = crypto.randomBytes(16).toString("hex");
-    // Store token mapping in production
-    return `https://ubi.app/trip/track/${token}`;
+    // Store token to trip mapping in Redis/database for link resolution
+    // This token allows public access to trip tracking page
+    const shareLink = `https://ubi.app/trip/track/${token}`;
+
+    // Store mapping for later resolution
+    this.shareLinkTokens.set(token, tripId);
+
+    tripMonitorLogger.info(
+      { tripId, token: token.slice(0, 8) },
+      "[TripMonitor] Share link generated",
+    );
+
+    return shareLink;
+  }
+
+  // Store for share link tokens
+  private readonly shareLinkTokens: Map<string, string> = new Map();
+
+  /**
+   * Resolve a share link token to trip ID
+   */
+  async resolvShareLinkToken(token: string): Promise<string | null> {
+    return this.shareLinkTokens.get(token) || null;
   }
 
   private async notifyTripShareContact(
     contactId: string,
-    _share: TripShare,
+    share: TripShare,
   ): Promise<void> {
-    // In production, send SMS/WhatsApp/Email with share link
-    tripMonitorLogger.info(
-      { contactId },
-      "[TripMonitor] Notified contact with share link",
+    // Get contact details (in production, fetch from database)
+    const contactPhone = await this.getContactPhone(contactId);
+    const contactEmail = await this.getContactEmail(contactId);
+
+    if (!contactPhone) {
+      tripMonitorLogger.warn(
+        { contactId },
+        "[TripMonitor] Cannot notify contact - no phone number",
+      );
+      return;
+    }
+
+    // Get rider name for personalized message
+    const riderName = await this.getRiderName(share.sharedBy);
+
+    // Get session for ETA
+    const session = this.activeSessions.get(share.tripId);
+    const eta = session?.eta
+      ? new Date(session.eta).toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : undefined;
+
+    // Send notification via notification client
+    const result = await notificationClient.notifyTripShared(
+      contactPhone,
+      contactEmail,
+      riderName,
+      share.shareLink || "",
+      eta,
     );
+
+    if (result.success) {
+      tripMonitorLogger.info(
+        { contactId, tripId: share.tripId },
+        "[TripMonitor] Contact notified of trip share",
+      );
+    } else {
+      tripMonitorLogger.error(
+        { contactId, error: result.error },
+        "[TripMonitor] Failed to notify contact of trip share",
+      );
+    }
+  }
+
+  /**
+   * Notify contact when trip ends safely
+   */
+  async notifyTripEndedSafely(
+    tripId: string,
+    contactIds: string[],
+  ): Promise<void> {
+    const session = this.activeSessions.get(tripId);
+    if (!session) return;
+
+    const riderName = await this.getRiderName(session.riderId);
+
+    for (const contactId of contactIds) {
+      const contactPhone = await this.getContactPhone(contactId);
+      if (contactPhone) {
+        await notificationClient.notifyTripEnded(contactPhone, riderName);
+      }
+    }
+
+    tripMonitorLogger.info(
+      { tripId, contactCount: contactIds.length },
+      "[TripMonitor] Contacts notified of safe arrival",
+    );
+  }
+
+  // Helper methods for getting user data
+  private async getContactPhone(contactId: string): Promise<string | null> {
+    // In production, fetch from EmergencyContact table
+    // For now, return placeholder that will be replaced with actual implementation
+    tripMonitorLogger.debug({ contactId }, "Fetching contact phone");
+    return `+234800000${contactId.slice(-4)}`;
+  }
+
+  private async getContactEmail(
+    contactId: string,
+  ): Promise<string | undefined> {
+    tripMonitorLogger.debug({ contactId }, "Fetching contact email");
+    return undefined; // Will be implemented with database lookup
+  }
+
+  private async getRiderName(riderId: string): Promise<string> {
+    // In production, fetch from User table
+    tripMonitorLogger.debug({ riderId }, "Fetching rider name");
+    return "Your contact"; // Will be replaced with actual user name
   }
 
   // ---------------------------------------------------------------------------

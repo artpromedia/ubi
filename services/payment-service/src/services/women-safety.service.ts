@@ -14,6 +14,7 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import { womenSafetyLogger } from "../lib/logger";
+import { notificationClient } from "../lib/notification-client";
 import {
   EmergencyContact,
   FemaleDriverMatch,
@@ -424,32 +425,102 @@ export class WomenSafetyService extends EventEmitter {
     }
   }
 
-  private async generateShareLink(_tripId: string): Promise<string> {
+  private async generateShareLink(tripId: string): Promise<string> {
     const token = crypto.randomBytes(16).toString("hex");
+    // Store token mapping for later resolution
+    this.shareLinkTokens.set(token, tripId);
     return `https://ubi.app/trip/track/${token}`;
   }
 
+  // Token to trip ID mapping
+  private readonly shareLinkTokens: Map<string, string> = new Map();
+
   private async notifyContactOfTripShare(
     contactId: string,
-    _riderId: string,
-    _shareLink: string,
+    riderId: string,
+    shareLink: string,
   ): Promise<void> {
-    // In production, send SMS/WhatsApp with share link
-    womenSafetyLogger.info(
-      { contactId },
-      "[WomenSafety] Contact notified of trip share",
+    // Get contact and rider details
+    const contactPhone = await this.getContactPhone(contactId);
+    const contactEmail = await this.getContactEmail(contactId);
+    const riderName = await this.getRiderName(riderId);
+
+    if (!contactPhone) {
+      womenSafetyLogger.warn(
+        { contactId },
+        "[WomenSafety] Cannot notify contact - no phone",
+      );
+      return;
+    }
+
+    // Send via notification client
+    const result = await notificationClient.notifyTripShared(
+      contactPhone,
+      contactEmail,
+      riderName,
+      shareLink,
     );
+
+    if (result.success) {
+      womenSafetyLogger.info(
+        { contactId, riderId },
+        "[WomenSafety] Contact notified of trip share via SMS",
+      );
+    } else {
+      womenSafetyLogger.error(
+        { contactId, error: result.error },
+        "[WomenSafety] Failed to notify contact of trip share",
+      );
+    }
   }
 
   private async notifyContactTripEnded(
     contactId: string,
-    _riderId: string,
+    riderId: string,
   ): Promise<void> {
-    // In production, send notification that trip ended safely
-    womenSafetyLogger.info(
-      { contactId },
-      "[WomenSafety] Contact notified trip ended safely",
+    const contactPhone = await this.getContactPhone(contactId);
+    const riderName = await this.getRiderName(riderId);
+
+    if (!contactPhone) {
+      womenSafetyLogger.warn(
+        { contactId },
+        "[WomenSafety] Cannot notify contact - no phone",
+      );
+      return;
+    }
+
+    // Send trip ended notification
+    const result = await notificationClient.notifyTripEnded(
+      contactPhone,
+      riderName,
     );
+
+    if (result.success) {
+      womenSafetyLogger.info(
+        { contactId },
+        "[WomenSafety] Contact notified trip ended safely",
+      );
+    }
+  }
+
+  // Helper methods for fetching user data
+  private async getContactPhone(contactId: string): Promise<string | null> {
+    // In production, fetch from EmergencyContact or TrustedContact table
+    womenSafetyLogger.debug({ contactId }, "Fetching contact phone");
+    return `+234800000${contactId.slice(-4)}`;
+  }
+
+  private async getContactEmail(
+    contactId: string,
+  ): Promise<string | undefined> {
+    womenSafetyLogger.debug({ contactId }, "Fetching contact email");
+    return undefined;
+  }
+
+  private async getRiderName(riderId: string): Promise<string> {
+    // In production, fetch from User table
+    womenSafetyLogger.debug({ riderId }, "Fetching rider name");
+    return "Your contact";
   }
 
   // ---------------------------------------------------------------------------

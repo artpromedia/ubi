@@ -39,6 +39,17 @@ export enum NotificationType {
   SUBSCRIPTION_RENEWED = "subscription_renewed",
   SUBSCRIPTION_EXPIRING = "subscription_expiring",
   PAYOUT_COMPLETED = "payout_completed",
+  // Safety & Emergency notifications
+  SOS_TRIGGERED = "sos_triggered",
+  SOS_RESOLVED = "sos_resolved",
+  EMERGENCY_CONTACT_ALERT = "emergency_contact_alert",
+  TRIP_SHARED = "trip_shared",
+  TRIP_SHARE_ENDED = "trip_share_ended",
+  SAFETY_CHECK = "safety_check",
+  SAFETY_CHECK_TIMEOUT = "safety_check_timeout",
+  CRASH_DETECTED = "crash_detected",
+  ROUTE_DEVIATION = "route_deviation",
+  DRIVER_ARRIVED = "driver_arrived",
 }
 
 export enum NotificationPriority {
@@ -406,6 +417,358 @@ class NotificationClient {
       type: NotificationType.PAYOUT_COMPLETED,
       priority: NotificationPriority.HIGH,
       data: { amount, currency, payoutMethod },
+    });
+  }
+
+  // ===========================================
+  // SAFETY & EMERGENCY METHODS
+  // ===========================================
+
+  /**
+   * Send emergency SMS to contacts
+   */
+  async sendEmergencySMS(
+    phoneNumber: string,
+    userName: string,
+    locationLink: string,
+    emergencyType: "sos" | "crash" | "route_deviation" = "sos",
+  ): Promise<SendResult> {
+    const messages: Record<string, string> = {
+      sos: `🚨 EMERGENCY: ${userName} has triggered an SOS alert on UBI. Track their live location: ${locationLink}. If unreachable, call emergency services.`,
+      crash: `🚨 CRASH DETECTED: ${userName} may have been in an accident. Track their location: ${locationLink}. Please try to contact them immediately.`,
+      route_deviation: `⚠️ SAFETY ALERT: ${userName}'s trip has deviated from the expected route. Track their location: ${locationLink}.`,
+    };
+
+    try {
+      const response = await fetch(
+        `${NOTIFICATION_SERVICE_URL}/api/v1/sms/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(NOTIFICATION_API_KEY && {
+              Authorization: `Bearer ${NOTIFICATION_API_KEY}`,
+            }),
+          },
+          body: JSON.stringify({
+            to: phoneNumber,
+            message: messages[emergencyType],
+            priority: "high",
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => ({}))) as any;
+        notificationLogger.error(
+          { err: errorData, phoneNumber: phoneNumber.slice(-4) },
+          "Emergency SMS failed",
+        );
+        return { success: false, error: errorData.message || "SMS failed" };
+      }
+
+      const result = (await response.json()) as any;
+      notificationLogger.info(
+        { phoneNumber: phoneNumber.slice(-4), emergencyType },
+        "Emergency SMS sent successfully",
+      );
+      return { success: true, notificationId: result.data?.messageId };
+    } catch (error) {
+      notificationLogger.error({ err: error }, "Failed to send emergency SMS");
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to send emergency SMS",
+      };
+    }
+  }
+
+  /**
+   * Send emergency push notification
+   */
+  async sendEmergencyPush(
+    userId: string,
+    title: string,
+    body: string,
+    data?: Record<string, unknown>,
+  ): Promise<SendResult> {
+    return this.send({
+      userId,
+      title,
+      body,
+      type: NotificationType.SOS_TRIGGERED,
+      priority: NotificationPriority.URGENT,
+      channels: [NotificationChannel.PUSH],
+      data: {
+        ...data,
+        isEmergency: true,
+        sound: "emergency_alert",
+        vibrate: true,
+      },
+    });
+  }
+
+  /**
+   * Notify emergency contacts about SOS
+   */
+  async notifyEmergencyContacts(
+    contacts: Array<{
+      phone: string;
+      email?: string;
+      whatsappEnabled?: boolean;
+    }>,
+    userName: string,
+    locationLink: string,
+    incidentId: string,
+  ): Promise<{ sent: number; failed: number }> {
+    let sent = 0;
+    let failed = 0;
+
+    for (const contact of contacts) {
+      // Send SMS
+      const smsResult = await this.sendEmergencySMS(
+        contact.phone,
+        userName,
+        locationLink,
+        "sos",
+      );
+      if (smsResult.success) {
+        sent++;
+      } else {
+        failed++;
+      }
+
+      // Send WhatsApp if enabled (via notification service)
+      if (contact.whatsappEnabled) {
+        try {
+          await fetch(`${NOTIFICATION_SERVICE_URL}/api/v1/whatsapp/send`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(NOTIFICATION_API_KEY && {
+                Authorization: `Bearer ${NOTIFICATION_API_KEY}`,
+              }),
+            },
+            body: JSON.stringify({
+              to: contact.phone,
+              template: "emergency_sos",
+              parameters: {
+                userName,
+                locationLink,
+                incidentId,
+              },
+            }),
+          });
+        } catch (error) {
+          notificationLogger.warn(
+            { err: error },
+            "WhatsApp emergency notification failed",
+          );
+        }
+      }
+    }
+
+    return { sent, failed };
+  }
+
+  /**
+   * Notify contact about trip sharing
+   */
+  async notifyTripShared(
+    contactPhone: string,
+    contactEmail: string | undefined,
+    riderName: string,
+    shareLink: string,
+    estimatedArrival?: string,
+  ): Promise<SendResult> {
+    const message =
+      `📍 ${riderName} is sharing their UBI trip with you. ` +
+      `Track their journey: ${shareLink}` +
+      (estimatedArrival ? `. ETA: ${estimatedArrival}` : "");
+
+    try {
+      // Send SMS
+      const response = await fetch(
+        `${NOTIFICATION_SERVICE_URL}/api/v1/sms/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(NOTIFICATION_API_KEY && {
+              Authorization: `Bearer ${NOTIFICATION_API_KEY}`,
+            }),
+          },
+          body: JSON.stringify({
+            to: contactPhone,
+            message,
+          }),
+        },
+      );
+
+      // Also send email if available
+      if (contactEmail) {
+        await fetch(`${NOTIFICATION_SERVICE_URL}/api/v1/email/send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(NOTIFICATION_API_KEY && {
+              Authorization: `Bearer ${NOTIFICATION_API_KEY}`,
+            }),
+          },
+          body: JSON.stringify({
+            to: contactEmail,
+            subject: `${riderName} is sharing their trip with you`,
+            template: "trip_shared",
+            data: {
+              riderName,
+              shareLink,
+              estimatedArrival,
+            },
+          }),
+        });
+      }
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: "Failed to send trip share notification",
+        };
+      }
+
+      notificationLogger.info(
+        { contactPhone: contactPhone.slice(-4) },
+        "Trip share notification sent",
+      );
+      return { success: true };
+    } catch (error) {
+      notificationLogger.error({ err: error }, "Failed to notify trip share");
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  /**
+   * Notify contact that trip has ended safely
+   */
+  async notifyTripEnded(
+    contactPhone: string,
+    riderName: string,
+  ): Promise<SendResult> {
+    const message = `✅ ${riderName} has arrived safely at their destination.`;
+
+    try {
+      const response = await fetch(
+        `${NOTIFICATION_SERVICE_URL}/api/v1/sms/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(NOTIFICATION_API_KEY && {
+              Authorization: `Bearer ${NOTIFICATION_API_KEY}`,
+            }),
+          },
+          body: JSON.stringify({
+            to: contactPhone,
+            message,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: "Failed to send trip end notification",
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      notificationLogger.error({ err: error }, "Failed to notify trip end");
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  /**
+   * Send safety check notification to rider
+   */
+  async sendSafetyCheck(
+    userId: string,
+    tripId: string,
+    reason: string,
+    checkId: string,
+  ): Promise<SendResult> {
+    return this.send({
+      userId,
+      title: "Safety Check 🛡️",
+      body: `Are you okay? ${reason}`,
+      type: NotificationType.SAFETY_CHECK,
+      priority: NotificationPriority.URGENT,
+      channels: [NotificationChannel.PUSH, NotificationChannel.IN_APP],
+      data: {
+        tripId,
+        checkId,
+        reason,
+        requiresResponse: true,
+        responseOptions: ["I'm fine", "Need help"],
+        timeoutSeconds: 60,
+      },
+    });
+  }
+
+  /**
+   * Notify about crash detection
+   */
+  async notifyCrashDetected(
+    userId: string,
+    tripId: string,
+    location: { lat: number; lng: number },
+  ): Promise<SendResult> {
+    return this.send({
+      userId,
+      title: "Crash Detected! 🚨",
+      body: "We detected a possible accident. Emergency contacts will be notified if you don't respond.",
+      type: NotificationType.CRASH_DETECTED,
+      priority: NotificationPriority.URGENT,
+      channels: [NotificationChannel.PUSH, NotificationChannel.SMS],
+      data: {
+        tripId,
+        location,
+        requiresResponse: true,
+        autoEscalateSeconds: 30,
+      },
+    });
+  }
+
+  /**
+   * Notify about route deviation
+   */
+  async notifyRouteDeviation(
+    userId: string,
+    tripId: string,
+    deviationDetails: {
+      expectedRoute: string;
+      currentLocation: { lat: number; lng: number };
+      deviationDistance: number;
+    },
+  ): Promise<SendResult> {
+    return this.send({
+      userId,
+      title: "Route Change Detected",
+      body: "Your trip has deviated from the expected route. Tap to view details.",
+      type: NotificationType.ROUTE_DEVIATION,
+      priority: NotificationPriority.HIGH,
+      channels: [NotificationChannel.PUSH, NotificationChannel.IN_APP],
+      data: {
+        tripId,
+        ...deviationDetails,
+      },
     });
   }
 }

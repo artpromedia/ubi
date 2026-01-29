@@ -4,11 +4,11 @@
  * Tests for the Orange Money payment service for Francophone Africa.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
-  OrangeMoneyConfig,
   OrangeMoneyCallbackData,
+  OrangeMoneyConfig,
 } from "../../src/providers/orange-money.service";
 
 // Mock dependencies
@@ -37,18 +37,17 @@ globalThis.fetch = mockFetch;
 
 // Lazy import for OrangeMoneyService
 const createService = async (config: OrangeMoneyConfig, prisma: unknown) => {
-  const { OrangeMoneyService } = await import(
-    "../../src/providers/orange-money.service"
-  );
+  const { OrangeMoneyService } =
+    await import("../../src/providers/orange-money.service");
   return new OrangeMoneyService(
     config,
-    prisma as ConstructorParameters<typeof OrangeMoneyService>[1]
+    prisma as ConstructorParameters<typeof OrangeMoneyService>[1],
   );
 };
 
 // Helper to setup mock fetch with URL pattern matching
 function setupMockFetch(
-  urlPatterns: Record<string, { json: unknown; status?: number; ok?: boolean }>
+  urlPatterns: Record<string, { json: unknown; status?: number; ok?: boolean }>,
 ): void {
   mockFetch.mockImplementation((url: string) => {
     for (const [pattern, response] of Object.entries(urlPatterns)) {
@@ -137,7 +136,7 @@ describe("OrangeMoneyService", () => {
             currency: "XOF",
             status: "PENDING",
           }),
-        })
+        }),
       );
     });
 
@@ -163,7 +162,7 @@ describe("OrangeMoneyService", () => {
           amount: 5000,
           description: "Test Payment",
           orderId: "ORDER-123",
-        })
+        }),
       ).rejects.toThrow("Orange Money error: Invalid request");
     });
   });
@@ -222,7 +221,7 @@ describe("OrangeMoneyService", () => {
           amount: 2500,
           description: "USSD Payment",
           orderId: "USSD-ORDER-123",
-        })
+        }),
       ).rejects.toThrow();
     });
   });
@@ -262,7 +261,7 @@ describe("OrangeMoneyService", () => {
           data: expect.objectContaining({
             status: "COMPLETED",
           }),
-        })
+        }),
       );
     });
 
@@ -295,7 +294,7 @@ describe("OrangeMoneyService", () => {
           data: expect.objectContaining({
             status: "PENDING",
           }),
-        })
+        }),
       );
     });
 
@@ -327,7 +326,7 @@ describe("OrangeMoneyService", () => {
           data: expect.objectContaining({
             status: "FAILED",
           }),
-        })
+        }),
       );
     });
   });
@@ -371,7 +370,7 @@ describe("OrangeMoneyService", () => {
             currency: "XOF",
             status: "COMPLETED",
           }),
-        })
+        }),
       );
     });
 
@@ -396,8 +395,10 @@ describe("OrangeMoneyService", () => {
           phoneNumber: "+22507XXXXXXXX",
           amount: 10000,
           orderId: "PAYOUT-123",
-        })
-      ).rejects.toThrow("Orange Money disbursement error: Insufficient balance");
+        }),
+      ).rejects.toThrow(
+        "Orange Money disbursement error: Insufficient balance",
+      );
     });
   });
 
@@ -432,7 +433,7 @@ describe("OrangeMoneyService", () => {
               currency: "XOF",
             },
           },
-        })
+        }),
       );
     });
 
@@ -479,7 +480,7 @@ describe("OrangeMoneyService", () => {
             status: "COMPLETED",
             providerTransactionId: "TXN-789",
           }),
-        })
+        }),
       );
     });
 
@@ -502,7 +503,7 @@ describe("OrangeMoneyService", () => {
           data: expect.objectContaining({
             status: "FAILED",
           }),
-        })
+        }),
       );
     });
 
@@ -524,7 +525,7 @@ describe("OrangeMoneyService", () => {
           data: expect.objectContaining({
             status: "CANCELLED",
           }),
-        })
+        }),
       );
     });
   });
@@ -545,7 +546,7 @@ describe("OrangeMoneyService", () => {
     it("should return correct provider for SN", async () => {
       const service = await createService(
         { ...mockConfig, country: "SN" },
-        mockPrisma
+        mockPrisma,
       );
       expect(service.getProvider()).toBe("ORANGE_MONEY_SN");
     });
@@ -553,7 +554,7 @@ describe("OrangeMoneyService", () => {
     it("should return correct provider for CM", async () => {
       const service = await createService(
         { ...mockConfig, country: "CM" },
-        mockPrisma
+        mockPrisma,
       );
       expect(service.getProvider()).toBe("ORANGE_MONEY_CM");
     });
@@ -561,7 +562,7 @@ describe("OrangeMoneyService", () => {
     it("should return correct provider for ML", async () => {
       const service = await createService(
         { ...mockConfig, country: "ML" },
-        mockPrisma
+        mockPrisma,
       );
       expect(service.getProvider()).toBe("ORANGE_MONEY_ML");
     });
@@ -570,9 +571,8 @@ describe("OrangeMoneyService", () => {
 
 describe("createOrangeMoneyServices", () => {
   it("should create services for all default countries", async () => {
-    const { createOrangeMoneyServices } = await import(
-      "../../src/providers/orange-money.service"
-    );
+    const { createOrangeMoneyServices } =
+      await import("../../src/providers/orange-money.service");
 
     const services = createOrangeMoneyServices(
       {
@@ -584,7 +584,7 @@ describe("createOrangeMoneyServices", () => {
         environment: "sandbox",
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockPrisma as any
+      mockPrisma as any,
     );
 
     expect(services.get("CI")).toBeDefined();
@@ -607,7 +607,7 @@ describe("URL Configuration", () => {
         environment: "sandbox",
         country: "CI",
       },
-      mockPrisma
+      mockPrisma,
     );
     expect(sandboxService).toBeDefined();
   });
@@ -623,7 +623,7 @@ describe("URL Configuration", () => {
         environment: "production",
         country: "CI",
       },
-      mockPrisma
+      mockPrisma,
     );
     expect(prodService).toBeDefined();
   });
