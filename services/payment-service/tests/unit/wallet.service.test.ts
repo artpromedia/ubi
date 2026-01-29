@@ -193,7 +193,7 @@ describe("WalletService", () => {
               create: vi.fn().mockResolvedValue({}),
             },
           };
-          return await callback(mockTx);
+          return callback(mockTx);
         },
       );
 
