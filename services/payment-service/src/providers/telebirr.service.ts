@@ -26,12 +26,13 @@
  * - Callback signature verification
  */
 
-import { createSign, createVerify, publicEncrypt } from "crypto";
+import { createSign, createVerify, publicEncrypt } from "node:crypto";
 
 import {
   Currency,
   PaymentProvider,
   PaymentStatus,
+  type Prisma,
   type PrismaClient,
 } from "@prisma/client";
 import { nanoid } from "nanoid";
@@ -84,13 +85,16 @@ export interface TelebirrDisbursementResponse {
   };
 }
 
+/** Telebirr transaction status codes */
+export type TelebirrTransStatus = "P" | "S" | "F" | "C"; // Pending, Success, Failed, Cancelled
+
 export interface TelebirrCallbackData {
   appid: string;
   sign: string;
   trade_no: string; // Telebirr transaction ID
   out_trade_no: string; // Merchant order number
   total_amount: string;
-  trans_status: "P" | "S" | "F" | "C"; // Pending, Success, Failed, Cancelled
+  trans_status: TelebirrTransStatus;
   trade_date: string;
   msisdn: string; // Customer phone number
   invoice_no?: string;
@@ -103,7 +107,7 @@ export interface TelebirrTransactionStatus {
     outTradeNo: string;
     tradeNo: string;
     transAmount: number;
-    transStatus: "P" | "S" | "F" | "C";
+    transStatus: TelebirrTransStatus;
     transDate: string;
   };
 }
@@ -138,7 +142,7 @@ export class TelebirrService {
   private getTimestamp(): string {
     return new Date()
       .toISOString()
-      .replace(/[-:]/g, "")
+      .replaceAll(/[-:]/g, "")
       .replace("T", "")
       .slice(0, 14);
   }
@@ -165,7 +169,8 @@ export class TelebirrService {
    */
   private verifySignature(data: string, signature: string): boolean {
     try {
-      const verify = createVerify("RSA-SHA256");
+      // NOSONAR: RSA-SHA256 is a crypto algorithm name, not a password
+      const verify = createVerify("RSA-SHA256"); // NOSONAR
       verify.update(data);
       verify.end();
       return verify.verify(this.config.publicKey, signature, "base64");
@@ -211,7 +216,7 @@ export class TelebirrService {
 
     // Create signature
     const sortedParams = Object.keys(payload)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((key) => `${key}=${payload[key as keyof typeof payload]}`)
       .join("&");
     const signature = this.signData(sortedParams);
@@ -304,7 +309,7 @@ export class TelebirrService {
     };
 
     const sortedParams = Object.keys(payload)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((key) => `${key}=${payload[key as keyof typeof payload]}`)
       .join("&");
     const signature = this.signData(sortedParams);
@@ -389,7 +394,7 @@ export class TelebirrService {
     };
 
     const sortedParams = Object.keys(payload)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((key) => `${key}=${payload[key as keyof typeof payload]}`)
       .join("&");
     const signature = this.signData(sortedParams);
@@ -418,7 +423,7 @@ export class TelebirrService {
           data: {
             status: this.mapTransactionStatus(data.data.transStatus),
             providerTransactionId: data.data.tradeNo,
-            providerResponse: data as any,
+            providerResponse: data as unknown as Prisma.JsonObject,
             updatedAt: new Date(),
           },
         });
@@ -456,7 +461,7 @@ export class TelebirrService {
     };
 
     const sortedParams = Object.keys(payload)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((key) => `${key}=${payload[key as keyof typeof payload]}`)
       .join("&");
     const signature = this.signData(sortedParams);
@@ -542,7 +547,7 @@ export class TelebirrService {
     };
 
     const sortedParams = Object.keys(payload)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((key) => `${key}=${payload[key as keyof typeof payload]}`)
       .join("&");
     const signature = this.signData(sortedParams);
@@ -603,7 +608,7 @@ export class TelebirrService {
     // Verify callback signature
     const dataToVerify = Object.keys(callbackData)
       .filter((key) => key !== "sign")
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((key) => `${key}=${callbackData[key as keyof TelebirrCallbackData]}`)
       .join("&");
 
@@ -632,7 +637,7 @@ export class TelebirrService {
       data: {
         status,
         providerTransactionId: callbackData.trade_no,
-        providerResponse: callbackData as any,
+        providerResponse: callbackData as unknown as Prisma.JsonObject,
         completedAt:
           status === PaymentStatus.COMPLETED ? new Date() : undefined,
         updatedAt: new Date(),

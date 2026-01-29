@@ -1090,7 +1090,7 @@ export class ReconciliationService {
       // Generate signed request
       const timestamp = new Date()
         .toISOString()
-        .replace(/[-:]/g, "")
+        .replaceAll(/[-:]/g, "")
         .replace("T", "")
         .slice(0, 14);
 
@@ -1105,9 +1105,9 @@ export class ReconciliationService {
       };
 
       // Create signature
-      const { createSign, publicEncrypt } = await import("crypto");
+      const { createSign, publicEncrypt } = await import("node:crypto");
       const sortedParams = Object.keys(payload)
-        .sort()
+        .sort((a, b) => a.localeCompare(b))
         .map((key) => `${key}=${payload[key as keyof typeof payload]}`)
         .join("&");
 

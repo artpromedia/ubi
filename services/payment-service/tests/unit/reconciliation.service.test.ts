@@ -568,7 +568,7 @@ describe("ReconciliationService", () => {
 
   describe("getPendingDiscrepancies", () => {
     it("should return paginated pending discrepancies", async () => {
-      const mockDiscrepancies = Array(10).fill({
+      const mockDiscrepancies = new Array(10).fill({
         id: "disc-x",
         type: "AMOUNT_MISMATCH",
         status: "pending",

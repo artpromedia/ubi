@@ -51,7 +51,7 @@ model DriverEarnings {
   @@unique([driverId, periodStart, periodEnd, periodType])
   @@index([driverId, periodStart])
   @@index([driverId, periodType])
-  @@map("driver_earnings")
+  @@map("driver_earnings_summary")
 }
 
 enum EarningsPeriodType {

@@ -422,7 +422,8 @@ model CachedPlace {
   @@index([city])
   @@index([h3Index])
   @@index([popularity])
-  @@fulltext([name, address])
+  // Note: Full-text search on PostgreSQL uses GIN indexes, not @@fulltext
+  // Create via raw SQL: CREATE INDEX cached_places_search_idx ON cached_places USING GIN (to_tsvector('english', name || ' ' || address));
   @@map("cached_places")
 }
 

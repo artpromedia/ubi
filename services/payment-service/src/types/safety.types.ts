@@ -15,6 +15,9 @@
 // VERIFICATION TYPES
 // =============================================================================
 
+/** Standard severity levels for risk and alerts */
+export type SeverityLevel = "low" | "medium" | "high" | "critical";
+
 export type VerificationLevel =
   | "BASIC"
   | "VERIFIED"
@@ -566,7 +569,7 @@ export interface RiskAssessment {
 
 export interface RiskSignal {
   type: FraudSignalType;
-  severity: "low" | "medium" | "high" | "critical";
+  severity: SeverityLevel;
   score: number;
   details: Record<string, any>;
   timestamp: Date;
@@ -612,7 +615,7 @@ export interface ATOSignal {
     | "new_device"
     | "impossible_travel"
     | "sim_swap";
-  severity: "low" | "medium" | "high";
+  severity: Exclude<SeverityLevel, "critical">;
   details: Record<string, any>;
 }
 
@@ -630,7 +633,7 @@ export interface AbuseSignal {
     | "excessive_promo_usage"
     | "velocity_abuse"
     | "fake_trip";
-  severity: "low" | "medium" | "high" | "critical";
+  severity: SeverityLevel;
   details: Record<string, any>;
 }
 

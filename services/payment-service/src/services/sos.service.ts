@@ -31,11 +31,13 @@ import {
 // =============================================================================
 
 export class SOSEmergencyService extends EventEmitter {
-  private activeIncidents: Map<string, SOSIncident> = new Map();
-  private incidentTimelines: Map<string, SOSTimelineEntry[]> = new Map();
-  private safetyAgents: Map<string, SafetyAgent> = new Map();
-  private agentAssignments: Map<string, string> = new Map(); // incidentId -> agentId
-  private audioRecordings: Map<string, AudioRecordingSession> = new Map();
+  private readonly activeIncidents: Map<string, SOSIncident> = new Map();
+  private readonly incidentTimelines: Map<string, SOSTimelineEntry[]> =
+    new Map();
+  private readonly safetyAgents: Map<string, SafetyAgent> = new Map();
+  private readonly agentAssignments: Map<string, string> = new Map(); // incidentId -> agentId
+  private readonly audioRecordings: Map<string, AudioRecordingSession> =
+    new Map();
 
   // Escalation timing (seconds)
   private readonly LEVEL_1_TIMEOUT = 60; // 1 minute
@@ -323,7 +325,7 @@ export class SOSEmergencyService extends EventEmitter {
   ): Promise<void> {
     const incident = this.activeIncidents.get(incidentId);
 
-    if (!incident || incident.status !== "ACTIVE") {
+    if (incident?.status !== "ACTIVE") {
       return;
     }
 
@@ -725,7 +727,7 @@ export class SOSEmergencyService extends EventEmitter {
   async streamAudioChunk(incidentId: string, chunk: Buffer): Promise<void> {
     const session = this.audioRecordings.get(incidentId);
 
-    if (session && session.isActive) {
+    if (session?.isActive) {
       // In production, append to storage
       sosLogger.info(
         { chunkLength: chunk.length },

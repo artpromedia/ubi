@@ -1,6 +1,7 @@
 {
   "extends": "@ubi/typescript-config/react-library.json",
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "outDir": "dist",
     "rootDir": "src",
