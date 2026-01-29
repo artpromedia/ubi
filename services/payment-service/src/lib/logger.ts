@@ -116,6 +116,8 @@ export const splitFareLogger = logger.child({ component: "split-fare" });
 export const vehicleFinancingLogger = logger.child({
   component: "vehicle-financing",
 });
+export const telebirrLogger = logger.child({ component: "telebirr" });
+export const orangeMoneyLogger = logger.child({ component: "orange-money" });
 
 // Log unhandled errors
 process.on("uncaughtException", (err) => {

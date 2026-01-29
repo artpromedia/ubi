@@ -9,7 +9,13 @@ export { PaystackClient } from "./paystack";
 // Full service classes with database integration
 export { MoMoService } from "./momo.service";
 export { MpesaService } from "./mpesa.service";
+export {
+  createOrangeMoneyService,
+  createOrangeMoneyServices,
+  OrangeMoneyService,
+} from "./orange-money.service";
 export { PaystackService } from "./paystack.service";
+export { createTelebirrService, TelebirrService } from "./telebirr.service";
 
 import { Currency } from "../types";
 import { FlutterwaveClient } from "./flutterwave";
@@ -56,7 +62,7 @@ export const PROVIDER_CAPABILITIES: Record<
  */
 export function getBestProvider(
   currency: Currency,
-  country?: string
+  country?: string,
 ): PaymentProvider {
   // Paystack is preferred for Nigeria due to better rates
   if (currency === Currency.NGN && (!country || country === "NG")) {
@@ -83,7 +89,7 @@ export function getBestProvider(
  * Create a provider client instance
  */
 export function createProviderClient(
-  provider: PaymentProvider
+  provider: PaymentProvider,
 ): PaystackClient | FlutterwaveClient {
   switch (provider) {
     case "paystack":

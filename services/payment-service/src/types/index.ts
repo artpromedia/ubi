@@ -50,6 +50,11 @@ export enum PaymentProvider {
   AIRTEL_MONEY_KE = "AIRTEL_MONEY_KE",
   AIRTEL_MONEY_UG = "AIRTEL_MONEY_UG",
   AIRTEL_MONEY_TZ = "AIRTEL_MONEY_TZ",
+  TELEBIRR = "TELEBIRR", // Ethiopia - Ethio Telecom
+  ORANGE_MONEY_CI = "ORANGE_MONEY_CI", // Côte d'Ivoire
+  ORANGE_MONEY_SN = "ORANGE_MONEY_SN", // Senegal
+  ORANGE_MONEY_CM = "ORANGE_MONEY_CM", // Cameroon
+  ORANGE_MONEY_ML = "ORANGE_MONEY_ML", // Mali
 }
 
 export enum PaymentType {

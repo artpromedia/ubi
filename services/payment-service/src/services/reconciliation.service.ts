@@ -1045,12 +1045,244 @@ export class ReconciliationService {
         return await this.getAirtelMoneyBalance(provider, currency);
       case PaymentProvider.FLUTTERWAVE:
         return await this.getFlutterwaveBalance(currency);
+      case PaymentProvider.TELEBIRR:
+        return await this.getTelebirrBalance();
+      case PaymentProvider.ORANGE_MONEY_CI:
+      case PaymentProvider.ORANGE_MONEY_SN:
+      case PaymentProvider.ORANGE_MONEY_CM:
+      case PaymentProvider.ORANGE_MONEY_ML:
+        return await this.getOrangeMoneyBalance(provider, currency);
       default:
         reconciliationLogger.warn(
           { provider },
           "Balance check not implemented for provider",
         );
         return 0;
+    }
+  }
+
+  /**
+   * Get Telebirr account balance (Ethiopia)
+   */
+  private async getTelebirrBalance(): Promise<number> {
+    const appId = process.env.TELEBIRR_APP_ID;
+    const appKey = process.env.TELEBIRR_APP_KEY;
+    const shortCode = process.env.TELEBIRR_SHORT_CODE;
+    const privateKey = process.env.TELEBIRR_PRIVATE_KEY;
+    const publicKey = process.env.TELEBIRR_PUBLIC_KEY;
+
+    if (!appId || !appKey || !shortCode || !privateKey || !publicKey) {
+      reconciliationLogger.warn("Telebirr credentials not configured");
+      return 0;
+    }
+
+    const environment =
+      process.env.TELEBIRR_ENVIRONMENT === "production"
+        ? "production"
+        : "sandbox";
+
+    const baseUrl =
+      environment === "production"
+        ? "https://api.ethiotelecom.et/telebirr"
+        : "https://sandbox.ethiotelecom.et/telebirr";
+
+    try {
+      // Generate signed request
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace("T", "")
+        .slice(0, 14);
+
+      const nonce = Math.random().toString(36).substring(2, 34);
+
+      const payload = {
+        appId,
+        appKey,
+        shortCode,
+        nonce,
+        timestamp,
+      };
+
+      // Create signature
+      const { createSign, publicEncrypt } = await import("crypto");
+      const sortedParams = Object.keys(payload)
+        .sort()
+        .map((key) => `${key}=${payload[key as keyof typeof payload]}`)
+        .join("&");
+
+      const sign = createSign("RSA-SHA256");
+      sign.update(sortedParams);
+      const signature = sign.sign(privateKey, "base64");
+
+      const encryptedPayload = publicEncrypt(
+        publicKey,
+        Buffer.from(JSON.stringify(payload)),
+      ).toString("base64");
+
+      const response = await fetch(`${baseUrl}/merchant/balance`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-APP-Key": appKey,
+        },
+        body: JSON.stringify({
+          appid: appId,
+          sign: signature,
+          ussd: encryptedPayload,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        code: number;
+        data?: {
+          availableBalance: number;
+        };
+      };
+
+      if (data.code === 200 && data.data) {
+        const balance = data.data.availableBalance;
+
+        // Store balance for tracking
+        await this.prisma.providerBalance.upsert({
+          where: {
+            provider_currency: {
+              provider: PaymentProvider.TELEBIRR,
+              currency: Currency.ETB,
+            },
+          },
+          update: {
+            balance,
+            updatedAt: new Date(),
+          },
+          create: {
+            provider: PaymentProvider.TELEBIRR,
+            currency: Currency.ETB,
+            balance,
+          },
+        });
+
+        return balance;
+      }
+
+      return 0;
+    } catch (error) {
+      reconciliationLogger.error(
+        { err: error },
+        "[Reconciliation] Failed to get Telebirr balance",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get Orange Money account balance (Francophone Africa)
+   */
+  private async getOrangeMoneyBalance(
+    provider: PaymentProvider,
+    currency: Currency,
+  ): Promise<number> {
+    const merchantKey = process.env.ORANGE_MONEY_MERCHANT_KEY;
+    const merchantSecret = process.env.ORANGE_MONEY_MERCHANT_SECRET;
+
+    if (!merchantKey || !merchantSecret) {
+      reconciliationLogger.warn("Orange Money credentials not configured");
+      return 0;
+    }
+
+    const environment =
+      process.env.ORANGE_MONEY_ENVIRONMENT === "production"
+        ? "production"
+        : "sandbox";
+
+    // Map provider to country code
+    const countryMap: Record<string, string> = {
+      [PaymentProvider.ORANGE_MONEY_CI]: "CI",
+      [PaymentProvider.ORANGE_MONEY_SN]: "SN",
+      [PaymentProvider.ORANGE_MONEY_CM]: "CM",
+      [PaymentProvider.ORANGE_MONEY_ML]: "ML",
+    };
+    const country = countryMap[provider] || "CI";
+
+    const authUrl =
+      environment === "production"
+        ? "https://api.orange.com/oauth/v3/token"
+        : "https://api.sandbox.orange-sonatel.com/oauth/v3/token";
+
+    const baseUrl =
+      environment === "production"
+        ? `https://api.orange.com/orange-money-webpay/${country.toLowerCase()}/v1`
+        : "https://api.sandbox.orange-sonatel.com";
+
+    try {
+      // Get OAuth token
+      const credentials = Buffer.from(
+        `${merchantKey}:${merchantSecret}`,
+      ).toString("base64");
+
+      const tokenResponse = await fetch(authUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "grant_type=client_credentials",
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error(`Orange Money OAuth error: ${tokenResponse.status}`);
+      }
+
+      const tokenData = (await tokenResponse.json()) as {
+        access_token: string;
+      };
+
+      // Get balance
+      const balanceResponse = await fetch(`${baseUrl}/balance`, {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+        },
+      });
+
+      const data = (await balanceResponse.json()) as {
+        status: number;
+        data?: {
+          balance: number;
+        };
+      };
+
+      if (data.status === 200 && data.data) {
+        const balance = data.data.balance;
+
+        // Store balance for tracking
+        await this.prisma.providerBalance.upsert({
+          where: {
+            provider_currency: {
+              provider,
+              currency,
+            },
+          },
+          update: {
+            balance,
+            updatedAt: new Date(),
+          },
+          create: {
+            provider,
+            currency,
+            balance,
+          },
+        });
+
+        return balance;
+      }
+
+      return 0;
+    } catch (error) {
+      reconciliationLogger.error(
+        { err: error, provider, country },
+        "[Reconciliation] Failed to get Orange Money balance",
+      );
+      throw error;
     }
   }
 
@@ -1626,6 +1858,12 @@ export class ReconciliationService {
       { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.GHS },
       { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.ZAR },
       { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.USD },
+      // New providers: Telebirr (Ethiopia) and Orange Money (Francophone Africa)
+      { provider: PaymentProvider.TELEBIRR, currency: Currency.ETB },
+      { provider: PaymentProvider.ORANGE_MONEY_CI, currency: Currency.XOF },
+      { provider: PaymentProvider.ORANGE_MONEY_SN, currency: Currency.XOF },
+      { provider: PaymentProvider.ORANGE_MONEY_CM, currency: Currency.XOF },
+      { provider: PaymentProvider.ORANGE_MONEY_ML, currency: Currency.XOF },
     ];
 
     const results: Array<{
@@ -1845,6 +2083,12 @@ export class ReconciliationService {
       { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.KES },
       { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.GHS },
       { provider: PaymentProvider.FLUTTERWAVE, currency: Currency.ZAR },
+      // New providers: Telebirr (Ethiopia) and Orange Money (Francophone Africa)
+      { provider: PaymentProvider.TELEBIRR, currency: Currency.ETB },
+      { provider: PaymentProvider.ORANGE_MONEY_CI, currency: Currency.XOF },
+      { provider: PaymentProvider.ORANGE_MONEY_SN, currency: Currency.XOF },
+      { provider: PaymentProvider.ORANGE_MONEY_CM, currency: Currency.XOF },
+      { provider: PaymentProvider.ORANGE_MONEY_ML, currency: Currency.XOF },
     ];
 
     reconciliationLogger.info(

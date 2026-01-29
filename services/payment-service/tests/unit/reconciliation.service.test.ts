@@ -25,7 +25,7 @@ describe("ReconciliationService", () => {
     resetMocks();
     reconciliationService = new ReconciliationService(
       mockPrismaClient,
-      mockRedisClient
+      mockRedisClient,
     );
   });
 
@@ -65,7 +65,7 @@ describe("ReconciliationService", () => {
       // Mock provider data fetch
       vi.spyOn(
         reconciliationService as any,
-        "getProviderTransactions"
+        "getProviderTransactions",
       ).mockResolvedValue(providerTransactions);
 
       // Mock report creation
@@ -86,7 +86,7 @@ describe("ReconciliationService", () => {
       const result = await reconciliationService.runDailyReconciliation(
         PaymentProvider.PAYSTACK,
         testDate,
-        Currency.NGN
+        Currency.NGN,
       );
 
       expect(result).toBeDefined();
@@ -116,7 +116,7 @@ describe("ReconciliationService", () => {
 
       vi.spyOn(
         reconciliationService as any,
-        "getProviderTransactions"
+        "getProviderTransactions",
       ).mockResolvedValue(providerTransactions);
 
       (
@@ -140,19 +140,19 @@ describe("ReconciliationService", () => {
       const result = await reconciliationService.runDailyReconciliation(
         PaymentProvider.PAYSTACK,
         testDate,
-        Currency.NGN
+        Currency.NGN,
       );
 
       expect(result.discrepancies).toBe(1);
       expect(
-        mockPrismaClient.reconciliationDiscrepancy.create
+        mockPrismaClient.reconciliationDiscrepancy.create,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             type: "MISSING_IN_UBI",
             providerReference: "PROV-002",
           }),
-        })
+        }),
       );
     });
 
@@ -182,7 +182,7 @@ describe("ReconciliationService", () => {
 
       vi.spyOn(
         reconciliationService as any,
-        "getProviderTransactions"
+        "getProviderTransactions",
       ).mockResolvedValue(providerTransactions);
 
       (
@@ -206,18 +206,18 @@ describe("ReconciliationService", () => {
       const result = await reconciliationService.runDailyReconciliation(
         PaymentProvider.PAYSTACK,
         testDate,
-        Currency.NGN
+        Currency.NGN,
       );
 
       expect(result.discrepancies).toBe(1);
       expect(
-        mockPrismaClient.reconciliationDiscrepancy.create
+        mockPrismaClient.reconciliationDiscrepancy.create,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             type: "MISSING_IN_PROVIDER",
           }),
-        })
+        }),
       );
     });
 
@@ -241,7 +241,7 @@ describe("ReconciliationService", () => {
 
       vi.spyOn(
         reconciliationService as any,
-        "getProviderTransactions"
+        "getProviderTransactions",
       ).mockResolvedValue(providerTransactions);
 
       (
@@ -266,18 +266,18 @@ describe("ReconciliationService", () => {
       const result = await reconciliationService.runDailyReconciliation(
         PaymentProvider.PAYSTACK,
         testDate,
-        Currency.NGN
+        Currency.NGN,
       );
 
       expect(result.discrepancies).toBe(1);
       expect(
-        mockPrismaClient.reconciliationDiscrepancy.create
+        mockPrismaClient.reconciliationDiscrepancy.create,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             type: "AMOUNT_MISMATCH",
           }),
-        })
+        }),
       );
     });
   });
@@ -290,7 +290,7 @@ describe("ReconciliationService", () => {
     it("should return LOW for small discrepancies", () => {
       const severity = reconciliationService.calculateSeverity(
         500,
-        Currency.NGN
+        Currency.NGN,
       );
       expect(severity).toBe("LOW");
     });
@@ -298,7 +298,7 @@ describe("ReconciliationService", () => {
     it("should return MEDIUM for moderate discrepancies", () => {
       const severity = reconciliationService.calculateSeverity(
         5000,
-        Currency.NGN
+        Currency.NGN,
       );
       expect(severity).toBe("MEDIUM");
     });
@@ -306,7 +306,7 @@ describe("ReconciliationService", () => {
     it("should return HIGH for large discrepancies", () => {
       const severity = reconciliationService.calculateSeverity(
         25000,
-        Currency.NGN
+        Currency.NGN,
       );
       expect(severity).toBe("HIGH");
     });
@@ -314,7 +314,7 @@ describe("ReconciliationService", () => {
     it("should return CRITICAL for very large discrepancies", () => {
       const severity = reconciliationService.calculateSeverity(
         100000,
-        Currency.NGN
+        Currency.NGN,
       );
       expect(severity).toBe("CRITICAL");
     });
@@ -353,7 +353,7 @@ describe("ReconciliationService", () => {
       const result = await reconciliationService.resolveDiscrepancy(
         "disc-1",
         "Manual adjustment made",
-        "admin-123"
+        "admin-123",
       );
 
       expect(result.status).toBe("resolved");
@@ -368,7 +368,11 @@ describe("ReconciliationService", () => {
       ).mockResolvedValue(null);
 
       await expect(
-        reconciliationService.resolveDiscrepancy("invalid-id", "Notes", "admin")
+        reconciliationService.resolveDiscrepancy(
+          "invalid-id",
+          "Notes",
+          "admin",
+        ),
       ).rejects.toThrow("Discrepancy not found");
     });
 
@@ -383,7 +387,7 @@ describe("ReconciliationService", () => {
       });
 
       await expect(
-        reconciliationService.resolveDiscrepancy("disc-1", "Notes", "admin")
+        reconciliationService.resolveDiscrepancy("disc-1", "Notes", "admin"),
       ).rejects.toThrow("already resolved");
     });
   });
@@ -402,7 +406,7 @@ describe("ReconciliationService", () => {
       // Mock provider balance
       vi.spyOn(
         reconciliationService as any,
-        "getProviderBalance"
+        "getProviderBalance",
       ).mockResolvedValue(1000000);
 
       (
@@ -420,7 +424,7 @@ describe("ReconciliationService", () => {
       const result = await reconciliationService.runBalanceReconciliation(
         PaymentProvider.PAYSTACK,
         new Date(),
-        Currency.NGN
+        Currency.NGN,
       );
 
       expect(result.status).toBe("matched");
@@ -434,7 +438,7 @@ describe("ReconciliationService", () => {
 
       vi.spyOn(
         reconciliationService as any,
-        "getProviderBalance"
+        "getProviderBalance",
       ).mockResolvedValue(950000); // 5% difference
 
       (
@@ -457,7 +461,7 @@ describe("ReconciliationService", () => {
       const result = await reconciliationService.runBalanceReconciliation(
         PaymentProvider.PAYSTACK,
         new Date(),
-        Currency.NGN
+        Currency.NGN,
       );
 
       expect(result.status).toBe("discrepancy");
@@ -617,6 +621,168 @@ describe("ReconciliationService", () => {
 
       expect(result.items).toHaveLength(2);
       expect(result.items[0].severity).toBe("HIGH");
+    });
+  });
+
+  // ===========================================
+  // NEW PROVIDER BALANCE TESTS (Sprint 2)
+  // ===========================================
+
+  describe("getProviderBalance - New Providers", () => {
+    it("should fetch Telebirr balance successfully", async () => {
+      vi.spyOn(
+        reconciliationService as any,
+        "getTelebirrBalance",
+      ).mockResolvedValue(500000);
+
+      (
+        mockPrismaClient.providerBalance.upsert as ReturnType<typeof vi.fn>
+      ).mockResolvedValue({
+        provider: PaymentProvider.TELEBIRR,
+        currency: Currency.ETB,
+        balance: 500000,
+      });
+
+      const balance = await (reconciliationService as any).getProviderBalance(
+        PaymentProvider.TELEBIRR,
+        Currency.ETB,
+      );
+
+      expect(balance).toBe(500000);
+    });
+
+    it("should fetch Orange Money CI balance successfully", async () => {
+      vi.spyOn(
+        reconciliationService as any,
+        "getOrangeMoneyBalance",
+      ).mockResolvedValue(1000000);
+
+      (
+        mockPrismaClient.providerBalance.upsert as ReturnType<typeof vi.fn>
+      ).mockResolvedValue({
+        provider: PaymentProvider.ORANGE_MONEY_CI,
+        currency: Currency.XOF,
+        balance: 1000000,
+      });
+
+      const balance = await (reconciliationService as any).getProviderBalance(
+        PaymentProvider.ORANGE_MONEY_CI,
+        Currency.XOF,
+      );
+
+      expect(balance).toBe(1000000);
+    });
+
+    it("should fetch Orange Money SN balance successfully", async () => {
+      vi.spyOn(
+        reconciliationService as any,
+        "getOrangeMoneyBalance",
+      ).mockResolvedValue(750000);
+
+      const balance = await (reconciliationService as any).getProviderBalance(
+        PaymentProvider.ORANGE_MONEY_SN,
+        Currency.XOF,
+      );
+
+      expect(balance).toBe(750000);
+    });
+
+    it("should fetch Orange Money CM balance successfully", async () => {
+      vi.spyOn(
+        reconciliationService as any,
+        "getOrangeMoneyBalance",
+      ).mockResolvedValue(250000);
+
+      const balance = await (reconciliationService as any).getProviderBalance(
+        PaymentProvider.ORANGE_MONEY_CM,
+        Currency.XOF,
+      );
+
+      expect(balance).toBe(250000);
+    });
+
+    it("should fetch Orange Money ML balance successfully", async () => {
+      vi.spyOn(
+        reconciliationService as any,
+        "getOrangeMoneyBalance",
+      ).mockResolvedValue(300000);
+
+      const balance = await (reconciliationService as any).getProviderBalance(
+        PaymentProvider.ORANGE_MONEY_ML,
+        Currency.XOF,
+      );
+
+      expect(balance).toBe(300000);
+    });
+  });
+
+  describe("runBalanceReconciliation - New Providers", () => {
+    it("should reconcile Telebirr balance with no discrepancy", async () => {
+      (
+        mockPrismaClient.walletAccount.aggregate as ReturnType<typeof vi.fn>
+      ).mockResolvedValue({ _sum: { balance: 500000 } });
+
+      vi.spyOn(
+        reconciliationService as any,
+        "getProviderBalance",
+      ).mockResolvedValue(500000);
+
+      (
+        mockPrismaClient.balanceReconciliation.create as ReturnType<
+          typeof vi.fn
+        >
+      ).mockResolvedValue({
+        id: "bal-recon-telebirr",
+        ubiBalance: "500000.0000",
+        providerBalance: "500000.0000",
+        difference: "0.0000",
+        status: "matched",
+      });
+
+      const result = await reconciliationService.runBalanceReconciliation(
+        PaymentProvider.TELEBIRR,
+        new Date(),
+        Currency.ETB,
+      );
+
+      expect(result.status).toBe("matched");
+    });
+
+    it("should detect Orange Money balance discrepancy", async () => {
+      (
+        mockPrismaClient.walletAccount.aggregate as ReturnType<typeof vi.fn>
+      ).mockResolvedValue({ _sum: { balance: 1000000 } });
+
+      vi.spyOn(
+        reconciliationService as any,
+        "getProviderBalance",
+      ).mockResolvedValue(900000); // 10% difference
+
+      (
+        mockPrismaClient.balanceReconciliation.create as ReturnType<
+          typeof vi.fn
+        >
+      ).mockResolvedValue({
+        id: "bal-recon-orange",
+        ubiBalance: "1000000.0000",
+        providerBalance: "900000.0000",
+        difference: "100000.0000",
+        percentageDiff: 10,
+        status: "discrepancy",
+      });
+
+      (
+        mockPrismaClient.alert.create as ReturnType<typeof vi.fn>
+      ).mockResolvedValue({});
+
+      const result = await reconciliationService.runBalanceReconciliation(
+        PaymentProvider.ORANGE_MONEY_CI,
+        new Date(),
+        Currency.XOF,
+      );
+
+      expect(result.status).toBe("discrepancy");
+      expect(mockPrismaClient.alert.create).toHaveBeenCalled();
     });
   });
 });
