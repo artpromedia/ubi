@@ -4,6 +4,11 @@
  * Implements double-entry bookkeeping for all wallet operations.
  * Every transaction creates balanced debit and credit entries.
  * All operations are atomic and ensure financial integrity.
+ *
+ * Performance optimizations:
+ * - Wallet balance caching with 30s TTL
+ * - Cache invalidation on write operations
+ * - Performance metrics collection
  */
 
 import {
@@ -15,7 +20,8 @@ import {
   TransactionType,
 } from "@prisma/client";
 import { nanoid } from "nanoid";
-import { walletLogger } from "../lib/logger";
+import { walletLogger } from "../lib/logger.js";
+import { performanceMonitor, walletCache } from "../lib/performance.js";
 
 export interface TransferParams {
   fromAccountId: string;
@@ -137,13 +143,30 @@ export class WalletService {
   }
 
   /**
-   * Get wallet account balance
+   * Get wallet account balance with caching
    */
   async getBalance(
     userId: string,
     accountType: AccountType,
     currency: Currency,
   ) {
+    const startTime = Date.now();
+    const cacheKey = `${userId}:${accountType}`;
+
+    // Try cache first
+    const cached = await walletCache.getBalance(cacheKey, currency);
+    if (cached) {
+      await performanceMonitor.recordCacheMetric("wallet_balance", true);
+      await performanceMonitor.recordTiming(
+        "wallet.getBalance",
+        Date.now() - startTime,
+        { source: "cache" },
+      );
+      return cached;
+    }
+
+    await performanceMonitor.recordCacheMetric("wallet_balance", false);
+
     const account = await this.prisma.walletAccount.findFirst({
       where: {
         userId,
@@ -152,19 +175,28 @@ export class WalletService {
       },
     });
 
-    if (!account) {
-      return {
-        balance: 0,
-        availableBalance: 0,
-        heldBalance: 0,
-      };
-    }
+    const result = account
+      ? {
+          balance: Number(account.balance),
+          availableBalance: Number(account.availableBalance),
+          heldBalance: Number(account.heldBalance),
+        }
+      : {
+          balance: 0,
+          availableBalance: 0,
+          heldBalance: 0,
+        };
 
-    return {
-      balance: Number(account.balance),
-      availableBalance: Number(account.availableBalance),
-      heldBalance: Number(account.heldBalance),
-    };
+    // Cache the result
+    await walletCache.setBalance(cacheKey, currency, result);
+
+    await performanceMonitor.recordTiming(
+      "wallet.getBalance",
+      Date.now() - startTime,
+      { source: "database" },
+    );
+
+    return result;
   }
 
   /**
@@ -262,6 +294,12 @@ export class WalletService {
           availableBalance: userNewBalance,
         },
       });
+
+      // Invalidate cache after balance update
+      await walletCache.invalidateBalance(
+        `${userId}:${AccountType.USER_WALLET}`,
+        currency,
+      );
 
       return {
         transaction,
@@ -374,6 +412,12 @@ export class WalletService {
           availableBalance: floatNewBalance,
         },
       });
+
+      // Invalidate cache after balance update
+      await walletCache.invalidateBalance(
+        `${userId}:${AccountType.USER_WALLET}`,
+        currency,
+      );
 
       return {
         transaction,
