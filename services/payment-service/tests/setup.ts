@@ -64,6 +64,7 @@ export const mockPrismaClient = {
   balanceHold: {
     findFirst: vi.fn(),
     findMany: vi.fn(),
+    findUnique: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
@@ -91,10 +92,12 @@ export const mockPrismaClient = {
   settlement: {
     findFirst: vi.fn(),
     findMany: vi.fn(),
+    findUnique: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     count: vi.fn(),
     aggregate: vi.fn(),
+    groupBy: vi.fn(),
   },
   user: {
     findFirst: vi.fn(),

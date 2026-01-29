@@ -1,7 +1,6 @@
 {
   "extends": "@ubi/typescript-config/node-service.json",
   "compilerOptions": {
-    "ignoreDeprecations": "6.0",
     "outDir": "./dist",
     "rootDir": "./src",
     "types": ["vitest/globals", "node"]

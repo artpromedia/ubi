@@ -32,14 +32,8 @@ const nextConfig = {
   experimental: {
     // Enable Turbopack for faster development
     // turbo: {},
-
-    // Optimize package imports
-    optimizePackageImports: [
-      "@ubi/ui",
-      "@tanstack/react-query",
-      "framer-motion",
-      "lucide-react",
-    ],
+    // Disable optimizePackageImports due to lucide-react barrel optimization issues with Next.js 15
+    // optimizePackageImports: [],
   },
 
   // Note: i18n configuration removed - App Router uses a different approach

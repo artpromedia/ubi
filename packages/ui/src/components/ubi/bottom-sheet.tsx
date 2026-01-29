@@ -63,8 +63,9 @@ export const BottomSheet = ({
 
   React.useEffect(() => {
     if (isOpen) {
+      const snapValue = snapPoints[initialSnap] ?? snapPoints[0] ?? 0.5;
       controls.start({
-        y: windowHeight * (1 - snapPoints[initialSnap]),
+        y: windowHeight * (1 - snapValue),
         transition: { type: "spring", damping: 30, stiffness: 300 },
       });
     } else {
@@ -91,19 +92,21 @@ export const BottomSheet = ({
     // If dragged up quickly, snap to highest point
     if (velocity < -500) {
       const highestSnap = snapPoints.length - 1;
+      const highestSnapValue = snapPoints[highestSnap] ?? 1;
       setCurrentSnap(highestSnap);
       controls.start({
-        y: windowHeight * (1 - snapPoints[highestSnap]),
+        y: windowHeight * (1 - highestSnapValue),
         transition: { type: "spring", damping: 30, stiffness: 300 },
       });
       return;
     }
 
     // Find nearest snap point
-    const currentY = windowHeight * (1 - snapPoints[currentSnap]) + offset;
+    const currentSnapValue = snapPoints[currentSnap] ?? 0.5;
+    const currentY = windowHeight * (1 - currentSnapValue) + offset;
     const snapPositions = snapPoints.map((sp) => windowHeight * (1 - sp));
     let nearestSnap = 0;
-    let minDistance = Math.abs(currentY - snapPositions[0]);
+    let minDistance = Math.abs(currentY - (snapPositions[0] ?? windowHeight));
 
     snapPositions.forEach((pos, index) => {
       const distance = Math.abs(currentY - pos);

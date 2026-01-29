@@ -68,7 +68,7 @@ export {
 export {
   QuickAction,
   QuickActionGrid,
-  iconVariants,
+  iconVariants as quickActionIconVariants,
   quickActionVariants,
   type QuickActionGridProps,
   type QuickActionProps,

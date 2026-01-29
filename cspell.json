@@ -59,7 +59,8 @@
     "mpesa",
     "momo",
     "badword",
-    "Greaaaaaaaat"
+    "Greaaaaaaaat",
+    "topup"
   ],
   "ignorePaths": [
     "node_modules",

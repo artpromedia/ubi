@@ -25,7 +25,7 @@ export default defineConfig({
   reporter: [
     ["list"],
     ["html", { outputFolder: "./e2e-report" }],
-    ...(CI ? [["github" as const]] : []),
+    ...(CI ? [["github", {}] as const] : []),
   ],
 
   use: {
@@ -69,3 +69,4 @@ export default defineConfig({
         timeout: 120000,
       },
 });
+

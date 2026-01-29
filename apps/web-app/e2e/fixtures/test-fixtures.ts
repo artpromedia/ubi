@@ -4,7 +4,7 @@
  * Custom Playwright fixtures for UBI tests.
  */
 
-import { test as base, expect, Page } from "@playwright/test";
+import { test as base, Page } from "@playwright/test";
 import { TEST_AUTH_TOKENS, TEST_RIDERS } from "@ubi/testing";
 
 // =============================================================================
@@ -75,7 +75,7 @@ interface UbiFixtures {
    * Network throttling helper
    */
   setNetworkConditions: (
-    profile: keyof typeof NETWORK_PROFILES
+    profile: keyof typeof NETWORK_PROFILES,
   ) => Promise<void>;
 
   /**
@@ -89,7 +89,7 @@ interface UbiFixtures {
   mockApiResponse: (
     urlPattern: string | RegExp,
     response: unknown,
-    status?: number
+    status?: number,
   ) => Promise<void>;
 }
 
@@ -120,7 +120,7 @@ export const test = base.extend<UbiFixtures>({
           email: "adaobi@test.ubi.com",
           firstName: "Adaobi",
           lastName: "Eze",
-        })
+        }),
       );
     });
 
@@ -179,7 +179,7 @@ export const test = base.extend<UbiFixtures>({
     const mock = async (
       urlPattern: string | RegExp,
       response: unknown,
-      status = 200
+      status = 200,
     ) => {
       await page.route(urlPattern, (route) => {
         route.fulfill({
@@ -198,7 +198,7 @@ export const test = base.extend<UbiFixtures>({
 // Custom Expect Matchers
 // =============================================================================
 
-export { expect } from \"@playwright/test\";
+export { expect } from "@playwright/test";
 
 // =============================================================================
 // Page Object Helpers
@@ -217,7 +217,7 @@ export async function waitForPageLoad(page: Page): Promise<void> {
  */
 export async function waitForApiResponse(
   page: Page,
-  urlPattern: string | RegExp
+  urlPattern: string | RegExp,
 ): Promise<unknown> {
   const response = await page.waitForResponse(urlPattern);
   return response.json();
@@ -228,7 +228,7 @@ export async function waitForApiResponse(
  */
 export async function takeTimestampedScreenshot(
   page: Page,
-  name: string
+  name: string,
 ): Promise<void> {
   const timestamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
   await page.screenshot({
@@ -242,14 +242,17 @@ export async function takeTimestampedScreenshot(
  */
 export async function getPerformanceMetrics(page: Page) {
   return page.evaluate(() => {
-    const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    const navigation = performance.getEntriesByType("navigation")[0] as
+      | PerformanceNavigationTiming
+      | undefined;
     const paints = performance.getEntriesByType("paint");
-    
+
     return {
       domContentLoaded: navigation?.domContentLoadedEventEnd ?? 0,
       load: navigation?.loadEventEnd ?? 0,
-      firstPaint: paints.find(p => p.name === "first-paint")?.startTime ?? 0,
-      firstContentfulPaint: paints.find(p => p.name === "first-contentful-paint")?.startTime ?? 0,
+      firstPaint: paints.find((p) => p.name === "first-paint")?.startTime ?? 0,
+      firstContentfulPaint:
+        paints.find((p) => p.name === "first-contentful-paint")?.startTime ?? 0,
     };
   });
 }

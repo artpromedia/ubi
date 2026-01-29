@@ -1,89 +1,102 @@
 /**
  * Wallet Service Unit Tests
  * UBI Payment Service
+ *
+ * Tests the double-entry ledger wallet service implementation
  */
 
-import { Currency } from "@prisma/client";
+import { AccountType, Currency, TransactionStatus } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  mockPrismaClient,
-  mockRedisClient,
-  resetMocks,
-  testUser,
-  testWallet,
-  testWalletAccount,
-} from "../setup";
+
+import { WalletService } from "../../src/services/wallet.service";
+import { mockPrismaClient, resetMocks, testUser } from "../setup";
+
+// Import after mocking
 
 // Mock the actual service with our test dependencies
 vi.mock("../../src/lib/prisma", () => ({
   prisma: mockPrismaClient,
 }));
 
-vi.mock("../../src/lib/redis", () => ({
-  redis: mockRedisClient,
-}));
-
-// Import after mocking
-import { WalletService } from "../../src/services/wallet.service";
-
 describe("WalletService", () => {
   let walletService: WalletService;
 
   beforeEach(() => {
     resetMocks();
-    walletService = new WalletService(mockPrismaClient, mockRedisClient);
+    walletService = new WalletService(mockPrismaClient);
   });
 
   // ===========================================
-  // CREATE WALLET TESTS
+  // GET OR CREATE WALLET ACCOUNT TESTS
   // ===========================================
 
-  describe("createWallet", () => {
-    it("should create a wallet with default accounts for all currencies", async () => {
-      const mockWallet = { ...testWallet };
-      const mockAccounts = [
-        { ...testWalletAccount, currency: Currency.NGN },
-        { ...testWalletAccount, currency: Currency.KES },
-        { ...testWalletAccount, currency: Currency.GHS },
-      ];
+  describe("getOrCreateWalletAccount", () => {
+    it("should return existing account if found", async () => {
+      const existingAccount = {
+        id: "account-123",
+        userId: testUser.id,
+        accountType: AccountType.USER_WALLET,
+        currency: Currency.KES,
+        balance: 10000,
+        availableBalance: 10000,
+        heldBalance: 0,
+      };
 
       (
-        mockPrismaClient.wallet.findFirst as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(null);
-      (
-        mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
-      ).mockImplementation(
-        async (callback: (tx: unknown) => Promise<unknown>) => {
-          const mockTx = {
-            wallet: {
-              create: vi.fn().mockResolvedValue(mockWallet),
-            },
-            walletAccount: {
-              createMany: vi.fn().mockResolvedValue({ count: 3 }),
-              findMany: vi.fn().mockResolvedValue(mockAccounts),
-            },
-          };
-          return callback(mockTx);
-        }
-      );
+        mockPrismaClient.walletAccount.findFirst as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(existingAccount);
 
-      const result = await walletService.createWallet(
+      const result = await walletService.getOrCreateWalletAccount(
         testUser.id,
-        "USER_WALLET"
+        AccountType.USER_WALLET,
+        Currency.KES,
       );
 
-      expect(result).toBeDefined();
-      expect(result.userId).toBe(testUser.id);
+      expect(result).toEqual(existingAccount);
+      expect(mockPrismaClient.walletAccount.findFirst).toHaveBeenCalledWith({
+        where: {
+          userId: testUser.id,
+          accountType: AccountType.USER_WALLET,
+          currency: Currency.KES,
+        },
+      });
     });
 
-    it("should throw error if wallet already exists", async () => {
-      (
-        mockPrismaClient.wallet.findFirst as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(testWallet);
+    it("should create new account if not found", async () => {
+      const newAccount = {
+        id: "new-account-123",
+        userId: testUser.id,
+        accountType: AccountType.USER_WALLET,
+        currency: Currency.KES,
+        balance: 0,
+        availableBalance: 0,
+        heldBalance: 0,
+      };
 
-      await expect(
-        walletService.createWallet(testUser.id, "USER_WALLET")
-      ).rejects.toThrow("Wallet already exists");
+      (
+        mockPrismaClient.walletAccount.findFirst as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(null);
+      (
+        mockPrismaClient.walletAccount.create as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(newAccount);
+
+      const result = await walletService.getOrCreateWalletAccount(
+        testUser.id,
+        AccountType.USER_WALLET,
+        Currency.KES,
+      );
+
+      expect(result).toEqual(newAccount);
+      expect(mockPrismaClient.walletAccount.create).toHaveBeenCalledWith({
+        data: {
+          userId: testUser.id,
+          accountType: AccountType.USER_WALLET,
+          currency: Currency.KES,
+          balance: 0,
+          availableBalance: 0,
+          heldBalance: 0,
+        },
+      });
     });
   });
 
@@ -93,134 +106,157 @@ describe("WalletService", () => {
 
   describe("getBalance", () => {
     it("should return correct balance for existing account", async () => {
-      (
-        mockPrismaClient.walletAccount.findFirst as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(testWalletAccount);
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-
-      const result = await walletService.getBalance(testUser.id, Currency.KES);
-
-      expect(result).toBeDefined();
-      expect(result.balance).toBe("10000.0000");
-      expect(result.availableBalance).toBe("10000.0000");
-      expect(result.currency).toBe(Currency.KES);
-    });
-
-    it("should use cached balance if available", async () => {
-      const cachedBalance = {
-        balance: "5000.0000",
-        availableBalance: "5000.0000",
-        holdBalance: "0.0000",
-        currency: Currency.KES,
+      const account = {
+        id: "account-123",
+        balance: "10000.0000",
+        availableBalance: "8000.0000",
+        heldBalance: "2000.0000",
       };
 
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
-        JSON.stringify(cachedBalance)
+      (
+        mockPrismaClient.walletAccount.findFirst as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(account);
+
+      const result = await walletService.getBalance(
+        testUser.id,
+        AccountType.USER_WALLET,
+        Currency.KES,
       );
 
-      const result = await walletService.getBalance(testUser.id, Currency.KES);
-
-      expect(result).toEqual(cachedBalance);
-      expect(mockPrismaClient.walletAccount.findFirst).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        balance: 10000,
+        availableBalance: 8000,
+        heldBalance: 2000,
+      });
     });
 
-    it("should throw error for non-existent account", async () => {
+    it("should return zero balances for non-existent account", async () => {
       (
         mockPrismaClient.walletAccount.findFirst as ReturnType<typeof vi.fn>
       ).mockResolvedValue(null);
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
-      await expect(
-        walletService.getBalance(testUser.id, Currency.KES)
-      ).rejects.toThrow("Account not found");
+      const result = await walletService.getBalance(
+        testUser.id,
+        AccountType.USER_WALLET,
+        Currency.KES,
+      );
+
+      expect(result).toEqual({
+        balance: 0,
+        availableBalance: 0,
+        heldBalance: 0,
+      });
     });
   });
 
   // ===========================================
-  // CREDIT TESTS
+  // TOP UP TESTS
   // ===========================================
 
-  describe("credit", () => {
-    it("should credit account and create ledger entry", async () => {
-      const creditAmount = 5000;
-      const updatedAccount = {
-        ...testWalletAccount,
-        balance: "15000.0000",
-        availableBalance: "15000.0000",
+  describe("topUp", () => {
+    it("should top up wallet and create ledger entries", async () => {
+      const topUpAmount = 5000;
+      const userAccount = {
+        id: "user-account-123",
+        userId: testUser.id,
+        accountType: AccountType.USER_WALLET,
+        currency: Currency.KES,
+        balance: "10000",
+        availableBalance: "10000",
+      };
+      const floatAccount = {
+        id: "float-account",
+        accountType: AccountType.UBI_FLOAT,
+        currency: Currency.KES,
+        balance: "1000000",
+        availableBalance: "1000000",
       };
 
+      // Mock the transaction callback
       (
         mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
       ).mockImplementation(
         async (callback: (tx: unknown) => Promise<unknown>) => {
           const mockTx = {
             walletAccount: {
-              findFirst: vi.fn().mockResolvedValue(testWalletAccount),
-              update: vi.fn().mockResolvedValue(updatedAccount),
+              findFirst: vi.fn().mockResolvedValueOnce(floatAccount),
+              update: vi.fn().mockResolvedValue({}),
             },
             transaction: {
               create: vi.fn().mockResolvedValue({
-                id: "txn-new",
-                amount: creditAmount.toString(),
+                id: "txn-topup",
+                amount: topUpAmount,
+                status: TransactionStatus.COMPLETED,
               }),
             },
             ledgerEntry: {
               create: vi.fn().mockResolvedValue({}),
             },
           };
-          return callback(mockTx);
-        }
+          return await callback(mockTx);
+        },
       );
 
-      const result = await walletService.credit({
+      // Mock getOrCreateWalletAccount
+      vi.spyOn(walletService, "getOrCreateWalletAccount").mockResolvedValue(
+        userAccount as never,
+      );
+
+      const result = await walletService.topUp({
         userId: testUser.id,
-        amount: creditAmount,
+        amount: topUpAmount,
         currency: Currency.KES,
-        type: "WALLET_TOPUP",
-        reference: "REF-CREDIT",
-        description: "Test credit",
+        paymentTransactionId: "payment-123",
+        description: "Test top-up",
       });
 
       expect(result).toBeDefined();
-      expect(result.newBalance).toBe("15000.0000");
+      expect(result.transaction).toBeDefined();
+      expect(result.newBalance).toBe(15000);
     });
 
     it("should reject zero or negative amounts", async () => {
       await expect(
-        walletService.credit({
+        walletService.topUp({
           userId: testUser.id,
           amount: 0,
           currency: Currency.KES,
-          type: "WALLET_TOPUP",
-          reference: "REF-CREDIT",
-          description: "Test credit",
-        })
+          paymentTransactionId: "payment-123",
+        }),
       ).rejects.toThrow("Amount must be positive");
 
       await expect(
-        walletService.credit({
+        walletService.topUp({
           userId: testUser.id,
           amount: -100,
           currency: Currency.KES,
-          type: "WALLET_TOPUP",
-          reference: "REF-CREDIT",
-          description: "Test credit",
-        })
+          paymentTransactionId: "payment-123",
+        }),
       ).rejects.toThrow("Amount must be positive");
     });
   });
 
   // ===========================================
-  // DEBIT TESTS
+  // WITHDRAW TESTS
   // ===========================================
 
-  describe("debit", () => {
-    it("should debit account when sufficient balance exists", async () => {
-      const debitAmount = 3000;
-      const updatedAccount = {
-        ...testWalletAccount,
-        balance: "7000.0000",
-        availableBalance: "7000.0000",
+  describe("withdraw", () => {
+    it("should withdraw from wallet when sufficient balance exists", async () => {
+      const withdrawAmount = 3000;
+      const userAccount = {
+        id: "user-account-123",
+        userId: testUser.id,
+        accountType: AccountType.USER_WALLET,
+        currency: Currency.KES,
+        balance: "10000",
+        availableBalance: "10000",
+      };
+      const floatAccount = {
+        id: "float-account",
+        accountType: AccountType.UBI_FLOAT,
+        currency: Currency.KES,
+        balance: "1000000",
+        availableBalance: "1000000",
       };
 
       (
@@ -229,13 +265,17 @@ describe("WalletService", () => {
         async (callback: (tx: unknown) => Promise<unknown>) => {
           const mockTx = {
             walletAccount: {
-              findFirst: vi.fn().mockResolvedValue(testWalletAccount),
-              update: vi.fn().mockResolvedValue(updatedAccount),
+              findFirst: vi
+                .fn()
+                .mockResolvedValueOnce(userAccount)
+                .mockResolvedValueOnce(floatAccount),
+              update: vi.fn().mockResolvedValue({}),
             },
             transaction: {
               create: vi.fn().mockResolvedValue({
-                id: "txn-debit",
-                amount: debitAmount.toString(),
+                id: "txn-withdraw",
+                amount: withdrawAmount,
+                status: TransactionStatus.COMPLETED,
               }),
             },
             ledgerEntry: {
@@ -243,27 +283,26 @@ describe("WalletService", () => {
             },
           };
           return callback(mockTx);
-        }
+        },
       );
 
-      const result = await walletService.debit({
+      const result = await walletService.withdraw({
         userId: testUser.id,
-        amount: debitAmount,
+        amount: withdrawAmount,
         currency: Currency.KES,
-        type: "RIDE_PAYMENT",
-        reference: "REF-DEBIT",
-        description: "Test debit",
+        description: "Test withdrawal",
       });
 
       expect(result).toBeDefined();
-      expect(result.newBalance).toBe("7000.0000");
+      expect(result.transaction).toBeDefined();
+      expect(result.newBalance).toBe(7000);
     });
 
-    it("should reject debit when insufficient balance", async () => {
+    it("should reject withdrawal when insufficient balance", async () => {
       const insufficientAccount = {
-        ...testWalletAccount,
-        balance: "500.0000",
-        availableBalance: "500.0000",
+        id: "user-account-123",
+        balance: "500",
+        availableBalance: "500",
       };
 
       (
@@ -275,30 +314,45 @@ describe("WalletService", () => {
               findFirst: vi.fn().mockResolvedValue(insufficientAccount),
             },
           };
-          return callback(mockTx);
-        }
+          const result = await callback(mockTx);
+          return result;
+        },
       );
 
       await expect(
-        walletService.debit({
+        walletService.withdraw({
           userId: testUser.id,
           amount: 1000,
           currency: Currency.KES,
-          type: "RIDE_PAYMENT",
-          reference: "REF-DEBIT",
-          description: "Test debit",
-        })
+        }),
       ).rejects.toThrow("Insufficient balance");
+    });
+
+    it("should reject zero or negative amounts", async () => {
+      await expect(
+        walletService.withdraw({
+          userId: testUser.id,
+          amount: 0,
+          currency: Currency.KES,
+        }),
+      ).rejects.toThrow("Amount must be positive");
     });
   });
 
   // ===========================================
-  // HOLD/RELEASE TESTS
+  // HOLD FUNDS TESTS
   // ===========================================
 
-  describe("createHold", () => {
+  describe("holdFunds", () => {
     it("should create hold and reduce available balance", async () => {
       const holdAmount = 2000;
+      const account = {
+        id: "account-123",
+        currency: Currency.KES,
+        balance: "10000",
+        availableBalance: "10000",
+        heldBalance: "0",
+      };
 
       (
         mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
@@ -306,41 +360,44 @@ describe("WalletService", () => {
         async (callback: (tx: unknown) => Promise<unknown>) => {
           const mockTx = {
             walletAccount: {
-              findFirst: vi.fn().mockResolvedValue(testWalletAccount),
+              findUnique: vi.fn().mockResolvedValue(account),
               update: vi.fn().mockResolvedValue({
-                ...testWalletAccount,
-                availableBalance: "8000.0000",
-                holdBalance: "2000.0000",
+                ...account,
+                availableBalance: "8000",
+                heldBalance: "2000",
               }),
             },
             balanceHold: {
               create: vi.fn().mockResolvedValue({
                 id: "hold-123",
-                accountId: testWalletAccount.id,
-                amount: holdAmount.toString(),
+                accountId: account.id,
+                amount: holdAmount,
+                currency: Currency.KES,
+                reason: "Ride payment hold",
               }),
             },
           };
-          return callback(mockTx);
-        }
+          const result = await callback(mockTx);
+          return result;
+        },
       );
 
-      const result = await walletService.createHold({
-        userId: testUser.id,
+      const holdResult = await walletService.holdFunds({
+        accountId: account.id,
         amount: holdAmount,
         currency: Currency.KES,
         reason: "Ride payment hold",
-        expiresAt: new Date(Date.now() + 3600000),
       });
 
-      expect(result).toBeDefined();
-      expect(result.id).toBe("hold-123");
+      expect(holdResult).toBeDefined();
+      expect(holdResult.id).toBe("hold-123");
     });
 
     it("should reject hold when insufficient available balance", async () => {
       const lowBalanceAccount = {
-        ...testWalletAccount,
-        availableBalance: "100.0000",
+        id: "account-123",
+        currency: Currency.KES,
+        availableBalance: "100",
       };
 
       (
@@ -349,38 +406,72 @@ describe("WalletService", () => {
         async (callback: (tx: unknown) => Promise<unknown>) => {
           const mockTx = {
             walletAccount: {
-              findFirst: vi.fn().mockResolvedValue(lowBalanceAccount),
+              findUnique: vi.fn().mockResolvedValue(lowBalanceAccount),
             },
           };
-          return callback(mockTx);
-        }
+          const result = await callback(mockTx);
+          return result;
+        },
       );
 
       await expect(
-        walletService.createHold({
-          userId: testUser.id,
+        walletService.holdFunds({
+          accountId: "account-123",
           amount: 500,
           currency: Currency.KES,
           reason: "Test hold",
-          expiresAt: new Date(Date.now() + 3600000),
-        })
+        }),
       ).rejects.toThrow("Insufficient available balance");
+    });
+
+    it("should reject hold with currency mismatch", async () => {
+      const account = {
+        id: "account-123",
+        currency: Currency.NGN,
+        availableBalance: "10000",
+      };
+
+      (
+        mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
+      ).mockImplementation(
+        async (callback: (tx: unknown) => Promise<unknown>) => {
+          const mockTx = {
+            walletAccount: {
+              findUnique: vi.fn().mockResolvedValue(account),
+            },
+          };
+          const result = await callback(mockTx);
+          return result;
+        },
+      );
+
+      await expect(
+        walletService.holdFunds({
+          accountId: "account-123",
+          amount: 500,
+          currency: Currency.KES,
+          reason: "Test hold",
+        }),
+      ).rejects.toThrow("Currency mismatch");
     });
   });
 
-  describe("releaseHold", () => {
+  // ===========================================
+  // RELEASE FUNDS TESTS
+  // ===========================================
+
+  describe("releaseFunds", () => {
     it("should release hold and restore available balance", async () => {
       const mockHold = {
         id: "hold-123",
-        accountId: testWalletAccount.id,
-        amount: "2000.0000",
+        accountId: "account-123",
+        amount: "2000",
         isReleased: false,
-      };
-
-      const accountWithHold = {
-        ...testWalletAccount,
-        availableBalance: "8000.0000",
-        holdBalance: "2000.0000",
+        account: {
+          id: "account-123",
+          availableBalance: "8000",
+          heldBalance: "2000",
+        },
       };
 
       (
@@ -389,28 +480,71 @@ describe("WalletService", () => {
         async (callback: (tx: unknown) => Promise<unknown>) => {
           const mockTx = {
             balanceHold: {
-              findFirst: vi.fn().mockResolvedValue(mockHold),
+              findUnique: vi.fn().mockResolvedValue(mockHold),
               update: vi
                 .fn()
                 .mockResolvedValue({ ...mockHold, isReleased: true }),
             },
             walletAccount: {
-              findFirst: vi.fn().mockResolvedValue(accountWithHold),
               update: vi.fn().mockResolvedValue({
-                ...testWalletAccount,
-                availableBalance: "10000.0000",
-                holdBalance: "0.0000",
+                availableBalance: "10000",
+                heldBalance: "0",
               }),
             },
           };
-          return callback(mockTx);
-        }
+          const result = await callback(mockTx);
+          return result;
+        },
       );
 
-      const result = await walletService.releaseHold("hold-123");
+      const releaseResult = await walletService.releaseFunds("hold-123");
 
-      expect(result).toBeDefined();
-      expect(result.isReleased).toBe(true);
+      expect(releaseResult).toBeDefined();
+    });
+
+    it("should throw error for non-existent hold", async () => {
+      (
+        mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
+      ).mockImplementation(
+        async (callback: (tx: unknown) => Promise<unknown>) => {
+          const mockTx = {
+            balanceHold: {
+              findUnique: vi.fn().mockResolvedValue(null),
+            },
+          };
+          const result = await callback(mockTx);
+          return result;
+        },
+      );
+
+      await expect(walletService.releaseFunds("invalid-hold")).rejects.toThrow(
+        "Hold not found",
+      );
+    });
+
+    it("should throw error for already released hold", async () => {
+      const releasedHold = {
+        id: "hold-123",
+        isReleased: true,
+      };
+
+      (
+        mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
+      ).mockImplementation(
+        async (callback: (tx: unknown) => Promise<unknown>) => {
+          const mockTx = {
+            balanceHold: {
+              findUnique: vi.fn().mockResolvedValue(releasedHold),
+            },
+          };
+          const result = await callback(mockTx);
+          return result;
+        },
+      );
+
+      await expect(walletService.releaseFunds("hold-123")).rejects.toThrow(
+        "Hold already released",
+      );
     });
   });
 
@@ -420,11 +554,19 @@ describe("WalletService", () => {
 
   describe("transfer", () => {
     it("should transfer between two accounts", async () => {
-      const fromAccount = { ...testWalletAccount, id: "from-account" };
+      const fromAccount = {
+        id: "from-account",
+        currency: Currency.KES,
+        balance: "10000",
+        availableBalance: "10000",
+        accountType: AccountType.USER_WALLET,
+      };
       const toAccount = {
-        ...testWalletAccount,
         id: "to-account",
-        userId: "user-456",
+        currency: Currency.KES,
+        balance: "5000",
+        availableBalance: "5000",
+        accountType: AccountType.USER_WALLET,
       };
 
       (
@@ -433,76 +575,92 @@ describe("WalletService", () => {
         async (callback: (tx: unknown) => Promise<unknown>) => {
           const mockTx = {
             walletAccount: {
-              findFirst: vi
+              findUnique: vi
                 .fn()
                 .mockResolvedValueOnce(fromAccount)
                 .mockResolvedValueOnce(toAccount),
               update: vi.fn().mockResolvedValue({}),
             },
             transaction: {
-              create: vi.fn().mockResolvedValue({ id: "txn-transfer" }),
+              create: vi.fn().mockResolvedValue({
+                id: "txn-transfer",
+                status: TransactionStatus.COMPLETED,
+              }),
             },
             ledgerEntry: {
-              createMany: vi.fn().mockResolvedValue({ count: 2 }),
+              create: vi.fn().mockResolvedValue({}),
             },
           };
-          return callback(mockTx);
-        }
+          const result = await callback(mockTx);
+          return result;
+        },
       );
 
-      const result = await walletService.transfer({
-        fromUserId: testUser.id,
-        toUserId: "user-456",
+      const transferResult = await walletService.transfer({
+        fromAccountId: "from-account",
+        toAccountId: "to-account",
         amount: 1000,
         currency: Currency.KES,
-        reference: "REF-TRANSFER",
         description: "Test transfer",
       });
 
-      expect(result).toBeDefined();
+      expect(transferResult).toBeDefined();
+      expect(transferResult.fromBalance).toBe(9000);
+      expect(transferResult.toBalance).toBe(6000);
     });
 
     it("should reject transfer to same account", async () => {
       await expect(
         walletService.transfer({
-          fromUserId: testUser.id,
-          toUserId: testUser.id,
+          fromAccountId: "same-account",
+          toAccountId: "same-account",
           amount: 1000,
           currency: Currency.KES,
-          reference: "REF-TRANSFER",
-          description: "Test transfer",
-        })
+        }),
       ).rejects.toThrow("Cannot transfer to same account");
     });
-  });
 
-  // ===========================================
-  // IDEMPOTENCY TESTS
-  // ===========================================
-
-  describe("idempotency", () => {
-    it("should return cached result for duplicate request", async () => {
-      const cachedResult = {
-        transactionId: "txn-cached",
-        newBalance: "15000.0000",
+    it("should reject transfer with insufficient balance", async () => {
+      const fromAccount = {
+        id: "from-account",
+        currency: Currency.KES,
+        balance: "500",
+        availableBalance: "500",
       };
 
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
-        JSON.stringify(cachedResult)
+      (
+        mockPrismaClient.$transaction as ReturnType<typeof vi.fn>
+      ).mockImplementation(
+        async (callback: (tx: unknown) => Promise<unknown>) => {
+          const mockTx = {
+            walletAccount: {
+              findUnique: vi.fn().mockResolvedValue(fromAccount),
+            },
+          };
+          const result = await callback(mockTx);
+          return result;
+        },
       );
 
-      const result = await walletService.credit({
-        userId: testUser.id,
-        amount: 5000,
-        currency: Currency.KES,
-        type: "WALLET_TOPUP",
-        reference: "REF-IDEMPOTENT",
-        description: "Test idempotent credit",
-        idempotencyKey: "idem-123",
-      });
+      await expect(
+        walletService.transfer({
+          fromAccountId: "from-account",
+          toAccountId: "to-account",
+          amount: 1000,
+          currency: Currency.KES,
+        }),
+      ).rejects.toThrow("Insufficient balance");
+    });
 
-      expect(result).toEqual(cachedResult);
-      expect(mockPrismaClient.$transaction).not.toHaveBeenCalled();
+    it("should reject zero or negative amounts", async () => {
+      await expect(
+        walletService.transfer({
+          fromAccountId: "from-account",
+          toAccountId: "to-account",
+          amount: 0,
+          currency: Currency.KES,
+        }),
+      ).rejects.toThrow("Amount must be positive");
     });
   });
 });

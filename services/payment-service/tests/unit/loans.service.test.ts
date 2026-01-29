@@ -8,10 +8,7 @@
 import { Currency } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Import after mocking
-import { LoanService } from "../../src/services/loans.service";
-
-// Mock dependencies
+// Mock dependencies - define mocks before vi.mock calls
 const mockPrismaClient = {
   loan: {
     findMany: vi.fn(),
@@ -36,11 +33,30 @@ const mockNotificationClient = {
 };
 
 vi.mock("../../src/lib/prisma", () => ({
-  prisma: mockPrismaClient,
+  prisma: {
+    loan: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      updateMany: vi.fn(),
+      update: vi.fn(),
+    },
+    loanSchedule: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+    },
+    loanNotificationLog: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  },
 }));
 
 vi.mock("../../src/lib/notification-client", () => ({
-  notificationClient: mockNotificationClient,
+  notificationClient: {
+    send: vi.fn().mockResolvedValue({ success: true }),
+    notifyLoanOverdue: vi.fn().mockResolvedValue({ success: true }),
+  },
   NotificationType: {
     LOAN_OVERDUE: "loan_overdue",
     LOAN_DUE_REMINDER: "loan_due_reminder",
@@ -69,6 +85,9 @@ vi.mock("../../src/services/enhanced-wallet.service", () => ({
 vi.mock("../../src/services/credit-scoring.service", () => ({
   creditScoringService: {},
 }));
+
+// Import after mocking
+import { LoanService } from "../../src/services/loans.service";
 
 // ===========================================
 // TEST DATA
@@ -150,52 +169,52 @@ describe("LoanService", () => {
         { loanId: "loan_3" },
       ];
 
-      mockPrismaClient.loanSchedule.findMany.mockResolvedValue(
-        overdueSchedules,
+      vi.mocked(prisma.loanSchedule.findMany).mockResolvedValue(
+        overdueSchedules as any,
       );
-      mockPrismaClient.loan.updateMany.mockResolvedValue({ count: 3 });
-      mockPrismaClient.loan.findUnique.mockResolvedValue(
+      vi.mocked(prisma.loan.updateMany).mockResolvedValue({ count: 3 });
+      vi.mocked(prisma.loan.findUnique).mockResolvedValue(
         createTestLoan({
           schedule: [createTestSchedule({ status: "OVERDUE" })],
-        }),
+        }) as any,
       );
 
       const result = await loanService.checkOverdueLoans();
 
       expect(result.updated).toBe(3);
-      expect(mockPrismaClient.loan.updateMany).toHaveBeenCalledWith({
+      expect(prisma.loan.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ["loan_1", "loan_2", "loan_3"] } },
         data: { status: "OVERDUE" },
       });
     });
 
     it("should return zero when no overdue loans exist", async () => {
-      mockPrismaClient.loanSchedule.findMany.mockResolvedValue([]);
+      vi.mocked(prisma.loanSchedule.findMany).mockResolvedValue([]);
 
       const result = await loanService.checkOverdueLoans();
 
       expect(result.updated).toBe(0);
       expect(result.notified).toBe(0);
-      expect(mockPrismaClient.loan.updateMany).not.toHaveBeenCalled();
+      expect(prisma.loan.updateMany).not.toHaveBeenCalled();
     });
 
     it("should send notifications for each overdue loan", async () => {
       const overdueSchedules = [{ loanId: "loan_1" }, { loanId: "loan_2" }];
 
-      mockPrismaClient.loanSchedule.findMany.mockResolvedValue(
-        overdueSchedules,
+      vi.mocked(prisma.loanSchedule.findMany).mockResolvedValue(
+        overdueSchedules as any,
       );
-      mockPrismaClient.loan.updateMany.mockResolvedValue({ count: 2 });
-      mockPrismaClient.loan.findUnique.mockResolvedValue(
+      vi.mocked(prisma.loan.updateMany).mockResolvedValue({ count: 2 });
+      vi.mocked(prisma.loan.findUnique).mockResolvedValue(
         createTestLoan({
           schedule: [createTestSchedule({ status: "OVERDUE" })],
-        }),
+        }) as any,
       );
 
       await loanService.checkOverdueLoans();
 
       // Should attempt to send notification for each loan
-      expect(mockNotificationClient.send).toHaveBeenCalled();
+      expect(notificationClient.send).toHaveBeenCalled();
     });
   });
 
@@ -215,9 +234,9 @@ describe("LoanService", () => {
         loan: createTestLoan(),
       });
 
-      mockPrismaClient.loanSchedule.findMany.mockResolvedValue([
+      vi.mocked(prisma.loanSchedule.findMany).mockResolvedValue([
         upcomingSchedule,
-      ]);
+      ] as any);
 
       const result = await loanService.sendDueReminders();
 
@@ -234,13 +253,13 @@ describe("LoanService", () => {
         loan: createTestLoan(),
       });
 
-      mockPrismaClient.loanSchedule.findMany.mockResolvedValue([
+      vi.mocked(prisma.loanSchedule.findMany).mockResolvedValue([
         dueTodaySchedule,
-      ]);
+      ] as any);
 
       await loanService.sendDueReminders();
 
-      expect(mockPrismaClient.loanSchedule.findMany).toHaveBeenCalled();
+      expect(prisma.loanSchedule.findMany).toHaveBeenCalled();
     });
 
     it("should include payment link in reminder notifications", async () => {
@@ -253,12 +272,14 @@ describe("LoanService", () => {
         loan: createTestLoan(),
       });
 
-      mockPrismaClient.loanSchedule.findMany.mockResolvedValue([schedule]);
+      vi.mocked(prisma.loanSchedule.findMany).mockResolvedValue([
+        schedule,
+      ] as any);
 
       await loanService.sendDueReminders();
 
       // Verify notification was called (actual data assertion would be in integration tests)
-      expect(mockPrismaClient.loanSchedule.findMany).toHaveBeenCalled();
+      expect(prisma.loanSchedule.findMany).toHaveBeenCalled();
     });
   });
 
@@ -281,13 +302,13 @@ describe("LoanService", () => {
         ],
       });
 
-      mockPrismaClient.loan.findMany.mockResolvedValue([overdueLoan]);
-      mockPrismaClient.loanNotificationLog.create.mockResolvedValue({});
+      vi.mocked(prisma.loan.findMany).mockResolvedValue([overdueLoan] as any);
+      vi.mocked(prisma.loanNotificationLog.create).mockResolvedValue({} as any);
 
       await loanService.sendEscalatingOverdueNotifications();
 
       // Verify notification was attempted
-      expect(mockPrismaClient.loan.findMany).toHaveBeenCalledWith(
+      expect(prisma.loan.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { status: "OVERDUE" },
         }),
@@ -308,12 +329,12 @@ describe("LoanService", () => {
         ],
       });
 
-      mockPrismaClient.loan.findMany.mockResolvedValue([overdueLoan]);
-      mockPrismaClient.loanNotificationLog.create.mockResolvedValue({});
+      vi.mocked(prisma.loan.findMany).mockResolvedValue([overdueLoan] as any);
+      vi.mocked(prisma.loanNotificationLog.create).mockResolvedValue({} as any);
 
       await loanService.sendEscalatingOverdueNotifications();
 
-      expect(mockPrismaClient.loan.findMany).toHaveBeenCalled();
+      expect(prisma.loan.findMany).toHaveBeenCalled();
     });
 
     it("should send critical level notification for 30+ days overdue", async () => {

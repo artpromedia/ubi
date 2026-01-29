@@ -104,7 +104,7 @@ export const SafetyAlert = ({
   actions,
   ...props
 }: SafetyAlertProps) => {
-  const config = severityConfig[severity];
+  const config = severityConfig[severity ?? "info"];
   const IconComponent = config.icon;
   const isEmergency = severity === "emergency";
 

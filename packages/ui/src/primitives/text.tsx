@@ -150,7 +150,7 @@ type TextProps<E extends React.ElementType = "p"> = TextOwnProps<E> &
   Omit<React.ComponentPropsWithoutRef<E>, keyof TextOwnProps<E>>;
 
 type TextComponent = <E extends React.ElementType = "p">(
-  props: TextProps<E> & { ref?: React.ComponentPropsWithRef<E>["ref"] }
+  props: TextProps<E> & { ref?: React.ComponentPropsWithRef<E>["ref"] },
 ) => React.ReactElement | null;
 
 const TextInner = <E extends React.ElementType = "p">(
@@ -168,13 +168,14 @@ const TextInner = <E extends React.ElementType = "p">(
     children,
     ...props
   }: TextProps<E>,
-  ref: React.ForwardedRef<Element>
+  ref: React.ForwardedRef<Element>,
 ) => {
   // Determine the element to render
-  const getComponent = () => {
+  const getComponent = (): React.ElementType => {
     if (asChild) return Slot;
     if (as) return as;
-    if (variant) return variantElementMap[variant];
+    if (variant && variantElementMap[variant])
+      return variantElementMap[variant];
     return "p";
   };
   const Component = getComponent();
@@ -192,7 +193,7 @@ const TextInner = <E extends React.ElementType = "p">(
           truncate,
           lineClamp,
         }),
-        className
+        className,
       )}
       {...props}
     >
