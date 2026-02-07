@@ -1,0 +1,133 @@
+# UBI Prometheus Configuration
+# Metrics collection for monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: "ubi-hetzner"
+    environment: "production"
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - alertmanager:9093
+
+# Rules files
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Node Exporter (if installed on host)
+  - job_name: "node"
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "ubi-hetzner"
+
+  # Docker containers
+  - job_name: "docker"
+    static_configs:
+      - targets: ["host.docker.internal:9323"]
+
+  # Caddy metrics
+  - job_name: "caddy"
+    static_configs:
+      - targets: ["caddy:2019"]
+
+  # API Gateway
+  - job_name: "api-gateway"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api-gateway:3000"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: "api-gateway"
+
+  # User Service
+  - job_name: "user-service"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["user-service:3001"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: "user-service"
+
+  # Ride Service (Go)
+  - job_name: "ride-service"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ride-service:3002"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: "ride-service"
+
+  # Food Service
+  - job_name: "food-service"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["food-service:3003"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: "food-service"
+
+  # Delivery Service (Go)
+  - job_name: "delivery-service"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["delivery-service:3004"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: "delivery-service"
+
+  # Payment Service
+  - job_name: "payment-service"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["payment-service:3005"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: "payment-service"
+
+  # Notification Service
+  - job_name: "notification-service"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["notification-service:3006"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: "notification-service"
+
+  # PostgreSQL (via postgres_exporter if installed)
+  - job_name: "postgresql"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # Redis metrics
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # MinIO metrics
+  - job_name: "minio"
+    metrics_path: /minio/v2/metrics/cluster
+    scheme: http
+    static_configs:
+      - targets: ["minio:9000"]

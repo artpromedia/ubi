@@ -1,0 +1,212 @@
+# UBI Hetzner Caddyfile
+# Automatic HTTPS with Let's Encrypt
+
+# Global options
+{
+    email admin@{$DOMAIN:ubi.africa}
+    acme_ca https://acme-v02.api.letsencrypt.org/directory
+    
+    # Enable on-demand TLS for subdomains
+    on_demand_tls {
+        ask http://localhost:5555/check
+    }
+}
+
+# Main Web Application
+{$DOMAIN:ubi.africa}, www.{$DOMAIN:ubi.africa} {
+    encode gzip zstd
+    
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        -Server
+    }
+    
+    # Proxy to web-app
+    reverse_proxy web-app:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # Health check
+        health_uri /api/health
+        health_interval 30s
+        health_timeout 10s
+    }
+    
+    # Logging
+    log {
+        output file /var/log/caddy/web-app.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+    }
+}
+
+# API Gateway
+{$API_DOMAIN:api.ubi.africa} {
+    encode gzip zstd
+    
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+    
+    # CORS configuration
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin "https://{$DOMAIN:ubi.africa}"
+        header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, X-Requested-With"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+    
+    # Rate limiting for API
+    rate_limit {
+        zone api {
+            key {remote_host}
+            events 100
+            window 1m
+        }
+    }
+    
+    # Proxy to api-gateway
+    reverse_proxy api-gateway:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # WebSocket support
+        header_up Connection {header.Connection}
+        header_up Upgrade {header.Upgrade}
+        
+        # Health check
+        health_uri /health
+        health_interval 30s
+        health_timeout 10s
+        
+        # Timeouts
+        transport http {
+            read_timeout 120s
+            write_timeout 120s
+        }
+    }
+    
+    log {
+        output file /var/log/caddy/api.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+    }
+}
+
+# Admin Dashboard
+{$ADMIN_DOMAIN:admin.ubi.africa} {
+    encode gzip zstd
+    
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+    
+    # Basic auth for admin (optional extra layer)
+    # Uncomment and set credentials if needed
+    # basicauth /* {
+    #     admin $2a$14$... # Use: caddy hash-password
+    # }
+    
+    # Proxy to admin-dashboard
+    reverse_proxy admin-dashboard:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        health_uri /api/health
+        health_interval 30s
+        health_timeout 10s
+    }
+    
+    log {
+        output file /var/log/caddy/admin.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+    }
+}
+
+# Grafana Monitoring (Protected)
+grafana.{$DOMAIN:ubi.africa} {
+    encode gzip zstd
+    
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+    
+    # IP allowlist for monitoring (adjust as needed)
+    @blocked not remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.1
+    # respond @blocked "Access denied" 403
+    
+    reverse_proxy grafana:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    
+    log {
+        output file /var/log/caddy/grafana.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+    }
+}
+
+# MinIO Storage (S3 API)
+storage.{$DOMAIN:ubi.africa} {
+    encode gzip zstd
+    
+    header {
+        X-Content-Type-Options nosniff
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+    
+    reverse_proxy minio:9000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # Allow larger uploads
+        transport http {
+            read_timeout 600s
+            write_timeout 600s
+        }
+    }
+    
+    log {
+        output file /var/log/caddy/storage.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+    }
+}

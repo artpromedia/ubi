@@ -26,6 +26,9 @@ export { cn } from "./lib/utils";
 // ===========================================
 // Core Components
 // ===========================================
+export { Logo, LogoIcon } from "./components/logo";
+export type { LogoIconProps, LogoProps } from "./components/logo";
+
 export { Button, buttonVariants } from "./components/button";
 export type { ButtonProps } from "./components/button";
 
@@ -246,12 +249,7 @@ export {
 // ===========================================
 // Navigation Components
 // ===========================================
-export {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "./components/tabs";
+export { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/tabs";
 
 export {
   Breadcrumb,
@@ -384,9 +382,7 @@ export type { RatingDisplayProps, RatingInputProps } from "./components/rating";
 // ===========================================
 // UBI Brand Components
 // ===========================================
-// Note: UBI-specific logo components to be added
-export { Logo, LogoIcon } from "./components/logo";
-export type { LogoProps, LogoIconProps } from "./components/logo";
+// Note: Logo and LogoIcon already exported in Core Components section above
 
 // ===========================================
 // UBI Domain Components

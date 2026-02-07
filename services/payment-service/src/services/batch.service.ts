@@ -35,6 +35,99 @@ interface WalletBalanceResult {
 }
 
 /**
+ * Group items by account type and currency for efficient queries
+ */
+function groupItemsByType(items: Array<{ data: WalletBalanceRequest }>) {
+  const groups = new Map<string, string[]>();
+  for (const item of items) {
+    const groupKey = `${item.data.accountType}:${item.data.currency}`;
+    const existing = groups.get(groupKey);
+    if (existing) {
+      existing.push(item.data.userId);
+    } else {
+      groups.set(groupKey, [item.data.userId]);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Find item by user ID, account type, and currency
+ */
+function findItem(
+  items: Array<{ id: string; data: WalletBalanceRequest }>,
+  userId: string,
+  accountType: AccountType,
+  currency: Currency,
+) {
+  return items.find(
+    (i) =>
+      i.data.userId === userId &&
+      i.data.accountType === accountType &&
+      i.data.currency === currency,
+  );
+}
+
+/**
+ * Process accounts and update cache
+ */
+async function processAccounts(
+  accounts: Array<{
+    userId: string | null;
+    balance: unknown;
+    availableBalance: unknown;
+    heldBalance: unknown;
+  }>,
+  items: Array<{ id: string; data: WalletBalanceRequest }>,
+  accountType: AccountType,
+  currency: Currency,
+  results: Map<string, WalletBalanceResult>,
+) {
+  for (const account of accounts) {
+    const result: WalletBalanceResult = {
+      userId: account.userId ?? "",
+      balance: Number(account.balance),
+      availableBalance: Number(account.availableBalance),
+      heldBalance: Number(account.heldBalance),
+    };
+
+    const item = findItem(items, account.userId ?? "", accountType, currency);
+    if (item) {
+      results.set(item.id, result);
+      const cacheKey = `${account.userId}:${accountType}`;
+      await walletCache.setBalance(cacheKey, currency, {
+        balance: result.balance,
+        availableBalance: result.availableBalance,
+        heldBalance: result.heldBalance,
+      });
+    }
+  }
+}
+
+/**
+ * Handle missing accounts (return zero balances)
+ */
+function handleMissingAccounts(
+  userIds: string[],
+  items: Array<{ id: string; data: WalletBalanceRequest }>,
+  accountType: AccountType,
+  currency: Currency,
+  results: Map<string, WalletBalanceResult>,
+) {
+  for (const userId of userIds) {
+    const item = findItem(items, userId, accountType, currency);
+    if (item && !results.has(item.id)) {
+      results.set(item.id, {
+        userId,
+        balance: 0,
+        availableBalance: 0,
+        heldBalance: 0,
+      });
+    }
+  }
+}
+
+/**
  * Batch processor for wallet balance lookups
  */
 const walletBalanceBatch = new BatchProcessor<
@@ -45,17 +138,7 @@ const walletBalanceBatch = new BatchProcessor<
     const startTime = Date.now();
     const results = new Map<string, WalletBalanceResult>();
 
-    // Group by account type and currency for efficient queries
-    const groups = new Map<string, string[]>();
-    for (const item of items) {
-      const groupKey = `${item.data.accountType}:${item.data.currency}`;
-      const existing = groups.get(groupKey);
-      if (existing) {
-        existing.push(item.data.userId);
-      } else {
-        groups.set(groupKey, [item.data.userId]);
-      }
-    }
+    const groups = groupItemsByType(items);
 
     // Query each group
     for (const [groupKey, userIds] of groups) {
@@ -78,54 +161,8 @@ const walletBalanceBatch = new BatchProcessor<
         },
       });
 
-      // Map results
-      for (const account of accounts) {
-        const result: WalletBalanceResult = {
-          userId: account.userId ?? "",
-          balance: Number(account.balance),
-          availableBalance: Number(account.availableBalance),
-          heldBalance: Number(account.heldBalance),
-        };
-
-        // Find the item ID for this result
-        const item = items.find(
-          (i) =>
-            i.data.userId === account.userId &&
-            i.data.accountType === accountType &&
-            i.data.currency === currency,
-        );
-
-        if (item) {
-          results.set(item.id, result);
-
-          // Update cache
-          const cacheKey = `${account.userId}:${accountType}`;
-          await walletCache.setBalance(cacheKey, currency, {
-            balance: result.balance,
-            availableBalance: result.availableBalance,
-            heldBalance: result.heldBalance,
-          });
-        }
-      }
-
-      // Handle missing accounts (return zero balances)
-      for (const userId of userIds) {
-        const item = items.find(
-          (i) =>
-            i.data.userId === userId &&
-            i.data.accountType === accountType &&
-            i.data.currency === currency,
-        );
-
-        if (item && !results.has(item.id)) {
-          results.set(item.id, {
-            userId,
-            balance: 0,
-            availableBalance: 0,
-            heldBalance: 0,
-          });
-        }
-      }
+      await processAccounts(accounts, items, accountType, currency, results);
+      handleMissingAccounts(userIds, items, accountType, currency, results);
     }
 
     await performanceMonitor.recordTiming(
@@ -316,7 +353,10 @@ export async function bulkGetWalletBalances(
         },
       });
 
-      const accountMap = new Map(accounts.map((a) => [a.userId, a]));
+      type AccountResult = (typeof accounts)[number];
+      const accountMap = new Map<string, AccountResult>(
+        accounts.map((a: AccountResult) => [a.userId, a]),
+      );
 
       for (const req of group.requests) {
         const key = `${req.userId}:${req.accountType}:${req.currency}`;

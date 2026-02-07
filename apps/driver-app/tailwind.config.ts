@@ -5,7 +5,6 @@ const config: Config = {
   content: [
     "./src/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    // Include shared UI package
     "../../packages/ui/src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
@@ -61,12 +60,10 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // UBI Brand Colors (from design tokens)
+        // UBI Brand Colors
         ubi: {
-          // Core brand
           black: "#191414",
           white: "#FFFFFF",
-          // Primary accent - UBI Green
           green: {
             DEFAULT: "#1DB954",
             50: "#E8F8EE",
@@ -80,11 +77,16 @@ const config: Config = {
             800: "#107633",
             900: "#0B5F28",
           },
-          // Service colors
-          move: "#1DB954", // Rides - Green
-          bites: "#FF7545", // Food - Orange
-          send: "#10AEBA", // Packages - Teal
-          ev: "#00793A", // EV/CEERION - Forest Green
+          move: "#1DB954",
+          bites: "#FF7545",
+          send: "#10AEBA",
+        },
+        // Driver-specific status colors
+        driver: {
+          online: "#1DB954",
+          offline: "#6B7280",
+          busy: "#F59E0B",
+          break: "#3B82F6",
         },
       },
       borderRadius: {
@@ -96,51 +98,22 @@ const config: Config = {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
       },
       keyframes: {
-        "accordion-down": {
-          from: { height: "0" },
-          to: { height: "var(--radix-accordion-content-height)" },
+        "pulse-ring": {
+          "0%": { transform: "scale(1)", opacity: "1" },
+          "100%": { transform: "scale(1.5)", opacity: "0" },
         },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: "0" },
-        },
-        "fade-in": {
-          from: { opacity: "0" },
-          to: { opacity: "1" },
-        },
-        "fade-out": {
-          from: { opacity: "1" },
-          to: { opacity: "0" },
-        },
-        "slide-in-from-bottom": {
-          from: { transform: "translateY(100%)" },
-          to: { transform: "translateY(0)" },
-        },
-        "slide-out-to-bottom": {
-          from: { transform: "translateY(0)" },
-          to: { transform: "translateY(100%)" },
+        "slide-up": {
+          "0%": { transform: "translateY(100%)" },
+          "100%": { transform: "translateY(0)" },
         },
       },
       animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-in": "fade-in 0.2s ease-out",
-        "fade-out": "fade-out 0.2s ease-out",
-        "slide-in-from-bottom": "slide-in-from-bottom 0.3s ease-out",
-        "slide-out-to-bottom": "slide-out-to-bottom 0.3s ease-out",
-      },
-      // Optimize for African network conditions
-      transitionDuration: {
-        "250": "250ms",
-        "350": "350ms",
+        "pulse-ring": "pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "slide-up": "slide-up 0.3s ease-out",
       },
     },
   },
-  plugins: [
-    // require("@tailwindcss/forms"),
-    // require("@tailwindcss/typography"),
-    // require("tailwindcss-animate"),
-  ],
+  plugins: [],
 };
 
 export default config;

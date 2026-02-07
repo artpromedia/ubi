@@ -5,56 +5,66 @@
 @layer base {
   :root {
     /* UBI Brand Colors - Light Mode */
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 0 0% 100%; /* #FFFFFF */
+    --foreground: 0 4% 9%; /* #191414 UBI Black */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 0 4% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 262 83% 58%; /* UBI Purple */
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 39 100% 50%; /* UBI Gold/Orange */
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 262 83% 58%;
-    --radius: 0.75rem;
+    --popover-foreground: 0 4% 9%;
+    --primary: 145 72% 42%; /* #1DB954 UBI Green */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%; /* #F5F5F5 */
+    --secondary-foreground: 0 4% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%; /* #666666 */
+    --accent: 21 100% 63%; /* #FF7545 UBI Bites Orange */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%; /* #E53E3E */
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 90%; /* #E5E5E5 */
+    --input: 0 0% 90%;
+    --ring: 145 72% 42%; /* UBI Green for focus rings */
+    --radius: 0.5rem;
+
+    /* UBI Service Colors */
+    --ubi-move: 145 72% 42%; /* #1DB954 Green */
+    --ubi-bites: 21 100% 63%; /* #FF7545 Orange */
+    --ubi-send: 184 85% 40%; /* #10AEBA Teal */
 
     /* Chart colors */
-    --chart-1: 262 83% 58%;
-    --chart-2: 39 100% 50%;
-    --chart-3: 142 76% 36%;
-    --chart-4: 198 93% 60%;
-    --chart-5: 356 87% 61%;
+    --chart-1: 145 72% 42%;
+    --chart-2: 21 100% 63%;
+    --chart-3: 184 85% 40%;
+    --chart-4: 142 60% 30%;
+    --chart-5: 0 72% 51%;
   }
 
   .dark {
     /* UBI Brand Colors - Dark Mode */
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 262 83% 65%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 39 100% 55%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 262 83% 65%;
+    --background: 0 4% 9%; /* #191414 UBI Black */
+    --foreground: 0 0% 100%;
+    --card: 0 4% 12%; /* Slightly lighter than background */
+    --card-foreground: 0 0% 100%;
+    --popover: 0 4% 12%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 145 72% 48%; /* UBI Green (slightly brighter for dark mode) */
+    --primary-foreground: 0 4% 9%;
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 21 100% 65%; /* UBI Bites Orange */
+    --accent-foreground: 0 4% 9%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 25%;
+    --input: 0 0% 25%;
+    --ring: 145 72% 48%; /* UBI Green */
+
+    /* UBI Service Colors (same in dark mode) */
+    --ubi-move: 145 72% 48%;
+    --ubi-bites: 21 100% 65%;
+    --ubi-send: 184 85% 45%;
   }
 }
 

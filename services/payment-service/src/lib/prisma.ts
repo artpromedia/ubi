@@ -12,20 +12,24 @@ import { PrismaClient } from "@prisma/client";
 import { dbLogger, perfLogger } from "./logger.js";
 import { DATABASE_POOL_CONFIG, performanceMonitor } from "./performance.js";
 
-const SLOW_QUERY_THRESHOLD_MS = parseInt(
+const SLOW_QUERY_THRESHOLD_MS = Number.parseInt(
   process.env.SLOW_QUERY_THRESHOLD_MS || "500",
   10,
 );
 
+// Type for the extended Prisma client
+type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
+
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  prisma: ExtendedPrismaClient | undefined;
 };
 
 /**
  * Create Prisma client with performance monitoring
+ * Uses Prisma Client Extensions (replaces deprecated $use middleware)
  */
-function createPrismaClient(): PrismaClient {
-  const client = new PrismaClient({
+function createPrismaClient() {
+  const baseClient = new PrismaClient({
     log:
       process.env.NODE_ENV === "development"
         ? [
@@ -41,58 +45,65 @@ function createPrismaClient(): PrismaClient {
     // Example: postgresql://user:pass@host:5432/db?connection_limit=25&pool_timeout=10
   });
 
-  // Query timing middleware for performance monitoring
-  client.$use(async (params, next) => {
-    const startTime = Date.now();
-    const result = await next(params);
-    const duration = Date.now() - startTime;
-
-    // Record query timing metrics
-    const operation = `${params.model}.${params.action}`;
-    await performanceMonitor.recordTiming("prisma.query", duration, {
-      model: params.model || "unknown",
-      action: params.action,
-    });
-
-    // Log slow queries
-    if (duration > SLOW_QUERY_THRESHOLD_MS) {
-      perfLogger.warn(
-        {
-          model: params.model,
-          action: params.action,
-          duration,
-          threshold: SLOW_QUERY_THRESHOLD_MS,
-        },
-        `Slow query detected: ${operation} took ${duration}ms`,
-      );
-    }
-
-    // Debug logging in development
-    if (process.env.NODE_ENV === "development" && duration > 100) {
-      dbLogger.debug(
-        { operation, duration },
-        `Query ${operation} completed in ${duration}ms`,
-      );
-    }
-
-    return result;
-  });
-
   // Log query events in development
   if (process.env.NODE_ENV === "development") {
-    (client.$on as any)("query", (e: any) => {
-      if (e.duration > 100) {
-        dbLogger.debug(
-          {
-            query: e.query.slice(0, 200),
-            params: e.params?.slice(0, 100),
-            duration: e.duration,
-          },
-          "Prisma query",
-        );
-      }
-    });
+    baseClient.$on(
+      "query" as never,
+      (e: { query: string; params: string; duration: number }) => {
+        if (e.duration > 100) {
+          dbLogger.debug(
+            {
+              query: e.query.slice(0, 200),
+              params: e.params?.slice(0, 100),
+              duration: e.duration,
+            },
+            "Prisma query",
+          );
+        }
+      },
+    );
   }
+
+  // Use Prisma Client Extensions for query timing (replaces deprecated $use middleware)
+  const client = baseClient.$extends({
+    query: {
+      $allOperations: async ({ operation, model, args, query }) => {
+        const startTime = Date.now();
+        const result = await query(args);
+        const duration = Date.now() - startTime;
+
+        // Record query timing metrics
+        const operationName = `${model || "unknown"}.${operation}`;
+        performanceMonitor.recordTiming("prisma.query", duration, {
+          model: model || "unknown",
+          action: operation,
+        });
+
+        // Log slow queries
+        if (duration > SLOW_QUERY_THRESHOLD_MS) {
+          perfLogger.warn(
+            {
+              model: model || "unknown",
+              action: operation,
+              duration,
+              threshold: SLOW_QUERY_THRESHOLD_MS,
+            },
+            `Slow query detected: ${operationName} took ${duration}ms`,
+          );
+        }
+
+        // Debug logging in development
+        if (process.env.NODE_ENV === "development" && duration > 100) {
+          dbLogger.debug(
+            { operation: operationName, duration },
+            `Query ${operationName} completed in ${duration}ms`,
+          );
+        }
+
+        return result;
+      },
+    },
+  });
 
   return client;
 }

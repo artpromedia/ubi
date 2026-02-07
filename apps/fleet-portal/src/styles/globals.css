@@ -5,18 +5,18 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 0 0% 8%;
+    --foreground: 0 4% 9%; /* #191414 UBI Black */
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 8%;
+    --card-foreground: 0 4% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 8%;
-    --primary: 142 71% 45%; /* UBI Green */
+    --popover-foreground: 0 4% 9%;
+    --primary: 145 72% 42%; /* #1DB954 UBI Green */
     --primary-foreground: 0 0% 100%;
     --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 8%;
+    --secondary-foreground: 0 4% 9%;
     --muted: 0 0% 96%;
     --muted-foreground: 0 0% 45%;
-    --accent: 0 0% 8%;
+    --accent: 0 4% 9%; /* #191414 UBI Black */
     --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
@@ -24,7 +24,7 @@
     --warning-foreground: 0 0% 100%;
     --border: 0 0% 90%;
     --input: 0 0% 90%;
-    --ring: 142 71% 45%;
+    --ring: 145 72% 42%; /* UBI Green */
     --radius: 0.5rem;
     
     /* Fleet-specific */
@@ -33,27 +33,27 @@
   }
 
   .dark {
-    --background: 0 0% 4%;
+    --background: 0 4% 4%; /* Dark version of UBI Black */
     --foreground: 0 0% 98%;
-    --card: 0 0% 8%;
+    --card: 0 4% 8%;
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 8%;
+    --popover: 0 4% 8%;
     --popover-foreground: 0 0% 98%;
-    --primary: 142 71% 45%;
+    --primary: 145 72% 45%; /* UBI Green (slightly brighter for dark mode) */
     --primary-foreground: 0 0% 100%;
     --secondary: 0 0% 15%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 15%;
     --muted-foreground: 0 0% 65%;
     --accent: 0 0% 98%;
-    --accent-foreground: 0 0% 8%;
+    --accent-foreground: 0 4% 8%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
     --border: 0 0% 18%;
     --input: 0 0% 18%;
-    --ring: 142 71% 45%;
+    --ring: 145 72% 45%; /* UBI Green */
   }
 }
 
