@@ -2,201 +2,310 @@ package testutil
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/modules/redis"
-	"github.com/testcontainers/testcontainers-go/wait"
+	goredis "github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
+
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/handler"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/matching"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/pricing"
+	ridisc "github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/redis"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/repository"
 )
 
-// TestDB wraps a test database container
-type TestDB struct {
-	Container *postgres.PostgresContainer
-	DB        *sql.DB
-	DSN       string
+// The harness talks to the real Postgres and the real Redis this repository
+// runs against. There is no container runtime in this environment and no
+// in-memory substitute worth having: the guarantees slice 02 asks for —
+// exactly one accept under concurrency, a unique active ride per driver, a
+// transaction that carries its own outbox row — are properties of the
+// database, and a fake would only prove that the fake agrees with itself.
+const (
+	defaultDatabaseURL = "postgresql://ubi:ubi_dev_password@127.0.0.1:5432/ubi_test"
+	defaultRedisURL    = "redis://127.0.0.1:6379/1"
+	// testSigningSecret is a fixture, used only by tests in this package tree.
+	testSigningSecret = "test-quote-signing-secret-at-least-32-bytes"
+)
+
+// Harness is a wired ride service pointed at live infrastructure, plus the
+// seeded city configuration every test needs and the router the handlers
+// really serve.
+type Harness struct {
+	T       *testing.T
+	Pool    *pgxpool.Pool
+	Redis   *goredis.Client
+	Service *move.Service
+	Router  http.Handler
+	Signer  *move.QuoteSigner
+	Clock   *Clock
+
+	// CityID is unique per harness, so tests running side by side never share
+	// a city's config, flags, drivers or rides.
+	CityID        string
+	ConfigVersion int
 }
 
-// TestRedis wraps a test Redis container
-type TestRedis struct {
-	Container *redis.RedisContainer
-	URL       string
+// HarnessOption customises a harness before it is built.
+type HarnessOption func(*harnessOptions)
+
+type harnessOptions struct {
+	config map[string]any
+	policy matching.Policy
+	flags  map[string]bool
 }
 
-// TestInfra holds all test infrastructure
-type TestInfra struct {
-	DB    *TestDB
-	Redis *TestRedis
-	ctx   context.Context
+// WithCityConfig replaces the seeded city configuration.
+func WithCityConfig(config map[string]any) HarnessOption {
+	return func(o *harnessOptions) { o.config = config }
 }
 
-// NewTestInfra creates test infrastructure with database and Redis
-func NewTestInfra(t *testing.T) *TestInfra {
+// WithPolicy replaces the dispatch policy.
+func WithPolicy(policy matching.Policy) HarnessOption {
+	return func(o *harnessOptions) { o.policy = policy }
+}
+
+// WithFlag sets a feature flag for the harness city.
+func WithFlag(key string, enabled bool) HarnessOption {
+	return func(o *harnessOptions) { o.flags[key] = enabled }
+}
+
+// NewHarness builds the service against live Postgres and Redis, seeds a city,
+// and registers cleanup that removes everything it wrote.
+func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	t.Helper()
 
 	ctx := context.Background()
+	cityID := "T" + uuid.NewString()[:7]
 
-	infra := &TestInfra{
-		ctx: ctx,
+	options := &harnessOptions{
+		config: CityConfigFixture(cityID, 1),
+		policy: matching.DefaultPolicy(),
+		flags: map[string]bool{
+			cityconfig.FlagMove:         true,
+			cityconfig.FlagRideRequest:  true,
+			cityconfig.FlagDriverOnline: true,
+		},
+	}
+	for _, opt := range opts {
+		opt(options)
 	}
 
-	// Start PostgreSQL
-	// testcontainers-go v0.31 is the last release that builds on the Go version
-	// CI pins (1.22); its constructor is RunContainer with an image option,
-	// rather than the Run(ctx, image, ...) form added in v0.33.
-	pgContainer, err := postgres.RunContainer(ctx,
-		testcontainers.WithImage("postgres:15-alpine"),
-		postgres.WithDatabase("ubi_test"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
+	pool, err := pgxpool.New(ctx, envOr("RIDE_TEST_DATABASE_URL", defaultDatabaseURL))
 	if err != nil {
-		t.Fatalf("Failed to start postgres container: %v", err)
+		t.Fatalf("failed to create the test database pool: %v", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		t.Fatalf("failed to reach the test database: %v", err)
 	}
 
-	dsn, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	redisOptions, err := goredis.ParseURL(envOr("RIDE_TEST_REDIS_URL", defaultRedisURL))
 	if err != nil {
-		t.Fatalf("Failed to get postgres connection string: %v", err)
+		pool.Close()
+		t.Fatalf("failed to parse the test Redis URL: %v", err)
+	}
+	redisClient := goredis.NewClient(redisOptions)
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		pool.Close()
+		t.Fatalf("failed to reach test Redis: %v", err)
 	}
 
-	db, err := sql.Open("postgres", dsn)
+	store := move.NewStore(pool)
+	if err := store.Migrate(ctx); err != nil {
+		pool.Close()
+		t.Fatalf("failed to apply the ride schema: %v", err)
+	}
+
+	version, ok := options.config["version"].(int)
+	if !ok {
+		version = 1
+	}
+	seedCity(t, ctx, pool, cityID, version, options.config, options.flags)
+
+	signer, err := move.NewQuoteSigner(testSigningSecret)
 	if err != nil {
-		t.Fatalf("Failed to connect to postgres: %v", err)
+		t.Fatalf("failed to build the quote signer: %v", err)
 	}
 
-	infra.DB = &TestDB{
-		Container: pgContainer,
-		DB:        db,
-		DSN:       dsn,
-	}
-
-	// Start Redis
-	redisContainer, err := redis.RunContainer(ctx,
-		testcontainers.WithImage("redis:7-alpine"),
-	)
-	if err != nil {
-		t.Fatalf("Failed to start redis container: %v", err)
-	}
-
-	redisURL, err := redisContainer.ConnectionString(ctx)
-	if err != nil {
-		t.Fatalf("Failed to get redis connection string: %v", err)
-	}
-
-	infra.Redis = &TestRedis{
-		Container: redisContainer,
-		URL:       redisURL,
-	}
-
-	// Register cleanup
-	t.Cleanup(func() {
-		infra.Cleanup()
+	clock := NewClock(time.Now().UTC())
+	service, err := move.NewService(move.Deps{
+		Store:   store,
+		Config:  cityconfig.NewStore(pool, nil, time.Second),
+		Flags:   cityconfig.NewFlags(pool),
+		Pricing: pricing.NewEngine(),
+		Signer:  signer,
+		Router:  move.NewStraightLineRouter(),
+		Redis:   ridisc.New(redisClient),
+		Ledger:  repository.NewLedgerRepository(pool),
+		Policy:  options.policy,
+		Logger:  zerolog.Nop(),
+		Now:     clock.Now,
 	})
-
-	return infra
-}
-
-// Cleanup tears down all test infrastructure
-func (ti *TestInfra) Cleanup() {
-	if ti.DB != nil && ti.DB.DB != nil {
-		ti.DB.DB.Close()
-	}
-	if ti.DB != nil && ti.DB.Container != nil {
-		ti.DB.Container.Terminate(ti.ctx)
-	}
-	if ti.Redis != nil && ti.Redis.Container != nil {
-		ti.Redis.Container.Terminate(ti.ctx)
-	}
-}
-
-// SetupTestEnv sets environment variables for test infrastructure
-func (ti *TestInfra) SetupTestEnv(t *testing.T) {
-	t.Helper()
-
-	os.Setenv("DATABASE_URL", ti.DB.DSN)
-	os.Setenv("REDIS_URL", ti.Redis.URL)
-	os.Setenv("ENVIRONMENT", "test")
-}
-
-// RunMigrations runs database migrations
-func (ti *TestInfra) RunMigrations(t *testing.T, migrationsPath string) {
-	t.Helper()
-
-	// Find all migration files
-	files, err := filepath.Glob(filepath.Join(migrationsPath, "*.sql"))
 	if err != nil {
-		t.Fatalf("Failed to find migration files: %v", err)
+		pool.Close()
+		t.Fatalf("failed to build the move service: %v", err)
 	}
 
-	for _, file := range files {
-		content, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatalf("Failed to read migration file %s: %v", file, err)
-		}
+	rideHandler := handler.NewRideHandler(service, zerolog.Nop())
+	router := rideHandler.Routes(handler.RequireIdentity(handler.NewInternalContextVerifier("", 0)), nil)
 
-		_, err = ti.DB.DB.Exec(string(content))
-		if err != nil {
-			t.Fatalf("Failed to execute migration %s: %v", file, err)
+	h := &Harness{
+		T: t, Pool: pool, Redis: redisClient, Service: service,
+		Router: router, Signer: signer, Clock: clock,
+		CityID: cityID, ConfigVersion: version,
+	}
+
+	t.Cleanup(func() {
+		h.cleanup(context.Background())
+		redisClient.Close()
+		pool.Close()
+	})
+	return h
+}
+
+// cleanup removes every row this harness created. It runs even when a test
+// fails, so a red test does not leave a city behind for the next one.
+func (h *Harness) cleanup(ctx context.Context) {
+	statements := []string{
+		`DELETE FROM ride.offers WHERE ride_id IN (SELECT id FROM ride.rides WHERE city_id = $1)`,
+		`DELETE FROM ride.rides WHERE city_id = $1`,
+		`DELETE FROM ride.quotes WHERE city_id = $1`,
+		`DELETE FROM ride.driver_sessions WHERE city_id = $1`,
+		`DELETE FROM public.outbox_events WHERE city_id = $1`,
+		`DELETE FROM public.flag_rules WHERE city_id = $1`,
+		`DELETE FROM public.city_config_versions WHERE city_id = $1`,
+		`DELETE FROM public.cities WHERE id = $1`,
+	}
+	for _, statement := range statements {
+		if _, err := h.Pool.Exec(ctx, statement, h.CityID); err != nil {
+			h.T.Logf("cleanup statement failed (%s): %v", statement, err)
 		}
+	}
+	// The idempotency rows are keyed by actor, not city, so they are cleared by
+	// scope instead.
+	if _, err := h.Pool.Exec(ctx, `DELETE FROM ride.idempotency_keys WHERE created_at < now()`); err != nil {
+		h.T.Logf("cleanup of idempotency keys failed: %v", err)
 	}
 }
 
-// ResetDatabase clears all data from database tables
-func (ti *TestInfra) ResetDatabase(t *testing.T) {
-	t.Helper()
+// Actor is a caller identity for a request.
+type Actor struct {
+	UserID uuid.UUID
+	Role   string
+	CityID string
+}
 
-	tables := []string{
-		"ride_ratings",
-		"ride_locations",
-		"rides",
-		"driver_locations",
-		"drivers",
-		"users",
+// Rider returns a fresh rider identity in the harness city.
+func (h *Harness) Rider() Actor {
+	return Actor{UserID: uuid.New(), Role: move.RoleRider, CityID: h.CityID}
+}
+
+// Driver returns a fresh driver identity in the harness city.
+func (h *Harness) Driver() Actor {
+	return Actor{UserID: uuid.New(), Role: move.RoleDriver, CityID: h.CityID}
+}
+
+// Do sends a request through the real router with the gateway's identity
+// headers, and returns the recorded response.
+func (h *Harness) Do(method, path string, actor Actor, body any, headers ...string) *httptest.ResponseRecorder {
+	h.T.Helper()
+
+	var reader *jsonReader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			h.T.Fatalf("failed to encode the request body: %v", err)
+		}
+		reader = newJSONReader(encoded)
 	}
 
-	for _, table := range tables {
-		_, err := ti.DB.DB.Exec(fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
-		if err != nil {
-			// Table might not exist, that's ok
-			t.Logf("Warning: Failed to truncate table %s: %v", table, err)
+	var request *http.Request
+	if reader == nil {
+		request = httptest.NewRequest(method, path, nil)
+	} else {
+		request = httptest.NewRequest(method, path, reader)
+		request.Header.Set("Content-Type", "application/json")
+	}
+	if actor.UserID != uuid.Nil {
+		request.Header.Set(handler.HeaderUserID, actor.UserID.String())
+		request.Header.Set(handler.HeaderUserRole, actor.Role)
+		if actor.CityID != "" {
+			request.Header.Set(handler.HeaderCityID, actor.CityID)
 		}
+	}
+	for i := 0; i+1 < len(headers); i += 2 {
+		request.Header.Set(headers[i], headers[i+1])
+	}
+
+	recorder := httptest.NewRecorder()
+	h.Router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+// DecodeBody decodes a recorded response body, failing the test if it cannot.
+func (h *Harness) DecodeBody(recorder *httptest.ResponseRecorder, target any) {
+	h.T.Helper()
+	if err := json.Unmarshal(recorder.Body.Bytes(), target); err != nil {
+		h.T.Fatalf("failed to decode the response body %q: %v", recorder.Body.String(), err)
 	}
 }
 
-// WithTransaction runs a test function within a transaction and rolls back after
-func WithTransaction(t *testing.T, db *sql.DB, fn func(tx *sql.Tx)) {
+// seedCity writes the city, its activated configuration version and its flag
+// rules. It is the same shape config-service writes, read back by the same
+// query the service uses in production.
+func seedCity(t *testing.T, ctx context.Context, pool *pgxpool.Pool, cityID string, version int, config map[string]any, flags map[string]bool) {
 	t.Helper()
 
-	tx, err := db.Begin()
+	encoded, err := json.Marshal(config)
 	if err != nil {
-		t.Fatalf("Failed to begin transaction: %v", err)
+		t.Fatalf("failed to encode the city configuration: %v", err)
 	}
 
-	defer tx.Rollback()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO public.cities (id, name, country, timezone, active, updated_at)
+		VALUES ($1, $2, 'NG', 'Africa/Lagos', true, now())
+		ON CONFLICT (id) DO UPDATE SET active = true, updated_at = now()`,
+		cityID, "Test City "+cityID); err != nil {
+		t.Fatalf("failed to seed the test city: %v", err)
+	}
 
-	fn(tx)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO public.city_config_versions (id, city_id, version, config, activated_at, created_by, updated_at)
+		VALUES ($1, $2, $3, $4, now(), 'system:test', now())`,
+		"ccv_"+cityID, cityID, version, encoded); err != nil {
+		t.Fatalf("failed to seed the city configuration: %v", err)
+	}
+
+	for key, enabled := range flags {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO public.feature_flags (key, default_on, description, updated_at)
+			VALUES ($1, false, $2, now())
+			ON CONFLICT (key) DO NOTHING`, key, key+" vertical"); err != nil {
+			t.Fatalf("failed to register the %s flag: %v", key, err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO public.flag_rules (id, flag_key, city_id, enabled, updated_by, updated_at)
+			VALUES ($1, $2, $3, $4, 'system:test', now())
+			ON CONFLICT (flag_key, city_id) DO UPDATE SET enabled = EXCLUDED.enabled`,
+			fmt.Sprintf("flr_%s_%s", key, cityID), key, cityID, enabled); err != nil {
+			t.Fatalf("failed to seed the %s flag rule: %v", key, err)
+		}
+	}
 }
 
-// WaitForReady waits for a service to be ready
-func WaitForReady(ctx context.Context, check func() error, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		if err := check(); err == nil {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
+func envOr(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-
-	return fmt.Errorf("service not ready after %v", timeout)
+	return fallback
 }

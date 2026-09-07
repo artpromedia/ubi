@@ -335,12 +335,19 @@ func formatMessage(msgAndArgs ...interface{}) string {
 	return " - " + msgAndArgs[0].(string)
 }
 
+// The comparators below type-switch on the concrete type. time.Duration has
+// int64 as its underlying type but is a DISTINCT type, so `case int64` does not
+// match it — without an explicit case a duration comparison falls through to
+// `return false` and the assertion can only ever fail. That is what
+// TestMatchDriver_WithMatchingDelay hit: 100.31ms was reported as not >= 100ms.
 func isGreater(a, b interface{}) bool {
 	switch av := a.(type) {
 	case int:
 		return av > b.(int)
 	case int64:
 		return av > b.(int64)
+	case time.Duration:
+		return av > b.(time.Duration)
 	case float64:
 		return av > b.(float64)
 	case time.Time:
@@ -355,6 +362,8 @@ func isGreaterOrEqual(a, b interface{}) bool {
 		return av >= b.(int)
 	case int64:
 		return av >= b.(int64)
+	case time.Duration:
+		return av >= b.(time.Duration)
 	case float64:
 		return av >= b.(float64)
 	case time.Time:
@@ -370,6 +379,8 @@ func isLess(a, b interface{}) bool {
 		return av < b.(int)
 	case int64:
 		return av < b.(int64)
+	case time.Duration:
+		return av < b.(time.Duration)
 	case float64:
 		return av < b.(float64)
 	case time.Time:
@@ -384,6 +395,8 @@ func isLessOrEqual(a, b interface{}) bool {
 		return av <= b.(int)
 	case int64:
 		return av <= b.(int64)
+	case time.Duration:
+		return av <= b.(time.Duration)
 	case float64:
 		return av <= b.(float64)
 	case time.Time:

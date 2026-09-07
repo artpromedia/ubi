@@ -114,3 +114,16 @@ func decodeJSON(raw json.RawMessage, target any) error {
 	}
 	return nil
 }
+
+// jsonOrNil encodes a slice for a COALESCE update: nil means "leave the stored
+// value alone", which is not the same as an empty list meaning "take anything".
+func jsonOrNil(values []string) []byte {
+	if values == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return nil
+	}
+	return encoded
+}

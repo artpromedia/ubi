@@ -1,659 +1,502 @@
-// Package handler provides HTTP handlers for the ride service API.
+// Package handler provides the HTTP surface of the ride service.
+//
+// Every route is under /v1 and every route is behind RequireIdentity: the
+// caller's user id, role and city come from the gateway's signed headers and
+// never from the request body, so no handler can be talked into acting as
+// somebody else (hard rule 3).
 package handler
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
-	"time"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
+
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
-	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/geo"
-	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/pricing"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
 )
 
-// Error message constants
-const (
-	errMsgInvalidRequestBody = "Invalid request body"
-	errMsgInvalidRideID      = "Invalid ride ID"
-	errMsgRideNotFound       = "Ride not found"
-)
+// maxRequestBytes caps a request body. Every body this service takes is a
+// handful of fields; anything larger is a mistake or an attack.
+const maxRequestBytes = 64 * 1024
 
-// RideService defines the ride service interface
-type RideService interface {
-	RequestRide(ctx context.Context, req *domain.RideRequest) (*domain.Ride, error)
-	GetRide(ctx context.Context, rideID uuid.UUID) (*domain.Ride, error)
-	CancelRide(ctx context.Context, rideID, userID uuid.UUID, reason string) error
-	UpdateRideStatus(ctx context.Context, rideID uuid.UUID, status domain.RideStatus) error
-	RateRide(ctx context.Context, rideID uuid.UUID, rating float32, isRider bool) error
-	GetActiveRide(ctx context.Context, userID uuid.UUID, isRider bool) (*domain.Ride, error)
-	GetRideHistory(ctx context.Context, userID uuid.UUID, limit, offset int) ([]*domain.Ride, int64, error)
-}
-
-// DriverService defines the driver service interface
-type DriverService interface {
-	GetNearbyDrivers(ctx context.Context, lat, lng, radius float64, rideType domain.RideType) ([]*domain.NearbyDriver, error)
-	UpdateLocation(ctx context.Context, driverID uuid.UUID, loc *domain.DriverLocation) error
-	AcceptRide(ctx context.Context, rideID, driverID uuid.UUID) error
-	DeclineRide(ctx context.Context, rideID, driverID uuid.UUID) error
-}
-
-// MatchingService defines the matching service interface
-type MatchingService interface {
-	AcceptRide(ctx context.Context, rideID, driverID uuid.UUID) error
-	DeclineRide(rideID, driverID uuid.UUID) error
-}
-
-// RideHandler handles ride-related HTTP requests
+// RideHandler serves the Move endpoints.
 type RideHandler struct {
-	rideService    RideService
-	driverService  DriverService
-	matchingService MatchingService
-	pricingEngine  *pricing.Engine
+	service *move.Service
+	logger  zerolog.Logger
 }
 
-// NewRideHandler creates a new ride handler
-func NewRideHandler(
-	rideService RideService,
-	driverService DriverService,
-	matchingService MatchingService,
-	pricingEngine *pricing.Engine,
-) *RideHandler {
-	return &RideHandler{
-		rideService:     rideService,
-		driverService:   driverService,
-		matchingService: matchingService,
-		pricingEngine:   pricingEngine,
-	}
+// NewRideHandler builds the handler.
+func NewRideHandler(service *move.Service, logger zerolog.Logger) *RideHandler {
+	return &RideHandler{service: service, logger: logger}
 }
 
-// Response helpers
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
 
-type APIResponse struct {
-	Success bool        `json:"success"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   *APIError   `json:"error,omitempty"`
-}
-
-type APIError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
+func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(APIResponse{
-		Success: status >= 200 && status < 300,
-		Data:    data,
+	if body == nil {
+		return
+	}
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		// The status is already written; there is nothing honest left to send.
+		return
+	}
+}
+
+// writeError renders the canonical error body every UBI service uses:
+// { code, message, details }, with the status the code maps to. Clients branch
+// on `code`, never on message text.
+func writeError(w http.ResponseWriter, err error) {
+	mapped, ok := domain.AsError(err)
+	if !ok {
+		mapped = domain.Errorf(domain.CodeInternalError, "the request could not be completed")
+	}
+	writeJSON(w, mapped.Status(), mapped)
+}
+
+// fail logs server-side failures with the request path and the code, and never
+// with the caller's identity or coordinates (CLAUDE.md #7).
+func (h *RideHandler) fail(w http.ResponseWriter, r *http.Request, err error) {
+	mapped, ok := domain.AsError(err)
+	if !ok {
+		mapped = domain.Errorf(domain.CodeInternalError, "the request could not be completed").Wrap(err)
+	}
+	if mapped.Status() >= 500 {
+		h.logger.Error().Err(err).Str("path", r.URL.Path).Str("code", string(mapped.Code)).Msg("request failed")
+	} else {
+		h.logger.Info().Str("path", r.URL.Path).Str("code", string(mapped.Code)).Msg("request rejected")
+	}
+	writeJSON(w, mapped.Status(), mapped)
+}
+
+func decodeBody(r *http.Request, target any) error {
+	decoder := json.NewDecoder(io.LimitReader(r.Body, maxRequestBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		if errors.Is(err, io.EOF) {
+			return domain.Errorf(domain.CodeValidationFailed, "this endpoint needs a JSON body")
+		}
+		return domain.Errorf(domain.CodeValidationFailed, "the request body could not be read: %s", err.Error())
+	}
+	return nil
+}
+
+func (h *RideHandler) actor(w http.ResponseWriter, r *http.Request) (move.Actor, bool) {
+	actor, ok := ActorFrom(r.Context())
+	if !ok {
+		h.fail(w, r, domain.Errorf(domain.CodeInternalError, "this route is missing its identity middleware"))
+		return move.Actor{}, false
+	}
+	return actor, true
+}
+
+func rideIDFrom(r *http.Request) (uuid.UUID, error) {
+	id, err := uuid.Parse(chi.URLParam(r, "rideId"))
+	if err != nil {
+		return uuid.Nil, domain.Errorf(domain.CodeValidationFailed, "that is not a ride id")
+	}
+	return id, nil
+}
+
+func offerIDFrom(r *http.Request) (uuid.UUID, error) {
+	id, err := uuid.Parse(chi.URLParam(r, "offerId"))
+	if err != nil {
+		return uuid.Nil, domain.Errorf(domain.CodeValidationFailed, "that is not an offer id")
+	}
+	return id, nil
+}
+
+// etagFor is the ride's aggregate version as a weak ETag. Version is the same
+// number the outbox events carry, so a client that resumes a stream and a
+// client that polls agree on what "current" means.
+func etagFor(version int) string {
+	return `W/"` + strconv.Itoa(version) + `"`
+}
+
+func etagMatches(header, etag string) bool {
+	if header == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(header, ",") {
+		if strings.TrimSpace(candidate) == etag {
+			return true
+		}
+	}
+	return false
+}
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
+// Routes mounts the /v1 surface. The caller supplies the identity middleware so
+// a test can mount the same routes with the same guard.
+func (h *RideHandler) Routes(identity func(http.Handler) http.Handler, locations *LocationHandler) chi.Router {
+	r := chi.NewRouter()
+	r.Use(identity)
+
+	r.Post("/quotes", h.CreateQuote)
+
+	r.Route("/rides", func(r chi.Router) {
+		r.Post("/", h.CreateRide)
+		// Registered before the parameterised route on purpose: chi prefers the
+		// static segment, so /rides/active is never read as a ride id.
+		r.Get("/active", h.ActiveRide)
+		r.Get("/{rideId}", h.GetRide)
+		r.Get("/{rideId}/offers", h.RideOffers)
+		r.Post("/{rideId}/arrived", h.Arrived)
+		r.Post("/{rideId}/verify-pin", h.VerifyPin)
+		r.Post("/{rideId}/start", h.Start)
+		r.Post("/{rideId}/complete", h.Complete)
+		r.Post("/{rideId}/cancel", h.Cancel)
 	})
-}
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(APIResponse{
-		Success: false,
-		Error: &APIError{
-			Code:    code,
-			Message: message,
-		},
+	r.Route("/offers", func(r chi.Router) {
+		r.Post("/{offerId}/accept", h.AcceptOffer)
+		r.Post("/{offerId}/decline", h.DeclineOffer)
 	})
-}
 
-// Request/Response types
+	r.Route("/drivers/me", func(r chi.Router) {
+		r.Get("/status", h.DriverStatus)
+		r.Post("/status", h.SetDriverStatus)
+		r.Post("/locations", h.IngestLocations)
+	})
 
-type RequestRideRequest struct {
-	PickupLocation  LocationInput `json:"pickup_location"`
-	DropoffLocation LocationInput `json:"dropoff_location"`
-	Stops           []LocationInput `json:"stops,omitempty"`
-	Type            string        `json:"type"`
-	PaymentMethod   string        `json:"payment_method"`
-	ScheduledFor    *time.Time    `json:"scheduled_for,omitempty"`
-	PromoCode       string        `json:"promo_code,omitempty"`
-	Notes           string        `json:"notes,omitempty"`
-}
-
-type LocationInput struct {
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-	Address   string  `json:"address,omitempty"`
-	Name      string  `json:"name,omitempty"`
-	PlaceID   string  `json:"place_id,omitempty"`
-}
-
-type CancelRideRequest struct {
-	Reason string `json:"reason"`
-}
-
-type RateRideRequest struct {
-	Rating  float32 `json:"rating"`
-	Comment string  `json:"comment,omitempty"`
-}
-
-type UpdateLocationRequest struct {
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-	Heading   float64 `json:"heading"`
-	Speed     float64 `json:"speed"`
-	Accuracy  float64 `json:"accuracy"`
-}
-
-type PriceEstimateRequest struct {
-	PickupLatitude   float64 `json:"pickup_latitude"`
-	PickupLongitude  float64 `json:"pickup_longitude"`
-	DropoffLatitude  float64 `json:"dropoff_latitude"`
-	DropoffLongitude float64 `json:"dropoff_longitude"`
-	Currency         string  `json:"currency,omitempty"`
-}
-
-type PriceEstimateResponse struct {
-	Estimates map[string]PriceEstimate `json:"estimates"`
-	Distance  int64                    `json:"distance_meters"`
-	Duration  int64                    `json:"duration_seconds"`
-	Surge     float64                  `json:"surge_multiplier"`
-}
-
-type PriceEstimate struct {
-	Type           string `json:"type"`
-	Total          int64  `json:"total"`
-	TotalFormatted string `json:"total_formatted"`
-	Currency       string `json:"currency"`
-	ETA            int64  `json:"eta_seconds"`
-}
-
-type NearbyDriversResponse struct {
-	Drivers []NearbyDriverInfo `json:"drivers"`
-}
-
-type NearbyDriverInfo struct {
-	ID           string  `json:"id"`
-	FirstName    string  `json:"first_name"`
-	Rating       float64 `json:"rating"`
-	VehicleType  string  `json:"vehicle_type"`
-	VehicleMake  string  `json:"vehicle_make"`
-	VehicleModel string  `json:"vehicle_model"`
-	LicensePlate string  `json:"license_plate"`
-	Latitude     float64 `json:"latitude"`
-	Longitude    float64 `json:"longitude"`
-	Heading      float64 `json:"heading"`
-	ETASeconds   int64   `json:"eta_seconds"`
-	DistanceM    float64 `json:"distance_meters"`
-}
-
-// Handlers
-
-// RequestRide handles POST /rides
-func (h *RideHandler) RequestRide(w http.ResponseWriter, r *http.Request) {
-	userID := getUserIDFromContext(r.Context())
-	if userID == uuid.Nil {
-		writeError(w, http.StatusUnauthorized, domain.ErrCodeUnauthorized, "Unauthorized")
-		return
-	}
-	
-	var req RequestRideRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRequestBody)
-		return
-	}
-	
-	// Validate locations
-	if !geo.IsValidCoordinate(req.PickupLocation.Latitude, req.PickupLocation.Longitude) {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidLocation, "Invalid pickup location")
-		return
-	}
-	if !geo.IsValidCoordinate(req.DropoffLocation.Latitude, req.DropoffLocation.Longitude) {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidLocation, "Invalid dropoff location")
-		return
-	}
-	
-	// Check service area
-	inService, _ := geo.IsInServiceArea(req.PickupLocation.Latitude, req.PickupLocation.Longitude)
-	if !inService {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeOutOfService, "Pickup location is outside service area")
-		return
-	}
-	
-	// Convert to domain request
-	rideReq := &domain.RideRequest{
-		RiderID: userID,
-		PickupLocation: domain.Location{
-			Latitude:  req.PickupLocation.Latitude,
-			Longitude: req.PickupLocation.Longitude,
-			Address:   req.PickupLocation.Address,
-			Name:      req.PickupLocation.Name,
-			PlaceID:   req.PickupLocation.PlaceID,
-			H3Cell:    geo.H3Cell(req.PickupLocation.Latitude, req.PickupLocation.Longitude, geo.H3Resolution),
-		},
-		DropoffLocation: domain.Location{
-			Latitude:  req.DropoffLocation.Latitude,
-			Longitude: req.DropoffLocation.Longitude,
-			Address:   req.DropoffLocation.Address,
-			Name:      req.DropoffLocation.Name,
-			PlaceID:   req.DropoffLocation.PlaceID,
-			H3Cell:    geo.H3Cell(req.DropoffLocation.Latitude, req.DropoffLocation.Longitude, geo.H3Resolution),
-		},
-		Type:          domain.RideType(req.Type),
-		PaymentMethod: domain.PaymentMethod(req.PaymentMethod),
-		ScheduledFor:  req.ScheduledFor,
-		PromoCode:     req.PromoCode,
-		Notes:         req.Notes,
-	}
-	
-	// Convert stops
-	for _, stop := range req.Stops {
-		rideReq.Stops = append(rideReq.Stops, domain.Location{
-			Latitude:  stop.Latitude,
-			Longitude: stop.Longitude,
-			Address:   stop.Address,
-			Name:      stop.Name,
-			PlaceID:   stop.PlaceID,
+	if locations != nil {
+		r.Route("/locations", func(r chi.Router) {
+			r.Get("/autocomplete", locations.AutocompleteLocation)
+			r.Get("/geocode", locations.GeocodeAddress)
+			r.Get("/reverse", locations.ReverseGeocode)
+			r.Get("/place", locations.GetPlaceDetails)
 		})
 	}
-	
-	// Create ride
-	ride, err := h.rideService.RequestRide(r.Context(), rideReq)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to request ride")
-		writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to request ride")
-		return
-	}
-	
-	writeJSON(w, http.StatusCreated, ride)
+
+	return r
 }
 
-// GetRide handles GET /rides/{rideId}
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+// CreateQuote handles POST /v1/quotes.
+func (h *RideHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	var req move.QuoteRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	quote, err := h.service.CreateQuote(r.Context(), actor, req)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, quote)
+}
+
+// CreateRide handles POST /v1/rides.
+func (h *RideHandler) CreateRide(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	var req move.CreateRideRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	key := r.Header.Get(move.IdempotencyHeader)
+	result, status, err := h.service.CreateRide(r.Context(), actor, req, key)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", etagFor(result.Version))
+	writeJSON(w, status, result)
+}
+
+// ActiveRide handles GET /v1/rides/active, answering 204 when there is none.
+func (h *RideHandler) ActiveRide(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	view, err := h.service.ActiveRide(r.Context(), actor)
+	if err != nil {
+		if mapped, isDomain := domain.AsError(err); isDomain && mapped.Code == domain.CodeNoActiveRide {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", etagFor(view.Version))
+	writeJSON(w, http.StatusOK, view)
+}
+
+// GetRide handles GET /v1/rides/{rideId} with an ETag over the ride's version.
 func (h *RideHandler) GetRide(w http.ResponseWriter, r *http.Request) {
-	rideID, err := uuid.Parse(chi.URLParam(r, "rideId"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRideID)
+	actor, ok := h.actor(w, r)
+	if !ok {
 		return
 	}
-	
-	ride, err := h.rideService.GetRide(r.Context(), rideID)
+	rideID, err := rideIDFrom(r)
 	if err != nil {
-		if err == domain.ErrRideNotFound {
-			writeError(w, http.StatusNotFound, domain.ErrCodeRideNotFound, errMsgRideNotFound)
-			return
-		}
-		writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to get ride")
+		h.fail(w, r, err)
 		return
 	}
-	
-	writeJSON(w, http.StatusOK, ride)
+	view, err := h.service.RideByID(r.Context(), actor, rideID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	etag := etagFor(view.Version)
+	w.Header().Set("ETag", etag)
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
-// CancelRide handles POST /rides/{rideId}/cancel
-func (h *RideHandler) CancelRide(w http.ResponseWriter, r *http.Request) {
-	userID := getUserIDFromContext(r.Context())
-	if userID == uuid.Nil {
-		writeError(w, http.StatusUnauthorized, domain.ErrCodeUnauthorized, "Unauthorized")
+// RideOffers handles GET /v1/rides/{rideId}/offers — the dispatch timeline.
+func (h *RideHandler) RideOffers(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
 		return
 	}
-	
-	rideID, err := uuid.Parse(chi.URLParam(r, "rideId"))
+	rideID, err := rideIDFrom(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRideID)
+		h.fail(w, r, err)
 		return
 	}
-	
-	var req CancelRideRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		req.Reason = "User cancelled"
-	}
-	
-	if err := h.rideService.CancelRide(r.Context(), rideID, userID, req.Reason); err != nil {
-		switch err {
-		case domain.ErrRideNotFound:
-			writeError(w, http.StatusNotFound, domain.ErrCodeRideNotFound, errMsgRideNotFound)
-		case domain.ErrRideAlreadyEnded:
-			writeError(w, http.StatusBadRequest, domain.ErrCodeRideAlreadyEnded, "Ride has already ended")
-		default:
-			writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to cancel ride")
-		}
+	offers, err := h.service.OffersForRide(r.Context(), actor, rideID)
+	if err != nil {
+		h.fail(w, r, err)
 		return
 	}
-	
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Ride cancelled successfully"})
+	writeJSON(w, http.StatusOK, map[string]any{"offers": offers})
 }
 
-// TrackRide handles GET /rides/{rideId}/track
-func (h *RideHandler) TrackRide(w http.ResponseWriter, r *http.Request) {
-	rideID, err := uuid.Parse(chi.URLParam(r, "rideId"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRideID)
+// AcceptOffer handles POST /v1/offers/{offerId}/accept.
+//
+// The body always carries the result — ok, expired or already_assigned — and
+// the status is the canonical one for that outcome, so a driver app can branch
+// on either without the two ever disagreeing.
+func (h *RideHandler) AcceptOffer(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
 		return
 	}
-	
-	ride, err := h.rideService.GetRide(r.Context(), rideID)
+	offerID, err := offerIDFrom(r)
 	if err != nil {
-		if err == domain.ErrRideNotFound {
-			writeError(w, http.StatusNotFound, domain.ErrCodeRideNotFound, errMsgRideNotFound)
-			return
-		}
-		writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to get ride")
+		h.fail(w, r, err)
 		return
 	}
-	
-	// Return tracking info
-	trackingInfo := map[string]interface{}{
-		"ride_id":          ride.ID,
-		"status":           ride.Status,
-		"current_location": ride.CurrentLocation,
-		"pickup_location":  ride.PickupLocation,
-		"dropoff_location": ride.DropoffLocation,
-		"driver_id":        ride.DriverID,
+	result, err := h.service.AcceptOffer(r.Context(), actor, offerID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
 	}
-	
-	// Add ETA if in progress
-	if ride.Status == domain.RideStatusInProgress && ride.Route != nil {
-		trackingInfo["eta_seconds"] = ride.Route.DurationSeconds
+	switch result.Result {
+	case domain.AcceptOK:
+		w.Header().Set("ETag", etagFor(result.Ride.Version))
+		writeJSON(w, http.StatusOK, result)
+	case domain.AcceptExpired:
+		writeJSON(w, domain.StatusFor(domain.CodeOfferExpired), result)
+	default:
+		writeJSON(w, domain.StatusFor(domain.CodeAlreadyAssigned), result)
 	}
-	
-	writeJSON(w, http.StatusOK, trackingInfo)
 }
 
-// RateRide handles POST /rides/{rideId}/rate
-func (h *RideHandler) RateRide(w http.ResponseWriter, r *http.Request) {
-	userID := getUserIDFromContext(r.Context())
-	if userID == uuid.Nil {
-		writeError(w, http.StatusUnauthorized, domain.ErrCodeUnauthorized, "Unauthorized")
+// DeclineOffer handles POST /v1/offers/{offerId}/decline.
+func (h *RideHandler) DeclineOffer(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
 		return
 	}
-	
-	rideID, err := uuid.Parse(chi.URLParam(r, "rideId"))
+	offerID, err := offerIDFrom(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRideID)
+		h.fail(w, r, err)
 		return
 	}
-	
-	var req RateRideRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRequestBody)
+	if err := h.service.DeclineOffer(r.Context(), actor, offerID); err != nil {
+		h.fail(w, r, err)
 		return
 	}
-	
-	if req.Rating < 1 || req.Rating > 5 {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, "Rating must be between 1 and 5")
-		return
-	}
-	
-	// Determine if user is rider or driver
-	ride, err := h.rideService.GetRide(r.Context(), rideID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, domain.ErrCodeRideNotFound, errMsgRideNotFound)
-		return
-	}
-	
-	isRider := ride.RiderID == userID
-	
-	if err := h.rideService.RateRide(r.Context(), rideID, req.Rating, isRider); err != nil {
-		writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to rate ride")
-		return
-	}
-	
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Rating submitted successfully"})
+	writeJSON(w, http.StatusOK, map[string]any{"result": "declined"})
 }
 
-// GetPriceEstimate handles POST /pricing/estimate
-func (h *RideHandler) GetPriceEstimate(w http.ResponseWriter, r *http.Request) {
-	var req PriceEstimateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRequestBody)
-		return
-	}
-	
-	// Calculate distance
-	distance := geo.HaversineDistance(
-		req.PickupLatitude, req.PickupLongitude,
-		req.DropoffLatitude, req.DropoffLongitude,
-	)
-	
-	// Estimate duration
-	duration := geo.EstimateETA(distance, "car")
-	
-	// Get H3 cell for surge
-	h3Cell := geo.H3Cell(req.PickupLatitude, req.PickupLongitude, geo.H3Resolution)
-	
-	// Default currency
-	currency := domain.CurrencyNGN
-	if req.Currency != "" {
-		currency = domain.Currency(req.Currency)
-	}
-	
-	// Get estimates for all ride types
-	estimates, err := h.pricingEngine.GetPriceEstimate(distance, duration, currency, h3Cell)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, domain.ErrCodePricingFailed, "Failed to calculate price")
-		return
-	}
-	
-	// Build response
-	response := PriceEstimateResponse{
-		Estimates: make(map[string]PriceEstimate),
-		Distance:  int64(distance),
-		Duration:  duration,
-		Surge:     h.pricingEngine.GetSurgeMultiplier(h3Cell),
-	}
-	
-	for rideType, price := range estimates {
-		response.Estimates[string(rideType)] = PriceEstimate{
-			Type:           string(rideType),
-			Total:          price.Total,
-			TotalFormatted: pricing.FormatPrice(price.Total, price.Currency),
-			Currency:       string(price.Currency),
-			ETA:            geo.EstimateETA(distance, string(rideType)),
-		}
-	}
-	
-	writeJSON(w, http.StatusOK, response)
-}
-
-// GetSurgeMultiplier handles GET /pricing/surge
-func (h *RideHandler) GetSurgeMultiplier(w http.ResponseWriter, r *http.Request) {
-	latStr := r.URL.Query().Get("lat")
-	lngStr := r.URL.Query().Get("lng")
-	
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, "Invalid latitude")
-		return
-	}
-	
-	lng, err := strconv.ParseFloat(lngStr, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, "Invalid longitude")
-		return
-	}
-	
-	h3Cell := geo.H3Cell(lat, lng, geo.H3Resolution)
-	surge := h.pricingEngine.GetSurgeMultiplier(h3Cell)
-	
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"surge_multiplier": surge,
-		"h3_cell":          h3Cell,
+// Arrived handles POST /v1/rides/{rideId}/arrived.
+func (h *RideHandler) Arrived(w http.ResponseWriter, r *http.Request) {
+	h.rideAction(w, r, func(actor move.Actor, rideID uuid.UUID) (*move.RideView, error) {
+		return h.service.Arrived(r.Context(), actor, rideID)
 	})
 }
 
-// UpdateDriverLocation handles PUT /drivers/location
-func (h *RideHandler) UpdateDriverLocation(w http.ResponseWriter, r *http.Request) {
-	driverID := getUserIDFromContext(r.Context())
-	if driverID == uuid.Nil {
-		writeError(w, http.StatusUnauthorized, domain.ErrCodeUnauthorized, "Unauthorized")
-		return
-	}
-	
-	var req UpdateLocationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, "Invalid request body")
-		return
-	}
-	
-	if !geo.IsValidCoordinate(req.Latitude, req.Longitude) {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidLocation, "Invalid location")
-		return
-	}
-	
-	loc := &domain.DriverLocation{
-		DriverID: driverID,
-		Location: domain.Location{
-			Latitude:  req.Latitude,
-			Longitude: req.Longitude,
-			H3Cell:    geo.H3Cell(req.Latitude, req.Longitude, geo.H3Resolution),
-		},
-		Heading:   req.Heading,
-		Speed:     req.Speed,
-		Accuracy:  req.Accuracy,
-		Timestamp: time.Now().UTC(),
-	}
-	
-	if err := h.driverService.UpdateLocation(r.Context(), driverID, loc); err != nil {
-		writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to update location")
-		return
-	}
-	
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Location updated"})
+// Start handles POST /v1/rides/{rideId}/start.
+func (h *RideHandler) Start(w http.ResponseWriter, r *http.Request) {
+	h.rideAction(w, r, func(actor move.Actor, rideID uuid.UUID) (*move.RideView, error) {
+		return h.service.Start(r.Context(), actor, rideID)
+	})
 }
 
-// GetNearbyDrivers handles GET /drivers/nearby
-func (h *RideHandler) GetNearbyDrivers(w http.ResponseWriter, r *http.Request) {
-	latStr := r.URL.Query().Get("lat")
-	lngStr := r.URL.Query().Get("lng")
-	radiusStr := r.URL.Query().Get("radius")
-	rideTypeStr := r.URL.Query().Get("type")
-	
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, "Invalid latitude")
-		return
-	}
-	
-	lng, err := strconv.ParseFloat(lngStr, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, "Invalid longitude")
-		return
-	}
-	
-	radius := 5000.0 // Default 5km
-	if radiusStr != "" {
-		radius, _ = strconv.ParseFloat(radiusStr, 64)
-	}
-	if radius > geo.MaxSearchRadius {
-		radius = geo.MaxSearchRadius
-	}
-	
-	rideType := domain.RideTypeStandard
-	if rideTypeStr != "" {
-		rideType = domain.RideType(rideTypeStr)
-	}
-	
-	drivers, err := h.driverService.GetNearbyDrivers(r.Context(), lat, lng, radius, rideType)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to get nearby drivers")
-		return
-	}
-	
-	response := NearbyDriversResponse{
-		Drivers: make([]NearbyDriverInfo, 0, len(drivers)),
-	}
-	
-	for _, d := range drivers {
-		info := NearbyDriverInfo{
-			ID:         d.Driver.ID.String(),
-			FirstName:  d.Driver.FirstName,
-			Rating:     d.Driver.Rating,
-			ETASeconds: d.ETASeconds,
-			DistanceM:  d.DistanceM,
-			Heading:    d.Driver.Heading,
-		}
-		
-		if d.Driver.CurrentLocation != nil {
-			info.Latitude = d.Driver.CurrentLocation.Latitude
-			info.Longitude = d.Driver.CurrentLocation.Longitude
-		}
-		
-		if d.Driver.Vehicle != nil {
-			info.VehicleType = string(d.Driver.Vehicle.Type)
-			info.VehicleMake = d.Driver.Vehicle.Make
-			info.VehicleModel = d.Driver.Vehicle.Model
-			info.LicensePlate = d.Driver.Vehicle.LicensePlate
-		}
-		
-		response.Drivers = append(response.Drivers, info)
-	}
-	
-	writeJSON(w, http.StatusOK, response)
+// Complete handles POST /v1/rides/{rideId}/complete. It reads no amount from
+// the request: the fare is the server's.
+func (h *RideHandler) Complete(w http.ResponseWriter, r *http.Request) {
+	h.rideAction(w, r, func(actor move.Actor, rideID uuid.UUID) (*move.RideView, error) {
+		return h.service.Complete(r.Context(), actor, rideID)
+	})
 }
 
-// AcceptRide handles POST /driver/rides/{rideId}/accept
-func (h *RideHandler) AcceptRide(w http.ResponseWriter, r *http.Request) {
-	driverID := getUserIDFromContext(r.Context())
-	if driverID == uuid.Nil {
-		writeError(w, http.StatusUnauthorized, domain.ErrCodeUnauthorized, "Unauthorized")
-		return
-	}
-	
-	rideID, err := uuid.Parse(chi.URLParam(r, "rideId"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRideID)
-		return
-	}
-	
-	if err := h.driverService.AcceptRide(r.Context(), rideID, driverID); err != nil {
-		switch err {
-		case domain.ErrRideNotFound:
-			writeError(w, http.StatusNotFound, domain.ErrCodeRideNotFound, "Ride not found")
-		case domain.ErrDriverNotAvailable:
-			writeError(w, http.StatusBadRequest, domain.ErrCodeDriverNotAvailable, "Driver not available")
-		case domain.ErrRideAlreadyAssigned:
-			writeError(w, http.StatusConflict, domain.ErrCodeRideAlreadyAssigned, "Ride already assigned")
-		default:
-			writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to accept ride")
-		}
-		return
-	}
-	
-	// Get updated ride
-	ride, _ := h.rideService.GetRide(r.Context(), rideID)
-	
-	writeJSON(w, http.StatusOK, ride)
+// VerifyPinRequest is the driver's PIN attempt.
+type VerifyPinRequest struct {
+	Pin string `json:"pin"`
 }
 
-// DeclineRide handles POST /driver/rides/{rideId}/decline
-func (h *RideHandler) DeclineRide(w http.ResponseWriter, r *http.Request) {
-	driverID := getUserIDFromContext(r.Context())
-	if driverID == uuid.Nil {
-		writeError(w, http.StatusUnauthorized, domain.ErrCodeUnauthorized, "Unauthorized")
+// VerifyPin handles POST /v1/rides/{rideId}/verify-pin.
+func (h *RideHandler) VerifyPin(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
 		return
 	}
-	
-	rideID, err := uuid.Parse(chi.URLParam(r, "rideId"))
+	rideID, err := rideIDFrom(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrCodeInvalidRequest, errMsgInvalidRideID)
+		h.fail(w, r, err)
 		return
 	}
-	
-	if err := h.driverService.DeclineRide(r.Context(), rideID, driverID); err != nil {
-		writeError(w, http.StatusInternalServerError, domain.ErrCodeInternal, "Failed to decline ride")
+	var req VerifyPinRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
 		return
 	}
-	
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Ride declined"})
+	result, err := h.service.VerifyPin(r.Context(), actor, rideID, req.Pin)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
-// Helper to get user ID from context (set by auth middleware)
-func getUserIDFromContext(ctx context.Context) uuid.UUID {
-	if id, ok := ctx.Value("user_id").(uuid.UUID); ok {
-		return id
+// CancelRequest carries the reason code. A driver must supply one.
+type CancelRequest struct {
+	ReasonCode string `json:"reasonCode"`
+}
+
+// Cancel handles POST /v1/rides/{rideId}/cancel.
+func (h *RideHandler) Cancel(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
 	}
-	if idStr, ok := ctx.Value("user_id").(string); ok {
-		if id, err := uuid.Parse(idStr); err == nil {
-			return id
+	rideID, err := rideIDFrom(r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req CancelRequest
+	if r.ContentLength > 0 {
+		if err := decodeBody(r, &req); err != nil {
+			h.fail(w, r, err)
+			return
 		}
 	}
-	return uuid.Nil
+	view, err := h.service.Cancel(r.Context(), actor, rideID, req.ReasonCode)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", etagFor(view.Version))
+	writeJSON(w, http.StatusOK, view)
+}
+
+// DriverStatus handles GET /v1/drivers/me/status.
+func (h *RideHandler) DriverStatus(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	view, err := h.service.DriverStatus(r.Context(), actor)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// SetDriverStatus handles POST /v1/drivers/me/status.
+func (h *RideHandler) SetDriverStatus(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	var req move.DriverStatusRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.SetDriverStatus(r.Context(), actor, req)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// LocationBatchRequest is a batch of points from a driver app.
+type LocationBatchRequest struct {
+	Points []domain.LocationPoint `json:"points"`
+}
+
+// IngestLocations handles POST /v1/drivers/me/locations.
+func (h *RideHandler) IngestLocations(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	var req LocationBatchRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	result, err := h.service.IngestLocations(r.Context(), actor, req.Points)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// rideAction is the shape every ride-scoped action shares: resolve the actor,
+// parse the id, run the transition, answer with the ride and its ETag.
+func (h *RideHandler) rideAction(w http.ResponseWriter, r *http.Request, action func(move.Actor, uuid.UUID) (*move.RideView, error)) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	rideID, err := rideIDFrom(r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := action(actor, rideID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", etagFor(view.Version))
+	writeJSON(w, http.StatusOK, view)
 }
