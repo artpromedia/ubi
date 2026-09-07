@@ -103,18 +103,33 @@ reported.
 **OPEN:** whether each is genuinely terminal. `rider.cancelled_by_rider` and
 `reservation.completed` look most like omissions.
 
-## 8. Slices 05–10 got no Prisma models in this pass
+## 8. merchants / menu_items collision — RESOLVED (phase 2)
 
-The handoff DDL says "keep names". Two of its tables already exist with different shapes:
-`merchants` (existing `Merchant` vs the Bites merchant with CAC/TIN/KYB) and `menu_items`
-(existing `MenuItem` vs the Bites item with option groups).
+The handoff DDL says "keep names". Two of its tables already existed with different shapes.
+On inspection the collision was semantic, not just nominal:
 
-Adding sixty models for slices with no service behind them would have meant resolving that
-collision by fiat, in a direction nobody had chosen. Models were added only for the slices
-actually implemented, so nothing is decided by default.
+- `merchants` is a **Send/courier** merchant (`Merchant`, with `totalShipments` and a
+  `deliveries` relation) — not a Bites merchant.
+- `menu_items` is the **legacy Restaurant** food model (`MenuItem`, `Decimal` price,
+  `restaurantId`) — not a Bites item.
 
-**OPEN, before slice 05 starts:** rename the new tables, migrate the existing models onto
-the new shape, or namespace one side.
+Migrating either onto the Bites shape would have broken delivery-service and the legacy food
+model. **Decision: namespace the two colliding Bites tables** as `bites_merchants` and
+`bites_menu_items` (models `BitesMerchant`, `BitesMenuItem`). Every other Bites table keeps
+its exact handoff name — `outlets`, `option_groups`, `options`, `carts`, `orders`,
+`order_issues`, `merchant_payouts`, `merchant_kyb` — because none of the rest collide. This
+is non-destructive: nothing existing changed shape.
+
+The legacy food-service was also written against models that existed in no schema file
+(`MenuCategory`, `Order`, `Review`, `ReviewReport`) and notification-service likewise
+(`NotificationPreference`, `NotificationLog`, `NotificationTemplate`, `InAppNotification`).
+Those were added with the fields the code actually uses, gathered by grepping every access
+rather than guessed. The legacy `Order` maps to `restaurant_orders` precisely so it does not
+collide with the canonical Bites `orders` table. `OrderStatus` gained `READY_FOR_PICKUP` and
+`REFUNDED` additively.
+
+Implemented in commit on this branch; schema validates, the chain provisions an empty
+database, and `prisma migrate diff` reports no drift.
 
 ## 9. `deploy.yml` and `release.yml` were not pointed at `master`
 
