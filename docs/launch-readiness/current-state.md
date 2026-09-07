@@ -250,9 +250,14 @@ guessed at or patched over, because doing so would mean inventing a schema.
 
 ### Go services
 
+**No Go service in the repository had a tracked `go.sum`.** `git ls-files
+'services/*/go.sum'` returns nothing at the audit baseline, so all three failed
+to build from a clean checkout — dependency resolution is not reproducible
+without it.
+
 | Service | Before | After |
 |---|---|---|
-| `ride-service` | builds | builds |
+| `ride-service` | **could not build** — no `go.sum` | in progress (slice 02) |
 | `location-service` | **could not build** — no `go.sum` | builds, vets clean |
 | `delivery-service` | **could not build** — no `go.sum`, and `go mod tidy` failed on a test importing a module path that does not exist | builds, vets clean, handler tests pass |
 
