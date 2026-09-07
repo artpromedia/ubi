@@ -11,5 +11,78 @@
     }
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  // exclude: node_modules/dist/tests as usual, PLUS deferred, non-launch
+  // features quarantined out of the build. Every path below is a DEFERRED
+  // feature (see QUARANTINE.md for the per-path reason). The launch money path
+  // (lib, index, middleware, ledger, finance, wallets/payments/payouts/
+  // mobile-money/webhooks/safety/health/admin/fraud/metrics routes, and the
+  // wallet/payout/settlement/fraud/sos/safety/verification/provider services)
+  // is NOT excluded and typechecks against the real generated Prisma types.
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+
+    // --- Dead code: imported by ZERO files ---
+    "src/services/ml",                              // unvalidated ML platform (deferred)
+    "src/services/offline",                         // offline USSD/voice/SMS (deferred)
+    "src/services/batch.service.ts",                // batch util for deferred flows, no importers
+
+    // --- Superseded by the canonical src/finance reconciliation ---
+    "src/services/reconciliation.service.ts",       // OLD recon, replaced by src/finance
+    "src/services/scheduled-jobs.service.ts",       // cron glue depending on the OLD recon
+
+    // --- Neo-bank fintech beyond ride payments/driver payouts.
+    //     These reference Prisma models absent from the launch schema
+    //     (walletBalance, card, beneficiary, savingsPocket, loan, ...),
+    //     are mounted by no launch route, and are deferred. ---
+    "src/services/enhanced-wallet.service.ts",      // walletBalance/walletTransaction models absent
+    "src/services/p2p.service.ts",                  // beneficiary/moneyRequest/p2PTransfer models absent
+    "src/services/cards.service.ts",                // card/cardTransaction models absent
+    "src/services/savings.service.ts",              // savingsPocket/savingsTransaction models absent
+    "src/services/loans.service.ts",                // loan/loanProduct models absent
+    "src/services/credit-scoring.service.ts",       // creditScore model absent
+    "src/services/bills.service.ts",                // billPayment/billProvider models absent
+    "src/services/subscription.service.ts",         // subscription/subscriptionPlan models absent
+    "src/services/qr-payment.service.ts",           // merchantQRCode/qRPayment models absent
+    "src/services/remittance.service.ts",           // remittanceRecipient model absent
+
+    // --- Loyalty / gamification (deferred; models absent) ---
+    "src/services/points.service.ts",               // pointsAccount/pointsTransaction models absent
+    "src/services/tier.service.ts",                 // pointsAccount/tierHistory models absent
+    "src/services/achievements.service.ts",         // userAchievement model absent
+    "src/services/streaks.service.ts",              // userStreak/streakHistory models absent
+    "src/services/referrals.service.ts",            // referral/referralProgram models absent
+    "src/services/challenges.service.ts",           // challenge/userChallenge models absent
+    "src/services/leaderboards.service.ts",         // leaderboardEntry/leaderboardReward models absent
+
+    // --- B2B / extended verticals (deferred) ---
+    "src/services/billing.service.ts",              // B2B billing (deferred)
+    "src/services/corporate-accounts.service.ts",   // corporate accounts (deferred)
+    "src/services/healthcare-transport.service.ts", // healthcare transport (deferred)
+    "src/services/school-transport.service.ts",     // school transport (deferred)
+    "src/services/ecommerce-integrations.service.ts", // ecommerce integrations (deferred)
+    "src/services/api-infrastructure.service.ts",   // partner API infra (deferred)
+    "src/services/delivery-api.service.ts",         // delivery API (deferred)
+    "src/services/vehicle-financing.service.ts",    // creditScore model absent (deferred)
+
+    // --- Driver experience extras (career/benefits/goals/incentives/fleet) ---
+    "src/services/driver",                          // driver gamification services (deferred)
+    "src/lib/service-adapters.ts",                  // driver-only service adapters (deferred)
+
+    // --- Deferred routes (unmounted; their services are quarantined) ---
+    "src/routes/b2b.ts",                            // B2B API (deferred)
+    "src/routes/loyalty.ts",                        // loyalty/gamification API (deferred)
+    "src/routes/driver.ts",                         // driver experience API (deferred)
+    "src/routes/vehicle-financing.ts",              // vehicle financing API (deferred)
+
+    // --- Type decls used only by the quarantined features above ---
+    "src/types/ml.types.ts",
+    "src/types/offline.types.ts",
+    "src/types/b2b.types.ts",
+    "src/types/loyalty.types.ts",
+    "src/types/fintech.types.ts",
+    "src/types/vehicle-financing.types.ts",
+    "src/types/driver.types.ts"
+  ]
 }

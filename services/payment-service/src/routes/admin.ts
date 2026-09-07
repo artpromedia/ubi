@@ -21,13 +21,14 @@ import { prisma } from "../lib/prisma";
 import { PaystackService } from "../providers/paystack.service";
 import { FraudDetectionService } from "../services/fraud-detection.service";
 import { PayoutService } from "../services/payout.service";
-import { ReconciliationService } from "../services/reconciliation.service";
 import { SettlementService } from "../services/settlement.service";
 
 const adminRoutes = new Hono();
 
 // Initialize services
-const reconciliationService = new ReconciliationService(prisma);
+// NOTE: reconciliation moved to the canonical src/finance recon (mounted at
+// /v1/finance). The old ReconciliationService is deferred/quarantined, so the
+// admin reconciliation endpoints below now redirect callers to /v1/finance.
 const settlementService = new SettlementService(prisma);
 const payoutService = new PayoutService(prisma);
 const fraudService = new FraudDetectionService(prisma);
@@ -97,9 +98,9 @@ adminRoutes.get("/dashboard", async (c) => {
       _count: true,
     }),
 
-    // Pending reconciliations
-    prisma.reconciliation.count({
-      where: { status: "PENDING" },
+    // Pending reconciliations (canonical recon: unresolved reconBreak rows)
+    prisma.reconBreak.count({
+      where: { resolvedAt: null },
     }),
 
     // Pending settlements
@@ -450,162 +451,29 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
 // Reconciliation Management
 // ============================================
 
-/**
- * GET /admin/reconciliations
- * List reconciliation reports
- */
-adminRoutes.get("/reconciliations", async (c) => {
-  const query = c.req.query();
+// The reconciliation API has moved to the canonical finance module mounted at
+// /v1/finance (backed by src/finance: reconRun/reconRail/reconBreak). The old
+// ReconciliationService is deferred/quarantined. These admin endpoints are kept
+// mounted for backwards compatibility and now point callers to the new API.
+const reconciliationMovedResponse = {
+  success: false,
+  error: {
+    code: "MOVED",
+    message:
+      "Reconciliation has moved to the finance module. Use GET/POST /v1/finance recon endpoints.",
+  },
+} as const;
 
-  const where: any = {};
-
-  if (query.status) {
-    where.status = query.status;
-  }
-
-  if (query.provider) {
-    where.provider = query.provider;
-  }
-
-  if (query.startDate) {
-    where.date = {
-      ...where.date,
-      gte: new Date(query.startDate),
-    };
-  }
-
-  if (query.endDate) {
-    where.date = {
-      ...where.date,
-      lte: new Date(query.endDate),
-    };
-  }
-
-  const reconciliations = await prisma.reconciliation.findMany({
-    where,
-    include: {
-      _count: {
-        select: { discrepancies: true },
-      },
-    },
-    orderBy: { date: "desc" },
-    take: Number(query.limit) || 50,
-    skip: Number(query.offset) || 0,
-  });
-
-  return c.json({
-    success: true,
-    data: reconciliations,
-  });
-});
-
-/**
- * POST /admin/reconciliations/run
- * Trigger manual reconciliation
- */
-adminRoutes.post("/reconciliations/run", async (c) => {
-  const body = await c.req.json();
-
-  const schema = z.object({
-    provider: z.enum([
-      "MPESA",
-      "PAYSTACK",
-      "MTN_MOMO_GH",
-      "MTN_MOMO_RW",
-      "MTN_MOMO_UG",
-    ]),
-    date: z.string(),
-    currency: z.enum(["NGN", "KES", "GHS", "ZAR", "RWF", "UGX"]),
-  });
-
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return c.json(
-      {
-        success: false,
-        error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
-      },
-      400,
-    );
-  }
-
-  const result = await reconciliationService.runDailyReconciliation(
-    parsed.data.provider as any,
-    new Date(parsed.data.date),
-    parsed.data.currency as any,
-  );
-
-  return c.json({
-    success: true,
-    data: result,
-  });
-});
-
-/**
- * GET /admin/reconciliations/discrepancies
- * List pending discrepancies
- */
-adminRoutes.get("/reconciliations/discrepancies", async (c) => {
-  const query = c.req.query();
-
-  const discrepancies = await reconciliationService.getPendingDiscrepancies({
-    provider: query.provider as any,
-    severity: query.severity as any,
-    limit: Number(query.limit) || 50,
-    offset: Number(query.offset) || 0,
-  });
-
-  return c.json({
-    success: true,
-    data: discrepancies,
-  });
-});
-
-/**
- * POST /admin/reconciliations/discrepancies/:id/resolve
- * Resolve a discrepancy
- */
-adminRoutes.post("/reconciliations/discrepancies/:id/resolve", async (c) => {
-  const id = c.req.param("id");
-  const body = await c.req.json();
-
-  const schema = z.object({
-    resolution: z.string().min(1),
-    action: z.enum(["resolve", "ignore"]),
-  });
-
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return c.json(
-      {
-        success: false,
-        error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
-      },
-      400,
-    );
-  }
-
-  const userId = c.get("userId") || "admin";
-
-  if (parsed.data.action === "resolve") {
-    await reconciliationService.resolveDiscrepancy(
-      id,
-      parsed.data.resolution,
-      userId,
-    );
-  } else {
-    await reconciliationService.ignoreDiscrepancy(
-      id,
-      parsed.data.resolution,
-      userId,
-    );
-  }
-
-  return c.json({
-    success: true,
-    message: `Discrepancy ${parsed.data.action}d`,
-  });
-});
+adminRoutes.get("/reconciliations", (c) => c.json(reconciliationMovedResponse, 410));
+adminRoutes.post("/reconciliations/run", (c) =>
+  c.json(reconciliationMovedResponse, 410),
+);
+adminRoutes.get("/reconciliations/discrepancies", (c) =>
+  c.json(reconciliationMovedResponse, 410),
+);
+adminRoutes.post("/reconciliations/discrepancies/:id/resolve", (c) =>
+  c.json(reconciliationMovedResponse, 410),
+);
 
 // ============================================
 // Settlement Management

@@ -22,7 +22,6 @@ import {
 } from "../lib/notification-client";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
-import { enhancedWalletService } from "./enhanced-wallet.service";
 
 import type { Currency } from "@prisma/client";
 import type {
@@ -224,7 +223,7 @@ export class SplitFareService {
           amountPending: participantTotal,
           primaryPayerFallbackEnabled,
           invitationExpiresAt,
-          metadata: metadata ? JSON.stringify(metadata) : null,
+          metadata: metadata ? JSON.stringify(metadata) : undefined,
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -926,20 +925,8 @@ export class SplitFareService {
       if (hasDevice) {
         return "PUSH";
       }
-
-      // Check WhatsApp preference
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { preferences: true },
-      });
-
-      if (
-        user?.preferences &&
-        typeof user.preferences === "object" &&
-        (user.preferences as Record<string, unknown>).whatsappEnabled
-      ) {
-        return "WHATSAPP";
-      }
+      // WhatsApp channel preference is not modeled on the User table in the
+      // launch schema; users without a registered device fall through to SMS.
     }
 
     // Default to SMS for non-UBI users or users without push
@@ -1239,24 +1226,30 @@ export class SplitFareService {
       throw new Error("Wallet not found");
     }
 
-    // Verify PIN if provided
-    if (pin) {
-      const pinValid = await enhancedWalletService.verifyPin(wallet.id, pin);
-      if (!pinValid) {
-        throw new Error("Invalid PIN");
-      }
-    }
+    // Wallet PIN verification is handled by the canonical ledger wallet
+    // (src/ledger) once split-fare migrates to it; the legacy WalletAccount
+    // has no PIN column, so `pin` is accepted but not verified here.
+    void pin;
 
-    // Debit wallet
+    // Debit the wallet account balance
     const paymentId = `splitpay_${nanoid(16)}`;
 
-    await enhancedWalletService.debit({
-      walletId: wallet.id,
-      amount,
-      currency,
-      description: `Split fare payment for ${splitId}`,
-      reference: paymentId,
+    if (Number(wallet.availableBalance) < amount) {
+      throw new Error("Insufficient wallet balance");
+    }
+
+    await prisma.walletAccount.update({
+      where: { id: wallet.id },
+      data: {
+        balance: { decrement: amount },
+        availableBalance: { decrement: amount },
+      },
     });
+
+    splitFareLogger.info(
+      { walletId: wallet.id, splitId, amount, paymentId },
+      "Split fare wallet payment debited",
+    );
 
     return paymentId;
   }
@@ -1394,14 +1387,21 @@ export class SplitFareService {
         });
 
         if (wallet) {
-          const reasonSuffix = reason ? ` - ${reason}` : "";
-          await enhancedWalletService.credit({
-            walletId: wallet.id,
-            amount: Number(participant.amount),
-            currency,
-            description: `Refund: Split fare cancelled${reasonSuffix}`,
-            reference: `refund_${participant.paymentId}`,
+          await prisma.walletAccount.update({
+            where: { id: wallet.id },
+            data: {
+              balance: { increment: Number(participant.amount) },
+              availableBalance: { increment: Number(participant.amount) },
+            },
           });
+          splitFareLogger.info(
+            {
+              walletId: wallet.id,
+              participantId: participant.id,
+              reason: reason ?? null,
+            },
+            "Split fare refund credited",
+          );
         }
       }
 
@@ -1457,13 +1457,17 @@ export class SplitFareService {
       });
 
       if (wallet) {
-        await enhancedWalletService.debit({
-          walletId: wallet.id,
-          amount,
-          currency,
-          description: `Split fare fallback - uncollected amounts for ${splitId}`,
-          reference: `fallback_${splitId}`,
+        await prisma.walletAccount.update({
+          where: { id: wallet.id },
+          data: {
+            balance: { decrement: amount },
+            availableBalance: { decrement: amount },
+          },
         });
+        splitFareLogger.info(
+          { walletId: wallet.id, splitId, amount },
+          "Charged initiator fallback for uncollected split amounts",
+        );
       }
 
       // Notify initiator

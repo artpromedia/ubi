@@ -31,8 +31,8 @@ import {
   Currency,
   PaymentProvider,
   PayoutStatus,
-  PrismaClient,
 } from "@prisma/client";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 import { payoutLogger } from "../lib/logger";
 import { MoMoService } from "../providers/momo.service";
 import { MpesaService } from "../providers/mpesa.service";
@@ -113,7 +113,7 @@ export class PayoutService {
     manualReviewLimit: 50000, // Manual review above ₦50,000
   };
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(private readonly prisma: ExtendedPrismaClient) {
     this.walletService = new WalletService(prisma);
   }
 
@@ -988,12 +988,12 @@ export class PayoutService {
 let payoutServiceInstance: PayoutService | null = null;
 
 // Create new instance
-export function createPayoutService(prisma: PrismaClient): PayoutService {
+export function createPayoutService(prisma: ExtendedPrismaClient): PayoutService {
   return new PayoutService(prisma);
 }
 
 // Get singleton instance
-export function getPayoutService(prisma: PrismaClient): PayoutService {
+export function getPayoutService(prisma: ExtendedPrismaClient): PayoutService {
   payoutServiceInstance ??= createPayoutService(prisma);
   return payoutServiceInstance;
 }
