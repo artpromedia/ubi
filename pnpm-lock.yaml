@@ -587,6 +587,9 @@ importers:
       '@tanstack/react-query-devtools':
         specifier: ^5.91.2
         version: 5.91.2(@tanstack/react-query@5.90.16(react@19.2.3))(react@19.2.3)
+      '@ubi/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@ubi/api-client':
         specifier: workspace:*
         version: link:../../packages/api

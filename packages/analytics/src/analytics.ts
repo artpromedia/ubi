@@ -104,8 +104,13 @@ export interface AnalyticsProvider {
 }
 
 // Analytics configuration
+import { createProvider, type ProviderConfig } from "./providers";
+
+/** A provider entry may be a ready instance or a declarative config. */
+export type ProviderEntry = AnalyticsProvider | ProviderConfig;
+
 export interface AnalyticsConfig {
-  providers: AnalyticsProvider[];
+  providers: ProviderEntry[];
   debug?: boolean;
   disabled?: boolean;
   defaultProperties?: Record<string, unknown>;
@@ -121,9 +126,30 @@ export class Analytics {
   private initialized = false;
   private queue: Array<() => Promise<void>> = [];
 
+  /** Declarative provider configs, keyed by the created provider's name. */
+  private readonly autoConfigs: Record<string, Record<string, unknown>> = {};
+
   constructor(config: AnalyticsConfig) {
     this.config = config;
-    this.providers = config.providers;
+    // A provider instance already implements initialize(); a declarative
+    // ProviderConfig does not, so it is turned into an instance here and its
+    // config is stashed so the provider is initialized with it.
+    this.providers = config.providers.map((entry) => {
+      if (typeof (entry as AnalyticsProvider).initialize === "function") {
+        return entry as AnalyticsProvider;
+      }
+      const cfg = entry as ProviderConfig;
+      const provider = createProvider(cfg.type);
+      const { type: _type, ...rest } = cfg;
+      this.autoConfigs[provider.name] = rest;
+      return provider;
+    });
+    // Initialize any declaratively-configured providers. Fire-and-forget:
+    // page()/track() queue until initialization completes. Guarded for SSR by
+    // each provider's own window check.
+    if (Object.keys(this.autoConfigs).length > 0) {
+      void this.initialize(this.autoConfigs);
+    }
   }
 
   /**
