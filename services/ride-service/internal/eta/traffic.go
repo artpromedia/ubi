@@ -42,7 +42,10 @@ type TrafficCellData struct {
 // GetTrafficMultiplier returns the traffic multiplier for a given location
 func (t *H3TrafficService) GetTrafficMultiplier(lat, lng float64, departureTime time.Time) float64 {
 	// Get H3 cell at resolution 7 (about 5km average edge length, good for traffic)
-	cell := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, 7)
+	cell, err := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, 7)
+	if err != nil {
+		return t.getTimeBasedMultiplier(departureTime)
+	}
 
 	// Get traffic data from Redis
 	trafficData, err := t.getCellTrafficData(cell.String())
@@ -121,7 +124,10 @@ func (t *H3TrafficService) UpdateCellTraffic(cellID string, data *TrafficCellDat
 
 // RecordDriverSpeed records a driver's current speed for traffic estimation
 func (t *H3TrafficService) RecordDriverSpeed(lat, lng, speedKmh float64) error {
-	cell := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, 7)
+	cell, err := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, 7)
+	if err != nil {
+		return err
+	}
 	cellID := cell.String()
 
 	// Add to rolling average using Redis sorted set
@@ -140,7 +146,7 @@ func (t *H3TrafficService) RecordDriverSpeed(lat, lng, speedKmh float64) error {
 	cutoff := time.Now().Add(-5 * time.Minute).Unix()
 	pipe.ZRemRangeByScore(t.ctx, fmt.Sprintf("traffic:speeds:%s", cellID), "0", fmt.Sprintf("%d", cutoff))
 
-	_, err := pipe.Exec(t.ctx)
+	_, err = pipe.Exec(t.ctx)
 	return err
 }
 
