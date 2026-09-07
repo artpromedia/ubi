@@ -73,6 +73,8 @@ export interface LockInput {
   readonly actor: Actor;
   readonly cityId: string;
   readonly locked: boolean;
+  /** Whose wallet. Only an ops actor may name anyone but themselves. */
+  readonly ownerId?: string | undefined;
   readonly reason?: string | undefined;
 }
 
@@ -84,18 +86,23 @@ export async function setWalletLock(
   deps: WalletDeps,
   input: LockInput,
 ): Promise<{ readonly walletId: string; readonly locked: boolean }> {
-  const config = await deps.config.load(input.cityId);
-  const wallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", input.actor.id, config.city),
-  );
+  const isOps = OPS_ROLES.includes(input.actor.role);
+  const ownerId = input.ownerId ?? input.actor.id;
 
-  if (!input.locked && !OPS_ROLES.includes(input.actor.role)) {
+  if (ownerId !== input.actor.id && !isOps) {
+    throw new ContractError("forbidden", "that is not your wallet");
+  }
+  if (!input.locked && !isOps) {
     throw new ContractError(
       "forbidden",
       "unlocking a frozen wallet is done by UBI support, not in the app",
-      { walletId: wallet.id },
     );
   }
+
+  const config = await deps.config.load(input.cityId);
+  const wallet = await deps.db.$transaction((tx) =>
+    ensureWallet(tx, "user", ownerId, config.city),
+  );
 
   return deps.db.$transaction(async (tx) => {
     await tx.wallet.update({

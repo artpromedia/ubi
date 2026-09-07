@@ -91,6 +91,8 @@ const PinEnrolBody = z.object({ pin: z.string().min(4).max(6) });
 
 const LockBody = z.object({
   locked: z.boolean(),
+  /** Ops only; a rider's own request may not name anyone else. */
+  userId: z.string().min(1).optional(),
   reason: z.string().max(280).optional(),
 });
 
@@ -406,6 +408,7 @@ export function createWalletV1Routes(deps: WalletDeps): Hono {
         actor: actorOf(c),
         cityId: cityOf(c),
         locked: body.locked,
+        ownerId: body.userId,
         reason: body.reason,
       });
       return c.json(result, 200);
