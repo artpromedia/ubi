@@ -21,6 +21,21 @@ import (
 // offer, and every expiry. Nothing about a dispatch lives in a goroutine's
 // memory, so a restart resumes rather than forgetting.
 func (s *Service) Dispatch(ctx context.Context, rideID uuid.UUID) error {
+	// Read the configuration before opening the transaction. A transaction that
+	// asks the pool for a second connection deadlocks once the pool is busy,
+	// and the dispatcher runs while every accept in the city is in flight.
+	pending, err := s.deps.Store.RideByID(ctx, s.deps.Store.Pool(), rideID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	config, err := s.config(ctx, pending.CityID)
+	if err != nil {
+		return err
+	}
+
 	return s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.deps.Store.RideForUpdate(ctx, tx, rideID)
 		if errors.Is(err, domain.ErrNotFound) {
@@ -41,11 +56,6 @@ func (s *Service) Dispatch(ctx context.Context, rideID uuid.UUID) error {
 		if live > 0 {
 			// Drivers are still looking at this ride; do not pile on.
 			return nil
-		}
-
-		config, err := s.config(ctx, ride.CityID)
-		if err != nil {
-			return err
 		}
 
 		ring, ok := matching.RingFor(config, ride.DispatchRing)

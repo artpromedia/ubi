@@ -55,6 +55,18 @@ func (s *Service) AcceptOffer(ctx context.Context, actor Actor, offerID uuid.UUI
 		return nil, domain.Errorf(domain.CodeNotFound, "that offer does not exist")
 	}
 
+	// The city configuration is read before the transaction opens: a
+	// transaction that reaches back into the same connection pool deadlocks
+	// under exactly the burst of concurrent accepts this endpoint is built for.
+	pending, err := s.deps.Store.RideByID(ctx, s.deps.Store.Pool(), offer.RideID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+	config, err := s.config(ctx, pending.CityID)
+	if err != nil {
+		return nil, err
+	}
+
 	lock, acquired := s.deps.Redis.AcquireAcceptLock(ctx, offer.RideID, acceptLockTTL)
 	if !acquired {
 		// Someone else is mid-accept on this ride. Report what the database
@@ -82,11 +94,6 @@ func (s *Service) AcceptOffer(ctx context.Context, actor Actor, offerID uuid.UUI
 		if ride.DriverID != nil {
 			return errRaceLost
 		}
-		config, err := s.config(ctx, ride.CityID)
-		if err != nil {
-			return err
-		}
-
 		session, err := s.deps.Store.SessionForUpdate(ctx, tx, actor.UserID)
 		if err != nil {
 			return err
