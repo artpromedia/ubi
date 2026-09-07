@@ -9,11 +9,14 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import { ConfigClient } from "@ubi/config-client";
+import { ContractError } from "@ubi/contracts";
+import { z } from "zod";
 
 import { notificationClient } from "../lib/notification-client.js";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { createPolicyProvider, type PolicyProvider } from "./policy";
+import type { FaceVerification, FaceVerifier } from "./step-up";
 
 /** The subset of a Redis client the identity module uses. `ioredis` satisfies it. */
 export interface IdentityCache {
@@ -34,8 +37,71 @@ export interface IdentityDeps {
   readonly cache: IdentityCache;
   readonly policy: PolicyProvider;
   readonly notifier: Notifier;
+  readonly faceVerifier: FaceVerifier;
   readonly now: () => Date;
 }
+
+/**
+ * The biometric provider. The selfie is posted to it and the response is a
+ * pair of scores; nothing here keeps the image, and the provider URL must be
+ * configured — there is no local "always pass" path.
+ */
+function httpFaceVerifier(): FaceVerifier {
+  return {
+    async verify(input): Promise<FaceVerification> {
+      const url = process.env.IDENTITY_FACE_PROVIDER_URL;
+      if (url === undefined || url.length === 0) {
+        throw new ContractError(
+          "service_unavailable",
+          "Identity checks are unavailable right now. Please try again shortly.",
+        );
+      }
+
+      const response = await fetch(`${url.replace(/\/+$/, "")}/v1/face/verify`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(process.env.IDENTITY_FACE_PROVIDER_KEY === undefined
+            ? {}
+            : { authorization: `Bearer ${process.env.IDENTITY_FACE_PROVIDER_KEY}` }),
+        },
+        body: JSON.stringify({
+          reference: input.userId,
+          nin: input.nin,
+          image: input.imageBase64,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new ContractError(
+          "service_unavailable",
+          "Identity checks are unavailable right now. Please try again shortly.",
+          { status: response.status },
+        );
+      }
+
+      const parsed = FaceProviderResponseSchema.safeParse(await response.json());
+      if (!parsed.success) {
+        throw new ContractError(
+          "service_unavailable",
+          "Identity checks are unavailable right now. Please try again shortly.",
+          { cause: "unparseable_provider_response" },
+        );
+      }
+      return {
+        livenessScore: parsed.data.livenessScore,
+        matchScore: parsed.data.matchScore,
+        providerRef: parsed.data.providerRef,
+      };
+    },
+  };
+}
+
+const FaceProviderResponseSchema = z.object({
+  livenessScore: z.number().min(0).max(1),
+  matchScore: z.number().min(0).max(1),
+  providerRef: z.string().min(1),
+});
 
 let cachedDeps: IdentityDeps | undefined;
 
@@ -58,6 +124,7 @@ export function defaultIdentityDeps(): IdentityDeps {
         await notificationClient.sendSMS(params);
       },
     },
+    faceVerifier: httpFaceVerifier(),
     now: () => new Date(),
   };
   return cachedDeps;

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,11 @@ const (
 	defaultRedisURL    = "redis://127.0.0.1:6379/1"
 	// testSigningSecret is a fixture, used only by tests in this package tree.
 	testSigningSecret = "test-quote-signing-secret-at-least-32-bytes"
+)
+
+var (
+	migrateOnce sync.Once
+	migrateErr  error
 )
 
 // Harness is a wired ride service pointed at live infrastructure, plus the
@@ -132,9 +138,13 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	}
 
 	store := move.NewStore(pool)
-	if err := store.Migrate(ctx); err != nil {
+	// Once per test binary: the DDL is idempotent, but two harnesses running it
+	// at the same instant would queue behind each other's schema locks for no
+	// benefit.
+	migrateOnce.Do(func() { migrateErr = store.Migrate(ctx) })
+	if migrateErr != nil {
 		pool.Close()
-		t.Fatalf("failed to apply the ride schema: %v", err)
+		t.Fatalf("failed to apply the ride schema: %v", migrateErr)
 	}
 
 	version, ok := options.config["version"].(int)
