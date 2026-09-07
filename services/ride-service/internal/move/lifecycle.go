@@ -163,8 +163,13 @@ func (s *Service) VerifyPin(ctx context.Context, actor Actor, rideID uuid.UUID, 
 		return nil, domain.Errorf(domain.CodeRateLimited, "too many PIN attempts; wait a moment")
 	}
 
+	_, config, err := s.prepare(ctx, actor, rideID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+
 	var result *PinResultView
-	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
 		if err != nil {
 			return err
@@ -511,6 +516,11 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 	if reasonCode != "" && !domain.ValidCancellationReason(reasonCode) {
 		return nil, domain.Errorf(domain.CodeValidationFailed, "%q is not a cancellation reason this platform knows", reasonCode).
 			WithDetails(map[string]any{"reasonCodes": sortedReasonCodes()})
+	}
+
+	_, config, err := s.prepare(ctx, actor, rideID)
+	if err != nil {
+		return nil, asDomainError(err)
 	}
 
 	var view *RideView
