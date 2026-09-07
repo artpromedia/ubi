@@ -504,6 +504,7 @@ model Transaction {
   @@index([transactionType])
   @@index([idempotencyKey])
   @@index([createdAt])
+  @@index([status, transactionType, createdAt], map: "idx_transactions_status_type_created")
   @@map("transactions")
 }
 
@@ -567,6 +568,10 @@ model PaymentTransaction {
   @@index([status, createdAt])
   @@index([provider, providerReference])
   @@index([createdAt])
+  // Declared in 20250101000004_performance_indexes; named so the datamodel
+  // and the migration chain do not drift.
+  @@index([userId, status, initiatedAt], map: "idx_payment_transactions_user_status_initiated")
+  @@index([provider, status, initiatedAt], map: "idx_payment_transactions_provider_status_created")
   @@map("payment_transactions")
 }
 

@@ -25,9 +25,8 @@ WHERE is_active = true;
 CREATE INDEX IF NOT EXISTS idx_transactions_status_type_created
 ON transactions(status, transaction_type, created_at DESC);
 
--- Transaction: User transaction history (via ledger entries)
-CREATE INDEX IF NOT EXISTS idx_ledger_entries_account_created_desc
-ON ledger_entries(account_id, created_at DESC);
+-- REMOVED: idx_ledger_entries_account_created_desc duplicated the index the
+-- datamodel already declares on LedgerEntry as @@index([accountId, createdAt]).
 
 -- PaymentTransaction: User payment history
 CREATE INDEX IF NOT EXISTS idx_payment_transactions_user_status_initiated
@@ -63,18 +62,14 @@ CREATE INDEX IF NOT EXISTS idx_payouts_status_initiated
 ON payouts(status, initiated_at)
 WHERE status IN ('PENDING', 'PROCESSING');
 
--- Driver earnings: period queries.
--- FIXED: driver_earnings has no period_start/period_end columns. Weekly and
--- daily statements are derived by filtering created_at per driver.
-CREATE INDEX IF NOT EXISTS idx_driver_earnings_driver_created
-ON driver_earnings(driver_id, created_at DESC);
+-- REMOVED: an index on driver_earnings(driver_id, period_start, period_end).
+-- Those columns do not exist; statements are derived by filtering created_at
+-- per driver, and the datamodel already declares @@index([driverId, createdAt]).
 
 -- REMOVED: a partial index predicated on `created_at > NOW() - INTERVAL '30
 -- days'`. Postgres requires index predicates to be IMMUTABLE and NOW() is
--- STABLE, so the statement is rejected. The full index on created_at below
--- serves the same "recent transactions" queries.
-CREATE INDEX IF NOT EXISTS idx_transactions_created_desc
-ON transactions(created_at DESC);
+-- STABLE, so the statement is rejected. No replacement is needed: the datamodel
+-- already declares @@index([createdAt]) on Transaction.
 
 -- Partial index for pending/processing transactions
 CREATE INDEX IF NOT EXISTS idx_transactions_pending_processing

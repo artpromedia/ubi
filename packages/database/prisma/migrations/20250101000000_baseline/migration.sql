@@ -1615,6 +1615,9 @@ CREATE INDEX "transactions_idempotency_key_idx" ON "transactions"("idempotency_k
 CREATE INDEX "transactions_created_at_idx" ON "transactions"("created_at");
 
 -- CreateIndex
+CREATE INDEX "idx_transactions_status_type_created" ON "transactions"("status", "transaction_type", "created_at");
+
+-- CreateIndex
 CREATE INDEX "payment_methods_user_id_idx" ON "payment_methods"("user_id");
 
 -- CreateIndex
@@ -1640,6 +1643,12 @@ CREATE INDEX "payment_transactions_provider_provider_reference_idx" ON "payment_
 
 -- CreateIndex
 CREATE INDEX "payment_transactions_created_at_idx" ON "payment_transactions"("created_at");
+
+-- CreateIndex
+CREATE INDEX "idx_payment_transactions_user_status_initiated" ON "payment_transactions"("user_id", "status", "initiated_at");
+
+-- CreateIndex
+CREATE INDEX "idx_payment_transactions_provider_status_created" ON "payment_transactions"("provider", "status", "initiated_at");
 
 -- CreateIndex
 CREATE INDEX "balance_holds_account_id_is_released_idx" ON "balance_holds"("account_id", "is_released");

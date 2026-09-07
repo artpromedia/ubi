@@ -259,9 +259,30 @@ jobs:
   # DATABASE
   # ===========================================
   db-check:
-    name: Database Schema Check
+    name: Database Schema & Migration Chain
     needs: setup
     runs-on: ubuntu-latest
+    # A schema that validates is not the same as a migration chain that runs.
+    # This job provisions an EMPTY database from the migrations, which is the
+    # Phase 0 database exit gate, and then checks the chain has not drifted
+    # from the schema.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_ci_password
+          POSTGRES_DB: ubi_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ubi:ubi_ci_password@localhost:5432/ubi_ci
+      SHADOW_DATABASE_URL: postgresql://ubi:ubi_ci_password@localhost:5432/ubi_ci_shadow
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -283,8 +304,41 @@ jobs:
       - name: Validate Prisma schema
         run: pnpm --filter @ubi/database exec prisma validate
 
+      - name: Provision an empty database from the migration chain
+        run: pnpm --filter @ubi/database exec prisma migrate deploy
+
+      - name: Fail on schema drift
+        # migrate diff between what the migrations produce and what the schema
+        # declares must be empty; --exit-code makes a non-empty diff fail.
+        run: |
+          pnpm --filter @ubi/database exec prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --exit-code
+
       - name: Generate Prisma client
         run: pnpm --filter @ubi/database exec prisma generate
+
+      - name: Assert the ledger invariant is enforced by the database
+        # The double-entry rule is a deferred constraint trigger, not an
+        # application convention. If this ever stops failing, the ledger has
+        # silently become unguarded.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO wallets (id, owner_type, owner_id, currency, tier, version, created_at, updated_at)
+            VALUES ('ci_w','user','ci_user','NGN','tier1',1,now(),now());"
+          if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+                BEGIN;
+                INSERT INTO journal_entries (id, kind, reference, occurred_at, created_at)
+                VALUES ('ci_je','test','ci', now(), now());
+                INSERT INTO journal_lines (id, entry_id, account, wallet_id, amount_minor, currency, created_at)
+                VALUES ('ci_jl','ci_je','wallet','ci_w',-100,'NGN',now());
+                COMMIT;"; then
+            echo "FAIL: an unbalanced journal entry was committed"
+            exit 1
+          fi
+          echo "OK: unbalanced journal entry refused by the database"
 
   # ===========================================
   # FINAL STATUS CHECK
