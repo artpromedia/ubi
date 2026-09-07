@@ -57,8 +57,13 @@ func (s *Service) Arrived(ctx context.Context, actor Actor, rideID uuid.UUID) (*
 		return nil, domain.Errorf(domain.CodeForbidden, "only the assigned driver can report arrival")
 	}
 
+	_, config, err := s.prepare(ctx, actor, rideID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+
 	var view *RideView
-	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
 		if err != nil {
 			return err
@@ -307,8 +312,13 @@ func (s *Service) Start(ctx context.Context, actor Actor, rideID uuid.UUID) (*Ri
 		return nil, domain.Errorf(domain.CodeForbidden, "only the assigned driver can start the trip")
 	}
 
+	_, config, err := s.prepare(ctx, actor, rideID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+
 	var view *RideView
-	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
 		if err != nil {
 			return err
@@ -368,8 +378,13 @@ func (s *Service) Complete(ctx context.Context, actor Actor, rideID uuid.UUID) (
 		return nil, domain.Errorf(domain.CodeForbidden, "only the assigned driver can complete the trip")
 	}
 
+	_, config, err := s.prepare(ctx, actor, rideID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+
 	var view *RideView
-	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
 		if err != nil {
 			return err
@@ -499,7 +514,7 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 	}
 
 	var view *RideView
-	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
 		if err != nil {
 			return err
