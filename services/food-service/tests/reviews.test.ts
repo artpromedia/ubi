@@ -355,8 +355,8 @@ describe("Review Tags", () => {
 
     const topTags = getTopTags(stats, 3);
     expect(topTags).toHaveLength(3);
-    expect(topTags[0].tag).toBe("delicious");
-    expect(topTags[0].count).toBe(10);
+    expect(topTags[0]?.tag).toBe("delicious");
+    expect(topTags[0]?.count).toBe(10);
   });
 });
 
@@ -517,7 +517,7 @@ describe("Review Helpfulness", () => {
     ];
 
     const sorted = sortByHelpfulness(reviews);
-    expect(sorted[0].reviewId).toBe("2");
+    expect(sorted[0]?.reviewId).toBe("2");
   });
 });
 

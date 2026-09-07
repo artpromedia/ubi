@@ -354,8 +354,8 @@ describe("Search Result Scoring", () => {
     ];
 
     const sorted = sortByRelevance(results);
-    expect(sorted[0].name).toBe("Best Match");
-    expect(sorted[sorted.length - 1].name).toBe("Low Match");
+    expect(sorted[0]?.name).toBe("Best Match");
+    expect(sorted[sorted.length - 1]?.name).toBe("Low Match");
   });
 });
 
@@ -521,7 +521,7 @@ describe("Search Suggestions", () => {
     );
     const menuSuggestions = suggestions.filter((s) => s.type === "menu_item");
     expect(menuSuggestions.length).toBe(1);
-    expect(menuSuggestions[0].name).toBe("Jollof Rice");
+    expect(menuSuggestions[0]?.name).toBe("Jollof Rice");
   });
 
   it("should suggest cuisines matching query", () => {
@@ -533,7 +533,7 @@ describe("Search Suggestions", () => {
     );
     const cuisineSuggestions = suggestions.filter((s) => s.type === "cuisine");
     expect(cuisineSuggestions.length).toBe(1);
-    expect(cuisineSuggestions[0].name).toBe("Italian");
+    expect(cuisineSuggestions[0]?.name).toBe("Italian");
   });
 
   it("should return mixed suggestions", () => {

@@ -314,7 +314,13 @@ emailRoutes.post('/receipt', serviceAuth, async (c) => {
 // Helpers
 // ============================================
 
-function interpolateTemplate(template: string, data: Record<string, any>): string {
+function interpolateTemplate(
+  template: string | null | undefined,
+  data: Record<string, any>,
+): string {
+  if (!template) {
+    return "";
+  }
   return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
     return data[key] !== undefined ? String(data[key]) : match;
   });

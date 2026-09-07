@@ -9,11 +9,7 @@ import { prisma } from "../lib/prisma";
 import { publishEvent, redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
 import { auth, serviceAuth } from "../middleware/auth";
-import {
-  NotificationPriority,
-  NotificationStatus,
-  NotificationType,
-} from "../types";
+import { NotificationPriority, NotificationType } from "../types";
 
 const inAppRoutes = new Hono();
 
@@ -73,9 +69,10 @@ inAppRoutes.get(
     const userId = c.get("userId");
     const { page, limit, unreadOnly, type } = c.req.valid("query");
 
+    // InAppNotification rows are inherently in-app; the model has no `channel`
+    // discriminator column, so we scope by user only.
     const where: Record<string, unknown> = {
       userId,
-      channel: "IN_APP",
     };
 
     if (unreadOnly) {
@@ -167,6 +164,9 @@ inAppRoutes.post(
       );
     }
 
+    // GAP: InAppNotification has no `priority`, `expiresAt` or `status` columns.
+    // Read-state is tracked by `readAt` (null = unread/delivered); priority and
+    // expiry are carried in the JSON `data` payload so no information is lost.
     const notification = await prisma.inAppNotification.create({
       data: {
         id: generateId("notif"),
@@ -176,10 +176,11 @@ inAppRoutes.post(
         body: data.body,
         imageUrl: data.imageUrl,
         actionUrl: data.actionUrl,
-        data: data.data || {},
-        priority: data.priority,
-        expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
-        status: NotificationStatus.DELIVERED,
+        data: {
+          ...(data.data ?? {}),
+          priority: data.priority,
+          ...(data.expiresAt ? { expiresAt: data.expiresAt } : {}),
+        },
       },
     });
 
@@ -227,7 +228,8 @@ inAppRoutes.post(
       });
     }
 
-    // Create notifications
+    // Create notifications. See create route above for the priority/status GAP:
+    // priority rides inside the JSON `data` payload, read-state via `readAt`.
     const notifications = eligibleUserIds.map((userId) => ({
       id: generateId("notif"),
       userId,
@@ -236,9 +238,10 @@ inAppRoutes.post(
       body: notificationData.body,
       imageUrl: notificationData.imageUrl,
       actionUrl: notificationData.actionUrl,
-      data: notificationData.data || {},
-      priority: notificationData.priority,
-      status: NotificationStatus.DELIVERED,
+      data: {
+        ...(notificationData.data ?? {}),
+        priority: notificationData.priority,
+      },
     }));
 
     await prisma.inAppNotification.createMany({ data: notifications });
@@ -288,7 +291,7 @@ inAppRoutes.patch("/:id/read", auth, async (c) => {
 
   const updated = await prisma.inAppNotification.update({
     where: { id },
-    data: { readAt: new Date(), status: NotificationStatus.READ },
+    data: { readAt: new Date() },
   });
 
   // Update badge count
@@ -308,7 +311,7 @@ inAppRoutes.post("/read-all", auth, async (c) => {
 
   const result = await prisma.inAppNotification.updateMany({
     where: { userId, readAt: null },
-    data: { readAt: new Date(), status: NotificationStatus.READ },
+    data: { readAt: new Date() },
   });
 
   // Reset badge count

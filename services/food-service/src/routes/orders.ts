@@ -12,12 +12,7 @@ import {
   generateId,
   generateOrderNumber,
 } from "../lib/utils";
-import {
-  ItemAvailability,
-  OrderStatus,
-  OrderType,
-  PaymentStatus,
-} from "../types";
+import { OrderStatus, OrderType, PaymentStatus } from "../types";
 
 const orderRoutes = new Hono();
 
@@ -116,7 +111,9 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
     );
   }
 
-  if (restaurant.status !== "ACTIVE") {
+  // GAP: Restaurant has no lifecycle `status` column; `isOpen` is the schema's
+  // "accepting orders" signal.
+  if (!restaurant.isOpen) {
     return c.json(
       {
         success: false,
@@ -135,7 +132,7 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
     where: {
       id: { in: menuItemIds },
       restaurantId: data.restaurantId,
-      isActive: true,
+      isAvailable: true,
     },
   });
 
@@ -152,10 +149,10 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
     );
   }
 
-  // Check availability
+  // Check availability. GAP: MenuItem has no `availability` enum; `isAvailable`
+  // (boolean) is the schema's stock signal.
   const unavailableItems = menuItems.filter(
-    (i: (typeof menuItems)[number]) =>
-      i.availability === ItemAvailability.OUT_OF_STOCK
+    (i: (typeof menuItems)[number]) => !i.isAvailable
   );
   if (unavailableItems.length > 0) {
     return c.json(
@@ -180,7 +177,9 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
     const menuItem = menuItems.find(
       (mi: (typeof menuItems)[number]) => mi.id === item.menuItemId
     )!;
-    let itemPrice = menuItem.discountPrice || menuItem.price;
+    // GAP: MenuItem has no `discountPrice` column. `price` is a Prisma Decimal,
+    // converted to a number for the order-math below.
+    let itemPrice = Number(menuItem.price);
 
     // Calculate option price modifiers
     const selectedOptions = item.selectedOptions.map((so) => {
@@ -202,9 +201,11 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
       };
     });
 
-    // Calculate addon prices
+    // Calculate addon prices.
+    // GAP: MenuItem has no `addons` column (only a generic `options` JSON), so
+    // add-on pricing cannot be resolved server-side; treated as no add-ons.
     const selectedAddons = item.selectedAddons.map((addonId) => {
-      const addon = (menuItem.addons as any[]).find((a) => a.id === addonId);
+      const addon = ([] as any[]).find((a) => a.id === addonId);
 
       if (addon) {
         itemPrice += addon.price;
@@ -230,31 +231,32 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
     };
   });
 
-  // Calculate totals
+  // Calculate totals. Restaurant.deliveryFee/minimumOrder are Prisma Decimals.
+  // GAP: Restaurant has no `currency` column — currency belongs to city config
+  // (see handoff rules); the Order model's `currency` default applies on write.
   const totals = calculateOrderTotals(orderItems, {
-    deliveryFee: data.type === OrderType.DELIVERY ? restaurant.deliveryFee : 0,
+    deliveryFee:
+      data.type === OrderType.DELIVERY ? Number(restaurant.deliveryFee) : 0,
     tip: data.tip,
-    currency: restaurant.currency || "NGN",
   });
 
   // Check minimum order
-  if (totals.subtotal < restaurant.minimumOrder) {
+  if (totals.subtotal < Number(restaurant.minimumOrder)) {
     return c.json(
       {
         success: false,
         error: {
           code: "BELOW_MINIMUM",
-          message: `Minimum order is ${restaurant.minimumOrder} ${restaurant.currency || "NGN"}`,
+          message: `Minimum order is ${restaurant.minimumOrder}`,
         },
       },
       400
     );
   }
 
-  // Calculate estimated prep time
-  const maxPrepTime = Math.max(
-    ...menuItems.map((i: (typeof menuItems)[number]) => i.prepTime || 15)
-  );
+  // Calculate estimated prep time.
+  // GAP: MenuItem has no `prepTime` column; a fixed per-item default is used.
+  const maxPrepTime = Math.max(...menuItems.map(() => 15));
   const estimatedPrepTime = maxPrepTime + Math.floor(orderItems.length / 3) * 5;
 
   const orderId = generateId("ord");
@@ -277,7 +279,6 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
       tip: totals.tip,
       discount: totals.discount,
       total: totals.total,
-      currency: restaurant.currency || "NGN",
       paymentStatus: PaymentStatus.PENDING,
       deliveryAddress: data.deliveryAddress,
       deliveryInstructions: data.deliveryInstructions,
@@ -345,7 +346,7 @@ orderRoutes.get("/", async (c) => {
       take: limit,
       include: {
         restaurant: {
-          select: { id: true, name: true, logo: true },
+          select: { id: true, name: true, imageUrl: true },
         },
       },
     }),
@@ -390,8 +391,10 @@ orderRoutes.get("/active", async (c) => {
           id: true,
           name: true,
           phone: true,
-          logo: true,
-          location: true,
+          imageUrl: true,
+          address: true,
+          latitude: true,
+          longitude: true,
         },
       },
     },
@@ -418,8 +421,10 @@ orderRoutes.get("/:id", async (c) => {
           id: true,
           name: true,
           phone: true,
-          logo: true,
-          location: true,
+          imageUrl: true,
+          address: true,
+          latitude: true,
+          longitude: true,
         },
       },
     },
@@ -441,7 +446,7 @@ orderRoutes.get("/:id", async (c) => {
   });
 
   const isCustomer = order.customerId === userId;
-  const isRestaurantOwner = restaurant?.ownerId === userId;
+  const isRestaurantOwner = restaurant?.userId === userId;
   const isDriver = order.driverId === userId;
 
   if (!isCustomer && !isRestaurantOwner && !isDriver) {
@@ -474,7 +479,6 @@ orderRoutes.get("/:id/track", async (c) => {
       status: true,
       type: true,
       estimatedPrepTime: true,
-      estimatedDeliveryTime: true,
       confirmedAt: true,
       preparingAt: true,
       readyAt: true,
@@ -483,7 +487,14 @@ orderRoutes.get("/:id/track", async (c) => {
       driverId: true,
       deliveryAddress: true,
       restaurant: {
-        select: { id: true, name: true, location: true, phone: true },
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+          phone: true,
+        },
       },
     },
   });
@@ -544,7 +555,7 @@ orderRoutes.put(
     }
 
     // Verify restaurant owner or driver
-    const isRestaurantOwner = order.restaurant.ownerId === userId;
+    const isRestaurantOwner = order.restaurant.userId === userId;
     const isDriver = order.driverId === userId;
 
     if (!isRestaurantOwner && !isDriver) {
@@ -660,7 +671,7 @@ orderRoutes.post("/:id/cancel", async (c) => {
   }
 
   const isCustomer = order.customerId === userId;
-  const isRestaurantOwner = order.restaurant.ownerId === userId;
+  const isRestaurantOwner = order.restaurant.userId === userId;
 
   if (!isCustomer && !isRestaurantOwner) {
     return c.json(
@@ -695,12 +706,13 @@ orderRoutes.post("/:id/cancel", async (c) => {
     data: {
       status: OrderStatus.CANCELLED,
       cancelledAt: new Date(),
-      cancellationReason: reason,
     },
   });
 
-  // Request refund if paid
-  if (order.paymentStatus === PaymentStatus.PAID) {
+  // Request refund if paid. GAP: Order has no `cancellationReason` column, so
+  // the reason is only propagated on the refund event, not persisted on the row.
+  // A paid order carries paymentStatus COMPLETED in this schema.
+  if (order.paymentStatus === "COMPLETED") {
     await redis.publish(
       "order:refund",
       JSON.stringify({
@@ -735,7 +747,9 @@ orderRoutes.post("/:id/assign-driver", async (c) => {
   }
 
   const id = c.req.param("id");
-  const { driverId, estimatedDeliveryTime } = await c.req.json<{
+  // GAP: Order has no `estimatedDeliveryTime` column, so the assigned ETA cannot
+  // be persisted on the order row (only the driver assignment is).
+  const { driverId } = await c.req.json<{
     driverId: string;
     estimatedDeliveryTime: number;
   }>();
@@ -771,7 +785,6 @@ orderRoutes.post("/:id/assign-driver", async (c) => {
     where: { id },
     data: {
       driverId,
-      estimatedDeliveryTime,
     },
   });
 
@@ -796,7 +809,7 @@ orderRoutes.get("/restaurant/:restaurantId", async (c) => {
     where: { id: restaurantId },
   });
 
-  if (restaurant?.ownerId !== userId) {
+  if (restaurant?.userId !== userId) {
     return c.json(
       {
         success: false,
@@ -844,7 +857,7 @@ orderRoutes.get("/restaurant/:restaurantId/active", async (c) => {
     where: { id: restaurantId },
   });
 
-  if (restaurant?.ownerId !== userId) {
+  if (restaurant?.userId !== userId) {
     return c.json(
       {
         success: false,

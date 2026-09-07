@@ -423,8 +423,9 @@ describe("Menu Price Calculations", () => {
     // Add option price modifiers
     item.selectedOptions.forEach((selection, optionIndex) => {
       const option = item.menuItem.options[optionIndex];
-      if (option && option.choices[selection.choiceIndex]) {
-        price += option.choices[selection.choiceIndex].priceModifier;
+      const choice = option?.choices[selection.choiceIndex];
+      if (choice) {
+        price += choice.priceModifier;
       }
     });
 
@@ -618,7 +619,7 @@ describe("Menu Dietary Filters", () => {
   it("should filter vegan items", () => {
     const result = filterByDietary(menuItems, { vegan: true });
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("Veggie Stir Fry");
+    expect(result[0]?.name).toBe("Veggie Stir Fry");
   });
 
   it("should filter gluten-free items", () => {
@@ -638,6 +639,6 @@ describe("Menu Dietary Filters", () => {
       excludeAllergens: ["dairy"],
     });
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("Veggie Stir Fry");
+    expect(result[0]?.name).toBe("Veggie Stir Fry");
   });
 });

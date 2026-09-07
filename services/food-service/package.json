@@ -20,6 +20,7 @@
     "@hono/zod-validator": "^0.7.6",
     "@prisma/client": "^6.1.0",
     "@types/jsonwebtoken": "^9.0.10",
+    "@ubi/contracts": "workspace:*",
     "@ubi/database": "workspace:*",
     "@ubi/logger": "workspace:*",
     "@ubi/utils": "workspace:*",

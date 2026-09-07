@@ -136,10 +136,10 @@ export async function restaurantOwner(
     const { prisma } = await import("../lib/prisma.js");
     const restaurant = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
-      select: { ownerId: true },
+      select: { userId: true },
     });
 
-    if (restaurant?.ownerId !== userId) {
+    if (restaurant?.userId !== userId) {
       return c.json(
         {
           success: false,

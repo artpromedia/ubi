@@ -133,10 +133,13 @@ templatesRoutes.post('/', adminOnly, zValidator('json', createTemplateSchema), a
     }, 409);
   }
 
+  const { variables, metadata, ...rest } = data;
+
   const template = await prisma.notificationTemplate.create({
     data: {
       id: generateId('tmpl'),
-      ...data,
+      ...rest,
+      metadata: mergeTemplateMetadata(metadata, variables),
       isActive: true,
     },
   });
@@ -162,10 +165,30 @@ templatesRoutes.patch('/:id', adminOnly, zValidator('json', updateTemplateSchema
     }, 404);
   }
 
+  const { variables, metadata, ...rest } = data;
+
+  // Only recompute the JSON blob when the patch touches variables or metadata,
+  // so an unrelated field update does not clobber stored values.
+  let nextMetadata: Record<string, any> | undefined;
+  if (variables !== undefined || metadata !== undefined) {
+    const base =
+      metadata ??
+      (existing.metadata &&
+      typeof existing.metadata === "object" &&
+      !Array.isArray(existing.metadata)
+        ? (existing.metadata as Record<string, any>)
+        : {});
+    nextMetadata = mergeTemplateMetadata(
+      base,
+      variables ?? readTemplateVariables(existing.metadata),
+    );
+  }
+
   const template = await prisma.notificationTemplate.update({
     where: { id },
     data: {
-      ...data,
+      ...rest,
+      ...(nextMetadata !== undefined ? { metadata: nextMetadata } : {}),
       updatedAt: new Date(),
     },
   });
@@ -251,6 +274,13 @@ templatesRoutes.post('/:id/duplicate', adminOnly, async (c) => {
     }, 404);
   }
 
+  const baseMetadata =
+    existing.metadata &&
+    typeof existing.metadata === "object" &&
+    !Array.isArray(existing.metadata)
+      ? (existing.metadata as Record<string, any>)
+      : {};
+
   const template = await prisma.notificationTemplate.create({
     data: {
       id: generateId('tmpl'),
@@ -260,8 +290,10 @@ templatesRoutes.post('/:id/duplicate', adminOnly, async (c) => {
       title: existing.title,
       body: existing.body,
       htmlBody: existing.htmlBody,
-      variables: existing.variables as string[],
-      metadata: existing.metadata || {},
+      metadata: mergeTemplateMetadata(
+        baseMetadata,
+        readTemplateVariables(existing.metadata),
+      ),
       isActive: false, // Start inactive
     },
   });
@@ -322,10 +354,43 @@ templatesRoutes.get('/by-type/:type/:channel', serviceAuth, async (c) => {
 // Helpers
 // ============================================
 
-function interpolateTemplate(template: string, variables: Record<string, any>): string {
+function interpolateTemplate(
+  template: string | null | undefined,
+  variables: Record<string, any>,
+): string {
+  if (!template) {
+    return "";
+  }
   return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
     return variables[key] !== undefined ? String(variables[key]) : match;
   });
+}
+
+/**
+ * The NotificationTemplate model has no dedicated `variables` column; the list
+ * of placeholder names is carried inside the JSON `metadata` blob. These helpers
+ * keep that single source consistent across create/update/duplicate/read.
+ * GAP: a first-class `variables String[]` column on NotificationTemplate.
+ */
+function readTemplateVariables(metadata: unknown): string[] {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    const v = (metadata as Record<string, unknown>)["variables"];
+    if (Array.isArray(v)) {
+      return v.filter((x): x is string => typeof x === "string");
+    }
+  }
+  return [];
+}
+
+function mergeTemplateMetadata(
+  metadata: Record<string, any> | undefined,
+  variables: string[] | undefined,
+): Record<string, any> {
+  const merged: Record<string, any> = { ...(metadata ?? {}) };
+  if (variables !== undefined) {
+    merged["variables"] = variables;
+  }
+  return merged;
 }
 
 export { templatesRoutes };

@@ -239,25 +239,29 @@ reviewRoutes.put("/:id", zValidator("json", updateReviewSchema), async (c) => {
     );
   }
 
-  // Recalculate overall rating if ratings changed
-  let overallRating = review.overallRating;
+  // Recalculate overall rating if ratings changed. overallRating is a Prisma
+  // Decimal; the average is computed as a number (accepted by the Decimal input).
+  let overallRating: number = Number(review.overallRating);
   if (data.restaurantRating || data.foodRating || data.deliveryRating) {
-    const ratings = [
-      data.restaurantRating || review.restaurantRating,
-      data.foodRating || review.foodRating,
-    ];
-    if (data.deliveryRating || review.deliveryRating) {
-      ratings.push(data.deliveryRating || review.deliveryRating!);
+    const ratings: number[] = [data.restaurantRating ?? review.restaurantRating];
+    const food = data.foodRating ?? review.foodRating;
+    if (food != null) {
+      ratings.push(food);
     }
-    overallRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+    const delivery = data.deliveryRating ?? review.deliveryRating;
+    if (delivery != null) {
+      ratings.push(delivery);
+    }
+    overallRating = ratings.reduce((a, b) => a + b, 0) / (ratings.length || 1);
   }
 
+  // GAP: Review has no `editedAt` column; the edit timestamp is not persisted
+  // (only the automatic `updatedAt` reflects the change).
   const updated = await prisma.review.update({
     where: { id },
     data: {
       ...data,
       overallRating,
-      editedAt: new Date(),
     },
     include: {
       customer: {
@@ -401,7 +405,7 @@ reviewRoutes.post(
       where: { id },
       include: {
         restaurant: {
-          select: { ownerId: true },
+          select: { userId: true },
         },
       },
     });
@@ -416,7 +420,7 @@ reviewRoutes.post(
       );
     }
 
-    if (review.restaurant.ownerId !== userId) {
+    if (review.restaurant.userId !== userId) {
       return c.json(
         {
           success: false,
@@ -426,12 +430,11 @@ reviewRoutes.post(
       );
     }
 
-    const updated = await prisma.review.update({
+    // GAP: Review has no `restaurantReply`/`restaurantRepliedAt` columns, so the
+    // reply text cannot be persisted on the review row. The customer is still
+    // notified of the reply below; the response returns the (unchanged) review.
+    const updated = await prisma.review.findUnique({
       where: { id },
-      data: {
-        restaurantReply: reply,
-        restaurantRepliedAt: new Date(),
-      },
       include: {
         customer: {
           select: {
@@ -497,13 +500,10 @@ reviewRoutes.post("/:id/helpful", async (c) => {
     );
   }
 
-  await Promise.all([
-    prisma.review.update({
-      where: { id },
-      data: { helpfulCount: { increment: 1 } },
-    }),
-    redis.set(helpfulKey, "1"), // No expiry
-  ]);
+  // GAP: Review has no `helpfulCount` column, so the aggregate helpful count
+  // cannot be persisted on the row. The per-user "marked helpful" flag is still
+  // recorded in Redis (which also enforces the already-marked guard above).
+  await redis.set(helpfulKey, "1"); // No expiry
 
   return c.json({
     success: true,
@@ -552,12 +552,12 @@ reviewRoutes.post("/:id/report", async (c) => {
     where: { reviewId: id },
   });
 
-  // Auto-flag if multiple reports
+  // Auto-flag if multiple reports.
+  // GAP: Review has no `isFlagged` column, so the review cannot be flagged on the
+  // row. The ReviewReport rows above are the durable record; moderation tooling
+  // can act on the report count until a flag column exists.
   if (reportCount >= 3) {
-    await prisma.review.update({
-      where: { id },
-      data: { isFlagged: true },
-    });
+    // Intentionally no persistence — see GAP above.
   }
 
   return c.json({
@@ -577,7 +577,9 @@ reviewRoutes.get("/pending", async (c) => {
     where: {
       customerId,
       status: "DELIVERED",
-      review: null,
+      // Order↔Review is a one-to-many relation named `reviews`; "no review yet"
+      // is expressed as `reviews: { none: {} }`.
+      reviews: { none: {} },
       deliveredAt: {
         // Only show orders delivered in last 7 days
         gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
@@ -588,7 +590,7 @@ reviewRoutes.get("/pending", async (c) => {
       orderNumber: true,
       deliveredAt: true,
       restaurant: {
-        select: { id: true, name: true, logo: true },
+        select: { id: true, name: true, imageUrl: true },
       },
     },
     orderBy: { deliveredAt: "desc" },
@@ -615,11 +617,13 @@ async function updateRestaurantRating(restaurantId: string): Promise<void> {
     _count: { id: true },
   });
 
+  // GAP: Restaurant has no `averageRating`/`totalReviews` columns; the aggregate
+  // score is written to `rating` and the review count is not persisted on the
+  // restaurant row.
   await prisma.restaurant.update({
     where: { id: restaurantId },
     data: {
-      averageRating: stats._avg.overallRating || 0,
-      totalReviews: stats._count.id,
+      rating: Number(stats._avg?.overallRating ?? 0),
     },
   });
 }

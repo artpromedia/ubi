@@ -65,7 +65,9 @@ pushRoutes.post(
   zValidator("json", registerDeviceSchema),
   async (c) => {
     const userId = c.get("userId");
-    const { token, platform, deviceId, appVersion } = c.req.valid("json");
+    // GAP: the DeviceToken model has no `deviceId`/`appVersion` columns, so those
+    // client hints are validated but not persisted. Accepted for forward-compat.
+    const { token, platform } = c.req.valid("json");
 
     // Upsert device token
     await prisma.deviceToken.upsert({
@@ -74,8 +76,6 @@ pushRoutes.post(
       },
       update: {
         platform,
-        deviceId,
-        appVersion,
         isActive: true,
         updatedAt: new Date(),
       },
@@ -84,8 +84,6 @@ pushRoutes.post(
         userId,
         token,
         platform,
-        deviceId,
-        appVersion,
         isActive: true,
       },
     });
@@ -155,7 +153,9 @@ pushRoutes.post(
       priority: data.priority,
     });
 
-    // Log notification
+    // Log notification.
+    // GAP: NotificationLog has no JSON `data` column, so the push payload is not
+    // persisted on the log row (only channel/type/title/body/status).
     await prisma.notificationLog.create({
       data: {
         id: generateId("log"),
@@ -164,7 +164,6 @@ pushRoutes.post(
         type: data.data?.type || "GENERAL",
         title: data.title,
         body: data.body,
-        data: data.data,
         status: result.success
           ? NotificationStatus.SENT
           : NotificationStatus.FAILED,

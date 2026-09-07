@@ -41,14 +41,6 @@ enum DayOfWeek {
   SUNDAY = "SUNDAY",
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-enum RestaurantStatus {
-  PENDING = "PENDING",
-  ACTIVE = "ACTIVE",
-  SUSPENDED = "SUSPENDED",
-  CLOSED = "CLOSED",
-}
-
 // Helper functions for business logic tests
 function calculateDistance(
   lat1: number,
