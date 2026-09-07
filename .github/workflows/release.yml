@@ -1,3 +1,8 @@
+# NOTE (launch-readiness audit): the repository default branch is `master`, but
+# this workflow triggers on `main`. It has therefore never run. The CI and test
+# gates have been pointed at `master`; this workflow is deliberately left alone
+# because adding `master` here would arm deployment/release on every merge to
+# the default branch, which is an operational decision for the team to make.
 # Release workflow using Changesets
 # Creates releases and publishes packages
 

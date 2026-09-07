@@ -88,3 +88,11 @@ docker-compose.override.yml
 .cache/
 .temp/
 tmp/
+
+# Machine-specific build and analysis artifacts (launch-readiness audit).
+# build-errors.txt was a tracked 68 KB UTF-16 PowerShell build log carrying a
+# developer's local absolute paths. Build output belongs in CI, not in git.
+build-errors.txt
+*-errors.txt
+*.build.log
+test-results/
