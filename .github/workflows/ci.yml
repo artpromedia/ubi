@@ -213,7 +213,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
           cache: true
 
       - name: Run golangci-lint (ride-service)
@@ -234,7 +234,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [ride-service, delivery-service]
+        service: [ride-service, delivery-service, location-service]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -242,7 +242,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
           cache: true
 
       - name: Build ${{ matrix.service }}
