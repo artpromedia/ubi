@@ -59,9 +59,10 @@ type Harness struct {
 type HarnessOption func(*harnessOptions)
 
 type harnessOptions struct {
-	config map[string]any
-	policy matching.Policy
-	flags  map[string]bool
+	config       map[string]any
+	policy       matching.Policy
+	flags        map[string]bool
+	withoutRedis bool
 }
 
 // WithCityConfig replaces the seeded city configuration.
@@ -72,6 +73,16 @@ func WithCityConfig(config map[string]any) HarnessOption {
 // WithPolicy replaces the dispatch policy.
 func WithPolicy(policy matching.Policy) HarnessOption {
 	return func(o *harnessOptions) { o.policy = policy }
+}
+
+// WithoutRedisGuards builds the service with no Redis at all.
+//
+// It exists for one test: the headline concurrency guard. With the SETNX accept
+// lock gone, every concurrent accept reaches the database, so what the test
+// proves is the database's guarantee rather than Redis's — which is the one
+// that has to hold when Redis is down or a key has expired early.
+func WithoutRedisGuards() HarnessOption {
+	return func(o *harnessOptions) { o.withoutRedis = true }
 }
 
 // WithFlag sets a feature flag for the harness city.
@@ -137,6 +148,11 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 		t.Fatalf("failed to build the quote signer: %v", err)
 	}
 
+	guards := ridisc.New(redisClient)
+	if options.withoutRedis {
+		guards = ridisc.New(nil)
+	}
+
 	clock := NewClock(time.Now().UTC())
 	service, err := move.NewService(move.Deps{
 		Store:   store,
@@ -145,7 +161,7 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 		Pricing: pricing.NewEngine(),
 		Signer:  signer,
 		Router:  move.NewStraightLineRouter(),
-		Redis:   ridisc.New(redisClient),
+		Redis:   guards,
 		Ledger:  repository.NewLedgerRepository(pool),
 		Policy:  options.policy,
 		Logger:  zerolog.Nop(),
