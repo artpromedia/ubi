@@ -20,6 +20,7 @@ import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
 import { lockWallet, type WalletDeps } from "./context";
 import { assertSufficientFunds, assertWithinLimits, limitStatus } from "./limits";
+import { isIdempotencyRace } from "./idempotency";
 import { fromDbMinor } from "./minor-units";
 import { assertPinShape } from "./pin";
 import { postEntry } from "./post-entry";
@@ -253,100 +254,125 @@ export async function payRequest(
 
   const transferId = generateId("tr");
 
-  return deps.db.$transaction(async (tx) => {
-    await lockWallet(tx, payerWallet.id);
-    const fresh = await tx.transferRequest.findUniqueOrThrow({
-      where: { id: request.id },
-    });
-    assertRequestTransition(fresh.status, "paid");
-
-    const limits = await limitStatus(tx, payerWallet, config.city, now);
-    assertWithinLimits(limits, amount);
-    await assertSufficientFunds(tx, payerWallet, amount);
-
-    const entry = await postEntry(tx, {
-      kind: "request_payment",
-      reference: `request:${request.id}`,
-      occurredAt: now,
-      idempotencyKey: key,
-      description: "split-fare request paid",
-      lines: [
-        {
-          account: "wallet",
-          walletId: payerWallet.id,
-          amount: money(-amount.amountMinor, amount.currency),
-          counterpartRef: `request:${request.id}:to:${payeeWallet.id}`,
-        },
-        {
-          account: "wallet",
-          walletId: payeeWallet.id,
-          amount,
-          counterpartRef: `request:${request.id}:from:${payerWallet.id}`,
-        },
-      ],
-    });
-
-    await tx.transfer.create({
-      data: {
-        id: transferId,
-        fromWallet: payerWallet.id,
-        toWallet: payeeWallet.id,
-        amountMinor: BigInt(amount.amountMinor),
-        currency: amount.currency,
-        note: fresh.rideId === null ? "split fare" : `split fare ${fresh.rideId}`,
-        status: "posted",
-        entryId: entry.id,
-        idempotencyKey: key,
-      },
-    });
-
-    const updated = await tx.transferRequest.updateMany({
-      where: { id: request.id, status: "pending" },
-      data: { status: "paid" },
-    });
-    if (updated.count !== 1) {
-      throw new ContractError("conflict", "this request was already settled");
+  const replayIfRaced = async (): Promise<PayRequestResult | null> => {
+    const winner = await deps.db.transfer.findUnique({ where: { idempotencyKey: key } });
+    if (winner === null || winner.fromWallet === null) {
+      return null;
     }
-
-    await writeAudit(tx, {
-      actor: input.actor,
-      action: "wallet.request.paid",
-      subjectType: "transfer",
-      subjectId: request.id,
-      before: { status: "pending" },
-      after: { status: "paid", transferId, entryId: entry.id },
-    });
-
-    await publishEvent(tx, {
-      name: "request.paid",
-      aggregateType: "transfer",
-      aggregateId: request.id,
-      fromVersion: null,
-      toVersion: 1,
-      actor: input.actor,
-      actorType: "rider",
-      cityId: input.cityId,
-      idempotencyKey: `request.paid:${request.id}`,
-      occurredAt: now,
-      payload: {
-        requestId: request.id,
-        transferId,
-        from: payerWallet.id,
-        to: payeeWallet.id,
-        amountMinor: amount.amountMinor,
-        counterpartRef: `request:${request.id}`,
-      },
-    });
-
     return {
       requestId: request.id,
-      transferId,
-      entryId: entry.id,
-      amount,
-      balanceAfter: await balanceOf(tx, payerWallet.id, amount.currency),
-      replayed: false,
+      transferId: winner.id,
+      entryId: winner.entryId ?? "",
+      amount: money(fromDbMinor(winner.amountMinor), winner.currency),
+      balanceAfter: await balanceOf(deps.db, winner.fromWallet, winner.currency),
+      replayed: true,
     };
-  });
+  };
+
+  try {
+    return await deps.db.$transaction(async (tx) => {
+      await lockWallet(tx, payerWallet.id);
+      const fresh = await tx.transferRequest.findUniqueOrThrow({
+        where: { id: request.id },
+      });
+      assertRequestTransition(fresh.status, "paid");
+
+      const limits = await limitStatus(tx, payerWallet, config.city, now);
+      assertWithinLimits(limits, amount);
+      await assertSufficientFunds(tx, payerWallet, amount);
+
+      const entry = await postEntry(tx, {
+        kind: "request_payment",
+        reference: `request:${request.id}`,
+        occurredAt: now,
+        idempotencyKey: key,
+        description: "split-fare request paid",
+        lines: [
+          {
+            account: "wallet",
+            walletId: payerWallet.id,
+            amount: money(-amount.amountMinor, amount.currency),
+            counterpartRef: `request:${request.id}:to:${payeeWallet.id}`,
+          },
+          {
+            account: "wallet",
+            walletId: payeeWallet.id,
+            amount,
+            counterpartRef: `request:${request.id}:from:${payerWallet.id}`,
+          },
+        ],
+      });
+
+      await tx.transfer.create({
+        data: {
+          id: transferId,
+          fromWallet: payerWallet.id,
+          toWallet: payeeWallet.id,
+          amountMinor: BigInt(amount.amountMinor),
+          currency: amount.currency,
+          note: fresh.rideId === null ? "split fare" : `split fare ${fresh.rideId}`,
+          status: "posted",
+          entryId: entry.id,
+          idempotencyKey: key,
+        },
+      });
+
+      const updated = await tx.transferRequest.updateMany({
+        where: { id: request.id, status: "pending" },
+        data: { status: "paid" },
+      });
+      if (updated.count !== 1) {
+        throw new ContractError("conflict", "this request was already settled");
+      }
+
+      await writeAudit(tx, {
+        actor: input.actor,
+        action: "wallet.request.paid",
+        subjectType: "transfer",
+        subjectId: request.id,
+        before: { status: "pending" },
+        after: { status: "paid", transferId, entryId: entry.id },
+      });
+
+      await publishEvent(tx, {
+        name: "request.paid",
+        aggregateType: "transfer",
+        aggregateId: request.id,
+        fromVersion: null,
+        toVersion: 1,
+        actor: input.actor,
+        actorType: "rider",
+        cityId: input.cityId,
+        idempotencyKey: `request.paid:${request.id}`,
+        occurredAt: now,
+        payload: {
+          requestId: request.id,
+          transferId,
+          from: payerWallet.id,
+          to: payeeWallet.id,
+          amountMinor: amount.amountMinor,
+          counterpartRef: `request:${request.id}`,
+        },
+      });
+
+      return {
+        requestId: request.id,
+        transferId,
+        entryId: entry.id,
+        amount,
+        balanceAfter: await balanceOf(tx, payerWallet.id, amount.currency),
+        replayed: false,
+      };
+    });
+  } catch (error) {
+    if (isIdempotencyRace(error)) {
+      const winner = await replayIfRaced();
+      if (winner !== null) {
+        return winner;
+      }
+    }
+    throw error;
+  }
 }
 
 /** Exposed so the route can list what a rider owes and is owed. */

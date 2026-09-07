@@ -20,6 +20,7 @@ import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
 import type { WalletDeps } from "./context";
 import { assertWithinBalanceCap, limitStatus } from "./limits";
+import { isIdempotencyRace } from "./idempotency";
 import { fromDbMinor } from "./minor-units";
 import { postEntry } from "./post-entry";
 import { requireRail } from "./providers";
@@ -175,6 +176,19 @@ export async function createTopup(
       };
     });
   } catch (error) {
+    if (isIdempotencyRace(error)) {
+      const winner = await deps.db.topup.findUnique({ where: { idempotencyKey: key } });
+      if (winner !== null) {
+        return {
+          topupId: winner.id,
+          amount: money(fromDbMinor(winner.amountMinor), winner.currency),
+          status: winner.status,
+          entryId: winner.entryId,
+          balanceAfter: await balanceOf(deps.db, winner.walletId, winner.currency),
+          replayed: true,
+        };
+      }
+    }
     await rail.refund(capture.pspRef, `${key}:refund`);
     walletLogger.warn(
       { topupId, amountMinor: amount.amountMinor, currency: amount.currency },

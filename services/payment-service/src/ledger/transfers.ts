@@ -26,6 +26,7 @@ import { generateId } from "../lib/utils";
 import { publishEvent, writeAudit } from "./audit";
 import { verifyWalletPin } from "./authorize";
 import { balanceOf } from "./balances";
+import { isIdempotencyRace } from "./idempotency";
 import { lockWallet, type WalletDeps } from "./context";
 import {
   assertSufficientFunds,
@@ -692,6 +693,17 @@ async function handleTransferFailure(
 ): Promise<TransferResult> {
   const original =
     params.error instanceof SagaAbort ? params.error.cause : params.error;
+
+  // Lost an idempotency race: the winner has already posted under this key, so
+  // the answer is its result. The rail capture is *not* compensated — both
+  // calls carried the same rail idempotency key and therefore refer to the one
+  // capture the winner's entry accounts for.
+  if (isIdempotencyRace(original)) {
+    const winner = await findByIdempotency(deps, params.idempotencyKey);
+    if (winner !== null) {
+      return deps.db.$transaction((tx) => replayOutcome(tx, winner, params.toUserId));
+    }
+  }
 
   if (params.capture !== null) {
     const rail = requireRail(deps.topupRail, "top-up");

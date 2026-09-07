@@ -19,6 +19,7 @@ import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
 import { lockWallet, type WalletDeps } from "./context";
 import { assertSufficientFunds, assertWithinLimits, limitStatus } from "./limits";
+import { isIdempotencyRace } from "./idempotency";
 import { fromDbMinor } from "./minor-units";
 import { assertPinShape } from "./pin";
 import { postEntry } from "./post-entry";
@@ -138,87 +139,118 @@ export async function createNipTransfer(
   const amount = money(input.amountMinor, config.city.currency);
   const nipId = generateId("nip");
 
-  const prepared = await deps.db.$transaction(async (tx) => {
-    await lockWallet(tx, wallet.id);
-    const limits = await limitStatus(tx, wallet, config.city, now);
-    assertWithinLimits(limits, amount);
-    await assertSufficientFunds(tx, wallet, amount);
+  const replayIfRaced = async (): Promise<NipResult | null> => {
+    const winner = await deps.db.nipTransfer.findUnique({
+      where: { idempotencyKey: key },
+    });
+    if (winner === null) {
+      return null;
+    }
+    return {
+      nipTransferId: winner.id,
+      status: winner.status as NipStatus,
+      accountName: winner.accountName ?? "",
+      amount: money(fromDbMinor(winner.amountMinor), winner.currency),
+      entryId: winner.entryId,
+      balanceAfter: await balanceOf(deps.db, winner.walletId, winner.currency),
+      replayed: true,
+    };
+  };
 
-    const entry = await postEntry(tx, {
-      kind: "nip_transfer",
-      reference: `nip:${nipId}`,
-      occurredAt: now,
-      idempotencyKey: key,
-      description: "bank transfer instructed",
-      lines: [
-        {
-          account: "wallet",
+  let prepared: { entryId: string; balanceAfter: Money };
+  try {
+    prepared = await deps.db.$transaction(async (tx) => {
+      await lockWallet(tx, wallet.id);
+      const limits = await limitStatus(tx, wallet, config.city, now);
+      assertWithinLimits(limits, amount);
+      await assertSufficientFunds(tx, wallet, amount);
+
+      const entry = await postEntry(tx, {
+        kind: "nip_transfer",
+        reference: `nip:${nipId}`,
+        occurredAt: now,
+        idempotencyKey: key,
+        description: "bank transfer instructed",
+        lines: [
+          {
+            account: "wallet",
+            walletId: wallet.id,
+            amount: money(-amount.amountMinor, amount.currency),
+            counterpartRef: `nip:${nipId}`,
+          },
+          {
+            account: "bank_settlement",
+            amount,
+            counterpartRef: `wallet:${wallet.id}`,
+          },
+        ],
+      });
+
+      await tx.nipTransfer.create({
+        data: {
+          id: nipId,
           walletId: wallet.id,
-          amount: money(-amount.amountMinor, amount.currency),
+          bankCode: input.bankCode,
+          accountNumber: input.accountNumber,
+          accountName: enquiry.accountName,
+          amountMinor: BigInt(amount.amountMinor),
+          currency: amount.currency,
+          status: "pending",
+          sessionId: enquiry.sessionId,
+          entryId: entry.id,
+          idempotencyKey: key,
+        },
+      });
+
+      await writeAudit(tx, {
+        actor: input.actor,
+        action: "wallet.nip.pending",
+        subjectType: "wallet",
+        subjectId: wallet.id,
+        after: {
+          nipTransferId: nipId,
+          amountMinor: amount.amountMinor,
+          currency: amount.currency,
+          bankCode: input.bankCode,
+          entryId: entry.id,
+        },
+      });
+
+      await publishEvent(tx, {
+        name: "nip.pending",
+        aggregateType: "wallet",
+        aggregateId: wallet.id,
+        fromVersion: null,
+        toVersion: 1,
+        actor: input.actor,
+        actorType: "rider",
+        cityId: input.cityId,
+        idempotencyKey: `nip.pending:${nipId}`,
+        occurredAt: now,
+        payload: {
+          nipTransferId: nipId,
+          amountMinor: amount.amountMinor,
+          currency: amount.currency,
           counterpartRef: `nip:${nipId}`,
         },
-        {
-          account: "bank_settlement",
-          amount,
-          counterpartRef: `wallet:${wallet.id}`,
-        },
-      ],
-    });
+      });
 
-    await tx.nipTransfer.create({
-      data: {
-        id: nipId,
-        walletId: wallet.id,
-        bankCode: input.bankCode,
-        accountNumber: input.accountNumber,
-        accountName: enquiry.accountName,
-        amountMinor: BigInt(amount.amountMinor),
-        currency: amount.currency,
-        status: "pending",
-        sessionId: enquiry.sessionId,
+      return {
         entryId: entry.id,
-        idempotencyKey: key,
-      },
+        balanceAfter: await balanceOf(tx, wallet.id, amount.currency),
+      };
     });
-
-    await writeAudit(tx, {
-      actor: input.actor,
-      action: "wallet.nip.pending",
-      subjectType: "wallet",
-      subjectId: wallet.id,
-      after: {
-        nipTransferId: nipId,
-        amountMinor: amount.amountMinor,
-        currency: amount.currency,
-        bankCode: input.bankCode,
-        entryId: entry.id,
-      },
-    });
-
-    await publishEvent(tx, {
-      name: "nip.pending",
-      aggregateType: "wallet",
-      aggregateId: wallet.id,
-      fromVersion: null,
-      toVersion: 1,
-      actor: input.actor,
-      actorType: "rider",
-      cityId: input.cityId,
-      idempotencyKey: `nip.pending:${nipId}`,
-      occurredAt: now,
-      payload: {
-        nipTransferId: nipId,
-        amountMinor: amount.amountMinor,
-        currency: amount.currency,
-        counterpartRef: `nip:${nipId}`,
-      },
-    });
-
-    return {
-      entryId: entry.id,
-      balanceAfter: await balanceOf(tx, wallet.id, amount.currency),
-    };
-  });
+  } catch (error) {
+    // Lost an idempotency race: the winner already debited and instructed the
+    // bank under this key. Answer with its result rather than instructing twice.
+    if (isIdempotencyRace(error)) {
+      const winner = await replayIfRaced();
+      if (winner !== null) {
+        return winner;
+      }
+    }
+    throw error;
+  }
 
   // The instruction goes to the bank only after the debit is committed, so a
   // payout can never exist that the ledger does not know about.
