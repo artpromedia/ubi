@@ -15,38 +15,42 @@ Implementation of the design handoff in `handoff/`, on branch
 
 ## Where this got to
 
-Five of the twelve slices are implemented and verified. **575 tests** pass, plus
-six Go packages.
+Six of the twelve slices are implemented and verified, plus the phase-2
+infrastructure. **674 vitest tests pass, 6 Go packages, and 32 Flutter tests.**
 
-| Slice | Status | Evidence |
+| Slice / area | Status | Evidence |
 |---|---|---|
-| Foundation | done | 64 tests · migration chain provisions an empty database |
-| 01 city config + flags | done | 90 tests (66 service + 24 client) |
-| 02 Move lockstep (Go) | done | 6 packages, `-race` clean, live Postgres + Redis |
-| 03 identity + gateway | done | 281 tests (73 gateway + 208 user-service) |
+| Foundation | done | 64 contracts + 24 config-client tests; migration chain provisions an empty DB, zero drift |
+| 01 city config + flags | done | 79 service tests |
+| 02 Move lockstep (Go) | done | 6 packages, `-race` clean |
+| 03 identity + gateway | done | 73 gateway + 208 user-service tests |
 | 04 wallet ledger + recon | done | 85 tests |
+| 05 Bites backend | done | 27 tests (backend only; screens pending) |
 | 11 support, safety, audit | done | 55 tests |
-| 01 client (Flutter) | landed, **not compiler-verified** | no Dart SDK here; see below |
-| 05 Bites | **blocked** | see below |
+| Outbox relay | done | 8 tests — SKIP LOCKED, per-aggregate order, quarantine, dedupe |
+| food + notification compile | done | 171 type errors → 0; 21 + 30 tests |
+| Mobile shared packages | done | 5 packages analyze clean; 32 core tests (first real compile) |
+| Mobile apps (rider/driver) | **not clean** | 95 / 334 analyze errors — bloc/contract mismatch, app-rewrite scope |
 | 06–10, 12 | not started | |
 
-Reproduce any of it:
+Reproduce (needs Postgres 16 + PostGIS, Redis, and a freshly migrated database):
 
 ```bash
-cd packages/contracts        && npx vitest run     # 64
-cd packages/config-client    && npx vitest run     # 24
-cd services/config-service   && npx vitest run     # 66
-cd services/api-gateway      && npx vitest run     # 73
-cd services/user-service     && npx vitest run     # 208
-cd services/payment-service  && npx vitest run tests/ledger tests/finance   # 85
-cd services/support-service  && npx vitest run     # 55
-cd services/ride-service     && go test -count=1 ./...   # 6 packages
+cd packages/contracts       && npx vitest run     # 64
+cd packages/config-client   && npx vitest run     # 24
+cd packages/outbox          && npx vitest run     # 8
+cd services/config-service  && npx vitest run     # 79
+cd services/api-gateway     && npx vitest run     # 73
+cd services/user-service    && npx vitest run     # 208
+cd services/payment-service && npx vitest run tests/ledger tests/finance  # 85
+cd services/support-service && npx vitest run     # 55
+cd services/notification-service && npx vitest run  # 30
+cd services/food-service    && npx vitest run tests/ src/routes            # 21 legacy
+cd services/food-service    && npx vitest run --config tests/bites/vitest.config.ts  # 27 Bites
+cd services/ride-service    && go test -count=1 ./...   # 6 packages
+# mobile (SDK at /opt/flutter): export PATH="/opt/flutter/bin:$PATH"
+cd mobile/packages/core     && flutter test        # 32
 ```
-
-Integration tests need Postgres 16 + PostGIS and Redis, and a **freshly migrated**
-database — several suites seed fixed ids and dates and do not clean up.
-
----
 
 ## The repository could not build when this started
 
@@ -114,35 +118,45 @@ A disabled feature answers 404, not 403, so a deep link cannot confirm it exists
 
 ---
 
-## Decisions this work did not make
+## Decisions made this phase (were open)
 
-1. **`merchants` / `menu_items` collide** with the slice 05 DDL. Rename, migrate
-   or namespace? Blocks slice 05.
-2. **`food-service` does not compile** — 116 errors, mostly references to Prisma
-   models that exist in **no** schema file here. It was written against a data
-   model that has never been in this repository, so fixing the schema path cannot
-   help; the model must be designed. Also blocks slice 05.
-3. **Arming release on `master`.** CI gates now run there; `deploy.yml` and
-   `release.yml` were deliberately left alone, because adding `master` would
-   deploy and publish on every merge to the default branch.
-4. **Retiring the old ledger.** `wallet_accounts`/`ledger_entries` and
-   `wallets`/`journal_entries` both model money. Only the new one is
+1. **merchants / menu_items collision — RESOLVED.** The existing tables are a
+   Send merchant and the legacy Restaurant food model; the Bites tables are
+   namespaced `bites_merchants` / `bites_menu_items` and the rest keep their
+   handoff names. Non-destructive. (ADR 0001 §8.)
+2. **food-service's never-existent model — RESOLVED.** The legacy models it and
+   notification-service referenced were added from observed usage; both services
+   now compile (171 type errors → 0). Slice 05 is built on the canonical Bites
+   tables, not the legacy ones.
+3. **Lagos placeholder config — REPLACED** with provisional fares, CBN-style KYC
+   tiers and a remittance cap, each marked as requiring ops/finance sign-off.
+
+## Decisions still open (the team's to make)
+
+1. **Arming release on `master`.** CI gates run there; `deploy.yml`/`release.yml`
+   are deliberately left alone — adding `master` would deploy and publish on
+   every merge to the default branch.
+2. **Retiring the old ledger.** `wallet_accounts`/`ledger_entries` and
+   `wallets`/`journal_entries` both model money; only the new one is
    balance-enforced.
-5. **The Prisma shim.** Deleting it takes payment-service from 350 to 1020 type
-   errors — 670 real errors it has been hiding in the service that moves money.
-6. **Target-only contract states** (`rider.cancelled_by_rider`,
-   `reservation.completed`, …) are treated as terminal. Some look like omissions.
-
----
+3. **The Prisma shim** in payment-service still hides ~670 type errors; deleting
+   it is scheduled work.
+4. **Target-only contract states** (`rider.cancelled_by_rider`,
+   `reservation.completed`, …) are treated as terminal; some look like omissions.
 
 ## Residual risk
 
-- **No Dart toolchain here.** Every mobile change is author-reviewed, not
-  compiled. The CI `mobile` job closes this on a runner, but is
-  `continue-on-error` until the existing analysis failures are cleared.
-- **No outbox relay.** Every service writes `outbox_events` transactionally;
-  nothing publishes them yet. Consumers are idempotent on `id` for when one
-  exists.
+- **Mobile apps not analyze-clean.** The Flutter SDK is now installed and the
+  code was compiled for the first time: all 5 shared packages are clean and
+  core's 32 tests pass, but rider_app (95) and driver_app (334) still have
+  analyze errors — their blocs target a different contract than core. Real
+  bloc/data work, not verification. The CI `mobile` job stays
+  `continue-on-error` until the apps are green.
+- **Outbox relay built, not yet wired into the process lifecycle.** @ubi/outbox
+  drains and publishes with SKIP LOCKED, ordering and quarantine, and each TS
+  service has an `outbox-runner.ts` — but the runners are not yet called from
+  each service's `index.ts`, and ride/delivery (Go) need a runner too. The relay
+  is language-agnostic at the row level.
 - **No Maestro flows.** Slice 12 names 30; only the testID registry they depend
   on exists.
 - **~1,190 type errors** repo-wide, concentrated in payment (≈1020 behind the
