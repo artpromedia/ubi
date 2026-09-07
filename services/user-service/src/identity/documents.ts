@@ -465,22 +465,3 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
   return { remindersEmitted, expired, driversTakenOffline: [...offline] };
 }
 
-/**
- * Whether a driver may be online right now, from documents alone. Used by the
- * eligibility endpoint and by the sweep's follow-up checks.
- */
-export async function hasBlockingDocument(
-  deps: IdentityDeps,
-  driverId: string,
-  vehicleId: string | null,
-): Promise<boolean> {
-  const owners: { ownerType: string; ownerId: string }[] = [
-    { ownerType: "driver", ownerId: driverId },
-  ];
-  if (vehicleId !== null) owners.push({ ownerType: "vehicle", ownerId: vehicleId });
-
-  const blocking = await deps.prisma.identityDocument.count({
-    where: { OR: owners, status: { in: ["expired", "rejected"] } },
-  });
-  return blocking > 0;
-}

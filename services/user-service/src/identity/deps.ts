@@ -57,20 +57,30 @@ function httpFaceVerifier(): FaceVerifier {
         );
       }
 
-      const response = await fetch(`${url.replace(/\/+$/, "")}/v1/face/verify`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(process.env.IDENTITY_FACE_PROVIDER_KEY === undefined
-            ? {}
-            : { authorization: `Bearer ${process.env.IDENTITY_FACE_PROVIDER_KEY}` }),
-        },
-        body: JSON.stringify({
-          reference: input.userId,
-          nin: input.nin,
-          image: input.imageBase64,
-        }),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${url.replace(/\/+$/, "")}/v1/face/verify`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(process.env.IDENTITY_FACE_PROVIDER_KEY === undefined
+              ? {}
+              : { authorization: `Bearer ${process.env.IDENTITY_FACE_PROVIDER_KEY}` }),
+          },
+          body: JSON.stringify({
+            reference: input.userId,
+            nin: input.nin,
+            image: input.imageBase64,
+          }),
+        });
+      } catch {
+        // An unreachable provider is an outage the caller can retry, not an
+        // identity failure the driver should be blamed for.
+        throw new ContractError(
+          "service_unavailable",
+          "Identity checks are unavailable right now. Please try again shortly.",
+        );
+      }
 
       if (!response.ok) {
         throw new ContractError(

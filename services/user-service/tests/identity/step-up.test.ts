@@ -208,6 +208,42 @@ describe("a failed face check", () => {
   });
 });
 
+describe("when the biometric provider is unavailable", () => {
+  it("says so honestly, and leaves the challenge open to retry", async () => {
+    const driver = await createDriver();
+    const challengeId = await enrolNewDevice(driver.id, "device-provider-down");
+
+    harness.breakFaceVerifier(true);
+    try {
+      const response = await selfie(driver.id, challengeId);
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as { error: { code: string; message: string } };
+      expect(body.error.code).toBe("service_unavailable");
+      expect(body.error.message).toContain("try again");
+    } finally {
+      harness.breakFaceVerifier(false);
+    }
+
+    // Nothing was decided: no score, no verdict, no case.
+    const challenge = await prisma.stepUpChallenge.findUniqueOrThrow({
+      where: { id: challengeId },
+    });
+    expect(challenge.status).toBe("pending");
+    expect(challenge.score).toBeNull();
+    expect(await prisma.faceCheck.count({ where: { driverId: driver.driverId } })).toBe(0);
+    expect(await prisma.identityCase.count({ where: { driverId: driver.driverId } })).toBe(0);
+
+    // ...and the driver is not punished for the outage.
+    const row = await prisma.driver.findUniqueOrThrow({ where: { id: driver.driverId } });
+    expect(row.isOnline).toBe(true);
+
+    // A retry once the provider is back works.
+    harness.face.livenessScore = 0.99;
+    harness.face.matchScore = 0.97;
+    expect((await selfie(driver.id, challengeId)).status).toBe(200);
+  });
+});
+
 describe("old-device approval", () => {
   it("lets a trusted device approve a new one, and never itself", async () => {
     const user = await createUser("RIDER");

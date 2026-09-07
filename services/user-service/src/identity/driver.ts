@@ -125,7 +125,7 @@ export async function driverEligibility(
   const now = deps.now();
   const driver = await deps.prisma.driver.findUnique({
     where: { id: driverId },
-    select: { id: true, isOnline: true },
+    select: { id: true, isOnline: true, vehicleId: true },
   });
 
   const reasons: string[] = [];
@@ -140,8 +140,17 @@ export async function driverEligibility(
     };
   }
 
+  // Both the driver's own documents and the vehicle's: an expired insurance
+  // certificate stops the driver just as surely as an expired licence.
+  const owners: { ownerType: string; ownerId: string }[] = [
+    { ownerType: "driver", ownerId: driverId },
+  ];
+  if (driver.vehicleId !== null) {
+    owners.push({ ownerType: "vehicle", ownerId: driver.vehicleId });
+  }
+
   const expired = await deps.prisma.identityDocument.findMany({
-    where: { ownerType: "driver", ownerId: driverId, status: "expired" },
+    where: { OR: owners, status: "expired" },
     select: { type: true, expiresAt: true },
   });
   for (const document of expired) {

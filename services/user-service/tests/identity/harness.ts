@@ -6,9 +6,9 @@
  * provider. Both are injected through the same `IdentityDeps` interface
  * production uses, so the code under test is the production code.
  */
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 
-import type { CityConfig } from "@ubi/contracts";
+import { type CityConfig, ContractError } from "@ubi/contracts";
 import { Hono } from "hono";
 import * as jose from "jose";
 
@@ -93,6 +93,8 @@ export interface TestHarness {
   now(): Date;
   /** Make the biometric provider unavailable. */
   breakFaceVerifier(broken: boolean): void;
+  /** Make the notification service unavailable. */
+  breakSms(broken: boolean): void;
 }
 
 export function createHarness(): TestHarness {
@@ -100,10 +102,18 @@ export function createHarness(): TestHarness {
   const sms: { phone: string; message: string }[] = [];
   let clock = new Date();
   let faceBroken = false;
+  let smsBroken = false;
 
   const faceVerifier: FaceVerifier = {
     async verify(): Promise<FaceVerification> {
-      if (faceBroken) throw new Error("provider unavailable");
+      // Matches what the production HTTP verifier throws when the provider
+      // cannot be reached, so the route's answer is the real one.
+      if (faceBroken) {
+        throw new ContractError(
+          "service_unavailable",
+          "Identity checks are unavailable right now. Please try again shortly.",
+        );
+      }
       return {
         livenessScore: face.livenessScore,
         matchScore: face.matchScore,
@@ -118,6 +128,7 @@ export function createHarness(): TestHarness {
     policy: createPolicyProvider({ getCityConfig: async () => CITY_CONFIG }),
     notifier: {
       async sendSms(params) {
+        if (smsBroken) throw new Error("notification service unavailable");
         sms.push({ phone: params.phone, message: params.message });
       },
     },
@@ -140,6 +151,9 @@ export function createHarness(): TestHarness {
     now: () => clock,
     breakFaceVerifier: (broken: boolean) => {
       faceBroken = broken;
+    },
+    breakSms: (broken: boolean) => {
+      smsBroken = broken;
     },
   };
 }
@@ -227,12 +241,12 @@ export interface TestUser {
 let sequence = 0;
 function uniqueSuffix(): string {
   sequence += 1;
-  return `${process.pid}${sequence}${Math.floor(Math.random() * 1000)}`;
+  return `${Date.now().toString(36)}${sequence}${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
 export async function createUser(role: "RIDER" | "DRIVER" = "RIDER"): Promise<TestUser> {
   const suffix = uniqueSuffix();
-  const phone = `+2348${suffix.padStart(9, "0").slice(0, 9)}`;
+  const phone = `+2348${String(randomInt(0, 1_000_000_000)).padStart(9, "0")}`;
   const email = `identity.${suffix}@test.ubi.africa`;
   const user = await prisma.user.create({
     data: {
@@ -265,7 +279,7 @@ export async function createDriver(options: { online?: boolean } = {}): Promise<
       model: "Corolla",
       year: 2019,
       color: "Silver",
-      plateNumber: `TST-${suffix.slice(0, 6)}`,
+      plateNumber: `TST-${suffix.slice(-10)}`,
       type: "SEDAN",
     },
     select: { id: true },
