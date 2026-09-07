@@ -21,7 +21,7 @@ import { writeAudit } from "./audit";
 import type { IdentityDeps } from "./deps";
 import { APPEAL_MESSAGE, APPEAL_PATH, takeDriverOffline } from "./driver";
 import { deterministicId, newId } from "./ids";
-import { writeOutboxEvent, writeOutboxEventOnce } from "./outbox";
+import { eventIdempotencyKey, writeOutboxEvent, writeOutboxEventOnce } from "./outbox";
 
 export const DRIVER_DOCUMENT_TYPES = [
   "licence",
@@ -362,7 +362,7 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
           subjectId: document.id,
           actorType: "system",
           actorId: "system:identity-sweep",
-          idempotencyKey: `document.expiring:${document.id}:${threshold}`,
+          idempotencyKey: eventIdempotencyKey("document.expiring", document.id, String(threshold)),
           fromVersion: null,
           toVersion: threshold,
           cityId: policy.cityId,
@@ -408,7 +408,7 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
         subjectId: document.id,
         actorType: "system",
         actorId: "system:identity-sweep",
-        idempotencyKey: `document.expired:${document.id}`,
+        idempotencyKey: eventIdempotencyKey("document.expired", document.id),
         fromVersion: null,
         toVersion: 1,
         cityId: policy.cityId,
@@ -445,7 +445,7 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
           subjectId: document.id,
           actorType: "system",
           actorId: "system:identity-sweep",
-          idempotencyKey: `vehicle.offline_for_all_drivers:${document.id}`,
+          idempotencyKey: eventIdempotencyKey("vehicle.offline_for_all_drivers", document.id),
           fromVersion: null,
           toVersion: 1,
           cityId: policy.cityId,

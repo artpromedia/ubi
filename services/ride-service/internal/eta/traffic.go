@@ -253,8 +253,8 @@ func (t *H3TrafficService) getTimeBasedMultiplier(departureTime time.Time) float
 
 // CityTrafficProfile defines traffic patterns for a specific city
 type CityTrafficProfile struct {
-	City            string
-	Country         string
+	City             string
+	Country          string
 	MorningRushStart int // Hour (24h format)
 	MorningRushEnd   int
 	EveningRushStart int

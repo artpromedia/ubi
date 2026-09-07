@@ -4,7 +4,7 @@
  * What this does that the legacy `/auth/login/otp` and `/auth/verify-otp` in
  * routes/auth.ts do not:
  *
- *   - the code is HASHED AT REST (bcrypt). Redis holds a hash, never the code,
+ *   - the code is HASHED AT REST (scrypt). Redis holds a hash, never the code,
  *     so a dump of the cache does not hand over live codes.
  *   - the cache KEY is a hash of the phone number, so the key space carries no
  *     PII either, and no log line ever contains the code or the number.
@@ -21,13 +21,11 @@
  * unlocks money — see `step-up.ts` and `pin.ts`, which refuse it explicitly.
  */
 import { ContractError } from "@ubi/contracts";
-import bcrypt from "bcrypt";
 import { createHash, randomInt } from "node:crypto";
 import { z } from "zod";
 
 import type { IdentityDeps } from "./deps";
-
-const BCRYPT_ROUNDS = 10;
+import { hashSecret, verifySecret } from "./secret-hash";
 
 export const OTP_PURPOSES = ["login", "verification"] as const;
 export type OtpPurpose = (typeof OTP_PURPOSES)[number];
@@ -91,7 +89,7 @@ export async function requestOtp(
 
   const code = generateCode(6);
   const stored: StoredOtp = {
-    hash: await bcrypt.hash(code, BCRYPT_ROUNDS),
+    hash: await hashSecret(code),
     purpose: input.purpose,
     attempts: 0,
   };
@@ -156,7 +154,7 @@ export async function verifyOtp(
     throw new ContractError("unauthorized", "That code has expired. Ask for a new one.");
   }
 
-  const matches = await bcrypt.compare(input.code, stored.hash);
+  const matches = await verifySecret(input.code, stored.hash);
   if (!matches) {
     const attempts = stored.attempts + 1;
     if (attempts >= policy.otpMaxAttempts) {

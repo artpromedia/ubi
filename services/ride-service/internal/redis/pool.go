@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	acceptLockPrefix   = "ride:accept:"
-	pinAttemptPrefix   = "ride:pin:"
+	acceptLockPrefix    = "ride:accept:"
+	pinAttemptPrefix    = "ride:pin:"
 	driverChannelPrefix = "user:"
 )
 

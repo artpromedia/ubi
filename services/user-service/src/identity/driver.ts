@@ -14,7 +14,7 @@ import type { Prisma } from "@prisma/client";
 import { writeAudit, type Tx } from "./audit";
 import { auditRevision } from "./common";
 import type { IdentityDeps } from "./deps";
-import { writeOutboxEvent } from "./outbox";
+import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
 
 /** Where a driver disputes an offline decision. Shown with every reason. */
 export const APPEAL_PATH = "/support/cases?topic=identity_review";
@@ -72,7 +72,11 @@ export async function takeDriverOffline(tx: Tx, input: OfflineInput): Promise<bo
     subjectId: input.driverId,
     actorType: "system",
     actorId: input.actorId,
-    idempotencyKey: `driver.status_changed:${input.driverId}:${input.occurredAt.toISOString()}`,
+    idempotencyKey: eventIdempotencyKey(
+      "driver.status_changed",
+      input.driverId,
+      input.occurredAt.toISOString(),
+    ),
     fromVersion: revision,
     toVersion: revision + 1,
     cityId: input.cityId,
@@ -86,7 +90,11 @@ export async function takeDriverOffline(tx: Tx, input: OfflineInput): Promise<bo
     subjectId: input.driverId,
     actorType: "system",
     actorId: input.actorId,
-    idempotencyKey: `driver.eligibility_changed:${input.driverId}:${input.occurredAt.toISOString()}`,
+    idempotencyKey: eventIdempotencyKey(
+      "driver.eligibility_changed",
+      input.driverId,
+      input.occurredAt.toISOString(),
+    ),
     fromVersion: revision,
     toVersion: revision + 1,
     cityId: input.cityId,

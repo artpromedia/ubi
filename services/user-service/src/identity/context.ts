@@ -100,13 +100,37 @@ export async function verifyIdentityContext(token: string): Promise<IdentityPrin
 
 const IDENTITY_KEY = "identity";
 
-/** Requires a verified gateway identity. Everything downstream reads this. */
+/**
+ * Requires a verified gateway identity. Everything downstream reads this.
+ *
+ * Answers with the canonical error body itself rather than throwing, because a
+ * middleware runs outside the per-route `contractRoute` wrapper and an escaped
+ * throw would surface as a 500 instead of a 401.
+ */
 export const requireIdentity = createMiddleware(async (c: Context, next: Next) => {
   const header = c.req.header(IDENTITY_HEADER);
   if (header === undefined || header.length === 0) {
-    throw new ContractError("unauthorized", "Authentication required");
+    const error = new ContractError("unauthorized", "Authentication required");
+    return c.json({ success: false, error: error.toBody() }, 401);
   }
-  c.set(IDENTITY_KEY, await verifyIdentityContext(header));
+  try {
+    c.set(IDENTITY_KEY, await verifyIdentityContext(header));
+  } catch (error) {
+    if (error instanceof ContractError) {
+      return c.json({ success: false, error: error.toBody() }, error.status as 401);
+    }
+    // A misconfigured secret is an outage, not a bad credential.
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "service_unavailable",
+          message: "Identity could not be verified. Please try again.",
+        },
+      },
+      503,
+    );
+  }
   return next();
 });
 

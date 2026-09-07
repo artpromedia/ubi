@@ -22,6 +22,7 @@ const (
 	maxLocationAgeMinutes  = 5
 	maxClockSkewSeconds    = 60
 	maxPlausibleSpeedMps   = 60.0
+	minSpeedWindowSeconds  = 1.0
 	maxLocationBatchPoints = 100
 )
 
@@ -202,9 +203,15 @@ func (s *Service) IngestLocations(ctx context.Context, actor Actor, points []dom
 				outcome.Accepted, outcome.Reason = false, domain.LocationRejectedAccuracy
 			}
 
+			// Speed is only judged over an interval long enough to mean
+			// something. Two fixes a few microseconds apart — which is what a
+			// stored timestamp truncated to microseconds against a fresh one
+			// looks like — would make any real movement read as teleportation,
+			// and rejecting a driver's true position is worse than accepting a
+			// jump the next point will contradict.
 			if outcome.Accepted && lastLat != nil && lastLng != nil && lastAt != nil {
 				elapsed := point.RecordedAt.Sub(*lastAt).Seconds()
-				if elapsed > 0 {
+				if elapsed >= minSpeedWindowSeconds {
 					distance := geo.HaversineDistance(*lastLat, *lastLng, point.Lat, point.Lng)
 					if distance/elapsed > maxPlausibleSpeedMps {
 						outcome.Accepted, outcome.Reason = false, domain.LocationRejectedSpeed

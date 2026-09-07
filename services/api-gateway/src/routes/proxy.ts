@@ -72,6 +72,8 @@ const HEADERS_TO_FORWARD: readonly string[] = [
   "x-real-ip",
   "x-idempotency-key",
   "idempotency-key",
+  // Signed by the telco over the raw body; user-service verifies it.
+  "x-telco-signature",
   REQUEST_ID_HEADER,
   IDENTITY_HEADER,
   "x-auth-user-id",
@@ -209,6 +211,7 @@ proxyRoutes.all("/users/*", (c) => proxyToService("users", downstreamPath(c), c)
 proxyRoutes.all("/devices", (c) => proxyToService("devices", downstreamPath(c), c));
 proxyRoutes.all("/devices/*", (c) => proxyToService("devices", downstreamPath(c), c));
 proxyRoutes.all("/identity/*", (c) => proxyToService("identity", downstreamPath(c), c));
+proxyRoutes.all("/webhooks/telco/*", (c) => proxyToService("identity", downstreamPath(c), c));
 proxyRoutes.all("/drivers/me/documents", (c) =>
   proxyToService("identity", downstreamPath(c), c),
 );

@@ -20,7 +20,19 @@ import {
 } from "@ubi/contracts";
 
 import type { Tx } from "./audit";
-import { newId } from "./ids";
+import { deterministicId, newId } from "./ids";
+
+/**
+ * Builds an idempotency key that always fits the envelope's 64-character limit.
+ *
+ * Readable while it fits — `document.expiring:doc_abc:14` — and a stable digest
+ * of the same parts once it would not, so the key stays deterministic either
+ * way and a replay still collides with its own earlier write.
+ */
+export function eventIdempotencyKey(name: string, ...parts: readonly string[]): string {
+  const readable = `${name}:${parts.join(":")}`;
+  return readable.length <= 64 ? readable : `${name}:${deterministicId("k", ...parts)}`;
+}
 
 export interface OutboxInput {
   readonly name: string;

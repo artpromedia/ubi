@@ -14,16 +14,14 @@
  * new-recipient rules.
  */
 import { ContractError } from "@ubi/contracts";
-import bcrypt from "bcrypt";
 import { z } from "zod";
 
 import { writeAudit } from "./audit";
 import { actorTypeFor, auditRevision } from "./common";
 import type { IdentityDeps } from "./deps";
-import { writeOutboxEvent } from "./outbox";
+import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
 import { assertNotInSafeMode } from "./safe-mode";
-
-const BCRYPT_ROUNDS = 12;
+import { hashSecret, verifySecret } from "./secret-hash";
 
 export const PinSchema = z.string().regex(/^\d{4,6}$/, "PIN must be 4 to 6 digits");
 
@@ -130,7 +128,7 @@ export async function verifyPin(
     throw new ContractError("pin_not_verified", "Set a wallet PIN before using it");
   }
 
-  const matches = await bcrypt.compare(pin, reference.pinHash);
+  const matches = await verifySecret(pin, reference.pinHash);
   if (matches) {
     await deps.prisma.wallet.updateMany({
       where: { ownerId: context.userId },
@@ -177,7 +175,7 @@ export async function verifyPin(
       subjectId: context.userId,
       actorType: actorTypeFor(context.role),
       actorId: context.userId,
-      idempotencyKey: `pin.locked:${context.userId}:${now.toISOString()}`,
+      idempotencyKey: eventIdempotencyKey("pin.locked", context.userId, now.toISOString()),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,
@@ -257,7 +255,7 @@ export async function resetPin(
   }
 
   await walletsFor(deps, context.userId);
-  const pinHash = await bcrypt.hash(input.newPin, BCRYPT_ROUNDS);
+  const pinHash = await hashSecret(input.newPin);
   const coolingUntil = new Date(now.getTime() + policy.coolingMs);
 
   await deps.prisma.$transaction(async (tx) => {
@@ -299,7 +297,7 @@ export async function resetPin(
       subjectId: context.userId,
       actorType: actorTypeFor(context.role),
       actorId: context.userId,
-      idempotencyKey: `pin.rotated:${challenge.id}`,
+      idempotencyKey: eventIdempotencyKey("pin.rotated", challenge.id),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,
@@ -313,7 +311,7 @@ export async function resetPin(
       subjectId: context.userId,
       actorType: actorTypeFor(context.role),
       actorId: context.userId,
-      idempotencyKey: `cooling.started:${challenge.id}`,
+      idempotencyKey: eventIdempotencyKey("cooling.started", challenge.id),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,

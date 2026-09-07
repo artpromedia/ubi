@@ -93,8 +93,8 @@ func session(id uuid.UUID, lat, lng float64, classes ...string) *domain.DriverSe
 
 func TestCandidatesKeepOnlyDriversInsideTheRing(t *testing.T) {
 	pickup := domain.Place{Lat: 6.5244, Lng: 3.3792}
-	near := session(uuid.New(), pickup.Lat+0.001, pickup.Lng)  // ~111 m
-	far := session(uuid.New(), pickup.Lat+0.05, pickup.Lng)    // ~5.5 km
+	near := session(uuid.New(), pickup.Lat+0.001, pickup.Lng) // ~111 m
+	far := session(uuid.New(), pickup.Lat+0.05, pickup.Lng)   // ~5.5 km
 	noFix := session(uuid.New(), 0, 0)
 	noFix.LastLat, noFix.LastLng = nil, nil
 

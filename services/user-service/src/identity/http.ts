@@ -76,7 +76,10 @@ export function requireIdempotencyKey(c: Context): string {
   return parsed.data;
 }
 
-export async function parseBody<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
+export async function parseBody<Out>(
+  c: Context,
+  schema: z.ZodType<Out, z.ZodTypeDef, unknown>,
+): Promise<Out> {
   let raw: unknown;
   try {
     raw = await c.req.json();

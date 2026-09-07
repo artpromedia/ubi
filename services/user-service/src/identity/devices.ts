@@ -18,7 +18,7 @@ import { writeAudit } from "./audit";
 import { actorTypeFor, auditRevision } from "./common";
 import type { IdentityDeps } from "./deps";
 import { deterministicId } from "./ids";
-import { writeOutboxEventOnce } from "./outbox";
+import { eventIdempotencyKey, writeOutboxEventOnce } from "./outbox";
 import { issueAccessToken, type IssuedToken } from "./tokens";
 
 export const STEP_UP_METHODS = ["old_device_approve", "selfie_nin"] as const;
@@ -184,7 +184,7 @@ export async function enrollDevice(
       subjectId: deviceId,
       actorType: actorTypeFor(input.role),
       actorId: input.userId,
-      idempotencyKey: `device.enrolled:${deviceId}`,
+      idempotencyKey: eventIdempotencyKey("device.enrolled", deviceId),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,

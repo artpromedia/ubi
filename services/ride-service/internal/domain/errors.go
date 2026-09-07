@@ -133,24 +133,3 @@ func AsError(err error) (*Error, bool) {
 // named does not exist. It is deliberately not an *Error: whether a missing row
 // is a 404 or something else is the caller's judgement.
 var ErrNotFound = errors.New("not found")
-
-// Sentinels used across the ride lifecycle. They are declared as *Error so a
-// caller can either compare them directly (the handlers switch on them) or read
-// their canonical code and status.
-//
-// All three were referenced at ten call sites across matching, repository,
-// service and handler without ever being defined, so the package did not
-// compile.
-var (
-	// ErrDriverNotAvailable is returned when a driver cannot take work: offline,
-	// already on a trip, or failing an eligibility gate.
-	ErrDriverNotAvailable = Errorf(CodeDriverIneligible, "driver is not available")
-
-	// ErrInvalidStatusTransition is returned when a transition is not in the
-	// canonical machine (contracts/state-machines.json).
-	ErrInvalidStatusTransition = Errorf(CodeIllegalTransition, "invalid status transition")
-
-	// ErrRideAlreadyEnded is returned when a ride has reached a terminal state
-	// and cannot be mutated further.
-	ErrRideAlreadyEnded = Errorf(CodeConflict, "ride has already ended")
-)

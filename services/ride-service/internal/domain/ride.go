@@ -37,12 +37,12 @@ func (p Place) Valid() bool {
 // FareBreakdown is what a fare is made of. It is stored with the quote so a
 // completed ride can be explained line by line without recomputing anything.
 type FareBreakdown struct {
-	BaseMinor        int64 `json:"baseMinor"`
-	DistanceMinor    int64 `json:"distanceMinor"`
-	TimeMinor        int64 `json:"timeMinor"`
-	BookingFeeMinor  int64 `json:"bookingFeeMinor"`
+	BaseMinor         int64 `json:"baseMinor"`
+	DistanceMinor     int64 `json:"distanceMinor"`
+	TimeMinor         int64 `json:"timeMinor"`
+	BookingFeeMinor   int64 `json:"bookingFeeMinor"`
 	MinFareTopUpMinor int64 `json:"minFareTopUpMinor"`
-	TotalMinor       int64 `json:"totalMinor"`
+	TotalMinor        int64 `json:"totalMinor"`
 }
 
 // Quote is a priced, signed offer to carry a rider. Every field except the

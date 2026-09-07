@@ -51,17 +51,28 @@ function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-// Public routes that don't require authentication
+// Public routes that don't require authentication.
+//
+// `/v1/auth/otp` and `/v1/auth/verify` are the slice-03 hardened OTP pair: a
+// caller has no token yet when they ask for a code. They grant nothing on their
+// own — `/v1/auth/verify` answers with a LIMITED-MODE token whenever the device
+// is not already trusted, so an SMS code alone never unlocks money.
+//
+// Note what is NOT here: `/v1/auth/step-up/*` and `/v1/auth/pin/*` require a
+// token, because they change what a session may do.
 const PUBLIC_ROUTES = [
   "/v1/auth/login",
   "/v1/auth/register",
   "/v1/auth/forgot-password",
   "/v1/auth/reset-password",
+  "/v1/auth/otp",
   "/v1/auth/verify-otp",
+  "/v1/auth/verify",
   "/v1/auth/refresh",
   "/v1/locations/autocomplete",
   "/v1/restaurants/public",
   "/v1/pricing/estimate",
+  "/v1/webhooks/telco",
 ];
 
 // Get JWT secret from environment

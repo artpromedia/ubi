@@ -20,6 +20,7 @@ import (
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/matching"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/testutil"
 )
@@ -570,7 +571,9 @@ func TestArrivalOutsideTheGeofenceIsRefused(t *testing.T) {
 		t.Fatalf("accept failed: %d %s", recorder.Code, recorder.Body.String())
 	}
 
-	// The city's geofence is 150 m; move the driver 600 m away.
+	// The city's geofence is 150 m; the driver drives 600 m away over half a
+	// minute, which is a speed the server will believe.
+	s.h.Clock.Advance(30 * time.Second)
 	far := testutil.PlaceAt(testutil.PickupFixture(), 600)
 	recorder := s.h.Do(http.MethodPost, "/drivers/me/locations", s.driver, map[string]any{
 		"points": []domain.LocationPoint{testutil.LocationPointFixture(2, far, s.h.Clock.Now())},
@@ -1085,4 +1088,90 @@ func TestAnUnknownCityCannotBeQuoted(t *testing.T) {
 	if recorder.Code != http.StatusNotFound && recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status: got %d, want a refusal (%s)", recorder.Code, recorder.Body.String())
 	}
+}
+
+// ---------------------------------------------------------------------------
+// The dispatcher: widening rings, bounded retries, an honest dead end
+// ---------------------------------------------------------------------------
+
+// TestAnUnansweredOfferExpiresAndTheDriverIsFreed drives the sweeper directly,
+// so the expiry is proven without waiting out a 12-second TTL.
+func TestAnUnansweredOfferExpiresAndTheDriverIsFreed(t *testing.T) {
+	s := newScenario(t)
+	ride := s.requestRide(s.quote(), "offer-expiry-0001")
+
+	offers := s.offersFor(ride.RideID)
+	if len(offers) != 1 {
+		t.Fatalf("expected one offer, got %d", len(offers))
+	}
+
+	// The city's offer TTL is 12 seconds; step past it and sweep.
+	s.h.Clock.Advance(13 * time.Second)
+	if err := s.h.Service.Sweep(context.Background()); err != nil {
+		t.Fatalf("sweep failed: %v", err)
+	}
+
+	after := s.offersFor(ride.RideID)
+	var expired int
+	for _, offer := range after {
+		if offer.ID == offers[0].ID && offer.State == domain.OfferExpired {
+			expired++
+		}
+	}
+	if expired != 1 {
+		t.Fatalf("the unanswered offer must be recorded as expired: %+v", after)
+	}
+
+	// Accepting it now is refused with the expired result, not with silence.
+	recorder := s.h.Do(http.MethodPost, "/offers/"+offers[0].ID.String()+"/accept", s.driver, nil)
+	var view move.AcceptResultView
+	s.h.DecodeBody(recorder, &view)
+	if view.Result != domain.AcceptExpired {
+		t.Fatalf("accept result: got %q, want expired", view.Result)
+	}
+
+	// And the driver is available again, so the next ring can reach them.
+	status := s.h.Do(http.MethodGet, "/drivers/me/status", s.driver, nil)
+	var session move.DriverStatusView
+	s.h.DecodeBody(status, &session)
+	if session.State != "available" {
+		t.Fatalf("the driver must be free again after the offer expired: got %q", session.State)
+	}
+}
+
+// TestARideWithNoDriverEndsWithOptionsRatherThanASpinner proves the retries are
+// bounded and that the rider is told the truth when they run out (board 1e).
+func TestARideWithNoDriverEndsWithOptionsRatherThanASpinner(t *testing.T) {
+	h := testutil.NewHarness(t, testutil.WithPolicy(matching.Policy{MaxRounds: 1}))
+	s := &scenario{h: h, rider: h.Rider(), driver: h.Driver()}
+
+	// A driver exists, but far outside every configured ring.
+	s.bringOnline(s.driver, testutil.PlaceAt(testutil.PickupFixture(), 50_000))
+
+	ride := s.requestRide(s.quote(), "no-driver-0001")
+	if offers := s.offersFor(ride.RideID); len(offers) != 0 {
+		t.Fatalf("nobody is in range, so nobody should be offered: %d offers", len(offers))
+	}
+
+	// Two configured rings, then the round is spent.
+	for i := 0; i < 3; i++ {
+		if err := h.Service.Sweep(context.Background()); err != nil {
+			t.Fatalf("sweep %d failed: %v", i, err)
+		}
+	}
+
+	recorder := h.Do(http.MethodGet, "/rides/"+ride.RideID.String(), s.rider, nil)
+	var view move.RideView
+	h.DecodeBody(recorder, &view)
+	if view.State != machine.RiderNoDriver {
+		t.Fatalf("state: got %q, want no_driver", view.State)
+	}
+	if view.Status != "NO_DRIVER" {
+		t.Fatalf("status: got %q, want NO_DRIVER", view.Status)
+	}
+	if len(view.Options) == 0 {
+		t.Fatal("a stranded rider must be given options, not a spinner")
+	}
+	assertEventPublished(t, h, "ride.no_driver", ride.RideID)
+	assertEventPublished(t, h, "matching.retry", ride.RideID)
 }

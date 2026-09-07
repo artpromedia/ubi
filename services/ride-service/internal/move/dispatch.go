@@ -36,7 +36,11 @@ func (s *Service) Dispatch(ctx context.Context, rideID uuid.UUID) error {
 		return err
 	}
 
-	return s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+	// Collected inside the transaction, sent after it commits: a driver app must
+	// never be told about an offer that then rolls back.
+	var announced []offerAnnouncement
+
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.deps.Store.RideForUpdate(ctx, tx, rideID)
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil
@@ -154,6 +158,17 @@ func (s *Service) Dispatch(ctx context.Context, rideID uuid.UUID) error {
 			}); err != nil {
 				return err
 			}
+			announced = append(announced, offerAnnouncement{
+				offerID:    offer.ID,
+				rideID:     ride.ID,
+				driverID:   candidate.DriverID,
+				etaSeconds: candidate.ETASeconds,
+				fareMinor:  ride.QuotedFareMinor,
+				currency:   ride.Currency,
+				expiresAt:  expiresAt,
+				pickup:     ride.Pickup,
+				dropoff:    ride.Dropoff,
+			})
 			created++
 		}
 
@@ -183,6 +198,53 @@ func (s *Service) Dispatch(ctx context.Context, rideID uuid.UUID) error {
 			},
 		})
 	})
+	if err != nil {
+		return err
+	}
+
+	s.announce(ctx, announced)
+	return nil
+}
+
+// offerAnnouncement is a committed offer on its way to a driver app.
+type offerAnnouncement struct {
+	offerID    uuid.UUID
+	rideID     uuid.UUID
+	driverID   uuid.UUID
+	etaSeconds int64
+	fareMinor  int64
+	currency   string
+	expiresAt  time.Time
+	pickup     domain.Place
+	dropoff    domain.Place
+}
+
+// announce pushes committed offers to the realtime gateway.
+//
+// A failed push is logged and not retried here: the offer is already in the
+// database and the driver app reads it back on reconnect, so the push is a
+// latency improvement rather than the delivery mechanism.
+func (s *Service) announce(ctx context.Context, offers []offerAnnouncement) {
+	for _, offer := range offers {
+		payload := map[string]any{
+			"type": "offer.created",
+			"payload": map[string]any{
+				"offerId":    offer.offerID.String(),
+				"rideId":     offer.rideID.String(),
+				"etaSeconds": offer.etaSeconds,
+				"fareMinor":  offer.fareMinor,
+				"currency":   offer.currency,
+				"expiresAt":  offer.expiresAt.Format(time.RFC3339),
+				"pickup":     map[string]any{"lat": offer.pickup.Lat, "lng": offer.pickup.Lng},
+				"dropoff":    map[string]any{"lat": offer.dropoff.Lat, "lng": offer.dropoff.Lng},
+			},
+		}
+		if err := s.deps.Redis.PublishToDriver(ctx, offer.driverID, payload); err != nil {
+			s.deps.Logger.Warn().Err(err).
+				Str("offer_id", offer.offerID.String()).
+				Msg("could not push the offer to the driver app; it is persisted and readable")
+		}
+	}
 }
 
 // noDriver tells the rider the truth: nobody took this ride. The rider is left

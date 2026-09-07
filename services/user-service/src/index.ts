@@ -21,11 +21,14 @@ import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { logger } from "./lib/logger.js";
 
+import { defaultIdentityDeps } from "./identity/deps";
 import { errorHandler } from "./middleware/error-handler";
 import { serviceAuthMiddleware } from "./middleware/service-auth";
 import { authRoutes } from "./routes/auth";
+import { createDeviceRoutes } from "./routes/devices";
 import { driverRoutes } from "./routes/drivers";
 import { healthRoutes } from "./routes/health";
+import { createIdentityRoutes } from "./routes/identity";
 import { sessionRoutes } from "./routes/sessions";
 import { userRoutes } from "./routes/users";
 
@@ -79,6 +82,18 @@ app.route("/health", healthRoutes);
 // Public Auth Routes
 // ===========================================
 app.route("/auth", authRoutes);
+
+// ===========================================
+// Identity (slice 03) — devices, step-up, PIN, documents, SIM-swap.
+//
+// These routes authenticate themselves: user-facing ones verify the API
+// gateway's SIGNED identity context, and the webhook and sweeps verify a
+// shared secret. They are mounted OUTSIDE `protectedApi` because they must not
+// inherit the header-trusting service-auth middleware.
+// ===========================================
+const identityDeps = defaultIdentityDeps();
+app.route("/devices", createDeviceRoutes(identityDeps));
+app.route("/", createIdentityRoutes(identityDeps));
 
 // ===========================================
 // Protected Routes (requires service auth or JWT)

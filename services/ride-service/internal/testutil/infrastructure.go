@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -246,20 +247,17 @@ func (h *Harness) Driver() Actor {
 func (h *Harness) Do(method, path string, actor Actor, body any, headers ...string) *httptest.ResponseRecorder {
 	h.T.Helper()
 
-	var reader *jsonReader
-	if body != nil {
+	var request *http.Request
+	if body == nil {
+		request = httptest.NewRequest(method, path, nil)
+	} else {
 		encoded, err := json.Marshal(body)
 		if err != nil {
 			h.T.Fatalf("failed to encode the request body: %v", err)
 		}
-		reader = newJSONReader(encoded)
-	}
-
-	var request *http.Request
-	if reader == nil {
-		request = httptest.NewRequest(method, path, nil)
-	} else {
-		request = httptest.NewRequest(method, path, reader)
+		// A *bytes.Reader, so httptest sets Content-Length the way a real
+		// client would: a handler that reads the header must see a real value.
+		request = httptest.NewRequest(method, path, bytes.NewReader(encoded))
 		request.Header.Set("Content-Type", "application/json")
 	}
 	if actor.UserID != uuid.Nil {

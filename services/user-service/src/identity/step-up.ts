@@ -26,7 +26,7 @@ import { actorTypeFor, auditRevision } from "./common";
 import type { IdentityDeps } from "./deps";
 import { APPEAL_MESSAGE, APPEAL_PATH, takeDriverOffline } from "./driver";
 import { newId } from "./ids";
-import { writeOutboxEvent } from "./outbox";
+import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
 import { issueAccessToken, type IssuedToken } from "./tokens";
 
 /**
@@ -195,7 +195,7 @@ export async function passSelfieStepUp(
       subjectId: context.userId,
       actorType: actorTypeFor(context.role),
       actorId: context.userId,
-      idempotencyKey: `step_up:${challenge.id}`,
+      idempotencyKey: eventIdempotencyKey("step_up", challenge.id),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,
@@ -216,7 +216,7 @@ export async function passSelfieStepUp(
         subjectId: driver.id,
         actorType: "system",
         actorId: "system:identity",
-        idempotencyKey: `face_check.failed:${challenge.id}`,
+        idempotencyKey: eventIdempotencyKey("face_check.failed", challenge.id),
         fromVersion: revision,
         toVersion: revision + 1,
         cityId: policy.cityId,
@@ -260,7 +260,7 @@ export async function passSelfieStepUp(
         subjectId: driver.id,
         actorType: "system",
         actorId: "system:identity",
-        idempotencyKey: `identity.case_opened:${caseId}`,
+        idempotencyKey: eventIdempotencyKey("identity.case_opened", caseId),
         fromVersion: revision,
         toVersion: revision + 1,
         cityId: policy.cityId,
@@ -374,7 +374,7 @@ export async function approveFromTrustedDevice(
       subjectId: context.userId,
       actorType: actorTypeFor(context.role),
       actorId: context.userId,
-      idempotencyKey: `step_up:${challenge.id}`,
+      idempotencyKey: eventIdempotencyKey("step_up", challenge.id),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,

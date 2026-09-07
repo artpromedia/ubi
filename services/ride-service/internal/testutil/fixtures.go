@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"bytes"
 	"time"
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
@@ -95,12 +94,4 @@ func LocationPointFixture(seq int64, place domain.Place, at time.Time) domain.Lo
 		AccuracyM:  8,
 		RecordedAt: at,
 	}
-}
-
-// jsonReader is a re-readable body reader, so a request built from a fixture
-// can be replayed without re-encoding it.
-type jsonReader struct{ *bytes.Reader }
-
-func newJSONReader(payload []byte) *jsonReader {
-	return &jsonReader{Reader: bytes.NewReader(payload)}
 }

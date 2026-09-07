@@ -18,7 +18,7 @@ import { auditRevision } from "./common";
 import type { IdentityDeps } from "./deps";
 import { APPEAL_MESSAGE, APPEAL_PATH } from "./driver";
 import { newId } from "./ids";
-import { writeOutboxEvent } from "./outbox";
+import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
 
 export const CASE_DECISIONS = ["reinstate", "deactivate"] as const;
 export type CaseDecision = (typeof CASE_DECISIONS)[number];
@@ -148,7 +148,7 @@ export async function decideIdentityCase(
       subjectId: existing.driverId,
       actorType: "agent",
       actorId: input.reviewerId,
-      idempotencyKey: `identity.case_decided:${input.caseId}`,
+      idempotencyKey: eventIdempotencyKey("identity.case_decided", input.caseId),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,

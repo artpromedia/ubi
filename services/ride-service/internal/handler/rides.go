@@ -26,6 +26,10 @@ import (
 // handful of fields; anything larger is a mistake or an attack.
 const maxRequestBytes = 64 * 1024
 
+// emptyBodyMessage marks the one decoding failure a handler may choose to
+// tolerate: no body at all.
+const emptyBodyMessage = "this endpoint needs a JSON body"
+
 // RideHandler serves the Move endpoints.
 type RideHandler struct {
 	service *move.Service
@@ -84,7 +88,7 @@ func decodeBody(r *http.Request, target any) error {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		if errors.Is(err, io.EOF) {
-			return domain.Errorf(domain.CodeValidationFailed, "this endpoint needs a JSON body")
+			return domain.Errorf(domain.CodeValidationFailed, "%s", emptyBodyMessage)
 		}
 		return domain.Errorf(domain.CodeValidationFailed, "the request body could not be read: %s", err.Error())
 	}
@@ -407,9 +411,13 @@ func (h *RideHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	// A rider may cancel with no body at all; a driver may not, and the service
+	// is what refuses that. Content-Length is not consulted, because a chunked
+	// request does not carry one and a missing reason must be the service's
+	// finding rather than an artefact of how the body was framed.
 	var req CancelRequest
-	if r.ContentLength > 0 {
-		if err := decodeBody(r, &req); err != nil {
+	if err := decodeBody(r, &req); err != nil {
+		if mapped, ok := domain.AsError(err); !ok || mapped.Message != emptyBodyMessage {
 			h.fail(w, r, err)
 			return
 		}

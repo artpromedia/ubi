@@ -22,7 +22,7 @@ import { writeAudit } from "./audit";
 import { auditRevision } from "./common";
 import type { IdentityCache, IdentityDeps } from "./deps";
 import { deterministicId } from "./ids";
-import { writeOutboxEventOnce } from "./outbox";
+import { eventIdempotencyKey, writeOutboxEventOnce } from "./outbox";
 
 /** Must match services/api-gateway/src/identity/state.ts. */
 export function safeModeKey(userId: string): string {
@@ -123,7 +123,7 @@ export async function recordSimSwap(
       subjectId: report.userId,
       actorType: "system",
       actorId: `telco:${report.source}`,
-      idempotencyKey: `wallet.safe_mode_entered:${signalId}`,
+      idempotencyKey: eventIdempotencyKey("wallet.safe_mode_entered", signalId),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,
@@ -234,7 +234,7 @@ export async function sweepSafeModeExits(deps: IdentityDeps): Promise<readonly s
         subjectId: signal.userId,
         actorType: "system",
         actorId: "system:identity-sweep",
-        idempotencyKey: `wallet.safe_mode_exited:${signal.id}`,
+        idempotencyKey: eventIdempotencyKey("wallet.safe_mode_exited", signal.id),
         fromVersion: revision,
         toVersion: revision + 1,
         cityId: policy.cityId,

@@ -168,7 +168,10 @@ func (s *Service) VerifyPin(ctx context.Context, actor Actor, rideID uuid.UUID, 
 		return nil, asDomainError(err)
 	}
 
-	var result *PinResultView
+	var (
+		result  *PinResultView
+		refusal *domain.Error
+	)
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
 		if err != nil {
@@ -240,8 +243,14 @@ func (s *Service) VerifyPin(ctx context.Context, actor Actor, rideID uuid.UUID, 
 				code = domain.CodePinAttemptsExhausted
 				message = "the pickup PIN is now locked for this ride"
 			}
-			return domain.Errorf(code, "%s", message).
+			// The refusal is carried out of the transaction rather than returned
+			// from inside it. Returning an error here would roll the transaction
+			// back, and the attempt that was just spent would be given back with
+			// it — an attempt limit that resets on every wrong guess is not a
+			// limit at all.
+			refusal = domain.Errorf(code, "%s", message).
 				WithDetails(map[string]any{"attemptsLeft": left})
+			return nil
 		}
 
 		state := ride.State
@@ -305,6 +314,10 @@ func (s *Service) VerifyPin(ctx context.Context, actor Actor, rideID uuid.UUID, 
 	})
 	if err != nil {
 		return nil, asDomainError(err)
+	}
+	if refusal != nil {
+		// The spent attempt is committed; the caller still gets the refusal.
+		return nil, refusal
 	}
 	s.deps.Redis.ClearPinAttempts(ctx, rideID)
 	return result, nil
