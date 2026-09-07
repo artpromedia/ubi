@@ -13,7 +13,7 @@ Statuses: **done** · **partial** · **not started** · **blocked**
 | 02 | Move core lockstep (`ride-service`, Go) | **done** — 67 tests, race-clean |
 | 03 | Auth, KYC, device trust, gateway identity context | **done** — 281 tests |
 | 04 | Wallet: double-entry ledger, P2P, NIP, saga, statements, finance recon | **done** — 77 tests |
-| 05 | Bites | **blocked** — see below |
+| 05 | Bites | **done** — 27 tests (backend); Flutter/console screens pending |
 | 06 | Send | not started |
 | 07 | Flights (One-Ticket) | not started |
 | 08 | Journeys and reservations | not started |
