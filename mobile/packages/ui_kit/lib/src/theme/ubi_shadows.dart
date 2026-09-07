@@ -103,7 +103,10 @@ abstract final class UbiShadows {
   
   /// Card shadow
   static const List<BoxShadow> card = sm;
-  
+
+  /// Card shadow for dark surfaces (more pronounced against dark backgrounds)
+  static const List<BoxShadow> cardDark = md;
+
   /// Button shadow
   static const List<BoxShadow> button = xs;
   

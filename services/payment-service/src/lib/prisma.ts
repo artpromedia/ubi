@@ -18,7 +18,7 @@ const SLOW_QUERY_THRESHOLD_MS = Number.parseInt(
 );
 
 // Type for the extended Prisma client
-type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
+export type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
 
 const globalForPrisma = globalThis as unknown as {
   prisma: ExtendedPrismaClient | undefined;

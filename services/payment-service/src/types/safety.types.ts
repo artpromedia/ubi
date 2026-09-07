@@ -68,6 +68,14 @@ export type DocumentType =
   | "NATIONAL_ID_RW"
   // Ethiopia
   | "NATIONAL_ID_ET"
+  // Tanzania
+  | "NATIONAL_ID_TZ"
+  // Uganda
+  | "NATIONAL_ID_UG"
+  // Côte d'Ivoire
+  | "CNI_CI"
+  // Senegal
+  | "CNI_SN"
   // Generic
   | "PASSPORT"
   | "UTILITY_BILL"
@@ -372,6 +380,9 @@ export interface TripSafetySession {
   pinVerified?: boolean;
   sharedWithContacts: boolean;
   monitoringStartedAt: Date;
+  // Optional expected-arrival estimate the monitor may attach for contact
+  // notifications (derived from expectedDuration; absent until computed).
+  eta?: Date | string | number;
 }
 
 export interface TripAnomaly {

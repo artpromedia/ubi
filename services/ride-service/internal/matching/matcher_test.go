@@ -1,408 +1,187 @@
 package matching_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/ubi/ride-service/internal/testutil"
+	"github.com/google/uuid"
+
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/matching"
 )
 
-// DriverMatcher interface for driver matching
-type DriverMatcher interface {
-	FindNearbyDrivers(ctx context.Context, lat, lng float64, radiusKm float64) ([]*testutil.MockDriver, error)
-	MatchDriver(ctx context.Context, rideID string, pickupLat, pickupLng float64) (*testutil.MockDriver, error)
-}
-
-// SimpleDriverMatcher implements basic driver matching logic
-type SimpleDriverMatcher struct {
-	rideMatcher *testutil.MockRideMatcher
-}
-
-// NewSimpleDriverMatcher creates a new simple driver matcher
-func NewSimpleDriverMatcher(matcher *testutil.MockRideMatcher) *SimpleDriverMatcher {
-	return &SimpleDriverMatcher{rideMatcher: matcher}
-}
-
-// FindNearbyDrivers finds drivers within radius
-func (m *SimpleDriverMatcher) FindNearbyDrivers(ctx context.Context, lat, lng float64, radiusKm float64) ([]*testutil.MockDriver, error) {
-	return m.rideMatcher.FindNearbyDrivers(ctx, lat, lng, radiusKm)
-}
-
-// MatchDriver matches the best available driver
-func (m *SimpleDriverMatcher) MatchDriver(ctx context.Context, rideID string, pickupLat, pickupLng float64) (*testutil.MockDriver, error) {
-	drivers, err := m.rideMatcher.FindNearbyDrivers(ctx, pickupLat, pickupLng, 5.0) // 5km radius
-	if err != nil {
-		return nil, err
+func configWithRings(rings ...cityconfig.MatchingRing) *cityconfig.CityConfig {
+	return &cityconfig.CityConfig{
+		CityID:        "TST",
+		Version:       1,
+		Currency:      "NGN",
+		MatchingRings: rings,
 	}
-
-	if len(drivers) == 0 {
-		return nil, nil
-	}
-
-	// Find driver with best rating
-	var bestDriver *testutil.MockDriver
-	for _, d := range drivers {
-		if bestDriver == nil || d.Rating > bestDriver.Rating {
-			bestDriver = d
-		}
-	}
-
-	return bestDriver, nil
 }
 
-// ========================================
-// Tests
-// ========================================
-
-func TestFindNearbyDrivers_NoDrivers(t *testing.T) {
-	// Setup
-	matcher := testutil.NewMockRideMatcher()
-	service := NewSimpleDriverMatcher(matcher)
-
-	// Test
-	ctx := context.Background()
-	drivers, err := service.FindNearbyDrivers(
-		ctx,
-		testutil.DefaultNigeriaLocation.Lat,
-		testutil.DefaultNigeriaLocation.Lng,
-		5.0,
+func TestRingsWidenAndThenRunOut(t *testing.T) {
+	config := configWithRings(
+		cityconfig.MatchingRing{RadiusMeters: 2000, MaxCandidates: 5},
+		cityconfig.MatchingRing{RadiusMeters: 4000, MaxCandidates: 8},
 	)
 
-	// Assertions
-	assert := testutil.NewAssert(t)
-	assert.NoError(err)
-	assert.Empty(drivers)
-}
-
-func TestFindNearbyDrivers_DriversInRange(t *testing.T) {
-	// Setup
-	matcher := testutil.NewMockRideMatcher()
-	
-	// Add drivers near Lagos
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-1",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01, // ~1.1km away
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Rating:    4.8,
-		Available: true,
-	})
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-2",
-		Lat:       testutil.DefaultNigeriaLocation.Lat - 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Rating:    4.5,
-		Available: true,
-	})
-
-	service := NewSimpleDriverMatcher(matcher)
-
-	// Test
-	ctx := context.Background()
-	drivers, err := service.FindNearbyDrivers(
-		ctx,
-		testutil.DefaultNigeriaLocation.Lat,
-		testutil.DefaultNigeriaLocation.Lng,
-		5.0,
-	)
-
-	// Assertions
-	assert := testutil.NewAssert(t)
-	assert.NoError(err)
-	assert.Len(drivers, 2)
-}
-
-func TestFindNearbyDrivers_ExcludesOfflineDrivers(t *testing.T) {
-	// Setup
-	matcher := testutil.NewMockRideMatcher()
-	
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-online",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Available: true,
-	})
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-offline",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "offline", // Should be excluded
-		Available: true,
-	})
-
-	service := NewSimpleDriverMatcher(matcher)
-
-	// Test
-	ctx := context.Background()
-	drivers, err := service.FindNearbyDrivers(
-		ctx,
-		testutil.DefaultNigeriaLocation.Lat,
-		testutil.DefaultNigeriaLocation.Lng,
-		5.0,
-	)
-
-	// Assertions
-	assert := testutil.NewAssert(t)
-	assert.NoError(err)
-	assert.Len(drivers, 1)
-	assert.Equal("driver-online", drivers[0].ID)
-}
-
-func TestFindNearbyDrivers_ExcludesUnavailableDrivers(t *testing.T) {
-	// Setup
-	matcher := testutil.NewMockRideMatcher()
-	
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-available",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Available: true,
-	})
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-busy",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Available: false, // On another ride
-	})
-
-	service := NewSimpleDriverMatcher(matcher)
-
-	// Test
-	ctx := context.Background()
-	drivers, err := service.FindNearbyDrivers(
-		ctx,
-		testutil.DefaultNigeriaLocation.Lat,
-		testutil.DefaultNigeriaLocation.Lng,
-		5.0,
-	)
-
-	// Assertions
-	assert := testutil.NewAssert(t)
-	assert.NoError(err)
-	assert.Len(drivers, 1)
-	assert.Equal("driver-available", drivers[0].ID)
-}
-
-func TestMatchDriver_SelectsHighestRated(t *testing.T) {
-	// Setup
-	matcher := testutil.NewMockRideMatcher()
-	
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-1",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Rating:    4.5,
-		Available: true,
-	})
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-2",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Rating:    4.9, // Highest rating
-		Available: true,
-	})
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-3",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Rating:    4.7,
-		Available: true,
-	})
-
-	service := NewSimpleDriverMatcher(matcher)
-
-	// Test
-	ctx := context.Background()
-	driver, err := service.MatchDriver(
-		ctx,
-		"ride-123",
-		testutil.DefaultNigeriaLocation.Lat,
-		testutil.DefaultNigeriaLocation.Lng,
-	)
-
-	// Assertions
-	assert := testutil.NewAssert(t)
-	assert.NoError(err)
-	assert.NotNil(driver)
-	assert.Equal("driver-2", driver.ID, "Should select highest rated driver")
-	assert.InDelta(4.9, driver.Rating, 0.01)
-}
-
-func TestMatchDriver_NoAvailableDrivers(t *testing.T) {
-	// Setup
-	matcher := testutil.NewMockRideMatcher()
-	service := NewSimpleDriverMatcher(matcher)
-
-	// Test
-	ctx := context.Background()
-	driver, err := service.MatchDriver(
-		ctx,
-		"ride-123",
-		testutil.DefaultNigeriaLocation.Lat,
-		testutil.DefaultNigeriaLocation.Lng,
-	)
-
-	// Assertions
-	assert := testutil.NewAssert(t)
-	assert.NoError(err)
-	assert.Nil(driver)
-}
-
-func TestMatchDriver_WithMatchingDelay(t *testing.T) {
-	// Setup
-	matcher := testutil.NewMockRideMatcher()
-	matcher.SetMatchDelay(100 * time.Millisecond)
-	
-	matcher.AddDriver(&testutil.MockDriver{
-		ID:        "driver-1",
-		Lat:       testutil.DefaultNigeriaLocation.Lat + 0.01,
-		Lng:       testutil.DefaultNigeriaLocation.Lng,
-		Status:    "online",
-		Rating:    4.5,
-		Available: true,
-	})
-
-	service := NewSimpleDriverMatcher(matcher)
-
-	// Test
-	ctx := context.Background()
-	start := time.Now()
-	driver, err := service.MatchDriver(
-		ctx,
-		"ride-123",
-		testutil.DefaultNigeriaLocation.Lat,
-		testutil.DefaultNigeriaLocation.Lng,
-	)
-	elapsed := time.Since(start)
-
-	// Assertions
-	assert := testutil.NewAssert(t)
-	assert.NoError(err)
-	assert.NotNil(driver)
-	assert.GreaterOrEqual(elapsed, 100*time.Millisecond, "Should have matching delay")
-}
-
-// Table-driven tests for different locations
-func TestFindNearbyDrivers_DifferentRegions(t *testing.T) {
-	testCases := []struct {
-		name       string
-		location   testutil.LocationFixture
-		driverCount int
-	}{
-		{
-			name:        "Lagos Nigeria",
-			location:    testutil.DefaultNigeriaLocation,
-			driverCount: 5,
-		},
-		{
-			name:        "Nairobi Kenya",
-			location:    testutil.DefaultKenyaLocation,
-			driverCount: 3,
-		},
-		{
-			name:        "Cape Town South Africa",
-			location:    testutil.DefaultSouthAfricaLocation,
-			driverCount: 4,
-		},
+	first, ok := matching.RingFor(config, 0)
+	if !ok || first.RadiusMeters != 2000 || first.MaxCandidates != 5 {
+		t.Fatalf("first ring: got %+v ok=%v", first, ok)
 	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Setup
-			matcher := testutil.NewMockRideMatcher()
-			
-			// Generate drivers for the location
-			for i := 0; i < tc.driverCount; i++ {
-				matcher.AddDriver(&testutil.MockDriver{
-					ID:        testutil.RandomUUID(),
-					Lat:       tc.location.Lat + float64(i)*0.005,
-					Lng:       tc.location.Lng,
-					Status:    "online",
-					Rating:    4.0 + float64(i)*0.1,
-					Available: true,
-				})
-			}
-
-			service := NewSimpleDriverMatcher(matcher)
-
-			// Test
-			ctx := context.Background()
-			drivers, err := service.FindNearbyDrivers(
-				ctx,
-				tc.location.Lat,
-				tc.location.Lng,
-				10.0, // 10km radius
-			)
-
-			// Assertions
-			assert := testutil.NewAssert(t)
-			assert.NoError(err)
-			assert.Len(drivers, tc.driverCount)
-		})
+	second, ok := matching.RingFor(config, 1)
+	if !ok || second.RadiusMeters != 4000 {
+		t.Fatalf("second ring: got %+v ok=%v", second, ok)
+	}
+	if _, ok := matching.RingFor(config, 2); ok {
+		t.Fatal("a third ring must not be invented; the city configured two")
+	}
+	if matching.RingCount(config) != 2 {
+		t.Fatalf("ring count: got %d, want 2", matching.RingCount(config))
 	}
 }
 
-// Benchmark tests
-func BenchmarkFindNearbyDrivers(b *testing.B) {
-	// Setup with 100 drivers
-	matcher := testutil.NewMockRideMatcher()
-	for i := 0; i < 100; i++ {
-		matcher.AddDriver(&testutil.MockDriver{
-			ID:        testutil.RandomUUID(),
-			Lat:       testutil.DefaultNigeriaLocation.Lat + float64(i%10)*0.01,
-			Lng:       testutil.DefaultNigeriaLocation.Lng + float64(i/10)*0.01,
-			Status:    "online",
-			Rating:    testutil.RandomRating(),
-			Available: i%3 != 0, // 2/3 available
-		})
+func TestRingsComeFromConfigNotFromCode(t *testing.T) {
+	// A city with a single, tiny ring gets exactly that. If this service had a
+	// default radius of its own, this would come back wider.
+	config := configWithRings(cityconfig.MatchingRing{RadiusMeters: 300, MaxCandidates: 1})
+	ring, ok := matching.RingFor(config, 0)
+	if !ok {
+		t.Fatal("the configured ring should be usable")
 	}
-
-	service := NewSimpleDriverMatcher(matcher)
-	ctx := context.Background()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		service.FindNearbyDrivers(
-			ctx,
-			testutil.DefaultNigeriaLocation.Lat,
-			testutil.DefaultNigeriaLocation.Lng,
-			5.0,
-		)
+	if ring.RadiusMeters != 300 || ring.MaxCandidates != 1 {
+		t.Fatalf("got %+v, want the city's 300 m / 1 candidate ring", ring)
 	}
 }
 
-func BenchmarkMatchDriver(b *testing.B) {
-	// Setup with 100 drivers
-	matcher := testutil.NewMockRideMatcher()
-	for i := 0; i < 100; i++ {
-		matcher.AddDriver(&testutil.MockDriver{
-			ID:        testutil.RandomUUID(),
-			Lat:       testutil.DefaultNigeriaLocation.Lat + float64(i%10)*0.01,
-			Lng:       testutil.DefaultNigeriaLocation.Lng + float64(i/10)*0.01,
-			Status:    "online",
-			Rating:    testutil.RandomRating(),
-			Available: true,
-		})
+func TestBoundingBoxContainsTheRing(t *testing.T) {
+	const lat, lng = 6.5244, 3.3792
+	const radius = 2000.0
+
+	minLat, maxLat, minLng, maxLng := matching.BoundingBox(lat, lng, radius)
+	if minLat >= lat || maxLat <= lat || minLng >= lng || maxLng <= lng {
+		t.Fatalf("the box must surround the centre: %v %v %v %v", minLat, maxLat, minLng, maxLng)
 	}
 
-	service := NewSimpleDriverMatcher(matcher)
-	ctx := context.Background()
+	// A point exactly at the radius due north must be inside the box, or the
+	// database prefilter would drop a driver the ring should have reached.
+	north := lat + radius/111_320.0
+	if north > maxLat {
+		t.Fatalf("a point on the ring (%v) fell outside the box (max %v)", north, maxLat)
+	}
+	if _, inside := matching.Within(lat, lng, north, lng, int(radius)); !inside {
+		t.Fatal("a point on the ring should measure as inside it")
+	}
+	// And a point well beyond it is not, however wide the box was.
+	if _, inside := matching.Within(lat, lng, lat+3*radius/111_320.0, lng, int(radius)); inside {
+		t.Fatal("a point three times the radius away must not measure as inside")
+	}
+}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		service.MatchDriver(
-			ctx,
-			"ride-123",
-			testutil.DefaultNigeriaLocation.Lat,
-			testutil.DefaultNigeriaLocation.Lng,
-		)
+func session(id uuid.UUID, lat, lng float64, classes ...string) *domain.DriverSession {
+	at := time.Now().UTC()
+	return &domain.DriverSession{
+		DriverID:       id,
+		State:          "available",
+		VehicleClasses: classes,
+		LastLat:        &lat,
+		LastLng:        &lng,
+		LastLocationAt: &at,
+	}
+}
+
+func TestCandidatesKeepOnlyDriversInsideTheRing(t *testing.T) {
+	pickup := domain.Place{Lat: 6.5244, Lng: 3.3792}
+	near := session(uuid.New(), pickup.Lat+0.001, pickup.Lng) // ~111 m
+	far := session(uuid.New(), pickup.Lat+0.05, pickup.Lng)   // ~5.5 km
+	noFix := session(uuid.New(), 0, 0)
+	noFix.LastLat, noFix.LastLng = nil, nil
+
+	candidates := matching.Candidates(
+		[]*domain.DriverSession{near, far, noFix},
+		pickup,
+		matching.Ring{RadiusMeters: 2000, MaxCandidates: 5},
+	)
+
+	if len(candidates) != 1 {
+		t.Fatalf("expected only the nearby driver, got %d candidates", len(candidates))
+	}
+	if candidates[0].DriverID != near.DriverID {
+		t.Fatalf("expected the nearby driver, got %s", candidates[0].DriverID)
+	}
+	if candidates[0].ETASeconds <= 0 {
+		t.Fatal("a candidate must carry an ETA")
+	}
+}
+
+func TestCandidatesAreRankedNearestFirstAndCapped(t *testing.T) {
+	pickup := domain.Place{Lat: 6.5244, Lng: 3.3792}
+	closest := session(uuid.New(), pickup.Lat+0.0005, pickup.Lng)
+	middle := session(uuid.New(), pickup.Lat+0.005, pickup.Lng)
+	furthest := session(uuid.New(), pickup.Lat+0.01, pickup.Lng)
+
+	candidates := matching.Candidates(
+		[]*domain.DriverSession{furthest, closest, middle},
+		pickup,
+		matching.Ring{RadiusMeters: 5000, MaxCandidates: 2},
+	)
+
+	if len(candidates) != 2 {
+		t.Fatalf("the ring caps candidates at 2, got %d", len(candidates))
+	}
+	if candidates[0].DriverID != closest.DriverID {
+		t.Fatal("the nearest driver must rank first")
+	}
+	if candidates[0].DistanceMeters > candidates[1].DistanceMeters {
+		t.Fatal("candidates must be ordered by how soon they can arrive")
+	}
+}
+
+func TestRankIsDeterministic(t *testing.T) {
+	// Two drivers at the same distance must always come back in the same order,
+	// so a dispatch can be replayed and explained.
+	a := matching.Candidate{DriverID: uuid.MustParse("00000000-0000-0000-0000-0000000000aa"), DistanceMeters: 100, ETASeconds: 60}
+	b := matching.Candidate{DriverID: uuid.MustParse("00000000-0000-0000-0000-0000000000bb"), DistanceMeters: 100, ETASeconds: 60}
+
+	first := matching.Rank([]matching.Candidate{a, b}, 2)
+	second := matching.Rank([]matching.Candidate{b, a}, 2)
+
+	if first[0].DriverID != second[0].DriverID || first[1].DriverID != second[1].DriverID {
+		t.Fatal("ranking must not depend on the order the drivers arrived in")
+	}
+}
+
+func TestPolicyNormalisesAwayDisabledLimits(t *testing.T) {
+	normalised := matching.Policy{}.Normalise()
+	if normalised.MaxRounds <= 0 {
+		t.Fatal("a zero round limit would let a ride retry forever")
+	}
+	if normalised.LocationFreshness <= 0 {
+		t.Fatal("a zero freshness window would let a stale driver be dispatched")
+	}
+	if normalised.SweepBatch <= 0 {
+		t.Fatal("a zero sweep batch would do no work")
+	}
+}
+
+func TestPolicyExhaustion(t *testing.T) {
+	config := configWithRings(
+		cityconfig.MatchingRing{RadiusMeters: 1000, MaxCandidates: 3},
+		cityconfig.MatchingRing{RadiusMeters: 2000, MaxCandidates: 3},
+	)
+	policy := matching.Policy{MaxRounds: 2}.Normalise()
+
+	if policy.Exhausted(config, 0, 0) {
+		t.Fatal("a ride on its first ring is not exhausted")
+	}
+	if policy.Exhausted(config, 2, 1) {
+		t.Fatal("a ride with a round left is not exhausted")
+	}
+	if !policy.Exhausted(config, 2, 2) {
+		t.Fatal("a ride that has used every ring and every round is exhausted")
+	}
+	if !policy.Exhausted(configWithRings(), 0, 0) {
+		t.Fatal("a city with no rings can match nobody")
 	}
 }

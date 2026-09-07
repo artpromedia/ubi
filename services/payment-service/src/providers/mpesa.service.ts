@@ -24,13 +24,9 @@
  * - Duplicate transaction → Idempotency check
  */
 
-import {
-  PaymentProvider,
-  PaymentStatus,
-  Prisma,
-  PrismaClient,
-} from "@prisma/client";
+import { PaymentProvider, PaymentStatus, Prisma } from "@prisma/client";
 import { mpesaLogger } from "../lib/logger.js";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 
 export interface MpesaConfig {
   consumerKey: string;
@@ -126,7 +122,7 @@ export class MpesaService {
 
   constructor(
     private readonly config: MpesaConfig,
-    private readonly prisma: PrismaClient,
+    private readonly prisma: ExtendedPrismaClient,
   ) {
     this.baseUrl =
       config.environment === "production"
@@ -779,7 +775,7 @@ export class MpesaService {
             status: "COMPLETED",
             providerReference: transactionId,
             completedAt: new Date(),
-            providerMetadata: {
+            metadata: {
               conversationId: result.ConversationID,
               originatorConversationId: result.OriginatorConversationID,
               transactionId,
@@ -803,7 +799,7 @@ export class MpesaService {
             status: "FAILED",
             failedAt: new Date(),
             failureReason: result.ResultDesc,
-            providerMetadata: {
+            metadata: {
               conversationId: result.ConversationID,
               originatorConversationId: result.OriginatorConversationID,
               resultCode: result.ResultCode,
@@ -859,7 +855,7 @@ export class MpesaService {
 
     // If we have a final status from callback, return it
     if (payout.status === "COMPLETED") {
-      const metadata = payout.providerMetadata as Record<string, unknown>;
+      const metadata = payout.metadata as Record<string, unknown>;
       return {
         status: "COMPLETED",
         description: "Payout completed successfully",
@@ -918,7 +914,7 @@ export class MpesaService {
    */
   private async queryB2CTransactionStatus(
     originatorConversationId: string,
-    payout: { id: string; amount: number },
+    payout: { id: string },
   ): Promise<{
     status: "COMPLETED" | "FAILED" | "PENDING";
     description: string;
@@ -991,7 +987,7 @@ export class MpesaService {
     await this.prisma.payout.update({
       where: { id: payoutId },
       data: {
-        status: "PENDING_RECONCILIATION",
+        status: "PROCESSING",
         metadata: {
           originatorConversationId,
           reconciliationQueuedAt: new Date().toISOString(),

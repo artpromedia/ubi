@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ubi_core/ubi_config.dart';
 
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/auth/presentation/pages/otp_verification_page.dart';
@@ -107,7 +109,21 @@ final appRouter = GoRouter(
       name: 'trip-request',
       builder: (context, state) {
         final data = state.extra as Map<String, dynamic>?;
-        return TripRequestPage(requestData: data ?? {});
+        final rawId = data?['requestId'];
+        final config = context.watch<ConfigCubit>().state;
+        // A driver can only be offered a trip where the city runs ride
+        // requests; a deep link into it otherwise is answered honestly
+        // (CLAUDE.md rules 5 and 8).
+        return FlagGatedRoute(
+          flag: UbiFlag.rideRequest,
+          featureName: 'Trip requests',
+          onDismiss: () => context.go(AppRoutes.home),
+          child: TripRequestPage(
+            requestId: rawId is String ? rawId : '',
+            // The offer window is city config, never a constant.
+            offerTtlSeconds: config.config?.offerTtlSec,
+          ),
+        );
       },
     ),
     GoRoute(

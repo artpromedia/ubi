@@ -3,7 +3,7 @@
 /// Contract for location-related data operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Repository for location operations
 abstract class LocationRepository {

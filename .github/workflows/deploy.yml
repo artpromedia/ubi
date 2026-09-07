@@ -1,3 +1,8 @@
+# NOTE (launch-readiness audit): the repository default branch is `master`, but
+# this workflow triggers on `main`. It has therefore never run. The CI and test
+# gates have been pointed at `master`; this workflow is deliberately left alone
+# because adding `master` here would arm deployment/release on every merge to
+# the default branch, which is an operational decision for the team to make.
 # UBI Deployment Pipeline
 # Deploys applications and services based on changed packages
 
@@ -292,7 +297,13 @@ jobs:
   # ===========================================
   notify-deployment:
     name: Notify Deployment
-    needs: [deploy-web-app, deploy-admin-dashboard, deploy-api-gateway, deploy-ride-service]
+    needs:
+      [
+        deploy-web-app,
+        deploy-admin-dashboard,
+        deploy-api-gateway,
+        deploy-ride-service,
+      ]
     if: always()
     runs-on: ubuntu-latest
     steps:

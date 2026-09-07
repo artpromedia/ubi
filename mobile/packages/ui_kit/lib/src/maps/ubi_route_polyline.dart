@@ -180,7 +180,7 @@ class UbiRoutePolyline {
         );
       case UbiPolylineType.driverToPickup:
         return _PolylineConfig(
-          color: UbiColors.ubiGreen.withValues(alpha: 0.7),
+          color: UbiColors.ubiGreen.withOpacity(0.7),
           width: 4,
           patterns: [
             PatternItem.dash(15),

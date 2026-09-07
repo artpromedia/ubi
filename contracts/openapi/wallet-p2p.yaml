@@ -1,0 +1,231 @@
+openapi: 3.1.0
+info:
+  {
+    title: "UBI Wallet P2P",
+    version: 0.1.0,
+    description: "Send/receive, split fare, NIP, top-up saga, safe mode, statements. Money is integer minor units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key.",
+  }
+servers: [{ url: https://api.ubi.africa }]
+components:
+  securitySchemes: { bearer: { type: http, scheme: bearer } }
+  parameters:
+    IdemKey:
+      {
+        name: Idempotency-Key,
+        in: header,
+        required: true,
+        schema: { type: string, maxLength: 64 },
+      }
+  schemas:
+    Money:
+      {
+        type: object,
+        required: [amountMinor, currency],
+        properties:
+          {
+            amountMinor: { type: integer },
+            currency: { type: string, example: NGN },
+          },
+      }
+    Error:
+      {
+        type: object,
+        properties:
+          {
+            code: { type: string },
+            message: { type: string },
+            details: { type: object },
+          },
+      }
+security: [{ bearer: [] }]
+paths:
+  /v1/wallet:
+    {
+      get:
+        {
+          responses:
+            {
+              "200":
+                {
+                  description: "balance (derived), tier, limits left today, safeMode",
+                },
+            },
+        },
+    }
+  /v1/wallet/recipients/lookup:
+    get:
+      {
+        parameters:
+          [
+            {
+              name: q,
+              in: query,
+              schema: { type: string, description: "@tag or phone" },
+            },
+          ],
+        responses:
+          { "200": { description: "full display name shown before PIN" } },
+      }
+  /v1/wallet/transfers:
+    post:
+      {
+        parameters: [{ $ref: "#/components/parameters/IdemKey" }],
+        requestBody:
+          {
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        required: [toUserId, amountMinor, pin],
+                        properties:
+                          {
+                            toUserId: { type: string },
+                            amountMinor: { type: integer },
+                            note: { type: string },
+                            pin: { type: string },
+                            topup:
+                              {
+                                type: object,
+                                description: "optional atomic top-up first (saga)",
+                                properties:
+                                  {
+                                    methodId: { type: string },
+                                    amountMinor: { type: integer },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              },
+          },
+        responses:
+          {
+            "201":
+              { description: "posted | held(risk) — never partially applied" },
+          },
+      }
+  /v1/wallet/transfers/{id}/return-request:
+    post:
+      {
+        parameters:
+          [{ name: id, in: path, required: true, schema: { type: string } }],
+        responses:
+          {
+            "201":
+              {
+                description: "asks recipient to return; reversal only on consent; dispute after 48h",
+              },
+          },
+      }
+  /v1/wallet/requests:
+    post:
+      {
+        parameters: [{ $ref: "#/components/parameters/IdemKey" }],
+        requestBody:
+          {
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        properties:
+                          {
+                            fromUserId: { type: string },
+                            amountMinor: { type: integer },
+                            rideId: { type: string },
+                          },
+                      },
+                  },
+              },
+          },
+        responses: { "201": { description: "split-fare request" } },
+      }
+  /v1/wallet/requests/{id}/pay:
+    {
+      post:
+        {
+          parameters:
+            [{ name: id, in: path, required: true, schema: { type: string } }],
+          responses: { "200": { description: paid } },
+        },
+    }
+  /v1/wallet/nip:
+    post:
+      {
+        parameters: [{ $ref: "#/components/parameters/IdemKey" }],
+        requestBody:
+          {
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: object,
+                        required: [bankCode, accountNumber, amountMinor, pin],
+                        properties:
+                          {
+                            bankCode: { type: string },
+                            accountNumber: { type: string },
+                            amountMinor: { type: integer },
+                            pin: { type: string },
+                          },
+                      },
+                  },
+              },
+          },
+        responses:
+          {
+            "201":
+              {
+                description: "pending → confirmed | reversed(24h) via bank webhook; name enquiry first",
+              },
+          },
+      }
+  /v1/wallet/statements:
+    get:
+      {
+        parameters:
+          [
+            { name: from, in: query, schema: { type: string, format: date } },
+            { name: to, in: query, schema: { type: string, format: date } },
+            {
+              name: format,
+              in: query,
+              schema: { type: string, enum: [json, pdf, csv] },
+            },
+          ],
+        responses:
+          {
+            "200":
+              {
+                description: "opening/in/out/closing + lines with counterpartRef",
+              },
+          },
+      }
+  /v1/wallet/pin/reset:
+    {
+      post:
+        {
+          responses:
+            {
+              "200":
+                {
+                  description: "requires biometric step-up; sets 2h cooling on >cap to new recipients",
+                },
+            },
+        },
+    }
+  /v1/wallet/lock:
+    {
+      post:
+        {
+          responses:
+            { "200": { description: "one-tap freeze; unlock is human" } },
+        },
+    }

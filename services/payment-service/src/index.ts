@@ -19,45 +19,28 @@ import { secureHeaders } from "hono/secure-headers";
 
 import { analyticsService } from "./lib/analytics";
 import { logger } from "./lib/logger";
-import { disconnectPrisma, prisma } from "./lib/prisma";
-import { disconnectRedis, redis } from "./lib/redis";
-import {
-  driverAnalyticsAdapter,
-  driverNotificationAdapter,
-  driverPaymentAdapter,
-} from "./lib/service-adapters";
-import {
-  errorHandler,
-  paymentRateLimit,
-  serviceAuth,
-  webhookRateLimit,
-} from "./middleware";
+import { disconnectPrisma } from "./lib/prisma";
+import { disconnectRedis } from "./lib/redis";
+import { errorHandler, paymentRateLimit, serviceAuth } from "./middleware";
 import { adminRoutes } from "./routes/admin";
-import { b2bRoutes } from "./routes/b2b";
-import { createDriverRoutes } from "./routes/driver";
 import fraudRoutes from "./routes/fraud";
 import { healthRoutes } from "./routes/health";
-import { loyaltyRoutes } from "./routes/loyalty";
-import { mobileMoneyRoutes } from "./routes/mobile-money";
-import { paymentRoutes } from "./routes/payments";
-import { payoutRoutes } from "./routes/payouts";
 import { safetyRoutes } from "./routes/safety";
-import { walletRoutes } from "./routes/wallet";
-import { webhookRoutes } from "./routes/webhooks";
+import { createFinanceRoutes } from "./finance/routes";
+import { createRemedyRoutes } from "./finance/remedies";
+import { walletDeps } from "./ledger/wiring";
+import { createWalletV1Routes } from "./routes/wallet-v1";
 
-// Import driver services for route initialization
-import { DriverBenefitsService } from "./services/driver/benefits.service";
-import {
-  DriverCareerService,
-  TrainingService,
-} from "./services/driver/career.service";
-import { CommunityService } from "./services/driver/community.service";
-import {
-  DriverEarningsService,
-  DriverGoalsService,
-} from "./services/driver/earnings.service";
-import { FleetOwnerService } from "./services/driver/fleet.service";
-import { IncentiveService } from "./services/driver/incentives.service";
+// NOTE: The B2B (/b2b), loyalty (/loyalty) and driver-experience (/drivers)
+// routes and their services are DEFERRED until Move is green and are
+// quarantined out of the build (see tsconfig "exclude" and QUARANTINE.md).
+// They are intentionally not imported or mounted here.
+//
+// SUPERSEDED by the canonical /v1 ledger and unmounted (see QUARANTINE.md):
+// the OLD /wallets, /payments, /mobile-money, /payouts and /webhooks routes and
+// their settlement/PSP services referenced Prisma models that do not exist. The
+// live money path is /v1/wallet + /v1/finance. PSP card/mobile-money COLLECTION,
+// bank PAYOUT batches and payment webhooks are deferred pending a canonical rebuild.
 
 const app = new Hono();
 
@@ -105,98 +88,33 @@ app.use("*", errorHandler);
 // Health check routes (no auth required)
 app.route("/health", healthRoutes);
 
-// Webhook routes (special auth via signature verification)
-app.use("/webhooks/*", webhookRateLimit);
-app.route("/webhooks", webhookRoutes);
-
 // Service auth and rate limiting for internal routes
-app.use("/wallets/*", paymentRateLimit);
-app.use("/wallets/*", serviceAuth);
-app.use("/payments/*", paymentRateLimit);
-app.use("/payments/*", serviceAuth);
-app.use("/mobile-money/*", paymentRateLimit);
-app.use("/mobile-money/*", serviceAuth);
-app.use("/payouts/*", paymentRateLimit);
-app.use("/payouts/*", serviceAuth);
 app.use("/fraud/*", paymentRateLimit);
 app.use("/fraud/*", serviceAuth);
-app.use("/loyalty/*", paymentRateLimit);
-app.use("/loyalty/*", serviceAuth);
 app.use("/safety/*", paymentRateLimit);
 app.use("/safety/*", serviceAuth);
 app.use("/admin/*", paymentRateLimit);
 app.use("/admin/*", serviceAuth);
-app.use("/b2b/*", paymentRateLimit);
-app.use("/drivers/*", paymentRateLimit);
-app.use("/drivers/*", serviceAuth);
 
 // API routes
-app.route("/wallets", walletRoutes);
-app.route("/payments", paymentRoutes);
-app.route("/mobile-money", mobileMoneyRoutes);
-app.route("/payouts", payoutRoutes);
 app.route("/fraud", fraudRoutes);
-app.route("/loyalty", loyaltyRoutes);
 app.route("/safety", safetyRoutes);
 app.route("/admin", adminRoutes);
 
-// B2B API routes (uses API key auth internally)
-app.route("/b2b", b2bRoutes);
+// Canonical wallet ledger (slice 04) and finance reconciliation (slice 11).
+// These mount beside the older /wallets routes while those are retired; the
+// route modules apply their own auth, so they are safe under any mount order.
+const ledgerDeps = walletDeps();
+app.use("/v1/wallet/*", paymentRateLimit);
+app.route("/v1/wallet", createWalletV1Routes(ledgerDeps));
+app.use("/v1/finance/*", paymentRateLimit);
+app.route("/v1/finance", createFinanceRoutes(ledgerDeps));
+// support-service posts typed remedies here; it decides whether a case
+// deserves one, the ledger decides which accounts move.
+app.route("/v1/finance/remedies", createRemedyRoutes(ledgerDeps));
 
-// Driver Experience routes - using real service adapters
-// Initialize earnings service first (other services depend on it)
-const earningsService = new DriverEarningsService(
-  prisma,
-  redis,
-  driverAnalyticsAdapter,
-);
-
-const driverServices = {
-  earningsService,
-  goalsService: new DriverGoalsService(
-    prisma,
-    earningsService,
-    driverAnalyticsAdapter,
-  ),
-  incentiveService: new IncentiveService(
-    prisma,
-    redis,
-    driverNotificationAdapter,
-    driverAnalyticsAdapter,
-  ),
-  benefitsService: new DriverBenefitsService(
-    prisma,
-    redis,
-    driverPaymentAdapter,
-    driverNotificationAdapter,
-    driverAnalyticsAdapter,
-  ),
-  careerService: new DriverCareerService(
-    prisma,
-    driverNotificationAdapter,
-    driverAnalyticsAdapter,
-  ),
-  trainingService: new TrainingService(
-    prisma,
-    driverNotificationAdapter,
-    driverAnalyticsAdapter,
-  ),
-  communityService: new CommunityService(
-    prisma,
-    redis,
-    driverNotificationAdapter,
-    driverAnalyticsAdapter,
-  ),
-  fleetService: new FleetOwnerService(
-    prisma,
-    redis,
-    driverPaymentAdapter,
-    driverNotificationAdapter,
-    driverAnalyticsAdapter,
-  ),
-};
-const driverRoutes = createDriverRoutes(driverServices);
-app.route("/drivers", driverRoutes);
+// DEFERRED: /b2b and /drivers routes and the driver-experience services are
+// quarantined until those features launch (see QUARANTINE.md). Not mounted.
 
 // 404 handler
 app.notFound((c) => {

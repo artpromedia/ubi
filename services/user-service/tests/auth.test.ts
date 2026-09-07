@@ -576,9 +576,10 @@ describe("Session Token Handling", () => {
 
     const token =
       "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyXzEyMyIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSJ9.signature";
-    const [, payload] = token.split(".");
+    const payload = token.split(".")[1];
+    expect(payload).toBeDefined();
 
-    const decoded = base64Decode(payload);
+    const decoded = base64Decode(payload as string);
     expect(decoded.sub).toBe("user_123");
     expect(decoded.email).toBe("test@example.com");
   });

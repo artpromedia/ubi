@@ -26,6 +26,7 @@ fraudRoutes.post(
       userId: z.string(),
       amount: z.number().positive(),
       currency: z.string(),
+      paymentTransactionId: z.string().optional(),
       ipAddress: z.string().optional(),
       deviceId: z.string().optional(),
       userAgent: z.string().optional(),

@@ -46,10 +46,21 @@ export default defineConfig({
     },
 
     // Pool settings
+    //
+    // Integration tests here share ONE Postgres database, so running test files
+    // in parallel lets their fixtures collide: tests/ledger/transfers and
+    // tests/ledger/statements each pass alone and fail when run together, which
+    // reads as flakiness rather than as the interference it is. Files run
+    // sequentially; tests within a file still share a worker.
+    //
+    // The faster alternative is a schema (or database) per test file. If this
+    // suite grows enough for the wall-clock to matter, do that instead of
+    // turning parallelism back on.
+    fileParallelism: false,
     pool: "threads",
     poolOptions: {
       threads: {
-        singleThread: false,
+        singleThread: true,
         isolate: true,
       },
     },

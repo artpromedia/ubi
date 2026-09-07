@@ -1,63 +1,54 @@
 import '../../core/result/result.dart';
 import '../entities/user.dart';
 
-/// Authentication repository interface
+/// Authentication repository interface.
+///
+/// The contract is driven by the presentation layer (auth BLoC) and the
+/// authentication use cases: OTP request/verify, registration, social
+/// sign-in, and session management. Implementations live in the data layer.
 abstract class AuthRepository {
-  /// Sign in with phone number (request OTP)
-  Future<Result<void>> signInWithPhone(String phoneNumber);
+  /// Request an OTP challenge for the given phone number.
+  Future<Result<void>> requestOtp({
+    required String phoneNumber,
+    required String countryCode,
+  });
 
-  /// Verify OTP
-  Future<Result<AuthResult>> verifyOtp(String phoneNumber, String otp);
+  /// Verify an OTP code and return the authenticated user.
+  Future<Result<User>> verifyOtp({
+    required String phoneNumber,
+    required String countryCode,
+    required String code,
+  });
 
-  /// Resend OTP
-  Future<Result<void>> resendOtp(String phoneNumber);
+  /// Register a new user after their phone number has been verified.
+  Future<Result<User>> register({
+    required String phoneNumber,
+    required String countryCode,
+    required String firstName,
+    required String lastName,
+    String? email,
+  });
 
-  /// Sign in with Google
-  Future<Result<AuthResult>> signInWithGoogle();
+  /// Sign in with a Google ID token.
+  Future<Result<User>> signInWithGoogle(String idToken);
 
-  /// Sign in with Apple
-  Future<Result<AuthResult>> signInWithApple();
+  /// Sign in with Apple credentials.
+  Future<Result<User>> signInWithApple({
+    required String identityToken,
+    required String authorizationCode,
+    String? firstName,
+    String? lastName,
+  });
 
-  /// Sign out
-  Future<Result<void>> signOut();
+  /// Log out the current user and clear the session.
+  Future<Result<void>> logout();
 
-  /// Get current user
+  /// Get the current authenticated user, or null when signed out.
   Future<Result<User?>> getCurrentUser();
 
-  /// Check if user is authenticated
-  Future<Result<bool>> isAuthenticated();
-
-  /// Refresh auth token
+  /// Refresh the access token, returning the new token.
   Future<Result<String>> refreshToken();
 
-  /// Get current auth token
-  Future<Result<String?>> getAuthToken();
-
-  /// Stream of auth state changes
-  Stream<AuthState> get authStateChanges;
-
-  /// Delete account
-  Future<Result<void>> deleteAccount();
-}
-
-/// Authentication result
-class AuthResult {
-  final User user;
-  final String accessToken;
-  final String refreshToken;
-  final bool isNewUser;
-
-  const AuthResult({
-    required this.user,
-    required this.accessToken,
-    required this.refreshToken,
-    this.isNewUser = false,
-  });
-}
-
-/// Authentication state
-enum AuthState {
-  unknown,
-  authenticated,
-  unauthenticated,
+  /// Stream of the authenticated user; emits null when signed out.
+  Stream<User?> authStateChanges();
 }

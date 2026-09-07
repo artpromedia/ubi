@@ -28,7 +28,8 @@ import { paystackLogger } from "../lib/logger";
  * - Webhook signature mismatch → Reject
  */
 
-import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
+import { Currency, PaymentProvider, PaymentStatus } from "@prisma/client";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 import crypto from "node:crypto";
 import { paystackLogger } from "../lib/logger.js";
 
@@ -253,7 +254,7 @@ export class PaystackService {
 
   constructor(
     private config: PaystackConfig,
-    private prisma: PrismaClient,
+    private prisma: ExtendedPrismaClient,
   ) {
     this.baseUrl = "https://api.paystack.co";
   }
@@ -701,7 +702,8 @@ export class PaystackService {
       where: {
         userId,
         provider: PaymentProvider.PAYSTACK,
-        providerMethodId: authorization.authorization_code,
+        // The provider authorization code is stored in the `token` column.
+        token: authorization.authorization_code,
       },
     });
 
@@ -713,19 +715,21 @@ export class PaystackService {
       data: {
         userId,
         provider: PaymentProvider.PAYSTACK,
-        providerMethodId: authorization.authorization_code,
+        token: authorization.authorization_code,
         type: "CARD",
         lastFour: authorization.last4,
-        expiryMonth: Number.parseInt(authorization.exp_month),
-        expiryYear: Number.parseInt(authorization.exp_year),
-        cardBrand: authorization.brand,
-        cardBank: authorization.bank,
-        isDefault: false, // User can set default later
+        brand: authorization.brand,
+        // The launch schema has no dedicated card-expiry/bank columns; keep the
+        // card detail in the metadata JSON (expiresAt is a nullable DateTime).
         metadata: {
+          expiryMonth: Number.parseInt(authorization.exp_month),
+          expiryYear: Number.parseInt(authorization.exp_year),
+          bank: authorization.bank,
           bin: authorization.bin,
           cardType: authorization.card_type,
           countryCode: authorization.country_code,
         },
+        isDefault: false, // User can set default later
       },
     });
 
@@ -830,14 +834,14 @@ export class PaystackService {
     }
 
     // Get currency from authorization code or default to NGN
-    const authCode = paymentMethod.providerMethodId;
+    const authCode = paymentMethod.token;
     const currency = authCode.includes("_") ? authCode.split("_")[0] : "NGN";
 
     // Charge authorization
     const chargeResponse = await this.chargeAuthorization({
       email: paymentMethod.user.email,
       amount,
-      authorizationCode: paymentMethod.providerMethodId,
+      authorizationCode: paymentMethod.token,
       reference: transactionId,
       metadata: {
         userId,
@@ -852,7 +856,7 @@ export class PaystackService {
         userId,
         provider: PaymentProvider.PAYSTACK,
         amount,
-        currency: chargeResponse.data.currency,
+        currency: chargeResponse.data.currency as Currency,
         status:
           chargeResponse.data.status === "success"
             ? PaymentStatus.COMPLETED
@@ -931,15 +935,22 @@ export class PaystackService {
       },
     });
 
-    return methods.map((method) => ({
-      id: method.id,
-      type: method.type,
-      lastFour: method.lastFour,
-      expiryMonth: method.expiryMonth,
-      expiryYear: method.expiryYear,
-      cardBrand: method.cardBrand || undefined,
-      isDefault: method.isDefault,
-    }));
+    return methods.map((method) => {
+      // Card expiry is kept in the metadata JSON (see savePaymentMethod).
+      const meta = (method.metadata ?? {}) as {
+        expiryMonth?: number;
+        expiryYear?: number;
+      };
+      return {
+        id: method.id,
+        type: method.type,
+        lastFour: method.lastFour ?? "",
+        expiryMonth: Number(meta.expiryMonth) || 0,
+        expiryYear: Number(meta.expiryYear) || 0,
+        cardBrand: method.brand || undefined,
+        isDefault: method.isDefault,
+      };
+    });
   }
 
   /**
@@ -1108,7 +1119,7 @@ export class PaystackService {
             status: "COMPLETED",
             providerReference: transferCode,
             completedAt: new Date(),
-            providerMetadata: {
+            metadata: {
               transferCode,
               amount: data.amount,
               currency: data.currency,
@@ -1130,7 +1141,7 @@ export class PaystackService {
             status: "FAILED",
             failedAt: new Date(),
             failureReason: data.reason || "Transfer failed",
-            providerMetadata: {
+            metadata: {
               transferCode,
               failures: data.failures,
             },
@@ -1149,7 +1160,7 @@ export class PaystackService {
             status: "FAILED",
             failedAt: new Date(),
             failureReason: "Transfer reversed",
-            providerMetadata: {
+            metadata: {
               transferCode,
               reversed: true,
             },
@@ -1191,7 +1202,7 @@ export class PaystackService {
               status: "COMPLETED",
               providerReference: transferCode,
               completedAt: new Date(),
-              providerMetadata: {
+              metadata: {
                 transferCode,
                 amount: result.data.amount,
                 currency: result.data.currency,
@@ -1215,7 +1226,7 @@ export class PaystackService {
               failedAt: new Date(),
               failureReason:
                 status === "reversed" ? "Transfer reversed" : "Transfer failed",
-              providerMetadata: {
+              metadata: {
                 transferCode,
                 failures: result.data.failures,
               },

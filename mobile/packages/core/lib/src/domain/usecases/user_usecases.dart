@@ -3,7 +3,7 @@
 /// Business logic for user profile operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Get current user
 class GetCurrentUserUseCase implements UseCase<User, NoParams> {

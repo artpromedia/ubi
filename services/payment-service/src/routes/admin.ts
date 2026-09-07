@@ -10,6 +10,7 @@
  * - System health monitoring
  */
 
+import { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
@@ -21,14 +22,14 @@ import { prisma } from "../lib/prisma";
 import { PaystackService } from "../providers/paystack.service";
 import { FraudDetectionService } from "../services/fraud-detection.service";
 import { PayoutService } from "../services/payout.service";
-import { ReconciliationService } from "../services/reconciliation.service";
-import { SettlementService } from "../services/settlement.service";
 
 const adminRoutes = new Hono();
 
 // Initialize services
-const reconciliationService = new ReconciliationService(prisma);
-const settlementService = new SettlementService(prisma);
+// NOTE: reconciliation AND settlement moved to the canonical src/finance module
+// (mounted at /v1/finance). The old ReconciliationService/SettlementService are
+// deferred/quarantined, so the admin reconciliation and settlement-action
+// endpoints below now redirect callers to /v1/finance.
 const payoutService = new PayoutService(prisma);
 const fraudService = new FraudDetectionService(prisma);
 
@@ -97,9 +98,9 @@ adminRoutes.get("/dashboard", async (c) => {
       _count: true,
     }),
 
-    // Pending reconciliations
-    prisma.reconciliation.count({
-      where: { status: "PENDING" },
+    // Pending reconciliations (canonical recon: unresolved reconBreak rows)
+    prisma.reconBreak.count({
+      where: { resolvedAt: null },
     }),
 
     // Pending settlements
@@ -107,11 +108,11 @@ adminRoutes.get("/dashboard", async (c) => {
       where: { status: "PENDING" },
     }),
 
-    // Pending fraud reviews
+    // Pending fraud reviews (not yet reviewed, high/critical)
     prisma.riskAssessment.count({
       where: {
-        reviewStatus: "PENDING",
-        riskLevel: { in: ["HIGH", "CRITICAL"] },
+        reviewedAt: null,
+        level: { in: ["HIGH", "CRITICAL"] },
       },
     }),
   ]);
@@ -132,7 +133,7 @@ adminRoutes.get("/dashboard", async (c) => {
     },
     _sum: {
       ubiCommission: true,
-      ceerionCommission: true,
+      ceerionDeduction: true,
     },
   });
 
@@ -151,10 +152,10 @@ adminRoutes.get("/dashboard", async (c) => {
         volume: Number(monthlyVolume._sum.amount) || 0,
         commission: {
           ubi: Number(monthlyCommission._sum.ubiCommission) || 0,
-          ceerion: Number(monthlyCommission._sum.ceerionCommission) || 0,
+          ceerion: Number(monthlyCommission._sum.ceerionDeduction) || 0,
           total:
             (Number(monthlyCommission._sum.ubiCommission) || 0) +
-            (Number(monthlyCommission._sum.ceerionCommission) || 0),
+            (Number(monthlyCommission._sum.ceerionDeduction) || 0),
         },
       },
       pending: {
@@ -224,17 +225,13 @@ adminRoutes.get("/transactions", async (c) => {
     prisma.paymentTransaction.findMany({
       where,
       include: {
-        payment: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                phone: true,
-                firstName: true,
-                lastName: true,
-              },
-            },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            firstName: true,
+            lastName: true,
           },
         },
       },
@@ -266,20 +263,17 @@ adminRoutes.get("/transactions/:id", async (c) => {
   const transaction = await prisma.paymentTransaction.findUnique({
     where: { id },
     include: {
-      payment: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              phone: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
+      user: {
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          firstName: true,
+          lastName: true,
         },
       },
-      ledgerEntries: true,
+      paymentMethod: true,
+      refunds: true,
     },
   });
 
@@ -380,15 +374,12 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
       });
 
       if (refundResult.status) {
+        // The launch Refund model tracks only status/failureReason; there are
+        // no providerRefundId/metadata columns for the provider response.
         await prisma.refund.update({
           where: { id: refund.id },
           data: {
             status: "PROCESSING",
-            providerRefundId: String(refundResult.data.id),
-            metadata: {
-              providerResponse: refundResult.data,
-              expectedAt: refundResult.data.expected_at,
-            },
           },
         });
 
@@ -413,10 +404,6 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
         where: { id: refund.id },
         data: {
           status: "PENDING",
-          metadata: {
-            requiresManualProcessing: true,
-            provider: transaction.provider,
-          },
         },
       });
     }
@@ -428,9 +415,6 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
         status: "FAILED",
         failureReason:
           error instanceof Error ? error.message : "Provider refund failed",
-        metadata: {
-          error: error instanceof Error ? error.message : String(error),
-        },
       },
     });
   }
@@ -450,162 +434,31 @@ adminRoutes.post("/transactions/:id/refund", async (c) => {
 // Reconciliation Management
 // ============================================
 
-/**
- * GET /admin/reconciliations
- * List reconciliation reports
- */
-adminRoutes.get("/reconciliations", async (c) => {
-  const query = c.req.query();
+// The reconciliation API has moved to the canonical finance module mounted at
+// /v1/finance (backed by src/finance: reconRun/reconRail/reconBreak). The old
+// ReconciliationService is deferred/quarantined. These admin endpoints are kept
+// mounted for backwards compatibility and now point callers to the new API.
+const reconciliationMovedResponse = {
+  success: false,
+  error: {
+    code: "MOVED",
+    message:
+      "Reconciliation has moved to the finance module. Use GET/POST /v1/finance recon endpoints.",
+  },
+} as const;
 
-  const where: any = {};
-
-  if (query.status) {
-    where.status = query.status;
-  }
-
-  if (query.provider) {
-    where.provider = query.provider;
-  }
-
-  if (query.startDate) {
-    where.date = {
-      ...where.date,
-      gte: new Date(query.startDate),
-    };
-  }
-
-  if (query.endDate) {
-    where.date = {
-      ...where.date,
-      lte: new Date(query.endDate),
-    };
-  }
-
-  const reconciliations = await prisma.reconciliation.findMany({
-    where,
-    include: {
-      _count: {
-        select: { discrepancies: true },
-      },
-    },
-    orderBy: { date: "desc" },
-    take: Number(query.limit) || 50,
-    skip: Number(query.offset) || 0,
-  });
-
-  return c.json({
-    success: true,
-    data: reconciliations,
-  });
-});
-
-/**
- * POST /admin/reconciliations/run
- * Trigger manual reconciliation
- */
-adminRoutes.post("/reconciliations/run", async (c) => {
-  const body = await c.req.json();
-
-  const schema = z.object({
-    provider: z.enum([
-      "MPESA",
-      "PAYSTACK",
-      "MTN_MOMO_GH",
-      "MTN_MOMO_RW",
-      "MTN_MOMO_UG",
-    ]),
-    date: z.string(),
-    currency: z.enum(["NGN", "KES", "GHS", "ZAR", "RWF", "UGX"]),
-  });
-
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return c.json(
-      {
-        success: false,
-        error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
-      },
-      400,
-    );
-  }
-
-  const result = await reconciliationService.runDailyReconciliation(
-    parsed.data.provider as any,
-    new Date(parsed.data.date),
-    parsed.data.currency as any,
-  );
-
-  return c.json({
-    success: true,
-    data: result,
-  });
-});
-
-/**
- * GET /admin/reconciliations/discrepancies
- * List pending discrepancies
- */
-adminRoutes.get("/reconciliations/discrepancies", async (c) => {
-  const query = c.req.query();
-
-  const discrepancies = await reconciliationService.getPendingDiscrepancies({
-    provider: query.provider as any,
-    severity: query.severity as any,
-    limit: Number(query.limit) || 50,
-    offset: Number(query.offset) || 0,
-  });
-
-  return c.json({
-    success: true,
-    data: discrepancies,
-  });
-});
-
-/**
- * POST /admin/reconciliations/discrepancies/:id/resolve
- * Resolve a discrepancy
- */
-adminRoutes.post("/reconciliations/discrepancies/:id/resolve", async (c) => {
-  const id = c.req.param("id");
-  const body = await c.req.json();
-
-  const schema = z.object({
-    resolution: z.string().min(1),
-    action: z.enum(["resolve", "ignore"]),
-  });
-
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return c.json(
-      {
-        success: false,
-        error: { code: "VALIDATION_ERROR", details: parsed.error.errors },
-      },
-      400,
-    );
-  }
-
-  const userId = c.get("userId") || "admin";
-
-  if (parsed.data.action === "resolve") {
-    await reconciliationService.resolveDiscrepancy(
-      id,
-      parsed.data.resolution,
-      userId,
-    );
-  } else {
-    await reconciliationService.ignoreDiscrepancy(
-      id,
-      parsed.data.resolution,
-      userId,
-    );
-  }
-
-  return c.json({
-    success: true,
-    message: `Discrepancy ${parsed.data.action}d`,
-  });
-});
+adminRoutes.get("/reconciliations", (c) =>
+  c.json(reconciliationMovedResponse, 410),
+);
+adminRoutes.post("/reconciliations/run", (c) =>
+  c.json(reconciliationMovedResponse, 410),
+);
+adminRoutes.get("/reconciliations/discrepancies", (c) =>
+  c.json(reconciliationMovedResponse, 410),
+);
+adminRoutes.post("/reconciliations/discrepancies/:id/resolve", (c) =>
+  c.json(reconciliationMovedResponse, 410),
+);
 
 // ============================================
 // Settlement Management
@@ -671,29 +524,19 @@ adminRoutes.get("/settlements", async (c) => {
  * POST /admin/settlements/:id/retry
  * Retry a failed settlement
  */
-adminRoutes.post("/settlements/:id/retry", async (c) => {
-  const id = c.req.param("id");
-
-  try {
-    await settlementService.retrySettlement(id);
-
-    return c.json({
-      success: true,
-      message: "Settlement retry initiated",
-    });
-  } catch (error) {
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "RETRY_FAILED",
-          message: error instanceof Error ? error.message : "Retry failed",
-        },
+adminRoutes.post("/settlements/:id/retry", (c) =>
+  c.json(
+    {
+      success: false,
+      error: {
+        code: "MOVED",
+        message:
+          "Settlement processing has moved to the finance module. Use the /v1/finance settlement endpoints.",
       },
-      400,
-    );
-  }
-});
+    },
+    410,
+  ),
+);
 
 /**
  * GET /admin/settlements/summary
@@ -708,15 +551,55 @@ adminRoutes.get("/settlements/summary", async (c) => {
 
   const endDate = query.endDate ? new Date(query.endDate) : new Date();
 
-  const summary = await settlementService.getSettlementSummary(
-    startDate,
-    endDate,
-    query.recipientType,
-  );
+  const where: Prisma.SettlementWhereInput = {
+    createdAt: { gte: startDate, lte: endDate },
+  };
+  if (query.recipientType) {
+    where.recipientType = query.recipientType;
+  }
+
+  const [totals, byStatus] = await Promise.all([
+    prisma.settlement.aggregate({
+      where,
+      _sum: {
+        grossAmount: true,
+        ubiCommission: true,
+        ceerionDeduction: true,
+        settlementFee: true,
+        netAmount: true,
+      },
+      _count: true,
+    }),
+    prisma.settlement.groupBy({
+      by: ["status", "currency"],
+      where,
+      _sum: { netAmount: true },
+      _count: true,
+    }),
+  ]);
 
   return c.json({
     success: true,
-    data: summary,
+    data: {
+      period: {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      },
+      count: totals._count,
+      totals: {
+        gross: Number(totals._sum.grossAmount) || 0,
+        ubiCommission: Number(totals._sum.ubiCommission) || 0,
+        ceerionDeduction: Number(totals._sum.ceerionDeduction) || 0,
+        settlementFee: Number(totals._sum.settlementFee) || 0,
+        net: Number(totals._sum.netAmount) || 0,
+      },
+      byStatus: byStatus.map((s) => ({
+        status: s.status,
+        currency: s.currency,
+        count: s._count,
+        net: Number(s._sum.netAmount) || 0,
+      })),
+    },
   });
 });
 
@@ -874,29 +757,37 @@ adminRoutes.post("/payouts/:id/cancel", async (c) => {
 adminRoutes.get("/fraud/alerts", async (c) => {
   const query = c.req.query();
 
-  const where: any = {
-    riskLevel: { in: ["HIGH", "CRITICAL"] },
+  const where: Prisma.RiskAssessmentWhereInput = {
+    level: { in: ["HIGH", "CRITICAL"] },
   };
 
-  if (query.status) {
-    where.reviewStatus = query.status;
+  if (query.status === "reviewed") {
+    where.reviewedAt = { not: null };
+  } else if (query.status === "pending") {
+    where.reviewedAt = null;
   }
 
   const alerts = await prisma.riskAssessment.findMany({
     where,
     include: {
-      user: {
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          firstName: true,
-          lastName: true,
+      // RiskAssessment relates to the payment transaction (and its user);
+      // there is no direct user relation on the launch model.
+      paymentTransaction: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              phone: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
         },
       },
       factors: true,
     },
-    orderBy: [{ riskScore: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ score: "desc" }, { createdAt: "desc" }],
     take: Number(query.limit) || 50,
     skip: Number(query.offset) || 0,
   });
@@ -962,13 +853,9 @@ adminRoutes.get("/users/:id", async (c) => {
   const user = await prisma.user.findUnique({
     where: { id },
     include: {
-      wallet: true,
-      payments: {
+      walletAccounts: true,
+      paymentTransactions: {
         take: 10,
-        orderBy: { createdAt: "desc" },
-      },
-      riskAssessments: {
-        take: 5,
         orderBy: { createdAt: "desc" },
       },
     },
@@ -1013,12 +900,12 @@ adminRoutes.post("/users/:id/block", async (c) => {
     );
   }
 
+  // The launch User model has no payment-specific block columns; blocking a
+  // user from payments maps to suspending the account (UserStatus.SUSPENDED).
   await prisma.user.update({
     where: { id },
     data: {
-      paymentBlocked: true,
-      paymentBlockReason: parsed.data.reason,
-      paymentBlockedAt: new Date(),
+      status: "SUSPENDED",
     },
   });
 
@@ -1035,12 +922,11 @@ adminRoutes.post("/users/:id/block", async (c) => {
 adminRoutes.post("/users/:id/unblock", async (c) => {
   const id = c.req.param("id");
 
+  // Re-activate the previously suspended account (see block handler).
   await prisma.user.update({
     where: { id },
     data: {
-      paymentBlocked: false,
-      paymentBlockReason: null,
-      paymentBlockedAt: null,
+      status: "ACTIVE",
     },
   });
 
@@ -1098,7 +984,7 @@ adminRoutes.get("/reports/daily", async (c) => {
       _sum: {
         grossAmount: true,
         ubiCommission: true,
-        ceerionCommission: true,
+        ceerionDeduction: true,
         netAmount: true,
       },
       _count: true,
@@ -1172,7 +1058,7 @@ adminRoutes.get("/reports/monthly", async (c) => {
         },
         _sum: {
           ubiCommission: true,
-          ceerionCommission: true,
+          ceerionDeduction: true,
         },
       }),
 
@@ -1208,10 +1094,10 @@ adminRoutes.get("/reports/monthly", async (c) => {
       },
       commission: {
         ubi: Number(commissionEarned._sum.ubiCommission) || 0,
-        ceerion: Number(commissionEarned._sum.ceerionCommission) || 0,
+        ceerion: Number(commissionEarned._sum.ceerionDeduction) || 0,
         total:
           (Number(commissionEarned._sum.ubiCommission) || 0) +
-          (Number(commissionEarned._sum.ceerionCommission) || 0),
+          (Number(commissionEarned._sum.ceerionDeduction) || 0),
       },
       providerBreakdown: providerBreakdown.map((p) => ({
         provider: p.provider,

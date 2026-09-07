@@ -5,12 +5,15 @@ library;
 
 /// Collection of formatter functions
 abstract class Formatters {
-  /// Format currency
+  /// Format currency.
+  ///
+  /// [symbol] and [decimals] must be supplied by the caller from city config.
+  /// This used to default to a dollar sign and two decimals, which named a
+  /// currency the app was never told about (CLAUDE.md rule 6).
   static String currency(
     double amount, {
-    String symbol = '\$',
-    int decimals = 2,
-    String locale = 'en_US',
+    required String symbol,
+    required int decimals,
   }) {
     final formatted = amount.toStringAsFixed(decimals);
     return '$symbol$formatted';

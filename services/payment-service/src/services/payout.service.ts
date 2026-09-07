@@ -27,12 +27,8 @@
  * - CEERION: ₦7.50 (0.75% of total, 5% of UBI's cut)
  */
 
-import {
-  Currency,
-  PaymentProvider,
-  PayoutStatus,
-  PrismaClient,
-} from "@prisma/client";
+import { Currency, PaymentProvider, PayoutStatus } from "@prisma/client";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 import { payoutLogger } from "../lib/logger";
 import { MoMoService } from "../providers/momo.service";
 import { MpesaService } from "../providers/mpesa.service";
@@ -113,7 +109,7 @@ export class PayoutService {
     manualReviewLimit: 50000, // Manual review above ₦50,000
   };
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(private readonly prisma: ExtendedPrismaClient) {
     this.walletService = new WalletService(prisma);
   }
 
@@ -306,12 +302,15 @@ export class PayoutService {
         netAmount,
         status: initialStatus,
         payoutMethod: paymentMethod.toUpperCase(),
-        payoutDetails: {
+        // Real Payout schema requires accountNumber; destination detail is kept
+        // in metadata (there is no payoutDetails/scheduledFor column).
+        accountNumber: phoneNumber ?? bankAccount?.accountNumber ?? "",
+        metadata: {
           phoneNumber,
           bankAccount,
           reason: reason || "Instant cashout",
+          scheduledFor: new Date().toISOString(),
         },
-        scheduledFor: new Date(), // Instant
       },
     });
 
@@ -378,19 +377,23 @@ export class PayoutService {
       await this.prisma.payout.update({
         where: { id: payoutId },
         data: {
-          metadata: { holdId: holdResult.hold.id },
+          metadata: { holdId: holdResult.id },
         },
       });
 
       // Initiate payout with provider
       const providerResult = await this.initiateProviderPayout(payout);
 
-      // Update payout with provider reference
+      // Update payout with provider reference (Payout has no providerResponse
+      // column; the provider response is kept in the metadata JSON).
       await this.prisma.payout.update({
         where: { id: payoutId },
         data: {
           providerReference: providerResult.reference,
-          providerResponse: providerResult as any,
+          metadata: {
+            holdId: holdResult.id,
+            providerResponse: providerResult,
+          },
         },
       });
 
@@ -911,10 +914,11 @@ export class PayoutService {
     let failed = 0;
     let totalAmount = 0;
 
-    // Get all drivers with balance >= minimum
+    // Get all drivers with balance >= minimum. The launch Driver model has no
+    // status column; a verified (active) driver is one with verifiedAt set.
     const drivers = await this.prisma.driver.findMany({
       where: {
-        status: "ACTIVE",
+        verifiedAt: { not: null },
       },
       include: { user: true },
     });
@@ -945,11 +949,12 @@ export class PayoutService {
                   netAmount: balance.availableBalance,
                   status: PayoutStatus.PROCESSING,
                   payoutMethod: "MOBILE_MONEY",
-                  payoutDetails: {
+                  accountNumber: driver.user.phone,
+                  metadata: {
                     phoneNumber: driver.user.phone,
                     reason: "Weekly automatic payout",
+                    scheduledFor: new Date().toISOString(),
                   },
-                  scheduledFor: new Date(),
                 },
               });
 
@@ -988,12 +993,14 @@ export class PayoutService {
 let payoutServiceInstance: PayoutService | null = null;
 
 // Create new instance
-export function createPayoutService(prisma: PrismaClient): PayoutService {
+export function createPayoutService(
+  prisma: ExtendedPrismaClient,
+): PayoutService {
   return new PayoutService(prisma);
 }
 
 // Get singleton instance
-export function getPayoutService(prisma: PrismaClient): PayoutService {
+export function getPayoutService(prisma: ExtendedPrismaClient): PayoutService {
   payoutServiceInstance ??= createPayoutService(prisma);
   return payoutServiceInstance;
 }

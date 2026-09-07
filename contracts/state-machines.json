@@ -1,0 +1,221 @@
+{
+  "$note": "Canonical machines. Every transition emits an event (contracts/events/catalog.md) with actor, ts, idempotencyKey, fromVersion, toVersion. Server enforces; clients render.",
+  "rider": {
+    "initial": "idle",
+    "transitions": {
+      "idle": ["destination_selected"],
+      "destination_selected": ["quote_ready", "idle"],
+      "quote_ready": ["requesting", "quote_expired", "destination_selected"],
+      "quote_expired": ["quote_ready"],
+      "requesting": ["matching"],
+      "matching": ["driver_assigned", "no_driver", "cancelled_by_rider"],
+      "no_driver": ["matching", "cancelled_by_rider"],
+      "driver_assigned": [
+        "driver_arrived",
+        "rematching",
+        "cancelled_by_rider",
+        "safety_hold"
+      ],
+      "rematching": ["driver_assigned", "no_driver", "cancelled_by_rider"],
+      "driver_arrived": [
+        "pin_verification",
+        "rematching",
+        "cancelled_by_rider",
+        "no_show"
+      ],
+      "pin_verification": ["in_progress", "driver_arrived"],
+      "in_progress": ["completed", "safety_hold"],
+      "safety_hold": ["in_progress", "completed", "cancelled_by_ops"],
+      "completed": ["payment_pending", "rated"],
+      "payment_pending": ["completed", "payment_failed"],
+      "payment_failed": ["payment_pending", "completed"],
+      "rated": []
+    },
+    "orthogonal": ["reconnecting (any state; stale data timestamped)"]
+  },
+  "driver": {
+    "initial": "offline",
+    "transitions": {
+      "offline": ["available"],
+      "available": ["offer_received", "offline"],
+      "offer_received": ["accepted", "offer_expired", "declined"],
+      "offer_expired": ["available"],
+      "declined": ["available"],
+      "accepted": ["navigating_to_pickup"],
+      "navigating_to_pickup": ["arrived", "cancelled", "safety_hold"],
+      "arrived": ["waiting"],
+      "waiting": ["pin_verified", "no_show", "cancelled"],
+      "pin_verified": ["in_trip"],
+      "in_trip": ["collecting_payment", "safety_hold"],
+      "collecting_payment": ["completed", "payment_disputed"],
+      "payment_disputed": ["completed"],
+      "completed": ["available"],
+      "cancelled": ["available"],
+      "safety_hold": ["in_trip", "available"]
+    },
+    "gates": {
+      "available": "eligibility (documents valid, vehicle docs valid, no identity hold, liveness passed on new device)"
+    }
+  },
+  "order": {
+    "initial": "placed",
+    "transitions": {
+      "placed": ["accepted", "rejected"],
+      "rejected": ["auth_released"],
+      "accepted": ["preparing"],
+      "preparing": ["ready"],
+      "ready": ["picked_up"],
+      "picked_up": ["delivered"],
+      "delivered": ["issue_reported", "closed"],
+      "issue_reported": [
+        "merchant_accepted",
+        "merchant_redeliver",
+        "merchant_disputed",
+        "auto_accepted"
+      ],
+      "merchant_accepted": ["refunded"],
+      "auto_accepted": ["refunded"],
+      "merchant_redeliver": ["delivered"],
+      "merchant_disputed": ["ubi_decided"],
+      "ubi_decided": ["refunded", "closed"],
+      "refunded": ["closed"]
+    }
+  },
+  "shipment": {
+    "initial": "created",
+    "transitions": {
+      "created": ["courier_assigned"],
+      "courier_assigned": ["picked_up"],
+      "picked_up": ["in_transit"],
+      "in_transit": ["delivered", "exception"],
+      "exception": [
+        "retry_scheduled",
+        "neighbour_delivery",
+        "return_to_sender",
+        "hub_hold"
+      ],
+      "hub_hold": ["retry_scheduled", "hub_pickup", "return_to_sender"],
+      "retry_scheduled": ["in_transit"],
+      "delivered": ["claim_opened", "closed"],
+      "claim_opened": ["claim_approved", "claim_partial", "claim_declined"],
+      "claim_approved": ["closed"],
+      "claim_partial": ["closed"],
+      "claim_declined": ["appealed", "closed"],
+      "appealed": ["closed"]
+    }
+  },
+  "flightBooking": {
+    "initial": "offer_held",
+    "transitions": {
+      "offer_held": ["paid", "hold_expired"],
+      "paid": ["ticketed"],
+      "ticketed": ["watching"],
+      "watching": ["checked_in", "cancelled_by_airline", "delayed"],
+      "delayed": ["watching", "cancelled_by_airline"],
+      "cancelled_by_airline": ["oneticket_active"],
+      "oneticket_active": ["alternatives_ranked"],
+      "alternatives_ranked": [
+        "seat_held",
+        "refunded_to_wallet",
+        "next_day_switched"
+      ],
+      "seat_held": ["switched", "alternatives_ranked"],
+      "switched": ["watching"],
+      "checked_in": ["flown"],
+      "flown": [],
+      "refunded_to_wallet": []
+    },
+    "reclaim": {
+      "filed": ["recovered", "disputed"],
+      "disputed": ["recovered", "written_off"]
+    }
+  },
+  "stayBooking": {
+    "initial": "rate_held",
+    "transitions": {
+      "rate_held": ["confirmed", "hold_expired"],
+      "confirmed": [
+        "pre_checked",
+        "late_arrival_held",
+        "moved",
+        "cancelled_by_guest",
+        "cancelled_by_airline_cause"
+      ],
+      "late_arrival_held": [
+        "pre_checked",
+        "checked_in",
+        "cancelled_by_airline_cause"
+      ],
+      "pre_checked": ["checked_in"],
+      "checked_in": ["checked_out"],
+      "checked_out": ["reviewed", "closed"],
+      "reviewed": ["replied", "closed"],
+      "moved": ["confirmed"],
+      "cancelled_by_airline_cause": ["refunded", "first_night_covered"]
+    }
+  },
+  "journeyLeg": {
+    "initial": "planned",
+    "transitions": {
+      "planned": ["retimed", "active", "cancelled"],
+      "retimed": ["planned"],
+      "active": ["completed"],
+      "completed": []
+    },
+    "rule": "retime propagates along dependsOn; dependent reservations emit pickup_moved → driver keep|release"
+  },
+  "reservation": {
+    "initial": "requested",
+    "transitions": {
+      "requested": ["pooled"],
+      "pooled": ["assigned"],
+      "assigned": ["reminded", "released", "pickup_moved"],
+      "pickup_moved": ["assigned", "released"],
+      "released": ["pooled"],
+      "reminded": ["en_route"],
+      "en_route": ["arrived_waiting"],
+      "arrived_waiting": ["ride_started", "no_show"],
+      "ride_started": ["completed"]
+    }
+  },
+  "fleetAssignment": {
+    "initial": "proposed",
+    "transitions": {
+      "proposed": ["signed", "declined", "expired"],
+      "signed": ["active"],
+      "active": ["change_proposed", "termination_notice"],
+      "change_proposed": ["active", "signed"],
+      "termination_notice": ["ended"],
+      "ended": []
+    },
+    "rule": "split_rule only applies in active; changes require re-sign with PIN"
+  },
+  "walletTransfer": {
+    "initial": "initiated",
+    "transitions": {
+      "initiated": [
+        "posted",
+        "held_risk",
+        "rejected_limit",
+        "rejected_safe_mode"
+      ],
+      "held_risk": ["posted", "reversed"],
+      "posted": ["return_requested", "closed"],
+      "return_requested": ["reversed", "declined_by_recipient"],
+      "declined_by_recipient": ["disputed", "closed"],
+      "disputed": ["reversed", "closed"]
+    },
+    "saga": "topup+transfer: both post or neither"
+  },
+  "supportCase": {
+    "initial": "open",
+    "transitions": {
+      "open": ["investigating"],
+      "investigating": ["remedied", "no_action"],
+      "remedied": ["resolved"],
+      "no_action": ["resolved"],
+      "resolved": ["reopened", "closed"],
+      "reopened": ["investigating"]
+    }
+  }
+}

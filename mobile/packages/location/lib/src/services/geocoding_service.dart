@@ -16,7 +16,7 @@ class GeocodingService {
       final locations = await geo.locationFromAddress(address);
 
       if (locations.isEmpty) {
-        return Result.failure(const ServerFailure('No location found for address'));
+        return Result.failure(const ServerFailure(message: 'No location found for address'));
       }
 
       final location = locations.first;
@@ -25,9 +25,9 @@ class GeocodingService {
         longitude: location.longitude,
       ));
     } on geo.NoResultFoundException {
-      return Result.failure(const ServerFailure('No location found for address'));
+      return Result.failure(const ServerFailure(message: 'No location found for address'));
     } catch (e) {
-      return Result.failure(ServerFailure('Geocoding failed: $e'));
+      return Result.failure(ServerFailure(message: 'Geocoding failed: $e'));
     }
   }
 
@@ -40,7 +40,7 @@ class GeocodingService {
       final placemarks = await geo.placemarkFromCoordinates(latitude, longitude);
 
       if (placemarks.isEmpty) {
-        return Result.failure(const ServerFailure('No address found for location'));
+        return Result.failure(const ServerFailure(message: 'No address found for location'));
       }
 
       final placemark = placemarks.first;
@@ -54,12 +54,11 @@ class GeocodingService {
           latitude: latitude,
           longitude: longitude,
         ),
-        addressComponents: _extractComponents(placemark),
       ));
     } on geo.NoResultFoundException {
-      return Result.failure(const ServerFailure('No address found for location'));
+      return Result.failure(const ServerFailure(message: 'No address found for location'));
     } catch (e) {
-      return Result.failure(ServerFailure('Reverse geocoding failed: $e'));
+      return Result.failure(ServerFailure(message: 'Reverse geocoding failed: $e'));
     }
   }
 
@@ -89,32 +88,4 @@ class GeocodingService {
     return parts.join(', ');
   }
 
-  /// Extract address components from placemark
-  Map<String, String> _extractComponents(geo.Placemark placemark) {
-    final components = <String, String>{};
-
-    if (placemark.street?.isNotEmpty == true) {
-      components['street'] = placemark.street!;
-    }
-    if (placemark.subLocality?.isNotEmpty == true) {
-      components['subLocality'] = placemark.subLocality!;
-    }
-    if (placemark.locality?.isNotEmpty == true) {
-      components['city'] = placemark.locality!;
-    }
-    if (placemark.administrativeArea?.isNotEmpty == true) {
-      components['state'] = placemark.administrativeArea!;
-    }
-    if (placemark.postalCode?.isNotEmpty == true) {
-      components['postalCode'] = placemark.postalCode!;
-    }
-    if (placemark.country?.isNotEmpty == true) {
-      components['country'] = placemark.country!;
-    }
-    if (placemark.isoCountryCode?.isNotEmpty == true) {
-      components['countryCode'] = placemark.isoCountryCode!;
-    }
-
-    return components;
-  }
 }

@@ -53,8 +53,11 @@ class UserMapper {
   static UserPreferences fromUserPreferencesDto(UserPreferencesDto dto) {
     return UserPreferences(
       language: dto.language ?? 'en',
-      currency: dto.currency ?? 'KES',
-      notificationsEnabled: dto.notificationsEnabled ?? true,
+      currency: dto.currency,
+      pushNotifications:
+          dto.pushNotifications ?? dto.notificationsEnabled ?? true,
+      emailNotifications: dto.emailNotifications ?? true,
+      smsNotifications: dto.smsNotifications ?? true,
       darkMode: dto.darkMode ?? false,
     );
   }
@@ -69,8 +72,8 @@ class UserMapper {
         latitude: dto.latitude,
         longitude: dto.longitude,
       ),
-      icon: dto.icon,
-      placeType: dto.placeType,
+      type: _mapSavedPlaceType(dto.placeType),
+      createdAt: dto.createdAt,
     );
   }
 
@@ -90,8 +93,7 @@ class UserMapper {
       address: place.address,
       latitude: place.location.latitude,
       longitude: place.location.longitude,
-      icon: place.icon,
-      placeType: place.placeType,
+      placeType: _savedPlaceTypeToWire(place.type),
     );
   }
 
@@ -100,13 +102,35 @@ class UserMapper {
     switch (role?.toLowerCase()) {
       case 'driver':
         return UserRole.driver;
-      case 'restaurant':
-        return UserRole.restaurant;
-      case 'admin':
-        return UserRole.admin;
+      case 'both':
+        return UserRole.both;
       case 'rider':
       default:
         return UserRole.rider;
+    }
+  }
+
+  /// Map saved-place type string to SavedPlaceType enum
+  static SavedPlaceType _mapSavedPlaceType(String? placeType) {
+    switch (placeType?.toLowerCase()) {
+      case 'home':
+        return SavedPlaceType.home;
+      case 'work':
+        return SavedPlaceType.work;
+      default:
+        return SavedPlaceType.other;
+    }
+  }
+
+  /// Map SavedPlaceType enum to its wire string
+  static String _savedPlaceTypeToWire(SavedPlaceType type) {
+    switch (type) {
+      case SavedPlaceType.home:
+        return 'home';
+      case SavedPlaceType.work:
+        return 'work';
+      case SavedPlaceType.other:
+        return 'other';
     }
   }
 }

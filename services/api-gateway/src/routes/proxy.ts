@@ -2,31 +2,64 @@
  * Proxy Routes
  *
  * Routes requests to downstream microservices.
- * Handles service discovery, load balancing, and circuit breaking.
+ *
+ * Identity is NOT reconstructed here. By the time a request reaches this file
+ * the identity middleware has already deleted every client-supplied identity
+ * header and installed the gateway's own, including the signed
+ * `X-UBI-Identity` context. This file only decides which of them cross the
+ * wire, and it copies them from the request object rather than rebuilding them,
+ * so there is exactly one place that can mint an identity.
+ *
+ * See middleware/identity.ts for the canonical header contract.
  */
-
+import type { Context } from "hono";
 import { Hono } from "hono";
+
 import { proxyLogger } from "../lib/logger.js";
+import { IDENTITY_HEADER, REQUEST_ID_HEADER } from "../middleware/identity";
 
 const proxyRoutes = new Hono();
 
-// Service registry - maps route prefixes to service URLs
-const SERVICE_REGISTRY: Record<string, string> = {
-  users: process.env.USER_SERVICE_URL || "http://localhost:4001",
-  auth: process.env.USER_SERVICE_URL || "http://localhost:4001",
-  rides: process.env.RIDE_SERVICE_URL || "http://localhost:4002",
-  food: process.env.FOOD_SERVICE_URL || "http://localhost:4003",
-  restaurants: process.env.FOOD_SERVICE_URL || "http://localhost:4003",
-  delivery: process.env.DELIVERY_SERVICE_URL || "http://localhost:4004",
-  packages: process.env.DELIVERY_SERVICE_URL || "http://localhost:4004",
-  payments: process.env.PAYMENT_SERVICE_URL || "http://localhost:4005",
-  wallets: process.env.PAYMENT_SERVICE_URL || "http://localhost:4005",
-  notifications:
-    process.env.NOTIFICATION_SERVICE_URL || "http://localhost:4006",
-  analytics: process.env.ANALYTICS_SERVICE_URL || "http://localhost:4007",
-  ceerion: process.env.CEERION_SERVICE_URL || "http://localhost:4008",
-  vehicles: process.env.CEERION_SERVICE_URL || "http://localhost:4008",
+/**
+ * Service registry — maps a logical service to the env var that carries its
+ * URL and the local default. Resolved per request rather than at import, so a
+ * redeploy that changes a service URL does not need the gateway rebuilt.
+ */
+const SERVICE_REGISTRY: Record<
+  string,
+  { readonly env: string; readonly fallback: string }
+> = {
+  users: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
+  auth: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
+  identity: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
+  devices: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
+  rides: { env: "RIDE_SERVICE_URL", fallback: "http://localhost:4002" },
+  food: { env: "FOOD_SERVICE_URL", fallback: "http://localhost:4003" },
+  restaurants: { env: "FOOD_SERVICE_URL", fallback: "http://localhost:4003" },
+  delivery: { env: "DELIVERY_SERVICE_URL", fallback: "http://localhost:4004" },
+  packages: { env: "DELIVERY_SERVICE_URL", fallback: "http://localhost:4004" },
+  payments: { env: "PAYMENT_SERVICE_URL", fallback: "http://localhost:4005" },
+  wallets: { env: "PAYMENT_SERVICE_URL", fallback: "http://localhost:4005" },
+  notifications: {
+    env: "NOTIFICATION_SERVICE_URL",
+    fallback: "http://localhost:4006",
+  },
+  analytics: {
+    env: "ANALYTICS_SERVICE_URL",
+    fallback: "http://localhost:4007",
+  },
+  ceerion: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
+  vehicles: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
 };
+
+function serviceUrl(serviceName: string): string | undefined {
+  const entry = SERVICE_REGISTRY[serviceName];
+  if (entry === undefined) return undefined;
+  const configured = process.env[entry.env];
+  return configured !== undefined && configured.length > 0
+    ? configured
+    : entry.fallback;
+}
 
 // Request timeout in milliseconds
 const REQUEST_TIMEOUT = Number.parseInt(
@@ -35,25 +68,56 @@ const REQUEST_TIMEOUT = Number.parseInt(
 );
 
 /**
+ * Headers copied from the (already sanitized) inbound request.
+ *
+ * The identity entries are safe to copy precisely because the strip middleware
+ * removed the client's versions and the identity middleware wrote the
+ * gateway's. `x-internal-service` is deliberately absent: it is a bypass in
+ * user-service and the gateway never speaks it.
+ */
+const HEADERS_TO_FORWARD: readonly string[] = [
+  "content-type",
+  "accept",
+  "accept-language",
+  "x-forwarded-for",
+  "x-real-ip",
+  "x-idempotency-key",
+  "idempotency-key",
+  // Signed by the telco over the raw body; user-service verifies it.
+  "x-telco-signature",
+  REQUEST_ID_HEADER,
+  IDENTITY_HEADER,
+  "x-auth-user-id",
+  "x-auth-user-role",
+  "x-user-id",
+  "x-user-role",
+  "x-session-id",
+  "x-ubi-city-id",
+  "x-ubi-tenant-id",
+  "x-ubi-scopes",
+  "x-ubi-modes",
+];
+
+const RESPONSE_HEADERS_TO_FORWARD: readonly string[] = [
+  "content-type",
+  REQUEST_ID_HEADER,
+  "x-ratelimit-limit",
+  "x-ratelimit-remaining",
+  "x-ratelimit-reset",
+];
+
+/**
  * Generic proxy handler
  * Forwards requests to the appropriate downstream service
  */
 const proxyToService = async (
   serviceName: string,
   originalPath: string,
-  c: {
-    req: {
-      method: string;
-      header: (name: string) => string | undefined;
-      raw: Request;
-    };
-    json: (data: object, status?: number) => Response;
-    header: (name: string, value: string) => void;
-  },
-) => {
-  const serviceUrl = SERVICE_REGISTRY[serviceName];
+  c: Context,
+): Promise<Response> => {
+  const baseUrl = serviceUrl(serviceName);
 
-  if (!serviceUrl) {
+  if (baseUrl === undefined) {
     return c.json(
       {
         success: false,
@@ -66,48 +130,25 @@ const proxyToService = async (
     );
   }
 
-  // Build target URL
-  const targetUrl = `${serviceUrl}${originalPath}`;
+  const url = new URL(c.req.url);
+  const targetUrl = `${baseUrl}${originalPath}${url.search}`;
 
-  // Forward headers (excluding hop-by-hop headers)
   const forwardHeaders = new Headers();
-  const headersToForward = [
-    "content-type",
-    "accept",
-    "accept-language",
-    "x-request-id",
-    "x-idempotency-key",
-    "x-forwarded-for",
-    "x-real-ip",
-  ];
-
-  for (const header of headersToForward) {
+  for (const header of HEADERS_TO_FORWARD) {
     const value = c.req.header(header);
-    if (value) {
+    if (value !== undefined && value.length > 0) {
       forwardHeaders.set(header, value);
     }
   }
 
-  // Add auth context if available
-  const auth = (c as unknown as { get: (key: string) => unknown }).get?.(
-    "auth",
-  );
-  if (auth) {
-    forwardHeaders.set("x-auth-user-id", (auth as { userId: string }).userId);
-    forwardHeaders.set("x-auth-user-role", (auth as { role: string }).role);
+  if (!forwardHeaders.has(REQUEST_ID_HEADER)) {
+    forwardHeaders.set(REQUEST_ID_HEADER, crypto.randomUUID());
   }
 
-  // Generate request ID if not present
-  if (!forwardHeaders.has("x-request-id")) {
-    forwardHeaders.set("x-request-id", crypto.randomUUID());
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
   try {
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
-    // Forward the request
     const response = await fetch(targetUrl, {
       method: c.req.method,
       headers: forwardHeaders,
@@ -119,27 +160,20 @@ const proxyToService = async (
       duplex: "half",
     } as RequestInit);
 
-    clearTimeout(timeoutId);
-
-    // Forward response headers
-    const responseHeaders = [
-      "content-type",
-      "x-request-id",
-      "x-ratelimit-limit",
-      "x-ratelimit-remaining",
-      "x-ratelimit-reset",
-    ];
-
-    for (const header of responseHeaders) {
+    for (const header of RESPONSE_HEADERS_TO_FORWARD) {
       const value = response.headers.get(header);
-      if (value) {
+      if (value !== null) {
         c.header(header, value);
       }
     }
 
-    // Return the response
-    const data = (await response.json()) as object;
-    return c.json(data, response.status as 200);
+    // Downstream services answer in JSON, but a 204 or an error page must not
+    // become a gateway 500 — pass the body through as it came.
+    const body = await response.text();
+    if (body.length === 0) {
+      return c.body(null, response.status as 204);
+    }
+    return c.body(body, response.status as 200);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       return c.json(
@@ -166,87 +200,116 @@ const proxyToService = async (
       },
       503,
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
+
+/** The gateway mounts /v1; downstream services do not carry the version prefix. */
+const downstreamPath = (c: Context): string => c.req.path.replace(/^\/v1/, "");
 
 // ===========================================
 // Route Definitions
 // ===========================================
 
 // User Service routes
-proxyRoutes.all("/auth/*", (c) =>
-  proxyToService("auth", c.req.path.replace("/v1", ""), c),
-);
+proxyRoutes.all("/auth/*", (c) => proxyToService("auth", downstreamPath(c), c));
 proxyRoutes.all("/users/*", (c) =>
-  proxyToService("users", c.req.path.replace("/v1", ""), c),
+  proxyToService("users", downstreamPath(c), c),
+);
+
+// Identity (slice 03) — device enrolment, step-up, documents, review cases.
+// These are registered BEFORE /drivers/* so driver documents reach the
+// user-service rather than the ride-service.
+proxyRoutes.all("/devices", (c) =>
+  proxyToService("devices", downstreamPath(c), c),
+);
+proxyRoutes.all("/devices/*", (c) =>
+  proxyToService("devices", downstreamPath(c), c),
+);
+proxyRoutes.all("/identity/*", (c) =>
+  proxyToService("identity", downstreamPath(c), c),
+);
+proxyRoutes.all("/webhooks/telco/*", (c) =>
+  proxyToService("identity", downstreamPath(c), c),
+);
+proxyRoutes.all("/drivers/me/documents", (c) =>
+  proxyToService("identity", downstreamPath(c), c),
+);
+proxyRoutes.all("/drivers/me/documents/*", (c) =>
+  proxyToService("identity", downstreamPath(c), c),
+);
+proxyRoutes.all("/drivers/me/eligibility", (c) =>
+  proxyToService("identity", downstreamPath(c), c),
 );
 
 // Ride Service routes
 proxyRoutes.all("/rides/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c),
+  proxyToService("rides", downstreamPath(c), c),
 );
 proxyRoutes.all("/drivers/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c),
+  proxyToService("rides", downstreamPath(c), c),
 );
 proxyRoutes.all("/pricing/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c),
+  proxyToService("rides", downstreamPath(c), c),
 );
 proxyRoutes.all("/locations/*", (c) =>
-  proxyToService("rides", c.req.path.replace("/v1", ""), c),
+  proxyToService("rides", downstreamPath(c), c),
 );
 
 // Food Service routes
-proxyRoutes.all("/food/*", (c) =>
-  proxyToService("food", c.req.path.replace("/v1", ""), c),
-);
+proxyRoutes.all("/food/*", (c) => proxyToService("food", downstreamPath(c), c));
 proxyRoutes.all("/restaurants/*", (c) =>
-  proxyToService("restaurants", c.req.path.replace("/v1", ""), c),
+  proxyToService("restaurants", downstreamPath(c), c),
 );
 proxyRoutes.all("/menus/*", (c) =>
-  proxyToService("food", c.req.path.replace("/v1", ""), c),
+  proxyToService("food", downstreamPath(c), c),
 );
 
 // Delivery Service routes
 proxyRoutes.all("/delivery/*", (c) =>
-  proxyToService("delivery", c.req.path.replace("/v1", ""), c),
+  proxyToService("delivery", downstreamPath(c), c),
 );
 proxyRoutes.all("/packages/*", (c) =>
-  proxyToService("packages", c.req.path.replace("/v1", ""), c),
+  proxyToService("packages", downstreamPath(c), c),
 );
 
 // Payment Service routes
 proxyRoutes.all("/payments/*", (c) =>
-  proxyToService("payments", c.req.path.replace("/v1", ""), c),
+  proxyToService("payments", downstreamPath(c), c),
 );
 proxyRoutes.all("/wallets/*", (c) =>
-  proxyToService("wallets", c.req.path.replace("/v1", ""), c),
+  proxyToService("wallets", downstreamPath(c), c),
+);
+proxyRoutes.all("/wallet/*", (c) =>
+  proxyToService("wallets", downstreamPath(c), c),
 );
 proxyRoutes.all("/transactions/*", (c) =>
-  proxyToService("payments", c.req.path.replace("/v1", ""), c),
+  proxyToService("payments", downstreamPath(c), c),
 );
 
 // Notification Service routes
 proxyRoutes.all("/notifications/*", (c) =>
-  proxyToService("notifications", c.req.path.replace("/v1", ""), c),
+  proxyToService("notifications", downstreamPath(c), c),
 );
 
 // Analytics Service routes
 proxyRoutes.all("/analytics/*", (c) =>
-  proxyToService("analytics", c.req.path.replace("/v1", ""), c),
+  proxyToService("analytics", downstreamPath(c), c),
 );
 proxyRoutes.all("/reports/*", (c) =>
-  proxyToService("analytics", c.req.path.replace("/v1", ""), c),
+  proxyToService("analytics", downstreamPath(c), c),
 );
 
 // CEERION Service routes (EV financing)
 proxyRoutes.all("/ceerion/*", (c) =>
-  proxyToService("ceerion", c.req.path.replace("/v1", ""), c),
+  proxyToService("ceerion", downstreamPath(c), c),
 );
 proxyRoutes.all("/vehicles/*", (c) =>
-  proxyToService("vehicles", c.req.path.replace("/v1", ""), c),
+  proxyToService("vehicles", downstreamPath(c), c),
 );
 proxyRoutes.all("/financing/*", (c) =>
-  proxyToService("ceerion", c.req.path.replace("/v1", ""), c),
+  proxyToService("ceerion", downstreamPath(c), c),
 );
 
 export { proxyRoutes };

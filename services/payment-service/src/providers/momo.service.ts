@@ -34,10 +34,10 @@ import {
   PaymentProvider,
   PaymentStatus,
   Prisma,
-  PrismaClient,
 } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { momoLogger } from "../lib/logger.js";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 
 export interface MoMoConfig {
   subscriptionKey: string; // Ocp-Apim-Subscription-Key
@@ -124,7 +124,7 @@ export class MoMoService {
 
   constructor(
     private readonly config: MoMoConfig,
-    private readonly prisma: PrismaClient,
+    private readonly prisma: ExtendedPrismaClient,
   ) {
     this.baseUrl =
       config.environment === "production"
@@ -754,7 +754,7 @@ export class MoMoService {
               status: "COMPLETED",
               providerReference: status.financialTransactionId,
               completedAt: new Date(),
-              providerMetadata: {
+              metadata: {
                 referenceId,
                 financialTransactionId: status.financialTransactionId,
                 externalId: status.externalId,
@@ -782,7 +782,7 @@ export class MoMoService {
               status: "FAILED",
               failedAt: new Date(),
               failureReason: reason,
-              providerMetadata: {
+              metadata: {
                 referenceId,
                 externalId: status.externalId,
                 reason: status.reason,

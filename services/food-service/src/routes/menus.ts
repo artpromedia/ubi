@@ -84,7 +84,7 @@ const bulkUpdateAvailabilitySchema = z.object({
     z.object({
       id: z.string(),
       availability: z.nativeEnum(ItemAvailability),
-    })
+    }),
   ),
 });
 
@@ -104,14 +104,12 @@ menuRoutes.get("/categories/:restaurantId", async (c) => {
     where.isActive = true;
   }
 
+  // GAP: MenuItem links to a category by the free-text `category` column, not a
+  // FK relation to MenuCategory, so a per-category item `_count` cannot be
+  // expressed as a Prisma relation aggregate here.
   const categories = await prisma.menuCategory.findMany({
     where,
     orderBy: { sortOrder: "asc" },
-    include: {
-      _count: {
-        select: { items: true },
-      },
-    },
   });
 
   return c.json({
@@ -135,13 +133,13 @@ menuRoutes.post(
       where: { id: data.restaurantId },
     });
 
-    if (!restaurant || restaurant.ownerId !== ownerId) {
+    if (!restaurant || restaurant.userId !== ownerId) {
       return c.json(
         {
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
@@ -157,7 +155,7 @@ menuRoutes.post(
     await cache.delete(`menu:${data.restaurantId}`);
 
     return c.json({ success: true, data: category }, 201);
-  }
+  },
 );
 
 /**
@@ -176,13 +174,13 @@ menuRoutes.put(
       include: { restaurant: true },
     });
 
-    if (!category || category.restaurant.ownerId !== ownerId) {
+    if (!category || category.restaurant.userId !== ownerId) {
       return c.json(
         {
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
@@ -194,7 +192,7 @@ menuRoutes.put(
     await cache.delete(`menu:${category.restaurantId}`);
 
     return c.json({ success: true, data: updated });
-  }
+  },
 );
 
 /**
@@ -206,20 +204,26 @@ menuRoutes.delete("/categories/:id", async (c) => {
 
   const category = await prisma.menuCategory.findUnique({
     where: { id },
-    include: { restaurant: true, items: true },
+    include: { restaurant: true },
   });
 
-  if (!category || category.restaurant.ownerId !== ownerId) {
+  if (!category || category.restaurant.userId !== ownerId) {
     return c.json(
       {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
-  if (category.items.length > 0) {
+  // GAP: no MenuItem→MenuCategory relation; items are matched by the category
+  // name string on the same restaurant.
+  const itemCount = await prisma.menuItem.count({
+    where: { restaurantId: category.restaurantId, category: category.name },
+  });
+
+  if (itemCount > 0) {
     // Soft delete - just mark as inactive
     await prisma.menuCategory.update({
       where: { id },
@@ -248,13 +252,13 @@ menuRoutes.post("/categories/reorder", async (c) => {
     where: { id: restaurantId },
   });
 
-  if (!restaurant || restaurant.ownerId !== ownerId) {
+  if (!restaurant || restaurant.userId !== ownerId) {
     return c.json(
       {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -264,8 +268,8 @@ menuRoutes.post("/categories/reorder", async (c) => {
       prisma.menuCategory.update({
         where: { id },
         data: { sortOrder: index },
-      })
-    )
+      }),
+    ),
   );
 
   await cache.delete(`menu:${restaurantId}`);
@@ -283,12 +287,13 @@ menuRoutes.post("/categories/reorder", async (c) => {
 menuRoutes.get("/items/:id", async (c) => {
   const id = c.req.param("id");
 
+  // GAP: MenuItem.category is a scalar string (no MenuCategory relation to
+  // include), and Restaurant has no `currency` column (currency is city-config).
   const item = await prisma.menuItem.findUnique({
     where: { id },
     include: {
-      category: true,
       restaurant: {
-        select: { id: true, name: true, currency: true },
+        select: { id: true, name: true },
       },
     },
   });
@@ -299,7 +304,7 @@ menuRoutes.get("/items/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Menu item not found" },
       },
-      404
+      404,
     );
   }
 
@@ -320,17 +325,17 @@ menuRoutes.post(
       where: { id: data.restaurantId },
     });
 
-    if (!restaurant || restaurant.ownerId !== ownerId) {
+    if (!restaurant || restaurant.userId !== ownerId) {
       return c.json(
         {
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
-    // Generate IDs for options and addons
+    // Generate IDs for options
     const options = data.options.map((opt) => ({
       ...opt,
       id: opt.id || generateId("opt"),
@@ -340,25 +345,29 @@ menuRoutes.post(
       })),
     }));
 
-    const addons = data.addons.map((addon) => ({
-      ...addon,
-      id: addon.id || generateId("add"),
-    }));
-
+    // GAP: the MenuItem model only persists name/description/price/imageUrl/
+    // category/isAvailable/options. Validated fields with no column — discountPrice,
+    // currency, addons, prepTime, calories, isVegetarian/isVegan/isGlutenFree/
+    // isSpicy/spiceLevel, allergens, sortOrder, isPopular — are not written.
+    // `category` stores the supplied categoryId; `imageUrl` the first image.
     const item = await prisma.menuItem.create({
       data: {
         id: generateId("itm"),
-        ...data,
+        restaurantId: data.restaurantId,
+        name: data.name,
+        description: data.description,
+        price: data.price,
+        imageUrl: data.images[0],
+        category: data.categoryId,
+        isAvailable: data.availability === ItemAvailability.AVAILABLE,
         options,
-        addons,
-        isActive: true,
       },
     });
 
     await cache.delete(`menu:${data.restaurantId}`);
 
     return c.json({ success: true, data: item }, 201);
-  }
+  },
 );
 
 /**
@@ -377,44 +386,51 @@ menuRoutes.put(
       include: { restaurant: true },
     });
 
-    if (!item || item.restaurant.ownerId !== ownerId) {
+    if (!item || item.restaurant.userId !== ownerId) {
       return c.json(
         {
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
-    // Generate IDs for new options/addons
-    if (data.options) {
-      data.options = data.options.map((opt) => ({
-        ...opt,
-        id: opt.id || generateId("opt"),
-        choices: opt.choices.map((choice) => ({
-          ...choice,
-          id: choice.id || generateId("chc"),
-        })),
-      }));
-    }
+    // Generate IDs for new options
+    const processedOptions = data.options?.map((opt) => ({
+      ...opt,
+      id: opt.id || generateId("opt"),
+      choices: opt.choices.map((choice) => ({
+        ...choice,
+        id: choice.id || generateId("chc"),
+      })),
+    }));
 
-    if (data.addons) {
-      data.addons = data.addons.map((addon) => ({
-        ...addon,
-        id: addon.id || generateId("add"),
-      }));
-    }
-
+    // GAP: only columns that exist on MenuItem are updated (see create above);
+    // other validated fields have no column and are ignored.
     const updated = await prisma.menuItem.update({
       where: { id },
-      data,
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.price !== undefined ? { price: data.price } : {}),
+        ...(data.images !== undefined ? { imageUrl: data.images[0] } : {}),
+        ...(data.categoryId !== undefined ? { category: data.categoryId } : {}),
+        ...(data.availability !== undefined
+          ? { isAvailable: data.availability === ItemAvailability.AVAILABLE }
+          : {}),
+        ...(processedOptions !== undefined
+          ? { options: processedOptions }
+          : {}),
+      },
     });
 
     await cache.delete(`menu:${item.restaurantId}`);
 
     return c.json({ success: true, data: updated });
-  }
+  },
 );
 
 /**
@@ -429,20 +445,21 @@ menuRoutes.delete("/items/:id", async (c) => {
     include: { restaurant: true },
   });
 
-  if (!item || item.restaurant.ownerId !== ownerId) {
+  if (!item || item.restaurant.userId !== ownerId) {
     return c.json(
       {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
-  // Soft delete
+  // Soft delete. GAP: MenuItem has no `isActive` column; `isAvailable` is the
+  // schema's visibility flag, so a deleted item is marked unavailable.
   await prisma.menuItem.update({
     where: { id },
-    data: { isActive: false },
+    data: { isAvailable: false },
   });
 
   await cache.delete(`menu:${item.restaurantId}`);
@@ -465,19 +482,21 @@ menuRoutes.put("/items/:id/availability", async (c) => {
     include: { restaurant: true },
   });
 
-  if (!item || item.restaurant.ownerId !== ownerId) {
+  if (!item || item.restaurant.userId !== ownerId) {
     return c.json(
       {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
+  // GAP: MenuItem has no `availability` enum column; it maps onto the
+  // `isAvailable` boolean (AVAILABLE -> true, anything else -> false).
   await prisma.menuItem.update({
     where: { id },
-    data: { availability },
+    data: { isAvailable: availability === ItemAvailability.AVAILABLE },
   });
 
   await cache.delete(`menu:${item.restaurantId}`);
@@ -504,7 +523,7 @@ menuRoutes.post(
     const restaurantIds = new Set<string>();
 
     for (const item of itemRecords) {
-      if (item.restaurant.ownerId !== ownerId) {
+      if (item.restaurant.userId !== ownerId) {
         return c.json(
           {
             success: false,
@@ -513,20 +532,22 @@ menuRoutes.post(
               message: "Not authorized for all items",
             },
           },
-          403
+          403,
         );
       }
       restaurantIds.add(item.restaurantId);
     }
 
-    // Update all items
+    // Update all items. GAP: `availability` enum maps onto `isAvailable`.
     await prisma.$transaction(
       items.map((item) =>
         prisma.menuItem.update({
           where: { id: item.id },
-          data: { availability: item.availability },
-        })
-      )
+          data: {
+            isAvailable: item.availability === ItemAvailability.AVAILABLE,
+          },
+        }),
+      ),
     );
 
     // Invalidate all affected menus
@@ -538,7 +559,7 @@ menuRoutes.post(
       success: true,
       data: { updated: items.length },
     });
-  }
+  },
 );
 
 /**
@@ -556,28 +577,25 @@ menuRoutes.post("/items/reorder", async (c) => {
     include: { restaurant: true },
   });
 
-  if (!category || category.restaurant.ownerId !== ownerId) {
+  if (!category || category.restaurant.userId !== ownerId) {
     return c.json(
       {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
-  await prisma.$transaction(
-    itemIds.map((id, index) =>
-      prisma.menuItem.update({
-        where: { id },
-        data: { sortOrder: index },
-      })
-    )
-  );
-
+  // GAP: MenuItem has no `sortOrder` column, so an explicit item ordering cannot
+  // be persisted from the current schema. The ownership check above still runs;
+  // the ordering itself is reported as not persisted rather than silently faked.
   await cache.delete(`menu:${category.restaurantId}`);
 
-  return c.json({ success: true, data: { reordered: true } });
+  return c.json({
+    success: true,
+    data: { reordered: false, itemCount: itemIds.length },
+  });
 });
 
 export { menuRoutes };

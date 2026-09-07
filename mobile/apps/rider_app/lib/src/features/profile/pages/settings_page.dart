@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ubi_core/ubi_config.dart';
+import 'package:ubi_core/ubi_theming.dart';
 
 /// Settings page
 class SettingsPage extends StatefulWidget {
@@ -11,11 +14,9 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   String _language = 'en';
-  String _currency = 'KES';
   bool _pushNotifications = true;
   bool _emailNotifications = true;
   bool _smsNotifications = false;
-  bool _darkMode = false;
 
   @override
   Widget build(BuildContext context) {
@@ -38,12 +39,18 @@ class _SettingsPageState extends State<SettingsPage> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showLanguagePicker(),
           ),
-          ListTile(
-            leading: const Icon(Icons.attach_money),
-            title: const Text('Currency'),
-            subtitle: Text(_currency),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showCurrencyPicker(),
+          // Currency is set by the city you are in, not by the rider: every
+          // fare, fee and refund is computed by the server in that currency
+          // (CLAUDE.md rules 1 and 6). It is shown, never chosen.
+          BlocBuilder<ConfigCubit, ConfigState>(
+            builder: (context, config) => ListTile(
+              leading: const Icon(Icons.payments_outlined),
+              title: const Text('Currency'),
+              subtitle: Text(
+                config.config?.currency ?? 'Set by your city',
+              ),
+              enabled: false,
+            ),
           ),
 
           const Divider(),
@@ -82,14 +89,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
           // Appearance
           _SectionHeader(title: 'Appearance'),
-          SwitchListTile(
-            secondary: const Icon(Icons.dark_mode),
-            title: const Text('Dark Mode'),
-            subtitle: const Text('Use dark theme'),
-            value: _darkMode,
-            onChanged: (value) {
-              setState(() => _darkMode = value);
-            },
+          BlocBuilder<UbiThemeModeCubit, ThemeMode>(
+            builder: (context, mode) => SwitchListTile(
+              secondary: const Icon(Icons.dark_mode),
+              title: const Text('Dark Mode'),
+              subtitle: const Text('Use dark theme'),
+              value: mode == ThemeMode.dark,
+              onChanged: (value) =>
+                  context.read<UbiThemeModeCubit>().setDark(dark: value),
+            ),
           ),
 
           const Divider(),
@@ -231,74 +239,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  void _showCurrencyPicker() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Select Currency',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            RadioListTile<String>(
-              title: const Text('KES - Kenyan Shilling'),
-              value: 'KES',
-              groupValue: _currency,
-              onChanged: (value) {
-                setState(() => _currency = value!);
-                Navigator.pop(context);
-              },
-            ),
-            RadioListTile<String>(
-              title: const Text('TZS - Tanzanian Shilling'),
-              value: 'TZS',
-              groupValue: _currency,
-              onChanged: (value) {
-                setState(() => _currency = value!);
-                Navigator.pop(context);
-              },
-            ),
-            RadioListTile<String>(
-              title: const Text('UGX - Ugandan Shilling'),
-              value: 'UGX',
-              groupValue: _currency,
-              onChanged: (value) {
-                setState(() => _currency = value!);
-                Navigator.pop(context);
-              },
-            ),
-            RadioListTile<String>(
-              title: const Text('NGN - Nigerian Naira'),
-              value: 'NGN',
-              groupValue: _currency,
-              onChanged: (value) {
-                setState(() => _currency = value!);
-                Navigator.pop(context);
-              },
-            ),
-            RadioListTile<String>(
-              title: const Text('USD - US Dollar'),
-              value: 'USD',
-              groupValue: _currency,
-              onChanged: (value) {
-                setState(() => _currency = value!);
-                Navigator.pop(context);
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
 
   void _clearCache() {
     showDialog(

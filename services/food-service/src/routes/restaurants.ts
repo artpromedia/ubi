@@ -7,8 +7,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { cache, redis } from "../lib/redis";
-import { generateId, generateSlug } from "../lib/utils";
-import { CuisineType, DayOfWeek, RestaurantStatus } from "../types";
+import { generateId } from "../lib/utils";
+import { CuisineType, DayOfWeek } from "../types";
 
 const restaurantRoutes = new Hono();
 
@@ -73,22 +73,19 @@ const nearbyQuerySchema = z.object({
  * GET /restaurants - List restaurants with filters
  */
 restaurantRoutes.get("/", async (c) => {
-  const city = c.req.query("city");
   const cuisine = c.req.query("cuisine") as CuisineType;
   const isOpen = c.req.query("isOpen") === "true";
   const minRating = Number.parseFloat(c.req.query("minRating") || "0");
-  const priceRange = c.req.query("priceRange")?.split(",").map(Number);
   const page = Number.parseInt(c.req.query("page") || "1");
   const limit = Number.parseInt(c.req.query("limit") || "20");
 
-  // Build where clause
+  // Build where clause.
+  // GAP: Restaurant has no `status`/`city`/`priceRange` columns, so those
+  // filters are unavailable; verifiedAt gates "active" and there is no
+  // `reviewCount` column (popularity falls back to totalOrders).
   const where: any = {
-    status: RestaurantStatus.ACTIVE,
+    verifiedAt: { not: null },
   };
-
-  if (city) {
-    where.location = { path: ["city"], equals: city };
-  }
 
   if (cuisine) {
     where.cuisineTypes = { has: cuisine };
@@ -98,14 +95,10 @@ restaurantRoutes.get("/", async (c) => {
     where.rating = { gte: minRating };
   }
 
-  if (priceRange?.length) {
-    where.priceRange = { in: priceRange };
-  }
-
   const [restaurants, total] = await Promise.all([
     prisma.restaurant.findMany({
       where,
-      orderBy: [{ rating: "desc" }, { reviewCount: "desc" }],
+      orderBy: [{ rating: "desc" }, { totalOrders: "desc" }],
       skip: (page - 1) * limit,
       take: limit,
     }),
@@ -116,7 +109,7 @@ restaurantRoutes.get("/", async (c) => {
   let filteredRestaurants = restaurants;
   if (isOpen) {
     filteredRestaurants = restaurants.filter(
-      (r: (typeof restaurants)[number]) => isRestaurantOpen(r.openingHours)
+      (r: (typeof restaurants)[number]) => isRestaurantOpen(r.openingHours),
     );
   }
 
@@ -172,7 +165,7 @@ restaurantRoutes.get(
         distance: Math.round(r.distance_km * 10) / 10,
       })),
     });
-  }
+  },
 );
 
 /**
@@ -206,7 +199,7 @@ restaurantRoutes.get("/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Restaurant not found" },
       },
-      404
+      404,
     );
   }
 
@@ -234,23 +227,33 @@ restaurantRoutes.get("/:id/menu", async (c) => {
     return c.json({ success: true, data: cached });
   }
 
-  const categories = await prisma.menuCategory.findMany({
-    where: { restaurantId: id, isActive: true },
-    orderBy: { sortOrder: "asc" },
-    include: {
-      items: {
-        where: { isActive: true },
-        orderBy: [{ isPopular: "desc" }, { sortOrder: "asc" }],
-      },
-    },
-  });
+  // GAP: MenuItem has no FK relation to MenuCategory (only a `category` name
+  // string) and no `isActive`/`isPopular`/`sortOrder` columns. The menu is
+  // assembled by matching available items to each category by name.
+  const [categories, items] = await Promise.all([
+    prisma.menuCategory.findMany({
+      where: { restaurantId: id, isActive: true },
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.menuItem.findMany({
+      where: { restaurantId: id, isAvailable: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
+  const menu = categories.map((category: (typeof categories)[number]) => ({
+    ...category,
+    items: items.filter(
+      (item: (typeof items)[number]) => item.category === category.name,
+    ),
+  }));
 
   // Cache for 10 minutes
-  await cache.set(`menu:${id}`, categories, 600);
+  await cache.set(`menu:${id}`, menu, 600);
 
   return c.json({
     success: true,
-    data: categories,
+    data: menu,
   });
 });
 
@@ -268,32 +271,35 @@ restaurantRoutes.post(
           success: false,
           error: { code: "UNAUTHORIZED", message: "Authentication required" },
         },
-        401
+        401,
       );
     }
 
     const data = c.req.valid("json");
     const id = generateId("rst");
-    const slug = generateSlug(data.name);
 
-    // Check for duplicate slug
-    const existing = await prisma.restaurant.findFirst({
-      where: { slug },
-    });
-
-    const finalSlug = existing ? `${slug}-${id.slice(-6)}` : slug;
-
+    // GAP: the Restaurant model has no `slug`/`status`/`reviewCount`/`images`/
+    // `priceRange`/`features` columns, and no `location` JSON (address/lat/lng
+    // are columns). `averagePrepTime` maps onto `estimatedDeliveryTime`; a new
+    // restaurant is created unverified (verifiedAt null) and closed.
     const restaurant = await prisma.restaurant.create({
       data: {
         id,
-        ownerId,
-        slug: finalSlug,
-        status: RestaurantStatus.PENDING,
+        userId: ownerId,
+        name: data.name,
+        description: data.description,
+        address: data.location.address,
+        latitude: data.location.latitude,
+        longitude: data.location.longitude,
+        phone: data.phone,
+        email: data.email ?? "",
+        cuisineTypes: data.cuisineTypes,
+        deliveryFee: data.deliveryFee,
+        minimumOrder: data.minimumOrder,
+        estimatedDeliveryTime: data.averagePrepTime,
+        openingHours: data.openingHours,
         rating: 0,
-        reviewCount: 0,
         isOpen: false,
-        images: [],
-        ...data,
       },
     });
 
@@ -302,9 +308,9 @@ restaurantRoutes.post(
         success: true,
         data: restaurant,
       },
-      201
+      201,
     );
-  }
+  },
 );
 
 /**
@@ -328,11 +334,11 @@ restaurantRoutes.put(
           success: false,
           error: { code: "NOT_FOUND", message: "Restaurant not found" },
         },
-        404
+        404,
       );
     }
 
-    if (restaurant.ownerId !== ownerId) {
+    if (restaurant.userId !== ownerId) {
       return c.json(
         {
           success: false,
@@ -341,13 +347,45 @@ restaurantRoutes.put(
             message: "Not authorized to update this restaurant",
           },
         },
-        403
+        403,
       );
     }
 
+    // GAP: only columns that exist on Restaurant are updated. `location` maps to
+    // address/lat/lng, `averagePrepTime` to estimatedDeliveryTime; priceRange
+    // and features have no column and are ignored (see create above).
     const updated = await prisma.restaurant.update({
       where: { id },
-      data,
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+        ...(data.email !== undefined ? { email: data.email } : {}),
+        ...(data.location !== undefined
+          ? {
+              address: data.location.address,
+              latitude: data.location.latitude,
+              longitude: data.location.longitude,
+            }
+          : {}),
+        ...(data.cuisineTypes !== undefined
+          ? { cuisineTypes: data.cuisineTypes }
+          : {}),
+        ...(data.deliveryFee !== undefined
+          ? { deliveryFee: data.deliveryFee }
+          : {}),
+        ...(data.minimumOrder !== undefined
+          ? { minimumOrder: data.minimumOrder }
+          : {}),
+        ...(data.averagePrepTime !== undefined
+          ? { estimatedDeliveryTime: data.averagePrepTime }
+          : {}),
+        ...(data.openingHours !== undefined
+          ? { openingHours: data.openingHours }
+          : {}),
+      },
     });
 
     // Invalidate cache
@@ -358,7 +396,7 @@ restaurantRoutes.put(
       success: true,
       data: updated,
     });
-  }
+  },
 );
 
 /**
@@ -382,32 +420,27 @@ restaurantRoutes.post("/:id/status", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Restaurant not found" },
       },
-      404
+      404,
     );
   }
 
-  if (restaurant.ownerId !== ownerId) {
+  if (restaurant.userId !== ownerId) {
     return c.json(
       {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
+  // GAP: Restaurant has no `metadata` column, so the manual-status-change audit
+  // trail cannot be persisted on the row; the reason is still emitted on the
+  // status event below.
   await prisma.restaurant.update({
     where: { id },
     data: {
       isOpen,
-      metadata: {
-        ...(restaurant.metadata as object),
-        manualStatusChange: {
-          isOpen,
-          reason,
-          changedAt: new Date().toISOString(),
-        },
-      },
     },
   });
 
@@ -422,7 +455,7 @@ restaurantRoutes.post("/:id/status", async (c) => {
       restaurantId: id,
       reason,
       timestamp: new Date().toISOString(),
-    })
+    }),
   );
 
   return c.json({
@@ -443,13 +476,13 @@ restaurantRoutes.get("/:id/stats", async (c) => {
     where: { id },
   });
 
-  if (!restaurant || restaurant.ownerId !== ownerId) {
+  if (!restaurant || restaurant.userId !== ownerId) {
     return c.json(
       {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -469,11 +502,13 @@ restaurantRoutes.get("/:id/stats", async (c) => {
 
   const [orderStats, topItems, ratingBreakdown] = await Promise.all([
     // Order statistics
+    // GAP: OrderStatus has no `COMPLETED` member; `DELIVERED` is the terminal
+    // fulfilled state in this schema.
     prisma.order.aggregate({
       where: {
         restaurantId: id,
         createdAt: { gte: startDate },
-        status: { in: ["DELIVERED", "COMPLETED"] },
+        status: { in: ["DELIVERED"] },
       },
       _count: true,
       _sum: { total: true },
@@ -497,9 +532,11 @@ restaurantRoutes.get("/:id/stats", async (c) => {
       LIMIT 10
     `,
 
-    // Rating breakdown
+    // Rating breakdown.
+    // GAP: Review has no generic `rating` column; `restaurantRating` is the
+    // headline score, so the breakdown is grouped by it.
     prisma.review.groupBy({
-      by: ["rating"],
+      by: ["restaurantRating"],
       where: {
         restaurantId: id,
         createdAt: { gte: startDate },
@@ -514,8 +551,8 @@ restaurantRoutes.get("/:id/stats", async (c) => {
       period,
       orders: {
         count: orderStats._count,
-        totalRevenue: orderStats._sum.total || 0,
-        averageOrderValue: orderStats._avg.total || 0,
+        totalRevenue: orderStats._sum?.total || 0,
+        averageOrderValue: orderStats._avg?.total || 0,
       },
       topItems,
       ratings: ratingBreakdown,
@@ -527,8 +564,8 @@ restaurantRoutes.get("/:id/stats", async (c) => {
 // Helpers
 // ============================================
 
-function isRestaurantOpen(openingHours: any[]): boolean {
-  if (!openingHours?.length) return false;
+function isRestaurantOpen(openingHours: any): boolean {
+  if (!Array.isArray(openingHours) || openingHours.length === 0) return false;
 
   const now = new Date();
   const days = [

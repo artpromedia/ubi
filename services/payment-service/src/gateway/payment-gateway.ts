@@ -26,7 +26,8 @@
  * - Transaction stuck → Auto-query status after 60s
  */
 
-import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
+import { PaymentProvider, PaymentStatus } from "@prisma/client";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 import { WalletService } from "../services/wallet.service";
 import { MoMoConfig, MoMoService } from "../providers/momo.service";
 import { MpesaConfig, MpesaService } from "../providers/mpesa.service";
@@ -94,7 +95,7 @@ export class PaymentGateway {
 
   constructor(
     config: PaymentGatewayConfig,
-    private prisma: PrismaClient
+    private prisma: ExtendedPrismaClient,
   ) {
     // Initialize services
     if (config.mpesa) {
@@ -121,7 +122,7 @@ export class PaymentGateway {
    */
   private async selectProvider(
     currency: string,
-    paymentMethod: "mobile_money" | "card" | "auto"
+    paymentMethod: "mobile_money" | "card" | "auto",
   ): Promise<PaymentProvider | null> {
     // Currency-specific routing
     switch (currency) {
@@ -129,7 +130,7 @@ export class PaymentGateway {
         if (paymentMethod === "mobile_money" || paymentMethod === "auto") {
           // M-Pesa dominates Kenya (90%+ mobile money market share)
           const mpesaHealthy = await this.isProviderHealthy(
-            PaymentProvider.MPESA
+            PaymentProvider.MPESA,
           );
           if (mpesaHealthy && this.mpesaService) {
             return PaymentProvider.MPESA;
@@ -138,7 +139,7 @@ export class PaymentGateway {
         // Fallback to Paystack for cards
         if (paymentMethod === "card" || paymentMethod === "auto") {
           const paystackHealthy = await this.isProviderHealthy(
-            PaymentProvider.PAYSTACK
+            PaymentProvider.PAYSTACK,
           );
           if (paystackHealthy && this.paystackService) {
             return PaymentProvider.PAYSTACK;
@@ -150,7 +151,7 @@ export class PaymentGateway {
         if (paymentMethod === "mobile_money" || paymentMethod === "auto") {
           // MTN MoMo is dominant in Ghana
           const momoHealthy = await this.isProviderHealthy(
-            PaymentProvider.MTN_MOMO_GH
+            PaymentProvider.MTN_MOMO_GH,
           );
           if (momoHealthy && this.momoGhanaService) {
             return PaymentProvider.MTN_MOMO_GH;
@@ -159,7 +160,7 @@ export class PaymentGateway {
         // Fallback to Paystack
         if (paymentMethod === "card" || paymentMethod === "auto") {
           const paystackHealthy = await this.isProviderHealthy(
-            PaymentProvider.PAYSTACK
+            PaymentProvider.PAYSTACK,
           );
           if (paystackHealthy && this.paystackService) {
             return PaymentProvider.PAYSTACK;
@@ -170,7 +171,7 @@ export class PaymentGateway {
       case "RWF": // Rwanda
         if (paymentMethod === "mobile_money" || paymentMethod === "auto") {
           const momoHealthy = await this.isProviderHealthy(
-            PaymentProvider.MTN_MOMO_RW
+            PaymentProvider.MTN_MOMO_RW,
           );
           if (momoHealthy && this.momoRwandaService) {
             return PaymentProvider.MTN_MOMO_RW;
@@ -181,7 +182,7 @@ export class PaymentGateway {
       case "UGX": // Uganda
         if (paymentMethod === "mobile_money" || paymentMethod === "auto") {
           const momoHealthy = await this.isProviderHealthy(
-            PaymentProvider.MTN_MOMO_UG
+            PaymentProvider.MTN_MOMO_UG,
           );
           if (momoHealthy && this.momoUgandaService) {
             return PaymentProvider.MTN_MOMO_UG;
@@ -194,7 +195,7 @@ export class PaymentGateway {
       case "USD": // International
         // Paystack for cards
         const paystackHealthy = await this.isProviderHealthy(
-          PaymentProvider.PAYSTACK
+          PaymentProvider.PAYSTACK,
         );
         if (paystackHealthy && this.paystackService) {
           return PaymentProvider.PAYSTACK;
@@ -224,7 +225,7 @@ export class PaymentGateway {
 
     // Provider is unhealthy if last check was >5 minutes ago and status is down
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    if (health.lastCheckedAt < fiveMinutesAgo && health.isHealthy === false) {
+    if (health.lastCheckAt < fiveMinutesAgo && health.isHealthy === false) {
       return false;
     }
 
@@ -238,7 +239,7 @@ export class PaymentGateway {
     provider: PaymentProvider,
     isHealthy: boolean,
     responseTime?: number,
-    error?: string
+    error?: string,
   ): Promise<void> {
     const now = new Date();
 
@@ -246,17 +247,25 @@ export class PaymentGateway {
       where: { provider },
     });
 
+    // The launch ProviderHealth schema tracks isHealthy/lastCheckAt/
+    // avgResponseTime/consecutiveFailures/lastIncidentAt; the transient
+    // last error/success timestamps are kept in the metadata JSON.
+    const metadata = {
+      lastError: error ?? null,
+      lastSuccessAt: isHealthy ? now.toISOString() : null,
+      lastFailureAt: error ? now.toISOString() : null,
+    };
+
     if (existing) {
       await this.prisma.providerHealth.update({
         where: { provider },
         data: {
           isHealthy,
-          lastCheckedAt: now,
-          lastResponseTime: responseTime,
+          lastCheckAt: now,
+          avgResponseTime: responseTime,
           consecutiveFailures: isHealthy ? 0 : existing.consecutiveFailures + 1,
-          lastError: error,
-          ...(isHealthy && { lastSuccessAt: now }),
-          ...(error && { lastFailureAt: now }),
+          ...(error ? { lastIncidentAt: now } : {}),
+          metadata,
         },
       });
     } else {
@@ -264,12 +273,11 @@ export class PaymentGateway {
         data: {
           provider,
           isHealthy,
-          lastCheckedAt: now,
-          lastResponseTime: responseTime,
+          lastCheckAt: now,
+          avgResponseTime: responseTime,
           consecutiveFailures: isHealthy ? 0 : 1,
-          lastError: error,
-          ...(isHealthy && { lastSuccessAt: now }),
-          ...(error && { lastFailureAt: now }),
+          ...(error ? { lastIncidentAt: now } : {}),
+          metadata,
         },
       });
     }
@@ -279,7 +287,7 @@ export class PaymentGateway {
    * Initiate payment with smart provider routing
    */
   async initiatePayment(
-    request: InitiatePaymentRequest
+    request: InitiatePaymentRequest,
   ): Promise<InitiatePaymentResponse> {
     const {
       userId,
@@ -302,7 +310,7 @@ export class PaymentGateway {
     const provider = await this.selectProvider(currency, paymentMethod);
     if (!provider) {
       throw new Error(
-        `No available provider for ${currency} (${paymentMethod})`
+        `No available provider for ${currency} (${paymentMethod})`,
       );
     }
 
@@ -429,7 +437,7 @@ export class PaymentGateway {
         provider,
         false,
         responseTime,
-        error.message
+        error.message,
       );
 
       throw error;
@@ -440,7 +448,7 @@ export class PaymentGateway {
    * Get payment status
    */
   async getPaymentStatus(
-    paymentTransactionId: string
+    paymentTransactionId: string,
   ): Promise<PaymentStatusResponse> {
     const paymentTx = await this.prisma.paymentTransaction.findUnique({
       where: { id: paymentTransactionId },
@@ -468,7 +476,7 @@ export class PaymentGateway {
    */
   async completePaymentToWallet(
     paymentTransactionId: string,
-    accountType: "USER_WALLET" | "DRIVER_WALLET" = "USER_WALLET"
+    accountType: "USER_WALLET" | "DRIVER_WALLET" = "USER_WALLET",
   ): Promise<{ transactionId: string; newBalance: number }> {
     const paymentTx = await this.prisma.paymentTransaction.findUnique({
       where: { id: paymentTransactionId },
@@ -547,7 +555,7 @@ export class PaymentGateway {
         await this.updateProviderHealth(
           PaymentProvider.PAYSTACK,
           true,
-          responseTime
+          responseTime,
         );
 
         return {
@@ -563,7 +571,7 @@ export class PaymentGateway {
       }
 
       throw new Error(
-        `Saved cards not supported for provider: ${paymentMethod.provider}`
+        `Saved cards not supported for provider: ${paymentMethod.provider}`,
       );
     } catch (error: any) {
       // Update provider health
@@ -572,7 +580,7 @@ export class PaymentGateway {
         paymentMethod.provider,
         false,
         responseTime,
-        error.message
+        error.message,
       );
 
       throw error;
@@ -588,18 +596,27 @@ export class PaymentGateway {
       orderBy: { createdAt: "desc" },
     });
 
-    return methods.map((method) => ({
-      id: method.id,
-      provider: method.provider,
-      type: method.type,
-      lastFour: method.lastFour,
-      expiryMonth: method.expiryMonth,
-      expiryYear: method.expiryYear,
-      cardBrand: method.cardBrand,
-      cardBank: method.cardBank,
-      isDefault: method.isDefault,
-      createdAt: method.createdAt,
-    }));
+    return methods.map((method) => {
+      // Card expiry/bank/brand detail lives in the metadata JSON on the launch
+      // schema (see PaystackService.savePaymentMethod).
+      const meta = (method.metadata ?? {}) as {
+        expiryMonth?: number;
+        expiryYear?: number;
+        bank?: string;
+      };
+      return {
+        id: method.id,
+        provider: method.provider,
+        type: method.type,
+        lastFour: method.lastFour,
+        expiryMonth: meta.expiryMonth ?? null,
+        expiryYear: meta.expiryYear ?? null,
+        cardBrand: method.brand,
+        cardBank: meta.bank ?? null,
+        isDefault: method.isDefault,
+        createdAt: method.createdAt,
+      };
+    });
   }
 
   /**

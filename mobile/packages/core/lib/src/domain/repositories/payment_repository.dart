@@ -3,7 +3,7 @@
 /// Contract for payment and wallet data operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Repository for payment operations
 abstract class PaymentRepository {

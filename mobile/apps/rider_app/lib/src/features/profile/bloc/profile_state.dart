@@ -576,7 +576,8 @@ class Transaction {
 class UserSettings {
   const UserSettings({
     this.language = 'en',
-    this.currency = 'KES',
+    // Set by city config, not by the rider.
+    this.currency,
     this.pushNotifications = true,
     this.emailNotifications = true,
     this.smsNotifications = false,
@@ -585,7 +586,7 @@ class UserSettings {
   });
 
   final String language;
-  final String currency;
+  final String? currency;
   final bool pushNotifications;
   final bool emailNotifications;
   final bool smsNotifications;

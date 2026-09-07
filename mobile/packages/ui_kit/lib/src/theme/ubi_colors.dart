@@ -204,6 +204,7 @@ abstract final class UbiColors {
   static const Color overlayMedium = Color(0x4D000000); // 30%
   static const Color overlayDark = Color(0x80000000); // 50%
   static const Color overlayDarker = Color(0xB3000000); // 70%
+  static const Color overlay40 = Color(0x66000000); // 40%
   static const Color overlay60 = Color(0x99000000); // 60%
   static const Color overlay80 = Color(0xCC000000); // 80%
 

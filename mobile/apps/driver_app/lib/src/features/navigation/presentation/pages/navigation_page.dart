@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/navigation_bloc.dart';
+import '../../bloc/navigation_bloc.dart';
 
 /// Turn-by-turn navigation page with voice guidance
 class NavigationPage extends StatefulWidget {

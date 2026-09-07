@@ -133,11 +133,16 @@ class Ride with _$Ride {
   /// Check if ride is cancelled
   bool get isCancelled => status == RideStatus.cancelled;
 
-  /// Get display fare
-  String get displayFare {
+  /// Get display fare.
+  ///
+  /// Returns null when either the amount or the currency is missing. There is
+  /// no fallback currency: an amount without the currency the server stamped
+  /// on it is not a price (CLAUDE.md rule 6). Render it through
+  /// `UbiMoneyFormatter` so the city's locale and fraction digits apply.
+  String? get displayFare {
     final fare = actualFare ?? estimatedFare;
-    if (fare == null) return '--';
-    final curr = currency ?? 'NGN';
+    final curr = currency;
+    if (fare == null || curr == null) return null;
     return '$curr ${fare.toStringAsFixed(0)}';
   }
 

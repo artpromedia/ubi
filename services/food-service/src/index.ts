@@ -27,6 +27,7 @@ import { orderRoutes } from "./routes/orders";
 import { restaurantRoutes } from "./routes/restaurants";
 import { reviewRoutes } from "./routes/reviews";
 import { searchRoutes } from "./routes/search";
+import { createBitesModule, startIssueSweep } from "./bites/index.js";
 
 const app = new Hono();
 
@@ -82,6 +83,16 @@ app.route("/menus", menuRoutes);
 app.route("/orders", orderRoutes);
 app.route("/search", searchRoutes);
 app.route("/reviews", reviewRoutes);
+
+// Bites (slice 05) — discovery, cart, orders, merchant console, onboarding.
+const bites = createBitesModule();
+app.route("/v1/bites", bites.discovery);
+app.route("/v1/merchants", bites.merchants);
+app.route("/v1/carts", bites.carts);
+app.route("/v1/orders", bites.orders);
+if (process.env.NODE_ENV !== "test") {
+  startIssueSweep(bites.deps);
+}
 
 // 404 handler
 app.notFound((c) => {

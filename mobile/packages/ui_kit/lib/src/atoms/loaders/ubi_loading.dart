@@ -66,7 +66,7 @@ class UbiLoadingIndicator extends StatelessWidget {
           value: value,
           strokeWidth: effectiveStrokeWidth,
           valueColor: AlwaysStoppedAnimation(effectiveColor),
-          backgroundColor: effectiveColor.withValues(alpha: 0.2),
+          backgroundColor: effectiveColor.withOpacity(0.2),
         ),
       ),
     );
@@ -438,7 +438,7 @@ class _UbiPulseLoaderState extends State<UbiPulseLoader>
               height: widget.dotSize,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: color.withValues(alpha: _animations[index].value),
+                color: color.withOpacity(_animations[index].value),
               ),
             );
           },

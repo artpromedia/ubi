@@ -38,7 +38,10 @@ func NewSurgeService(redisClient *redis.Client) *SurgeService {
 
 // CalculateSurge returns the surge multiplier for a location
 func (s *SurgeService) CalculateSurge(ctx context.Context, lat, lng float64) (float64, error) {
-	h3Index := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, H3Resolution)
+	h3Index, err := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, H3Resolution)
+	if err != nil {
+		return 0, fmt.Errorf("locating surge cell for %f,%f: %w", lat, lng, err)
+	}
 
 	// Try to get cached surge
 	zone, err := s.getSurgeZone(ctx, h3Index.String())
@@ -55,8 +58,14 @@ func (s *SurgeService) CalculateSurge(ctx context.Context, lat, lng float64) (fl
 
 // GetSurgeZones returns surge multipliers for multiple H3 cells (for map display)
 func (s *SurgeService) GetSurgeZones(ctx context.Context, lat, lng float64, radius int) ([]*SurgeZone, error) {
-	centerCell := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, H3Resolution)
-	cells := h3.GridDisk(centerCell, radius)
+	centerCell, err := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, H3Resolution)
+	if err != nil {
+		return nil, fmt.Errorf("locating surge cell for %f,%f: %w", lat, lng, err)
+	}
+	cells, err := h3.GridDisk(centerCell, radius)
+	if err != nil {
+		return nil, fmt.Errorf("expanding surge disk of radius %d: %w", radius, err)
+	}
 
 	var zones []*SurgeZone
 	for _, cell := range cells {
@@ -74,7 +83,12 @@ func (s *SurgeService) GetSurgeZones(ctx context.Context, lat, lng float64, radi
 
 func (s *SurgeService) calculateZoneSurge(ctx context.Context, h3Index h3.Cell) *SurgeZone {
 	// Get neighboring cells for broader view
-	cells := h3.GridDisk(h3Index, 1) // Center + 1 ring
+	cells, err := h3.GridDisk(h3Index, 1) // Center + 1 ring
+	if err != nil {
+		// A disk that cannot be expanded means no neighbours to average over;
+		// fall back to the centre cell alone rather than dropping the zone.
+		cells = []h3.Cell{h3Index}
+	}
 
 	var totalDemand, totalSupply int
 
@@ -173,10 +187,13 @@ func (s *SurgeService) cacheSurgeZone(ctx context.Context, zone *SurgeZone) {
 
 // TrackRequest adds a request to a zone's tracking
 func (s *SurgeService) TrackRequest(ctx context.Context, requestID string, lat, lng float64) error {
-	h3Index := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, H3Resolution)
+	h3Index, err := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, H3Resolution)
+	if err != nil {
+		return fmt.Errorf("locating surge cell for %f,%f: %w", lat, lng, err)
+	}
 	
 	// Add to zone's active requests
-	err := s.redis.SAdd(ctx, fmt.Sprintf("zone:%s:requests", h3Index.String()), requestID).Err()
+	err = s.redis.SAdd(ctx, fmt.Sprintf("zone:%s:requests", h3Index.String()), requestID).Err()
 	if err != nil {
 		return err
 	}
@@ -187,7 +204,10 @@ func (s *SurgeService) TrackRequest(ctx context.Context, requestID string, lat, 
 
 // UntrackRequest removes a request from zone tracking
 func (s *SurgeService) UntrackRequest(ctx context.Context, requestID string, lat, lng float64) error {
-	h3Index := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, H3Resolution)
+	h3Index, err := h3.LatLngToCell(h3.LatLng{Lat: lat, Lng: lng}, H3Resolution)
+	if err != nil {
+		return fmt.Errorf("locating surge cell for %f,%f: %w", lat, lng, err)
+	}
 	return s.redis.SRem(ctx, fmt.Sprintf("zone:%s:requests", h3Index.String()), requestID).Err()
 }
 

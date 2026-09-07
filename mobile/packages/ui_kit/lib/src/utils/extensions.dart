@@ -127,19 +127,14 @@ extension UbiColorExtensions on Color {
         .toColor();
   }
 
-  /// Returns the color with modified opacity
-  Color withOpacity(double opacity) {
-    return withValues(alpha: opacity);
-  }
-
   /// Converts color to hex string
   String toHex({bool includeHash = true, bool includeAlpha = false}) {
     final buffer = StringBuffer();
     if (includeHash) buffer.write('#');
-    if (includeAlpha) buffer.write(_toHex(a.toInt()));
-    buffer.write(_toHex(r.toInt()));
-    buffer.write(_toHex(g.toInt()));
-    buffer.write(_toHex(b.toInt()));
+    if (includeAlpha) buffer.write(_toHex(alpha));
+    buffer.write(_toHex(red));
+    buffer.write(_toHex(green));
+    buffer.write(_toHex(blue));
     return buffer.toString();
   }
 

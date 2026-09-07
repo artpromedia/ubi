@@ -568,7 +568,7 @@ class UbiTheme {
 
   static final _darkNavigationBarTheme = NavigationBarThemeData(
     backgroundColor: UbiColors.cardDark,
-    indicatorColor: UbiColors.greenDark.withValues(alpha: 0.3),
+    indicatorColor: UbiColors.greenDark.withOpacity(0.3),
     surfaceTintColor: Colors.transparent,
     elevation: 0,
     height: 80,
@@ -654,7 +654,7 @@ class UbiTheme {
 
   static final _darkChipTheme = ChipThemeData(
     backgroundColor: UbiColors.gray800,
-    selectedColor: UbiColors.greenDark.withValues(alpha: 0.3),
+    selectedColor: UbiColors.greenDark.withOpacity(0.3),
     disabledColor: UbiColors.gray700,
     deleteIconColor: UbiColors.textSecondaryDark,
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

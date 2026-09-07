@@ -3,7 +3,7 @@
 /// Business logic for authentication operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Request OTP for phone number
 class RequestOtpUseCase implements UseCase<void, RequestOtpParams> {

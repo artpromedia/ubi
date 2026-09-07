@@ -211,7 +211,7 @@ class UbiConfirmationDialog extends StatelessWidget {
       case UbiDialogVariant.standard:
       default:
         return _VariantColors(
-          backgroundColor: UbiColors.ubiGreen.withValues(alpha: 0.1),
+          backgroundColor: UbiColors.ubiGreen.withOpacity(0.1),
           iconColor: UbiColors.ubiGreen,
         );
     }

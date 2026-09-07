@@ -3,8 +3,6 @@ import 'package:ubi_api_client/ubi_api_client.dart';
 import 'package:ubi_location/ubi_location.dart';
 import 'package:ubi_storage/ubi_storage.dart';
 
-import '../../features/auth/bloc/auth_bloc.dart';
-import '../../features/connectivity/bloc/connectivity_bloc.dart';
 import '../../features/driver/bloc/driver_bloc.dart';
 import '../../features/earnings/bloc/earnings_bloc.dart';
 import '../../features/navigation/bloc/navigation_bloc.dart';
@@ -49,11 +47,11 @@ Future<void> configureDependencies() async {
 
 /// Register all BLoCs
 void _registerBlocs() {
-  // Auth BLoC - singleton for app-wide auth state
-  getIt.registerLazySingleton<AuthBloc>(() => AuthBloc());
-
-  // Connectivity BLoC - singleton for network monitoring
-  getIt.registerLazySingleton<ConnectivityBloc>(() => ConnectivityBloc());
+  // NOTE: the AuthBloc and ConnectivityBloc registrations that used to live
+  // here imported features/auth/bloc/auth_bloc.dart and
+  // features/connectivity/bloc/connectivity_bloc.dart. Neither file exists in
+  // this app, and nothing else referenced either bloc, so the dangling
+  // registrations are gone rather than left to fail at import time.
 
   // Driver BLoC - singleton for online/offline status
   getIt.registerLazySingleton<DriverBloc>(() => DriverBloc());

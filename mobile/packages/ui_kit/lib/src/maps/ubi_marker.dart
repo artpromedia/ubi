@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../theme/ubi_colors.dart';
@@ -153,7 +152,7 @@ class UbiMarkerFactory {
 
     // Draw pin shadow
     paint
-      ..color = Colors.black.withValues(alpha: 0.2)
+      ..color = Colors.black.withOpacity(0.2)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     canvas.drawCircle(
       const Offset(size / 2, pinHeight - 4),
@@ -234,7 +233,7 @@ class UbiMarkerFactory {
 
     // Draw shadow
     paint
-      ..color = Colors.black.withValues(alpha: 0.3)
+      ..color = Colors.black.withOpacity(0.3)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     canvas.drawCircle(
       const Offset(size / 2, size / 2 + 2),

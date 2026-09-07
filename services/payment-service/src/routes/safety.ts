@@ -940,18 +940,20 @@ safetyRoutes.put("/emergency-contacts/:contactId", async (c) => {
   try {
     const contactId = c.req.param("contactId");
     const body = await c.req.json();
+    const userId = body.userId;
 
-    if (!contactId) {
+    if (!contactId || !userId) {
       return c.json(
         {
           success: false,
-          error: "Missing contactId parameter",
+          error: "Missing required fields: userId, contactId",
         },
         400,
       );
     }
 
     const contact = await sosEmergencyService.updateEmergencyContact(
+      userId,
       contactId,
       {
         name: body.name,
@@ -987,18 +989,19 @@ safetyRoutes.put("/emergency-contacts/:contactId", async (c) => {
 safetyRoutes.delete("/emergency-contacts/:contactId", async (c) => {
   try {
     const contactId = c.req.param("contactId");
+    const userId = c.req.query("userId");
 
-    if (!contactId) {
+    if (!contactId || !userId) {
       return c.json(
         {
           success: false,
-          error: "Missing contactId parameter",
+          error: "Missing required fields: userId (query), contactId",
         },
         400,
       );
     }
 
-    await sosEmergencyService.deleteEmergencyContact(contactId);
+    await sosEmergencyService.deleteEmergencyContact(userId, contactId);
 
     return c.json({
       success: true,

@@ -41,7 +41,10 @@ sealed class Result<T> with _$Result<T> {
   }
 
   /// Map success value
-  Result<R> map<R>(R Function(T data) mapper) {
+  ///
+  /// Named [mapValue] (rather than `map`) because freezed generates a
+  /// union-pattern-matching `map` on the sealed type.
+  Result<R> mapValue<R>(R Function(T data) mapper) {
     return when(
       success: (data) => Result.success(mapper(data)),
       failure: (failure) => Result.failure(failure),
@@ -133,7 +136,7 @@ extension FutureResultExtension<T> on Future<Result<T>> {
   /// Map success value
   Future<Result<R>> mapSuccess<R>(R Function(T data) mapper) async {
     final result = await this;
-    return result.map(mapper);
+    return result.mapValue(mapper);
   }
 
   /// Flat map success value

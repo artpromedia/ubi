@@ -1,5 +1,22 @@
 # UBI Real-Time Systems - Quick Start Guide
 
+> [!WARNING]
+> **The performance and availability figures in this document are design targets,
+> not measured results.**
+>
+> The launch-readiness audit (2026-09-05) found no benchmark, load test report or
+> staging capacity measurement backing any of them — including "100K+ concurrent
+> connections", "500K+ location updates per minute", the latency table, and the
+> "99.9% uptime SLA". "Production-ready" here describes intent, not a state that
+> has been verified.
+>
+> Per the launch gates, no launch claim is accepted from documentation alone.
+> Before any of these numbers is repeated outside engineering it needs a k6 or
+> equivalent run against staging, with the report linked here and a date. Until
+> then, treat every figure below as a hypothesis.
+>
+> Tracking: `docs/launch-readiness/current-state.md`
+
 ## What's Been Built
 
 A production-ready real-time infrastructure for UBI's super-app with:
@@ -235,7 +252,7 @@ See [docs/integration/realtime-clients.md](./docs/integration/realtime-clients.m
 
 ```typescript
 const ws = new WebSocket(
-  "wss://api.ubi.africa/ws?token=JWT&userType=rider&deviceId=web&platform=web"
+  "wss://api.ubi.africa/ws?token=JWT&userType=rider&deviceId=web&platform=web",
 );
 
 ws.onmessage = (event) => {

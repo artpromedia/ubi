@@ -3,7 +3,7 @@
 /// Business logic for ride operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Get ride fare estimates
 class GetRideEstimatesUseCase implements UseCase<List<RideEstimate>, GetRideEstimatesParams> {
@@ -124,7 +124,7 @@ class RateRideParams {
   });
 
   final String rideId;
-  final int rating;
+  final double rating;
   final String? review;
 }
 

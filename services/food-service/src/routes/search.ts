@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { cache } from "../lib/redis";
-import { CuisineType, RestaurantStatus } from "../types";
+import { CuisineType } from "../types";
 
 const searchRoutes = new Hono();
 
@@ -76,16 +76,18 @@ searchRoutes.get(
 
     const suggestions: any[] = [];
 
-    // Search restaurants by name
+    // Search restaurants by name. GAP: the Restaurant model has no lifecycle
+    // `status` column; a verified restaurant (verifiedAt set) is the closest
+    // "live/active" predicate the schema supports.
     const restaurants = await prisma.restaurant.findMany({
       where: {
-        status: RestaurantStatus.ACTIVE,
+        verifiedAt: { not: null },
         OR: [
           { name: { contains: query, mode: "insensitive" } },
           { cuisineTypes: { has: query.toUpperCase() } },
         ],
       },
-      select: { id: true, name: true, cuisineTypes: true, logo: true },
+      select: { id: true, name: true, cuisineTypes: true, imageUrl: true },
       take: limit,
     });
 
@@ -95,14 +97,14 @@ searchRoutes.get(
         id: r.id,
         name: r.name,
         subtitle: r.cuisineTypes.join(", "),
-        image: r.logo,
-      }))
+        image: r.imageUrl,
+      })),
     );
 
     // Search menu items
     const menuItems = await prisma.menuItem.findMany({
       where: {
-        isActive: true,
+        isAvailable: true,
         OR: [
           { name: { contains: query, mode: "insensitive" } },
           { description: { contains: query, mode: "insensitive" } },
@@ -111,7 +113,7 @@ searchRoutes.get(
       select: {
         id: true,
         name: true,
-        image: true,
+        imageUrl: true,
         restaurant: { select: { id: true, name: true } },
       },
       take: limit,
@@ -124,13 +126,13 @@ searchRoutes.get(
         name: item.name,
         subtitle: `at ${item.restaurant.name}`,
         restaurantId: item.restaurant.id,
-        image: item.image,
-      }))
+        image: item.imageUrl,
+      })),
     );
 
     // Search cuisine types
     const cuisineMatches = Object.values(CuisineType).filter((c) =>
-      c.toLowerCase().includes(query.toLowerCase())
+      c.toLowerCase().includes(query.toLowerCase()),
     );
 
     suggestions.push(
@@ -141,7 +143,7 @@ searchRoutes.get(
           cuisine.charAt(0) +
           cuisine.slice(1).toLowerCase().replaceAll("_", " "),
         subtitle: "Cuisine type",
-      }))
+      })),
     );
 
     // Cache for 5 minutes
@@ -151,7 +153,7 @@ searchRoutes.get(
       success: true,
       data: suggestions.slice(0, limit),
     });
-  }
+  },
 );
 
 /**
@@ -166,12 +168,13 @@ searchRoutes.get("/popular", async (c) => {
     return c.json({ success: true, data: cached });
   }
 
-  // Get popular cuisines based on order count
+  // Get popular cuisines based on order count.
+  // GAP: Restaurant has no `city` column (only `address`/lat/lng), so the
+  // `city` query param cannot filter these results; verifiedAt gates "active".
   const popularCuisines = await prisma.restaurant.groupBy({
     by: ["cuisineTypes"],
     where: {
-      status: RestaurantStatus.ACTIVE,
-      ...(city ? { city } : {}),
+      verifiedAt: { not: null },
     },
     _count: { id: true },
     orderBy: { _count: { id: "desc" } },
@@ -181,31 +184,30 @@ searchRoutes.get("/popular", async (c) => {
   // Get trending restaurants
   const trendingRestaurants = await prisma.restaurant.findMany({
     where: {
-      status: RestaurantStatus.ACTIVE,
-      ...(city ? { city } : {}),
+      verifiedAt: { not: null },
     },
-    orderBy: [{ averageRating: "desc" }, { totalOrders: "desc" }],
+    orderBy: [{ rating: "desc" }, { totalOrders: "desc" }],
     select: {
       id: true,
       name: true,
       cuisineTypes: true,
-      averageRating: true,
-      logo: true,
+      rating: true,
+      imageUrl: true,
     },
     take: 5,
   });
 
-  // Get popular items
+  // Get popular items.
+  // GAP: MenuItem has no `isPopular` column and no restaurant.city relation
+  // filter, so "popular" degrades to available items.
   const popularItems = await prisma.menuItem.findMany({
     where: {
-      isActive: true,
-      isPopular: true,
-      ...(city ? { restaurant: { city } } : {}),
+      isAvailable: true,
     },
     select: {
       id: true,
       name: true,
-      image: true,
+      imageUrl: true,
       restaurant: { select: { id: true, name: true } },
     },
     take: 5,
@@ -246,7 +248,7 @@ searchRoutes.get("/nearby-categories", async (c) => {
         success: false,
         error: { code: "VALIDATION_ERROR", message: "Location required" },
       },
-      400
+      400,
     );
   }
 
@@ -306,9 +308,9 @@ searchRoutes.get("/filters", async (c) => {
     return c.json({ success: true, data: cached });
   }
 
-  const where = city
-    ? { city, status: RestaurantStatus.ACTIVE }
-    : { status: RestaurantStatus.ACTIVE };
+  // GAP: Restaurant has no `city` column, so the `city` query param cannot
+  // filter these options; verifiedAt gates "active".
+  const where = { verifiedAt: { not: null } };
 
   // Get all available cuisines
   const cuisines = await prisma.restaurant.findMany({
@@ -318,17 +320,13 @@ searchRoutes.get("/filters", async (c) => {
   });
 
   const allCuisineTypes = cuisines.flatMap(
-    (r: (typeof cuisines)[number]) => r.cuisineTypes
+    (r: (typeof cuisines)[number]) => r.cuisineTypes,
   );
   const uniqueCuisines = [...new Set<string>(allCuisineTypes)];
 
-  // Get price range distribution
-  const priceRanges = await prisma.restaurant.groupBy({
-    by: ["priceRange"],
-    where,
-    _count: { id: true },
-  });
-
+  // GAP: Restaurant has no `priceRange` column, so a price-range distribution
+  // cannot be computed from the current schema. The buckets are still returned
+  // (for the client filter UI) with a zero count until the column exists.
   const filters = {
     cuisines: uniqueCuisines.map((c: string) => ({
       value: c,
@@ -337,10 +335,7 @@ searchRoutes.get("/filters", async (c) => {
     priceRanges: [1, 2, 3, 4].map((pr) => ({
       value: pr,
       label: "₦".repeat(pr),
-      count:
-        priceRanges.find(
-          (p: (typeof priceRanges)[number]) => p.priceRange === pr
-        )?._count?.id || 0,
+      count: 0,
     })),
     sortOptions: [
       { value: "relevance", label: "Relevance" },
@@ -382,19 +377,20 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
 
   const offset = (page - 1) * limit;
 
-  // Build restaurant search
+  // Build restaurant search.
+  // GAP: Restaurant has no `city`/`priceRange`/`status` columns, so those
+  // filters cannot be applied to the non-location (Prisma) branch; verifiedAt
+  // stands in for "active" and `rating` for the aspirational `averageRating`.
   const restaurantWhere: any = {
-    status: RestaurantStatus.ACTIVE,
+    verifiedAt: { not: null },
     OR: [
       { name: { contains: query, mode: "insensitive" } },
       { description: { contains: query, mode: "insensitive" } },
     ],
   };
 
-  if (city) restaurantWhere.city = city;
   if (cuisine) restaurantWhere.cuisineTypes = { has: cuisine };
-  if (priceRange) restaurantWhere.priceRange = priceRange;
-  if (minRating) restaurantWhere.averageRating = { gte: minRating };
+  if (minRating) restaurantWhere.rating = { gte: minRating };
 
   // Location-based search
   let restaurants: any[] = [];
@@ -462,14 +458,14 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
     // Search without location
     restaurants = await prisma.restaurant.findMany({
       where: restaurantWhere,
-      orderBy: [{ averageRating: "desc" }, { totalOrders: "desc" }],
+      orderBy: [{ rating: "desc" }, { totalOrders: "desc" }],
       skip: offset,
       take: limit,
     });
 
     menuItems = await prisma.menuItem.findMany({
       where: {
-        isActive: true,
+        isAvailable: true,
         OR: [
           { name: { contains: query, mode: "insensitive" } },
           { description: { contains: query, mode: "insensitive" } },
@@ -477,13 +473,15 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
       },
       include: {
         restaurant: {
-          select: { id: true, name: true, status: true },
+          select: { id: true, name: true, verifiedAt: true },
         },
       },
       take: limit,
     });
 
-    menuItems = menuItems.filter((item) => item.restaurant.status === "ACTIVE");
+    // GAP: no restaurant `status` column; only surface items from verified
+    // (live) restaurants.
+    menuItems = menuItems.filter((item) => item.restaurant.verifiedAt !== null);
   }
 
   // Filter by isOpen if requested

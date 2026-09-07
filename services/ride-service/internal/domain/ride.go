@@ -1,292 +1,173 @@
-// Package domain contains the core business entities and rules for the ride service.
 package domain
 
 import (
+	"math"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// RideStatus represents the current state of a ride
-type RideStatus string
-
-const (
-	RideStatusPending    RideStatus = "PENDING"
-	RideStatusSearching  RideStatus = "SEARCHING"
-	RideStatusMatched    RideStatus = "MATCHED"
-	RideStatusAccepted   RideStatus = "ACCEPTED"
-	RideStatusArriving   RideStatus = "ARRIVING"
-	RideStatusArrived    RideStatus = "ARRIVED"
-	RideStatusInProgress RideStatus = "IN_PROGRESS"
-	RideStatusCompleted  RideStatus = "COMPLETED"
-	RideStatusCancelled  RideStatus = "CANCELLED"
-)
-
-// RideType represents the type of ride service
-type RideType string
-
-const (
-	RideTypeStandard RideType = "STANDARD"
-	RideTypePremium  RideType = "PREMIUM"
-	RideTypeXL       RideType = "XL"
-	RideTypeBoda     RideType = "BODA"
-	RideTypeTricycle RideType = "TRICYCLE"
-)
-
-// PaymentMethod represents the payment method for a ride
-type PaymentMethod string
-
-const (
-	PaymentMethodCash        PaymentMethod = "CASH"
-	PaymentMethodWallet      PaymentMethod = "WALLET"
-	PaymentMethodMobileMoney PaymentMethod = "MOBILE_MONEY"
-	PaymentMethodCard        PaymentMethod = "CARD"
-)
-
-// Currency represents supported currencies
-type Currency string
-
-const (
-	CurrencyNGN Currency = "NGN"
-	CurrencyKES Currency = "KES"
-	CurrencyGHS Currency = "GHS"
-	CurrencyUGX Currency = "UGX"
-	CurrencyTZS Currency = "TZS"
-	CurrencyRWF Currency = "RWF"
-	CurrencyZAR Currency = "ZAR"
-	CurrencyUSD Currency = "USD"
-)
-
-// Location represents a geographic coordinate with optional metadata
-type Location struct {
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-	Address   string  `json:"address,omitempty"`
-	Name      string  `json:"name,omitempty"`
-	PlaceID   string  `json:"place_id,omitempty"`
-	H3Cell    string  `json:"h3_cell,omitempty"` // H3 grid cell for indexing
+// Money is an integer amount in the minor unit of an explicit currency. There
+// is no float anywhere near a fare, and no amount travels without the currency
+// it is denominated in — both from city config, never from a constant here.
+type Money struct {
+	AmountMinor int64  `json:"amountMinor"`
+	Currency    string `json:"currency"`
 }
 
-// RouteInfo contains route details between pickup and dropoff
-type RouteInfo struct {
-	DistanceMeters   int64   `json:"distance_meters"`
-	DurationSeconds  int64   `json:"duration_seconds"`
-	Polyline         string  `json:"polyline,omitempty"`
-	TrafficDuration  int64   `json:"traffic_duration_seconds,omitempty"`
+// Place is a coordinate with an optional human label.
+type Place struct {
+	Lat     float64 `json:"lat"`
+	Lng     float64 `json:"lng"`
+	Address string  `json:"address,omitempty"`
 }
 
-// PriceBreakdown contains detailed pricing information
-type PriceBreakdown struct {
-	BaseFare         int64   `json:"base_fare"`
-	DistanceFare     int64   `json:"distance_fare"`
-	TimeFare         int64   `json:"time_fare"`
-	SurgeMultiplier  float64 `json:"surge_multiplier"`
-	SurgeAmount      int64   `json:"surge_amount"`
-	BookingFee       int64   `json:"booking_fee"`
-	TollFees         int64   `json:"toll_fees"`
-	PromoDiscount    int64   `json:"promo_discount"`
-	Total            int64   `json:"total"`
-	Currency         Currency `json:"currency"`
-	DriverEarnings   int64   `json:"driver_earnings"`
-	PlatformFee      int64   `json:"platform_fee"`
-}
-
-// Ride represents a ride request in the system
-type Ride struct {
-	ID              uuid.UUID      `json:"id"`
-	RiderID         uuid.UUID      `json:"rider_id"`
-	DriverID        *uuid.UUID     `json:"driver_id,omitempty"`
-	VehicleID       *uuid.UUID     `json:"vehicle_id,omitempty"`
-	
-	// Locations
-	PickupLocation  Location       `json:"pickup_location"`
-	DropoffLocation Location       `json:"dropoff_location"`
-	Stops           []Location     `json:"stops,omitempty"`
-	CurrentLocation *Location      `json:"current_location,omitempty"`
-	
-	// Ride details
-	Type            RideType       `json:"type"`
-	Status          RideStatus     `json:"status"`
-	PaymentMethod   PaymentMethod  `json:"payment_method"`
-	
-	// Route & Pricing
-	Route           *RouteInfo     `json:"route,omitempty"`
-	Price           *PriceBreakdown `json:"price,omitempty"`
-	
-	// Scheduling
-	ScheduledFor    *time.Time     `json:"scheduled_for,omitempty"`
-	
-	// Timestamps
-	RequestedAt     time.Time      `json:"requested_at"`
-	AcceptedAt      *time.Time     `json:"accepted_at,omitempty"`
-	ArrivedAt       *time.Time     `json:"arrived_at,omitempty"`
-	StartedAt       *time.Time     `json:"started_at,omitempty"`
-	CompletedAt     *time.Time     `json:"completed_at,omitempty"`
-	CancelledAt     *time.Time     `json:"cancelled_at,omitempty"`
-	
-	// Cancellation
-	CancellationReason string       `json:"cancellation_reason,omitempty"`
-	CancelledBy        *uuid.UUID   `json:"cancelled_by,omitempty"`
-	
-	// Ratings
-	RiderRating     *float32       `json:"rider_rating,omitempty"`
-	DriverRating    *float32       `json:"driver_rating,omitempty"`
-	
-	// Promo code
-	PromoCode       string         `json:"promo_code,omitempty"`
-	
-	// Metadata
-	Metadata        map[string]any `json:"metadata,omitempty"`
-	
-	// Audit
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
-}
-
-// RideRequest represents a request to create a new ride
-type RideRequest struct {
-	RiderID         uuid.UUID     `json:"rider_id" validate:"required"`
-	PickupLocation  Location      `json:"pickup_location" validate:"required"`
-	DropoffLocation Location      `json:"dropoff_location" validate:"required"`
-	Stops           []Location    `json:"stops"`
-	Type            RideType      `json:"type" validate:"required"`
-	PaymentMethod   PaymentMethod `json:"payment_method" validate:"required"`
-	ScheduledFor    *time.Time    `json:"scheduled_for"`
-	PromoCode       string        `json:"promo_code"`
-	Notes           string        `json:"notes"`
-}
-
-// DriverOffer represents a driver's offer to fulfill a ride
-type DriverOffer struct {
-	DriverID       uuid.UUID  `json:"driver_id"`
-	RideID         uuid.UUID  `json:"ride_id"`
-	VehicleID      uuid.UUID  `json:"vehicle_id"`
-	ETASeconds     int64      `json:"eta_seconds"`
-	Distance       float64    `json:"distance_meters"`
-	AcceptedAt     time.Time  `json:"accepted_at"`
-	ExpiresAt      time.Time  `json:"expires_at"`
-}
-
-// CancellationPolicy defines cancellation rules
-type CancellationPolicy struct {
-	FreeCancellationWindowSeconds int64 `json:"free_cancellation_window_seconds"`
-	CancellationFee               int64 `json:"cancellation_fee"`
-	DriverNoShowThresholdSeconds  int64 `json:"driver_no_show_threshold_seconds"`
-}
-
-// NewRide creates a new ride from a request
-func NewRide(req *RideRequest) *Ride {
-	now := time.Now().UTC()
-	return &Ride{
-		ID:              uuid.New(),
-		RiderID:         req.RiderID,
-		PickupLocation:  req.PickupLocation,
-		DropoffLocation: req.DropoffLocation,
-		Stops:           req.Stops,
-		Type:            req.Type,
-		Status:          RideStatusPending,
-		PaymentMethod:   req.PaymentMethod,
-		ScheduledFor:    req.ScheduledFor,
-		PromoCode:       req.PromoCode,
-		RequestedAt:     now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		Metadata:        make(map[string]any),
-	}
-}
-
-// CanTransitionTo checks if a status transition is valid
-func (r *Ride) CanTransitionTo(newStatus RideStatus) bool {
-	validTransitions := map[RideStatus][]RideStatus{
-		RideStatusPending:    {RideStatusSearching, RideStatusCancelled},
-		RideStatusSearching:  {RideStatusMatched, RideStatusCancelled},
-		RideStatusMatched:    {RideStatusAccepted, RideStatusSearching, RideStatusCancelled},
-		RideStatusAccepted:   {RideStatusArriving, RideStatusCancelled},
-		RideStatusArriving:   {RideStatusArrived, RideStatusCancelled},
-		RideStatusArrived:    {RideStatusInProgress, RideStatusCancelled},
-		RideStatusInProgress: {RideStatusCompleted, RideStatusCancelled},
-		RideStatusCompleted:  {},
-		RideStatusCancelled:  {},
-	}
-	
-	allowed, exists := validTransitions[r.Status]
-	if !exists {
+// Valid reports whether a coordinate is on Earth, and not the null island a
+// missing JSON field decodes to.
+func (p Place) Valid() bool {
+	if math.IsNaN(p.Lat) || math.IsNaN(p.Lng) || math.IsInf(p.Lat, 0) || math.IsInf(p.Lng, 0) {
 		return false
 	}
-	
-	for _, status := range allowed {
-		if status == newStatus {
-			return true
-		}
+	if p.Lat < -90 || p.Lat > 90 || p.Lng < -180 || p.Lng > 180 {
+		return false
 	}
-	return false
+	return p.Lat != 0 || p.Lng != 0
 }
 
-// UpdateStatus updates the ride status with timestamp tracking
-func (r *Ride) UpdateStatus(newStatus RideStatus) error {
-	if !r.CanTransitionTo(newStatus) {
-		return ErrInvalidStatusTransition
-	}
-	
-	now := time.Now().UTC()
-	r.Status = newStatus
-	r.UpdatedAt = now
-	
-	switch newStatus {
-	case RideStatusArrived:
-		r.ArrivedAt = &now
-	case RideStatusInProgress:
-		r.StartedAt = &now
-	case RideStatusCompleted:
-		r.CompletedAt = &now
-	case RideStatusCancelled:
-		r.CancelledAt = &now
-	}
-	
-	return nil
+// FareBreakdown is what a fare is made of. It is stored with the quote so a
+// completed ride can be explained line by line without recomputing anything.
+type FareBreakdown struct {
+	BaseMinor         int64 `json:"baseMinor"`
+	DistanceMinor     int64 `json:"distanceMinor"`
+	TimeMinor         int64 `json:"timeMinor"`
+	BookingFeeMinor   int64 `json:"bookingFeeMinor"`
+	MinFareTopUpMinor int64 `json:"minFareTopUpMinor"`
+	TotalMinor        int64 `json:"totalMinor"`
 }
 
-// AssignDriver assigns a driver and vehicle to the ride
-func (r *Ride) AssignDriver(driverID, vehicleID uuid.UUID) error {
-	if r.Status != RideStatusSearching && r.Status != RideStatusMatched {
-		return ErrInvalidStatusTransition
-	}
-	
-	now := time.Now().UTC()
-	r.DriverID = &driverID
-	r.VehicleID = &vehicleID
-	r.Status = RideStatusAccepted
-	r.AcceptedAt = &now
-	r.UpdatedAt = now
-	
-	return nil
+// Quote is a priced, signed offer to carry a rider. Every field except the
+// requested geometry is computed by the server.
+type Quote struct {
+	ID              uuid.UUID     `json:"quoteId"`
+	CityID          string        `json:"cityId"`
+	ConfigVersion   int           `json:"configVersion"`
+	RiderID         uuid.UUID     `json:"-"`
+	VehicleClass    string        `json:"vehicleClass"`
+	Pickup          Place         `json:"pickup"`
+	Dropoff         Place         `json:"dropoff"`
+	Stops           []Place       `json:"stops"`
+	DistanceMeters  int64         `json:"distanceMeters"`
+	DurationSeconds int64         `json:"durationSeconds"`
+	FareMinor       int64         `json:"fareMinor"`
+	Currency        string        `json:"currency"`
+	Breakdown       FareBreakdown `json:"breakdown"`
+	ExpiresAt       time.Time     `json:"expiresAt"`
+	Signature       string        `json:"signature"`
+	ConsumedBy      *uuid.UUID    `json:"-"`
 }
 
-// Cancel cancels the ride with a reason
-func (r *Ride) Cancel(cancelledBy uuid.UUID, reason string) error {
-	if r.Status == RideStatusCompleted || r.Status == RideStatusCancelled {
-		return ErrRideAlreadyEnded
-	}
-	
-	now := time.Now().UTC()
-	r.Status = RideStatusCancelled
-	r.CancelledBy = &cancelledBy
-	r.CancellationReason = reason
-	r.CancelledAt = &now
-	r.UpdatedAt = now
-	
-	return nil
+// Expired reports whether the quote may no longer be used.
+func (q *Quote) Expired(now time.Time) bool { return !now.Before(q.ExpiresAt) }
+
+// Ride is one ride, in a state of the rider machine from
+// contracts/state-machines.json. `Version` is the aggregate version used for
+// ETags and for the outbox from/to versions.
+type Ride struct {
+	ID               uuid.UUID  `json:"rideId"`
+	CityID           string     `json:"cityId"`
+	ConfigVersion    int        `json:"configVersion"`
+	QuoteID          uuid.UUID  `json:"quoteId"`
+	RiderID          uuid.UUID  `json:"riderId"`
+	DriverID         *uuid.UUID `json:"driverId,omitempty"`
+	State            string     `json:"state"`
+	Version          int        `json:"version"`
+	Active           bool       `json:"active"`
+	VehicleClass     string     `json:"vehicleClass"`
+	PaymentMethodID  string     `json:"paymentMethodId"`
+	Pickup           Place      `json:"pickup"`
+	Dropoff          Place      `json:"dropoff"`
+	QuotedFareMinor  int64      `json:"quotedFareMinor"`
+	FinalFareMinor   *int64     `json:"finalFareMinor,omitempty"`
+	WaitFeeMinor     int64      `json:"waitFeeMinor"`
+	Currency         string     `json:"currency"`
+	PinAttempts      int        `json:"pinAttempts"`
+	PinLocked        bool       `json:"pinLocked"`
+	PinVerifiedAt    *time.Time `json:"pinVerifiedAt,omitempty"`
+	DispatchRing     int        `json:"dispatchRing"`
+	DispatchRounds   int        `json:"dispatchRounds"`
+	AssignedAt       *time.Time `json:"assignedAt,omitempty"`
+	ArrivedAt        *time.Time `json:"arrivedAt,omitempty"`
+	StartedAt        *time.Time `json:"startedAt,omitempty"`
+	CompletedAt      *time.Time `json:"completedAt,omitempty"`
+	CancelledAt      *time.Time `json:"cancelledAt,omitempty"`
+	CancelledByRole  string     `json:"cancelledByRole,omitempty"`
+	CancelReasonCode string     `json:"cancelReasonCode,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
 }
 
-// IsActive returns true if the ride is in an active state
-func (r *Ride) IsActive() bool {
-	return r.Status != RideStatusCompleted && r.Status != RideStatusCancelled
+// Offer states. Every offer and every response is persisted, which is what the
+// ops timeline (board 4b) reads; none of this lives only in a goroutine.
+const (
+	OfferOffered  = "offered"
+	OfferAccepted = "accepted"
+	OfferDeclined = "declined"
+	OfferExpired  = "expired"
+)
+
+// Offer is one dispatch of one ride to one driver.
+type Offer struct {
+	ID             uuid.UUID  `json:"offerId"`
+	RideID         uuid.UUID  `json:"rideId"`
+	DriverID       uuid.UUID  `json:"driverId"`
+	Ring           int        `json:"ring"`
+	RadiusMeters   int        `json:"radiusMeters"`
+	DistanceMeters float64    `json:"distanceMeters"`
+	ETASeconds     int64      `json:"etaSeconds"`
+	State          string     `json:"state"`
+	Reason         string     `json:"reason,omitempty"`
+	ExpiresAt      time.Time  `json:"expiresAt"`
+	RespondedAt    *time.Time `json:"respondedAt,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
 }
 
-// WaitTimeSeconds returns how long the rider has been waiting
-func (r *Ride) WaitTimeSeconds() int64 {
-	if r.StartedAt != nil {
-		return int64(r.StartedAt.Sub(r.RequestedAt).Seconds())
-	}
-	return int64(time.Since(r.RequestedAt).Seconds())
+// Live reports whether a driver could still accept this offer.
+func (o *Offer) Live(now time.Time) bool {
+	return o.State == OfferOffered && now.Before(o.ExpiresAt)
+}
+
+// AcceptResult is the closed set of answers to an accept. Exactly one of these
+// comes back, and under concurrency exactly one caller gets AcceptOK.
+type AcceptResult string
+
+const (
+	AcceptOK              AcceptResult = "ok"
+	AcceptExpired         AcceptResult = "expired"
+	AcceptAlreadyAssigned AcceptResult = "already_assigned"
+)
+
+// CancellationReasons is the closed set of reason codes a cancellation may
+// carry. A driver must supply one (slice 02 guard); `unsafe` routes the ride
+// into the safety flow rather than a plain cancellation.
+var CancellationReasons = map[string]struct{}{
+	"rider_no_show":      {},
+	"rider_unreachable":  {},
+	"wrong_pickup":       {},
+	"vehicle_issue":      {},
+	"traffic":            {},
+	"too_far":            {},
+	"unsafe":             {},
+	"changed_mind":       {},
+	"found_another_ride": {},
+	"driver_late":        {},
+	"price_too_high":     {},
+	"other":              {},
+}
+
+// ValidCancellationReason reports whether a reason code is one the platform
+// knows. An unknown code is refused rather than stored, so the ops timeline
+// cannot fill up with free text.
+func ValidCancellationReason(code string) bool {
+	_, ok := CancellationReasons[code]
+	return ok
 }

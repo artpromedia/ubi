@@ -2,74 +2,95 @@ import '../../core/result/result.dart';
 import '../entities/ride.dart';
 import '../entities/location.dart';
 
-/// Ride repository interface
+/// Ride repository interface.
+///
+/// The contract is aligned with the ride use cases: fare estimation, ride
+/// lifecycle, live tracking streams, and place search. Implementations live
+/// in the data layer.
 abstract class RideRepository {
-  /// Get ride estimates for a route
+  /// Get ride estimates for a route, optionally filtered by vehicle type.
   Future<Result<List<RideEstimate>>> getEstimates({
     required GeoLocation pickup,
     required GeoLocation dropoff,
+    VehicleType? vehicleType,
   });
 
-  /// Request a new ride
-  Future<Result<Ride>> requestRide(RideRequest request);
+  /// Request a new ride.
+  Future<Result<Ride>> requestRide({required RideRequest request});
 
-  /// Get ride by ID
+  /// Get ride by ID.
   Future<Result<Ride>> getRideById(String rideId);
 
-  /// Get current active ride
-  Future<Result<Ride?>> getCurrentRide();
+  /// Get the current active ride, or null when there is none.
+  Future<Result<Ride?>> getActiveRide();
 
-  /// Get ride history
+  /// Get ride history.
   Future<Result<List<Ride>>> getRideHistory({
     int page = 1,
     int limit = 20,
   });
 
-  /// Cancel a ride
+  /// Cancel a ride.
   Future<Result<Ride>> cancelRide(
     String rideId, {
     CancellationReason? reason,
     String? note,
   });
 
-  /// Rate a completed ride
-  Future<Result<Ride>> rateRide(
-    String rideId, {
+  /// Rate a completed ride.
+  Future<Result<Ride>> rateRide({
+    required String rideId,
     required double rating,
     String? review,
   });
 
-  /// Update ride tip
-  Future<Result<Ride>> updateTip(String rideId, double tipAmount);
-
-  /// Get driver location stream
-  Stream<Result<GeoLocation>> getDriverLocationStream(String rideId);
-
-  /// Get ride status stream
-  Stream<Result<Ride>> getRideStatusStream(String rideId);
-
-  /// Get saved places
-  Future<Result<List<SavedPlace>>> getSavedPlaces();
-
-  /// Add saved place
-  Future<Result<SavedPlace>> addSavedPlace(SavedPlace place);
-
-  /// Remove saved place
-  Future<Result<void>> removeSavedPlace(String placeId);
-
-  /// Search places
-  Future<Result<List<PlaceSearchResult>>> searchPlaces(
-    String query, {
-    GeoLocation? nearLocation,
+  /// Add a tip to a ride.
+  Future<Result<Ride>> addTip({
+    required String rideId,
+    required double amount,
   });
 
-  /// Get place details
+  /// Get nearby drivers for a location, optionally filtered by vehicle type.
+  Future<Result<List<Driver>>> getNearbyDrivers({
+    required GeoLocation location,
+    VehicleType? vehicleType,
+  });
+
+  /// Watch ride updates in real time.
+  Stream<Ride> watchRide(String rideId);
+
+  /// Watch driver location updates in real time.
+  Stream<GeoLocation> watchDriverLocation(String rideId);
+
+  /// Get saved places.
+  Future<Result<List<SavedPlace>>> getSavedPlaces();
+
+  /// Add a saved place.
+  Future<Result<SavedPlace>> addSavedPlace(SavedPlace place);
+
+  /// Remove a saved place.
+  Future<Result<void>> removeSavedPlace(String placeId);
+
+  /// Search places by free-text query.
+  Future<Result<List<PlaceSearchResult>>> searchPlaces({
+    required String query,
+    GeoLocation? location,
+  });
+
+  /// Autocomplete places for a search input.
+  Future<Result<List<PlaceSearchResult>>> autocompletePlaces({
+    required String input,
+    required String sessionToken,
+    GeoLocation? location,
+  });
+
+  /// Get place details.
   Future<Result<PlaceDetails>> getPlaceDetails(String placeId);
 
-  /// Reverse geocode location
-  Future<Result<String>> reverseGeocode(GeoLocation location);
+  /// Reverse geocode a location to place details.
+  Future<Result<PlaceDetails>> reverseGeocode(GeoLocation location);
 
-  /// Get route polyline
+  /// Get route polyline between two points.
   Future<Result<List<GeoLocation>>> getRoutePolyline(
     GeoLocation pickup,
     GeoLocation dropoff,

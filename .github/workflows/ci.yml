@@ -6,9 +6,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master, main, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [master, main, develop]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -213,7 +213,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
           cache: true
 
       - name: Run golangci-lint (ride-service)
@@ -234,7 +234,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [ride-service, delivery-service]
+        service: [ride-service, delivery-service, location-service]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -242,7 +242,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
           cache: true
 
       - name: Build ${{ matrix.service }}
@@ -259,9 +259,30 @@ jobs:
   # DATABASE
   # ===========================================
   db-check:
-    name: Database Schema Check
+    name: Database Schema & Migration Chain
     needs: setup
     runs-on: ubuntu-latest
+    # A schema that validates is not the same as a migration chain that runs.
+    # This job provisions an EMPTY database from the migrations, which is the
+    # Phase 0 database exit gate, and then checks the chain has not drifted
+    # from the schema.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_ci_password
+          POSTGRES_DB: ubi_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ubi:ubi_ci_password@localhost:5432/ubi_ci
+      SHADOW_DATABASE_URL: postgresql://ubi:ubi_ci_password@localhost:5432/ubi_ci_shadow
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -283,15 +304,150 @@ jobs:
       - name: Validate Prisma schema
         run: pnpm --filter @ubi/database exec prisma validate
 
+      - name: Provision an empty database from the migration chain
+        run: pnpm --filter @ubi/database exec prisma migrate deploy
+
+      - name: Fail on schema drift
+        # migrate diff between what the migrations produce and what the schema
+        # declares must be empty; --exit-code makes a non-empty diff fail.
+        run: |
+          pnpm --filter @ubi/database exec prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --exit-code
+
       - name: Generate Prisma client
         run: pnpm --filter @ubi/database exec prisma generate
+
+      - name: Assert the ledger invariant is enforced by the database
+        # The double-entry rule is a deferred constraint trigger, not an
+        # application convention. If this ever stops failing, the ledger has
+        # silently become unguarded.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO wallets (id, owner_type, owner_id, currency, tier, version, created_at, updated_at)
+            VALUES ('ci_w','user','ci_user','NGN','tier1',1,now(),now());"
+          if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+                BEGIN;
+                INSERT INTO journal_entries (id, kind, reference, occurred_at, created_at)
+                VALUES ('ci_je','test','ci', now(), now());
+                INSERT INTO journal_lines (id, entry_id, account, wallet_id, amount_minor, currency, created_at)
+                VALUES ('ci_jl','ci_je','wallet','ci_w',-100,'NGN',now());
+                COMMIT;"; then
+            echo "FAIL: an unbalanced journal entry was committed"
+            exit 1
+          fi
+          echo "OK: unbalanced journal entry refused by the database"
+
+  contracts:
+    name: Contract Validation
+    needs: setup
+    runs-on: ubuntu-latest
+    # Guards the two contract failures that are invisible on reading: a
+    # duplicate top-level YAML key (which silently discards the earlier block)
+    # and a $ref that does not resolve.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate OpenAPI documents and state machines
+        run: node tooling/scripts/validate-contracts.mjs
+
+      - name: Assert the generated state machines match the contract
+        # codegen must be a no-op on a clean tree; if it is not, the committed
+        # code has drifted from contracts/state-machines.json.
+        run: |
+          pnpm --filter @ubi/contracts codegen
+          git diff --exit-code packages/contracts/src/state-machines/machines.generated.ts
+
+  # ===========================================
+  # MOBILE (FLUTTER)
+  # ===========================================
+  mobile:
+    name: Flutter Analyze & Test
+    needs: setup
+    runs-on: ubuntu-latest
+    # The audit found CI does not build or test either Flutter app, so nothing
+    # in mobile/ has ever been gated. This job analyses and tests both apps and
+    # the shared Dart packages.
+    #
+    # continue-on-error is set ONLY for the initial adoption: mobile/ has known
+    # analysis failures today (rider_app dependency injection, repository and
+    # use-case signature mismatches). Remove it — and add `mobile` to
+    # ci-success below — as soon as the baseline is clean, otherwise this job
+    # reports green while proving nothing.
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Report toolchain
+        run: flutter --version
+
+      - name: Resolve dependencies
+        working-directory: mobile
+        run: |
+          for pkg in packages/* apps/*; do
+            if [ -f "$pkg/pubspec.yaml" ]; then
+              echo "::group::pub get $pkg"
+              (cd "$pkg" && flutter pub get)
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Analyze
+        working-directory: mobile
+        run: |
+          status=0
+          for pkg in packages/* apps/*; do
+            if [ -f "$pkg/pubspec.yaml" ]; then
+              echo "::group::analyze $pkg"
+              (cd "$pkg" && flutter analyze) || status=1
+              echo "::endgroup::"
+            fi
+          done
+          exit $status
+
+      - name: Test
+        working-directory: mobile
+        run: |
+          status=0
+          for pkg in packages/* apps/*; do
+            if [ -d "$pkg/test" ]; then
+              echo "::group::test $pkg"
+              (cd "$pkg" && flutter test) || status=1
+              echo "::endgroup::"
+            fi
+          done
+          exit $status
 
   # ===========================================
   # FINAL STATUS CHECK
   # ===========================================
   ci-success:
     name: CI Success
-    needs: [build, test, go-build, db-check]
+    needs: [build, test, go-build, db-check, contracts]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -300,7 +456,8 @@ jobs:
           if [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.go-build.result }}" != "success" ] || \
-             [ "${{ needs.db-check.result }}" != "success" ]; then
+             [ "${{ needs.db-check.result }}" != "success" ] || \
+             [ "${{ needs.contracts.result }}" != "success" ]; then
             echo "One or more jobs failed"
             exit 1
           fi

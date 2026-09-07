@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
+import '../../../../core/router/app_router.dart';
 
-/// Registration page for new drivers
+/// Registration page for new drivers.
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
+  const RegisterPage({super.key, this.cities = const <String>[]});
+
+  /// Cities UBI operates in, supplied by the caller from the server. Empty
+  /// until they have been fetched — the field is then disabled and says so,
+  /// rather than offering a market that may not exist.
+  final List<String> cities;
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -21,15 +26,11 @@ class _RegisterPageState extends State<RegisterPage> {
 
   bool _isLoading = false;
   bool _acceptedTerms = false;
-  String _selectedCity = 'Nairobi';
-
-  final List<String> _cities = [
-    'Nairobi',
-    'Mombasa',
-    'Kisumu',
-    'Nakuru',
-    'Eldoret',
-  ];
+  /// The city the driver signs up in. Chosen from the cities the server says
+  /// UBI operates in — the app used to ship a fixed Kenyan list with Nairobi
+  /// preselected (CLAUDE.md rule 12), which told every applicant, in every
+  /// market, that they were in Kenya.
+  String? _selectedCity;
 
   @override
   void dispose() {
@@ -216,20 +217,25 @@ class _RegisterPageState extends State<RegisterPage> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _selectedCity,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.location_city),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.location_city),
+                    hintText: widget.cities.isEmpty
+                        ? 'Loading cities...'
+                        : 'Select your city',
                   ),
-                  items: _cities
+                  items: widget.cities
                       .map((city) => DropdownMenuItem(
                             value: city,
                             child: Text(city),
                           ))
                       .toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedCity = value!;
-                    });
-                  },
+                  onChanged: widget.cities.isEmpty
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _selectedCity = value;
+                          });
+                        },
                 ),
                 const SizedBox(height: 24),
 

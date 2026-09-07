@@ -131,14 +131,14 @@ class UbiDriverMarker {
     // Draw outer ring for selected/nearby state
     if (isSelected || isNearby) {
       paint.color = isSelected
-          ? UbiColors.ubiGreen.withValues(alpha: 0.3)
-          : UbiColors.ubiGreen.withValues(alpha: 0.15);
+          ? UbiColors.ubiGreen.withOpacity(0.3)
+          : UbiColors.ubiGreen.withOpacity(0.15);
       canvas.drawCircle(center, 26, paint);
     }
 
     // Draw shadow
     paint
-      ..color = Colors.black.withValues(alpha: 0.25)
+      ..color = Colors.black.withOpacity(0.25)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
     canvas.drawCircle(Offset(center.dx, center.dy + 2), 18, paint);
 

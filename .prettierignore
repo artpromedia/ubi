@@ -1,0 +1,18 @@
+# Build output and dependencies
+node_modules
+dist
+.next
+.turbo
+coverage
+build
+
+# Generated code (owned by their generators, not hand-formatted)
+**/*.g.dart
+**/*.freezed.dart
+**/*.config.dart
+**/*.mocks.dart
+packages/database/prisma/migrations
+pnpm-lock.yaml
+
+# Vendored verbatim from the external design handoff — kept byte-for-byte
+docs/launch-readiness/handoff

@@ -161,7 +161,7 @@ splitFareRoutes.get("/rides/:id/split", async (c) => {
 
   try {
     // Find split by ride ID
-    const { prisma } = await import("../lib/prisma");
+    const { prisma } = await import("../lib/prisma.js");
     const split = await prisma.fareSplit.findFirst({
       where: { rideId },
       orderBy: { createdAt: "desc" },
@@ -605,7 +605,7 @@ splitFareRoutes.get("/splits/public/:token", async (c) => {
   const token = c.req.param("token");
 
   try {
-    const { prisma } = await import("../lib/prisma");
+    const { prisma } = await import("../lib/prisma.js");
 
     // Find participant by token
     const participant = await prisma.fareSplitParticipant.findFirst({

@@ -2,7 +2,10 @@
  * Payment Services Index
  * UBI Payment System
  *
- * Exports all payment services for use across the application.
+ * Exports the LAUNCH payment services. Deferred neo-bank fintech, loyalty,
+ * B2B, ML, offline and driver-experience services are quarantined out of the
+ * build (see ../../tsconfig.json "exclude" and ../../QUARANTINE.md) and are
+ * intentionally NOT re-exported here.
  */
 
 // Core Services
@@ -18,17 +21,14 @@ export { MoMoService as MomoService } from "../providers/momo.service";
 export { MpesaService } from "../providers/mpesa.service";
 export { PaystackService } from "../providers/paystack.service";
 
-// Payout & Settlement Services
+// Payout Services
 export {
   PayoutService,
   createPayoutService,
   getPayoutService,
 } from "./payout.service";
-export {
-  SettlementService,
-  createSettlementService,
-  getSettlementService,
-} from "./settlement.service";
+// NOTE: SettlementService is superseded by the canonical src/finance settlement
+// path and quarantined out of the build (tsconfig "exclude"); not re-exported.
 
 // Risk & Compliance Services
 export {
@@ -36,92 +36,6 @@ export {
   createFraudDetectionService,
   getFraudDetectionService,
 } from "./fraud-detection.service";
-
-// Operations Services
-export {
-  ReconciliationService,
-  createReconciliationService,
-  getReconciliationService,
-} from "./reconciliation.service";
-export {
-  ScheduledJobsService,
-  createScheduledJobsService,
-  getScheduledJobsService,
-} from "./scheduled-jobs.service";
-
-// ===========================================
-// FINTECH SERVICES (Neo-Bank Features)
-// ===========================================
-
-// Enhanced Wallet (Multi-currency, Tiers, Limits)
-export {
-  EnhancedWalletService,
-  enhancedWalletService,
-} from "./enhanced-wallet.service";
-
-// P2P Transfers
-export { P2PService, p2pService } from "./p2p.service";
-
-// Bill Payments
-export { BillsService, billsService } from "./bills.service";
-
-// QR Payments
-export { QRPaymentService, qrPaymentService } from "./qr-payment.service";
-
-// Savings Pockets
-export { SavingsService, savingsService } from "./savings.service";
-
-// Credit Scoring
-export {
-  CreditScoringService,
-  creditScoringService,
-} from "./credit-scoring.service";
-
-// Loan Management
-export { LoanService, loanService } from "./loans.service";
-
-// Card Issuance
-export { CardService, cardService } from "./cards.service";
-
-// International Remittances
-export { RemittanceService, remittanceService } from "./remittance.service";
-
-// ===========================================
-// LOYALTY & GAMIFICATION SERVICES
-// ===========================================
-
-// Points Management
-export { PointsService, pointsService } from "./points.service";
-
-// Tier Management
-export { TierService, tierService } from "./tier.service";
-
-// UBI+ Subscriptions
-export {
-  SubscriptionService,
-  subscriptionService,
-} from "./subscription.service";
-
-// Achievements & Badges
-export {
-  AchievementsService,
-  achievementsService,
-} from "./achievements.service";
-
-// Streaks & Milestones
-export { StreaksService, streaksService } from "./streaks.service";
-
-// Referral Program
-export { ReferralsService, referralsService } from "./referrals.service";
-
-// Challenges (Daily/Weekly/Monthly)
-export { ChallengesService, challengesService } from "./challenges.service";
-
-// Leaderboards
-export {
-  LeaderboardsService,
-  leaderboardsService,
-} from "./leaderboards.service";
 
 // Types
 export type {
@@ -138,9 +52,6 @@ export type {
   InitiatePaymentResponse as PaymentResult,
 } from "../gateway/payment-gateway";
 
-// Re-export provider types from their respective files
-// These are available from the providers directory
-
 export type {
   // Payout types
   CashoutRequest,
@@ -148,37 +59,7 @@ export type {
 } from "./payout.service";
 
 export type {
-  CommissionBreakdown,
-  // Settlement types
-  SettlementRequest,
-} from "./settlement.service";
-
-export type {
   // Fraud detection types
   FraudCheckResult,
   RiskFactor,
 } from "./fraud-detection.service";
-
-export type {
-  DiscrepancyDetails,
-  // Reconciliation types
-  ReconciliationResult,
-} from "./reconciliation.service";
-
-// ===========================================
-// ML SERVICES (AI/ML Platform)
-// ===========================================
-
-export * from "./ml";
-
-// ===========================================
-// OFFLINE & ACCESSIBILITY SERVICES
-// ===========================================
-
-export * from "./offline";
-
-// ===========================================
-// DRIVER EXPERIENCE SERVICES
-// ===========================================
-
-export * from "./driver";

@@ -36,7 +36,7 @@ describe("Health Routes", () => {
   describe("GET /health", () => {
     it("should return healthy status", async () => {
       const res = await app.request("/health");
-      const body = await res.json();
+      const body = (await res.json()) as any;
 
       expect(res.status).toBe(200);
       expect(body.status).toBe("healthy");
@@ -48,7 +48,7 @@ describe("Health Routes", () => {
   describe("GET /health/live", () => {
     it("should return alive status", async () => {
       const res = await app.request("/health/live");
-      const body = await res.json();
+      const body = (await res.json()) as any;
 
       expect(res.status).toBe(200);
       expect(body.status).toBe("alive");
@@ -58,7 +58,7 @@ describe("Health Routes", () => {
   describe("GET /health/ready", () => {
     it("should return ready when all checks pass", async () => {
       const res = await app.request("/health/ready");
-      const body = await res.json();
+      const body = (await res.json()) as any;
 
       expect(res.status).toBe(200);
       expect(body.status).toBe("ready");
@@ -70,7 +70,7 @@ describe("Health Routes", () => {
   describe("GET /health/detailed", () => {
     it("should return detailed health information", async () => {
       const res = await app.request("/health/detailed");
-      const body = await res.json();
+      const body = (await res.json()) as any;
 
       expect(res.status).toBe(200);
       expect(body.status).toBe("healthy");

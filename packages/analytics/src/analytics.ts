@@ -104,8 +104,13 @@ export interface AnalyticsProvider {
 }
 
 // Analytics configuration
+import { createProvider, type ProviderConfig } from "./providers";
+
+/** A provider entry may be a ready instance or a declarative config. */
+export type ProviderEntry = AnalyticsProvider | ProviderConfig;
+
 export interface AnalyticsConfig {
-  providers: AnalyticsProvider[];
+  providers: ProviderEntry[];
   debug?: boolean;
   disabled?: boolean;
   defaultProperties?: Record<string, unknown>;
@@ -121,15 +126,38 @@ export class Analytics {
   private initialized = false;
   private queue: Array<() => Promise<void>> = [];
 
+  /** Declarative provider configs, keyed by the created provider's name. */
+  private readonly autoConfigs: Record<string, Record<string, unknown>> = {};
+
   constructor(config: AnalyticsConfig) {
     this.config = config;
-    this.providers = config.providers;
+    // A provider instance already implements initialize(); a declarative
+    // ProviderConfig does not, so it is turned into an instance here and its
+    // config is stashed so the provider is initialized with it.
+    this.providers = config.providers.map((entry) => {
+      if (typeof (entry as AnalyticsProvider).initialize === "function") {
+        return entry as AnalyticsProvider;
+      }
+      const cfg = entry as ProviderConfig;
+      const provider = createProvider(cfg.type);
+      const { type: _type, ...rest } = cfg;
+      this.autoConfigs[provider.name] = rest;
+      return provider;
+    });
+    // Initialize any declaratively-configured providers. Fire-and-forget:
+    // page()/track() queue until initialization completes. Guarded for SSR by
+    // each provider's own window check.
+    if (Object.keys(this.autoConfigs).length > 0) {
+      void this.initialize(this.autoConfigs);
+    }
   }
 
   /**
    * Initialize all providers
    */
-  async initialize(providerConfigs: Record<string, Record<string, unknown>>): Promise<void> {
+  async initialize(
+    providerConfigs: Record<string, Record<string, unknown>>,
+  ): Promise<void> {
     if (this.config.disabled) return;
 
     const initPromises = this.providers.map(async (provider) => {
@@ -172,7 +200,7 @@ export class Analytics {
           } catch (error) {
             this.handleError(error as Error, provider.name);
           }
-        })
+        }),
       );
     };
 
@@ -186,7 +214,10 @@ export class Analytics {
   /**
    * Track a custom event
    */
-  async track(eventName: UBIEventName | string, properties?: Record<string, unknown>): Promise<void> {
+  async track(
+    eventName: UBIEventName | string,
+    properties?: Record<string, unknown>,
+  ): Promise<void> {
     if (this.config.disabled) return;
 
     const event: BaseEvent = {
@@ -203,11 +234,14 @@ export class Analytics {
         this.providers.map(async (provider) => {
           try {
             await provider.track(event);
-            this.log(`Tracked ${eventName} in ${provider.name}`, event.properties);
+            this.log(
+              `Tracked ${eventName} in ${provider.name}`,
+              event.properties,
+            );
           } catch (error) {
             this.handleError(error as Error, provider.name);
           }
-        })
+        }),
       );
     };
 
@@ -221,7 +255,10 @@ export class Analytics {
   /**
    * Track a page view
    */
-  async page(path: string, properties?: Omit<PageViewEvent["properties"], "path">): Promise<void> {
+  async page(
+    path: string,
+    properties?: Omit<PageViewEvent["properties"], "path">,
+  ): Promise<void> {
     if (this.config.disabled) return;
 
     const event: PageViewEvent = {
@@ -243,7 +280,7 @@ export class Analytics {
           } catch (error) {
             this.handleError(error as Error, provider.name);
           }
-        })
+        }),
       );
     };
 
@@ -269,7 +306,7 @@ export class Analytics {
             this.handleError(error as Error, provider.name);
           }
         }
-      })
+      }),
     );
   }
 
@@ -288,7 +325,7 @@ export class Analytics {
         } catch (error) {
           this.handleError(error as Error, provider.name);
         }
-      })
+      }),
     );
   }
 

@@ -22,7 +22,9 @@
  * - BLOCK: Reject transaction
  */
 
-import { PrismaClient, RiskAction, RiskLevel } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import { Prisma, RiskAction, RiskLevel } from "@prisma/client";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 
 /**
  * Represents a single risk factor identified during fraud analysis
@@ -52,6 +54,9 @@ export interface RiskAssessmentRequest {
   userId: string;
   amount: number;
   currency: string;
+  // The launch RiskAssessment row is keyed 1:1 to a PaymentTransaction; supply
+  // this to persist the assessment (and surface it in the review queue).
+  paymentTransactionId?: string;
   ipAddress?: string;
   deviceId?: string;
   userAgent?: string;
@@ -100,7 +105,7 @@ export class FraudDetectionService {
   // High-risk amount thresholds (normalized to USD equivalent)
   private readonly HIGH_AMOUNT_THRESHOLD = 1000; // $1000 USD
 
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: ExtendedPrismaClient) {}
 
   /**
    * Assess transaction risk
@@ -220,34 +225,43 @@ export class FraudDetectionService {
     // Generate reasons
     const reasons = this.generateReasons(factors, riskLevel);
 
-    // Save risk assessment
-    const assessment = await this.prisma.riskAssessment.create({
-      data: {
-        userId: request.userId,
-        riskScore,
-        riskLevel,
-        action,
-        metadata: {
-          factors,
-          request,
-        },
-      },
-    });
+    // Persist the risk assessment. The launch RiskAssessment row is keyed 1:1
+    // to a PaymentTransaction (required, unique), so only persist when the
+    // caller ties the assessment to one; otherwise return a computed result.
+    let assessmentId: string = randomUUID();
 
-    // Save individual risk factors
-    for (const factor of factors) {
-      await this.prisma.riskFactor.create({
+    if (request.paymentTransactionId) {
+      const assessment = await this.prisma.riskAssessment.create({
         data: {
-          assessmentId: assessment.id,
-          factorType: factor.name,
-          score: factor.score,
-          description: factor.description,
+          paymentTransactionId: request.paymentTransactionId,
+          userId: request.userId,
+          score: riskScore,
+          level: riskLevel,
+          action,
+          deviceFingerprint: request.deviceId ?? null,
+          ipAddress: request.ipAddress ?? null,
+          ipLocation: request.location
+            ? (request.location as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
         },
       });
+      assessmentId = assessment.id;
+
+      // Save individual risk factors
+      for (const factor of factors) {
+        await this.prisma.riskFactor.create({
+          data: {
+            riskAssessmentId: assessment.id,
+            name: factor.name,
+            score: factor.score,
+            details: factor.description,
+          },
+        });
+      }
     }
 
     return {
-      assessmentId: assessment.id,
+      assessmentId,
       riskScore,
       riskLevel,
       action,
@@ -413,7 +427,7 @@ export class FraudDetectionService {
         status: "COMPLETED",
         metadata: {
           path: ["location"],
-          not: null,
+          not: Prisma.DbNull,
         },
       },
       orderBy: { createdAt: "desc" },
@@ -448,8 +462,8 @@ export class FraudDetectionService {
         const distance = this.calculateDistance(
           location.latitude,
           location.longitude,
-          txLocation.latitude,
-          txLocation.longitude,
+          txLocation.lat ?? 0,
+          txLocation.lng ?? 0,
         );
 
         maxDistance = Math.max(maxDistance, distance);
@@ -507,14 +521,14 @@ export class FraudDetectionService {
       return 50; // New device/IP
     }
 
-    // Check if device/IP is blacklisted (used in fraud)
+    // Check if device/IP is blacklisted (used in a BLOCK assessment). The
+    // launch schema stores these on the deviceFingerprint/ipAddress columns.
     const blacklisted = await this.prisma.riskAssessment.findFirst({
       where: {
         action: RiskAction.BLOCK,
-        metadata: {
-          path: ["request", deviceId ? "deviceId" : "ipAddress"],
-          equals: deviceId || ipAddress,
-        },
+        ...(deviceId
+          ? { deviceFingerprint: deviceId }
+          : { ipAddress: ipAddress ?? undefined }),
       },
     });
 
@@ -533,7 +547,7 @@ export class FraudDetectionService {
     const fraudAssessments = await this.prisma.riskAssessment.count({
       where: {
         userId,
-        riskLevel: { in: [RiskLevel.HIGH, RiskLevel.CRITICAL] },
+        level: { in: [RiskLevel.HIGH, RiskLevel.CRITICAL] },
       },
     });
 
@@ -541,13 +555,11 @@ export class FraudDetectionService {
       return Math.min(fraudAssessments * 25, 100);
     }
 
-    // Check for disputes
+    // Check for disputes (Dispute carries userId directly)
     const disputes = await this.prisma.dispute.count({
       where: {
-        transaction: {
-          userId,
-        },
-        status: { not: "WON" },
+        userId,
+        status: { not: "won" },
       },
     });
 
@@ -653,22 +665,28 @@ export class FraudDetectionService {
     const assessments = await this.prisma.riskAssessment.findMany({
       where: {
         action: { in: [RiskAction.REVIEW, RiskAction.BLOCK] },
-        riskScore: { gte: minRiskScore },
+        score: { gte: minRiskScore },
         reviewedAt: null, // Not yet reviewed
       },
       include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            phone: true,
-            firstName: true,
-            lastName: true,
+        // RiskAssessment relates to the payment transaction (and through it the
+        // user); there is no direct user relation on the launch model.
+        paymentTransaction: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                phone: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
           },
         },
         factors: true,
       },
-      orderBy: { riskScore: "desc" },
+      orderBy: { score: "desc" },
       take: limit,
       skip: offset,
     });
@@ -676,13 +694,13 @@ export class FraudDetectionService {
     return assessments.map((assessment) => ({
       id: assessment.id,
       userId: assessment.userId,
-      user: assessment.user,
-      riskScore: assessment.riskScore,
-      riskLevel: assessment.riskLevel,
+      user: assessment.paymentTransaction?.user,
+      riskScore: assessment.score,
+      riskLevel: assessment.level,
       action: assessment.action,
       factors: assessment.factors,
       createdAt: assessment.createdAt,
-      metadata: assessment.metadata,
+      ipLocation: assessment.ipLocation,
     }));
   }
 
@@ -698,10 +716,8 @@ export class FraudDetectionService {
       data: {
         action: RiskAction.ALLOW,
         reviewedAt: new Date(),
-        metadata: {
-          reviewedBy,
-          reviewNote: "Manually approved",
-        },
+        reviewedBy,
+        reviewNotes: "Manually approved",
       },
     });
   }
@@ -719,10 +735,8 @@ export class FraudDetectionService {
       data: {
         action: RiskAction.BLOCK,
         reviewedAt: new Date(),
-        metadata: {
-          reviewedBy,
-          reviewNote: reason,
-        },
+        reviewedBy,
+        reviewNotes: reason,
       },
     });
   }
@@ -733,14 +747,14 @@ let fraudDetectionServiceInstance: FraudDetectionService | null = null;
 
 // Create new instance
 export function createFraudDetectionService(
-  prisma: PrismaClient,
+  prisma: ExtendedPrismaClient,
 ): FraudDetectionService {
   return new FraudDetectionService(prisma);
 }
 
 // Get singleton instance
 export function getFraudDetectionService(
-  prisma: PrismaClient,
+  prisma: ExtendedPrismaClient,
 ): FraudDetectionService {
   fraudDetectionServiceInstance ??= createFraudDetectionService(prisma);
   return fraudDetectionServiceInstance;

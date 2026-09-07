@@ -8,8 +8,10 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  // URL is configured in prisma.config.ts for Prisma 7+
-  // See: https://pris.ly/d/config-datasource
+  // Prisma 6 (the pinned CLI) requires the url here. prisma.config.ts also
+  // supplies it for migrate; both read the same DATABASE_URL so they cannot
+  // drift. Without this the schema fails `prisma validate` outright.
+  url        = env("DATABASE_URL")
   extensions = [postgis, pgcrypto, uuid_ossp(map: "uuid-ossp")]
 }
 
@@ -75,10 +77,12 @@ enum OrderStatus {
   CONFIRMED
   PREPARING
   READY
+  READY_FOR_PICKUP
   PICKED_UP
   DELIVERING
   DELIVERED
   CANCELLED
+  REFUNDED
 }
 
 enum DeliveryStatus {
@@ -225,6 +229,7 @@ model User {
   paymentTransactions PaymentTransaction[]
   notifications       Notification[]
   sessions            Session[]
+  foodReviews         Review[]       @relation("UserFoodReviews")
 
   @@index([email])
   @@index([phone])
@@ -502,6 +507,7 @@ model Transaction {
   @@index([transactionType])
   @@index([idempotencyKey])
   @@index([createdAt])
+  @@index([status, transactionType, createdAt], map: "idx_transactions_status_type_created")
   @@map("transactions")
 }
 
@@ -565,6 +571,10 @@ model PaymentTransaction {
   @@index([status, createdAt])
   @@index([provider, providerReference])
   @@index([createdAt])
+  // Declared in 20250101000004_performance_indexes; named so the datamodel
+  // and the migration chain do not drift.
+  @@index([userId, status, initiatedAt], map: "idx_payment_transactions_user_status_initiated")
+  @@index([provider, status, initiatedAt], map: "idx_payment_transactions_provider_status_created")
   @@map("payment_transactions")
 }
 
@@ -906,9 +916,12 @@ model Restaurant {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  menuItems MenuItem[]
-  orders    FoodOrder[]
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  menuItems      MenuItem[]
+  orders         FoodOrder[]
+  menuCategories MenuCategory[]
+  restaurantOrders Order[]
+  reviews        Review[]
 
   @@index([latitude, longitude])
   @@index([isOpen, rating])
@@ -1458,4 +1471,1104 @@ model DeviceToken {
   @@unique([userId, token])
   @@index([userId, isActive])
   @@map("device_tokens")
+}
+
+// ===========================================
+// LAUNCH HANDOFF MODELS
+// ===========================================
+// Source: docs/launch-readiness/handoff/db/*.sql
+//
+// Convention for these tables (set by the handoff, and different from the
+// original schema above on purpose):
+//   - ids are text (nanoid), not uuid
+//   - money is BigInt minor units plus an explicit currency column, never Decimal
+//   - tables that hold state carry `version` for optimistic concurrency
+//   - table names are kept exactly as the handoff DDL declares them
+//
+// Money never appears as Decimal here: minor units are exact, and the ledger
+// invariant (sum of lines per entry = 0) only holds over integers.
+
+// -------------------------------------------
+// 001 — config & flags (config-service)
+// -------------------------------------------
+
+model City {
+  id        String   @id
+  name      String
+  country   String   @db.Char(2)
+  timezone  String
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  configVersions CityConfigVersion[]
+  changeRequests ConfigChangeRequest[]
+  flagRules      FlagRule[]
+
+  @@index([active])
+  @@map("cities")
+}
+
+model CityConfigVersion {
+  id          String    @id
+  cityId      String    @map("city_id")
+  version     Int
+  config      Json
+  activatedAt DateTime? @map("activated_at")
+  createdBy   String    @map("created_by")
+  approvedBy  String?   @map("approved_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  city City @relation(fields: [cityId], references: [id])
+
+  @@unique([cityId, version])
+  @@index([cityId, activatedAt])
+  @@map("city_config_versions")
+}
+
+model ConfigChangeRequest {
+  id        String   @id
+  cityId    String   @map("city_id")
+  patch     Json
+  reason    String
+  authorId  String   @map("author_id")
+  status    String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  city      City             @relation(fields: [cityId], references: [id])
+  approvals ConfigApproval[]
+
+  @@index([cityId, status])
+  @@map("config_change_requests")
+}
+
+model ConfigApproval {
+  id         String   @id
+  requestId  String   @map("request_id")
+  approverId String   @map("approver_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  request ConfigChangeRequest @relation(fields: [requestId], references: [id])
+
+  @@unique([requestId, approverId])
+  @@map("config_approvals")
+}
+
+model FeatureFlag {
+  key         String   @id
+  description String?
+  defaultOn   Boolean  @default(false) @map("default_on")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rules FlagRule[]
+
+  @@map("feature_flags")
+}
+
+model FlagRule {
+  id        String   @id
+  flagKey   String   @map("flag_key")
+  cityId    String?  @map("city_id")
+  segment   Json?
+  enabled   Boolean  @default(false)
+  updatedBy String?  @map("updated_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  flag FeatureFlag @relation(fields: [flagKey], references: [key])
+  city City?       @relation(fields: [cityId], references: [id])
+
+  @@unique([flagKey, cityId])
+  @@index([cityId])
+  @@map("flag_rules")
+}
+
+model AuditLog {
+  id          String   @id
+  actorId     String   @map("actor_id")
+  actorRole   String   @map("actor_role")
+  action      String
+  subjectType String   @map("subject_type")
+  subjectId   String   @map("subject_id")
+  before      Json?
+  after       Json?
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([subjectType, subjectId], map: "audit_subject")
+  @@index([actorId, createdAt])
+  @@map("audit_log")
+}
+
+// -------------------------------------------
+// Transactional outbox (CLAUDE.md #2)
+// -------------------------------------------
+// Every state transition is written here in the same transaction as the state
+// change, then published. Consumers are idempotent on `id`.
+
+model OutboxEvent {
+  id             String    @id
+  name           String
+  schemaVersion  Int       @default(1) @map("schema_version")
+  aggregateType  String    @map("aggregate_type")
+  aggregateId    String    @map("aggregate_id")
+  fromVersion    Int?      @map("from_version")
+  toVersion      Int       @map("to_version")
+  sequence       BigInt?
+  cityId         String?   @map("city_id")
+  actorType      String    @map("actor_type")
+  actorId        String    @map("actor_id")
+  idempotencyKey String    @unique @map("idempotency_key")
+  correlationId  String?   @map("correlation_id")
+  causationId    String?   @map("causation_id")
+  payload        Json
+  occurredAt     DateTime  @map("occurred_at")
+  publishedAt    DateTime? @map("published_at")
+  attempts       Int       @default(0)
+  lastError      String?   @map("last_error")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, occurredAt], map: "outbox_unpublished")
+  @@index([aggregateType, aggregateId, toVersion])
+  @@map("outbox_events")
+}
+
+// -------------------------------------------
+// 002 — wallet & double-entry ledger (payment-service)
+// -------------------------------------------
+
+model Wallet {
+  id                String    @id
+  ownerType         String    @map("owner_type")
+  ownerId           String    @map("owner_id")
+  currency          String
+  tier              String
+  safeModeUntil     DateTime? @map("safe_mode_until")
+  locked            Boolean   @default(false)
+  pinHash           String?   @map("pin_hash")
+  pinFailedAttempts Int       @default(0) @map("pin_failed_attempts")
+  pinLockedUntil    DateTime? @map("pin_locked_until")
+  coolingUntil      DateTime? @map("cooling_until")
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  lines           JournalLine[]
+  transfersOut    Transfer[]    @relation("TransferFrom")
+  transfersIn     Transfer[]    @relation("TransferTo")
+  nipTransfers    NipTransfer[]
+  topups          Topup[]
+  statements      WalletStatement[]
+
+  @@unique([ownerType, ownerId, currency])
+  @@index([ownerId])
+  @@map("wallets")
+}
+
+model JournalEntry {
+  id             String   @id
+  kind           String
+  reference      String
+  description    String?
+  occurredAt     DateTime @map("occurred_at")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  caseRef        String?  @map("case_ref")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  lines        JournalLine[]
+  transfers    Transfer[]
+  remittances  Remittance[]
+
+  @@index([kind, occurredAt])
+  @@index([reference])
+  @@index([caseRef])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String   @id
+  entryId        String   @map("entry_id")
+  account        String
+  walletId       String?  @map("wallet_id")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  counterpartRef String?  @map("counterpart_ref")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  entry  JournalEntry @relation(fields: [entryId], references: [id])
+  wallet Wallet?      @relation(fields: [walletId], references: [id])
+
+  @@index([walletId], map: "journal_lines_wallet")
+  @@index([entryId])
+  @@index([account, createdAt])
+  @@map("journal_lines")
+}
+
+model Transfer {
+  id             String    @id
+  fromWallet     String?   @map("from_wallet")
+  toWallet       String?   @map("to_wallet")
+  amountMinor    BigInt    @map("amount_minor")
+  currency       String
+  note           String?
+  status         String
+  riskHoldReason String?   @map("risk_hold_reason")
+  entryId        String?   @map("entry_id")
+  idempotencyKey String?   @unique @map("idempotency_key")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  from           Wallet?         @relation("TransferFrom", fields: [fromWallet], references: [id])
+  to             Wallet?         @relation("TransferTo", fields: [toWallet], references: [id])
+  entry          JournalEntry?   @relation(fields: [entryId], references: [id])
+  returnRequests ReturnRequest[]
+  topups         Topup[]
+
+  @@index([fromWallet, createdAt])
+  @@index([toWallet, createdAt])
+  @@index([status])
+  @@map("transfers")
+}
+
+model TransferRequest {
+  id             String   @id
+  fromUser       String   @map("from_user")
+  toUser         String   @map("to_user")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  rideId         String?  @map("ride_id")
+  status         String
+  idempotencyKey String?  @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([fromUser, status])
+  @@index([toUser, status])
+  @@index([rideId])
+  @@map("transfer_requests")
+}
+
+model ReturnRequest {
+  id         String   @id
+  transferId String   @map("transfer_id")
+  status     String
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  transfer Transfer @relation(fields: [transferId], references: [id])
+
+  @@index([transferId])
+  @@map("return_requests")
+}
+
+model NipTransfer {
+  id             String    @id
+  walletId       String    @map("wallet_id")
+  bankCode       String    @map("bank_code")
+  accountNumber  String    @map("account_number")
+  accountName    String?   @map("account_name")
+  amountMinor    BigInt    @map("amount_minor")
+  currency       String
+  status         String
+  sessionId      String?   @map("session_id")
+  entryId        String?   @map("entry_id")
+  confirmedAt    DateTime? @map("confirmed_at")
+  reversedAt     DateTime? @map("reversed_at")
+  idempotencyKey String?   @unique @map("idempotency_key")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, createdAt])
+  @@index([status])
+  @@index([sessionId])
+  @@map("nip_transfers")
+}
+
+model Topup {
+  id             String   @id
+  walletId       String   @map("wallet_id")
+  methodId       String   @map("method_id")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  status         String
+  pspRef         String?  @map("psp_ref")
+  entryId        String?  @map("entry_id")
+  sagaTransferId String?  @map("saga_transfer_id")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  wallet       Wallet    @relation(fields: [walletId], references: [id])
+  sagaTransfer Transfer? @relation(fields: [sagaTransferId], references: [id])
+
+  @@index([walletId, createdAt])
+  @@index([status])
+  @@map("topups")
+}
+
+model WalletStatement {
+  id           String   @id
+  walletId     String   @map("wallet_id")
+  periodStart  DateTime @map("period_start") @db.Date
+  periodEnd    DateTime @map("period_end") @db.Date
+  openingMinor BigInt   @map("opening_minor")
+  inMinor      BigInt   @map("in_minor")
+  outMinor     BigInt   @map("out_minor")
+  closingMinor BigInt   @map("closing_minor")
+  currency     String
+  fileUrl      String?  @map("file_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@unique([walletId, periodStart, periodEnd])
+  @@map("statements")
+}
+
+model SplitRule {
+  id               String    @id
+  driverId         String    @map("driver_id")
+  fleetId          String    @map("fleet_id")
+  vehicleId        String    @map("vehicle_id")
+  type             String
+  amountMinor      BigInt?   @map("amount_minor")
+  currency         String
+  percent          Decimal?  @db.Decimal(5, 2)
+  shortfallPolicy  String    @map("shortfall_policy")
+  shortfallMaxWeeks Int?     @map("shortfall_max_weeks")
+  termsHash        String    @map("terms_hash")
+  signedAt         DateTime? @map("signed_at")
+  active           Boolean   @default(false)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  remittances Remittance[]
+
+  @@index([driverId, active])
+  @@index([fleetId])
+  @@map("split_rules")
+}
+
+model Remittance {
+  id           String   @id
+  splitRuleId  String   @map("split_rule_id")
+  weekStart    DateTime @map("week_start") @db.Date
+  dueMinor     BigInt   @map("due_minor")
+  coveredMinor BigInt   @default(0) @map("covered_minor")
+  carriedMinor BigInt   @default(0) @map("carried_minor")
+  currency     String
+  entryId      String?  @map("entry_id")
+  status       String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  splitRule SplitRule     @relation(fields: [splitRuleId], references: [id])
+  entry     JournalEntry? @relation(fields: [entryId], references: [id])
+
+  @@unique([splitRuleId, weekStart])
+  @@index([status])
+  @@map("remittances")
+}
+
+// -------------------------------------------
+// 003 — identity, device trust, documents (user-service)
+// -------------------------------------------
+
+model Device {
+  id         String    @id
+  userId     String    @map("user_id")
+  platform   String?
+  model      String?
+  trusted    Boolean   @default(false)
+  enrolledAt DateTime  @default(now()) @map("enrolled_at")
+  lastSeen   DateTime? @map("last_seen")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  challenges StepUpChallenge[]
+
+  @@index([userId, trusted])
+  @@map("devices")
+}
+
+model StepUpChallenge {
+  id         String    @id
+  userId     String    @map("user_id")
+  deviceId   String?   @map("device_id")
+  method     String
+  status     String
+  score      Decimal?  @db.Decimal(5, 4)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  device Device? @relation(fields: [deviceId], references: [id])
+
+  @@index([userId, status])
+  @@map("step_up_challenges")
+}
+
+model SimSwapSignal {
+  id         String   @id
+  userId     String   @map("user_id")
+  phone      String
+  reportedAt DateTime @map("reported_at")
+  source     String?
+  handled    Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, handled])
+  @@index([phone])
+  @@map("sim_swap_signals")
+}
+
+model IdentityDocument {
+  id         String    @id
+  ownerType  String    @map("owner_type")
+  ownerId    String    @map("owner_id")
+  type       String
+  fileRef    String    @map("file_ref")
+  expiresAt  DateTime? @map("expires_at") @db.Date
+  status     String
+  reviewedBy String?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at")
+  reviewNote String?   @map("review_note")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([expiresAt], map: "documents_expiry")
+  @@index([ownerType, ownerId, status])
+  @@map("documents")
+}
+
+model IdentityCase {
+  id        String   @id
+  driverId  String   @map("driver_id")
+  signals   Json
+  status    String
+  decision  String?
+  decidedBy String[] @map("decided_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([driverId, status])
+  @@map("identity_cases")
+}
+
+model FaceCheck {
+  id        String   @id
+  driverId  String   @map("driver_id")
+  deviceId  String?  @map("device_id")
+  score     Decimal? @db.Decimal(5, 4)
+  passed    Boolean
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([driverId, createdAt])
+  @@map("face_checks")
+}
+
+// -------------------------------------------
+// 008 — ops: support, recon, reviews, safety
+// -------------------------------------------
+
+model SupportCase {
+  id          String    @id
+  userType    String?   @map("user_type")
+  userId      String?   @map("user_id")
+  subjectType String?   @map("subject_type")
+  subjectId   String?   @map("subject_id")
+  category    String?
+  status      String
+  slaDue      DateTime? @map("sla_due")
+  assignee    String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  resolvedAt  DateTime? @map("resolved_at")
+
+  events   CaseEvent[]
+  remedies Remedy[]
+
+  @@index([status, slaDue])
+  @@index([userId])
+  @@index([subjectType, subjectId])
+  @@map("support_cases")
+}
+
+model CaseEvent {
+  id        String   @id
+  caseId    String   @map("case_id")
+  kind      String
+  payload   Json?
+  actor     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  supportCase SupportCase @relation(fields: [caseId], references: [id])
+
+  @@index([caseId, createdAt])
+  @@map("case_events")
+}
+
+model Remedy {
+  id          String   @id
+  caseId      String   @map("case_id")
+  type        String
+  amountMinor BigInt?  @map("amount_minor")
+  currency    String?
+  reason      String?
+  entryId     String?  @map("entry_id")
+  byUser      String   @map("by_user")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  supportCase SupportCase @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@index([entryId])
+  @@map("remedies")
+}
+
+model ReconRun {
+  date             DateTime  @id @db.Date
+  status           String
+  unexplainedMinor BigInt    @default(0) @map("unexplained_minor")
+  currency         String
+  closedBy         String?   @map("closed_by")
+  closedAt         DateTime? @map("closed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  rails ReconRail[]
+
+  @@map("recon_runs")
+}
+
+model ReconRail {
+  id            String   @id
+  date          DateTime @db.Date
+  rail          String
+  ledgerMinor   BigInt   @map("ledger_minor")
+  externalMinor BigInt   @map("external_minor")
+  diffMinor     BigInt   @map("diff_minor")
+  currency      String
+  status        String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  run    ReconRun     @relation(fields: [date], references: [date])
+  breaks ReconBreak[]
+
+  @@unique([date, rail])
+  @@map("recon_rails")
+}
+
+model ReconBreak {
+  id            String    @id
+  railId        String    @map("rail_id")
+  amountMinor   BigInt    @map("amount_minor")
+  currency      String
+  description   String
+  owner         String?
+  deadline      DateTime?
+  resolutionRef String?   @map("resolution_ref")
+  resolvedAt    DateTime? @map("resolved_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  rail ReconRail @relation(fields: [railId], references: [id])
+
+  @@index([railId])
+  @@index([resolvedAt])
+  @@map("recon_breaks")
+}
+
+model SafetyCase {
+  id        String    @id
+  rideId    String?   @map("ride_id")
+  raisedBy  String    @map("raised_by")
+  severity  String
+  status    String
+  slaDue    DateTime? @map("sla_due")
+  responder String?
+  timeline  Json?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, slaDue])
+  @@index([rideId])
+  @@map("safety_cases")
+}
+
+model ReviewDecision {
+  id          String   @id
+  queue       String
+  subjectType String   @map("subject_type")
+  subjectId   String   @map("subject_id")
+  checks      Json?
+  decision    String
+  reviewers   String[]
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([queue, createdAt])
+  @@index([subjectType, subjectId])
+  @@map("review_decisions")
+}
+
+// ===========================================
+// PHASE 2 — legacy food/notification compile-fix models
+// ===========================================
+// These services were written against Prisma models that existed in no schema
+// file (the "never-existent data model" the audit flagged). They are added here
+// with the fields the services actually use, so the services compile and CI can
+// gate them. They are the LEGACY restaurant/notification domain and are distinct
+// from the canonical Bites tables (slice 05) further below — the two must not
+// share a table name.
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum NotificationType {
+  WELCOME
+  OTP
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  SECURITY_ALERT
+  ACCOUNT_LOCKED
+  MARKETING
+  PROMO_CODE
+  RIDE_REQUESTED
+  RIDE_ACCEPTED
+  RIDE_STARTED
+  RIDE_COMPLETED
+  DRIVER_ARRIVING
+  DRIVER_ARRIVED
+  ORDER_PLACED
+  ORDER_CONFIRMED
+  ORDER_PREPARING
+  ORDER_DELIVERED
+  FOOD_ORDER_CONFIRMED
+  FOOD_PREPARING
+  FOOD_READY_FOR_PICKUP
+  FOOD_OUT_FOR_DELIVERY
+  FOOD_DELIVERED
+  DELIVERY_CREATED
+  DELIVERY_PICKED_UP
+  DELIVERY_IN_TRANSIT
+  DELIVERY_COMPLETED
+  DELIVERY_DELIVERED
+  PAYMENT_RECEIVED
+  PAYMENT_SUCCESSFUL
+  PAYMENT_FAILED
+  REFUND_PROCESSED
+  SOS_ALERT
+  GENERAL
+}
+
+model MenuCategory {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  restaurantId String   @map("restaurant_id") @db.Uuid
+  name         String
+  description  String?
+  sortOrder    Int      @default(0) @map("sort_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, isActive])
+  @@map("menu_categories")
+}
+
+model Order {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderNumber          String        @unique @map("order_number")
+  customerId           String        @map("customer_id") @db.Uuid
+  restaurantId         String        @map("restaurant_id") @db.Uuid
+  driverId             String?       @map("driver_id") @db.Uuid
+  type                 String
+  status               OrderStatus   @default(PENDING)
+  items                Json
+  subtotal             Decimal       @db.Decimal(12, 2)
+  deliveryFee          Decimal       @default(0) @map("delivery_fee") @db.Decimal(12, 2)
+  serviceFee           Decimal       @default(0) @map("service_fee") @db.Decimal(12, 2)
+  tax                  Decimal       @default(0) @db.Decimal(12, 2)
+  tip                  Decimal       @default(0) @db.Decimal(12, 2)
+  discount             Decimal       @default(0) @db.Decimal(12, 2)
+  total                Decimal       @db.Decimal(12, 2)
+  currency             String        @default("NGN")
+  paymentStatus        PaymentStatus @default(PENDING) @map("payment_status")
+  deliveryAddress      Json?         @map("delivery_address")
+  deliveryInstructions String?       @map("delivery_instructions")
+  estimatedPrepTime    Int?          @map("estimated_prep_time")
+  customerNote         String?       @map("customer_note")
+  confirmedAt          DateTime?     @map("confirmed_at")
+  preparingAt          DateTime?     @map("preparing_at")
+  readyAt              DateTime?     @map("ready_at")
+  pickedUpAt           DateTime?     @map("picked_up_at")
+  deliveredAt          DateTime?     @map("delivered_at")
+  cancelledAt          DateTime?     @map("cancelled_at")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  reviews    Review[]
+
+  @@index([customerId, createdAt])
+  @@index([restaurantId, status])
+  @@index([status, createdAt])
+  @@map("restaurant_orders")
+}
+
+model Review {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId          String   @unique @map("order_id") @db.Uuid
+  customerId       String   @map("customer_id") @db.Uuid
+  restaurantId     String   @map("restaurant_id") @db.Uuid
+  driverId         String?  @map("driver_id") @db.Uuid
+  restaurantRating Int      @map("restaurant_rating")
+  foodRating       Int?     @map("food_rating")
+  deliveryRating   Int?     @map("delivery_rating")
+  overallRating    Decimal  @map("overall_rating") @db.Decimal(3, 2)
+  comment          String?
+  images           String[]
+  tags             String[]
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  restaurant Restaurant     @relation(fields: [restaurantId], references: [id])
+  customer   User           @relation("UserFoodReviews", fields: [customerId], references: [id])
+  reports    ReviewReport[]
+
+  @@index([restaurantId, createdAt])
+  @@index([customerId])
+  @@map("restaurant_reviews")
+}
+
+model ReviewReport {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reviewId   String   @map("review_id") @db.Uuid
+  reporterId String   @map("reporter_id") @db.Uuid
+  reason     String
+  details    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@map("restaurant_review_reports")
+}
+
+model NotificationPreference {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String   @unique @map("user_id") @db.Uuid
+  emailEnabled          Boolean  @default(true) @map("email_enabled")
+  emailReceipts         Boolean  @default(true) @map("email_receipts")
+  emailPromotions       Boolean  @default(false) @map("email_promotions")
+  emailNewsletter       Boolean  @default(false) @map("email_newsletter")
+  emailSecurityAlerts   Boolean  @default(true) @map("email_security_alerts")
+  smsEnabled            Boolean  @default(true) @map("sms_enabled")
+  smsOtp                Boolean  @default(true) @map("sms_otp")
+  smsCriticalAlerts     Boolean  @default(true) @map("sms_critical_alerts")
+  pushEnabled           Boolean  @default(true) @map("push_enabled")
+  pushRideUpdates       Boolean  @default(true) @map("push_ride_updates")
+  pushFoodUpdates       Boolean  @default(true) @map("push_food_updates")
+  pushDeliveryUpdates   Boolean  @default(true) @map("push_delivery_updates")
+  pushPaymentUpdates    Boolean  @default(true) @map("push_payment_updates")
+  pushPromotions        Boolean  @default(false) @map("push_promotions")
+  pushNews              Boolean  @default(false) @map("push_news")
+  inAppEnabled          Boolean  @default(true) @map("in_app_enabled")
+  quietHoursEnabled     Boolean  @default(false) @map("quiet_hours_enabled")
+  quietHoursStart       String?  @map("quiet_hours_start")
+  quietHoursEnd         String?  @map("quiet_hours_end")
+  quietHoursTimezone    String?  @map("quiet_hours_timezone")
+  maxDailyEmail         Int?     @map("max_daily_email")
+  maxDailyPush          Int?     @map("max_daily_push")
+  maxDailySms           Int?     @map("max_daily_sms")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_preferences")
+}
+
+model NotificationLog {
+  id         String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?              @map("user_id") @db.Uuid
+  channel    NotificationChannel
+  type       NotificationType     @default(GENERAL)
+  title      String?
+  body       String?
+  recipient  String?
+  status     NotificationStatus   @default(PENDING)
+  externalId String?              @map("external_id")
+  error      String?
+  sentAt     DateTime?            @map("sent_at")
+  createdAt  DateTime             @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([channel, status])
+  @@map("notification_logs")
+}
+
+model NotificationTemplate {
+  id        String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String              @unique
+  channel   NotificationChannel @default(EMAIL)
+  type      NotificationType    @default(GENERAL)
+  title     String?
+  body      String?
+  htmlBody  String?             @map("html_body")
+  isActive  Boolean             @default(true) @map("is_active")
+  metadata  Json?
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+
+  @@map("notification_templates")
+}
+
+model InAppNotification {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType @default(GENERAL)
+  title     String
+  body      String?
+  data      Json?
+  actionUrl String?          @map("action_url")
+  imageUrl  String?          @map("image_url")
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, readAt])
+  @@map("in_app_notifications")
+}
+
+// ===========================================
+// 004 — Bites (slice 05, canonical model)
+// ===========================================
+// Source: docs/launch-readiness/handoff/db/004_bites.sql. Money is bigint minor
+// units + currency, ids are text (nanoid), state tables carry version.
+//
+// COLLISION RESOLUTION (ADR 0001 §8): the handoff DDL names two tables
+// `merchants` and `menu_items`, but those names already belong to unrelated
+// models — `merchants` is a Send/courier merchant (Merchant, with a deliveries
+// relation) and `menu_items` is the legacy Restaurant food model (MenuItem).
+// Migrating either onto the Bites shape would break delivery-service and the
+// legacy food model. The Bites tables are therefore namespaced `bites_merchants`
+// and `bites_menu_items`; every other Bites table keeps its handoff name, since
+// none of the rest collide. Non-destructive.
+
+model BitesMerchant {
+  id         String    @id
+  legalName  String?   @map("legal_name")
+  tradeName  String?   @map("trade_name")
+  cacRc      String?   @map("cac_rc")
+  tin        String?
+  status     String
+  approvedAt DateTime? @map("approved_at")
+  rankScore  Decimal   @default(0) @map("rank_score") @db.Decimal(10, 4)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  kyb      MerchantKyb[]
+  outlets  Outlet[]
+  payouts  MerchantPayout[]
+
+  @@index([status])
+  @@map("bites_merchants")
+}
+
+model MerchantKyb {
+  id           String    @id
+  merchantId   String    @map("merchant_id")
+  checks       Json
+  permitFile   String?   @map("permit_file")
+  permitExpiry DateTime? @map("permit_expiry") @db.Date
+  reviewedBy   String?   @map("reviewed_by")
+  decision     String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  merchant BitesMerchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId])
+  @@map("merchant_kyb")
+}
+
+model Outlet {
+  id          String    @id
+  merchantId  String    @map("merchant_id")
+  address     String?
+  lat         Decimal?  @db.Decimal(10, 7)
+  lng         Decimal?  @db.Decimal(10, 7)
+  hours       Json?
+  pausedUntil DateTime? @map("paused_until")
+  open        Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  merchant  BitesMerchant  @relation(fields: [merchantId], references: [id])
+  menuItems BitesMenuItem[]
+  carts     Cart[]
+  orders    BitesOrder[]
+
+  @@index([merchantId, open])
+  @@map("outlets")
+}
+
+model BitesMenuItem {
+  id           String    @id
+  outletId     String    @map("outlet_id")
+  category     String?
+  name         String
+  description  String?
+  priceMinor   BigInt    @map("price_minor")
+  currency     String
+  allergens    String[]
+  soldOutUntil DateTime? @map("sold_out_until")
+  photoRef     String?   @map("photo_ref")
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  outlet       Outlet        @relation(fields: [outletId], references: [id])
+  optionGroups OptionGroup[]
+
+  @@index([outletId, active])
+  @@map("bites_menu_items")
+}
+
+model OptionGroup {
+  id        String   @id
+  itemId    String   @map("item_id")
+  name      String
+  required  Boolean  @default(false)
+  minSelect Int      @default(0) @map("min_select")
+  maxSelect Int      @default(1) @map("max_select")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  item    BitesMenuItem @relation(fields: [itemId], references: [id])
+  options MenuOption[]
+
+  @@index([itemId])
+  @@map("option_groups")
+}
+
+model MenuOption {
+  id              String   @id
+  groupId         String   @map("group_id")
+  name            String
+  priceDeltaMinor BigInt   @default(0) @map("price_delta_minor")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  group OptionGroup @relation(fields: [groupId], references: [id])
+
+  @@index([groupId])
+  @@map("options")
+}
+
+model Cart {
+  id            String   @id
+  userId        String   @map("user_id")
+  outletId      String   @map("outlet_id")
+  items         Json
+  subtotalMinor BigInt   @map("subtotal_minor")
+  currency      String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  outlet Outlet @relation(fields: [outletId], references: [id])
+
+  @@unique([userId, outletId])
+  @@map("carts")
+}
+
+model BitesOrder {
+  id              String    @id
+  userId          String    @map("user_id")
+  outletId        String    @map("outlet_id")
+  status          String
+  items           Json
+  totals          Json
+  currency        String
+  paymentIntentId String?   @map("payment_intent_id")
+  authCaptured    Boolean   @default(false) @map("auth_captured")
+  handoverCode    String?   @map("handover_code")
+  deliveryCode    String?   @map("delivery_code")
+  courierId       String?   @map("courier_id")
+  version         Int       @default(1)
+  idempotencyKey  String?   @unique @map("idempotency_key")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  outlet Outlet       @relation(fields: [outletId], references: [id])
+  issues OrderIssue[]
+
+  @@index([userId, createdAt])
+  @@index([outletId, status])
+  @@index([courierId])
+  @@map("orders")
+}
+
+model OrderIssue {
+  id             String    @id
+  orderId        String    @map("order_id")
+  items          Json
+  type           String
+  photoRef       String?   @map("photo_ref")
+  requestedMinor BigInt?   @map("requested_minor")
+  status         String
+  merchantResponse String? @map("merchant_response")
+  respondBy      DateTime? @map("respond_by")
+  decidedAt      DateTime? @map("decided_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  order BitesOrder @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([status, respondBy])
+  @@map("order_issues")
+}
+
+model MerchantPayout {
+  id           String    @id
+  merchantId   String    @map("merchant_id")
+  weekStart    DateTime  @map("week_start") @db.Date
+  grossMinor   BigInt    @map("gross_minor")
+  feesMinor    BigInt    @map("fees_minor")
+  refundsMinor BigInt    @map("refunds_minor")
+  netMinor     BigInt    @map("net_minor")
+  currency     String
+  entryId      String?   @map("entry_id")
+  status       String
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  merchant BitesMerchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([merchantId, weekStart])
+  @@map("merchant_payouts")
 }

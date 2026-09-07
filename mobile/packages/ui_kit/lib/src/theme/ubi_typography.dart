@@ -221,6 +221,29 @@ abstract final class UbiTypography {
         height: 1.25,
       );
 
+  // === Design-scale accessors (public names used across the UI kit) ===
+
+  /// Heading large - maps to headline large
+  static TextStyle get headingLarge => _headlineLarge;
+
+  /// Heading medium - maps to headline medium
+  static TextStyle get headingMedium => _headlineMedium;
+
+  /// Heading small - maps to headline small
+  static TextStyle get headingSmall => _headlineSmall;
+
+  /// Body large
+  static TextStyle get bodyLarge => _bodyLarge;
+
+  /// Body medium
+  static TextStyle get bodyMedium => _bodyMedium;
+
+  /// Body small
+  static TextStyle get bodySmall => _bodySmall;
+
+  /// Default price style accessor.
+  static TextStyle get priceStyle => price();
+
   // === Custom Text Styles ===
 
   /// Price style - monospace for alignment
@@ -249,21 +272,6 @@ abstract final class UbiTypography {
     );
   }
   
-  /// Button text style
-  static TextStyle button({
-    double fontSize = 16,
-    FontWeight fontWeight = FontWeight.w600,
-    Color color = UbiColors.ubiWhite,
-  }) {
-    return GoogleFonts.inter(
-      fontSize: fontSize,
-      fontWeight: fontWeight,
-      color: color,
-      letterSpacing: 0.5,
-      height: 1.25,
-    );
-  }
-  
   /// Link text style
   static TextStyle link({
     double fontSize = 14,
@@ -275,19 +283,6 @@ abstract final class UbiTypography {
       color: color,
       decoration: TextDecoration.underline,
       decorationColor: color,
-    );
-  }
-  
-  /// Caption style
-  static TextStyle caption({
-    Color color = UbiColors.gray500,
-  }) {
-    return GoogleFonts.inter(
-      fontSize: 12,
-      fontWeight: FontWeight.w400,
-      color: color,
-      letterSpacing: 0.4,
-      height: 1.33,
     );
   }
   

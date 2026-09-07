@@ -3,10 +3,25 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ubi_core/ubi_config.dart';
+import 'package:ubi_core/ubi_test_ids.dart';
+import 'package:ubi_ui_kit/ubi_tokens.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/trips_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../bloc/trips_bloc.dart';
+
+/// Formats an amount with the city's currency, fraction digits and locale.
+///
+/// Returns an em dash when there is no city config: without one there is no
+/// honest way to name a currency, and the app must never fall back to a
+/// literal (CLAUDE.md rule 6).
+String _money(BuildContext context, num amountMajor) {
+  // `read`, not `watch`: this helper is also called from a dialog builder,
+  // where a watch would assert.
+  final formatter = context.read<ConfigCubit>().state.money;
+  return formatter == null ? '\u2014' : formatter.formatMajor(amountMajor);
+}
 
 /// Active trip page showing current trip with navigation and customer info
 class ActiveTripPage extends StatefulWidget {
@@ -197,21 +212,23 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
     Color color;
     IconData icon;
 
+    final tokens = UbiSemanticColors.of(context);
+
     if (state is TripsEnRouteToPickup) {
       status = 'En route to pickup';
-      color = Colors.blue;
+      color = tokens.travelInk;
       icon = Icons.directions_car;
     } else if (state is TripsArrivedPickup) {
       status = 'Arrived at pickup';
-      color = const Color(0xFF00A86B);
+      color = tokens.moveInk;
       icon = Icons.location_on;
     } else if (state is TripsInProgress) {
       status = 'Trip in progress';
-      color = const Color(0xFF00A86B);
+      color = tokens.moveInk;
       icon = Icons.navigation;
     } else if (state is TripsArrivedDropoff) {
       status = 'Arrived at dropoff';
-      color = Colors.orange;
+      color = tokens.warnInk;
       icon = Icons.flag;
     } else if (state is TripsCollectingCash) {
       status = 'Collecting payment';
@@ -358,8 +375,8 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               Container(
                 width: 10,
                 height: 10,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF00A86B),
+                decoration: BoxDecoration(
+                  color: UbiSemanticColors.of(context).move,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -435,7 +452,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               Column(
                 children: [
                   Text(
-                    'KES ${fare.toInt()}',
+                    _money(context, fare),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -459,12 +476,15 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
   }
 
   Widget _buildActionButton(BuildContext context, TripsState state) {
+    final tokens = UbiSemanticColors.of(context);
     String text;
     VoidCallback onPressed;
     Color? color;
+    String? testId;
 
     if (state is TripsEnRouteToPickup) {
       text = 'Arrived at Pickup';
+      testId = TestIds.driverPickupArrived;
       onPressed = () {
         context.read<TripsBloc>().add(const ArrivedAtPickup());
       };
@@ -475,17 +495,21 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
       };
     } else if (state is TripsInProgress) {
       text = 'Complete Trip';
+      testId = TestIds.driverTripComplete;
       onPressed = () {
         context.read<TripsBloc>().add(const TripCompleted());
       };
     } else if (state is TripsArrivedDropoff) {
       text = 'Confirm Dropoff';
+      testId = TestIds.driverTripComplete;
       onPressed = () {
         context.read<TripsBloc>().add(const TripCompleted());
       };
     } else if (state is TripsCollectingCash) {
-      text = 'Cash Collected - KES ${state.trip.estimatedFare.toInt()}';
-      color = Colors.green;
+      // The amount is the server's, rendered in the city's currency.
+      text = 'Cash Collected - ${_money(context, state.trip.estimatedFare)}';
+      testId = TestIds.driverCashReceived;
+      color = tokens.move;
       onPressed = () {
         context.read<TripsBloc>().add(
               CashCollected(state.trip.estimatedFare),
@@ -500,8 +524,9 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
       children: [
         SizedBox(
           width: double.infinity,
-          height: 56,
+          height: UbiTargets.primaryButton,
           child: ElevatedButton(
+            key: testId == null ? null : testKey(testId),
             onPressed: onPressed,
             style: color != null
                 ? ElevatedButton.styleFrom(backgroundColor: color)
@@ -552,12 +577,12 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                color: const Color(0xFF00A86B).withOpacity(0.1),
+                color: UbiSemanticColors.of(context).moveTint,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.check_circle,
-                color: Color(0xFF00A86B),
+                color: UbiSemanticColors.of(context).moveInk,
                 size: 40,
               ),
             ),
@@ -570,13 +595,13 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
               ),
             ),
             const SizedBox(height: 24),
-            _buildSummaryRow('Fare', 'KES ${summary.fare.toInt()}'),
-            _buildSummaryRow('Tips', 'KES ${summary.tips.toInt()}'),
-            _buildSummaryRow('Bonus', 'KES ${summary.bonus.toInt()}'),
+            _buildSummaryRow('Fare', _money(context, summary.fare)),
+            _buildSummaryRow('Tips', _money(context, summary.tips)),
+            _buildSummaryRow('Bonus', _money(context, summary.bonus)),
             const Divider(height: 24),
             _buildSummaryRow(
               'Total Earnings',
-              'KES ${summary.totalEarnings.toInt()}',
+              _money(context, summary.totalEarnings),
               isTotal: true,
             ),
             const SizedBox(height: 8),
@@ -625,7 +650,7 @@ class _ActiveTripPageState extends State<ActiveTripPage> {
             style: TextStyle(
               fontSize: isTotal ? 18 : 14,
               fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
-              color: isTotal ? const Color(0xFF00A86B) : null,
+              color: isTotal ? UbiSemanticColors.of(context).moveInk : null,
             ),
           ),
         ],
