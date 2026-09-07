@@ -340,6 +340,41 @@ jobs:
           fi
           echo "OK: unbalanced journal entry refused by the database"
 
+  contracts:
+    name: Contract Validation
+    needs: setup
+    runs-on: ubuntu-latest
+    # Guards the two contract failures that are invisible on reading: a
+    # duplicate top-level YAML key (which silently discards the earlier block)
+    # and a $ref that does not resolve.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate OpenAPI documents and state machines
+        run: node tooling/scripts/validate-contracts.mjs
+
+      - name: Assert the generated state machines match the contract
+        # codegen must be a no-op on a clean tree; if it is not, the committed
+        # code has drifted from contracts/state-machines.json.
+        run: |
+          pnpm --filter @ubi/contracts codegen
+          git diff --exit-code packages/contracts/src/state-machines/machines.generated.ts
+
   # ===========================================
   # MOBILE (FLUTTER)
   # ===========================================
@@ -412,7 +447,7 @@ jobs:
   # ===========================================
   ci-success:
     name: CI Success
-    needs: [build, test, go-build, db-check]
+    needs: [build, test, go-build, db-check, contracts]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -421,7 +456,8 @@ jobs:
           if [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.go-build.result }}" != "success" ] || \
-             [ "${{ needs.db-check.result }}" != "success" ]; then
+             [ "${{ needs.db-check.result }}" != "success" ] || \
+             [ "${{ needs.contracts.result }}" != "success" ]; then
             echo "One or more jobs failed"
             exit 1
           fi

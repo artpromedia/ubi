@@ -1,28 +1,322 @@
+# Vendored from the design handoff, with one repair.
+#
+# The handoff copy of this document declared `components:` TWICE at the top
+# level. YAML has no merge semantics for duplicate keys -- the later mapping
+# simply replaces the earlier one -- so the first block was silently discarded,
+# taking `securitySchemes`, the required `Idempotency-Key` parameter and the
+# shared `Money`/`Error` schemas with it. Every `$ref` to them dangled, and the
+# API declared no authentication at all.
+#
+# The two blocks are merged here into one. No content was changed, added or
+# removed; the file is re-emitted in block style, so it no longer matches the
+# handoff byte for byte.
 openapi: 3.1.0
-info: { title: "UBI Config, Identity, Support, Recon", version: 0.1.0, description: "City config & flags, identity step-up, support cases, finance reconciliation, review queues. Money is integer minor units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key." }
-servers: [{ url: https://api.ubi.africa }]
+info:
+  title: UBI Config, Identity, Support, Recon
+  version: 0.1.0
+  description: City config & flags, identity step-up, support cases, finance reconciliation, review queues.
+    Money is integer minor units (kobo) with explicit currency from city config. All mutating POSTs accept
+    Idempotency-Key.
+servers:
+- url: https://api.ubi.africa
 components:
-  securitySchemes: { bearer: { type: http, scheme: bearer } }
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
   parameters:
-    IdemKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 64 } }
+    IdemKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        maxLength: 64
   schemas:
-    Money: { type: object, required: [amountMinor, currency], properties: { amountMinor: { type: integer }, currency: { type: string, example: NGN } } }
-    Error: { type: object, properties: { code: { type: string }, message: { type: string }, details: { type: object } } }
-security: [{ bearer: [] }]
+    Money:
+      type: object
+      required:
+      - amountMinor
+      - currency
+      properties:
+        amountMinor:
+          type: integer
+        currency:
+          type: string
+          example: NGN
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+    CityConfig:
+      type: object
+      properties:
+        cityId:
+          type: string
+        version:
+          type: integer
+        currency:
+          type: string
+          example: NGN
+        emergencyNumber:
+          type: string
+          example: '112'
+        vehicleClasses:
+          type: array
+          items:
+            type: string
+          example:
+          - go
+          - comfort
+          - xl
+        fares:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              baseMinor:
+                type: integer
+              perKmMinor:
+                type: integer
+              perMinMinor:
+                type: integer
+              bookingFeeMinor:
+                type: integer
+              minFareMinor:
+                type: integer
+        waitPolicy:
+          type: object
+          properties:
+            freeSec:
+              type: integer
+              example: 300
+            perMinMinor:
+              type: integer
+              example: 5000
+        cancelPolicy:
+          type: object
+          properties:
+            riderFeeAfterAssignMinor:
+              type: integer
+              example: 30000
+            driverFeeMinor:
+              type: integer
+              example: 0
+            freeWindowSec:
+              type: integer
+              example: 120
+        pinRequired:
+          type: boolean
+        quoteTtlSec:
+          type: integer
+          example: 300
+        offerTtlSec:
+          type: integer
+          example: 12
+        paymentMethods:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              available:
+                type: boolean
+              reason:
+                type: string
+        kycTiers:
+          type: object
+        remittanceCapMinor:
+          type: integer
+        airport:
+          type: object
+          properties:
+            codes:
+              type: array
+              items:
+                type: string
+            arrivalBufferMin:
+              type: integer
+              example: 20
+            doors:
+              type: object
+        serviceFeePct:
+          type: number
+          example: 20
+security:
+- bearer: []
 paths:
-  /v1/config/cities/{cityId}: { get: { parameters: [{name: cityId, in: path, required: true, schema: {type: string, example: LOS}}], responses: { '200': { description: 'active config version (ETag)', content: { application/json: { schema: { $ref: '#/components/schemas/CityConfig' } } } } } } }
-  /v1/flags: { get: { parameters: [{name: cityId, in: query, schema: {type: string}}], responses: { '200': { description: 'evaluated flags; deny-by-default', content: { application/json: { schema: { type: object, additionalProperties: { type: boolean } } } } } } } }
-  /v1/config/change-requests: { post: { requestBody: { content: { application/json: { schema: { type: object, required: [cityId, patch, reason], properties: { cityId: {type: string}, patch: {type: object}, reason: {type: string} } } } } }, responses: { '201': { description: pending } } } }
-  /v1/config/change-requests/{id}/approve: { post: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: { '200': { description: 'second approver (≠ author) activates new version' } } } }
-  /v1/devices/enroll: { post: { responses: { '200': { description: 'ok | step_up_required{methods:[old_device_approve, selfie_nin]} → limited scopes until passed' } } } }
-  /v1/auth/step-up/selfie: { post: { responses: { '200': { description: 'liveness + NIN face match; score stored, image discarded' } } } }
-  /v1/drivers/me/documents: { get: { responses: { '200': { description: 'Lagos set with expiry + review state' } } }, post: { responses: { '201': { description: 'uploaded → review queue' } } } }
-  /v1/safety/sos: { post: { responses: { '202': { description: 'durable; SMS fallback; ride → safety_hold; 24/7 queue with SLA' } } } }
-  /v1/support/cases: { post: { responses: { '201': { description: 'case with unified timeline' } } } }
-  /v1/support/cases/{id}/remedies: { post: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], requestBody: { content: { application/json: { schema: { type: object, required: [type], properties: { type: { type: string, enum: [fee_reversal, refund, credit, redelivery, cash_dispute_resolution] }, amountMinor: {type: integer}, reason: {type: string} } } } } }, responses: { '201': { description: 'typed remedy → ledger lines with case ref; visible to user on the item' } } } }
-  /v1/finance/recon/{date}: { get: { parameters: [{name: date, in: path, required: true, schema: {type: string, format: date}}], responses: { '200': { description: 'per rail: ledger vs external, diff, breaks with owner + deadline; closeAllowed = unexplained == 0' } } } }
-  /v1/finance/recon/{date}/close: { post: { parameters: [{name: date, in: path, required: true, schema: {type: string}}], responses: { '200': { description: closed }, '409': { description: 'unexplained ≠ 0' } } } }
-  /v1/reviews/{queue}: { get: { parameters: [{name: queue, in: path, required: true, schema: { type: string, enum: [kyc, merchants, hotels, fleets, claims, identity] }}], responses: { '200': { description: 'automated checks advisory; human decides; decision + reviewer → audit_log' } } } }
-components:
-  schemas:
-    CityConfig: { type: object, properties: { cityId: {type: string}, version: {type: integer}, currency: {type: string, example: NGN}, emergencyNumber: {type: string, example: '112'}, vehicleClasses: { type: array, items: { type: string }, example: [go, comfort, xl] }, fares: { type: object, additionalProperties: { type: object, properties: { baseMinor: {type: integer}, perKmMinor: {type: integer}, perMinMinor: {type: integer}, bookingFeeMinor: {type: integer}, minFareMinor: {type: integer} } } }, waitPolicy: { type: object, properties: { freeSec: {type: integer, example: 300}, perMinMinor: {type: integer, example: 5000} } }, cancelPolicy: { type: object, properties: { riderFeeAfterAssignMinor: {type: integer, example: 30000}, driverFeeMinor: {type: integer, example: 0}, freeWindowSec: {type: integer, example: 120} } }, pinRequired: {type: boolean}, quoteTtlSec: {type: integer, example: 300}, offerTtlSec: {type: integer, example: 12}, paymentMethods: { type: array, items: { type: object, properties: { id: {type: string}, available: {type: boolean}, reason: {type: string} } } }, kycTiers: {type: object}, remittanceCapMinor: {type: integer}, airport: { type: object, properties: { codes: { type: array, items: { type: string } }, arrivalBufferMin: {type: integer, example: 20}, doors: {type: object} } }, serviceFeePct: {type: number, example: 20} } }
+  /v1/config/cities/{cityId}:
+    get:
+      parameters:
+      - name: cityId
+        in: path
+        required: true
+        schema:
+          type: string
+          example: LOS
+      responses:
+        '200':
+          description: active config version (ETag)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CityConfig'
+  /v1/flags:
+    get:
+      parameters:
+      - name: cityId
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: evaluated flags; deny-by-default
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+  /v1/config/change-requests:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - cityId
+              - patch
+              - reason
+              properties:
+                cityId:
+                  type: string
+                patch:
+                  type: object
+                reason:
+                  type: string
+      responses:
+        '201':
+          description: pending
+  /v1/config/change-requests/{id}/approve:
+    post:
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: second approver (≠ author) activates new version
+  /v1/devices/enroll:
+    post:
+      responses:
+        '200':
+          description: ok | step_up_required{methods:[old_device_approve, selfie_nin]} → limited scopes
+            until passed
+  /v1/auth/step-up/selfie:
+    post:
+      responses:
+        '200':
+          description: liveness + NIN face match; score stored, image discarded
+  /v1/drivers/me/documents:
+    get:
+      responses:
+        '200':
+          description: Lagos set with expiry + review state
+    post:
+      responses:
+        '201':
+          description: uploaded → review queue
+  /v1/safety/sos:
+    post:
+      responses:
+        '202':
+          description: durable; SMS fallback; ride → safety_hold; 24/7 queue with SLA
+  /v1/support/cases:
+    post:
+      responses:
+        '201':
+          description: case with unified timeline
+  /v1/support/cases/{id}/remedies:
+    post:
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - type
+              properties:
+                type:
+                  type: string
+                  enum:
+                  - fee_reversal
+                  - refund
+                  - credit
+                  - redelivery
+                  - cash_dispute_resolution
+                amountMinor:
+                  type: integer
+                reason:
+                  type: string
+      responses:
+        '201':
+          description: typed remedy → ledger lines with case ref; visible to user on the item
+  /v1/finance/recon/{date}:
+    get:
+      parameters:
+      - name: date
+        in: path
+        required: true
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: 'per rail: ledger vs external, diff, breaks with owner + deadline; closeAllowed
+            = unexplained == 0'
+  /v1/finance/recon/{date}/close:
+    post:
+      parameters:
+      - name: date
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: closed
+        '409':
+          description: unexplained ≠ 0
+  /v1/reviews/{queue}:
+    get:
+      parameters:
+      - name: queue
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - kyc
+          - merchants
+          - hotels
+          - fleets
+          - claims
+          - identity
+      responses:
+        '200':
+          description: automated checks advisory; human decides; decision + reviewer → audit_log
