@@ -261,7 +261,18 @@ without it.
 | `location-service` | **could not build** — no `go.sum`                                                                                 | builds, vets clean                     |
 | `delivery-service` | **could not build** — no `go.sum`, and `go mod tidy` failed on a test importing a module path that does not exist | builds, vets clean, handler tests pass |
 
-### payment-service: a hand-written shim turns every database query into `any`
+### payment-service: a hand-written shim turned every database query into `any` — RESOLVED
+
+> **Resolved.** The shim is deleted. payment-service now typechecks at **0
+> errors** against the real generated Prisma types. The launch money path
+> (`src/ledger`, `src/finance`, `/v1/wallet`, `/v1/finance`, `/v1/finance/remedies`)
+> is fixed with real types; the superseded legacy that was built on models that
+> never existed (`prisma.payment`, `walletTransaction`, stored-balance wallet — the
+> old `/payments`, `/wallets`, `/payouts`, `/mobile-money`, `/webhooks` routes and
+> `settlement.service`) is quarantined out of the build and unmounted, documented
+> in `services/payment-service/QUARANTINE.md`. The original finding, below, is kept
+> for the record.
+
 
 `services/payment-service/src/types/prisma.d.ts` contains
 `declare module "@prisma/client" { ... }`. That is an **ambient module
