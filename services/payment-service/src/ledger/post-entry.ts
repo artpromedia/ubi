@@ -10,10 +10,11 @@
  */
 import { ContractError, money, sumMoney } from "@ubi/contracts";
 
-import { generateId } from "../lib/utils";
 
 import { isWalletBearing } from "./accounts";
 import { toDbMinor } from "./minor-units";
+import { generateId } from "../lib/utils";
+
 import type {
   JournalLineInput,
   LedgerTx,

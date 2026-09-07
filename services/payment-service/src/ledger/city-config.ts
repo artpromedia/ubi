@@ -7,6 +7,8 @@
  * valid version exists the wallet answers `config_unavailable` rather than
  * falling back to a default, and every feature flag reads as off (CLAUDE.md #5).
  */
+import { z } from "zod";
+
 import {
   CityConfigSchema,
   type CityConfig,
@@ -17,7 +19,6 @@ import {
   isEnabled,
   featureDisabled,
 } from "@ubi/contracts";
-import { z } from "zod";
 
 import { walletLogger } from "../lib/logger";
 

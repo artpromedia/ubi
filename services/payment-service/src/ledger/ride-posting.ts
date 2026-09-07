@@ -21,6 +21,7 @@ import {
 } from "@ubi/contracts";
 
 import { postEntry } from "./post-entry";
+
 import type { JournalLineInput, LedgerTx, PostedEntry } from "./types";
 
 export type RidePaymentMethod = "wallet" | "cash";

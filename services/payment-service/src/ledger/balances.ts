@@ -7,6 +7,7 @@ import { type Money, money } from "@ubi/contracts";
 
 import { OUTBOUND_LIMIT_KINDS } from "./accounts";
 import { fromDbMinor, fromNullableDbMinor } from "./minor-units";
+
 import type { LedgerTx } from "./types";
 
 /** Sum of every journal line carrying this wallet id, in the wallet's currency. */

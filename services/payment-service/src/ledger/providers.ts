@@ -7,8 +7,9 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { ContractError, type Money } from "@ubi/contracts";
 import { z } from "zod";
+
+import { ContractError, type Money } from "@ubi/contracts";
 
 export interface NameEnquiryRequest {
   readonly bankCode: string;

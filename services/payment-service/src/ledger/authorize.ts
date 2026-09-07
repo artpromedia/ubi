@@ -9,9 +9,10 @@
 import { ContractError } from "@ubi/contracts";
 
 import { publishEvent, writeAudit } from "./audit";
+import { verifyPin } from "./pin";
+
 import type { WalletCityConfig } from "./city-config";
 import type { WalletDeps } from "./context";
-import { verifyPin } from "./pin";
 import type { Actor } from "./types";
 import type { WalletRecord } from "./wallets";
 

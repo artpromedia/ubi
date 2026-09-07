@@ -20,14 +20,13 @@ import {
   scopedIdempotencyKey,
 } from "@ubi/contracts";
 
-import { walletLogger } from "../lib/logger";
-import { generateId } from "../lib/utils";
 
 import { publishEvent, writeAudit } from "./audit";
 import { verifyWalletPin } from "./authorize";
 import { balanceOf } from "./balances";
-import { isIdempotencyRace } from "./idempotency";
+import { assertFlagEnabled, type WalletCityConfig } from "./city-config";
 import { lockWallet, type WalletDeps } from "./context";
+import { isIdempotencyRace } from "./idempotency";
 import {
   assertSufficientFunds,
   assertWithinLimits,
@@ -37,16 +36,18 @@ import { fromDbMinor } from "./minor-units";
 import { assertPinShape } from "./pin";
 import { postEntry } from "./post-entry";
 import { requireRail } from "./providers";
-import { evaluateTransferRisk, isNewRecipient, type RiskReason } from "./risk";
 import { openRiskReviewCase } from "./review";
-import type { Actor, LedgerTx } from "./types";
+import { evaluateTransferRisk, isNewRecipient, type RiskReason } from "./risk";
 import {
   assertNotLocked,
   assertNotSafeMode,
   assertOutsideCoolingCap,
   ensureWallet,
 } from "./wallets";
-import { assertFlagEnabled, type WalletCityConfig } from "./city-config";
+import { walletLogger } from "../lib/logger";
+import { generateId } from "../lib/utils";
+
+import type { Actor, LedgerTx } from "./types";
 
 const TRANSFER_MACHINE = "walletTransfer" as const;
 
@@ -197,10 +198,7 @@ async function recordRejection(
   });
 }
 
-async function findByIdempotency(
-  deps: WalletDeps,
-  key: string,
-): Promise<TransferRow | null> {
+function findByIdempotency(deps: WalletDeps, key: string): Promise<TransferRow | null> {
   return deps.db.transfer.findUnique({ where: { idempotencyKey: key } });
 }
 
@@ -213,7 +211,9 @@ export async function sendTransfer(
 
   const existing = await findByIdempotency(deps, idempotencyKey);
   if (existing !== null) {
-    return deps.db.$transaction((tx) => replayOutcome(tx, existing, input.toUserId));
+    return deps.db.$transaction((tx) =>
+      replayOutcome(tx, existing, input.toUserId),
+    );
   }
 
   const config = await deps.config.loadForWallet(input.cityId);
@@ -701,7 +701,9 @@ async function handleTransferFailure(
   if (isIdempotencyRace(original)) {
     const winner = await findByIdempotency(deps, params.idempotencyKey);
     if (winner !== null) {
-      return deps.db.$transaction((tx) => replayOutcome(tx, winner, params.toUserId));
+      return deps.db.$transaction((tx) =>
+        replayOutcome(tx, winner, params.toUserId),
+      );
     }
   }
 

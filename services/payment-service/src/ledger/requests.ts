@@ -12,24 +12,25 @@ import {
   scopedIdempotencyKey,
 } from "@ubi/contracts";
 
-import { generateId } from "../lib/utils";
 
 import { publishEvent, writeAudit } from "./audit";
 import { verifyWalletPin } from "./authorize";
 import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
 import { lockWallet, type WalletDeps } from "./context";
-import { assertSufficientFunds, assertWithinLimits, limitStatus } from "./limits";
 import { isIdempotencyRace } from "./idempotency";
+import { assertSufficientFunds, assertWithinLimits, limitStatus } from "./limits";
 import { fromDbMinor } from "./minor-units";
 import { assertPinShape } from "./pin";
 import { postEntry } from "./post-entry";
-import type { Actor, LedgerTx } from "./types";
 import {
   assertNotLocked,
   assertNotSafeMode,
   ensureWallet,
 } from "./wallets";
+import { generateId } from "../lib/utils";
+
+import type { Actor, LedgerTx } from "./types";
 
 /**
  * `transfer_requests` has no machine in contracts/state-machines.json, so the

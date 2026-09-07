@@ -5,15 +5,15 @@
  * takes a caller-supplied Prisma transaction client so a saga (top-up +
  * transfer) commits or rolls back as one unit.
  */
+import type { EntryKind, LedgerAccount } from "./accounts";
+import type { PrismaClient } from "@prisma/client/index";
 import type { Money } from "@ubi/contracts";
 // The generated client's types are reachable through the "./index" subpath but
 // not through the package root under `moduleResolution: nodenext` — the root's
 // `default.d.ts` re-exports a specifier the exports map cannot resolve, so
 // `PrismaClient` degrades to `any` there and every query in this service loses
 // its types. This is a type-only import, erased at build time.
-import type { PrismaClient } from "@prisma/client/index";
 
-import type { EntryKind, LedgerAccount } from "./accounts";
 
 /** A Prisma client scoped to an open transaction — no lifecycle methods. */
 export type LedgerTx = Omit<

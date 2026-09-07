@@ -99,17 +99,19 @@ describe("concurrent spending from one wallet", () => {
         idempotencyKey: key,
       });
 
-    const results = await Promise.allSettled([send(), send()]);
+    const results = await Promise.all([send(), send()]);
     const posted = await db.transfer.count({
       where: { fromWallet: senderWallet.id, status: "posted" },
     });
 
-    // Whatever the losing request saw, the unique idempotency key means the
-    // money moved exactly once.
+    // Both callers are answered, both with the same transfer, and the money
+    // moved exactly once: the loser of the race replayed the winner's result
+    // rather than surfacing a constraint violation.
     expect(posted).toBe(1);
+    expect(results[0]?.transferId).toBe(results[1]?.transferId);
+    expect(results.some((entry) => entry.replayed)).toBe(true);
     expect(await balanceOf(db, recipientWallet.id, city.currency)).toEqual(
       money(70_000, city.currency),
     );
-    expect(results.some((entry) => entry.status === "fulfilled")).toBe(true);
   });
 });

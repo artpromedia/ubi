@@ -6,11 +6,12 @@
  * `walletPolicy`, so a market can tune them without a deploy and every change
  * goes through config approval.
  */
-import type { Money } from "@ubi/contracts";
 
 import { fromDbMinor } from "./minor-units";
-import type { LedgerTx } from "./types";
+
 import type { WalletPolicy } from "./city-config";
+import type { LedgerTx } from "./types";
+import type { Money } from "@ubi/contracts";
 
 export const RISK_REASONS = ["new_recipient", "velocity_count", "velocity_amount"] as const;
 export type RiskReason = (typeof RISK_REASONS)[number];

@@ -14,14 +14,15 @@ import {
   money,
 } from "@ubi/contracts";
 
-import { generateId } from "../lib/utils";
-
 import { publishEvent, writeAudit } from "./audit";
-import type { WalletDeps } from "./context";
+import { assertFlagEnabled } from "./city-config";
 import { fromDbMinor } from "./minor-units";
 import { postEntry } from "./post-entry";
+import { generateId } from "../lib/utils";
+
+import type { WalletDeps } from "./context";
 import type { Actor, LedgerTx } from "./types";
-import { assertFlagEnabled } from "./city-config";
+
 
 const TRANSFER_MACHINE = "walletTransfer" as const;
 
@@ -72,12 +73,11 @@ async function moveTransfer(
   tx: LedgerTx,
   transfer: LoadedTransfer,
   next: string,
-  data: Readonly<Record<string, unknown>> = {},
 ): Promise<void> {
   assertTransition(TRANSFER_MACHINE, transfer.status, next);
   const updated = await tx.transfer.updateMany({
     where: { id: transfer.id, version: transfer.version },
-    data: { ...data, status: next, version: { increment: 1 } },
+    data: { status: next, version: { increment: 1 } },
   });
   if (updated.count !== 1) {
     throw new ContractError("version_conflict", "the transfer changed underneath us", {

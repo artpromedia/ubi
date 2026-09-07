@@ -5,12 +5,13 @@
  * against a real, isolated database in the tests — the operations never reach
  * for a module-level client of their own.
  */
-import { prisma } from "../lib/prisma";
 
 import { createCityConfigProvider } from "./city-config";
-import type { WalletDeps } from "./context";
 import { createPrismaDirectory } from "./directory";
 import { httpBankRailProvider, httpTopupProvider } from "./providers";
+import { prisma } from "../lib/prisma";
+
+import type { WalletDeps } from "./context";
 import type { LedgerDb } from "./types";
 
 export function createWalletDeps(db: LedgerDb): WalletDeps {

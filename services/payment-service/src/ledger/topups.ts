@@ -12,20 +12,21 @@ import {
   scopedIdempotencyKey,
 } from "@ubi/contracts";
 
-import { walletLogger } from "../lib/logger";
-import { generateId } from "../lib/utils";
 
 import { publishEvent, writeAudit } from "./audit";
 import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
-import type { WalletDeps } from "./context";
-import { assertWithinBalanceCap, limitStatus } from "./limits";
 import { isIdempotencyRace } from "./idempotency";
+import { assertWithinBalanceCap, limitStatus } from "./limits";
 import { fromDbMinor } from "./minor-units";
 import { postEntry } from "./post-entry";
 import { requireRail } from "./providers";
-import type { Actor } from "./types";
 import { assertNotLocked, ensureWallet } from "./wallets";
+import { walletLogger } from "../lib/logger";
+import { generateId } from "../lib/utils";
+
+import type { WalletDeps } from "./context";
+import type { Actor } from "./types";
 
 export interface TopupInput {
   readonly actor: Actor;

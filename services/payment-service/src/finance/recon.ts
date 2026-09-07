@@ -15,15 +15,6 @@ import {
   money,
 } from "@ubi/contracts";
 
-import type { LedgerAccount } from "../ledger/accounts";
-import { writeAudit } from "../ledger/audit";
-import type { WalletDeps } from "../ledger/context";
-import { assertIsoDate, dayWindow } from "../ledger/day-window";
-import { fromDbMinor, fromNullableDbMinor } from "../ledger/minor-units";
-import { postEntry } from "../ledger/post-entry";
-import type { Actor, LedgerTx } from "../ledger/types";
-import { generateId } from "../lib/utils";
-
 import {
   isExplanation,
   RAIL_ACCOUNTS,
@@ -31,6 +22,15 @@ import {
   type ReconRailName,
   RESOLUTION_PREFIXES,
 } from "./rails";
+import { writeAudit } from "../ledger/audit";
+import { assertIsoDate, dayWindow } from "../ledger/day-window";
+import { fromDbMinor, fromNullableDbMinor } from "../ledger/minor-units";
+import { postEntry } from "../ledger/post-entry";
+import { generateId } from "../lib/utils";
+
+import type { LedgerAccount } from "../ledger/accounts";
+import type { WalletDeps } from "../ledger/context";
+import type { Actor, LedgerTx } from "../ledger/types";
 
 /** One line of a reconciliation adjustment, in the run's currency. */
 export interface AdjustmentLine {

@@ -6,11 +6,12 @@ import { ContractError, type Money, money } from "@ubi/contracts";
 
 import { publishEvent, writeAudit } from "./audit";
 import { balanceOf } from "./balances";
-import type { WalletDeps } from "./context";
 import { limitStatus } from "./limits";
 import { hashPin } from "./pin";
-import type { Actor } from "./types";
 import { ensureWallet } from "./wallets";
+
+import type { WalletDeps } from "./context";
+import type { Actor } from "./types";
 
 export interface WalletOverview {
   readonly walletId: string;

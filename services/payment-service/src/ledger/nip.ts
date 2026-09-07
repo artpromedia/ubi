@@ -10,26 +10,27 @@
  */
 import { ContractError, type Money, money, scopedIdempotencyKey } from "@ubi/contracts";
 
-import { walletLogger } from "../lib/logger";
-import { generateId } from "../lib/utils";
 
 import { publishEvent, writeAudit } from "./audit";
 import { verifyWalletPin } from "./authorize";
 import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
 import { lockWallet, type WalletDeps } from "./context";
-import { assertSufficientFunds, assertWithinLimits, limitStatus } from "./limits";
 import { isIdempotencyRace } from "./idempotency";
+import { assertSufficientFunds, assertWithinLimits, limitStatus } from "./limits";
 import { fromDbMinor } from "./minor-units";
 import { assertPinShape } from "./pin";
 import { postEntry } from "./post-entry";
 import { requireRail } from "./providers";
-import type { Actor, LedgerTx } from "./types";
 import {
   assertNotLocked,
   assertNotSafeMode,
   ensureWallet,
 } from "./wallets";
+import { walletLogger } from "../lib/logger";
+import { generateId } from "../lib/utils";
+
+import type { Actor, LedgerTx } from "./types";
 
 export const NIP_STATUSES = ["pending", "confirmed", "reversed"] as const;
 export type NipStatus = (typeof NIP_STATUSES)[number];

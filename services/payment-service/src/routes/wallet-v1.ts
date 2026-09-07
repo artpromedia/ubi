@@ -8,9 +8,10 @@
  * gateway's authenticated headers, the currency and every limit come from city
  * config, and the body only ever supplies an amount and an intent.
  */
-import { ContractError, IDEMPOTENCY_HEADER, IdempotencyKeySchema } from "@ubi/contracts";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
+
+import { ContractError, IDEMPOTENCY_HEADER, IdempotencyKeySchema } from "@ubi/contracts";
 
 import {
   applyNipCallback,
@@ -26,17 +27,16 @@ import {
   respondToReturnRequest,
   sendTransfer,
   setInitialPin,
+  listRequests,
   setWalletLock,
   verifyWebhookSignature,
   walletOverview,
   type WalletDeps,
 } from "../ledger";
-import { listRequests } from "../ledger/requests";
 import { walletLogger } from "../lib/logger";
 import { serviceAuth } from "../middleware";
 
 import type { Actor } from "../ledger/types";
-import type { Context } from "hono";
 
 const AmountSchema = z.number().int().positive();
 
