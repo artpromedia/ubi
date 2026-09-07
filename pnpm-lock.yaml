@@ -1347,6 +1347,9 @@ importers:
       '@ubi/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@ubi/outbox':
+        specifier: workspace:*
+        version: link:../../packages/outbox
       hono:
         specifier: ^4.6.14
         version: 4.11.3
@@ -1414,6 +1417,9 @@ importers:
       '@ubi/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@ubi/outbox':
+        specifier: workspace:*
+        version: link:../../packages/outbox
       '@ubi/utils':
         specifier: workspace:*
         version: link:../../packages/utils
@@ -1560,6 +1566,9 @@ importers:
       '@ubi/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@ubi/outbox':
+        specifier: workspace:*
+        version: link:../../packages/outbox
       '@ubi/utils':
         specifier: workspace:*
         version: link:../../packages/utils
@@ -1685,6 +1694,9 @@ importers:
       '@ubi/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@ubi/outbox':
+        specifier: workspace:*
+        version: link:../../packages/outbox
       hono:
         specifier: ^4.6.14
         version: 4.11.3
@@ -1752,6 +1764,9 @@ importers:
       '@ubi/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@ubi/outbox':
+        specifier: workspace:*
+        version: link:../../packages/outbox
       '@ubi/utils':
         specifier: workspace:*
         version: link:../../packages/utils

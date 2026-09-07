@@ -12,8 +12,10 @@
  * cash/card/bank_transfer/wallet as payment methods.
  *
  * The per-class fare tables, KYC limits and remittance cap are NOT on the board
- * for this slice; they are marked below and must be replaced with the launch
- * numbers before Lagos goes live.
+ * for this slice. The values below are PROVISIONAL launch defaults: real,
+ * internally-consistent NGN figures (kobo) chosen so the service is not seeded
+ * with broken sentinels, but every one still REQUIRES ops/finance sign-off
+ * before Lagos goes live. Each block is annotated where the number was set.
  */
 import type { Prisma } from "@prisma/client";
 import { type CityConfig, CityConfigSchema, ContractError, FLAG_KEYS } from "@ubi/contracts";
@@ -48,28 +50,33 @@ export function lagosConfig(version: number): CityConfig {
     timezone: LAGOS_CITY.timezone,
     emergencyNumber: "112",
     vehicleClasses: ["go", "comfort", "xl"],
-    // PLACEHOLDER — not on the slice 01 board. Replace with the launch fare table.
+    // PROVISIONAL, pending ops/finance sign-off — not on the slice 01 board.
+    // NGN kobo (minor units; 100 kobo = ₦1). Defensible 2026 Lagos ride-hailing
+    // defaults, monotonic across classes: comfort > go and xl > comfort on
+    // base and perKm (and, deliberately, on perMin and minFare too). The
+    // platform booking fee is flat at ₦100 across classes. Worked example, an
+    // 8 km / 20 min trip: go ₦2,640, comfort ₦3,620, xl ₦4,960.
     fares: {
       go: {
-        baseMinor: 50_000,
-        perKmMinor: 12_000,
-        perMinMinor: 2_500,
-        bookingFeeMinor: 10_000,
-        minFareMinor: 90_000,
+        baseMinor: 60_000, // ₦600 base
+        perKmMinor: 18_000, // ₦180/km
+        perMinMinor: 2_500, // ₦25/min
+        bookingFeeMinor: 10_000, // ₦100 flat platform booking fee
+        minFareMinor: 120_000, // ₦1,200 floor
       },
       comfort: {
-        baseMinor: 80_000,
-        perKmMinor: 16_000,
-        perMinMinor: 3_500,
-        bookingFeeMinor: 10_000,
-        minFareMinor: 140_000,
+        baseMinor: 90_000, // ₦900 base
+        perKmMinor: 24_000, // ₦240/km
+        perMinMinor: 3_500, // ₦35/min
+        bookingFeeMinor: 10_000, // ₦100 flat platform booking fee
+        minFareMinor: 180_000, // ₦1,800 floor
       },
       xl: {
-        baseMinor: 120_000,
-        perKmMinor: 22_000,
-        perMinMinor: 4_500,
-        bookingFeeMinor: 10_000,
-        minFareMinor: 200_000,
+        baseMinor: 140_000, // ₦1,400 base
+        perKmMinor: 32_000, // ₦320/km
+        perMinMinor: 4_500, // ₦45/min
+        bookingFeeMinor: 10_000, // ₦100 flat platform booking fee
+        minFareMinor: 260_000, // ₦2,600 floor
       },
     },
     waitPolicy: { freeSec: 300, perMinMinor: 5_000 },
@@ -94,25 +101,42 @@ export function lagosConfig(version: number): CityConfig {
       { id: "bank_transfer", available: true },
       { id: "wallet", available: true },
     ],
-    // PLACEHOLDER — KYC limits are not on the slice 01 board.
+    // PROVISIONAL, pending ops/finance sign-off — KYC limits are not on the
+    // slice 01 board. CBN-style three-tier ladder in NGN kobo: tier1 is the
+    // most restrictive (a new wallet starts here — the payment service derives
+    // the entry tier from the lowest dailyOut, so tier1 must stay lowest) and
+    // tier3 is fully-KYC'd with an uncapped balance. Every limit is strictly
+    // increasing across tiers; null balanceCap means "no cap" (tier3 only),
+    // not an unset sentinel. Aligns with the CBN three-tier framework
+    // (~₦50k/₦300k, ₦200k/₦500k, unlimited-with-full-KYC).
     kycTiers: [
-      { tier: "tier0", dailyOutMinor: 0, singleTransferMinor: 0, balanceCapMinor: 5_000_000 },
       {
-        tier: "tier1",
-        dailyOutMinor: 5_000_000,
-        singleTransferMinor: 2_000_000,
-        balanceCapMinor: 30_000_000,
+        tier: "tier1", // minimal KYC (name + phone/BVN): lowest ceilings
+        dailyOutMinor: 5_000_000, // ₦50,000/day out
+        singleTransferMinor: 2_000_000, // ₦20,000 per transfer
+        balanceCapMinor: 30_000_000, // ₦300,000 balance cap
       },
       {
-        tier: "tier2",
-        dailyOutMinor: 50_000_000,
-        singleTransferMinor: 20_000_000,
-        balanceCapMinor: null,
+        tier: "tier2", // BVN + verified ID/address
+        dailyOutMinor: 20_000_000, // ₦200,000/day out
+        singleTransferMinor: 10_000_000, // ₦100,000 per transfer
+        balanceCapMinor: 50_000_000, // ₦500,000 balance cap
+      },
+      {
+        tier: "tier3", // full KYC: highest ceilings, uncapped balance
+        dailyOutMinor: 500_000_000, // ₦5,000,000/day out
+        singleTransferMinor: 100_000_000, // ₦1,000,000 per transfer
+        balanceCapMinor: null, // no balance cap
       },
     ],
     serviceFeePct: 20,
-    // PLACEHOLDER — remittance cap is not on the slice 01 board.
-    remittanceCapMinor: 5_000_000,
+    // PROVISIONAL, pending ops/finance sign-off — remittance cap is not on the
+    // slice 01 board. Ceiling on a fleet's WEEKLY remittance from a driver
+    // (slice 10 fleet: "weekly remittance or % of net, ≤ cap from config"),
+    // in NGN kobo. ₦150,000/week — comfortably above legitimate Lagos
+    // hire-purchase / vehicle-financing arrangements (typically ≤ ₦100k/week,
+    // more for XL) while capping exploitative terms.
+    remittanceCapMinor: 15_000_000,
     reservationFreeReleaseSec: 900,
     airport: {
       codes: ["LOS"],

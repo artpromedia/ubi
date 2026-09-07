@@ -23,6 +23,7 @@
     "@ubi/contracts": "workspace:*",
     "@ubi/database": "workspace:*",
     "@ubi/logger": "workspace:*",
+    "@ubi/outbox": "workspace:*",
     "@ubi/utils": "workspace:*",
     "hono": "^4.6.14",
     "ioredis": "^5.4.1",
