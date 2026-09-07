@@ -11,9 +11,20 @@ import type { IdentityStateStore } from "../identity/state";
 import { logger } from "./logger.js";
 
 let client: Redis | undefined;
+let override: IdentityStateStore | undefined;
 let initialised = false;
 
+/**
+ * Injection seam. Production never calls this; tests use it to supply a store
+ * (or a store that always throws, to prove the read fails closed) without
+ * opening a socket.
+ */
+export function setIdentityStateStore(store: IdentityStateStore | undefined): void {
+  override = store;
+}
+
 export function getIdentityStateStore(): IdentityStateStore | undefined {
+  if (override !== undefined) return override;
   if (initialised) return client;
   initialised = true;
 
@@ -40,6 +51,7 @@ export function getIdentityStateStore(): IdentityStateStore | undefined {
 export function resetIdentityStateStore(): void {
   client?.disconnect();
   client = undefined;
+  override = undefined;
   initialised = false;
 }
 
