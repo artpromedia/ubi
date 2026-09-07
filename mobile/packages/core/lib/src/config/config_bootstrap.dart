@@ -69,7 +69,7 @@ abstract final class ConfigBootstrap {
   }) async {
     return ConfigCubit(
       repository: ConfigRepository(
-        api: ConfigApi(dio),
+        source: ConfigApi(dio),
         cache: cache ?? await ConfigCache.open(),
       ),
       citySource: citySource ?? await StoredCitySource.open(),

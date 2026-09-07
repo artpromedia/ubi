@@ -110,3 +110,16 @@ class ScriptedConfigSource implements ConfigSource {
     return flagResponses[_flagCall++];
   }
 }
+
+/// A [CitySource] with a fixed answer.
+class FakeCitySource implements CitySource {
+  FakeCitySource(this._cityId);
+
+  String? _cityId;
+
+  @override
+  Future<String?> currentCityId() async => _cityId;
+
+  @override
+  Future<void> setCityId(String cityId) async => _cityId = cityId;
+}

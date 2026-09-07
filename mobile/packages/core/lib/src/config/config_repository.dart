@@ -52,11 +52,11 @@ class FlagOutcome {
 }
 
 class ConfigRepository {
-  ConfigRepository({required ConfigSource api, ConfigCache? cache})
-      : _api = api,
+  ConfigRepository({required ConfigSource source, ConfigCache? cache})
+      : _source = source,
         _cache = cache;
 
-  final ConfigSource _api;
+  final ConfigSource _source;
   final ConfigCache? _cache;
 
   /// Flag revalidation state. In memory only, and only for this session — see
@@ -86,7 +86,7 @@ class ConfigRepository {
       }
     }
 
-    final ConfigResponse<CityConfig> response = await _api.fetchCityConfig(
+    final ConfigResponse<CityConfig> response = await _source.fetchCityConfig(
       cityId: cityId,
       etag: cachedConfig == null ? null : cached?.etag,
     );
@@ -140,7 +140,7 @@ class ConfigRepository {
 
   /// Evaluates flags. Any failure returns [FlagSet.denyAll].
   Future<FlagOutcome> loadFlags(String cityId) async {
-    final ConfigResponse<FlagSet> response = await _api.fetchFlags(
+    final ConfigResponse<FlagSet> response = await _source.fetchFlags(
       cityId: cityId,
       etag: _flagSet == null ? null : _flagEtag,
     );
