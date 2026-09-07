@@ -106,3 +106,11 @@ func (s *Store) SaveIdempotent(ctx context.Context, db DB, scope string, actorID
 	}
 	return nil
 }
+
+// decodeJSON reads a stored idempotent response back into its view type.
+func decodeJSON(raw json.RawMessage, target any) error {
+	if err := json.Unmarshal(raw, target); err != nil {
+		return fmt.Errorf("stored idempotent response is unreadable: %w", err)
+	}
+	return nil
+}

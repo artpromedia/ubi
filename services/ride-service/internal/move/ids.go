@@ -3,6 +3,7 @@ package move
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -25,4 +26,10 @@ func newID(prefix string) string {
 // a second row. The database enforces idempotency, not a cache.
 func deterministicID(prefix string, parts ...string) string {
 	return prefix + "_" + digest(strings.Join(parts, "|"))
+}
+
+// itoa keeps event idempotency keys free of fmt formatting, which is the kind
+// of place a %!d(MISSING) silently becomes part of a key.
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }
