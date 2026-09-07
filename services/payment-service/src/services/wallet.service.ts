@@ -15,12 +15,12 @@ import {
   AccountType,
   Currency,
   EntryType,
-  PrismaClient,
   TransactionStatus,
   TransactionType,
 } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { walletLogger } from "../lib/logger.js";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 import { performanceMonitor, walletCache } from "../lib/performance.js";
 
 export interface TransferParams {
@@ -106,7 +106,7 @@ export interface WithdrawalRequest {
 }
 
 export class WalletService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: ExtendedPrismaClient) {}
 
   /**
    * Get or create wallet account for user
@@ -904,12 +904,12 @@ export class WalletService {
 let walletServiceInstance: WalletService | null = null;
 
 // Create new instance
-export function createWalletService(prisma: PrismaClient): WalletService {
+export function createWalletService(prisma: ExtendedPrismaClient): WalletService {
   return new WalletService(prisma);
 }
 
 // Get singleton instance
-export function getWalletService(prisma: PrismaClient): WalletService {
+export function getWalletService(prisma: ExtendedPrismaClient): WalletService {
   walletServiceInstance ??= createWalletService(prisma);
   return walletServiceInstance;
 }

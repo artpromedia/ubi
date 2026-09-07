@@ -306,12 +306,15 @@ export class PayoutService {
         netAmount,
         status: initialStatus,
         payoutMethod: paymentMethod.toUpperCase(),
-        payoutDetails: {
+        // Real Payout schema requires accountNumber; destination detail is kept
+        // in metadata (there is no payoutDetails/scheduledFor column).
+        accountNumber: phoneNumber ?? bankAccount?.accountNumber ?? "",
+        metadata: {
           phoneNumber,
           bankAccount,
           reason: reason || "Instant cashout",
+          scheduledFor: new Date().toISOString(),
         },
-        scheduledFor: new Date(), // Instant
       },
     });
 
@@ -378,19 +381,23 @@ export class PayoutService {
       await this.prisma.payout.update({
         where: { id: payoutId },
         data: {
-          metadata: { holdId: holdResult.hold.id },
+          metadata: { holdId: holdResult.id },
         },
       });
 
       // Initiate payout with provider
       const providerResult = await this.initiateProviderPayout(payout);
 
-      // Update payout with provider reference
+      // Update payout with provider reference (Payout has no providerResponse
+      // column; the provider response is kept in the metadata JSON).
       await this.prisma.payout.update({
         where: { id: payoutId },
         data: {
           providerReference: providerResult.reference,
-          providerResponse: providerResult as any,
+          metadata: {
+            holdId: holdResult.id,
+            providerResponse: providerResult,
+          },
         },
       });
 
@@ -911,10 +918,11 @@ export class PayoutService {
     let failed = 0;
     let totalAmount = 0;
 
-    // Get all drivers with balance >= minimum
+    // Get all drivers with balance >= minimum. The launch Driver model has no
+    // status column; a verified (active) driver is one with verifiedAt set.
     const drivers = await this.prisma.driver.findMany({
       where: {
-        status: "ACTIVE",
+        verifiedAt: { not: null },
       },
       include: { user: true },
     });
@@ -945,11 +953,12 @@ export class PayoutService {
                   netAmount: balance.availableBalance,
                   status: PayoutStatus.PROCESSING,
                   payoutMethod: "MOBILE_MONEY",
-                  payoutDetails: {
+                  accountNumber: driver.user.phone,
+                  metadata: {
                     phoneNumber: driver.user.phone,
                     reason: "Weekly automatic payout",
+                    scheduledFor: new Date().toISOString(),
                   },
-                  scheduledFor: new Date(),
                 },
               });
 

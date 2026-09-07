@@ -23,6 +23,21 @@
     "dist",
     "**/*.test.ts",
 
+    // --- Superseded by the canonical /v1 ledger (src/ledger + src/finance) ---
+    //     These use Prisma models/shape that do NOT exist (prisma.payment,
+    //     prisma.walletTransaction, a stored-balance wallet.balance/lockedBalance/
+    //     wallet.userId). They only ever "compiled" under the deleted any-shim and
+    //     are replaced by /v1/wallet + /v1/finance. Routes unmounted in index.ts;
+    //     the PSP collection/payout providers are deferred pending a canonical rebuild.
+    "src/routes/payments.ts",                       // superseded by the canonical /v1 ledger
+    "src/routes/wallet.ts",                         // OLD wallet route; superseded by /v1/wallet
+    "src/routes/payouts.ts",                        // superseded by the canonical /v1 ledger
+    "src/routes/mobile-money.ts",                   // superseded by the canonical /v1 ledger
+    "src/routes/webhooks.ts",                       // superseded by the canonical /v1 ledger
+    "src/services/settlement.service.ts",           // fictional payment/walletTransaction models; canonical settlement is src/finance
+    "src/providers/orange-money.service.ts",        // PSP collection/payout integration, deferred — rebuild on the canonical ledger (fictional prisma.providerBalance; unsupported XOF currency)
+    "src/providers/telebirr.service.ts",            // PSP collection/payout integration, deferred — rebuild on the canonical ledger (fictional prisma.providerBalance)
+
     // --- Dead code: imported by ZERO files ---
     "src/services/ml",                              // unvalidated ML platform (deferred)
     "src/services/offline",                         // offline USSD/voice/SMS (deferred)

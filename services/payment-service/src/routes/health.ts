@@ -26,7 +26,7 @@ healthRoutes.get('/ready', async (c) => {
   const checks: Record<string, boolean> = {};
   
   // Check database
-  checks.database = await checkPrismaConnection();
+  checks.database = (await checkPrismaConnection()).healthy;
   
   // Check Redis
   checks.redis = await checkRedisConnection();

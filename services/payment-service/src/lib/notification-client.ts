@@ -5,6 +5,7 @@
  * for sending push notifications, SMS, emails, and in-app messages.
  */
 
+import { Prisma } from "@prisma/client";
 import { notificationLogger } from "./logger.js";
 import { prisma } from "./prisma";
 
@@ -209,10 +210,14 @@ class NotificationClient {
           title: payload.title,
           body: payload.body,
           type: payload.type,
-          priority: payload.priority || NotificationPriority.NORMAL,
-          data: payload.data as any,
-          channels: payload.channels || [],
-          status: "PENDING",
+          // The launch Notification schema stores only type/title/body/data;
+          // priority/channels/status ride along in the data JSON.
+          data: {
+            ...(payload.data ?? {}),
+            priority: payload.priority || NotificationPriority.NORMAL,
+            channels: payload.channels || [],
+            status: "PENDING",
+          } as Prisma.InputJsonValue,
         },
       });
     } catch (error) {

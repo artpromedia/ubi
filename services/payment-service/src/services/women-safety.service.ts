@@ -137,7 +137,7 @@ export class WomenSafetyService extends EventEmitter {
     }
 
     // Sort by distance and verified status
-    const sorted = matches.toSorted((a, b) => {
+    const sorted = [...matches].sort((a, b) => {
       // Prefer verified drivers
       if (a.verifiedFemale && !b.verifiedFemale) return -1;
       if (!a.verifiedFemale && b.verifiedFemale) return 1;

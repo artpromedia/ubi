@@ -21,17 +21,14 @@ export { MoMoService as MomoService } from "../providers/momo.service";
 export { MpesaService } from "../providers/mpesa.service";
 export { PaystackService } from "../providers/paystack.service";
 
-// Payout & Settlement Services
+// Payout Services
 export {
   PayoutService,
   createPayoutService,
   getPayoutService,
 } from "./payout.service";
-export {
-  SettlementService,
-  createSettlementService,
-  getSettlementService,
-} from "./settlement.service";
+// NOTE: SettlementService is superseded by the canonical src/finance settlement
+// path and quarantined out of the build (tsconfig "exclude"); not re-exported.
 
 // Risk & Compliance Services
 export {
@@ -60,12 +57,6 @@ export type {
   CashoutRequest,
   PayoutResult,
 } from "./payout.service";
-
-export type {
-  CommissionBreakdown,
-  // Settlement types
-  SettlementRequest,
-} from "./settlement.service";
 
 export type {
   // Fraud detection types

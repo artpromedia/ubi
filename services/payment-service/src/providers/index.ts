@@ -9,13 +9,11 @@ export { PaystackClient } from "./paystack";
 // Full service classes with database integration
 export { MoMoService } from "./momo.service";
 export { MpesaService } from "./mpesa.service";
-export {
-  createOrangeMoneyService,
-  createOrangeMoneyServices,
-  OrangeMoneyService,
-} from "./orange-money.service";
 export { PaystackService } from "./paystack.service";
-export { createTelebirrService, TelebirrService } from "./telebirr.service";
+// NOTE: OrangeMoneyService (XOF) and TelebirrService are deferred PSP
+// collection/payout integrations (fictional prisma.providerBalance model,
+// unsupported currency) quarantined out of the build (tsconfig "exclude");
+// not re-exported. Rebuild on the canonical ledger before launch.
 
 import { Currency } from "../types";
 import { FlutterwaveClient } from "./flutterwave";

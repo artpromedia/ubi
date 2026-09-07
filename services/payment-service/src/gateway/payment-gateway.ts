@@ -26,7 +26,8 @@
  * - Transaction stuck → Auto-query status after 60s
  */
 
-import { PaymentProvider, PaymentStatus, PrismaClient } from "@prisma/client";
+import { PaymentProvider, PaymentStatus } from "@prisma/client";
+import type { ExtendedPrismaClient } from "../lib/prisma";
 import { WalletService } from "../services/wallet.service";
 import { MoMoConfig, MoMoService } from "../providers/momo.service";
 import { MpesaConfig, MpesaService } from "../providers/mpesa.service";
@@ -94,7 +95,7 @@ export class PaymentGateway {
 
   constructor(
     config: PaymentGatewayConfig,
-    private prisma: PrismaClient
+    private prisma: ExtendedPrismaClient
   ) {
     // Initialize services
     if (config.mpesa) {
@@ -224,7 +225,7 @@ export class PaymentGateway {
 
     // Provider is unhealthy if last check was >5 minutes ago and status is down
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    if (health.lastCheckedAt < fiveMinutesAgo && health.isHealthy === false) {
+    if (health.lastCheckAt < fiveMinutesAgo && health.isHealthy === false) {
       return false;
     }
 
@@ -246,17 +247,25 @@ export class PaymentGateway {
       where: { provider },
     });
 
+    // The launch ProviderHealth schema tracks isHealthy/lastCheckAt/
+    // avgResponseTime/consecutiveFailures/lastIncidentAt; the transient
+    // last error/success timestamps are kept in the metadata JSON.
+    const metadata = {
+      lastError: error ?? null,
+      lastSuccessAt: isHealthy ? now.toISOString() : null,
+      lastFailureAt: error ? now.toISOString() : null,
+    };
+
     if (existing) {
       await this.prisma.providerHealth.update({
         where: { provider },
         data: {
           isHealthy,
-          lastCheckedAt: now,
-          lastResponseTime: responseTime,
+          lastCheckAt: now,
+          avgResponseTime: responseTime,
           consecutiveFailures: isHealthy ? 0 : existing.consecutiveFailures + 1,
-          lastError: error,
-          ...(isHealthy && { lastSuccessAt: now }),
-          ...(error && { lastFailureAt: now }),
+          ...(error ? { lastIncidentAt: now } : {}),
+          metadata,
         },
       });
     } else {
@@ -264,12 +273,11 @@ export class PaymentGateway {
         data: {
           provider,
           isHealthy,
-          lastCheckedAt: now,
-          lastResponseTime: responseTime,
+          lastCheckAt: now,
+          avgResponseTime: responseTime,
           consecutiveFailures: isHealthy ? 0 : 1,
-          lastError: error,
-          ...(isHealthy && { lastSuccessAt: now }),
-          ...(error && { lastFailureAt: now }),
+          ...(error ? { lastIncidentAt: now } : {}),
+          metadata,
         },
       });
     }
@@ -588,18 +596,27 @@ export class PaymentGateway {
       orderBy: { createdAt: "desc" },
     });
 
-    return methods.map((method) => ({
-      id: method.id,
-      provider: method.provider,
-      type: method.type,
-      lastFour: method.lastFour,
-      expiryMonth: method.expiryMonth,
-      expiryYear: method.expiryYear,
-      cardBrand: method.cardBrand,
-      cardBank: method.cardBank,
-      isDefault: method.isDefault,
-      createdAt: method.createdAt,
-    }));
+    return methods.map((method) => {
+      // Card expiry/bank/brand detail lives in the metadata JSON on the launch
+      // schema (see PaystackService.savePaymentMethod).
+      const meta = (method.metadata ?? {}) as {
+        expiryMonth?: number;
+        expiryYear?: number;
+        bank?: string;
+      };
+      return {
+        id: method.id,
+        provider: method.provider,
+        type: method.type,
+        lastFour: method.lastFour,
+        expiryMonth: meta.expiryMonth ?? null,
+        expiryYear: meta.expiryYear ?? null,
+        cardBrand: method.brand,
+        cardBank: meta.bank ?? null,
+        isDefault: method.isDefault,
+        createdAt: method.createdAt,
+      };
+    });
   }
 
   /**
