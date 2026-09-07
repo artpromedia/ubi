@@ -6,8 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:ubi_core/ubi_config.dart';
 import 'package:ubi_core/ubi_test_ids.dart';
 
-import '../../../core/router/app_router.dart';
-import '../../driver/bloc/driver_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../driver/bloc/driver_bloc.dart';
 
 /// The offer exactly as the server sent it.
 ///

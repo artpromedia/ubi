@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/driver_profile_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../bloc/driver_profile_bloc.dart';
 
 /// Driver profile page with overview, ratings, and menu options
 class ProfilePage extends StatefulWidget {

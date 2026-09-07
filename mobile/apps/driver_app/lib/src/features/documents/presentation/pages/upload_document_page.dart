@@ -5,8 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/driver_profile_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../../profile/bloc/driver_profile_bloc.dart';
 
 /// Upload document page for submitting driver documents
 class UploadDocumentPage extends StatefulWidget {

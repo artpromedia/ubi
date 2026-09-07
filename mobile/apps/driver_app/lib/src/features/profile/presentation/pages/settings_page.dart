@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/driver_profile_bloc.dart';
+import '../../bloc/driver_profile_bloc.dart';
 
 /// Settings page for driver app preferences
 class SettingsPage extends StatefulWidget {

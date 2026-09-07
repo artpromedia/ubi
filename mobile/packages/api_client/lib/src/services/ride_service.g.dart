@@ -75,7 +75,7 @@ RideRequestDto _$RideRequestDtoFromJson(Map<String, dynamic> json) =>
       dropoffLongitude: (json['dropoffLongitude'] as num).toDouble(),
       dropoffAddress: json['dropoffAddress'] as String,
       vehicleType: json['vehicleType'] as String,
-      paymentMethodId: json['paymentMethodId'] as String,
+      paymentMethodId: json['paymentMethodId'] as String?,
       scheduledTime: json['scheduledTime'] == null
           ? null
           : DateTime.parse(json['scheduledTime'] as String),
@@ -100,6 +100,7 @@ Map<String, dynamic> _$RideRequestDtoToJson(RideRequestDto instance) =>
 
 RideDto _$RideDtoFromJson(Map<String, dynamic> json) => RideDto(
       id: json['id'] as String,
+      riderId: json['riderId'] as String,
       status: json['status'] as String,
       pickupLatitude: (json['pickupLatitude'] as num).toDouble(),
       pickupLongitude: (json['pickupLongitude'] as num).toDouble(),
@@ -147,6 +148,7 @@ RideDto _$RideDtoFromJson(Map<String, dynamic> json) => RideDto(
 
 Map<String, dynamic> _$RideDtoToJson(RideDto instance) => <String, dynamic>{
       'id': instance.id,
+      'riderId': instance.riderId,
       'status': instance.status,
       'pickupLatitude': instance.pickupLatitude,
       'pickupLongitude': instance.pickupLongitude,

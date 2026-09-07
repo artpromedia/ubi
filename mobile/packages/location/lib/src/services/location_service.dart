@@ -40,7 +40,6 @@ class LocationService {
   final _locationController = BehaviorSubject<LocationUpdate>();
 
   // Last known position
-  Position? _lastPosition;
 
   // Background tracking state
   bool _isBackgroundTrackingActive = false;
@@ -60,22 +59,19 @@ class LocationService {
       // Check permission
       final permissionStatus = await _permissionService.checkLocationPermission();
       if (permissionStatus == LocationPermissionStatus.serviceDisabled) {
-        return Result.failure(const LocationFailure('Location services are disabled'));
+        return Result.failure(const LocationFailure(message: 'Location services are disabled'));
       }
       if (permissionStatus == LocationPermissionStatus.denied ||
           permissionStatus == LocationPermissionStatus.deniedForever) {
-        return Result.failure(const LocationFailure('Location permission denied'));
+        return Result.failure(const LocationFailure(message: 'Location permission denied'));
       }
 
       // Get position
       final position = await geo.Geolocator.getCurrentPosition(
-        locationSettings: LocationSettings(
-          accuracy: _mapAccuracy(accuracy),
-          timeLimit: timeout,
-        ),
+        desiredAccuracy: _mapAccuracy(accuracy),
+        timeLimit: timeout,
       );
 
-      _lastPosition = position;
 
       return Result.success(GeoLocation(
         latitude: position.latitude,
@@ -87,11 +83,11 @@ class LocationService {
         timestamp: position.timestamp,
       ));
     } on TimeoutException {
-      return Result.failure(const LocationFailure('Location request timed out'));
+      return Result.failure(const LocationFailure(message: 'Location request timed out'));
     } on LocationServiceDisabledException {
-      return Result.failure(const LocationFailure('Location services are disabled'));
+      return Result.failure(const LocationFailure(message: 'Location services are disabled'));
     } catch (e) {
-      return Result.failure(LocationFailure('Failed to get location: $e'));
+      return Result.failure(LocationFailure(message: 'Failed to get location: $e'));
     }
   }
 
@@ -113,7 +109,7 @@ class LocationService {
         timestamp: position.timestamp,
       ));
     } catch (e) {
-      return Result.failure(LocationFailure('Failed to get last known location: $e'));
+      return Result.failure(LocationFailure(message: 'Failed to get last known location: $e'));
     }
   }
 
@@ -136,7 +132,6 @@ class LocationService {
       locationSettings: settings,
     ).listen(
       (position) {
-        _lastPosition = position;
         _locationController.add(LocationUpdate(
           location: GeoLocation(
             latitude: position.latitude,
@@ -147,10 +142,7 @@ class LocationService {
             speed: position.speed,
             timestamp: position.timestamp,
           ),
-          timestamp: position.timestamp ?? DateTime.now(),
-          accuracy: position.accuracy,
-          bearing: position.heading,
-          speed: position.speed,
+          timestamp: position.timestamp,
         ));
       },
       onError: (error) {
@@ -170,7 +162,7 @@ class LocationService {
       // Check background permission
       final permissionStatus = await _permissionService.requestBackgroundPermission();
       if (permissionStatus != LocationPermissionStatus.granted) {
-        return Result.failure(const LocationFailure('Background location permission required'));
+        return Result.failure(const LocationFailure(message: 'Background location permission required'));
       }
 
       // Start tracking
@@ -183,7 +175,7 @@ class LocationService {
       _isBackgroundTrackingActive = true;
       return Result.success(null);
     } catch (e) {
-      return Result.failure(LocationFailure('Failed to start background tracking: $e'));
+      return Result.failure(LocationFailure(message: 'Failed to start background tracking: $e'));
     }
   }
 
@@ -195,7 +187,7 @@ class LocationService {
       _isBackgroundTrackingActive = false;
       return Result.success(null);
     } catch (e) {
-      return Result.failure(LocationFailure('Failed to stop background tracking: $e'));
+      return Result.failure(LocationFailure(message: 'Failed to stop background tracking: $e'));
     }
   }
 

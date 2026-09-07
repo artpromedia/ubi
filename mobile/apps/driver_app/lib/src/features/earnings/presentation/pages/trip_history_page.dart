@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/earnings_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../bloc/earnings_bloc.dart';
 
 /// Trip history page showing paginated list of past trips
 class TripHistoryPage extends StatefulWidget {

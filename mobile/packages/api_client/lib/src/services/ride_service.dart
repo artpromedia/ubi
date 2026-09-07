@@ -172,7 +172,7 @@ class RideRequestDto {
     required this.dropoffLongitude,
     required this.dropoffAddress,
     required this.vehicleType,
-    required this.paymentMethodId,
+    this.paymentMethodId,
     this.scheduledTime,
     this.notes,
     this.promoCode,
@@ -188,7 +188,7 @@ class RideRequestDto {
   final double dropoffLongitude;
   final String dropoffAddress;
   final String vehicleType;
-  final String paymentMethodId;
+  final String? paymentMethodId;
   final DateTime? scheduledTime;
   final String? notes;
   final String? promoCode;
@@ -200,6 +200,7 @@ class RideRequestDto {
 class RideDto {
   const RideDto({
     required this.id,
+    required this.riderId,
     required this.status,
     required this.pickupLatitude,
     required this.pickupLongitude,
@@ -235,6 +236,7 @@ class RideDto {
       _$RideDtoFromJson(json);
 
   final String id;
+  final String riderId;
   final String status;
   final double pickupLatitude;
   final double pickupLongitude;

@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../../core/services/image_picker_service.dart';
-import '../bloc/driver_profile_bloc.dart';
+import '../../bloc/driver_profile_bloc.dart';
 
 /// Edit profile page for updating personal information
 class EditProfilePage extends StatefulWidget {

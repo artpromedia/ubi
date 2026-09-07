@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/driver_profile_bloc.dart';
+import '../../bloc/driver_profile_bloc.dart';
 
 /// Ratings page showing driver's rating breakdown and reviews
 class RatingsPage extends StatefulWidget {

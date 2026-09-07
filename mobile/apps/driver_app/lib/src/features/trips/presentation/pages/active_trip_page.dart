@@ -8,8 +8,8 @@ import 'package:ubi_core/ubi_test_ids.dart';
 import 'package:ubi_ui_kit/ubi_tokens.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/router/app_router.dart';
-import '../bloc/trips_bloc.dart';
+import '../../../../core/router/app_router.dart';
+import '../../bloc/trips_bloc.dart';
 
 /// Formats an amount with the city's currency, fraction digits and locale.
 ///

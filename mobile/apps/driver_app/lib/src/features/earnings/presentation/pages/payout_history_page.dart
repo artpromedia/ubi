@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/earnings_bloc.dart';
+import '../../bloc/earnings_bloc.dart';
 
 /// Payout history page showing past payouts and request payout
 class PayoutHistoryPage extends StatefulWidget {

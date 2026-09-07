@@ -3,7 +3,6 @@
 /// Manages Isar database initialization and access.
 library;
 
-import 'package:injectable/injectable.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -11,8 +10,12 @@ import 'collections/order_collection.dart';
 import 'collections/ride_collection.dart';
 import 'collections/user_collection.dart';
 
-/// Database service for local storage
-@lazySingleton
+/// Database service for local storage.
+///
+/// Registered for DI via [StorageModule.databaseService] (a `@module`
+/// provider), not by a class-level annotation: the class exposes only a
+/// private constructor behind the [instance] singleton, which injectable
+/// cannot instantiate directly.
 class DatabaseService {
   DatabaseService._();
 

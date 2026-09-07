@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import '../bloc/earnings_bloc.dart';
+import '../../bloc/earnings_bloc.dart';
 
 /// Detailed view of a single trip's earnings breakdown
 class TripDetailsPage extends StatefulWidget {
