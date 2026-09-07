@@ -9,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ubi_core/ubi_config.dart';
 import 'package:ubi_core/ubi_theming.dart';
 import 'package:ubi_storage/ubi_storage.dart';
+import 'package:ubi_ui_kit/ubi_tokens.dart';
 
 import 'src/app.dart';
 import 'src/core/di/injection.dart';
@@ -63,7 +64,9 @@ void main() async {
   );
 
   // Rider ships light-default; a stored choice wins (CLAUDE.md rule 10).
-  final themeCubit = await UbiThemeModeCubit.open(appDefault: ThemeMode.light);
+  final themeCubit = await UbiThemeModeCubit.open(
+    appDefault: UbiApp.rider.defaultThemeMode,
+  );
 
   unawaited(configCubit.load());
 

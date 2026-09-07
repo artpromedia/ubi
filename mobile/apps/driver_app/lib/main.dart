@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:ubi_core/ubi_config.dart';
 import 'package:ubi_core/ubi_theming.dart';
 import 'package:ubi_storage/ubi_storage.dart';
+import 'package:ubi_ui_kit/ubi_tokens.dart';
 
 import 'src/app.dart';
 import 'src/core/di/injection.dart';
@@ -41,7 +42,9 @@ void main() async {
   );
 
   // Driver ships dark-default; a stored choice wins (CLAUDE.md rule 10).
-  final themeCubit = await UbiThemeModeCubit.open(appDefault: ThemeMode.dark);
+  final themeCubit = await UbiThemeModeCubit.open(
+    appDefault: UbiApp.driver.defaultThemeMode,
+  );
 
   unawaited(configCubit.load());
 
