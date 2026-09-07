@@ -19,7 +19,7 @@
 import { ContractError } from "@ubi/contracts";
 
 import { writeAudit } from "./audit";
-import { actorTypeFor, auditRevision } from "./common";
+import { auditRevision } from "./common";
 import type { IdentityCache, IdentityDeps } from "./deps";
 import { deterministicId } from "./ids";
 import { writeOutboxEventOnce } from "./outbox";
@@ -258,6 +258,3 @@ export async function sweepSafeModeExits(deps: IdentityDeps): Promise<readonly s
 
   return exited;
 }
-
-/** Used by `actorTypeFor` consumers that need the event actor for a user role. */
-export { actorTypeFor };
