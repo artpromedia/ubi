@@ -21,6 +21,32 @@ import (
 // It is not a city policy — it is how long a GPS fix is worth believing.
 const locationFreshnessForGeofence = 90 * time.Second
 
+// prepare resolves the ride and its pinned city configuration *before* a
+// transaction is opened.
+//
+// This ordering is not cosmetic. Reading the configuration goes to the same
+// connection pool, and a transaction that reaches back into the pool while
+// holding a connection deadlocks the moment the pool is saturated — which is
+// exactly what a burst of concurrent accepts does. Everything a transition
+// needs from outside its own transaction is fetched first.
+func (s *Service) prepare(ctx context.Context, actor Actor, rideID uuid.UUID) (*domain.Ride, *cityconfig.CityConfig, error) {
+	ride, err := s.deps.Store.RideByID(ctx, s.deps.Store.Pool(), rideID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil, domain.Errorf(domain.CodeNotFound, "that ride does not exist")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.authorise(actor, ride); err != nil {
+		return nil, nil, err
+	}
+	config, err := s.config(ctx, ride.CityID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ride, config, nil
+}
+
 // Arrived records that the driver reached the pickup point.
 //
 // The server checks the distance itself, against the driver's last accepted
@@ -34,10 +60,6 @@ func (s *Service) Arrived(ctx context.Context, actor Actor, rideID uuid.UUID) (*
 	var view *RideView
 	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
-		if err != nil {
-			return err
-		}
-		config, err := s.config(ctx, ride.CityID)
 		if err != nil {
 			return err
 		}
@@ -139,10 +161,6 @@ func (s *Service) VerifyPin(ctx context.Context, actor Actor, rideID uuid.UUID, 
 	var result *PinResultView
 	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
-		if err != nil {
-			return err
-		}
-		config, err := s.config(ctx, ride.CityID)
 		if err != nil {
 			return err
 		}
@@ -295,10 +313,6 @@ func (s *Service) Start(ctx context.Context, actor Actor, rideID uuid.UUID) (*Ri
 		if err != nil {
 			return err
 		}
-		config, err := s.config(ctx, ride.CityID)
-		if err != nil {
-			return err
-		}
 		if config.PinRequired && ride.PinVerifiedAt == nil {
 			return domain.Errorf(domain.CodePinNotVerified,
 				"the pickup PIN has not been verified for this ride")
@@ -357,10 +371,6 @@ func (s *Service) Complete(ctx context.Context, actor Actor, rideID uuid.UUID) (
 	var view *RideView
 	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
-		if err != nil {
-			return err
-		}
-		config, err := s.config(ctx, ride.CityID)
 		if err != nil {
 			return err
 		}
@@ -491,10 +501,6 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 	var view *RideView
 	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
-		if err != nil {
-			return err
-		}
-		config, err := s.config(ctx, ride.CityID)
 		if err != nil {
 			return err
 		}

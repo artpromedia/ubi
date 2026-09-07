@@ -16,11 +16,20 @@
  *
  * Both can be active at once; the effective scope set is the intersection.
  *
- * DENY BY DEFAULT. In a restricted mode a route with no declared scope
- * requirement is refused, so adding a new proxy prefix cannot silently widen
- * what a limited or safe-mode session can reach. In full mode the role's scope
- * set governs and unlisted routes fall through to the downstream service, which
- * still receives the signed context and applies its own authorization.
+ * The two modes are shaped differently on purpose, because the slice defines
+ * them differently:
+ *
+ *   LIMITED MODE is an ALLOWLIST and therefore DENY BY DEFAULT. A route with
+ *   no declared scope requirement is refused, so adding a new proxy prefix can
+ *   never silently widen what an unverified device can reach.
+ *
+ *   WALLET SAFE MODE is a DENYLIST over exactly what the slice names — P2P,
+ *   NIP, and PIN / phone / contact changes. A hold placed after a SIM-swap
+ *   signal must not lock the holder out of the rest of the product.
+ *
+ * In full mode the role's scope set governs, and an unlisted route falls
+ * through to the downstream service, which still receives the signed context
+ * and applies its own authorization.
  */
 import { ContractError } from "@ubi/contracts";
 
@@ -271,10 +280,10 @@ export interface AuthorizeInput {
  */
 export function authorizeRequest(input: AuthorizeInput): void {
   const rule = ruleFor(input.path, input.method);
-  const restricted = input.modes.length > 0;
 
   if (rule === undefined) {
-    if (!restricted) return;
+    // Limited mode is an allowlist: an undeclared route is not on it.
+    if (!input.modes.includes("limited")) return;
     throw deniedError(input.modes, {
       path: input.path,
       method: input.method.toUpperCase(),
