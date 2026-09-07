@@ -46,8 +46,11 @@ func NewTestInfra(t *testing.T) *TestInfra {
 	}
 
 	// Start PostgreSQL
-	pgContainer, err := postgres.Run(ctx,
-		"postgres:15-alpine",
+	// testcontainers-go v0.31 is the last release that builds on the Go version
+	// CI pins (1.22); its constructor is RunContainer with an image option,
+	// rather than the Run(ctx, image, ...) form added in v0.33.
+	pgContainer, err := postgres.RunContainer(ctx,
+		testcontainers.WithImage("postgres:15-alpine"),
 		postgres.WithDatabase("ubi_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
@@ -78,8 +81,8 @@ func NewTestInfra(t *testing.T) *TestInfra {
 	}
 
 	// Start Redis
-	redisContainer, err := redis.Run(ctx,
-		"redis:7-alpine",
+	redisContainer, err := redis.RunContainer(ctx,
+		testcontainers.WithImage("redis:7-alpine"),
 	)
 	if err != nil {
 		t.Fatalf("Failed to start redis container: %v", err)

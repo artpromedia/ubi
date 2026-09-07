@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ubi/ride-service/internal/testutil"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/testutil"
 )
 
 // DriverMatcher interface for driver matching

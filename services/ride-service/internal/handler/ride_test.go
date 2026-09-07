@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/ubi/ride-service/internal/testutil"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/testutil"
 )
 
 // RideEstimateRequest represents a ride estimate request

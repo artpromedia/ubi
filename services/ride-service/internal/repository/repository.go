@@ -974,20 +974,29 @@ func (r *DriverRepository) scanNearbyDriver(rows pgx.Rows) (*domain.NearbyDriver
 		driver.Vehicle = vehicle
 	}
 	
-	// Calculate ETA
-	vType := "car"
+	// Rough straight-line ETA, used only to order and filter nearby drivers.
+	// The ETA a rider is shown comes from the routing provider (see internal/eta),
+	// never from this figure.
+	//
+	// Two defects were fixed here. The vehicle type was computed and then
+	// discarded, so a bike and a car got the same estimate; and the 1.2 detour
+	// factor was written as `int64(1.2)`, which truncates to 1 in Go — the
+	// multiplier did nothing at all. Both are now applied in float.
+	const detourFactor = 1.2
+
+	metresPerSecond := 10.0
 	if driver.Vehicle != nil {
 		switch driver.Vehicle.Type {
 		case domain.VehicleTypeBike:
-			vType = "bike"
+			metresPerSecond = 7.0
 		case domain.VehicleTypeTricycle:
-			vType = "tricycle"
+			metresPerSecond = 6.0
 		}
 	}
-	
+
 	return &domain.NearbyDriver{
 		Driver:     &driver,
 		DistanceM:  distanceMeters,
-		ETASeconds: int64(distanceMeters/10.0) * int64(1.2), // Rough ETA
+		ETASeconds: int64(distanceMeters / metresPerSecond * detourFactor),
 	}, nil
 }

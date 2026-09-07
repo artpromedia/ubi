@@ -9,7 +9,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/ubi/ride-service/internal/testutil"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/testutil"
 )
 
 // Integration tests require Docker and are run with: go test -tags=integration ./...
