@@ -233,13 +233,17 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
 
   // =========================================================================
   // Authenticated — gateway identity context required
+  //
+  // `requireIdentity` is attached PER ROUTE, never with `use("*")`. This router
+  // is mounted at "/" alongside the service's existing routes, and a wildcard
+  // middleware here would run for `/users/*`, `/drivers/*` and `/sessions/*`
+  // too, locking out every endpoint this slice does not own.
   // =========================================================================
-  const secure = new Hono();
-  secure.use("*", requireIdentity);
 
   /** Liveness + NIN face match. The image is verified and dropped; the score is kept. */
-  secure.post(
+  routes.post(
     "/auth/step-up/selfie",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "auth:step_up");
@@ -285,8 +289,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
   );
 
   /** A device this account already trusts approves the new one. */
-  secure.post(
+  routes.post(
     "/auth/step-up/approve",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "auth:step_up");
@@ -329,8 +334,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  secure.get(
+  routes.get(
     "/auth/pin/state",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "wallet:read");
@@ -348,8 +354,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  secure.post(
+  routes.post(
     "/auth/pin/verify",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "wallet:read");
@@ -367,8 +374,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
   );
 
   /** Reset needs a passed biometric step-up, and starts the cooling window. */
-  secure.post(
+  routes.post(
     "/auth/pin/reset",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "auth:step_up");
@@ -385,8 +393,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  secure.get(
+  routes.get(
     "/drivers/me/documents",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "profile:read");
@@ -395,8 +404,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  secure.post(
+  routes.post(
     "/drivers/me/documents",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "driver:documents:write");
@@ -420,8 +430,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  secure.get(
+  routes.get(
     "/drivers/me/eligibility",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "profile:read");
@@ -430,8 +441,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  secure.get(
+  routes.get(
     "/identity/liveness/required",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "profile:read");
@@ -446,8 +458,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  secure.get(
+  routes.get(
     "/identity/safe-mode",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "wallet:read");
@@ -462,8 +475,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
 
   // ---- Reviewer surface (board 4d) ----------------------------------------
 
-  secure.get(
+  routes.get(
     "/identity/cases",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireReviewerRole(principal.role);
@@ -472,8 +486,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
   );
 
   /** Deactivation needs two different reviewers; reinstating needs one. */
-  secure.post(
+  routes.post(
     "/identity/cases/:id/decide",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireReviewerRole(principal.role);
@@ -488,8 +503,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  secure.post(
+  routes.post(
     "/identity/documents/:id/review",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireReviewerRole(principal.role);
@@ -505,6 +521,5 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
     }),
   );
 
-  routes.route("/", secure);
   return routes;
 }

@@ -118,6 +118,32 @@ describe("inbound identity headers are stripped", () => {
     expect(verified.requestId).toBe(forwarded?.headers["x-request-id"]);
   });
 
+  it("keeps a sane client request id and replaces a hostile one", async () => {
+    const token = await clientToken({ sub: "usr_real", role: "rider" });
+
+    await app.fetch(
+      new Request("http://gateway.test/v1/users/me", {
+        method: "GET",
+        headers: { authorization: `Bearer ${token}`, "x-request-id": "trace-abc-123" },
+      }),
+    );
+    expect(upstream.received[0]?.headers["x-request-id"]).toBe("trace-abc-123");
+
+    upstream.received.length = 0;
+    await app.fetch(
+      new Request("http://gateway.test/v1/users/me", {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-request-id": "id\" OR 1=1 -- with spaces and quotes",
+        },
+      }),
+    );
+    const replaced = upstream.received[0]?.headers["x-request-id"];
+    expect(replaced).toBeDefined();
+    expect(replaced).not.toContain("OR 1=1");
+  });
+
   it("mints no identity at all for an unauthenticated public route", async () => {
     await app.fetch(
       new Request("http://gateway.test/v1/auth/login", {

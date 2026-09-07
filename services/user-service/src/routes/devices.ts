@@ -21,10 +21,10 @@ import { prisma } from "../lib/prisma";
 
 export function createDeviceRoutes(deps: IdentityDeps): Hono {
   const routes = new Hono();
-  routes.use("*", requireIdentity);
 
   routes.post(
     "/enroll",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "device:enroll");
@@ -74,6 +74,7 @@ export function createDeviceRoutes(deps: IdentityDeps): Hono {
 
   routes.get(
     "/",
+    requireIdentity,
     contractRoute(async (c) => {
       const principal = getIdentity(c);
       requireScope(principal, "profile:read");

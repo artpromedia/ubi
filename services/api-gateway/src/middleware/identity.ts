@@ -125,6 +125,19 @@ export const stripInboundIdentityHeaders = createMiddleware(async (c: Context, n
   return next();
 });
 
+/**
+ * A client may propose a request id for correlation, but only a short, boring
+ * one: it ends up in log lines and in the signed context, and neither should
+ * carry whatever a caller felt like sending.
+ */
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9_.:-]{8,64}$/;
+
+export function safeRequestId(proposed: string | undefined): string {
+  return proposed !== undefined && REQUEST_ID_PATTERN.test(proposed)
+    ? proposed
+    : crypto.randomUUID();
+}
+
 function modesFor(auth: AuthContext, safeMode: boolean): readonly IdentityMode[] {
   const modes: IdentityMode[] = [];
   if (auth.mode === "limited") modes.push("limited");
@@ -146,7 +159,7 @@ export const identityContextMiddleware = createMiddleware(async (c: Context, nex
     return next();
   }
 
-  const requestId = c.req.header(REQUEST_ID_HEADER) ?? crypto.randomUUID();
+  const requestId = safeRequestId(c.req.header(REQUEST_ID_HEADER));
   const risk = await readRiskState(getIdentityStateStore(), auth.userId);
   const modes = modesFor(auth, risk.safeMode);
 
