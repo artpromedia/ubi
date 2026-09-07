@@ -30,3 +30,4 @@ export * from "./transfers";
 export * from "./types";
 export * from "./wallet-ops";
 export * from "./wallets";
+export * from "./wiring";

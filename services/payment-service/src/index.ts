@@ -42,6 +42,9 @@ import { mobileMoneyRoutes } from "./routes/mobile-money";
 import { paymentRoutes } from "./routes/payments";
 import { payoutRoutes } from "./routes/payouts";
 import { safetyRoutes } from "./routes/safety";
+import { createFinanceRoutes } from "./finance/routes";
+import { walletDeps } from "./ledger/wiring";
+import { createWalletV1Routes } from "./routes/wallet-v1";
 import { walletRoutes } from "./routes/wallet";
 import { webhookRoutes } from "./routes/webhooks";
 
@@ -139,6 +142,15 @@ app.route("/fraud", fraudRoutes);
 app.route("/loyalty", loyaltyRoutes);
 app.route("/safety", safetyRoutes);
 app.route("/admin", adminRoutes);
+
+// Canonical wallet ledger (slice 04) and finance reconciliation (slice 11).
+// These mount beside the older /wallets routes while those are retired; the
+// route modules apply their own auth, so they are safe under any mount order.
+const ledgerDeps = walletDeps();
+app.use("/v1/wallet/*", paymentRateLimit);
+app.route("/v1/wallet", createWalletV1Routes(ledgerDeps));
+app.use("/v1/finance/*", paymentRateLimit);
+app.route("/v1/finance", createFinanceRoutes(ledgerDeps));
 
 // B2B API routes (uses API key auth internally)
 app.route("/b2b", b2bRoutes);
