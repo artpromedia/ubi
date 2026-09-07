@@ -77,7 +77,10 @@ export async function applyMerchant(
     include: { outlets: true },
   });
   if (existing !== null) {
-    return toMerchantView(existing, existing.outlets.map((o) => o.id));
+    return toMerchantView(
+      existing,
+      existing.outlets.map((o) => o.id),
+    );
   }
 
   const outletId = generateId("outlet");
@@ -173,15 +176,22 @@ export async function reviewMerchant(
 
   const merchant = await deps.db.bitesMerchant.findUnique({
     where: { id: params.merchantId },
-    include: { outlets: true, kyb: { orderBy: { createdAt: "desc" }, take: 1 } },
+    include: {
+      outlets: true,
+      kyb: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
   if (merchant === null) {
     throw new ContractError("not_found", "no such merchant");
   }
   if (merchant.status !== STATUS_PENDING) {
-    throw new ContractError("conflict", "that application is not awaiting review", {
-      status: merchant.status,
-    });
+    throw new ContractError(
+      "conflict",
+      "that application is not awaiting review",
+      {
+        status: merchant.status,
+      },
+    );
   }
 
   const approve = params.decision === "approve";
@@ -217,7 +227,10 @@ export async function reviewMerchant(
     };
 
     return {
-      result: toMerchantView(updated, merchant.outlets.map((o) => o.id)),
+      result: toMerchantView(
+        updated,
+        merchant.outlets.map((o) => o.id),
+      ),
       audit: {
         actor: params.actor,
         action: `bites.merchant.${params.decision}`,
@@ -243,7 +256,10 @@ function assertOwnsMerchant(actor: Actor, merchantId: string): void {
     return;
   }
   if (actor.id !== merchantId) {
-    throw new ContractError("forbidden", "you may only manage your own business");
+    throw new ContractError(
+      "forbidden",
+      "you may only manage your own business",
+    );
   }
 }
 
@@ -312,7 +328,10 @@ export interface OptionGroupInput {
   readonly required: boolean;
   readonly minSelect: number;
   readonly maxSelect: number;
-  readonly options: readonly { readonly name: string; readonly priceDeltaMinor: number }[];
+  readonly options: readonly {
+    readonly name: string;
+    readonly priceDeltaMinor: number;
+  }[];
 }
 
 export interface CreateMenuItemParams {
@@ -345,10 +364,16 @@ export async function createMenuItem(
   deps: BitesDeps,
   params: CreateMenuItemParams,
 ): Promise<MenuItemCreated> {
-  const { outletId, merchantId } = await loadOwnedOutlet(deps, params.actor, params.outletId);
+  const { outletId, merchantId } = await loadOwnedOutlet(
+    deps,
+    params.actor,
+    params.outletId,
+  );
   const { city } = await deps.config.loadForBites(params.cityId);
 
-  const merchant = await deps.db.bitesMerchant.findUnique({ where: { id: merchantId } });
+  const merchant = await deps.db.bitesMerchant.findUnique({
+    where: { id: merchantId },
+  });
   if (merchant === null) {
     throw new ContractError("not_found", "no such merchant");
   }
@@ -420,7 +445,11 @@ export interface AvailabilityParams {
 export async function setAvailability(
   deps: BitesDeps,
   params: AvailabilityParams,
-): Promise<{ readonly itemId: string; readonly active: boolean; readonly soldOut: boolean }> {
+): Promise<{
+  readonly itemId: string;
+  readonly active: boolean;
+  readonly soldOut: boolean;
+}> {
   const item = await deps.db.bitesMenuItem.findUnique({
     where: { id: params.itemId },
     include: { outlet: true },
@@ -444,12 +473,19 @@ export async function setAvailability(
 
   switch (params.action) {
     case "sold_out": {
-      soldOutUntil = params.soldOutUntil ?? new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      soldOutUntil =
+        params.soldOutUntil ?? new Date(now.getTime() + 24 * 60 * 60 * 1000);
       events.push(
-        availabilityEvent(deps, params, item.outlet.merchantId, "menu.item_unavailable", {
-          itemId: params.itemId,
-          soldOutUntil: soldOutUntil.toISOString(),
-        }),
+        availabilityEvent(
+          deps,
+          params,
+          item.outlet.merchantId,
+          "menu.item_unavailable",
+          {
+            itemId: params.itemId,
+            soldOutUntil: soldOutUntil.toISOString(),
+          },
+        ),
       );
       break;
     }
@@ -474,7 +510,10 @@ export async function setAvailability(
       break;
     }
     default:
-      throw new ContractError("validation_failed", "unknown availability action");
+      throw new ContractError(
+        "validation_failed",
+        "unknown availability action",
+      );
   }
 
   return auditedTransaction(deps.db, async (tx) => {
@@ -486,7 +525,8 @@ export async function setAvailability(
       result: {
         itemId: params.itemId,
         active,
-        soldOut: soldOutUntil !== null && soldOutUntil.getTime() > now.getTime(),
+        soldOut:
+          soldOutUntil !== null && soldOutUntil.getTime() > now.getTime(),
       },
       audit: {
         actor: params.actor,
@@ -537,7 +577,11 @@ export async function pauseStore(
   deps: BitesDeps,
   params: PauseStoreParams,
 ): Promise<{ readonly outletId: string; readonly pausedUntil: string }> {
-  const { outletId, merchantId } = await loadOwnedOutlet(deps, params.actor, params.outletId);
+  const { outletId, merchantId } = await loadOwnedOutlet(
+    deps,
+    params.actor,
+    params.outletId,
+  );
   return auditedTransaction(deps.db, async (tx) => {
     await tx.outlet.update({
       where: { id: outletId },
@@ -555,7 +599,11 @@ export async function pauseStore(
       idempotencyKey: `store.paused:${outletId}:${params.pausedUntil.getTime()}`,
       correlationId: params.correlationId,
       occurredAt: deps.now(),
-      payload: { merchantId, outletId, pausedUntil: params.pausedUntil.toISOString() },
+      payload: {
+        merchantId,
+        outletId,
+        pausedUntil: params.pausedUntil.toISOString(),
+      },
     };
     return {
       result: { outletId, pausedUntil: params.pausedUntil.toISOString() },
@@ -608,7 +656,9 @@ export async function listMerchantOrders(
   return orders.map((order) => {
     const totals = order.totals as { totalMinor?: unknown } | null;
     const totalMinor =
-      totals !== null && typeof totals.totalMinor === "number" ? totals.totalMinor : 0;
+      totals !== null && typeof totals.totalMinor === "number"
+        ? totals.totalMinor
+        : 0;
     return {
       orderId: order.id,
       outletId: order.outletId,
@@ -666,7 +716,8 @@ function toMerchantView(
     merchantId: merchant.id,
     status: merchant.status,
     tradeName: merchant.tradeName,
-    approvedAt: merchant.approvedAt === null ? null : merchant.approvedAt.toISOString(),
+    approvedAt:
+      merchant.approvedAt === null ? null : merchant.approvedAt.toISOString(),
     outletIds,
   };
 }

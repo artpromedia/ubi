@@ -42,12 +42,16 @@ async function simSwap(
     source: options.source ?? "mtn-ng",
   });
   const signature =
-    options.signature ?? createHmac("sha256", TELCO_SECRET).update(body).digest("hex");
+    options.signature ??
+    createHmac("sha256", TELCO_SECRET).update(body).digest("hex");
 
   return harness.app.fetch(
     new Request("http://user-service.test/webhooks/telco/sim-swap", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-telco-signature": signature },
+      headers: {
+        "content-type": "application/json",
+        "x-telco-signature": signature,
+      },
       body,
     }),
   );
@@ -58,7 +62,9 @@ describe("the SIM-swap webhook", () => {
     const user = await createUser("RIDER");
     const response = await simSwap(user.phone, { signature: "" });
     expect(response.status).toBe(401);
-    expect(await prisma.simSwapSignal.count({ where: { userId: user.id } })).toBe(0);
+    expect(
+      await prisma.simSwapSignal.count({ where: { userId: user.id } }),
+    ).toBe(0);
   });
 
   it("refuses a report whose body was edited after signing", async () => {
@@ -68,12 +74,17 @@ describe("the SIM-swap webhook", () => {
       reportedAt: NOW.toISOString(),
       source: "mtn-ng",
     });
-    const signature = createHmac("sha256", TELCO_SECRET).update(honest).digest("hex");
+    const signature = createHmac("sha256", TELCO_SECRET)
+      .update(honest)
+      .digest("hex");
 
     const response = await harness.app.fetch(
       new Request("http://user-service.test/webhooks/telco/sim-swap", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-telco-signature": signature },
+        headers: {
+          "content-type": "application/json",
+          "x-telco-signature": signature,
+        },
         body: JSON.stringify({
           phone: user.phone,
           reportedAt: NOW.toISOString(),
@@ -90,11 +101,15 @@ describe("the SIM-swap webhook", () => {
 
     const response = await simSwap(user.phone);
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { data: { held: boolean; until: string } };
+    const body = (await response.json()) as {
+      data: { held: boolean; until: string };
+    };
     expect(body.data.held).toBe(true);
     expect(new Date(body.data.until).getTime() - NOW.getTime()).toBe(24 * HOUR);
 
-    const wallet = await prisma.wallet.findFirstOrThrow({ where: { ownerId: user.id } });
+    const wallet = await prisma.wallet.findFirstOrThrow({
+      where: { ownerId: user.id },
+    });
     expect(wallet.safeModeUntil?.toISOString()).toBe(body.data.until);
     expect(wallet.version).toBe(2);
 
@@ -127,7 +142,9 @@ describe("the SIM-swap webhook", () => {
     const retry = await simSwap(user.phone);
     expect(retry.status).toBe(200);
 
-    expect(await prisma.simSwapSignal.count({ where: { userId: user.id } })).toBe(1);
+    expect(
+      await prisma.simSwapSignal.count({ where: { userId: user.id } }),
+    ).toBe(1);
     expect(
       await prisma.outboxEvent.count({
         where: { aggregateId: user.id, name: "wallet.safe_mode_entered" },
@@ -138,7 +155,9 @@ describe("the SIM-swap webhook", () => {
   it("says nothing about whether a number is on file", async () => {
     const response = await simSwap("+2348999999999");
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { data: { accepted: boolean; held: boolean } };
+    const body = (await response.json()) as {
+      data: { accepted: boolean; held: boolean };
+    };
     expect(body.data).toEqual({ accepted: true, held: false });
   });
 
@@ -152,8 +171,12 @@ describe("the SIM-swap webhook", () => {
     const body = (await response.json()) as { data: { held: boolean } };
     expect(body.data.held).toBe(false);
 
-    expect(await prisma.simSwapSignal.count({ where: { userId: user.id } })).toBe(1);
-    const wallet = await prisma.wallet.findFirstOrThrow({ where: { ownerId: user.id } });
+    expect(
+      await prisma.simSwapSignal.count({ where: { userId: user.id } }),
+    ).toBe(1);
+    const wallet = await prisma.wallet.findFirstOrThrow({
+      where: { ownerId: user.id },
+    });
     expect(wallet.safeModeUntil).toBeNull();
   });
 });
@@ -192,7 +215,9 @@ describe("leaving safe mode", () => {
     // Still held part-way through.
     harness.setNow(new Date(NOW.getTime() + 12 * HOUR));
     expect(await sweepSafeModeExits(harness.deps)).not.toContain(user.id);
-    let wallet = await prisma.wallet.findFirstOrThrow({ where: { ownerId: user.id } });
+    let wallet = await prisma.wallet.findFirstOrThrow({
+      where: { ownerId: user.id },
+    });
     expect(wallet.safeModeUntil).not.toBeNull();
 
     // ...and lifted once it has elapsed.
@@ -200,10 +225,14 @@ describe("leaving safe mode", () => {
     const exited = await sweepSafeModeExits(harness.deps);
     expect(exited).toContain(user.id);
 
-    wallet = await prisma.wallet.findFirstOrThrow({ where: { ownerId: user.id } });
+    wallet = await prisma.wallet.findFirstOrThrow({
+      where: { ownerId: user.id },
+    });
     expect(wallet.safeModeUntil).toBeNull();
 
-    const signal = await prisma.simSwapSignal.findFirstOrThrow({ where: { userId: user.id } });
+    const signal = await prisma.simSwapSignal.findFirstOrThrow({
+      where: { userId: user.id },
+    });
     expect(signal.handled).toBe(true);
 
     expect(
@@ -226,14 +255,18 @@ describe("leaving safe mode", () => {
 
   it("needs the service key to run the sweep over HTTP", async () => {
     const unauthorised = await harness.app.fetch(
-      new Request("http://user-service.test/identity/jobs/safe-mode-exit", { method: "POST" }),
+      new Request("http://user-service.test/identity/jobs/safe-mode-exit", {
+        method: "POST",
+      }),
     );
     expect(unauthorised.status).toBe(401);
 
     const authorised = await harness.app.fetch(
       new Request("http://user-service.test/identity/jobs/safe-mode-exit", {
         method: "POST",
-        headers: { "x-service-key": process.env.IDENTITY_JOB_SERVICE_KEY as string },
+        headers: {
+          "x-service-key": process.env.IDENTITY_JOB_SERVICE_KEY as string,
+        },
       }),
     );
     expect(authorised.status).toBe(200);

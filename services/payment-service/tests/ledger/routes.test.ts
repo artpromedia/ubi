@@ -38,7 +38,9 @@ async function httpScenario(options: SeedCityOptions = {}) {
   await setInitialPin(deps, { id: sender.id, role: "rider" }, city.cityId, PIN);
   await fundWallet(db, senderWallet.id, city.currency, 3_000_000);
 
-  const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
+  const headers = (
+    extra: Record<string, string> = {},
+  ): Record<string, string> => ({
     "X-User-ID": sender.id,
     "X-User-Role": "rider",
     "X-City-ID": city.cityId,
@@ -63,7 +65,10 @@ describe("/v1/wallet", () => {
     const response = await s.app.request("/", { headers: s.headers() });
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;
-    expect(body.balance).toEqual({ amountMinor: 3_000_000, currency: s.city.currency });
+    expect(body.balance).toEqual({
+      amountMinor: 3_000_000,
+      currency: s.city.currency,
+    });
     expect(body.tier).toBe("tier1");
     expect(body.safeMode).toEqual({ active: false, until: null });
   });
@@ -103,7 +108,9 @@ describe("/v1/wallet", () => {
   });
 
   it("answers 202 when a transfer is held for review", async () => {
-    const s = await httpScenario({ policy: { newRecipientHoldAboveMinor: 1_000 } });
+    const s = await httpScenario({
+      policy: { newRecipientHoldAboveMinor: 1_000 },
+    });
     const response = await s.app.request("/transfers", {
       method: "POST",
       headers: s.headers({ "Idempotency-Key": uid("idem") }),
@@ -114,7 +121,10 @@ describe("/v1/wallet", () => {
       }),
     });
     expect(response.status).toBe(202);
-    const body = (await response.json()) as { status: string; reviewCaseId: string };
+    const body = (await response.json()) as {
+      status: string;
+      reviewCaseId: string;
+    };
     expect(body.status).toBe("held_risk");
     expect(body.reviewCaseId).toBeTruthy();
   });
@@ -170,8 +180,15 @@ describe("/v1/wallet", () => {
     const s = await httpScenario();
     const response = await s.app.request("/nip/callbacks", {
       method: "POST",
-      headers: { "content-type": "application/json", "X-City-ID": s.city.cityId },
-      body: JSON.stringify({ sessionId: "s", status: "confirmed", reference: "r" }),
+      headers: {
+        "content-type": "application/json",
+        "X-City-ID": s.city.cityId,
+      },
+      body: JSON.stringify({
+        sessionId: "s",
+        status: "confirmed",
+        reference: "r",
+      }),
     });
     expect(response.status).toBe(503);
   });
@@ -189,7 +206,10 @@ describe("/v1/finance", () => {
       headers: s.headers({ "X-User-Role": "ADMIN" }),
     });
     expect(asOps.status).toBe(200);
-    const body = (await asOps.json()) as { date: string; closeAllowed: boolean };
+    const body = (await asOps.json()) as {
+      date: string;
+      closeAllowed: boolean;
+    };
     expect(body.date).toBe("2024-06-10");
     expect(body.closeAllowed).toBe(false);
   });

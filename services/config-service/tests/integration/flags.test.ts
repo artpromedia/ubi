@@ -17,7 +17,10 @@ import {
 
 const app = buildApp();
 
-async function flagsFor(query: string, headers: Record<string, string> = {}): Promise<Record<string, boolean>> {
+async function flagsFor(
+  query: string,
+  headers: Record<string, string> = {},
+): Promise<Record<string, boolean>> {
   const response = await app.request(`/v1/flags${query}`, { headers });
   expect(response.status).toBe(200);
   return (await response.json()) as Record<string, boolean>;
@@ -55,11 +58,16 @@ describe("feature flags", () => {
     const flags = await flagsFor(`?cityId=${LAGOS_CITY.id}`);
     expect(flags["definitely_not_a_flag"]).toBeUndefined();
     // Read through the contract helper, an absent key is off.
-    expect(isEnabled(flags as never, "definitely_not_a_flag" as never)).toBe(false);
+    expect(isEnabled(flags as never, "definitely_not_a_flag" as never)).toBe(
+      false,
+    );
   });
 
   it("falls back to the flag default when the city has no rule", async () => {
-    await prisma.featureFlag.update({ where: { key: "tips" }, data: { defaultOn: true } });
+    await prisma.featureFlag.update({
+      where: { key: "tips" },
+      data: { defaultOn: true },
+    });
     await prisma.flagRule.deleteMany({ where: { flagKey: "tips" } });
 
     const flags = await flagsFor(`?cityId=${LAGOS_CITY.id}`);
@@ -67,19 +75,38 @@ describe("feature flags", () => {
   });
 
   it("prefers a city rule over a global rule and a global rule over the default", async () => {
-    await prisma.featureFlag.update({ where: { key: "stays" }, data: { defaultOn: true } });
+    await prisma.featureFlag.update({
+      where: { key: "stays" },
+      data: { defaultOn: true },
+    });
     await prisma.flagRule.create({
-      data: { id: "flr_global_stays", flagKey: "stays", cityId: null, enabled: false },
+      data: {
+        id: "flr_global_stays",
+        flagKey: "stays",
+        cityId: null,
+        enabled: false,
+      },
     });
     await prisma.city.create({
-      data: { id: "ABV", name: "Abuja", country: "NG", timezone: "Africa/Lagos", active: true },
+      data: {
+        id: "ABV",
+        name: "Abuja",
+        country: "NG",
+        timezone: "Africa/Lagos",
+        active: true,
+      },
     });
 
     // Global rule beats the default.
     expect((await flagsFor("?cityId=ABV"))["stays"]).toBe(false);
 
     await prisma.flagRule.create({
-      data: { id: "flr_abv_stays", flagKey: "stays", cityId: "ABV", enabled: true },
+      data: {
+        id: "flr_abv_stays",
+        flagKey: "stays",
+        cityId: "ABV",
+        enabled: true,
+      },
     });
     // Written straight to the table, so it bypasses the invalidation the service
     // performs on a real flag change; drop the warm snapshot by hand.
@@ -99,8 +126,12 @@ describe("feature flags", () => {
       },
     });
 
-    const pilot = await flagsFor(`?cityId=${LAGOS_CITY.id}`, { "x-user-id": "usr_pilot" });
-    const other = await flagsFor(`?cityId=${LAGOS_CITY.id}`, { "x-user-id": "usr_other" });
+    const pilot = await flagsFor(`?cityId=${LAGOS_CITY.id}`, {
+      "x-user-id": "usr_pilot",
+    });
+    const other = await flagsFor(`?cityId=${LAGOS_CITY.id}`, {
+      "x-user-id": "usr_other",
+    });
     const anonymous = await flagsFor(`?cityId=${LAGOS_CITY.id}`);
 
     expect(pilot["bites"]).toBe(true);
@@ -119,13 +150,18 @@ describe("feature flags", () => {
       },
     });
 
-    const response = await app.request(`/v1/flags?cityId=${LAGOS_CITY.id}&userId=usr_pilot`, {
-      headers: { "x-user-id": "usr_impostor" },
-    });
+    const response = await app.request(
+      `/v1/flags?cityId=${LAGOS_CITY.id}&userId=usr_pilot`,
+      {
+        headers: { "x-user-id": "usr_impostor" },
+      },
+    );
     expect(response.status).toBe(403);
 
     // An unauthenticated caller's userId is ignored rather than trusted.
-    const anonymous = await flagsFor(`?cityId=${LAGOS_CITY.id}&userId=usr_pilot`);
+    const anonymous = await flagsFor(
+      `?cityId=${LAGOS_CITY.id}&userId=usr_pilot`,
+    );
     expect(anonymous["send"]).toBe(false);
   });
 
@@ -143,10 +179,18 @@ describe("feature flags", () => {
     const response = await app.request("/v1/flags/bites", {
       method: "PUT",
       headers: adminHeaders("usr_ops", "flag-bites-001"),
-      body: JSON.stringify({ cityId: LAGOS_CITY.id, enabled: true, reason: "lagos bites launch" }),
+      body: JSON.stringify({
+        cityId: LAGOS_CITY.id,
+        enabled: true,
+        reason: "lagos bites launch",
+      }),
     });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { from: boolean; to: boolean; replayed: boolean };
+    const body = (await response.json()) as {
+      from: boolean;
+      to: boolean;
+      replayed: boolean;
+    };
     expect(body).toMatchObject({ from: false, to: true, replayed: false });
 
     const rule = await prisma.flagRule.findFirstOrThrow({
@@ -156,13 +200,18 @@ describe("feature flags", () => {
     expect(rule.updatedBy).toBe("usr_ops");
 
     const audit = await prisma.auditLog.findFirstOrThrow({
-      where: { action: "flag.changed", subjectId: `flag:bites:${LAGOS_CITY.id}` },
+      where: {
+        action: "flag.changed",
+        subjectId: `flag:bites:${LAGOS_CITY.id}`,
+      },
     });
     expect(audit.actorId).toBe("usr_ops");
     expect(audit.before).toEqual({ enabled: false });
     expect(audit.after).toEqual({ enabled: true });
 
-    const outbox = await prisma.outboxEvent.findFirstOrThrow({ where: { name: "flag.changed" } });
+    const outbox = await prisma.outboxEvent.findFirstOrThrow({
+      where: { name: "flag.changed" },
+    });
     expect(outbox.payload).toEqual({
       key: "bites",
       cityId: LAGOS_CITY.id,
@@ -195,19 +244,31 @@ describe("feature flags", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(((await second.json()) as { replayed: boolean }).replayed).toBe(true);
-    expect(await prisma.outboxEvent.count({ where: { name: "flag.changed" } })).toBe(1);
-    expect(await prisma.auditLog.count({ where: { action: "flag.changed" } })).toBe(1);
+    expect(((await second.json()) as { replayed: boolean }).replayed).toBe(
+      true,
+    );
+    expect(
+      await prisma.outboxEvent.count({ where: { name: "flag.changed" } }),
+    ).toBe(1);
+    expect(
+      await prisma.auditLog.count({ where: { action: "flag.changed" } }),
+    ).toBe(1);
   });
 
   it("refuses to create a rule for a flag nobody registered", async () => {
     const response = await app.request("/v1/flags/ghost_vertical", {
       method: "PUT",
       headers: adminHeaders("usr_ops", "flag-ghost-001"),
-      body: JSON.stringify({ cityId: LAGOS_CITY.id, enabled: true, reason: "should not work" }),
+      body: JSON.stringify({
+        cityId: LAGOS_CITY.id,
+        enabled: true,
+        reason: "should not work",
+      }),
     });
     expect(response.status).toBe(404);
-    expect(await prisma.flagRule.count({ where: { flagKey: "ghost_vertical" } })).toBe(0);
+    expect(
+      await prisma.flagRule.count({ where: { flagKey: "ghost_vertical" } }),
+    ).toBe(0);
   });
 
   it("requires an admin role to change a flag", async () => {
@@ -219,15 +280,27 @@ describe("feature flags", () => {
         "x-user-role": "rider",
         "idempotency-key": "flag-rider-001",
       },
-      body: JSON.stringify({ cityId: LAGOS_CITY.id, enabled: true, reason: "let me in" }),
+      body: JSON.stringify({
+        cityId: LAGOS_CITY.id,
+        enabled: true,
+        reason: "let me in",
+      }),
     });
     expect(response.status).toBe(403);
-    expect(await prisma.outboxEvent.count({ where: { name: "flag.changed" } })).toBe(0);
+    expect(
+      await prisma.outboxEvent.count({ where: { name: "flag.changed" } }),
+    ).toBe(0);
   });
 
   it("evaluates a city with no rules at all as everything off", async () => {
     await prisma.city.create({
-      data: { id: "KAN", name: "Kano", country: "NG", timezone: "Africa/Lagos", active: false },
+      data: {
+        id: "KAN",
+        name: "Kano",
+        country: "NG",
+        timezone: "Africa/Lagos",
+        active: false,
+      },
     });
     const flags = await flagsFor("?cityId=KAN");
     expect(Object.values(flags).some((value) => value)).toBe(false);

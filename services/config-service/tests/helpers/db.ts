@@ -7,7 +7,10 @@ import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { seedLagos } from "@/seed/lagos";
 
-export const SEED_ENV = { NODE_ENV: "test", CONFIG_SEED_ENABLED: "true" } as const;
+export const SEED_ENV = {
+  NODE_ENV: "test",
+  CONFIG_SEED_ENABLED: "true",
+} as const;
 
 /** Tables this service owns, in an order Postgres accepts. */
 const TABLES = [
@@ -28,7 +31,10 @@ export async function resetDatabase(): Promise<void> {
 }
 
 export async function resetCache(): Promise<void> {
-  const keys = [...(await redis.keys("ubi:config:*")), ...(await redis.keys("ubi:flags:*"))];
+  const keys = [
+    ...(await redis.keys("ubi:config:*")),
+    ...(await redis.keys("ubi:flags:*")),
+  ];
   if (keys.length > 0) await redis.del(...keys);
 }
 
@@ -39,8 +45,14 @@ export async function resetAll(): Promise<void> {
 
 export async function seedLagosForTest(): Promise<void> {
   await seedLagos(SEED_ENV);
-  await configCache.invalidate({ kind: "config", scopeId: "LOS" }, { kind: "config", scopeId: "LOS" });
-  await configCache.invalidate({ kind: "flags", scopeId: "LOS" }, { kind: "flags", scopeId: "LOS" });
+  await configCache.invalidate(
+    { kind: "config", scopeId: "LOS" },
+    { kind: "config", scopeId: "LOS" },
+  );
+  await configCache.invalidate(
+    { kind: "flags", scopeId: "LOS" },
+    { kind: "flags", scopeId: "LOS" },
+  );
 }
 
 export async function closeConnections(): Promise<void> {
@@ -48,11 +60,16 @@ export async function closeConnections(): Promise<void> {
   await redis.quit();
 }
 
-export function adminHeaders(userId: string, idempotencyKey?: string): Record<string, string> {
+export function adminHeaders(
+  userId: string,
+  idempotencyKey?: string,
+): Record<string, string> {
   return {
     "content-type": "application/json",
     "x-user-id": userId,
     "x-user-role": "config_admin",
-    ...(idempotencyKey === undefined ? {} : { "idempotency-key": idempotencyKey }),
+    ...(idempotencyKey === undefined
+      ? {}
+      : { "idempotency-key": idempotencyKey }),
   };
 }

@@ -63,10 +63,14 @@ function stringOrNull(value: unknown): string | null {
 }
 
 function stringArray(value: unknown): readonly string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
-export async function verifyIdentityContext(token: string): Promise<IdentityPrincipal> {
+export async function verifyIdentityContext(
+  token: string,
+): Promise<IdentityPrincipal> {
   for (const key of verificationKeys()) {
     try {
       const { payload } = await jose.jwtVerify(token, key, {
@@ -95,7 +99,10 @@ export async function verifyIdentityContext(token: string): Promise<IdentityPrin
       // Try the previous key: a rotation may be in progress.
     }
   }
-  throw new ContractError("unauthorized", "Internal identity context is missing or not trusted");
+  throw new ContractError(
+    "unauthorized",
+    "Internal identity context is missing or not trusted",
+  );
 }
 
 const IDENTITY_KEY = "identity";
@@ -107,32 +114,40 @@ const IDENTITY_KEY = "identity";
  * middleware runs outside the per-route `contractRoute` wrapper and an escaped
  * throw would surface as a 500 instead of a 401.
  */
-export const requireIdentity = createMiddleware(async (c: Context, next: Next) => {
-  const header = c.req.header(IDENTITY_HEADER);
-  if (header === undefined || header.length === 0) {
-    const error = new ContractError("unauthorized", "Authentication required");
-    return c.json({ success: false, error: error.toBody() }, 401);
-  }
-  try {
-    c.set(IDENTITY_KEY, await verifyIdentityContext(header));
-  } catch (error) {
-    if (error instanceof ContractError) {
-      return c.json({ success: false, error: error.toBody() }, error.status as 401);
+export const requireIdentity = createMiddleware(
+  async (c: Context, next: Next) => {
+    const header = c.req.header(IDENTITY_HEADER);
+    if (header === undefined || header.length === 0) {
+      const error = new ContractError(
+        "unauthorized",
+        "Authentication required",
+      );
+      return c.json({ success: false, error: error.toBody() }, 401);
     }
-    // A misconfigured secret is an outage, not a bad credential.
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "service_unavailable",
-          message: "Identity could not be verified. Please try again.",
+    try {
+      c.set(IDENTITY_KEY, await verifyIdentityContext(header));
+    } catch (error) {
+      if (error instanceof ContractError) {
+        return c.json(
+          { success: false, error: error.toBody() },
+          error.status as 401,
+        );
+      }
+      // A misconfigured secret is an outage, not a bad credential.
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "service_unavailable",
+            message: "Identity could not be verified. Please try again.",
+          },
         },
-      },
-      503,
-    );
-  }
-  return next();
-});
+        503,
+      );
+    }
+    return next();
+  },
+);
 
 export function getIdentity(c: Context): IdentityPrincipal {
   const principal = c.get(IDENTITY_KEY) as IdentityPrincipal | undefined;
@@ -147,7 +162,10 @@ export function getIdentity(c: Context): IdentityPrincipal {
  * this service checks again, so a request that reached it another way is still
  * refused.
  */
-export function requireScope(principal: IdentityPrincipal, scope: string): void {
+export function requireScope(
+  principal: IdentityPrincipal,
+  scope: string,
+): void {
   if (principal.scopes.includes(scope)) return;
   if (principal.modes.includes("wallet_safe")) {
     throw new ContractError(
@@ -163,7 +181,11 @@ export function requireScope(principal: IdentityPrincipal, scope: string): void 
       { required: scope },
     );
   }
-  throw new ContractError("forbidden", "You don't have permission to perform this action", {
-    required: scope,
-  });
+  throw new ContractError(
+    "forbidden",
+    "You don't have permission to perform this action",
+    {
+      required: scope,
+    },
+  );
 }

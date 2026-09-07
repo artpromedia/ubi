@@ -962,7 +962,10 @@ export class SOSEmergencyService extends EventEmitter {
     contacts.push(created);
     this.emergencyContacts.set(userId, contacts);
 
-    sosLogger.info({ userId, contactId: created.id }, "Emergency contact added");
+    sosLogger.info(
+      { userId, contactId: created.id },
+      "Emergency contact added",
+    );
 
     return created;
   }

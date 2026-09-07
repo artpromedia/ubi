@@ -14,7 +14,10 @@ import * as jose from "jose";
 
 import type { IdentityDeps } from "../../src/identity/deps";
 import { createPolicyProvider } from "../../src/identity/policy";
-import type { FaceVerification, FaceVerifier } from "../../src/identity/step-up";
+import type {
+  FaceVerification,
+  FaceVerifier,
+} from "../../src/identity/step-up";
 import { prisma } from "../../src/lib/prisma";
 import { redis } from "../../src/lib/redis";
 import { createDeviceRoutes } from "../../src/routes/devices";
@@ -60,8 +63,18 @@ export const CITY_CONFIG: CityConfig = {
     { id: "wallet", available: true },
   ],
   kycTiers: [
-    { tier: "tier_0", dailyOutMinor: 5_000_000, singleTransferMinor: 2_000_000, balanceCapMinor: 30_000_000 },
-    { tier: "tier_1", dailyOutMinor: 20_000_000, singleTransferMinor: 10_000_000, balanceCapMinor: null },
+    {
+      tier: "tier_0",
+      dailyOutMinor: 5_000_000,
+      singleTransferMinor: 2_000_000,
+      balanceCapMinor: 30_000_000,
+    },
+    {
+      tier: "tier_1",
+      dailyOutMinor: 20_000_000,
+      singleTransferMinor: 10_000_000,
+      balanceCapMinor: null,
+    },
   ],
   serviceFeePct: 20,
   remittanceCapMinor: 100_000_000,
@@ -196,7 +209,9 @@ export async function identityHeader(
   input: PrincipalInput,
   options: { secret?: string; expiresInSeconds?: number } = {},
 ): Promise<string> {
-  const key = new TextEncoder().encode(options.secret ?? INTERNAL_IDENTITY_SECRET);
+  const key = new TextEncoder().encode(
+    options.secret ?? INTERNAL_IDENTITY_SECRET,
+  );
   const now = Math.floor(Date.now() / 1000);
   return new jose.SignJWT({
     role: input.role,
@@ -244,7 +259,9 @@ function uniqueSuffix(): string {
   return `${Date.now().toString(36)}${sequence}${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
-export async function createUser(role: "RIDER" | "DRIVER" = "RIDER"): Promise<TestUser> {
+export async function createUser(
+  role: "RIDER" | "DRIVER" = "RIDER",
+): Promise<TestUser> {
   const suffix = uniqueSuffix();
   const phone = `+2348${String(randomInt(0, 1_000_000_000)).padStart(9, "0")}`;
   const email = `identity.${suffix}@test.ubi.africa`;
@@ -270,7 +287,9 @@ export interface TestDriver extends TestUser {
   readonly vehicleId: string;
 }
 
-export async function createDriver(options: { online?: boolean } = {}): Promise<TestDriver> {
+export async function createDriver(
+  options: { online?: boolean } = {},
+): Promise<TestDriver> {
   const user = await createUser("DRIVER");
   const suffix = uniqueSuffix();
   const vehicle = await prisma.vehicle.create({
@@ -316,7 +335,9 @@ export async function createWallet(
       currency: CITY_CONFIG.currency,
       tier: "tier_0",
       pinFailedAttempts: overrides.pinFailedAttempts ?? 0,
-      ...(overrides.pinHash === undefined ? {} : { pinHash: overrides.pinHash }),
+      ...(overrides.pinHash === undefined
+        ? {}
+        : { pinHash: overrides.pinHash }),
       ...(overrides.pinLockedUntil === undefined
         ? {}
         : { pinLockedUntil: overrides.pinLockedUntil }),

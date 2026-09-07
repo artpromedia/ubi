@@ -48,13 +48,17 @@ describe("option validation", () => {
         required: false,
         minSelect: 0,
         maxSelect: 2,
-        options: [{ id: "o_plantain", name: "Plantain", priceDeltaMinor: 50_000 }],
+        options: [
+          { id: "o_plantain", name: "Plantain", priceDeltaMinor: 50_000 },
+        ],
       },
     ],
   });
 
   it("rejects an unmet required group", () => {
-    expect(() => priceSelection(withRequiredProtein, [])).toThrowError(ContractError);
+    expect(() => priceSelection(withRequiredProtein, [])).toThrowError(
+      ContractError,
+    );
     try {
       priceSelection(withRequiredProtein, []);
     } catch (error) {
@@ -91,7 +95,10 @@ describe("option validation", () => {
     // 250,000 + 150,000 (beef) + 50,000 (plantain)
     expect(unitPrice.amountMinor).toBe(450_000);
     expect(unitPrice.currency).toBe("NGN");
-    expect(options.map((o) => o.optionId).sort()).toEqual(["o_beef", "o_plantain"]);
+    expect(options.map((o) => o.optionId).sort()).toEqual([
+      "o_beef",
+      "o_plantain",
+    ]);
   });
 
   it("accepts a required group met with exactly one selection", () => {
@@ -110,7 +117,9 @@ describe("sold-out and inactive items", () => {
 
   it("treats a past sold-out window as available", () => {
     const now = new Date("2026-01-01T12:00:00Z");
-    const backInStock = item({ soldOutUntil: new Date("2026-01-01T11:00:00Z") });
+    const backInStock = item({
+      soldOutUntil: new Date("2026-01-01T11:00:00Z"),
+    });
     expect(isSoldOut(backInStock, now)).toBe(false);
     expect(() => assertAddable(backInStock, now)).not.toThrow();
   });

@@ -30,7 +30,10 @@ function zoneOffsetMs(instant: Date, timeZone: string): number {
   const read = (type: Intl.DateTimeFormatPartTypes): number => {
     const part = parts.find((candidate) => candidate.type === type);
     if (part === undefined) {
-      throw new ContractError("internal_error", `timezone ${timeZone} produced no ${type}`);
+      throw new ContractError(
+        "internal_error",
+        `timezone ${timeZone} produced no ${type}`,
+      );
     }
     return Number.parseInt(part.value, 10);
   };
@@ -59,15 +62,26 @@ function localMidnight(isoDate: string, timeZone: string): Date {
 
 export function assertIsoDate(value: string): string {
   if (!ISO_DATE.test(value)) {
-    throw new ContractError("validation_failed", "date must be formatted YYYY-MM-DD", {
-      value,
-    });
+    throw new ContractError(
+      "validation_failed",
+      "date must be formatted YYYY-MM-DD",
+      {
+        value,
+      },
+    );
   }
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
-    throw new ContractError("validation_failed", "date is not a real calendar date", {
-      value,
-    });
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  ) {
+    throw new ContractError(
+      "validation_failed",
+      "date is not a real calendar date",
+      {
+        value,
+      },
+    );
   }
   return value;
 }
@@ -91,10 +105,14 @@ export function rangeWindow(
   const from = dayWindow(fromDate, timeZone);
   const to = dayWindow(toDate, timeZone);
   if (to.end.getTime() <= from.start.getTime()) {
-    throw new ContractError("validation_failed", "`to` must not be before `from`", {
-      from: fromDate,
-      to: toDate,
-    });
+    throw new ContractError(
+      "validation_failed",
+      "`to` must not be before `from`",
+      {
+        from: fromDate,
+        to: toDate,
+      },
+    );
   }
   return { start: from.start, end: to.end };
 }

@@ -83,10 +83,14 @@ const approveRoute = createRoute({
   method: "post",
   path: "/v1/config/change-requests/{id}/approve",
   tags: ["config"],
-  summary: "Approve a change request; the second distinct approver activates it",
+  summary:
+    "Approve a change request; the second distinct approver activates it",
   request: { params: RequestIdParam, headers: IdempotencyHeaders },
   responses: {
-    200: jsonContent(ApprovalResponse, "approval recorded, possibly activating"),
+    200: jsonContent(
+      ApprovalResponse,
+      "approval recorded, possibly activating",
+    ),
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
@@ -112,7 +116,16 @@ export function registerConfigRoutes(app: OpenAPIHono): void {
     requireConfigAdmin(c);
     const { cityId } = c.req.valid("param");
     const versions = await getHistory(cityId);
-    return c.json({ cityId, versions: versions.map((entry) => ({ ...entry, approvers: [...entry.approvers] })) }, 200);
+    return c.json(
+      {
+        cityId,
+        versions: versions.map((entry) => ({
+          ...entry,
+          approvers: [...entry.approvers],
+        })),
+      },
+      200,
+    );
   });
 
   app.openapi(createChangeRequestRoute, async (c) => {
@@ -135,6 +148,9 @@ export function registerConfigRoutes(app: OpenAPIHono): void {
     // keyed on (requestId, approverId), so a retry is caught as already_approved
     // rather than recorded twice.
     const result = await approveChangeRequest({ requestId: id, actor });
-    return c.json({ ...result, diff: result.diff.map((entry) => ({ ...entry })) }, 200);
+    return c.json(
+      { ...result, diff: result.diff.map((entry) => ({ ...entry })) },
+      200,
+    );
   });
 }

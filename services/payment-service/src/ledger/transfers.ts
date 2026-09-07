@@ -20,7 +20,6 @@ import {
   scopedIdempotencyKey,
 } from "@ubi/contracts";
 
-
 import { publishEvent, writeAudit } from "./audit";
 import { verifyWalletPin } from "./authorize";
 import { balanceOf } from "./balances";
@@ -172,7 +171,11 @@ async function recordRejection(
     readonly reason: string;
   },
 ): Promise<void> {
-  assertTransition(TRANSFER_MACHINE, initialState(TRANSFER_MACHINE), params.status);
+  assertTransition(
+    TRANSFER_MACHINE,
+    initialState(TRANSFER_MACHINE),
+    params.status,
+  );
   await deps.db.$transaction(async (tx) => {
     await tx.transfer.create({
       data: {
@@ -198,7 +201,10 @@ async function recordRejection(
   });
 }
 
-function findByIdempotency(deps: WalletDeps, key: string): Promise<TransferRow | null> {
+function findByIdempotency(
+  deps: WalletDeps,
+  key: string,
+): Promise<TransferRow | null> {
   return deps.db.transfer.findUnique({ where: { idempotencyKey: key } });
 }
 
@@ -207,7 +213,10 @@ export async function sendTransfer(
   input: SendTransferInput,
 ): Promise<TransferResult> {
   const now = deps.now();
-  const idempotencyKey = transferIdempotencyKey(input.actor.id, input.idempotencyKey);
+  const idempotencyKey = transferIdempotencyKey(
+    input.actor.id,
+    input.idempotencyKey,
+  );
 
   const existing = await findByIdempotency(deps, idempotencyKey);
   if (existing !== null) {
@@ -221,7 +230,10 @@ export async function sendTransfer(
   assertPinShape(input.pin);
 
   if (input.amountMinor <= 0) {
-    throw new ContractError("validation_failed", "amount must be greater than zero");
+    throw new ContractError(
+      "validation_failed",
+      "amount must be greater than zero",
+    );
   }
   if (input.toUserId === input.actor.id) {
     throw new ContractError("validation_failed", "a wallet cannot pay itself");
@@ -234,10 +246,17 @@ export async function sendTransfer(
 
   const amount = money(input.amountMinor, config.city.currency);
 
-  const { sender, recipientWallet } = await deps.db.$transaction(async (tx) => ({
-    sender: await ensureWallet(tx, "user", input.actor.id, config.city),
-    recipientWallet: await ensureWallet(tx, "user", input.toUserId, config.city),
-  }));
+  const { sender, recipientWallet } = await deps.db.$transaction(
+    async (tx) => ({
+      sender: await ensureWallet(tx, "user", input.actor.id, config.city),
+      recipientWallet: await ensureWallet(
+        tx,
+        "user",
+        input.toUserId,
+        config.city,
+      ),
+    }),
+  );
 
   assertNotLocked(sender);
 
@@ -269,7 +288,9 @@ export async function sendTransfer(
   try {
     return await deps.db.$transaction(async (tx) => {
       await lockWallet(tx, sender.id);
-      const locked = await tx.wallet.findUniqueOrThrow({ where: { id: sender.id } });
+      const locked = await tx.wallet.findUniqueOrThrow({
+        where: { id: sender.id },
+      });
 
       let topupId: string | null = null;
       if (capture !== null) {
@@ -282,7 +303,10 @@ export async function sendTransfer(
           lines: [
             {
               account: "psp_settlement",
-              amount: money(-capture.amount.amountMinor, capture.amount.currency),
+              amount: money(
+                -capture.amount.amountMinor,
+                capture.amount.currency,
+              ),
               counterpartRef: `wallet:${sender.id}`,
             },
             {
@@ -316,7 +340,11 @@ export async function sendTransfer(
         throw abortable(error, capture !== null);
       }
 
-      const newRecipient = await isNewRecipient(tx, sender.id, recipientWallet.id);
+      const newRecipient = await isNewRecipient(
+        tx,
+        sender.id,
+        recipientWallet.id,
+      );
       try {
         assertOutsideCoolingCap(
           locked,
@@ -423,7 +451,10 @@ async function captureSagaTopup(
     return null;
   }
   if (request.amountMinor <= 0) {
-    throw new ContractError("validation_failed", "top-up amount must be greater than zero");
+    throw new ContractError(
+      "validation_failed",
+      "top-up amount must be greater than zero",
+    );
   }
   const available = config.city.paymentMethods.find(
     (method) => method.id === request.methodId,
@@ -476,7 +507,10 @@ interface PostParams {
   readonly now: Date;
 }
 
-async function postTransfer(tx: LedgerTx, params: PostParams): Promise<TransferResult> {
+async function postTransfer(
+  tx: LedgerTx,
+  params: PostParams,
+): Promise<TransferResult> {
   assertTransition(TRANSFER_MACHINE, initialState(TRANSFER_MACHINE), "posted");
 
   const entry = await postEntry(tx, {
@@ -582,7 +616,11 @@ async function postTransfer(tx: LedgerTx, params: PostParams): Promise<TransferR
     riskReason: null,
     reviewCaseId: null,
     topupId: params.topupId,
-    balanceAfter: await balanceOf(tx, params.senderWalletId, params.amount.currency),
+    balanceAfter: await balanceOf(
+      tx,
+      params.senderWalletId,
+      params.amount.currency,
+    ),
     replayed: false,
     createdAt: params.now.toISOString(),
   };
@@ -593,8 +631,15 @@ interface HoldParams extends Omit<PostParams, "topupId"> {
   readonly slaMinutes: number;
 }
 
-async function holdTransfer(tx: LedgerTx, params: HoldParams): Promise<TransferResult> {
-  assertTransition(TRANSFER_MACHINE, initialState(TRANSFER_MACHINE), "held_risk");
+async function holdTransfer(
+  tx: LedgerTx,
+  params: HoldParams,
+): Promise<TransferResult> {
+  assertTransition(
+    TRANSFER_MACHINE,
+    initialState(TRANSFER_MACHINE),
+    "held_risk",
+  );
 
   await tx.transfer.create({
     data: {
@@ -626,7 +671,11 @@ async function holdTransfer(tx: LedgerTx, params: HoldParams): Promise<TransferR
     action: "wallet.transfer.held",
     subjectType: "transfer",
     subjectId: params.transferId,
-    after: { status: "held_risk", reason: params.reason, caseId: review.caseId },
+    after: {
+      status: "held_risk",
+      reason: params.reason,
+      caseId: review.caseId,
+    },
     reason: params.reason,
   });
 
@@ -660,7 +709,11 @@ async function holdTransfer(tx: LedgerTx, params: HoldParams): Promise<TransferR
     riskReason: params.reason,
     reviewCaseId: review.caseId,
     topupId: null,
-    balanceAfter: await balanceOf(tx, params.senderWalletId, params.amount.currency),
+    balanceAfter: await balanceOf(
+      tx,
+      params.senderWalletId,
+      params.amount.currency,
+    ),
     replayed: false,
     createdAt: params.now.toISOString(),
   };
@@ -709,7 +762,10 @@ async function handleTransferFailure(
 
   if (params.capture !== null) {
     const rail = requireRail(deps.topupRail, "top-up");
-    await rail.refund(params.capture.pspRef, `${params.capture.idempotencyKey}:refund`);
+    await rail.refund(
+      params.capture.pspRef,
+      `${params.capture.idempotencyKey}:refund`,
+    );
     walletLogger.warn(
       {
         transferId: params.transferId,
@@ -732,7 +788,9 @@ async function handleTransferFailure(
         amount: params.amount,
         note: params.note,
         idempotencyKey: params.idempotencyKey,
-        reason: (original.details?.reason as RiskReason | undefined) ?? "new_recipient",
+        reason:
+          (original.details?.reason as RiskReason | undefined) ??
+          "new_recipient",
         slaMinutes: params.slaMinutes,
         now: params.now,
       }),

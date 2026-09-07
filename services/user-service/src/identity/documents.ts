@@ -21,7 +21,11 @@ import { writeAudit } from "./audit";
 import type { IdentityDeps } from "./deps";
 import { APPEAL_MESSAGE, APPEAL_PATH, takeDriverOffline } from "./driver";
 import { deterministicId, newId } from "./ids";
-import { eventIdempotencyKey, writeOutboxEvent, writeOutboxEventOnce } from "./outbox";
+import {
+  eventIdempotencyKey,
+  writeOutboxEvent,
+  writeOutboxEventOnce,
+} from "./outbox";
 
 export const DRIVER_DOCUMENT_TYPES = [
   "licence",
@@ -35,10 +39,18 @@ export const VEHICLE_DOCUMENT_TYPES = [
   "vehicle_registration",
 ] as const;
 
-export const DOCUMENT_TYPES = [...DRIVER_DOCUMENT_TYPES, ...VEHICLE_DOCUMENT_TYPES] as const;
+export const DOCUMENT_TYPES = [
+  ...DRIVER_DOCUMENT_TYPES,
+  ...VEHICLE_DOCUMENT_TYPES,
+] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
-export const DOCUMENT_STATUSES = ["pending", "valid", "rejected", "expired"] as const;
+export const DOCUMENT_STATUSES = [
+  "pending",
+  "valid",
+  "rejected",
+  "expired",
+] as const;
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 
 /** Human labels, so the driver is told which document in their own words. */
@@ -103,7 +115,8 @@ export async function listDriverDocuments(
   const owners: { ownerType: string; ownerId: string }[] = [
     { ownerType: "driver", ownerId: driverId },
   ];
-  if (vehicleId !== null) owners.push({ ownerType: "vehicle", ownerId: vehicleId });
+  if (vehicleId !== null)
+    owners.push({ ownerType: "vehicle", ownerId: vehicleId });
 
   const rows = await deps.prisma.identityDocument.findMany({
     where: { OR: owners },
@@ -121,19 +134,27 @@ export async function listDriverDocuments(
       label: label(row.type),
       status: row.status,
       expiresAt: row.expiresAt?.toISOString().slice(0, 10) ?? null,
-      daysUntilExpiry: row.expiresAt === null ? null : daysUntil(row.expiresAt, now),
+      daysUntilExpiry:
+        row.expiresAt === null ? null : daysUntil(row.expiresAt, now),
       reviewedAt: row.reviewedAt?.toISOString() ?? null,
       reviewNote: row.reviewNote,
       blocksGoingOnline: row.status === "expired" || row.status === "rejected",
     });
   }
 
-  const missing = DOCUMENT_TYPES.filter((type) => !seen.has(type)).map((type) => ({
-    type,
-    label: DOCUMENT_LABELS[type],
-  }));
+  const missing = DOCUMENT_TYPES.filter((type) => !seen.has(type)).map(
+    (type) => ({
+      type,
+      label: DOCUMENT_LABELS[type],
+    }),
+  );
 
-  return { documents, missing, appealPath: APPEAL_PATH, appealMessage: APPEAL_MESSAGE };
+  return {
+    documents,
+    missing,
+    appealPath: APPEAL_PATH,
+    appealMessage: APPEAL_MESSAGE,
+  };
 }
 
 export interface UploadContext {
@@ -156,7 +177,9 @@ export async function uploadDocument(
   body: UploadDocumentBody,
 ): Promise<DocumentView> {
   const now = deps.now();
-  const isVehicleDocument = (VEHICLE_DOCUMENT_TYPES as readonly string[]).includes(body.type);
+  const isVehicleDocument = (
+    VEHICLE_DOCUMENT_TYPES as readonly string[]
+  ).includes(body.type);
   if (isVehicleDocument && context.vehicleId === null) {
     throw new ContractError(
       "validation_failed",
@@ -166,9 +189,20 @@ export async function uploadDocument(
   }
 
   const ownerType = isVehicleDocument ? "vehicle" : "driver";
-  const ownerId = isVehicleDocument ? (context.vehicleId as string) : context.driverId;
-  const id = deterministicId("doc", ownerType, ownerId, body.type, context.idempotencyKey);
-  const expiresAt = body.expiresAt === undefined ? null : new Date(`${body.expiresAt}T00:00:00Z`);
+  const ownerId = isVehicleDocument
+    ? (context.vehicleId as string)
+    : context.driverId;
+  const id = deterministicId(
+    "doc",
+    ownerType,
+    ownerId,
+    body.type,
+    context.idempotencyKey,
+  );
+  const expiresAt =
+    body.expiresAt === undefined
+      ? null
+      : new Date(`${body.expiresAt}T00:00:00Z`);
 
   if (expiresAt !== null && expiresAt.getTime() <= now.getTime()) {
     throw new ContractError(
@@ -178,7 +212,9 @@ export async function uploadDocument(
     );
   }
 
-  const existing = await deps.prisma.identityDocument.findUnique({ where: { id } });
+  const existing = await deps.prisma.identityDocument.findUnique({
+    where: { id },
+  });
   if (existing !== null) {
     // Replay of the same upload: the original result, not a second row.
     return {
@@ -187,7 +223,8 @@ export async function uploadDocument(
       label: label(existing.type),
       status: existing.status,
       expiresAt: existing.expiresAt?.toISOString().slice(0, 10) ?? null,
-      daysUntilExpiry: existing.expiresAt === null ? null : daysUntil(existing.expiresAt, now),
+      daysUntilExpiry:
+        existing.expiresAt === null ? null : daysUntil(existing.expiresAt, now),
       reviewedAt: existing.reviewedAt?.toISOString() ?? null,
       reviewNote: existing.reviewNote,
       blocksGoingOnline: false,
@@ -249,7 +286,8 @@ export async function reviewDocument(
   const document = await deps.prisma.identityDocument.findUnique({
     where: { id: input.documentId },
   });
-  if (document === null) throw new ContractError("not_found", "Document not found");
+  if (document === null)
+    throw new ContractError("not_found", "Document not found");
 
   const updated = await deps.prisma.$transaction(async (tx) => {
     const row = await tx.identityDocument.update({
@@ -295,7 +333,8 @@ export async function reviewDocument(
     label: label(updated.type),
     status: updated.status,
     expiresAt: updated.expiresAt?.toISOString().slice(0, 10) ?? null,
-    daysUntilExpiry: updated.expiresAt === null ? null : daysUntil(updated.expiresAt, now),
+    daysUntilExpiry:
+      updated.expiresAt === null ? null : daysUntil(updated.expiresAt, now),
     reviewedAt: updated.reviewedAt?.toISOString() ?? null,
     reviewNote: updated.reviewNote,
     blocksGoingOnline: updated.status !== "valid",
@@ -328,11 +367,15 @@ async function driversForDocument(
  * outbox idempotency key contains both — so this can run every hour without
  * shouting at the driver every hour.
  */
-export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySweepResult> {
+export async function sweepDocumentExpiry(
+  deps: IdentityDeps,
+): Promise<ExpirySweepResult> {
   const now = deps.now();
   const policy = await deps.policy.forCity(null);
   const thresholds = [...policy.documentReminderDays].sort((a, b) => a - b);
-  const horizon = new Date(now.getTime() + (thresholds[thresholds.length - 1] ?? 30) * DAY_MS);
+  const horizon = new Date(
+    now.getTime() + (thresholds[thresholds.length - 1] ?? 30) * DAY_MS,
+  );
 
   const documents = await deps.prisma.identityDocument.findMany({
     where: { status: "valid", expiresAt: { not: null, lte: horizon } },
@@ -362,7 +405,11 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
           subjectId: document.id,
           actorType: "system",
           actorId: "system:identity-sweep",
-          idempotencyKey: eventIdempotencyKey("document.expiring", document.id, String(threshold)),
+          idempotencyKey: eventIdempotencyKey(
+            "document.expiring",
+            document.id,
+            String(threshold),
+          ),
           fromVersion: null,
           toVersion: threshold,
           cityId: policy.cityId,
@@ -381,7 +428,11 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
       continue;
     }
 
-    const driverIds = await driversForDocument(deps, document.ownerType, document.ownerId);
+    const driverIds = await driversForDocument(
+      deps,
+      document.ownerType,
+      document.ownerId,
+    );
 
     await deps.prisma.$transaction(async (tx) => {
       const updated = await tx.identityDocument.updateMany({
@@ -445,7 +496,10 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
           subjectId: document.id,
           actorType: "system",
           actorId: "system:identity-sweep",
-          idempotencyKey: eventIdempotencyKey("vehicle.offline_for_all_drivers", document.id),
+          idempotencyKey: eventIdempotencyKey(
+            "vehicle.offline_for_all_drivers",
+            document.id,
+          ),
           fromVersion: null,
           toVersion: 1,
           cityId: policy.cityId,
@@ -464,4 +518,3 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
 
   return { remindersEmitted, expired, driversTakenOffline: [...offline] };
 }
-

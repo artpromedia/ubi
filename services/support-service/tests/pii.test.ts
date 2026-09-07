@@ -23,7 +23,6 @@ import {
 import { createApp } from "../src/index";
 import { openCase } from "../src/ops/cases";
 
-
 import type { SupportDeps } from "../src/ops/context";
 import type { SupportDb } from "../src/ops/types";
 import type { Hono } from "hono";
@@ -131,7 +130,9 @@ describe("PII visibility by role", () => {
       headers: headers(agent, city.cityId),
     });
     const agentBody = (await agentView.json()) as CaseBody;
-    const agentRide = agentBody.timeline.find((item) => item.kind === "ride.assigned");
+    const agentRide = agentBody.timeline.find(
+      (item) => item.kind === "ride.assigned",
+    );
     expect(agentRide).toBeDefined();
     const agentDriver = agentRide?.detail.driver as Record<string, unknown>;
     expect(agentDriver.displayName).toBe("[withheld]");
@@ -148,9 +149,15 @@ describe("PII visibility by role", () => {
     const responderRide = responderBody.timeline.find(
       (item) => item.kind === "ride.assigned",
     );
-    const responderDriver = responderRide?.detail.driver as Record<string, unknown>;
+    const responderDriver = responderRide?.detail.driver as Record<
+      string,
+      unknown
+    >;
     expect(responderDriver.displayName).toBe("Tunde Bello");
-    const responderPickup = responderRide?.detail.pickup as Record<string, number>;
+    const responderPickup = responderRide?.detail.pickup as Record<
+      string,
+      number
+    >;
     expect(responderPickup.lat).toBe(6.453172);
   });
 

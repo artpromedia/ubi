@@ -29,9 +29,14 @@ import { deterministicId, newId } from "./ids";
  * of the same parts once it would not, so the key stays deterministic either
  * way and a replay still collides with its own earlier write.
  */
-export function eventIdempotencyKey(name: string, ...parts: readonly string[]): string {
+export function eventIdempotencyKey(
+  name: string,
+  ...parts: readonly string[]
+): string {
   const readable = `${name}:${parts.join(":")}`;
-  return readable.length <= 64 ? readable : `${name}:${deterministicId("k", ...parts)}`;
+  return readable.length <= 64
+    ? readable
+    : `${name}:${deterministicId("k", ...parts)}`;
 }
 
 export interface OutboxInput {
@@ -48,7 +53,10 @@ export interface OutboxInput {
   readonly occurredAt?: Date;
 }
 
-export async function writeOutboxEvent(tx: Tx, input: OutboxInput): Promise<EventEnvelope> {
+export async function writeOutboxEvent(
+  tx: Tx,
+  input: OutboxInput,
+): Promise<EventEnvelope> {
   const occurredAt = input.occurredAt ?? new Date();
   const envelope: EventEnvelope = EventEnvelopeSchema.parse({
     id: newId("evt"),
@@ -112,7 +120,9 @@ export async function findOutboxByIdempotencyKey(
 ): Promise<Record<string, unknown> | undefined> {
   const row = await tx.outboxEvent.findUnique({ where: { idempotencyKey } });
   if (row === null) return undefined;
-  return typeof row.payload === "object" && row.payload !== null && !Array.isArray(row.payload)
+  return typeof row.payload === "object" &&
+    row.payload !== null &&
+    !Array.isArray(row.payload)
     ? (row.payload as Record<string, unknown>)
     : {};
 }

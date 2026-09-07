@@ -54,11 +54,17 @@ export interface RideCompletionResult {
 
 export function breakdownFor(
   config: CityConfig,
-  input: Pick<RideCompletionInput, "fareMinor" | "waitFeeMinor" | "tipMinor" | "method">,
+  input: Pick<
+    RideCompletionInput,
+    "fareMinor" | "waitFeeMinor" | "tipMinor" | "method"
+  >,
 ): RideCompletionBreakdown {
   const currency = config.currency;
   if (input.fareMinor < 0 || input.waitFeeMinor < 0 || input.tipMinor < 0) {
-    throw new ContractError("validation_failed", "ride amounts cannot be negative");
+    throw new ContractError(
+      "validation_failed",
+      "ride amounts cannot be negative",
+    );
   }
 
   const commissionable = money(input.fareMinor + input.waitFeeMinor, currency);
@@ -97,10 +103,17 @@ export async function postRideCompletion(
         { rideId: input.rideId },
       );
     }
-    if (breakdown.commissionable.amountMinor === 0 && breakdown.tip.amountMinor === 0) {
-      throw new ContractError("validation_failed", "a ride entry must move something", {
-        rideId: input.rideId,
-      });
+    if (
+      breakdown.commissionable.amountMinor === 0 &&
+      breakdown.tip.amountMinor === 0
+    ) {
+      throw new ContractError(
+        "validation_failed",
+        "a ride entry must move something",
+        {
+          rideId: input.rideId,
+        },
+      );
     }
 
     if (breakdown.commissionable.amountMinor > 0) {
@@ -197,7 +210,10 @@ export async function postCashSettlement(
   input: CashSettlementInput,
 ): Promise<PostedEntry> {
   if (input.amount.amountMinor <= 0) {
-    throw new ContractError("validation_failed", "a settlement must move a positive amount");
+    throw new ContractError(
+      "validation_failed",
+      "a settlement must move a positive amount",
+    );
   }
   return postEntry(tx, {
     kind: "cash_settlement",

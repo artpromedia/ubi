@@ -12,22 +12,21 @@ import {
   scopedIdempotencyKey,
 } from "@ubi/contracts";
 
-
 import { publishEvent, writeAudit } from "./audit";
 import { verifyWalletPin } from "./authorize";
 import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
 import { lockWallet, type WalletDeps } from "./context";
 import { isIdempotencyRace } from "./idempotency";
-import { assertSufficientFunds, assertWithinLimits, limitStatus } from "./limits";
+import {
+  assertSufficientFunds,
+  assertWithinLimits,
+  limitStatus,
+} from "./limits";
 import { fromDbMinor } from "./minor-units";
 import { assertPinShape } from "./pin";
 import { postEntry } from "./post-entry";
-import {
-  assertNotLocked,
-  assertNotSafeMode,
-  ensureWallet,
-} from "./wallets";
+import { assertNotLocked, assertNotSafeMode, ensureWallet } from "./wallets";
 import { generateId } from "../lib/utils";
 
 import type { Actor, LedgerTx } from "./types";
@@ -46,7 +45,10 @@ const REQUEST_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
 function assertRequestTransition(from: string, to: string): void {
   const allowed = REQUEST_TRANSITIONS[from];
   if (allowed === undefined) {
-    throw new ContractError("illegal_transition", `unknown request state "${from}"`);
+    throw new ContractError(
+      "illegal_transition",
+      `unknown request state "${from}"`,
+    );
   }
   if (!allowed.includes(to)) {
     throw new ContractError(
@@ -82,7 +84,11 @@ export async function createRequest(
   input: CreateRequestInput,
 ): Promise<RequestResult> {
   const now = deps.now();
-  const key = scopedIdempotencyKey("wallet.request", input.actor.id, input.idempotencyKey);
+  const key = scopedIdempotencyKey(
+    "wallet.request",
+    input.actor.id,
+    input.idempotencyKey,
+  );
 
   const existing = await deps.db.transferRequest.findUnique({
     where: { idempotencyKey: key },
@@ -103,10 +109,16 @@ export async function createRequest(
   assertFlagEnabled(config.flags, "wallet_p2p");
 
   if (input.amountMinor <= 0) {
-    throw new ContractError("validation_failed", "amount must be greater than zero");
+    throw new ContractError(
+      "validation_failed",
+      "amount must be greater than zero",
+    );
   }
   if (input.fromUserId === input.actor.id) {
-    throw new ContractError("validation_failed", "a rider cannot bill themselves");
+    throw new ContractError(
+      "validation_failed",
+      "a rider cannot bill themselves",
+    );
   }
   const payer = await deps.directory.byUserId(input.fromUserId);
   if (payer === null) {
@@ -159,7 +171,10 @@ export async function createRequest(
         to: input.actor.id,
         amountMinor: amount.amountMinor,
         currency: amount.currency,
-        counterpartRef: input.rideId === undefined ? `request:${requestId}` : `ride:${input.rideId}`,
+        counterpartRef:
+          input.rideId === undefined
+            ? `request:${requestId}`
+            : `ride:${input.rideId}`,
       },
     });
 
@@ -203,7 +218,9 @@ export async function payRequest(
     input.idempotencyKey,
   );
 
-  const replayed = await deps.db.transfer.findUnique({ where: { idempotencyKey: key } });
+  const replayed = await deps.db.transfer.findUnique({
+    where: { idempotencyKey: key },
+  });
   if (replayed !== null) {
     const balance =
       replayed.fromWallet === null
@@ -230,7 +247,10 @@ export async function payRequest(
     throw new ContractError("not_found", "request not found");
   }
   if (request.fromUser !== input.actor.id) {
-    throw new ContractError("forbidden", "only the person billed may pay this request");
+    throw new ContractError(
+      "forbidden",
+      "only the person billed may pay this request",
+    );
   }
 
   const payerWallet = await deps.db.$transaction((tx) =>
@@ -256,7 +276,9 @@ export async function payRequest(
   const transferId = generateId("tr");
 
   const replayIfRaced = async (): Promise<PayRequestResult | null> => {
-    const winner = await deps.db.transfer.findUnique({ where: { idempotencyKey: key } });
+    const winner = await deps.db.transfer.findUnique({
+      where: { idempotencyKey: key },
+    });
     if (winner === null || winner.fromWallet === null) {
       return null;
     }
@@ -265,7 +287,11 @@ export async function payRequest(
       transferId: winner.id,
       entryId: winner.entryId ?? "",
       amount: money(fromDbMinor(winner.amountMinor), winner.currency),
-      balanceAfter: await balanceOf(deps.db, winner.fromWallet, winner.currency),
+      balanceAfter: await balanceOf(
+        deps.db,
+        winner.fromWallet,
+        winner.currency,
+      ),
       replayed: true,
     };
   };
@@ -311,7 +337,8 @@ export async function payRequest(
           toWallet: payeeWallet.id,
           amountMinor: BigInt(amount.amountMinor),
           currency: amount.currency,
-          note: fresh.rideId === null ? "split fare" : `split fare ${fresh.rideId}`,
+          note:
+            fresh.rideId === null ? "split fare" : `split fare ${fresh.rideId}`,
           status: "posted",
           entryId: entry.id,
           idempotencyKey: key,
@@ -385,7 +412,10 @@ export async function listRequests(
   readonly owing: readonly RequestResult[];
 }> {
   const rows = await tx.transferRequest.findMany({
-    where: { OR: [{ fromUser: userId }, { toUser: userId }], status: "pending" },
+    where: {
+      OR: [{ fromUser: userId }, { toUser: userId }],
+      status: "pending",
+    },
     orderBy: { createdAt: "desc" },
     take: 100,
   });

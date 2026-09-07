@@ -44,7 +44,12 @@ const REMEDY_SOURCE: Readonly<Record<string, LedgerAccount>> = {
   cash_dispute_resolution: "cash_owed",
 };
 
-const OWNER_TYPES: readonly WalletOwnerType[] = ["user", "driver", "merchant", "fleet"];
+const OWNER_TYPES: readonly WalletOwnerType[] = [
+  "user",
+  "driver",
+  "merchant",
+  "fleet",
+];
 
 const RemedyBody = z.object({
   caseId: z.string().min(1).max(120),
@@ -86,12 +91,19 @@ export function createRemedyRoutes(deps: WalletDeps): Hono {
     }
     if (error instanceof z.ZodError) {
       return ctx.json(
-        { code: "validation_failed", message: "invalid remedy", details: { issues: error.issues } },
+        {
+          code: "validation_failed",
+          message: "invalid remedy",
+          details: { issues: error.issues },
+        },
         422,
       );
     }
     logger.error({ err: error }, "remedy failed");
-    return ctx.json({ code: "internal_error", message: "remedy could not be posted" }, 500);
+    return ctx.json(
+      { code: "internal_error", message: "remedy could not be posted" },
+      500,
+    );
   });
 
   app.post("/", async (c: Context) => {
@@ -125,9 +137,13 @@ export function createRemedyRoutes(deps: WalletDeps): Hono {
     if (source === undefined) {
       // Unreachable through the schema; kept so adding a remedy type without
       // choosing its account fails loudly rather than defaulting to float.
-      throw new ContractError("validation_failed", "that remedy has no ledger account", {
-        type: body.type,
-      });
+      throw new ContractError(
+        "validation_failed",
+        "that remedy has no ledger account",
+        {
+          type: body.type,
+        },
+      );
     }
 
     // Replay returns the entry the first attempt posted, never a second one.
@@ -143,7 +159,12 @@ export function createRemedyRoutes(deps: WalletDeps): Hono {
 
     try {
       const posted = await deps.db.$transaction(async (tx) => {
-        const wallet = await ensureWallet(tx, ownerType, body.beneficiary.userId, config);
+        const wallet = await ensureWallet(
+          tx,
+          ownerType,
+          body.beneficiary.userId,
+          config,
+        );
         const counterpartRef = `case:${body.caseId}`;
 
         return postEntry(tx, {
@@ -171,7 +192,12 @@ export function createRemedyRoutes(deps: WalletDeps): Hono {
       });
 
       logger.info(
-        { caseId: body.caseId, remedyId: body.remedyId, type: body.type, entryId: posted.id },
+        {
+          caseId: body.caseId,
+          remedyId: body.remedyId,
+          type: body.type,
+          entryId: posted.id,
+        },
         "remedy posted",
       );
       return c.json(viewOf(posted, false), 201);

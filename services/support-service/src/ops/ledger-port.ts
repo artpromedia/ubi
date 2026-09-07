@@ -65,7 +65,8 @@ interface LedgerHttpOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
-const RESPONSE_SHAPE_ERROR = "the ledger returned a response this service cannot read";
+const RESPONSE_SHAPE_ERROR =
+  "the ledger returned a response this service cannot read";
 
 function parseEntry(body: unknown): PostedRemedyEntry {
   if (typeof body !== "object" || body === null) {
@@ -75,7 +76,11 @@ function parseEntry(body: unknown): PostedRemedyEntry {
   const entryId = record.entryId;
   const caseRef = record.caseRef;
   const lines = record.lines;
-  if (typeof entryId !== "string" || typeof caseRef !== "string" || !Array.isArray(lines)) {
+  if (
+    typeof entryId !== "string" ||
+    typeof caseRef !== "string" ||
+    !Array.isArray(lines)
+  ) {
     throw new ContractError("service_unavailable", RESPONSE_SHAPE_ERROR);
   }
   const parsedLines: PostedLine[] = lines.map((line) => {
@@ -85,7 +90,9 @@ function parseEntry(body: unknown): PostedRemedyEntry {
       amountMinor: Number(candidate.amountMinor ?? 0),
       currency: String(candidate.currency ?? ""),
       counterpartRef:
-        typeof candidate.counterpartRef === "string" ? candidate.counterpartRef : null,
+        typeof candidate.counterpartRef === "string"
+          ? candidate.counterpartRef
+          : null,
     };
   });
   return {
@@ -107,7 +114,9 @@ export function createHttpLedger(options: LedgerHttpOptions): LedgerPort {
   const timeoutMs = options.timeoutMs ?? 10_000;
 
   return {
-    async postRemedy(request: RemedyPostingRequest): Promise<PostedRemedyEntry> {
+    async postRemedy(
+      request: RemedyPostingRequest,
+    ): Promise<PostedRemedyEntry> {
       const url = `${options.baseUrl.replace(/\/+$/, "")}${path}`;
       const headers: Record<string, string> = {
         "content-type": "application/json",
@@ -168,7 +177,10 @@ export function createHttpLedger(options: LedgerHttpOptions): LedgerPort {
         if (error instanceof ContractError) {
           throw error;
         }
-        ledgerLogger.error({ err: error, caseId: request.caseId }, "ledger call failed");
+        ledgerLogger.error(
+          { err: error, caseId: request.caseId },
+          "ledger call failed",
+        );
         throw new ContractError(
           "service_unavailable",
           "the ledger is not reachable; the remedy was not posted",

@@ -12,7 +12,13 @@ import {
 import { postEntry } from "../../src/ledger/post-entry";
 import type { Actor } from "../../src/ledger/types";
 
-import { closeTestDb, makeDeps, seedCity, testDb, uid } from "../ledger/helpers";
+import {
+  closeTestDb,
+  makeDeps,
+  seedCity,
+  testDb,
+  uid,
+} from "../ledger/helpers";
 
 const db = testDb();
 const deps = makeDeps(db);
@@ -123,7 +129,11 @@ describe("daily reconciliation", () => {
     const currency = "GHS";
     const city = await seedCity(db, { currency });
     const date = "2024-06-03";
-    await seedDay(currency, date, { topup: 1_000_000, nip: 400_000, cashCommission: 20_000 });
+    await seedDay(currency, date, {
+      topup: 1_000_000,
+      nip: 400_000,
+      cashCommission: 20_000,
+    });
 
     // What the counterparties' own statements say for the day.
     await recordExternalTotal(deps, {
@@ -161,7 +171,9 @@ describe("daily reconciliation", () => {
     for (const rail of report.rails) {
       expect(rail.diff).toEqual(money(0, currency));
       expect(rail.status).toBe("balanced");
-      expect(rail.breaks.filter((entry) => entry.resolvedAt === null)).toHaveLength(0);
+      expect(
+        rail.breaks.filter((entry) => entry.resolvedAt === null),
+      ).toHaveLength(0);
     }
     expect(
       report.rails.reduce((total, rail) => total + rail.diff.amountMinor, 0),
@@ -188,7 +200,11 @@ describe("daily reconciliation", () => {
     const currency = "RWF";
     const city = await seedCity(db, { currency });
     const date = "2024-06-04";
-    await seedDay(currency, date, { topup: 500_000, nip: 0, cashCommission: 0 });
+    await seedDay(currency, date, {
+      topup: 500_000,
+      nip: 0,
+      cashCommission: 0,
+    });
 
     // The PSP's file is 12 500 short of what the ledger says arrived.
     await recordExternalTotal(deps, {
@@ -200,7 +216,11 @@ describe("daily reconciliation", () => {
       source: "psp settlement file",
     });
 
-    const report = await runRecon(deps, { actor: OPS, cityId: city.cityId, date });
+    const report = await runRecon(deps, {
+      actor: OPS,
+      cityId: city.cityId,
+      date,
+    });
     const psp = report.rails.find((rail) => rail.rail === "psp_settlement");
     expect(psp?.diff).toEqual(money(12_500, currency));
     expect(psp?.status).toBe("break");
@@ -258,7 +278,10 @@ describe("daily reconciliation", () => {
     expect(adjustment.kind).toBe("recon_adjustment");
     expect(adjustment.caseRef).toBe(caseRef);
     expect(
-      adjustment.lines.reduce((total, line) => total + Number(line.amountMinor), 0),
+      adjustment.lines.reduce(
+        (total, line) => total + Number(line.amountMinor),
+        0,
+      ),
     ).toBe(0);
     expect(
       await db.journalEntry.count({
@@ -266,7 +289,11 @@ describe("daily reconciliation", () => {
       }),
     ).toBe(entriesBefore + 1);
 
-    const after = await closeRecon(deps, { actor: OPS, cityId: city.cityId, date });
+    const after = await closeRecon(deps, {
+      actor: OPS,
+      cityId: city.cityId,
+      date,
+    });
     expect(after.status).toBe("closed");
     expect(after.unexplained).toEqual(money(0, currency));
     const pspAfter = after.rails.find((rail) => rail.rail === "psp_settlement");
@@ -277,7 +304,11 @@ describe("daily reconciliation", () => {
     const currency = "ZAR";
     const city = await seedCity(db, { currency });
     const date = "2024-06-05";
-    await seedDay(currency, date, { topup: 300_000, nip: 0, cashCommission: 0 });
+    await seedDay(currency, date, {
+      topup: 300_000,
+      nip: 0,
+      cashCommission: 0,
+    });
 
     await recordExternalTotal(deps, {
       actor: OPS,
@@ -288,8 +319,14 @@ describe("daily reconciliation", () => {
       amountMinor: 280_000,
       source: "psp settlement file",
     });
-    const report = await runRecon(deps, { actor: OPS, cityId: city.cityId, date });
-    const open = report.rails[0]?.breaks.find((entry) => entry.resolvedAt === null);
+    const report = await runRecon(deps, {
+      actor: OPS,
+      cityId: city.cityId,
+      date,
+    });
+    const open = report.rails[0]?.breaks.find(
+      (entry) => entry.resolvedAt === null,
+    );
     expect(open?.amount).toEqual(money(20_000, currency));
 
     await expect(
@@ -308,7 +345,11 @@ describe("daily reconciliation", () => {
     expect(resolved.resolutionRef).toBe(`case:${caseRef}`);
     expect(resolved.entryId).toBeNull();
 
-    const closed = await closeRecon(deps, { actor: OPS, cityId: city.cityId, date });
+    const closed = await closeRecon(deps, {
+      actor: OPS,
+      cityId: city.cityId,
+      date,
+    });
     expect(closed.status).toBe("closed");
     // The difference is still on the rail — it is explained, not erased.
     expect(closed.rails[0]?.diff).toEqual(money(20_000, currency));
@@ -319,7 +360,11 @@ describe("daily reconciliation", () => {
     const currency = "ETB";
     const city = await seedCity(db, { currency });
     const date = "2024-06-06";
-    await seedDay(currency, date, { topup: 100_000, nip: 0, cashCommission: 0 });
+    await seedDay(currency, date, {
+      topup: 100_000,
+      nip: 0,
+      cashCommission: 0,
+    });
     await recordExternalTotal(deps, {
       actor: OPS,
       cityId: city.cityId,
@@ -349,7 +394,11 @@ describe("daily reconciliation", () => {
     const currency = "USD";
     const city = await seedCity(db, { currency });
     const date = "2024-06-07";
-    const report = await runRecon(deps, { actor: OPS, cityId: city.cityId, date });
+    const report = await runRecon(deps, {
+      actor: OPS,
+      cityId: city.cityId,
+      date,
+    });
     expect(report.rails).toHaveLength(0);
     expect(report.unexplained).toEqual(money(0, currency));
   });

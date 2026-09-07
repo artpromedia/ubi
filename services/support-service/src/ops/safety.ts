@@ -21,7 +21,6 @@
  */
 import { ContractError, scopedIdempotencyKey } from "@ubi/contracts";
 
-
 import { auditedTransaction, type OutboxInput } from "./audit";
 import {
   SAFETY_SEVERITIES,
@@ -41,7 +40,12 @@ import type { SupportDeps } from "./context";
 import type { SafetyAlert } from "./notifier";
 import type { Actor, JsonRecord, JsonValue, SupportDb } from "./types";
 
-export const SAFETY_STATUSES = ["open", "acknowledged", "escalated", "resolved"] as const;
+export const SAFETY_STATUSES = [
+  "open",
+  "acknowledged",
+  "escalated",
+  "resolved",
+] as const;
 export type SafetyStatus = (typeof SAFETY_STATUSES)[number];
 
 /**
@@ -49,7 +53,9 @@ export type SafetyStatus = (typeof SAFETY_STATUSES)[number];
  * local one. It is closed and checked the same way the contract machines are;
  * see the slice report for the contract gap.
  */
-const SAFETY_TRANSITIONS: Readonly<Record<SafetyStatus, readonly SafetyStatus[]>> = {
+const SAFETY_TRANSITIONS: Readonly<
+  Record<SafetyStatus, readonly SafetyStatus[]>
+> = {
   open: ["acknowledged", "escalated"],
   acknowledged: ["escalated", "resolved"],
   escalated: ["resolved"],
@@ -205,7 +211,9 @@ function safetyView(row: SafetyRow, role: string, now: Date): SafetyCaseView {
     raisedBy: row.raisedBy,
     slaDueAt: row.slaDue === null ? null : row.slaDue.toISOString(),
     slaBreached:
-      row.slaDue !== null && row.status !== "resolved" && row.slaDue.getTime() < now.getTime(),
+      row.slaDue !== null &&
+      row.status !== "resolved" &&
+      row.slaDue.getTime() < now.getTime(),
     responder: row.responder,
     emergencyNumber: timeline?.emergencyNumber ?? null,
     rideHoldRequested: timeline?.rideHoldRequested ?? false,
@@ -231,14 +239,18 @@ export async function raiseSos(
   // Tolerant load: a missing city config must not swallow an SOS. What it costs
   // is the SLA clock and the emergency number, and the case says so out loud.
   const attempt = await deps.config.tryLoadForSupport(input.cityId);
-  const policy: SupportPolicy | null = attempt.ok ? attempt.config.policy : null;
+  const policy: SupportPolicy | null = attempt.ok
+    ? attempt.config.policy
+    : null;
   const severity: SafetySeverity = severityForTrigger(policy, input.trigger);
   const now = deps.now();
   const slaDue =
     policy === null
       ? null
       : new Date(now.getTime() + safetySlaMinutes(policy, severity) * 60_000);
-  const emergencyNumber = attempt.ok ? attempt.config.city.emergencyNumber : null;
+  const emergencyNumber = attempt.ok
+    ? attempt.config.city.emergencyNumber
+    : null;
   const configStatus = attempt.ok ? "ok" : `unavailable:${attempt.reason}`;
 
   const scoped = scopedIdempotencyKey(
@@ -423,7 +435,9 @@ export async function raiseSos(
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      const existing = await deps.db.safetyCase.findUnique({ where: { id: caseId } });
+      const existing = await deps.db.safetyCase.findUnique({
+        where: { id: caseId },
+      });
       if (existing !== null) {
         return safetyView(existing, input.actor.role, now);
       }
@@ -641,16 +655,22 @@ export async function respond(
   input: ResponderActionInput,
 ): Promise<SafetyCaseView> {
   assertPermission(input.actor.role, "safety.respond");
-  const row = await deps.db.safetyCase.findUnique({ where: { id: input.caseId } });
+  const row = await deps.db.safetyCase.findUnique({
+    where: { id: input.caseId },
+  });
   if (row === null) {
     throw new ContractError("not_found", "no such safety case", {
       caseId: input.caseId,
     });
   }
   if (!isSafetyStatus(row.status)) {
-    throw new ContractError("illegal_transition", "the case is in an unknown state", {
-      status: row.status,
-    });
+    throw new ContractError(
+      "illegal_transition",
+      "the case is in an unknown state",
+      {
+        status: row.status,
+      },
+    );
   }
   const target = ACTION_TARGET[input.action];
   if (!actionsFor(row.status).includes(input.action)) {
@@ -674,7 +694,10 @@ export async function respond(
     const nextTimeline =
       timeline === null
         ? null
-        : timelineToJson({ ...timeline, entries: [...timeline.entries, entry] });
+        : timelineToJson({
+            ...timeline,
+            entries: [...timeline.entries, entry],
+          });
 
     const updated = await tx.safetyCase.update({
       where: { id: input.caseId },
@@ -694,7 +717,10 @@ export async function respond(
         subjectId: input.caseId,
         reason: input.note ?? `responder action ${input.action}`,
         before: { status: row.status, responder: row.responder },
-        after: { status: target ?? row.status, responder: row.responder ?? input.actor.id },
+        after: {
+          status: target ?? row.status,
+          responder: row.responder ?? input.actor.id,
+        },
         correlationId: input.correlationId,
       },
     };

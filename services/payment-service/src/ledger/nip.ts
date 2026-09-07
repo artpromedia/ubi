@@ -8,8 +8,12 @@
  * the confirmation is applied, and the late confirmation is then ignored rather
  * than resurrecting a payout that has already been unwound.
  */
-import { ContractError, type Money, money, scopedIdempotencyKey } from "@ubi/contracts";
-
+import {
+  ContractError,
+  type Money,
+  money,
+  scopedIdempotencyKey,
+} from "@ubi/contracts";
 
 import { publishEvent, writeAudit } from "./audit";
 import { verifyWalletPin } from "./authorize";
@@ -17,16 +21,16 @@ import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
 import { lockWallet, type WalletDeps } from "./context";
 import { isIdempotencyRace } from "./idempotency";
-import { assertSufficientFunds, assertWithinLimits, limitStatus } from "./limits";
+import {
+  assertSufficientFunds,
+  assertWithinLimits,
+  limitStatus,
+} from "./limits";
 import { fromDbMinor } from "./minor-units";
 import { assertPinShape } from "./pin";
 import { postEntry } from "./post-entry";
 import { requireRail } from "./providers";
-import {
-  assertNotLocked,
-  assertNotSafeMode,
-  ensureWallet,
-} from "./wallets";
+import { assertNotLocked, assertNotSafeMode, ensureWallet } from "./wallets";
 import { walletLogger } from "../lib/logger";
 import { generateId } from "../lib/utils";
 
@@ -88,7 +92,10 @@ export async function nameEnquiry(
   const rail = requireRail(deps.bankRail, "bank");
   const result = await rail.nameEnquiry({ bankCode, accountNumber });
   if (result === null) {
-    throw new ContractError("recipient_not_found", "that account could not be found");
+    throw new ContractError(
+      "recipient_not_found",
+      "that account could not be found",
+    );
   }
   return { accountName: result.accountName, sessionId: result.sessionId };
 }
@@ -98,9 +105,15 @@ export async function createNipTransfer(
   input: CreateNipInput,
 ): Promise<NipResult> {
   const now = deps.now();
-  const key = scopedIdempotencyKey("wallet.nip", input.actor.id, input.idempotencyKey);
+  const key = scopedIdempotencyKey(
+    "wallet.nip",
+    input.actor.id,
+    input.idempotencyKey,
+  );
 
-  const existing = await deps.db.nipTransfer.findUnique({ where: { idempotencyKey: key } });
+  const existing = await deps.db.nipTransfer.findUnique({
+    where: { idempotencyKey: key },
+  });
   if (existing !== null) {
     return {
       nipTransferId: existing.id,
@@ -108,7 +121,11 @@ export async function createNipTransfer(
       accountName: existing.accountName ?? "",
       amount: money(fromDbMinor(existing.amountMinor), existing.currency),
       entryId: existing.entryId,
-      balanceAfter: await balanceOf(deps.db, existing.walletId, existing.currency),
+      balanceAfter: await balanceOf(
+        deps.db,
+        existing.walletId,
+        existing.currency,
+      ),
       replayed: true,
     };
   }
@@ -117,7 +134,10 @@ export async function createNipTransfer(
   assertFlagEnabled(config.flags, "wallet_nip");
   assertPinShape(input.pin);
   if (input.amountMinor <= 0) {
-    throw new ContractError("validation_failed", "amount must be greater than zero");
+    throw new ContractError(
+      "validation_failed",
+      "amount must be greater than zero",
+    );
   }
 
   const wallet = await deps.db.$transaction((tx) =>
@@ -134,7 +154,10 @@ export async function createNipTransfer(
     accountNumber: input.accountNumber,
   });
   if (enquiry === null) {
-    throw new ContractError("recipient_not_found", "that account could not be found");
+    throw new ContractError(
+      "recipient_not_found",
+      "that account could not be found",
+    );
   }
 
   const amount = money(input.amountMinor, config.city.currency);
@@ -307,7 +330,10 @@ export async function applyNipCallback(
       where: { sessionId: callback.sessionId },
     });
     if (transfer === null) {
-      throw new ContractError("not_found", "no bank transfer matches that session");
+      throw new ContractError(
+        "not_found",
+        "no bank transfer matches that session",
+      );
     }
 
     if (transfer.status === callback.status) {
@@ -333,7 +359,11 @@ export async function applyNipCallback(
         reason: "out_of_order_callback",
       });
       walletLogger.warn(
-        { nipTransferId: transfer.id, from: transfer.status, to: callback.status },
+        {
+          nipTransferId: transfer.id,
+          from: transfer.status,
+          to: callback.status,
+        },
         "out-of-order bank callback ignored",
       );
       return {
@@ -386,7 +416,13 @@ export async function applyNipCallback(
     }
 
     const amount = money(fromDbMinor(transfer.amountMinor), transfer.currency);
-    const entry = await postReversal(tx, transfer.id, transfer.walletId, amount, now);
+    const entry = await postReversal(
+      tx,
+      transfer.id,
+      transfer.walletId,
+      amount,
+      now,
+    );
 
     await tx.nipTransfer.update({
       where: { id: transfer.id },

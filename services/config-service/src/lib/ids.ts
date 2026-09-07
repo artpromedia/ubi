@@ -15,6 +15,9 @@ export function newId(prefix: string): string {
   return `${prefix}_${digest(randomUUID())}`;
 }
 
-export function deterministicId(prefix: string, ...parts: readonly string[]): string {
+export function deterministicId(
+  prefix: string,
+  ...parts: readonly string[]
+): string {
   return `${prefix}_${digest(parts.join("|"))}`;
 }

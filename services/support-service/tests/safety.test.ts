@@ -21,8 +21,13 @@ import {
   type SeededUser,
 } from "./helpers";
 import { createApp } from "../src/index";
-import { attemptDelivery, listSafetyCases, raiseSos, respond, sweepPendingDeliveries } from "../src/ops/safety";
-
+import {
+  attemptDelivery,
+  listSafetyCases,
+  raiseSos,
+  respond,
+  sweepPendingDeliveries,
+} from "../src/ops/safety";
 
 import type { SupportDb } from "../src/ops/types";
 
@@ -77,12 +82,18 @@ describe("durable SOS", () => {
       where: { correlationId: null, aggregateId: { in: [result.id, rideId] } },
     });
     const names = events.map((event) => event.name).sort();
-    expect(names).toEqual(["incident.created", "ride.safety_hold", "safety.sos_raised"]);
+    expect(names).toEqual([
+      "incident.created",
+      "ride.safety_hold",
+      "safety.sos_raised",
+    ]);
     const hold = events.find((event) => event.name === "ride.safety_hold");
     expect(hold?.aggregateType).toBe("ride");
     expect(hold?.aggregateId).toBe(rideId);
 
-    expect(notifier.attempts.map((attempt) => attempt.channel)).toEqual(["push"]);
+    expect(notifier.attempts.map((attempt) => attempt.channel)).toEqual([
+      "push",
+    ]);
     expect(result.delivery.status).toBe("delivered");
     expect(result.delivery.deliveredChannel).toBe("push");
   });
@@ -102,7 +113,10 @@ describe("durable SOS", () => {
       correlationId: null,
     });
 
-    expect(notifier.attempts.map((attempt) => attempt.channel)).toEqual(["push", "sms"]);
+    expect(notifier.attempts.map((attempt) => attempt.channel)).toEqual([
+      "push",
+      "sms",
+    ]);
     expect(result.delivery.status).toBe("delivered");
     expect(result.delivery.deliveredChannel).toBe("sms");
   });
@@ -148,7 +162,8 @@ describe("durable SOS", () => {
     expect(swept).toBeGreaterThanOrEqual(1);
 
     const after = await db.safetyCase.findUnique({ where: { id: result.id } });
-    const delivery = (after?.timeline as { delivery: { status: string } }).delivery;
+    const delivery = (after?.timeline as { delivery: { status: string } })
+      .delivery;
     expect(delivery.status).toBe("delivered");
   });
 

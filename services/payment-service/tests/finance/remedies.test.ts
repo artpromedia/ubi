@@ -1,7 +1,14 @@
 import { afterAll, describe, expect, it } from "vitest";
 
 import { createRemedyRoutes } from "../../src/finance/remedies";
-import { closeTestDb, makeDeps, seedCity, seedUser, testDb, uid } from "../ledger/helpers";
+import {
+  closeTestDb,
+  makeDeps,
+  seedCity,
+  seedUser,
+  testDb,
+  uid,
+} from "../ledger/helpers";
 
 const db = testDb();
 const deps = makeDeps(db);
@@ -17,7 +24,12 @@ afterAll(async () => {
 interface RemedyView {
   entryId: string;
   caseRef: string | null;
-  lines: { account: string; amountMinor: number; currency: string; counterpartRef: string | null }[];
+  lines: {
+    account: string;
+    amountMinor: number;
+    currency: string;
+    counterpartRef: string | null;
+  }[];
   replayed: boolean;
 }
 
@@ -86,7 +98,9 @@ describe("posting a support remedy", () => {
       const body = await remedyBody({ type });
       const view = (await (await post(body, uid("idem"))).json()) as RemedyView;
       const source = view.lines.find((line) => line.account !== "wallet");
-      expect(source?.account, `${type} must draw from ${account}`).toBe(account);
+      expect(source?.account, `${type} must draw from ${account}`).toBe(
+        account,
+      );
     }
   });
 
@@ -100,7 +114,9 @@ describe("posting a support remedy", () => {
     expect(second.entryId).toBe(first.entryId);
     expect(second.replayed).toBe(true);
 
-    const entries = await db.journalEntry.count({ where: { caseRef: body.caseId } });
+    const entries = await db.journalEntry.count({
+      where: { caseRef: body.caseId },
+    });
     expect(entries, "a retry must not post a second entry").toBe(1);
   });
 
@@ -121,14 +137,18 @@ describe("posting a support remedy", () => {
     const body = await remedyBody({ currency: "KES" });
     const response = await post(body, uid("idem"));
     expect(response.status).toBe(422);
-    expect(await db.journalEntry.count({ where: { caseRef: body.caseId } })).toBe(0);
+    expect(
+      await db.journalEntry.count({ where: { caseRef: body.caseId } }),
+    ).toBe(0);
   });
 
   it("refuses an untyped remedy", async () => {
     const body = await remedyBody({ type: "just_give_them_money" });
     const response = await post(body, uid("idem"));
     expect(response.status).toBeGreaterThanOrEqual(400);
-    expect(await db.journalEntry.count({ where: { caseRef: body.caseId } })).toBe(0);
+    expect(
+      await db.journalEntry.count({ where: { caseRef: body.caseId } }),
+    ).toBe(0);
   });
 
   it("refuses a negative or zero amount", async () => {
@@ -136,22 +156,33 @@ describe("posting a support remedy", () => {
       const body = await remedyBody({ amountMinor });
       const response = await post(body, uid("idem"));
       expect(response.status).toBeGreaterThanOrEqual(400);
-      expect(await db.journalEntry.count({ where: { caseRef: body.caseId } })).toBe(0);
+      expect(
+        await db.journalEntry.count({ where: { caseRef: body.caseId } }),
+      ).toBe(0);
     }
   });
 
   it("leaves the entry it corrects completely untouched", async () => {
     const body = await remedyBody();
     // A prior entry the case is about.
-    const before = await db.journalEntry.findMany({ orderBy: { id: "asc" }, include: { lines: true } });
+    const before = await db.journalEntry.findMany({
+      orderBy: { id: "asc" },
+      include: { lines: true },
+    });
     await post(body, uid("idem"));
     const after = await db.journalEntry.findMany({
       where: { id: { in: before.map((entry) => entry.id) } },
       orderBy: { id: "asc" },
       include: { lines: true },
     });
-    expect(JSON.stringify(after, (_k, v) => (typeof v === "bigint" ? v.toString() : v))).toBe(
-      JSON.stringify(before, (_k, v) => (typeof v === "bigint" ? v.toString() : v)),
+    expect(
+      JSON.stringify(after, (_k, v) =>
+        typeof v === "bigint" ? v.toString() : v,
+      ),
+    ).toBe(
+      JSON.stringify(before, (_k, v) =>
+        typeof v === "bigint" ? v.toString() : v,
+      ),
     );
   });
 });

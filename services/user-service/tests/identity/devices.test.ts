@@ -37,7 +37,11 @@ async function enrol(deviceId: string, principalUserId = user.id) {
         role: "rider",
         scopes: FULL_SCOPES,
       }),
-      body: JSON.stringify({ deviceId, platform: "android", model: "Pixel 7a" }),
+      body: JSON.stringify({
+        deviceId,
+        platform: "android",
+        model: "Pixel 7a",
+      }),
     }),
   );
 }
@@ -52,7 +56,11 @@ describe("device enrolment", () => {
         status: string;
         deviceId: string;
         trusted: boolean;
-        stepUp: { required: boolean; methods: string[]; unavailable: { method: string }[] };
+        stepUp: {
+          required: boolean;
+          methods: string[];
+          unavailable: { method: string }[];
+        };
         token: { accessToken: string; mode: string; scopes: string[] };
       };
     };
@@ -75,7 +83,9 @@ describe("device enrolment", () => {
     expect(claims.sub).toBe(user.id);
     expect(claims.deviceId).toBe(body.data.deviceId);
 
-    const stored = await prisma.device.findUniqueOrThrow({ where: { id: body.data.deviceId } });
+    const stored = await prisma.device.findUniqueOrThrow({
+      where: { id: body.data.deviceId },
+    });
     expect(stored.trusted).toBe(false);
     expect(stored.userId).toBe(user.id);
 
@@ -97,7 +107,11 @@ describe("device enrolment", () => {
     const response = await enrol("device-beta-0002");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      data: { status: string; trusted: boolean; token: { mode: string; scopes: null } };
+      data: {
+        status: string;
+        trusted: boolean;
+        token: { mode: string; scopes: null };
+      };
     };
     expect(body.data.status).toBe("enrolled");
     expect(body.data.trusted).toBe(true);
@@ -110,7 +124,10 @@ describe("device enrolment", () => {
     const body = (await response.json()) as {
       data: { stepUp: { methods: string[]; unavailable: unknown[] } };
     };
-    expect(body.data.stepUp.methods).toEqual(["old_device_approve", "selfie_nin"]);
+    expect(body.data.stepUp.methods).toEqual([
+      "old_device_approve",
+      "selfie_nin",
+    ]);
     expect(body.data.stepUp.unavailable).toHaveLength(0);
   });
 
@@ -135,9 +152,9 @@ describe("the identity context is the only thing that authenticates", () => {
       }),
     );
     expect(response.status).toBe(401);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
-      "unauthorized",
-    );
+    expect(
+      ((await response.json()) as { error: { code: string } }).error.code,
+    ).toBe("unauthorized");
   });
 
   it("refuses a forged x-auth-user-id, which it never reads", async () => {
@@ -163,7 +180,10 @@ describe("the identity context is the only thing that authenticates", () => {
     const response = await harness.app.fetch(
       new Request("http://user-service.test/devices/enroll", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-ubi-identity": forged },
+        headers: {
+          "content-type": "application/json",
+          "x-ubi-identity": forged,
+        },
         body: JSON.stringify({ deviceId: "device-forged-02" }),
       }),
     );
@@ -182,14 +202,17 @@ describe("the identity context is the only thing that authenticates", () => {
     ) as Record<string, unknown>;
     claims.scp = [...FULL_SCOPES];
     claims.role = "admin";
-    const tampered = `${header as string}.${Buffer.from(JSON.stringify(claims)).toString(
-      "base64url",
-    )}.${signature as string}`;
+    const tampered = `${header as string}.${Buffer.from(
+      JSON.stringify(claims),
+    ).toString("base64url")}.${signature as string}`;
 
     const response = await harness.app.fetch(
       new Request("http://user-service.test/devices/enroll", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-ubi-identity": tampered },
+        headers: {
+          "content-type": "application/json",
+          "x-ubi-identity": tampered,
+        },
         body: JSON.stringify({ deviceId: "device-tampered-1" }),
       }),
     );
@@ -204,7 +227,10 @@ describe("the identity context is the only thing that authenticates", () => {
     const response = await harness.app.fetch(
       new Request("http://user-service.test/devices/enroll", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-ubi-identity": expired },
+        headers: {
+          "content-type": "application/json",
+          "x-ubi-identity": expired,
+        },
         body: JSON.stringify({ deviceId: "device-expired-01" }),
       }),
     );
@@ -225,8 +251,8 @@ describe("the identity context is the only thing that authenticates", () => {
       }),
     );
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
-      "limited_mode",
-    );
+    expect(
+      ((await response.json()) as { error: { code: string } }).error.code,
+    ).toBe("limited_mode");
   });
 });

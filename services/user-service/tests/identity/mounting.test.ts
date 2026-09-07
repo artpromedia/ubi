@@ -41,7 +41,9 @@ beforeAll(async () => {
 
   const protectedApi = new Hono();
   protectedApi.use("*", serviceAuthMiddleware);
-  protectedApi.get("/users/me", (c) => c.json({ success: true, data: { via: "protectedApi" } }));
+  protectedApi.get("/users/me", (c) =>
+    c.json({ success: true, data: { via: "protectedApi" } }),
+  );
   app.route("/", protectedApi);
 });
 
@@ -110,7 +112,9 @@ describe("identity routes are not shadowed by the header-trusting service auth",
     // Refused by the signature check, which is the identity module's own —
     // not by the service-auth middleware.
     expect(response.status).toBe(401);
-    const body = (await response.json()) as { error: { code: string; message: string } };
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
     expect(body.error.code).toBe("unauthorized");
     expect(body.error.message).toContain("signature");
   });

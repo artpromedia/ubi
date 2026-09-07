@@ -22,7 +22,10 @@ export interface AuditInput {
   readonly reason?: string | null;
 }
 
-export async function writeAudit(tx: LedgerTx, input: AuditInput): Promise<void> {
+export async function writeAudit(
+  tx: LedgerTx,
+  input: AuditInput,
+): Promise<void> {
   await tx.auditLog.create({
     data: {
       id: generateId("aud"),
@@ -31,8 +34,14 @@ export async function writeAudit(tx: LedgerTx, input: AuditInput): Promise<void>
       action: input.action,
       subjectType: input.subjectType,
       subjectId: input.subjectId,
-      before: input.before === undefined || input.before === null ? undefined : { ...input.before },
-      after: input.after === undefined || input.after === null ? undefined : { ...input.after },
+      before:
+        input.before === undefined || input.before === null
+          ? undefined
+          : { ...input.before },
+      after:
+        input.after === undefined || input.after === null
+          ? undefined
+          : { ...input.after },
       reason: input.reason ?? null,
     },
   });
@@ -54,7 +63,10 @@ export interface OutboxInput {
   readonly payload: JsonRecord;
 }
 
-export async function publishEvent(tx: LedgerTx, input: OutboxInput): Promise<void> {
+export async function publishEvent(
+  tx: LedgerTx,
+  input: OutboxInput,
+): Promise<void> {
   const name = assertKnownEventName(input.name);
   await tx.outboxEvent.create({
     data: {

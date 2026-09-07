@@ -11,7 +11,11 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 
-import { ContractError, IDEMPOTENCY_HEADER, IdempotencyKeySchema } from "@ubi/contracts";
+import {
+  ContractError,
+  IDEMPOTENCY_HEADER,
+  IdempotencyKeySchema,
+} from "@ubi/contracts";
 
 import {
   applyNipCallback,
@@ -60,7 +64,9 @@ const PayRequestBody = z.object({ pin: z.string().min(4).max(6) });
 
 const NipBody = z.object({
   bankCode: z.string().min(3).max(10),
-  accountNumber: z.string().regex(/^\d{10}$/, "account number must be 10 digits"),
+  accountNumber: z
+    .string()
+    .regex(/^\d{10}$/, "account number must be 10 digits"),
   amountMinor: AmountSchema,
   pin: z.string().min(4).max(6),
 });
@@ -149,12 +155,16 @@ async function parse<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
   const body: unknown = await c.req.json().catch(() => undefined);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw new ContractError("validation_failed", "the request body is not valid", {
-      issues: parsed.error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
-    });
+    throw new ContractError(
+      "validation_failed",
+      "the request body is not valid",
+      {
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      },
+    );
   }
   return parsed.data;
 }
@@ -166,7 +176,10 @@ function fail(c: Context, error: unknown): Response {
   }
   walletLogger.error({ err: error }, "unhandled wallet error");
   return c.json(
-    { code: "internal_error", message: "something went wrong handling that request" },
+    {
+      code: "internal_error",
+      message: "something went wrong handling that request",
+    },
     500,
   );
 }
@@ -182,7 +195,10 @@ export function createWalletV1Routes(deps: WalletDeps): Hono {
       verifyWebhookSignature(raw, c.req.header("X-Bank-Signature"));
       const parsed = NipCallbackBody.safeParse(JSON.parse(raw));
       if (!parsed.success) {
-        throw new ContractError("validation_failed", "the callback body is not valid");
+        throw new ContractError(
+          "validation_failed",
+          "the callback body is not valid",
+        );
       }
       const cityId = cityOf(c);
       const result = await applyNipCallback(deps, cityId, parsed.data);
@@ -206,12 +222,18 @@ export function createWalletV1Routes(deps: WalletDeps): Hono {
     try {
       const query = c.req.query("q");
       if (query === undefined || query.length === 0) {
-        throw new ContractError("validation_failed", "say who you are looking for");
+        throw new ContractError(
+          "validation_failed",
+          "say who you are looking for",
+        );
       }
       // Only the display name crosses this boundary — never the phone number
       // that was searched for, and never anything else about the account.
       const match = await deps.directory.lookup(query);
-      return c.json({ userId: match.userId, displayName: match.displayName }, 200);
+      return c.json(
+        { userId: match.userId, displayName: match.displayName },
+        200,
+      );
     } catch (error) {
       return fail(c, error);
     }
@@ -334,7 +356,10 @@ export function createWalletV1Routes(deps: WalletDeps): Hono {
           "a bank code and account number are both needed",
         );
       }
-      return c.json(await nameEnquiry(deps, cityOf(c), bankCode, accountNumber), 200);
+      return c.json(
+        await nameEnquiry(deps, cityOf(c), bankCode, accountNumber),
+        200,
+      );
     } catch (error) {
       return fail(c, error);
     }
@@ -425,7 +450,10 @@ export function createWalletV1Routes(deps: WalletDeps): Hono {
         format: c.req.query("format") ?? "json",
       });
       if (!query.success) {
-        throw new ContractError("validation_failed", "from and to are both required");
+        throw new ContractError(
+          "validation_failed",
+          "from and to are both required",
+        );
       }
       const statement = await buildStatement(deps, {
         actor: actorOf(c),

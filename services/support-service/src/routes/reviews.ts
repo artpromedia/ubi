@@ -39,7 +39,9 @@ const DecisionBody = z.object({
 
 function queueOf(raw: string): ReviewQueue {
   if (!isReviewQueue(raw)) {
-    throw new ContractError("not_found", "no such review queue", { queue: raw });
+    throw new ContractError("not_found", "no such review queue", {
+      queue: raw,
+    });
   }
   return raw;
 }

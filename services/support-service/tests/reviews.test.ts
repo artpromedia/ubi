@@ -18,8 +18,12 @@ import {
 } from "./helpers";
 import { createApp } from "../src/index";
 import { openCase, postRemedy } from "../src/ops/cases";
-import { decide, listQueue, requiresDualControl, subjectValueMinor } from "../src/ops/reviews";
-
+import {
+  decide,
+  listQueue,
+  requiresDualControl,
+  subjectValueMinor,
+} from "../src/ops/reviews";
 
 import type { SupportDeps } from "../src/ops/context";
 import type { SupportDb } from "../src/ops/types";
@@ -71,10 +75,13 @@ describe("review queues", () => {
     });
     const item = queue.items.find((entry) => entry.subjectId === expired.id);
     expect(item).toBeDefined();
-    expect(item?.checks.map((check) => check.code)).toContain("document.not_expired");
-    expect(item?.checks.find((check) => check.code === "document.not_expired")?.level).toBe(
-      "fail",
+    expect(item?.checks.map((check) => check.code)).toContain(
+      "document.not_expired",
     );
+    expect(
+      item?.checks.find((check) => check.code === "document.not_expired")
+        ?.level,
+    ).toBe("fail");
 
     // A failing check does not block the human: they can still approve, and the
     // checks they saw are recorded with the decision.
@@ -91,12 +98,18 @@ describe("review queues", () => {
     });
     expect(decision.status).toBe("complete");
 
-    const stored = await db.reviewDecision.findUnique({ where: { id: decision.id } });
+    const stored = await db.reviewDecision.findUnique({
+      where: { id: decision.id },
+    });
     const checks = stored?.checks as { advisory: { code: string }[] };
-    expect(checks.advisory.map((check) => check.code)).toContain("document.not_expired");
+    expect(checks.advisory.map((check) => check.code)).toContain(
+      "document.not_expired",
+    );
 
     // The decision actually changed the record it was about.
-    const document = await db.identityDocument.findUnique({ where: { id: expired.id } });
+    const document = await db.identityDocument.findUnique({
+      where: { id: expired.id },
+    });
     expect(document?.status).toBe("approved");
     expect(document?.reviewedBy).toBe(reviewerA.id);
     expect(document?.reviewedAt).not.toBeNull();
@@ -144,7 +157,9 @@ describe("review queues", () => {
 
     const first = await app.request("/v1/reviews/identity/decisions", {
       method: "POST",
-      headers: headers(reviewerA, city.cityId, { "idempotency-key": idemKey("rvd") }),
+      headers: headers(reviewerA, city.cityId, {
+        "idempotency-key": idemKey("rvd"),
+      }),
       body: JSON.stringify({
         subjectType: "identity_case",
         subjectId: identityCase.id,
@@ -153,18 +168,25 @@ describe("review queues", () => {
       }),
     });
     expect(first.status).toBe(202);
-    const proposal = (await first.json()) as { id: string; reviewers: string[] };
+    const proposal = (await first.json()) as {
+      id: string;
+      reviewers: string[];
+    };
     expect(proposal.reviewers).toEqual([reviewerA.id]);
 
     // Nothing has happened to the driver yet.
-    const untouched = await db.identityCase.findUnique({ where: { id: identityCase.id } });
+    const untouched = await db.identityCase.findUnique({
+      where: { id: identityCase.id },
+    });
     expect(untouched?.decision).toBeNull();
     expect(untouched?.status).toBe("open");
 
     // The same reviewer cannot sign twice.
     const again = await app.request("/v1/reviews/identity/decisions", {
       method: "POST",
-      headers: headers(reviewerA, city.cityId, { "idempotency-key": idemKey("rvd") }),
+      headers: headers(reviewerA, city.cityId, {
+        "idempotency-key": idemKey("rvd"),
+      }),
       body: JSON.stringify({
         subjectType: "identity_case",
         subjectId: identityCase.id,
@@ -173,12 +195,16 @@ describe("review queues", () => {
       }),
     });
     expect(again.status).toBe(409);
-    expect(((await again.json()) as { code: string }).code).toBe("already_approved");
+    expect(((await again.json()) as { code: string }).code).toBe(
+      "already_approved",
+    );
 
     // A different reviewer completes it.
     const second = await app.request("/v1/reviews/identity/decisions", {
       method: "POST",
-      headers: headers(reviewerB, city.cityId, { "idempotency-key": idemKey("rvd") }),
+      headers: headers(reviewerB, city.cityId, {
+        "idempotency-key": idemKey("rvd"),
+      }),
       body: JSON.stringify({
         subjectType: "identity_case",
         subjectId: identityCase.id,
@@ -187,11 +213,16 @@ describe("review queues", () => {
       }),
     });
     expect(second.status).toBe(201);
-    const completed = (await second.json()) as { id: string; reviewers: string[] };
+    const completed = (await second.json()) as {
+      id: string;
+      reviewers: string[];
+    };
     expect(completed.id).toBe(proposal.id);
     expect(completed.reviewers).toEqual([reviewerA.id, reviewerB.id]);
 
-    const decided = await db.identityCase.findUnique({ where: { id: identityCase.id } });
+    const decided = await db.identityCase.findUnique({
+      where: { id: identityCase.id },
+    });
     expect(decided?.decision).toBe("deactivate");
     expect(decided?.decidedBy).toEqual([reviewerA.id, reviewerB.id]);
 
@@ -209,12 +240,17 @@ describe("review queues", () => {
       "review.identity.proposed",
       "review.identity.decided",
     ]);
-    expect(audits.map((row) => row.actorId)).toEqual([reviewerA.id, reviewerB.id]);
+    expect(audits.map((row) => row.actorId)).toEqual([
+      reviewerA.id,
+      reviewerB.id,
+    ]);
 
     const events = await db.outboxEvent.findMany({
       where: { aggregateId: identityCase.id },
     });
-    expect(events.map((event) => event.name)).toEqual(["identity.case_decided"]);
+    expect(events.map((event) => event.name)).toEqual([
+      "identity.case_decided",
+    ]);
   });
 
   it("requires two reviewers once the subject's value passes the city threshold", async () => {
@@ -322,7 +358,9 @@ describe("review queues", () => {
     expect(
       await db.reviewDecision.count({ where: { subjectId: merchant.id } }),
     ).toBe(1);
-    const verified = await db.merchant.findUnique({ where: { id: merchant.id } });
+    const verified = await db.merchant.findUnique({
+      where: { id: merchant.id },
+    });
     expect(verified?.verifiedAt).not.toBeNull();
   });
 
@@ -369,7 +407,9 @@ describe("review queues", () => {
       await db.reviewDecision.count({ where: { subjectId: identityCase.id } }),
     ).toBe(1);
     // The replay is not a second ops action, so it wrote no second audit row.
-    expect(await db.auditLog.count({ where: { subjectId: identityCase.id } })).toBe(1);
+    expect(
+      await db.auditLog.count({ where: { subjectId: identityCase.id } }),
+    ).toBe(1);
   });
 
   it("keeps the queues away from roles that may not review", async () => {

@@ -2,27 +2,39 @@
  * The seed must be impossible to run against production, and the Lagos config
  * it carries must hold the board numbers exactly.
  */
-import { CityConfigSchema, ContractError, fareTableFor, paymentMethodAvailable } from "@ubi/contracts";
+import {
+  CityConfigSchema,
+  ContractError,
+  fareTableFor,
+  paymentMethodAvailable,
+} from "@ubi/contracts";
 import { describe, expect, it } from "vitest";
 
 import { assertSeedAllowed, lagosConfig, seedLagos } from "@/seed/lagos";
 
 describe("seed guards", () => {
   it("refuses to run in production even with the opt-in set", () => {
-    expect(() => assertSeedAllowed({ NODE_ENV: "production", CONFIG_SEED_ENABLED: "true" })).toThrow(
-      ContractError,
-    );
+    expect(() =>
+      assertSeedAllowed({
+        NODE_ENV: "production",
+        CONFIG_SEED_ENABLED: "true",
+      }),
+    ).toThrow(ContractError);
   });
 
   it("refuses to run without the explicit opt-in", () => {
-    expect(() => assertSeedAllowed({ NODE_ENV: "development" })).toThrow(ContractError);
-    expect(() => assertSeedAllowed({ NODE_ENV: "test", CONFIG_SEED_ENABLED: "false" })).toThrow(
+    expect(() => assertSeedAllowed({ NODE_ENV: "development" })).toThrow(
       ContractError,
     );
+    expect(() =>
+      assertSeedAllowed({ NODE_ENV: "test", CONFIG_SEED_ENABLED: "false" }),
+    ).toThrow(ContractError);
   });
 
   it("allows an explicitly opted-in non-production run", () => {
-    expect(() => assertSeedAllowed({ NODE_ENV: "test", CONFIG_SEED_ENABLED: "true" })).not.toThrow();
+    expect(() =>
+      assertSeedAllowed({ NODE_ENV: "test", CONFIG_SEED_ENABLED: "true" }),
+    ).not.toThrow();
   });
 
   it("rejects a production seed before touching the database", async () => {

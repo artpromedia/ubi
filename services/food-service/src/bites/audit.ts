@@ -67,7 +67,9 @@ export interface AuditedOutcome<T> {
   readonly events?: readonly OutboxInput[];
 }
 
-function jsonOrNull(value: JsonRecord | null | undefined): JsonRecord | undefined {
+function jsonOrNull(
+  value: JsonRecord | null | undefined,
+): JsonRecord | undefined {
   return value === undefined || value === null ? undefined : { ...value };
 }
 
@@ -76,7 +78,10 @@ function jsonOrNull(value: JsonRecord | null | undefined): JsonRecord | undefine
  * shape; production mutations never call it directly, they return an
  * `AuditRecord` and let `auditedTransaction` write it.
  */
-export async function writeAudit(tx: BitesTx, record: AuditRecord): Promise<void> {
+export async function writeAudit(
+  tx: BitesTx,
+  record: AuditRecord,
+): Promise<void> {
   const correlationId = record.correlationId ?? null;
   const after = jsonOrNull(record.after);
   await tx.auditLog.create({
@@ -99,7 +104,10 @@ export async function writeAudit(tx: BitesTx, record: AuditRecord): Promise<void
   });
 }
 
-export async function publishEvent(tx: BitesTx, input: OutboxInput): Promise<void> {
+export async function publishEvent(
+  tx: BitesTx,
+  input: OutboxInput,
+): Promise<void> {
   const name = assertKnownEventName(input.name);
   await tx.outboxEvent.create({
     data: {

@@ -147,13 +147,19 @@ describe("relay: SKIP LOCKED", () => {
     const prismaB = makePrisma();
     try {
       const relayA = createOutboxRelay({ prisma, redis: pub, batchSize: 100 });
-      const relayB = createOutboxRelay({ prisma: prismaB, redis: pub, batchSize: 100 });
+      const relayB = createOutboxRelay({
+        prisma: prismaB,
+        redis: pub,
+        batchSize: 100,
+      });
 
       const [a, b] = await Promise.all([relayA.tick(), relayB.tick()]);
       const totalPublished = a.published + b.published;
       expect(totalPublished).toBe(ids.length);
 
-      await onSubject.waitFor((m) => m.filter((x) => ids.includes(x.id)).length >= ids.length);
+      await onSubject.waitFor(
+        (m) => m.filter((x) => ids.includes(x.id)).length >= ids.length,
+      );
 
       // Every id was delivered exactly once — no row published twice.
       for (const id of ids) {
@@ -173,7 +179,10 @@ describe("relay: SKIP LOCKED", () => {
 
   it("a single contended row is published exactly once by concurrent passes", async () => {
     const rideId = uid("ride");
-    const eventId = await insertRow(prisma, { aggregateId: rideId, toVersion: 1 });
+    const eventId = await insertRow(prisma, {
+      aggregateId: rideId,
+      toVersion: 1,
+    });
     const onSubject = await collect(`ride.${rideId}`);
 
     const prismaB = makePrisma();

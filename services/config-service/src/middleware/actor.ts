@@ -38,9 +38,13 @@ export function actorFrom(c: Context): Actor {
 export function requireConfigAdmin(c: Context): Actor {
   const actor = actorFrom(c);
   if (!CONFIG_ADMIN_ROLES.has(actor.role)) {
-    throw new ContractError("forbidden", "config administration requires an admin role", {
-      requiredRoles: [...CONFIG_ADMIN_ROLES],
-    });
+    throw new ContractError(
+      "forbidden",
+      "config administration requires an admin role",
+      {
+        requiredRoles: [...CONFIG_ADMIN_ROLES],
+      },
+    );
   }
   return actor;
 }
@@ -61,7 +65,10 @@ function isInternalCaller(c: Context): boolean {
  *   because it has already authenticated that user itself.
  * - Anyone else gets a city-only evaluation; the supplied `userId` is dropped.
  */
-export function effectiveUserId(c: Context, requestedUserId: string | undefined): string | undefined {
+export function effectiveUserId(
+  c: Context,
+  requestedUserId: string | undefined,
+): string | undefined {
   const headerUserId = c.req.header(USER_ID_HEADER)?.trim();
   if (headerUserId !== undefined && headerUserId !== "") {
     if (
@@ -69,11 +76,18 @@ export function effectiveUserId(c: Context, requestedUserId: string | undefined)
       requestedUserId !== "" &&
       requestedUserId !== headerUserId
     ) {
-      throw new ContractError("forbidden", "cannot evaluate flags for another user");
+      throw new ContractError(
+        "forbidden",
+        "cannot evaluate flags for another user",
+      );
     }
     return headerUserId;
   }
-  if (isInternalCaller(c) && requestedUserId !== undefined && requestedUserId !== "") {
+  if (
+    isInternalCaller(c) &&
+    requestedUserId !== undefined &&
+    requestedUserId !== ""
+  ) {
     return requestedUserId;
   }
   return undefined;

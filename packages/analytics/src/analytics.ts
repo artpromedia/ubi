@@ -155,7 +155,9 @@ export class Analytics {
   /**
    * Initialize all providers
    */
-  async initialize(providerConfigs: Record<string, Record<string, unknown>>): Promise<void> {
+  async initialize(
+    providerConfigs: Record<string, Record<string, unknown>>,
+  ): Promise<void> {
     if (this.config.disabled) return;
 
     const initPromises = this.providers.map(async (provider) => {
@@ -198,7 +200,7 @@ export class Analytics {
           } catch (error) {
             this.handleError(error as Error, provider.name);
           }
-        })
+        }),
       );
     };
 
@@ -212,7 +214,10 @@ export class Analytics {
   /**
    * Track a custom event
    */
-  async track(eventName: UBIEventName | string, properties?: Record<string, unknown>): Promise<void> {
+  async track(
+    eventName: UBIEventName | string,
+    properties?: Record<string, unknown>,
+  ): Promise<void> {
     if (this.config.disabled) return;
 
     const event: BaseEvent = {
@@ -229,11 +234,14 @@ export class Analytics {
         this.providers.map(async (provider) => {
           try {
             await provider.track(event);
-            this.log(`Tracked ${eventName} in ${provider.name}`, event.properties);
+            this.log(
+              `Tracked ${eventName} in ${provider.name}`,
+              event.properties,
+            );
           } catch (error) {
             this.handleError(error as Error, provider.name);
           }
-        })
+        }),
       );
     };
 
@@ -247,7 +255,10 @@ export class Analytics {
   /**
    * Track a page view
    */
-  async page(path: string, properties?: Omit<PageViewEvent["properties"], "path">): Promise<void> {
+  async page(
+    path: string,
+    properties?: Omit<PageViewEvent["properties"], "path">,
+  ): Promise<void> {
     if (this.config.disabled) return;
 
     const event: PageViewEvent = {
@@ -269,7 +280,7 @@ export class Analytics {
           } catch (error) {
             this.handleError(error as Error, provider.name);
           }
-        })
+        }),
       );
     };
 
@@ -295,7 +306,7 @@ export class Analytics {
             this.handleError(error as Error, provider.name);
           }
         }
-      })
+      }),
     );
   }
 
@@ -314,7 +325,7 @@ export class Analytics {
         } catch (error) {
           this.handleError(error as Error, provider.name);
         }
-      })
+      }),
     );
   }
 

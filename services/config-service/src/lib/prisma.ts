@@ -4,9 +4,12 @@
  */
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as { ubiConfigPrisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as {
+  ubiConfigPrisma?: PrismaClient;
+};
 
-export const prisma: PrismaClient = globalForPrisma.ubiConfigPrisma ?? new PrismaClient();
+export const prisma: PrismaClient =
+  globalForPrisma.ubiConfigPrisma ?? new PrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.ubiConfigPrisma = prisma;

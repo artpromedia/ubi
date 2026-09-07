@@ -58,8 +58,11 @@ export async function decideIdentityCase(
   const now = deps.now();
   const policy = await deps.policy.forCity(input.cityId);
 
-  const existing = await deps.prisma.identityCase.findUnique({ where: { id: input.caseId } });
-  if (existing === null) throw new ContractError("not_found", "Identity case not found");
+  const existing = await deps.prisma.identityCase.findUnique({
+    where: { id: input.caseId },
+  });
+  if (existing === null)
+    throw new ContractError("not_found", "Identity case not found");
   if (existing.status === "decided") {
     throw new ContractError("conflict", "That case has already been decided", {
       decision: existing.decision,
@@ -92,7 +95,8 @@ export async function decideIdentityCase(
 
   // Changing the proposed decision restarts the count: two reviewers must agree
   // on the SAME outcome.
-  const sameDecision = existing.decision === null || existing.decision === input.decision;
+  const sameDecision =
+    existing.decision === null || existing.decision === input.decision;
   const effectiveReviewers = sameDecision ? reviewers : [input.reviewerId];
   const required = REQUIRED_REVIEWERS[input.decision];
   const applied = effectiveReviewers.length >= required;
@@ -120,11 +124,17 @@ export async function decideIdentityCase(
     await writeAudit(tx, {
       actorId: input.reviewerId,
       actorRole: "agent",
-      action: applied ? `identity.case_${input.decision}` : "identity.case_review_recorded",
+      action: applied
+        ? `identity.case_${input.decision}`
+        : "identity.case_review_recorded",
       subjectType: "identity_case",
       subjectId: input.caseId,
       before: { status: existing.status, decidedBy: existing.decidedBy },
-      after: { status, decision: input.decision, decidedBy: effectiveReviewers },
+      after: {
+        status,
+        decision: input.decision,
+        decidedBy: effectiveReviewers,
+      },
       reason: input.reason,
     });
 
@@ -148,7 +158,10 @@ export async function decideIdentityCase(
       subjectId: existing.driverId,
       actorType: "agent",
       actorId: input.reviewerId,
-      idempotencyKey: eventIdempotencyKey("identity.case_decided", input.caseId),
+      idempotencyKey: eventIdempotencyKey(
+        "identity.case_decided",
+        input.caseId,
+      ),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,
@@ -206,7 +219,8 @@ export async function listOpenIdentityCases(
     reviewersRequired:
       row.decision === null
         ? REQUIRED_REVIEWERS.deactivate
-        : REQUIRED_REVIEWERS[row.decision as CaseDecision] ?? REQUIRED_REVIEWERS.deactivate,
+        : (REQUIRED_REVIEWERS[row.decision as CaseDecision] ??
+          REQUIRED_REVIEWERS.deactivate),
     createdAt: row.createdAt.toISOString(),
   }));
 }

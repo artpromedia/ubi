@@ -20,7 +20,11 @@ import type {
   PostedRemedyEntry,
   RemedyPostingRequest,
 } from "../src/ops/ledger-port";
-import type { NotifyChannel, SafetyAlert, SafetyNotifier } from "../src/ops/notifier";
+import type {
+  NotifyChannel,
+  SafetyAlert,
+  SafetyNotifier,
+} from "../src/ops/notifier";
 import type { SupportDb } from "../src/ops/types";
 
 export const TEST_DATABASE_URL =
@@ -164,7 +168,8 @@ export async function seedCity(
         safety: 15,
         account: 480,
       },
-      safetySlaMinutesBySeverity: options.policy?.safetySlaMinutesBySeverity ?? {
+      safetySlaMinutesBySeverity: options.policy
+        ?.safetySlaMinutesBySeverity ?? {
         critical: 5,
         high: 15,
         standard: 60,
@@ -177,7 +182,9 @@ export async function seedCity(
         third_party_report: "standard",
       },
       sosMaxDeliveryAttempts: options.policy?.sosMaxDeliveryAttempts ?? 5,
-      sosRetryBackoffSeconds: options.policy?.sosRetryBackoffSeconds ?? [30, 60, 300],
+      sosRetryBackoffSeconds: options.policy?.sosRetryBackoffSeconds ?? [
+        30, 60, 300,
+      ],
       remedyCapMinorByType: options.policy?.remedyCapMinorByType ?? {
         fee_reversal: 500_000,
         refund: 2_000_000,
@@ -185,10 +192,10 @@ export async function seedCity(
         redelivery: 500_000,
         cash_dispute_resolution: 1_000_000,
       },
-      remedyHighValueAboveMinor: options.policy?.remedyHighValueAboveMinor ?? 200_000,
-      reviewDualControlDecisions: options.policy?.reviewDualControlDecisions ?? [
-        "deactivate",
-      ],
+      remedyHighValueAboveMinor:
+        options.policy?.remedyHighValueAboveMinor ?? 200_000,
+      reviewDualControlDecisions: options.policy
+        ?.reviewDualControlDecisions ?? ["deactivate"],
       reviewDualControlAboveMinor:
         options.policy?.reviewDualControlAboveMinor ?? 1_000_000,
     };
@@ -215,7 +222,12 @@ export async function seedCity(
     },
   });
 
-  const flags = options.flags ?? { bites: true, stays: true, fleet: true, send: true };
+  const flags = options.flags ?? {
+    bites: true,
+    stays: true,
+    fleet: true,
+    send: true,
+  };
   for (const [key, enabled] of Object.entries(flags)) {
     await db.featureFlag.upsert({
       where: { key },
@@ -238,7 +250,10 @@ export interface SeededUser {
   readonly email: string;
 }
 
-export async function seedUser(db: SupportDb, name = "Ada"): Promise<SeededUser> {
+export async function seedUser(
+  db: SupportDb,
+  name = "Ada",
+): Promise<SeededUser> {
   counter += 1;
   const suffix = uid("u").replace(/[^a-z0-9]/gi, "");
   const digits = [
@@ -347,7 +362,10 @@ export class FakeLedger implements LedgerPort {
   async postRemedy(request: RemedyPostingRequest): Promise<PostedRemedyEntry> {
     this.requests.push(request);
     if (this.failing) {
-      throw new ContractError("service_unavailable", "the ledger is not reachable");
+      throw new ContractError(
+        "service_unavailable",
+        "the ledger is not reachable",
+      );
     }
 
     const existing = await this.db.journalEntry.findUnique({
@@ -369,7 +387,10 @@ export class FakeLedger implements LedgerPort {
     }
 
     const wallet = await this.db.wallet.findFirst({
-      where: { ownerId: request.beneficiary.userId, currency: request.amount.currency },
+      where: {
+        ownerId: request.beneficiary.userId,
+        currency: request.amount.currency,
+      },
     });
     if (wallet === null) {
       throw new ContractError("not_found", "the beneficiary has no wallet");
@@ -453,7 +474,10 @@ export class FakeNotifier implements SafetyNotifier {
     this.attempts.push({ channel, caseId: alert.caseId });
     await Promise.resolve();
     if (this.failing.has(channel)) {
-      throw new ContractError("service_unavailable", `channel ${channel} is down`);
+      throw new ContractError(
+        "service_unavailable",
+        `channel ${channel} is down`,
+      );
     }
   }
 
@@ -468,7 +492,10 @@ export interface DepsOptions {
   readonly now?: () => Date;
 }
 
-export function makeDeps(db: SupportDb, options: DepsOptions = {}): SupportDeps {
+export function makeDeps(
+  db: SupportDb,
+  options: DepsOptions = {},
+): SupportDeps {
   return {
     db,
     config: createCityConfigProvider(db),

@@ -337,12 +337,18 @@ export interface SeedGroup {
   readonly required: boolean;
   readonly minSelect: number;
   readonly maxSelect: number;
-  readonly options: readonly { readonly name?: string; readonly priceDeltaMinor: number }[];
+  readonly options: readonly {
+    readonly name?: string;
+    readonly priceDeltaMinor: number;
+  }[];
 }
 
 export interface SeededItem {
   readonly itemId: string;
-  readonly groups: readonly { readonly groupId: string; readonly optionIds: readonly string[] }[];
+  readonly groups: readonly {
+    readonly groupId: string;
+    readonly optionIds: readonly string[];
+  }[];
 }
 
 export async function seedMenuItem(
@@ -420,7 +426,10 @@ export async function seedWallet(
 }
 
 /** The derived balance of a wallet, read from the ledger view, in minor units. */
-export async function walletBalanceMinor(db: BitesDb, walletId: string): Promise<number> {
+export async function walletBalanceMinor(
+  db: BitesDb,
+  walletId: string,
+): Promise<number> {
   const rows = await db.$queryRawUnsafe<{ balance_minor: bigint }[]>(
     `SELECT balance_minor FROM wallet_balances WHERE wallet_id = $1`,
     walletId,
@@ -430,7 +439,10 @@ export async function walletBalanceMinor(db: BitesDb, walletId: string): Promise
 }
 
 /** Ledger lines posted against a specific order (`counterpart_ref = 'bites:<id>'`). */
-export async function journalLinesForOrder(db: BitesDb, orderId: string): Promise<number> {
+export async function journalLinesForOrder(
+  db: BitesDb,
+  orderId: string,
+): Promise<number> {
   const rows = await db.$queryRawUnsafe<{ count: bigint }[]>(
     `SELECT COUNT(*)::bigint AS count FROM journal_lines WHERE counterpart_ref = $1`,
     `bites:${orderId}`,

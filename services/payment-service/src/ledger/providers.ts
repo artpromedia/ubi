@@ -102,9 +102,13 @@ async function railPost<T>(
   }
   const parsed = schema.safeParse(await response.json());
   if (!parsed.success) {
-    throw new ContractError("service_unavailable", "rail returned an unusable response", {
-      path,
-    });
+    throw new ContractError(
+      "service_unavailable",
+      "rail returned an unusable response",
+      {
+        path,
+      },
+    );
   }
   return { status: response.status, parsed: parsed.data };
 }
@@ -128,9 +132,13 @@ export function httpBankRailProvider(): BankRailProvider | null {
         return null;
       }
       if (parsed === null) {
-        throw new ContractError("service_unavailable", "bank name enquiry failed", {
-          status,
-        });
+        throw new ContractError(
+          "service_unavailable",
+          "bank name enquiry failed",
+          {
+            status,
+          },
+        );
       }
       return parsed;
     },
@@ -150,9 +158,13 @@ export function httpBankRailProvider(): BankRailProvider | null {
         PayoutResponse,
       );
       if (parsed === null) {
-        throw new ContractError("service_unavailable", "bank payout was not accepted", {
-          status,
-        });
+        throw new ContractError(
+          "service_unavailable",
+          "bank payout was not accepted",
+          {
+            status,
+          },
+        );
       }
       return parsed;
     },
@@ -180,9 +192,13 @@ export function httpTopupProvider(): TopupProvider | null {
         CaptureResponse,
       );
       if (parsed === null) {
-        throw new ContractError("service_unavailable", "top-up was not captured", {
-          status,
-        });
+        throw new ContractError(
+          "service_unavailable",
+          "top-up was not captured",
+          {
+            status,
+          },
+        );
       }
       return parsed;
     },
@@ -195,9 +211,13 @@ export function httpTopupProvider(): TopupProvider | null {
         z.object({}).passthrough(),
       );
       if (parsed === null) {
-        throw new ContractError("service_unavailable", "top-up refund was not accepted", {
-          status,
-        });
+        throw new ContractError(
+          "service_unavailable",
+          "top-up refund was not accepted",
+          {
+            status,
+          },
+        );
       }
     },
   };
@@ -218,7 +238,10 @@ export function requireRail<T>(rail: T | null, name: string): T {
  * HMAC-SHA256 over the exact bytes the bank sent. An unset secret is a failure,
  * not a bypass: an unverifiable webhook is rejected.
  */
-export function verifyWebhookSignature(rawBody: string, signature: string | undefined): void {
+export function verifyWebhookSignature(
+  rawBody: string,
+  signature: string | undefined,
+): void {
   const secret = process.env.NIP_WEBHOOK_SECRET;
   if (!secret) {
     throw new ContractError(
@@ -229,14 +252,19 @@ export function verifyWebhookSignature(rawBody: string, signature: string | unde
   if (!signature) {
     throw new ContractError("unauthorized", "missing webhook signature");
   }
-  const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest();
+  const expected = createHmac("sha256", secret)
+    .update(rawBody, "utf8")
+    .digest();
   let provided: Buffer;
   try {
     provided = Buffer.from(signature, "hex");
   } catch {
     throw new ContractError("unauthorized", "malformed webhook signature");
   }
-  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+  if (
+    provided.length !== expected.length ||
+    !timingSafeEqual(provided, expected)
+  ) {
     throw new ContractError("unauthorized", "webhook signature did not verify");
   }
 }

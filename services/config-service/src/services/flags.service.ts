@@ -55,12 +55,18 @@ async function loadSnapshot(cityId: string | undefined): Promise<FlagSnapshot> {
   const [flags, rules] = await Promise.all([
     prisma.featureFlag.findMany({ select: { key: true, defaultOn: true } }),
     prisma.flagRule.findMany({
-      where: cityId === undefined ? { cityId: null } : { OR: [{ cityId }, { cityId: null }] },
+      where:
+        cityId === undefined
+          ? { cityId: null }
+          : { OR: [{ cityId }, { cityId: null }] },
       select: { flagKey: true, cityId: true, enabled: true, segment: true },
     }),
   ]);
   return {
-    defaults: flags.map((flag) => ({ key: flag.key, defaultOn: flag.defaultOn })),
+    defaults: flags.map((flag) => ({
+      key: flag.key,
+      defaultOn: flag.defaultOn,
+    })),
     rules: rules.map((rule) => ({
       flagKey: rule.flagKey,
       cityScoped: rule.cityId !== null,
@@ -73,7 +79,8 @@ async function loadSnapshot(cityId: string | undefined): Promise<FlagSnapshot> {
 function reviveSnapshot(raw: unknown): FlagSnapshot | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const candidate = raw as Partial<FlagSnapshot>;
-  if (!Array.isArray(candidate.defaults) || !Array.isArray(candidate.rules)) return undefined;
+  if (!Array.isArray(candidate.defaults) || !Array.isArray(candidate.rules))
+    return undefined;
   return { defaults: candidate.defaults, rules: candidate.rules };
 }
 
@@ -81,7 +88,9 @@ function segmentMatches(segment: unknown, userId: string | undefined): boolean {
   if (segment === null || segment === undefined) return true;
   const parsed = SegmentSchema.safeParse(segment);
   if (!parsed.success) {
-    flagLogger.warn("flag rule carries an unreadable segment; treating it as no match");
+    flagLogger.warn(
+      "flag rule carries an unreadable segment; treating it as no match",
+    );
     return false;
   }
   if (userId === undefined) return false;
@@ -158,16 +167,32 @@ export async function setFlag(input: SetFlagInput): Promise<SetFlagResult> {
   if (flag === null) {
     throw new ContractError("not_found", "unknown feature flag", { key });
   }
-  if (cityId !== null && (await prisma.city.count({ where: { id: cityId } })) === 0) {
-    throw new ContractError("city_unsupported", "city is not configured", { cityId });
-  }
-  if (input.segment !== undefined && !SegmentSchema.safeParse(input.segment).success) {
-    throw new ContractError("validation_failed", "segment must be { userIds: string[] }", {
-      key,
+  if (
+    cityId !== null &&
+    (await prisma.city.count({ where: { id: cityId } })) === 0
+  ) {
+    throw new ContractError("city_unsupported", "city is not configured", {
+      cityId,
     });
   }
+  if (
+    input.segment !== undefined &&
+    !SegmentSchema.safeParse(input.segment).success
+  ) {
+    throw new ContractError(
+      "validation_failed",
+      "segment must be { userIds: string[] }",
+      {
+        key,
+      },
+    );
+  }
 
-  const idempotencyKey = scopedIdempotencyKey("flag.changed", actor.id, input.idempotencyKey);
+  const idempotencyKey = scopedIdempotencyKey(
+    "flag.changed",
+    actor.id,
+    input.idempotencyKey,
+  );
 
   const replay = await findOutboxByIdempotencyKey(prisma, idempotencyKey);
   if (replay !== undefined) {
@@ -188,7 +213,9 @@ export async function setFlag(input: SetFlagInput): Promise<SetFlagResult> {
     // Looked up by (flag, city) rather than by unique key: Postgres does not
     // enforce a unique index across NULL city ids, so the deterministic row id
     // is what keeps a global rule single.
-    const existing = await tx.flagRule.findFirst({ where: { flagKey: key, cityId } });
+    const existing = await tx.flagRule.findFirst({
+      where: { flagKey: key, cityId },
+    });
     const from = existing?.enabled ?? flag.defaultOn;
 
     await tx.flagRule.upsert({
@@ -248,13 +275,28 @@ export async function setFlag(input: SetFlagInput): Promise<SetFlagResult> {
 
   const affectedCities =
     cityId === null
-      ? (await prisma.city.findMany({ select: { id: true } })).map((city) => city.id)
+      ? (await prisma.city.findMany({ select: { id: true } })).map(
+          (city) => city.id,
+        )
       : [cityId];
   for (const scopeId of [...affectedCities, GLOBAL_SCOPE]) {
-    await configCache.invalidate({ kind: "flags", scopeId }, { kind: "flags", scopeId });
+    await configCache.invalidate(
+      { kind: "flags", scopeId },
+      { kind: "flags", scopeId },
+    );
   }
 
-  flagLogger.info({ key, cityId, from: result.from, to: enabled }, "feature flag changed");
+  flagLogger.info(
+    { key, cityId, from: result.from, to: enabled },
+    "feature flag changed",
+  );
 
-  return { key, cityId, from: result.from, to: enabled, by: actor.id, replayed: false };
+  return {
+    key,
+    cityId,
+    from: result.from,
+    to: enabled,
+    by: actor.id,
+    replayed: false,
+  };
 }

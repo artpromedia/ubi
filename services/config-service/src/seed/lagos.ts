@@ -18,7 +18,12 @@
  * before Lagos goes live. Each block is annotated where the number was set.
  */
 import type { Prisma } from "@prisma/client";
-import { type CityConfig, CityConfigSchema, ContractError, FLAG_KEYS } from "@ubi/contracts";
+import {
+  type CityConfig,
+  CityConfigSchema,
+  ContractError,
+  FLAG_KEYS,
+} from "@ubi/contracts";
 
 import { deterministicId, newId } from "../lib/ids";
 import { GLOBAL_SCOPE } from "../lib/cache";
@@ -38,7 +43,11 @@ export const LAGOS_CITY = {
 const SEED_ACTOR = "system:seed";
 
 /** Flags on for the Lagos launch. Everything else stays off (CLAUDE.md #5). */
-export const LAGOS_ENABLED_FLAGS = ["move", "ride_request", "driver_online"] as const;
+export const LAGOS_ENABLED_FLAGS = [
+  "move",
+  "ride_request",
+  "driver_online",
+] as const;
 
 export function lagosConfig(version: number): CityConfig {
   return CityConfigSchema.parse({
@@ -166,7 +175,10 @@ export interface SeedEnv {
 export function assertSeedAllowed(env: SeedEnv = process.env): void {
   const nodeEnv = env.NODE_ENV ?? "development";
   if (nodeEnv === "production") {
-    throw new ContractError("forbidden", "seeding is not permitted in production");
+    throw new ContractError(
+      "forbidden",
+      "seeding is not permitted in production",
+    );
   }
   if (env.CONFIG_SEED_ENABLED !== "true") {
     throw new ContractError(
@@ -187,13 +199,19 @@ export interface SeedResult {
  * Idempotent: a second run activates nothing. The activation is written with
  * its audit and outbox rows in one transaction, exactly like a real approval.
  */
-export async function seedLagos(env: SeedEnv = process.env): Promise<SeedResult> {
+export async function seedLagos(
+  env: SeedEnv = process.env,
+): Promise<SeedResult> {
   assertSeedAllowed(env);
 
   await prisma.city.upsert({
     where: { id: LAGOS_CITY.id },
     create: { ...LAGOS_CITY, active: true },
-    update: { name: LAGOS_CITY.name, timezone: LAGOS_CITY.timezone, active: true },
+    update: {
+      name: LAGOS_CITY.name,
+      timezone: LAGOS_CITY.timezone,
+      active: true,
+    },
   });
 
   for (const key of FLAG_KEYS) {
@@ -208,7 +226,13 @@ export async function seedLagos(env: SeedEnv = process.env): Promise<SeedResult>
     const id = deterministicId("flr", key, LAGOS_CITY.id);
     await prisma.flagRule.upsert({
       where: { id },
-      create: { id, flagKey: key, cityId: LAGOS_CITY.id, enabled: true, updatedBy: SEED_ACTOR },
+      create: {
+        id,
+        flagKey: key,
+        cityId: LAGOS_CITY.id,
+        enabled: true,
+        updatedBy: SEED_ACTOR,
+      },
       update: {},
     });
   }
@@ -252,7 +276,11 @@ export async function seedLagos(env: SeedEnv = process.env): Promise<SeedResult>
       action: "config.version_activated",
       subjectType: "config",
       subjectId: created.id,
-      after: { version, config, approvers: [SEED_ACTOR] } as unknown as Prisma.InputJsonValue,
+      after: {
+        version,
+        config,
+        approvers: [SEED_ACTOR],
+      } as unknown as Prisma.InputJsonValue,
       reason: "initial lagos configuration",
     });
     await writeOutboxEvent(tx, {

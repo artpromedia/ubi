@@ -3,10 +3,7 @@
  * transition. The server is authoritative (CLAUDE.md #2): a transition that is
  * not in the contract is rejected, never coerced into something adjacent.
  */
-import {
-  MACHINES,
-  type MachineName,
-} from "./machines.generated";
+import { MACHINES, type MachineName } from "./machines.generated";
 
 export * from "./machines.generated";
 
@@ -50,18 +47,28 @@ function transitionsFor(machine: MachineName, from: string): readonly string[] {
 }
 
 export function isKnownState(machine: MachineName, state: string): boolean {
-  return Object.prototype.hasOwnProperty.call(MACHINES[machine].transitions, state);
+  return Object.prototype.hasOwnProperty.call(
+    MACHINES[machine].transitions,
+    state,
+  );
 }
 
 export function initialState(machine: MachineName): string {
   return MACHINES[machine].initial;
 }
 
-export function allowedTransitions(machine: MachineName, from: string): readonly string[] {
+export function allowedTransitions(
+  machine: MachineName,
+  from: string,
+): readonly string[] {
   return transitionsFor(machine, from);
 }
 
-export function canTransition(machine: MachineName, from: string, to: string): boolean {
+export function canTransition(
+  machine: MachineName,
+  from: string,
+  to: string,
+): boolean {
   if (!isKnownState(machine, from) || !isKnownState(machine, to)) {
     return false;
   }
@@ -73,7 +80,11 @@ export function canTransition(machine: MachineName, from: string, to: string): b
  * same transaction that writes the new state and the outbox row, so an illegal
  * transition can never be persisted or published.
  */
-export function assertTransition(machine: MachineName, from: string, to: string): void {
+export function assertTransition(
+  machine: MachineName,
+  from: string,
+  to: string,
+): void {
   if (!isKnownState(machine, from)) {
     throw new UnknownStateError(machine, from);
   }

@@ -5,7 +5,10 @@ import { applyPatch, canonicalJson, diffJson } from "@/lib/json";
 
 describe("applyPatch", () => {
   it("merges nested objects instead of replacing them", () => {
-    const base = { waitPolicy: { freeSec: 300, perMinMinor: 5_000 }, pinRequired: true };
+    const base = {
+      waitPolicy: { freeSec: 300, perMinMinor: 5_000 },
+      pinRequired: true,
+    };
     expect(applyPatch(base, { waitPolicy: { perMinMinor: 6_000 } })).toEqual({
       waitPolicy: { freeSec: 300, perMinMinor: 6_000 },
       pinRequired: true,
@@ -14,7 +17,9 @@ describe("applyPatch", () => {
 
   it("replaces arrays wholesale", () => {
     const base = { vehicleClasses: ["go", "comfort", "xl"] };
-    expect(applyPatch(base, { vehicleClasses: ["go"] })).toEqual({ vehicleClasses: ["go"] });
+    expect(applyPatch(base, { vehicleClasses: ["go"] })).toEqual({
+      vehicleClasses: ["go"],
+    });
   });
 
   it("removes a key when the patch sets it to null", () => {
@@ -32,7 +37,9 @@ describe("diffJson", () => {
   it("reports only the leaves that changed", () => {
     const before = { a: 1, nested: { x: 1, y: 2 } };
     const after = { a: 1, nested: { x: 1, y: 3 } };
-    expect(diffJson(before, after)).toEqual([{ path: "nested.y", before: 2, after: 3 }]);
+    expect(diffJson(before, after)).toEqual([
+      { path: "nested.y", before: 2, after: 3 },
+    ]);
   });
 
   it("reports additions and removals", () => {
@@ -49,7 +56,9 @@ describe("diffJson", () => {
 
 describe("canonicalJson", () => {
   it("sorts keys at every depth", () => {
-    expect(canonicalJson({ b: 1, a: { d: 1, c: 2 } })).toBe('{"a":{"c":2,"d":1},"b":1}');
+    expect(canonicalJson({ b: 1, a: { d: 1, c: 2 } })).toBe(
+      '{"a":{"c":2,"d":1},"b":1}',
+    );
   });
 });
 

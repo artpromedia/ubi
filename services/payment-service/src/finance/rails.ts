@@ -35,7 +35,9 @@ export function isReconRail(value: string): value is ReconRailName {
   return RAIL_SET.has(value);
 }
 
-export const RAIL_ACCOUNTS: Readonly<Record<ReconRailName, readonly LedgerAccount[]>> = {
+export const RAIL_ACCOUNTS: Readonly<
+  Record<ReconRailName, readonly LedgerAccount[]>
+> = {
   psp_settlement: ["psp_settlement"],
   nip: ["bank_settlement"],
   driver_cash: ["cash_owed"],
@@ -55,8 +57,14 @@ export type RunStatus = (typeof RUN_STATUSES)[number];
  * attaches the case that accounts for it. The two are told apart by the prefix
  * on `resolution_ref`, because `recon_breaks` has no column for the distinction.
  */
-export const RESOLUTION_PREFIXES = { adjustment: "entry:", explanation: "case:" } as const;
+export const RESOLUTION_PREFIXES = {
+  adjustment: "entry:",
+  explanation: "case:",
+} as const;
 
 export function isExplanation(resolutionRef: string | null): boolean {
-  return resolutionRef !== null && resolutionRef.startsWith(RESOLUTION_PREFIXES.explanation);
+  return (
+    resolutionRef !== null &&
+    resolutionRef.startsWith(RESOLUTION_PREFIXES.explanation)
+  );
 }

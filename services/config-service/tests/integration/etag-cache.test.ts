@@ -9,27 +9,45 @@ import { ConfigCache } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { LAGOS_CITY } from "@/seed/lagos";
-import { adminHeaders, closeConnections, resetAll, seedLagosForTest } from "@tests/helpers/db";
+import {
+  adminHeaders,
+  closeConnections,
+  resetAll,
+  seedLagosForTest,
+} from "@tests/helpers/db";
 
 const app = buildApp();
 
-async function activateChange(patch: Record<string, unknown>, salt: string): Promise<number> {
+async function activateChange(
+  patch: Record<string, unknown>,
+  salt: string,
+): Promise<number> {
   const created = (await (
     await app.request("/v1/config/change-requests", {
       method: "POST",
       headers: adminHeaders("usr_author", `cr-change-${salt}`),
-      body: JSON.stringify({ cityId: LAGOS_CITY.id, patch, reason: `change ${salt}` }),
+      body: JSON.stringify({
+        cityId: LAGOS_CITY.id,
+        patch,
+        reason: `change ${salt}`,
+      }),
     })
   ).json()) as { id: string };
   await app.request(`/v1/config/change-requests/${created.id}/approve`, {
     method: "POST",
     headers: adminHeaders("usr_one", `ap1-change-${salt}`),
   });
-  const response = await app.request(`/v1/config/change-requests/${created.id}/approve`, {
-    method: "POST",
-    headers: adminHeaders("usr_two", `ap2-change-${salt}`),
-  });
-  const body = (await response.json()) as { version: number; activated: boolean };
+  const response = await app.request(
+    `/v1/config/change-requests/${created.id}/approve`,
+    {
+      method: "POST",
+      headers: adminHeaders("usr_two", `ap2-change-${salt}`),
+    },
+  );
+  const body = (await response.json()) as {
+    version: number;
+    activated: boolean;
+  };
   expect(body.activated).toBe(true);
   return body.version;
 }
@@ -79,13 +97,19 @@ describe("city config ETag and cache", () => {
     expect(revalidate.status).toBe(200);
     const newEtag = revalidate.headers.get("etag");
     expect(newEtag).not.toBe(oldEtag);
-    const config = (await revalidate.json()) as { version: number; offerTtlSec: number };
+    const config = (await revalidate.json()) as {
+      version: number;
+      offerTtlSec: number;
+    };
     expect(config.version).toBe(2);
     expect(config.offerTtlSec).toBe(15);
 
-    const conditional = await app.request(`/v1/config/cities/${LAGOS_CITY.id}`, {
-      headers: { "if-none-match": newEtag ?? "" },
-    });
+    const conditional = await app.request(
+      `/v1/config/cities/${LAGOS_CITY.id}`,
+      {
+        headers: { "if-none-match": newEtag ?? "" },
+      },
+    );
     expect(conditional.status).toBe(304);
   });
 
@@ -97,7 +121,10 @@ describe("city config ETag and cache", () => {
     await activateChange({ quoteTtlSec: 420 }, "cache");
 
     const after = await app.request(`/v1/config/cities/${LAGOS_CITY.id}`);
-    const config = (await after.json()) as { version: number; quoteTtlSec: number };
+    const config = (await after.json()) as {
+      version: number;
+      quoteTtlSec: number;
+    };
     expect(config.version).toBe(2);
     expect(config.quoteTtlSec).toBe(420);
   });
@@ -111,7 +138,11 @@ describe("city config ETag and cache", () => {
     const stale = await cache.read<string>(
       scope,
       async () => {
-        await cache.invalidate(scope, { kind: "config", scopeId: "RACE", version: 2 });
+        await cache.invalidate(scope, {
+          kind: "config",
+          scopeId: "RACE",
+          version: 2,
+        });
         return "version-1";
       },
       (raw) => (typeof raw === "string" ? raw : undefined),
@@ -162,7 +193,10 @@ describe("city config ETag and cache", () => {
   });
 
   it("keeps answering from Postgres when the cached entry is unreadable", async () => {
-    await redis.set(`ubi:config:${LAGOS_CITY.id}:entry`, JSON.stringify({ nonsense: true }));
+    await redis.set(
+      `ubi:config:${LAGOS_CITY.id}:entry`,
+      JSON.stringify({ nonsense: true }),
+    );
     const response = await app.request(`/v1/config/cities/${LAGOS_CITY.id}`);
     expect(response.status).toBe(200);
     expect(((await response.json()) as { version: number }).version).toBe(1);

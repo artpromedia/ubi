@@ -66,8 +66,14 @@ async function clearOtpState(phone: string): Promise<void> {
   const key = otpCacheKey(phone);
   await redis.del(key, `${key.replace("otp:", "otp:cooldown:")}`);
   const pepper = process.env.IDENTITY_OTP_PEPPER ?? "";
-  const id = createHash("sha256").update(`${pepper}:${phone}`).digest("base64url").slice(0, 32);
-  await redis.del(`ubi:identity:otp:cooldown:${id}`, `ubi:identity:otp:sends:${id}`);
+  const id = createHash("sha256")
+    .update(`${pepper}:${phone}`)
+    .digest("base64url")
+    .slice(0, 32);
+  await redis.del(
+    `ubi:identity:otp:cooldown:${id}`,
+    `ubi:identity:otp:sends:${id}`,
+  );
 }
 
 describe("OTP at rest", () => {
@@ -86,7 +92,10 @@ describe("OTP at rest", () => {
     const stored = await redis.get(otpCacheKey(user.phone));
     expect(stored).not.toBeNull();
 
-    const parsed = JSON.parse(stored as string) as { hash: string; attempts: number };
+    const parsed = JSON.parse(stored as string) as {
+      hash: string;
+      attempts: number;
+    };
     expect(parsed.hash.startsWith("scrypt$")).toBe(true);
     expect(parsed.hash).not.toContain(code);
     expect(parsed.attempts).toBe(0);
@@ -133,7 +142,9 @@ describe("OTP verification", () => {
 
     // The code is gone, so the real one no longer works either.
     expect(await redis.get(otpCacheKey(user.phone))).toBeNull();
-    expect((await verify(user.phone, code, "device-otp-attempts")).status).toBe(401);
+    expect((await verify(user.phone, code, "device-otp-attempts")).status).toBe(
+      401,
+    );
   });
 
   it("refuses a code that was never issued", async () => {
@@ -150,7 +161,11 @@ describe("an SMS code never unlocks money", () => {
     await clearOtpState(user.phone);
     await requestCode(user.phone);
 
-    const response = await verify(user.phone, lastCode(), "device-otp-newdev-1");
+    const response = await verify(
+      user.phone,
+      lastCode(),
+      "device-otp-newdev-1",
+    );
     expect(response.status).toBe(200);
 
     const body = (await response.json()) as {
@@ -193,17 +208,27 @@ describe("an SMS code never unlocks money", () => {
     await clearOtpState(user.phone);
     await requestCode(user.phone);
     const first = await verify(user.phone, lastCode(), "device-otp-trusted1");
-    const firstBody = (await first.json()) as { data: { device: { trusted: boolean } } };
+    const firstBody = (await first.json()) as {
+      data: { device: { trusted: boolean } };
+    };
     expect(firstBody.data.device.trusted).toBe(false);
 
-    const device = await prisma.device.findFirstOrThrow({ where: { userId: user.id } });
-    await prisma.device.update({ where: { id: device.id }, data: { trusted: true } });
+    const device = await prisma.device.findFirstOrThrow({
+      where: { userId: user.id },
+    });
+    await prisma.device.update({
+      where: { id: device.id },
+      data: { trusted: true },
+    });
 
     await clearOtpState(user.phone);
     await requestCode(user.phone);
     const second = await verify(user.phone, lastCode(), "device-otp-trusted1");
     const secondBody = (await second.json()) as {
-      data: { device: { trusted: boolean }; token: { mode: string; scopes: null } };
+      data: {
+        device: { trusted: boolean };
+        token: { mode: string; scopes: null };
+      };
     };
     expect(secondBody.data.device.trusted).toBe(true);
     expect(secondBody.data.token.mode).toBe("full");
@@ -212,7 +237,10 @@ describe("an SMS code never unlocks money", () => {
 
   it("refuses a suspended account outright", async () => {
     const user = await createUser("RIDER");
-    await prisma.user.update({ where: { id: user.id }, data: { status: "SUSPENDED" } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { status: "SUSPENDED" },
+    });
     await clearOtpState(user.phone);
 
     const response = await requestCode(user.phone);

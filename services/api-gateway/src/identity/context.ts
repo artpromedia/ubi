@@ -19,7 +19,12 @@
 import { ContractError } from "@ubi/contracts";
 import * as jose from "jose";
 
-import { type IdentityMode, isIdentityMode, isScope, type Scope } from "./scopes";
+import {
+  type IdentityMode,
+  isIdentityMode,
+  isScope,
+  type Scope,
+} from "./scopes";
 
 export const IDENTITY_CONTEXT_ISSUER = "ubi-gateway";
 export const IDENTITY_CONTEXT_AUDIENCE = "ubi-internal";
@@ -71,7 +76,10 @@ export function currentSigningKey(): SigningKey {
     throw new Error("UBI_IDENTITY_SECRET environment variable is required");
   }
   assertUsable("UBI_IDENTITY_SECRET", secret);
-  return { kid: readSecret("UBI_IDENTITY_KEY_ID") ?? "k1", key: new TextEncoder().encode(secret) };
+  return {
+    kid: readSecret("UBI_IDENTITY_KEY_ID") ?? "k1",
+    key: new TextEncoder().encode(secret),
+  };
 }
 
 /** Current key first, then the previous one, so a rotation overlaps cleanly. */
@@ -119,7 +127,9 @@ function stringOrNull(value: unknown): string | null {
 }
 
 function stringArray(value: unknown): readonly string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 /**
@@ -127,7 +137,9 @@ function stringArray(value: unknown): readonly string[] {
  * issuer, expired, unknown key, tampered payload — is the same
  * `unauthorized`, so a caller learns nothing from probing.
  */
-export async function verifyIdentityContext(token: string): Promise<IdentityContext> {
+export async function verifyIdentityContext(
+  token: string,
+): Promise<IdentityContext> {
   const keys = verificationKeys();
   for (const { key } of keys) {
     try {
@@ -157,5 +169,8 @@ export async function verifyIdentityContext(token: string): Promise<IdentityCont
       // Try the next key; a rotation means the previous one may be correct.
     }
   }
-  throw new ContractError("unauthorized", "Internal identity context is missing or not trusted");
+  throw new ContractError(
+    "unauthorized",
+    "Internal identity context is missing or not trusted",
+  );
 }

@@ -37,7 +37,10 @@ export async function balanceFromView(
     SELECT balance_minor FROM wallet_balances WHERE wallet_id = ${walletId}
   `;
   const row = rows[0];
-  return money(row === undefined ? 0 : fromDbMinor(row.balance_minor), currency);
+  return money(
+    row === undefined ? 0 : fromDbMinor(row.balance_minor),
+    currency,
+  );
 }
 
 /**

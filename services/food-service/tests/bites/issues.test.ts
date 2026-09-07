@@ -63,7 +63,10 @@ async function deliverAnOrder(
 ): Promise<Delivered> {
   const { cityId, currency } = await seedCity(db);
   const { merchantId, outletId } = await seedMerchant(db);
-  const item = await seedMenuItem(db, outletId, { priceMinor: unitPriceMinor, currency });
+  const item = await seedMenuItem(db, outletId, {
+    priceMinor: unitPriceMinor,
+    currency,
+  });
   const rider: Actor = { id: uid("rider"), role: "rider" };
   const walletId = await seedWallet(db, rider.id, currency);
   const cartId = uid("cart");
@@ -88,9 +91,26 @@ async function deliverAnOrder(
   const orderId = order.orderId;
   const merchant: Actor = { id: merchantId, role: "merchant" };
   const courier: Actor = { id: uid("courier"), role: "driver" };
-  await acceptOrder(deps, { actor: merchant, cityId, orderId, correlationId: null });
-  await advanceOrder(deps, { actor: merchant, cityId, orderId, to: "preparing", correlationId: null });
-  await advanceOrder(deps, { actor: merchant, cityId, orderId, to: "ready", correlationId: null });
+  await acceptOrder(deps, {
+    actor: merchant,
+    cityId,
+    orderId,
+    correlationId: null,
+  });
+  await advanceOrder(deps, {
+    actor: merchant,
+    cityId,
+    orderId,
+    to: "preparing",
+    correlationId: null,
+  });
+  await advanceOrder(deps, {
+    actor: merchant,
+    cityId,
+    orderId,
+    to: "ready",
+    correlationId: null,
+  });
   const row = await db.bitesOrder.findUnique({ where: { id: orderId } });
   await handoverOrder(deps, {
     actor: courier,
@@ -107,7 +127,15 @@ async function deliverAnOrder(
     photoRef: null,
     correlationId: null,
   });
-  return { orderId, itemId: item.itemId, rider, merchantId, cityId, currency, walletId };
+  return {
+    orderId,
+    itemId: item.itemId,
+    rider,
+    merchantId,
+    cityId,
+    currency,
+    walletId,
+  };
 }
 
 describe("2h auto-accept sweep", () => {
@@ -141,7 +169,9 @@ describe("2h auto-accept sweep", () => {
 
     const order = await db.bitesOrder.findUnique({ where: { id: fx.orderId } });
     expect(order?.status).toBe("refunded");
-    const stored = await db.orderIssue.findUnique({ where: { id: issue.issueId } });
+    const stored = await db.orderIssue.findUnique({
+      where: { id: issue.issueId },
+    });
     expect(stored?.status).toBe("auto_refunded");
 
     expect(payments.refunds).toHaveLength(1);
@@ -151,10 +181,14 @@ describe("2h auto-accept sweep", () => {
     expect(await journalLinesForOrder(db, fx.orderId)).toBe(2);
 
     // Repeated missing-item reports lower the merchant's rank.
-    const merchant = await db.bitesMerchant.findUnique({ where: { id: fx.merchantId } });
+    const merchant = await db.bitesMerchant.findUnique({
+      where: { id: fx.merchantId },
+    });
     expect(Number(merchant?.rankScore)).toBeLessThan(0);
 
-    const events = await db.outboxEvent.findMany({ where: { aggregateId: fx.orderId } });
+    const events = await db.outboxEvent.findMany({
+      where: { aggregateId: fx.orderId },
+    });
     expect(events.map((e) => e.name)).toContain("refund.posted");
   });
 
@@ -214,7 +248,9 @@ describe("merchant responds within the window", () => {
     expect(payments.refunds[0]?.amount.amountMinor).toBe(500_000);
     expect(await walletBalanceMinor(db, fx.walletId)).toBe(500_000);
 
-    const events = await db.outboxEvent.findMany({ where: { aggregateId: fx.orderId } });
+    const events = await db.outboxEvent.findMany({
+      where: { aggregateId: fx.orderId },
+    });
     const names = events.map((e) => e.name);
     expect(names).toContain("merchant.responded");
     expect(names).toContain("refund.posted");

@@ -31,8 +31,16 @@ export interface RiskState {
   readonly degraded: boolean;
 }
 
-const OPEN: RiskState = { safeMode: false, safeModeUntil: null, degraded: false };
-const FAIL_CLOSED: RiskState = { safeMode: true, safeModeUntil: null, degraded: true };
+const OPEN: RiskState = {
+  safeMode: false,
+  safeModeUntil: null,
+  degraded: false,
+};
+const FAIL_CLOSED: RiskState = {
+  safeMode: true,
+  safeModeUntil: null,
+  degraded: true,
+};
 
 export async function readRiskState(
   store: IdentityStateStore | undefined,
@@ -57,5 +65,9 @@ export async function readRiskState(
   }
   if (until.getTime() <= now.getTime()) return OPEN;
 
-  return { safeMode: true, safeModeUntil: until.toISOString(), degraded: false };
+  return {
+    safeMode: true,
+    safeModeUntil: until.toISOString(),
+    degraded: false,
+  };
 }

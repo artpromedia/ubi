@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { DENY_ALL, FLAG_KEYS, isEnabled } from "../src/flags";
-import { ERROR_CODES, ContractError, featureDisabled, statusForErrorCode } from "../src/errors";
+import {
+  ERROR_CODES,
+  ContractError,
+  featureDisabled,
+  statusForErrorCode,
+} from "../src/errors";
 import { TEST_IDS, allTestIds, isValidTestId } from "../src/test-ids";
 import { IdempotencyKeySchema, scopedIdempotencyKey } from "../src/idempotency";
 
@@ -41,7 +46,9 @@ describe("error codes", () => {
   });
 
   it("carries structured details for client branching", () => {
-    const error = new ContractError("wrong_pin", "That PIN is not right", { attemptsLeft: 2 });
+    const error = new ContractError("wrong_pin", "That PIN is not right", {
+      attemptsLeft: 2,
+    });
     expect(error.status).toBe(422);
     expect(error.toBody().details).toEqual({ attemptsLeft: 2 });
   });
@@ -108,11 +115,15 @@ describe("idempotency keys", () => {
     expect(IdempotencyKeySchema.safeParse("short").success).toBe(false);
     expect(IdempotencyKeySchema.safeParse("a".repeat(65)).success).toBe(false);
     expect(IdempotencyKeySchema.safeParse("has space").success).toBe(false);
-    expect(IdempotencyKeySchema.safeParse("ride-2026-09-05-abc123").success).toBe(true);
+    expect(
+      IdempotencyKeySchema.safeParse("ride-2026-09-05-abc123").success,
+    ).toBe(true);
   });
 
   it("scopes a client key to the actor and operation", () => {
-    expect(scopedIdempotencyKey("ride.create", "usr_1", "abc")).toBe("ride.create:usr_1:abc");
+    expect(scopedIdempotencyKey("ride.create", "usr_1", "abc")).toBe(
+      "ride.create:usr_1:abc",
+    );
     expect(scopedIdempotencyKey("ride.create", "usr_1", "abc")).not.toBe(
       scopedIdempotencyKey("ride.create", "usr_2", "abc"),
     );

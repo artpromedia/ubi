@@ -54,10 +54,19 @@ const TotalsSchema = z.object({
 });
 export type OrderTotals = z.infer<typeof TotalsSchema>;
 
-export const REJECT_REASONS = ["item_sold_out", "store_paused", "closed"] as const;
+export const REJECT_REASONS = [
+  "item_sold_out",
+  "store_paused",
+  "closed",
+] as const;
 export type RejectReason = (typeof REJECT_REASONS)[number];
 
-export const ISSUE_TYPES = ["missing_item", "wrong_item", "damaged", "not_delivered"] as const;
+export const ISSUE_TYPES = [
+  "missing_item",
+  "wrong_item",
+  "damaged",
+  "not_delivered",
+] as const;
 export type IssueType = (typeof ISSUE_TYPES)[number];
 
 export interface ReportedItem {
@@ -105,7 +114,10 @@ type OrderRow = {
 function parseTotals(value: unknown): OrderTotals {
   const parsed = TotalsSchema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("internal_error", "stored order totals are malformed");
+    throw new ContractError(
+      "internal_error",
+      "stored order totals are malformed",
+    );
   }
   return parsed.data;
 }
@@ -129,7 +141,9 @@ function toOrderView(order: OrderRow, viewer: Actor): OrderView {
   };
   return {
     ...base,
-    ...(isCustomer && order.deliveryCode !== null ? { deliveryCode: order.deliveryCode } : {}),
+    ...(isCustomer && order.deliveryCode !== null
+      ? { deliveryCode: order.deliveryCode }
+      : {}),
     ...(isMerchantOrCourier && order.handoverCode !== null
       ? { handoverCode: order.handoverCode }
       : {}),
@@ -183,9 +197,15 @@ export async function placeOrder(
   const { city, policy, flags } = await deps.config.loadForBites(params.cityId);
   assertFlagEnabled(flags, "bites");
 
-  const scopedKey = scopedIdempotencyKey("bites.order.place", params.actor.id, params.idempotencyKey);
+  const scopedKey = scopedIdempotencyKey(
+    "bites.order.place",
+    params.actor.id,
+    params.idempotencyKey,
+  );
 
-  const replay = await deps.db.bitesOrder.findUnique({ where: { idempotencyKey: scopedKey } });
+  const replay = await deps.db.bitesOrder.findUnique({
+    where: { idempotencyKey: scopedKey },
+  });
   if (replay !== null) {
     return toOrderView(replay, params.actor);
   }
@@ -210,11 +230,16 @@ export async function placeOrder(
     throw new ContractError("not_found", "that merchant is not available");
   }
   const now = deps.now();
-  const paused = outlet.pausedUntil !== null && outlet.pausedUntil.getTime() > now.getTime();
+  const paused =
+    outlet.pausedUntil !== null && outlet.pausedUntil.getTime() > now.getTime();
   if (!outlet.open || paused) {
-    throw new ContractError("conflict", "that store is not accepting orders right now", {
-      reason: !outlet.open ? "closed" : "paused",
-    });
+    throw new ContractError(
+      "conflict",
+      "that store is not accepting orders right now",
+      {
+        reason: !outlet.open ? "closed" : "paused",
+      },
+    );
   }
 
   if (!paymentMethodAvailable(city, params.paymentMethodId)) {
@@ -397,7 +422,11 @@ export async function acceptOrder(
   deps: BitesDeps,
   params: OrderActionParams,
 ): Promise<OrderView> {
-  const { order, merchantId } = await loadOrderForMerchant(deps, params.actor, params.orderId);
+  const { order, merchantId } = await loadOrderForMerchant(
+    deps,
+    params.actor,
+    params.orderId,
+  );
   await auditedTransaction(deps.db, async (tx) => {
     await transitionOrder(tx, order, "accepted");
     const event = orderEvent(
@@ -427,7 +456,11 @@ export async function advanceOrder(
   deps: BitesDeps,
   params: AdvanceParams,
 ): Promise<OrderView> {
-  const { order } = await loadOrderForMerchant(deps, params.actor, params.orderId);
+  const { order } = await loadOrderForMerchant(
+    deps,
+    params.actor,
+    params.orderId,
+  );
   await auditedTransaction(deps.db, async (tx) => {
     await transitionOrder(tx, order, params.to);
     return {
@@ -456,7 +489,11 @@ export async function rejectOrder(
   deps: BitesDeps,
   params: RejectParams,
 ): Promise<OrderView> {
-  const { order, merchantId } = await loadOrderForMerchant(deps, params.actor, params.orderId);
+  const { order, merchantId } = await loadOrderForMerchant(
+    deps,
+    params.actor,
+    params.orderId,
+  );
 
   // The machine only allows a reject from `placed`; surface anything else as an
   // illegal transition rather than a silent no-op.
@@ -481,10 +518,17 @@ export async function rejectOrder(
     // updates so the row's version matches the two events emitted below.
     const toRejected = await tx.bitesOrder.updateMany({
       where: { id: order.id, version: order.version },
-      data: { status: "rejected", version: order.version + 1, authCaptured: false },
+      data: {
+        status: "rejected",
+        version: order.version + 1,
+        authCaptured: false,
+      },
     });
     if (toRejected.count === 0) {
-      throw new ContractError("version_conflict", "the order changed under you");
+      throw new ContractError(
+        "version_conflict",
+        "the order changed under you",
+      );
     }
     assertTransition("order", "rejected", "auth_released");
     const toReleased = await tx.bitesOrder.updateMany({
@@ -492,7 +536,10 @@ export async function rejectOrder(
       data: { status: "auth_released", version: order.version + 2 },
     });
     if (toReleased.count === 0) {
-      throw new ContractError("version_conflict", "the order changed under you");
+      throw new ContractError(
+        "version_conflict",
+        "the order changed under you",
+      );
     }
 
     const events: OutboxInput[] = [
@@ -525,26 +572,44 @@ export async function rejectOrder(
         data: { soldOutUntil: new Date(now.getTime() + 24 * 60 * 60 * 1000) },
       });
       events.push(
-        sideEffectEvent(deps, params, "menu.item_unavailable", "menu_item", params.itemId, {
-          merchantId,
-          itemId: params.itemId,
-        }),
+        sideEffectEvent(
+          deps,
+          params,
+          "menu.item_unavailable",
+          "menu_item",
+          params.itemId,
+          {
+            merchantId,
+            itemId: params.itemId,
+          },
+        ),
       );
     } else if (params.reason === "store_paused") {
-      const pausedUntil = params.pausedUntil ?? new Date(now.getTime() + 60 * 60 * 1000);
+      const pausedUntil =
+        params.pausedUntil ?? new Date(now.getTime() + 60 * 60 * 1000);
       await tx.outlet.update({
         where: { id: order.outletId },
         data: { pausedUntil },
       });
       events.push(
-        sideEffectEvent(deps, params, "store.paused", "outlet", order.outletId, {
-          merchantId,
-          outletId: order.outletId,
-          pausedUntil: pausedUntil.toISOString(),
-        }),
+        sideEffectEvent(
+          deps,
+          params,
+          "store.paused",
+          "outlet",
+          order.outletId,
+          {
+            merchantId,
+            outletId: order.outletId,
+            pausedUntil: pausedUntil.toISOString(),
+          },
+        ),
       );
     } else if (params.reason === "closed") {
-      await tx.outlet.update({ where: { id: order.outletId }, data: { open: false } });
+      await tx.outlet.update({
+        where: { id: order.outletId },
+        data: { open: false },
+      });
     }
 
     return {
@@ -585,11 +650,16 @@ export async function handoverOrder(
 ): Promise<OrderView> {
   assertPermission(params.actor.role, "courier.fulfill");
   const order = await loadOrderRow(deps, params.orderId);
-  if (order.handoverCode === null || order.handoverCode !== params.handoverCode) {
+  if (
+    order.handoverCode === null ||
+    order.handoverCode !== params.handoverCode
+  ) {
     throw new ContractError("forbidden", "the hand-over code does not match");
   }
   await auditedTransaction(deps.db, async (tx) => {
-    await transitionOrder(tx, order, "picked_up", { courierId: params.actor.id });
+    await transitionOrder(tx, order, "picked_up", {
+      courierId: params.actor.id,
+    });
     const event = orderEvent(
       deps,
       params,
@@ -630,9 +700,13 @@ export async function deliverOrder(
   assertPermission(params.actor.role, "courier.fulfill");
   const order = await loadOrderRow(deps, params.orderId);
   if (order.courierId !== params.actor.id) {
-    throw new ContractError("forbidden", "you are not the courier for that order");
+    throw new ContractError(
+      "forbidden",
+      "you are not the courier for that order",
+    );
   }
-  const byCode = params.deliveryCode !== null && params.deliveryCode === order.deliveryCode;
+  const byCode =
+    params.deliveryCode !== null && params.deliveryCode === order.deliveryCode;
   const byPhoto = params.photoRef !== null && params.photoRef.length > 0;
   if (!byCode && !byPhoto) {
     throw new ContractError(
@@ -698,9 +772,13 @@ function computeIssueRefund(
   for (const item of reported) {
     const line = lines.find((candidate) => candidate.itemId === item.itemId);
     if (line === undefined) {
-      throw new ContractError("validation_failed", "an item was not in that order", {
-        itemId: item.itemId,
-      });
+      throw new ContractError(
+        "validation_failed",
+        "an item was not in that order",
+        {
+          itemId: item.itemId,
+        },
+      );
     }
     const quantity = Math.min(item.quantity, line.quantity);
     parts.push(money(line.unitPriceMinor * quantity, currency));
@@ -748,11 +826,16 @@ export async function reportIssue(
 
   const { policy } = await deps.config.loadForBites(params.cityId);
   const now = deps.now();
-  const respondBy = new Date(now.getTime() + policy.issueResponseWindowMinutes * 60 * 1000);
+  const respondBy = new Date(
+    now.getTime() + policy.issueResponseWindowMinutes * 60 * 1000,
+  );
   const issueId = deterministicId("issue", `${order.id}:${now.getTime()}`);
 
   const reportedJson: JsonRecord = {
-    items: params.items.map((item) => ({ itemId: item.itemId, quantity: item.quantity })),
+    items: params.items.map((item) => ({
+      itemId: item.itemId,
+      quantity: item.quantity,
+    })),
   };
 
   await auditedTransaction(deps.db, async (tx) => {
@@ -824,8 +907,14 @@ export async function respondIssue(
   deps: BitesDeps,
   params: RespondIssueParams,
 ): Promise<IssueView> {
-  const { order, merchantId } = await loadOrderForMerchant(deps, params.actor, params.orderId);
-  const issue = await deps.db.orderIssue.findUnique({ where: { id: params.issueId } });
+  const { order, merchantId } = await loadOrderForMerchant(
+    deps,
+    params.actor,
+    params.orderId,
+  );
+  const issue = await deps.db.orderIssue.findUnique({
+    where: { id: params.issueId },
+  });
   if (issue === null || issue.orderId !== order.id) {
     throw new ContractError("not_found", "no such issue on that order");
   }
@@ -848,7 +937,8 @@ export async function respondIssue(
   }
 
   const now = deps.now();
-  const nextIssueStatus = params.decision === "redeliver" ? "redeliver" : "disputed";
+  const nextIssueStatus =
+    params.decision === "redeliver" ? "redeliver" : "disputed";
   await auditedTransaction(deps.db, async (tx) => {
     if (params.decision === "redeliver") {
       // issue_reported -> merchant_redeliver -> delivered (a fresh delivery).
@@ -859,14 +949,21 @@ export async function respondIssue(
         data: { status: "delivered", version: order.version + 2 },
       });
       if (back.count === 0) {
-        throw new ContractError("version_conflict", "the order changed under you");
+        throw new ContractError(
+          "version_conflict",
+          "the order changed under you",
+        );
       }
     } else {
       await transitionOrder(tx, order, "merchant_disputed");
     }
     await tx.orderIssue.update({
       where: { id: params.issueId },
-      data: { status: nextIssueStatus, merchantResponse: params.decision, decidedAt: now },
+      data: {
+        status: nextIssueStatus,
+        merchantResponse: params.decision,
+        decidedAt: now,
+      },
     });
     const event = orderEvent(
       deps,
@@ -916,7 +1013,9 @@ async function resolveWithRefund(
   deps: BitesDeps,
   args: ResolveRefundArgs,
 ): Promise<IssueView> {
-  const issue = await deps.db.orderIssue.findUnique({ where: { id: args.issueId } });
+  const issue = await deps.db.orderIssue.findUnique({
+    where: { id: args.issueId },
+  });
   if (issue === null) {
     throw new ContractError("not_found", "no such issue");
   }
@@ -949,7 +1048,10 @@ async function resolveWithRefund(
       data: { status: "refunded", version: args.order.version + 2 },
     });
     if (refunded.count === 0) {
-      throw new ContractError("version_conflict", "the order changed under you");
+      throw new ContractError(
+        "version_conflict",
+        "the order changed under you",
+      );
     }
     await tx.orderIssue.update({
       where: { id: args.issueId },
@@ -971,41 +1073,61 @@ async function resolveWithRefund(
     const events: OutboxInput[] = [];
     if (!args.auto) {
       events.push(
-        makeOrderEvent(deps, args.actor, args.cityId, args.order, args.merchantId, {
-          name: "merchant.responded",
-          fromVersion: args.order.version,
-          toVersion: args.order.version + 1,
-          correlationId: args.correlationId,
-          payload: { issueId: args.issueId, decision: "accept" },
-        }),
+        makeOrderEvent(
+          deps,
+          args.actor,
+          args.cityId,
+          args.order,
+          args.merchantId,
+          {
+            name: "merchant.responded",
+            fromVersion: args.order.version,
+            toVersion: args.order.version + 1,
+            correlationId: args.correlationId,
+            payload: { issueId: args.issueId, decision: "accept" },
+          },
+        ),
       );
     }
     events.push(
-      makeOrderEvent(deps, args.actor, args.cityId, args.order, args.merchantId, {
-        name: "refund.posted",
-        fromVersion: args.order.version + 1,
-        toVersion: args.order.version + 2,
-        correlationId: args.correlationId,
-        payload: {
-          orderId: args.order.id,
-          issueId: args.issueId,
-          entryId: posted.entryId,
-          refundMinor: refund.amountMinor,
-          currency: args.order.currency,
-          auto: args.auto,
+      makeOrderEvent(
+        deps,
+        args.actor,
+        args.cityId,
+        args.order,
+        args.merchantId,
+        {
+          name: "refund.posted",
+          fromVersion: args.order.version + 1,
+          toVersion: args.order.version + 2,
+          correlationId: args.correlationId,
+          payload: {
+            orderId: args.order.id,
+            issueId: args.issueId,
+            entryId: posted.entryId,
+            refundMinor: refund.amountMinor,
+            currency: args.order.currency,
+            auto: args.auto,
+          },
         },
-      }),
+      ),
     );
 
     return {
       result: undefined,
       audit: {
         actor: args.actor,
-        action: args.auto ? "bites.issue.auto_accepted" : "bites.issue.accepted",
+        action: args.auto
+          ? "bites.issue.auto_accepted"
+          : "bites.issue.accepted",
         subjectType: "order",
         subjectId: args.order.id,
         reason: args.auto ? "auto_accepted_after_window" : "merchant_accepted",
-        after: { status: "refunded", refundMinor: refund.amountMinor, entryId: posted.entryId },
+        after: {
+          status: "refunded",
+          refundMinor: refund.amountMinor,
+          entryId: posted.entryId,
+        },
         correlationId: args.correlationId,
       },
       events,
@@ -1058,13 +1180,23 @@ export async function sweepDueIssues(deps: BitesDeps): Promise<number> {
  * The city an order belongs to. The order does not carry a city column, so the
  * sweep derives it from the order's own `order.placed` outbox event, which does.
  */
-async function cityIdForOrder(deps: BitesDeps, orderId: string): Promise<string> {
+async function cityIdForOrder(
+  deps: BitesDeps,
+  orderId: string,
+): Promise<string> {
   const placed = await deps.db.outboxEvent.findFirst({
-    where: { aggregateType: "order", aggregateId: orderId, name: "order.placed" },
+    where: {
+      aggregateType: "order",
+      aggregateId: orderId,
+      name: "order.placed",
+    },
     orderBy: { occurredAt: "asc" },
   });
   if (placed === null || placed.cityId === null) {
-    throw new ContractError("config_unavailable", "cannot determine the order's city");
+    throw new ContractError(
+      "config_unavailable",
+      "cannot determine the order's city",
+    );
   }
   return placed.cityId;
 }
@@ -1096,7 +1228,10 @@ export async function getOrder(
   return toOrderView(order, actor);
 }
 
-async function loadOrderRow(deps: BitesDeps, orderId: string): Promise<OrderRow> {
+async function loadOrderRow(
+  deps: BitesDeps,
+  orderId: string,
+): Promise<OrderRow> {
   const order = await deps.db.bitesOrder.findUnique({ where: { id: orderId } });
   if (order === null) {
     throw new ContractError("not_found", "no such order");
@@ -1109,13 +1244,16 @@ async function issueView(deps: BitesDeps, issueId: string): Promise<IssueView> {
   if (issue === null) {
     throw new ContractError("not_found", "no such issue");
   }
-  const order = await deps.db.bitesOrder.findUnique({ where: { id: issue.orderId } });
+  const order = await deps.db.bitesOrder.findUnique({
+    where: { id: issue.orderId },
+  });
   return {
     issueId: issue.id,
     orderId: issue.orderId,
     type: issue.type,
     status: issue.status,
-    requestedMinor: issue.requestedMinor === null ? 0 : Number(issue.requestedMinor),
+    requestedMinor:
+      issue.requestedMinor === null ? 0 : Number(issue.requestedMinor),
     currency: order?.currency ?? "",
     respondBy: issue.respondBy?.toISOString() ?? "",
   };
@@ -1123,11 +1261,16 @@ async function issueView(deps: BitesDeps, issueId: string): Promise<IssueView> {
 
 function parseReportedItems(value: unknown): ReportedItem[] {
   const schema = z.object({
-    items: z.array(z.object({ itemId: z.string(), quantity: z.number().int().positive() })),
+    items: z.array(
+      z.object({ itemId: z.string(), quantity: z.number().int().positive() }),
+    ),
   });
   const parsed = schema.safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("internal_error", "stored issue items are malformed");
+    throw new ContractError(
+      "internal_error",
+      "stored issue items are malformed",
+    );
   }
   return parsed.data.items;
 }

@@ -18,8 +18,12 @@ import {
 } from "../middleware";
 import { parseBody, parseLimit } from "./parse";
 import { SOS_TRIGGERS } from "../ops/city-config";
-import { listSafetyCases, raiseSos, respond, RESPONDER_ACTIONS } from "../ops/safety";
-
+import {
+  listSafetyCases,
+  raiseSos,
+  respond,
+  RESPONDER_ACTIONS,
+} from "../ops/safety";
 
 import type { SupportDeps } from "../ops/context";
 

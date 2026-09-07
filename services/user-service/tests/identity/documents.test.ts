@@ -112,7 +112,9 @@ describe("driver documents", () => {
       }),
     );
     expect(first.status).toBe(201);
-    const created = (await first.json()) as { data: { document: { id: string; status: string } } };
+    const created = (await first.json()) as {
+      data: { document: { id: string; status: string } };
+    };
     expect(created.data.document.status).toBe("pending");
 
     const replay = await harness.app.fetch(
@@ -122,12 +124,18 @@ describe("driver documents", () => {
         body,
       }),
     );
-    const replayed = (await replay.json()) as { data: { document: { id: string } } };
+    const replayed = (await replay.json()) as {
+      data: { document: { id: string } };
+    };
     expect(replayed.data.document.id).toBe(created.data.document.id);
 
     expect(
       await prisma.identityDocument.count({
-        where: { ownerType: "driver", ownerId: driver.driverId, type: "lasdri" },
+        where: {
+          ownerType: "driver",
+          ownerId: driver.driverId,
+          type: "lasdri",
+        },
       }),
     ).toBe(1);
   });
@@ -142,7 +150,10 @@ describe("driver documents", () => {
           role: "driver",
           scopes: FULL_SCOPES,
         }),
-        body: JSON.stringify({ type: "licence", fileRef: "s3://ubi-documents/lic.jpg" }),
+        body: JSON.stringify({
+          type: "licence",
+          fileRef: "s3://ubi-documents/lic.jpg",
+        }),
       }),
     );
     expect(response.status).toBe(422);
@@ -181,20 +192,28 @@ describe("driver documents", () => {
           },
           { "idempotency-key": `limited-${driver.driverId.slice(0, 12)}` },
         ),
-        body: JSON.stringify({ type: "licence", fileRef: "s3://ubi-documents/lic.jpg" }),
+        body: JSON.stringify({
+          type: "licence",
+          fileRef: "s3://ubi-documents/lic.jpg",
+        }),
       }),
     );
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
-      "limited_mode",
-    );
+    expect(
+      ((await response.json()) as { error: { code: string } }).error.code,
+    ).toBe("limited_mode");
   });
 });
 
 describe("expiry reminders", () => {
   it("emits one reminder per threshold as each is crossed, and never twice", async () => {
     const driver = await createDriver();
-    const documentId = await putDocument("driver", driver.driverId, "licence", 30);
+    const documentId = await putDocument(
+      "driver",
+      driver.driverId,
+      "licence",
+      30,
+    );
 
     const reminders = async (): Promise<number[]> => {
       const events = await prisma.outboxEvent.findMany({
@@ -251,7 +270,9 @@ describe("an expired document forces the driver offline", () => {
   });
 
   it("writes is_online = false in the database, not just in an event", async () => {
-    const row = await prisma.driver.findUniqueOrThrow({ where: { id: driver.driverId } });
+    const row = await prisma.driver.findUniqueOrThrow({
+      where: { id: driver.driverId },
+    });
     expect(row.isOnline).toBe(false);
     expect(row.isAvailable).toBe(false);
   });
@@ -292,7 +313,9 @@ describe("an expired document forces the driver offline", () => {
     const names = documentEvents.map((event) => event.name);
     expect(names).toContain("document.expired");
 
-    const expired = documentEvents.find((event) => event.name === "document.expired");
+    const expired = documentEvents.find(
+      (event) => event.name === "document.expired",
+    );
     expect(expired?.payload).toMatchObject({
       ownerType: "driver",
       ownerId: driver.driverId,
@@ -303,8 +326,12 @@ describe("an expired document forces the driver offline", () => {
       where: { aggregateId: driver.driverId },
       select: { name: true },
     });
-    expect(driverEvents.map((event) => event.name)).toContain("driver.status_changed");
-    expect(driverEvents.map((event) => event.name)).toContain("driver.eligibility_changed");
+    expect(driverEvents.map((event) => event.name)).toContain(
+      "driver.status_changed",
+    );
+    expect(driverEvents.map((event) => event.name)).toContain(
+      "driver.eligibility_changed",
+    );
   });
 });
 
@@ -312,13 +339,20 @@ describe("an expired vehicle document takes every driver of that vehicle offline
   it("emits vehicle.offline_for_all_drivers", async () => {
     harness.setNow(NOW);
     const driver = await createDriver({ online: true });
-    const documentId = await putDocument("vehicle", driver.vehicleId, "insurance", 1);
+    const documentId = await putDocument(
+      "vehicle",
+      driver.vehicleId,
+      "insurance",
+      1,
+    );
 
     harness.setNow(new Date(NOW.getTime() + 3 * DAY));
     await sweepDocumentExpiry(harness.deps);
     harness.setNow(NOW);
 
-    const row = await prisma.driver.findUniqueOrThrow({ where: { id: driver.driverId } });
+    const row = await prisma.driver.findUniqueOrThrow({
+      where: { id: driver.driverId },
+    });
     expect(row.isOnline).toBe(false);
 
     const events = await prisma.outboxEvent.findMany({
@@ -328,8 +362,12 @@ describe("an expired vehicle document takes every driver of that vehicle offline
     const names = events.map((event) => event.name);
     expect(names).toContain("vehicle.offline_for_all_drivers");
 
-    const fleetEvent = events.find((event) => event.name === "vehicle.offline_for_all_drivers");
-    expect((fleetEvent?.payload as { driverIds: string[] }).driverIds).toContain(driver.driverId);
+    const fleetEvent = events.find(
+      (event) => event.name === "vehicle.offline_for_all_drivers",
+    );
+    expect(
+      (fleetEvent?.payload as { driverIds: string[] }).driverIds,
+    ).toContain(driver.driverId);
 
     // The driver is told which document, even though it belongs to the vehicle.
     const eligibility = await harness.app.fetch(

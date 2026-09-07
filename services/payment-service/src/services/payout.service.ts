@@ -27,11 +27,7 @@
  * - CEERION: ₦7.50 (0.75% of total, 5% of UBI's cut)
  */
 
-import {
-  Currency,
-  PaymentProvider,
-  PayoutStatus,
-} from "@prisma/client";
+import { Currency, PaymentProvider, PayoutStatus } from "@prisma/client";
 import type { ExtendedPrismaClient } from "../lib/prisma";
 import { payoutLogger } from "../lib/logger";
 import { MoMoService } from "../providers/momo.service";
@@ -997,7 +993,9 @@ export class PayoutService {
 let payoutServiceInstance: PayoutService | null = null;
 
 // Create new instance
-export function createPayoutService(prisma: ExtendedPrismaClient): PayoutService {
+export function createPayoutService(
+  prisma: ExtendedPrismaClient,
+): PayoutService {
   return new PayoutService(prisma);
 }
 

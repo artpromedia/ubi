@@ -9,4 +9,10 @@ export * from "./reviews";
 export * from "./roles";
 export * from "./safety";
 export * from "./timeline";
-export type { Actor, JsonRecord, JsonValue, SupportDb, SupportTx } from "./types";
+export type {
+  Actor,
+  JsonRecord,
+  JsonValue,
+  SupportDb,
+  SupportTx,
+} from "./types";

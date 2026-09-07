@@ -19,11 +19,13 @@ const DATABASE_URL =
 process.env.NODE_ENV = "test";
 process.env.LOG_LEVEL = "silent";
 process.env.DATABASE_URL = DATABASE_URL;
-process.env.REDIS_URL = process.env.IDENTITY_TEST_REDIS_URL ?? "redis://127.0.0.1:6379";
+process.env.REDIS_URL =
+  process.env.IDENTITY_TEST_REDIS_URL ?? "redis://127.0.0.1:6379";
 process.env.JWT_SECRET = "user-service-test-client-facing-secret-1";
 process.env.UBI_IDENTITY_SECRET = "user-service-test-internal-identity-01";
 process.env.TELCO_SIM_SWAP_SECRET = "user-service-test-telco-webhook-secret-1";
-process.env.IDENTITY_JOB_SERVICE_KEY = "user-service-test-identity-job-service-1";
+process.env.IDENTITY_JOB_SERVICE_KEY =
+  "user-service-test-identity-job-service-1";
 process.env.IDENTITY_OTP_PEPPER = "user-service-test-otp-pepper";
 process.env.IDENTITY_DEFAULT_CITY_ID = "LOS";
 
@@ -33,7 +35,10 @@ export const INTERNAL_IDENTITY_SECRET = process.env.UBI_IDENTITY_SECRET;
 export const TELCO_SECRET = process.env.TELCO_SIM_SWAP_SECRET;
 export const JOB_SERVICE_KEY = process.env.IDENTITY_JOB_SERVICE_KEY;
 
-const DATABASE_PACKAGE = path.resolve(__dirname, "../../../../packages/database");
+const DATABASE_PACKAGE = path.resolve(
+  __dirname,
+  "../../../../packages/database",
+);
 
 function psql(url: string, sql: string): string {
   const parsed = new URL(url);
@@ -51,7 +56,9 @@ function psql(url: string, sql: string): string {
       "-tAc",
       sql,
     ],
-    { env: { ...process.env, PGPASSWORD: decodeURIComponent(parsed.password) } },
+    {
+      env: { ...process.env, PGPASSWORD: decodeURIComponent(parsed.password) },
+    },
   )
     .toString()
     .trim();
@@ -59,7 +66,10 @@ function psql(url: string, sql: string): string {
 
 function ensureDatabase(): void {
   const name = new URL(DATABASE_URL).pathname.replace(/^\//, "");
-  const exists = psql(DATABASE_URL, `SELECT 1 FROM pg_database WHERE datname = '${name}'`);
+  const exists = psql(
+    DATABASE_URL,
+    `SELECT 1 FROM pg_database WHERE datname = '${name}'`,
+  );
   if (exists === "") {
     psql(DATABASE_URL, `CREATE DATABASE "${name}" OWNER ubi`);
   }

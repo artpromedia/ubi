@@ -97,7 +97,10 @@ export const CityConfigSchema = z.object({
 
 export type CityConfig = z.infer<typeof CityConfigSchema>;
 
-export function fareTableFor(config: CityConfig, vehicleClass: string): FareTable {
+export function fareTableFor(
+  config: CityConfig,
+  vehicleClass: string,
+): FareTable {
   const table = config.fares[vehicleClass];
   if (table === undefined) {
     throw new Error(
@@ -107,7 +110,10 @@ export function fareTableFor(config: CityConfig, vehicleClass: string): FareTabl
   return table;
 }
 
-export function paymentMethodAvailable(config: CityConfig, methodId: string): boolean {
+export function paymentMethodAvailable(
+  config: CityConfig,
+  methodId: string,
+): boolean {
   return config.paymentMethods.some((m) => m.id === methodId && m.available);
 }
 

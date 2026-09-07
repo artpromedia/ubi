@@ -83,20 +83,31 @@ export async function addItem(
     // Sold-out / inactive items are not addable (slice 05 guard).
     assertAddable(item, now);
 
-    const existingCart = await tx.cart.findUnique({ where: { id: params.cartId } });
+    const existingCart = await tx.cart.findUnique({
+      where: { id: params.cartId },
+    });
 
     if (existingCart !== null && existingCart.userId !== params.actor.id) {
       throw new ContractError("forbidden", "that cart belongs to someone else");
     }
     if (existingCart !== null && existingCart.outletId !== item.outletId) {
       // Single-merchant cart: an item from another outlet cannot join this cart.
-      throw new ContractError("conflict", "a cart can hold one merchant's items only", {
-        cartOutletId: existingCart.outletId,
-        itemOutletId: item.outletId,
-      });
+      throw new ContractError(
+        "conflict",
+        "a cart can hold one merchant's items only",
+        {
+          cartOutletId: existingCart.outletId,
+          itemOutletId: item.outletId,
+        },
+      );
     }
 
-    const priced = priceLine(item, params.quantity, params.optionIds, generateId("line"));
+    const priced = priceLine(
+      item,
+      params.quantity,
+      params.optionIds,
+      generateId("line"),
+    );
     const currentLines =
       existingCart === null ? [] : parseLines(existingCart.items);
 

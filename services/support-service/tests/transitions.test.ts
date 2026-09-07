@@ -9,7 +9,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { allowedTransitions, MACHINES } from "@ubi/contracts";
 
-
 import {
   closeTestDb,
   headers,
@@ -72,7 +71,13 @@ describe("supportCase transitions", () => {
 
   it("walks the whole contract path and refuses everything off it", async () => {
     const opened = await newCase();
-    const path = ["investigating", "no_action", "resolved", "reopened", "investigating"];
+    const path = [
+      "investigating",
+      "no_action",
+      "resolved",
+      "reopened",
+      "investigating",
+    ];
     let current = opened.status;
 
     for (const next of path) {
@@ -108,7 +113,9 @@ describe("supportCase transitions", () => {
       ).rejects.toMatchObject({ code: "illegal_transition" });
     }
 
-    const stored = await db.supportCase.findUnique({ where: { id: opened.id } });
+    const stored = await db.supportCase.findUnique({
+      where: { id: opened.id },
+    });
     expect(stored?.status).toBe(current);
   });
 
@@ -122,7 +129,9 @@ describe("supportCase transitions", () => {
       cityId: city.cityId,
       correlationId: null,
     });
-    const midway = await db.supportCase.findUnique({ where: { id: opened.id } });
+    const midway = await db.supportCase.findUnique({
+      where: { id: opened.id },
+    });
     expect(midway?.resolvedAt).toBeNull();
 
     await transitionCase(deps, {
@@ -174,7 +183,10 @@ describe("supportCase transitions", () => {
       const payload = hop.payload as { from: string; to: string };
       return `${payload.from}->${payload.to}`;
     });
-    expect(transitions).toEqual(["open->investigating", "investigating->remedied"]);
+    expect(transitions).toEqual([
+      "open->investigating",
+      "investigating->remedied",
+    ]);
   });
 
   it("refuses a remedy on a resolved case and posts nothing", async () => {
@@ -190,21 +202,28 @@ describe("supportCase transitions", () => {
       });
     }
 
-    const response = await app.request(`/v1/support/cases/${opened.id}/remedies`, {
-      method: "POST",
-      headers: headers(lead, city.cityId, { "idempotency-key": idemKey("rm") }),
-      body: JSON.stringify({
-        type: "refund",
-        amountMinor: 1_000,
-        reason: "too late",
-      }),
-    });
+    const response = await app.request(
+      `/v1/support/cases/${opened.id}/remedies`,
+      {
+        method: "POST",
+        headers: headers(lead, city.cityId, {
+          "idempotency-key": idemKey("rm"),
+        }),
+        body: JSON.stringify({
+          type: "refund",
+          amountMinor: 1_000,
+          reason: "too late",
+        }),
+      },
+    );
 
     expect(response.status).toBe(409);
     const body = (await response.json()) as { code: string };
     expect(body.code).toBe("illegal_transition");
     expect(await db.remedy.count({ where: { caseId: opened.id } })).toBe(0);
-    expect(await db.journalEntry.count({ where: { caseRef: opened.id } })).toBe(0);
+    expect(await db.journalEntry.count({ where: { caseRef: opened.id } })).toBe(
+      0,
+    );
   });
 
   it("refuses a message on a closed case", async () => {
@@ -219,11 +238,14 @@ describe("supportCase transitions", () => {
         correlationId: null,
       });
     }
-    const response = await app.request(`/v1/support/cases/${opened.id}/messages`, {
-      method: "POST",
-      headers: headers(lead, city.cityId),
-      body: JSON.stringify({ body: "one more thing" }),
-    });
+    const response = await app.request(
+      `/v1/support/cases/${opened.id}/messages`,
+      {
+        method: "POST",
+        headers: headers(lead, city.cityId),
+        body: JSON.stringify({ body: "one more thing" }),
+      },
+    );
     expect(response.status).toBe(409);
   });
 });

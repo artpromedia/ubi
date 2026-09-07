@@ -34,7 +34,10 @@ export interface OfflineInput {
  * Forces a driver offline. Returns false when they were already offline, so a
  * sweep that runs hourly does not emit the same event every hour.
  */
-export async function takeDriverOffline(tx: Tx, input: OfflineInput): Promise<boolean> {
+export async function takeDriverOffline(
+  tx: Tx,
+  input: OfflineInput,
+): Promise<boolean> {
   const driver = await tx.driver.findUnique({
     where: { id: input.driverId },
     select: { id: true, isOnline: true, isAvailable: true },
@@ -166,7 +169,9 @@ export async function driverEligibility(
     select: { id: true },
   });
   if (openCase !== null) {
-    reasons.push("A liveness check did not match your ID, so a person is reviewing your account.");
+    reasons.push(
+      "A liveness check did not match your ID, so a person is reviewing your account.",
+    );
   }
 
   const failedRecently = await deps.prisma.faceCheck.findFirst({
@@ -178,7 +183,9 @@ export async function driverEligibility(
     select: { id: true },
   });
   if (failedRecently !== null && openCase === null) {
-    reasons.push("Your last liveness check did not pass. Try the check again from the app.");
+    reasons.push(
+      "Your last liveness check did not pass. Try the check again from the app.",
+    );
   }
 
   return {

@@ -22,8 +22,14 @@ export function shiftDate(now: Date): string {
 }
 
 /** 0–99, uniform over the hash. */
-export function samplingBucket(driverId: string, deviceId: string, date: string): number {
-  const digest = createHash("sha256").update(`${driverId}|${deviceId}|${date}`).digest();
+export function samplingBucket(
+  driverId: string,
+  deviceId: string,
+  date: string,
+): number {
+  const digest = createHash("sha256")
+    .update(`${driverId}|${deviceId}|${date}`)
+    .digest();
   return ((digest[0] ?? 0) * 256 + (digest[1] ?? 0)) % 100;
 }
 
@@ -39,7 +45,12 @@ export async function livenessRequiredForShift(
   deviceId: string,
 ): Promise<LivenessGate> {
   const passedOnThisDevice = await deps.prisma.stepUpChallenge.count({
-    where: { userId, deviceId, method: "selfie_nin", status: { in: ["passed", "consumed"] } },
+    where: {
+      userId,
+      deviceId,
+      method: "selfie_nin",
+      status: { in: ["passed", "consumed"] },
+    },
   });
   if (passedOnThisDevice === 0) {
     return { required: true, reason: "first_shift_on_device" };

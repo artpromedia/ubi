@@ -18,11 +18,16 @@ const NGN = { locale: "en-NG", fractionDigits: 2 };
 describe("money", () => {
   it("only accepts integer minor units", () => {
     expect(() => money(3100.5, "NGN")).toThrow(TypeError);
-    expect(money(310_000, "NGN")).toEqual({ amountMinor: 310_000, currency: "NGN" });
+    expect(money(310_000, "NGN")).toEqual({
+      amountMinor: 310_000,
+      currency: "NGN",
+    });
   });
 
   it("refuses to mix currencies", () => {
-    expect(() => addMoney(money(100, "NGN"), money(100, "KES"))).toThrow(CurrencyMismatchError);
+    expect(() => addMoney(money(100, "NGN"), money(100, "KES"))).toThrow(
+      CurrencyMismatchError,
+    );
     expect(() => subtractMoney(money(100, "NGN"), money(100, "USD"))).toThrow(
       CurrencyMismatchError,
     );
@@ -61,23 +66,30 @@ describe("money", () => {
   it("rejects out-of-range percentages", () => {
     expect(() => splitPercent(money(100, "NGN"), -1)).toThrow(RangeError);
     expect(() => splitPercent(money(100, "NGN"), 101)).toThrow(RangeError);
-    expect(() => splitPercent(money(100, "NGN"), Number.NaN)).toThrow(RangeError);
+    expect(() => splitPercent(money(100, "NGN"), Number.NaN)).toThrow(
+      RangeError,
+    );
   });
 
   it("formats from the currency it is given, never a hard-coded market", () => {
     expect(formatMoney(money(310_000, "NGN"), NGN)).toContain("3,100.00");
-    const kes = formatMoney(money(310_000, "KES"), { locale: "en-KE", fractionDigits: 2 });
+    const kes = formatMoney(money(310_000, "KES"), {
+      locale: "en-KE",
+      fractionDigits: 2,
+    });
     expect(kes).toContain("3,100.00");
     expect(kes).not.toEqual(formatMoney(money(310_000, "NGN"), NGN));
   });
 
   it("respects a market with no minor unit", () => {
-    expect(formatMoney(money(3100, "JPY"), { locale: "ja-JP", fractionDigits: 0 })).toContain(
-      "3,100",
-    );
+    expect(
+      formatMoney(money(3100, "JPY"), { locale: "ja-JP", fractionDigits: 0 }),
+    ).toContain("3,100");
   });
 
   it("announces money with its currency for screen readers", () => {
-    expect(moneyAccessibilityLabel(money(310_000, "NGN"), NGN)).toBe("3,100.00 NGN");
+    expect(moneyAccessibilityLabel(money(310_000, "NGN"), NGN)).toBe(
+      "3,100.00 NGN",
+    );
   });
 });

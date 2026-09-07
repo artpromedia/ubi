@@ -6,7 +6,11 @@
  * wire shape and the validation the apps perform can never drift apart.
  */
 import { z } from "@hono/zod-openapi";
-import { ERROR_CODES, IDEMPOTENCY_HEADER, IdempotencyKeySchema } from "@ubi/contracts";
+import {
+  ERROR_CODES,
+  IDEMPOTENCY_HEADER,
+  IdempotencyKeySchema,
+} from "@ubi/contracts";
 
 export const CityIdParam = z.object({
   cityId: z
@@ -17,11 +21,19 @@ export const CityIdParam = z.object({
 });
 
 export const RequestIdParam = z.object({
-  id: z.string().min(1).max(64).openapi({ param: { name: "id", in: "path" } }),
+  id: z
+    .string()
+    .min(1)
+    .max(64)
+    .openapi({ param: { name: "id", in: "path" } }),
 });
 
 export const FlagKeyParam = z.object({
-  key: z.string().min(1).max(64).openapi({ param: { name: "key", in: "path" } }),
+  key: z
+    .string()
+    .min(1)
+    .max(64)
+    .openapi({ param: { name: "key", in: "path" } }),
 });
 
 export const ConditionalHeaders = z.object({
@@ -106,7 +118,9 @@ export const FlagChangeBody = z
     cityId: z.string().min(1).max(16).nullable().default(null),
     enabled: z.boolean(),
     reason: z.string().min(3).max(500),
-    segment: z.object({ userIds: z.array(z.string().min(1)).min(1) }).optional(),
+    segment: z
+      .object({ userIds: z.array(z.string().min(1)).min(1) })
+      .optional(),
   })
   .openapi("FlagChangeBody");
 
@@ -121,7 +135,10 @@ export const FlagChangeResponse = z
   })
   .openapi("FlagChange");
 
-export const jsonContent = <T extends z.ZodTypeAny>(schema: T, description: string) => ({
+export const jsonContent = <T extends z.ZodTypeAny>(
+  schema: T,
+  description: string,
+) => ({
   description,
   content: { "application/json": { schema } },
 });

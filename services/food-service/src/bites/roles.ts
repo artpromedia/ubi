@@ -66,10 +66,14 @@ export function can(role: string, permission: Permission): boolean {
 
 export function assertPermission(role: string, permission: Permission): void {
   if (!can(role, permission)) {
-    throw new ContractError("forbidden", "your role does not allow that action", {
-      role,
-      permission,
-    });
+    throw new ContractError(
+      "forbidden",
+      "your role does not allow that action",
+      {
+        role,
+        permission,
+      },
+    );
   }
 }
 

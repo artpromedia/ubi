@@ -6,8 +6,11 @@
  * body may not name a user, a role or a city (CLAUDE.md non-negotiable #1 — the
  * server is authoritative).
  */
-import { ContractError, IDEMPOTENCY_HEADER, IdempotencyKeySchema } from "@ubi/contracts";
-
+import {
+  ContractError,
+  IDEMPOTENCY_HEADER,
+  IdempotencyKeySchema,
+} from "@ubi/contracts";
 
 import { isKnownRole } from "../ops/roles";
 
@@ -20,7 +23,10 @@ declare module "hono" {
   }
 }
 
-export async function gatewayAuth(c: Context, next: Next): Promise<void | Response> {
+export async function gatewayAuth(
+  c: Context,
+  next: Next,
+): Promise<void | Response> {
   const userId = c.req.header("X-User-ID");
   const role = c.req.header("X-User-Role");
   if (userId === undefined || userId.length === 0) {

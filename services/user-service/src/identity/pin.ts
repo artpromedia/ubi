@@ -23,7 +23,9 @@ import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
 import { assertNotInSafeMode } from "./safe-mode";
 import { hashSecret, verifySecret } from "./secret-hash";
 
-export const PinSchema = z.string().regex(/^\d{4,6}$/, "PIN must be 4 to 6 digits");
+export const PinSchema = z
+  .string()
+  .regex(/^\d{4,6}$/, "PIN must be 4 to 6 digits");
 
 export const VerifyPinSchema = z.object({ pin: PinSchema });
 
@@ -54,7 +56,10 @@ interface WalletRow {
   readonly coolingUntil: Date | null;
 }
 
-async function walletsFor(deps: IdentityDeps, userId: string): Promise<readonly WalletRow[]> {
+async function walletsFor(
+  deps: IdentityDeps,
+  userId: string,
+): Promise<readonly WalletRow[]> {
   const wallets = await deps.prisma.wallet.findMany({
     where: { ownerId: userId },
     select: {
@@ -74,24 +79,35 @@ async function walletsFor(deps: IdentityDeps, userId: string): Promise<readonly 
 
 function worst(wallets: readonly WalletRow[]): WalletRow {
   const [first, ...rest] = wallets;
-  if (first === undefined) throw new ContractError("not_found", "You don't have a wallet yet");
+  if (first === undefined)
+    throw new ContractError("not_found", "You don't have a wallet yet");
   return rest.reduce(
-    (acc, candidate) => (candidate.pinFailedAttempts > acc.pinFailedAttempts ? candidate : acc),
+    (acc, candidate) =>
+      candidate.pinFailedAttempts > acc.pinFailedAttempts ? candidate : acc,
     first,
   );
 }
 
-export async function pinState(deps: IdentityDeps, context: PinContext): Promise<PinState> {
+export async function pinState(
+  deps: IdentityDeps,
+  context: PinContext,
+): Promise<PinState> {
   const now = deps.now();
   const policy = await deps.policy.forCity(context.cityId);
   const wallet = worst(await walletsFor(deps, context.userId));
-  const locked = wallet.pinLockedUntil !== null && wallet.pinLockedUntil.getTime() > now.getTime();
+  const locked =
+    wallet.pinLockedUntil !== null &&
+    wallet.pinLockedUntil.getTime() > now.getTime();
   return {
     locked,
     lockedUntil: locked ? wallet.pinLockedUntil : null,
-    attemptsRemaining: Math.max(0, policy.maxPinAttempts - wallet.pinFailedAttempts),
+    attemptsRemaining: Math.max(
+      0,
+      policy.maxPinAttempts - wallet.pinFailedAttempts,
+    ),
     coolingUntil:
-      wallet.coolingUntil !== null && wallet.coolingUntil.getTime() > now.getTime()
+      wallet.coolingUntil !== null &&
+      wallet.coolingUntil.getTime() > now.getTime()
         ? wallet.coolingUntil
         : null,
   };
@@ -116,7 +132,10 @@ export async function verifyPin(
   const wallets = await walletsFor(deps, context.userId);
   const reference = worst(wallets);
 
-  if (reference.pinLockedUntil !== null && reference.pinLockedUntil.getTime() > now.getTime()) {
+  if (
+    reference.pinLockedUntil !== null &&
+    reference.pinLockedUntil.getTime() > now.getTime()
+  ) {
     throw new ContractError(
       "pin_locked",
       "Your PIN is locked. Reset it with a selfie check to unlock your wallet.",
@@ -125,7 +144,10 @@ export async function verifyPin(
   }
 
   if (reference.pinHash === null) {
-    throw new ContractError("pin_not_verified", "Set a wallet PIN before using it");
+    throw new ContractError(
+      "pin_not_verified",
+      "Set a wallet PIN before using it",
+    );
   }
 
   const matches = await verifySecret(pin, reference.pinHash);
@@ -137,7 +159,8 @@ export async function verifyPin(
     return {
       verified: true,
       coolingUntil:
-        reference.coolingUntil !== null && reference.coolingUntil.getTime() > now.getTime()
+        reference.coolingUntil !== null &&
+        reference.coolingUntil.getTime() > now.getTime()
           ? reference.coolingUntil
           : null,
     };
@@ -145,7 +168,9 @@ export async function verifyPin(
 
   const attempts = reference.pinFailedAttempts + 1;
   const willLock = attempts >= policy.maxPinAttempts;
-  const lockedUntil = willLock ? new Date(now.getTime() + policy.pinLockMs) : null;
+  const lockedUntil = willLock
+    ? new Date(now.getTime() + policy.pinLockMs)
+    : null;
 
   await deps.prisma.$transaction(async (tx) => {
     await tx.wallet.updateMany({
@@ -175,7 +200,11 @@ export async function verifyPin(
       subjectId: context.userId,
       actorType: actorTypeFor(context.role),
       actorId: context.userId,
-      idempotencyKey: eventIdempotencyKey("pin.locked", context.userId, now.toISOString()),
+      idempotencyKey: eventIdempotencyKey(
+        "pin.locked",
+        context.userId,
+        now.toISOString(),
+      ),
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,
@@ -231,7 +260,10 @@ export async function resetPin(
     where: { id: input.challengeId },
   });
   if (challenge === null || challenge.userId !== context.userId) {
-    throw new ContractError("step_up_required", "Finish the selfie check before resetting your PIN");
+    throw new ContractError(
+      "step_up_required",
+      "Finish the selfie check before resetting your PIN",
+    );
   }
   if (challenge.method === "sms_otp") {
     throw new ContractError(
@@ -248,10 +280,16 @@ export async function resetPin(
     );
   }
   if (challenge.status !== "passed" || challenge.resolvedAt === null) {
-    throw new ContractError("step_up_required", "That selfie check has not passed");
+    throw new ContractError(
+      "step_up_required",
+      "That selfie check has not passed",
+    );
   }
   if (now.getTime() - challenge.resolvedAt.getTime() > policy.stepUpTtlMs) {
-    throw new ContractError("step_up_required", "That selfie check is too old. Do it again.");
+    throw new ContractError(
+      "step_up_required",
+      "That selfie check is too old. Do it again.",
+    );
   }
 
   await walletsFor(deps, context.userId);
@@ -265,7 +303,10 @@ export async function resetPin(
       data: { status: "consumed" },
     });
     if (consumed.count === 0) {
-      throw new ContractError("step_up_required", "That selfie check has already been used");
+      throw new ContractError(
+        "step_up_required",
+        "That selfie check has already been used",
+      );
     }
 
     await tx.wallet.updateMany({
@@ -287,7 +328,10 @@ export async function resetPin(
       subjectType: "user",
       subjectId: context.userId,
       // The PIN itself never appears here, hashed or otherwise.
-      after: { challengeId: challenge.id, coolingUntil: coolingUntil.toISOString() },
+      after: {
+        challengeId: challenge.id,
+        coolingUntil: coolingUntil.toISOString(),
+      },
       reason: "biometric_step_up",
     });
 
@@ -301,7 +345,11 @@ export async function resetPin(
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,
-      payload: { userId: context.userId, until: coolingUntil.toISOString(), capMinor: null },
+      payload: {
+        userId: context.userId,
+        until: coolingUntil.toISOString(),
+        capMinor: null,
+      },
       occurredAt: now,
     });
 
@@ -315,7 +363,11 @@ export async function resetPin(
       fromVersion: revision,
       toVersion: revision + 1,
       cityId: policy.cityId,
-      payload: { userId: context.userId, until: coolingUntil.toISOString(), capMinor: null },
+      payload: {
+        userId: context.userId,
+        until: coolingUntil.toISOString(),
+        capMinor: null,
+      },
       occurredAt: now,
     });
   });

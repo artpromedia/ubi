@@ -13,8 +13,11 @@
  * cannot be completed by one person: the first reviewer records an intent, and a
  * *different* reviewer completes it.
  */
-import { ContractError, scopedIdempotencyKey, type FlagKey } from "@ubi/contracts";
-
+import {
+  ContractError,
+  scopedIdempotencyKey,
+  type FlagKey,
+} from "@ubi/contracts";
 
 import { auditedTransaction, type OutboxInput } from "./audit";
 import { assertFlagEnabled, type SupportCityConfig } from "./city-config";
@@ -114,7 +117,11 @@ async function kycItems(tx: SupportTx, limit: number): Promise<ReviewItem[]> {
   return rows.map((row) => {
     const checks: AdvisoryCheck[] = [
       row.fileRef.length > 0
-        ? { code: "document.file_attached", level: "pass", detail: "a file is attached" }
+        ? {
+            code: "document.file_attached",
+            level: "pass",
+            detail: "a file is attached",
+          }
         : {
             code: "document.file_attached",
             level: "fail",
@@ -154,7 +161,10 @@ async function kycItems(tx: SupportTx, limit: number): Promise<ReviewItem[]> {
   });
 }
 
-async function identityItems(tx: SupportTx, limit: number): Promise<ReviewItem[]> {
+async function identityItems(
+  tx: SupportTx,
+  limit: number,
+): Promise<ReviewItem[]> {
   const rows = await tx.identityCase.findMany({
     where: { decision: null },
     orderBy: { createdAt: "asc" },
@@ -198,13 +208,19 @@ async function identityItems(tx: SupportTx, limit: number): Promise<ReviewItem[]
         driverId: row.driverId,
         status: row.status,
         // The biometric score is kept; the image never was (CLAUDE.md #6).
-        latestScore: latest?.score === null || latest === undefined ? null : Number(latest.score),
+        latestScore:
+          latest?.score === null || latest === undefined
+            ? null
+            : Number(latest.score),
       },
     };
   });
 }
 
-async function merchantItems(tx: SupportTx, limit: number): Promise<ReviewItem[]> {
+async function merchantItems(
+  tx: SupportTx,
+  limit: number,
+): Promise<ReviewItem[]> {
   const rows = await tx.merchant.findMany({
     where: { verifiedAt: null },
     orderBy: { createdAt: "asc" },
@@ -224,8 +240,16 @@ async function merchantItems(tx: SupportTx, limit: number): Promise<ReviewItem[]
             detail: "the business name is missing or too short",
           },
       row.address.trim().length > 0
-        ? { code: "merchant.address", level: "pass", detail: "an address was given" }
-        : { code: "merchant.address", level: "fail", detail: "no address was given" },
+        ? {
+            code: "merchant.address",
+            level: "pass",
+            detail: "an address was given",
+          }
+        : {
+            code: "merchant.address",
+            level: "fail",
+            detail: "no address was given",
+          },
       row.latitude !== 0 || row.longitude !== 0
         ? {
             code: "merchant.geo",
@@ -309,7 +333,10 @@ export async function listQueue(
 
 interface ChecksBlock {
   readonly advisory?: readonly AdvisoryCheck[];
-  readonly dualControl?: { readonly required: boolean; readonly complete: boolean };
+  readonly dualControl?: {
+    readonly required: boolean;
+    readonly complete: boolean;
+  };
   readonly valueMinor?: number | null;
   readonly note?: string | null;
 }
@@ -329,7 +356,10 @@ export function requiresDualControl(
   if (config.policy.reviewDualControlDecisions.includes(decision)) {
     return true;
   }
-  return valueMinor !== null && valueMinor > config.policy.reviewDualControlAboveMinor;
+  return (
+    valueMinor !== null &&
+    valueMinor > config.policy.reviewDualControlAboveMinor
+  );
 }
 
 /**
@@ -371,7 +401,10 @@ async function pendingDecisions(
   return rows
     .filter((row) => {
       const checks = readChecks(row.checks);
-      return checks.dualControl?.required === true && checks.dualControl.complete !== true;
+      return (
+        checks.dualControl?.required === true &&
+        checks.dualControl.complete !== true
+      );
     })
     .map((row) => ({
       id: row.id,
@@ -474,7 +507,11 @@ async function applyDecision(
   if (input.queue === "identity" && input.subjectType === "identity_case") {
     await tx.identityCase.update({
       where: { id: input.subjectId },
-      data: { decision: input.decision, decidedBy: [...reviewers], status: "decided" },
+      data: {
+        decision: input.decision,
+        decidedBy: [...reviewers],
+        status: "decided",
+      },
     });
     return;
   }
@@ -512,7 +549,9 @@ export async function decide(
   );
   const decisionId = deterministicId("rvd", scoped);
 
-  const replay = await deps.db.reviewDecision.findUnique({ where: { id: decisionId } });
+  const replay = await deps.db.reviewDecision.findUnique({
+    where: { id: decisionId },
+  });
   if (replay !== null) {
     const checks = readChecks(replay.checks);
     return {
@@ -523,7 +562,8 @@ export async function decide(
       decision: replay.decision,
       reviewers: replay.reviewers,
       status:
-        checks.dualControl?.required === true && checks.dualControl.complete !== true
+        checks.dualControl?.required === true &&
+        checks.dualControl.complete !== true
           ? "pending_second_reviewer"
           : "complete",
       valueMinor: checks.valueMinor ?? null,
@@ -659,7 +699,8 @@ export async function decide(
           decision: existing.decision,
           reviewers: existing.reviewers,
           status:
-            checks.dualControl?.required === true && checks.dualControl.complete !== true
+            checks.dualControl?.required === true &&
+            checks.dualControl.complete !== true
               ? "pending_second_reviewer"
               : "complete",
           valueMinor: checks.valueMinor ?? null,
@@ -693,7 +734,10 @@ async function findOpenProposal(
   });
   for (const row of rows) {
     const checks = readChecks(row.checks);
-    if (checks.dualControl?.required === true && checks.dualControl.complete !== true) {
+    if (
+      checks.dualControl?.required === true &&
+      checks.dualControl.complete !== true
+    ) {
       return { id: row.id, reviewers: row.reviewers };
     }
   }
@@ -710,7 +754,9 @@ async function completeProposal(
 ): Promise<DecisionView> {
   const reviewers = [...existingReviewers, input.actor.id];
   const completed = await auditedTransaction(deps.db, async (tx) => {
-    const current = await tx.reviewDecision.findUnique({ where: { id: decisionId } });
+    const current = await tx.reviewDecision.findUnique({
+      where: { id: decisionId },
+    });
     if (current === null) {
       throw new ContractError("not_found", "that decision is no longer open", {
         decisionId,
@@ -777,7 +823,12 @@ async function completeProposal(
         subjectId: input.subjectId,
         reason: input.note,
         before: { reviewers: [...existingReviewers], complete: false },
-        after: { decision: input.decision, reviewers, complete: true, valueMinor },
+        after: {
+          decision: input.decision,
+          reviewers,
+          complete: true,
+          valueMinor,
+        },
         correlationId: input.correlationId,
       },
       events,
@@ -800,7 +851,9 @@ async function advisoryFor(
           ? await merchantItems(deps.db, 200)
           : [];
   const match = items.find(
-    (item) => item.subjectType === input.subjectType && item.subjectId === input.subjectId,
+    (item) =>
+      item.subjectType === input.subjectType &&
+      item.subjectId === input.subjectId,
   );
   return match?.checks ?? [];
 }

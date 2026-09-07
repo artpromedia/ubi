@@ -140,11 +140,19 @@ export class ContractError extends Error {
   toBody(): ErrorBody {
     return this.details === undefined
       ? { code: this.code, message: this.message }
-      : { code: this.code, message: this.message, details: { ...this.details } };
+      : {
+          code: this.code,
+          message: this.message,
+          details: { ...this.details },
+        };
   }
 }
 
 /** Feature-flag denial: deep links must 404, not 403, so a disabled vertical is invisible. */
 export function featureDisabled(feature: string): ContractError {
-  return new ContractError("feature_disabled", `${feature} is not available here`, { feature });
+  return new ContractError(
+    "feature_disabled",
+    `${feature} is not available here`,
+    { feature },
+  );
 }

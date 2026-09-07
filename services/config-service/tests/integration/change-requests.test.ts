@@ -7,7 +7,12 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "@/app";
 import { prisma } from "@/lib/prisma";
 import { LAGOS_CITY } from "@/seed/lagos";
-import { adminHeaders, closeConnections, resetAll, seedLagosForTest } from "@tests/helpers/db";
+import {
+  adminHeaders,
+  closeConnections,
+  resetAll,
+  seedLagosForTest,
+} from "@tests/helpers/db";
 
 const app = buildApp();
 
@@ -28,7 +33,11 @@ async function createRequest(
   });
 }
 
-async function approve(requestId: string, actor: string, idempotencyKey: string): Promise<Response> {
+async function approve(
+  requestId: string,
+  actor: string,
+  idempotencyKey: string,
+): Promise<Response> {
   return app.request(`/v1/config/change-requests/${requestId}/approve`, {
     method: "POST",
     headers: adminHeaders(actor, idempotencyKey),
@@ -51,7 +60,10 @@ describe("config change requests", () => {
     const response = await createRequest({ waitPolicy: { perMinMinor: -1 } });
 
     expect(response.status).toBe(422);
-    const body = (await response.json()) as { code: string; details?: Record<string, unknown> };
+    const body = (await response.json()) as {
+      code: string;
+      details?: Record<string, unknown>;
+    };
     expect(body.code).toBe("validation_failed");
     // Nothing is stored: the patch never becomes something an approver could activate.
     expect(await prisma.configChangeRequest.count()).toBe(before);
@@ -83,21 +95,29 @@ describe("config change requests", () => {
     await createRequest({ quoteTtlSec: 240 });
     const response = await createRequest({ quoteTtlSec: 200 });
     expect(response.status).toBe(409);
-    expect(((await response.json()) as { code: string }).code).toBe("idempotency_key_reuse");
+    expect(((await response.json()) as { code: string }).code).toBe(
+      "idempotency_key_reuse",
+    );
   });
 
   it("will not let the author approve their own change request", async () => {
-    const created = (await (await createRequest({ quoteTtlSec: 240 })).json()) as { id: string };
+    const created = (await (
+      await createRequest({ quoteTtlSec: 240 })
+    ).json()) as { id: string };
 
     const response = await approve(created.id, AUTHOR, "apr-author-001");
 
     expect(response.status).toBe(409);
-    expect(((await response.json()) as { code: string }).code).toBe("approver_is_author");
+    expect(((await response.json()) as { code: string }).code).toBe(
+      "approver_is_author",
+    );
     expect(await prisma.configApproval.count()).toBe(0);
   });
 
   it("will not let the same approver approve twice", async () => {
-    const created = (await (await createRequest({ quoteTtlSec: 240 })).json()) as { id: string };
+    const created = (await (
+      await createRequest({ quoteTtlSec: 240 })
+    ).json()) as { id: string };
 
     const first = await approve(created.id, APPROVER_ONE, "apr-one-001");
     const second = await approve(created.id, APPROVER_ONE, "apr-one-002");
@@ -105,7 +125,9 @@ describe("config change requests", () => {
     expect(first.status).toBe(200);
     expect(((await first.json()) as { approvals: number }).approvals).toBe(1);
     expect(second.status).toBe(409);
-    expect(((await second.json()) as { code: string }).code).toBe("already_approved");
+    expect(((await second.json()) as { code: string }).code).toBe(
+      "already_approved",
+    );
     expect(await prisma.configApproval.count()).toBe(1);
   });
 
@@ -113,12 +135,16 @@ describe("config change requests", () => {
     const previous = await prisma.cityConfigVersion.findFirstOrThrow({
       where: { cityId: LAGOS_CITY.id, version: 1 },
     });
-    const created = (await (await createRequest({ waitPolicy: { perMinMinor: 6_000 } })).json()) as {
+    const created = (await (
+      await createRequest({ waitPolicy: { perMinMinor: 6_000 } })
+    ).json()) as {
       id: string;
     };
 
     const first = await approve(created.id, APPROVER_ONE, "apr-one-101");
-    expect(((await first.json()) as { activated: boolean }).activated).toBe(false);
+    expect(((await first.json()) as { activated: boolean }).activated).toBe(
+      false,
+    );
 
     const second = await approve(created.id, APPROVER_TWO, "apr-two-101");
     expect(second.status).toBe(200);
@@ -145,8 +171,12 @@ describe("config change requests", () => {
       where: { cityId: LAGOS_CITY.id, version: 1 },
     });
     expect(previousNow.config).toEqual(previous.config);
-    expect(previousNow.activatedAt?.toISOString()).toBe(previous.activatedAt?.toISOString());
-    expect(previousNow.updatedAt.toISOString()).toBe(previous.updatedAt.toISOString());
+    expect(previousNow.activatedAt?.toISOString()).toBe(
+      previous.activatedAt?.toISOString(),
+    );
+    expect(previousNow.updatedAt.toISOString()).toBe(
+      previous.updatedAt.toISOString(),
+    );
 
     // The new version carries author and activating approver.
     const activated = versions[1];
@@ -166,19 +196,28 @@ describe("config change requests", () => {
     expect(outbox.toVersion).toBe(2);
     expect(outbox.cityId).toBe(LAGOS_CITY.id);
     expect(outbox.publishedAt).toBeNull();
-    const payload = outbox.payload as { cityId: string; version: number; by: string[] };
+    const payload = outbox.payload as {
+      cityId: string;
+      version: number;
+      by: string[];
+    };
     expect(payload.version).toBe(2);
     expect(payload.by).toEqual([AUTHOR, APPROVER_ONE, APPROVER_TWO]);
 
     // And the served config is the new version.
     const served = await app.request(`/v1/config/cities/${LAGOS_CITY.id}`);
-    const config = (await served.json()) as { version: number; waitPolicy: { perMinMinor: number } };
+    const config = (await served.json()) as {
+      version: number;
+      waitPolicy: { perMinMinor: number };
+    };
     expect(config.version).toBe(2);
     expect(config.waitPolicy.perMinMinor).toBe(6_000);
   });
 
   it("rolls back the version, the approval, the audit row and the outbox row together when activation fails", async () => {
-    const created = (await (await createRequest({ quoteTtlSec: 240 })).json()) as { id: string };
+    const created = (await (
+      await createRequest({ quoteTtlSec: 240 })
+    ).json()) as { id: string };
     await approve(created.id, APPROVER_ONE, "apr-one-201");
 
     // Occupy the idempotency key the activation will use, so the outbox insert
@@ -198,21 +237,33 @@ describe("config change requests", () => {
       },
     });
 
-    const versionsBefore = await prisma.cityConfigVersion.count({ where: { cityId: LAGOS_CITY.id } });
-    const auditBefore = await prisma.auditLog.count({ where: { action: "config.version_activated" } });
+    const versionsBefore = await prisma.cityConfigVersion.count({
+      where: { cityId: LAGOS_CITY.id },
+    });
+    const auditBefore = await prisma.auditLog.count({
+      where: { action: "config.version_activated" },
+    });
 
     const response = await approve(created.id, APPROVER_TWO, "apr-two-201");
     expect(response.status).toBe(409);
 
-    expect(await prisma.cityConfigVersion.count({ where: { cityId: LAGOS_CITY.id } })).toBe(
-      versionsBefore,
-    );
-    expect(await prisma.auditLog.count({ where: { action: "config.version_activated" } })).toBe(
-      auditBefore,
-    );
+    expect(
+      await prisma.cityConfigVersion.count({
+        where: { cityId: LAGOS_CITY.id },
+      }),
+    ).toBe(versionsBefore);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: "config.version_activated" },
+      }),
+    ).toBe(auditBefore);
     // The second approval itself is gone: the whole transaction rolled back.
-    expect(await prisma.configApproval.count({ where: { requestId: created.id } })).toBe(1);
-    const request = await prisma.configChangeRequest.findUniqueOrThrow({ where: { id: created.id } });
+    expect(
+      await prisma.configApproval.count({ where: { requestId: created.id } }),
+    ).toBe(1);
+    const request = await prisma.configChangeRequest.findUniqueOrThrow({
+      where: { id: created.id },
+    });
     expect(request.status).toBe("pending");
     // Only the blocker row exists for that key.
     const events = await prisma.outboxEvent.findMany({
@@ -223,13 +274,18 @@ describe("config change requests", () => {
   });
 
   it("reports history with the author, the activating approver and every approver", async () => {
-    const created = (await (await createRequest({ offerTtlSec: 15 })).json()) as { id: string };
+    const created = (await (
+      await createRequest({ offerTtlSec: 15 })
+    ).json()) as { id: string };
     await approve(created.id, APPROVER_ONE, "apr-one-301");
     await approve(created.id, APPROVER_TWO, "apr-two-301");
 
-    const response = await app.request(`/v1/config/cities/${LAGOS_CITY.id}/history`, {
-      headers: adminHeaders(APPROVER_ONE),
-    });
+    const response = await app.request(
+      `/v1/config/cities/${LAGOS_CITY.id}/history`,
+      {
+        headers: adminHeaders(APPROVER_ONE),
+      },
+    );
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       versions: Array<{
@@ -257,17 +313,30 @@ describe("config change requests", () => {
         "x-user-role": "rider",
         "idempotency-key": "cr-rider-001",
       },
-      body: JSON.stringify({ cityId: LAGOS_CITY.id, patch: { offerTtlSec: 60 }, reason: "why not" }),
+      body: JSON.stringify({
+        cityId: LAGOS_CITY.id,
+        patch: { offerTtlSec: 60 },
+        reason: "why not",
+      }),
     });
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { code: string }).code).toBe("forbidden");
+    expect(((await response.json()) as { code: string }).code).toBe(
+      "forbidden",
+    );
   });
 
   it("requires authentication", async () => {
     const response = await app.request("/v1/config/change-requests", {
       method: "POST",
-      headers: { "content-type": "application/json", "idempotency-key": "cr-anon-001" },
-      body: JSON.stringify({ cityId: LAGOS_CITY.id, patch: { offerTtlSec: 60 }, reason: "why not" }),
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": "cr-anon-001",
+      },
+      body: JSON.stringify({
+        cityId: LAGOS_CITY.id,
+        patch: { offerTtlSec: 60 },
+        reason: "why not",
+      }),
     });
     expect(response.status).toBe(401);
   });
@@ -275,15 +344,25 @@ describe("config change requests", () => {
   it("404s an unknown city", async () => {
     const response = await app.request("/v1/config/cities/ZZZ");
     expect(response.status).toBe(404);
-    expect(((await response.json()) as { code: string }).code).toBe("city_unsupported");
+    expect(((await response.json()) as { code: string }).code).toBe(
+      "city_unsupported",
+    );
   });
 
   it("404s a city that exists but has no activated version", async () => {
     await prisma.city.create({
-      data: { id: "ABJ", name: "Abuja", country: "NG", timezone: "Africa/Lagos", active: false },
+      data: {
+        id: "ABJ",
+        name: "Abuja",
+        country: "NG",
+        timezone: "Africa/Lagos",
+        active: false,
+      },
     });
     const response = await app.request("/v1/config/cities/ABJ");
     expect(response.status).toBe(404);
-    expect(((await response.json()) as { code: string }).code).toBe("not_found");
+    expect(((await response.json()) as { code: string }).code).toBe(
+      "not_found",
+    );
   });
 });

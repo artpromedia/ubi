@@ -179,27 +179,75 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/auth/pin/reset", anyOf: ["auth:step_up"] },
   { methods: "*", prefix: "/v1/auth/pin", anyOf: ["wallet:read"] },
   { methods: ["GET"], prefix: "/v1/users", anyOf: ["profile:read"] },
-  { methods: ["POST", "PUT", "PATCH", "DELETE"], prefix: "/v1/users", anyOf: ["profile:write"] },
-  { methods: "*", prefix: "/v1/users/me/phone", anyOf: ["security:phone:change"] },
-  { methods: "*", prefix: "/v1/users/me/contacts", anyOf: ["security:contacts:change"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/users",
+    anyOf: ["profile:write"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/users/me/phone",
+    anyOf: ["security:phone:change"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/users/me/contacts",
+    anyOf: ["security:contacts:change"],
+  },
   { methods: "*", prefix: "/v1/users/me/pin", anyOf: ["security:pin:change"] },
   { methods: ["GET"], prefix: "/v1/rides", anyOf: ["ride:read"] },
-  { methods: ["POST"], prefix: "/v1/rides", anyOf: ["ride:book:cash", "ride:book:wallet"] },
-  { methods: "*", prefix: "/v1/pricing", anyOf: ["ride:book:cash", "ride:book:wallet"] },
+  {
+    methods: ["POST"],
+    prefix: "/v1/rides",
+    anyOf: ["ride:book:cash", "ride:book:wallet"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/pricing",
+    anyOf: ["ride:book:cash", "ride:book:wallet"],
+  },
   { methods: "*", prefix: "/v1/locations", anyOf: ["ride:read"] },
-  { methods: ["GET"], prefix: "/v1/drivers/me/documents", anyOf: ["profile:read"] },
-  { methods: ["POST", "PUT", "PATCH"], prefix: "/v1/drivers/me/documents", anyOf: ["driver:documents:write"] },
+  {
+    methods: ["GET"],
+    prefix: "/v1/drivers/me/documents",
+    anyOf: ["profile:read"],
+  },
+  {
+    methods: ["POST", "PUT", "PATCH"],
+    prefix: "/v1/drivers/me/documents",
+    anyOf: ["driver:documents:write"],
+  },
   { methods: "*", prefix: "/v1/drivers/me/status", anyOf: ["driver:online"] },
   { methods: ["GET"], prefix: "/v1/wallets", anyOf: ["wallet:read"] },
   { methods: ["GET"], prefix: "/v1/wallet", anyOf: ["wallet:read"] },
   { methods: ["GET"], prefix: "/v1/transactions", anyOf: ["history:read"] },
-  { methods: ["POST"], prefix: "/v1/wallets/transfers", anyOf: ["wallet:transfer:p2p"] },
-  { methods: ["POST"], prefix: "/v1/wallet/transfers", anyOf: ["wallet:transfer:p2p"] },
-  { methods: ["POST"], prefix: "/v1/wallets/nip", anyOf: ["wallet:transfer:nip"] },
-  { methods: ["POST"], prefix: "/v1/wallet/nip", anyOf: ["wallet:transfer:nip"] },
+  {
+    methods: ["POST"],
+    prefix: "/v1/wallets/transfers",
+    anyOf: ["wallet:transfer:p2p"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/wallet/transfers",
+    anyOf: ["wallet:transfer:p2p"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/wallets/nip",
+    anyOf: ["wallet:transfer:nip"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/wallet/nip",
+    anyOf: ["wallet:transfer:nip"],
+  },
   { methods: ["POST"], prefix: "/v1/wallets/topup", anyOf: ["wallet:topup"] },
   { methods: ["POST"], prefix: "/v1/wallet/topup", anyOf: ["wallet:topup"] },
-  { methods: ["POST"], prefix: "/v1/wallet/pin", anyOf: ["security:pin:change"] },
+  {
+    methods: ["POST"],
+    prefix: "/v1/wallet/pin",
+    anyOf: ["security:pin:change"],
+  },
   { methods: "*", prefix: "/v1/payments", anyOf: ["wallet:read"] },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
   { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },
@@ -229,13 +277,17 @@ export function effectiveScopes(input: EffectiveScopeInput): readonly Scope[] {
   const ceiling = scopesForRole(input.role);
   const claimed = input.tokenScopes;
   let allowed: readonly Scope[] =
-    claimed === undefined ? ceiling : ceiling.filter((scope) => claimed.includes(scope));
+    claimed === undefined
+      ? ceiling
+      : ceiling.filter((scope) => claimed.includes(scope));
 
   if (input.modes.includes("limited")) {
     allowed = allowed.filter((scope) => LIMITED_MODE_SCOPES.includes(scope));
   }
   if (input.modes.includes("wallet_safe")) {
-    allowed = allowed.filter((scope) => !SAFE_MODE_DENIED_SCOPES.includes(scope));
+    allowed = allowed.filter(
+      (scope) => !SAFE_MODE_DENIED_SCOPES.includes(scope),
+    );
   }
   return allowed;
 }
@@ -258,7 +310,11 @@ export function ruleFor(path: string, method: string): RouteRule | undefined {
       best = rule;
       continue;
     }
-    if (rule.prefix.length === best.prefix.length && best.methods === "*" && rule.methods !== "*") {
+    if (
+      rule.prefix.length === best.prefix.length &&
+      best.methods === "*" &&
+      rule.methods !== "*"
+    ) {
       best = rule;
     }
   }
@@ -296,9 +352,13 @@ export function authorizeRequest(input: AuthorizeInput): void {
   const ceiling = scopesForRole(input.role);
   const grantedByRole = rule.anyOf.filter((scope) => ceiling.includes(scope));
   if (grantedByRole.length === 0) {
-    throw new ContractError("forbidden", "This action is not available for your account type", {
-      required: [...rule.anyOf],
-    });
+    throw new ContractError(
+      "forbidden",
+      "This action is not available for your account type",
+      {
+        required: [...rule.anyOf],
+      },
+    );
   }
 
   throw deniedError(input.modes, {
@@ -326,5 +386,9 @@ function deniedError(
       { ...details, modes: [...modes] },
     );
   }
-  return new ContractError("forbidden", "You don't have permission to perform this action", details);
+  return new ContractError(
+    "forbidden",
+    "You don't have permission to perform this action",
+    details,
+  );
 }

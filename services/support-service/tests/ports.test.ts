@@ -9,7 +9,10 @@ import { describe, expect, it } from "vitest";
 
 import { IDEMPOTENCY_HEADER, money } from "@ubi/contracts";
 
-import { createHttpLedger, type RemedyPostingRequest } from "../src/ops/ledger-port";
+import {
+  createHttpLedger,
+  type RemedyPostingRequest,
+} from "../src/ops/ledger-port";
 import { createHttpNotifier, type SafetyAlert } from "../src/ops/notifier";
 
 interface Call {
@@ -17,9 +20,10 @@ interface Call {
   init: RequestInit;
 }
 
-function recordingFetch(
-  response: () => Response | Promise<Response>,
-): { calls: Call[]; impl: typeof fetch } {
+function recordingFetch(response: () => Response | Promise<Response>): {
+  calls: Call[];
+  impl: typeof fetch;
+} {
   const calls: Call[] = [];
   const impl = (async (input: unknown, init?: RequestInit) => {
     calls.push({ url: String(input), init: init ?? {} });
@@ -74,7 +78,9 @@ describe("ledger port over HTTP", () => {
     expect(posted.entryId).toBe("je_1");
     expect(posted.caseRef).toBe("case_abc");
     expect(posted.lines).toHaveLength(2);
-    expect(posted.lines.reduce((total, line) => total + line.amountMinor, 0)).toBe(0);
+    expect(
+      posted.lines.reduce((total, line) => total + line.amountMinor, 0),
+    ).toBe(0);
 
     const call = calls[0];
     expect(call?.url).toBe("http://payment-service:4003/v1/finance/remedies");
@@ -105,9 +111,14 @@ describe("ledger port over HTTP", () => {
           headers: { "content-type": "application/json" },
         }),
     );
-    const ledger = createHttpLedger({ baseUrl: "http://payment", fetchImpl: impl });
+    const ledger = createHttpLedger({
+      baseUrl: "http://payment",
+      fetchImpl: impl,
+    });
 
-    const error = await ledger.postRemedy(request).catch((caught: unknown) => caught);
+    const error = await ledger
+      .postRemedy(request)
+      .catch((caught: unknown) => caught);
     expect(error).toMatchObject({
       code: "service_unavailable",
       details: { status: 422, ledgerCode: "insufficient_funds" },
@@ -122,7 +133,10 @@ describe("ledger port over HTTP", () => {
           headers: { "content-type": "application/json" },
         }),
     );
-    const ledger = createHttpLedger({ baseUrl: "http://payment", fetchImpl: impl });
+    const ledger = createHttpLedger({
+      baseUrl: "http://payment",
+      fetchImpl: impl,
+    });
     await expect(ledger.postRemedy(request)).rejects.toMatchObject({
       code: "service_unavailable",
     });
@@ -133,7 +147,10 @@ describe("ledger port over HTTP", () => {
       await Promise.resolve();
       throw new Error("ECONNREFUSED");
     }) as typeof fetch;
-    const ledger = createHttpLedger({ baseUrl: "http://payment", fetchImpl: impl });
+    const ledger = createHttpLedger({
+      baseUrl: "http://payment",
+      fetchImpl: impl,
+    });
     await expect(ledger.postRemedy(request)).rejects.toMatchObject({
       code: "service_unavailable",
     });
@@ -151,14 +168,19 @@ describe("safety notifier over HTTP", () => {
   };
 
   it("sends the channel, the case and the city's emergency number and nothing else", async () => {
-    const { calls, impl } = recordingFetch(() => new Response("", { status: 202 }));
+    const { calls, impl } = recordingFetch(
+      () => new Response("", { status: 202 }),
+    );
     const notifier = createHttpNotifier({
       baseUrl: "http://notification-service:4006",
       fetchImpl: impl,
     });
     await notifier.deliver("sms", alert);
 
-    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<
+      string,
+      unknown
+    >;
     expect(body).toEqual({
       channel: "sms",
       caseId: "sfc_1",
@@ -173,7 +195,10 @@ describe("safety notifier over HTTP", () => {
 
   it("throws when the channel refuses, so the caller can fall back and retry", async () => {
     const { impl } = recordingFetch(() => new Response("", { status: 500 }));
-    const notifier = createHttpNotifier({ baseUrl: "http://notif", fetchImpl: impl });
+    const notifier = createHttpNotifier({
+      baseUrl: "http://notif",
+      fetchImpl: impl,
+    });
     await expect(notifier.deliver("push", alert)).rejects.toMatchObject({
       code: "service_unavailable",
       details: { channel: "push" },

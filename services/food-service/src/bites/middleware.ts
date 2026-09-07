@@ -30,11 +30,17 @@ declare module "hono" {
   }
 }
 
-export async function gatewayAuth(c: Context, next: Next): Promise<void | Response> {
+export async function gatewayAuth(
+  c: Context,
+  next: Next,
+): Promise<void | Response> {
   const userId = c.req.header("X-User-ID");
   const role = c.req.header("X-User-Role");
   if (userId === undefined || userId.length === 0) {
-    return c.json({ code: "unauthorized", message: "authentication required" }, 401);
+    return c.json(
+      { code: "unauthorized", message: "authentication required" },
+      401,
+    );
   }
   if (role === undefined || !isKnownRole(role)) {
     return c.json(
@@ -90,40 +96,61 @@ export function correlationIdOf(c: Context): string | null {
   return c.req.header("X-Request-ID") ?? null;
 }
 
-export async function parseBody<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
+export async function parseBody<T>(
+  c: Context,
+  schema: z.ZodType<T>,
+): Promise<T> {
   const body: unknown = await c.req.json().catch(() => undefined);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw new ContractError("validation_failed", "the request body is not valid", {
-      issues: parsed.error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
-    });
+    throw new ContractError(
+      "validation_failed",
+      "the request body is not valid",
+      {
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      },
+    );
   }
   return parsed.data;
 }
 
-export function parseLimit(raw: string | undefined, fallback: number, max: number): number {
+export function parseLimit(
+  raw: string | undefined,
+  fallback: number,
+  max: number,
+): number {
   if (raw === undefined) {
     return fallback;
   }
   const value = Number.parseInt(raw, 10);
   if (!Number.isInteger(value) || value <= 0) {
-    throw new ContractError("validation_failed", "limit must be a positive integer");
+    throw new ContractError(
+      "validation_failed",
+      "limit must be a positive integer",
+    );
   }
   return Math.min(value, max);
 }
 
 export function failure(c: Context, error: unknown): Response {
   if (error instanceof ZodError) {
-    const validation = new ContractError("validation_failed", "the request is not valid", {
-      issues: error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
-    });
-    return c.json(validation.toBody(), validation.status as ContentfulStatusCode);
+    const validation = new ContractError(
+      "validation_failed",
+      "the request is not valid",
+      {
+        issues: error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      },
+    );
+    return c.json(
+      validation.toBody(),
+      validation.status as ContentfulStatusCode,
+    );
   }
   const contract = toContractError(error);
   if (contract.code === "internal_error") {

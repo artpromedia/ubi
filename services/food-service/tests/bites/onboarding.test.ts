@@ -118,9 +118,9 @@ describe("merchant onboarding", () => {
     expect(created.currency).toBe(currency);
 
     // Public menu does not show an unapproved merchant at all.
-    await expect(getPublicMenu(deps(), cityId, merchantId)).rejects.toBeInstanceOf(
-      ContractError,
-    );
+    await expect(
+      getPublicMenu(deps(), cityId, merchantId),
+    ).rejects.toBeInstanceOf(ContractError);
 
     // The merchant can see their own draft menu.
     const console = await getConsoleMenu(deps(), merchant, merchantId);
@@ -192,7 +192,9 @@ describe("merchant onboarding", () => {
       correlationId: null,
     });
     const published = await getPublicMenu(deps(), cityId, merchantId);
-    expect(published.outlets[0]?.items.map((i) => i.id)).toContain(built.itemId);
+    expect(published.outlets[0]?.items.map((i) => i.id)).toContain(
+      built.itemId,
+    );
 
     // An item created after approval is published immediately.
     const later = await createMenuItem(deps(), {

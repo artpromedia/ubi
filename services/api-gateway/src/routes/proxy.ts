@@ -25,7 +25,10 @@ const proxyRoutes = new Hono();
  * URL and the local default. Resolved per request rather than at import, so a
  * redeploy that changes a service URL does not need the gateway rebuilt.
  */
-const SERVICE_REGISTRY: Record<string, { readonly env: string; readonly fallback: string }> = {
+const SERVICE_REGISTRY: Record<
+  string,
+  { readonly env: string; readonly fallback: string }
+> = {
   users: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
   auth: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
   identity: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
@@ -37,8 +40,14 @@ const SERVICE_REGISTRY: Record<string, { readonly env: string; readonly fallback
   packages: { env: "DELIVERY_SERVICE_URL", fallback: "http://localhost:4004" },
   payments: { env: "PAYMENT_SERVICE_URL", fallback: "http://localhost:4005" },
   wallets: { env: "PAYMENT_SERVICE_URL", fallback: "http://localhost:4005" },
-  notifications: { env: "NOTIFICATION_SERVICE_URL", fallback: "http://localhost:4006" },
-  analytics: { env: "ANALYTICS_SERVICE_URL", fallback: "http://localhost:4007" },
+  notifications: {
+    env: "NOTIFICATION_SERVICE_URL",
+    fallback: "http://localhost:4006",
+  },
+  analytics: {
+    env: "ANALYTICS_SERVICE_URL",
+    fallback: "http://localhost:4007",
+  },
   ceerion: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
   vehicles: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
 };
@@ -47,7 +56,9 @@ function serviceUrl(serviceName: string): string | undefined {
   const entry = SERVICE_REGISTRY[serviceName];
   if (entry === undefined) return undefined;
   const configured = process.env[entry.env];
-  return configured !== undefined && configured.length > 0 ? configured : entry.fallback;
+  return configured !== undefined && configured.length > 0
+    ? configured
+    : entry.fallback;
 }
 
 // Request timeout in milliseconds
@@ -203,15 +214,25 @@ const downstreamPath = (c: Context): string => c.req.path.replace(/^\/v1/, "");
 
 // User Service routes
 proxyRoutes.all("/auth/*", (c) => proxyToService("auth", downstreamPath(c), c));
-proxyRoutes.all("/users/*", (c) => proxyToService("users", downstreamPath(c), c));
+proxyRoutes.all("/users/*", (c) =>
+  proxyToService("users", downstreamPath(c), c),
+);
 
 // Identity (slice 03) — device enrolment, step-up, documents, review cases.
 // These are registered BEFORE /drivers/* so driver documents reach the
 // user-service rather than the ride-service.
-proxyRoutes.all("/devices", (c) => proxyToService("devices", downstreamPath(c), c));
-proxyRoutes.all("/devices/*", (c) => proxyToService("devices", downstreamPath(c), c));
-proxyRoutes.all("/identity/*", (c) => proxyToService("identity", downstreamPath(c), c));
-proxyRoutes.all("/webhooks/telco/*", (c) => proxyToService("identity", downstreamPath(c), c));
+proxyRoutes.all("/devices", (c) =>
+  proxyToService("devices", downstreamPath(c), c),
+);
+proxyRoutes.all("/devices/*", (c) =>
+  proxyToService("devices", downstreamPath(c), c),
+);
+proxyRoutes.all("/identity/*", (c) =>
+  proxyToService("identity", downstreamPath(c), c),
+);
+proxyRoutes.all("/webhooks/telco/*", (c) =>
+  proxyToService("identity", downstreamPath(c), c),
+);
 proxyRoutes.all("/drivers/me/documents", (c) =>
   proxyToService("identity", downstreamPath(c), c),
 );
@@ -223,26 +244,46 @@ proxyRoutes.all("/drivers/me/eligibility", (c) =>
 );
 
 // Ride Service routes
-proxyRoutes.all("/rides/*", (c) => proxyToService("rides", downstreamPath(c), c));
-proxyRoutes.all("/drivers/*", (c) => proxyToService("rides", downstreamPath(c), c));
-proxyRoutes.all("/pricing/*", (c) => proxyToService("rides", downstreamPath(c), c));
-proxyRoutes.all("/locations/*", (c) => proxyToService("rides", downstreamPath(c), c));
+proxyRoutes.all("/rides/*", (c) =>
+  proxyToService("rides", downstreamPath(c), c),
+);
+proxyRoutes.all("/drivers/*", (c) =>
+  proxyToService("rides", downstreamPath(c), c),
+);
+proxyRoutes.all("/pricing/*", (c) =>
+  proxyToService("rides", downstreamPath(c), c),
+);
+proxyRoutes.all("/locations/*", (c) =>
+  proxyToService("rides", downstreamPath(c), c),
+);
 
 // Food Service routes
 proxyRoutes.all("/food/*", (c) => proxyToService("food", downstreamPath(c), c));
 proxyRoutes.all("/restaurants/*", (c) =>
   proxyToService("restaurants", downstreamPath(c), c),
 );
-proxyRoutes.all("/menus/*", (c) => proxyToService("food", downstreamPath(c), c));
+proxyRoutes.all("/menus/*", (c) =>
+  proxyToService("food", downstreamPath(c), c),
+);
 
 // Delivery Service routes
-proxyRoutes.all("/delivery/*", (c) => proxyToService("delivery", downstreamPath(c), c));
-proxyRoutes.all("/packages/*", (c) => proxyToService("packages", downstreamPath(c), c));
+proxyRoutes.all("/delivery/*", (c) =>
+  proxyToService("delivery", downstreamPath(c), c),
+);
+proxyRoutes.all("/packages/*", (c) =>
+  proxyToService("packages", downstreamPath(c), c),
+);
 
 // Payment Service routes
-proxyRoutes.all("/payments/*", (c) => proxyToService("payments", downstreamPath(c), c));
-proxyRoutes.all("/wallets/*", (c) => proxyToService("wallets", downstreamPath(c), c));
-proxyRoutes.all("/wallet/*", (c) => proxyToService("wallets", downstreamPath(c), c));
+proxyRoutes.all("/payments/*", (c) =>
+  proxyToService("payments", downstreamPath(c), c),
+);
+proxyRoutes.all("/wallets/*", (c) =>
+  proxyToService("wallets", downstreamPath(c), c),
+);
+proxyRoutes.all("/wallet/*", (c) =>
+  proxyToService("wallets", downstreamPath(c), c),
+);
 proxyRoutes.all("/transactions/*", (c) =>
   proxyToService("payments", downstreamPath(c), c),
 );
@@ -253,12 +294,22 @@ proxyRoutes.all("/notifications/*", (c) =>
 );
 
 // Analytics Service routes
-proxyRoutes.all("/analytics/*", (c) => proxyToService("analytics", downstreamPath(c), c));
-proxyRoutes.all("/reports/*", (c) => proxyToService("analytics", downstreamPath(c), c));
+proxyRoutes.all("/analytics/*", (c) =>
+  proxyToService("analytics", downstreamPath(c), c),
+);
+proxyRoutes.all("/reports/*", (c) =>
+  proxyToService("analytics", downstreamPath(c), c),
+);
 
 // CEERION Service routes (EV financing)
-proxyRoutes.all("/ceerion/*", (c) => proxyToService("ceerion", downstreamPath(c), c));
-proxyRoutes.all("/vehicles/*", (c) => proxyToService("vehicles", downstreamPath(c), c));
-proxyRoutes.all("/financing/*", (c) => proxyToService("ceerion", downstreamPath(c), c));
+proxyRoutes.all("/ceerion/*", (c) =>
+  proxyToService("ceerion", downstreamPath(c), c),
+);
+proxyRoutes.all("/vehicles/*", (c) =>
+  proxyToService("vehicles", downstreamPath(c), c),
+);
+proxyRoutes.all("/financing/*", (c) =>
+  proxyToService("ceerion", downstreamPath(c), c),
+);
 
 export { proxyRoutes };

@@ -2,7 +2,10 @@ import "./setup-env";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { livenessRequiredForShift, samplingBucket } from "../../src/identity/liveness";
+import {
+  livenessRequiredForShift,
+  samplingBucket,
+} from "../../src/identity/liveness";
 import { prisma } from "../../src/lib/prisma";
 import {
   authedHeaders,
@@ -80,25 +83,34 @@ describe("deactivation needs two reviewers", () => {
     expect(response.status).toBe(200);
 
     const body = (await response.json()) as {
-      data: { status: string; applied: boolean; reviewers: string[]; reviewersRequired: number };
+      data: {
+        status: string;
+        applied: boolean;
+        reviewers: string[];
+        reviewersRequired: number;
+      };
     };
     expect(body.data.applied).toBe(false);
     expect(body.data.status).toBe("awaiting_second_reviewer");
     expect(body.data.reviewers).toEqual([firstReviewer]);
     expect(body.data.reviewersRequired).toBe(2);
 
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: driver.id } });
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: driver.id },
+    });
     expect(user.status).toBe("ACTIVE");
   });
 
   it("refuses the SAME reviewer as the second signature", async () => {
     const response = await decide(caseId, firstReviewer, "deactivate");
     expect(response.status).toBe(409);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
-      "already_approved",
-    );
+    expect(
+      ((await response.json()) as { error: { code: string } }).error.code,
+    ).toBe("already_approved");
 
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: driver.id } });
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: driver.id },
+    });
     expect(user.status).toBe("ACTIVE");
   });
 
@@ -107,17 +119,26 @@ describe("deactivation needs two reviewers", () => {
     expect(response.status).toBe(200);
 
     const body = (await response.json()) as {
-      data: { applied: boolean; status: string; reviewers: string[]; appealPath: string };
+      data: {
+        applied: boolean;
+        status: string;
+        reviewers: string[];
+        appealPath: string;
+      };
     };
     expect(body.data.applied).toBe(true);
     expect(body.data.status).toBe("decided");
     expect(body.data.reviewers).toEqual([firstReviewer, secondReviewer]);
     expect(body.data.appealPath).toBe("/support/cases?topic=identity_review");
 
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: driver.id } });
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: driver.id },
+    });
     expect(user.status).toBe("SUSPENDED");
 
-    const row = await prisma.driver.findUniqueOrThrow({ where: { id: driver.driverId } });
+    const row = await prisma.driver.findUniqueOrThrow({
+      where: { id: driver.driverId },
+    });
     expect(row.isOnline).toBe(false);
 
     const event = await prisma.outboxEvent.findFirstOrThrow({
@@ -151,11 +172,15 @@ describe("reinstating", () => {
 
     const response = await decide(caseId, reviewer, "reinstate");
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { data: { applied: boolean; status: string } };
+    const body = (await response.json()) as {
+      data: { applied: boolean; status: string };
+    };
     expect(body.data.applied).toBe(true);
     expect(body.data.status).toBe("decided");
 
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: driver.id } });
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: driver.id },
+    });
     expect(user.status).toBe("ACTIVE");
   });
 
@@ -169,10 +194,14 @@ describe("reinstating", () => {
     const disagreement = await decide(caseId, second, "reinstate");
     expect(disagreement.status).toBe(200);
 
-    const body = (await disagreement.json()) as { data: { reviewers: string[] } };
+    const body = (await disagreement.json()) as {
+      data: { reviewers: string[] };
+    };
     expect(body.data.reviewers).toEqual([second]);
 
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: driver.id } });
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: driver.id },
+    });
     expect(user.status).toBe("ACTIVE");
   });
 });
@@ -190,7 +219,10 @@ describe("who may review", () => {
           role: "admin",
           scopes: FULL_SCOPES,
         }),
-        body: JSON.stringify({ decision: "reinstate", reason: "I am fine, honestly." }),
+        body: JSON.stringify({
+          decision: "reinstate",
+          reason: "I am fine, honestly.",
+        }),
       }),
     );
     expect(response.status).toBe(403);
@@ -209,7 +241,10 @@ describe("who may review", () => {
           role: "rider",
           scopes: FULL_SCOPES,
         }),
-        body: JSON.stringify({ decision: "reinstate", reason: "Because I said so." }),
+        body: JSON.stringify({
+          decision: "reinstate",
+          reason: "Because I said so.",
+        }),
       }),
     );
     expect(response.status).toBe(403);
@@ -272,7 +307,8 @@ describe("the driver liveness gate", () => {
     let challenged = 0;
     const shifts = 5_000;
     for (let index = 0; index < shifts; index += 1) {
-      if (samplingBucket(`drv_${index}`, "dev_1", "2026-08-01") < 10) challenged += 1;
+      if (samplingBucket(`drv_${index}`, "dev_1", "2026-08-01") < 10)
+        challenged += 1;
     }
     const rate = challenged / shifts;
     expect(rate).toBeGreaterThan(0.07);

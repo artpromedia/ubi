@@ -12,7 +12,6 @@ import {
   scopedIdempotencyKey,
 } from "@ubi/contracts";
 
-
 import { publishEvent, writeAudit } from "./audit";
 import { balanceOf } from "./balances";
 import { assertFlagEnabled } from "./city-config";
@@ -50,16 +49,26 @@ export async function createTopup(
   input: TopupInput,
 ): Promise<TopupResult> {
   const now = deps.now();
-  const key = scopedIdempotencyKey("wallet.topup", input.actor.id, input.idempotencyKey);
+  const key = scopedIdempotencyKey(
+    "wallet.topup",
+    input.actor.id,
+    input.idempotencyKey,
+  );
 
-  const existing = await deps.db.topup.findUnique({ where: { idempotencyKey: key } });
+  const existing = await deps.db.topup.findUnique({
+    where: { idempotencyKey: key },
+  });
   if (existing !== null) {
     return {
       topupId: existing.id,
       amount: money(fromDbMinor(existing.amountMinor), existing.currency),
       status: existing.status,
       entryId: existing.entryId,
-      balanceAfter: await balanceOf(deps.db, existing.walletId, existing.currency),
+      balanceAfter: await balanceOf(
+        deps.db,
+        existing.walletId,
+        existing.currency,
+      ),
       replayed: true,
     };
   }
@@ -68,9 +77,14 @@ export async function createTopup(
   assertFlagEnabled(config.flags, "wallet_p2p");
 
   if (input.amountMinor <= 0) {
-    throw new ContractError("validation_failed", "amount must be greater than zero");
+    throw new ContractError(
+      "validation_failed",
+      "amount must be greater than zero",
+    );
   }
-  const method = config.city.paymentMethods.find((entry) => entry.id === input.methodId);
+  const method = config.city.paymentMethods.find(
+    (entry) => entry.id === input.methodId,
+  );
   if (method === undefined || !method.available) {
     throw new ContractError(
       "payment_method_unavailable",
@@ -178,14 +192,20 @@ export async function createTopup(
     });
   } catch (error) {
     if (isIdempotencyRace(error)) {
-      const winner = await deps.db.topup.findUnique({ where: { idempotencyKey: key } });
+      const winner = await deps.db.topup.findUnique({
+        where: { idempotencyKey: key },
+      });
       if (winner !== null) {
         return {
           topupId: winner.id,
           amount: money(fromDbMinor(winner.amountMinor), winner.currency),
           status: winner.status,
           entryId: winner.entryId,
-          balanceAfter: await balanceOf(deps.db, winner.walletId, winner.currency),
+          balanceAfter: await balanceOf(
+            deps.db,
+            winner.walletId,
+            winner.currency,
+          ),
           replayed: true,
         };
       }

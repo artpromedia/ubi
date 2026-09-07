@@ -56,7 +56,10 @@ export async function withSweepLock<T>(
   try {
     acquired = (await redis.set(key, token, "EX", ttlSeconds, "NX")) === "OK";
   } catch (error) {
-    redisLogger.warn({ err: error, key }, "sweep lock unavailable; skipping sweep");
+    redisLogger.warn(
+      { err: error, key },
+      "sweep lock unavailable; skipping sweep",
+    );
     return null;
   }
   if (!acquired) {

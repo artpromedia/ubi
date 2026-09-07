@@ -39,7 +39,10 @@ export interface WalletDeps {
  * Locks the wallet row for the rest of the transaction so two concurrent
  * transfers from the same wallet cannot both pass the balance check.
  */
-export async function lockWallet(tx: LedgerTx, walletId: string): Promise<void> {
+export async function lockWallet(
+  tx: LedgerTx,
+  walletId: string,
+): Promise<void> {
   const rows = await tx.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM wallets WHERE id = ${walletId} FOR UPDATE
   `;

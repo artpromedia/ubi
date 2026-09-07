@@ -447,7 +447,9 @@ const reconciliationMovedResponse = {
   },
 } as const;
 
-adminRoutes.get("/reconciliations", (c) => c.json(reconciliationMovedResponse, 410));
+adminRoutes.get("/reconciliations", (c) =>
+  c.json(reconciliationMovedResponse, 410),
+);
 adminRoutes.post("/reconciliations/run", (c) =>
   c.json(reconciliationMovedResponse, 410),
 );
@@ -579,7 +581,10 @@ adminRoutes.get("/settlements/summary", async (c) => {
   return c.json({
     success: true,
     data: {
-      period: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+      period: {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      },
       count: totals._count,
       totals: {
         gross: Number(totals._sum.grossAmount) || 0,

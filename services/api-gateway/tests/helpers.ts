@@ -2,7 +2,12 @@
  * Shared helpers for the gateway tests: a real upstream service to proxy to,
  * and real client tokens signed with the same secret the gateway verifies.
  */
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { AddressInfo } from "node:net";
 
 import * as jose from "jose";
@@ -29,21 +34,29 @@ export interface Upstream {
 export async function startUpstream(): Promise<Upstream> {
   const received: RecordedRequest[] = [];
 
-  const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const headers: Record<string, string> = {};
-    for (const [name, value] of Object.entries(req.headers)) {
-      if (typeof value === "string") headers[name] = value;
-      else if (Array.isArray(value)) headers[name] = value.join(",");
-    }
-    received.push({ method: req.method ?? "GET", url: req.url ?? "/", headers });
+  const server: Server = createServer(
+    (req: IncomingMessage, res: ServerResponse) => {
+      const headers: Record<string, string> = {};
+      for (const [name, value] of Object.entries(req.headers)) {
+        if (typeof value === "string") headers[name] = value;
+        else if (Array.isArray(value)) headers[name] = value.join(",");
+      }
+      received.push({
+        method: req.method ?? "GET",
+        url: req.url ?? "/",
+        headers,
+      });
 
-    // Drain the body so keep-alive sockets do not stall.
-    req.resume();
-    req.on("end", () => {
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ success: true, data: { receivedHeaders: headers } }));
-    });
-  });
+      // Drain the body so keep-alive sockets do not stall.
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ success: true, data: { receivedHeaders: headers } }),
+        );
+      });
+    },
+  );
 
   await new Promise<void>((resolve) => {
     server.listen(0, "127.0.0.1", resolve);

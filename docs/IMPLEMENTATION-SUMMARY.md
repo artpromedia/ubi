@@ -17,7 +17,6 @@
 >
 > Tracking: `docs/launch-readiness/current-state.md`
 
-
 ## What Was Built
 
 A complete, production-ready real-time infrastructure for UBI's African mobility super-app:

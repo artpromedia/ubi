@@ -14,10 +14,11 @@ openapi: 3.1.0
 info:
   title: UBI Journeys & Reservations
   version: 0.1.0
-  description: Door-to-door itineraries; rides derive their time from flights. Money is integer minor
+  description:
+    Door-to-door itineraries; rides derive their time from flights. Money is integer minor
     units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key.
 servers:
-- url: https://api.ubi.africa
+  - url: https://api.ubi.africa
 components:
   securitySchemes:
     bearer:
@@ -35,8 +36,8 @@ components:
     Money:
       type: object
       required:
-      - amountMinor
-      - currency
+        - amountMinor
+        - currency
       properties:
         amountMinor:
           type: integer
@@ -55,14 +56,14 @@ components:
     LegInput:
       type: object
       required:
-      - type
+        - type
       properties:
         type:
           type: string
           enum:
-          - ride
-          - flight
-          - stay
+            - ride
+            - flight
+            - stay
         ref:
           type: string
           description: rideId | bookingId | stayBookingId
@@ -72,8 +73,8 @@ components:
         direction:
           type: string
           enum:
-          - outbound
-          - return
+            - outbound
+            - return
     Journey:
       type: object
       properties:
@@ -82,10 +83,10 @@ components:
         status:
           type: string
           enum:
-          - planned
-          - in_progress
-          - completed
-          - cancelled
+            - planned
+            - in_progress
+            - completed
+            - cancelled
         legs:
           type: array
           items:
@@ -103,24 +104,24 @@ components:
               status:
                 type: string
               amount:
-                $ref: '#/components/schemas/Money'
+                $ref: "#/components/schemas/Money"
               retimedBy:
                 type: string
         total:
-          $ref: '#/components/schemas/Money'
+          $ref: "#/components/schemas/Money"
         protection:
           type: string
           enum:
-          - none
-          - one_ticket
-          - journey
+            - none
+            - one_ticket
+            - journey
 security:
-- bearer: []
+  - bearer: []
 paths:
   /v1/journeys:
     post:
       parameters:
-      - $ref: '#/components/parameters/IdemKey'
+        - $ref: "#/components/parameters/IdemKey"
       requestBody:
         content:
           application/json:
@@ -130,70 +131,70 @@ paths:
                 legs:
                   type: array
                   items:
-                    $ref: '#/components/schemas/LegInput'
+                    $ref: "#/components/schemas/LegInput"
       responses:
-        '201':
+        "201":
           description: journey
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Journey'
+                $ref: "#/components/schemas/Journey"
   /v1/journeys/{id}:
     get:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: timeline + totals from ledger
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Journey'
+                $ref: "#/components/schemas/Journey"
   /v1/journeys/{id}/legs:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LegInput'
+              $ref: "#/components/schemas/LegInput"
       responses:
-        '201':
+        "201":
           description: leg added; dependents re-timed
   /v1/journeys/{id}/receipt.pdf:
     get:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: one receipt, all legs, all charges
   /v1/rides/reservations:
     post:
       parameters:
-      - $ref: '#/components/parameters/IdemKey'
+        - $ref: "#/components/parameters/IdemKey"
       requestBody:
         content:
           application/json:
             schema:
               type: object
               required:
-              - pickup
-              - dropoff
-              - vehicleClass
-              - cityId
+                - pickup
+                - dropoff
+                - vehicleClass
+                - cityId
               properties:
                 pickup:
                   type: object
@@ -214,21 +215,21 @@ paths:
                   type: string
                   format: date-time
       responses:
-        '201':
+        "201":
           description: reserved; driver assigned T-12h from pool
   /v1/reservations/{id}/release:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: driver released; re-pooled; free until window from config
   /v1/drivers/me/scheduled:
     get:
       responses:
-        '200':
-          description: 'upcoming reservations: door, time, fare; no PNR or rider phone'
+        "200":
+          description: "upcoming reservations: door, time, fare; no PNR or rider phone"

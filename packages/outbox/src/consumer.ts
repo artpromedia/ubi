@@ -73,7 +73,13 @@ export async function subscribeOutbox(
 
     let firstSight: "OK" | null;
     try {
-      firstSight = await commands.set(`${prefix}${envelope.id}`, "1", "EX", ttl, "NX");
+      firstSight = await commands.set(
+        `${prefix}${envelope.id}`,
+        "1",
+        "EX",
+        ttl,
+        "NX",
+      );
     } catch (err) {
       options.onError?.(err, channel, raw);
       return;
@@ -90,7 +96,11 @@ export async function subscribeOutbox(
     }
   };
 
-  const onPMessage = (_pattern: string, channel: string, message: string): void => {
+  const onPMessage = (
+    _pattern: string,
+    channel: string,
+    message: string,
+  ): void => {
     void handleMessage(channel, message);
   };
 

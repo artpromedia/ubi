@@ -21,7 +21,12 @@ import type { FaceVerification, FaceVerifier } from "./step-up";
 /** The subset of a Redis client the identity module uses. `ioredis` satisfies it. */
 export interface IdentityCache {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, mode: "EX", ttlSeconds: number): Promise<unknown>;
+  set(
+    key: string,
+    value: string,
+    mode: "EX",
+    ttlSeconds: number,
+  ): Promise<unknown>;
   del(...keys: string[]): Promise<number>;
   incr(key: string): Promise<number>;
   expire(key: string, seconds: number): Promise<number>;
@@ -29,7 +34,11 @@ export interface IdentityCache {
 }
 
 export interface Notifier {
-  sendSms(params: { userId?: string; phone: string; message: string }): Promise<void>;
+  sendSms(params: {
+    userId?: string;
+    phone: string;
+    message: string;
+  }): Promise<void>;
 }
 
 export interface IdentityDeps {
@@ -65,7 +74,9 @@ function httpFaceVerifier(): FaceVerifier {
             "content-type": "application/json",
             ...(process.env.IDENTITY_FACE_PROVIDER_KEY === undefined
               ? {}
-              : { authorization: `Bearer ${process.env.IDENTITY_FACE_PROVIDER_KEY}` }),
+              : {
+                  authorization: `Bearer ${process.env.IDENTITY_FACE_PROVIDER_KEY}`,
+                }),
           },
           body: JSON.stringify({
             reference: input.userId,
@@ -90,7 +101,9 @@ function httpFaceVerifier(): FaceVerifier {
         );
       }
 
-      const parsed = FaceProviderResponseSchema.safeParse(await response.json());
+      const parsed = FaceProviderResponseSchema.safeParse(
+        await response.json(),
+      );
       if (!parsed.success) {
         throw new ContractError(
           "service_unavailable",

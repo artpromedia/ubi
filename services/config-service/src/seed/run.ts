@@ -13,8 +13,14 @@ import { SEED_CACHE_SCOPES, seedLagos } from "./lagos";
 async function main(): Promise<void> {
   const result = await seedLagos();
   for (const scopeId of SEED_CACHE_SCOPES) {
-    await configCache.invalidate({ kind: "config", scopeId }, { kind: "config", scopeId });
-    await configCache.invalidate({ kind: "flags", scopeId }, { kind: "flags", scopeId });
+    await configCache.invalidate(
+      { kind: "config", scopeId },
+      { kind: "config", scopeId },
+    );
+    await configCache.invalidate(
+      { kind: "flags", scopeId },
+      { kind: "flags", scopeId },
+    );
   }
   seedLogger.info(result, "seed complete");
 }

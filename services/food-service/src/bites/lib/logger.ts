@@ -10,8 +10,12 @@ import { createChildLogger, type Logger } from "@ubi/logger";
 
 import { logger as baseLogger } from "../../lib/logger.js";
 
-export const logger: Logger = createChildLogger(baseLogger, { module: "bites" });
-export const orderLogger: Logger = createChildLogger(logger, { component: "orders" });
+export const logger: Logger = createChildLogger(baseLogger, {
+  module: "bites",
+});
+export const orderLogger: Logger = createChildLogger(logger, {
+  component: "orders",
+});
 export const merchantLogger: Logger = createChildLogger(logger, {
   component: "merchants",
 });

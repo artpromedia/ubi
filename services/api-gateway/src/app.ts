@@ -37,7 +37,9 @@ import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { healthRoutes } from "./routes/health";
 import { proxyRoutes } from "./routes/proxy";
 
-export function createApp(nodeEnv: string = process.env.NODE_ENV || "development"): Hono {
+export function createApp(
+  nodeEnv: string = process.env.NODE_ENV || "development",
+): Hono {
   const app = new Hono();
 
   // ===========================================

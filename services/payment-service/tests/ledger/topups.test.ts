@@ -50,12 +50,16 @@ describe("wallet top-ups", () => {
     expect(result.balanceAfter).toEqual(money(750_000, s.city.currency));
     expect(s.rail.captures).toHaveLength(1);
 
-    const lines = await db.journalLine.findMany({ where: { entryId: result.entryId! } });
+    const lines = await db.journalLine.findMany({
+      where: { entryId: result.entryId! },
+    });
     expect(lines.map((line) => line.account).sort()).toEqual([
       "psp_settlement",
       "wallet",
     ]);
-    expect(lines.reduce((total, line) => total + Number(line.amountMinor), 0)).toBe(0);
+    expect(
+      lines.reduce((total, line) => total + Number(line.amountMinor), 0),
+    ).toBe(0);
   });
 
   it("replays rather than charging the card twice", async () => {

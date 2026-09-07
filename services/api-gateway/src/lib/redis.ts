@@ -19,7 +19,9 @@ let initialised = false;
  * (or a store that always throws, to prove the read fails closed) without
  * opening a socket.
  */
-export function setIdentityStateStore(store: IdentityStateStore | undefined): void {
+export function setIdentityStateStore(
+  store: IdentityStateStore | undefined,
+): void {
   override = store;
 }
 

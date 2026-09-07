@@ -34,23 +34,29 @@ describe("canonical state machines", () => {
     );
   });
 
-  it.each(MACHINE_NAMES)("%s: every transition target is a declared state", (name) => {
-    const machine = MACHINES[name];
-    for (const [from, targets] of Object.entries(machine.transitions)) {
-      for (const to of targets) {
-        expect(
-          Object.prototype.hasOwnProperty.call(machine.transitions, to),
-          `${name}: ${from} → ${to} targets an undeclared state`,
-        ).toBe(true);
+  it.each(MACHINE_NAMES)(
+    "%s: every transition target is a declared state",
+    (name) => {
+      const machine = MACHINES[name];
+      for (const [from, targets] of Object.entries(machine.transitions)) {
+        for (const to of targets) {
+          expect(
+            Object.prototype.hasOwnProperty.call(machine.transitions, to),
+            `${name}: ${from} → ${to} targets an undeclared state`,
+          ).toBe(true);
+        }
       }
-    }
-  });
+    },
+  );
 
-  it.each(MACHINE_NAMES)("%s: every state is reachable from the initial state", (name) => {
-    const reachable = reachableStates(name);
-    const declared = Object.keys(MACHINES[name].transitions);
-    expect([...declared].filter((s) => !reachable.has(s))).toEqual([]);
-  });
+  it.each(MACHINE_NAMES)(
+    "%s: every state is reachable from the initial state",
+    (name) => {
+      const reachable = reachableStates(name);
+      const declared = Object.keys(MACHINES[name].transitions);
+      expect([...declared].filter((s) => !reachable.has(s))).toEqual([]);
+    },
+  );
 
   it("records states the contract declares only as transition targets", () => {
     // These are terminal leaves in the source contract; the generator keeps them
@@ -93,9 +99,9 @@ describe("rider machine", () => {
 
   it("refuses to skip PIN verification before the trip starts", () => {
     expect(canTransition("rider", "driver_arrived", "in_progress")).toBe(false);
-    expect(() => assertTransition("rider", "driver_arrived", "in_progress")).toThrow(
-      IllegalTransitionError,
-    );
+    expect(() =>
+      assertTransition("rider", "driver_arrived", "in_progress"),
+    ).toThrow(IllegalTransitionError);
   });
 
   it("refuses to jump from matching straight to completed", () => {
@@ -109,12 +115,18 @@ describe("rider machine", () => {
     expect(canTransition("rider", "no_driver", "matching")).toBe(true);
     expect(canTransition("rider", "driver_assigned", "rematching")).toBe(true);
     expect(canTransition("rider", "in_progress", "safety_hold")).toBe(true);
-    expect(canTransition("rider", "payment_pending", "payment_failed")).toBe(true);
+    expect(canTransition("rider", "payment_pending", "payment_failed")).toBe(
+      true,
+    );
   });
 
   it("rejects unknown states rather than guessing", () => {
-    expect(() => assertTransition("rider", "teleporting", "idle")).toThrow(UnknownStateError);
-    expect(() => assertTransition("rider", "idle", "teleporting")).toThrow(UnknownStateError);
+    expect(() => assertTransition("rider", "teleporting", "idle")).toThrow(
+      UnknownStateError,
+    );
+    expect(() => assertTransition("rider", "idle", "teleporting")).toThrow(
+      UnknownStateError,
+    );
     expect(canTransition("rider", "idle", "teleporting")).toBe(false);
   });
 });
@@ -128,13 +140,17 @@ describe("driver machine", () => {
 
   it("returns to available after a completed trip", () => {
     expect(canTransition("driver", "in_trip", "collecting_payment")).toBe(true);
-    expect(canTransition("driver", "collecting_payment", "completed")).toBe(true);
+    expect(canTransition("driver", "collecting_payment", "completed")).toBe(
+      true,
+    );
     expect(canTransition("driver", "completed", "available")).toBe(true);
   });
 
   it("cannot accept an expired offer", () => {
     expect(canTransition("driver", "offer_expired", "accepted")).toBe(false);
-    expect(allowedTransitions("driver", "offer_expired")).toEqual(["available"]);
+    expect(allowedTransitions("driver", "offer_expired")).toEqual([
+      "available",
+    ]);
   });
 });
 
@@ -142,9 +158,15 @@ describe("wallet transfer machine", () => {
   it("never allows a posted transfer to be pulled back unilaterally", () => {
     // CLAUDE.md #7: reversal requires recipient consent or a dispute.
     expect(canTransition("walletTransfer", "posted", "reversed")).toBe(false);
-    expect(canTransition("walletTransfer", "posted", "return_requested")).toBe(true);
-    expect(canTransition("walletTransfer", "return_requested", "reversed")).toBe(true);
-    expect(canTransition("walletTransfer", "declined_by_recipient", "disputed")).toBe(true);
+    expect(canTransition("walletTransfer", "posted", "return_requested")).toBe(
+      true,
+    );
+    expect(
+      canTransition("walletTransfer", "return_requested", "reversed"),
+    ).toBe(true);
+    expect(
+      canTransition("walletTransfer", "declined_by_recipient", "disputed"),
+    ).toBe(true);
     expect(canTransition("walletTransfer", "disputed", "reversed")).toBe(true);
   });
 });

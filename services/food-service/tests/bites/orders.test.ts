@@ -51,7 +51,10 @@ interface Fixture {
   readonly payments: FakePayments;
 }
 
-async function stockedCart(payments: FakePayments, priceMinor = 250_000): Promise<Fixture> {
+async function stockedCart(
+  payments: FakePayments,
+  priceMinor = 250_000,
+): Promise<Fixture> {
   const { cityId, currency } = await seedCity(db);
   const { merchantId, outletId } = await seedMerchant(db);
   const item = await seedMenuItem(db, outletId, { priceMinor, currency });
@@ -66,7 +69,16 @@ async function stockedCart(payments: FakePayments, priceMinor = 250_000): Promis
     optionIds: [],
     correlationId: null,
   });
-  return { cityId, currency, merchantId, outletId, itemId: item.itemId, rider, cartId, payments };
+  return {
+    cityId,
+    currency,
+    merchantId,
+    outletId,
+    itemId: item.itemId,
+    rider,
+    cartId,
+    payments,
+  };
 }
 
 describe("placement", () => {
@@ -100,7 +112,9 @@ describe("placement", () => {
     expect(payments.authorizations[0]?.amount.amountMinor).toBe(650_000);
     expect(payments.captures).toHaveLength(0);
 
-    const row = await db.bitesOrder.findUnique({ where: { id: order.orderId } });
+    const row = await db.bitesOrder.findUnique({
+      where: { id: order.orderId },
+    });
     expect(row?.authCaptured).toBe(false);
     expect(row?.paymentIntentId).toBeTruthy();
     expect(await journalLinesForOrder(db, order.orderId)).toBe(0);
@@ -183,7 +197,9 @@ describe("reject releases the pre-auth", () => {
     expect(await journalLinesForOrder(db, order.orderId)).toBe(0);
 
     // Side effect: the rejected item is sold out, and the events are emitted.
-    const item = await db.bitesMenuItem.findUnique({ where: { id: fx.itemId } });
+    const item = await db.bitesMenuItem.findUnique({
+      where: { id: fx.itemId },
+    });
     expect(item?.soldOutUntil).not.toBeNull();
     const events = await db.outboxEvent.findMany({
       where: { aggregateId: order.orderId },
@@ -213,7 +229,12 @@ describe("courier happy path", () => {
     });
     const orderId = order.orderId;
 
-    await acceptOrder(deps, { actor: merchant, cityId: fx.cityId, orderId, correlationId: null });
+    await acceptOrder(deps, {
+      actor: merchant,
+      cityId: fx.cityId,
+      orderId,
+      correlationId: null,
+    });
     await advanceOrder(deps, {
       actor: merchant,
       cityId: fx.cityId,
@@ -264,7 +285,9 @@ describe("courier happy path", () => {
     expect(delivered.authCaptured).toBe(true);
     expect(payments.captures).toHaveLength(1);
 
-    const events = await db.outboxEvent.findMany({ where: { aggregateId: orderId } });
+    const events = await db.outboxEvent.findMany({
+      where: { aggregateId: orderId },
+    });
     const names = events.map((e) => e.name);
     expect(names).toContain("order.placed");
     expect(names).toContain("merchant.accepted");

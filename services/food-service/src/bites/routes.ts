@@ -26,10 +26,7 @@ import {
   parseBody,
   parseLimit,
 } from "./middleware.js";
-import {
-  addItem,
-  getCart,
-} from "./services/carts.js";
+import { addItem, getCart } from "./services/carts.js";
 import { feed, search } from "./services/discovery.js";
 import { getConsoleMenu, getPublicMenu } from "./services/menu.js";
 import {
@@ -199,7 +196,10 @@ export function createMerchantRoutes(deps: BitesDeps): Hono {
 
   routes.get("/:id/menu", async (c) => {
     try {
-      return c.json(await getPublicMenu(deps, cityOf(c), c.req.param("id")), 200);
+      return c.json(
+        await getPublicMenu(deps, cityOf(c), c.req.param("id")),
+        200,
+      );
     } catch (error) {
       return failure(c, error);
     }
@@ -207,7 +207,10 @@ export function createMerchantRoutes(deps: BitesDeps): Hono {
 
   routes.get("/:id/console/menu", async (c) => {
     try {
-      return c.json(await getConsoleMenu(deps, actorOf(c), c.req.param("id")), 200);
+      return c.json(
+        await getConsoleMenu(deps, actorOf(c), c.req.param("id")),
+        200,
+      );
     } catch (error) {
       return failure(c, error);
     }
@@ -316,10 +319,15 @@ export function createMerchantRoutes(deps: BitesDeps): Hono {
   routes.get("/:id/orders", async (c) => {
     try {
       const status = c.req.query("status");
-      const result = await listMerchantOrders(deps, actorOf(c), c.req.param("id"), {
-        ...(status === undefined ? {} : { status }),
-        limit: parseLimit(c.req.query("limit"), 50, 200),
-      });
+      const result = await listMerchantOrders(
+        deps,
+        actorOf(c),
+        c.req.param("id"),
+        {
+          ...(status === undefined ? {} : { status }),
+          limit: parseLimit(c.req.query("limit"), 50, 200),
+        },
+      );
       return c.json({ orders: result }, 200);
     } catch (error) {
       return failure(c, error);
@@ -407,19 +415,29 @@ const DeliverBody = z
     deliveryCode: z.string().min(1).max(12).optional(),
     photoRef: z.string().min(1).max(400).optional(),
   })
-  .refine((body) => body.deliveryCode !== undefined || body.photoRef !== undefined, {
-    message: "provide the delivery code or a drop photo",
-  });
+  .refine(
+    (body) => body.deliveryCode !== undefined || body.photoRef !== undefined,
+    {
+      message: "provide the delivery code or a drop photo",
+    },
+  );
 
 const IssueBody = z.object({
   items: z
-    .array(z.object({ itemId: z.string().min(1), quantity: z.number().int().positive() }))
+    .array(
+      z.object({
+        itemId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
     .min(1),
   type: z.enum(ISSUE_TYPES),
   photoRef: z.string().min(1).max(400).optional(),
 });
 
-const RespondBody = z.object({ decision: z.enum(["accept", "redeliver", "dispute"]) });
+const RespondBody = z.object({
+  decision: z.enum(["accept", "redeliver", "dispute"]),
+});
 
 export function createOrderRoutes(deps: BitesDeps): Hono {
   const routes = new Hono();

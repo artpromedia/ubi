@@ -14,7 +14,6 @@ import type { Money } from "@ubi/contracts";
 // `PrismaClient` degrades to `any` there and every query in this service loses
 // its types. This is a type-only import, erased at build time.
 
-
 /** A Prisma client scoped to an open transaction — no lifecycle methods. */
 export type LedgerTx = Omit<
   PrismaClient,

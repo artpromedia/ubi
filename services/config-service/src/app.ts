@@ -18,12 +18,16 @@ export function buildApp(): OpenAPIHono {
     // never as a framework-shaped error.
     defaultHook: (result) => {
       if (!result.success) {
-        throw new ContractError("validation_failed", "request failed validation", {
-          issues: result.error.issues.map((issue) => ({
-            path: issue.path.join("."),
-            message: issue.message,
-          })),
-        });
+        throw new ContractError(
+          "validation_failed",
+          "request failed validation",
+          {
+            issues: result.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+            })),
+          },
+        );
       }
     },
   });

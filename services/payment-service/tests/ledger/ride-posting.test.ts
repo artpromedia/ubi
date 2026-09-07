@@ -74,8 +74,12 @@ describe("posting a completed ride", () => {
     expect(commissionLines).toHaveLength(1);
     expect(commissionLines[0]?.amountMinor).toBe(20_000);
 
-    expect(entry.lines.reduce((total, line) => total + line.amountMinor, 0)).toBe(0);
-    expect(entry.lines.every((line) => line.counterpartRef !== null)).toBe(true);
+    expect(
+      entry.lines.reduce((total, line) => total + line.amountMinor, 0),
+    ).toBe(0);
+    expect(entry.lines.every((line) => line.counterpartRef !== null)).toBe(
+      true,
+    );
   });
 
   it("loses no minor unit to rounding, whatever the fare", async () => {
@@ -117,7 +121,9 @@ describe("posting a completed ride", () => {
       }),
     );
 
-    expect(entry.lines.reduce((total, line) => total + line.amountMinor, 0)).toBe(0);
+    expect(
+      entry.lines.reduce((total, line) => total + line.amountMinor, 0),
+    ).toBe(0);
     const riderMoved = 1_000_000 - 100_003;
     expect(await balanceOf(db, s.rider.id, s.city.currency)).toEqual(
       money(riderMoved, s.city.currency),
@@ -159,7 +165,10 @@ describe("posting a completed ride", () => {
 
     const cashRail = await db.journalLine.aggregate({
       _sum: { amountMinor: true },
-      where: { account: "cash_owed", counterpartRef: { startsWith: entry.reference } },
+      where: {
+        account: "cash_owed",
+        counterpartRef: { startsWith: entry.reference },
+      },
     });
     expect(Number(cashRail._sum.amountMinor)).toBe(-20_000);
 
@@ -180,14 +189,20 @@ describe("posting a completed ride", () => {
     );
     const railAfter = await db.journalLine.aggregate({
       _sum: { amountMinor: true },
-      where: { account: "cash_owed", counterpartRef: { startsWith: entry.reference } },
+      where: {
+        account: "cash_owed",
+        counterpartRef: { startsWith: entry.reference },
+      },
     });
     expect(Number(railAfter._sum.amountMinor)).toBe(-20_000);
     const settlementLines = await db.journalLine.findMany({
       where: { entryId: settlement.id },
     });
     expect(
-      settlementLines.reduce((total, line) => total + Number(line.amountMinor), 0),
+      settlementLines.reduce(
+        (total, line) => total + Number(line.amountMinor),
+        0,
+      ),
     ).toBe(0);
   });
 

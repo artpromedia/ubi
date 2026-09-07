@@ -53,7 +53,9 @@ export async function limitStatus(
     remainingToday: money(remainingMinor, wallet.currency),
     singleTransfer: money(tier.singleTransferMinor, wallet.currency),
     balanceCap:
-      tier.balanceCapMinor === null ? null : money(tier.balanceCapMinor, wallet.currency),
+      tier.balanceCapMinor === null
+        ? null
+        : money(tier.balanceCapMinor, wallet.currency),
   };
 }
 
@@ -94,7 +96,10 @@ export async function assertWithinBalanceCap(
     return;
   }
   const balance = await balanceOf(tx, wallet.id, wallet.currency);
-  if (balance.amountMinor + incoming.amountMinor > status.balanceCap.amountMinor) {
+  if (
+    balance.amountMinor + incoming.amountMinor >
+    status.balanceCap.amountMinor
+  ) {
     throw new ContractError(
       "limit_exceeded",
       "that would take the wallet past the balance this tier may hold",
@@ -114,10 +119,14 @@ export async function assertSufficientFunds(
 ): Promise<Money> {
   const balance = await balanceOf(tx, wallet.id, wallet.currency);
   if (balance.amountMinor < amount.amountMinor) {
-    throw new ContractError("insufficient_funds", "not enough money in the wallet", {
-      balanceMinor: balance.amountMinor,
-      requiredMinor: amount.amountMinor,
-    });
+    throw new ContractError(
+      "insufficient_funds",
+      "not enough money in the wallet",
+      {
+        balanceMinor: balance.amountMinor,
+        requiredMinor: amount.amountMinor,
+      },
+    );
   }
   return balance;
 }

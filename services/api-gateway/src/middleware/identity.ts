@@ -59,7 +59,11 @@ import { authLogger } from "../lib/logger.js";
 import { getIdentityStateStore } from "../lib/redis";
 import { type IdentityContext, signIdentityContext } from "../identity/context";
 import { readRiskState } from "../identity/state";
-import { authorizeRequest, effectiveScopes, type IdentityMode } from "../identity/scopes";
+import {
+  authorizeRequest,
+  effectiveScopes,
+  type IdentityMode,
+} from "../identity/scopes";
 
 export const IDENTITY_HEADER = "x-ubi-identity";
 export const REQUEST_ID_HEADER = "x-request-id";
@@ -83,7 +87,12 @@ export const RESERVED_IDENTITY_HEADERS: readonly string[] = [
 ];
 
 /** Whole families the gateway owns, so a new claim header cannot be forged. */
-const RESERVED_PREFIXES: readonly string[] = ["x-auth-", "x-ubi-", "x-user-", "x-internal-"];
+const RESERVED_PREFIXES: readonly string[] = [
+  "x-auth-",
+  "x-ubi-",
+  "x-user-",
+  "x-internal-",
+];
 
 export function isReservedIdentityHeader(name: string): boolean {
   const lower = name.toLowerCase();
@@ -104,26 +113,28 @@ export function isReservedIdentityHeader(name: string): boolean {
  * Must be mounted before authentication, and before anything that reads a
  * header.
  */
-export const stripInboundIdentityHeaders = createMiddleware(async (c: Context, next: Next) => {
-  const headers = c.req.raw.headers;
-  const forged: string[] = [];
+export const stripInboundIdentityHeaders = createMiddleware(
+  async (c: Context, next: Next) => {
+    const headers = c.req.raw.headers;
+    const forged: string[] = [];
 
-  for (const name of [...headers.keys()]) {
-    if (!isReservedIdentityHeader(name)) continue;
-    forged.push(name);
-    headers.delete(name);
-  }
+    for (const name of [...headers.keys()]) {
+      if (!isReservedIdentityHeader(name)) continue;
+      forged.push(name);
+      headers.delete(name);
+    }
 
-  if (forged.length > 0) {
-    // Header NAMES only — the values are attacker-controlled and may carry PII.
-    authLogger.warn(
-      { path: c.req.path, method: c.req.method, strippedHeaders: forged },
-      "Stripped reserved identity headers from an inbound client request",
-    );
-  }
+    if (forged.length > 0) {
+      // Header NAMES only — the values are attacker-controlled and may carry PII.
+      authLogger.warn(
+        { path: c.req.path, method: c.req.method, strippedHeaders: forged },
+        "Stripped reserved identity headers from an inbound client request",
+      );
+    }
 
-  return next();
-});
+    return next();
+  },
+);
 
 /**
  * A client may propose a request id for correlation, but only a short, boring
@@ -138,7 +149,10 @@ export function safeRequestId(proposed: string | undefined): string {
     : crypto.randomUUID();
 }
 
-function modesFor(auth: AuthContext, safeMode: boolean): readonly IdentityMode[] {
+function modesFor(
+  auth: AuthContext,
+  safeMode: boolean,
+): readonly IdentityMode[] {
   const modes: IdentityMode[] = [];
   if (auth.mode === "limited") modes.push("limited");
   if (safeMode) modes.push("wallet_safe");
@@ -151,108 +165,117 @@ function modesFor(auth: AuthContext, safeMode: boolean): readonly IdentityMode[]
  * Runs after authentication. Everything it writes is derived from the validated
  * token plus server-side risk state; nothing is copied from the client.
  */
-export const identityContextMiddleware = createMiddleware(async (c: Context, next: Next) => {
-  const auth = c.get("auth") as AuthContext | undefined;
-  if (auth === undefined) {
-    // Public route: no identity to mint. The strip middleware already removed
-    // anything the client tried to supply.
+export const identityContextMiddleware = createMiddleware(
+  async (c: Context, next: Next) => {
+    const auth = c.get("auth") as AuthContext | undefined;
+    if (auth === undefined) {
+      // Public route: no identity to mint. The strip middleware already removed
+      // anything the client tried to supply.
+      return next();
+    }
+
+    const requestId = safeRequestId(c.req.header(REQUEST_ID_HEADER));
+    const risk = await readRiskState(getIdentityStateStore(), auth.userId);
+    const modes = modesFor(auth, risk.safeMode);
+
+    const scopes = effectiveScopes({
+      role: auth.role,
+      tokenScopes: auth.scopes,
+      modes,
+    });
+
+    const context: IdentityContext = {
+      userId: auth.userId,
+      role: auth.role,
+      scopes,
+      modes,
+      cityId: auth.cityId,
+      tenantId: auth.tenantId,
+      sessionId: auth.sessionId,
+      deviceId: auth.deviceId,
+      requestId,
+    };
+
+    let signed: string;
+    try {
+      signed = await signIdentityContext(context);
+    } catch (error) {
+      authLogger.error(
+        { err: error, path: c.req.path },
+        "Could not sign the internal identity context",
+      );
+      const failure = new ContractError(
+        "service_unavailable",
+        "Identity could not be established. Please try again.",
+      );
+      return c.json({ success: false, error: failure.toBody() }, 503);
+    }
+
+    c.set("identity", context);
+    c.set("identityToken", signed);
+    c.set("riskDegraded", risk.degraded);
+
+    // Install the authoritative values on the request itself, so any consumer —
+    // including a proxy that forwards headers wholesale — sees only these.
+    const headers = c.req.raw.headers;
+    headers.set(IDENTITY_HEADER, signed);
+    headers.set("x-auth-user-id", context.userId);
+    headers.set("x-auth-user-role", context.role);
+    headers.set("x-user-id", context.userId);
+    headers.set("x-user-role", context.role);
+    headers.set(REQUEST_ID_HEADER, requestId);
+    headers.set("x-ubi-scopes", context.scopes.join(" "));
+    headers.set("x-ubi-modes", context.modes.join(" "));
+    if (context.sessionId !== null)
+      headers.set("x-session-id", context.sessionId);
+    if (context.cityId !== null) headers.set("x-ubi-city-id", context.cityId);
+    if (context.tenantId !== null)
+      headers.set("x-ubi-tenant-id", context.tenantId);
+
+    c.header(REQUEST_ID_HEADER, requestId);
+
     return next();
-  }
-
-  const requestId = safeRequestId(c.req.header(REQUEST_ID_HEADER));
-  const risk = await readRiskState(getIdentityStateStore(), auth.userId);
-  const modes = modesFor(auth, risk.safeMode);
-
-  const scopes = effectiveScopes({
-    role: auth.role,
-    tokenScopes: auth.scopes,
-    modes,
-  });
-
-  const context: IdentityContext = {
-    userId: auth.userId,
-    role: auth.role,
-    scopes,
-    modes,
-    cityId: auth.cityId,
-    tenantId: auth.tenantId,
-    sessionId: auth.sessionId,
-    deviceId: auth.deviceId,
-    requestId,
-  };
-
-  let signed: string;
-  try {
-    signed = await signIdentityContext(context);
-  } catch (error) {
-    authLogger.error(
-      { err: error, path: c.req.path },
-      "Could not sign the internal identity context",
-    );
-    const failure = new ContractError(
-      "service_unavailable",
-      "Identity could not be established. Please try again.",
-    );
-    return c.json({ success: false, error: failure.toBody() }, 503);
-  }
-
-  c.set("identity", context);
-  c.set("identityToken", signed);
-  c.set("riskDegraded", risk.degraded);
-
-  // Install the authoritative values on the request itself, so any consumer —
-  // including a proxy that forwards headers wholesale — sees only these.
-  const headers = c.req.raw.headers;
-  headers.set(IDENTITY_HEADER, signed);
-  headers.set("x-auth-user-id", context.userId);
-  headers.set("x-auth-user-role", context.role);
-  headers.set("x-user-id", context.userId);
-  headers.set("x-user-role", context.role);
-  headers.set(REQUEST_ID_HEADER, requestId);
-  headers.set("x-ubi-scopes", context.scopes.join(" "));
-  headers.set("x-ubi-modes", context.modes.join(" "));
-  if (context.sessionId !== null) headers.set("x-session-id", context.sessionId);
-  if (context.cityId !== null) headers.set("x-ubi-city-id", context.cityId);
-  if (context.tenantId !== null) headers.set("x-ubi-tenant-id", context.tenantId);
-
-  c.header(REQUEST_ID_HEADER, requestId);
-
-  return next();
-});
+  },
+);
 
 /**
  * Enforces the scope matrix. Deny-by-default inside a restricted mode: see
  * `identity/scopes.ts` for what limited mode and wallet safe mode take away.
  */
-export const scopeEnforcementMiddleware = createMiddleware(async (c: Context, next: Next) => {
-  const identity = c.get("identity") as IdentityContext | undefined;
-  if (identity === undefined) return next();
+export const scopeEnforcementMiddleware = createMiddleware(
+  async (c: Context, next: Next) => {
+    const identity = c.get("identity") as IdentityContext | undefined;
+    if (identity === undefined) return next();
 
-  try {
-    authorizeRequest({
-      path: c.req.path,
-      method: c.req.method,
-      role: identity.role,
-      modes: identity.modes,
-      scopes: identity.scopes,
-    });
-  } catch (error) {
-    if (error instanceof ContractError) {
-      const degraded = c.get("riskDegraded") === true;
-      authLogger.warn(
-        {
-          path: c.req.path,
-          method: c.req.method,
-          code: error.code,
-          modes: identity.modes,
-          riskStateDegraded: degraded,
-        },
-        "Request denied by the gateway scope matrix",
-      );
-      return c.json({ success: false, error: error.toBody() }, error.status as 403);
+    try {
+      authorizeRequest({
+        path: c.req.path,
+        method: c.req.method,
+        role: identity.role,
+        modes: identity.modes,
+        scopes: identity.scopes,
+      });
+    } catch (error) {
+      if (error instanceof ContractError) {
+        const degraded = c.get("riskDegraded") === true;
+        authLogger.warn(
+          {
+            path: c.req.path,
+            method: c.req.method,
+            code: error.code,
+            modes: identity.modes,
+            riskStateDegraded: degraded,
+          },
+          "Request denied by the gateway scope matrix",
+        );
+        return c.json(
+          { success: false, error: error.toBody() },
+          error.status as 403,
+        );
+      }
+      throw error;
     }
-    throw error;
-  }
 
-  return next();
-});
+    return next();
+  },
+);

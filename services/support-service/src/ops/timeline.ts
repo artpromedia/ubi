@@ -63,7 +63,11 @@ const CONTACT_KEYS = new Set([
 const LOCATION_KEYS = new Set(["lat", "latitude", "lng", "longitude"]);
 
 function redactValue(role: string, key: string, value: JsonValue): JsonValue {
-  if (typeof value === "string" && CONTACT_KEYS.has(key) && !can(role, "pii.contact")) {
+  if (
+    typeof value === "string" &&
+    CONTACT_KEYS.has(key) &&
+    !can(role, "pii.contact")
+  ) {
     if (key === "email") {
       return maskEmail(value);
     }
@@ -72,7 +76,11 @@ function redactValue(role: string, key: string, value: JsonValue): JsonValue {
     }
     return "[withheld]";
   }
-  if (typeof value === "number" && LOCATION_KEYS.has(key) && !can(role, "pii.location")) {
+  if (
+    typeof value === "number" &&
+    LOCATION_KEYS.has(key) &&
+    !can(role, "pii.location")
+  ) {
     const coarse = locationForRole(role, { lat: value, lng: value });
     return coarse === null ? value : coarse.lat;
   }

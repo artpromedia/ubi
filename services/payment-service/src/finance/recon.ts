@@ -78,7 +78,11 @@ interface RunContext {
   readonly slaHours: number;
 }
 
-async function runContext(deps: WalletDeps, cityId: string, date: string): Promise<RunContext> {
+async function runContext(
+  deps: WalletDeps,
+  cityId: string,
+  date: string,
+): Promise<RunContext> {
   assertIsoDate(date);
   const config = await deps.config.loadForWallet(cityId);
   return {
@@ -126,9 +130,13 @@ async function requireOpenRun(
     );
   }
   if (run.status === "closed") {
-    throw new ContractError("conflict", "that reconciliation day is already closed", {
-      date,
-    });
+    throw new ContractError(
+      "conflict",
+      "that reconciliation day is already closed",
+      {
+        date,
+      },
+    );
   }
 }
 
@@ -282,7 +290,8 @@ export async function runRecon(
         continue;
       }
 
-      const externalMinor = existing === null ? 0 : fromDbMinor(existing.externalMinor);
+      const externalMinor =
+        existing === null ? 0 : fromDbMinor(existing.externalMinor);
       const diffMinor = ledgerMinor - externalMinor;
       const railId = existing?.id ?? generateId("rrl");
 
@@ -367,9 +376,14 @@ interface SyncBreakInput {
 }
 
 async function syncBreak(tx: LedgerTx, input: SyncBreakInput): Promise<void> {
-  const breaks = await tx.reconBreak.findMany({ where: { railId: input.railId } });
+  const breaks = await tx.reconBreak.findMany({
+    where: { railId: input.railId },
+  });
   const explained = breaks
-    .filter((entry) => entry.resolvedAt !== null && isExplanation(entry.resolutionRef))
+    .filter(
+      (entry) =>
+        entry.resolvedAt !== null && isExplanation(entry.resolutionRef),
+    )
     .reduce((total, entry) => total + fromDbMinor(entry.amountMinor), 0);
   const outstanding = input.diffMinor - explained;
   const open = breaks.find((entry) => entry.resolvedAt === null);
@@ -446,7 +460,8 @@ async function unexplainedTotal(tx: LedgerTx, date: string): Promise<number> {
     (total, rail) =>
       total +
       rail.breaks.reduce(
-        (railTotal, entry) => railTotal + Math.abs(fromDbMinor(entry.amountMinor)),
+        (railTotal, entry) =>
+          railTotal + Math.abs(fromDbMinor(entry.amountMinor)),
         0,
       ),
     0,
@@ -473,7 +488,8 @@ export async function getRecon(
       external: money(fromDbMinor(row.externalMinor), row.currency),
       diff: money(fromDbMinor(row.diffMinor), row.currency),
       status: row.status,
-      externalReported: row.externalMinor !== BigInt(0) || row.status === "balanced",
+      externalReported:
+        row.externalMinor !== BigInt(0) || row.status === "balanced",
       breaks: row.breaks.map((entry) => ({
         id: entry.id,
         amount: money(fromDbMinor(entry.amountMinor), entry.currency),
@@ -517,11 +533,14 @@ export async function assignBreak(
   const now = deps.now();
 
   return deps.db.$transaction(async (tx) => {
-    const entry = await tx.reconBreak.findUnique({ where: { id: input.breakId } });
+    const entry = await tx.reconBreak.findUnique({
+      where: { id: input.breakId },
+    });
     if (entry === null) {
       throw new ContractError("not_found", "no such reconciliation break");
     }
-    const deadline = input.deadline === undefined ? entry.deadline : new Date(input.deadline);
+    const deadline =
+      input.deadline === undefined ? entry.deadline : new Date(input.deadline);
     await tx.reconBreak.update({
       where: { id: entry.id },
       data: { owner: input.owner, deadline },
@@ -596,7 +615,9 @@ export async function resolveBreak(
 
   return deps.db.$transaction(async (tx) => {
     await requireOpenRun(tx, input.date, context.currency);
-    const entry = await tx.reconBreak.findUnique({ where: { id: input.breakId } });
+    const entry = await tx.reconBreak.findUnique({
+      where: { id: input.breakId },
+    });
     if (entry === null) {
       throw new ContractError("not_found", "no such reconciliation break");
     }
@@ -669,12 +690,21 @@ export async function closeRecon(
   input: CloseReconInput,
 ): Promise<ReconReport> {
   const now = deps.now();
-  await runRecon(deps, { actor: input.actor, cityId: input.cityId, date: input.date });
+  await runRecon(deps, {
+    actor: input.actor,
+    cityId: input.cityId,
+    date: input.date,
+  });
 
   await deps.db.$transaction(async (tx) => {
-    const run = await tx.reconRun.findUnique({ where: { date: asDate(input.date) } });
+    const run = await tx.reconRun.findUnique({
+      where: { date: asDate(input.date) },
+    });
     if (run === null) {
-      throw new ContractError("not_found", "there is no reconciliation for that date");
+      throw new ContractError(
+        "not_found",
+        "there is no reconciliation for that date",
+      );
     }
     if (run.status === "closed") {
       throw new ContractError("conflict", "that day is already closed", {
@@ -687,7 +717,11 @@ export async function closeRecon(
       throw new ContractError(
         "recon_unexplained",
         "the day cannot be closed while a break is neither adjusted nor explained",
-        { date: input.date, unexplainedMinor: unexplained, currency: run.currency },
+        {
+          date: input.date,
+          unexplainedMinor: unexplained,
+          currency: run.currency,
+        },
       );
     }
 

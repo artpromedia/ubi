@@ -40,7 +40,9 @@ export type EnvelopeParse =
   | { readonly ok: false; readonly error: string };
 
 function toIso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+  return value instanceof Date
+    ? value.toISOString()
+    : new Date(value).toISOString();
 }
 
 /**
@@ -48,7 +50,9 @@ function toIso(value: Date | string): string {
  * the offending values (CLAUDE.md #6/#12 — no PII in logs or the quarantine
  * record). At most a handful of issues are reported.
  */
-function summarizeIssues(error: { readonly issues: ReadonlyArray<{ path: PropertyKey[]; code: string }> }): string {
+function summarizeIssues(error: {
+  readonly issues: ReadonlyArray<{ path: PropertyKey[]; code: string }>;
+}): string {
   const parts = error.issues.slice(0, 5).map((issue) => {
     const path = issue.path.length === 0 ? "<root>" : issue.path.join(".");
     return `${path}:${issue.code}`;

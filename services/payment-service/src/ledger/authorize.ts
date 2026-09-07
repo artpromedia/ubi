@@ -77,9 +77,13 @@ export async function verifyWalletPin(
   });
 
   if (verdict.locked) {
-    throw new ContractError("pin_attempts_exhausted", "too many wrong PIN attempts", {
-      until: lockedUntil?.toISOString() ?? null,
-    });
+    throw new ContractError(
+      "pin_attempts_exhausted",
+      "too many wrong PIN attempts",
+      {
+        until: lockedUntil?.toISOString() ?? null,
+      },
+    );
   }
   throw new ContractError("wrong_pin", "that PIN is not right", {
     attemptsLeft: Math.max(0, config.city.maxPinAttempts - verdict.attempts),

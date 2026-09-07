@@ -37,8 +37,10 @@ export interface InvalidationMessage {
   readonly at: string;
 }
 
-const entryKey = (scope: CacheScope): string => `ubi:${scope.kind}:${scope.scopeId}:entry`;
-const generationKey = (scope: CacheScope): string => `ubi:${scope.kind}:${scope.scopeId}:gen`;
+const entryKey = (scope: CacheScope): string =>
+  `ubi:${scope.kind}:${scope.scopeId}:entry`;
+const generationKey = (scope: CacheScope): string =>
+  `ubi:${scope.kind}:${scope.scopeId}:gen`;
 
 /**
  * SET the entry only if the generation is still the one the caller observed
@@ -72,7 +74,10 @@ export class ConfigCache {
   ): Promise<T> {
     let observedGeneration: string | undefined;
     try {
-      const [cached, generation] = await this.client.mget(entryKey(scope), generationKey(scope));
+      const [cached, generation] = await this.client.mget(
+        entryKey(scope),
+        generationKey(scope),
+      );
       observedGeneration = generation ?? "0";
       if (cached !== null && cached !== undefined) {
         const revived = revive(JSON.parse(cached) as unknown);
@@ -80,7 +85,10 @@ export class ConfigCache {
         cacheLogger.warn({ scope }, "discarding unreadable cache entry");
       }
     } catch (err) {
-      cacheLogger.error({ err, scope }, "cache read failed; falling back to postgres");
+      cacheLogger.error(
+        { err, scope },
+        "cache read failed; falling back to postgres",
+      );
       observedGeneration = undefined;
     }
 
@@ -98,7 +106,10 @@ export class ConfigCache {
           String(this.ttlSec),
         );
         if (filled === 0) {
-          cacheLogger.info({ scope }, "cache fill dropped: invalidated while loading");
+          cacheLogger.info(
+            { scope },
+            "cache fill dropped: invalidated while loading",
+          );
         }
       } catch (err) {
         cacheLogger.error({ err, scope }, "cache fill failed");
@@ -113,8 +124,14 @@ export class ConfigCache {
    * after the activating transaction commits — one retry, because a lost
    * invalidation would leave stale config visible for the whole TTL.
    */
-  async invalidate(scope: CacheScope, message: Omit<InvalidationMessage, "at">): Promise<void> {
-    const payload: InvalidationMessage = { ...message, at: new Date().toISOString() };
+  async invalidate(
+    scope: CacheScope,
+    message: Omit<InvalidationMessage, "at">,
+  ): Promise<void> {
+    const payload: InvalidationMessage = {
+      ...message,
+      at: new Date().toISOString(),
+    };
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         await this.client
@@ -128,7 +145,10 @@ export class ConfigCache {
         cacheLogger.error({ err, scope, attempt }, "cache invalidation failed");
       }
     }
-    cacheLogger.fatal({ scope }, "cache invalidation gave up; readers may serve stale config");
+    cacheLogger.fatal(
+      { scope },
+      "cache invalidation gave up; readers may serve stale config",
+    );
   }
 }
 

@@ -39,7 +39,11 @@ async function tryPin(userId: string, pin: string) {
   return harness.app.fetch(
     new Request("http://user-service.test/auth/pin/verify", {
       method: "POST",
-      headers: await authedHeaders({ userId, role: "rider", scopes: FULL_SCOPES }),
+      headers: await authedHeaders({
+        userId,
+        role: "rider",
+        scopes: FULL_SCOPES,
+      }),
       body: JSON.stringify({ pin }),
     }),
   );
@@ -60,15 +64,21 @@ describe("PIN lockout", () => {
       expect(body.error.code).toBe("wrong_pin");
       expect(body.error.details.attemptsRemaining).toBe(limit - attempt);
 
-      const wallet = await prisma.wallet.findFirstOrThrow({ where: { ownerId: user.id } });
+      const wallet = await prisma.wallet.findFirstOrThrow({
+        where: { ownerId: user.id },
+      });
       expect(wallet.pinLockedUntil).toBeNull();
     }
 
     const locking = await tryPin(user.id, "0000");
     expect(locking.status).toBe(403);
-    expect(((await locking.json()) as { error: { code: string } }).error.code).toBe("pin_locked");
+    expect(
+      ((await locking.json()) as { error: { code: string } }).error.code,
+    ).toBe("pin_locked");
 
-    const wallet = await prisma.wallet.findFirstOrThrow({ where: { ownerId: user.id } });
+    const wallet = await prisma.wallet.findFirstOrThrow({
+      where: { ownerId: user.id },
+    });
     expect(wallet.pinFailedAttempts).toBe(limit);
     expect(wallet.pinLockedUntil).not.toBeNull();
   });
@@ -80,7 +90,9 @@ describe("PIN lockout", () => {
     }
     const response = await tryPin(user.id, "4321");
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe("pin_locked");
+    expect(
+      ((await response.json()) as { error: { code: string } }).error.code,
+    ).toBe("pin_locked");
   });
 
   it("emits pin.locked exactly once through the outbox", async () => {
@@ -92,7 +104,10 @@ describe("PIN lockout", () => {
       where: { aggregateId: user.id, name: "pin.locked" },
     });
     expect(events).toHaveLength(1);
-    expect(events[0]?.payload).toMatchObject({ userId: user.id, capMinor: null });
+    expect(events[0]?.payload).toMatchObject({
+      userId: user.id,
+      capMinor: null,
+    });
 
     const audit = await prisma.auditLog.findMany({
       where: { subjectId: user.id, action: "pin.locked" },
@@ -108,13 +123,18 @@ describe("PIN lockout", () => {
     const response = await tryPin(user.id, "4321");
     expect(response.status).toBe(200);
 
-    const wallet = await prisma.wallet.findFirstOrThrow({ where: { ownerId: user.id } });
+    const wallet = await prisma.wallet.findFirstOrThrow({
+      where: { ownerId: user.id },
+    });
     expect(wallet.pinFailedAttempts).toBe(0);
   });
 });
 
 describe("PIN reset and the cooling window", () => {
-  async function passedSelfieChallenge(userId: string, method = "selfie_nin"): Promise<string> {
+  async function passedSelfieChallenge(
+    userId: string,
+    method = "selfie_nin",
+  ): Promise<string> {
     const id = `suc_test_${Math.random().toString(36).slice(2, 12)}`;
     await prisma.stepUpChallenge.create({
       data: {
@@ -134,7 +154,11 @@ describe("PIN reset and the cooling window", () => {
     return harness.app.fetch(
       new Request("http://user-service.test/auth/pin/reset", {
         method: "POST",
-        headers: await authedHeaders({ userId, role: "rider", scopes: FULL_SCOPES }),
+        headers: await authedHeaders({
+          userId,
+          role: "rider",
+          scopes: FULL_SCOPES,
+        }),
         body: JSON.stringify({ challengeId, newPin }),
       }),
     );
@@ -152,11 +176,13 @@ describe("PIN reset and the cooling window", () => {
 
     const body = (await response.json()) as { data: { coolingUntil: string } };
     // Slice 03: a two-hour cooling window.
-    expect(new Date(body.data.coolingUntil).getTime() - harness.now().getTime()).toBe(
-      2 * 60 * 60 * 1000,
-    );
+    expect(
+      new Date(body.data.coolingUntil).getTime() - harness.now().getTime(),
+    ).toBe(2 * 60 * 60 * 1000);
 
-    const wallet = await prisma.wallet.findFirstOrThrow({ where: { ownerId: user.id } });
+    const wallet = await prisma.wallet.findFirstOrThrow({
+      where: { ownerId: user.id },
+    });
     expect(wallet.pinFailedAttempts).toBe(0);
     expect(wallet.pinLockedUntil).toBeNull();
     expect(wallet.coolingUntil?.toISOString()).toBe(body.data.coolingUntil);
@@ -172,13 +198,17 @@ describe("PIN reset and the cooling window", () => {
     await reset(user.id, challengeId, "5555");
 
     const verified = await tryPin(user.id, "5555");
-    const body = (await verified.json()) as { data: { coolingUntil: string | null } };
+    const body = (await verified.json()) as {
+      data: { coolingUntil: string | null };
+    };
     expect(body.data.coolingUntil).not.toBeNull();
 
     // Once the window has passed, it is no longer reported.
     harness.setNow(new Date(START.getTime() + 3 * 60 * 60 * 1000));
     const later = await tryPin(user.id, "5555");
-    const laterBody = (await later.json()) as { data: { coolingUntil: string | null } };
+    const laterBody = (await later.json()) as {
+      data: { coolingUntil: string | null };
+    };
     expect(laterBody.data.coolingUntil).toBeNull();
     harness.setNow(START);
   });
@@ -251,8 +281,8 @@ describe("PIN reset and the cooling window", () => {
 
     const response = await reset(user.id, challengeId, "8888");
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
-      "safe_mode_active",
-    );
+    expect(
+      ((await response.json()) as { error: { code: string } }).error.code,
+    ).toBe("safe_mode_active");
   });
 });

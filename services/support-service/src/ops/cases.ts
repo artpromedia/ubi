@@ -23,7 +23,6 @@ import {
   type Money,
 } from "@ubi/contracts";
 
-
 import { auditedTransaction, type AuditedTx, type OutboxInput } from "./audit";
 import {
   remedyCapMinor,
@@ -142,7 +141,11 @@ function remedyView(row: RemedyRow): RemedyView {
   };
 }
 
-function caseView(row: CaseRow, remedies: readonly RemedyRow[], now: Date): CaseView {
+function caseView(
+  row: CaseRow,
+  remedies: readonly RemedyRow[],
+  now: Date,
+): CaseView {
   return {
     id: row.id,
     status: row.status,
@@ -156,7 +159,9 @@ function caseView(row: CaseRow, remedies: readonly RemedyRow[], now: Date): Case
     assignee: row.assignee,
     slaDueAt: row.slaDue === null ? null : row.slaDue.toISOString(),
     slaBreached:
-      row.slaDue !== null && row.resolvedAt === null && row.slaDue.getTime() < now.getTime(),
+      row.slaDue !== null &&
+      row.resolvedAt === null &&
+      row.slaDue.getTime() < now.getTime(),
     createdAt: row.createdAt.toISOString(),
     resolvedAt: row.resolvedAt === null ? null : row.resolvedAt.toISOString(),
     outcome: {
@@ -180,7 +185,13 @@ async function appendCaseEvent(
   payload: JsonRecord,
 ): Promise<void> {
   await tx.caseEvent.create({
-    data: { id: generateId("cev"), caseId, kind, actor, payload: { ...payload } },
+    data: {
+      id: generateId("cev"),
+      caseId,
+      kind,
+      actor,
+      payload: { ...payload },
+    },
   });
 }
 
@@ -218,7 +229,10 @@ export interface OpenCaseInput {
   readonly description: string;
   readonly subject: CaseSubject | null;
   /** Ops opening a case for a customer. Requires `case.open.on_behalf`. */
-  readonly onBehalfOf: { readonly userType: string; readonly userId: string } | null;
+  readonly onBehalfOf: {
+    readonly userType: string;
+    readonly userId: string;
+  } | null;
   readonly idempotencyKey: string;
   readonly correlationId: string | null;
 }
@@ -248,7 +262,9 @@ export async function openCase(
   );
   const caseId = deterministicId("case", scoped);
 
-  const replay = await deps.db.supportCase.findUnique({ where: { id: caseId } });
+  const replay = await deps.db.supportCase.findUnique({
+    where: { id: caseId },
+  });
   if (replay !== null) {
     return withRemedies(deps, replay);
   }
@@ -329,7 +345,9 @@ export async function openCase(
   } catch (error) {
     if (isUniqueViolation(error)) {
       // Concurrent replay: the winner already wrote it, return what it wrote.
-      const existing = await deps.db.supportCase.findUnique({ where: { id: caseId } });
+      const existing = await deps.db.supportCase.findUnique({
+        where: { id: caseId },
+      });
       if (existing !== null) {
         return withRemedies(deps, existing);
       }
@@ -338,7 +356,10 @@ export async function openCase(
   }
 }
 
-async function withRemedies(deps: SupportDeps, row: CaseRow): Promise<CaseView> {
+async function withRemedies(
+  deps: SupportDeps,
+  row: CaseRow,
+): Promise<CaseView> {
   const remedies = await deps.db.remedy.findMany({
     where: { caseId: row.id },
     orderBy: { createdAt: "asc" },
@@ -500,7 +521,10 @@ export async function addMessage(
         before: null,
         // The message body is on the case, not in the audit trail: audit says
         // who did what, it is not a second copy of the customer's words.
-        after: { messageLength: input.body.length, authorRole: input.actor.role },
+        after: {
+          messageLength: input.body.length,
+          authorRole: input.actor.role,
+        },
         correlationId: input.correlationId,
       },
     };
@@ -649,9 +673,13 @@ function assertAmountShape(
   }
   // A re-delivery may cost UBI money, or may cost nothing at all.
   if (amountMinor !== null && amountMinor < 0) {
-    throw new ContractError("validation_failed", "an amount cannot be negative", {
-      type,
-    });
+    throw new ContractError(
+      "validation_failed",
+      "an amount cannot be negative",
+      {
+        type,
+      },
+    );
   }
   return amountMinor === null || amountMinor === 0 ? null : amountMinor;
 }
@@ -767,7 +795,10 @@ export async function postRemedy(
 
   const finalStatus = path.length === 0 ? row.status : path[path.length - 1];
   if (finalStatus === undefined) {
-    throw new ContractError("internal_error", "could not determine the case status");
+    throw new ContractError(
+      "internal_error",
+      "could not determine the case status",
+    );
   }
 
   return auditedTransaction(deps.db, async (tx) => {
@@ -786,11 +817,17 @@ export async function postRemedy(
 
     let previous = row.status;
     for (const next of path) {
-      await appendCaseEvent(tx, input.caseId, "case.status_changed", input.actor.id, {
-        from: previous,
-        to: next,
-        reason: `remedy ${input.type} posted`,
-      });
+      await appendCaseEvent(
+        tx,
+        input.caseId,
+        "case.status_changed",
+        input.actor.id,
+        {
+          from: previous,
+          to: next,
+          reason: `remedy ${input.type} posted`,
+        },
+      );
       previous = next;
     }
     if (path.length > 0) {
@@ -800,14 +837,20 @@ export async function postRemedy(
       });
     }
 
-    await appendCaseEvent(tx, input.caseId, "case.remedy_posted", input.actor.id, {
-      remedyId,
-      type: input.type,
-      amountMinor: amount?.amountMinor ?? null,
-      currency: amount?.currency ?? null,
-      entryId: posted?.entryId ?? null,
-      reason: input.reason,
-    });
+    await appendCaseEvent(
+      tx,
+      input.caseId,
+      "case.remedy_posted",
+      input.actor.id,
+      {
+        remedyId,
+        type: input.type,
+        amountMinor: amount?.amountMinor ?? null,
+        currency: amount?.currency ?? null,
+        entryId: posted?.entryId ?? null,
+        reason: input.reason,
+      },
+    );
 
     const version = await caseVersion(tx, input.caseId);
     const event: OutboxInput = {

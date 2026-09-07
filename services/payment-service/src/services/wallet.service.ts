@@ -904,7 +904,9 @@ export class WalletService {
 let walletServiceInstance: WalletService | null = null;
 
 // Create new instance
-export function createWalletService(prisma: ExtendedPrismaClient): WalletService {
+export function createWalletService(
+  prisma: ExtendedPrismaClient,
+): WalletService {
   return new WalletService(prisma);
 }
 

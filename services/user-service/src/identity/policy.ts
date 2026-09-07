@@ -110,7 +110,9 @@ export function resolveCityId(contextCityId: string | null): string {
 export function createPolicyProvider(source: CityConfigSource): PolicyProvider {
   return {
     async forCity(cityId: string | null): Promise<IdentityPolicy> {
-      return policyFromCityConfig(await source.getCityConfig(resolveCityId(cityId)));
+      return policyFromCityConfig(
+        await source.getCityConfig(resolveCityId(cityId)),
+      );
     },
   };
 }

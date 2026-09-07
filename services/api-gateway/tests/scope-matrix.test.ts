@@ -55,7 +55,9 @@ async function call(
   const token = await clientToken({
     sub: USER_ID,
     role,
-    ...(mode === "limited" || mode === "limited_and_safe" ? { mode: "limited" as const } : {}),
+    ...(mode === "limited" || mode === "limited_and_safe"
+      ? { mode: "limited" as const }
+      : {}),
   });
 
   ipCounter += 1;
@@ -71,7 +73,9 @@ async function call(
     (init as { body?: string }).body = "{}";
   }
 
-  const response = await app.fetch(new Request(`http://gateway.test${path}`, init));
+  const response = await app.fetch(
+    new Request(`http://gateway.test${path}`, init),
+  );
   const body = (await response.json()) as { error?: { code?: string } };
   return { status: response.status, code: body.error?.code };
 }
@@ -90,22 +94,112 @@ interface MatrixCase {
  *   safe mode     — no P2P, no NIP, no PIN / phone / contact change.
  */
 const MATRIX: readonly MatrixCase[] = [
-  { method: "GET", path: "/v1/users/me", full: "allow", limited: "allow", safe: "allow" },
-  { method: "POST", path: "/v1/users/me", full: "allow", limited: "deny", safe: "allow" },
-  { method: "GET", path: "/v1/rides/history", full: "allow", limited: "allow", safe: "allow" },
-  { method: "POST", path: "/v1/rides", full: "allow", limited: "allow", safe: "allow" },
-  { method: "GET", path: "/v1/transactions", full: "allow", limited: "allow", safe: "allow" },
-  { method: "GET", path: "/v1/wallets/balance", full: "allow", limited: "allow", safe: "allow" },
-  { method: "POST", path: "/v1/wallets/transfers", full: "allow", limited: "deny", safe: "deny" },
-  { method: "POST", path: "/v1/wallets/nip", full: "allow", limited: "deny", safe: "deny" },
-  { method: "POST", path: "/v1/wallets/topup", full: "allow", limited: "deny", safe: "allow" },
-  { method: "POST", path: "/v1/users/me/pin", full: "allow", limited: "deny", safe: "deny" },
-  { method: "POST", path: "/v1/users/me/phone", full: "allow", limited: "deny", safe: "deny" },
-  { method: "POST", path: "/v1/users/me/contacts", full: "allow", limited: "deny", safe: "deny" },
-  { method: "POST", path: "/v1/devices/enroll", full: "allow", limited: "allow", safe: "allow" },
-  { method: "POST", path: "/v1/auth/step-up/selfie", full: "allow", limited: "allow", safe: "allow" },
+  {
+    method: "GET",
+    path: "/v1/users/me",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/users/me",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/rides/history",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/rides",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/transactions",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/wallets/balance",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/wallets/transfers",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
+  {
+    method: "POST",
+    path: "/v1/wallets/nip",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
+  {
+    method: "POST",
+    path: "/v1/wallets/topup",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/users/me/pin",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
+  {
+    method: "POST",
+    path: "/v1/users/me/phone",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
+  {
+    method: "POST",
+    path: "/v1/users/me/contacts",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
+  {
+    method: "POST",
+    path: "/v1/devices/enroll",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/step-up/selfie",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
   // Undeclared route: limited mode is an allowlist, safe mode is a denylist.
-  { method: "GET", path: "/v1/notifications", full: "allow", limited: "deny", safe: "allow" },
+  {
+    method: "GET",
+    path: "/v1/notifications",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
 ];
 
 describe("limited mode and wallet safe mode scope matrix", () => {
@@ -147,14 +241,23 @@ describe("limited mode and wallet safe mode scope matrix", () => {
   });
 
   it("reports safe mode ahead of limited mode when both are active", async () => {
-    const result = await call("limited_and_safe", "POST", "/v1/wallets/transfers");
+    const result = await call(
+      "limited_and_safe",
+      "POST",
+      "/v1/wallets/transfers",
+    );
     expect(result.status).toBe(403);
     expect(result.code).toBe("safe_mode_active");
   });
 
   it("still lets a doubly-restricted session book with cash and finish the step-up", async () => {
-    expect((await call("limited_and_safe", "POST", "/v1/rides")).status).toBe(200);
-    expect((await call("limited_and_safe", "POST", "/v1/auth/step-up/selfie")).status).toBe(200);
+    expect((await call("limited_and_safe", "POST", "/v1/rides")).status).toBe(
+      200,
+    );
+    expect(
+      (await call("limited_and_safe", "POST", "/v1/auth/step-up/selfie"))
+        .status,
+    ).toBe(200);
   });
 
   it("refuses a scope the role never had, without blaming a mode", async () => {
@@ -164,10 +267,12 @@ describe("limited mode and wallet safe mode scope matrix", () => {
   });
 
   it("lets a driver do what only a driver may", async () => {
-    expect((await call("full", "POST", "/v1/drivers/me/status", "driver")).status).toBe(200);
-    expect((await call("limited", "POST", "/v1/drivers/me/status", "driver")).code).toBe(
-      "limited_mode",
-    );
+    expect(
+      (await call("full", "POST", "/v1/drivers/me/status", "driver")).status,
+    ).toBe(200);
+    expect(
+      (await call("limited", "POST", "/v1/drivers/me/status", "driver")).code,
+    ).toBe("limited_mode");
   });
 
   it("cannot be widened by a token claiming scopes its role does not have", async () => {
@@ -180,7 +285,10 @@ describe("limited mode and wallet safe mode scope matrix", () => {
     const response = await app.fetch(
       new Request("http://gateway.test/v1/drivers/me/status", {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
         body: "{}",
       }),
     );
@@ -194,14 +302,17 @@ describe("limited mode and wallet safe mode scope matrix", () => {
     const denied = await app.fetch(
       new Request("http://gateway.test/v1/wallets/transfers", {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
         body: "{}",
       }),
     );
     expect(denied.status).toBe(403);
-    expect(((await denied.json()) as { error: { code: string } }).error.code).toBe(
-      "safe_mode_active",
-    );
+    expect(
+      ((await denied.json()) as { error: { code: string } }).error.code,
+    ).toBe("safe_mode_active");
 
     // Degraded, not down: reading and booking still work.
     const allowed = await app.fetch(
@@ -219,7 +330,10 @@ describe("limited mode and wallet safe mode scope matrix", () => {
     const response = await app.fetch(
       new Request("http://gateway.test/v1/wallets/transfers", {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
         body: "{}",
       }),
     );

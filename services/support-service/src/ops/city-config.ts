@@ -85,7 +85,10 @@ export const SupportPolicySchema = z.object({
     standard: positiveInt,
   }),
   /** Which severity each SOS trigger carries in this city. */
-  sosSeverityByTrigger: z.record(z.enum(SOS_TRIGGERS), z.enum(SAFETY_SEVERITIES)),
+  sosSeverityByTrigger: z.record(
+    z.enum(SOS_TRIGGERS),
+    z.enum(SAFETY_SEVERITIES),
+  ),
   /** How many times an SOS notification is retried before it is escalated by hand. */
   sosMaxDeliveryAttempts: positiveInt,
   /** Backoff between SOS notification attempts. The last entry repeats. */
@@ -147,17 +150,26 @@ export function createCityConfigProvider(db: SupportTx): CityConfigProvider {
       }
       return resolved as FlagSet;
     } catch (error) {
-      logger.error({ err: error, cityId }, "flag lookup failed; denying all flags");
+      logger.error(
+        { err: error, cityId },
+        "flag lookup failed; denying all flags",
+      );
       return DENY_ALL;
     }
   }
 
-  async function loadRaw(cityId: string): Promise<{ base: BaseCityConfig; raw: unknown }> {
+  async function loadRaw(
+    cityId: string,
+  ): Promise<{ base: BaseCityConfig; raw: unknown }> {
     const city = await db.city.findUnique({ where: { id: cityId } });
     if (city === null || !city.active) {
-      throw new ContractError("city_unsupported", "UBI is not live in that city", {
-        cityId,
-      });
+      throw new ContractError(
+        "city_unsupported",
+        "UBI is not live in that city",
+        {
+          cityId,
+        },
+      );
     }
 
     const version = await db.cityConfigVersion.findFirst({
@@ -171,10 +183,17 @@ export function createCityConfigProvider(db: SupportTx): CityConfigProvider {
     const parsed = CityConfigSchema.safeParse(version.config);
     if (!parsed.success) {
       logger.error(
-        { cityId, version: version.version, issues: parsed.error.issues.length },
+        {
+          cityId,
+          version: version.version,
+          issues: parsed.error.issues.length,
+        },
         "active city config failed validation",
       );
-      throw configUnavailable(cityId, "active config version failed validation");
+      throw configUnavailable(
+        cityId,
+        "active config version failed validation",
+      );
     }
 
     const flags = await loadFlags(cityId);
@@ -189,7 +208,10 @@ export function createCityConfigProvider(db: SupportTx): CityConfigProvider {
     );
     if (!policy.success) {
       logger.error({ cityId }, "city config has no valid supportPolicy block");
-      throw configUnavailable(cityId, "config has no valid supportPolicy block");
+      throw configUnavailable(
+        cityId,
+        "config has no valid supportPolicy block",
+      );
     }
     return { city: base.city, flags: base.flags, policy: policy.data };
   }
@@ -239,7 +261,10 @@ export function slaMinutesForCategory(
   return minutes;
 }
 
-export function remedyCapMinor(policy: SupportPolicy, type: RemedyType): number {
+export function remedyCapMinor(
+  policy: SupportPolicy,
+  type: RemedyType,
+): number {
   const cap = policy.remedyCapMinorByType[type];
   if (cap === undefined) {
     throw new ContractError(
@@ -274,7 +299,10 @@ export function safetySlaMinutes(
 }
 
 /** Backoff for attempt number `attempt` (1-based); the final entry repeats. */
-export function sosBackoffSeconds(policy: SupportPolicy, attempt: number): number {
+export function sosBackoffSeconds(
+  policy: SupportPolicy,
+  attempt: number,
+): number {
   const schedule = policy.sosRetryBackoffSeconds;
   const index = Math.min(Math.max(attempt, 1), schedule.length) - 1;
   return schedule[index] ?? 60;

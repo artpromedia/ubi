@@ -43,7 +43,10 @@ export const VerifyOtpSchema = z.object({
 /** Keys are derived, so nothing readable about a person sits in the cache. */
 function phoneKey(phone: string): string {
   const pepper = process.env.IDENTITY_OTP_PEPPER ?? "";
-  return createHash("sha256").update(`${pepper}:${phone}`).digest("base64url").slice(0, 32);
+  return createHash("sha256")
+    .update(`${pepper}:${phone}`)
+    .digest("base64url")
+    .slice(0, 32);
 }
 
 const codeKey = (id: string): string => `ubi:identity:otp:${id}`;
@@ -76,15 +79,22 @@ export async function requestOtp(
 
   const cooling = await deps.cache.ttl(cooldownKey(id));
   if (cooling > 0) {
-    throw new ContractError("rate_limited", "Wait a moment before asking for another code", {
-      retryAfterSeconds: cooling,
-    });
+    throw new ContractError(
+      "rate_limited",
+      "Wait a moment before asking for another code",
+      {
+        retryAfterSeconds: cooling,
+      },
+    );
   }
 
   const sends = await deps.cache.incr(sendsKey(id));
   if (sends === 1) await deps.cache.expire(sendsKey(id), 3600);
   if (sends > policy.otpMaxSendsPerHour) {
-    throw new ContractError("rate_limited", "Too many codes requested. Try again later.");
+    throw new ContractError(
+      "rate_limited",
+      "Too many codes requested. Try again later.",
+    );
   }
 
   const code = generateCode(6);
@@ -93,7 +103,12 @@ export async function requestOtp(
     purpose: input.purpose,
     attempts: 0,
   };
-  await deps.cache.set(codeKey(id), JSON.stringify(stored), "EX", policy.otpTtlSeconds);
+  await deps.cache.set(
+    codeKey(id),
+    JSON.stringify(stored),
+    "EX",
+    policy.otpTtlSeconds,
+  );
   await deps.cache.set(
     cooldownKey(id),
     "1",
@@ -143,7 +158,10 @@ export async function verifyOtp(
 
   const raw = await deps.cache.get(codeKey(id));
   if (raw === null) {
-    throw new ContractError("unauthorized", "That code has expired. Ask for a new one.");
+    throw new ContractError(
+      "unauthorized",
+      "That code has expired. Ask for a new one.",
+    );
   }
 
   let stored: StoredOtp;
@@ -151,7 +169,10 @@ export async function verifyOtp(
     stored = JSON.parse(raw) as StoredOtp;
   } catch {
     await deps.cache.del(codeKey(id));
-    throw new ContractError("unauthorized", "That code has expired. Ask for a new one.");
+    throw new ContractError(
+      "unauthorized",
+      "That code has expired. Ask for a new one.",
+    );
   }
 
   const matches = await verifySecret(input.code, stored.hash);

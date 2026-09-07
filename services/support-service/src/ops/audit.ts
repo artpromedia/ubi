@@ -66,7 +66,9 @@ export interface AuditedOutcome<T> {
   readonly events?: readonly OutboxInput[];
 }
 
-function jsonOrNull(value: JsonRecord | null | undefined): JsonRecord | undefined {
+function jsonOrNull(
+  value: JsonRecord | null | undefined,
+): JsonRecord | undefined {
   return value === undefined || value === null ? undefined : { ...value };
 }
 
@@ -75,7 +77,10 @@ function jsonOrNull(value: JsonRecord | null | undefined): JsonRecord | undefine
  * shape; production mutations never call it directly, they return an
  * `AuditRecord` and let `auditedTransaction` write it.
  */
-export async function writeAudit(tx: SupportTx, record: AuditRecord): Promise<void> {
+export async function writeAudit(
+  tx: SupportTx,
+  record: AuditRecord,
+): Promise<void> {
   const correlationId = record.correlationId ?? null;
   const after = jsonOrNull(record.after);
   await tx.auditLog.create({
@@ -90,15 +95,16 @@ export async function writeAudit(tx: SupportTx, record: AuditRecord): Promise<vo
       // The correlation id belongs with the "after" picture so an ops action can
       // be traced back to the request without adding a column to audit_log.
       after:
-        correlationId === null
-          ? after
-          : { ...(after ?? {}), correlationId },
+        correlationId === null ? after : { ...(after ?? {}), correlationId },
       reason: record.reason ?? null,
     },
   });
 }
 
-export async function publishEvent(tx: SupportTx, input: OutboxInput): Promise<void> {
+export async function publishEvent(
+  tx: SupportTx,
+  input: OutboxInput,
+): Promise<void> {
   const name = assertKnownEventName(input.name);
   await tx.outboxEvent.create({
     data: {

@@ -56,14 +56,19 @@ interface CachedConfig {
 }
 
 function configUnavailable(cityId: string, cause: string): ContractError {
-  return new ContractError("config_unavailable", "city config is unavailable", { cityId, cause });
+  return new ContractError("config_unavailable", "city config is unavailable", {
+    cityId,
+    cause,
+  });
 }
 
 /** Maps a service error body onto a canonical code, defaulting to config_unavailable. */
 function codeFromBody(body: unknown): ErrorCode | undefined {
   if (typeof body !== "object" || body === null) return undefined;
   const code = (body as { code?: unknown }).code;
-  return typeof code === "string" && ERROR_CODE_SET.has(code) ? (code as ErrorCode) : undefined;
+  return typeof code === "string" && ERROR_CODE_SET.has(code)
+    ? (code as ErrorCode)
+    : undefined;
 }
 
 export class ConfigClient {
@@ -97,7 +102,10 @@ export class ConfigClient {
     return `ubi:config-client:flags:${query.cityId ?? "-"}:${query.userId ?? "-"}`;
   }
 
-  private async request(path: string, headers: Record<string, string>): Promise<Response> {
+  private async request(
+    path: string,
+    headers: Record<string, string>,
+  ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort();
@@ -112,7 +120,10 @@ export class ConfigClient {
     }
   }
 
-  private async readStore<T>(key: string, revive: (raw: unknown) => T | undefined): Promise<T | undefined> {
+  private async readStore<T>(
+    key: string,
+    revive: (raw: unknown) => T | undefined,
+  ): Promise<T | undefined> {
     if (this.store === undefined) return undefined;
     try {
       const raw = await this.store.get(key);
@@ -152,7 +163,10 @@ export class ConfigClient {
     return load;
   }
 
-  private async loadCityConfig(cityId: string, key: string): Promise<CityConfig> {
+  private async loadCityConfig(
+    cityId: string,
+    key: string,
+  ): Promise<CityConfig> {
     const shared = await this.readStore<CachedConfig>(key, (raw) => {
       if (typeof raw !== "object" || raw === null) return undefined;
       const candidate = raw as { config?: unknown; etag?: unknown };
@@ -182,11 +196,17 @@ export class ConfigClient {
         etag === undefined ? {} : { "if-none-match": etag },
       );
     } catch (err) {
-      throw configUnavailable(cityId, err instanceof Error ? err.name : "request_failed");
+      throw configUnavailable(
+        cityId,
+        err instanceof Error ? err.name : "request_failed",
+      );
     }
 
     if (response.status === 304 && stale !== undefined) {
-      this.configs.set(key, { ...stale, expiresAt: this.now() + this.ttlSec * 1_000 });
+      this.configs.set(key, {
+        ...stale,
+        expiresAt: this.now() + this.ttlSec * 1_000,
+      });
       await this.writeStore(key, stale.value);
       return stale.value.config;
     }
@@ -194,7 +214,10 @@ export class ConfigClient {
     if (!response.ok) {
       // A definitive 4xx is reported as itself — an unconfigured city is an
       // answer, not an outage — but it still rejects: no config is invented.
-      const code = response.status < 500 ? codeFromBody(await this.safeJson(response)) : undefined;
+      const code =
+        response.status < 500
+          ? codeFromBody(await this.safeJson(response))
+          : undefined;
       if (code !== undefined) {
         throw new ContractError(code, "city config is unavailable", { cityId });
       }
@@ -238,10 +261,16 @@ export class ConfigClient {
 
     const shared = await this.readStore<FlagSet>(key, (raw) => {
       const parsed = FlagMapSchema.safeParse(raw);
-      return parsed.success ? (Object.freeze(parsed.data) as FlagSet) : undefined;
+      return parsed.success
+        ? (Object.freeze(parsed.data) as FlagSet)
+        : undefined;
     });
     if (shared !== undefined) {
-      this.flags.set(key, { value: shared, etag: undefined, expiresAt: this.now() + this.ttlSec * 1_000 });
+      this.flags.set(key, {
+        value: shared,
+        etag: undefined,
+        expiresAt: this.now() + this.ttlSec * 1_000,
+      });
       return shared;
     }
 
@@ -252,14 +281,20 @@ export class ConfigClient {
 
     try {
       const response = await this.request(`/v1/flags${suffix}`, {
-        ...(this.serviceKey === undefined ? {} : { "x-service-key": this.serviceKey }),
+        ...(this.serviceKey === undefined
+          ? {}
+          : { "x-service-key": this.serviceKey }),
         ...(query.userId === undefined ? {} : { "x-user-id": query.userId }),
       });
       if (!response.ok) return DENY_ALL;
       const parsed = FlagMapSchema.safeParse(await this.safeJson(response));
       if (!parsed.success) return DENY_ALL;
       const flags = Object.freeze(parsed.data) as FlagSet;
-      this.flags.set(key, { value: flags, etag: undefined, expiresAt: this.now() + this.ttlSec * 1_000 });
+      this.flags.set(key, {
+        value: flags,
+        etag: undefined,
+        expiresAt: this.now() + this.ttlSec * 1_000,
+      });
       await this.writeStore(key, flags);
       return flags;
     } catch {
@@ -298,7 +333,9 @@ export class ConfigClient {
         // process knows about — every other subscriber drops its own, and the
         // TTL bounds anything neither of them saw.
         const dropped = [
-          ...this.flags.deleteByPrefix(`ubi:config-client:flags:${result.data.scopeId}:`),
+          ...this.flags.deleteByPrefix(
+            `ubi:config-client:flags:${result.data.scopeId}:`,
+          ),
           ...this.flags.deleteByPrefix("ubi:config-client:flags:-:"),
         ];
         void this.dropShared(...dropped);

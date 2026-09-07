@@ -27,18 +27,23 @@ describe("lagos provisional values", () => {
   });
 
   describe("fares are monotonic across classes", () => {
-    const tables: FareTable[] = CLASS_LADDER.map((cls) => fareTableFor(config, cls));
+    const tables: FareTable[] = CLASS_LADDER.map((cls) =>
+      fareTableFor(config, cls),
+    );
 
     it("has a table for exactly the offered classes and no others", () => {
       expect([...config.vehicleClasses]).toEqual([...CLASS_LADDER]);
-      expect(Object.keys(config.fares).sort()).toEqual([...CLASS_LADDER].sort());
+      expect(Object.keys(config.fares).sort()).toEqual(
+        [...CLASS_LADDER].sort(),
+      );
     });
 
     it("increases base and perKm strictly with each class (comfort > go, xl > comfort)", () => {
       for (let i = 1; i < tables.length; i += 1) {
         const lower = tables[i - 1];
         const higher = tables[i];
-        if (lower === undefined || higher === undefined) throw new Error("missing fare table");
+        if (lower === undefined || higher === undefined)
+          throw new Error("missing fare table");
         expect(higher.baseMinor).toBeGreaterThan(lower.baseMinor);
         expect(higher.perKmMinor).toBeGreaterThan(lower.perKmMinor);
       }
@@ -48,7 +53,8 @@ describe("lagos provisional values", () => {
       for (let i = 1; i < tables.length; i += 1) {
         const lower = tables[i - 1];
         const higher = tables[i];
-        if (lower === undefined || higher === undefined) throw new Error("missing fare table");
+        if (lower === undefined || higher === undefined)
+          throw new Error("missing fare table");
         expect(higher.perMinMinor).toBeGreaterThan(lower.perMinMinor);
         expect(higher.minFareMinor).toBeGreaterThan(lower.minFareMinor);
       }
@@ -81,9 +87,12 @@ describe("lagos provisional values", () => {
       for (let i = 1; i < tiers.length; i += 1) {
         const lower = tiers[i - 1];
         const higher = tiers[i];
-        if (lower === undefined || higher === undefined) throw new Error("missing kyc tier");
+        if (lower === undefined || higher === undefined)
+          throw new Error("missing kyc tier");
         expect(higher.dailyOutMinor).toBeGreaterThan(lower.dailyOutMinor);
-        expect(higher.singleTransferMinor).toBeGreaterThan(lower.singleTransferMinor);
+        expect(higher.singleTransferMinor).toBeGreaterThan(
+          lower.singleTransferMinor,
+        );
         expect(balanceCapRank(higher.balanceCapMinor)).toBeGreaterThan(
           balanceCapRank(lower.balanceCapMinor),
         );

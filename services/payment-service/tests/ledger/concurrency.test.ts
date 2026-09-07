@@ -27,7 +27,10 @@ afterAll(async () => {
 describe("concurrent spending from one wallet", () => {
   it("cannot be raced past the balance", async () => {
     const city = await seedCity(db, {
-      policy: { velocityMaxTransfers: 50, newRecipientHoldAboveMinor: 100_000_000 },
+      policy: {
+        velocityMaxTransfers: 50,
+        newRecipientHoldAboveMinor: 100_000_000,
+      },
     });
     const deps = makeDeps(db);
     const sender = await seedUser(db, "Nneka");
@@ -37,7 +40,12 @@ describe("concurrent spending from one wallet", () => {
     const senderWallet = await db.$transaction((tx) =>
       ensureWallet(tx, "user", sender.id, config.city),
     );
-    await setInitialPin(deps, { id: sender.id, role: "rider" }, city.cityId, PIN);
+    await setInitialPin(
+      deps,
+      { id: sender.id, role: "rider" },
+      city.cityId,
+      PIN,
+    );
     await fundWallet(db, senderWallet.id, city.currency, 100_000);
 
     // Two transfers of 60 000 launched together against a 100 000 balance.
@@ -52,13 +60,17 @@ describe("concurrent spending from one wallet", () => {
         idempotencyKey: uid("idem"),
       });
 
-    const results = await Promise.allSettled([attempt(first.id), attempt(second.id)]);
+    const results = await Promise.allSettled([
+      attempt(first.id),
+      attempt(second.id),
+    ]);
     const fulfilled = results.filter((entry) => entry.status === "fulfilled");
     const rejected = results.filter((entry) => entry.status === "rejected");
 
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    const reason = (rejected[0] as PromiseRejectedResult).reason as ContractError;
+    const reason = (rejected[0] as PromiseRejectedResult)
+      .reason as ContractError;
     expect(reason.code).toBe("insufficient_funds");
 
     const balance = await balanceOf(db, senderWallet.id, city.currency);
@@ -85,7 +97,12 @@ describe("concurrent spending from one wallet", () => {
     const recipientWallet = await db.$transaction((tx) =>
       ensureWallet(tx, "user", recipient.id, config.city),
     );
-    await setInitialPin(deps, { id: sender.id, role: "rider" }, city.cityId, PIN);
+    await setInitialPin(
+      deps,
+      { id: sender.id, role: "rider" },
+      city.cityId,
+      PIN,
+    );
     await fundWallet(db, senderWallet.id, city.currency, 500_000);
 
     const key = uid("idem");

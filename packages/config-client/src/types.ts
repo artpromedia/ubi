@@ -8,17 +8,28 @@
 /** The subset of a Redis client the shared cache needs. `ioredis` satisfies it. */
 export interface CacheStore {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, mode: "EX", ttlSeconds: number): Promise<unknown>;
+  set(
+    key: string,
+    value: string,
+    mode: "EX",
+    ttlSeconds: number,
+  ): Promise<unknown>;
   del(...keys: string[]): Promise<unknown>;
 }
 
 /** The subset of a Redis subscriber connection used for invalidation. */
 export interface InvalidationSubscriber {
   subscribe(channel: string): Promise<unknown>;
-  on(event: "message", listener: (channel: string, message: string) => void): unknown;
+  on(
+    event: "message",
+    listener: (channel: string, message: string) => void,
+  ): unknown;
 }
 
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+export type FetchLike = (
+  input: string,
+  init?: RequestInit,
+) => Promise<Response>;
 
 export interface ConfigClientOptions {
   /** Base URL of the config service, e.g. http://config-service:3010 */

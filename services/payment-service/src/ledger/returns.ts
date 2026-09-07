@@ -23,10 +23,14 @@ import { generateId } from "../lib/utils";
 import type { WalletDeps } from "./context";
 import type { Actor, LedgerTx } from "./types";
 
-
 const TRANSFER_MACHINE = "walletTransfer" as const;
 
-export const RETURN_STATUSES = ["requested", "returned", "declined", "disputed"] as const;
+export const RETURN_STATUSES = [
+  "requested",
+  "returned",
+  "declined",
+  "disputed",
+] as const;
 export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 
 export interface ReturnRequestResult {
@@ -49,7 +53,10 @@ interface LoadedTransfer {
   readonly createdAt: Date;
 }
 
-async function loadTransfer(tx: LedgerTx, transferId: string): Promise<LoadedTransfer> {
+async function loadTransfer(
+  tx: LedgerTx,
+  transferId: string,
+): Promise<LoadedTransfer> {
   const transfer = await tx.transfer.findUnique({ where: { id: transferId } });
   if (transfer === null) {
     throw new ContractError("not_found", "transfer not found", { transferId });
@@ -80,9 +87,13 @@ async function moveTransfer(
     data: { status: next, version: { increment: 1 } },
   });
   if (updated.count !== 1) {
-    throw new ContractError("version_conflict", "the transfer changed underneath us", {
-      transferId: transfer.id,
-    });
+    throw new ContractError(
+      "version_conflict",
+      "the transfer changed underneath us",
+      {
+        transferId: transfer.id,
+      },
+    );
   }
 }
 
@@ -109,11 +120,15 @@ export async function openReturnRequest(
     }
     const senderId = await walletOwner(tx, transfer.fromWallet);
     if (senderId !== input.actor.id) {
-      throw new ContractError("forbidden", "only the sender may ask for a return");
+      throw new ContractError(
+        "forbidden",
+        "only the sender may ask for a return",
+      );
     }
 
     const deadline = new Date(
-      transfer.createdAt.getTime() + config.policy.returnRequestWindowHours * 3_600_000,
+      transfer.createdAt.getTime() +
+        config.policy.returnRequestWindowHours * 3_600_000,
     );
     if (now > deadline) {
       throw new ContractError(
@@ -217,9 +232,13 @@ export async function respondToReturnRequest(
       throw new ContractError("not_found", "return request not found");
     }
     if (request.status !== "requested") {
-      throw new ContractError("conflict", "this return request was already answered", {
-        status: request.status,
-      });
+      throw new ContractError(
+        "conflict",
+        "this return request was already answered",
+        {
+          status: request.status,
+        },
+      );
     }
 
     const amount = money(fromDbMinor(transfer.amountMinor), transfer.currency);
@@ -299,7 +318,10 @@ interface ReverseInput {
 }
 
 /** The reversal is a new entry. The original entry is never touched. */
-async function reverseTransfer(tx: LedgerTx, input: ReverseInput): Promise<string> {
+async function reverseTransfer(
+  tx: LedgerTx,
+  input: ReverseInput,
+): Promise<string> {
   const entry = await postEntry(tx, {
     kind: "p2p_reversal",
     reference: input.reference,
@@ -378,11 +400,15 @@ export async function disputeTransfer(
     }
     const senderId = await walletOwner(tx, transfer.fromWallet);
     if (senderId !== input.actor.id) {
-      throw new ContractError("forbidden", "only the sender may dispute this transfer");
+      throw new ContractError(
+        "forbidden",
+        "only the sender may dispute this transfer",
+      );
     }
 
     const deadline = new Date(
-      transfer.createdAt.getTime() + config.policy.disputeWindowHours * 3_600_000,
+      transfer.createdAt.getTime() +
+        config.policy.disputeWindowHours * 3_600_000,
     );
     if (now > deadline) {
       throw new ContractError("conflict", "the dispute window has closed", {
@@ -402,7 +428,9 @@ export async function disputeTransfer(
         subjectId: transfer.id,
         category: "wallet_transfer_dispute",
         status: "open",
-        slaDue: new Date(now.getTime() + config.policy.riskReviewSlaMinutes * 60_000),
+        slaDue: new Date(
+          now.getTime() + config.policy.riskReviewSlaMinutes * 60_000,
+        ),
       },
     });
     await tx.caseEvent.create({

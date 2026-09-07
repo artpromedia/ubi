@@ -91,19 +91,29 @@ async function loadPendingChallenge(
   challengeId: string,
   ttlMs: number,
 ) {
-  const challenge = await deps.prisma.stepUpChallenge.findUnique({ where: { id: challengeId } });
+  const challenge = await deps.prisma.stepUpChallenge.findUnique({
+    where: { id: challengeId },
+  });
   if (challenge === null || challenge.userId !== userId) {
     throw new ContractError("not_found", "That security check was not found");
   }
   if (challenge.status !== "pending") {
-    throw new ContractError("conflict", "That security check has already been answered", {
-      status: challenge.status,
-    });
+    throw new ContractError(
+      "conflict",
+      "That security check has already been answered",
+      {
+        status: challenge.status,
+      },
+    );
   }
   if (deps.now().getTime() - challenge.createdAt.getTime() > ttlMs) {
-    throw new ContractError("step_up_required", "That security check expired. Start a new one.", {
-      challengeId,
-    });
+    throw new ContractError(
+      "step_up_required",
+      "That security check expired. Start a new one.",
+      {
+        challengeId,
+      },
+    );
   }
   return challenge;
 }
@@ -132,7 +142,9 @@ export async function passSelfieStepUp(
     imageBase64: body.imageBase64,
   });
 
-  const score = round4(Math.min(verification.livenessScore, verification.matchScore));
+  const score = round4(
+    Math.min(verification.livenessScore, verification.matchScore),
+  );
   const passed = score >= policy.faceMatchThreshold;
   const reason = passed
     ? null
@@ -171,7 +183,9 @@ export async function passSelfieStepUp(
           score,
           passed,
           createdAt: now,
-          ...(challenge.deviceId === null ? {} : { deviceId: challenge.deviceId }),
+          ...(challenge.deviceId === null
+            ? {}
+            : { deviceId: challenge.deviceId }),
           ...(reason === null ? {} : { reason }),
         },
       });
@@ -247,7 +261,11 @@ export async function passSelfieStepUp(
         data: {
           id: caseId,
           driverId: driver.id,
-          signals: { challengeId: challenge.id, score, deviceId: challenge.deviceId },
+          signals: {
+            challengeId: challenge.id,
+            score,
+            deviceId: challenge.deviceId,
+          },
           status: "open",
           decidedBy: [],
           createdAt: now,
@@ -264,7 +282,13 @@ export async function passSelfieStepUp(
         fromVersion: revision,
         toVersion: revision + 1,
         cityId: policy.cityId,
-        payload: { driverId: driver.id, caseId, score, decision: null, reviewers: [] },
+        payload: {
+          driverId: driver.id,
+          caseId,
+          score,
+          decision: null,
+          reviewers: [],
+        },
         occurredAt: now,
       });
     }
@@ -325,7 +349,11 @@ export async function approveFromTrustedDevice(
   const approver = await deps.prisma.device.findUnique({
     where: { id: context.approvingDeviceId },
   });
-  if (approver === null || approver.userId !== context.userId || !approver.trusted) {
+  if (
+    approver === null ||
+    approver.userId !== context.userId ||
+    !approver.trusted
+  ) {
     throw new ContractError(
       "step_up_required",
       "This device is not trusted yet, so it cannot approve another one.",

@@ -11,7 +11,11 @@
  * the emergency number — comes from `getCityConfig`. Nothing in this package
  * has a fallback value for any of them.
  */
-export { ConfigClient, CONFIG_INVALIDATION_CHANNEL, createConfigClient } from "./client";
+export {
+  ConfigClient,
+  CONFIG_INVALIDATION_CHANNEL,
+  createConfigClient,
+} from "./client";
 export { MemoryCache, type CacheEntry } from "./memory-cache";
 export { flagEnabled, requireFlag } from "./flags";
 export type {

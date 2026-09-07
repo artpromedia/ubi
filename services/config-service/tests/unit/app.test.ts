@@ -25,13 +25,18 @@ describe("app surface", () => {
   it("answers a liveness check without touching a dependency", async () => {
     const response = await app.request("/health/live");
     expect(response.status).toBe(200);
-    expect(((await response.json()) as { status: string }).status).toBe("alive");
+    expect(((await response.json()) as { status: string }).status).toBe(
+      "alive",
+    );
   });
 
   it("returns a canonical error body for an unknown endpoint", async () => {
     const response = await app.request("/nope");
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ code: "not_found", message: "no such endpoint" });
+    expect(await response.json()).toEqual({
+      code: "not_found",
+      message: "no such endpoint",
+    });
   });
 
   it("rejects a change request with no idempotency key as validation_failed", async () => {
@@ -45,6 +50,8 @@ describe("app surface", () => {
       body: JSON.stringify({ cityId: "LOS", patch: {}, reason: "no key" }),
     });
     expect(response.status).toBe(422);
-    expect(((await response.json()) as { code: string }).code).toBe("validation_failed");
+    expect(((await response.json()) as { code: string }).code).toBe(
+      "validation_failed",
+    );
   });
 });

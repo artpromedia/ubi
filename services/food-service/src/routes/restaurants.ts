@@ -109,7 +109,7 @@ restaurantRoutes.get("/", async (c) => {
   let filteredRestaurants = restaurants;
   if (isOpen) {
     filteredRestaurants = restaurants.filter(
-      (r: (typeof restaurants)[number]) => isRestaurantOpen(r.openingHours)
+      (r: (typeof restaurants)[number]) => isRestaurantOpen(r.openingHours),
     );
   }
 
@@ -165,7 +165,7 @@ restaurantRoutes.get(
         distance: Math.round(r.distance_km * 10) / 10,
       })),
     });
-  }
+  },
 );
 
 /**
@@ -199,7 +199,7 @@ restaurantRoutes.get("/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Restaurant not found" },
       },
-      404
+      404,
     );
   }
 
@@ -244,7 +244,7 @@ restaurantRoutes.get("/:id/menu", async (c) => {
   const menu = categories.map((category: (typeof categories)[number]) => ({
     ...category,
     items: items.filter(
-      (item: (typeof items)[number]) => item.category === category.name
+      (item: (typeof items)[number]) => item.category === category.name,
     ),
   }));
 
@@ -271,7 +271,7 @@ restaurantRoutes.post(
           success: false,
           error: { code: "UNAUTHORIZED", message: "Authentication required" },
         },
-        401
+        401,
       );
     }
 
@@ -308,9 +308,9 @@ restaurantRoutes.post(
         success: true,
         data: restaurant,
       },
-      201
+      201,
     );
-  }
+  },
 );
 
 /**
@@ -334,7 +334,7 @@ restaurantRoutes.put(
           success: false,
           error: { code: "NOT_FOUND", message: "Restaurant not found" },
         },
-        404
+        404,
       );
     }
 
@@ -347,7 +347,7 @@ restaurantRoutes.put(
             message: "Not authorized to update this restaurant",
           },
         },
-        403
+        403,
       );
     }
 
@@ -396,7 +396,7 @@ restaurantRoutes.put(
       success: true,
       data: updated,
     });
-  }
+  },
 );
 
 /**
@@ -420,7 +420,7 @@ restaurantRoutes.post("/:id/status", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Restaurant not found" },
       },
-      404
+      404,
     );
   }
 
@@ -430,7 +430,7 @@ restaurantRoutes.post("/:id/status", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -455,7 +455,7 @@ restaurantRoutes.post("/:id/status", async (c) => {
       restaurantId: id,
       reason,
       timestamp: new Date().toISOString(),
-    })
+    }),
   );
 
   return c.json({
@@ -482,7 +482,7 @@ restaurantRoutes.get("/:id/stats", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 

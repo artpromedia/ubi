@@ -229,7 +229,9 @@ export function isKnownEventName(name: string): name is EventName {
 
 export function assertKnownEventName(name: string): EventName {
   if (!isKnownEventName(name)) {
-    throw new Error(`unknown event name "${name}" — add it to contracts/events before publishing`);
+    throw new Error(
+      `unknown event name "${name}" — add it to contracts/events before publishing`,
+    );
   }
   return name;
 }

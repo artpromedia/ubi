@@ -21,7 +21,11 @@ describe("lagos seed", () => {
   it("activates version 1 with an audit row and an outbox row", async () => {
     const result = await seedLagos(SEED_ENV);
 
-    expect(result).toMatchObject({ cityId: "LOS", configVersion: 1, createdVersion: true });
+    expect(result).toMatchObject({
+      cityId: "LOS",
+      configVersion: 1,
+      createdVersion: true,
+    });
 
     const version = await prisma.cityConfigVersion.findFirstOrThrow({
       where: { cityId: LAGOS_CITY.id },
@@ -50,7 +54,9 @@ describe("lagos seed", () => {
     expect(flags.every((flag) => !flag.defaultOn)).toBe(true);
 
     const rules = await prisma.flagRule.findMany({ where: { enabled: true } });
-    expect(rules.map((rule) => rule.flagKey).sort()).toEqual([...LAGOS_ENABLED_FLAGS].sort());
+    expect(rules.map((rule) => rule.flagKey).sort()).toEqual(
+      [...LAGOS_ENABLED_FLAGS].sort(),
+    );
   });
 
   it("is idempotent: a second run activates nothing new", async () => {
@@ -59,7 +65,11 @@ describe("lagos seed", () => {
 
     expect(second.createdVersion).toBe(false);
     expect(await prisma.cityConfigVersion.count()).toBe(1);
-    expect(await prisma.outboxEvent.count({ where: { name: "config.version_activated" } })).toBe(1);
+    expect(
+      await prisma.outboxEvent.count({
+        where: { name: "config.version_activated" },
+      }),
+    ).toBe(1);
     expect(await prisma.flagRule.count()).toBe(LAGOS_ENABLED_FLAGS.length);
   });
 });

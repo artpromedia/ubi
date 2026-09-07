@@ -131,7 +131,11 @@ export async function seedCity(
       { id: "wallet", available: true },
       { id: "card", available: true },
       { id: "cash", available: true },
-      { id: "bank_transfer", available: false, reason: "not enabled in this city yet" },
+      {
+        id: "bank_transfer",
+        available: false,
+        reason: "not enabled in this city yet",
+      },
     ],
     kycTiers: [
       {
@@ -139,7 +143,9 @@ export async function seedCity(
         dailyOutMinor: options.dailyOutMinor ?? 5_000_000,
         singleTransferMinor: options.singleTransferMinor ?? 2_000_000,
         balanceCapMinor:
-          options.balanceCapMinor === undefined ? 30_000_000 : options.balanceCapMinor,
+          options.balanceCapMinor === undefined
+            ? 30_000_000
+            : options.balanceCapMinor,
       },
       {
         tier: "tier2",
@@ -165,12 +171,14 @@ export async function seedCity(
     config.walletPolicy = {
       velocityWindowMinutes: options.policy?.velocityWindowMinutes ?? 60,
       velocityMaxTransfers: options.policy?.velocityMaxTransfers ?? 20,
-      velocityMaxAmountMinor: options.policy?.velocityMaxAmountMinor ?? 100_000_000,
+      velocityMaxAmountMinor:
+        options.policy?.velocityMaxAmountMinor ?? 100_000_000,
       newRecipientHoldAboveMinor:
         options.policy?.newRecipientHoldAboveMinor ?? 100_000_000,
       pinLockMinutes: options.policy?.pinLockMinutes ?? 30,
       pinResetCoolingMinutes: options.policy?.pinResetCoolingMinutes ?? 120,
-      pinResetCoolingCapMinor: options.policy?.pinResetCoolingCapMinor ?? 500_000,
+      pinResetCoolingCapMinor:
+        options.policy?.pinResetCoolingCapMinor ?? 500_000,
       returnRequestWindowHours: options.policy?.returnRequestWindowHours ?? 48,
       disputeWindowHours: options.policy?.disputeWindowHours ?? 48,
       nipReversalWindowHours: options.policy?.nipReversalWindowHours ?? 24,
@@ -194,7 +202,11 @@ export async function seedCity(
     },
   });
 
-  const flags = options.flags ?? { wallet_p2p: true, wallet_nip: true, tips: true };
+  const flags = options.flags ?? {
+    wallet_p2p: true,
+    wallet_nip: true,
+    tips: true,
+  };
   for (const [key, enabled] of Object.entries(flags)) {
     await db.featureFlag.upsert({
       where: { key },
@@ -217,7 +229,10 @@ export interface SeededUser {
   readonly displayName: string;
 }
 
-export async function seedUser(db: LedgerDb, name = "Ada"): Promise<SeededUser> {
+export async function seedUser(
+  db: LedgerDb,
+  name = "Ada",
+): Promise<SeededUser> {
   counter += 1;
   const suffix = uid("u").replace(/[^a-z0-9]/gi, "");
   // A real E.164 number: the directory only resolves recipients by one.
@@ -253,7 +268,9 @@ export class RecordingTopupRail implements TopupProvider {
       throw new Error("rail refused the capture");
     }
     this.captures.push(request);
-    return { pspRef: `psp_${this.captures.length}_${request.idempotencyKey.slice(-8)}` };
+    return {
+      pspRef: `psp_${this.captures.length}_${request.idempotencyKey.slice(-8)}`,
+    };
   }
 
   async refund(pspRef: string): Promise<void> {

@@ -158,7 +158,9 @@ const noopLogger: OutboxRelayLogger = {
 
 function errorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  return raw.length > MAX_LAST_ERROR_LENGTH ? raw.slice(0, MAX_LAST_ERROR_LENGTH) : raw;
+  return raw.length > MAX_LAST_ERROR_LENGTH
+    ? raw.slice(0, MAX_LAST_ERROR_LENGTH)
+    : raw;
 }
 
 class OutboxRelayImpl implements OutboxRelay {
@@ -219,7 +221,10 @@ class OutboxRelayImpl implements OutboxRelay {
           await tx.$executeRawUnsafe(
             QUARANTINE_SQL,
             this.maxAttempts,
-            `${QUARANTINE_PREFIX}${parsed.error}`.slice(0, MAX_LAST_ERROR_LENGTH),
+            `${QUARANTINE_PREFIX}${parsed.error}`.slice(
+              0,
+              MAX_LAST_ERROR_LENGTH,
+            ),
             row.id,
           );
           this.backoffUntil.delete(row.id);
@@ -243,7 +248,11 @@ class OutboxRelayImpl implements OutboxRelay {
           published += 1;
         } catch (err) {
           const attempts = row.attempts + 1;
-          await tx.$executeRawUnsafe(RECORD_FAILURE_SQL, errorMessage(err), row.id);
+          await tx.$executeRawUnsafe(
+            RECORD_FAILURE_SQL,
+            errorMessage(err),
+            row.id,
+          );
           const delay = backoffDelayMs(attempts, {
             baseMs: this.backoffBaseMs,
             maxMs: this.backoffMaxMs,
@@ -257,14 +266,25 @@ class OutboxRelayImpl implements OutboxRelay {
             );
           } else {
             this.logger.warn(
-              { outboxId: row.id, eventName: row.name, attempts, retryInMs: delay },
+              {
+                outboxId: row.id,
+                eventName: row.name,
+                attempts,
+                retryInMs: delay,
+              },
               "outbox publish failed; will retry after backoff",
             );
           }
         }
       }
 
-      return { claimed: rows.length, published, failed, quarantined, skippedBackoff };
+      return {
+        claimed: rows.length,
+        published,
+        failed,
+        quarantined,
+        skippedBackoff,
+      };
     });
   }
 
@@ -306,6 +326,8 @@ class OutboxRelayImpl implements OutboxRelay {
   }
 }
 
-export function createOutboxRelay(options: CreateOutboxRelayOptions): OutboxRelay {
+export function createOutboxRelay(
+  options: CreateOutboxRelayOptions,
+): OutboxRelay {
   return new OutboxRelayImpl(options);
 }

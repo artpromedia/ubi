@@ -4,7 +4,9 @@
  */
 import { type CityConfig, CityConfigSchema } from "@ubi/contracts";
 
-export function cityConfigFixture(overrides: Record<string, unknown> = {}): CityConfig {
+export function cityConfigFixture(
+  overrides: Record<string, unknown> = {},
+): CityConfig {
   return CityConfigSchema.parse({
     cityId: "LOS",
     version: 1,
@@ -38,7 +40,11 @@ export function cityConfigFixture(overrides: Record<string, unknown> = {}): City
       },
     },
     waitPolicy: { freeSec: 300, perMinMinor: 5_000 },
-    cancelPolicy: { riderFeeAfterAssignMinor: 30_000, driverFeeMinor: 0, freeWindowSec: 120 },
+    cancelPolicy: {
+      riderFeeAfterAssignMinor: 30_000,
+      driverFeeMinor: 0,
+      freeWindowSec: 120,
+    },
     pinRequired: true,
     quoteTtlSec: 300,
     offerTtlSec: 12,
@@ -51,7 +57,14 @@ export function cityConfigFixture(overrides: Record<string, unknown> = {}): City
       { id: "bank_transfer", available: true },
       { id: "wallet", available: true },
     ],
-    kycTiers: [{ tier: "tier1", dailyOutMinor: 5_000_000, singleTransferMinor: 2_000_000, balanceCapMinor: null }],
+    kycTiers: [
+      {
+        tier: "tier1",
+        dailyOutMinor: 5_000_000,
+        singleTransferMinor: 2_000_000,
+        balanceCapMinor: null,
+      },
+    ],
     serviceFeePct: 20,
     remittanceCapMinor: 5_000_000,
     reservationFreeReleaseSec: 900,

@@ -3,7 +3,11 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { balanceOf } from "../../src/ledger/balances";
 import { createCityConfigProvider } from "../../src/ledger/city-config";
-import { createRequest, listRequests, payRequest } from "../../src/ledger/requests";
+import {
+  createRequest,
+  listRequests,
+  payRequest,
+} from "../../src/ledger/requests";
 import { setInitialPin } from "../../src/ledger/wallet-ops";
 import { ensureWallet } from "../../src/ledger/wallets";
 
@@ -67,7 +71,9 @@ describe("split-fare requests", () => {
     );
 
     const inbox = await listRequests(db, s.payer.id);
-    expect(inbox.owing.map((entry) => entry.requestId)).toContain(request.requestId);
+    expect(inbox.owing.map((entry) => entry.requestId)).toContain(
+      request.requestId,
+    );
 
     const paid = await payRequest(s.deps, {
       actor: { id: s.payer.id, role: "rider" },
@@ -85,7 +91,9 @@ describe("split-fare requests", () => {
       money(175_000, s.city.currency),
     );
 
-    const lines = await db.journalLine.findMany({ where: { entryId: paid.entryId } });
+    const lines = await db.journalLine.findMany({
+      where: { entryId: paid.entryId },
+    });
     expect(lines).toHaveLength(2);
     expect(
       lines.every((line) => line.counterpartRef?.includes(request.requestId)),

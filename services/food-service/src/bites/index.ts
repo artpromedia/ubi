@@ -37,7 +37,9 @@ export interface BitesModule {
 }
 
 /** Builds the module's four sub-apps from a set of dependencies. */
-export function createBitesModule(deps: BitesDeps = createBitesDeps()): BitesModule {
+export function createBitesModule(
+  deps: BitesDeps = createBitesDeps(),
+): BitesModule {
   return {
     deps,
     discovery: createDiscoveryRoutes(deps),
@@ -54,7 +56,10 @@ export function createBitesModule(deps: BitesDeps = createBitesDeps()): BitesMod
  */
 export function startIssueSweep(
   deps: BitesDeps,
-  intervalMs = Number.parseInt(process.env.BITES_ISSUE_SWEEP_INTERVAL_MS ?? "60000", 10),
+  intervalMs = Number.parseInt(
+    process.env.BITES_ISSUE_SWEEP_INTERVAL_MS ?? "60000",
+    10,
+  ),
 ): NodeJS.Timeout {
   const timer = setInterval(() => {
     void sweepDueIssues(deps).catch(() => {

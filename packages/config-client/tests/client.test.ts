@@ -12,7 +12,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CONFIG_INVALIDATION_CHANNEL, createConfigClient } from "../src/index";
 import { requireFlag } from "../src/index";
 import { cityConfigFixture } from "./fixtures";
-import { type TestServer, closedPortUrl, json, startServer } from "./helpers/server";
+import {
+  type TestServer,
+  closedPortUrl,
+  json,
+  startServer,
+} from "./helpers/server";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
 
@@ -41,7 +46,11 @@ describe("getCityConfig", () => {
     server = await startServer((_req, res) => {
       json(res, 200, config, { etag: etagFor(config) });
     });
-    const client = createConfigClient({ baseUrl: server.url, ttlSec: 60, now: new Clock().now });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      ttlSec: 60,
+      now: new Clock().now,
+    });
 
     expect(await client.getCityConfig("LOS")).toEqual(config);
     expect(await client.getCityConfig("LOS")).toEqual(config);
@@ -60,7 +69,11 @@ describe("getCityConfig", () => {
       }
       json(res, 200, config, { etag });
     });
-    const client = createConfigClient({ baseUrl: server.url, ttlSec: 60, now: clock.now });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      ttlSec: 60,
+      now: clock.now,
+    });
 
     await client.getCityConfig("LOS");
     clock.advanceSeconds(61);
@@ -78,7 +91,11 @@ describe("getCityConfig", () => {
     server = await startServer((_req, res) => {
       json(res, 200, current, { etag: etagFor(current) });
     });
-    const client = createConfigClient({ baseUrl: server.url, ttlSec: 60, now: clock.now });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      ttlSec: 60,
+      now: clock.now,
+    });
 
     expect((await client.getCityConfig("LOS")).version).toBe(1);
     current = second;
@@ -89,7 +106,10 @@ describe("getCityConfig", () => {
   });
 
   it("rejects with config_unavailable when the service is unreachable", async () => {
-    const client = createConfigClient({ baseUrl: await closedPortUrl(), timeoutMs: 500 });
+    const client = createConfigClient({
+      baseUrl: await closedPortUrl(),
+      timeoutMs: 500,
+    });
     await expect(client.getCityConfig("LOS")).rejects.toMatchObject({
       code: "config_unavailable",
       status: 503,
@@ -101,7 +121,9 @@ describe("getCityConfig", () => {
       json(res, 500, { code: "internal_error", message: "boom" });
     });
     const client = createConfigClient({ baseUrl: server.url });
-    await expect(client.getCityConfig("LOS")).rejects.toMatchObject({ code: "config_unavailable" });
+    await expect(client.getCityConfig("LOS")).rejects.toMatchObject({
+      code: "config_unavailable",
+    });
   });
 
   it("rejects with config_unavailable when the body is not a city config", async () => {
@@ -126,10 +148,15 @@ describe("getCityConfig", () => {
 
   it("reports a definitive 404 as itself, and still refuses to invent a config", async () => {
     server = await startServer((_req, res) => {
-      json(res, 404, { code: "city_unsupported", message: "city is not configured" });
+      json(res, 404, {
+        code: "city_unsupported",
+        message: "city is not configured",
+      });
     });
     const client = createConfigClient({ baseUrl: server.url });
-    const error = await client.getCityConfig("ZZZ").catch((err: unknown) => err);
+    const error = await client
+      .getCityConfig("ZZZ")
+      .catch((err: unknown) => err);
     expect(error).toBeInstanceOf(ContractError);
     expect((error as ContractError).code).toBe("city_unsupported");
     expect((error as ContractError).status).toBe(404);
@@ -146,7 +173,11 @@ describe("getCityConfig", () => {
       }
       json(res, 200, config, { etag: etagFor(config) });
     });
-    const client = createConfigClient({ baseUrl: server.url, ttlSec: 60, now: clock.now });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      ttlSec: 60,
+      now: clock.now,
+    });
 
     await client.getCityConfig("LOS");
     healthy = false;
@@ -188,7 +219,11 @@ describe("getFlags", () => {
     server = await startServer((_req, res) => {
       json(res, 200, { move: true, bites: false });
     });
-    const client = createConfigClient({ baseUrl: server.url, ttlSec: 60, now: new Clock().now });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      ttlSec: 60,
+      now: new Clock().now,
+    });
 
     const flags = await client.getFlags({ cityId: "LOS", userId: "usr_1" });
     expect(flags).toEqual({ move: true, bites: false });
@@ -199,7 +234,10 @@ describe("getFlags", () => {
   });
 
   it("denies everything when the service is unreachable", async () => {
-    const client = createConfigClient({ baseUrl: await closedPortUrl(), timeoutMs: 500 });
+    const client = createConfigClient({
+      baseUrl: await closedPortUrl(),
+      timeoutMs: 500,
+    });
     expect(await client.getFlags({ cityId: "LOS" })).toEqual(DENY_ALL);
   });
 
@@ -236,7 +274,11 @@ describe("getFlags", () => {
       }
       json(res, 200, { move: true });
     });
-    const client = createConfigClient({ baseUrl: server.url, ttlSec: 60, now: new Clock().now });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      ttlSec: 60,
+      now: new Clock().now,
+    });
 
     expect(await client.getFlags({ cityId: "LOS" })).toEqual(DENY_ALL);
     healthy = true;
@@ -247,7 +289,10 @@ describe("getFlags", () => {
     server = await startServer((_req, res) => {
       json(res, 200, { move: true });
     });
-    const client = createConfigClient({ baseUrl: server.url, serviceKey: "internal-key" });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      serviceKey: "internal-key",
+    });
     await client.getFlags({ cityId: "LOS", userId: "usr_1" });
     expect(server.requests[0]?.headers["x-service-key"]).toBe("internal-key");
     expect(server.requests[0]?.headers["x-user-id"]).toBe("usr_1");
@@ -315,8 +360,16 @@ describe("shared redis cache and invalidation", () => {
       json(res, 200, config, { etag: etagFor(config) });
     });
 
-    const first = createConfigClient({ baseUrl: server.url, cache: redis, ttlSec: 60 });
-    const second = createConfigClient({ baseUrl: server.url, cache: redis, ttlSec: 60 });
+    const first = createConfigClient({
+      baseUrl: server.url,
+      cache: redis,
+      ttlSec: 60,
+    });
+    const second = createConfigClient({
+      baseUrl: server.url,
+      cache: redis,
+      ttlSec: 60,
+    });
 
     expect(await first.getCityConfig("LOS")).toEqual(config);
     expect(await second.getCityConfig("LOS")).toEqual(config);
@@ -331,7 +384,11 @@ describe("shared redis cache and invalidation", () => {
       json(res, 200, current, { etag: etagFor(current) });
     });
 
-    const client = createConfigClient({ baseUrl: server.url, cache: redis, ttlSec: 60 });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      cache: redis,
+      ttlSec: 60,
+    });
     const subscriber = redis.duplicate();
     await client.watchInvalidations(subscriber);
 
@@ -341,7 +398,11 @@ describe("shared redis cache and invalidation", () => {
     const publisher = redis.duplicate();
     await publisher.publish(
       CONFIG_INVALIDATION_CHANNEL,
-      JSON.stringify({ kind: "config", scopeId: "LOS", at: new Date().toISOString() }),
+      JSON.stringify({
+        kind: "config",
+        scopeId: "LOS",
+        at: new Date().toISOString(),
+      }),
     );
     await new Promise((resolve) => setTimeout(resolve, 150));
 
@@ -357,17 +418,27 @@ describe("shared redis cache and invalidation", () => {
       json(res, 200, current);
     });
 
-    const client = createConfigClient({ baseUrl: server.url, cache: redis, ttlSec: 60 });
+    const client = createConfigClient({
+      baseUrl: server.url,
+      cache: redis,
+      ttlSec: 60,
+    });
     const subscriber = redis.duplicate();
     await client.watchInvalidations(subscriber);
 
-    expect(await client.getFlags({ cityId: "LOS", userId: "usr_1" })).toEqual(current);
+    expect(await client.getFlags({ cityId: "LOS", userId: "usr_1" })).toEqual(
+      current,
+    );
 
     current = { move: true, bites: true };
     const publisher = redis.duplicate();
     await publisher.publish(
       CONFIG_INVALIDATION_CHANNEL,
-      JSON.stringify({ kind: "flags", scopeId: "LOS", at: new Date().toISOString() }),
+      JSON.stringify({
+        kind: "flags",
+        scopeId: "LOS",
+        at: new Date().toISOString(),
+      }),
     );
     await new Promise((resolve) => setTimeout(resolve, 150));
 

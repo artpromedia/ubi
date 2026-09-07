@@ -58,7 +58,10 @@ export function isLedgerAccount(value: string): value is LedgerAccount {
 }
 
 /** Accounts whose lines land in a wallet balance and therefore require a `walletId`. */
-export const WALLET_BEARING_ACCOUNTS: readonly LedgerAccount[] = ["wallet", "tips"];
+export const WALLET_BEARING_ACCOUNTS: readonly LedgerAccount[] = [
+  "wallet",
+  "tips",
+];
 
 export function isWalletBearing(account: LedgerAccount): boolean {
   return WALLET_BEARING_ACCOUNTS.includes(account);

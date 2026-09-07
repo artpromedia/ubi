@@ -6,7 +6,12 @@ import { createApp } from "../src/app";
 import { verifyIdentityContext } from "../src/identity/context";
 import { setIdentityStateStore } from "../src/lib/redis";
 import { IDENTITY_HEADER } from "../src/middleware/identity";
-import { clientToken, openRiskStore, startUpstream, type Upstream } from "./helpers";
+import {
+  clientToken,
+  openRiskStore,
+  startUpstream,
+  type Upstream,
+} from "./helpers";
 
 let upstream: Upstream;
 const app = createApp("test");
@@ -54,7 +59,11 @@ describe("inbound identity headers are stripped", () => {
 
   it("strips every reserved family, including the internal-service bypass", async () => {
     // A limited-mode token, so a forged wide scope header would be visible.
-    const token = await clientToken({ sub: "usr_real", role: "rider", mode: "limited" });
+    const token = await clientToken({
+      sub: "usr_real",
+      role: "rider",
+      mode: "limited",
+    });
 
     await app.fetch(
       new Request("http://gateway.test/v1/users/me", {
@@ -81,8 +90,12 @@ describe("inbound identity headers are stripped", () => {
     expect(forwarded?.headers["x-session-id"]).toBeUndefined();
     // The scope header is the gateway's own computation, not the client's:
     // a limited-mode session never carries a money or security scope.
-    expect(forwarded?.headers["x-ubi-scopes"]).not.toContain("security:pin:change");
-    expect(forwarded?.headers["x-ubi-scopes"]).not.toContain("wallet:transfer:p2p");
+    expect(forwarded?.headers["x-ubi-scopes"]).not.toContain(
+      "security:pin:change",
+    );
+    expect(forwarded?.headers["x-ubi-scopes"]).not.toContain(
+      "wallet:transfer:p2p",
+    );
     expect(forwarded?.headers["x-ubi-scopes"]).toContain("ride:book:cash");
     expect(forwarded?.headers["x-ubi-modes"]).toBe("limited");
   });
@@ -124,7 +137,10 @@ describe("inbound identity headers are stripped", () => {
     await app.fetch(
       new Request("http://gateway.test/v1/users/me", {
         method: "GET",
-        headers: { authorization: `Bearer ${token}`, "x-request-id": "trace-abc-123" },
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-request-id": "trace-abc-123",
+        },
       }),
     );
     expect(upstream.received[0]?.headers["x-request-id"]).toBe("trace-abc-123");
@@ -135,7 +151,7 @@ describe("inbound identity headers are stripped", () => {
         method: "GET",
         headers: {
           authorization: `Bearer ${token}`,
-          "x-request-id": "id\" OR 1=1 -- with spaces and quotes",
+          "x-request-id": 'id" OR 1=1 -- with spaces and quotes',
         },
       }),
     );

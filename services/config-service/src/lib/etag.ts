@@ -8,7 +8,9 @@ import { createHash } from "node:crypto";
 import { canonicalJson } from "./json";
 
 export function strongEtag(value: unknown): string {
-  const digest = createHash("sha256").update(canonicalJson(value)).digest("base64url");
+  const digest = createHash("sha256")
+    .update(canonicalJson(value))
+    .digest("base64url");
   return `"${digest}"`;
 }
 
@@ -16,9 +18,14 @@ export function strongEtag(value: unknown): string {
  * RFC 9110 If-None-Match. A weak validator (W/"...") matches too: for a
  * read-only GET, weak comparison is the correct semantics.
  */
-export function etagMatches(ifNoneMatch: string | undefined, etag: string): boolean {
+export function etagMatches(
+  ifNoneMatch: string | undefined,
+  etag: string,
+): boolean {
   if (ifNoneMatch === undefined || ifNoneMatch.trim() === "") return false;
   const candidates = ifNoneMatch.split(",").map((part) => part.trim());
   if (candidates.includes("*")) return true;
-  return candidates.some((candidate) => candidate === etag || candidate === `W/${etag}`);
+  return candidates.some(
+    (candidate) => candidate === etag || candidate === `W/${etag}`,
+  );
 }

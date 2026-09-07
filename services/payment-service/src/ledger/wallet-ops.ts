@@ -25,7 +25,10 @@ export interface WalletOverview {
     readonly singleTransfer: Money;
     readonly balanceCap: Money | null;
   };
-  readonly safeMode: { readonly active: boolean; readonly until: string | null };
+  readonly safeMode: {
+    readonly active: boolean;
+    readonly until: string | null;
+  };
   readonly locked: boolean;
   readonly pinSet: boolean;
   readonly pinLockedUntil: string | null;
@@ -163,7 +166,10 @@ export async function resetPin(
   }
   const challengeAge = now.getTime() - challenge.createdAt.getTime();
   if (challengeAge > config.policy.pinResetCoolingMinutes * 60_000) {
-    throw new ContractError("step_up_required", "that step-up is too old to reuse");
+    throw new ContractError(
+      "step_up_required",
+      "that step-up is too old to reuse",
+    );
   }
 
   const wallet = await deps.db.$transaction((tx) =>
@@ -231,7 +237,10 @@ export async function resetPin(
     return {
       walletId: wallet.id,
       coolingUntil: coolingUntil.toISOString(),
-      coolingCap: money(config.policy.pinResetCoolingCapMinor, config.city.currency),
+      coolingCap: money(
+        config.policy.pinResetCoolingCapMinor,
+        config.city.currency,
+      ),
     };
   });
 }

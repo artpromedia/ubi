@@ -87,12 +87,22 @@ export interface HistoryEntry {
   readonly reason: string | null;
 }
 
-function parseStoredConfig(cityId: string, version: number, stored: unknown): CityConfig {
+function parseStoredConfig(
+  cityId: string,
+  version: number,
+  stored: unknown,
+): CityConfig {
   const parsed = CityConfigSchema.safeParse(stored);
   if (!parsed.success) {
     // Only reachable if a row was written around this service.
-    configLogger.error({ cityId, version }, "activated config row does not parse");
-    throw new ContractError("internal_error", "stored city config is not readable");
+    configLogger.error(
+      { cityId, version },
+      "activated config row does not parse",
+    );
+    throw new ContractError(
+      "internal_error",
+      "stored city config is not readable",
+    );
   }
   return parsed.data;
 }
@@ -105,22 +115,34 @@ async function cityExists(cityId: string): Promise<boolean> {
 async function loadActiveRow(
   client: Tx,
   cityId: string,
-): Promise<{ version: number; config: unknown; activatedAt: Date } | undefined> {
+): Promise<
+  { version: number; config: unknown; activatedAt: Date } | undefined
+> {
   const row = await client.cityConfigVersion.findFirst({
     where: { cityId, activatedAt: { not: null } },
     orderBy: { version: "desc" },
   });
   if (row === null || row.activatedAt === null) return undefined;
-  return { version: row.version, config: row.config, activatedAt: row.activatedAt };
+  return {
+    version: row.version,
+    config: row.config,
+    activatedAt: row.activatedAt,
+  };
 }
 
 async function loadActiveConfig(cityId: string): Promise<ActiveConfig> {
   const row = await loadActiveRow(prisma, cityId);
   if (row === undefined) {
     if (!(await cityExists(cityId))) {
-      throw new ContractError("city_unsupported", "city is not configured", { cityId });
+      throw new ContractError("city_unsupported", "city is not configured", {
+        cityId,
+      });
     }
-    throw new ContractError("not_found", "city has no activated config version", { cityId });
+    throw new ContractError(
+      "not_found",
+      "city has no activated config version",
+      { cityId },
+    );
   }
   const config = parseStoredConfig(cityId, row.version, row.config);
   return {
@@ -141,7 +163,10 @@ export async function getActiveConfig(cityId: string): Promise<ActiveConfig> {
       const candidate = raw as Partial<ActiveConfig>;
       const parsed = CityConfigSchema.safeParse(candidate.config);
       if (!parsed.success) return undefined;
-      if (typeof candidate.version !== "number" || typeof candidate.activatedAt !== "string") {
+      if (
+        typeof candidate.version !== "number" ||
+        typeof candidate.activatedAt !== "string"
+      ) {
         return undefined;
       }
       return {
@@ -217,7 +242,9 @@ export async function createChangeRequest(
 ): Promise<ChangeRequestView> {
   const { cityId, patch, reason, actor } = input;
   if (!(await cityExists(cityId))) {
-    throw new ContractError("city_unsupported", "city is not configured", { cityId });
+    throw new ContractError("city_unsupported", "city is not configured", {
+      cityId,
+    });
   }
   rejectServerOwnedKeys(patch);
 
@@ -228,7 +255,11 @@ export async function createChangeRequest(
 
   const id = deterministicId(
     "ccr",
-    scopedIdempotencyKey("config.change_request", actor.id, input.idempotencyKey),
+    scopedIdempotencyKey(
+      "config.change_request",
+      actor.id,
+      input.idempotencyKey,
+    ),
   );
 
   const existing = await prisma.configChangeRequest.findUnique({
@@ -309,9 +340,13 @@ export async function approveChangeRequest(
 ): Promise<ApprovalResult> {
   const { requestId, actor } = input;
 
-  const request = await prisma.configChangeRequest.findUnique({ where: { id: requestId } });
+  const request = await prisma.configChangeRequest.findUnique({
+    where: { id: requestId },
+  });
   if (request === null) {
-    throw new ContractError("not_found", "change request not found", { requestId });
+    throw new ContractError("not_found", "change request not found", {
+      requestId,
+    });
   }
   if (request.authorId === actor.id) {
     throw new ContractError(
@@ -330,12 +365,21 @@ export async function approveChangeRequest(
   const result = await prisma
     .$transaction(
       async (tx) => {
-        const current = await tx.configChangeRequest.findUnique({ where: { id: requestId } });
-        if (current === null || current.status !== CHANGE_REQUEST_STATUS.pending) {
-          throw new ContractError("conflict", "change request is no longer pending", {
-            requestId,
-            status: current?.status ?? "missing",
-          });
+        const current = await tx.configChangeRequest.findUnique({
+          where: { id: requestId },
+        });
+        if (
+          current === null ||
+          current.status !== CHANGE_REQUEST_STATUS.pending
+        ) {
+          throw new ContractError(
+            "conflict",
+            "change request is no longer pending",
+            {
+              requestId,
+              status: current?.status ?? "missing",
+            },
+          );
         }
 
         const approvalId = deterministicId("cap", requestId, actor.id);
@@ -348,14 +392,20 @@ export async function approveChangeRequest(
             err instanceof Prisma.PrismaClientKnownRequestError &&
             (err.code === "P2002" || err.code === "P2010")
           ) {
-            throw new ContractError("already_approved", "this approver already approved", {
-              requestId,
-            });
+            throw new ContractError(
+              "already_approved",
+              "this approver already approved",
+              {
+                requestId,
+              },
+            );
           }
           throw err;
         }
 
-        const approvals = await tx.configApproval.count({ where: { requestId } });
+        const approvals = await tx.configApproval.count({
+          where: { requestId },
+        });
         if (approvals < REQUIRED_APPROVALS) {
           return {
             requestId,
@@ -378,7 +428,8 @@ export async function approveChangeRequest(
         ).map((row) => row.approverId);
 
         const active = await loadActiveRow(tx, current.cityId);
-        const baseConfig = active === undefined ? {} : asJsonObject(active.config);
+        const baseConfig =
+          active === undefined ? {} : asJsonObject(active.config);
         const version = await nextVersion(tx, current.cityId);
         // Re-validated against the config that is active *now*, not the one that
         // was active when the request was raised.
@@ -417,7 +468,10 @@ export async function approveChangeRequest(
           before:
             active === undefined
               ? undefined
-              : ({ version: active.version, config: baseConfig } as Prisma.InputJsonValue),
+              : ({
+                  version: active.version,
+                  config: baseConfig,
+                } as Prisma.InputJsonValue),
           after: {
             version,
             config: candidate,
@@ -466,12 +520,20 @@ export async function approveChangeRequest(
       if (err instanceof Prisma.PrismaClientKnownRequestError) {
         if (err.code === "P2002") {
           // A concurrent activation took this version number or this approval.
-          throw new ContractError("conflict", "concurrent config change; retry", {
-            requestId,
-          });
+          throw new ContractError(
+            "conflict",
+            "concurrent config change; retry",
+            {
+              requestId,
+            },
+          );
         }
         if (err.code === "P2034") {
-          throw new ContractError("conflict", "concurrent config change; retry", { requestId });
+          throw new ContractError(
+            "conflict",
+            "concurrent config change; retry",
+            { requestId },
+          );
         }
       }
       throw err;
@@ -480,7 +542,11 @@ export async function approveChangeRequest(
   if (result.activated) {
     await configCache.invalidate(
       { kind: "config", scopeId: result.cityId },
-      { kind: "config", scopeId: result.cityId, ...(result.version === null ? {} : { version: result.version }) },
+      {
+        kind: "config",
+        scopeId: result.cityId,
+        ...(result.version === null ? {} : { version: result.version }),
+      },
     );
     configLogger.info(
       { cityId: result.cityId, version: result.version, requestId },
@@ -491,9 +557,13 @@ export async function approveChangeRequest(
   return result;
 }
 
-export async function getHistory(cityId: string): Promise<readonly HistoryEntry[]> {
+export async function getHistory(
+  cityId: string,
+): Promise<readonly HistoryEntry[]> {
   if (!(await cityExists(cityId))) {
-    throw new ContractError("city_unsupported", "city is not configured", { cityId });
+    throw new ContractError("city_unsupported", "city is not configured", {
+      cityId,
+    });
   }
   const versions = await prisma.cityConfigVersion.findMany({
     where: { cityId },
@@ -516,7 +586,9 @@ export async function getHistory(cityId: string): Promise<readonly HistoryEntry[
     const audit = auditBySubject.get(version.id);
     const after = asJsonObject(audit?.after);
     const approvers = Array.isArray(after["approvers"])
-      ? (after["approvers"] as unknown[]).filter((value): value is string => typeof value === "string")
+      ? (after["approvers"] as unknown[]).filter(
+          (value): value is string => typeof value === "string",
+        )
       : [];
     return {
       version: version.version,

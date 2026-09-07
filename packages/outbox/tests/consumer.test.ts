@@ -100,7 +100,10 @@ describe("subscribeOutbox dedupe", () => {
 
     try {
       const rideId = uid("ride");
-      await pub.publish(subjectChannel({ type: "ride", id: rideId }), "{not valid json");
+      await pub.publish(
+        subjectChannel({ type: "ride", id: rideId }),
+        "{not valid json",
+      );
       await until(() => errors.length === 1);
       expect(seen).toEqual([]);
     } finally {

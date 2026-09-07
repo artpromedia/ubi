@@ -6,7 +6,11 @@
  * contract assigns. Clients branch on `code`, never on message text, so copy
  * can change without changing behaviour.
  */
-import { ContractError, IDEMPOTENCY_HEADER, IdempotencyKeySchema } from "@ubi/contracts";
+import {
+  ContractError,
+  IDEMPOTENCY_HEADER,
+  IdempotencyKeySchema,
+} from "@ubi/contracts";
 import type { Context } from "hono";
 import { z } from "zod";
 
@@ -20,7 +24,10 @@ export function contractRoute(handler: IdentityHandler): IdentityHandler {
       return await handler(c);
     } catch (error) {
       if (error instanceof ContractError) {
-        return c.json({ success: false, error: error.toBody() }, error.status as 400);
+        return c.json(
+          { success: false, error: error.toBody() },
+          error.status as 400,
+        );
       }
       if (error instanceof z.ZodError) {
         return c.json(
@@ -48,7 +55,10 @@ export function contractRoute(handler: IdentityHandler): IdentityHandler {
       return c.json(
         {
           success: false,
-          error: { code: "internal_error", message: "An unexpected error occurred" },
+          error: {
+            code: "internal_error",
+            message: "An unexpected error occurred",
+          },
         },
         500,
       );
@@ -56,7 +66,11 @@ export function contractRoute(handler: IdentityHandler): IdentityHandler {
   };
 }
 
-export function ok(c: Context, data: unknown, status: 200 | 201 = 200): Response {
+export function ok(
+  c: Context,
+  data: unknown,
+  status: 200 | 201 = 200,
+): Response {
   return c.json({ success: true, data }, status);
 }
 
@@ -71,7 +85,10 @@ export function requireIdempotencyKey(c: Context): string {
   }
   const parsed = IdempotencyKeySchema.safeParse(raw);
   if (!parsed.success) {
-    throw new ContractError("validation_failed", "Idempotency-Key is not in a usable form");
+    throw new ContractError(
+      "validation_failed",
+      "Idempotency-Key is not in a usable form",
+    );
   }
   return parsed.data;
 }

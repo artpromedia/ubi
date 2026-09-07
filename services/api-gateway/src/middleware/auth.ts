@@ -219,7 +219,9 @@ export const authMiddleware = createMiddleware(
         email: jwtPayload.email,
         role: jwtPayload.role,
         permissions: jwtPayload.permissions ?? [],
-        scopes: Array.isArray(jwtPayload.scopes) ? jwtPayload.scopes : undefined,
+        scopes: Array.isArray(jwtPayload.scopes)
+          ? jwtPayload.scopes
+          : undefined,
         mode: jwtPayload.mode === "limited" ? "limited" : "full",
         cityId: optionalString(jwtPayload.cityId),
         tenantId: optionalString(jwtPayload.tenantId),

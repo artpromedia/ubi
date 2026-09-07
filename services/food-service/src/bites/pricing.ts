@@ -8,7 +8,13 @@
  * options each allows — are enforced here so an incomplete or over-filled
  * selection is refused before it reaches the cart.
  */
-import { addMoney, money, sumMoney, type Money, ContractError } from "@ubi/contracts";
+import {
+  addMoney,
+  money,
+  sumMoney,
+  type Money,
+  ContractError,
+} from "@ubi/contracts";
 import { z } from "zod";
 
 export interface OptionForPricing {
@@ -60,7 +66,9 @@ export interface PricedLine {
 
 /** An item is not addable while it is inactive or sold out for a window not yet past. */
 export function isSoldOut(item: MenuItemForPricing, now: Date): boolean {
-  return item.soldOutUntil !== null && item.soldOutUntil.getTime() > now.getTime();
+  return (
+    item.soldOutUntil !== null && item.soldOutUntil.getTime() > now.getTime()
+  );
 }
 
 export function assertAddable(item: MenuItemForPricing, now: Date): void {
@@ -89,7 +97,10 @@ export function priceSelection(
   item: MenuItemForPricing,
   optionIds: readonly string[],
 ): { readonly unitPrice: Money; readonly options: readonly SelectedOption[] } {
-  const optionToGroup = new Map<string, { group: OptionGroupForPricing; option: OptionForPricing }>();
+  const optionToGroup = new Map<
+    string,
+    { group: OptionGroupForPricing; option: OptionForPricing }
+  >();
   for (const group of item.optionGroups) {
     for (const option of group.options) {
       optionToGroup.set(option.id, { group, option });
@@ -113,12 +124,17 @@ export function priceSelection(
       name: found.option.name,
       priceDeltaMinor: found.option.priceDeltaMinor,
     });
-    countByGroup.set(found.group.id, (countByGroup.get(found.group.id) ?? 0) + 1);
+    countByGroup.set(
+      found.group.id,
+      (countByGroup.get(found.group.id) ?? 0) + 1,
+    );
   }
 
   for (const group of item.optionGroups) {
     const count = countByGroup.get(group.id) ?? 0;
-    const minRequired = group.required ? Math.max(group.minSelect, 1) : group.minSelect;
+    const minRequired = group.required
+      ? Math.max(group.minSelect, 1)
+      : group.minSelect;
     if (count < minRequired) {
       throw new ContractError(
         "validation_failed",
@@ -148,7 +164,9 @@ export function priceSelection(
   }
 
   const base = money(item.priceMinor, item.currency);
-  const deltas = selected.map((option) => money(option.priceDeltaMinor, item.currency));
+  const deltas = selected.map((option) =>
+    money(option.priceDeltaMinor, item.currency),
+  );
   const unitPrice = addMoney(base, sumMoney(deltas, item.currency));
   return { unitPrice, options: selected };
 }
@@ -178,7 +196,10 @@ export function priceLine(
 }
 
 /** The subtotal of a set of lines, in the given currency. */
-export function subtotalOf(lines: readonly PricedLine[], currency: string): Money {
+export function subtotalOf(
+  lines: readonly PricedLine[],
+  currency: string,
+): Money {
   return sumMoney(
     lines.map((line) => money(line.lineTotalMinor, currency)),
     currency,
@@ -212,13 +233,18 @@ const PricedLineSchema = z.object({
 export function parseLines(value: unknown): PricedLine[] {
   const parsed = z.array(PricedLineSchema).safeParse(value);
   if (!parsed.success) {
-    throw new ContractError("internal_error", "stored cart/order lines are malformed");
+    throw new ContractError(
+      "internal_error",
+      "stored cart/order lines are malformed",
+    );
   }
   return parsed.data;
 }
 
 /** A stable signature for a line's item + options, so identical lines merge. */
-export function lineSignature(itemId: string, optionIds: readonly string[]): string {
+export function lineSignature(
+  itemId: string,
+  optionIds: readonly string[],
+): string {
   return `${itemId}|${[...optionIds].sort().join(",")}`;
 }
-

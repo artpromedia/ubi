@@ -34,7 +34,10 @@ export interface OutboxInput {
   readonly occurredAt?: Date;
 }
 
-export async function writeOutboxEvent(tx: Tx, input: OutboxInput): Promise<EventEnvelope> {
+export async function writeOutboxEvent(
+  tx: Tx,
+  input: OutboxInput,
+): Promise<EventEnvelope> {
   const occurredAt = input.occurredAt ?? new Date();
   const envelope: EventEnvelope = EventEnvelopeSchema.parse({
     id: newId("evt"),

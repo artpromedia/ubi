@@ -88,7 +88,8 @@ function toItemView(item: ItemWithGroups, now: Date): MenuItemView {
     currency: item.currency,
     allergens: item.allergens,
     active: item.active,
-    soldOut: item.soldOutUntil !== null && item.soldOutUntil.getTime() > now.getTime(),
+    soldOut:
+      item.soldOutUntil !== null && item.soldOutUntil.getTime() > now.getTime(),
     optionGroups: item.optionGroups.map((group) => ({
       id: group.id,
       name: group.name,

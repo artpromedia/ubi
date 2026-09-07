@@ -50,7 +50,12 @@ async function scenario(
     ensureWallet(tx, "user", recipientUser.id, config.city),
   );
 
-  await setInitialPin(deps, { id: senderUser.id, role: "rider" }, city.cityId, PIN);
+  await setInitialPin(
+    deps,
+    { id: senderUser.id, role: "rider" },
+    city.cityId,
+    PIN,
+  );
   if (senderBalanceMinor > 0) {
     await fundWallet(db, senderWallet.id, city.currency, senderBalanceMinor);
   }
@@ -88,10 +93,14 @@ describe("wallet transfers", () => {
       money(250_000, s.currency),
     );
 
-    const lines = await db.journalLine.findMany({ where: { entryId: result.entryId! } });
+    const lines = await db.journalLine.findMany({
+      where: { entryId: result.entryId! },
+    });
     expect(lines).toHaveLength(2);
     expect(lines.every((line) => line.counterpartRef !== null)).toBe(true);
-    expect(lines.reduce((total, line) => total + Number(line.amountMinor), 0)).toBe(0);
+    expect(
+      lines.reduce((total, line) => total + Number(line.amountMinor), 0),
+    ).toBe(0);
 
     const audit = await db.auditLog.findFirst({
       where: { subjectType: "transfer", subjectId: result.transferId },
@@ -190,7 +199,9 @@ describe("wallet transfers", () => {
       details: { replayed: true },
     });
 
-    const rows = await db.transfer.findMany({ where: { fromWallet: s.sender.walletId } });
+    const rows = await db.transfer.findMany({
+      where: { fromWallet: s.sender.walletId },
+    });
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("rejected_limit");
     expect(await balanceOf(db, s.sender.walletId, s.currency)).toEqual(
@@ -199,7 +210,10 @@ describe("wallet transfers", () => {
   });
 
   it("enforces the tier's daily limit across several transfers", async () => {
-    const s = await scenario({ dailyOutMinor: 300_000, singleTransferMinor: 300_000 });
+    const s = await scenario({
+      dailyOutMinor: 300_000,
+      singleTransferMinor: 300_000,
+    });
     await sendTransfer(s.deps, {
       actor: { id: s.sender.id, role: "rider" },
       cityId: s.cityId,
@@ -243,7 +257,9 @@ describe("wallet transfers", () => {
   });
 
   it("holds a risky transfer for a human instead of posting it", async () => {
-    const s = await scenario({ policy: { newRecipientHoldAboveMinor: 100_000 } });
+    const s = await scenario({
+      policy: { newRecipientHoldAboveMinor: 100_000 },
+    });
     const result = await sendTransfer(s.deps, {
       actor: { id: s.sender.id, role: "rider" },
       cityId: s.cityId,
@@ -275,7 +291,10 @@ describe("wallet transfers", () => {
 
   it("holds on velocity once the window's ceiling is passed", async () => {
     const s = await scenario({
-      policy: { velocityMaxTransfers: 1, newRecipientHoldAboveMinor: 100_000_000 },
+      policy: {
+        velocityMaxTransfers: 1,
+        newRecipientHoldAboveMinor: 100_000_000,
+      },
     });
     const first = await sendTransfer(s.deps, {
       actor: { id: s.sender.id, role: "rider" },
@@ -323,7 +342,9 @@ describe("wallet transfers", () => {
       }),
     ).rejects.toMatchObject({ code: "pin_attempts_exhausted" });
 
-    const wallet = await db.wallet.findUniqueOrThrow({ where: { id: s.sender.walletId } });
+    const wallet = await db.wallet.findUniqueOrThrow({
+      where: { id: s.sender.walletId },
+    });
     expect(wallet.pinFailedAttempts).toBe(2);
     expect(wallet.pinLockedUntil).not.toBeNull();
 
@@ -340,7 +361,9 @@ describe("wallet transfers", () => {
   });
 
   it("404s when the wallet_p2p flag is off, so a deep link cannot probe it", async () => {
-    const s = await scenario({ flags: { wallet_p2p: false, wallet_nip: false } });
+    const s = await scenario({
+      flags: { wallet_p2p: false, wallet_nip: false },
+    });
     await expect(
       sendTransfer(s.deps, {
         actor: { id: s.sender.id, role: "rider" },

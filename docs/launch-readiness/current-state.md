@@ -15,15 +15,15 @@ Every claim below carries the command that produced it.
 
 ## 1. Environment used for verification
 
-| Tool | Version | Notes |
-|---|---|---|
-| Node | 22.22.2 | |
-| pnpm | 9.14.2 | matches `packageManager` |
-| Go | 1.24.7 | |
-| PostgreSQL | 16.13 | started locally for this work |
-| PostGIS | 3.4 | installed; `schema.prisma` declares the extension |
-| Redis | 7.x | started locally |
-| Flutter / Dart | **absent** | `which flutter` and `which dart` both fail |
+| Tool           | Version    | Notes                                             |
+| -------------- | ---------- | ------------------------------------------------- |
+| Node           | 22.22.2    |                                                   |
+| pnpm           | 9.14.2     | matches `packageManager`                          |
+| Go             | 1.24.7     |                                                   |
+| PostgreSQL     | 16.13      | started locally for this work                     |
+| PostGIS        | 3.4        | installed; `schema.prisma` declares the extension |
+| Redis          | 7.x        | started locally                                   |
+| Flutter / Dart | **absent** | `which flutter` and `which dart` both fail        |
 
 The missing Flutter SDK is the single largest verification gap. No Dart in this repository
 can currently be compiled, analysed or tested here, so any mobile change is
@@ -72,13 +72,13 @@ ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block
 
 Verified by provisioning a database from the baseline and querying `information_schema`:
 
-| Statement referenced | Reality | Resolution |
-|---|---|---|
-| `balance_holds(account_id, status)`, `WHERE status = 'ACTIVE'` | no `status` column; the model uses `is_released` | re-expressed as `WHERE is_released = false` |
-| `fraud_alerts(user_id, is_active, ...)` | **table does not exist**; nearest is `alerts`, which has neither column | replaced with an index on the real `alerts` shape |
-| `payouts(status, scheduled_at)` | no `scheduled_at` column | uses `initiated_at` |
-| `driver_earnings(driver_id, period_start, period_end)` | neither period column exists | uses `created_at` |
-| `idx_transactions_recent … WHERE created_at > NOW() - INTERVAL '30 days'` | index predicates must be IMMUTABLE; `NOW()` is STABLE | replaced with a plain index on `created_at` |
+| Statement referenced                                                      | Reality                                                                 | Resolution                                        |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------- |
+| `balance_holds(account_id, status)`, `WHERE status = 'ACTIVE'`            | no `status` column; the model uses `is_released`                        | re-expressed as `WHERE is_released = false`       |
+| `fraud_alerts(user_id, is_active, ...)`                                   | **table does not exist**; nearest is `alerts`, which has neither column | replaced with an index on the real `alerts` shape |
+| `payouts(status, scheduled_at)`                                           | no `scheduled_at` column                                                | uses `initiated_at`                               |
+| `driver_earnings(driver_id, period_start, period_end)`                    | neither period column exists                                            | uses `created_at`                                 |
+| `idx_transactions_recent … WHERE created_at > NOW() - INTERVAL '30 days'` | index predicates must be IMMUTABLE; `NOW()` is STABLE                   | replaced with a plain index on `created_at`       |
 
 Every change is annotated inline in the migration file with the reason.
 
@@ -124,19 +124,19 @@ keys in the `transitions` map. They are terminal leaves, and the generator keeps
 the state union rather than dropping them silently, reporting them in
 `TERMINAL_ONLY_STATES`:
 
-| Machine | Target-only states |
-|---|---|
-| rider | `cancelled_by_ops`, `cancelled_by_rider`, `no_show` |
-| driver | `no_show` |
-| order | `auth_released`, `closed` |
-| shipment | `closed`, `hub_pickup`, `neighbour_delivery`, `return_to_sender` |
-| flightBooking | `hold_expired`, `next_day_switched` |
-| stayBooking | `cancelled_by_guest`, `closed`, `first_night_covered`, `hold_expired`, `refunded`, `replied` |
-| journeyLeg | `cancelled` |
-| reservation | `completed`, `no_show` |
-| fleetAssignment | `declined`, `expired` |
-| walletTransfer | `closed`, `rejected_limit`, `rejected_safe_mode`, `reversed` |
-| supportCase | `closed` |
+| Machine         | Target-only states                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------- |
+| rider           | `cancelled_by_ops`, `cancelled_by_rider`, `no_show`                                          |
+| driver          | `no_show`                                                                                    |
+| order           | `auth_released`, `closed`                                                                    |
+| shipment        | `closed`, `hub_pickup`, `neighbour_delivery`, `return_to_sender`                             |
+| flightBooking   | `hold_expired`, `next_day_switched`                                                          |
+| stayBooking     | `cancelled_by_guest`, `closed`, `first_night_covered`, `hold_expired`, `refunded`, `replied` |
+| journeyLeg      | `cancelled`                                                                                  |
+| reservation     | `completed`, `no_show`                                                                       |
+| fleetAssignment | `declined`, `expired`                                                                        |
+| walletTransfer  | `closed`, `rejected_limit`, `rejected_safe_mode`, `reversed`                                 |
+| supportCase     | `closed`                                                                                     |
 
 **Needs a contract decision:** whether each of these is genuinely terminal, or whether a
 transition out of it is missing. `rider.cancelled_by_rider` and `reservation.completed`
@@ -146,9 +146,9 @@ look most likely to be omissions.
 
 The handoff DDL says "keep names". Two of its tables already exist with different shapes:
 
-| Table | Existing owner | Handoff owner (slice 05) |
-|---|---|---|
-| `merchants` | `Merchant` model | Bites merchant with CAC/TIN/KYB |
+| Table        | Existing owner   | Handoff owner (slice 05)           |
+| ------------ | ---------------- | ---------------------------------- |
+| `merchants`  | `Merchant` model | Bites merchant with CAC/TIN/KYB    |
 | `menu_items` | `MenuItem` model | Bites menu item with option groups |
 
 **Needs a decision before slice 05 is built**: rename the new tables, migrate the old
@@ -169,11 +169,11 @@ Go, per the handoff's own instruction to ground everything in what exists.
 
 Two conventions now coexist in `schema.prisma`, on purpose:
 
-| | Original models | Handoff models |
-|---|---|---|
-| Primary key | `uuid` via `gen_random_uuid()` | `text` (nanoid) |
-| Money | `Decimal(19,4)` | `BigInt` minor units + explicit `currency` |
-| Table names | snake_case via `@@map` | snake_case, names kept exactly as the handoff DDL |
+|             | Original models                | Handoff models                                    |
+| ----------- | ------------------------------ | ------------------------------------------------- |
+| Primary key | `uuid` via `gen_random_uuid()` | `text` (nanoid)                                   |
+| Money       | `Decimal(19,4)`                | `BigInt` minor units + explicit `currency`        |
+| Table names | snake_case via `@@map`         | snake_case, names kept exactly as the handoff DDL |
 
 The handoff requires minor units: the double-entry invariant (lines sum to zero) only holds
 exactly over integers. The two conventions are separated by module, not mixed within one.
@@ -210,15 +210,15 @@ visible**.
 
 ### TypeScript services
 
-| Service | Type errors | Note |
-|---|---:|---|
-| `api-gateway` | 0 | |
-| `user-service` | 0 | |
-| `realtime-gateway` | 0 | |
-| `config-service` | 0 | added in this branch |
-| `payment-service` | ~350 | pre-existing, excluding the new ledger module |
-| `food-service` | 116 | |
-| `notification-service` | 55 | |
+| Service                | Type errors | Note                                          |
+| ---------------------- | ----------: | --------------------------------------------- |
+| `api-gateway`          |           0 |                                               |
+| `user-service`         |           0 |                                               |
+| `realtime-gateway`     |           0 |                                               |
+| `config-service`       |           0 | added in this branch                          |
+| `payment-service`      |        ~350 | pre-existing, excluding the new ledger module |
+| `food-service`         |         116 |                                               |
+| `notification-service` |          55 |                                               |
 
 All 11 shared packages typecheck.
 
@@ -255,17 +255,17 @@ guessed at or patched over, because doing so would mean inventing a schema.
 to build from a clean checkout — dependency resolution is not reproducible
 without it.
 
-| Service | Before | After |
-|---|---|---|
-| `ride-service` | **could not build** — no `go.sum` | in progress (slice 02) |
-| `location-service` | **could not build** — no `go.sum` | builds, vets clean |
+| Service            | Before                                                                                                            | After                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `ride-service`     | **could not build** — no `go.sum`                                                                                 | in progress (slice 02)                 |
+| `location-service` | **could not build** — no `go.sum`                                                                                 | builds, vets clean                     |
 | `delivery-service` | **could not build** — no `go.sum`, and `go mod tidy` failed on a test importing a module path that does not exist | builds, vets clean, handler tests pass |
 
 ### payment-service: a hand-written shim turns every database query into `any`
 
 `services/payment-service/src/types/prisma.d.ts` contains
 `declare module "@prisma/client" { ... }`. That is an **ambient module
-declaration**, so it *replaces* the generated Prisma client's types for the whole
+declaration**, so it _replaces_ the generated Prisma client's types for the whole
 service rather than adding to them. Its hand-written `PrismaClient` class ends
 with:
 
@@ -276,7 +276,7 @@ with:
 Any property access therefore type-checks and yields `any`. Verified directly:
 
 ```ts
-prisma.thisMethodDoesNotExist().andNeitherDoesThis();  // no error in payment-service
+prisma.thisMethodDoesNotExist().andNeitherDoesThis(); // no error in payment-service
 ```
 
 The identical line in `food-service`, which has no such shim, is correctly
@@ -299,7 +299,7 @@ New code does not depend on it: `src/ledger/` imports from
 ledger modules typecheck at zero errors against the true schema.
 
 **This revises §6 above.** The "521 pre-existing errors" figure counts what is
-*visible*. The true figure for payment-service alone is ~1020, so the repository
+_visible_. The true figure for payment-service alone is ~1020, so the repository
 carries roughly **1,190 type errors**, not 521.
 
 ### The first-failure mask
@@ -313,27 +313,27 @@ from all six tsconfigs that carried it.
 
 Files matching `mock data|mock_|MOCK |// Mock|TODO: replace|hardcoded|hard-coded`:
 
-| Area | Files |
-|---|---|
-| `apps/` | 24 |
-| `services/` | 33 |
-| `mobile/` | 7 |
-| `packages/` | 7 |
+| Area        | Files |
+| ----------- | ----- |
+| `apps/`     | 24    |
+| `services/` | 33    |
+| `mobile/`   | 7     |
+| `packages/` | 7     |
 
 This is a marker scan, not a judgement: some are legitimate test fixtures. It is a starting
 worklist, not a defect count.
 
 ## 8. Route inventory (Next.js `page.tsx` per app)
 
-| App | Pages |
-|---|---|
-| `apps/driver-app` | 23 |
-| `apps/admin-dashboard` | 5 |
-| `apps/web-app` | 4 |
-| `apps/fleet-portal` | 1 |
-| `apps/marketing-site` | 1 |
-| `apps/merchant-portal` | 1 |
-| `apps/restaurant-portal` | 1 |
+| App                      | Pages |
+| ------------------------ | ----- |
+| `apps/driver-app`        | 23    |
+| `apps/admin-dashboard`   | 5     |
+| `apps/web-app`           | 4     |
+| `apps/fleet-portal`      | 1     |
+| `apps/marketing-site`    | 1     |
+| `apps/merchant-portal`   | 1     |
+| `apps/restaurant-portal` | 1     |
 
 The admin navigation advertises far more destinations than the five pages that exist, and
 fleet/merchant/restaurant portals are single-page shells. Consistent with the audit.

@@ -60,7 +60,9 @@ export interface IssuedToken {
   readonly scopes: readonly string[] | null;
 }
 
-export async function issueAccessToken(input: AccessTokenInput): Promise<IssuedToken> {
+export async function issueAccessToken(
+  input: AccessTokenInput,
+): Promise<IssuedToken> {
   const scopes = input.mode === "limited" ? LIMITED_MODE_SCOPES : null;
 
   const claims: Record<string, unknown> = {
@@ -72,7 +74,8 @@ export async function issueAccessToken(input: AccessTokenInput): Promise<IssuedT
   };
   if (scopes !== null) claims.scopes = [...scopes];
   if (input.sessionId !== undefined) claims.sid = input.sessionId;
-  if (input.cityId !== undefined && input.cityId !== null) claims.cityId = input.cityId;
+  if (input.cityId !== undefined && input.cityId !== null)
+    claims.cityId = input.cityId;
 
   const accessToken = await new jose.SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
@@ -83,5 +86,10 @@ export async function issueAccessToken(input: AccessTokenInput): Promise<IssuedT
     .setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`)
     .sign(secret());
 
-  return { accessToken, expiresIn: ACCESS_TOKEN_TTL_SECONDS, mode: input.mode, scopes };
+  return {
+    accessToken,
+    expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+    mode: input.mode,
+    scopes,
+  };
 }

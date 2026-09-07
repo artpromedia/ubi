@@ -87,7 +87,10 @@ export function createCityConfigProvider(db: BitesTx): CityConfigProvider {
       }
       return resolved as FlagSet;
     } catch (error) {
-      logger.error({ err: error, cityId }, "flag lookup failed; denying all flags");
+      logger.error(
+        { err: error, cityId },
+        "flag lookup failed; denying all flags",
+      );
       return DENY_ALL;
     }
   }
@@ -97,9 +100,13 @@ export function createCityConfigProvider(db: BitesTx): CityConfigProvider {
   ): Promise<{ base: BaseCityConfig; raw: unknown }> {
     const city = await db.city.findUnique({ where: { id: cityId } });
     if (city === null || !city.active) {
-      throw new ContractError("city_unsupported", "UBI is not live in that city", {
-        cityId,
-      });
+      throw new ContractError(
+        "city_unsupported",
+        "UBI is not live in that city",
+        {
+          cityId,
+        },
+      );
     }
 
     const version = await db.cityConfigVersion.findFirst({
@@ -113,10 +120,17 @@ export function createCityConfigProvider(db: BitesTx): CityConfigProvider {
     const parsed = CityConfigSchema.safeParse(version.config);
     if (!parsed.success) {
       logger.error(
-        { cityId, version: version.version, issues: parsed.error.issues.length },
+        {
+          cityId,
+          version: version.version,
+          issues: parsed.error.issues.length,
+        },
         "active city config failed validation",
       );
-      throw configUnavailable(cityId, "active config version failed validation");
+      throw configUnavailable(
+        cityId,
+        "active config version failed validation",
+      );
     }
 
     const flags = await loadFlags(cityId);
@@ -137,7 +151,10 @@ export function createCityConfigProvider(db: BitesTx): CityConfigProvider {
       );
       if (!policy.success) {
         logger.error({ cityId }, "city config has no valid bitesPolicy block");
-        throw configUnavailable(cityId, "config has no valid bitesPolicy block");
+        throw configUnavailable(
+          cityId,
+          "config has no valid bitesPolicy block",
+        );
       }
       return { city: base.city, flags: base.flags, policy: policy.data };
     },

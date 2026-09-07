@@ -43,6 +43,10 @@ export async function writeAudit(tx: Tx, input: AuditInput): Promise<string> {
  * changes a monotonic revision number for the event envelope, since a flag rule
  * carries no version column of its own.
  */
-export async function auditRevision(tx: Tx, subjectType: string, subjectId: string): Promise<number> {
+export async function auditRevision(
+  tx: Tx,
+  subjectType: string,
+  subjectId: string,
+): Promise<number> {
   return tx.auditLog.count({ where: { subjectType, subjectId } });
 }

@@ -42,7 +42,12 @@ async function postedTransfer(amountMinor = 300_000) {
   const recipientWallet = await db.$transaction((tx) =>
     ensureWallet(tx, "user", recipientUser.id, config.city),
   );
-  await setInitialPin(deps, { id: senderUser.id, role: "rider" }, city.cityId, PIN);
+  await setInitialPin(
+    deps,
+    { id: senderUser.id, role: "rider" },
+    city.cityId,
+    PIN,
+  );
   await fundWallet(db, senderWallet.id, city.currency, 5_000_000);
 
   const transfer = await sendTransfer(deps, {
@@ -72,7 +77,9 @@ describe("returning a posted transfer", () => {
       "closed",
     ]);
     expect(canTransition("walletTransfer", "posted", "reversed")).toBe(false);
-    expect(canTransition("walletTransfer", "return_requested", "reversed")).toBe(true);
+    expect(
+      canTransition("walletTransfer", "return_requested", "reversed"),
+    ).toBe(true);
   });
 
   it("lets the sender ask, and moves nothing until the recipient agrees", async () => {

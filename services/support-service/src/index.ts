@@ -47,7 +47,11 @@ export function createApp(deps: SupportDeps): Hono {
     cors({
       origin: (origin) => {
         const allowed = ["https://admin.ubi.africa", "https://app.ubi.africa"];
-        if (!origin || allowed.includes(origin) || /^http:\/\/localhost:\d+$/.test(origin)) {
+        if (
+          !origin ||
+          allowed.includes(origin) ||
+          /^http:\/\/localhost:\d+$/.test(origin)
+        ) {
           return origin || "";
         }
         return "";
@@ -105,9 +109,11 @@ if (process.env.NODE_ENV !== "test") {
     logger.info({ signal }, "shutting down");
     clearInterval(sweep);
     server.close();
-    void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).then(() => {
-      process.exit(0);
-    });
+    void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).then(
+      () => {
+        process.exit(0);
+      },
+    );
   };
 
   process.on("SIGTERM", () => {

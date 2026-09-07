@@ -70,7 +70,12 @@ describe("server-side price recompute", () => {
         "X-City-ID": cityId,
       },
       // The client lies: price says 1 kobo. It must be ignored entirely.
-      body: JSON.stringify({ itemId: item.itemId, quantity: 2, optionIds: [optionId], price: 1 }),
+      body: JSON.stringify({
+        itemId: item.itemId,
+        quantity: 2,
+        optionIds: [optionId],
+        price: 1,
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -96,7 +101,12 @@ describe("cart guards", () => {
       priceMinor: 100_000,
       currency,
       groups: [
-        { required: true, minSelect: 1, maxSelect: 1, options: [{ priceDeltaMinor: 0 }] },
+        {
+          required: true,
+          minSelect: 1,
+          maxSelect: 1,
+          options: [{ priceDeltaMinor: 0 }],
+        },
       ],
     });
     await expect(
@@ -137,8 +147,14 @@ describe("cart guards", () => {
     const { cityId, currency } = await seedCity(db);
     const first = await seedMerchant(db);
     const second = await seedMerchant(db);
-    const itemA = await seedMenuItem(db, first.outletId, { priceMinor: 100_000, currency });
-    const itemB = await seedMenuItem(db, second.outletId, { priceMinor: 120_000, currency });
+    const itemA = await seedMenuItem(db, first.outletId, {
+      priceMinor: 100_000,
+      currency,
+    });
+    const itemB = await seedMenuItem(db, second.outletId, {
+      priceMinor: 120_000,
+      currency,
+    });
 
     const rider = { id: uid("rider"), role: "rider" as const };
     const cartId = uid("cart");
@@ -167,7 +183,10 @@ describe("cart guards", () => {
   it("merges an identical item + option selection into one line", async () => {
     const { cityId, currency } = await seedCity(db);
     const { outletId } = await seedMerchant(db);
-    const item = await seedMenuItem(db, outletId, { priceMinor: 100_000, currency });
+    const item = await seedMenuItem(db, outletId, {
+      priceMinor: 100_000,
+      currency,
+    });
     const rider = { id: uid("rider"), role: "rider" as const };
     const cartId = uid("cart");
     const base = {

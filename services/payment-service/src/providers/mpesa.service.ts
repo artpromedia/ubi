@@ -24,11 +24,7 @@
  * - Duplicate transaction → Idempotency check
  */
 
-import {
-  PaymentProvider,
-  PaymentStatus,
-  Prisma,
-} from "@prisma/client";
+import { PaymentProvider, PaymentStatus, Prisma } from "@prisma/client";
 import { mpesaLogger } from "../lib/logger.js";
 import type { ExtendedPrismaClient } from "../lib/prisma";
 

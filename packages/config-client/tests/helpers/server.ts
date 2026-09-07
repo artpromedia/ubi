@@ -3,12 +3,21 @@
  * mocked, so ETag revalidation, timeouts and refused connections are exercised
  * as they behave in production.
  */
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import type { AddressInfo } from "node:net";
 
 export interface TestServer {
   readonly url: string;
-  readonly requests: Array<{ method: string; url: string; headers: Record<string, string> }>;
+  readonly requests: Array<{
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+  }>;
   close(): Promise<void>;
 }
 
@@ -21,7 +30,10 @@ export async function startServer(handler: Handler): Promise<TestServer> {
       method: req.method ?? "GET",
       url: req.url ?? "/",
       headers: Object.fromEntries(
-        Object.entries(req.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(",") : (value ?? "")]),
+        Object.entries(req.headers).map(([key, value]) => [
+          key,
+          Array.isArray(value) ? value.join(",") : (value ?? ""),
+        ]),
       ),
     });
     handler(req, res);
@@ -53,7 +65,12 @@ export async function closedPortUrl(): Promise<string> {
   return url;
 }
 
-export function json(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
+export function json(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
   res.writeHead(status, { "content-type": "application/json", ...headers });
   res.end(JSON.stringify(body));
 }

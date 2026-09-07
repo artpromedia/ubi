@@ -11,15 +11,29 @@ import { checkRedisConnection } from "../lib/redis";
 export const healthRoutes = new Hono();
 
 healthRoutes.get("/", (c) =>
-  c.json({ status: "ok", service: "config-service", timestamp: new Date().toISOString() }),
+  c.json({
+    status: "ok",
+    service: "config-service",
+    timestamp: new Date().toISOString(),
+  }),
 );
 
 healthRoutes.get("/live", (c) =>
-  c.json({ status: "alive", service: "config-service", uptime: process.uptime() }),
+  c.json({
+    status: "alive",
+    service: "config-service",
+    uptime: process.uptime(),
+  }),
 );
 
 healthRoutes.get("/ready", async (c) => {
-  const [database, cache] = await Promise.all([checkPrismaConnection(), checkRedisConnection()]);
+  const [database, cache] = await Promise.all([
+    checkPrismaConnection(),
+    checkRedisConnection(),
+  ]);
   const status = database ? (cache ? "ready" : "degraded") : "unavailable";
-  return c.json({ status, service: "config-service", checks: { database, cache } }, database ? 200 : 503);
+  return c.json(
+    { status, service: "config-service", checks: { database, cache } },
+    database ? 200 : 503,
+  );
 });

@@ -14,11 +14,12 @@ openapi: 3.1.0
 info:
   title: UBI Config, Identity, Support, Recon
   version: 0.1.0
-  description: City config & flags, identity step-up, support cases, finance reconciliation, review queues.
+  description:
+    City config & flags, identity step-up, support cases, finance reconciliation, review queues.
     Money is integer minor units (kobo) with explicit currency from city config. All mutating POSTs accept
     Idempotency-Key.
 servers:
-- url: https://api.ubi.africa
+  - url: https://api.ubi.africa
 components:
   securitySchemes:
     bearer:
@@ -36,8 +37,8 @@ components:
     Money:
       type: object
       required:
-      - amountMinor
-      - currency
+        - amountMinor
+        - currency
       properties:
         amountMinor:
           type: integer
@@ -65,15 +66,15 @@ components:
           example: NGN
         emergencyNumber:
           type: string
-          example: '112'
+          example: "112"
         vehicleClasses:
           type: array
           items:
             type: string
           example:
-          - go
-          - comfort
-          - xl
+            - go
+            - comfort
+            - xl
         fares:
           type: object
           additionalProperties:
@@ -149,33 +150,33 @@ components:
           type: number
           example: 20
 security:
-- bearer: []
+  - bearer: []
 paths:
   /v1/config/cities/{cityId}:
     get:
       parameters:
-      - name: cityId
-        in: path
-        required: true
-        schema:
-          type: string
-          example: LOS
+        - name: cityId
+          in: path
+          required: true
+          schema:
+            type: string
+            example: LOS
       responses:
-        '200':
+        "200":
           description: active config version (ETag)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CityConfig'
+                $ref: "#/components/schemas/CityConfig"
   /v1/flags:
     get:
       parameters:
-      - name: cityId
-        in: query
-        schema:
-          type: string
+        - name: cityId
+          in: query
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: evaluated flags; deny-by-default
           content:
             application/json:
@@ -191,9 +192,9 @@ paths:
             schema:
               type: object
               required:
-              - cityId
-              - patch
-              - reason
+                - cityId
+                - patch
+                - reason
               properties:
                 cityId:
                   type: string
@@ -202,121 +203,123 @@ paths:
                 reason:
                   type: string
       responses:
-        '201':
+        "201":
           description: pending
   /v1/config/change-requests/{id}/approve:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: second approver (≠ author) activates new version
   /v1/devices/enroll:
     post:
       responses:
-        '200':
-          description: ok | step_up_required{methods:[old_device_approve, selfie_nin]} → limited scopes
+        "200":
+          description:
+            ok | step_up_required{methods:[old_device_approve, selfie_nin]} → limited scopes
             until passed
   /v1/auth/step-up/selfie:
     post:
       responses:
-        '200':
+        "200":
           description: liveness + NIN face match; score stored, image discarded
   /v1/drivers/me/documents:
     get:
       responses:
-        '200':
+        "200":
           description: Lagos set with expiry + review state
     post:
       responses:
-        '201':
+        "201":
           description: uploaded → review queue
   /v1/safety/sos:
     post:
       responses:
-        '202':
+        "202":
           description: durable; SMS fallback; ride → safety_hold; 24/7 queue with SLA
   /v1/support/cases:
     post:
       responses:
-        '201':
+        "201":
           description: case with unified timeline
   /v1/support/cases/{id}/remedies:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
             schema:
               type: object
               required:
-              - type
+                - type
               properties:
                 type:
                   type: string
                   enum:
-                  - fee_reversal
-                  - refund
-                  - credit
-                  - redelivery
-                  - cash_dispute_resolution
+                    - fee_reversal
+                    - refund
+                    - credit
+                    - redelivery
+                    - cash_dispute_resolution
                 amountMinor:
                   type: integer
                 reason:
                   type: string
       responses:
-        '201':
+        "201":
           description: typed remedy → ledger lines with case ref; visible to user on the item
   /v1/finance/recon/{date}:
     get:
       parameters:
-      - name: date
-        in: path
-        required: true
-        schema:
-          type: string
-          format: date
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
       responses:
-        '200':
-          description: 'per rail: ledger vs external, diff, breaks with owner + deadline; closeAllowed
-            = unexplained == 0'
+        "200":
+          description:
+            "per rail: ledger vs external, diff, breaks with owner + deadline; closeAllowed
+            = unexplained == 0"
   /v1/finance/recon/{date}/close:
     post:
       parameters:
-      - name: date
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: closed
-        '409':
+        "409":
           description: unexplained ≠ 0
   /v1/reviews/{queue}:
     get:
       parameters:
-      - name: queue
-        in: path
-        required: true
-        schema:
-          type: string
-          enum:
-          - kyc
-          - merchants
-          - hotels
-          - fleets
-          - claims
-          - identity
+        - name: queue
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - kyc
+              - merchants
+              - hotels
+              - fleets
+              - claims
+              - identity
       responses:
-        '200':
+        "200":
           description: automated checks advisory; human decides; decision + reviewer → audit_log

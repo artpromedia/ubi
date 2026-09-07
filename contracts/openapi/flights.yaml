@@ -14,10 +14,11 @@ openapi: 3.1.0
 info:
   title: UBI Flights (One-Ticket)
   version: 0.1.0
-  description: Search, book, watch, switch and refund partner-airline flights. Money is integer minor
+  description:
+    Search, book, watch, switch and refund partner-airline flights. Money is integer minor
     units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key.
 servers:
-- url: https://api.ubi.africa
+  - url: https://api.ubi.africa
 components:
   securitySchemes:
     bearer:
@@ -35,8 +36,8 @@ components:
     Money:
       type: object
       required:
-      - amountMinor
-      - currency
+        - amountMinor
+        - currency
       properties:
         amountMinor:
           type: integer
@@ -72,7 +73,7 @@ components:
           type: string
           example: MMA2
         fare:
-          $ref: '#/components/schemas/Money'
+          $ref: "#/components/schemas/Money"
         seatsLeft:
           type: integer
         oneTicketEligible:
@@ -80,17 +81,17 @@ components:
     Passenger:
       type: object
       required:
-      - nameAsOnId
-      - idType
-      - idRef
+        - nameAsOnId
+        - idType
+        - idRef
       properties:
         nameAsOnId:
           type: string
         idType:
           type: string
           enum:
-          - nin
-          - passport
+            - nin
+            - passport
         idRef:
           type: string
         phone:
@@ -105,14 +106,14 @@ components:
         status:
           type: string
           enum:
-          - ticketed
-          - watching
-          - checked_in
-          - flown
-          - cancelled_by_airline
-          - oneticket_active
-          - switched
-          - refunded
+            - ticketed
+            - watching
+            - checked_in
+            - flown
+            - cancelled_by_airline
+            - oneticket_active
+            - switched
+            - refunded
         protection:
           type: object
           properties:
@@ -124,7 +125,7 @@ components:
             coveredMinor:
               type: integer
         flight:
-          $ref: '#/components/schemas/Offer'
+          $ref: "#/components/schemas/Offer"
         journeyId:
           type: string
     Alternative:
@@ -133,7 +134,7 @@ components:
         offerId:
           type: string
         flight:
-          $ref: '#/components/schemas/Offer'
+          $ref: "#/components/schemas/Offer"
         sameTerminal:
           type: boolean
         terminalTransferRide:
@@ -144,41 +145,41 @@ components:
             minutes:
               type: integer
         travellerPrice:
-          $ref: '#/components/schemas/Money'
+          $ref: "#/components/schemas/Money"
         listPrice:
-          $ref: '#/components/schemas/Money'
+          $ref: "#/components/schemas/Money"
 security:
-- bearer: []
+  - bearer: []
 paths:
   /v1/flights/search:
     get:
       parameters:
-      - name: from
-        in: query
-        schema:
-          type: string
-          example: LOS
-      - name: to
-        in: query
-        schema:
-          type: string
-          example: ABV
-      - name: date
-        in: query
-        schema:
-          type: string
-          format: date
-      - name: pax
-        in: query
-        schema:
-          type: integer
-          default: 1
-      - name: oneTicketOnly
-        in: query
-        schema:
-          type: boolean
+        - name: from
+          in: query
+          schema:
+            type: string
+            example: LOS
+        - name: to
+          in: query
+          schema:
+            type: string
+            example: ABV
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: pax
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: oneTicketOnly
+          in: query
+          schema:
+            type: boolean
       responses:
-        '200':
+        "200":
           description: offers
           content:
             application/json:
@@ -188,17 +189,17 @@ paths:
                   offers:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Offer'
+                      $ref: "#/components/schemas/Offer"
   /v1/flights/offers/{offerId}/hold:
     post:
       parameters:
-      - name: offerId
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: price held 10 min
           content:
             application/json:
@@ -211,11 +212,11 @@ paths:
                     type: string
                     format: date-time
                   fare:
-                    $ref: '#/components/schemas/Money'
+                    $ref: "#/components/schemas/Money"
   /v1/flights/bookings:
     post:
       parameters:
-      - $ref: '#/components/parameters/IdemKey'
+        - $ref: "#/components/parameters/IdemKey"
       requestBody:
         required: true
         content:
@@ -223,57 +224,57 @@ paths:
             schema:
               type: object
               required:
-              - holdId
-              - passenger
-              - paymentMethodId
+                - holdId
+                - passenger
+                - paymentMethodId
               properties:
                 holdId:
                   type: string
                 passenger:
-                  $ref: '#/components/schemas/Passenger'
+                  $ref: "#/components/schemas/Passenger"
                 paymentMethodId:
                   type: string
                 journeyId:
                   type: string
       responses:
-        '201':
+        "201":
           description: ticketed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Booking'
-        '409':
+                $ref: "#/components/schemas/Booking"
+        "409":
           description: price changed → re-offer
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/Error"
   /v1/flights/bookings/{id}:
     get:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: booking
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Booking'
+                $ref: "#/components/schemas/Booking"
   /v1/flights/bookings/{id}/alternatives:
     get:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
-          description: 'ranked: same terminal, seats left, time; travellerPrice is 0 when protection active'
+        "200":
+          description: "ranked: same terminal, seats left, time; travellerPrice is 0 when protection active"
           content:
             application/json:
               schema:
@@ -284,57 +285,57 @@ paths:
                   alternatives:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Alternative'
+                      $ref: "#/components/schemas/Alternative"
                   fallbacks:
                     type: array
                     items:
                       type: string
                       enum:
-                      - next_day_free
-                      - refund_to_wallet
+                        - next_day_free
+                        - refund_to_wallet
   /v1/flights/bookings/{id}/switch:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      - $ref: '#/components/parameters/IdemKey'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdemKey"
       requestBody:
         content:
           application/json:
             schema:
               type: object
               required:
-              - offerId
+                - offerId
               properties:
                 offerId:
                   type: string
                 actor:
                   type: string
                   enum:
-                  - traveller
-                  - desk_agent
+                    - traveller
+                    - desk_agent
       responses:
-        '200':
+        "200":
           description: seat held at airline first; new PNR; coverage ledgered
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Booking'
-        '409':
+                $ref: "#/components/schemas/Booking"
+        "409":
           description: seat lost → try next alternative
   /v1/flights/bookings/{id}/refund:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: refund to wallet (protection or airline cause)
   /v1/desk/scan:
     post:
@@ -347,10 +348,10 @@ paths:
                 qr:
                   type: string
       responses:
-        '200':
+        "200":
           description: traveller record scoped to this booking
   /v1/flights/disruptions:
     get:
       responses:
-        '200':
-          description: 'ops: per-flight protected/switched/choosing/help, seats left, exposure, reclaims'
+        "200":
+          description: "ops: per-flight protected/switched/choosing/help, seats left, exposure, reclaims"

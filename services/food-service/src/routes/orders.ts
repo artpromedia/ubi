@@ -28,7 +28,7 @@ const orderItemSchema = z.object({
       z.object({
         optionId: z.string(),
         choiceId: z.string(),
-      })
+      }),
     )
     .default([]),
   selectedAddons: z.array(z.string()).default([]),
@@ -92,7 +92,7 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
           message: "Delivery address is required",
         },
       },
-      400
+      400,
     );
   }
 
@@ -107,7 +107,7 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Restaurant not found" },
       },
-      404
+      404,
     );
   }
 
@@ -122,7 +122,7 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
           message: "Restaurant is not accepting orders",
         },
       },
-      400
+      400,
     );
   }
 
@@ -145,14 +145,14 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
           message: "Some menu items are not available",
         },
       },
-      400
+      400,
     );
   }
 
   // Check availability. GAP: MenuItem has no `availability` enum; `isAvailable`
   // (boolean) is the schema's stock signal.
   const unavailableItems = menuItems.filter(
-    (i: (typeof menuItems)[number]) => !i.isAvailable
+    (i: (typeof menuItems)[number]) => !i.isAvailable,
   );
   if (unavailableItems.length > 0) {
     return c.json(
@@ -163,19 +163,19 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
           message: "Some items are out of stock",
           details: {
             items: unavailableItems.map(
-              (i: (typeof menuItems)[number]) => i.name
+              (i: (typeof menuItems)[number]) => i.name,
             ),
           },
         },
       },
-      400
+      400,
     );
   }
 
   // Build order items with prices
   const orderItems = data.items.map((item) => {
     const menuItem = menuItems.find(
-      (mi: (typeof menuItems)[number]) => mi.id === item.menuItemId
+      (mi: (typeof menuItems)[number]) => mi.id === item.menuItemId,
     )!;
     // GAP: MenuItem has no `discountPrice` column. `price` is a Prisma Decimal,
     // converted to a number for the order-math below.
@@ -184,7 +184,7 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
     // Calculate option price modifiers
     const selectedOptions = item.selectedOptions.map((so) => {
       const option = (menuItem.options as any[]).find(
-        (o) => o.id === so.optionId
+        (o) => o.id === so.optionId,
       );
       const choice = option?.choices.find((ch: any) => ch.id === so.choiceId);
 
@@ -250,7 +250,7 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
           message: `Minimum order is ${restaurant.minimumOrder}`,
         },
       },
-      400
+      400,
     );
   }
 
@@ -298,7 +298,7 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
       restaurantId: data.restaurantId,
       total: order.total,
       timestamp: new Date().toISOString(),
-    })
+    }),
   );
 
   const response = {
@@ -317,7 +317,7 @@ orderRoutes.post("/", zValidator("json", createOrderSchema), async (c) => {
     await redis.setex(
       `idempotency:order:${idempotencyKey}`,
       86400,
-      JSON.stringify(response)
+      JSON.stringify(response),
     );
   }
 
@@ -436,7 +436,7 @@ orderRoutes.get("/:id", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Order not found" },
       },
-      404
+      404,
     );
   }
 
@@ -455,7 +455,7 @@ orderRoutes.get("/:id", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -505,7 +505,7 @@ orderRoutes.get("/:id/track", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Order not found" },
       },
-      404
+      404,
     );
   }
 
@@ -550,7 +550,7 @@ orderRoutes.put(
           success: false,
           error: { code: "NOT_FOUND", message: "Order not found" },
         },
-        404
+        404,
       );
     }
 
@@ -564,7 +564,7 @@ orderRoutes.put(
           success: false,
           error: { code: "FORBIDDEN", message: "Not authorized" },
         },
-        403
+        403,
       );
     }
 
@@ -578,7 +578,7 @@ orderRoutes.put(
             message: `Cannot transition from ${order.status} to ${status}`,
           },
         },
-        400
+        400,
       );
     }
 
@@ -606,7 +606,7 @@ orderRoutes.put(
             (order.preparingAt?.getTime() ||
               order.confirmedAt?.getTime() ||
               Date.now())) /
-            60000
+            60000,
         );
         break;
       case OrderStatus.PICKED_UP:
@@ -615,7 +615,7 @@ orderRoutes.put(
       case OrderStatus.DELIVERED:
         updateData.deliveredAt = new Date();
         updateData.actualDeliveryTime = Math.round(
-          (Date.now() - (order.pickedUpAt?.getTime() || Date.now())) / 60000
+          (Date.now() - (order.pickedUpAt?.getTime() || Date.now())) / 60000,
         );
         break;
     }
@@ -637,14 +637,14 @@ orderRoutes.put(
         driverId: order.driverId,
         status,
         timestamp: new Date().toISOString(),
-      })
+      }),
     );
 
     return c.json({
       success: true,
       data: updated,
     });
-  }
+  },
 );
 
 /**
@@ -666,7 +666,7 @@ orderRoutes.post("/:id/cancel", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Order not found" },
       },
-      404
+      404,
     );
   }
 
@@ -679,14 +679,14 @@ orderRoutes.post("/:id/cancel", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
   // Can only cancel pending or confirmed orders
   if (
     ![OrderStatus.PENDING, OrderStatus.CONFIRMED].includes(
-      order.status as OrderStatus
+      order.status as OrderStatus,
     )
   ) {
     return c.json(
@@ -697,7 +697,7 @@ orderRoutes.post("/:id/cancel", async (c) => {
           message: "Order cannot be cancelled at this stage",
         },
       },
-      400
+      400,
     );
   }
 
@@ -721,7 +721,7 @@ orderRoutes.post("/:id/cancel", async (c) => {
         amount: order.total,
         currency: order.currency,
         reason,
-      })
+      }),
     );
   }
 
@@ -742,7 +742,7 @@ orderRoutes.post("/:id/assign-driver", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Internal endpoint" },
       },
-      403
+      403,
     );
   }
 
@@ -764,7 +764,7 @@ orderRoutes.post("/:id/assign-driver", async (c) => {
         success: false,
         error: { code: "NOT_FOUND", message: "Order not found" },
       },
-      404
+      404,
     );
   }
 
@@ -777,7 +777,7 @@ orderRoutes.post("/:id/assign-driver", async (c) => {
           message: "Order is not a delivery order",
         },
       },
-      400
+      400,
     );
   }
 
@@ -815,7 +815,7 @@ orderRoutes.get("/restaurant/:restaurantId", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -863,7 +863,7 @@ orderRoutes.get("/restaurant/:restaurantId/active", async (c) => {
         success: false,
         error: { code: "FORBIDDEN", message: "Not authorized" },
       },
-      403
+      403,
     );
   }
 
@@ -894,7 +894,7 @@ orderRoutes.get("/restaurant/:restaurantId/active", async (c) => {
 
 function isValidStatusTransition(
   current: OrderStatus,
-  next: OrderStatus
+  next: OrderStatus,
 ): boolean {
   const transitions: Record<OrderStatus, OrderStatus[]> = {
     [OrderStatus.PENDING]: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
@@ -954,7 +954,7 @@ function buildOrderTimeline(order: any) {
         label: "Delivered",
         timestamp: order.deliveredAt,
         completed: !!order.deliveredAt,
-      }
+      },
     );
   }
 

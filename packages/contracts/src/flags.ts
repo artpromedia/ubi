@@ -39,5 +39,8 @@ export function isEnabled(flags: FlagSet | undefined, key: FlagKey): boolean {
 
 /** Every flag off — the value used when the config service is unreachable. */
 export const DENY_ALL: FlagSet = Object.freeze(
-  Object.fromEntries(FLAG_KEYS.map((key) => [key, false])) as Record<FlagKey, boolean>,
+  Object.fromEntries(FLAG_KEYS.map((key) => [key, false])) as Record<
+    FlagKey,
+    boolean
+  >,
 );

@@ -9,36 +9,104 @@
  */
 export const TEST_IDS = {
   rider: {
-    home: { whereTo: "rider.home.whereTo", savedPlaces: "rider.home.savedPlaces", serviceSwitcher: "rider.home.serviceSwitcher", activeTrip: "rider.home.activeTrip" },
-    search: { input: "rider.search.input", results: "rider.search.results", chooseOnMap: "rider.search.chooseOnMap" },
+    home: {
+      whereTo: "rider.home.whereTo",
+      savedPlaces: "rider.home.savedPlaces",
+      serviceSwitcher: "rider.home.serviceSwitcher",
+      activeTrip: "rider.home.activeTrip",
+    },
+    search: {
+      input: "rider.search.input",
+      results: "rider.search.results",
+      chooseOnMap: "rider.search.chooseOnMap",
+    },
     pickup: { confirm: "rider.pickup.confirm", notes: "rider.pickup.notes" },
-    quote: { confirm: "rider.quote.confirm", classList: "rider.quote.classList", paymentMethod: "rider.quote.paymentMethod", expiry: "rider.quote.expiry" },
-    match: { cancel: "rider.match.cancel", status: "rider.match.status", switchClass: "rider.match.switchClass", keepWaiting: "rider.match.keepWaiting" },
-    assigned: { driverCard: "rider.assigned.driverCard", call: "rider.assigned.call", chat: "rider.assigned.chat", cancel: "rider.assigned.cancel" },
+    quote: {
+      confirm: "rider.quote.confirm",
+      classList: "rider.quote.classList",
+      paymentMethod: "rider.quote.paymentMethod",
+      expiry: "rider.quote.expiry",
+    },
+    match: {
+      cancel: "rider.match.cancel",
+      status: "rider.match.status",
+      switchClass: "rider.match.switchClass",
+      keepWaiting: "rider.match.keepWaiting",
+    },
+    assigned: {
+      driverCard: "rider.assigned.driverCard",
+      call: "rider.assigned.call",
+      chat: "rider.assigned.chat",
+      cancel: "rider.assigned.cancel",
+    },
     pin: { display: "rider.pin.display" },
-    trip: { shareTrip: "rider.trip.shareTrip", safetyHub: "rider.trip.safetyHub", status: "rider.trip.status", eta: "rider.trip.eta" },
-    pay: { cashConfirm: "rider.pay.cashConfirm", breakdown: "rider.pay.breakdown", retry: "rider.pay.retry" },
-    rate: { submit: "rider.rate.submit", stars: "rider.rate.stars", tip: "rider.rate.tip" },
-    offline: { banner: "rider.offline.banner", staleTimestamp: "rider.offline.staleTimestamp" },
+    trip: {
+      shareTrip: "rider.trip.shareTrip",
+      safetyHub: "rider.trip.safetyHub",
+      status: "rider.trip.status",
+      eta: "rider.trip.eta",
+    },
+    pay: {
+      cashConfirm: "rider.pay.cashConfirm",
+      breakdown: "rider.pay.breakdown",
+      retry: "rider.pay.retry",
+    },
+    rate: {
+      submit: "rider.rate.submit",
+      stars: "rider.rate.stars",
+      tip: "rider.rate.tip",
+    },
+    offline: {
+      banner: "rider.offline.banner",
+      staleTimestamp: "rider.offline.staleTimestamp",
+    },
   },
   driver: {
-    home: { goOnline: "driver.home.goOnline", goOffline: "driver.home.goOffline", filters: "driver.home.filters", eligibility: "driver.home.eligibility" },
-    offer: { accept: "driver.offer.accept", decline: "driver.offer.decline", countdown: "driver.offer.countdown", economics: "driver.offer.economics" },
-    pickup: { arrived: "driver.pickup.arrived", navigate: "driver.pickup.navigate", notes: "driver.pickup.notes" },
+    home: {
+      goOnline: "driver.home.goOnline",
+      goOffline: "driver.home.goOffline",
+      filters: "driver.home.filters",
+      eligibility: "driver.home.eligibility",
+    },
+    offer: {
+      accept: "driver.offer.accept",
+      decline: "driver.offer.decline",
+      countdown: "driver.offer.countdown",
+      economics: "driver.offer.economics",
+    },
+    pickup: {
+      arrived: "driver.pickup.arrived",
+      navigate: "driver.pickup.navigate",
+      notes: "driver.pickup.notes",
+    },
     wait: { timer: "driver.wait.timer", noShow: "driver.wait.noShow" },
     pin: { input: "driver.pin.input", submit: "driver.pin.submit" },
     trip: { complete: "driver.trip.complete", addStop: "driver.trip.addStop" },
     cash: { received: "driver.cash.received", dispute: "driver.cash.dispute" },
-    earnings: { cashout: "driver.earnings.cashout", breakdown: "driver.earnings.breakdown", statement: "driver.earnings.statement" },
-    documents: { upload: "driver.documents.upload", status: "driver.documents.status" },
-    fleet: { signPin: "driver.fleet.signPin", arrangement: "driver.fleet.arrangement" },
+    earnings: {
+      cashout: "driver.earnings.cashout",
+      breakdown: "driver.earnings.breakdown",
+      statement: "driver.earnings.statement",
+    },
+    documents: {
+      upload: "driver.documents.upload",
+      status: "driver.documents.status",
+    },
+    fleet: {
+      signPin: "driver.fleet.signPin",
+      arrangement: "driver.fleet.arrangement",
+    },
   },
   common: {
     sos: { hold: "common.sos.hold", confirm: "common.sos.confirm" },
     flagOff: { screen: "common.flagOff.screen" },
   },
   wallet: {
-    send: { confirmPin: "wallet.send.confirmPin", recipient: "wallet.send.recipient", amount: "wallet.send.amount" },
+    send: {
+      confirmPin: "wallet.send.confirmPin",
+      recipient: "wallet.send.recipient",
+      amount: "wallet.send.amount",
+    },
     request: { pay: "wallet.request.pay", create: "wallet.request.create" },
     nip: { confirm: "wallet.nip.confirm", status: "wallet.nip.status" },
     topup: { confirm: "wallet.topup.confirm" },
@@ -47,7 +115,10 @@ export const TEST_IDS = {
   bites: {
     cart: { checkout: "bites.cart.checkout" },
     issue: { submit: "bites.issue.submit" },
-    merchant: { accept: "bites.merchant.accept", reject: "bites.merchant.reject" },
+    merchant: {
+      accept: "bites.merchant.accept",
+      reject: "bites.merchant.reject",
+    },
   },
   send: {
     create: { confirm: "send.create.confirm" },
@@ -69,7 +140,8 @@ export const TEST_IDS = {
   ops: { case: { remedy: "ops.case.remedy" } },
 } as const;
 
-const TEST_ID_PATTERN = /^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/;
+const TEST_ID_PATTERN =
+  /^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/;
 
 export function isValidTestId(value: string): boolean {
   return TEST_ID_PATTERN.test(value);

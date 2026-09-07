@@ -123,7 +123,10 @@ export interface Captured {
  */
 export interface Collector {
   readonly messages: Captured[];
-  waitFor(predicate: (messages: Captured[]) => boolean, timeoutMs?: number): Promise<void>;
+  waitFor(
+    predicate: (messages: Captured[]) => boolean,
+    timeoutMs?: number,
+  ): Promise<void>;
   stop(): Promise<void>;
 }
 

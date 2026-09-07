@@ -19,7 +19,10 @@ import { topicFor, type SubjectType } from "@ubi/contracts";
 export const EVENT_TYPE_CHANNEL_PREFIX = "event:";
 
 /** The subject/topic channel, identical to the realtime topic. */
-export function subjectChannel(subject: { readonly type: SubjectType; readonly id: string }): string {
+export function subjectChannel(subject: {
+  readonly type: SubjectType;
+  readonly id: string;
+}): string {
   return topicFor(subject);
 }
 

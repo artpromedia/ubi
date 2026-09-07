@@ -64,12 +64,16 @@ describe("NIP bank payouts", () => {
       money(1_500_000, s.city.currency),
     );
 
-    const lines = await db.journalLine.findMany({ where: { entryId: result.entryId! } });
+    const lines = await db.journalLine.findMany({
+      where: { entryId: result.entryId! },
+    });
     expect(lines.map((line) => line.account).sort()).toEqual([
       "bank_settlement",
       "wallet",
     ]);
-    expect(lines.reduce((total, line) => total + Number(line.amountMinor), 0)).toBe(0);
+    expect(
+      lines.reduce((total, line) => total + Number(line.amountMinor), 0),
+    ).toBe(0);
     // The instruction only reaches the bank once the debit is committed.
     expect(s.rail.payouts).toHaveLength(1);
   });
@@ -174,7 +178,9 @@ describe("NIP bank payouts", () => {
     expect(await balanceOf(db, s.wallet.id, s.city.currency)).toEqual(
       money(2_000_000, s.city.currency),
     );
-    const after = await db.nipTransfer.findUniqueOrThrow({ where: { id: row.id } });
+    const after = await db.nipTransfer.findUniqueOrThrow({
+      where: { id: row.id },
+    });
     expect(after.status).toBe("reversed");
     expect(after.confirmedAt).toBeNull();
 
@@ -228,14 +234,19 @@ describe("bank webhook signatures", () => {
     process.env.NIP_WEBHOOK_SECRET = "shhh-this-is-the-bank-secret";
     expect(() => verifyWebhookSignature(body, undefined)).toThrow(/missing/);
     expect(() =>
-      verifyWebhookSignature(body, createHmac("sha256", "wrong").update(body).digest("hex")),
+      verifyWebhookSignature(
+        body,
+        createHmac("sha256", "wrong").update(body).digest("hex"),
+      ),
     ).toThrow(/did not verify/);
   });
 
   it("accepts the bank's own signature", () => {
     const secret = "shhh-this-is-the-bank-secret";
     process.env.NIP_WEBHOOK_SECRET = secret;
-    const signature = createHmac("sha256", secret).update(body, "utf8").digest("hex");
+    const signature = createHmac("sha256", secret)
+      .update(body, "utf8")
+      .digest("hex");
     expect(() => verifyWebhookSignature(body, signature)).not.toThrow();
   });
 });

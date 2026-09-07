@@ -44,12 +44,18 @@ export interface DiffEntry {
  * Leaf-level diff. Arrays are compared whole because an ordered list (vehicle
  * classes, matching rings) only makes sense as a unit.
  */
-export function diffJson(before: unknown, after: unknown, path = ""): DiffEntry[] {
+export function diffJson(
+  before: unknown,
+  after: unknown,
+  path = "",
+): DiffEntry[] {
   if (isPlainObject(before) && isPlainObject(after)) {
     const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
     return [...keys]
       .sort()
-      .flatMap((key) => diffJson(before[key], after[key], path === "" ? key : `${path}.${key}`));
+      .flatMap((key) =>
+        diffJson(before[key], after[key], path === "" ? key : `${path}.${key}`),
+      );
   }
   return jsonEqual(before, after) ? [] : [{ path, before, after }];
 }

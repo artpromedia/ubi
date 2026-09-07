@@ -55,7 +55,9 @@ interface NotifierHttpOptions {
  * an emergency number — never the location, the names or anything else a
  * notification pipeline has no business logging (CLAUDE.md #6, #12).
  */
-export function createHttpNotifier(options: NotifierHttpOptions): SafetyNotifier {
+export function createHttpNotifier(
+  options: NotifierHttpOptions,
+): SafetyNotifier {
   const doFetch = options.fetchImpl ?? fetch;
   const path = options.path ?? "/v1/notifications/safety";
   const timeoutMs = options.timeoutMs ?? 5_000;
@@ -101,7 +103,10 @@ export function createHttpNotifier(options: NotifierHttpOptions): SafetyNotifier
         if (error instanceof ContractError) {
           throw error;
         }
-        safetyLogger.error({ err: error, channel }, "safety notification failed");
+        safetyLogger.error(
+          { err: error, channel },
+          "safety notification failed",
+        );
         throw new ContractError(
           "service_unavailable",
           `notification channel ${channel} is not reachable`,

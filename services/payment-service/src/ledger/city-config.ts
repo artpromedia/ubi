@@ -105,7 +105,10 @@ export function createCityConfigProvider(db: LedgerTx): CityConfigProvider {
       }
       return resolved as FlagSet;
     } catch (error) {
-      walletLogger.error({ err: error, cityId }, "flag lookup failed; denying all flags");
+      walletLogger.error(
+        { err: error, cityId },
+        "flag lookup failed; denying all flags",
+      );
       return DENY_ALL;
     }
   }
@@ -116,9 +119,13 @@ export function createCityConfigProvider(db: LedgerTx): CityConfigProvider {
   }> {
     const city = await db.city.findUnique({ where: { id: cityId } });
     if (city === null || !city.active) {
-      throw new ContractError("city_unsupported", "UBI is not live in that city", {
-        cityId,
-      });
+      throw new ContractError(
+        "city_unsupported",
+        "UBI is not live in that city",
+        {
+          cityId,
+        },
+      );
     }
 
     const version = await db.cityConfigVersion.findFirst({
@@ -132,10 +139,17 @@ export function createCityConfigProvider(db: LedgerTx): CityConfigProvider {
     const parsed = CityConfigSchema.safeParse(version.config);
     if (!parsed.success) {
       walletLogger.error(
-        { cityId, version: version.version, issues: parsed.error.issues.length },
+        {
+          cityId,
+          version: version.version,
+          issues: parsed.error.issues.length,
+        },
         "active city config failed validation",
       );
-      throw configUnavailable(cityId, "active config version failed validation");
+      throw configUnavailable(
+        cityId,
+        "active config version failed validation",
+      );
     }
 
     const flags = await loadFlags(cityId);
@@ -150,15 +164,19 @@ export function createCityConfigProvider(db: LedgerTx): CityConfigProvider {
 
     async loadForWallet(cityId: string): Promise<WalletCityConfig> {
       const { base, raw } = await loadBase(cityId);
-      const container = z
-        .object({ walletPolicy: z.unknown() })
-        .safeParse(raw);
+      const container = z.object({ walletPolicy: z.unknown() }).safeParse(raw);
       const policy = WalletPolicySchema.safeParse(
         container.success ? container.data.walletPolicy : undefined,
       );
       if (!policy.success) {
-        walletLogger.error({ cityId }, "city config has no valid walletPolicy block");
-        throw configUnavailable(cityId, "config has no valid walletPolicy block");
+        walletLogger.error(
+          { cityId },
+          "city config has no valid walletPolicy block",
+        );
+        throw configUnavailable(
+          cityId,
+          "config has no valid walletPolicy block",
+        );
       }
       return { city: base.city, policy: policy.data, flags: base.flags };
     },

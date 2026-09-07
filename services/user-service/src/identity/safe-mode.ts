@@ -75,7 +75,9 @@ export async function recordSimSwap(
   );
 
   const entered = await deps.prisma.$transaction(async (tx) => {
-    const existing = await tx.simSwapSignal.findUnique({ where: { id: signalId } });
+    const existing = await tx.simSwapSignal.findUnique({
+      where: { id: signalId },
+    });
     if (existing !== null) return false;
 
     await tx.simSwapSignal.create({
@@ -95,9 +97,14 @@ export async function recordSimSwap(
       return false;
     }
 
-    const wallets = await tx.wallet.findMany({ where: { ownerId: report.userId } });
+    const wallets = await tx.wallet.findMany({
+      where: { ownerId: report.userId },
+    });
     for (const wallet of wallets) {
-      if (wallet.safeModeUntil !== null && wallet.safeModeUntil.getTime() >= until.getTime()) {
+      if (
+        wallet.safeModeUntil !== null &&
+        wallet.safeModeUntil.getTime() >= until.getTime()
+      ) {
         continue;
       }
       await tx.wallet.update({
@@ -113,7 +120,11 @@ export async function recordSimSwap(
       action: "wallet.safe_mode_entered",
       subjectType: "user",
       subjectId: report.userId,
-      after: { until: until.toISOString(), signalId, walletsHeld: wallets.length },
+      after: {
+        until: until.toISOString(),
+        signalId,
+        walletsHeld: wallets.length,
+      },
       reason: "sim_swap_signal",
     });
 
@@ -156,7 +167,8 @@ export async function safeModeState(
     where: { ownerId: userId, safeModeUntil: { gt: now } },
     orderBy: { safeModeUntil: "desc" },
   });
-  if (held?.safeModeUntil != null) return { active: true, until: held.safeModeUntil };
+  if (held?.safeModeUntil != null)
+    return { active: true, until: held.safeModeUntil };
 
   const signal = await deps.prisma.simSwapSignal.findFirst({
     where: { userId, handled: false },
@@ -191,7 +203,9 @@ export async function assertNotInSafeMode(
  * once per signal. Safe to run on a schedule; the outbox idempotency key makes
  * a second run a no-op.
  */
-export async function sweepSafeModeExits(deps: IdentityDeps): Promise<readonly string[]> {
+export async function sweepSafeModeExits(
+  deps: IdentityDeps,
+): Promise<readonly string[]> {
   const now = deps.now();
   const policy = await deps.policy.forCity(null);
   const cutoff = new Date(now.getTime() - policy.safeModeMs);
@@ -205,15 +219,25 @@ export async function sweepSafeModeExits(deps: IdentityDeps): Promise<readonly s
   const exited: string[] = [];
   for (const signal of due) {
     const cleared = await deps.prisma.$transaction(async (tx) => {
-      await tx.simSwapSignal.update({ where: { id: signal.id }, data: { handled: true } });
+      await tx.simSwapSignal.update({
+        where: { id: signal.id },
+        data: { handled: true },
+      });
 
       const stillHeld = await tx.simSwapSignal.findFirst({
-        where: { userId: signal.userId, handled: false, reportedAt: { gt: cutoff } },
+        where: {
+          userId: signal.userId,
+          handled: false,
+          reportedAt: { gt: cutoff },
+        },
       });
       if (stillHeld !== null) return false;
 
       await tx.wallet.updateMany({
-        where: { ownerId: signal.userId, safeModeUntil: { not: null, lte: now } },
+        where: {
+          ownerId: signal.userId,
+          safeModeUntil: { not: null, lte: now },
+        },
         data: { safeModeUntil: null, version: { increment: 1 } },
       });
 
@@ -234,7 +258,10 @@ export async function sweepSafeModeExits(deps: IdentityDeps): Promise<readonly s
         subjectId: signal.userId,
         actorType: "system",
         actorId: "system:identity-sweep",
-        idempotencyKey: eventIdempotencyKey("wallet.safe_mode_exited", signal.id),
+        idempotencyKey: eventIdempotencyKey(
+          "wallet.safe_mode_exited",
+          signal.id,
+        ),
         fromVersion: revision,
         toVersion: revision + 1,
         cityId: policy.cityId,
@@ -242,7 +269,9 @@ export async function sweepSafeModeExits(deps: IdentityDeps): Promise<readonly s
           userId: signal.userId,
           deviceId: null,
           method: "sim_swap",
-          until: new Date(signal.reportedAt.getTime() + policy.safeModeMs).toISOString(),
+          until: new Date(
+            signal.reportedAt.getTime() + policy.safeModeMs,
+          ).toISOString(),
         },
         occurredAt: now,
       });

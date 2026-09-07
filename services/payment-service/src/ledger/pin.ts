@@ -6,7 +6,11 @@
  * the wallet row so they survive a restart and cannot be reset by retrying
  * against another instance. The attempt ceiling comes from city config.
  */
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import {
+  randomBytes,
+  scrypt as scryptCallback,
+  timingSafeEqual,
+} from "node:crypto";
 import { promisify } from "node:util";
 
 import { ContractError } from "@ubi/contracts";
@@ -54,7 +58,11 @@ export interface PinState {
 
 export type PinVerdict =
   | { readonly outcome: "ok" }
-  | { readonly outcome: "wrong"; readonly attempts: number; readonly locked: boolean };
+  | {
+      readonly outcome: "wrong";
+      readonly attempts: number;
+      readonly locked: boolean;
+    };
 
 /**
  * Verifies a PIN against a wallet's stored state. The caller persists the

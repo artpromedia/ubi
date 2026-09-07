@@ -14,7 +14,9 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-async function walletFor(cityId: string): Promise<{ id: string; currency: string }> {
+async function walletFor(
+  cityId: string,
+): Promise<{ id: string; currency: string }> {
   const config = await createCityConfigProvider(db).load(cityId);
   const wallet = await db.$transaction((tx) =>
     ensureWallet(tx, "user", uid("owner"), config.city),
@@ -85,7 +87,9 @@ describe("double-entry invariant", () => {
       ),
     ).rejects.toMatchObject({ code: "unbalanced_journal" });
 
-    const lines = await db.journalLine.count({ where: { walletId: wallet.id } });
+    const lines = await db.journalLine.count({
+      where: { walletId: wallet.id },
+    });
     expect(lines).toBe(0);
   });
 
@@ -130,7 +134,9 @@ describe("double-entry invariant", () => {
       }),
     ).rejects.toThrow(/unbalanced/i);
 
-    expect(await db.journalEntry.findUnique({ where: { id: entryId } })).toBeNull();
+    expect(
+      await db.journalEntry.findUnique({ where: { id: entryId } }),
+    ).toBeNull();
     expect(await db.journalLine.count({ where: { entryId } })).toBe(0);
     expect(await balanceOf(db, wallet.id, wallet.currency)).toEqual(
       money(0, wallet.currency),
@@ -147,10 +153,26 @@ describe("double-entry invariant", () => {
           caseRef: "case_1",
           occurredAt: new Date(),
           lines: [
-            { account: "ubi_float", amount: money(-100, "NGN"), counterpartRef: "a" },
-            { account: "ubi_commission", amount: money(100, "NGN"), counterpartRef: "a" },
-            { account: "ubi_float", amount: money(-100, "KES"), counterpartRef: "a" },
-            { account: "ubi_commission", amount: money(90, "KES"), counterpartRef: "a" },
+            {
+              account: "ubi_float",
+              amount: money(-100, "NGN"),
+              counterpartRef: "a",
+            },
+            {
+              account: "ubi_commission",
+              amount: money(100, "NGN"),
+              counterpartRef: "a",
+            },
+            {
+              account: "ubi_float",
+              amount: money(-100, "KES"),
+              counterpartRef: "a",
+            },
+            {
+              account: "ubi_commission",
+              amount: money(90, "KES"),
+              counterpartRef: "a",
+            },
           ],
         }),
       ),
@@ -168,8 +190,16 @@ describe("double-entry invariant", () => {
           reference: uid("bad"),
           occurredAt: new Date(),
           lines: [
-            { account: "wallet", amount: money(-10, wallet.currency), counterpartRef: "a" },
-            { account: "ubi_float", amount: money(10, wallet.currency), counterpartRef: "a" },
+            {
+              account: "wallet",
+              amount: money(-10, wallet.currency),
+              counterpartRef: "a",
+            },
+            {
+              account: "ubi_float",
+              amount: money(10, wallet.currency),
+              counterpartRef: "a",
+            },
           ],
         }),
       ),
@@ -208,8 +238,16 @@ describe("double-entry invariant", () => {
           reference: uid("adj"),
           occurredAt: new Date(),
           lines: [
-            { account: "ubi_float", amount: money(-10, "NGN"), counterpartRef: "a" },
-            { account: "ubi_commission", amount: money(10, "NGN"), counterpartRef: "a" },
+            {
+              account: "ubi_float",
+              amount: money(-10, "NGN"),
+              counterpartRef: "a",
+            },
+            {
+              account: "ubi_commission",
+              amount: money(10, "NGN"),
+              counterpartRef: "a",
+            },
           ],
         }),
       ),

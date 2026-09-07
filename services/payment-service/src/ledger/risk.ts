@@ -13,12 +13,20 @@ import type { WalletPolicy } from "./city-config";
 import type { LedgerTx } from "./types";
 import type { Money } from "@ubi/contracts";
 
-export const RISK_REASONS = ["new_recipient", "velocity_count", "velocity_amount"] as const;
+export const RISK_REASONS = [
+  "new_recipient",
+  "velocity_count",
+  "velocity_amount",
+] as const;
 export type RiskReason = (typeof RISK_REASONS)[number];
 
 export type RiskVerdict =
   | { readonly hold: false; readonly newRecipient: boolean }
-  | { readonly hold: true; readonly newRecipient: boolean; readonly reason: RiskReason };
+  | {
+      readonly hold: true;
+      readonly newRecipient: boolean;
+      readonly reason: RiskReason;
+    };
 
 /** True when this wallet has never successfully paid the recipient before. */
 export async function isNewRecipient(
@@ -45,9 +53,16 @@ export async function evaluateTransferRisk(
   tx: LedgerTx,
   input: RiskInput,
 ): Promise<RiskVerdict> {
-  const newRecipient = await isNewRecipient(tx, input.fromWalletId, input.toWalletId);
+  const newRecipient = await isNewRecipient(
+    tx,
+    input.fromWalletId,
+    input.toWalletId,
+  );
 
-  if (newRecipient && input.amount.amountMinor > input.policy.newRecipientHoldAboveMinor) {
+  if (
+    newRecipient &&
+    input.amount.amountMinor > input.policy.newRecipientHoldAboveMinor
+  ) {
     return { hold: true, newRecipient, reason: "new_recipient" };
   }
 

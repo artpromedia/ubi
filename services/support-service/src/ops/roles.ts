@@ -23,7 +23,13 @@ export const OPS_ROLES = [
 export type OpsRole = (typeof OPS_ROLES)[number];
 
 /** Roles that belong to an end user rather than to the ops organisation. */
-export const END_USER_ROLES = ["rider", "driver", "merchant", "hotel", "fleet"] as const;
+export const END_USER_ROLES = [
+  "rider",
+  "driver",
+  "merchant",
+  "hotel",
+  "fleet",
+] as const;
 export type EndUserRole = (typeof END_USER_ROLES)[number];
 
 export const PERMISSIONS = [
@@ -52,7 +58,9 @@ export const PERMISSIONS = [
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
-const ROLE_PERMISSIONS: Readonly<Record<OpsRole | EndUserRole, readonly Permission[]>> = {
+const ROLE_PERMISSIONS: Readonly<
+  Record<OpsRole | EndUserRole, readonly Permission[]>
+> = {
   // ---- ops roles -------------------------------------------------------
   support_agent: [
     "case.open",
@@ -111,7 +119,10 @@ const ROLE_PERMISSIONS: Readonly<Record<OpsRole | EndUserRole, readonly Permissi
   fleet: ["case.open", "case.message"],
 };
 
-const ROLE_SET: ReadonlySet<string> = new Set([...OPS_ROLES, ...END_USER_ROLES]);
+const ROLE_SET: ReadonlySet<string> = new Set([
+  ...OPS_ROLES,
+  ...END_USER_ROLES,
+]);
 
 export function isKnownRole(role: string): role is OpsRole | EndUserRole {
   return ROLE_SET.has(role);
@@ -128,10 +139,14 @@ export function can(role: string, permission: Permission): boolean {
 
 export function assertPermission(role: string, permission: Permission): void {
   if (!can(role, permission)) {
-    throw new ContractError("forbidden", "your role does not allow that action", {
-      role,
-      permission,
-    });
+    throw new ContractError(
+      "forbidden",
+      "your role does not allow that action",
+      {
+        role,
+        permission,
+      },
+    );
   }
 }
 
@@ -163,7 +178,9 @@ export function maskPhone(phone: string): string {
   if (digits.length < 4) {
     return "•".repeat(digits.length);
   }
-  const head = phone.startsWith("+") ? `+${digits.slice(0, 3)}` : digits.slice(0, 3);
+  const head = phone.startsWith("+")
+    ? `+${digits.slice(0, 3)}`
+    : digits.slice(0, 3);
   const tail = digits.slice(-2);
   return `${head}${"•".repeat(Math.max(2, digits.length - 5))}${tail}`;
 }
@@ -184,7 +201,10 @@ export interface Contact {
   readonly email: string | null;
 }
 
-export function contactForRole(role: string, contact: Contact): Contact & {
+export function contactForRole(
+  role: string,
+  contact: Contact,
+): Contact & {
   readonly masked: boolean;
 } {
   if (can(role, "pii.contact")) {

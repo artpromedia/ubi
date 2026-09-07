@@ -27,7 +27,6 @@ import { generateId } from "../src/lib/ids";
 import { auditedTransaction } from "../src/ops/audit";
 import { openCase } from "../src/ops/cases";
 
-
 import type { SupportDeps } from "../src/ops/context";
 import type { SupportDb } from "../src/ops/types";
 import type { Hono } from "hono";
@@ -65,7 +64,9 @@ describe("audit completeness", () => {
     // 1. open a case
     const openResponse = await app.request("/v1/support/cases", {
       method: "POST",
-      headers: headers(lead, city.cityId, { "idempotency-key": idemKey("open") }),
+      headers: headers(lead, city.cityId, {
+        "idempotency-key": idemKey("open"),
+      }),
       body: JSON.stringify({
         category: "wallet",
         description: "money left my wallet twice",
@@ -83,7 +84,9 @@ describe("audit completeness", () => {
       {
         method: "POST",
         headers: headers(lead, city.cityId),
-        body: JSON.stringify({ body: "asked the customer for the transaction ids" }),
+        body: JSON.stringify({
+          body: "asked the customer for the transaction ids",
+        }),
       },
     );
     expect(messageResponse.status).toBe(201);
@@ -106,7 +109,9 @@ describe("audit completeness", () => {
       `/v1/support/cases/${opened.id}/remedies`,
       {
         method: "POST",
-        headers: headers(lead, city.cityId, { "idempotency-key": idemKey("rm") }),
+        headers: headers(lead, city.cityId, {
+          "idempotency-key": idemKey("rm"),
+        }),
         body: JSON.stringify({
           type: "refund",
           amountMinor: 15_000,
@@ -147,15 +152,22 @@ describe("audit completeness", () => {
       expect(row.reason).not.toBeNull();
       expect(row.subjectType).toBe("support_case");
     }
-    const remedyRow = rows.find((row) => row.action === "support.remedy.posted");
+    const remedyRow = rows.find(
+      (row) => row.action === "support.remedy.posted",
+    );
     expect(remedyRow?.before).toMatchObject({ status: "investigating" });
-    expect(remedyRow?.after).toMatchObject({ status: "remedied", type: "refund" });
+    expect(remedyRow?.after).toMatchObject({
+      status: "remedied",
+      type: "refund",
+    });
   });
 
   it("audits an SOS exactly once, and a review decision exactly once", async () => {
     const sosResponse = await app.request("/v1/safety/sos", {
       method: "POST",
-      headers: headers(rider, city.cityId, { "idempotency-key": idemKey("sos") }),
+      headers: headers(rider, city.cityId, {
+        "idempotency-key": idemKey("sos"),
+      }),
       body: JSON.stringify({ trigger: "sos_button", rideId: uid("rd") }),
     });
     expect(sosResponse.status).toBe(202);
@@ -175,7 +187,9 @@ describe("audit completeness", () => {
     });
     const decisionResponse = await app.request("/v1/reviews/kyc/decisions", {
       method: "POST",
-      headers: headers(lead, city.cityId, { "idempotency-key": idemKey("rvd") }),
+      headers: headers(lead, city.cityId, {
+        "idempotency-key": idemKey("rvd"),
+      }),
       body: JSON.stringify({
         subjectType: "document",
         subjectId: document.id,
@@ -211,7 +225,9 @@ describe("audit completeness", () => {
       `/v1/support/cases/${opened.id}/remedies`,
       {
         method: "POST",
-        headers: headers(lead, city.cityId, { "idempotency-key": idemKey("rm") }),
+        headers: headers(lead, city.cityId, {
+          "idempotency-key": idemKey("rm"),
+        }),
         body: JSON.stringify({
           type: "fee_reversal",
           amountMinor: 12_000,
@@ -222,9 +238,13 @@ describe("audit completeness", () => {
 
     expect(response.status).toBe(503);
     expect(await db.remedy.count({ where: { caseId: opened.id } })).toBe(0);
-    expect(await db.journalEntry.count({ where: { caseRef: opened.id } })).toBe(0);
+    expect(await db.journalEntry.count({ where: { caseRef: opened.id } })).toBe(
+      0,
+    );
     expect(await auditCount(opened.id)).toBe(auditsBefore);
-    const stillOpen = await db.supportCase.findUnique({ where: { id: opened.id } });
+    const stillOpen = await db.supportCase.findUnique({
+      where: { id: opened.id },
+    });
     expect(stillOpen?.status).toBe("open");
   });
 
@@ -239,7 +259,9 @@ describe("audit completeness", () => {
       idempotencyKey: idemKey("open"),
       correlationId: null,
     });
-    const eventsBefore = await db.caseEvent.count({ where: { caseId: opened.id } });
+    const eventsBefore = await db.caseEvent.count({
+      where: { caseId: opened.id },
+    });
     const auditsBefore = await auditCount(opened.id);
     const marker = generateId("cev");
 
@@ -258,7 +280,9 @@ describe("audit completeness", () => {
       }),
     ).rejects.toThrow("the work failed after writing");
 
-    expect(await db.caseEvent.count({ where: { caseId: opened.id } })).toBe(eventsBefore);
+    expect(await db.caseEvent.count({ where: { caseId: opened.id } })).toBe(
+      eventsBefore,
+    );
     expect(await db.caseEvent.findUnique({ where: { id: marker } })).toBeNull();
     expect(await auditCount(opened.id)).toBe(auditsBefore);
   });
@@ -278,7 +302,9 @@ describe("audit completeness", () => {
       }),
     });
     const opened = (await response.json()) as { id: string };
-    const row = await db.auditLog.findFirst({ where: { subjectId: opened.id } });
+    const row = await db.auditLog.findFirst({
+      where: { subjectId: opened.id },
+    });
     expect(row?.after).toMatchObject({ correlationId });
   });
 });

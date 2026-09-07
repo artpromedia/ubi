@@ -32,9 +32,13 @@ export interface WalletRecord {
 export function entryTier(config: CityConfig): KycTier {
   const [first, ...rest] = config.kycTiers;
   if (first === undefined) {
-    throw new ContractError("config_unavailable", "city config defines no KYC tiers", {
-      cityId: config.cityId,
-    });
+    throw new ContractError(
+      "config_unavailable",
+      "city config defines no KYC tiers",
+      {
+        cityId: config.cityId,
+      },
+    );
   }
   return rest.reduce(
     (lowest, candidate) =>

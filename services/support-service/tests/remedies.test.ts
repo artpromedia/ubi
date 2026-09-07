@@ -22,7 +22,6 @@ import {
 import { createApp } from "../src/index";
 import { openCase, postRemedy } from "../src/ops/cases";
 
-
 import type { SupportDeps } from "../src/ops/context";
 import type { SupportDb } from "../src/ops/types";
 
@@ -50,7 +49,9 @@ describe("typed remedies", () => {
     await closeTestDb();
   });
 
-  async function newCase(subjectId = `rd_${Math.random().toString(36).slice(2)}`) {
+  async function newCase(
+    subjectId = `rd_${Math.random().toString(36).slice(2)}`,
+  ) {
     const opened = await openCase(deps, {
       actor: agent,
       cityId: city.cityId,
@@ -72,7 +73,9 @@ describe("typed remedies", () => {
       `/v1/support/cases/${opened.id}/remedies`,
       {
         method: "POST",
-        headers: headers(agent, city.cityId, { "idempotency-key": idemKey("rm") }),
+        headers: headers(agent, city.cityId, {
+          "idempotency-key": idemKey("rm"),
+        }),
         body: JSON.stringify({
           type: "goodwill_gesture",
           amountMinor: 1000,
@@ -91,7 +94,12 @@ describe("typed remedies", () => {
 
   it("posts counter-lines that reference the case and leaves the prior entry untouched", async () => {
     const opened = await newCase();
-    const priorEntryId = await seedRideEntry(db, walletId, city.currency, 180_000);
+    const priorEntryId = await seedRideEntry(
+      db,
+      walletId,
+      city.currency,
+      180_000,
+    );
     const priorLinesBefore = await db.journalLine.findMany({
       where: { entryId: priorEntryId },
       orderBy: { id: "asc" },
@@ -180,7 +188,9 @@ describe("typed remedies", () => {
 
     const rows = await db.remedy.findMany({ where: { caseId: opened.id } });
     expect(rows).toHaveLength(1);
-    const entries = await db.journalEntry.findMany({ where: { caseRef: opened.id } });
+    const entries = await db.journalEntry.findMany({
+      where: { caseRef: opened.id },
+    });
     expect(entries).toHaveLength(1);
   });
 
@@ -287,7 +297,9 @@ describe("typed remedies", () => {
     });
     expect(result.remedy.entryId).toBeNull();
     expect(result.remedy.amount).toBeNull();
-    expect(result.case.outcome.remedies.some((r) => r.type === "redelivery")).toBe(true);
+    expect(
+      result.case.outcome.remedies.some((r) => r.type === "redelivery"),
+    ).toBe(true);
   });
 
   it("shows the outcome on the case, so the customer sees it on the item it touched", async () => {
@@ -311,10 +323,15 @@ describe("typed remedies", () => {
     );
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      cases: { id: string; outcome: { status: string; remedies: { type: string }[] } }[];
+      cases: {
+        id: string;
+        outcome: { status: string; remedies: { type: string }[] };
+      }[];
     };
     const found = body.cases.find((entry) => entry.id === opened.id);
     expect(found?.outcome.status).toBe("remedied");
-    expect(found?.outcome.remedies.map((r) => r.type)).toContain("fee_reversal");
+    expect(found?.outcome.remedies.map((r) => r.type)).toContain(
+      "fee_reversal",
+    );
   });
 });

@@ -10,7 +10,11 @@
  * than hidden (CLAUDE.md #8). A merchant still in KYB review does not appear at
  * all — it has nothing published to order.
  */
-import { assertFlagEnabled, quotedEtaMinutes, type BitesCityConfig } from "../city-config.js";
+import {
+  assertFlagEnabled,
+  quotedEtaMinutes,
+  type BitesCityConfig,
+} from "../city-config.js";
 import { MERCHANT_APPROVED } from "./menu.js";
 
 import type { BitesDeps } from "../context.js";
@@ -40,7 +44,8 @@ function quoteFor(
   config: BitesCityConfig,
   now: Date,
 ): MerchantQuote {
-  const paused = outlet.pausedUntil !== null && outlet.pausedUntil.getTime() > now.getTime();
+  const paused =
+    outlet.pausedUntil !== null && outlet.pausedUntil.getTime() > now.getTime();
   const available = outlet.open && !paused;
   const unavailableReason = !outlet.open ? "closed" : paused ? "paused" : null;
   return {
@@ -60,7 +65,10 @@ export async function feed(
   deps: BitesDeps,
   cityId: string,
   addressId: string,
-): Promise<{ readonly addressId: string; readonly merchants: readonly MerchantQuote[] }> {
+): Promise<{
+  readonly addressId: string;
+  readonly merchants: readonly MerchantQuote[];
+}> {
   const config = await deps.config.loadForBites(cityId);
   assertFlagEnabled(config.flags, "bites");
 
@@ -116,6 +124,8 @@ export async function search(
   const now = deps.now();
   const quotes = outlets.map((outlet) => quoteFor(outlet, config, now));
   return {
-    merchants: filters.openNow ? quotes.filter((quote) => quote.available) : quotes,
+    merchants: filters.openNow
+      ? quotes.filter((quote) => quote.available)
+      : quotes,
   };
 }

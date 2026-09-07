@@ -43,10 +43,23 @@ export function createPrismaDirectory(db: LedgerTx): RecipientDirectory {
       }
       const user = await db.user.findUnique({
         where: { phone: trimmed },
-        select: { id: true, firstName: true, lastName: true, status: true, deletedAt: true },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          status: true,
+          deletedAt: true,
+        },
       });
-      if (user === null || user.deletedAt !== null || user.status !== "ACTIVE") {
-        throw new ContractError("recipient_not_found", "no UBI account uses that number");
+      if (
+        user === null ||
+        user.deletedAt !== null ||
+        user.status !== "ACTIVE"
+      ) {
+        throw new ContractError(
+          "recipient_not_found",
+          "no UBI account uses that number",
+        );
       }
       return { userId: user.id, displayName: displayNameOf(user) };
     },
@@ -54,9 +67,19 @@ export function createPrismaDirectory(db: LedgerTx): RecipientDirectory {
     async byUserId(userId: string): Promise<RecipientMatch | null> {
       const user = await db.user.findUnique({
         where: { id: userId },
-        select: { id: true, firstName: true, lastName: true, status: true, deletedAt: true },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          status: true,
+          deletedAt: true,
+        },
       });
-      if (user === null || user.deletedAt !== null || user.status !== "ACTIVE") {
+      if (
+        user === null ||
+        user.deletedAt !== null ||
+        user.status !== "ACTIVE"
+      ) {
         return null;
       }
       return { userId: user.id, displayName: displayNameOf(user) };

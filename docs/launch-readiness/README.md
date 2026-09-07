@@ -3,13 +3,13 @@
 Implementation of the design handoff in `handoff/`, on branch
 `claude/handoff-implementation-h2p0f0`.
 
-| Document | What it holds |
-|---|---|
-| `current-state.md` | What was reproduced, what was fixed, and the command that proves each |
-| `slice-status.md` | The twelve slices against what is actually on the branch |
-| `ownership-matrix.md` | Which service owns which routes, events and tables |
-| `feature-flags.md` | All 16 flags and their production defaults |
-| `../adr/0001-launch-handoff-decisions.md` | Decisions taken, and the ones left open |
+| Document                                  | What it holds                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------- |
+| `current-state.md`                        | What was reproduced, what was fixed, and the command that proves each |
+| `slice-status.md`                         | The twelve slices against what is actually on the branch              |
+| `ownership-matrix.md`                     | Which service owns which routes, events and tables                    |
+| `feature-flags.md`                        | All 16 flags and their production defaults                            |
+| `../adr/0001-launch-handoff-decisions.md` | Decisions taken, and the ones left open                               |
 
 ---
 
@@ -18,20 +18,20 @@ Implementation of the design handoff in `handoff/`, on branch
 Six of the twelve slices are implemented and verified, plus the phase-2
 infrastructure. **674 vitest tests pass, 6 Go packages, and 32 Flutter tests.**
 
-| Slice / area | Status | Evidence |
-|---|---|---|
-| Foundation | done | 64 contracts + 24 config-client tests; migration chain provisions an empty DB, zero drift |
-| 01 city config + flags | done | 79 service tests |
-| 02 Move lockstep (Go) | done | 6 packages, `-race` clean |
-| 03 identity + gateway | done | 73 gateway + 208 user-service tests |
-| 04 wallet ledger + recon | done | 85 tests |
-| 05 Bites backend | done | 27 tests (backend only; screens pending) |
-| 11 support, safety, audit | done | 55 tests |
-| Outbox relay | done | 8 tests — SKIP LOCKED, per-aggregate order, quarantine, dedupe |
-| food + notification compile | done | 171 type errors → 0; 21 + 30 tests |
-| Mobile shared packages | done | 5 packages analyze clean; 32 core tests (first real compile) |
-| Mobile apps (rider/driver) | **not clean** | 95 / 334 analyze errors — bloc/contract mismatch, app-rewrite scope |
-| 06–10, 12 | not started | |
+| Slice / area                | Status        | Evidence                                                                                  |
+| --------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
+| Foundation                  | done          | 64 contracts + 24 config-client tests; migration chain provisions an empty DB, zero drift |
+| 01 city config + flags      | done          | 79 service tests                                                                          |
+| 02 Move lockstep (Go)       | done          | 6 packages, `-race` clean                                                                 |
+| 03 identity + gateway       | done          | 73 gateway + 208 user-service tests                                                       |
+| 04 wallet ledger + recon    | done          | 85 tests                                                                                  |
+| 05 Bites backend            | done          | 27 tests (backend only; screens pending)                                                  |
+| 11 support, safety, audit   | done          | 55 tests                                                                                  |
+| Outbox relay                | done          | 8 tests — SKIP LOCKED, per-aggregate order, quarantine, dedupe                            |
+| food + notification compile | done          | 171 type errors → 0; 21 + 30 tests                                                        |
+| Mobile shared packages      | done          | 5 packages analyze clean; 32 core tests (first real compile)                              |
+| Mobile apps (rider/driver)  | **not clean** | 95 / 334 analyze errors — bloc/contract mismatch, app-rewrite scope                       |
+| 06–10, 12                   | not started   |                                                                                           |
 
 Reproduce (needs Postgres 16 + PostGIS, Redis, and a freshly migrated database):
 
@@ -57,23 +57,23 @@ cd mobile/packages/core     && flutter test        # 32
 Fifteen defects were reproduced before being fixed, and re-run after. These were
 not judgement calls about style; each one broke something outright.
 
-| # | Defect | Proof it was real |
-|---|---|---|
-| 1 | `datasource` had no `url`; Prisma 6 rejects it | `prisma validate` → P1012 |
-| 2 | No baseline migration | an empty database could not be provisioned |
-| 3 | `CREATE INDEX CONCURRENTLY` inside Prisma's transaction | SQLSTATE 25001 |
-| 4 | 5 of 12 index statements referenced a table and columns that do not exist | checked against `information_schema` |
-| 5 | Every workflow triggered on `main`; the default branch is `master` | no `main` on the remote |
-| 6 | `ignoreDeprecations: "6.0"` invalid for TS 5.9 | TS5103, and turbo stops at the first failure |
-| 7 | 5 of 6 OpenAPI documents declared `components:` twice | `securitySchemes`, `IdemKey`, `Money`, `Error` silently discarded |
-| 8 | No Go service had a tracked `go.sum` | `git ls-files 'services/*/go.sum'` empty |
-| 9 | Two test files imported a module path that does not exist | blocked `go mod tidy` for the whole module |
-| 10 | h3-go v4.5 returns `(value, error)`; five call sites assumed one | compile error |
-| 11 | Three error sentinels used at ten sites, never defined | compile error |
-| 12 | `int64(1.2)` truncates to 1 — the ETA detour factor did nothing | and the computed vehicle type was discarded |
-| 13 | `time.Duration` never matched `case int64` in a type switch | every duration assertion could only fail |
-| 14 | CI pinned Go 1.22; modules require up to 1.24 | two of three services would not build |
-| 15 | `declare module "@prisma/client"` shadows the generated types | `prisma.nonExistentMethod()` compiles |
+| #   | Defect                                                                    | Proof it was real                                                 |
+| --- | ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 1   | `datasource` had no `url`; Prisma 6 rejects it                            | `prisma validate` → P1012                                         |
+| 2   | No baseline migration                                                     | an empty database could not be provisioned                        |
+| 3   | `CREATE INDEX CONCURRENTLY` inside Prisma's transaction                   | SQLSTATE 25001                                                    |
+| 4   | 5 of 12 index statements referenced a table and columns that do not exist | checked against `information_schema`                              |
+| 5   | Every workflow triggered on `main`; the default branch is `master`        | no `main` on the remote                                           |
+| 6   | `ignoreDeprecations: "6.0"` invalid for TS 5.9                            | TS5103, and turbo stops at the first failure                      |
+| 7   | 5 of 6 OpenAPI documents declared `components:` twice                     | `securitySchemes`, `IdemKey`, `Money`, `Error` silently discarded |
+| 8   | No Go service had a tracked `go.sum`                                      | `git ls-files 'services/*/go.sum'` empty                          |
+| 9   | Two test files imported a module path that does not exist                 | blocked `go mod tidy` for the whole module                        |
+| 10  | h3-go v4.5 returns `(value, error)`; five call sites assumed one          | compile error                                                     |
+| 11  | Three error sentinels used at ten sites, never defined                    | compile error                                                     |
+| 12  | `int64(1.2)` truncates to 1 — the ETA detour factor did nothing           | and the computed vehicle type was discarded                       |
+| 13  | `time.Duration` never matched `case int64` in a type switch               | every duration assertion could only fail                          |
+| 14  | CI pinned Go 1.22; modules require up to 1.24                             | two of three services would not build                             |
+| 15  | `declare module "@prisma/client"` shadows the generated types             | `prisma.nonExistentMethod()` compiles                             |
 
 Several of these hid the next: no `go.sum` hid the bad import path, which hid the
 h3 API change, which hid the undefined sentinels, which hid the assertion helper.
@@ -105,7 +105,7 @@ routing, replaces a forged signed context with one it issued, and derives scopes
 from the role server-side — a token claiming scopes its role lacks cannot widen
 itself.
 
-**Privacy.** The selfie step-up test asserts the image is written *nowhere*: not
+**Privacy.** The selfie step-up test asserts the image is written _nowhere_: not
 the challenge, the face check, the audit log or the outbox. Asserting absence in
 every sink is the only way the claim means anything.
 
@@ -167,7 +167,7 @@ A disabled feature answers 404, not 403, so a deep link cannot confirm it exists
 - **Placeholder city config.** The Lagos seed carries commented PLACEHOLDER
   values for per-class fares, KYC tier limits and the remittance cap — the three
   things slice 01 does not specify. They must be replaced before Lagos goes live.
-  Everything the slice *does* specify is exact and asserted in tests.
+  Everything the slice _does_ specify is exact and asserted in tests.
 
 Nothing here is described as complete on the strength of documentation. Where a
 claim is not backed by a command that was run, it says so.

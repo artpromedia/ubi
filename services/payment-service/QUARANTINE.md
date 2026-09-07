@@ -19,18 +19,21 @@ the deleted any-shim. They are replaced by the canonical `/v1/wallet` +
 DERIVED from journal lines).
 
 Routes (unmounted from `src/index.ts`):
-- `src/routes/payments.ts`        (was `/payments`)
-- `src/routes/wallet.ts`          (was `/wallets` — the OLD wallet route; `/v1/wallet` stays)
-- `src/routes/payouts.ts`         (was `/payouts`)
-- `src/routes/mobile-money.ts`    (was `/mobile-money`)
-- `src/routes/webhooks.ts`        (was `/webhooks`)
+
+- `src/routes/payments.ts` (was `/payments`)
+- `src/routes/wallet.ts` (was `/wallets` — the OLD wallet route; `/v1/wallet` stays)
+- `src/routes/payouts.ts` (was `/payouts`)
+- `src/routes/mobile-money.ts` (was `/mobile-money`)
+- `src/routes/webhooks.ts` (was `/webhooks`)
 
 Services:
-- `src/services/settlement.service.ts`  (fictional payment/walletTransaction models; canonical settlement is `src/finance`). The `src/services/index.ts` barrel no longer re-exports it, and `src/routes/admin.ts` was decoupled from it (its settlement-action endpoints now 410-redirect to `/v1/finance`; the settlement LIST/summary/report reads use `prisma.settlement` directly).
+
+- `src/services/settlement.service.ts` (fictional payment/walletTransaction models; canonical settlement is `src/finance`). The `src/services/index.ts` barrel no longer re-exports it, and `src/routes/admin.ts` was decoupled from it (its settlement-action endpoints now 410-redirect to `/v1/finance`; the settlement LIST/summary/report reads use `prisma.settlement` directly).
 
 PSP provider integrations (deferred — rebuild on the canonical ledger):
-- `src/providers/orange-money.service.ts`  (fictional `prisma.providerBalance`; unsupported XOF currency)
-- `src/providers/telebirr.service.ts`       (fictional `prisma.providerBalance`)
+
+- `src/providers/orange-money.service.ts` (fictional `prisma.providerBalance`; unsupported XOF currency)
+- `src/providers/telebirr.service.ts` (fictional `prisma.providerBalance`)
   The `src/providers/index.ts` barrel no longer re-exports these two.
 
 The remaining PSP providers ARE kept and were fixed against the real generated
@@ -51,6 +54,7 @@ above provided them against the fictional schema and are now unmounted; the kept
 gateway/provider/payout code compiles against the real types but its money moves
 still need to be re-expressed as canonical journal entries before those flows
 launch. Two smaller placeholders in kept, launch code:
+
 - `src/services/sos.service.ts` emergency-contact CRUD is held in-process (a
   Map on the singleton) because the launch schema has no `EmergencyContact`
   table; it must be re-pointed at a real model before it can persist.

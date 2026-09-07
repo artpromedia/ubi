@@ -16,8 +16,16 @@ import { ContractError } from "@ubi/contracts";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { decideIdentityCase, DecideCaseSchema, listOpenIdentityCases } from "../identity/cases";
-import { getIdentity, requireIdentity, requireScope } from "../identity/context";
+import {
+  decideIdentityCase,
+  DecideCaseSchema,
+  listOpenIdentityCases,
+} from "../identity/cases";
+import {
+  getIdentity,
+  requireIdentity,
+  requireScope,
+} from "../identity/context";
 import type { IdentityDeps } from "../identity/deps";
 import { enrollDevice } from "../identity/devices";
 import {
@@ -28,7 +36,12 @@ import {
   UploadDocumentSchema,
 } from "../identity/documents";
 import { driverEligibility } from "../identity/driver";
-import { contractRoute, ok, parseBody, requireIdempotencyKey } from "../identity/http";
+import {
+  contractRoute,
+  ok,
+  parseBody,
+  requireIdempotencyKey,
+} from "../identity/http";
 import {
   requireReviewerRole,
   requireServiceKey,
@@ -37,9 +50,24 @@ import {
   verifyTelcoSignature,
 } from "../identity/internal-auth";
 import { livenessRequiredForShift } from "../identity/liveness";
-import { requestOtp, RequestOtpSchema, verifyOtp, VerifyOtpSchema } from "../identity/otp";
-import { pinState, resetPin, ResetPinSchema, verifyPin, VerifyPinSchema } from "../identity/pin";
-import { recordSimSwap, safeModeState, sweepSafeModeExits } from "../identity/safe-mode";
+import {
+  requestOtp,
+  RequestOtpSchema,
+  verifyOtp,
+  VerifyOtpSchema,
+} from "../identity/otp";
+import {
+  pinState,
+  resetPin,
+  ResetPinSchema,
+  verifyPin,
+  VerifyPinSchema,
+} from "../identity/pin";
+import {
+  recordSimSwap,
+  safeModeState,
+  sweepSafeModeExits,
+} from "../identity/safe-mode";
 import {
   approveFromTrustedDevice,
   ApproveFromTrustedDeviceSchema,
@@ -55,7 +83,11 @@ const SimSwapWebhookSchema = z.object({
 });
 
 const VerifyOtpAndEnrolSchema = VerifyOtpSchema.extend({
-  deviceId: z.string().min(8).max(64).regex(/^[A-Za-z0-9_.:-]+$/),
+  deviceId: z
+    .string()
+    .min(8)
+    .max(64)
+    .regex(/^[A-Za-z0-9_.:-]+$/),
   platform: z.enum(["ios", "android", "web"]).optional(),
   model: z.string().min(1).max(120).optional(),
 });
@@ -124,12 +156,16 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         where: { phone: body.phone },
         select: { id: true, email: true, role: true, status: true },
       });
-      if (user === null) throw new ContractError("not_found", "No account uses that number");
+      if (user === null)
+        throw new ContractError("not_found", "No account uses that number");
       if (user.status === "SUSPENDED") {
         throw new ContractError("forbidden", "This account is suspended");
       }
 
-      const verified = await verifyOtp(deps, { phone: body.phone, code: body.code });
+      const verified = await verifyOtp(deps, {
+        phone: body.phone,
+        code: body.code,
+      });
 
       const enrolment = await enrollDevice(deps, {
         deviceId: body.deviceId,
@@ -182,7 +218,10 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       try {
         parsedJson = JSON.parse(rawBody) as unknown;
       } catch {
-        throw new ContractError("validation_failed", "Request body must be JSON");
+        throw new ContractError(
+          "validation_failed",
+          "Request body must be JSON",
+        );
       }
       const body = SimSwapWebhookSchema.parse(parsedJson);
 
@@ -253,7 +292,8 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         where: { id: principal.userId },
         select: { email: true },
       });
-      if (user === null) throw new ContractError("not_found", "Account not found");
+      if (user === null)
+        throw new ContractError("not_found", "Account not found");
 
       const outcome = await passSelfieStepUp(
         deps,
@@ -301,7 +341,8 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         where: { id: principal.userId },
         select: { email: true },
       });
-      if (user === null) throw new ContractError("not_found", "Account not found");
+      if (user === null)
+        throw new ContractError("not_found", "Account not found");
 
       const outcome = await approveFromTrustedDevice(
         deps,
@@ -363,7 +404,11 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       const body = await parseBody(c, VerifyPinSchema);
       const result = await verifyPin(
         deps,
-        { userId: principal.userId, role: principal.role, cityId: principal.cityId },
+        {
+          userId: principal.userId,
+          role: principal.role,
+          cityId: principal.cityId,
+        },
         body.pin,
       );
       return ok(c, {
@@ -383,7 +428,11 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       const body = await parseBody(c, ResetPinSchema);
       const result = await resetPin(
         deps,
-        { userId: principal.userId, role: principal.role, cityId: principal.cityId },
+        {
+          userId: principal.userId,
+          role: principal.role,
+          cityId: principal.cityId,
+        },
         body,
       );
       return ok(c, {
@@ -400,7 +449,10 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       const principal = getIdentity(c);
       requireScope(principal, "profile:read");
       const driver = await driverForUser(principal.userId);
-      return ok(c, await listDriverDocuments(deps, driver.id, driver.vehicleId));
+      return ok(
+        c,
+        await listDriverDocuments(deps, driver.id, driver.vehicleId),
+      );
     }),
   );
 
@@ -453,7 +505,12 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       }
       return ok(
         c,
-        await livenessRequiredForShift(deps, driver.id, principal.userId, principal.deviceId),
+        await livenessRequiredForShift(
+          deps,
+          driver.id,
+          principal.userId,
+          principal.deviceId,
+        ),
       );
     }),
   );
@@ -468,7 +525,11 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
       return ok(c, {
         active: state.active,
         until: state.until?.toISOString() ?? null,
-        blocks: ["wallet:transfer:p2p", "wallet:transfer:nip", "security:pin:change"],
+        blocks: [
+          "wallet:transfer:p2p",
+          "wallet:transfer:nip",
+          "security:pin:change",
+        ],
       });
     }),
   );

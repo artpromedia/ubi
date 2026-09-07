@@ -5,7 +5,12 @@
  * Bites is off should look like a page that does not exist, not like a locked
  * door (CLAUDE.md #5). `featureDisabled` carries exactly that status.
  */
-import { type FlagKey, type FlagSet, featureDisabled, isEnabled } from "@ubi/contracts";
+import {
+  type FlagKey,
+  type FlagSet,
+  featureDisabled,
+  isEnabled,
+} from "@ubi/contracts";
 
 export function flagEnabled(flags: FlagSet | undefined, key: FlagKey): boolean {
   return isEnabled(flags, key);

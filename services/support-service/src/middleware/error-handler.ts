@@ -15,7 +15,6 @@ import { toContractError } from "../ops/errors";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
-
 export function failure(c: Context, error: unknown): Response {
   if (error instanceof ZodError) {
     const validation = new ContractError(
@@ -28,7 +27,10 @@ export function failure(c: Context, error: unknown): Response {
         })),
       },
     );
-    return c.json(validation.toBody(), validation.status as ContentfulStatusCode);
+    return c.json(
+      validation.toBody(),
+      validation.status as ContentfulStatusCode,
+    );
   }
 
   const contract = toContractError(error);

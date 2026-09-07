@@ -30,15 +30,24 @@ afterAll(async () => {
   await closeConnections();
 });
 
-async function enrolNewDevice(userId: string, deviceId: string): Promise<string> {
+async function enrolNewDevice(
+  userId: string,
+  deviceId: string,
+): Promise<string> {
   const response = await harness.app.fetch(
     new Request("http://user-service.test/devices/enroll", {
       method: "POST",
-      headers: await authedHeaders({ userId, role: "driver", scopes: FULL_SCOPES }),
+      headers: await authedHeaders({
+        userId,
+        role: "driver",
+        scopes: FULL_SCOPES,
+      }),
       body: JSON.stringify({ deviceId, platform: "android" }),
     }),
   );
-  const body = (await response.json()) as { data: { stepUp: { challengeId: string } } };
+  const body = (await response.json()) as {
+    data: { stepUp: { challengeId: string } };
+  };
   return body.data.stepUp.challengeId;
 }
 
@@ -46,7 +55,11 @@ async function selfie(userId: string, challengeId: string) {
   return harness.app.fetch(
     new Request("http://user-service.test/auth/step-up/selfie", {
       method: "POST",
-      headers: await authedHeaders({ userId, role: "driver", scopes: FULL_SCOPES }),
+      headers: await authedHeaders({
+        userId,
+        role: "driver",
+        scopes: FULL_SCOPES,
+      }),
       body: JSON.stringify({ challengeId, nin: NIN, imageBase64: SELFIE }),
     }),
   );
@@ -129,13 +142,17 @@ describe("a failed face check", () => {
   });
 
   it("takes the driver offline", async () => {
-    const row = await prisma.driver.findUniqueOrThrow({ where: { id: driver.driverId } });
+    const row = await prisma.driver.findUniqueOrThrow({
+      where: { id: driver.driverId },
+    });
     expect(row.isOnline).toBe(false);
     expect(row.isAvailable).toBe(false);
   });
 
   it("does NOT deactivate the account", async () => {
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: driver.id } });
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: driver.id },
+    });
     expect(user.status).toBe("ACTIVE");
     expect(user.deletedAt).toBeNull();
   });
@@ -177,7 +194,12 @@ describe("a failed face check", () => {
       }),
     );
     const body = (await response.json()) as {
-      data: { eligible: boolean; reasons: string[]; appealPath: string; appealMessage: string };
+      data: {
+        eligible: boolean;
+        reasons: string[];
+        appealPath: string;
+        appealMessage: string;
+      };
     };
     expect(body.data.eligible).toBe(false);
     expect(body.data.reasons.length).toBeGreaterThan(0);
@@ -193,7 +215,12 @@ describe("a failed face check", () => {
 
     const response = await selfie(other.id, challengeId);
     const body = (await response.json()) as {
-      data: { status: string; token: unknown; reason: string; appealPath: string };
+      data: {
+        status: string;
+        token: unknown;
+        reason: string;
+        appealPath: string;
+      };
     };
     expect(body.data.status).toBe("failed");
     expect(body.data.token).toBeNull();
@@ -217,7 +244,9 @@ describe("when the biometric provider is unavailable", () => {
     try {
       const response = await selfie(driver.id, challengeId);
       expect(response.status).toBe(503);
-      const body = (await response.json()) as { error: { code: string; message: string } };
+      const body = (await response.json()) as {
+        error: { code: string; message: string };
+      };
       expect(body.error.code).toBe("service_unavailable");
       expect(body.error.message).toContain("try again");
     } finally {
@@ -230,11 +259,17 @@ describe("when the biometric provider is unavailable", () => {
     });
     expect(challenge.status).toBe("pending");
     expect(challenge.score).toBeNull();
-    expect(await prisma.faceCheck.count({ where: { driverId: driver.driverId } })).toBe(0);
-    expect(await prisma.identityCase.count({ where: { driverId: driver.driverId } })).toBe(0);
+    expect(
+      await prisma.faceCheck.count({ where: { driverId: driver.driverId } }),
+    ).toBe(0);
+    expect(
+      await prisma.identityCase.count({ where: { driverId: driver.driverId } }),
+    ).toBe(0);
 
     // ...and the driver is not punished for the outage.
-    const row = await prisma.driver.findUniqueOrThrow({ where: { id: driver.driverId } });
+    const row = await prisma.driver.findUniqueOrThrow({
+      where: { id: driver.driverId },
+    });
     expect(row.isOnline).toBe(true);
 
     // A retry once the provider is back works.
@@ -248,14 +283,23 @@ describe("old-device approval", () => {
   it("lets a trusted device approve a new one, and never itself", async () => {
     const user = await createUser("RIDER");
 
-    const firstChallenge = await enrolNewDevice(user.id, "device-trusted-src-1");
+    const firstChallenge = await enrolNewDevice(
+      user.id,
+      "device-trusted-src-1",
+    );
     const first = await prisma.stepUpChallenge.findUniqueOrThrow({
       where: { id: firstChallenge },
     });
     const trustedDeviceId = first.deviceId as string;
-    await prisma.device.update({ where: { id: trustedDeviceId }, data: { trusted: true } });
+    await prisma.device.update({
+      where: { id: trustedDeviceId },
+      data: { trusted: true },
+    });
 
-    const secondChallenge = await enrolNewDevice(user.id, "device-trusted-new-1");
+    const secondChallenge = await enrolNewDevice(
+      user.id,
+      "device-trusted-new-1",
+    );
 
     // A device cannot approve its own challenge.
     const selfApproval = await harness.app.fetch(
@@ -266,7 +310,9 @@ describe("old-device approval", () => {
           role: "rider",
           scopes: FULL_SCOPES,
           deviceId: (
-            await prisma.stepUpChallenge.findUniqueOrThrow({ where: { id: secondChallenge } })
+            await prisma.stepUpChallenge.findUniqueOrThrow({
+              where: { id: secondChallenge },
+            })
           ).deviceId,
         }),
         body: JSON.stringify({ challengeId: secondChallenge }),
@@ -287,7 +333,9 @@ describe("old-device approval", () => {
       }),
     );
     expect(approval.status).toBe(200);
-    const body = (await approval.json()) as { data: { token: { mode: string } } };
+    const body = (await approval.json()) as {
+      data: { token: { mode: string } };
+    };
     expect(body.data.token.mode).toBe("full");
   });
 
@@ -312,8 +360,8 @@ describe("old-device approval", () => {
       }),
     );
     expect(response.status).toBe(401);
-    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
-      "step_up_required",
-    );
+    expect(
+      ((await response.json()) as { error: { code: string } }).error.code,
+    ).toBe("step_up_required");
   });
 });

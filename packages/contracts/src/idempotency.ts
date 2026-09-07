@@ -37,7 +37,9 @@ export class IdempotencyConflictError extends Error {
   readonly code = "idempotency_key_reuse";
 
   constructor(readonly key: string) {
-    super(`idempotency key ${key} was already used with a different request body`);
+    super(
+      `idempotency key ${key} was already used with a different request body`,
+    );
     this.name = "IdempotencyConflictError";
   }
 }

@@ -57,7 +57,10 @@ export interface EnrollDeviceResult {
   readonly unavailable: readonly { method: StepUpMethod; reason: string }[];
 }
 
-export function internalDeviceId(userId: string, clientDeviceId: string): string {
+export function internalDeviceId(
+  userId: string,
+  clientDeviceId: string,
+): string {
   return deterministicId("dev", userId, clientDeviceId);
 }
 
@@ -100,16 +103,24 @@ export async function enrollDevice(
   const policy = await deps.policy.forCity(input.cityId);
   const deviceId = internalDeviceId(input.userId, input.deviceId);
 
-  const existing = await deps.prisma.device.findUnique({ where: { id: deviceId } });
+  const existing = await deps.prisma.device.findUnique({
+    where: { id: deviceId },
+  });
 
   if (existing !== null && existing.userId !== input.userId) {
     // Cannot happen while the id is namespaced by user, but a row that says
     // otherwise is a conflict, not something to overwrite.
-    throw new ContractError("conflict", "This device is registered to another account");
+    throw new ContractError(
+      "conflict",
+      "This device is registered to another account",
+    );
   }
 
   if (existing !== null && existing.trusted) {
-    await deps.prisma.device.update({ where: { id: deviceId }, data: { lastSeen: now } });
+    await deps.prisma.device.update({
+      where: { id: deviceId },
+      data: { lastSeen: now },
+    });
     return {
       status: "enrolled",
       deviceId,
@@ -129,7 +140,11 @@ export async function enrollDevice(
     };
   }
 
-  const { methods, unavailable } = await availableStepUpMethods(deps, input.userId, deviceId);
+  const { methods, unavailable } = await availableStepUpMethods(
+    deps,
+    input.userId,
+    deviceId,
+  );
   const challengeId = deterministicId("suc", deviceId, now.toISOString());
 
   await deps.prisma.$transaction(async (tx) => {
@@ -146,7 +161,10 @@ export async function enrollDevice(
         },
       });
     } else {
-      await tx.device.update({ where: { id: deviceId }, data: { lastSeen: now } });
+      await tx.device.update({
+        where: { id: deviceId },
+        data: { lastSeen: now },
+      });
     }
 
     // One open challenge per device: a client that retries enrolment does not
@@ -161,7 +179,9 @@ export async function enrollDevice(
         id: challengeId,
         userId: input.userId,
         deviceId,
-        method: methods.includes("old_device_approve") ? "old_device_approve" : "selfie_nin",
+        method: methods.includes("old_device_approve")
+          ? "old_device_approve"
+          : "selfie_nin",
         status: "pending",
         createdAt: now,
       },
@@ -191,7 +211,9 @@ export async function enrollDevice(
       payload: {
         userId: input.userId,
         deviceId,
-        method: methods.includes("old_device_approve") ? "old_device_approve" : "selfie_nin",
+        method: methods.includes("old_device_approve")
+          ? "old_device_approve"
+          : "selfie_nin",
         until: new Date(now.getTime() + policy.stepUpTtlMs).toISOString(),
       },
       occurredAt: now,

@@ -17,26 +17,45 @@ import { useEffect, type ReactNode } from "react";
 const analytics = createAnalytics({
   providers: [
     // Console logging in development
-    ...(process.env.NODE_ENV === "development" ? [{ type: "console" as const }] : []),
+    ...(process.env.NODE_ENV === "development"
+      ? [{ type: "console" as const }]
+      : []),
     // Google Analytics 4
     ...(process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
-      ? [{ type: "ga4" as const, measurementId: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID }]
+      ? [
+          {
+            type: "ga4" as const,
+            measurementId: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+          },
+        ]
       : []),
     // Mixpanel
     ...(process.env.NEXT_PUBLIC_MIXPANEL_TOKEN
-      ? [{ type: "mixpanel" as const, token: process.env.NEXT_PUBLIC_MIXPANEL_TOKEN }]
+      ? [
+          {
+            type: "mixpanel" as const,
+            token: process.env.NEXT_PUBLIC_MIXPANEL_TOKEN,
+          },
+        ]
       : []),
     // Amplitude
     ...(process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY
-      ? [{ type: "amplitude" as const, apiKey: process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY }]
+      ? [
+          {
+            type: "amplitude" as const,
+            apiKey: process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY,
+          },
+        ]
       : []),
     // PostHog
     ...(process.env.NEXT_PUBLIC_POSTHOG_KEY
-      ? [{
-          type: "posthog" as const,
-          apiKey: process.env.NEXT_PUBLIC_POSTHOG_KEY,
-          host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-        }]
+      ? [
+          {
+            type: "posthog" as const,
+            apiKey: process.env.NEXT_PUBLIC_POSTHOG_KEY,
+            host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+          },
+        ]
       : []),
   ],
   debug: process.env.NODE_ENV === "development",
@@ -56,7 +75,8 @@ function PageViewTracker() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const url = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : "");
+    const url =
+      pathname + (searchParams.toString() ? `?${searchParams.toString()}` : "");
     analytics.page(url, {
       search: searchParams.toString(),
       title: document.title,

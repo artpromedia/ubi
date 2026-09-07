@@ -3,7 +3,6 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-
 import {
   closeTestDb,
   headers,
@@ -234,6 +233,8 @@ describe("city config is the only source of policy", () => {
       idempotencyKey: idemKey("open"),
       correlationId: null,
     });
-    expect(opened.slaDueAt).toBe(new Date(at.getTime() + 30 * 60_000).toISOString());
+    expect(opened.slaDueAt).toBe(
+      new Date(at.getTime() + 30 * 60_000).toISOString(),
+    );
   });
 });

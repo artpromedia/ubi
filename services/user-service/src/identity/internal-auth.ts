@@ -27,7 +27,10 @@ function equal(a: string, b: string): boolean {
  * Verifies an HMAC-SHA256 signature over the RAW request body. The body is
  * signed, not a subset of it, so a replayed body with edited fields fails.
  */
-export function verifyTelcoSignature(rawBody: string, signature: string | undefined): void {
+export function verifyTelcoSignature(
+  rawBody: string,
+  signature: string | undefined,
+): void {
   const secret = process.env.TELCO_SIM_SWAP_SECRET;
   if (secret === undefined || secret.length < 32) {
     throw new ContractError(
@@ -61,6 +64,11 @@ export function requireServiceKey(presented: string | undefined): void {
 /** Reviewer actions are for operators, not for the people being reviewed. */
 export function requireReviewerRole(role: string): void {
   const normalised = role.toLowerCase();
-  if (normalised === "admin" || normalised === "agent" || normalised === "super_admin") return;
+  if (
+    normalised === "admin" ||
+    normalised === "agent" ||
+    normalised === "super_admin"
+  )
+    return;
   throw new ContractError("forbidden", "Only a reviewer can decide this");
 }

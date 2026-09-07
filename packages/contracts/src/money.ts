@@ -7,7 +7,9 @@
 import { z } from "zod";
 
 /** ISO-4217 alphabetic code. Validated shape only; the allowed set is city config. */
-export const CurrencySchema = z.string().regex(/^[A-Z]{3}$/, "currency must be an ISO-4217 alpha-3 code");
+export const CurrencySchema = z
+  .string()
+  .regex(/^[A-Z]{3}$/, "currency must be an ISO-4217 alpha-3 code");
 
 export const MoneySchema = z.object({
   amountMinor: z.number().int(),
@@ -28,7 +30,9 @@ export class CurrencyMismatchError extends Error {
 
 export function money(amountMinor: number, currency: string): Money {
   if (!Number.isInteger(amountMinor)) {
-    throw new TypeError(`amountMinor must be an integer, received ${amountMinor}`);
+    throw new TypeError(
+      `amountMinor must be an integer, received ${amountMinor}`,
+    );
   }
   return { amountMinor, currency };
 }
@@ -56,12 +60,19 @@ export function negateMoney(a: Money): Money {
 }
 
 export function sumMoney(values: readonly Money[], currency: string): Money {
-  return values.reduce<Money>((acc, value) => addMoney(acc, value), zero(currency));
+  return values.reduce<Money>(
+    (acc, value) => addMoney(acc, value),
+    zero(currency),
+  );
 }
 
 export function compareMoney(a: Money, b: Money): number {
   sameCurrency(a, b);
-  return a.amountMinor === b.amountMinor ? 0 : a.amountMinor < b.amountMinor ? -1 : 1;
+  return a.amountMinor === b.amountMinor
+    ? 0
+    : a.amountMinor < b.amountMinor
+      ? -1
+      : 1;
 }
 
 /**
@@ -76,7 +87,9 @@ export function splitPercent(
   percent: number,
 ): { readonly part: Money; readonly remainder: Money } {
   if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-    throw new RangeError(`percent must be within [0, 100], received ${percent}`);
+    throw new RangeError(
+      `percent must be within [0, 100], received ${percent}`,
+    );
   }
   const exact = (amount.amountMinor * percent) / 100;
   const rounded = exact < 0 ? -Math.round(-exact) : Math.round(exact);

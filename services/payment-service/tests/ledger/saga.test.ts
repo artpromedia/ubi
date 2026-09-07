@@ -39,7 +39,12 @@ async function sagaScenario(options: SeedCityOptions = {}) {
   const recipientWallet = await db.$transaction((tx) =>
     ensureWallet(tx, "user", recipientUser.id, config.city),
   );
-  await setInitialPin(deps, { id: senderUser.id, role: "rider" }, city.cityId, PIN);
+  await setInitialPin(
+    deps,
+    { id: senderUser.id, role: "rider" },
+    city.cityId,
+    PIN,
+  );
 
   return {
     city,
@@ -76,7 +81,9 @@ describe("top-up + transfer saga", () => {
       money(150_000, s.city.currency),
     );
 
-    const topup = await db.topup.findUniqueOrThrow({ where: { id: result.topupId! } });
+    const topup = await db.topup.findUniqueOrThrow({
+      where: { id: result.topupId! },
+    });
     expect(topup.status).toBe("captured");
     expect(topup.sagaTransferId).toBe(result.transferId);
     expect(topup.entryId).not.toBeNull();
@@ -107,11 +114,15 @@ describe("top-up + transfer saga", () => {
     expect(await balanceOf(db, s.sender.walletId, s.city.currency)).toEqual(
       money(0, s.city.currency),
     );
-    expect(await db.topup.count({ where: { walletId: s.sender.walletId } })).toBe(0);
-    expect(await db.journalLine.count({ where: { walletId: s.sender.walletId } })).toBe(0);
-    expect(await db.journalLine.count({ where: { walletId: s.recipient.walletId } })).toBe(
-      0,
-    );
+    expect(
+      await db.topup.count({ where: { walletId: s.sender.walletId } }),
+    ).toBe(0);
+    expect(
+      await db.journalLine.count({ where: { walletId: s.sender.walletId } }),
+    ).toBe(0);
+    expect(
+      await db.journalLine.count({ where: { walletId: s.recipient.walletId } }),
+    ).toBe(0);
 
     // And the capture that did happen at the rail was compensated.
     expect(s.rail.captures).toHaveLength(1);
@@ -126,7 +137,9 @@ describe("top-up + transfer saga", () => {
   });
 
   it("does not fund the wallet when risk holds the transfer", async () => {
-    const s = await sagaScenario({ policy: { newRecipientHoldAboveMinor: 50_000 } });
+    const s = await sagaScenario({
+      policy: { newRecipientHoldAboveMinor: 50_000 },
+    });
 
     const result = await sendTransfer(s.deps, {
       actor: { id: s.sender.id, role: "rider" },
@@ -144,7 +157,9 @@ describe("top-up + transfer saga", () => {
     expect(await balanceOf(db, s.sender.walletId, s.city.currency)).toEqual(
       money(0, s.city.currency),
     );
-    expect(await db.topup.count({ where: { walletId: s.sender.walletId } })).toBe(0);
+    expect(
+      await db.topup.count({ where: { walletId: s.sender.walletId } }),
+    ).toBe(0);
     expect(s.rail.refunds).toHaveLength(1);
     expect(result.reviewCaseId).not.toBeNull();
   });
@@ -170,7 +185,12 @@ describe("top-up + transfer saga", () => {
     const deps = makeDeps(db, { topupRail: null });
     const senderUser = await seedUser(db, "Emeka");
     const recipientUser = await seedUser(db, "Zainab");
-    await setInitialPin(deps, { id: senderUser.id, role: "rider" }, city.cityId, PIN);
+    await setInitialPin(
+      deps,
+      { id: senderUser.id, role: "rider" },
+      city.cityId,
+      PIN,
+    );
 
     await expect(
       sendTransfer(deps, {

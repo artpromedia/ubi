@@ -29,7 +29,10 @@ export function toContractError(error: unknown): ContractError {
       state: error.state,
     });
   }
-  return new ContractError("internal_error", "something went wrong handling that request");
+  return new ContractError(
+    "internal_error",
+    "something went wrong handling that request",
+  );
 }
 
 /**

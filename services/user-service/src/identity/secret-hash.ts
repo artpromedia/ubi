@@ -11,7 +11,11 @@
  * parameters are recorded in the encoded value so they can be raised later
  * without invalidating what is already stored.
  */
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import {
+  randomBytes,
+  scrypt as scryptCallback,
+  timingSafeEqual,
+} from "node:crypto";
 import { promisify } from "node:util";
 
 const scrypt = promisify(scryptCallback) as (
@@ -29,7 +33,10 @@ const PREFIX = "scrypt";
 
 export async function hashSecret(secret: string): Promise<string> {
   const salt = randomBytes(SALT_LENGTH);
-  const derived = await scrypt(secret, salt, KEY_LENGTH, { ...COST, maxmem: MAXMEM });
+  const derived = await scrypt(secret, salt, KEY_LENGTH, {
+    ...COST,
+    maxmem: MAXMEM,
+  });
   return [
     PREFIX,
     COST.N,
@@ -40,7 +47,10 @@ export async function hashSecret(secret: string): Promise<string> {
   ].join("$");
 }
 
-export async function verifySecret(secret: string, encoded: string): Promise<boolean> {
+export async function verifySecret(
+  secret: string,
+  encoded: string,
+): Promise<boolean> {
   const parts = encoded.split("$");
   if (parts.length !== 6 || parts[0] !== PREFIX) return false;
 
@@ -60,13 +70,20 @@ export async function verifySecret(secret: string, encoded: string): Promise<boo
   }
 
   const expected = Buffer.from(hashPart, "base64url");
-  const derived = await scrypt(secret, Buffer.from(saltPart, "base64url"), expected.length, {
-    N,
-    r,
-    p,
-    maxmem: MAXMEM,
-  });
-  return derived.length === expected.length && timingSafeEqual(derived, expected);
+  const derived = await scrypt(
+    secret,
+    Buffer.from(saltPart, "base64url"),
+    expected.length,
+    {
+      N,
+      r,
+      p,
+      maxmem: MAXMEM,
+    },
+  );
+  return (
+    derived.length === expected.length && timingSafeEqual(derived, expected)
+  );
 }
 
 /** True when the value looks like something this module produced. */

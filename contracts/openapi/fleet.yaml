@@ -14,10 +14,11 @@ openapi: 3.1.0
 info:
   title: UBI Fleet
   version: 0.1.0
-  description: 'Multi-vehicle owners: vehicles, drivers, consented remittance splits. Money is integer
-    minor units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key.'
+  description:
+    "Multi-vehicle owners: vehicles, drivers, consented remittance splits. Money is integer
+    minor units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key."
 servers:
-- url: https://api.ubi.africa
+  - url: https://api.ubi.africa
 components:
   securitySchemes:
     bearer:
@@ -35,8 +36,8 @@ components:
     Money:
       type: object
       required:
-      - amountMinor
-      - currency
+        - amountMinor
+        - currency
       properties:
         amountMinor:
           type: integer
@@ -77,54 +78,54 @@ components:
               shift:
                 type: string
                 enum:
-                - full
-                - day
-                - night
+                  - full
+                  - day
+                  - night
         statusNow:
           type: string
           enum:
-          - on_trip
-          - online
-          - offline
-          - idle
-          - held_by_ubi
-          - unassigned
+            - on_trip
+            - online
+            - offline
+            - idle
+            - held_by_ubi
+            - unassigned
         weekGross:
-          $ref: '#/components/schemas/Money'
+          $ref: "#/components/schemas/Money"
         remittance:
           type: object
           properties:
             due:
-              $ref: '#/components/schemas/Money'
+              $ref: "#/components/schemas/Money"
             covered:
-              $ref: '#/components/schemas/Money'
+              $ref: "#/components/schemas/Money"
             status:
               type: string
               enum:
-              - covered
-              - short
-              - pending
+                - covered
+                - short
+                - pending
         documents:
           type: object
           properties:
             status:
               type: string
               enum:
-              - valid
-              - expiring
-              - expired
+                - valid
+                - expiring
+                - expired
             nextExpiry:
               type: string
               format: date
     AssignmentTerms:
       type: object
       required:
-      - vehicleId
-      - driverId
-      - type
-      - amountMinor
-      - shortfall
-      - shift
+        - vehicleId
+        - driverId
+        - type
+        - amountMinor
+        - shortfall
+        - shift
       properties:
         vehicleId:
           type: string
@@ -133,8 +134,8 @@ components:
         type:
           type: string
           enum:
-          - weekly_fixed
-          - percent_of_net
+            - weekly_fixed
+            - percent_of_net
         amountMinor:
           type: integer
           description: must be ≤ cap from city config
@@ -146,26 +147,26 @@ components:
             policy:
               type: string
               enum:
-              - carry_forward
-              - forgive
+                - carry_forward
+                - forgive
             maxWeeks:
               type: integer
         shift:
           type: string
           enum:
-          - full
-          - day
-          - night
+            - full
+            - day
+            - night
         fuelBy:
           type: string
           enum:
-          - driver
-          - fleet
+            - driver
+            - fleet
         servicingBy:
           type: string
           enum:
-          - driver
-          - fleet
+            - driver
+            - fleet
         hirePurchase:
           type: object
           properties:
@@ -174,58 +175,58 @@ components:
             weeksPaid:
               type: integer
 security:
-- bearer: []
+  - bearer: []
 paths:
   /v1/fleets:
     post:
       responses:
-        '201':
+        "201":
           description: KYB application (mirrors merchant)
   /v1/fleets/{id}/overview:
     get:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: gross, remittances due/covered, utilisation, idle, alerts
   /v1/fleets/{id}/vehicles:
     get:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: vehicles
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/FleetVehicle'
+                  $ref: "#/components/schemas/FleetVehicle"
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
             schema:
               type: object
               required:
-              - plate
-              - make
-              - model
-              - year
+                - plate
+                - make
+                - model
+                - year
               properties:
                 plate:
                   type: string
@@ -241,69 +242,69 @@ paths:
                   items:
                     type: string
       responses:
-        '201':
+        "201":
           description: vehicle added; documents pending
   /v1/fleets/{id}/assignments/propose:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      - $ref: '#/components/parameters/IdemKey'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdemKey"
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AssignmentTerms'
+              $ref: "#/components/schemas/AssignmentTerms"
       responses:
-        '201':
+        "201":
           description: offer sent to driver; expires 48h; nothing deducted until signed
   /v1/drivers/me/fleet-offers:
     get:
       responses:
-        '200':
+        "200":
           description: pending offers with real historic earnings for that vehicle
   /v1/fleet-offers/{id}/sign:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
             schema:
               type: object
               required:
-              - pin
+                - pin
               properties:
                 pin:
                   type: string
       responses:
-        '200':
+        "200":
           description: split_rule active; terms hashed and stored
   /v1/fleet-offers/{id}/decline:
     post:
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
+        "200":
           description: declined
   /v1/drivers/me/fleet:
     get:
       responses:
-        '200':
-          description: 'my arrangement: terms, hire-purchase progress, this week split'
+        "200":
+          description: "my arrangement: terms, hire-purchase progress, this week split"
   /v1/drivers/me/fleet/terminate:
     post:
       responses:
-        '200':
+        "200":
           description: 2-week notice (from terms)

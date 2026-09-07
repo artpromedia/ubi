@@ -78,12 +78,16 @@ async function parse<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
   const body: unknown = await c.req.json().catch(() => undefined);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw new ContractError("validation_failed", "the request body is not valid", {
-      issues: parsed.error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
-    });
+    throw new ContractError(
+      "validation_failed",
+      "the request body is not valid",
+      {
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      },
+    );
   }
   return parsed.data;
 }
@@ -91,7 +95,11 @@ async function parse<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
 function railOf(c: Context): ReconRailName {
   const rail = c.req.param("rail");
   if (!isReconRail(rail)) {
-    throw new ContractError("validation_failed", "unknown reconciliation rail", { rail });
+    throw new ContractError(
+      "validation_failed",
+      "unknown reconciliation rail",
+      { rail },
+    );
   }
   return rail;
 }
@@ -100,9 +108,15 @@ function fail(c: Context, error: unknown): Response {
   if (error instanceof ContractError) {
     return c.json(error.toBody(), error.status as 200);
   }
-  logger.error({ err: error, component: "finance-recon" }, "unhandled recon error");
+  logger.error(
+    { err: error, component: "finance-recon" },
+    "unhandled recon error",
+  );
   return c.json(
-    { code: "internal_error", message: "something went wrong handling that request" },
+    {
+      code: "internal_error",
+      message: "something went wrong handling that request",
+    },
     500,
   );
 }
