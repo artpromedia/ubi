@@ -64,6 +64,10 @@ func RingCount(config *cityconfig.CityConfig) int { return len(config.MatchingRi
 // than the radius allows.
 func BoundingBox(lat, lng float64, radiusMeters float64) (minLat, maxLat, minLng, maxLng float64) {
 	const metersPerDegreeLat = 111_320.0
+	// A one percent margin, so a driver sitting exactly on the ring is not lost
+	// to floating-point rounding between this box and the distance measured
+	// afterwards. Over-selecting is free; under-selecting drops a real driver.
+	radiusMeters *= 1.01
 	deltaLat := radiusMeters / metersPerDegreeLat
 
 	// Degrees of longitude shrink towards the poles. Guard the cosine so a
