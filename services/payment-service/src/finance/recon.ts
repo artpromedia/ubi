@@ -610,10 +610,17 @@ export async function resolveBreak(
     let resolutionRef = `${RESOLUTION_PREFIXES.explanation}${input.caseRef}`;
 
     if (input.adjustment !== undefined) {
+      // An adjusting entry belongs to the period it corrects, so it is dated to
+      // the last instant of the reconciled day. That is what makes the rail's
+      // figure move and the break close on the next recompute — an entry dated
+      // today would leave yesterday's difference standing.
+      const closeOfDay = new Date(
+        dayWindow(input.date, context.timezone).end.getTime() - 1,
+      );
       const posted = await postEntry(tx, {
         kind: "recon_adjustment",
         reference: `recon:${input.date}:${entry.id}`,
-        occurredAt: now,
+        occurredAt: closeOfDay,
         idempotencyKey: `recon.adjustment:${entry.id}`,
         caseRef: input.caseRef,
         description: input.note ?? "reconciliation adjustment",

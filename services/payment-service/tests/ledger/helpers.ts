@@ -218,8 +218,15 @@ export interface SeededUser {
 }
 
 export async function seedUser(db: LedgerDb, name = "Ada"): Promise<SeededUser> {
+  counter += 1;
   const suffix = uid("u").replace(/[^a-z0-9]/gi, "");
-  const phone = `+234${suffix.slice(-10).padStart(10, "7")}`;
+  // A real E.164 number: the directory only resolves recipients by one.
+  const digits = [
+    String(Date.now() % 1_000_000).padStart(6, "0"),
+    String(process.pid % 1_000).padStart(3, "0"),
+    String(counter % 1_000).padStart(3, "0"),
+  ].join("");
+  const phone = `+234${digits}`;
   const user = await db.user.create({
     data: {
       email: `${suffix}@example.test`,
