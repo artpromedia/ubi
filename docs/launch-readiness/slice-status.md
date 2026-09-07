@@ -8,19 +8,21 @@ Statuses: **done** · **partial** · **not started** · **blocked**
 
 | Slice | Scope | Status |
 |---|---|---|
-| — | Foundation: `packages/contracts`, Prisma models, migration chain, CI gates | **done** |
-| 01 | City config + deny-by-default flags (`config-service`, `config-client`) | **done** — 90 tests |
-| 02 | Move core lockstep (`ride-service`, Go) | in progress |
-| 03 | Auth, KYC, device trust, gateway identity context | queued |
-| 04 | Wallet: double-entry ledger, P2P, NIP, saga, statements, finance recon | **done** — 71 tests |
-| 05 | Bites | blocked — see below |
+| — | Foundation: `packages/contracts`, Prisma models, migration chain, CI gates | **done** — 64 tests |
+| 01 | City config + deny-by-default flags | **done** — 90 tests |
+| 02 | Move core lockstep (`ride-service`, Go) | **done** — 67 tests, race-clean |
+| 03 | Auth, KYC, device trust, gateway identity context | **done** — 281 tests |
+| 04 | Wallet: double-entry ledger, P2P, NIP, saga, statements, finance recon | **done** — 77 tests |
+| 05 | Bites | **blocked** — see below |
 | 06 | Send | not started |
 | 07 | Flights (One-Ticket) | not started |
 | 08 | Journeys and reservations | not started |
 | 09 | Stays | not started |
 | 10 | Fleet | not started |
-| 11 | Ops: support, safety, reviews, audit | queued (finance recon half done under slice 04) |
+| 11 | Ops: support, safety, reviews, audit | in progress |
 | 12 | Android parity, testIDs, Maestro | partial — testID registry only |
+
+**579 tests green** across the five completed areas.
 
 ## Slice 05 is blocked, not merely unstarted
 
@@ -50,6 +52,9 @@ Move, auth and wallet first.
 | Ledger invariant enforced by the database | unbalanced entry refused at COMMIT, nothing persisted |
 | Monorepo typechecks | `turbo run typecheck --filter=./packages/*` → 11 passed |
 | Slice 01 | `vitest run` → 90 tests (config-service 66, config-client 24) |
+| Slice 02 | `go build`, `go vet`, `go test -count=1 ./...` → 6 packages, 67 tests, `-race` clean |
+| Slice 02 headline guard | 64 concurrent accepts on one offer with Redis DISABLED → exactly one winner, verified in the database |
+| Slice 03 | 73 gateway + 208 user-service tests; forged `x-auth-*` headers stripped; scopes cannot be widened by a token |
 | Slice 04 | `vitest run tests/ledger tests/finance` → 71 tests on a fresh database |
 | Go services | `go build ./...` and `go vet ./...` clean for location- and delivery-service |
 | Contracts | `node tooling/scripts/validate-contracts.mjs` → all six documents resolve |
