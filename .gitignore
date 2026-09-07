@@ -96,3 +96,6 @@ build-errors.txt
 *-errors.txt
 *.build.log
 test-results/
+
+# Redis snapshot written when a local redis-server runs in the repo root
+dump.rdb
