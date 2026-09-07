@@ -578,6 +578,11 @@ func TestArrivalOutsideTheGeofenceIsRefused(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("location update failed: %d %s", recorder.Code, recorder.Body.String())
 	}
+	var moved move.LocationBatchResult
+	s.h.DecodeBody(recorder, &moved)
+	if moved.Accepted != 1 {
+		t.Fatalf("the driver's new position must be accepted before arrival is judged: %+v", moved)
+	}
 
 	recorder = s.h.Do(http.MethodPost, "/rides/"+ride.RideID.String()+"/arrived", s.driver, nil)
 	if recorder.Code != http.StatusUnprocessableEntity {

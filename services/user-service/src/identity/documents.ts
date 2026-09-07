@@ -18,7 +18,6 @@ import { ContractError } from "@ubi/contracts";
 import { z } from "zod";
 
 import { writeAudit } from "./audit";
-import { auditRevision } from "./common";
 import type { IdentityDeps } from "./deps";
 import { APPEAL_MESSAGE, APPEAL_PATH, takeDriverOffline } from "./driver";
 import { deterministicId, newId } from "./ids";
@@ -347,7 +346,10 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
 
   for (const document of documents) {
     if (document.expiresAt === null) continue;
-    const remaining = daysUntil(document.expiresAt, now);
+    // Hoisted: the narrowing above is lost inside the transaction closure below,
+    // because expiresAt is a mutable property rather than a local binding.
+    const expiresAt = document.expiresAt;
+    const remaining = daysUntil(expiresAt, now);
 
     if (remaining > 0) {
       const threshold = thresholds.find((candidate) => remaining <= candidate);
@@ -368,7 +370,7 @@ export async function sweepDocumentExpiry(deps: IdentityDeps): Promise<ExpirySwe
             ownerType: document.ownerType,
             ownerId: document.ownerId,
             docType: document.type,
-            expiry: document.expiresAt.toISOString().slice(0, 10),
+            expiry: expiresAt.toISOString().slice(0, 10),
             days: threshold,
             label: label(document.type),
           },
