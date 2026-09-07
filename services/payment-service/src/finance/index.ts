@@ -4,3 +4,4 @@
 export * from "./rails";
 export * from "./recon";
 export * from "./routes";
+export * from "./remedies";

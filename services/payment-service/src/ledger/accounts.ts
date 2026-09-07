@@ -79,6 +79,8 @@ export const ENTRY_KINDS = [
   "ride_completion_cash",
   "cash_settlement",
   "recon_adjustment",
+  /** A typed support remedy: counter-lines that make a case good. */
+  "remedy",
 ] as const;
 
 export type EntryKind = (typeof ENTRY_KINDS)[number];

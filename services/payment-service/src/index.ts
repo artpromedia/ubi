@@ -43,6 +43,7 @@ import { paymentRoutes } from "./routes/payments";
 import { payoutRoutes } from "./routes/payouts";
 import { safetyRoutes } from "./routes/safety";
 import { createFinanceRoutes } from "./finance/routes";
+import { createRemedyRoutes } from "./finance/remedies";
 import { walletDeps } from "./ledger/wiring";
 import { createWalletV1Routes } from "./routes/wallet-v1";
 import { walletRoutes } from "./routes/wallet";
@@ -151,6 +152,9 @@ app.use("/v1/wallet/*", paymentRateLimit);
 app.route("/v1/wallet", createWalletV1Routes(ledgerDeps));
 app.use("/v1/finance/*", paymentRateLimit);
 app.route("/v1/finance", createFinanceRoutes(ledgerDeps));
+// support-service posts typed remedies here; it decides whether a case
+// deserves one, the ledger decides which accounts move.
+app.route("/v1/finance/remedies", createRemedyRoutes(ledgerDeps));
 
 // B2B API routes (uses API key auth internally)
 app.route("/b2b", b2bRoutes);
