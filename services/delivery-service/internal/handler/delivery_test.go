@@ -1,7 +1,6 @@
 package handler_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/ubi/delivery-service/internal/testutil"
+	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/testutil"
 )
 
 // ========================================
