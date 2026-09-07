@@ -5,13 +5,16 @@
  * code and the status the contract assigns it, so a client can branch on `code`
  * and never on a message (packages/contracts/src/errors.ts).
  */
-import { ContractError } from "@ubi/contracts";
-import type { Context } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { ZodError } from "zod";
+
+import { ContractError } from "@ubi/contracts";
 
 import { logger } from "../lib/logger";
 import { toContractError } from "../ops/errors";
+
+import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+
 
 export function failure(c: Context, error: unknown): Response {
   if (error instanceof ZodError) {

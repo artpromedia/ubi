@@ -23,7 +23,6 @@ import {
   type Money,
 } from "@ubi/contracts";
 
-import { deterministicId, generateId } from "../lib/ids";
 
 import { auditedTransaction, type AuditedTx, type OutboxInput } from "./audit";
 import {
@@ -36,6 +35,7 @@ import {
 import { isUniqueViolation } from "./errors";
 import { actorTypeFor, assertPermission, can, contactForRole } from "./roles";
 import { unifiedTimeline, type TimelineItem } from "./timeline";
+import { deterministicId, generateId } from "../lib/ids";
 
 import type { SupportDeps } from "./context";
 import type { Actor, JsonRecord, SupportTx } from "./types";
@@ -168,7 +168,8 @@ function caseView(row: CaseRow, remedies: readonly RemedyRow[], now: Date): Case
 
 /** Aggregate version = how many events the case has recorded. Monotonic by construction. */
 async function caseVersion(tx: SupportTx, caseId: string): Promise<number> {
-  return tx.caseEvent.count({ where: { caseId } });
+  const count = await tx.caseEvent.count({ where: { caseId } });
+  return count;
 }
 
 async function appendCaseEvent(
@@ -227,16 +228,18 @@ export async function openCase(
   input: OpenCaseInput,
 ): Promise<CaseView> {
   assertPermission(input.actor.role, "case.open");
-  const config = await deps.config.loadForSupport(input.cityId);
-  const slaMinutes = slaMinutesForCategory(config.policy, input.category);
-
+  if (input.onBehalfOf !== null) {
+    // Opening a case in someone else's name is a separate permission, checked
+    // before anything else is looked up.
+    assertPermission(input.actor.role, "case.open.on_behalf");
+  }
   const owner =
     input.onBehalfOf === null
       ? { userType: actorTypeFor(input.actor.role), userId: input.actor.id }
       : input.onBehalfOf;
-  if (input.onBehalfOf !== null) {
-    assertPermission(input.actor.role, "case.open.on_behalf");
-  }
+
+  const config = await deps.config.loadForSupport(input.cityId);
+  const slaMinutes = slaMinutesForCategory(config.policy, input.category);
 
   const scoped = scopedIdempotencyKey(
     "support.case.open",

@@ -21,11 +21,10 @@
  */
 import { ContractError, scopedIdempotencyKey } from "@ubi/contracts";
 
-import { deterministicId } from "../lib/ids";
-import { safetyLogger } from "../lib/logger";
 
 import { auditedTransaction, type OutboxInput } from "./audit";
 import {
+  SAFETY_SEVERITIES,
   safetySlaMinutes,
   severityForTrigger,
   sosBackoffSeconds,
@@ -35,6 +34,8 @@ import {
 } from "./city-config";
 import { isUniqueViolation } from "./errors";
 import { actorTypeFor, assertPermission, locationForRole } from "./roles";
+import { deterministicId } from "../lib/ids";
+import { safetyLogger } from "../lib/logger";
 
 import type { SupportDeps } from "./context";
 import type { SafetyAlert } from "./notifier";
@@ -77,6 +78,10 @@ const ACTION_TARGET: Readonly<Record<ResponderAction, SafetyStatus | null>> = {
 
 export function isSafetyStatus(value: string): value is SafetyStatus {
   return (SAFETY_STATUSES as readonly string[]).includes(value);
+}
+
+function isSafetySeverity(value: string): value is SafetySeverity {
+  return (SAFETY_SEVERITIES as readonly string[]).includes(value);
 }
 
 /** The actions a responder may take from the case's current status. */
@@ -455,13 +460,19 @@ export async function attemptDelivery(
   if (timeline === null || timeline.delivery.status === "delivered") {
     return timeline?.delivery ?? null;
   }
+  // A responder who has already taken the case does not need to be paged again,
+  // and must never be dragged back out of "resolved" by a late retry.
+  if (row.status === "resolved") {
+    return timeline.delivery;
+  }
 
   const attempt = await deps.config.tryLoadForSupport(timeline.cityId);
   const policy = attempt.ok ? attempt.config.policy : null;
 
   const alert: SafetyAlert = {
     caseId,
-    severity: (row.severity as SafetySeverity) ?? "critical",
+    // An unrecognised severity is treated as the worst one, not trusted blindly.
+    severity: isSafetySeverity(row.severity) ? row.severity : "critical",
     cityId: timeline.cityId,
     audience: [
       { userType: "agent", userId: "trust_and_safety_queue" },
@@ -511,7 +522,8 @@ export async function attemptDelivery(
       deliveredChannel: null,
       lastError,
     },
-    exhausted,
+    // Only a case nobody has picked up yet is escalated by a failed delivery.
+    exhausted && row.status === "open",
   );
   return state;
 }

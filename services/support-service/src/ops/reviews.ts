@@ -15,12 +15,12 @@
  */
 import { ContractError, scopedIdempotencyKey, type FlagKey } from "@ubi/contracts";
 
-import { deterministicId } from "../lib/ids";
 
 import { auditedTransaction, type OutboxInput } from "./audit";
 import { assertFlagEnabled, type SupportCityConfig } from "./city-config";
 import { isUniqueViolation } from "./errors";
 import { actorTypeFor, assertPermission } from "./roles";
+import { deterministicId } from "../lib/ids";
 
 import type { SupportDeps } from "./context";
 import type { Actor, JsonRecord, SupportTx } from "./types";
@@ -505,22 +505,6 @@ export async function decide(
   const dualControl = requiresDualControl(config, input.decision, valueMinor);
   const now = deps.now();
 
-  // A dual-control decision already proposed by someone else is completed here
-  // rather than starting a second one.
-  if (dualControl) {
-    const open = await findOpenProposal(deps, input);
-    if (open !== null) {
-      if (open.reviewers.includes(input.actor.id)) {
-        throw new ContractError(
-          "already_approved",
-          "you have already signed this decision; a different reviewer has to confirm it",
-          { decisionId: open.id },
-        );
-      }
-      return completeProposal(deps, input, open.id, open.reviewers, valueMinor, now);
-    }
-  }
-
   const scoped = scopedIdempotencyKey(
     `review.decide:${input.queue}`,
     input.actor.id,
@@ -548,11 +532,35 @@ export async function decide(
     };
   }
 
+  // Not a replay. A dual-control decision another reviewer has already proposed
+  // is completed here rather than started a second time.
+  if (dualControl) {
+    const open = await findOpenProposal(deps, input);
+    if (open !== null) {
+      if (open.reviewers.includes(input.actor.id)) {
+        throw new ContractError(
+          "already_approved",
+          "you have already signed this decision; a different reviewer has to confirm it",
+          { decisionId: open.id },
+        );
+      }
+      const completion = await completeProposal(
+        deps,
+        input,
+        open.id,
+        open.reviewers,
+        valueMinor,
+        now,
+      );
+      return completion;
+    }
+  }
+
   const advisory = await advisoryFor(deps, input);
   const complete = !dualControl;
 
   try {
-    return await auditedTransaction(deps.db, async (tx) => {
+    const decided = await auditedTransaction(deps.db, async (tx) => {
       const row = await tx.reviewDecision.create({
         data: {
           id: decisionId,
@@ -635,6 +643,7 @@ export async function decide(
         events,
       };
     });
+    return decided;
   } catch (error) {
     if (isUniqueViolation(error)) {
       const existing = await deps.db.reviewDecision.findUnique({
@@ -700,7 +709,7 @@ async function completeProposal(
   now: Date,
 ): Promise<DecisionView> {
   const reviewers = [...existingReviewers, input.actor.id];
-  return auditedTransaction(deps.db, async (tx) => {
+  const completed = await auditedTransaction(deps.db, async (tx) => {
     const current = await tx.reviewDecision.findUnique({ where: { id: decisionId } });
     if (current === null) {
       throw new ContractError("not_found", "that decision is no longer open", {
@@ -774,6 +783,7 @@ async function completeProposal(
       events,
     };
   });
+  return completed;
 }
 
 /** The advisory checks for the item being decided, recorded with the decision. */

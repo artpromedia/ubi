@@ -7,11 +7,12 @@
  * server is authoritative).
  */
 import { ContractError, IDEMPOTENCY_HEADER, IdempotencyKeySchema } from "@ubi/contracts";
-import type { Context, Next } from "hono";
+
 
 import { isKnownRole } from "../ops/roles";
 
 import type { Actor } from "../ops/types";
+import type { Context, Next } from "hono";
 
 declare module "hono" {
   interface ContextVariableMap {
