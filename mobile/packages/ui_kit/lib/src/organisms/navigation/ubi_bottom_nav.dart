@@ -109,7 +109,7 @@ class UbiBottomNav extends StatelessWidget {
         boxShadow: elevation > 0
             ? [
                 BoxShadow(
-                  color: UbiColors.ubiBlack.withValues(alpha: 0.08),
+                  color: UbiColors.ubiBlack.withOpacity(0.08),
                   blurRadius: elevation,
                   offset: Offset(0, -2),
                 ),
@@ -158,7 +158,7 @@ class UbiBottomNav extends StatelessWidget {
           borderRadius: BorderRadius.circular(32),
           boxShadow: [
             BoxShadow(
-              color: UbiColors.ubiBlack.withValues(alpha: 0.15),
+              color: UbiColors.ubiBlack.withOpacity(0.15),
               blurRadius: 20,
               offset: Offset(0, 4),
             ),
@@ -256,7 +256,7 @@ class UbiBottomNav extends StatelessWidget {
                   ),
                   decoration: isSelected
                       ? BoxDecoration(
-                          color: selectedColor.withValues(alpha: 0.1),
+                          color: selectedColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(16),
                         )
                       : null,

@@ -3,7 +3,7 @@
 /// Contract for food ordering data operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Repository for food ordering operations
 abstract class FoodRepository {

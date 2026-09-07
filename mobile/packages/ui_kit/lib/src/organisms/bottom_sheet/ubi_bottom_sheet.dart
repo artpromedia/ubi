@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/ubi_colors.dart';
-import '../../theme/ubi_radius.dart';
 import '../../theme/ubi_spacing.dart';
 import '../../theme/ubi_typography.dart';
 
@@ -165,7 +164,7 @@ class UbiBottomSheet extends StatelessWidget {
         borderRadius: effectiveBorderRadius,
         boxShadow: [
           BoxShadow(
-            color: UbiColors.ubiBlack.withValues(alpha: 0.1),
+            color: UbiColors.ubiBlack.withOpacity(0.1),
             blurRadius: 20,
             offset: Offset(0, -4),
           ),
@@ -347,7 +346,7 @@ class _UbiDraggableBottomSheetState extends State<UbiDraggableBottomSheet> {
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             boxShadow: [
               BoxShadow(
-                color: UbiColors.ubiBlack.withValues(alpha: 0.1),
+                color: UbiColors.ubiBlack.withOpacity(0.1),
                 blurRadius: 20,
                 offset: Offset(0, -4),
               ),

@@ -160,7 +160,6 @@ class UbiTextField extends StatefulWidget {
 
 class _UbiTextFieldState extends State<UbiTextField> {
   late FocusNode _focusNode;
-  bool _isFocused = false;
   bool _obscureText = false;
 
   @override
@@ -182,9 +181,8 @@ class _UbiTextFieldState extends State<UbiTextField> {
   }
 
   void _handleFocusChange() {
-    setState(() {
-      _isFocused = _focusNode.hasFocus;
-    });
+    // Rebuild so focus-dependent styling (border, label) reflects hasFocus.
+    setState(() {});
   }
 
   void _toggleObscureText() {

@@ -3,7 +3,7 @@
 /// Contract for package delivery data operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Repository for package delivery operations
 abstract class DeliveryRepository {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/ubi_colors.dart';
-import '../../theme/ubi_radius.dart';
 import '../../theme/ubi_spacing.dart';
 import '../../theme/ubi_typography.dart';
 
@@ -134,7 +133,7 @@ class UbiChip extends StatelessWidget {
         case UbiChipVariant.subtle:
           effectiveBackgroundColor = backgroundColor ??
               (isDark
-                  ? UbiColors.gray800.withValues(alpha: 0.5)
+                  ? UbiColors.gray800.withOpacity(0.5)
                   : UbiColors.gray100);
           effectiveTextColor = textColor ??
               (isDark ? UbiColors.ubiWhite : UbiColors.gray700);
@@ -184,7 +183,7 @@ class UbiChip extends StatelessWidget {
               child: Icon(
                 Icons.close,
                 size: iconSize,
-                color: effectiveTextColor.withValues(alpha: 0.7),
+                color: effectiveTextColor.withOpacity(0.7),
               ),
             ),
           ],

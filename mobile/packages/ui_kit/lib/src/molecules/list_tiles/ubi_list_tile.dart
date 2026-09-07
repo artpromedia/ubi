@@ -101,7 +101,7 @@ class UbiListTile extends StatelessWidget {
     Color effectiveBackgroundColor;
     if (isSelected) {
       effectiveBackgroundColor = selectedColor ?? 
-        UbiColors.ubiGreen.withValues(alpha: 0.1);
+        UbiColors.ubiGreen.withOpacity(0.1);
     } else {
       effectiveBackgroundColor = backgroundColor ?? 
         (isDark ? UbiColors.gray900 : UbiColors.ubiWhite);

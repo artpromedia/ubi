@@ -3,7 +3,7 @@
 /// Business logic for food ordering operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Get nearby restaurants
 class GetNearbyRestaurantsUseCase implements UseCase<List<Restaurant>, GetNearbyRestaurantsParams> {

@@ -3,7 +3,7 @@
 /// Business logic for payment and wallet operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Process a payment
 class ProcessPaymentUseCase implements UseCase<Payment, ProcessPaymentParams> {

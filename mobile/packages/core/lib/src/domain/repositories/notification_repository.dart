@@ -3,7 +3,7 @@
 /// Contract for notification data operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Repository for notification operations
 abstract class NotificationRepository {

@@ -3,7 +3,7 @@
 /// Contract for user-related data operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Repository for user-related operations
 abstract class UserRepository {

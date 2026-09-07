@@ -48,7 +48,7 @@ export 'src/domain/repositories/location_repository.dart';
 export 'src/domain/repositories/notification_repository.dart';
 
 // === Use Cases ===
-export 'src/domain/usecases/use_case.dart';
+export 'src/domain/use_cases/use_case.dart';
 export 'src/domain/usecases/auth_usecases.dart';
 export 'src/domain/usecases/user_usecases.dart';
 export 'src/domain/usecases/ride_usecases.dart';

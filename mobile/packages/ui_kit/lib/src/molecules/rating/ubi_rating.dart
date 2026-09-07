@@ -80,7 +80,6 @@ class _UbiRatingState extends State<UbiRating> {
     Widget starsRow = Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(widget.maxValue, (index) {
-        final starValue = index + 1;
         final fillAmount = (displayValue - index).clamp(0.0, 1.0);
 
         return Padding(

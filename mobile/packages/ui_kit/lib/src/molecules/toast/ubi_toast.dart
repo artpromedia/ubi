@@ -211,7 +211,7 @@ class _UbiToastState extends State<UbiToast> with SingleTickerProviderStateMixin
         borderRadius: UbiRadius.mdRadius,
         boxShadow: [
           BoxShadow(
-            color: UbiColors.ubiBlack.withValues(alpha: 0.15),
+            color: UbiColors.ubiBlack.withOpacity(0.15),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -259,7 +259,7 @@ class _UbiToastState extends State<UbiToast> with SingleTickerProviderStateMixin
               onTap: _dismiss,
               child: Icon(
                 Icons.close,
-                color: colors.text.withValues(alpha: 0.7),
+                color: colors.text.withOpacity(0.7),
                 size: 18,
               ),
             ),

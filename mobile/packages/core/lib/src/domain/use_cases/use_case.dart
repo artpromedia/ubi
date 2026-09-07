@@ -1,4 +1,4 @@
-import '../result/result.dart';
+import '../../core/result/result.dart';
 
 /// Base use case interface
 abstract class UseCase<Type, Params> {
@@ -13,15 +13,18 @@ abstract class NoParamsUseCase<Type> {
 }
 
 /// Stream use case interface
+///
+/// Stream use cases surface a live domain value rather than a one-shot
+/// [Result]; transport/decoding failures terminate the stream with an error.
 abstract class StreamUseCase<Type, Params> {
   /// Execute the use case and return a stream
-  Stream<Result<Type>> call(Params params);
+  Stream<Type> call(Params params);
 }
 
 /// Stream use case without parameters
 abstract class NoParamsStreamUseCase<Type> {
   /// Execute the use case and return a stream
-  Stream<Result<Type>> call();
+  Stream<Type> call();
 }
 
 /// Synchronous use case interface

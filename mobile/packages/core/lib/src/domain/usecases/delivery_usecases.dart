@@ -3,7 +3,7 @@
 /// Business logic for package delivery operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Get delivery estimate
 class GetDeliveryEstimateUseCase implements UseCase<DeliveryEstimate, GetDeliveryEstimateParams> {

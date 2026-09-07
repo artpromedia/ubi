@@ -177,7 +177,7 @@ class _UbiSearchBarState extends State<UbiSearchBar> {
           boxShadow: widget.elevation > 0
               ? [
                   BoxShadow(
-                    color: UbiColors.ubiBlack.withValues(alpha: 0.1),
+                    color: UbiColors.ubiBlack.withOpacity(0.1),
                     blurRadius: widget.elevation * 2,
                     offset: Offset(0, widget.elevation),
                   ),

@@ -3,7 +3,7 @@
 /// Business logic for notification operations.
 library;
 
-import '../../../core.dart';
+import '../../../ubi_core.dart';
 
 /// Register device for push notifications
 class RegisterDeviceUseCase implements UseCase<void, RegisterDeviceParams> {
