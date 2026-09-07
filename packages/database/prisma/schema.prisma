@@ -8,8 +8,10 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  // URL is configured in prisma.config.ts for Prisma 7+
-  // See: https://pris.ly/d/config-datasource
+  // Prisma 6 (the pinned CLI) requires the url here. prisma.config.ts also
+  // supplies it for migrate; both read the same DATABASE_URL so they cannot
+  // drift. Without this the schema fails `prisma validate` outright.
+  url        = env("DATABASE_URL")
   extensions = [postgis, pgcrypto, uuid_ossp(map: "uuid-ossp")]
 }
 
@@ -1458,4 +1460,651 @@ model DeviceToken {
   @@unique([userId, token])
   @@index([userId, isActive])
   @@map("device_tokens")
+}
+
+// ===========================================
+// LAUNCH HANDOFF MODELS
+// ===========================================
+// Source: docs/launch-readiness/handoff/db/*.sql
+//
+// Convention for these tables (set by the handoff, and different from the
+// original schema above on purpose):
+//   - ids are text (nanoid), not uuid
+//   - money is BigInt minor units plus an explicit currency column, never Decimal
+//   - tables that hold state carry `version` for optimistic concurrency
+//   - table names are kept exactly as the handoff DDL declares them
+//
+// Money never appears as Decimal here: minor units are exact, and the ledger
+// invariant (sum of lines per entry = 0) only holds over integers.
+
+// -------------------------------------------
+// 001 — config & flags (config-service)
+// -------------------------------------------
+
+model City {
+  id        String   @id
+  name      String
+  country   String   @db.Char(2)
+  timezone  String
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  configVersions CityConfigVersion[]
+  changeRequests ConfigChangeRequest[]
+  flagRules      FlagRule[]
+
+  @@index([active])
+  @@map("cities")
+}
+
+model CityConfigVersion {
+  id          String    @id
+  cityId      String    @map("city_id")
+  version     Int
+  config      Json
+  activatedAt DateTime? @map("activated_at")
+  createdBy   String    @map("created_by")
+  approvedBy  String?   @map("approved_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  city City @relation(fields: [cityId], references: [id])
+
+  @@unique([cityId, version])
+  @@index([cityId, activatedAt])
+  @@map("city_config_versions")
+}
+
+model ConfigChangeRequest {
+  id        String   @id
+  cityId    String   @map("city_id")
+  patch     Json
+  reason    String
+  authorId  String   @map("author_id")
+  status    String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  city      City             @relation(fields: [cityId], references: [id])
+  approvals ConfigApproval[]
+
+  @@index([cityId, status])
+  @@map("config_change_requests")
+}
+
+model ConfigApproval {
+  id         String   @id
+  requestId  String   @map("request_id")
+  approverId String   @map("approver_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  request ConfigChangeRequest @relation(fields: [requestId], references: [id])
+
+  @@unique([requestId, approverId])
+  @@map("config_approvals")
+}
+
+model FeatureFlag {
+  key         String   @id
+  description String?
+  defaultOn   Boolean  @default(false) @map("default_on")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rules FlagRule[]
+
+  @@map("feature_flags")
+}
+
+model FlagRule {
+  id        String   @id
+  flagKey   String   @map("flag_key")
+  cityId    String?  @map("city_id")
+  segment   Json?
+  enabled   Boolean  @default(false)
+  updatedBy String?  @map("updated_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  flag FeatureFlag @relation(fields: [flagKey], references: [key])
+  city City?       @relation(fields: [cityId], references: [id])
+
+  @@unique([flagKey, cityId])
+  @@index([cityId])
+  @@map("flag_rules")
+}
+
+model AuditLog {
+  id          String   @id
+  actorId     String   @map("actor_id")
+  actorRole   String   @map("actor_role")
+  action      String
+  subjectType String   @map("subject_type")
+  subjectId   String   @map("subject_id")
+  before      Json?
+  after       Json?
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([subjectType, subjectId], map: "audit_subject")
+  @@index([actorId, createdAt])
+  @@map("audit_log")
+}
+
+// -------------------------------------------
+// Transactional outbox (CLAUDE.md #2)
+// -------------------------------------------
+// Every state transition is written here in the same transaction as the state
+// change, then published. Consumers are idempotent on `id`.
+
+model OutboxEvent {
+  id             String    @id
+  name           String
+  schemaVersion  Int       @default(1) @map("schema_version")
+  aggregateType  String    @map("aggregate_type")
+  aggregateId    String    @map("aggregate_id")
+  fromVersion    Int?      @map("from_version")
+  toVersion      Int       @map("to_version")
+  sequence       BigInt?
+  cityId         String?   @map("city_id")
+  actorType      String    @map("actor_type")
+  actorId        String    @map("actor_id")
+  idempotencyKey String    @unique @map("idempotency_key")
+  correlationId  String?   @map("correlation_id")
+  causationId    String?   @map("causation_id")
+  payload        Json
+  occurredAt     DateTime  @map("occurred_at")
+  publishedAt    DateTime? @map("published_at")
+  attempts       Int       @default(0)
+  lastError      String?   @map("last_error")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([publishedAt, occurredAt], map: "outbox_unpublished")
+  @@index([aggregateType, aggregateId, toVersion])
+  @@map("outbox_events")
+}
+
+// -------------------------------------------
+// 002 — wallet & double-entry ledger (payment-service)
+// -------------------------------------------
+
+model Wallet {
+  id                String    @id
+  ownerType         String    @map("owner_type")
+  ownerId           String    @map("owner_id")
+  currency          String
+  tier              String
+  safeModeUntil     DateTime? @map("safe_mode_until")
+  locked            Boolean   @default(false)
+  pinHash           String?   @map("pin_hash")
+  pinFailedAttempts Int       @default(0) @map("pin_failed_attempts")
+  pinLockedUntil    DateTime? @map("pin_locked_until")
+  coolingUntil      DateTime? @map("cooling_until")
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  lines           JournalLine[]
+  transfersOut    Transfer[]    @relation("TransferFrom")
+  transfersIn     Transfer[]    @relation("TransferTo")
+  nipTransfers    NipTransfer[]
+  topups          Topup[]
+  statements      WalletStatement[]
+
+  @@unique([ownerType, ownerId, currency])
+  @@index([ownerId])
+  @@map("wallets")
+}
+
+model JournalEntry {
+  id             String   @id
+  kind           String
+  reference      String
+  description    String?
+  occurredAt     DateTime @map("occurred_at")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  caseRef        String?  @map("case_ref")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  lines        JournalLine[]
+  transfers    Transfer[]
+  remittances  Remittance[]
+
+  @@index([kind, occurredAt])
+  @@index([reference])
+  @@index([caseRef])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String   @id
+  entryId        String   @map("entry_id")
+  account        String
+  walletId       String?  @map("wallet_id")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  counterpartRef String?  @map("counterpart_ref")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  entry  JournalEntry @relation(fields: [entryId], references: [id])
+  wallet Wallet?      @relation(fields: [walletId], references: [id])
+
+  @@index([walletId], map: "journal_lines_wallet")
+  @@index([entryId])
+  @@index([account, createdAt])
+  @@map("journal_lines")
+}
+
+model Transfer {
+  id             String    @id
+  fromWallet     String?   @map("from_wallet")
+  toWallet       String?   @map("to_wallet")
+  amountMinor    BigInt    @map("amount_minor")
+  currency       String
+  note           String?
+  status         String
+  riskHoldReason String?   @map("risk_hold_reason")
+  entryId        String?   @map("entry_id")
+  idempotencyKey String?   @unique @map("idempotency_key")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  from           Wallet?         @relation("TransferFrom", fields: [fromWallet], references: [id])
+  to             Wallet?         @relation("TransferTo", fields: [toWallet], references: [id])
+  entry          JournalEntry?   @relation(fields: [entryId], references: [id])
+  returnRequests ReturnRequest[]
+  topups         Topup[]
+
+  @@index([fromWallet, createdAt])
+  @@index([toWallet, createdAt])
+  @@index([status])
+  @@map("transfers")
+}
+
+model TransferRequest {
+  id             String   @id
+  fromUser       String   @map("from_user")
+  toUser         String   @map("to_user")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  rideId         String?  @map("ride_id")
+  status         String
+  idempotencyKey String?  @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([fromUser, status])
+  @@index([toUser, status])
+  @@index([rideId])
+  @@map("transfer_requests")
+}
+
+model ReturnRequest {
+  id         String   @id
+  transferId String   @map("transfer_id")
+  status     String
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  transfer Transfer @relation(fields: [transferId], references: [id])
+
+  @@index([transferId])
+  @@map("return_requests")
+}
+
+model NipTransfer {
+  id             String    @id
+  walletId       String    @map("wallet_id")
+  bankCode       String    @map("bank_code")
+  accountNumber  String    @map("account_number")
+  accountName    String?   @map("account_name")
+  amountMinor    BigInt    @map("amount_minor")
+  currency       String
+  status         String
+  sessionId      String?   @map("session_id")
+  entryId        String?   @map("entry_id")
+  confirmedAt    DateTime? @map("confirmed_at")
+  reversedAt     DateTime? @map("reversed_at")
+  idempotencyKey String?   @unique @map("idempotency_key")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, createdAt])
+  @@index([status])
+  @@index([sessionId])
+  @@map("nip_transfers")
+}
+
+model Topup {
+  id             String   @id
+  walletId       String   @map("wallet_id")
+  methodId       String   @map("method_id")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  status         String
+  pspRef         String?  @map("psp_ref")
+  entryId        String?  @map("entry_id")
+  sagaTransferId String?  @map("saga_transfer_id")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  wallet       Wallet    @relation(fields: [walletId], references: [id])
+  sagaTransfer Transfer? @relation(fields: [sagaTransferId], references: [id])
+
+  @@index([walletId, createdAt])
+  @@index([status])
+  @@map("topups")
+}
+
+model WalletStatement {
+  id           String   @id
+  walletId     String   @map("wallet_id")
+  periodStart  DateTime @map("period_start") @db.Date
+  periodEnd    DateTime @map("period_end") @db.Date
+  openingMinor BigInt   @map("opening_minor")
+  inMinor      BigInt   @map("in_minor")
+  outMinor     BigInt   @map("out_minor")
+  closingMinor BigInt   @map("closing_minor")
+  currency     String
+  fileUrl      String?  @map("file_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@unique([walletId, periodStart, periodEnd])
+  @@map("statements")
+}
+
+model SplitRule {
+  id               String    @id
+  driverId         String    @map("driver_id")
+  fleetId          String    @map("fleet_id")
+  vehicleId        String    @map("vehicle_id")
+  type             String
+  amountMinor      BigInt?   @map("amount_minor")
+  currency         String
+  percent          Decimal?  @db.Decimal(5, 2)
+  shortfallPolicy  String    @map("shortfall_policy")
+  shortfallMaxWeeks Int?     @map("shortfall_max_weeks")
+  termsHash        String    @map("terms_hash")
+  signedAt         DateTime? @map("signed_at")
+  active           Boolean   @default(false)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  remittances Remittance[]
+
+  @@index([driverId, active])
+  @@index([fleetId])
+  @@map("split_rules")
+}
+
+model Remittance {
+  id           String   @id
+  splitRuleId  String   @map("split_rule_id")
+  weekStart    DateTime @map("week_start") @db.Date
+  dueMinor     BigInt   @map("due_minor")
+  coveredMinor BigInt   @default(0) @map("covered_minor")
+  carriedMinor BigInt   @default(0) @map("carried_minor")
+  currency     String
+  entryId      String?  @map("entry_id")
+  status       String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  splitRule SplitRule     @relation(fields: [splitRuleId], references: [id])
+  entry     JournalEntry? @relation(fields: [entryId], references: [id])
+
+  @@unique([splitRuleId, weekStart])
+  @@index([status])
+  @@map("remittances")
+}
+
+// -------------------------------------------
+// 003 — identity, device trust, documents (user-service)
+// -------------------------------------------
+
+model Device {
+  id         String    @id
+  userId     String    @map("user_id")
+  platform   String?
+  model      String?
+  trusted    Boolean   @default(false)
+  enrolledAt DateTime  @default(now()) @map("enrolled_at")
+  lastSeen   DateTime? @map("last_seen")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  challenges StepUpChallenge[]
+
+  @@index([userId, trusted])
+  @@map("devices")
+}
+
+model StepUpChallenge {
+  id         String    @id
+  userId     String    @map("user_id")
+  deviceId   String?   @map("device_id")
+  method     String
+  status     String
+  score      Decimal?  @db.Decimal(5, 4)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  device Device? @relation(fields: [deviceId], references: [id])
+
+  @@index([userId, status])
+  @@map("step_up_challenges")
+}
+
+model SimSwapSignal {
+  id         String   @id
+  userId     String   @map("user_id")
+  phone      String
+  reportedAt DateTime @map("reported_at")
+  source     String?
+  handled    Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, handled])
+  @@index([phone])
+  @@map("sim_swap_signals")
+}
+
+model IdentityDocument {
+  id         String    @id
+  ownerType  String    @map("owner_type")
+  ownerId    String    @map("owner_id")
+  type       String
+  fileRef    String    @map("file_ref")
+  expiresAt  DateTime? @map("expires_at") @db.Date
+  status     String
+  reviewedBy String?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at")
+  reviewNote String?   @map("review_note")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([expiresAt], map: "documents_expiry")
+  @@index([ownerType, ownerId, status])
+  @@map("documents")
+}
+
+model IdentityCase {
+  id        String   @id
+  driverId  String   @map("driver_id")
+  signals   Json
+  status    String
+  decision  String?
+  decidedBy String[] @map("decided_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([driverId, status])
+  @@map("identity_cases")
+}
+
+model FaceCheck {
+  id        String   @id
+  driverId  String   @map("driver_id")
+  deviceId  String?  @map("device_id")
+  score     Decimal? @db.Decimal(5, 4)
+  passed    Boolean
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([driverId, createdAt])
+  @@map("face_checks")
+}
+
+// -------------------------------------------
+// 008 — ops: support, recon, reviews, safety
+// -------------------------------------------
+
+model SupportCase {
+  id          String    @id
+  userType    String?   @map("user_type")
+  userId      String?   @map("user_id")
+  subjectType String?   @map("subject_type")
+  subjectId   String?   @map("subject_id")
+  category    String?
+  status      String
+  slaDue      DateTime? @map("sla_due")
+  assignee    String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  resolvedAt  DateTime? @map("resolved_at")
+
+  events   CaseEvent[]
+  remedies Remedy[]
+
+  @@index([status, slaDue])
+  @@index([userId])
+  @@index([subjectType, subjectId])
+  @@map("support_cases")
+}
+
+model CaseEvent {
+  id        String   @id
+  caseId    String   @map("case_id")
+  kind      String
+  payload   Json?
+  actor     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  supportCase SupportCase @relation(fields: [caseId], references: [id])
+
+  @@index([caseId, createdAt])
+  @@map("case_events")
+}
+
+model Remedy {
+  id          String   @id
+  caseId      String   @map("case_id")
+  type        String
+  amountMinor BigInt?  @map("amount_minor")
+  currency    String?
+  reason      String?
+  entryId     String?  @map("entry_id")
+  byUser      String   @map("by_user")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  supportCase SupportCase @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@index([entryId])
+  @@map("remedies")
+}
+
+model ReconRun {
+  date             DateTime  @id @db.Date
+  status           String
+  unexplainedMinor BigInt    @default(0) @map("unexplained_minor")
+  currency         String
+  closedBy         String?   @map("closed_by")
+  closedAt         DateTime? @map("closed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  rails ReconRail[]
+
+  @@map("recon_runs")
+}
+
+model ReconRail {
+  id            String   @id
+  date          DateTime @db.Date
+  rail          String
+  ledgerMinor   BigInt   @map("ledger_minor")
+  externalMinor BigInt   @map("external_minor")
+  diffMinor     BigInt   @map("diff_minor")
+  currency      String
+  status        String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  run    ReconRun     @relation(fields: [date], references: [date])
+  breaks ReconBreak[]
+
+  @@unique([date, rail])
+  @@map("recon_rails")
+}
+
+model ReconBreak {
+  id            String    @id
+  railId        String    @map("rail_id")
+  amountMinor   BigInt    @map("amount_minor")
+  currency      String
+  description   String
+  owner         String?
+  deadline      DateTime?
+  resolutionRef String?   @map("resolution_ref")
+  resolvedAt    DateTime? @map("resolved_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  rail ReconRail @relation(fields: [railId], references: [id])
+
+  @@index([railId])
+  @@index([resolvedAt])
+  @@map("recon_breaks")
+}
+
+model SafetyCase {
+  id        String    @id
+  rideId    String?   @map("ride_id")
+  raisedBy  String    @map("raised_by")
+  severity  String
+  status    String
+  slaDue    DateTime? @map("sla_due")
+  responder String?
+  timeline  Json?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, slaDue])
+  @@index([rideId])
+  @@map("safety_cases")
+}
+
+model ReviewDecision {
+  id          String   @id
+  queue       String
+  subjectType String   @map("subject_type")
+  subjectId   String   @map("subject_id")
+  checks      Json?
+  decision    String
+  reviewers   String[]
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([queue, createdAt])
+  @@index([subjectType, subjectId])
+  @@map("review_decisions")
 }

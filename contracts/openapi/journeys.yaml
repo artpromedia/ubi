@@ -1,0 +1,30 @@
+openapi: 3.1.0
+info: { title: "UBI Journeys & Reservations", version: 0.1.0, description: "Door-to-door itineraries; rides derive their time from flights. Money is integer minor units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key." }
+servers: [{ url: https://api.ubi.africa }]
+components:
+  securitySchemes: { bearer: { type: http, scheme: bearer } }
+  parameters:
+    IdemKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 64 } }
+  schemas:
+    Money: { type: object, required: [amountMinor, currency], properties: { amountMinor: { type: integer }, currency: { type: string, example: NGN } } }
+    Error: { type: object, properties: { code: { type: string }, message: { type: string }, details: { type: object } } }
+security: [{ bearer: [] }]
+paths:
+  /v1/journeys:
+    post: { parameters: [{ $ref: '#/components/parameters/IdemKey' }], requestBody: { content: { application/json: { schema: { type: object, properties: { legs: { type: array, items: { $ref: '#/components/schemas/LegInput' } } } } } } }, responses: { '201': { description: journey, content: { application/json: { schema: { $ref: '#/components/schemas/Journey' } } } } } }
+  /v1/journeys/{id}:
+    get: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: { '200': { description: 'timeline + totals from ledger', content: { application/json: { schema: { $ref: '#/components/schemas/Journey' } } } } } }
+  /v1/journeys/{id}/legs:
+    post: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/LegInput' } } } }, responses: { '201': { description: 'leg added; dependents re-timed' } } }
+  /v1/journeys/{id}/receipt.pdf:
+    get: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: { '200': { description: 'one receipt, all legs, all charges' } } }
+  /v1/rides/reservations:
+    post: { parameters: [{ $ref: '#/components/parameters/IdemKey' }], requestBody: { content: { application/json: { schema: { type: object, required: [pickup, dropoff, vehicleClass, cityId], properties: { pickup: {type: object}, dropoff: {type: object}, vehicleClass: {type: string}, cityId: {type: string, example: ABV}, pickupAt: { type: string, format: date-time, description: 'derived server-side when linkedBookingId present' }, linkedBookingId: {type: string}, arriveBy: {type: string, format: date-time} } } } } }, responses: { '201': { description: 'reserved; driver assigned T-12h from pool' } } }
+  /v1/reservations/{id}/release:
+    post: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: { '200': { description: 'driver released; re-pooled; free until window from config' } } }
+  /v1/drivers/me/scheduled:
+    get: { responses: { '200': { description: 'upcoming reservations: door, time, fare; no PNR or rider phone' } } }
+components:
+  schemas:
+    LegInput: { type: object, required: [type], properties: { type: { type: string, enum: [ride, flight, stay] }, ref: { type: string, description: 'rideId | bookingId | stayBookingId' }, dependsOn: { type: string, description: 'legId whose time drives this leg' }, direction: { type: string, enum: [outbound, return] } } }
+    Journey: { type: object, properties: { journeyId: {type: string}, status: { type: string, enum: [planned, in_progress, completed, cancelled] }, legs: { type: array, items: { type: object, properties: { legId: {type: string}, type: {type: string}, ref: {type: string}, startsAt: {type: string, format: date-time}, status: {type: string}, amount: { $ref: '#/components/schemas/Money' }, retimedBy: {type: string} } } }, total: { $ref: '#/components/schemas/Money' }, protection: { type: string, enum: [none, one_ticket, journey] } } }

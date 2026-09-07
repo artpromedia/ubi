@@ -1,0 +1,34 @@
+openapi: 3.1.0
+info: { title: "UBI Stays", version: 0.1.0, description: "Hotel search, booking, express check-in, Journey Protection, partner APIs. Money is integer minor units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key." }
+servers: [{ url: https://api.ubi.africa }]
+components:
+  securitySchemes: { bearer: { type: http, scheme: bearer } }
+  parameters:
+    IdemKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 64 } }
+  schemas:
+    Money: { type: object, required: [amountMinor, currency], properties: { amountMinor: { type: integer }, currency: { type: string, example: NGN } } }
+    Error: { type: object, properties: { code: { type: string }, message: { type: string }, details: { type: object } } }
+security: [{ bearer: [] }]
+paths:
+  /v1/stays/search:
+    get: { parameters: [{name: city, in: query, schema: {type: string}}, {name: checkIn, in: query, schema: {type: string, format: date}}, {name: checkOut, in: query, schema: {type: string, format: date}}, {name: guests, in: query, schema: {type: integer}}, {name: journeyId, in: query, schema: {type: string}}, {name: protectedOnly, in: query, schema: {type: boolean}}], responses: { '200': { description: hotels, content: { application/json: { schema: { type: object, properties: { hotels: { type: array, items: { $ref: '#/components/schemas/HotelCard' } } } } } } } } }
+  /v1/stays/hotels/{id}/rooms:
+    get: { parameters: [{name: id, in: path, required: true, schema: {type: string}}, {name: checkIn, in: query, schema: {type: string}}, {name: checkOut, in: query, schema: {type: string}}], responses: { '200': { description: 'live rates from channel manager; held 10 min on select' } } }
+  /v1/stays/bookings:
+    post: { parameters: [{ $ref: '#/components/parameters/IdemKey' }], requestBody: { content: { application/json: { schema: { type: object, required: [rateId, guest, paymentMode], properties: { rateId: {type: string}, guest: {type: object}, paymentMode: { type: string, enum: [pay_now, pay_at_hotel] }, paymentMethodId: {type: string}, journeyId: {type: string}, prefs: {type: object} } } } } }, responses: { '201': { description: confirmed, content: { application/json: { schema: { $ref: '#/components/schemas/StayBooking' } } } } } }
+  /v1/stays/bookings/{id}/checkin:
+    post: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], requestBody: { content: { application/json: { schema: { type: object, properties: { prefs: {type: object}, signature: { type: string, description: 'vector/base64; physical ID still required at desk' } } } } } }, responses: { '200': { description: 'pre-checked; pushed to PMS' } } }
+  /v1/stays/bookings/{id}/protection/options:
+    get: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: { '200': { description: 'keep (room held) | move (free) | cancel (refund + first-night cover) — only when cause is airline (feed-verified)' } } }
+  /v1/stays/bookings/{id}/review:
+    post: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: { '201': { description: 'verified stay only, 24h window' } } }
+  /v1/hotels/me/arrivals:
+    get: { responses: { '200': { description: 'front desk: name, room, ETA (live while ride active), idVerified, protection status' } } }
+  /v1/hotels/me/reviews/{id}/reply:
+    post: { parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: { '201': { description: 'single public reply' } } }
+  /v1/partners/hotels:
+    post: { responses: { '201': { description: 'onboarding application (CAC, TIN, licence, channel test, payout, terms v3)' } } }
+components:
+  schemas:
+    HotelCard: { type: object, properties: { hotelId: {type: string}, name: {type: string}, rating: {type: number}, reviews: {type: integer}, area: {type: string}, minutesToSavedPlace: {type: integer}, fromRatePerNight: { $ref: '#/components/schemas/Money' }, taxesIncluded: { type: boolean, default: true }, protectionEligible: {type: boolean}, freeCancelUntil: {type: string, format: date-time}, payAtHotel: {type: boolean} } }
+    StayBooking: { type: object, properties: { stayBookingId: {type: string}, confirmationCode: {type: string, example: UBS-7K2Q9}, status: { type: string, enum: [confirmed, pre_checked, checked_in, late_arrival_held, moved, cancelled_by_airline_cause, cancelled_by_guest, checked_out] }, total: { $ref: '#/components/schemas/Money' }, taxBreakdown: { type: object, description: 'as quoted by hotel; UBI never re-derives' }, protection: { type: string, enum: [none, journey] }, journeyId: {type: string} } }
