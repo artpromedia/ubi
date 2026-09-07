@@ -5,6 +5,15 @@
 /// both the Rider and Driver apps.
 library ubi_ui_kit;
 
+// Design tokens (contracts/semantic-tokens.json)
+// Also available on their own as package:ubi_ui_kit/ubi_tokens.dart
+export 'src/tokens/ubi_money_text.dart';
+export 'src/tokens/ubi_semantic_colors.dart';
+export 'src/tokens/ubi_status_pill.dart';
+export 'src/tokens/ubi_token_scale.dart';
+export 'src/tokens/ubi_token_theme.dart';
+export 'src/tokens/ubi_token_typography.dart';
+
 // Theme
 export 'src/theme/ubi_theme.dart';
 export 'src/theme/ubi_colors.dart';

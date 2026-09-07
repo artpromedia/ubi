@@ -10,41 +10,35 @@ class UbiFormatters {
 
   // === Currency Formatters ===
 
-  /// Formats amount with currency symbol
+  /// Formats an amount with the city's currency.
+  ///
+  /// [currencyCode], [decimalDigits] and [locale] all come from city config
+  /// (CLAUDE.md rule 6) — there is no default market and no symbol table in
+  /// this file. `intl` resolves the symbol for the code in the given locale,
+  /// falling back to the code itself, so a currency we have never seen renders
+  /// honestly instead of as someone else's money.
+  ///
+  /// Prefer `UbiMoneyFormatter` from `package:ubi_core/ubi_config.dart`, which
+  /// takes the whole triple straight off the config and handles minor units.
   static String currency(
     double amount, {
-    String currency = 'KES',
+    required String currencyCode,
+    required String locale,
     int decimalDigits = 0,
     bool compact = false,
   }) {
-    final currencySymbols = {
-      'KES': 'KSh',
-      'UGX': 'USh',
-      'TZS': 'TSh',
-      'NGN': '₦',
-      'GHS': 'GH₵',
-      'ZAR': 'R',
-      'USD': '\$',
-      'EUR': '€',
-      'GBP': '£',
-      'RWF': 'FRw',
-      'XOF': 'CFA',
-      'XAF': 'FCFA',
-      'ETB': 'Br',
-      'EGP': 'E£',
-    };
-
-    final symbol = currencySymbols[currency] ?? currency;
-
     if (compact && amount >= 1000) {
+      final symbol =
+          NumberFormat.simpleCurrency(locale: locale, name: currencyCode)
+              .currencySymbol;
       return '$symbol${_compactNumber(amount)}';
     }
 
-    final formatter = NumberFormat.currency(
-      symbol: symbol,
+    return NumberFormat.currency(
+      locale: locale,
+      name: currencyCode,
       decimalDigits: decimalDigits,
-    );
-    return formatter.format(amount);
+    ).format(amount);
   }
 
   /// Formats amount without currency symbol

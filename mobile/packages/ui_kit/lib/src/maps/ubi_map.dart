@@ -85,7 +85,7 @@ class UbiMapConfig {
 /// Example:
 /// ```dart
 /// UbiMap(
-///   initialPosition: LatLng(-1.2921, 36.8219), // Nairobi
+///   initialPosition: currentPosition, // never a hard-coded city centre
 ///   markers: {pickupMarker, dropoffMarker},
 ///   polylines: {routePolyline},
 ///   onMapCreated: (controller) => _mapController = controller,

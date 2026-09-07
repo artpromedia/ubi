@@ -1,20 +1,72 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ubi_core/ubi_config.dart';
+import 'package:ubi_core/ubi_test_ids.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../driver/bloc/driver_bloc.dart';
 
-/// Trip request page shown when a new trip request comes in
+/// The offer exactly as the server sent it.
+///
+/// Nothing on this screen is computed locally: the fare is server-signed
+/// [Money], the distance and time are the server's strings, and the offer
+/// window comes from city config (CLAUDE.md rules 1 and 6).
+@immutable
+class TripOffer {
+  const TripOffer({
+    required this.requestId,
+    this.riderName,
+    this.riderRating,
+    this.pickupAddress,
+    this.dropoffAddress,
+    this.distanceLabel,
+    this.etaLabel,
+    this.fare,
+    this.paymentMethodId,
+    this.tripTypeLabel,
+  });
+
+  final String requestId;
+  final String? riderName;
+  final String? riderRating;
+  final String? pickupAddress;
+  final String? dropoffAddress;
+  final String? distanceLabel;
+  final String? etaLabel;
+
+  /// Server-computed offer value. The driver app never prices a trip.
+  final Money? fare;
+
+  /// Payment method id from city config, e.g. `cash`.
+  final String? paymentMethodId;
+
+  final String? tripTypeLabel;
+}
+
+/// Trip request page shown when a new trip request comes in.
+///
+/// The previous version carried a mock rider ("John Doe", 4.8), a Nairobi
+/// pickup address, a hard-coded KES 450 fare and an ETA computed as
+/// `distance * 3` on the device. All of it is gone: this screen renders what
+/// it is given and says so when it has not been given anything.
 class TripRequestPage extends StatefulWidget {
   final String requestId;
+
+  /// The offer to render. Null while it is still being fetched.
+  final TripOffer? offer;
+
+  /// `offerTtlSec` from city config. Null means we do not know the window, so
+  /// no countdown is drawn — the server enforces the deadline regardless.
+  final int? offerTtlSeconds;
 
   const TripRequestPage({
     super.key,
     required this.requestId,
+    this.offer,
+    this.offerTtlSeconds,
   });
 
   @override
@@ -24,28 +76,44 @@ class TripRequestPage extends StatefulWidget {
 class _TripRequestPageState extends State<TripRequestPage>
     with SingleTickerProviderStateMixin {
   late AnimationController _countdownController;
-  int _remainingSeconds = 15;
+  late final int _totalSeconds = widget.offerTtlSeconds ?? 0;
+  late int _remainingSeconds = _totalSeconds;
   Timer? _countdownTimer;
 
-  // Mock trip data
-  final String _customerName = 'John Doe';
-  final double _rating = 4.8;
-  final String _pickupAddress = 'Kenyatta Avenue, Nairobi CBD';
-  final String _dropoffAddress = 'Westlands, ABC Place';
-  final double _distance = 5.2;
-  final double _estimatedFare = 450;
-  final String _paymentMethod = 'Cash';
-  final String _tripType = 'Ride';
+  TripOffer? get _offer => widget.offer;
+
+  String get _customerName => _offer?.riderName ?? 'Rider';
+  String get _rating => _offer?.riderRating ?? '-';
+  String get _pickupAddress => _offer?.pickupAddress ?? 'Pickup loading';
+  String get _dropoffAddress => _offer?.dropoffAddress ?? 'Drop-off loading';
+  String get _distanceLabel => _offer?.distanceLabel ?? '-';
+  String get _etaLabel => _offer?.etaLabel ?? '-';
+  bool get _isCash => _offer?.paymentMethodId == 'cash';
+  String get _paymentMethod => _offer?.paymentMethodId ?? 'Payment pending';
+  String get _tripType => _offer?.tripTypeLabel ?? 'Trip';
+
+  /// Formats the server's offer value with the city's currency, fraction
+  /// digits and locale. No config means no honest way to show an amount.
+  String _fareLabel(BuildContext context) {
+    final offerFare = _offer?.fare;
+    final formatter = context.watch<ConfigCubit>().state.money;
+    if (offerFare == null || formatter == null) {
+      return '-';
+    }
+    return formatter.format(offerFare);
+  }
 
   @override
   void initState() {
     super.initState();
     _countdownController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 15),
-    )..forward();
-
-    _startCountdown();
+      duration: Duration(seconds: _totalSeconds),
+    );
+    if (_totalSeconds > 0) {
+      _countdownController.forward();
+      _startCountdown();
+    }
   }
 
   void _startCountdown() {
@@ -92,8 +160,10 @@ class _TripRequestPageState extends State<TripRequestPage>
       body: SafeArea(
         child: Column(
           children: [
-            // Countdown timer
+            // Countdown timer. The window is `offerTtlSec` from city config,
+            // never a constant in the app (CLAUDE.md rule 6).
             Padding(
+              key: testKey(TestIds.driverOfferCountdown),
               padding: const EdgeInsets.all(24),
               child: Stack(
                 alignment: Alignment.center,
@@ -102,7 +172,9 @@ class _TripRequestPageState extends State<TripRequestPage>
                     width: 80,
                     height: 80,
                     child: CircularProgressIndicator(
-                      value: _remainingSeconds / 15,
+                      value: _totalSeconds == 0
+                          ? null
+                          : _remainingSeconds / _totalSeconds,
                       strokeWidth: 6,
                       backgroundColor: Colors.grey.shade800,
                       valueColor: AlwaysStoppedAnimation<Color>(
@@ -111,7 +183,10 @@ class _TripRequestPageState extends State<TripRequestPage>
                     ),
                   ),
                   Text(
-                    '$_remainingSeconds',
+                    _totalSeconds == 0 ? '-' : '$_remainingSeconds',
+                    semanticsLabel: _totalSeconds == 0
+                        ? 'Offer window unknown'
+                        : '$_remainingSeconds seconds left to respond',
                     style: TextStyle(
                       color: _remainingSeconds <= 5 ? Colors.red : Colors.white,
                       fontSize: 32,
@@ -133,7 +208,7 @@ class _TripRequestPageState extends State<TripRequestPage>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    _tripType == 'Ride' ? Icons.directions_car : Icons.fastfood,
+                    Icons.directions_car,
                     color: Colors.white,
                     size: 20,
                   ),
@@ -197,7 +272,7 @@ class _TripRequestPageState extends State<TripRequestPage>
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
-                                    _rating.toString(),
+                                    _rating,
                                     style: TextStyle(
                                       color: Colors.grey.shade600,
                                     ),
@@ -213,7 +288,7 @@ class _TripRequestPageState extends State<TripRequestPage>
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: _paymentMethod == 'Cash'
+                            color: _isCash
                                 ? Colors.green.withOpacity(0.1)
                                 : Colors.blue.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
@@ -221,7 +296,7 @@ class _TripRequestPageState extends State<TripRequestPage>
                           child: Text(
                             _paymentMethod,
                             style: TextStyle(
-                              color: _paymentMethod == 'Cash'
+                              color: _isCash
                                   ? Colors.green
                                   : Colors.blue,
                               fontWeight: FontWeight.bold,
@@ -322,13 +397,14 @@ class _TripRequestPageState extends State<TripRequestPage>
                     ),
                     const SizedBox(height: 24),
 
-                    // Stats row
+                    // Offer economics: distance, time and the server's fare.
                     Row(
+                      key: testKey(TestIds.driverOfferEconomics),
                       children: [
                         Expanded(
                           child: _buildStatCard(
                             icon: Icons.route,
-                            value: '${_distance}km',
+                            value: _distanceLabel,
                             label: 'Distance',
                           ),
                         ),
@@ -336,7 +412,7 @@ class _TripRequestPageState extends State<TripRequestPage>
                         Expanded(
                           child: _buildStatCard(
                             icon: Icons.schedule,
-                            value: '${(_distance * 3).round()} min',
+                            value: _etaLabel,
                             label: 'Est. Time',
                           ),
                         ),
@@ -344,7 +420,7 @@ class _TripRequestPageState extends State<TripRequestPage>
                         Expanded(
                           child: _buildStatCard(
                             icon: Icons.attach_money,
-                            value: 'KES ${_estimatedFare.toInt()}',
+                            value: _fareLabel(context),
                             label: 'Est. Fare',
                             highlight: true,
                           ),
@@ -361,6 +437,7 @@ class _TripRequestPageState extends State<TripRequestPage>
                           child: SizedBox(
                             height: 56,
                             child: OutlinedButton(
+                              key: testKey(TestIds.driverOfferDecline),
                               onPressed: _declineRequest,
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.red,
@@ -385,6 +462,7 @@ class _TripRequestPageState extends State<TripRequestPage>
                           child: SizedBox(
                             height: 56,
                             child: ElevatedButton(
+                              key: testKey(TestIds.driverOfferAccept),
                               onPressed: _acceptRequest,
                               style: ElevatedButton.styleFrom(
                                 shape: RoundedRectangleBorder(

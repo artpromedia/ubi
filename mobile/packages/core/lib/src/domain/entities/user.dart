@@ -82,7 +82,8 @@ class User with _$User {
 class UserPreferences with _$UserPreferences {
   const factory UserPreferences({
     @Default('en') String language,
-    @Default('NGN') String currency,
+    // No default: the display currency is the city's, and the server sends it.
+    String? currency,
     @Default(true) bool pushNotifications,
     @Default(true) bool emailNotifications,
     @Default(true) bool smsNotifications,

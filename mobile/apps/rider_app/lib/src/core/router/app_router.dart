@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ubi_core/ubi_config.dart';
 
-import '../di/injection.dart';
 import '../../features/auth/bloc/auth_bloc.dart';
 import '../../features/auth/pages/login_page.dart';
 import '../../features/auth/pages/otp_page.dart';
@@ -14,7 +14,7 @@ import '../../features/food/pages/order_details_page.dart';
 import '../../features/food/pages/order_tracking_page.dart';
 import '../../features/food/pages/restaurant_detail_page.dart';
 import '../../features/food/pages/restaurants_page.dart';
-import '../../features/home/pages/home_page.dart';
+import '../../features/home/pages/home_tiles_page.dart';
 import '../../features/onboarding/pages/onboarding_page.dart';
 import '../../features/profile/pages/edit_profile_page.dart';
 import '../../features/profile/pages/payment_methods_page.dart';
@@ -25,8 +25,12 @@ import '../../features/ride/pages/ride_details_page.dart';
 import '../../features/ride/pages/ride_search_page.dart';
 import '../../features/ride/pages/ride_tracking_page.dart';
 import '../../features/splash/pages/splash_page.dart';
+import '../di/injection.dart';
 
-/// Route names
+/// Route names.
+///
+/// These strings are the deep-link surface, so they must match the `GoRoute`
+/// paths below exactly.
 abstract class Routes {
   // Splash & Onboarding
   static const splash = '/';
@@ -40,21 +44,34 @@ abstract class Routes {
   // Home
   static const home = '/home';
 
-  // Ride
-  static const rideSearch = '/home/ride';
-  static const rideTracking = '/home/ride/tracking';
-  static const rideDetails = '/home/ride/details';
+  // Move
+  static const rideSearch = '/home/ride/search';
 
-  // Food
-  static const foodRestaurants = '/home/food';
+  static String rideTracking(String rideId) => '/home/ride/$rideId/tracking';
+
+  static String rideDetails(String rideId) => '/home/ride/$rideId/details';
+
+  // Bites
+  static const foodRestaurants = '/home/food/restaurants';
   static const foodCart = '/home/food/cart';
-  static const foodOrderTracking = '/home/food/order';
-  static const foodOrderDetails = '/home/food/order/details';
 
-  // Delivery
-  static const deliveryNew = '/home/delivery';
-  static const deliveryTracking = '/home/delivery/tracking';
-  static const deliveryDetails = '/home/delivery/details';
+  static String foodRestaurant(String restaurantId) =>
+      '/home/food/restaurant/$restaurantId';
+
+  static String foodOrderTracking(String orderId) =>
+      '/home/food/order/$orderId/tracking';
+
+  static String foodOrderDetails(String orderId) =>
+      '/home/food/order/$orderId/details';
+
+  // Send
+  static const deliveryNew = '/home/delivery/new';
+
+  static String deliveryTracking(String deliveryId) =>
+      '/home/delivery/$deliveryId/tracking';
+
+  static String deliveryDetails(String deliveryId) =>
+      '/home/delivery/$deliveryId/details';
 
   // Profile
   static const profile = '/profile';
@@ -64,7 +81,7 @@ abstract class Routes {
   static const settings = '/profile/settings';
 }
 
-/// App router configuration
+/// App router configuration.
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -74,13 +91,10 @@ class AppRouter {
     debugLogDiagnostics: true,
     redirect: _guardRoute,
     routes: [
-      // Splash
       GoRoute(
         path: Routes.splash,
         builder: (context, state) => const SplashPage(),
       ),
-
-      // Onboarding
       GoRoute(
         path: Routes.onboarding,
         builder: (context, state) => const OnboardingPage(),
@@ -95,8 +109,9 @@ class AppRouter {
         path: Routes.otp,
         builder: (context, state) {
           final extras = state.extra as Map<String, dynamic>?;
+          final verificationId = extras?['verificationId'];
           return OtpPage(
-            verificationId: extras?['verificationId'] ?? '',
+            verificationId: verificationId is String ? verificationId : '',
           );
         },
       ),
@@ -105,72 +120,123 @@ class AppRouter {
         builder: (context, state) => const RegisterPage(),
       ),
 
-      // Home (with shell for bottom navigation)
+      // Home
       GoRoute(
         path: Routes.home,
-        builder: (context, state) => const HomePage(),
+        builder: (context, state) => HomeTilesPage(
+          onOpenSearch: () => context.go(Routes.rideSearch),
+          onOpenSavedPlaces: () => context.go(Routes.savedPlaces),
+          onOpenVertical: (vertical) => context.go(_homeFor(vertical)),
+        ),
         routes: [
-          // Ride routes
+          // Move
           GoRoute(
             path: 'ride/search',
-            builder: (context, state) => const RideSearchPage(),
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.move,
+              'UBI Move',
+              const RideSearchPage(),
+            ),
           ),
           GoRoute(
             path: 'ride/:rideId/tracking',
-            builder: (context, state) => RideTrackingPage(
-              rideId: state.pathParameters['rideId']!,
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.move,
+              'UBI Move',
+              RideTrackingPage(rideId: state.pathParameters['rideId']!),
             ),
           ),
           GoRoute(
             path: 'ride/:rideId/details',
-            builder: (context, state) => RideDetailsPage(
-              rideId: state.pathParameters['rideId']!,
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.move,
+              'UBI Move',
+              RideDetailsPage(rideId: state.pathParameters['rideId']!),
             ),
           ),
 
-          // Food routes
+          // Bites
           GoRoute(
             path: 'food/restaurants',
-            builder: (context, state) => const RestaurantsPage(),
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.bites,
+              'UBI Bites',
+              const RestaurantsPage(),
+            ),
           ),
           GoRoute(
             path: 'food/restaurant/:restaurantId',
-            builder: (context, state) => RestaurantDetailPage(
-              restaurantId: state.pathParameters['restaurantId']!,
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.bites,
+              'UBI Bites',
+              RestaurantDetailPage(
+                restaurantId: state.pathParameters['restaurantId']!,
+              ),
             ),
           ),
           GoRoute(
             path: 'food/cart',
-            builder: (context, state) => const CartPage(),
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.bites,
+              'UBI Bites',
+              const CartPage(),
+            ),
           ),
           GoRoute(
             path: 'food/order/:orderId/tracking',
-            builder: (context, state) => OrderTrackingPage(
-              orderId: state.pathParameters['orderId']!,
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.bites,
+              'UBI Bites',
+              OrderTrackingPage(orderId: state.pathParameters['orderId']!),
             ),
           ),
           GoRoute(
             path: 'food/order/:orderId/details',
-            builder: (context, state) => OrderDetailsPage(
-              orderId: state.pathParameters['orderId']!,
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.bites,
+              'UBI Bites',
+              OrderDetailsPage(orderId: state.pathParameters['orderId']!),
             ),
           ),
 
-          // Delivery routes
+          // Send
           GoRoute(
             path: 'delivery/new',
-            builder: (context, state) => const DeliveryNewPage(),
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.send,
+              'UBI Send',
+              const DeliveryNewPage(),
+            ),
           ),
           GoRoute(
             path: 'delivery/:deliveryId/tracking',
-            builder: (context, state) => DeliveryTrackingPage(
-              deliveryId: state.pathParameters['deliveryId']!,
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.send,
+              'UBI Send',
+              DeliveryTrackingPage(
+                deliveryId: state.pathParameters['deliveryId']!,
+              ),
             ),
           ),
           GoRoute(
             path: 'delivery/:deliveryId/details',
-            builder: (context, state) => DeliveryDetailsPage(
-              deliveryId: state.pathParameters['deliveryId']!,
+            builder: (context, state) => _gate(
+              context,
+              UbiFlag.send,
+              'UBI Send',
+              DeliveryDetailsPage(
+                deliveryId: state.pathParameters['deliveryId']!,
+              ),
             ),
           ),
         ],
@@ -202,7 +268,48 @@ class AppRouter {
     ],
   );
 
-  /// Route guard for authentication
+  /// Wraps a vertical's screen so a deep link into a disabled vertical lands on
+  /// the honest "not available here" screen (`common.flagOff.screen`) instead
+  /// of a broken page or a silent no-op (CLAUDE.md rules 5 and 8).
+  static Widget _gate(
+    BuildContext context,
+    UbiFlag flag,
+    String featureName,
+    Widget child,
+  ) {
+    return FlagGatedRoute(
+      flag: flag,
+      featureName: featureName,
+      onDismiss: () => context.go(Routes.home),
+      child: child,
+    );
+  }
+
+  static String _homeFor(UbiFlag vertical) {
+    switch (vertical) {
+      case UbiFlag.bites:
+        return Routes.foodRestaurants;
+      case UbiFlag.send:
+        return Routes.deliveryNew;
+      case UbiFlag.move:
+      case UbiFlag.travel:
+      case UbiFlag.stays:
+      case UbiFlag.journeys:
+      case UbiFlag.reservations:
+      case UbiFlag.fleet:
+      case UbiFlag.walletP2p:
+      case UbiFlag.walletNip:
+      case UbiFlag.tips:
+      case UbiFlag.scheduledRides:
+      case UbiFlag.recording:
+      case UbiFlag.driverOnline:
+      case UbiFlag.rideRequest:
+      case UbiFlag.providerPayments:
+        return Routes.rideSearch;
+    }
+  }
+
+  /// Route guard for authentication.
   static String? _guardRoute(BuildContext context, GoRouterState state) {
     final authState = getIt<AuthBloc>().state;
     final isAuthenticated = authState is AuthAuthenticated;
@@ -212,17 +319,14 @@ class AppRouter {
     final isSplashRoute = state.matchedLocation == Routes.splash;
     final isOnboardingRoute = state.matchedLocation == Routes.onboarding;
 
-    // Allow splash and onboarding always
     if (isSplashRoute || isOnboardingRoute) {
       return null;
     }
 
-    // If not authenticated and not on auth route, redirect to login
     if (!isAuthenticated && !isAuthRoute) {
       return Routes.login;
     }
 
-    // If authenticated and on auth route, redirect to home
     if (isAuthenticated && isAuthRoute) {
       return Routes.home;
     }

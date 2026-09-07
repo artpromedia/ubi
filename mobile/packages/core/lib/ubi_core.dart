@@ -4,6 +4,30 @@
 /// business logic for UBI mobile applications.
 library ubi_core;
 
+// === City Config & Feature Flags (slice 01) ===
+// Also available on its own as package:ubi_core/ubi_config.dart
+export 'src/config/city_config.dart';
+export 'src/config/city_source.dart';
+export 'src/config/config_api.dart';
+export 'src/config/config_bootstrap.dart';
+export 'src/config/config_cache.dart';
+export 'src/config/config_cubit.dart';
+export 'src/config/config_failure.dart';
+export 'src/config/config_repository.dart';
+export 'src/config/feature_flags.dart';
+export 'src/config/flag_gate.dart';
+export 'src/config/json_read.dart';
+export 'src/config/money.dart';
+export 'src/config/money_formatter.dart';
+
+// === Theme mode ===
+// Also available on its own as package:ubi_core/ubi_theming.dart
+export 'src/theming/theme_mode_cubit.dart';
+
+// === testIDs ===
+// Also available on its own as package:ubi_core/ubi_test_ids.dart
+export 'src/testing/test_ids.dart';
+
 // === Domain Entities ===
 export 'src/domain/entities/user.dart';
 export 'src/domain/entities/location.dart';

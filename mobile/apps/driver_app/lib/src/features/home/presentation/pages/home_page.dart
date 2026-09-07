@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:ubi_core/ubi_config.dart';
+import 'package:ubi_core/ubi_test_ids.dart';
+import 'package:ubi_ui_kit/ubi_tokens.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../driver/bloc/driver_bloc.dart';
@@ -107,10 +110,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   // Earnings preview
                   BlocBuilder<EarningsBloc, EarningsState>(
                     builder: (context, state) {
-                      String earnings = 'KES 0';
-                      if (state is EarningsTodayLoaded) {
-                        earnings = 'KES ${state.summary.totalEarnings.toStringAsFixed(0)}';
-                      }
+                      // Today's total is shown on the earnings screen, which
+                      // renders it from the server's Money (amount + currency)
+                      // through the city-config formatter. This chip used to
+                      // print a hard-coded "KES" in front of a bare double,
+                      // which named a market the config never chose
+                      // (CLAUDE.md rule 6).
+                      const earnings = 'Earnings';
                       return GestureDetector(
                         onTap: () => context.push(AppRoutes.earnings),
                         child: Container(
@@ -139,10 +145,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               const SizedBox(width: 8),
                               Text(
                                 earnings,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
+                                style: UbiTokenTypography.labelLarge,
                               ),
                               const SizedBox(width: 4),
                               const Icon(
@@ -200,8 +203,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       _buildStatusCard(context, state),
                       const SizedBox(height: 24),
 
-                      // Online/Offline toggle
-                      _buildToggleButton(context, state),
+                      // Going online is gated on the city's driver_online
+                      // flag: where UBI has not launched driver supply, the
+                      // button is not shown and the reason is (rule 5/8).
+                      FlagGate(
+                        flag: UbiFlag.driverOnline,
+                        fallback: _buildOnlineUnavailable(context),
+                        child: _buildToggleButton(context, state),
+                      ),
                       const SizedBox(height: 16),
 
                       // Stats row
@@ -224,31 +233,33 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     String subtitle;
     Color color;
 
+    final tokens = UbiSemanticColors.of(context);
+
     if (state is DriverOnline) {
       icon = Icons.wifi_tethering;
       title = 'You are Online';
       subtitle = 'Waiting for trip requests...';
-      color = const Color(0xFF00A86B);
+      color = tokens.moveInk;
     } else if (state is DriverBusy) {
       icon = Icons.directions_car;
       title = 'On a Trip';
       subtitle = 'Complete your current trip';
-      color = Colors.orange;
+      color = tokens.warnInk;
     } else if (state is DriverOnBreak) {
       icon = Icons.coffee;
       title = 'On Break';
       subtitle = 'Take your time';
-      color = Colors.blue;
+      color = tokens.travelInk;
     } else if (state is DriverRequestPending) {
       icon = Icons.notifications_active;
       title = 'New Request!';
       subtitle = 'Tap to view details';
-      color = Theme.of(context).primaryColor;
+      color = tokens.move;
     } else {
       icon = Icons.wifi_off;
       title = 'You are Offline';
       subtitle = 'Go online to receive trips';
-      color = Colors.grey;
+      color = tokens.text3;
     }
 
     return Container(
@@ -328,13 +339,59 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  /// Shown in place of the go-online button when the city does not run driver
+  /// supply, or when we could not check.
+  Widget _buildOnlineUnavailable(BuildContext context) {
+    final tokens = UbiSemanticColors.of(context);
+    return BlocBuilder<ConfigCubit, ConfigState>(
+      builder: (context, config) {
+        final couldNotCheck = config.flagsUnverified;
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(UbiSpace.x4),
+          decoration: BoxDecoration(
+            color: tokens.bg2,
+            borderRadius: UbiRadii.cardLgBorder,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                couldNotCheck
+                    ? 'We could not check if you can go online'
+                    : 'Going online is not available here yet',
+                style: UbiTokenTypography.titleMedium
+                    .copyWith(color: tokens.ink),
+              ),
+              const SizedBox(height: UbiSpace.x2),
+              Text(
+                couldNotCheck
+                    ? 'You are offline, so we cannot confirm your city allows '
+                        'driver sign-on. Reconnect and try again.'
+                    : 'UBI has not opened driver sign-on in your city. Nothing '
+                        'is wrong with your account.',
+                style: UbiTokenTypography.bodyMedium
+                    .copyWith(color: tokens.text2),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildToggleButton(BuildContext context, DriverState state) {
     final isOnline = state is DriverOnline || state is DriverBusy;
 
+    final tokens = UbiSemanticColors.of(context);
+
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: UbiTargets.primaryButton,
       child: ElevatedButton(
+        key: testKey(
+          isOnline ? TestIds.driverHomeGoOffline : TestIds.driverHomeGoOnline,
+        ),
         onPressed: () {
           if (isOnline) {
             context.read<DriverBloc>().add(const DriverWentOffline());
@@ -343,26 +400,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           }
         },
         style: ElevatedButton.styleFrom(
-          backgroundColor: isOnline ? Colors.red.shade400 : const Color(0xFF00A86B),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+          backgroundColor: isOnline ? tokens.error : tokens.primaryButton,
+          foregroundColor:
+              isOnline ? tokens.bg : tokens.onPrimaryButton,
+          shape: const RoundedRectangleBorder(
+            borderRadius: UbiRadii.cardLgBorder,
           ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isOnline ? Icons.power_settings_new : Icons.play_arrow,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 8),
+            Icon(isOnline ? Icons.power_settings_new : Icons.play_arrow),
+            const SizedBox(width: UbiSpace.x2),
             Text(
               isOnline ? 'Go Offline' : 'Go Online',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+              style: UbiTokenTypography.labelLarge.copyWith(fontSize: 18),
             ),
           ],
         ),

@@ -53,7 +53,7 @@ class UserMapper {
   static UserPreferences fromUserPreferencesDto(UserPreferencesDto dto) {
     return UserPreferences(
       language: dto.language ?? 'en',
-      currency: dto.currency ?? 'KES',
+      currency: dto.currency,
       notificationsEnabled: dto.notificationsEnabled ?? true,
       darkMode: dto.darkMode ?? false,
     );
