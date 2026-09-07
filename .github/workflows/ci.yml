@@ -341,6 +341,73 @@ jobs:
           echo "OK: unbalanced journal entry refused by the database"
 
   # ===========================================
+  # MOBILE (FLUTTER)
+  # ===========================================
+  mobile:
+    name: Flutter Analyze & Test
+    needs: setup
+    runs-on: ubuntu-latest
+    # The audit found CI does not build or test either Flutter app, so nothing
+    # in mobile/ has ever been gated. This job analyses and tests both apps and
+    # the shared Dart packages.
+    #
+    # continue-on-error is set ONLY for the initial adoption: mobile/ has known
+    # analysis failures today (rider_app dependency injection, repository and
+    # use-case signature mismatches). Remove it — and add `mobile` to
+    # ci-success below — as soon as the baseline is clean, otherwise this job
+    # reports green while proving nothing.
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Report toolchain
+        run: flutter --version
+
+      - name: Resolve dependencies
+        working-directory: mobile
+        run: |
+          for pkg in packages/* apps/*; do
+            if [ -f "$pkg/pubspec.yaml" ]; then
+              echo "::group::pub get $pkg"
+              (cd "$pkg" && flutter pub get)
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Analyze
+        working-directory: mobile
+        run: |
+          status=0
+          for pkg in packages/* apps/*; do
+            if [ -f "$pkg/pubspec.yaml" ]; then
+              echo "::group::analyze $pkg"
+              (cd "$pkg" && flutter analyze) || status=1
+              echo "::endgroup::"
+            fi
+          done
+          exit $status
+
+      - name: Test
+        working-directory: mobile
+        run: |
+          status=0
+          for pkg in packages/* apps/*; do
+            if [ -d "$pkg/test" ]; then
+              echo "::group::test $pkg"
+              (cd "$pkg" && flutter test) || status=1
+              echo "::endgroup::"
+            fi
+          done
+          exit $status
+
+  # ===========================================
   # FINAL STATUS CHECK
   # ===========================================
   ci-success:
