@@ -20,25 +20,35 @@ import { IDENTITY_HEADER, REQUEST_ID_HEADER } from "../middleware/identity";
 
 const proxyRoutes = new Hono();
 
-// Service registry - maps route prefixes to service URLs
-const SERVICE_REGISTRY: Record<string, string> = {
-  users: process.env.USER_SERVICE_URL || "http://localhost:4001",
-  auth: process.env.USER_SERVICE_URL || "http://localhost:4001",
-  identity: process.env.USER_SERVICE_URL || "http://localhost:4001",
-  devices: process.env.USER_SERVICE_URL || "http://localhost:4001",
-  rides: process.env.RIDE_SERVICE_URL || "http://localhost:4002",
-  food: process.env.FOOD_SERVICE_URL || "http://localhost:4003",
-  restaurants: process.env.FOOD_SERVICE_URL || "http://localhost:4003",
-  delivery: process.env.DELIVERY_SERVICE_URL || "http://localhost:4004",
-  packages: process.env.DELIVERY_SERVICE_URL || "http://localhost:4004",
-  payments: process.env.PAYMENT_SERVICE_URL || "http://localhost:4005",
-  wallets: process.env.PAYMENT_SERVICE_URL || "http://localhost:4005",
-  notifications:
-    process.env.NOTIFICATION_SERVICE_URL || "http://localhost:4006",
-  analytics: process.env.ANALYTICS_SERVICE_URL || "http://localhost:4007",
-  ceerion: process.env.CEERION_SERVICE_URL || "http://localhost:4008",
-  vehicles: process.env.CEERION_SERVICE_URL || "http://localhost:4008",
+/**
+ * Service registry — maps a logical service to the env var that carries its
+ * URL and the local default. Resolved per request rather than at import, so a
+ * redeploy that changes a service URL does not need the gateway rebuilt.
+ */
+const SERVICE_REGISTRY: Record<string, { readonly env: string; readonly fallback: string }> = {
+  users: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
+  auth: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
+  identity: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
+  devices: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
+  rides: { env: "RIDE_SERVICE_URL", fallback: "http://localhost:4002" },
+  food: { env: "FOOD_SERVICE_URL", fallback: "http://localhost:4003" },
+  restaurants: { env: "FOOD_SERVICE_URL", fallback: "http://localhost:4003" },
+  delivery: { env: "DELIVERY_SERVICE_URL", fallback: "http://localhost:4004" },
+  packages: { env: "DELIVERY_SERVICE_URL", fallback: "http://localhost:4004" },
+  payments: { env: "PAYMENT_SERVICE_URL", fallback: "http://localhost:4005" },
+  wallets: { env: "PAYMENT_SERVICE_URL", fallback: "http://localhost:4005" },
+  notifications: { env: "NOTIFICATION_SERVICE_URL", fallback: "http://localhost:4006" },
+  analytics: { env: "ANALYTICS_SERVICE_URL", fallback: "http://localhost:4007" },
+  ceerion: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
+  vehicles: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
 };
+
+function serviceUrl(serviceName: string): string | undefined {
+  const entry = SERVICE_REGISTRY[serviceName];
+  if (entry === undefined) return undefined;
+  const configured = process.env[entry.env];
+  return configured !== undefined && configured.length > 0 ? configured : entry.fallback;
+}
 
 // Request timeout in milliseconds
 const REQUEST_TIMEOUT = Number.parseInt(
@@ -92,9 +102,9 @@ const proxyToService = async (
   originalPath: string,
   c: Context,
 ): Promise<Response> => {
-  const serviceUrl = SERVICE_REGISTRY[serviceName];
+  const baseUrl = serviceUrl(serviceName);
 
-  if (!serviceUrl) {
+  if (baseUrl === undefined) {
     return c.json(
       {
         success: false,
@@ -108,7 +118,7 @@ const proxyToService = async (
   }
 
   const url = new URL(c.req.url);
-  const targetUrl = `${serviceUrl}${originalPath}${url.search}`;
+  const targetUrl = `${baseUrl}${originalPath}${url.search}`;
 
   const forwardHeaders = new Headers();
   for (const header of HEADERS_TO_FORWARD) {
