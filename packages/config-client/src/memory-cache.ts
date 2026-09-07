@@ -40,11 +40,15 @@ export class MemoryCache<T> {
     this.entries.delete(key);
   }
 
+  keysWithPrefix(prefix: string): string[] {
+    return [...this.entries.keys()].filter((key) => key.startsWith(prefix));
+  }
+
   /** Drops every entry whose key starts with the prefix. Used on invalidation. */
-  deleteByPrefix(prefix: string): void {
-    for (const key of [...this.entries.keys()]) {
-      if (key.startsWith(prefix)) this.entries.delete(key);
-    }
+  deleteByPrefix(prefix: string): string[] {
+    const keys = this.keysWithPrefix(prefix);
+    for (const key of keys) this.entries.delete(key);
+    return keys;
   }
 
   clear(): void {

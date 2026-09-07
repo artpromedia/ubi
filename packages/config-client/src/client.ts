@@ -293,16 +293,23 @@ export class ConfigClient {
         this.configs.delete(this.configKey(result.data.scopeId));
         void this.dropShared(this.configKey(result.data.scopeId));
       } else {
-        this.flags.deleteByPrefix(`ubi:config-client:flags:${result.data.scopeId}:`);
-        this.flags.deleteByPrefix("ubi:config-client:flags:-:");
+        // Flag entries are per (city, user); drop every user of that city plus
+        // the city-less evaluation. Shared entries are dropped for the keys this
+        // process knows about — every other subscriber drops its own, and the
+        // TTL bounds anything neither of them saw.
+        const dropped = [
+          ...this.flags.deleteByPrefix(`ubi:config-client:flags:${result.data.scopeId}:`),
+          ...this.flags.deleteByPrefix("ubi:config-client:flags:-:"),
+        ];
+        void this.dropShared(...dropped);
       }
     });
   }
 
-  private async dropShared(key: string): Promise<void> {
-    if (this.store === undefined) return;
+  private async dropShared(...keys: string[]): Promise<void> {
+    if (this.store === undefined || keys.length === 0) return;
     try {
-      await this.store.del(key);
+      await this.store.del(...keys);
     } catch {
       // Best effort; the TTL still bounds staleness.
     }
