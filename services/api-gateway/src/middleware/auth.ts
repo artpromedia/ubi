@@ -15,15 +15,40 @@ interface JWTPayload {
   email: string;
   role: "rider" | "driver" | "restaurant" | "merchant" | "admin" | "service";
   permissions: string[];
+  /** Server-issued scope narrowing. It may only reduce what the role allows. */
+  scopes?: string[];
+  /** "limited" is set by user-service on a token issued to an unverified device. */
+  mode?: string;
+  cityId?: string;
+  tenantId?: string;
+  sid?: string;
+  deviceId?: string;
   iat: number;
   exp: number;
 }
 
-interface AuthContext {
+/**
+ * What the gateway knows about the caller after validating their token. Every
+ * field comes from the signed token or from the gateway itself — none of it is
+ * read from a client header (see middleware/identity.ts).
+ */
+export interface AuthContext {
   userId: string;
   email: string;
   role: string;
   permissions: string[];
+  /** Present only when the token narrows the role's scopes. */
+  scopes: string[] | undefined;
+  /** "full" unless user-service issued a limited-mode token. */
+  mode: "full" | "limited";
+  cityId: string | null;
+  tenantId: string | null;
+  sessionId: string | null;
+  deviceId: string | null;
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 // Public routes that don't require authentication
@@ -155,6 +180,12 @@ export const authMiddleware = createMiddleware(
         email: `${serviceName}@service.ubi.africa`,
         role: "service",
         permissions: ["*"],
+        scopes: undefined,
+        mode: "full",
+        cityId: null,
+        tenantId: null,
+        sessionId: null,
+        deviceId: null,
       };
       c.set("auth", serviceAuth);
       return next();
@@ -169,12 +200,20 @@ export const authMiddleware = createMiddleware(
 
       const jwtPayload = payload as unknown as JWTPayload;
 
-      // Attach auth context to request
+      // Attach auth context to request. `mode` and `scopes` are claims the
+      // user-service put in the token; anything else defaults to unrestricted,
+      // and the scope matrix still applies.
       const auth: AuthContext = {
         userId: jwtPayload.sub,
         email: jwtPayload.email,
         role: jwtPayload.role,
-        permissions: jwtPayload.permissions,
+        permissions: jwtPayload.permissions ?? [],
+        scopes: Array.isArray(jwtPayload.scopes) ? jwtPayload.scopes : undefined,
+        mode: jwtPayload.mode === "limited" ? "limited" : "full",
+        cityId: optionalString(jwtPayload.cityId),
+        tenantId: optionalString(jwtPayload.tenantId),
+        sessionId: optionalString(jwtPayload.sid),
+        deviceId: optionalString(jwtPayload.deviceId),
       };
 
       c.set("auth", auth);
