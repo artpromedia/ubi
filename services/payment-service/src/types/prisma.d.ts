@@ -1,4 +1,38 @@
 /**
+ * ⚠️  DEPRECATED — THIS FILE DEFEATS TYPE CHECKING ON THE MONEY PATH.
+ *
+ * `declare module "@prisma/client"` is an ambient declaration, so it REPLACES
+ * the generated Prisma client's types for this whole service rather than adding
+ * to them. Two consequences:
+ *
+ *   1. The `PrismaClient` class below ends with
+ *          [key: string]: ModelDelegate | ((...args: any[]) => any) | any;
+ *      so ANY property access on the client type-checks and returns `any`. A
+ *      call to a method that does not exist compiles cleanly — verified:
+ *      `prisma.thisMethodDoesNotExist().andNeitherDoesThis()` raises no error
+ *      here, while the same line in food-service (which has no such shim) is
+ *      correctly rejected. Every query, every `where`, every `data` payload in
+ *      this service is unchecked.
+ *
+ *   2. The model list is hand-maintained and already stale. It names 33 models
+ *      and knows nothing about `wallet`, `journalEntry`, `journalLine`,
+ *      `transfer`, `reconRun` or any other model added since it was written.
+ *
+ * MEASURED IMPACT: deleting this file takes `tsc --noEmit` in this service from
+ * 350 errors to 1020. The extra 670 are real type errors this shim has been
+ * hiding, not new ones. It is restored here only so that removing it is a
+ * deliberate, scheduled piece of work rather than a side effect of another
+ * change — see docs/launch-readiness/current-state.md.
+ *
+ * The handoff is explicit that generated clients must not be shadowed by
+ * hand-written duplicates. This must be deleted and the 670 errors fixed before
+ * payment-service can be considered launch-ready.
+ *
+ * New code MUST NOT rely on these types. `src/ledger/` imports from
+ * "@prisma/client/index" precisely to get the real generated types instead.
+ *
+ * ---- original header follows ----
+ *
  * Prisma Client Type Declarations
  *
  * This file provides type declarations for Prisma enums and types

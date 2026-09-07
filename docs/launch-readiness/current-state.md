@@ -261,6 +261,47 @@ without it.
 | `location-service` | **could not build** — no `go.sum` | builds, vets clean |
 | `delivery-service` | **could not build** — no `go.sum`, and `go mod tidy` failed on a test importing a module path that does not exist | builds, vets clean, handler tests pass |
 
+### payment-service: a hand-written shim turns every database query into `any`
+
+`services/payment-service/src/types/prisma.d.ts` contains
+`declare module "@prisma/client" { ... }`. That is an **ambient module
+declaration**, so it *replaces* the generated Prisma client's types for the whole
+service rather than adding to them. Its hand-written `PrismaClient` class ends
+with:
+
+```ts
+[key: string]: ModelDelegate | ((...args: any[]) => any) | any;
+```
+
+Any property access therefore type-checks and yields `any`. Verified directly:
+
+```ts
+prisma.thisMethodDoesNotExist().andNeitherDoesThis();  // no error in payment-service
+```
+
+The identical line in `food-service`, which has no such shim, is correctly
+rejected with TS2339. **Every query, every `where` clause and every `data`
+payload in the service that moves money is unchecked.** The model list is also
+hand-maintained and already stale: it names 33 models and knows nothing about
+`wallet`, `journalEntry`, `journalLine`, `transfer` or `reconRun`.
+
+**Measured:** deleting the file takes `tsc --noEmit` from **350 errors to 1020**.
+The extra 670 are real type errors the shim has been suppressing.
+
+The file is left in place with a deprecation header stating all of the above.
+Removing it means fixing 670 errors in the money service, which is a scheduled
+piece of work and a decision for the team — not a side effect of this pass. The
+handoff forbids hand-written duplicates of a generated client, so this must be
+resolved before payment-service is launch-ready.
+
+New code does not depend on it: `src/ledger/` imports from
+`"@prisma/client/index"` to get the real generated types, which is why the 26
+ledger modules typecheck at zero errors against the true schema.
+
+**This revises §6 above.** The "521 pre-existing errors" figure counts what is
+*visible*. The true figure for payment-service alone is ~1020, so the repository
+carries roughly **1,190 type errors**, not 521.
+
 ### The first-failure mask
 
 `@ubi/database` failed `typecheck` on an invalid `ignoreDeprecations: "6.0"`
