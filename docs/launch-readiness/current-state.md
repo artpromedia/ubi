@@ -201,7 +201,69 @@ nothing persisted; a cross-currency line is refused on insert.
 
 ---
 
-## 6. Mock and stub inventory (marker scan)
+## 6. Build matrix — what actually compiles
+
+Measured with `turbo run typecheck --continue` and `go build ./...`. `--continue`
+matters: turbo halts at the first failure by default, and the first failure was
+`@ubi/database` (see the first-failure mask below), so **no other package's type errors had ever been
+visible**.
+
+### TypeScript services
+
+| Service | Type errors | Note |
+|---|---:|---|
+| `api-gateway` | 0 | |
+| `user-service` | 0 | |
+| `realtime-gateway` | 0 | |
+| `config-service` | 0 | added in this branch |
+| `payment-service` | ~350 | pre-existing, excluding the new ledger module |
+| `food-service` | 116 | |
+| `notification-service` | 55 | |
+
+All 11 shared packages typecheck.
+
+### The 521 pre-existing errors are mostly one root cause
+
+`food-service` and `notification-service` are written against **Prisma models
+that do not exist**:
+
+`inAppNotification` · `menuCategory` · `notificationLog` ·
+`notificationPreference` · `notificationTemplate` · `order` · `review` ·
+`reviewReport`
+
+This is worse than the audit's diagnosis. The audit attributed the orphaned-model
+problem to `prisma.config.ts` pointing only at `schema.prisma`, leaving the seven
+`schema-*.prisma` fragments out of generation. That is true, but it is not what
+is happening here: **none of these eight models exists in any schema file in the
+repository**, fragments included. Verified with
+`grep -l "^model <Name> " packages/database/prisma/*.prisma` for each.
+
+These services were written against a schema that has never existed here. That
+is a design gap, not a configuration mistake, and it cannot be closed by fixing
+the schema path.
+
+**Consequence for the build order:** slice 05 (Bites) extends `food-service`, and
+several slices depend on `notification-service`. Both need their data model
+designed and agreed before the slice can start — on top of the
+`merchants`/`menu_items` collision already recorded in §3.2. Nothing here was
+guessed at or patched over, because doing so would mean inventing a schema.
+
+### Go services
+
+| Service | Before | After |
+|---|---|---|
+| `ride-service` | builds | builds |
+| `location-service` | **could not build** — no `go.sum` | builds, vets clean |
+| `delivery-service` | **could not build** — no `go.sum`, and `go mod tidy` failed on a test importing a module path that does not exist | builds, vets clean, handler tests pass |
+
+### The first-failure mask
+
+`@ubi/database` failed `typecheck` on an invalid `ignoreDeprecations: "6.0"`
+value (TS5103) that TypeScript 5.9.3 rejects. Because turbo stops at the first
+failure, that single line hid the state of every other package. It is removed
+from all six tsconfigs that carried it.
+
+## 7. Mock and stub inventory (marker scan)
 
 Files matching `mock data|mock_|MOCK |// Mock|TODO: replace|hardcoded|hard-coded`:
 
@@ -215,7 +277,7 @@ Files matching `mock data|mock_|MOCK |// Mock|TODO: replace|hardcoded|hard-coded
 This is a marker scan, not a judgement: some are legitimate test fixtures. It is a starting
 worklist, not a defect count.
 
-## 7. Route inventory (Next.js `page.tsx` per app)
+## 8. Route inventory (Next.js `page.tsx` per app)
 
 | App | Pages |
 |---|---|
@@ -232,7 +294,7 @@ fleet/merchant/restaurant portals are single-page shells. Consistent with the au
 
 ---
 
-## 8. Verification commands
+## 9. Verification commands
 
 ```bash
 # contracts
