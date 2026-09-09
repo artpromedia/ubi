@@ -1,0 +1,11 @@
+{
+  "name": "@ubi/mobile-tokens",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "generate": "node scripts/generate.mjs"
+  },
+  "_note": "src/index.ts mirrors packages/design-tokens {base,semantic,dark}.json. RN-01 replaces the hand-mirrored values with generator output; do not add colours here by hand."
+}
