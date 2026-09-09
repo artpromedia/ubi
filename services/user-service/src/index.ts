@@ -21,14 +21,18 @@ import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 import { logger } from "./lib/logger.js";
 
+import type { AiActionDeps } from "./grants/types";
 import { defaultIdentityDeps } from "./identity/deps";
+import { prisma } from "./lib/prisma";
 import { errorHandler } from "./middleware/error-handler";
 import { serviceAuthMiddleware } from "./middleware/service-auth";
 import { authRoutes } from "./routes/auth";
 import { createDeviceRoutes } from "./routes/devices";
 import { driverRoutes } from "./routes/drivers";
+import { createGrantRoutes } from "./routes/grants";
 import { healthRoutes } from "./routes/health";
 import { createIdentityRoutes } from "./routes/identity";
+import { createMandateRoutes } from "./routes/mandates";
 import { sessionRoutes } from "./routes/sessions";
 import { userRoutes } from "./routes/users";
 
@@ -94,6 +98,19 @@ app.route("/auth", authRoutes);
 const identityDeps = defaultIdentityDeps();
 app.route("/devices", createDeviceRoutes(identityDeps));
 app.route("/", createIdentityRoutes(identityDeps));
+
+// ===========================================
+// Action grants + mandates (slice NEW-01)
+//
+// User mandate CRUD (`/mandates`) authenticates via the gateway's signed
+// identity context; the internal grant + mandate-run surface (`/internal/*`)
+// authenticates via the service key. Both are mounted at "/" OUTSIDE
+// `protectedApi` so they do not inherit the header-trusting service-auth
+// middleware, exactly like the identity slice.
+// ===========================================
+const aiActionDeps: AiActionDeps = { prisma, now: () => new Date() };
+app.route("/", createMandateRoutes(aiActionDeps));
+app.route("/", createGrantRoutes(aiActionDeps));
 
 // ===========================================
 // Protected Routes (requires service auth or JWT)
