@@ -1,0 +1,206 @@
+openapi: 3.1.0
+info:
+  title: UBI Travel v2 — supplier-adapter flights and stays, carts, orders, servicing, linked rides
+  version: 2.0.0
+  description: >
+    Supersedes One-Ticket flights.yaml/stays.yaml for the launch. Every promise on screen is an adapter capability on the specific offer.
+    Orders are per item; there is no atomic transaction across suppliers. Unknown results reconcile by UBI reference — never re-purchase.
+servers: [{ url: https://api.ubi.africa }]
+security: [{ bearer: [] }]
+paths:
+  /v1/travel/flights/searches:
+    post:
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [from, to, departDate, passengers], properties: { from: { type: string }, to: { type: string }, departDate: { type: string, format: date }, returnDate: { type: string, format: date }, passengers: { type: integer, minimum: 1 }, cabin: { type: string, enum: [economy, business] } } } } } }
+      responses: { '201': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/FlightSearch' } } } }, '404': { description: feature_disabled } }
+  /v1/travel/flights/searches/{searchId}:
+    get: { parameters: [{ name: searchId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: refreshed prices, content: { application/json: { schema: { $ref: '#/components/schemas/FlightSearch' } } } } } }
+  /v1/travel/stays/searches:
+    post:
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [city, checkIn, checkOut, guests], properties: { city: { type: string }, near: { type: string }, checkIn: { type: string, format: date }, checkOut: { type: string, format: date }, guests: { type: integer } } } } } }
+      responses: { '201': { description: ok, content: { application/json: { schema: { type: object, properties: { searchId: { type: string }, properties: { type: array, items: { $ref: '#/components/schemas/Property' } } } } } } } }
+  /v1/travel/stays/{propertyId}/rates:
+    get:
+      parameters: [{ name: propertyId, in: path, required: true, schema: { type: string } }, { name: searchId, in: query, required: true, schema: { type: string } }]
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Rate' } } } } } }
+  /v1/travel/carts:
+    post: { parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { type: object, required: [kind, offerRef], properties: { kind: { type: string, enum: [flight, stay] }, offerRef: { type: string }, fareFamilyId: { type: string }, rateId: { type: string } } } } } } } } }, responses: { '201': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Cart' } } } } } }
+  /v1/travel/carts/{cartId}/passengers:
+    put: { parameters: [{ name: cartId, in: path, required: true, schema: { type: string } }], requestBody: { required: true, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Passenger' } } } } }, responses: { '200': { description: ok } } }
+  /v1/travel/carts/{cartId}/checkout:
+    post:
+      summary: Revalidate every item with its supplier, then create per-item orders
+      parameters: [{ name: cartId, in: path, required: true, schema: { type: string } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [paymentMethodId], properties: { paymentMethodId: { type: string }, grantId: { type: string, description: from Ask review }, assurance: { type: object, properties: { method: { type: string }, proof: { type: string } } }, expectedTotal: { $ref: '#/components/schemas/Money' } } } } } }
+      responses:
+        '202': { description: orders created and executing, content: { application/json: { schema: { type: object, required: [tripId, orders], properties: { tripId: { type: string }, orders: { type: array, items: { $ref: '#/components/schemas/Order' } } } } } } }
+        '409': { description: repriced — cart returned with diff, content: { application/json: { schema: { $ref: '#/components/schemas/Cart' } } } }
+  /v1/travel/orders/{orderId}:
+    get: { parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } } } }
+  /v1/travel/orders/{orderId}/cancel:
+    post: { parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '202': { description: cancellation requested; refund tracked, content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }, '409': { description: not cancellable (policy) } } }
+  /v1/travel/refunds/{refundId}:
+    get: { parameters: [{ name: refundId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } } } }
+  /v1/travel/orders/{orderId}/disruption:
+    get: { parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Disruption' } } } }, '404': { description: no disruption } } }
+  /v1/travel/orders/{orderId}/switch:
+    post: { parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [alternativeId], properties: { alternativeId: { type: string }, grantId: { type: string } } } } } }, responses: { '202': { description: switching, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }, '409': { description: alternative no longer held } } }
+  /v1/travel/trips/{tripId}:
+    get: { parameters: [{ name: tripId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: itinerary, content: { application/json: { schema: { $ref: '#/components/schemas/Trip' } } } } } }
+  /v1/travel/trips/{tripId}/linked:
+    get: { parameters: [{ name: tripId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: linked orders with separate outcomes, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/LinkedItem' } } } } } } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, maxLength: 128 }
+  schemas:
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64, description: minor units (kobo) }
+        currency: { type: string, example: NGN }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    Capabilities:
+      type: object
+      required: [holdSupported, merchantOfRecord, changeSupported, refundSupported, currency]
+      properties:
+        holdSupported: { type: boolean }
+        priceGuaranteeUntil: { type: string, format: date-time, description: only when the adapter guarantees the price; never a seat reservation }
+        merchantOfRecord: { type: string, enum: [ubi, supplier] }
+        changeSupported: { type: boolean }
+        refundSupported: { type: boolean }
+        currency: { type: string }
+        payAtProperty: { type: boolean }
+    FlightSearch:
+      type: object
+      required: [searchId, pricesAsOf, offers]
+      properties: { searchId: { type: string }, pricesAsOf: { type: string, format: date-time }, offers: { type: array, items: { $ref: '#/components/schemas/FlightOffer' } } }
+    FlightOffer:
+      type: object
+      required: [offerRef, carrier, flightNumber, departAt, arriveAt, durationMin, stops, fareFamilies, capabilities]
+      properties:
+        offerRef: { type: string }
+        carrier: { type: string, example: Air Peace }
+        flightNumber: { type: string, example: P4 7120 }
+        aircraft: { type: string }
+        departAt: { type: string, format: date-time, description: local with offset }
+        arriveAt: { type: string, format: date-time }
+        departTerminal: { type: string }
+        arriveTerminal: { type: string }
+        durationMin: { type: integer }
+        stops: { type: integer }
+        soldOut: { type: boolean }
+        fareFamilies: { type: array, items: { $ref: '#/components/schemas/FareFamily' } }
+        capabilities: { $ref: '#/components/schemas/Capabilities' }
+    FareFamily:
+      type: object
+      required: [id, name, price, baggage, changeRule, refundRule]
+      properties:
+        id: { type: string }
+        name: { type: string, example: Saver }
+        price: { $ref: '#/components/schemas/Money' }
+        base: { $ref: '#/components/schemas/Money' }
+        taxes: { $ref: '#/components/schemas/Money' }
+        baggage: { type: string, example: 20 kg checked }
+        changeRule: { type: string, example: change ₦15,000 + fare difference }
+        refundRule: { type: string, example: non-refundable (taxes refundable) }
+        protectionOffered: { type: boolean, description: Journey Protection available for this fare at checkout }
+        seatsLeft: { type: integer }
+    Property:
+      type: object
+      required: [id, name, area, distanceKm, fromPrice]
+      properties: { id: { type: string }, name: { type: string }, area: { type: string }, distanceKm: { type: number }, distanceTo: { type: string }, fromPrice: { $ref: '#/components/schemas/Money' }, photos: { type: array, items: { type: string, format: uri } } }
+    Rate:
+      type: object
+      required: [id, roomName, occupancy, payNow, payAtProperty, cancellation, capabilities]
+      properties:
+        id: { type: string }
+        roomName: { type: string }
+        board: { type: string, example: breakfast included }
+        occupancy: { type: object, properties: { minAdults: { type: integer }, maxAdults: { type: integer }, bookable: { type: boolean }, reason: { type: string } } }
+        payNow: { $ref: '#/components/schemas/Money' }
+        payAtProperty: { $ref: '#/components/schemas/Money' }
+        supplierPrice: { $ref: '#/components/schemas/Money', description: in supplier currency when different }
+        fx: { type: object, properties: { rate: { type: number }, lockedUntil: { type: string, format: date-time } } }
+        taxesNote: { type: string }
+        cancellation: { type: object, required: [freeUntil, penaltyAfter], properties: { freeUntil: { type: string, format: date-time }, penaltyAfter: { type: string } } }
+        capabilities: { $ref: '#/components/schemas/Capabilities' }
+    Passenger:
+      type: object
+      required: [givenNames, surname, dateOfBirth, phone]
+      properties: { givenNames: { type: string }, surname: { type: string }, title: { type: string }, dateOfBirth: { type: string, format: date }, phone: { type: string }, identityRef: { type: string, description: opaque KYC reference; documents are never forwarded }, save: { type: boolean } }
+    Cart:
+      type: object
+      required: [id, items, fees, total, status]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [building, priced, repriced, paying, checked_out, expired] }
+        items: { type: array, items: { type: object, properties: { kind: { type: string }, title: { type: string }, detail: { type: string }, price: { $ref: '#/components/schemas/Money' }, previousPrice: { $ref: '#/components/schemas/Money' }, terms: { type: array, items: { type: string } } } } }
+        fees: { type: array, items: { type: object, properties: { label: { type: string }, amount: { $ref: '#/components/schemas/Money' } } } }
+        adjustments: { type: array, items: { type: object, additionalProperties: true } }
+        total: { $ref: '#/components/schemas/Money' }
+        previousTotal: { $ref: '#/components/schemas/Money' }
+    Order:
+      type: object
+      required: [id, kind, state, ladder, price]
+      properties:
+        id: { type: string, description: canonical UBI id }
+        tripId: { type: string }
+        kind: { type: string, enum: [flight, stay] }
+        state: { type: string, enum: [payment_authorized, submitted, supplier_pending, confirmed, ticketed, failed_released, unknown_reconciling, cancelled, refunded] }
+        ladder: { type: array, items: { type: object, required: [step, state], properties: { step: { type: string, enum: [payment_authorized, submitted, supplier_confirmed, ticketed, prebooked, booked] }, state: { type: string, enum: [done, active, pending, skipped] }, at: { type: string, format: date-time }, detail: { type: string } } } }
+        supplierRefs: { type: object, properties: { pnr: { type: string }, ticketNumbers: { type: array, items: { type: string } }, bookingRef: { type: string }, orderRef: { type: string } } }
+        price: { $ref: '#/components/schemas/Money' }
+        held: { $ref: '#/components/schemas/Money' }
+        charged: { $ref: '#/components/schemas/Money' }
+        released: { $ref: '#/components/schemas/Money' }
+        policy: { type: object, properties: { cancellation: { type: string }, change: { type: string }, freeUntil: { type: string, format: date-time } } }
+        protection: { type: object, properties: { covered: { type: boolean }, ruleId: { type: string } } }
+    Refund:
+      type: object
+      required: [id, orderId, amount, stage]
+      properties: { id: { type: string }, orderId: { type: string }, amount: { $ref: '#/components/schemas/Money' }, stage: { type: string, enum: [requested, supplier_confirmed, supplier_refund_pending, refunded_to_wallet, rejected] }, expectedBy: { type: string, format: date }, penalty: { $ref: '#/components/schemas/Money' }, steps: { type: array, items: { type: object, properties: { label: { type: string }, state: { type: string }, at: { type: string, format: date-time }, detail: { type: string } } } } }
+    Disruption:
+      type: object
+      required: [cause, verifiedAt, eligibility, airlineOptions, alternatives, refund]
+      properties:
+        cause: { type: string, enum: [airline_cancelled, schedule_change, delay_major] }
+        verifiedAt: { type: string, format: date-time }
+        eligibility: { type: object, required: [covered], properties: { covered: { type: boolean }, ruleId: { type: string }, fundedBy: { type: string }, cap: { $ref: '#/components/schemas/Money' }, reason: { type: string } } }
+        airlineOptions: { type: array, items: { $ref: '#/components/schemas/Alternative' }, description: statutory options from the operating carrier, listed first when not covered }
+        alternatives: { type: array, items: { $ref: '#/components/schemas/Alternative' } }
+        refund: { type: object, properties: { amount: { $ref: '#/components/schemas/Money' }, path: { type: string }, etaDays: { type: string } } }
+        linkedRideImpact: { type: string }
+    Alternative:
+      type: object
+      required: [id, carrier, flightNumber, departAt, arriveAt, price, customerPays]
+      properties: { id: { type: string }, carrier: { type: string }, flightNumber: { type: string }, departAt: { type: string, format: date-time }, arriveAt: { type: string, format: date-time }, fareFamily: { type: string }, baggage: { type: string }, seatsLeft: { type: integer }, price: { $ref: '#/components/schemas/Money' }, covered: { $ref: '#/components/schemas/Money' }, customerPays: { $ref: '#/components/schemas/Money' }, heldUntil: { type: string, format: date-time, description: present only when the seat is actually held } }
+    Trip:
+      type: object
+      required: [id, title, timezone, items]
+      properties: { id: { type: string }, title: { type: string }, startDate: { type: string, format: date }, endDate: { type: string, format: date }, timezone: { type: string, example: Africa/Lagos }, items: { type: array, items: { $ref: '#/components/schemas/LinkedItem' } } }
+    LinkedItem:
+      type: object
+      required: [kind, title, status]
+      properties:
+        kind: { type: string, enum: [flight, stay, ride_reservation, return_flight_placeholder] }
+        orderId: { type: string }
+        reservationId: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        status: { type: string, enum: [ticketed, confirmed, supplier_pending, not_reserved, reserved, assigned, completed, cancelled, refunded, not_booked] }
+        charged: { $ref: '#/components/schemas/Money' }
+        policy: { type: string }
+        disruption: { type: string }
+        actions: { type: array, items: { type: object, properties: { key: { type: string }, label: { type: string }, primary: { type: boolean } } } }

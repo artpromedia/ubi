@@ -1,0 +1,126 @@
+openapi: 3.1.0
+info:
+  title: UBI Growth admin + Travel/AI operations
+  version: 1.0.0
+  description: Admin-only. Approvals reuse config-service two-person flow (author ≠ approver). Metrics always carry denominator, window, sample size.
+servers: [{ url: https://api.ubi.africa }]
+security: [{ bearer: [] }]
+paths:
+  /v1/growth/campaigns:
+    get: { responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Campaign' } } } } } } }
+    post: { parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CampaignVersionInput' } } } }, responses: { '201': { description: draft created, content: { application/json: { schema: { $ref: '#/components/schemas/Campaign' } } } } } }
+  /v1/growth/campaigns/{id}/versions/{v}/simulate:
+    post: { parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: v, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Liability' } } } } } }
+  /v1/growth/campaigns/{id}/versions/{v}/submit:
+    post: { parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: v, in: path, required: true, schema: { type: integer } }], responses: { '202': { description: approval requested } } }
+  /v1/growth/campaigns/{id}/actions:
+    post:
+      summary: activate | pause | resume | end | raise_budget — each an approved action
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [action], properties: { action: { type: string, enum: [activate, pause, resume, end, raise_budget] }, approvalId: { type: string }, newBudget: { $ref: '#/components/schemas/Money' }, reason: { type: string } } } } } }
+      responses: { '200': { description: ok }, '403': { description: author cannot approve own / missing approval } }
+  /v1/growth/campaigns/{id}/versions/{v}/outcome:
+    get: { parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: v, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Outcome' } } } } } }
+  /v1/growth/referrals/review-queue:
+    get: { responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ReviewCase' } } } } } } }
+  /v1/growth/referrals/review-queue/{caseId}/decision:
+    post: { parameters: [{ name: caseId, in: path, required: true, schema: { type: string } }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [decision, reasonCode], properties: { decision: { type: string, enum: [qualify, hold, deny] }, reasonCode: { type: string }, holdHours: { type: integer } } } } } }, responses: { '200': { description: recorded with actor } } }
+  /v1/growth/commission-incentives/live:
+    get: { responses: { '200': { description: live rebate spend by campaign, drivers at cap, wording check, cash netting totals } } }
+  /v1/growth/recon/{date}:
+    get: { parameters: [{ name: date, in: path, required: true, schema: { type: string, format: date } }], responses: { '200': { description: promised vs reserved vs consumed vs reversed per campaign version; unexplained must be 0 to close } } }
+  /v1/ai/marketing/threads/{threadId}/messages:
+    post:
+      parameters: [{ name: threadId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } } }
+      responses: { '200': { description: proposal (draft material only), content: { application/json: { schema: { $ref: '#/components/schemas/Proposal' } } } } }
+  /v1/ops/travel/exceptions:
+    get: { responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/TravelException' } } } } } } }
+  /v1/ops/travel/exceptions/{id}/actions:
+    post: { parameters: [{ name: id, in: path, required: true, schema: { type: string } }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [action], properties: { action: { type: string, enum: [lookup_by_our_ref, escalate, accept_difference, dispute_difference, chase_refund] }, note: { type: string } } } } } }, responses: { '200': { description: recorded with actor; never re-books } } }
+  /v1/ops/travel/providers/health:
+    get: { responses: { '200': { description: p95 latencies, success rates, ticketing lag, webhook stats, settlement differences } } }
+  /v1/ops/ai/actions:
+    get: { parameters: [{ name: since, in: query, schema: { type: string, format: date-time } }], responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AiAction' } } } } } } }
+  /v1/ops/ai/metrics:
+    get: { responses: { '200': { description: task success, unsafe actions (must be 0), p95 latency, cost per task, by model/version } } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, maxLength: 128 }
+  schemas:
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64, description: minor units (kobo) }
+        currency: { type: string, example: NGN }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    CampaignVersionInput:
+      type: object
+      required: [name, benefitType, audienceRule, market, window, value, caps, qualificationEvent, stacking, funding, budgetLimit, experiment, copy]
+      properties:
+        name: { type: string }
+        benefitType: { type: string, enum: [fare_discount, fee_waiver, credit, driver_rebate, driver_window, referral] }
+        audienceRule: { type: string, description: rule expression evaluated server-side }
+        market: { type: string }
+        window: { type: object, properties: { start: { type: string, format: date-time }, end: { type: string, format: date-time }, timezone: { type: string } } }
+        value: { type: object, additionalProperties: true }
+        caps: { type: object, properties: { perUser: { type: integer }, minSpend: { $ref: '#/components/schemas/Money' }, perRideCap: { $ref: '#/components/schemas/Money' } } }
+        qualificationEvent: { type: string }
+        stacking: { type: object, properties: { stacksWith: { type: array, items: { type: string } }, priority: { type: integer } } }
+        funding: { type: object, properties: { party: { type: string }, costCentre: { type: string } } }
+        budgetLimit: { $ref: '#/components/schemas/Money' }
+        experiment: { type: object, properties: { id: { type: string }, holdoutPct: { type: number }, assignment: { type: string, enum: [stable_by_user_id] }, measurementDays: { type: integer } } }
+        copy: { type: string }
+    Campaign:
+      type: object
+      required: [id, name, state, versions]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        state: { type: string, enum: [draft, simulated, awaiting_approval, scheduled, active, paused, exhausted, ended] }
+        stateAt: { type: string, format: date-time }
+        stateBy: { type: string }
+        versions: { type: array, items: { type: object, additionalProperties: true } }
+        budget: { type: object, properties: { limit: { $ref: '#/components/schemas/Money' }, reserved: { $ref: '#/components/schemas/Money' }, spent: { $ref: '#/components/schemas/Money' } } }
+        redemptions: { type: integer }
+    Liability:
+      type: object
+      required: [eligibleUsers, expectedRedemptionPct, maxLiability, expectedSpend]
+      properties: { eligibleUsers: { type: integer }, expectedRedemptionPct: { type: number }, redemptionRange: { type: array, items: { type: number } }, maxLiability: { $ref: '#/components/schemas/Money' }, expectedSpend: { $ref: '#/components/schemas/Money' }, exhaustionDayAtHighRedemption: { type: integer }, warnings: { type: array, items: { type: string } }, overlaps: { type: array, items: { type: string } } }
+    Metric:
+      type: object
+      required: [key, value, denominator, window, sampleSize, method]
+      properties: { key: { type: string }, value: { type: number }, unit: { type: string }, denominator: { type: string }, window: { type: string }, sampleSize: { type: integer }, ci95: { type: array, items: { type: number } }, method: { type: string, enum: [holdout_difference, transaction_confirmed, count] }, note: { type: string } }
+    Outcome:
+      type: object
+      required: [metrics, attribution, caveats]
+      properties: { metrics: { type: array, items: { $ref: '#/components/schemas/Metric' } }, attribution: { type: object, properties: { taggedPct: { type: number }, organicPct: { type: number }, unknownPct: { type: number } } }, caveats: { type: array, items: { type: string } } }
+    ReviewCase:
+      type: object
+      required: [id, referral, qualifyingEvent, signals, waitingHours, heldReward]
+      properties: { id: { type: string }, referral: { type: string }, kind: { type: string, enum: [rider, driver_milestone] }, qualifyingEvent: { type: string }, signals: { type: array, items: { type: object, properties: { rule: { type: string }, severity: { type: string, enum: [info, warn, high] }, text: { type: string } } } }, waitingHours: { type: number }, heldReward: { $ref: '#/components/schemas/Money' }, maskedView: { type: object, additionalProperties: true } }
+    Proposal:
+      type: object
+      required: [brief, audienceRule, benefit, copy, channels, experiment, evidence, assumptions, budget]
+      properties: { brief: { type: string }, audienceRule: { type: string }, benefit: { type: object, additionalProperties: true }, copy: { type: array, items: { type: object, properties: { locale: { type: string }, channel: { type: string }, text: { type: string }, needsNativeReview: { type: boolean } } } }, channels: { type: object, properties: { plan: { type: array, items: { type: string } }, frequencyCap: { type: string }, quietHours: { type: string } } }, experiment: { type: string }, evidence: { type: array, items: { type: object, properties: { query: { type: string }, value: { type: string } } } }, assumptions: { type: array, items: { type: string } }, budget: { $ref: '#/components/schemas/Liability' } }
+    TravelException:
+      type: object
+      required: [orderId, kind, state, since, money]
+      properties: { orderId: { type: string }, supplierRefs: { type: object, additionalProperties: true }, traveller: { type: string }, item: { type: string }, kind: { type: string, enum: [pending_ticketing, unknown_result, refund_due, settlement_difference, provider_uncertain] }, state: { type: string }, since: { type: string, format: date-time }, money: { type: object, properties: { held: { $ref: '#/components/schemas/Money' }, owed: { $ref: '#/components/schemas/Money' }, difference: { $ref: '#/components/schemas/Money' } } }, nextAction: { type: string } }
+    AiAction:
+      type: object
+      required: [at, actor, action, outcome]
+      properties: { at: { type: string, format: date-time }, actor: { type: object, properties: { kind: { type: string, enum: [rider, driver, mandate, admin] }, ref: { type: string } } }, threadId: { type: string }, action: { type: string }, tool: { type: string }, model: { type: string }, modelRevision: { type: string }, promptVersion: { type: string }, authRef: { type: string }, authKind: { type: string, enum: [grant, mandate, read_only, none] }, outcome: { type: string, enum: [done, partial, blocked, refused, error] }, reasonCode: { type: string }, providerRefs: { type: array, items: { type: string } }, tokens: { type: integer }, cost: { $ref: '#/components/schemas/Money' } } }

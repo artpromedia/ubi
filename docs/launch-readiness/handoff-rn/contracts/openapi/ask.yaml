@@ -1,0 +1,159 @@
+openapi: 3.1.0
+info:
+  title: UBI Ask — conversational assistant, reviews, executions
+  version: 1.0.0
+  description: >
+    Model-backed assistant with read tools and grant-gated transactional tools. The model never mints grants.
+    Actor, role and ownership come from the gateway identity context; flags ai_assistant / ai_transactions.
+servers: [{ url: https://api.ubi.africa }]
+security: [{ bearer: [] }]
+paths:
+  /v1/ask/threads:
+    post:
+      summary: Open a thread
+      requestBody: { content: { application/json: { schema: { type: object, properties: { source: { type: string, enum: [home, web, deeplink, driver_account] }, context: { type: object, properties: { tripId: { type: string }, orderId: { type: string } } } } } } } }
+      responses: { '201': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Thread' } } } }, '404': { description: feature_disabled } }
+  /v1/ask/threads/{threadId}/messages:
+    post:
+      summary: Send a message; response streams server-sent events
+      parameters: [{ name: threadId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, maxLength: 2000 }, clarifications: { type: object, additionalProperties: true } } } } } }
+      responses:
+        '200':
+          description: text/event-stream of AskEvent
+          content: { text/event-stream: { schema: { $ref: '#/components/schemas/AskEvent' } } }
+        '429': { description: per-user limit }
+  /v1/ask/reviews/{reviewId}:
+    get:
+      summary: Transaction review — exact terms awaiting confirmation
+      parameters: [{ name: reviewId, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Review' } } } }, '410': { description: expired } }
+  /v1/ask/reviews/{reviewId}/confirm:
+    post:
+      summary: Confirm the reviewed terms; server mints a single-use action grant and starts execution
+      parameters: [{ name: reviewId, in: path, required: true, schema: { type: string } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [termsVersion, assurance], properties: { termsVersion: { type: string }, assurance: { type: object, required: [method, proof], properties: { method: { type: string, enum: [pin, biometric, none_read_only] }, proof: { type: string } } } } } } } }
+      responses:
+        '202': { description: executing, content: { application/json: { schema: { type: object, required: [executionId], properties: { executionId: { type: string } } } } } }
+        '409': { description: terms_changed — a new review is returned, content: { application/json: { schema: { $ref: '#/components/schemas/Review' } } } }
+        '410': { description: review expired }
+  /v1/ask/executions/{executionId}:
+    get:
+      parameters: [{ name: executionId, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Execution' } } } } }
+  /v1/ask/threads/{threadId}/handoff:
+    post:
+      summary: Hand the thread to a human support case
+      parameters: [{ name: threadId, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { includeTranscript: { type: boolean, default: true } } } } } }
+      responses: { '201': { description: case opened, content: { application/json: { schema: { type: object, properties: { supportCaseId: { type: string }, estimatedWaitSec: { type: integer } } } } } } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, maxLength: 128 }
+  schemas:
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64, description: minor units (kobo) }
+        currency: { type: string, example: NGN }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    Thread:
+      type: object
+      required: [id, createdAt]
+      properties: { id: { type: string }, createdAt: { type: string, format: date-time } }
+    AskEvent:
+      description: One SSE event. type discriminates.
+      oneOf:
+        - { type: object, required: [type, text], properties: { type: { const: token }, text: { type: string } } }
+        - { type: object, required: [type, card], properties: { type: { const: card }, card: { $ref: '#/components/schemas/Card' } } }
+        - { type: object, required: [type, fields], properties: { type: { const: clarify }, fields: { type: array, items: { $ref: '#/components/schemas/ClarifyField' } } } }
+        - { type: object, required: [type, sources], properties: { type: { const: sources }, sources: { type: array, items: { $ref: '#/components/schemas/Source' } } } }
+        - { type: object, required: [type, reviewId, totals], properties: { type: { const: review_ready }, reviewId: { type: string }, totals: { $ref: '#/components/schemas/Money' } } }
+        - { type: object, required: [type, deepLink, policy], properties: { type: { const: refused }, deepLink: { type: string }, policy: { type: string, example: p2p_out_of_scope } } }
+        - { type: object, required: [type], properties: { type: { const: done } } }
+    Card:
+      type: object
+      required: [id, kind, status, title]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [flight, stay, ride_estimate, ride_quote, policy] }
+        status: { type: string, enum: [suggestion, live, expired] }
+        quotedAt: { type: string, format: date-time }
+        title: { type: string }
+        subtitle: { type: string }
+        price: { $ref: '#/components/schemas/Money' }
+        warnings: { type: array, items: { type: string }, description: e.g. "Price can change until you pay — the airline does not hold seats." }
+        offerRef: { type: string, description: opaque; resolves inside travel tools }
+        editInForm: { type: object, properties: { route: { type: string }, params: { type: object, additionalProperties: true } } }
+    ClarifyField:
+      type: object
+      required: [key, label, kind]
+      properties: { key: { type: string }, label: { type: string }, kind: { type: string, enum: [chips, passenger, date, text] }, options: { type: array, items: { type: string } }, required: { type: boolean } }
+    Source:
+      type: object
+      required: [title, ref]
+      properties: { title: { type: string }, ref: { type: string }, version: { type: string }, updatedAt: { type: string, format: date } }
+    Review:
+      type: object
+      required: [id, status, termsVersion, expiresAt, items, total, paymentMethod]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [awaiting_confirmation, expired, superseded] }
+        termsVersion: { type: string }
+        expiresAt: { type: string, format: date-time }
+        items: { type: array, items: { $ref: '#/components/schemas/ReviewItem' } }
+        adjustments: { type: array, items: { $ref: '#/components/schemas/Adjustment' } }
+        total: { $ref: '#/components/schemas/Money' }
+        paymentMethod: { type: object, properties: { id: { type: string }, label: { type: string } } }
+        assuranceRequired: { type: string, enum: [pin, biometric] }
+        notes: { type: array, items: { type: string } }
+    ReviewItem:
+      type: object
+      required: [kind, title, price, terms]
+      properties:
+        kind: { type: string, enum: [flight, stay, ride_reservation] }
+        title: { type: string }
+        detail: { type: string }
+        price: { $ref: '#/components/schemas/Money' }
+        priceBreakdown: { type: array, items: { type: object, properties: { label: { type: string }, amount: { $ref: '#/components/schemas/Money' } } } }
+        terms: { type: array, items: { type: object, properties: { text: { type: string }, tone: { type: string, enum: [neutral, positive, warning] } } } }
+        offerRef: { type: string }
+    Adjustment:
+      type: object
+      required: [type, label, amount]
+      properties: { type: { type: string, enum: [fare_discount, fee_waiver, credit, referral_reward] }, label: { type: string }, amount: { $ref: '#/components/schemas/Money' }, fundedBy: { type: string }, campaignVersionId: { type: string }, reasonCode: { type: string } }
+    Execution:
+      type: object
+      required: [id, status, items, startedAt]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [processing, confirmed, partly_booked, failed] }
+        startedAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            required: [kind, title, state]
+            properties:
+              kind: { type: string, enum: [payment, flight, stay, ride_reservation] }
+              title: { type: string }
+              state: { type: string, enum: [authorized, submitted, supplier_pending, confirmed, ticketed, failed_released, unknown_reconciling, reserved, reservation_failed] }
+              supplierRef: { type: string }
+              orderId: { type: string }
+              charged: { $ref: '#/components/schemas/Money' }
+              released: { $ref: '#/components/schemas/Money' }
+              detail: { type: string }
+              alternatives: { type: array, items: { $ref: '#/components/schemas/Card' } }
