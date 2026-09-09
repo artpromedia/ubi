@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Screen, Text, Card, Chip, Row, Button, MoneyText, Skeleton, Banner, useTheme } from '@ubi/mobile-ui';
 import { TID, track, formatMinor } from '@ubi/mobile-core';
@@ -10,7 +11,7 @@ import { travelApi } from '../../api/travel';
 export function AttachAirportRideScreen() {
   const t = useTheme();
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { orderId: string; direction: 'to_airport' | 'from_airport' } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'AttachAirportRide'>>();
   const q = useQuery({ queryKey: ['resSuggest', params.orderId, params.direction], queryFn: () => travelApi.reservationSuggestion(params.orderId, params.direction) });
   const [time, setTime] = useState<string | undefined>(); const [cls, setCls] = useState<string | undefined>(); const [failed, setFailed] = useState<string | undefined>();
   const reserve = useMutation({ mutationFn: () => travelApi.reserve(params.orderId, time!, cls!), onSuccess: (r) => { if (r.status === 'reserved') { track('reservation_attached', { orderId: params.orderId, pickupAt: time, classId: cls }); nav.navigate('LinkedOrders', { tripId: params.orderId }); } else { track('reservation_failed', { orderId: params.orderId, reason: r.reason }); setFailed(r.reason ?? 'No reserved drivers accepted this time.'); } } });

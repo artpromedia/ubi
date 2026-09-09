@@ -1,5 +1,6 @@
 import React from 'react';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Text, Card, StatusPill, Ladder, Button, Skeleton, Banner } from '@ubi/mobile-ui';
 import { TID, track } from '@ubi/mobile-core';
@@ -9,7 +10,7 @@ const pill = (s: OrderState) => s === 'ticketed' ? 'ticketed' : s === 'confirmed
 /** Board 21c — the ladder. A PNR is not a ticket; the copy says so. Unknown results reconcile — no "pay again". */
 export function OrderStatusScreen() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { orderId: string } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'OrderStatus'>>();
   const q = useQuery({ queryKey: ['order', params.orderId], queryFn: () => travelApi.order(params.orderId), refetchInterval: (query) => (['submitted', 'supplier_pending', 'unknown_reconciling', 'payment_authorized'].includes(query.state.data?.state ?? '') ? 15_000 : false) });
   const o = q.data;
   React.useEffect(() => { if (o) track('travel_order_status_viewed', { orderId: o.id, state: o.state }); }, [o?.state]);

@@ -1,4 +1,3 @@
-import React from 'react';
 import { formatMinor, accessibleMoney, useCityConfig, type Money } from '@ubi/mobile-core';
 import { Text, type UbiTextProps } from './Text';
 

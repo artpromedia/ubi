@@ -38,7 +38,7 @@ export function openEventStream(path: string, body: unknown, onEvent: (e: SseEve
   let closed = false;
   (async () => {
     try {
-      if (fixtureHandler) { const r = await fixtureHandler({ method: 'SSE', path, body }); const events = (r?.json as SseEvent[]) ?? []; for (const e of events) { if (closed) return; onEvent(e); await new Promise(res => setTimeout(res, 120)); } onDone(); return; }
+      if (fixtureHandler) { const r = await fixtureHandler({ method: 'SSE', path, body }); const events = (r?.json as SseEvent[]) ?? []; for (const e of events) { if (closed) return; onEvent(e); await new Promise<void>(res => { setTimeout(() => res(), 120); }); } onDone(); return; }
       const token = await getAccessToken();
       const res = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'text/event-stream', authorization: token ? 'Bearer ' + token : '' }, body: JSON.stringify(body) });
       const text = await res.text(); // TODO(RN-01): replace with incremental reader

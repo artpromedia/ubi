@@ -12,5 +12,8 @@
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0"
   }
 }

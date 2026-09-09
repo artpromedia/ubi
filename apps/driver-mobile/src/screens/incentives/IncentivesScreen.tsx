@@ -1,13 +1,15 @@
 import React from 'react';
 import { View, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Text, Card, StatusPill, MoneyText, Skeleton, useTheme } from '@ubi/mobile-ui';
 import { TID, track, bpsToPercent, formatMinor } from '@ubi/mobile-core';
+import type { IncentivesStackParamList } from '../../navigation/routes';
 import { incentivesApi, type Rebate, type Window } from '../../api/incentives';
 
 const left = (iso: string) => { const ms = new Date(iso).getTime() - Date.now(); const d = Math.floor(ms / 86_400_000), h = Math.floor((ms % 86_400_000) / 3_600_000); return (d > 0 ? d + 'd ' : '') + h + 'h left'; };
-function RebateCard({ r, onPress }: { r: Rebate; onPress: () => void }) {
+export function RebateCard({ r, onPress }: { r: Rebate; onPress: () => void }) {
   const t = useTheme();
   return (
     <Pressable testID={TID.driver.incentives.rebateCard} accessibilityRole="button" accessibilityLabel={r.title + '. Base ' + bpsToPercent(r.baseBps) + ', minus ' + (r.reductionBps / 100) + ' points, effective ' + bpsToPercent(r.effectiveBps)} onPress={onPress}>
@@ -37,7 +39,7 @@ function WindowCard({ w }: { w: Window }) {
 /** Board 22c — parked view: rebate, window, referral milestones, quest. Server computes everything. */
 export function IncentivesScreen() {
   const t = useTheme();
-  const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void }>();
+  const nav = useNavigation<NativeStackNavigationProp<IncentivesStackParamList, 'Overview'>>();
   const q = useQuery({ queryKey: ['driverIncentives'], queryFn: incentivesApi.overview });
   React.useEffect(() => { if (q.data) track('driver_incentives_viewed', { rebates: q.data.rebates.length, windows: q.data.windows.length }); }, [q.data]);
   const d = q.data;

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, TextInput, Pressable, FlatList, KeyboardAvoidingView, Platform, Linking } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Screen, Text, Button, Banner, useTheme } from '@ubi/mobile-ui';
 import { track, TID } from '@ubi/mobile-core';
+import type { AskStackParamList } from '../../navigation/routes';
 import { askApi, type AskEvent, type Card, type ClarifyField, type Source } from '../../api/ask';
 import { PlanCard } from '../../components/ask/QuoteCard';
 import { ClarifyForm } from '../../components/ask/ClarifyForm';
@@ -16,7 +17,7 @@ type Block = { id: string; kind: 'user' | 'text' | 'card' | 'clarify' | 'sources
 export function AskScreen() {
   const t = useTheme();
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const route = useRoute<{ params?: { threadId?: string; seed?: string } }>();
+  const route = useRoute<RouteProp<AskStackParamList, 'Thread'>>();
   const [threadId, setThreadId] = useState<string | undefined>(route.params?.threadId);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [input, setInput] = useState(route.params?.seed ?? '');
@@ -24,7 +25,7 @@ export function AskScreen() {
   const [review, setReview] = useState<string | undefined>();
   const [handoff, setHandoff] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const stop = useRef<() => void>();
+  const stop = useRef<(() => void) | undefined>(undefined);
   const list = useRef<FlatList<Block>>(null);
 
   useEffect(() => { if (!threadId) askApi.openThread('home').then(r => setThreadId(r.id)).catch(() => setError('Ask UBI is unavailable right now. You can still book with the forms.')); return () => stop.current?.(); }, []);

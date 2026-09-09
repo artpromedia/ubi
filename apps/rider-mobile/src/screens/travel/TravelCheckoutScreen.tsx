@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Text, Card, Row, MoneyText, Button, Banner, Skeleton } from '@ubi/mobile-ui';
 import { ApiError, TID, track, formatMinor } from '@ubi/mobile-core';
@@ -9,7 +10,7 @@ import { travelApi, type Cart } from '../../api/travel';
 /** Board 21b — full price and every term before pay. 409 repriced ⇒ show the diff, never charge. */
 export function TravelCheckoutScreen() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { cartId: string } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'Checkout'>>();
   const q = useQuery({ queryKey: ['cart', params.cartId], queryFn: () => travelApi.cart(params.cartId) });
   const [cart, setCart] = useState<Cart | undefined>(); const [repriced, setRepriced] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | undefined>();
   const c = cart ?? q.data;

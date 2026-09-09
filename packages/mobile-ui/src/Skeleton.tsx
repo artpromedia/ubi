@@ -1,4 +1,3 @@
-import React from 'react';
 import { View } from 'react-native';
 import { useTheme } from './theme';
 export function Skeleton({ height = 16, width = '100%', radius }: { height?: number; width?: number | string; radius?: number }) {

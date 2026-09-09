@@ -1,4 +1,3 @@
-import React from 'react';
 import { Pressable, ActivityIndicator, View, type ViewStyle } from 'react-native';
 import { useTheme } from './theme';
 import { Text } from './Text';

@@ -1,16 +1,18 @@
 import React from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Text, Card, Row, MoneyText, Skeleton, useTheme } from '@ubi/mobile-ui';
 import { TID, track, formatMinor } from '@ubi/mobile-core';
+import type { IncentivesStackParamList } from '../../navigation/routes';
 import { incentivesApi } from '../../api/incentives';
 
 /** Board 22d — the exact wording of a reduction: rule table, worked example from the driver's last trip, pp-vs-% note. */
 export function CommissionDetailScreen() {
   const t = useTheme();
-  const nav = useNavigation<{ goBack: () => void }>();
-  const { params } = useRoute<{ params: { incentiveId: string } }>();
+  const nav = useNavigation<NativeStackNavigationProp<IncentivesStackParamList, 'CommissionDetail'>>();
+  const { params } = useRoute<RouteProp<IncentivesStackParamList, 'CommissionDetail'>>();
   const q = useQuery({ queryKey: ['incentive', params.incentiveId], queryFn: () => incentivesApi.detail(params.incentiveId) });
   const d = q.data;
   React.useEffect(() => { if (d) track('driver_commission_detail_viewed', { kind: d.kind }); }, [d?.id]);

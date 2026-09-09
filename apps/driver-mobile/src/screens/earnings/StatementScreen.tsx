@@ -1,16 +1,18 @@
 import React from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Text, Card, Row, MoneyText, Skeleton, StatusPill } from '@ubi/mobile-ui';
 import { TID, track, formatMinor } from '@ubi/mobile-core';
+import type { EarningsStackParamList } from '../../navigation/routes';
 import { incentivesApi, type StatementLine } from '../../api/incentives';
 
 const toneOf = (l: StatementLine) => l.tone === 'positive' ? 'ok' : l.tone === 'negative' ? 'errorInk' : l.tone === 'warning' ? 'warnInk' : 'text';
 /** Board 22d (statement) — every line is a ledger line; rebate, window waiver and reversal are their own rows; totals come from the server. */
 export function StatementScreen() {
-  const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { periodId: string } }>();
+  const nav = useNavigation<NativeStackNavigationProp<EarningsStackParamList, 'Statement'>>();
+  const { params } = useRoute<RouteProp<EarningsStackParamList, 'Statement'>>();
   const q = useQuery({ queryKey: ['statement', params.periodId], queryFn: () => incentivesApi.statement(params.periodId) });
   const s = q.data;
   React.useEffect(() => { if (s) track('driver_statement_viewed', { periodId: s.periodId, status: s.status }); }, [s?.periodId]);

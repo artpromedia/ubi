@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Screen, Text, Button, Skeleton, useTheme } from '@ubi/mobile-ui';
 import { travelApi } from '../../api/travel';
@@ -10,7 +11,7 @@ import { RateCard } from '../../components/travel/RateCard';
 export function StayRoomsScreen() {
   const t = useTheme();
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { propertyId: string; searchId: string } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'StayRooms'>>();
   const q = useQuery({ queryKey: ['rates', params.propertyId, params.searchId], queryFn: () => travelApi.rates(params.propertyId, params.searchId) });
   const [sel, setSel] = useState<string | undefined>();
   const cart = useMutation({ mutationFn: () => travelApi.createCart([{ kind: 'stay', offerRef: params.propertyId, rateId: sel }]), onSuccess: (c) => nav.navigate('Checkout', { cartId: c.id }) });

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, TextInput } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useMutation } from '@tanstack/react-query';
 import { Screen, Text, Button, Toggle, Card, useTheme } from '@ubi/mobile-ui';
 import { TID } from '@ubi/mobile-core';
@@ -10,7 +11,7 @@ import { travelApi } from '../../api/travel';
 export function PassengerDetailsScreen() {
   const t = useTheme();
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { cartId: string; index: number } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'PassengerDetails'>>();
   const [p, setP] = useState({ givenNames: 'Adaeze Chioma', surname: 'Nwosu', title: 'Ms', dateOfBirth: '1994-03-14', phone: '+234 813 ••• 2291', identityRef: 'kyc_ref', save: true, useVerified: true });
   const [err, setErr] = useState<Record<string, string>>({});
   const save = useMutation({ mutationFn: () => travelApi.putPassengers(params.cartId, [p]), onSuccess: () => nav.navigate('Checkout', { cartId: params.cartId }) });

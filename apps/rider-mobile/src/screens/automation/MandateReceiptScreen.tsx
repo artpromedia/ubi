@@ -1,15 +1,16 @@
 import React from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Text, Card, StatusPill, Row, MoneyText, Button, Skeleton } from '@ubi/mobile-ui';
 import { TID, track, formatMinor } from '@ubi/mobile-core';
+import type { AccountStackParamList } from '../../navigation/routes';
 import { mandatesApi } from '../../api/mandates';
 
 /** Board 20d — receipt for one run (done or blocked, with reason) plus earlier runs. */
 export function MandateReceiptScreen() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { executionId: string } }>();
+  const { params } = useRoute<RouteProp<AccountStackParamList, 'MandateReceipt'>>();
   const q = useQuery({ queryKey: ['mandateExec', params.executionId], queryFn: () => mandatesApi.execution(params.executionId) });
   const hist = useQuery({ queryKey: ['mandateExecs', q.data?.mandateId], queryFn: () => mandatesApi.executions(q.data!.mandateId), enabled: !!q.data });
   React.useEffect(() => { if (q.data) track('mandate_receipt_viewed', { executionId: q.data.id, outcome: q.data.outcome }); }, [q.data?.id]);

@@ -1,5 +1,6 @@
 import React from 'react';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Skeleton } from '@ubi/mobile-ui';
 import { travelApi, type LinkedItem } from '../../api/travel';
@@ -8,7 +9,7 @@ import { ItemCard } from '../../components/travel/ItemCard';
 /** Board 21c — every item with its own status, times (with time zone) and policy. */
 export function ItineraryScreen() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { tripId: string } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'Itinerary'>>();
   const q = useQuery({ queryKey: ['trip', params.tripId], queryFn: () => travelApi.trip(params.tripId) });
   const act = (item: LinkedItem, key: string) => {
     if (key === 'change' || key === 'cancel') nav.navigate('Servicing', { orderId: item.orderId });

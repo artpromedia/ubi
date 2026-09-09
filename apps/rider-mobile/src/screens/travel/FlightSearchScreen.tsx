@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useMutation } from '@tanstack/react-query';
 import { Screen, Text, Card, Chip, Row, Toggle, Button, Banner } from '@ubi/mobile-ui';
 import { TID, track, useFlag } from '@ubi/mobile-core';
@@ -10,7 +10,7 @@ import type { TravelStackParamList } from '../../navigation/routes';
 /** Board 21a — the conventional form Ask UBI also opens (params prefilled). */
 export function FlightSearchScreen() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params?: TravelStackParamList['FlightSearch'] }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'FlightSearch'>>();
   const staysOn = useFlag('stays_booking');
   const [mode, setMode] = useState<'return' | 'one_way'>(params?.returnDate ? 'return' : 'return');
   const [form, setForm] = useState({ from: params?.from ?? 'LOS', to: params?.to ?? 'ABV', departDate: params?.departDate ?? '2026-09-12', returnDate: params?.returnDate ?? '2026-09-14', passengers: params?.passengers ?? 1, cabin: 'economy', withStay: params?.withStay ?? false });

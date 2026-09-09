@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Screen, Text, Card, StatusPill, Button, MoneyText, Skeleton, Banner } from '@ubi/mobile-ui';
 import { TID, track, formatMinor } from '@ubi/mobile-core';
@@ -10,7 +11,7 @@ import { AlternativeCard } from '../../components/travel/AlternativeCard';
 /** Board 21d — one screen, two server-driven variants. Covered: ₦0 alternatives under a funded rule. Not covered: the airline's statutory options first, then paid alternatives. */
 export function DisruptionScreen() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { orderId: string } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'Disruption'>>();
   const q = useQuery({ queryKey: ['disruption', params.orderId], queryFn: () => travelApi.disruption(params.orderId) });
   const [sel, setSel] = useState<string | 'refund' | undefined>();
   const sw = useMutation({ mutationFn: () => travelApi.switchTo(params.orderId, sel as string), onSuccess: (o) => { track('travel_switch_confirmed', { orderId: o.id }); nav.navigate('OrderStatus', { orderId: o.id }); } });

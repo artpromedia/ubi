@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, type BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useTheme, FlagGate } from '@ubi/mobile-ui';
 import type { RootStackParamList, MainTabParamList, IncentivesStackParamList, EarningsStackParamList } from './routes';
 import { HomeScreen } from '../screens/home/HomeScreen';
@@ -14,9 +14,9 @@ const Root = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
 const Inc = createNativeStackNavigator<IncentivesStackParamList>();
 const Earn = createNativeStackNavigator<EarningsStackParamList>();
-function IncentivesNavigator({ navigation }: { navigation: { navigate: (s: 'Main') => void } }) {
+function IncentivesNavigator({ navigation }: BottomTabScreenProps<MainTabParamList, 'Incentives'>) {
   return (
-    <FlagGate flag="driver_commission_rebates" featureName="Incentives" onDismiss={() => navigation.navigate('Main')}>
+    <FlagGate flag="driver_commission_rebates" featureName="Incentives" onDismiss={() => navigation.navigate('Home')}>
       <Inc.Navigator screenOptions={{ headerShown: false }}>
         <Inc.Screen name="Overview" component={IncentivesScreen} />
         <Inc.Screen name="CommissionDetail" component={CommissionDetailScreen} />
@@ -35,7 +35,7 @@ function MainTabs() {
     <Tabs.Navigator screenOptions={{ headerShown: false, tabBarActiveTintColor: t.colors.text, tabBarInactiveTintColor: t.colors.text3, tabBarStyle: { backgroundColor: t.colors.bg2, borderTopColor: t.colors.border, height: 84, paddingTop: 8 }, tabBarLabelStyle: { fontFamily: 'Inter-SemiBold', fontSize: 10.5 } }}>
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="Earnings" component={EarningsNavigator} />
-      <Tabs.Screen name="Incentives" component={IncentivesNavigator as never} />
+      <Tabs.Screen name="Incentives" component={IncentivesNavigator} />
       <Tabs.Screen name="Account" component={PlaceholderScreen} />
     </Tabs.Navigator>
   );

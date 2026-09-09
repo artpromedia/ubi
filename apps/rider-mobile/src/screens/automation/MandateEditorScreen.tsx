@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, TextInput, Alert } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Screen, Text, Chip, Button, Row, Toggle, useTheme } from '@ubi/mobile-ui';
 import { TID, track, useCityConfig, formatMinor } from '@ubi/mobile-core';
+import type { AccountStackParamList } from '../../navigation/routes';
 import { mandatesApi, type MandateInput, type AllowedAction } from '../../api/mandates';
 
 const ACTIONS: { id: AllowedAction; label: string; hint: string }[] = [
@@ -18,7 +19,7 @@ const DEFAULT: MandateInput = { action: 'airport_pickup.reserve', title: 'Airpor
 export function MandateEditorScreen() {
   const t = useTheme(); const qc = useQueryClient();
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params?: { mandateId?: string } }>();
+  const { params } = useRoute<RouteProp<AccountStackParamList, 'MandateEditor'>>();
   const existing = useQuery({ queryKey: ['mandate', params?.mandateId], queryFn: () => mandatesApi.get(params!.mandateId!), enabled: !!params?.mandateId });
   const [m, setM] = useState<MandateInput>(DEFAULT);
   useEffect(() => { if (existing.data) setM(existing.data); }, [existing.data]);

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, FlatList } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Screen, Text, Chip, Button, Skeleton, Banner } from '@ubi/mobile-ui';
 import { TID, track, formatMinor } from '@ubi/mobile-core';
@@ -10,7 +11,7 @@ import { OfferCard } from '../../components/travel/OfferCard';
 /** Board 21a — compare fare families before picking. Sort/filter chips are server-side params in RN-01 (client-side here for fixtures). */
 export function FlightResultsScreen() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { searchId: string } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'FlightResults'>>();
   const q = useQuery({ queryKey: ['flightSearch', params.searchId], queryFn: () => travelApi.refreshFlights(params.searchId), staleTime: 60_000 });
   const [sort, setSort] = useState<'cheapest' | 'earliest' | 'refundable' | 'bag'>('cheapest');
   const [sel, setSel] = useState<{ offerRef: string; familyId: string } | undefined>();

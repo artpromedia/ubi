@@ -1,5 +1,6 @@
 import React from 'react';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Text, Card, Skeleton, Button } from '@ubi/mobile-ui';
 import { travelApi, type LinkedItem } from '../../api/travel';
@@ -8,7 +9,7 @@ import { ItemCard } from '../../components/travel/ItemCard';
 /** Board 21e — linked orders: separate outcomes, separate money, separate policies, one screen. */
 export function LinkedOrdersScreen() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { tripId: string } }>();
+  const { params } = useRoute<RouteProp<TravelStackParamList, 'LinkedOrders'>>();
   const q = useQuery({ queryKey: ['linked', params.tripId], queryFn: () => travelApi.linked(params.tripId) });
   const t = q.data;
   const failedRide = t?.items.find(i => i.kind === 'ride_reservation' && i.status === 'not_reserved');

@@ -1,4 +1,4 @@
-import { apiClient } from '@ubi/api-client';
+import { apiClient } from './api-client';
 export type Money = { amountMinor: number; currency: string };
 export const fmt = (m?: Money) => (m ? '₦' + Math.round(m.amountMinor / 100).toLocaleString('en-NG') : '—');
 export type CampaignState = 'draft' | 'simulated' | 'awaiting_approval' | 'scheduled' | 'active' | 'paused' | 'exhausted' | 'ended';

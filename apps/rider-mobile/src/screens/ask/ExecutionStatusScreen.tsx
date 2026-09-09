@@ -1,9 +1,10 @@
 import React from 'react';
 import { View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import { Screen, Text, Card, StatusPill, MoneyText, Button, Skeleton, Banner, useTheme } from '@ubi/mobile-ui';
 import { track, TID } from '@ubi/mobile-core';
+import type { AskStackParamList } from '../../navigation/routes';
 import { askApi, type ExecutionItem } from '../../api/ask';
 import { PlanCard } from '../../components/ask/QuoteCard';
 
@@ -12,7 +13,7 @@ const pillFor = (s: ExecutionItem['state']) => s === 'confirmed' || s === 'autho
 export function ExecutionStatusScreen() {
   const t = useTheme();
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
-  const { params } = useRoute<{ params: { executionId: string } }>();
+  const { params } = useRoute<RouteProp<AskStackParamList, 'Execution'>>();
   const q = useQuery({ queryKey: ['execution', params.executionId], queryFn: () => askApi.getExecution(params.executionId), refetchInterval: (query) => (query.state.data?.status === 'processing' ? 15_000 : false) });
   const e = q.data;
   React.useEffect(() => { if (e) track('ask_execution_viewed', { executionId: e.id, outcome: e.status }); }, [e?.status]);
