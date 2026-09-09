@@ -1,0 +1,94 @@
+openapi: 3.1.0
+info:
+  title: UBI Promotions — adjustments, benefits, referrals, attribution
+  version: 1.0.0
+  description: Rider-facing read endpoints plus the adjustments[] shape embedded in quotes and checkouts. Flags rider_promotions, referrals.
+servers: [{ url: https://api.ubi.africa }]
+security: [{ bearer: [] }]
+paths:
+  /v1/benefits:
+    get: { responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Benefits' } } } } } }
+  /v1/benefits/changes/{changeId}:
+    get: { parameters: [{ name: changeId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: change with terms reference, content: { application/json: { schema: { $ref: '#/components/schemas/BenefitChange' } } } } } }
+  /v1/referrals:
+    get: { responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/ReferralProgram' } } } } } }
+  /v1/referrals/share:
+    post: { responses: { '200': { description: ok, content: { application/json: { schema: { type: object, properties: { code: { type: string }, url: { type: string, format: uri } } } } } } } }
+  /v1/attribution/claim:
+    post:
+      summary: Claim a referral code / campaign token on first app open (deferred deep link) or from web handoff
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { code: { type: string }, token: { type: string }, campaign: { type: string }, source: { type: string, enum: [deferred_link, web_handoff, manual] } } } } } }
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: object, properties: { attributed: { type: boolean }, kind: { type: string, enum: [referral, campaign, unknown, organic] } } } } } } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, maxLength: 128 }
+  schemas:
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64, description: minor units (kobo) }
+        currency: { type: string, example: NGN }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    Adjustment:
+      type: object
+      required: [type, label, amount]
+      properties:
+        type: { type: string, enum: [fare_discount, fee_waiver, credit, referral_reward] }
+        label: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
+        fundedBy: { type: string, enum: [ubi_marketing, ubi_fee, earned_credit] }
+        campaignVersionId: { type: string }
+        capNote: { type: string, example: max ₦500/ride }
+        reasonCode: { type: string, description: when not applied — min_spend_not_met, budget_exhausted, expired, scope, cap_reached }
+    Benefits:
+      type: object
+      required: [credits, offers, changes]
+      properties:
+        credits: { type: array, items: { type: object, required: [amount, expiresAt, perRideCap, scope], properties: { amount: { $ref: '#/components/schemas/Money' }, expiresAt: { type: string, format: date }, perRideCap: { $ref: '#/components/schemas/Money' }, scope: { type: string, enum: [rides, airport_rides] }, restrictions: { type: array, items: { type: string } } } } }
+        offers: { type: array, items: { $ref: '#/components/schemas/Offer' } }
+        changes: { type: array, items: { $ref: '#/components/schemas/BenefitChange' } }
+    Offer:
+      type: object
+      required: [id, type, title, status, rules]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [fare_discount, fee_waiver, credit] }
+        title: { type: string }
+        status: { type: string, enum: [active, scheduled, used_up, expired, ineligible] }
+        statusAt: { type: string, format: date-time, description: exhaustion or expiry timestamp }
+        rules: { type: object, properties: { market: { type: string }, validFrom: { type: string, format: date-time }, validUntil: { type: string, format: date-time }, minSpend: { $ref: '#/components/schemas/Money' }, maxUses: { type: integer }, perRideCap: { $ref: '#/components/schemas/Money' }, stacking: { type: string }, fundedBy: { type: string }, scope: { type: string } } }
+        campaignVersionId: { type: string }
+    BenefitChange:
+      type: object
+      required: [id, kind, amount, at]
+      properties: { id: { type: string }, kind: { type: string, enum: [earned, reversed, expired] }, amount: { $ref: '#/components/schemas/Money' }, at: { type: string, format: date-time }, title: { type: string }, explanation: { type: string }, reasonCode: { type: string }, termsRef: { type: object, properties: { title: { type: string }, section: { type: string }, url: { type: string } } }, disputable: { type: boolean } }
+    ReferralProgram:
+      type: object
+      required: [code, url, reward, refereeBenefit, monthlyCap, referrals]
+      properties:
+        code: { type: string }
+        url: { type: string }
+        reward: { $ref: '#/components/schemas/Money' }
+        refereeBenefit: { $ref: '#/components/schemas/Money' }
+        qualifyingEvent: { type: string, example: first completed and paid ride within 30 days }
+        monthlyCap: { type: integer }
+        earnedTotal: { $ref: '#/components/schemas/Money' }
+        referrals: { type: array, items: { $ref: '#/components/schemas/Referral' } }
+    Referral:
+      type: object
+      required: [id, displayName, stage]
+      properties: { id: { type: string }, displayName: { type: string }, initials: { type: string }, stage: { type: string, enum: [invited, installed, qualifying, in_review, rewarded, reversed, expired] }, detail: { type: string }, deadline: { type: string, format: date }, reviewNote: { type: string } }

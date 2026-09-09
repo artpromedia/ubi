@@ -1,0 +1,51 @@
+{
+  "name": "@ubi/driver-mobile",
+  "version": "0.0.1",
+  "private": true,
+  "_note": "UNVERIFIED BUILD. Same stack as rider-mobile plus background location. Pin versions in RN-02; keep the Flutter driver app's identifiers and signing.",
+  "scripts": {
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "e2e": "maestro test .maestro"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-native": "^0.79.0",
+    "@react-navigation/native": "^7.0.0",
+    "@react-navigation/native-stack": "^7.0.0",
+    "@react-navigation/bottom-tabs": "^7.0.0",
+    "react-native-screens": "^4.0.0",
+    "react-native-safe-area-context": "^4.14.0",
+    "react-native-gesture-handler": "^2.20.0",
+    "react-native-reanimated": "^3.16.0",
+    "react-native-maps": "^1.20.0",
+    "react-native-background-geolocation": "^4.17.0",
+    "react-native-keychain": "^9.0.0",
+    "react-native-mmkv": "^3.0.0",
+    "@react-native-community/netinfo": "^11.0.0",
+    "react-native-permissions": "^5.0.0",
+    "@react-native-firebase/app": "^21.0.0",
+    "@react-native-firebase/messaging": "^21.0.0",
+    "@notifee/react-native": "^9.0.0",
+    "@shopify/flash-list": "^1.7.0",
+    "@tanstack/react-query": "^5.62.7",
+    "zustand": "^5.0.2",
+    "zod": "^3.24.1",
+    "@ubi/contracts": "workspace:*",
+    "@ubi/mobile-tokens": "workspace:*",
+    "@ubi/mobile-ui": "workspace:*",
+    "@ubi/mobile-core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "jest": "^29.7.0",
+    "@testing-library/react-native": "^12.8.0",
+    "@types/react": "^19.0.1",
+    "@react-native/babel-preset": "^0.79.0",
+    "@react-native/metro-config": "^0.79.0",
+    "@react-native/typescript-config": "^0.79.0"
+  }
+}

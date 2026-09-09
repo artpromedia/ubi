@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: UBI Mandates — user-controlled standing authorisations (ride/travel only)
+  version: 1.0.0
+  description: >
+    A mandate authorises only the listed action with the listed limits. Each run revalidates the mandate,
+    reserves allowance atomically and mints a transaction-specific grant. Revoke stops future runs; it never unwinds an accepted supplier booking.
+    Flag ai_mandates (depends on ai_transactions). P2P transfers, account administration and campaign actions are not mandate-able.
+servers: [{ url: https://api.ubi.africa }]
+security: [{ bearer: [] }]
+paths:
+  /v1/mandates:
+    get: { summary: List my mandates, responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Mandate' } } } } } } }
+    post:
+      summary: Create (requires assurance)
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MandateInput' } } } }
+      responses: { '201': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Mandate' } } } }, '422': { description: action not allowed } }
+  /v1/mandates/{id}:
+    patch:
+      summary: Edit limits, pause, resume or revoke (assurance required for edit/revoke)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { op: { type: string, enum: [edit, pause, resume, revoke] }, changes: { $ref: '#/components/schemas/MandateInput' }, assurance: { type: object, properties: { method: { type: string }, proof: { type: string } } } } } } } }
+      responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Mandate' } } } } }
+  /v1/mandates/{id}/executions:
+    get:
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: ok, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/MandateExecution' } } } } } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, maxLength: 128 }
+  schemas:
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64, description: minor units (kobo) }
+        currency: { type: string, example: NGN }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    AllowedAction:
+      type: string
+      enum: [airport_pickup.reserve, flight.rebook_on_cancel, scheduled_ride.book]
+    MandateInput:
+      type: object
+      required: [action, title, passengers, categories, perRunCap, periodCap, expiresAt, constraints]
+      properties:
+        action: { $ref: '#/components/schemas/AllowedAction' }
+        title: { type: string }
+        passengers: { type: string, enum: [self_only, saved_passengers] }
+        categories: { type: array, items: { type: string }, description: ride classes or fare families }
+        providers: { type: array, items: { type: string } }
+        perRunCap: { $ref: '#/components/schemas/Money' }
+        periodCap: { type: object, required: [amount, runs, period], properties: { amount: { $ref: '#/components/schemas/Money' }, runs: { type: integer }, period: { type: string, enum: [month] } } }
+        maxPriceVariance: { $ref: '#/components/schemas/Money' }
+        expiresAt: { type: string, format: date-time, description: ≤ 12 months }
+        constraints: { type: array, items: { type: object, required: [key, mode], properties: { key: { type: string, example: lands_after_23_00 }, mode: { type: string, enum: [always_ask, ask, allow] } } } }
+    Mandate:
+      allOf:
+        - { $ref: '#/components/schemas/MandateInput' }
+        - type: object
+          required: [id, status, usage]
+          properties:
+            id: { type: string }
+            status: { type: string, enum: [active, paused, revoked, expired] }
+            usage: { type: object, properties: { amountUsed: { $ref: '#/components/schemas/Money' }, runsUsed: { type: integer }, periodStart: { type: string, format: date } } }
+            lastRunAt: { type: string, format: date-time }
+    MandateExecution:
+      type: object
+      required: [id, mandateId, at, outcome]
+      properties:
+        id: { type: string }
+        mandateId: { type: string }
+        at: { type: string, format: date-time }
+        outcome: { type: string, enum: [executed, blocked] }
+        reasonCode: { type: string, description: when blocked — e.g. price_above_cap, constraint_ask, allowance_exhausted, mandate_paused }
+        grantId: { type: string }
+        receiptRef: { type: string, example: AUT-3K9F2 }
+        resultRef: { type: string, description: reservation/order id }
+        amount: { $ref: '#/components/schemas/Money' }
+        summary: { type: string }

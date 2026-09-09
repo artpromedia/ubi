@@ -1,0 +1,22 @@
+{
+  "name": "@ubi/mobile-core",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@ubi/contracts": "workspace:*",
+    "@tanstack/react-query": "^5.62.7",
+    "zod": "^3.24.1",
+    "react-native-keychain": "^9.0.0",
+    "react-native-mmkv": "^3.0.0",
+    "@react-native-community/netinfo": "^11.0.0"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0"
+  }
+}

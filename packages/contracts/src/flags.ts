@@ -22,6 +22,17 @@ export const FLAG_KEYS = [
   "driver_online",
   "ride_request",
   "provider_payments",
+  // RN-migration handoff verticals (AI / travel / growth). Deny-by-default is
+  // automatic: an absent key is off, so a half-built vertical stays dark.
+  "ai_assistant",
+  "ai_transactions",
+  "ai_mandates",
+  "flights_booking",
+  "stays_booking",
+  "rider_promotions",
+  "driver_commission_rebates",
+  "referrals",
+  "ai_marketing",
 ] as const;
 
 export type FlagKey = (typeof FLAG_KEYS)[number];

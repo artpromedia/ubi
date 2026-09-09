@@ -26,6 +26,28 @@ describe("feature flags", () => {
   it("does not accept a non-boolean as enabled", () => {
     expect(isEnabled({ bites: undefined }, "bites")).toBe(false);
   });
+
+  it("denies the RN-migration handoff verticals by default", () => {
+    // A half-built AI/travel/growth vertical must stay dark until switched on
+    // per city (handoff CLAUDE.md #18-29).
+    const newFlags = [
+      "ai_assistant",
+      "ai_transactions",
+      "ai_mandates",
+      "flights_booking",
+      "stays_booking",
+      "rider_promotions",
+      "driver_commission_rebates",
+      "referrals",
+      "ai_marketing",
+    ] as const;
+    for (const key of newFlags) {
+      expect(FLAG_KEYS).toContain(key);
+      expect(isEnabled(undefined, key)).toBe(false);
+      expect(isEnabled({}, key)).toBe(false);
+      expect(isEnabled(DENY_ALL, key)).toBe(false);
+    }
+  });
 });
 
 describe("error codes", () => {
@@ -100,6 +122,31 @@ describe("testIDs", () => {
       "driver.fleet.signPin",
       "desk.scan.qr",
       "ops.case.remedy",
+      // RN-migration handoff additions (ANALYTICS_TESTIDS.md).
+      "rider.home.askUbi",
+      "rider.quote.savings",
+      "ask.plan.card",
+      "ask.review.confirmPin",
+      "mandates.edit.savePin",
+      "mandates.receipt.card",
+      "flights.search.form",
+      "flights.results.offer",
+      "flights.passenger.givenName",
+      "stays.rooms.rate",
+      "travel.checkout.payPin",
+      "travel.disruption.eligibility",
+      "reservations.airport.confirm",
+      "benefits.credit.card",
+      "referrals.share.link",
+      "driver.home.incentiveStrip",
+      "driver.incentives.rebateCard",
+      "driver.commission.detail",
+      "growth.campaign.liability",
+      "growth.assistant.saveDraft",
+      "ops.travel.health",
+      "ops.ai.actions",
+      "web.ask.panel",
+      "web.handoff.fallback",
     ]) {
       expect(ids.has(required), `missing testID ${required}`).toBe(true);
     }

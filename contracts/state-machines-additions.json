@@ -1,0 +1,199 @@
+{
+  "$note": "Merge into contracts/state-machines.json; generator keeps target-only states as terminal.",
+  "askReview": {
+    "initial": "awaiting_confirmation",
+    "transitions": {
+      "awaiting_confirmation": {
+        "confirm": "executing",
+        "expire": "expired",
+        "terms_changed": "superseded",
+        "dismiss": "cancelled"
+      }
+    }
+  },
+  "askExecution": {
+    "initial": "processing",
+    "transitions": {
+      "processing": {
+        "all_confirmed": "confirmed",
+        "some_failed": "partly_booked",
+        "all_failed": "failed"
+      }
+    }
+  },
+  "travelOrder": {
+    "initial": "payment_authorized",
+    "transitions": {
+      "payment_authorized": {
+        "submit": "submitted"
+      },
+      "submitted": {
+        "supplier_ack": "supplier_pending",
+        "supplier_confirm": "confirmed",
+        "supplier_reject": "failed_released",
+        "timeout": "unknown_reconciling"
+      },
+      "supplier_pending": {
+        "supplier_confirm": "confirmed",
+        "supplier_reject": "failed_released",
+        "timeout": "unknown_reconciling"
+      },
+      "unknown_reconciling": {
+        "lookup_confirmed": "confirmed",
+        "lookup_not_found": "failed_released"
+      },
+      "confirmed": {
+        "documents_issued": "ticketed",
+        "cancel": "cancelled",
+        "supplier_cancelled": "disrupted"
+      },
+      "ticketed": {
+        "cancel": "cancelled",
+        "supplier_cancelled": "disrupted",
+        "complete": "completed"
+      },
+      "disrupted": {
+        "switch": "ticketed",
+        "refund": "refunded",
+        "keep": "ticketed"
+      },
+      "cancelled": {
+        "refund_settled": "refunded"
+      }
+    }
+  },
+  "travelRefund": {
+    "initial": "requested",
+    "transitions": {
+      "requested": {
+        "supplier_confirm": "supplier_confirmed",
+        "reject": "rejected"
+      },
+      "supplier_confirmed": {
+        "supplier_paid": "supplier_refund_pending"
+      },
+      "supplier_refund_pending": {
+        "landed": "refunded_to_wallet"
+      }
+    }
+  },
+  "rideReservation": {
+    "initial": "requested",
+    "transitions": {
+      "requested": {
+        "driver_commit": "reserved",
+        "no_commit": "reservation_failed"
+      },
+      "reserved": {
+        "assign": "assigned",
+        "retime": "reserved",
+        "cancel": "cancelled"
+      },
+      "assigned": {
+        "complete": "completed",
+        "cancel": "cancelled",
+        "no_show": "no_show"
+      }
+    }
+  },
+  "mandate": {
+    "initial": "active",
+    "transitions": {
+      "active": {
+        "pause": "paused",
+        "revoke": "revoked",
+        "expire": "expired"
+      },
+      "paused": {
+        "resume": "active",
+        "revoke": "revoked",
+        "expire": "expired"
+      }
+    }
+  },
+  "mandateRun": {
+    "initial": "evaluated",
+    "transitions": {
+      "evaluated": {
+        "allow": "executed",
+        "block": "blocked"
+      }
+    }
+  },
+  "campaign": {
+    "initial": "draft",
+    "transitions": {
+      "draft": {
+        "simulate": "simulated",
+        "submit": "awaiting_approval"
+      },
+      "simulated": {
+        "submit": "awaiting_approval",
+        "edit": "draft"
+      },
+      "awaiting_approval": {
+        "approve": "scheduled",
+        "reject": "draft"
+      },
+      "scheduled": {
+        "activate": "active",
+        "end": "ended"
+      },
+      "active": {
+        "pause": "paused",
+        "budget_exhausted": "exhausted",
+        "end": "ended"
+      },
+      "paused": {
+        "resume": "active",
+        "end": "ended"
+      },
+      "exhausted": {
+        "raise_budget": "active",
+        "end": "ended"
+      }
+    }
+  },
+  "referral": {
+    "initial": "invited",
+    "transitions": {
+      "invited": {
+        "install": "installed",
+        "expire": "expired"
+      },
+      "installed": {
+        "first_ride": "qualifying",
+        "expire": "expired"
+      },
+      "qualifying": {
+        "paid_verified": "rewarded",
+        "review": "in_review",
+        "expire": "expired"
+      },
+      "in_review": {
+        "qualify": "rewarded",
+        "deny": "expired",
+        "hold": "in_review"
+      },
+      "rewarded": {
+        "refund_within_window": "reversed"
+      },
+      "reversed": {
+        "requalify": "rewarded"
+      }
+    }
+  },
+  "promotionReservation": {
+    "initial": "reserved",
+    "transitions": {
+      "reserved": {
+        "qualify": "consumed",
+        "expire": "released",
+        "cancel": "released"
+      },
+      "consumed": {
+        "reverse": "reversed"
+      }
+    }
+  }
+}

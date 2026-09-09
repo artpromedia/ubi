@@ -1,0 +1,80 @@
+openapi: 3.1.0
+info:
+  title: UBI Driver Incentives — commission rebates, windows, milestones, statements
+  version: 1.0.0
+  description: Driver-facing. All amounts are ledger-derived. Flag driver_commission_rebates.
+servers: [{ url: https://api.ubi.africa }]
+security: [{ bearer: [] }]
+paths:
+  /v1/driver/incentives:
+    get: { responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/IncentivesOverview' } } } } } }
+  /v1/driver/incentives/{id}:
+    get: { parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/RebateDetail' } } } } } }
+  /v1/driver/statements/{periodId}:
+    get: { parameters: [{ name: periodId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: ok, content: { application/json: { schema: { $ref: '#/components/schemas/Statement' } } } } } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, maxLength: 128 }
+  schemas:
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64, description: minor units (kobo) }
+        currency: { type: string, example: NGN }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    Rebate:
+      type: object
+      required: [id, title, baseBps, reductionBps, kind, effectiveBps, endsAt, eligible, fundedBy, example]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        baseBps: { type: integer, example: 2000 }
+        reductionBps: { type: integer, example: 500 }
+        kind: { type: string, enum: [percentage_points, percent_of_commission] }
+        effectiveBps: { type: integer, example: 1500 }
+        endsAt: { type: string, format: date-time }
+        eligible: { type: object, properties: { used: { type: integer }, cap: { type: integer }, rebatedSoFar: { $ref: '#/components/schemas/Money' } } }
+        fundedBy: { type: string }
+        example: { type: object, properties: { tripRef: { type: string }, fare: { $ref: '#/components/schemas/Money' }, commissionBefore: { $ref: '#/components/schemas/Money' }, commissionAfter: { $ref: '#/components/schemas/Money' }, rebate: { $ref: '#/components/schemas/Money' }, ifPercentOfCommission: { $ref: '#/components/schemas/Money' } } }
+    Window:
+      type: object
+      required: [id, title, startsAt, endsAt, zones, tripCap, moneyCap, used]
+      properties: { id: { type: string }, title: { type: string }, startsAt: { type: string, format: date-time }, endsAt: { type: string, format: date-time }, zones: { type: array, items: { type: string } }, tripCap: { type: integer }, moneyCap: { $ref: '#/components/schemas/Money' }, used: { type: object, properties: { trips: { type: integer }, saved: { $ref: '#/components/schemas/Money' } } }, live: { type: boolean }, rule: { type: string, example: trips started in the window } }
+    IncentivesOverview:
+      type: object
+      properties:
+        strip: { type: object, description: null when nothing live, properties: { headline: { type: string }, detail: { type: string }, badge: { type: string } } }
+        rebates: { type: array, items: { $ref: '#/components/schemas/Rebate' } }
+        windows: { type: array, items: { $ref: '#/components/schemas/Window' } }
+        referral: { type: object, properties: { code: { type: string }, reward: { $ref: '#/components/schemas/Money' }, referees: { type: array, items: { type: object, properties: { name: { type: string }, milestones: { type: array, items: { type: object, properties: { label: { type: string }, done: { type: boolean }, paid: { $ref: '#/components/schemas/Money' }, progress: { type: integer }, target: { type: integer }, deadline: { type: string, format: date } } } } } } } } }
+        quests: { type: array, items: { type: object, properties: { title: { type: string }, progress: { type: integer }, target: { type: integer }, bonus: { $ref: '#/components/schemas/Money' }, paysOn: { type: string } } } }
+    RebateDetail:
+      allOf:
+        - { $ref: '#/components/schemas/Rebate' }
+        - type: object
+          properties:
+            rules: { type: array, items: { type: object, required: [label, value], properties: { label: { type: string }, value: { type: string } } } }
+            note: { type: object, properties: { title: { type: string }, body: { type: string } } }
+    Statement:
+      type: object
+      required: [periodId, status, lines, trips, payout]
+      properties:
+        periodId: { type: string }
+        status: { type: string, enum: [draft, finalised, paid] }
+        paysAt: { type: string, format: date-time }
+        lines: { type: array, items: { type: object, required: [ledgerLineId, kind, label, amount], properties: { ledgerLineId: { type: string }, kind: { type: string, enum: [fares, tips_tolls, commission, rebate, window_waiver, rebate_reversal, cash_collected, remittance, quest_bonus, payout] }, label: { type: string }, amount: { $ref: '#/components/schemas/Money' }, tone: { type: string, enum: [neutral, positive, negative, warning] } } } }
+        trips: { type: array, items: { type: object, properties: { tripId: { type: string }, title: { type: string }, fare: { $ref: '#/components/schemas/Money' }, paymentMethod: { type: string }, commission: { $ref: '#/components/schemas/Money' }, rebate: { $ref: '#/components/schemas/Money' }, windowWaiver: { type: boolean }, owedToUbi: { $ref: '#/components/schemas/Money' }, reversal: { type: object, properties: { amount: { $ref: '#/components/schemas/Money' }, reason: { type: string } } } } } }
+        payout: { $ref: '#/components/schemas/Money' }
