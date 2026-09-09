@@ -378,76 +378,60 @@ jobs:
   # ===========================================
   # MOBILE (FLUTTER)
   # ===========================================
-  mobile:
-    name: Flutter Analyze & Test
+  rn-mobile:
+    name: RN Mobile (typecheck + jest)
     needs: setup
     runs-on: ubuntu-latest
-    # The audit found CI does not build or test either Flutter app, so nothing
-    # in mobile/ has ever been gated. This job analyses and tests both apps and
-    # the shared Dart packages.
+    # Owner instruction (docs/launch-readiness/handoff-rn/CLAUDE.md rule 13): the
+    # delivery targets are the React Native apps apps/rider-mobile and
+    # apps/driver-mobile. This job is the JS/TS gate that CAN run on ubuntu:
+    # tsc for both apps and the shared mobile packages, and jest for both apps
+    # (native modules are mocked). It is REAL and fails on error — no
+    # continue-on-error. The native iOS/Android build + device E2E gate lives in
+    # rn-native.yml and requires macOS/Android runners (see FLUTTER_TO_RN_CUTOVER).
     #
-    # continue-on-error is set ONLY for the initial adoption: mobile/ has known
-    # analysis failures today (rider_app dependency injection, repository and
-    # use-case signature mismatches). Remove it — and add `mobile` to
-    # ci-success below — as soon as the baseline is clean, otherwise this job
-    # reports green while proving nothing.
-    continue-on-error: true
+    # Flutter under mobile/ is a FROZEN behavioural reference until RN acceptance
+    # and is no longer analysed here.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          channel: stable
-          cache: true
+          version: ${{ env.PNPM_VERSION }}
 
-      - name: Report toolchain
-        run: flutter --version
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
 
-      - name: Resolve dependencies
-        working-directory: mobile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build contracts (RN apps depend on @ubi/contracts dist)
+        run: pnpm --filter @ubi/contracts build
+
+      - name: Typecheck shared mobile packages
         run: |
-          for pkg in packages/* apps/*; do
-            if [ -f "$pkg/pubspec.yaml" ]; then
-              echo "::group::pub get $pkg"
-              (cd "$pkg" && flutter pub get)
-              echo "::endgroup::"
-            fi
-          done
+          pnpm --filter @ubi/mobile-tokens exec tsc --noEmit
+          pnpm --filter @ubi/mobile-ui exec tsc --noEmit
+          pnpm --filter @ubi/mobile-core exec tsc --noEmit
 
-      - name: Analyze
-        working-directory: mobile
+      - name: Typecheck RN apps
         run: |
-          status=0
-          for pkg in packages/* apps/*; do
-            if [ -f "$pkg/pubspec.yaml" ]; then
-              echo "::group::analyze $pkg"
-              (cd "$pkg" && flutter analyze) || status=1
-              echo "::endgroup::"
-            fi
-          done
-          exit $status
+          pnpm --filter @ubi/rider-mobile exec tsc --noEmit
+          pnpm --filter @ubi/driver-mobile exec tsc --noEmit
 
-      - name: Test
-        working-directory: mobile
+      - name: Jest (rider + driver)
         run: |
-          status=0
-          for pkg in packages/* apps/*; do
-            if [ -d "$pkg/test" ]; then
-              echo "::group::test $pkg"
-              (cd "$pkg" && flutter test) || status=1
-              echo "::endgroup::"
-            fi
-          done
-          exit $status
+          pnpm --filter @ubi/rider-mobile exec jest
+          pnpm --filter @ubi/driver-mobile exec jest
 
-  # ===========================================
-  # FINAL STATUS CHECK
-  # ===========================================
   ci-success:
     name: CI Success
-    needs: [build, test, go-build, db-check, contracts]
+    needs: [build, test, go-build, db-check, contracts, rn-mobile]
     runs-on: ubuntu-latest
     if: always()
     steps:

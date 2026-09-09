@@ -1,3 +1,11 @@
+> **FROZEN — behavioural reference only (2026-09).**
+> The delivery targets for UBI mobile are the React Native apps `apps/rider-mobile`
+> and `apps/driver-mobile` (owner instruction; docs/launch-readiness/handoff-rn/CLAUDE.md
+> rule 13). This Flutter source is kept ONLY as a behavioural reference for porting the
+> retained journeys, and is removed after RN acceptance per
+> docs/launch-readiness/handoff-rn/FLUTTER_TO_RN_CUTOVER.md. Do not add new Flutter
+> features here. CI no longer analyses this tree; the RN gate is ci.yml's `rn-mobile` job.
+
 # UBI Mobile Flutter Monorepo
 
 A Flutter monorepo containing the UBI rider and driver mobile applications, along with shared packages.
