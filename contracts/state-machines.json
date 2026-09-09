@@ -217,5 +217,97 @@
       "resolved": ["reopened", "closed"],
       "reopened": ["investigating"]
     }
+  },
+  "askReview": {
+    "initial": "awaiting_confirmation",
+    "transitions": {
+      "awaiting_confirmation": ["executing", "expired", "superseded", "cancelled"]
+    },
+    "rule": "material change ⇒ grant invalid ⇒ superseded; the model cannot mint or extend a grant (CLAUDE.md #18)"
+  },
+  "askExecution": {
+    "initial": "processing",
+    "transitions": {
+      "processing": ["confirmed", "partly_booked", "failed"]
+    },
+    "rule": "items are separate orders; a partial outcome is partly_booked, never coerced to confirmed (CLAUDE.md #25)"
+  },
+  "travelOrder": {
+    "initial": "payment_authorized",
+    "transitions": {
+      "payment_authorized": ["submitted"],
+      "submitted": ["supplier_pending", "confirmed", "failed_released", "unknown_reconciling"],
+      "supplier_pending": ["confirmed", "failed_released", "unknown_reconciling"],
+      "unknown_reconciling": ["confirmed", "failed_released"],
+      "confirmed": ["ticketed", "cancelled", "disrupted"],
+      "ticketed": ["cancelled", "disrupted", "completed"],
+      "disrupted": ["ticketed", "refunded"],
+      "cancelled": ["refunded"]
+    },
+    "rule": "a PNR (confirmed) is not a ticket; ticketed only via documents_issued; unknown_reconciling resolves only by lookup, never re-purchase (CLAUDE.md #24)"
+  },
+  "travelRefund": {
+    "initial": "requested",
+    "transitions": {
+      "requested": ["supplier_confirmed", "rejected"],
+      "supplier_confirmed": ["supplier_refund_pending"],
+      "supplier_refund_pending": ["refunded_to_wallet"]
+    }
+  },
+  "rideReservation": {
+    "initial": "requested",
+    "transitions": {
+      "requested": ["reserved", "reservation_failed"],
+      "reserved": ["assigned", "reserved", "cancelled"],
+      "assigned": ["completed", "cancelled", "no_show"]
+    },
+    "rule": "linked to a travel order; retime keeps the reservation and re-times the pickup"
+  },
+  "mandate": {
+    "initial": "active",
+    "transitions": {
+      "active": ["paused", "revoked", "expired"],
+      "paused": ["active", "revoked", "expired"]
+    },
+    "rule": "the model can never pause, resume, revoke or edit a mandate (CLAUDE.md #18-19)"
+  },
+  "mandateRun": {
+    "initial": "evaluated",
+    "transitions": {
+      "evaluated": ["executed", "blocked"]
+    }
+  },
+  "campaign": {
+    "initial": "draft",
+    "transitions": {
+      "draft": ["simulated", "awaiting_approval"],
+      "simulated": ["awaiting_approval", "draft"],
+      "awaiting_approval": ["scheduled", "draft"],
+      "scheduled": ["active", "ended"],
+      "active": ["paused", "exhausted", "ended"],
+      "paused": ["active", "ended"],
+      "exhausted": ["active", "ended"]
+    },
+    "rule": "activation and budget changes go through two-person approval; the AI marketing assistant only drafts (CLAUDE.md #19, #22)"
+  },
+  "referral": {
+    "initial": "invited",
+    "transitions": {
+      "invited": ["installed", "expired"],
+      "installed": ["qualifying", "expired"],
+      "qualifying": ["rewarded", "in_review", "expired"],
+      "in_review": ["rewarded", "expired", "in_review"],
+      "rewarded": ["reversed"],
+      "reversed": ["rewarded"]
+    },
+    "rule": "qualify from server-verified events; shared device/payment routes to in_review, never auto-deny (CLAUDE.md #28)"
+  },
+  "promotionReservation": {
+    "initial": "reserved",
+    "transitions": {
+      "reserved": ["consumed", "released"],
+      "consumed": ["reversed"]
+    },
+    "rule": "budget reserved on a promise, consumed on qualification, released on expiry (CLAUDE.md #29)"
   }
 }

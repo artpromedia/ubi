@@ -67,6 +67,34 @@ describe("event envelope", () => {
     );
   });
 
+  it("knows the RN-migration handoff events (catalog-additions.md)", () => {
+    for (const name of [
+      "ask.thread.opened",
+      "ask.review.confirmed",
+      "ask.execution.item.updated",
+      "action_grant.minted",
+      "mandate.run.evaluated",
+      "travel.order.submitted",
+      "travel.order.unknown",
+      "travel.refund.refunded_to_wallet",
+      "travel.disruption.detected",
+      "reservation.reserved",
+      "promotion.reserved",
+      "promotion.reversed",
+      "referral.created",
+      "referral.review.decided",
+      "incentive.rebate.posted",
+      "campaign.version.activated",
+      "marketing.proposal.created",
+      "ai.action.logged",
+      "support.case.opened",
+    ]) {
+      expect(isKnownEventName(name), `missing event ${name}`).toBe(true);
+    }
+    // Still closed: an invented handoff-adjacent name is rejected.
+    expect(isKnownEventName("travel.order.teleported")).toBe(false);
+  });
+
   it("mirrors the subject in the realtime topic", () => {
     expect(topicFor({ type: "ride", id: "rd_314" })).toBe("ride.rd_314");
   });

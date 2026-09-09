@@ -14,6 +14,8 @@ export const TEST_IDS = {
       savedPlaces: "rider.home.savedPlaces",
       serviceSwitcher: "rider.home.serviceSwitcher",
       activeTrip: "rider.home.activeTrip",
+      // Ask UBI entry point extends the existing rider.home screen group.
+      askUbi: "rider.home.askUbi",
     },
     search: {
       input: "rider.search.input",
@@ -26,6 +28,8 @@ export const TEST_IDS = {
       classList: "rider.quote.classList",
       paymentMethod: "rider.quote.paymentMethod",
       expiry: "rider.quote.expiry",
+      savings: "rider.quote.savings",
+      savingsChanged: "rider.quote.savingsChanged",
     },
     match: {
       cancel: "rider.match.cancel",
@@ -67,7 +71,14 @@ export const TEST_IDS = {
       goOffline: "driver.home.goOffline",
       filters: "driver.home.filters",
       eligibility: "driver.home.eligibility",
+      // Incentive strip extends the existing driver.home screen group.
+      incentiveStrip: "driver.home.incentiveStrip",
     },
+    incentives: {
+      rebateCard: "driver.incentives.rebateCard",
+      referrals: "driver.incentives.referrals",
+    },
+    commission: { detail: "driver.commission.detail" },
     offer: {
       accept: "driver.offer.accept",
       decline: "driver.offer.decline",
@@ -126,18 +137,107 @@ export const TEST_IDS = {
     exception: { decision: "send.exception.decision" },
   },
   flights: {
-    search: { results: "flights.search.results" },
+    search: {
+      form: "flights.search.form",
+      submit: "flights.search.submit",
+      results: "flights.search.results",
+    },
+    results: {
+      offer: "flights.results.offer",
+      continue: "flights.results.continue",
+    },
+    passenger: {
+      givenName: "flights.passenger.givenName",
+      continue: "flights.passenger.continue",
+    },
     pay: { confirm: "flights.pay.confirm" },
     switch: { confirm: "flights.switch.confirm" },
   },
   journey: { itinerary: { view: "journey.itinerary.view" } },
   stays: {
+    rooms: { rate: "stays.rooms.rate" },
     pay: { confirm: "stays.pay.confirm" },
     checkin: { complete: "stays.checkin.complete" },
   },
+  ask: {
+    plan: {
+      card: "ask.plan.card",
+      review: "ask.plan.review",
+      editInForm: "ask.plan.editInForm",
+    },
+    clarify: { form: "ask.clarify.form", submit: "ask.clarify.submit" },
+    answer: { sources: "ask.answer.sources" },
+    review: {
+      sheet: "ask.review.sheet",
+      confirmPin: "ask.review.confirmPin",
+      dismiss: "ask.review.dismiss",
+    },
+    status: { list: "ask.status.list", item: "ask.status.item" },
+    handoff: { sheet: "ask.handoff.sheet", start: "ask.handoff.start" },
+  },
+  mandates: {
+    list: { item: "mandates.list.item", new: "mandates.list.new" },
+    edit: {
+      perRideCap: "mandates.edit.perRideCap",
+      monthlyCap: "mandates.edit.monthlyCap",
+      savePin: "mandates.edit.savePin",
+      revoke: "mandates.edit.revoke",
+    },
+    receipt: { card: "mandates.receipt.card" },
+  },
+  travel: {
+    checkout: {
+      breakdown: "travel.checkout.breakdown",
+      payPin: "travel.checkout.payPin",
+    },
+    order: { ladder: "travel.order.ladder" },
+    itinerary: { item: "travel.itinerary.item" },
+    refund: { tracker: "travel.refund.tracker" },
+    disruption: {
+      eligibility: "travel.disruption.eligibility",
+      alternative: "travel.disruption.alternative",
+    },
+    linked: { flight: "travel.linked.flight", ride: "travel.linked.ride" },
+  },
+  reservations: {
+    airport: {
+      form: "reservations.airport.form",
+      confirm: "reservations.airport.confirm",
+    },
+  },
+  benefits: {
+    credit: { card: "benefits.credit.card" },
+    offer: { card: "benefits.offer.card" },
+    change: { row: "benefits.change.row" },
+  },
+  referrals: {
+    share: { card: "referrals.share.card", link: "referrals.share.link" },
+    status: { list: "referrals.status.list" },
+  },
+  growth: {
+    campaign: {
+      form: "growth.campaign.form",
+      liability: "growth.campaign.liability",
+      submit: "growth.campaign.submit",
+      outcome: "growth.campaign.outcome",
+    },
+    abuse: { case: "growth.abuse.case", decision: "growth.abuse.decision" },
+    assistant: {
+      output: "growth.assistant.output",
+      saveDraft: "growth.assistant.saveDraft",
+    },
+  },
+  web: {
+    ask: { panel: "web.ask.panel" },
+    handoff: { banner: "web.handoff.banner", fallback: "web.handoff.fallback" },
+  },
   fleet: { assign: { send: "fleet.assign.send" } },
   desk: { scan: { qr: "desk.scan.qr" } },
-  ops: { case: { remedy: "ops.case.remedy" } },
+  ops: {
+    case: { remedy: "ops.case.remedy" },
+    travel: { health: "ops.travel.health", exception: "ops.travel.exception" },
+    ai: { actions: "ops.ai.actions" },
+  },
 } as const;
 
 const TEST_ID_PATTERN =

@@ -229,7 +229,7 @@ model User {
   paymentTransactions PaymentTransaction[]
   notifications       Notification[]
   sessions            Session[]
-  foodReviews         Review[]       @relation("UserFoodReviews")
+  foodReviews         Review[]              @relation("UserFoodReviews")
 
   @@index([email])
   @@index([phone])
@@ -916,12 +916,12 @@ model Restaurant {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  menuItems      MenuItem[]
-  orders         FoodOrder[]
-  menuCategories MenuCategory[]
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  menuItems        MenuItem[]
+  orders           FoodOrder[]
+  menuCategories   MenuCategory[]
   restaurantOrders Order[]
-  reviews        Review[]
+  reviews          Review[]
 
   @@index([latitude, longitude])
   @@index([isOpen, rating])
@@ -1656,12 +1656,12 @@ model Wallet {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  lines           JournalLine[]
-  transfersOut    Transfer[]    @relation("TransferFrom")
-  transfersIn     Transfer[]    @relation("TransferTo")
-  nipTransfers    NipTransfer[]
-  topups          Topup[]
-  statements      WalletStatement[]
+  lines        JournalLine[]
+  transfersOut Transfer[]        @relation("TransferFrom")
+  transfersIn  Transfer[]        @relation("TransferTo")
+  nipTransfers NipTransfer[]
+  topups       Topup[]
+  statements   WalletStatement[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -1678,9 +1678,9 @@ model JournalEntry {
   caseRef        String?  @map("case_ref")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  lines        JournalLine[]
-  transfers    Transfer[]
-  remittances  Remittance[]
+  lines       JournalLine[]
+  transfers   Transfer[]
+  remittances Remittance[]
 
   @@index([kind, occurredAt])
   @@index([reference])
@@ -1708,19 +1708,19 @@ model JournalLine {
 }
 
 model Transfer {
-  id             String    @id
-  fromWallet     String?   @map("from_wallet")
-  toWallet       String?   @map("to_wallet")
-  amountMinor    BigInt    @map("amount_minor")
+  id             String   @id
+  fromWallet     String?  @map("from_wallet")
+  toWallet       String?  @map("to_wallet")
+  amountMinor    BigInt   @map("amount_minor")
   currency       String
   note           String?
   status         String
-  riskHoldReason String?   @map("risk_hold_reason")
-  entryId        String?   @map("entry_id")
-  idempotencyKey String?   @unique @map("idempotency_key")
-  version        Int       @default(1)
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  riskHoldReason String?  @map("risk_hold_reason")
+  entryId        String?  @map("entry_id")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  version        Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   from           Wallet?         @relation("TransferFrom", fields: [fromWallet], references: [id])
   to             Wallet?         @relation("TransferTo", fields: [toWallet], references: [id])
@@ -1833,21 +1833,21 @@ model WalletStatement {
 }
 
 model SplitRule {
-  id               String    @id
-  driverId         String    @map("driver_id")
-  fleetId          String    @map("fleet_id")
-  vehicleId        String    @map("vehicle_id")
-  type             String
-  amountMinor      BigInt?   @map("amount_minor")
-  currency         String
-  percent          Decimal?  @db.Decimal(5, 2)
-  shortfallPolicy  String    @map("shortfall_policy")
-  shortfallMaxWeeks Int?     @map("shortfall_max_weeks")
-  termsHash        String    @map("terms_hash")
-  signedAt         DateTime? @map("signed_at")
-  active           Boolean   @default(false)
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id                String    @id
+  driverId          String    @map("driver_id")
+  fleetId           String    @map("fleet_id")
+  vehicleId         String    @map("vehicle_id")
+  type              String
+  amountMinor       BigInt?   @map("amount_minor")
+  currency          String
+  percent           Decimal?  @db.Decimal(5, 2)
+  shortfallPolicy   String    @map("shortfall_policy")
+  shortfallMaxWeeks Int?      @map("shortfall_max_weeks")
+  termsHash         String    @map("terms_hash")
+  signedAt          DateTime? @map("signed_at")
+  active            Boolean   @default(false)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   remittances Remittance[]
 
@@ -2286,50 +2286,50 @@ model ReviewReport {
 }
 
 model NotificationPreference {
-  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId                String   @unique @map("user_id") @db.Uuid
-  emailEnabled          Boolean  @default(true) @map("email_enabled")
-  emailReceipts         Boolean  @default(true) @map("email_receipts")
-  emailPromotions       Boolean  @default(false) @map("email_promotions")
-  emailNewsletter       Boolean  @default(false) @map("email_newsletter")
-  emailSecurityAlerts   Boolean  @default(true) @map("email_security_alerts")
-  smsEnabled            Boolean  @default(true) @map("sms_enabled")
-  smsOtp                Boolean  @default(true) @map("sms_otp")
-  smsCriticalAlerts     Boolean  @default(true) @map("sms_critical_alerts")
-  pushEnabled           Boolean  @default(true) @map("push_enabled")
-  pushRideUpdates       Boolean  @default(true) @map("push_ride_updates")
-  pushFoodUpdates       Boolean  @default(true) @map("push_food_updates")
-  pushDeliveryUpdates   Boolean  @default(true) @map("push_delivery_updates")
-  pushPaymentUpdates    Boolean  @default(true) @map("push_payment_updates")
-  pushPromotions        Boolean  @default(false) @map("push_promotions")
-  pushNews              Boolean  @default(false) @map("push_news")
-  inAppEnabled          Boolean  @default(true) @map("in_app_enabled")
-  quietHoursEnabled     Boolean  @default(false) @map("quiet_hours_enabled")
-  quietHoursStart       String?  @map("quiet_hours_start")
-  quietHoursEnd         String?  @map("quiet_hours_end")
-  quietHoursTimezone    String?  @map("quiet_hours_timezone")
-  maxDailyEmail         Int?     @map("max_daily_email")
-  maxDailyPush          Int?     @map("max_daily_push")
-  maxDailySms           Int?     @map("max_daily_sms")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId              String   @unique @map("user_id") @db.Uuid
+  emailEnabled        Boolean  @default(true) @map("email_enabled")
+  emailReceipts       Boolean  @default(true) @map("email_receipts")
+  emailPromotions     Boolean  @default(false) @map("email_promotions")
+  emailNewsletter     Boolean  @default(false) @map("email_newsletter")
+  emailSecurityAlerts Boolean  @default(true) @map("email_security_alerts")
+  smsEnabled          Boolean  @default(true) @map("sms_enabled")
+  smsOtp              Boolean  @default(true) @map("sms_otp")
+  smsCriticalAlerts   Boolean  @default(true) @map("sms_critical_alerts")
+  pushEnabled         Boolean  @default(true) @map("push_enabled")
+  pushRideUpdates     Boolean  @default(true) @map("push_ride_updates")
+  pushFoodUpdates     Boolean  @default(true) @map("push_food_updates")
+  pushDeliveryUpdates Boolean  @default(true) @map("push_delivery_updates")
+  pushPaymentUpdates  Boolean  @default(true) @map("push_payment_updates")
+  pushPromotions      Boolean  @default(false) @map("push_promotions")
+  pushNews            Boolean  @default(false) @map("push_news")
+  inAppEnabled        Boolean  @default(true) @map("in_app_enabled")
+  quietHoursEnabled   Boolean  @default(false) @map("quiet_hours_enabled")
+  quietHoursStart     String?  @map("quiet_hours_start")
+  quietHoursEnd       String?  @map("quiet_hours_end")
+  quietHoursTimezone  String?  @map("quiet_hours_timezone")
+  maxDailyEmail       Int?     @map("max_daily_email")
+  maxDailyPush        Int?     @map("max_daily_push")
+  maxDailySms         Int?     @map("max_daily_sms")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("notification_preferences")
 }
 
 model NotificationLog {
-  id         String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String?              @map("user_id") @db.Uuid
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?             @map("user_id") @db.Uuid
   channel    NotificationChannel
-  type       NotificationType     @default(GENERAL)
+  type       NotificationType    @default(GENERAL)
   title      String?
   body       String?
   recipient  String?
-  status     NotificationStatus   @default(PENDING)
-  externalId String?              @map("external_id")
+  status     NotificationStatus  @default(PENDING)
+  externalId String?             @map("external_id")
   error      String?
-  sentAt     DateTime?            @map("sent_at")
-  createdAt  DateTime             @default(now()) @map("created_at")
+  sentAt     DateTime?           @map("sent_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
 
   @@index([userId, createdAt])
   @@index([channel, status])
@@ -2395,9 +2395,9 @@ model BitesMerchant {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  kyb      MerchantKyb[]
-  outlets  Outlet[]
-  payouts  MerchantPayout[]
+  kyb     MerchantKyb[]
+  outlets Outlet[]
+  payouts MerchantPayout[]
 
   @@index([status])
   @@map("bites_merchants")
@@ -2431,7 +2431,7 @@ model Outlet {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  merchant  BitesMerchant  @relation(fields: [merchantId], references: [id])
+  merchant  BitesMerchant   @relation(fields: [merchantId], references: [id])
   menuItems BitesMenuItem[]
   carts     Cart[]
   orders    BitesOrder[]
@@ -2508,22 +2508,22 @@ model Cart {
 }
 
 model BitesOrder {
-  id              String    @id
-  userId          String    @map("user_id")
-  outletId        String    @map("outlet_id")
+  id              String   @id
+  userId          String   @map("user_id")
+  outletId        String   @map("outlet_id")
   status          String
   items           Json
   totals          Json
   currency        String
-  paymentIntentId String?   @map("payment_intent_id")
-  authCaptured    Boolean   @default(false) @map("auth_captured")
-  handoverCode    String?   @map("handover_code")
-  deliveryCode    String?   @map("delivery_code")
-  courierId       String?   @map("courier_id")
-  version         Int       @default(1)
-  idempotencyKey  String?   @unique @map("idempotency_key")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  paymentIntentId String?  @map("payment_intent_id")
+  authCaptured    Boolean  @default(false) @map("auth_captured")
+  handoverCode    String?  @map("handover_code")
+  deliveryCode    String?  @map("delivery_code")
+  courierId       String?  @map("courier_id")
+  version         Int      @default(1)
+  idempotencyKey  String?  @unique @map("idempotency_key")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   outlet Outlet       @relation(fields: [outletId], references: [id])
   issues OrderIssue[]
@@ -2535,17 +2535,17 @@ model BitesOrder {
 }
 
 model OrderIssue {
-  id             String    @id
-  orderId        String    @map("order_id")
-  items          Json
-  type           String
-  photoRef       String?   @map("photo_ref")
-  requestedMinor BigInt?   @map("requested_minor")
-  status         String
-  merchantResponse String? @map("merchant_response")
-  respondBy      DateTime? @map("respond_by")
-  decidedAt      DateTime? @map("decided_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
+  id               String    @id
+  orderId          String    @map("order_id")
+  items            Json
+  type             String
+  photoRef         String?   @map("photo_ref")
+  requestedMinor   BigInt?   @map("requested_minor")
+  status           String
+  merchantResponse String?   @map("merchant_response")
+  respondBy        DateTime? @map("respond_by")
+  decidedAt        DateTime? @map("decided_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
 
   order BitesOrder @relation(fields: [orderId], references: [id])
 
@@ -2555,20 +2555,713 @@ model OrderIssue {
 }
 
 model MerchantPayout {
-  id           String    @id
-  merchantId   String    @map("merchant_id")
-  weekStart    DateTime  @map("week_start") @db.Date
-  grossMinor   BigInt    @map("gross_minor")
-  feesMinor    BigInt    @map("fees_minor")
-  refundsMinor BigInt    @map("refunds_minor")
-  netMinor     BigInt    @map("net_minor")
+  id           String   @id
+  merchantId   String   @map("merchant_id")
+  weekStart    DateTime @map("week_start") @db.Date
+  grossMinor   BigInt   @map("gross_minor")
+  feesMinor    BigInt   @map("fees_minor")
+  refundsMinor BigInt   @map("refunds_minor")
+  netMinor     BigInt   @map("net_minor")
   currency     String
-  entryId      String?   @map("entry_id")
+  entryId      String?  @map("entry_id")
   status       String
-  createdAt    DateTime  @default(now()) @map("created_at")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   merchant BitesMerchant @relation(fields: [merchantId], references: [id])
 
   @@unique([merchantId, weekStart])
   @@map("merchant_payouts")
+}
+
+// ===========================================
+// RN MIGRATION FEATURES (AI / travel / growth)
+// ===========================================
+// Source: docs/launch-readiness/handoff-rn/db/009_*.sql .. 012_*.sql
+//
+// Same convention as the LAUNCH HANDOFF MODELS section above: text @id (nanoid,
+// no @default), money is BigInt minor units + an explicit currency column,
+// table/column names kept verbatim from the DDL via @@map / @map. SQL CHECK
+// enums are plain String fields (allowed values documented in a comment) because
+// Prisma has no CHECK constraint; Decimal is used ONLY for non-money numerics
+// (fx_rate). bps values stay Int. SQL CHECK expressions that reference other
+// rows/columns cannot be expressed in Prisma and are noted in comments.
+
+// -------------------------------------------
+// 009 — promotions, referrals, driver incentives (promotions module)
+// -------------------------------------------
+
+model Campaign {
+  id          String   @id
+  name        String
+  // benefit_type CHECK: fare_discount | fee_waiver | credit | driver_rebate | driver_window | referral
+  benefitType String   @map("benefit_type")
+  // state CHECK: draft | simulated | awaiting_approval | scheduled | active | paused | exhausted | ended
+  state       String
+  stateAt     DateTime @default(now()) @map("state_at")
+  stateBy     String?  @map("state_by")
+  authorId    String   @map("author_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  versions CampaignVersion[]
+
+  @@map("campaigns")
+}
+
+model CampaignVersion {
+  id                 String    @id
+  campaignId         String    @map("campaign_id")
+  version            Int
+  audienceRule       String    @map("audience_rule")
+  market             String
+  windowStart        DateTime  @map("window_start")
+  windowEnd          DateTime  @map("window_end")
+  timezone           String
+  value              Json
+  caps               Json
+  qualificationEvent String    @map("qualification_event")
+  stacking           Json
+  funding            Json
+  budgetLimitMinor   BigInt    @map("budget_limit_minor")
+  currency           String
+  experiment         Json?
+  copy               String
+  approvalId         String?   @map("approval_id")
+  approvedBy         String?   @map("approved_by")
+  approvedAt         DateTime? @map("approved_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  // CHECK (approved_by IS NULL OR approved_by <> campaigns.author_id): separation of
+  // duties — cannot be expressed in Prisma, enforced by the DB CHECK / app layer.
+  campaign       Campaign               @relation(fields: [campaignId], references: [id])
+  budget         CampaignBudget?
+  reservations   PromotionReservation[]
+  referrals      Referral[]
+  incentiveRules DriverIncentiveRule[]
+
+  @@unique([campaignId, version])
+  @@map("campaign_versions")
+}
+
+model CampaignBudget {
+  campaignVersionId String    @id @map("campaign_version_id")
+  reservedMinor     BigInt    @default(0) @map("reserved_minor")
+  consumedMinor     BigInt    @default(0) @map("consumed_minor")
+  reversedMinor     BigInt    @default(0) @map("reversed_minor")
+  exhaustedAt       DateTime? @map("exhausted_at")
+
+  // CHECK (reserved_minor >= 0 AND consumed_minor >= 0) — enforced by DB.
+  campaignVersion CampaignVersion @relation(fields: [campaignVersionId], references: [id])
+
+  @@map("campaign_budgets")
+}
+
+model PromotionReservation {
+  id                String    @id
+  campaignVersionId String    @map("campaign_version_id")
+  userId            String    @map("user_id")
+  subjectKind       String    @map("subject_kind")
+  subjectId         String    @map("subject_id")
+  // adjustment_type CHECK: fare_discount | fee_waiver | credit | referral_reward | driver_rebate | window_waiver
+  adjustmentType    String    @map("adjustment_type")
+  amountMinor       BigInt    @map("amount_minor")
+  currency          String
+  // state CHECK: reserved | consumed | released | reversed
+  state             String
+  reasonCode        String?   @map("reason_code")
+  termsRef          String?   @map("terms_ref")
+  idempotencyKey    String    @unique @map("idempotency_key")
+  expiresAt         DateTime? @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  campaignVersion CampaignVersion @relation(fields: [campaignVersionId], references: [id])
+  credits         UserCredit[]
+
+  @@index([userId, campaignVersionId, state])
+  @@map("promotion_reservations")
+}
+
+model UserCredit {
+  id                  String   @id
+  userId              String   @map("user_id")
+  amountMinor         BigInt   @map("amount_minor")
+  currency            String
+  perRideCapMinor     BigInt?  @map("per_ride_cap_minor")
+  scope               String   @default("rides")
+  expiresAt           DateTime @map("expires_at") @db.Date
+  sourceReservationId String?  @map("source_reservation_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  sourceReservation PromotionReservation? @relation(fields: [sourceReservationId], references: [id])
+
+  @@map("user_credits")
+}
+
+model Referral {
+  id               String    @id
+  programVersionId String    @map("program_version_id")
+  referrerId       String    @map("referrer_id")
+  refereeId        String?   @map("referee_id")
+  code             String
+  // stage CHECK: invited | installed | qualifying | in_review | rewarded | reversed | expired
+  stage            String
+  qualifyingRideId String?   @map("qualifying_ride_id")
+  deadline         DateTime? @db.Date
+  stageAt          DateTime  @default(now()) @map("stage_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  programVersion CampaignVersion      @relation(fields: [programVersionId], references: [id])
+  reviewCases    ReferralReviewCase[]
+
+  @@index([referrerId, stage])
+  @@map("referrals")
+}
+
+model ReferralReviewCase {
+  id         String    @id
+  referralId String    @map("referral_id")
+  signals    Json
+  openedAt   DateTime  @default(now()) @map("opened_at")
+  slaHours   Int       @default(24) @map("sla_hours")
+  // decision CHECK: qualify | hold | deny
+  decision   String?
+  reasonCode String?   @map("reason_code")
+  decidedBy  String?   @map("decided_by")
+  decidedAt  DateTime? @map("decided_at")
+
+  referral Referral @relation(fields: [referralId], references: [id])
+
+  @@map("referral_review_cases")
+}
+
+model AttributionClaim {
+  id        String   @id
+  userId    String   @unique @map("user_id")
+  source    String
+  code      String?
+  campaign  String?
+  token     String?
+  // kind CHECK: referral | campaign | unknown | organic
+  kind      String
+  claimedAt DateTime @default(now()) @map("claimed_at")
+
+  @@map("attribution_claims")
+}
+
+model DriverIncentiveRule {
+  id                String    @id
+  campaignVersionId String    @map("campaign_version_id")
+  // kind CHECK: percentage_points | percent_of_commission | window
+  kind              String
+  baseBps           Int?      @map("base_bps")
+  reductionBps      Int?      @map("reduction_bps")
+  appliesTo         String    @default("fare_only") @map("applies_to")
+  exclusions        String[]  @default(["tips", "tolls", "taxes"])
+  eligibleTripCap   Int?      @map("eligible_trip_cap")
+  moneyCapMinor     BigInt?   @map("money_cap_minor")
+  zones             String[]
+  startsAt          DateTime? @map("starts_at")
+  endsAt            DateTime? @map("ends_at")
+  cashSettlement    String    @default("nets_against_owed") @map("cash_settlement")
+  fleetInteraction  String    @default("after_rebate") @map("fleet_interaction")
+  rounding          String    @default("kobo_per_trip")
+
+  campaignVersion CampaignVersion          @relation(fields: [campaignVersionId], references: [id])
+  postings        DriverIncentivePosting[]
+
+  @@map("driver_incentive_rules")
+}
+
+model DriverIncentivePosting {
+  id           String   @id
+  ruleId       String   @map("rule_id")
+  driverId     String   @map("driver_id")
+  tripId       String   @map("trip_id")
+  ledgerLineId String   @map("ledger_line_id")
+  // kind CHECK: rebate | window_waiver | rebate_reversal | milestone
+  kind         String
+  amountMinor  BigInt   @map("amount_minor")
+  currency     String
+  reasonCode   String?  @map("reason_code")
+  postedAt     DateTime @default(now()) @map("posted_at")
+
+  rule DriverIncentiveRule @relation(fields: [ruleId], references: [id])
+
+  @@unique([tripId, kind])
+  @@map("driver_incentive_postings")
+}
+
+// -------------------------------------------
+// 010 — action grants + mandates (user-service auth) & ask threads (ask-service)
+// -------------------------------------------
+
+model ActionGrant {
+  id             String    @id
+  actorId        String    @map("actor_id")
+  action         String
+  resourceRef    String    @map("resource_ref")
+  provider       String?
+  termsVersion   String    @map("terms_version")
+  totalMinor     BigInt    @map("total_minor")
+  currency       String
+  idempotencyKey String    @unique @map("idempotency_key")
+  // assurance CHECK: pin | biometric | mandate
+  assurance      String
+  // mandate_id is a plain text ref in the DDL (no FK) — kept as a scalar.
+  mandateId      String?   @map("mandate_id")
+  expiresAt      DateTime  @map("expires_at")
+  consumedAt     DateTime? @map("consumed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  mandateExecutions MandateExecution[]
+  askReviews        AskReview[]
+
+  @@index([actorId, expiresAt])
+  @@map("action_grants")
+}
+
+model Mandate {
+  id                    String   @id
+  userId                String   @map("user_id")
+  // action CHECK: airport_pickup.reserve | flight.rebook_on_cancel | scheduled_ride.book
+  action                String
+  title                 String
+  // passengers CHECK: self_only | saved_passengers
+  passengers            String
+  categories            String[]
+  providers             String[]
+  perRunCapMinor        BigInt   @map("per_run_cap_minor")
+  periodCapMinor        BigInt   @map("period_cap_minor")
+  periodRuns            Int      @map("period_runs")
+  maxPriceVarianceMinor BigInt?  @map("max_price_variance_minor")
+  currency              String
+  constraints           Json
+  // status CHECK: active | paused | revoked | expired
+  status                String
+  expiresAt             DateTime @map("expires_at")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  // CHECK (expires_at <= created_at + interval '12 months') — enforced by DB.
+  allowances MandateAllowance[]
+  executions MandateExecution[]
+
+  @@map("mandates")
+}
+
+model MandateAllowance {
+  mandateId       String   @map("mandate_id")
+  periodStart     DateTime @map("period_start") @db.Date
+  amountUsedMinor BigInt   @default(0) @map("amount_used_minor")
+  runsUsed        Int      @default(0) @map("runs_used")
+
+  mandate Mandate @relation(fields: [mandateId], references: [id])
+
+  @@id([mandateId, periodStart])
+  @@map("mandate_allowances")
+}
+
+model MandateExecution {
+  id          String   @id
+  mandateId   String   @map("mandate_id")
+  triggerRef  String   @map("trigger_ref")
+  // outcome CHECK: executed | blocked
+  outcome     String
+  reasonCode  String?  @map("reason_code")
+  grantId     String?  @map("grant_id")
+  receiptRef  String?  @unique @map("receipt_ref")
+  resultRef   String?  @map("result_ref")
+  amountMinor BigInt?  @map("amount_minor")
+  currency    String?
+  summary     String?
+  at          DateTime @default(now())
+
+  mandate Mandate      @relation(fields: [mandateId], references: [id])
+  grant   ActionGrant? @relation(fields: [grantId], references: [id])
+
+  @@unique([mandateId, triggerRef])
+  @@map("mandate_executions")
+}
+
+model AskThread {
+  id        String    @id
+  userId    String    @map("user_id")
+  role      String
+  source    String
+  createdAt DateTime  @default(now()) @map("created_at")
+  closedAt  DateTime? @map("closed_at")
+
+  messages AskMessage[]
+  reviews  AskReview[]
+
+  @@map("ask_threads")
+}
+
+model AskMessage {
+  id           String   @id
+  threadId     String   @map("thread_id")
+  // sender CHECK: user | assistant | system
+  sender       String
+  redactedText String   @map("redacted_text")
+  cards        Json?
+  sources      Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  thread AskThread @relation(fields: [threadId], references: [id])
+
+  @@map("ask_messages")
+}
+
+model AskReview {
+  id              String   @id
+  threadId        String   @map("thread_id")
+  userId          String   @map("user_id")
+  termsVersion    String   @map("terms_version")
+  items           Json
+  adjustments     Json?
+  totalMinor      BigInt   @map("total_minor")
+  currency        String
+  paymentMethodId String   @map("payment_method_id")
+  // status CHECK: awaiting_confirmation | executing | expired | superseded | cancelled
+  status          String
+  expiresAt       DateTime @map("expires_at")
+  grantId         String?  @map("grant_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  thread     AskThread      @relation(fields: [threadId], references: [id])
+  grant      ActionGrant?   @relation(fields: [grantId], references: [id])
+  executions AskExecution[]
+
+  @@map("ask_reviews")
+}
+
+model AskExecution {
+  id          String    @id
+  reviewId    String    @map("review_id")
+  // status CHECK: processing | confirmed | partly_booked | failed
+  status      String
+  items       Json
+  startedAt   DateTime  @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  review AskReview @relation(fields: [reviewId], references: [id])
+
+  @@map("ask_executions")
+}
+
+// -------------------------------------------
+// 011 — travel v2 (travel-service). Canonical UBI ids; supplier refs stored only.
+// -------------------------------------------
+
+model TravelSupplier {
+  id      String  @id
+  // kind CHECK: flight | stay
+  kind    String
+  adapter String
+  config  Json
+  enabled Boolean @default(false)
+
+  capabilitiesLog TravelCapabilitiesLog[]
+  searches        TravelSearch[]
+  orders          TravelOrder[]
+  webhooks        TravelWebhook[]
+  commercialRates TravelCommercialRate[]
+
+  @@map("travel_suppliers")
+}
+
+model TravelCapabilitiesLog {
+  id           String   @id
+  supplierId   String   @map("supplier_id")
+  offerRef     String   @map("offer_ref")
+  capabilities Json
+  observedAt   DateTime @default(now()) @map("observed_at")
+
+  supplier TravelSupplier @relation(fields: [supplierId], references: [id])
+
+  @@map("travel_capabilities_log")
+}
+
+model TravelSearch {
+  id         String    @id
+  userId     String    @map("user_id")
+  kind       String
+  params     Json
+  supplierId String?   @map("supplier_id")
+  pricesAsOf DateTime  @map("prices_as_of")
+  offers     Json
+  cacheUntil DateTime? @map("cache_until")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  supplier TravelSupplier? @relation(fields: [supplierId], references: [id])
+
+  @@map("travel_searches")
+}
+
+model TravelCart {
+  id                 String   @id
+  userId             String   @map("user_id")
+  // status CHECK: building | priced | repriced | paying | checked_out | expired
+  status             String
+  items              Json
+  passengers         Json?
+  fees               Json?
+  adjustments        Json?
+  totalMinor         BigInt?  @map("total_minor")
+  currency           String?
+  previousTotalMinor BigInt?  @map("previous_total_minor")
+  idempotencyKey     String?  @unique @map("idempotency_key")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  orders TravelOrder[]
+
+  @@map("travel_carts")
+}
+
+model TravelTrip {
+  id        String    @id
+  userId    String    @map("user_id")
+  title     String
+  startDate DateTime? @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date") @db.Date
+  timezone  String    @default("Africa/Lagos")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  orders TravelOrder[]
+
+  @@map("travel_trips")
+}
+
+model TravelOrder {
+  id                 String    @id
+  tripId             String?   @map("trip_id")
+  cartId             String?   @map("cart_id")
+  userId             String    @map("user_id")
+  // kind CHECK: flight | stay
+  kind               String
+  supplierId         String    @map("supplier_id")
+  // state CHECK: payment_authorized | submitted | supplier_pending | confirmed | ticketed |
+  //   failed_released | unknown_reconciling | disrupted | cancelled | refunded | completed
+  state              String
+  stateAt            DateTime  @default(now()) @map("state_at")
+  supplierRefs       Json      @default("{}") @map("supplier_refs")
+  offerSnapshot      Json      @map("offer_snapshot")
+  capabilities       Json
+  priceMinor         BigInt    @map("price_minor")
+  currency           String
+  supplierPriceMinor BigInt?   @map("supplier_price_minor")
+  supplierCurrency   String?   @map("supplier_currency")
+  // fx_rate is a ratio, not money -> Decimal(18,6)
+  fxRate             Decimal?  @map("fx_rate") @db.Decimal(18, 6)
+  fxLockedUntil      DateTime? @map("fx_locked_until")
+  heldMinor          BigInt    @default(0) @map("held_minor")
+  chargedMinor       BigInt    @default(0) @map("charged_minor")
+  releasedMinor      BigInt    @default(0) @map("released_minor")
+  payAtPropertyMinor BigInt    @default(0) @map("pay_at_property_minor")
+  policy             Json
+  protectionRuleId   String?   @map("protection_rule_id")
+  // grant_id is a plain text ref in the DDL (no FK) — kept as a scalar.
+  grantId            String?   @map("grant_id")
+  idempotencyKey     String    @unique @map("idempotency_key")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  trip     TravelTrip?    @relation(fields: [tripId], references: [id])
+  cart     TravelCart?    @relation(fields: [cartId], references: [id])
+  supplier TravelSupplier @relation(fields: [supplierId], references: [id])
+
+  events           TravelOrderEvent[]
+  documents        TravelDocument[]
+  refunds          TravelRefund[]
+  disruptions      TravelDisruption[]
+  settlements      TravelSettlement[]
+  reservationLinks RideReservationLink[]
+
+  @@index([userId, state])
+  @@map("travel_orders")
+}
+
+model TravelOrderEvent {
+  id        BigInt   @id @default(autoincrement())
+  orderId   String   @map("order_id")
+  fromState String?  @map("from_state")
+  toState   String   @map("to_state")
+  actor     String
+  detail    Json?
+  at        DateTime @default(now())
+
+  order TravelOrder @relation(fields: [orderId], references: [id])
+
+  @@map("travel_order_events")
+}
+
+model TravelDocument {
+  id             String   @id
+  orderId        String   @map("order_id")
+  // kind CHECK: eticket | booking_confirmation | boarding_pass
+  kind           String
+  number         String
+  passengerIndex Int?     @map("passenger_index")
+  issuedAt       DateTime @map("issued_at")
+
+  order TravelOrder @relation(fields: [orderId], references: [id])
+
+  @@map("travel_documents")
+}
+
+model TravelRefund {
+  id            String    @id
+  orderId       String    @map("order_id")
+  amountMinor   BigInt    @map("amount_minor")
+  currency      String
+  penaltyMinor  BigInt    @default(0) @map("penalty_minor")
+  // stage CHECK: requested | supplier_confirmed | supplier_refund_pending | refunded_to_wallet | rejected
+  stage         String
+  expectedBy    DateTime? @map("expected_by") @db.Date
+  supplierRef   String?   @map("supplier_ref")
+  ledgerEntryId String?   @map("ledger_entry_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  order TravelOrder @relation(fields: [orderId], references: [id])
+
+  @@map("travel_refunds")
+}
+
+model TravelDisruption {
+  id             String    @id
+  orderId        String    @map("order_id")
+  cause          String
+  verifiedAt     DateTime  @map("verified_at")
+  source         String
+  covered        Boolean
+  ruleId         String?   @map("rule_id")
+  fundedBy       String?   @map("funded_by")
+  capMinor       BigInt?   @map("cap_minor")
+  alternatives   Json
+  airlineOptions Json      @map("airline_options")
+  resolution     String?
+  resolvedAt     DateTime? @map("resolved_at")
+
+  order TravelOrder @relation(fields: [orderId], references: [id])
+
+  @@map("travel_disruptions")
+}
+
+model TravelWebhook {
+  id          String    @id
+  supplierId  String    @map("supplier_id")
+  externalId  String    @map("external_id")
+  signatureOk Boolean   @map("signature_ok")
+  payload     Json
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  processedAt DateTime? @map("processed_at")
+
+  supplier TravelSupplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([supplierId, externalId])
+  @@map("travel_webhooks")
+}
+
+model TravelSettlement {
+  id              String    @id
+  orderId         String    @map("order_id")
+  chargedMinor    BigInt    @map("charged_minor")
+  invoicedMinor   BigInt    @map("invoiced_minor")
+  differenceMinor BigInt    @map("difference_minor")
+  currency        String
+  // resolution CHECK: accepted | disputed
+  resolution      String?
+  resolvedBy      String?   @map("resolved_by")
+  resolvedAt      DateTime? @map("resolved_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  order TravelOrder @relation(fields: [orderId], references: [id])
+
+  @@map("travel_settlements")
+}
+
+model TravelCommercialRate {
+  id              String   @id
+  supplierId      String   @map("supplier_id")
+  routeOrProperty String   @map("route_or_property")
+  feeSchedule     Json     @map("fee_schedule")
+  source          String
+  effectiveDate   DateTime @map("effective_date") @db.Date
+  termsRef        String?  @map("terms_ref")
+
+  supplier TravelSupplier @relation(fields: [supplierId], references: [id])
+
+  @@map("travel_commercial_rates")
+}
+
+model RideReservationLink {
+  reservationId String @id @map("reservation_id")
+  orderId       String @map("order_id")
+  // direction CHECK: to_airport | from_airport
+  direction     String
+  retimedCount  Int    @default(0) @map("retimed_count")
+
+  order TravelOrder @relation(fields: [orderId], references: [id])
+
+  @@map("ride_reservation_links")
+}
+
+// -------------------------------------------
+// 012 — AI action log (ask-service; readers: ops). 90-day retention, audited.
+// -------------------------------------------
+
+model AiAction {
+  id             String   @id
+  at             DateTime @default(now())
+  // actor_kind CHECK: rider | driver | mandate | admin
+  actorKind      String   @map("actor_kind")
+  actorRef       String   @map("actor_ref")
+  threadId       String?  @map("thread_id")
+  action         String
+  tool           String?
+  model          String?
+  modelRevision  String?  @map("model_revision")
+  promptVersion  String?  @map("prompt_version")
+  redactedInputs Json?    @map("redacted_inputs")
+  // auth_kind CHECK: grant | mandate | read_only | none
+  authKind       String   @map("auth_kind")
+  authRef        String?  @map("auth_ref")
+  providerRefs   String[] @map("provider_refs")
+  // outcome CHECK: done | partial | blocked | refused | error
+  outcome        String
+  reasonCode     String?  @map("reason_code")
+  tokens         Int?
+  costMinor      BigInt?  @map("cost_minor")
+  currency       String?
+  latencyMs      Int?     @map("latency_ms")
+  retentionUntil DateTime @default(dbgenerated("(CURRENT_DATE + 90)")) @map("retention_until") @db.Date
+
+  @@index([at(sort: Desc)])
+  @@index([actorRef, at(sort: Desc)])
+  @@map("ai_actions")
+}
+
+model AiModelMetricsDaily {
+  day           DateTime @db.Date
+  model         String
+  modelRevision String   @map("model_revision")
+  tasks         Int
+  success       Int
+  unsafeActions Int      @map("unsafe_actions")
+  p95LatencyMs  Int?     @map("p95_latency_ms")
+  costMinor     BigInt   @map("cost_minor")
+  currency      String
+
+  @@id([day, model, modelRevision])
+  @@map("ai_model_metrics_daily")
+}
+
+model AiActionAccessLog {
+  id      BigInt   @id @default(autoincrement())
+  adminId String   @map("admin_id")
+  query   Json
+  at      DateTime @default(now())
+
+  @@map("ai_action_access_log")
 }

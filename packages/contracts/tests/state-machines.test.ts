@@ -30,6 +30,17 @@ describe("canonical state machines", () => {
         "stayBooking",
         "supportCase",
         "walletTransfer",
+        // RN-migration handoff machines (AI / travel / growth).
+        "askReview",
+        "askExecution",
+        "travelOrder",
+        "travelRefund",
+        "rideReservation",
+        "mandate",
+        "mandateRun",
+        "campaign",
+        "referral",
+        "promotionReservation",
       ].sort(),
     );
   });
@@ -168,5 +179,90 @@ describe("wallet transfer machine", () => {
       canTransition("walletTransfer", "declined_by_recipient", "disputed"),
     ).toBe(true);
     expect(canTransition("walletTransfer", "disputed", "reversed")).toBe(true);
+  });
+});
+
+describe("travel order machine", () => {
+  it("starts at payment_authorized and walks the confirm→ticket ladder", () => {
+    expect(initialState("travelOrder")).toBe("payment_authorized");
+    expect(canTransition("travelOrder", "payment_authorized", "submitted")).toBe(
+      true,
+    );
+    expect(canTransition("travelOrder", "confirmed", "ticketed")).toBe(true);
+    expect(canTransition("travelOrder", "ticketed", "completed")).toBe(true);
+  });
+
+  it("a PNR (confirmed) is not a ticket — ticketed is unreachable before confirmed", () => {
+    // CLAUDE.md #24: ticketed only via documents_issued out of confirmed.
+    expect(canTransition("travelOrder", "submitted", "ticketed")).toBe(false);
+    expect(canTransition("travelOrder", "supplier_pending", "ticketed")).toBe(
+      false,
+    );
+    expect(canTransition("travelOrder", "payment_authorized", "ticketed")).toBe(
+      false,
+    );
+    expect(() =>
+      assertTransition("travelOrder", "submitted", "ticketed"),
+    ).toThrow(IllegalTransitionError);
+  });
+
+  it("resolves an unknown order only by lookup, never straight to ticketed", () => {
+    // CLAUDE.md #24: unknown_reconciling → confirmed|failed_released only.
+    expect(allowedTransitions("travelOrder", "unknown_reconciling")).toEqual([
+      "confirmed",
+      "failed_released",
+    ]);
+    expect(canTransition("travelOrder", "unknown_reconciling", "ticketed")).toBe(
+      false,
+    );
+  });
+
+  it("keeps failed_released, completed and refunded terminal", () => {
+    expect(isTerminal("travelOrder", "failed_released")).toBe(true);
+    expect(isTerminal("travelOrder", "completed")).toBe(true);
+    expect(isTerminal("travelOrder", "refunded")).toBe(true);
+  });
+});
+
+describe("promotion reservation machine", () => {
+  it("reserves, then consumes on qualification or releases on expiry", () => {
+    // CLAUDE.md #29: budget reserved on promise, consumed on qualification.
+    expect(initialState("promotionReservation")).toBe("reserved");
+    expect(canTransition("promotionReservation", "reserved", "consumed")).toBe(
+      true,
+    );
+    expect(canTransition("promotionReservation", "reserved", "released")).toBe(
+      true,
+    );
+    expect(canTransition("promotionReservation", "consumed", "reversed")).toBe(
+      true,
+    );
+  });
+
+  it("cannot release budget that was already consumed", () => {
+    expect(canTransition("promotionReservation", "consumed", "released")).toBe(
+      false,
+    );
+    expect(() =>
+      assertTransition("promotionReservation", "consumed", "released"),
+    ).toThrow(IllegalTransitionError);
+  });
+});
+
+describe("mandate machine", () => {
+  it("can pause and resume, or revoke, an active mandate", () => {
+    expect(initialState("mandate")).toBe("active");
+    expect(canTransition("mandate", "active", "paused")).toBe(true);
+    expect(canTransition("mandate", "paused", "active")).toBe(true);
+    expect(canTransition("mandate", "active", "revoked")).toBe(true);
+  });
+
+  it("never reactivates a revoked or expired mandate", () => {
+    expect(isTerminal("mandate", "revoked")).toBe(true);
+    expect(isTerminal("mandate", "expired")).toBe(true);
+    expect(canTransition("mandate", "revoked", "active")).toBe(false);
+    expect(() => assertTransition("mandate", "revoked", "active")).toThrow(
+      IllegalTransitionError,
+    );
   });
 });
