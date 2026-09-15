@@ -20,6 +20,7 @@ export const ERROR_CODES = [
   "config_unavailable",
   "approver_is_author",
   "already_approved",
+  "launch_pair_incomplete",
   // state
   "illegal_transition",
   "version_conflict",
@@ -83,6 +84,7 @@ const STATUS_BY_CODE: Readonly<Record<ErrorCode, number>> = {
   config_unavailable: 503,
   approver_is_author: 409,
   already_approved: 409,
+  launch_pair_incomplete: 409,
   illegal_transition: 409,
   version_conflict: 409,
   idempotency_key_reuse: 409,

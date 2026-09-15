@@ -1493,19 +1493,27 @@ model DeviceToken {
 // -------------------------------------------
 
 model City {
-  id        String   @id
-  name      String
-  country   String   @db.Char(2)
-  timezone  String
-  active    Boolean  @default(false)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id       String  @id
+  name     String
+  country  String  @db.Char(2)
+  /// State or federal territory the city sits in, for display (e.g. "Lagos State", "FCT").
+  region   String?
+  timezone String
+  /// planned | launching | active | paused — CITY_STATUSES in @ubi/contracts.
+  status   String  @default("planned")
+  /// Cities in the same group must go live together (launch_pair_incomplete guard).
+  launchGroup String?  @map("launch_group")
+  /// Derived: status == "active". Kept for readers that predate `status`.
+  active      Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   configVersions CityConfigVersion[]
   changeRequests ConfigChangeRequest[]
   flagRules      FlagRule[]
 
   @@index([active])
+  @@index([status])
   @@map("cities")
 }
 

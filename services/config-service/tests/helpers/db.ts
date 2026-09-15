@@ -5,7 +5,9 @@
 import { configCache } from "@/lib/cache";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
+import { seedAbuja } from "@/seed/abuja";
 import { seedLagos } from "@/seed/lagos";
+import { seedPlannedCities } from "@/seed/planned";
 
 export const SEED_ENV = {
   NODE_ENV: "test",
@@ -72,4 +74,21 @@ export function adminHeaders(
       ? {}
       : { "idempotency-key": idempotencyKey }),
   };
+}
+
+/** Lagos and Abuja (both `launching`) plus the eight planned rows. */
+export async function seedLaunchCitiesForTest(): Promise<void> {
+  await seedLagos(SEED_ENV);
+  await seedAbuja(SEED_ENV);
+  await seedPlannedCities(SEED_ENV);
+  for (const scopeId of ["LOS", "ABV"]) {
+    await configCache.invalidate(
+      { kind: "config", scopeId },
+      { kind: "config", scopeId },
+    );
+    await configCache.invalidate(
+      { kind: "flags", scopeId },
+      { kind: "flags", scopeId },
+    );
+  }
 }

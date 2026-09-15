@@ -4,23 +4,18 @@
  * GET is conditional: the active version carries a strong ETag, and a client
  * polling on foreground gets 304 until a new version is activated.
  */
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+
 import { CityConfigSchema, IDEMPOTENCY_HEADER } from "@ubi/contracts";
 
-import { CONFIG_CACHE_TTL_SEC } from "../lib/env";
-import { etagMatches } from "../lib/etag";
-import { requireConfigAdmin } from "../middleware/actor";
-import {
-  approveChangeRequest,
-  createChangeRequest,
-  getActiveConfig,
-  getHistory,
-} from "../services/config.service";
 import {
   ApprovalResponse,
   ChangeRequestBody,
   ChangeRequestResponse,
+  CitiesResponse,
   CityIdParam,
+  CityStatusBody,
+  CityStatusResponse,
   ConditionalHeaders,
   HistoryResponse,
   IdempotencyHeaders,
@@ -28,6 +23,50 @@ import {
   errorResponses,
   jsonContent,
 } from "./schemas";
+import { CONFIG_CACHE_TTL_SEC } from "../lib/env";
+import { etagMatches } from "../lib/etag";
+import { requireConfigAdmin } from "../middleware/actor";
+import { listCities, setCityStatus } from "../services/cities.service";
+import {
+  approveChangeRequest,
+  createChangeRequest,
+  getActiveConfig,
+  getHistory,
+} from "../services/config.service";
+
+const listCitiesRoute = createRoute({
+  method: "get",
+  path: "/v1/config/cities",
+  tags: ["config"],
+  summary:
+    "Every city with its launch status (planned, launching, active, paused)",
+  responses: {
+    200: jsonContent(CitiesResponse, "city rows, launch cities first"),
+    500: errorResponses[500],
+    503: errorResponses[503],
+  },
+});
+
+const cityStatusRoute = createRoute({
+  method: "post",
+  path: "/v1/config/cities/status",
+  tags: ["config"],
+  summary:
+    "Change the launch status of one or more cities, optionally switching flags in the same change; launch-group members must go live together",
+  request: {
+    headers: IdempotencyHeaders,
+    body: { content: { "application/json": { schema: CityStatusBody } } },
+  },
+  responses: {
+    200: jsonContent(CityStatusResponse, "status changed (or replayed)"),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: errorResponses[409],
+    422: errorResponses[422],
+    500: errorResponses[500],
+  },
+});
 
 const getCityConfigRoute = createRoute({
   method: "get",
@@ -101,6 +140,34 @@ const approveRoute = createRoute({
 });
 
 export function registerConfigRoutes(app: OpenAPIHono): void {
+  app.openapi(listCitiesRoute, async (c) => {
+    const cities = await listCities();
+    c.header("Cache-Control", `private, max-age=${CONFIG_CACHE_TTL_SEC}`);
+    return c.json(cities, 200);
+  });
+
+  app.openapi(cityStatusRoute, async (c) => {
+    const actor = requireConfigAdmin(c);
+    const body = c.req.valid("json");
+    const result = await setCityStatus({
+      cityIds: body.cityIds,
+      status: body.status,
+      flags: body.flags,
+      reason: body.reason,
+      actor,
+      idempotencyKey: c.req.valid("header")[IDEMPOTENCY_HEADER],
+    });
+    return c.json(
+      {
+        cities: result.cities.map((entry) => ({ ...entry })),
+        flags: result.flags.map((entry) => ({ ...entry })),
+        by: result.by,
+        replayed: result.replayed,
+      },
+      200,
+    );
+  });
+
   app.openapi(getCityConfigRoute, async (c) => {
     const { cityId } = c.req.valid("param");
     const active = await getActiveConfig(cityId);

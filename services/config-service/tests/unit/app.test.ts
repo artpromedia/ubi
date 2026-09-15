@@ -15,6 +15,8 @@ describe("app surface", () => {
     expect(Object.keys(doc.paths).sort()).toEqual([
       "/v1/config/change-requests",
       "/v1/config/change-requests/{id}/approve",
+      "/v1/config/cities",
+      "/v1/config/cities/status",
       "/v1/config/cities/{cityId}",
       "/v1/config/cities/{cityId}/history",
       "/v1/flags",

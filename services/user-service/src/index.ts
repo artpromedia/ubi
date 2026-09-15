@@ -32,6 +32,7 @@ import { driverRoutes } from "./routes/drivers";
 import { createGrantRoutes } from "./routes/grants";
 import { healthRoutes } from "./routes/health";
 import { createIdentityRoutes } from "./routes/identity";
+import { createKycRoutes } from "./routes/kyc";
 import { createMandateRoutes } from "./routes/mandates";
 import { sessionRoutes } from "./routes/sessions";
 import { userRoutes } from "./routes/users";
@@ -98,6 +99,10 @@ app.route("/auth", authRoutes);
 const identityDeps = defaultIdentityDeps();
 app.route("/devices", createDeviceRoutes(identityDeps));
 app.route("/", createIdentityRoutes(identityDeps));
+
+// KYC requirements per city: public, no account data (marketing site and
+// driver app read the same list). Mounted outside `protectedApi` on purpose.
+app.route("/", createKycRoutes());
 
 // ===========================================
 // Action grants + mandates (slice NEW-01)
