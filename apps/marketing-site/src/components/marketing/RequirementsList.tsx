@@ -80,9 +80,8 @@ export async function RequirementsList({
       <p className="mk-small mt-3.5">
         Own several cars?{" "}
         <DestinationLink to="fleetContact" variant="text">
-          Fleet arrangements
-        </DestinationLink>{" "}
-        are agreed with UBI directly.
+          Fleet arrangements are agreed with UBI directly.
+        </DestinationLink>
       </p>
     </aside>
   );

@@ -183,12 +183,17 @@ export function CityCarousel({
                 aria-selected={position === index}
                 aria-label={slide.cityName}
                 onClick={() => setIndex(position)}
-                className={`h-2 rounded-full transition-all ${
-                  position === index
-                    ? "w-[22px] bg-mk-green"
-                    : "w-2 bg-mk-on-forest/60"
-                }`}
-              />
+                className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full"
+              >
+                <span
+                  aria-hidden
+                  className={`h-2 rounded-full transition-all ${
+                    position === index
+                      ? "w-[22px] bg-mk-green"
+                      : "w-2 bg-mk-on-forest/60"
+                  }`}
+                />
+              </button>
             ))}
           </div>
         </>
