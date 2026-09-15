@@ -1,0 +1,4 @@
+next-env.d.ts
+.next/
+e2e-results/
+e2e-report/

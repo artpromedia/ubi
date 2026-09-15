@@ -11,9 +11,13 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf .next .turbo node_modules"
+    "clean": "rm -rf .next .turbo node_modules",
+    "test:e2e": "next build && playwright test",
+    "test:e2e:report": "playwright show-report e2e-report"
   },
   "dependencies": {
+    "@ubi/analytics": "workspace:^",
+    "@ubi/contracts": "workspace:^",
     "@ubi/ui": "workspace:*",
     "@ubi/utils": "workspace:*",
     "clsx": "^2.1.1",
@@ -25,9 +29,13 @@
     "next-mdx-remote": "^5.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tailwind-merge": "^2.6.0"
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.57.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.1",
@@ -35,6 +43,7 @@
     "@ubi/typescript-config": "workspace:*",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
+    "eslint-config-next": "15.5.9",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",

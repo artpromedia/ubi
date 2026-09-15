@@ -1,3 +1,9 @@
+import { connection } from "next/server";
+
+import { SiteFooter } from "@/components/marketing/SiteFooter";
+import { SiteHeader } from "@/components/marketing/SiteHeader";
+import { listActiveCities } from "@/lib/availability";
+
 import {
   ArrowUpRight,
   Car,
@@ -24,8 +30,6 @@ const rider = configuredUrl(process.env.UBI_RIDER_URL);
 const driver = configuredUrl(process.env.UBI_DRIVER_URL);
 const ios = configuredUrl(process.env.UBI_IOS_STORE_URL);
 const android = configuredUrl(process.env.UBI_ANDROID_STORE_URL);
-const privacy = configuredUrl(process.env.UBI_PRIVACY_URL);
-const terms = configuredUrl(process.env.UBI_TERMS_URL);
 const services = [
   {
     name: "Move",
@@ -67,26 +71,19 @@ const faqs = [
     "Travel features are being introduced by market. Availability, prices and cancellation conditions depend on the provider and are shown before checkout.",
   ],
 ];
-export default function HomePage() {
+/**
+ * Homepage (marketing redesign). Rendered per request so the header, footer and
+ * every destination reflect the environment and city rows at request time.
+ */
+export default async function HomePage() {
+  await connection();
+  const cities = await listActiveCities();
   return (
-    <>
-      <a className="skip" href="#main">
-        Skip to content
-      </a>
-      <header className="header wrap">
-        <a href="/" aria-label="UBI home">
-          <img src="/ubi-logo-black.svg" width="80" height="40" alt="UBI" />
-        </a>
-        <nav aria-label="Main navigation">
-          <a href="#services">Explore UBI</a>
-          <a href="#drive">For drivers</a>
-          <a href="#questions">Questions</a>
-        </nav>
-        <a className="button small" href="#get-ubi">
-          Get UBI <ArrowUpRight size={17} />
-        </a>
-      </header>
-      <main id="main">
+    <div>
+      <SiteHeader current="ride" />
+      {/* `.home` scopes the redesign's element styles to the homepage body only,
+          so the shared header and footer keep the site-wide tokens. */}
+      <main id="main" tabIndex={-1} className="home">
         <section className="hero wrap">
           <div className="hero-copy">
             <p className="eyebrow">
@@ -416,25 +413,7 @@ export default function HomePage() {
           </div>
         </section>
       </main>
-      <footer className="wrap footer">
-        <div>
-          <a href="/" aria-label="UBI home">
-            <img src="/ubi-logo-black.svg" alt="UBI" width="80" height="40" />
-          </a>
-          <p>Make room for more of your day.</p>
-        </div>
-        <nav aria-label="Footer navigation">
-          <a href="#services">Explore</a>
-          <a href="#drive">Drive</a>
-          <a href="#questions">Questions</a>
-          {privacy && <a href={privacy}>Privacy</a>}
-          {terms && <a href={terms}>Terms</a>}
-        </nav>
-        <p className="copyright">
-          © {new Date().getFullYear()} UBI. Services and offers vary by
-          location.
-        </p>
-      </footer>
-    </>
+      <SiteFooter cities={cities} tagline="Make room for more of your day." />
+    </div>
   );
 }
