@@ -86,12 +86,13 @@ test("canonical and Open Graph URLs resolve to the gowithubi.com origin", async 
     );
   }
   await page.goto("/");
+  // Next serialises the origin with or without a trailing slash.
   await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
     "content",
-    "https://gowithubi.com/",
+    /^https:\/\/gowithubi\.com\/?$/,
   );
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     "href",
-    "https://gowithubi.com/",
+    /^https:\/\/gowithubi\.com\/?$/,
   );
 });
