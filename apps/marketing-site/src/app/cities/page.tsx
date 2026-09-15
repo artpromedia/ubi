@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   title: "Where UBI is",
   description:
     "See exactly what is on in each UBI city today, which cities are launching, and where UBI plans to go next.",
-  alternates: { canonical: "https://www.ubi.africa/cities" },
+  alternates: { canonical: "/cities" },
 };
 
 /** Board 24f. Live now / Launching / Planned next from city rows. No dates, no counts, no sign-ups. */

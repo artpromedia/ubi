@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   title: "Drive with UBI",
   description:
     "Apply in the UBI Driver app: what you need, what happens next, how your pay is shown.",
-  alternates: { canonical: "https://www.ubi.africa/drive" },
+  alternates: { canonical: "/drive" },
 };
 
 /**

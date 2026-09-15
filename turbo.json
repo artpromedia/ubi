@@ -48,7 +48,8 @@
     "UBI_SUPPORT_PHONE",
     "NEXT_PUBLIC_POSTHOG_KEY",
     "NEXT_PUBLIC_POSTHOG_HOST",
-    "PW_CHROMIUM_PATH"
+    "PW_CHROMIUM_PATH",
+    "UBI_SITE_URL"
   ],
   "tasks": {
     "build": {

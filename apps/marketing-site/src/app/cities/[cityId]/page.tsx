@@ -46,7 +46,8 @@ export async function generateMetadata({
     availability.status === "unknown_city" || availability.status === "error"
       ? cityId.toLowerCase()
       : citySlug(availability.cityName);
-  const canonical = `https://www.ubi.africa/cities/${slug}`;
+  // Relative: resolved against metadataBase (gowithubi.com) by Next.
+  const canonical = `/cities/${slug}`;
   if (availability.status === "unknown_city") {
     return {
       title: "City not launched",

@@ -132,7 +132,7 @@ export function citySlug(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/** Canonical path of a city page (board: ubi.africa/cities/lagos). */
+/** Canonical path of a city page (gowithubi.com/cities/lagos). */
 export function cityPath(city: { readonly name: string }): string {
   return `/cities/${citySlug(city.name)}`;
 }

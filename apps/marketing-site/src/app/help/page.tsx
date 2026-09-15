@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   title: "Help",
   description:
     "Support is inside the UBI apps. Urgent numbers, where to get help for rides, driving and travel bookings.",
-  alternates: { canonical: "https://www.ubi.africa/help" },
+  alternates: { canonical: "/help" },
 };
 
 /**

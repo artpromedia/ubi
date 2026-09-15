@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Poppins } from "next/font/google";
 
+import { SITE_ORIGIN, SITE_URL } from "@/lib/site";
+
 import "@/styles/globals.css";
 
 const inter = Inter({
@@ -17,7 +19,7 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.ubi.africa"),
+  metadataBase: SITE_URL,
   title: {
     default: "UBI. Life moves. Move with UBI.",
     template: "%s | UBI",
@@ -45,8 +47,8 @@ const organisation = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: "UBI",
-  url: "https://www.ubi.africa",
-  logo: "https://www.ubi.africa/brand/ubi-logo-black.svg",
+  url: SITE_ORIGIN,
+  logo: `${SITE_ORIGIN}/brand/ubi-logo-black.svg`,
 };
 
 export default function RootLayout({

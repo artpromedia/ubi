@@ -67,3 +67,31 @@ test("pending destinations render as spans wherever the env is unset", async ({
   );
   expect(new Set(keys)).toEqual(new Set(["iosStore", "androidStore", "terms"]));
 });
+
+test("canonical and Open Graph URLs resolve to the gowithubi.com origin", async ({
+  page,
+  request,
+}) => {
+  await scenario(request, "today");
+  for (const [route, expected] of [
+    ["/cities/lagos", "https://gowithubi.com/cities/lagos"],
+    ["/cities", "https://gowithubi.com/cities"],
+    ["/drive", "https://gowithubi.com/drive"],
+    ["/help", "https://gowithubi.com/help"],
+  ]) {
+    await page.goto(route as string);
+    await expect(page.locator('link[rel="canonical"]'), route).toHaveAttribute(
+      "href",
+      expected as string,
+    );
+  }
+  await page.goto("/");
+  await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+    "content",
+    "https://gowithubi.com/",
+  );
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    "https://gowithubi.com/",
+  );
+});

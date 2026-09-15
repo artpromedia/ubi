@@ -47,6 +47,7 @@ each is an external decision.
 
 | Variable                                                                                                 | dev            | staging | production |
 | -------------------------------------------------------------------------------------------------------- | -------------- | ------- | ---------- |
+| `UBI_SITE_URL` (site origin; default `https://gowithubi.com`)                                            | default        | default | default    |
 | `UBI_RIDER_URL`, `UBI_DRIVER_URL`                                                                        | unset          | unset   | unset      |
 | `UBI_IOS_STORE_URL`, `UBI_ANDROID_STORE_URL`, `UBI_DRIVER_IOS_STORE_URL`, `UBI_DRIVER_ANDROID_STORE_URL` | unset          | unset   | unset      |
 | `UBI_PRIVACY_URL`, `UBI_TERMS_URL`, `UBI_FLEET_CONTACT_URL`, `UBI_HELP_URL`, `UBI_SUPPORT_PHONE`         | unset          | unset   | unset      |
