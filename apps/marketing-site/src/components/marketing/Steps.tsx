@@ -64,7 +64,11 @@ export function Steps({
                   : "border border-mk-border bg-mk-surface"
               } rounded-[18px] p-5`}
             >
-              <div className="mb-2 text-[13px] font-bold text-mk-green-deep">
+              <div
+                className={`mb-2 text-[13px] font-bold ${
+                  last ? "text-mk-green" : "text-mk-green-deep"
+                }`}
+              >
                 {String(index + 1).padStart(2, "0")}
               </div>
               <div
