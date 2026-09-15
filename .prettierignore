@@ -16,3 +16,6 @@ pnpm-lock.yaml
 
 # Vendored verbatim from the external design handoff — kept byte-for-byte
 docs/launch-readiness/handoff
+
+# Vendored verbatim from the external marketing design handoff (board 24)
+docs/launch-readiness/handoff-marketing

@@ -11,17 +11,19 @@
  * or a default behind it. Nothing here is probabilistic: the same inputs always
  * evaluate to the same answer.
  */
-import { Prisma } from "@prisma/client";
-import { FLAG_KEYS, ContractError, scopedIdempotencyKey } from "@ubi/contracts";
 import { z } from "zod";
 
+import { FLAG_KEYS, ContractError, scopedIdempotencyKey } from "@ubi/contracts";
+
+import { type Tx, auditRevision, writeAudit } from "./audit";
+import { findOutboxByIdempotencyKey, writeOutboxEvent } from "./outbox";
 import { GLOBAL_SCOPE, configCache } from "../lib/cache";
 import { deterministicId } from "../lib/ids";
 import { flagLogger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
+
 import type { Actor } from "../middleware/actor";
-import { auditRevision, writeAudit } from "./audit";
-import { findOutboxByIdempotencyKey, writeOutboxEvent } from "./outbox";
+import type { Prisma } from "@prisma/client";
 
 /**
  * The only segment shape this service understands. Anything else is treated as
@@ -77,15 +79,20 @@ async function loadSnapshot(cityId: string | undefined): Promise<FlagSnapshot> {
 }
 
 function reviveSnapshot(raw: unknown): FlagSnapshot | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const candidate = raw as Partial<FlagSnapshot>;
-  if (!Array.isArray(candidate.defaults) || !Array.isArray(candidate.rules))
+  if (typeof raw !== "object" || raw === null) {
     return undefined;
+  }
+  const candidate = raw as Partial<FlagSnapshot>;
+  if (!Array.isArray(candidate.defaults) || !Array.isArray(candidate.rules)) {
+    return undefined;
+  }
   return { defaults: candidate.defaults, rules: candidate.rules };
 }
 
 function segmentMatches(segment: unknown, userId: string | undefined): boolean {
-  if (segment === null || segment === undefined) return true;
+  if (segment === null || segment === undefined) {
+    return true;
+  }
   const parsed = SegmentSchema.safeParse(segment);
   if (!parsed.success) {
     flagLogger.warn(
@@ -93,7 +100,9 @@ function segmentMatches(segment: unknown, userId: string | undefined): boolean {
     );
     return false;
   }
-  if (userId === undefined) return false;
+  if (userId === undefined) {
+    return false;
+  }
   return parsed.data.userIds.includes(userId);
 }
 
@@ -101,8 +110,12 @@ function evaluate(snapshot: FlagSnapshot, userId: string | undefined): FlagMap {
   const flags: FlagMap = {};
   // Every key the platform knows about is reported, so a client can tell
   // "off" from "never heard of it" only by asking; both render as off.
-  for (const key of FLAG_KEYS) flags[key] = false;
-  for (const { key, defaultOn } of snapshot.defaults) flags[key] = defaultOn;
+  for (const key of FLAG_KEYS) {
+    flags[key] = false;
+  }
+  for (const { key, defaultOn } of snapshot.defaults) {
+    flags[key] = defaultOn;
+  }
 
   const cityRules = snapshot.rules.filter((rule) => rule.cityScoped);
   const globalRules = snapshot.rules.filter((rule) => !rule.cityScoped);
@@ -118,7 +131,9 @@ function evaluate(snapshot: FlagSnapshot, userId: string | undefined): FlagMap {
     const globalRule = globalRules.find(
       (rule) => rule.flagKey === key && segmentMatches(rule.segment, userId),
     );
-    if (globalRule !== undefined) flags[key] = globalRule.enabled;
+    if (globalRule !== undefined) {
+      flags[key] = globalRule.enabled;
+    }
   }
 
   return flags;
@@ -130,10 +145,98 @@ export async function evaluateFlags(params: {
 }): Promise<FlagMap> {
   const snapshot = await configCache.read<FlagSnapshot>(
     flagScope(params.cityId),
-    () => loadSnapshot(params.cityId),
+    async () => loadSnapshot(params.cityId),
     reviveSnapshot,
   );
   return evaluate(snapshot, params.userId);
+}
+
+export interface ApplyFlagChangeInput {
+  readonly key: string;
+  readonly cityId: string | null;
+  readonly enabled: boolean;
+  readonly reason: string;
+  readonly segment?: Record<string, unknown> | undefined;
+  readonly actor: Actor;
+  /** Already scoped: the outbox idempotency key of the resulting event. */
+  readonly idempotencyKey: string;
+}
+
+/**
+ * The rule row, its audit row and its `flag.changed` outbox row, inside the
+ * caller's transaction. `setFlag` wraps it on its own; a city status change
+ * calls it for every flag it switches so the whole launch is one commit.
+ */
+export async function applyFlagChange(
+  tx: Tx,
+  flag: { readonly defaultOn: boolean },
+  input: ApplyFlagChangeInput,
+): Promise<{ readonly from: boolean }> {
+  const { key, cityId, enabled, reason, actor } = input;
+  const ruleId = deterministicId("flr", key, cityId ?? GLOBAL_SCOPE);
+  const subjectId = `flag:${key}:${cityId ?? GLOBAL_SCOPE}`;
+
+  // Looked up by (flag, city) rather than by unique key: Postgres does not
+  // enforce a unique index across NULL city ids, so the deterministic row id
+  // is what keeps a global rule single.
+  const existing = await tx.flagRule.findFirst({
+    where: { flagKey: key, cityId },
+  });
+  const from = existing?.enabled ?? flag.defaultOn;
+
+  await tx.flagRule.upsert({
+    where: { id: ruleId },
+    create: {
+      id: ruleId,
+      flagKey: key,
+      cityId,
+      enabled,
+      updatedBy: actor.id,
+      ...(input.segment === undefined
+        ? {}
+        : { segment: input.segment as Prisma.InputJsonValue }),
+    },
+    update: {
+      enabled,
+      updatedBy: actor.id,
+      ...(input.segment === undefined
+        ? {}
+        : { segment: input.segment as Prisma.InputJsonValue }),
+    },
+  });
+
+  await writeAudit(tx, {
+    actorId: actor.id,
+    actorRole: actor.role,
+    action: "flag.changed",
+    subjectType: "config",
+    subjectId,
+    before: { enabled: from },
+    after: {
+      enabled,
+      ...(input.segment === undefined ? {} : { segment: input.segment }),
+    } as Prisma.InputJsonValue,
+    reason,
+  });
+
+  // A flag rule has no version column; its revision is how many times it has
+  // been audited, which is monotonic and derived inside the same transaction.
+  const revision = await auditRevision(tx, "config", subjectId);
+
+  await writeOutboxEvent(tx, {
+    name: "flag.changed",
+    subjectType: "config",
+    subjectId,
+    actorType: "agent",
+    actorId: actor.id,
+    idempotencyKey: input.idempotencyKey,
+    fromVersion: revision > 1 ? revision - 1 : null,
+    toVersion: revision,
+    cityId,
+    payload: { key, cityId, from, to: enabled, by: actor.id },
+  });
+
+  return { from };
 }
 
 export interface SetFlagInput {
@@ -206,72 +309,18 @@ export async function setFlag(input: SetFlagInput): Promise<SetFlagResult> {
     };
   }
 
-  const ruleId = deterministicId("flr", key, cityId ?? GLOBAL_SCOPE);
-  const subjectId = `flag:${key}:${cityId ?? GLOBAL_SCOPE}`;
-
-  const result = await prisma.$transaction(async (tx) => {
-    // Looked up by (flag, city) rather than by unique key: Postgres does not
-    // enforce a unique index across NULL city ids, so the deterministic row id
-    // is what keeps a global rule single.
-    const existing = await tx.flagRule.findFirst({
-      where: { flagKey: key, cityId },
-    });
-    const from = existing?.enabled ?? flag.defaultOn;
-
-    await tx.flagRule.upsert({
-      where: { id: ruleId },
-      create: {
-        id: ruleId,
-        flagKey: key,
+  const result = await prisma.$transaction(
+    async (tx) =>
+      await applyFlagChange(tx, flag, {
+        key,
         cityId,
         enabled,
-        updatedBy: actor.id,
-        ...(input.segment === undefined
-          ? {}
-          : { segment: input.segment as Prisma.InputJsonValue }),
-      },
-      update: {
-        enabled,
-        updatedBy: actor.id,
-        ...(input.segment === undefined
-          ? {}
-          : { segment: input.segment as Prisma.InputJsonValue }),
-      },
-    });
-
-    await writeAudit(tx, {
-      actorId: actor.id,
-      actorRole: actor.role,
-      action: "flag.changed",
-      subjectType: "config",
-      subjectId,
-      before: { enabled: from },
-      after: {
-        enabled,
-        ...(input.segment === undefined ? {} : { segment: input.segment }),
-      } as Prisma.InputJsonValue,
-      reason,
-    });
-
-    // A flag rule has no version column; its revision is how many times it has
-    // been audited, which is monotonic and derived inside the same transaction.
-    const revision = await auditRevision(tx, "config", subjectId);
-
-    await writeOutboxEvent(tx, {
-      name: "flag.changed",
-      subjectType: "config",
-      subjectId,
-      actorType: "agent",
-      actorId: actor.id,
-      idempotencyKey,
-      fromVersion: revision > 1 ? revision - 1 : null,
-      toVersion: revision,
-      cityId,
-      payload: { key, cityId, from, to: enabled, by: actor.id },
-    });
-
-    return { from };
-  });
+        reason,
+        segment: input.segment,
+        actor,
+        idempotencyKey,
+      }),
+  );
 
   const affectedCities =
     cityId === null

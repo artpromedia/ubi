@@ -213,6 +213,7 @@ export const EVENT_NAMES = [
   "case.resolved",
   "config.version_activated",
   "flag.changed",
+  "city.status_changed",
   "recon.run",
   "recon.break_opened",
   "recon.break_owned",

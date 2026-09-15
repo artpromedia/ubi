@@ -124,3 +124,41 @@ export function kycTier(config: CityConfig, tier: string): KycTier {
   }
   return found;
 }
+
+/**
+ * Where a city is on its way to launch. The marketing site and the ops console
+ * render ONLY from this: `active` cities show services from their flags,
+ * `launching` cities are announced without a date, `planned` cities are named
+ * as intent, `paused` cities show nothing as live.
+ */
+export const CITY_STATUSES = [
+  "planned",
+  "launching",
+  "active",
+  "paused",
+] as const;
+export type CityStatus = (typeof CITY_STATUSES)[number];
+
+export const CityStatusSchema = z.enum(CITY_STATUSES);
+
+/** `GET /v1/config/cities` row (contracts/openapi/support-config.yaml). */
+export const CitySummarySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  country: z.string().length(2),
+  region: z.string().min(1).nullable(),
+  timezone: z.string().min(1),
+  status: CityStatusSchema,
+  /** Derived from `status` (`active` only); kept for readers that predate it. */
+  active: z.boolean(),
+  /**
+   * Cities that must go live together. A status change to `active` fails with
+   * `launch_pair_incomplete` unless every city in the group is active after it.
+   */
+  launchGroup: z.string().min(1).nullable(),
+});
+export type CitySummary = z.infer<typeof CitySummarySchema>;
+
+export function cityIsActive(status: CityStatus): boolean {
+  return status === "active";
+}

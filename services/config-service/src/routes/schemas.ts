@@ -6,7 +6,9 @@
  * wire shape and the validation the apps perform can never drift apart.
  */
 import { z } from "@hono/zod-openapi";
+
 import {
+  CITY_STATUSES,
   ERROR_CODES,
   IDEMPOTENCY_HEADER,
   IdempotencyKeySchema,
@@ -153,3 +155,53 @@ export const errorResponses = {
   500: jsonContent(ErrorSchema, "internal error"),
   503: jsonContent(ErrorSchema, "dependency unavailable"),
 } as const;
+
+/** `GET /v1/config/cities` row: launch status is the only thing the site renders from. */
+export const CitySummaryResponse = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    country: z.string(),
+    region: z.string().nullable(),
+    timezone: z.string(),
+    status: z.enum(CITY_STATUSES),
+    active: z.boolean(),
+    launchGroup: z.string().nullable(),
+  })
+  .openapi("CitySummary");
+
+export const CitiesResponse = z.array(CitySummaryResponse).openapi("Cities");
+
+export const CityStatusBody = z
+  .object({
+    cityIds: z.array(z.string().min(1).max(16)).min(1).max(16),
+    status: z.enum(CITY_STATUSES),
+    flags: z
+      .array(z.object({ key: z.string().min(1).max(64), enabled: z.boolean() }))
+      .max(32)
+      .optional(),
+    reason: z.string().min(3).max(500),
+  })
+  .openapi("CityStatusBody");
+
+export const CityStatusResponse = z
+  .object({
+    cities: z.array(
+      z.object({
+        cityId: z.string(),
+        from: z.enum(CITY_STATUSES),
+        to: z.enum(CITY_STATUSES),
+      }),
+    ),
+    flags: z.array(
+      z.object({
+        key: z.string(),
+        cityId: z.string(),
+        from: z.boolean(),
+        to: z.boolean(),
+      }),
+    ),
+    by: z.string(),
+    replayed: z.boolean(),
+  })
+  .openapi("CityStatusChange");

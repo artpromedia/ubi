@@ -17,30 +17,18 @@
  * with broken sentinels, but every one still REQUIRES ops/finance sign-off
  * before Lagos goes live. Each block is annotated where the number was set.
  */
-import type { Prisma } from "@prisma/client";
 import {
   type CityConfig,
   CityConfigSchema,
   ContractError,
-  FLAG_KEYS,
 } from "@ubi/contracts";
 
-import { deterministicId, newId } from "../lib/ids";
+import { LAGOS_CITY } from "./cities";
+import { type SeedResult, seedCityConfig } from "./city-config";
 import { GLOBAL_SCOPE } from "../lib/cache";
-import { seedLogger } from "../lib/logger";
-import { prisma } from "../lib/prisma";
-import { writeAudit } from "../services/audit";
-import { writeOutboxEvent } from "../services/outbox";
 
-export const LAGOS_CITY = {
-  id: "LOS",
-  name: "Lagos",
-  country: "NG",
-  timezone: "Africa/Lagos",
-} as const;
-
-/** Actor recorded for seeded rows; not a person and never a login. */
-const SEED_ACTOR = "system:seed";
+export { LAGOS_CITY };
+export type { SeedResult };
 
 /** Flags on for the Lagos launch. Everything else stays off (CLAUDE.md #5). */
 export const LAGOS_ENABLED_FLAGS = [
@@ -188,124 +176,21 @@ export function assertSeedAllowed(env: SeedEnv = process.env): void {
   }
 }
 
-export interface SeedResult {
-  readonly cityId: string;
-  readonly configVersion: number;
-  readonly createdVersion: boolean;
-  readonly flagsRegistered: number;
-}
-
 /**
- * Idempotent: a second run activates nothing. The activation is written with
- * its audit and outbox rows in one transaction, exactly like a real approval.
+ * Idempotent: a second run activates nothing. Lagos is seeded with status
+ * `launching` (the launch plan) and its launch-day flags on, so the ride flow
+ * can be exercised in dev and test while nothing reads as publicly live.
  */
 export async function seedLagos(
   env: SeedEnv = process.env,
 ): Promise<SeedResult> {
   assertSeedAllowed(env);
-
-  await prisma.city.upsert({
-    where: { id: LAGOS_CITY.id },
-    create: { ...LAGOS_CITY, active: true },
-    update: {
-      name: LAGOS_CITY.name,
-      timezone: LAGOS_CITY.timezone,
-      active: true,
-    },
+  return await seedCityConfig({
+    city: LAGOS_CITY,
+    config: lagosConfig,
+    enabledFlags: LAGOS_ENABLED_FLAGS,
+    reason: "initial lagos configuration",
   });
-
-  for (const key of FLAG_KEYS) {
-    await prisma.featureFlag.upsert({
-      where: { key },
-      create: { key, defaultOn: false, description: `${key} vertical` },
-      update: {},
-    });
-  }
-
-  for (const key of LAGOS_ENABLED_FLAGS) {
-    const id = deterministicId("flr", key, LAGOS_CITY.id);
-    await prisma.flagRule.upsert({
-      where: { id },
-      create: {
-        id,
-        flagKey: key,
-        cityId: LAGOS_CITY.id,
-        enabled: true,
-        updatedBy: SEED_ACTOR,
-      },
-      update: {},
-    });
-  }
-
-  const existing = await prisma.cityConfigVersion.findFirst({
-    where: { cityId: LAGOS_CITY.id, activatedAt: { not: null } },
-    orderBy: { version: "desc" },
-  });
-  if (existing !== null) {
-    seedLogger.info(
-      { cityId: LAGOS_CITY.id, version: existing.version },
-      "lagos config already activated; nothing to seed",
-    );
-    return {
-      cityId: LAGOS_CITY.id,
-      configVersion: existing.version,
-      createdVersion: false,
-      flagsRegistered: FLAG_KEYS.length,
-    };
-  }
-
-  const version = 1;
-  const config = lagosConfig(version);
-  const activatedAt = new Date();
-
-  await prisma.$transaction(async (tx) => {
-    const created = await tx.cityConfigVersion.create({
-      data: {
-        id: newId("ccv"),
-        cityId: LAGOS_CITY.id,
-        version,
-        config: config as unknown as Prisma.InputJsonValue,
-        activatedAt,
-        createdBy: SEED_ACTOR,
-        approvedBy: SEED_ACTOR,
-      },
-    });
-    await writeAudit(tx, {
-      actorId: SEED_ACTOR,
-      actorRole: "system",
-      action: "config.version_activated",
-      subjectType: "config",
-      subjectId: created.id,
-      after: {
-        version,
-        config,
-        approvers: [SEED_ACTOR],
-      } as unknown as Prisma.InputJsonValue,
-      reason: "initial lagos configuration",
-    });
-    await writeOutboxEvent(tx, {
-      name: "config.version_activated",
-      subjectType: "config",
-      subjectId: LAGOS_CITY.id,
-      actorType: "system",
-      actorId: SEED_ACTOR,
-      idempotencyKey: `config.version_activated:seed:${LAGOS_CITY.id}:${version}`,
-      fromVersion: null,
-      toVersion: version,
-      cityId: LAGOS_CITY.id,
-      payload: { cityId: LAGOS_CITY.id, version, diff: [], by: [SEED_ACTOR] },
-      occurredAt: activatedAt,
-    });
-  });
-
-  seedLogger.info({ cityId: LAGOS_CITY.id, version }, "seeded lagos config");
-
-  return {
-    cityId: LAGOS_CITY.id,
-    configVersion: version,
-    createdVersion: true,
-    flagsRegistered: FLAG_KEYS.length,
-  };
 }
 
 /** Cache scopes a caller should invalidate after seeding into a running system. */

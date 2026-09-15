@@ -54,6 +54,51 @@ components:
           type: string
         details:
           type: object
+    CitySummary:
+      type: object
+      required:
+        - id
+        - name
+        - country
+        - timezone
+        - status
+        - active
+      properties:
+        id:
+          type: string
+          example: LOS
+        name:
+          type: string
+          example: Lagos
+        country:
+          type: string
+          example: NG
+        region:
+          type: string
+          nullable: true
+          example: Lagos State
+        timezone:
+          type: string
+          example: Africa/Lagos
+        status:
+          type: string
+          description: >-
+            Launch status. The marketing site renders only from this: active ⇒ services from flags,
+            launching ⇒ coming with no date, planned ⇒ named as intent, paused ⇒ nothing live.
+          enum:
+            - planned
+            - launching
+            - active
+            - paused
+        active:
+          type: boolean
+          description: Derived from status (status == active). Kept for readers that predate status.
+        launchGroup:
+          type: string
+          nullable: true
+          description: >-
+            Cities in the same launch group go live together; activating one while another member is
+            not active fails with 409 launch_pair_incomplete.
     CityConfig:
       type: object
       properties:
@@ -168,6 +213,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CityConfig"
+  /v1/config/cities:
+    get:
+      summary: Every city with its launch status; launch cities first
+      responses:
+        "200":
+          description: city rows (planned, launching, active, paused)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CitySummary"
+  /v1/config/cities/status:
+    post:
+      summary: Change the launch status of one or more cities in one audited change
+      description: >-
+        Launch-group members must be activated in the same request (409 launch_pair_incomplete
+        otherwise). Flags listed in `flags` are switched for every city in the same transaction,
+        so a launch is one approved change. Idempotent on Idempotency-Key.
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cityIds
+                - status
+                - reason
+              properties:
+                cityIds:
+                  type: array
+                  items:
+                    type: string
+                status:
+                  type: string
+                  enum:
+                    - planned
+                    - launching
+                    - active
+                    - paused
+                flags:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - key
+                      - enabled
+                    properties:
+                      key:
+                        type: string
+                      enabled:
+                        type: boolean
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: status (and flags) changed, or the original answer on replay
+        "409":
+          description: launch_pair_incomplete, or a concurrent change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/flags:
     get:
       parameters:
@@ -237,6 +347,31 @@ paths:
       responses:
         "201":
           description: uploaded → review queue
+  /v1/kyc/requirements:
+    get:
+      summary: What a driver in a city must provide (user-service); public, no account data
+      parameters:
+        - name: cityId
+          in: query
+          required: true
+          schema:
+            type: string
+            example: LOS
+        - name: role
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - driver
+      responses:
+        "200":
+          description: >-
+            documents[] of {type, title, detail, required, owner: driver|vehicle|identity};
+            Lagos adds the LASDRI card, every city carries licence, NIN + selfie identity check,
+            vehicle registration, roadworthiness, third-party insurance and background check
+        "404":
+          description: city_unsupported when no set is published for the city
   /v1/safety/sos:
     post:
       responses:

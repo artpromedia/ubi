@@ -429,9 +429,61 @@ jobs:
           pnpm --filter @ubi/rider-mobile exec jest
           pnpm --filter @ubi/driver-mobile exec jest
 
+  # ===========================================
+  # MARKETING SITE E2E (Playwright)
+  # ===========================================
+  marketing-e2e:
+    name: Marketing E2E (Playwright)
+    needs: setup
+    runs-on: ubuntu-latest
+    # Required: the production build of apps/marketing-site against mocked
+    # config-service and user-service, every state in the handoff's
+    # ACCEPTANCE.md at 1440 and 390, axe on every route. No continue-on-error.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the marketing site's workspace dependencies
+        run: pnpm turbo run build --filter=@ubi/marketing-site^...
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @ubi/marketing-site exec playwright install --with-deps chromium
+
+      - name: Unit tests
+        run: pnpm --filter @ubi/marketing-site test
+
+      - name: Build and run the E2E suite
+        run: pnpm --filter @ubi/marketing-site test:e2e
+
+      - name: Upload Playwright report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketing-e2e
+          path: |
+            apps/marketing-site/e2e-report
+            apps/marketing-site/e2e-results
+            apps/marketing-site/e2e/screenshots
+          retention-days: 7
+
   ci-success:
     name: CI Success
-    needs: [build, test, go-build, db-check, contracts, rn-mobile]
+    needs:
+      [build, test, go-build, db-check, contracts, rn-mobile, marketing-e2e]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -441,7 +493,8 @@ jobs:
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.go-build.result }}" != "success" ] || \
              [ "${{ needs.db-check.result }}" != "success" ] || \
-             [ "${{ needs.contracts.result }}" != "success" ]; then
+             [ "${{ needs.contracts.result }}" != "success" ] || \
+             [ "${{ needs.marketing-e2e.result }}" != "success" ]; then
             echo "One or more jobs failed"
             exit 1
           fi

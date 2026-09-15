@@ -11,8 +11,16 @@ import { PORT } from "./lib/env";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis } from "./lib/redis";
+import { startMarketingRevalidation } from "./marketing-revalidate";
 
 const app = buildApp();
+
+const marketingRevalidation = startMarketingRevalidation().catch(
+  (err: unknown) => {
+    logger.error({ err }, "marketing revalidation consumer failed to start");
+    return undefined;
+  },
+);
 
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   logger.info({ port: info.port }, "config-service listening");
@@ -21,6 +29,7 @@ const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "shutting down");
   server.close();
+  await (await marketingRevalidation)?.stop();
   await disconnectPrisma();
   await disconnectRedis();
 }

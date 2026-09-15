@@ -2,77 +2,689 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Marketing stylesheet.
+ *
+ * 1. Tokens: `--mk-*` custom properties are derived from src/styles/marketing-tokens.ts
+ *    through Tailwind's theme(); that file is the only place a value is typed.
+ * 2. Type scale and focus rules for the Tailwind pages (board 24).
+ * 3. The homepage redesign's plain CSS, scoped under `.home` so its element
+ *    selectors (h1, p, em ...) never leak into the other pages, with its hex
+ *    colours replaced by the shared tokens.
+ */
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 220 14% 10%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 14% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 14% 10%;
-    --primary: 145 63% 42%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 13% 96%;
-    --secondary-foreground: 220 14% 10%;
-    --muted: 220 13% 96%;
-    --muted-foreground: 220 9% 46%;
-    --accent: 220 13% 96%;
-    --accent-foreground: 220 14% 10%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 145 63% 42%;
-    --radius: 0.75rem;
-    
-    /* UBI specific */
-    --ubi-green: 145 63% 42%;
-    --ubi-bites: 20 100% 64%;
-    --ubi-send: 184 85% 40%;
+    --mk-canvas: theme(colors.mk-canvas);
+    --mk-surface: theme(colors.mk-surface);
+    --mk-mint: theme(colors.mk-mint);
+    --mk-mint-border: theme(colors.mk-mint-border);
+    --mk-forest: theme(colors.mk-forest);
+    --mk-forest-hover: theme(colors.mk-forest-hover);
+    --mk-forest-soft: theme(colors.mk-forest-soft);
+    --mk-ink: theme(colors.mk-ink);
+    --mk-muted: theme(colors.mk-muted);
+    --mk-border: theme(colors.mk-border);
+    --mk-border-dashed: theme(colors.mk-border-dashed);
+    --mk-divider: theme(colors.mk-divider);
+    --mk-skeleton: theme(colors.mk-skeleton);
+    --mk-green: theme(colors.mk-green);
+    --mk-green-hover: theme(colors.mk-green-hover);
+    --mk-green-ink: theme(colors.mk-green-ink);
+    --mk-green-deep: theme(colors.mk-green-deep);
+    --mk-lime: theme(colors.mk-lime);
+    --mk-lime-soft: theme(colors.mk-lime-soft);
+    --mk-peach: theme(colors.mk-peach);
+    --mk-sky: theme(colors.mk-sky);
+    --mk-on-forest: theme(colors.mk-on-forest);
+    --mk-on-forest-muted: theme(colors.mk-on-forest-muted);
+    --mk-warn-bg: theme(colors.mk-warn-bg);
+    --mk-warn-border: theme(colors.mk-warn-border);
+    --mk-warn-ink: theme(colors.mk-warn-ink);
+    --mk-radius-card: theme(borderRadius.card);
+    --mk-radius-card-lg: theme(borderRadius.card-lg);
+    --mk-radius-control: theme(borderRadius.control);
+    --mk-radius-cta: theme(borderRadius.cta);
+    --mk-radius-pill: 999px;
+    --mk-target: theme(minHeight.target);
+    --mk-cta-height: theme(minHeight.cta);
+    --mk-font-heading:
+      var(--font-poppins), var(--font-inter), system-ui, sans-serif;
+    --mk-font-body: var(--font-inter), system-ui, sans-serif;
   }
 
-  .dark {
-    --background: 220 14% 4%;
-    --foreground: 0 0% 98%;
-    --card: 220 14% 6%;
-    --card-foreground: 0 0% 98%;
-    --popover: 220 14% 6%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 145 63% 42%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 14%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 220 14% 14%;
-    --muted-foreground: 220 9% 54%;
-    --accent: 220 14% 14%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 84% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 220 14% 14%;
-    --input: 220 14% 14%;
-    --ring: 145 63% 42%;
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 80px;
   }
-}
 
-@layer base {
-  * {
-    @apply border-border;
-  }
   body {
-    @apply bg-background text-foreground;
+    background: var(--mk-canvas);
+    color: var(--mk-ink);
+    font-family: var(--mk-font-body);
+  }
+
+  /* Focus: 3 px UBI green, offset 3, cream on forest surfaces. Never removed. */
+  :where(a, button, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--mk-green);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+  .mk-on-forest :where(a, button, [tabindex]):focus-visible {
+    outline-color: var(--mk-on-forest);
   }
 }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
+@layer components {
+  /* Type scale (board 24): Poppins 600 headings, Inter body. Desktop / mobile. */
+  .mk-h1 {
+    font: 600 56px/1.05 var(--mk-font-heading);
+    letter-spacing: -0.02em;
+    color: var(--mk-forest);
+  }
+  .mk-h2 {
+    font: 600 32px/1.15 var(--mk-font-heading);
+    letter-spacing: -0.01em;
+    color: var(--mk-forest);
+  }
+  .mk-h3 {
+    font: 600 22px/1.2 var(--mk-font-heading);
+    color: var(--mk-forest);
+  }
+  .mk-lead {
+    font: 400 19px/1.55 var(--mk-font-body);
+    color: var(--mk-ink);
+    text-wrap: pretty;
+  }
+  .mk-body {
+    font: 400 15px/1.55 var(--mk-font-body);
+    color: var(--mk-ink);
+  }
+  .mk-small {
+    font: 400 13px/1.5 var(--mk-font-body);
+    color: var(--mk-muted);
+  }
+  .mk-label {
+    font: 600 11px/1 var(--mk-font-body);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  @media (max-width: 639px) {
+    .mk-h1 {
+      font-size: 38px;
+      line-height: 1.08;
+    }
+    .mk-h2 {
+      font-size: 26px;
+    }
+    .mk-h3 {
+      font-size: 20px;
+    }
+    .mk-lead {
+      font-size: 16.5px;
+    }
+    .mk-body {
+      font-size: 14.5px;
+    }
+  }
 }
 
-/* Hide scrollbar but keep functionality */
-.no-scrollbar::-webkit-scrollbar {
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .mk-motion {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Homepage redesign (scoped to <main class="home">). Element selectors are   */
+/* prefixed with `.home` so they never reach the shared header and footer.  */
+/* Preflight zeroes paragraph margins, so the few paragraphs that relied on   */
+/* browser defaults get theirs back below.                                    */
+/* ------------------------------------------------------------------------- */
+.home h1,
+.home h2,
+.home h3 {
+  font-family: var(--mk-font-heading);
+}
+.home .lead {
+  margin: 0 0 24px;
+}
+.home .future-grid p:not(.eyebrow) {
+  margin: 0 0 16px;
+}
+.home .faq details p {
+  margin: 12px 0 0;
+}
+.home .download > svg {
+  margin-left: auto;
+  margin-right: auto;
+}
+.home .section-heading > p {
+  margin: 0;
+}
+.home a {
+  color: inherit;
+  text-decoration: none;
+}
+.home a:hover {
+  text-decoration: underline;
+}
+.home p {
+  line-height: 1.65;
+}
+.home svg {
+  flex-shrink: 0;
+}
+.home .wrap {
+  max-width: 1240px;
+  margin: auto;
+  padding-left: 40px;
+  padding-right: 40px;
+}
+.home .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: var(--mk-forest);
+  color: white;
+  min-height: 54px;
+  padding: 16px 25px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.home .button:hover {
+  background: var(--mk-forest-hover);
+  text-decoration: none;
+}
+.home .button.small {
+  min-height: 44px;
+  padding: 12px 18px;
+}
+.home .hero {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 60px;
+  align-items: center;
+  padding-top: 55px;
+  padding-bottom: 75px;
+}
+.home .eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+  margin: 0 0 24px;
+}
+.home .dot {
+  display: inline-block;
+  background: var(--mk-green-deep);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.home h1 {
+  font-size: clamp(56px, 6.6vw, 86px);
+  line-height: 1.04;
+  letter-spacing: -5px;
+  margin: 0 0 28px;
+  font-weight: 600;
+}
+.home em {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  color: var(--mk-green-deep);
+}
+.home h2 {
+  font-size: clamp(34px, 4vw, 50px);
+  line-height: 1.1;
+  letter-spacing: -2px;
+  margin: 0 0 24px;
+  font-weight: 500;
+}
+.home h3 {
+  font-size: 22px;
+  letter-spacing: -0.5px;
+  font-weight: 500;
+}
+.home .lead {
+  font-size: 17px;
+  color: var(--mk-muted);
+  max-width: 450px;
+}
+.home .actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin: 30px 0 0;
+}
+.home .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.home .quiet {
+  font-size: 12px;
+  color: var(--mk-muted);
+  margin-top: 26px;
+}
+.home .journey-art {
+  position: relative;
+  background: var(--mk-mint);
+  border-radius: 22px;
+  overflow: hidden;
+  height: 550px;
+  transform: rotate(2deg);
+}
+.home .journey-art > svg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.home .art-top {
+  position: absolute;
+  top: 28px;
+  left: 28px;
+  right: 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 2px;
+  font-weight: bold;
+  z-index: 1;
+}
+.home .art-top > span:last-child {
+  font-size: 32px;
+}
+.home .map-label {
+  position: absolute;
+  background: var(--mk-surface);
+  border-radius: 8px;
+  padding: 14px 18px;
+  box-shadow: 0 8px 20px rgb(16 56 42 / 0.05);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  gap: 25px;
+}
+.home .map-label.end {
+  right: 24px;
+  top: 110px;
+}
+.home .map-label.start {
+  left: 24px;
+  bottom: 165px;
+}
+.home .art-bottom {
+  position: absolute;
+  bottom: 22px;
+  left: 22px;
+  right: 22px;
+  background: var(--mk-surface);
+  border-radius: 14px;
+  padding: 22px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.home .art-bottom div {
+  font-size: 18px;
+  line-height: 1.4;
+}
+.home .art-bottom > span {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.home .section {
+  padding-top: 70px;
+  padding-bottom: 70px;
+}
+.home .section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+  margin-bottom: 38px;
+}
+.home .section-heading h2 {
+  margin: 0;
+}
+.home .section-heading > p {
+  max-width: 310px;
+  color: var(--mk-muted);
+  font-size: 14px;
+}
+.home .service-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.home .service {
+  padding: 30px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 330px;
+}
+.home .mint {
+  background: var(--mk-mint);
+}
+.home .peach {
+  background: var(--mk-peach);
+}
+.home .blue {
+  background: var(--mk-sky);
+}
+.home .service-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 1.4px;
+}
+.home .service h3 {
+  font-size: 30px;
+  line-height: 1.15;
+  max-width: 240px;
+  margin: 42px 0 12px;
+}
+.home .service p {
+  font-size: 14px;
+  color: var(--mk-muted);
+  margin: 0 0 25px;
+}
+.home .service a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  font-size: 13px;
+  font-weight: bold;
+}
+.home .steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  border-top: 1px solid var(--mk-border);
+  padding-top: 60px;
+}
+.home .steps ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.home .steps li {
+  display: flex;
+  gap: 28px;
+  margin-bottom: 30px;
+}
+.home .steps li > span {
+  font-size: 12px;
+  padding-top: 5px;
+  color: var(--mk-green-deep);
+}
+.home .steps h3 {
+  margin: 0;
+}
+.home .steps p {
+  font-size: 14px;
+  color: var(--mk-muted);
+  margin: 8px 0;
+}
+.home .driver-section {
+  background: var(--mk-forest);
+  color: var(--mk-surface);
+  padding: 80px 0;
+}
+.home .driver-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 110px;
+}
+.home .driver-section em {
+  color: var(--mk-lime);
+}
+.home .driver-section .lead {
+  color: var(--mk-on-forest-muted);
+}
+.home .light {
+  background: var(--mk-lime-soft);
+  color: var(--mk-forest);
+}
+.home .light:hover {
+  background: var(--mk-lime);
+}
+.home .driver-notes article {
+  position: relative;
+  padding-left: 45px;
+  border-bottom: 1px solid var(--mk-forest-soft);
+  padding-bottom: 20px;
+  margin-bottom: 25px;
+}
+.home .driver-notes svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--mk-lime);
+}
+.home .driver-notes h3 {
+  font-size: 20px;
+  margin: 0;
+}
+.home .driver-notes p {
+  font-size: 14px;
+  color: var(--mk-on-forest-muted);
+  margin: 10px 0 0;
+}
+.home .future-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 70px;
+}
+.home .future-grid article {
+  padding: 30px 0;
+}
+.home .future-grid article > svg {
+  margin-bottom: 25px;
+}
+.home .future-grid p:not(.eyebrow) {
+  color: var(--mk-muted);
+  max-width: 430px;
+  font-size: 15px;
+}
+.home .tag {
+  display: inline-block;
+  border: 1px solid var(--mk-border);
+  border-radius: 30px;
+  font-size: 11px;
+  padding: 8px 12px;
+  margin-top: 10px;
+}
+.home .faq {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 60px;
+  border-top: 1px solid var(--mk-border);
+}
+.home .faq details {
+  border-bottom: 1px solid var(--mk-border);
+  padding: 21px 0;
+}
+.home .faq summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.home .faq summary::-webkit-details-marker {
   display: none;
 }
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+.home .faq details[open] summary span {
+  transform: rotate(45deg);
+}
+.home .faq details p {
+  font-size: 14px;
+  color: var(--mk-muted);
+  max-width: 520px;
+}
+.home .download {
+  text-align: center;
+  background: var(--mk-mint);
+  border-radius: 20px;
+  padding-top: 60px;
+  padding-bottom: 60px;
+  margin-top: 30px;
+  margin-bottom: 70px;
+}
+.home .download > .eyebrow {
+  margin-top: 20px;
+}
+.home .download > p:not(.eyebrow) {
+  color: var(--mk-muted);
+}
+.home .access-grid {
+  max-width: 800px;
+  margin: 30px auto 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.home .access-grid article {
+  background: var(--mk-canvas);
+  border-radius: 12px;
+  padding: 24px;
+}
+.home .access-grid h3 {
+  margin: 0 0 12px;
+}
+.home .access-grid p {
+  font-size: 14px;
+  color: var(--mk-muted);
+  margin: 0;
+}
+.home .access-grid .actions {
+  justify-content: center;
+  margin-top: 0;
+  gap: 12px;
+}
+@media (max-width: 800px) {
+  .home .wrap {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .home .hero {
+    gap: 30px;
+    padding-top: 30px;
+  }
+  .home .journey-art {
+    height: 450px;
+  }
+  .home h1 {
+    font-size: 58px;
+    letter-spacing: -3px;
+  }
+  .home .service-grid {
+    gap: 12px;
+  }
+  .home .service {
+    padding: 22px;
+  }
+  .home .service h3 {
+    font-size: 25px;
+  }
+  .home .driver-grid {
+    gap: 45px;
+  }
+  .home .steps {
+    gap: 35px;
+  }
+  .home .download {
+    margin-left: 20px;
+    margin-right: 20px;
+  }
+}
+@media (max-width: 600px) {
+  .home .hero {
+    grid-template-columns: 1fr;
+    padding-bottom: 35px;
+  }
+  .home .hero h1 {
+    font-size: 64px;
+  }
+  .home .hero-copy {
+    padding-top: 20px;
+  }
+  .home .journey-art {
+    height: 420px;
+    transform: none;
+    margin-top: 10px;
+  }
+  .home .section {
+    padding-top: 45px;
+    padding-bottom: 45px;
+  }
+  .home .section-heading {
+    display: block;
+  }
+  .home .section-heading > p {
+    max-width: none;
+  }
+  .home .service-grid,
+  .home .steps,
+  .home .driver-grid,
+  .home .future-grid,
+  .home .faq,
+  .home .access-grid {
+    grid-template-columns: 1fr;
+  }
+  .home .service {
+    min-height: 290px;
+  }
+  .home .service h3 {
+    max-width: none;
+    margin-top: 30px;
+  }
+  .home .steps {
+    padding-top: 35px;
+    gap: 20px;
+  }
+  .home .driver-section {
+    padding: 55px 0;
+  }
+  .home .driver-grid {
+    gap: 45px;
+  }
+  .home .future-grid {
+    gap: 0;
+  }
+  .home .future-grid article + article {
+    border-top: 1px solid var(--mk-border);
+  }
+  .home .faq {
+    gap: 10px;
+  }
+  .home .download {
+    padding: 40px 20px;
+    margin-bottom: 40px;
+  }
+  .home .art-bottom {
+    padding: 18px;
+  }
+  .home .actions {
+    gap: 20px;
+  }
 }
