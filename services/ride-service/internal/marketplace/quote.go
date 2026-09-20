@@ -133,22 +133,35 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 		return nil, asDomainError(err)
 	}
 
+	return quoteEnvelopeViewOf(quote), nil
+}
+
+// quoteEnvelopeViewOf renders the client-facing envelope: every amount a
+// Money object, per the contract.
+func quoteEnvelopeViewOf(quote *Quote) *QuoteEnvelopeView {
+	breakdown := make([]BreakdownRowView, 0, len(quote.Breakdown))
+	for _, row := range quote.Breakdown {
+		breakdown = append(breakdown, BreakdownRowView{
+			Label:       row.Label,
+			AmountMinor: money(row.AmountMinor, quote.Currency),
+		})
+	}
 	return &QuoteEnvelopeView{
 		QuoteID:              quote.ID.String(),
 		Service:              quote.Service,
 		VehicleClass:         quote.VehicleClass,
 		CityID:               quote.CityID,
 		Currency:             quote.Currency,
-		SuggestedFareMinor:   quote.SuggestedMinor,
-		MinimumFareMinor:     quote.MinMinor,
-		MaximumFareMinor:     quote.MaxMinor,
+		SuggestedFareMinor:   money(quote.SuggestedMinor, quote.Currency),
+		MinimumFareMinor:     money(quote.MinMinor, quote.Currency),
+		MaximumFareMinor:     money(quote.MaxMinor, quote.Currency),
 		ExpiresAt:            quote.ExpiresAt,
 		PricingVersion:       quote.PricingVersion,
 		PolicyVersion:        quote.PolicyVersion,
-		Breakdown:            quote.Breakdown,
+		Breakdown:            breakdown,
 		RoutedDistanceMeters: quote.RoutedDistanceM,
 		RoutedDurationSec:    quote.RoutedDurationSec,
-	}, nil
+	}
 }
 
 // exactAreaOf keeps the routed coordinate for server-side checks — envelope

@@ -187,17 +187,17 @@ export async function marketplaceFixtures(i: FixtureInput) {
   // ── Driver view (D02/D03/D10) ──
   if (i.method === 'GET' && /^\/v1\/mp\/requests\/req_mp_210\/driver-view$/.test(i.path)) {
     const item = feedItems()[2];
-    return ok({ item, eligibility: eligibility({ eligible: false, reasons: blockedReasons, slot: null }), presets: [], profileLine: null, ceilingNotice: null, myBid: null });
+    return ok({ item, eligibility: eligibility({ eligible: false, reasons: blockedReasons, slot: null }), presets: [], profileLine: null, ceilingNotice: null, myBid: null, currentClaimId: null });
   }
   if (i.method === 'GET' && /^\/v1\/mp\/requests\/(req_mp_201|req_mp_202)\/driver-view$/.test(i.path)) {
     const isRide = i.path.includes('req_mp_201');
     const item = feedItems()[isRide ? 0 : 1];
     const reasons = motionReasons();
-    if (reasons.length) return ok({ item, eligibility: eligibility({ eligible: false, reasons, slot: null }), presets: [], profileLine: null, ceilingNotice: null, myBid: null });
+    if (reasons.length) return ok({ item, eligibility: eligibility({ eligible: false, reasons, slot: null }), presets: [], profileLine: null, ceilingNotice: null, myBid: null, currentClaimId: null });
     if (!isRide) {
       return ok({
         item, eligibility: eligibility(), presets: [preset('d_req', 'requested', 1800_00, 'Offer ₦1,800 · sender’s price', true), preset('d_low', 'lower', 1600_00, 'Offer ₦1,600 · undercut slightly', false)],
-        profileLine: null, ceilingNotice: null, myBid: null,
+        profileLine: null, ceilingNotice: null, myBid: null, currentClaimId: null,
       });
     }
     return ok({
@@ -262,8 +262,8 @@ export async function marketplaceFixtures(i: FixtureInput) {
     const b = i.body as { perKmMinor: number; minimumTripFareMinor: number };
     return ok(ratePreview(b.perKmMinor, b.minimumTripFareMinor));
   }
-  // ── Wallet (D04) ──
-  if (i.method === 'GET' && i.path === '/v1/wallet/mp/overview') {
+  // ── Wallet (D04) ── (`?cityId=` names the market, per the contract)
+  if (i.method === 'GET' && (i.path === '/v1/wallet/mp/overview' || i.path.startsWith('/v1/wallet/mp/overview?'))) {
     // Pending top-ups clear only after polls — standing in for wallet.topup.settled.
     if (s.topupClearPolls !== null) {
       s.topupClearPolls += 1;
@@ -286,26 +286,26 @@ export async function marketplaceFixtures(i: FixtureInput) {
     s.topupClearPolls = 0;
     return { status: 202, json: { topups: s.topups.map(({ label: l, state }) => ({ label: 'Top-up · ' + l, state })) } };
   }
-  // ── PROPOSED endpoints (see src/api/marketplace.ts) ──
+  // ── Parked attestation (D07) — contract ack {state, availabilityEpoch, confirmedAt, expiresAt, ttlSeconds} ──
   if (i.method === 'POST' && i.path === '/v1/mp/driver/parked') {
     // The server acknowledges the attestation; the client adopts THIS state, never its own.
-    return ok({ state: 'parked_confirmed', availabilityEpoch: 8, confirmedAt: new Date().toISOString() });
+    return ok({ state: 'parked_confirmed', availabilityEpoch: 8, confirmedAt: new Date().toISOString(), expiresAt: iso(600_000), ttlSeconds: 600 });
   }
+  // ── Jobs projection (D05/D11) — OpenAPI DriverJob schema ──
   if (i.method === 'GET' && i.path === '/v1/mp/driver/jobs') {
     s.jobsPolls += 1;
-    const next = { claimId: 'clm_next', slot: 'next', statusSuffix: 'queued', title: 'Lekki Phase 1 → Ajah · ₦2,800 agreed', fareMinor: NGN(2800), feeLine: 'Fee ₦280 · debited at selection', feeReceiptId: 'rcpt_mp_00291', detail: 'Pickup commitment 12–18 min · rider sees live updates', remainingLabel: null, tripId: null };
+    const next = { claimId: 'clm_next', slot: 'next', service: 'ride', state: 'queued', fareMinor: NGN(2800), commissionMinor: money(feeMinor(2800_00)), receiptId: 'rcpt_mp_00291', executionRef: null, pickupWindow: { earliestSec: 720, latestSec: 1080, etaVersion: 3 } };
     if (s.jobsPolls >= 7) {
       // Current ended early → promotion re-validates from the driver's actual location.
-      return ok({ winnerToast: null, current: null, next, promotion: 'failed_revalidating' });
+      return ok({ current: null, next, promotion: 'failed_revalidating' });
     }
     if (s.jobsPolls >= 5) {
-      return ok({ winnerToast: null, current: null, next, promotion: 'pending' });
+      return ok({ current: null, next, promotion: 'pending' });
     }
     return ok({
-      winnerToast: s.jobsPolls <= 2 ? { title: 'You got the job — ₦3,200 agreed', fareMinor: NGN(3200), feeLine: '−₦320', receiptLine: 'rcpt_mp_00287 · journal jl_88214', addressesLine: 'Full pickup and drop-off addresses are now visible: 14 Adeola Odeku St → 3 Bourdillon Rd.', tripId: 'ride_mp_901' } : null,
-      current: { claimId: 'clm_cur', slot: 'current', statusSuffix: 'in trip', title: 'Victoria Island → Ikoyi · ₦3,200 agreed', fareMinor: NGN(3200), feeLine: 'Fee ₦320 · rcpt_mp_00287', feeReceiptId: 'rcpt_mp_00287', detail: '', remainingLabel: '8 min remaining', tripId: 'ride_mp_901' },
+      current: { claimId: 'clm_cur', slot: 'current', service: 'ride', state: 'in trip', fareMinor: NGN(3200), commissionMinor: money(feeMinor(3200_00)), receiptId: 'rcpt_mp_00287', executionRef: { service: 'ride', id: 'ride_mp_901' }, pickupWindow: null },
       next,
-      promotion: null,
+      promotion: 'none',
     });
   }
   return undefined;

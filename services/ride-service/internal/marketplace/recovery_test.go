@@ -25,7 +25,7 @@ func TestReleaseFailureIsRecoveredBySweep(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	h.Wallet.SetSpendable(driver.UserID, 1_000_000)

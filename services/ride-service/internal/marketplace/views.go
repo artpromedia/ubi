@@ -8,22 +8,30 @@ import (
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
 )
 
+// BreakdownRowView is one labelled component of a suggested fare as clients
+// see it: the amount is a Money object per the contract. (The stored
+// BreakdownRow keeps its compact shape; only the view is Money-shaped.)
+type BreakdownRowView struct {
+	Label       string `json:"label"`
+	AmountMinor Money  `json:"amountMinor"`
+}
+
 // QuoteEnvelopeView answers GET /v1/mp/quote (MpQuoteEnvelopeSchema).
 type QuoteEnvelopeView struct {
-	QuoteID              string         `json:"quoteId"`
-	Service              string         `json:"service"`
-	VehicleClass         string         `json:"vehicleClass"`
-	CityID               string         `json:"cityId"`
-	Currency             string         `json:"currency"`
-	SuggestedFareMinor   int64          `json:"suggestedFareMinor"`
-	MinimumFareMinor     int64          `json:"minimumFareMinor"`
-	MaximumFareMinor     int64          `json:"maximumFareMinor"`
-	ExpiresAt            time.Time      `json:"expiresAt"`
-	PricingVersion       string         `json:"pricingVersion"`
-	PolicyVersion        int            `json:"policyVersion"`
-	Breakdown            []BreakdownRow `json:"breakdown"`
-	RoutedDistanceMeters int64          `json:"routedDistanceMeters"`
-	RoutedDurationSec    int64          `json:"routedDurationSec"`
+	QuoteID              string             `json:"quoteId"`
+	Service              string             `json:"service"`
+	VehicleClass         string             `json:"vehicleClass"`
+	CityID               string             `json:"cityId"`
+	Currency             string             `json:"currency"`
+	SuggestedFareMinor   Money              `json:"suggestedFareMinor"`
+	MinimumFareMinor     Money              `json:"minimumFareMinor"`
+	MaximumFareMinor     Money              `json:"maximumFareMinor"`
+	ExpiresAt            time.Time          `json:"expiresAt"`
+	PricingVersion       string             `json:"pricingVersion"`
+	PolicyVersion        int                `json:"policyVersion"`
+	Breakdown            []BreakdownRowView `json:"breakdown"`
+	RoutedDistanceMeters int64              `json:"routedDistanceMeters"`
+	RoutedDurationSec    int64              `json:"routedDurationSec"`
 }
 
 // SearchEnvelopeView is the request's current search envelope.
@@ -45,10 +53,10 @@ type RequestView struct {
 	Currency           string             `json:"currency"`
 	RequesterID        string             `json:"requesterId"`
 	QuoteID            string             `json:"quoteId"`
-	RequestedFareMinor int64              `json:"requestedFareMinor"`
-	SuggestedFareMinor int64              `json:"suggestedFareMinor"`
-	MinimumFareMinor   int64              `json:"minimumFareMinor"`
-	MaximumFareMinor   int64              `json:"maximumFareMinor"`
+	RequestedFareMinor Money              `json:"requestedFareMinor"`
+	SuggestedFareMinor Money              `json:"suggestedFareMinor"`
+	MinimumFareMinor   Money              `json:"minimumFareMinor"`
+	MaximumFareMinor   Money              `json:"maximumFareMinor"`
 	Pickup             Area               `json:"pickup"`
 	Dropoff            Area               `json:"dropoff"`
 	Delivery           map[string]any     `json:"delivery"`
@@ -77,10 +85,10 @@ func requestViewOf(request *Request) *RequestView {
 		Currency:           request.Currency,
 		RequesterID:        request.RequesterID.String(),
 		QuoteID:            request.QuoteID.String(),
-		RequestedFareMinor: request.RequestedMinor,
-		SuggestedFareMinor: request.SuggestedMinor,
-		MinimumFareMinor:   request.MinMinor,
-		MaximumFareMinor:   request.MaxMinor,
+		RequestedFareMinor: money(request.RequestedMinor, request.Currency),
+		SuggestedFareMinor: money(request.SuggestedMinor, request.Currency),
+		MinimumFareMinor:   money(request.MinMinor, request.Currency),
+		MaximumFareMinor:   money(request.MaxMinor, request.Currency),
 		Pickup:             request.Pickup,
 		Dropoff:            request.Dropoff,
 		Delivery:           request.Delivery,
@@ -97,6 +105,18 @@ func requestViewOf(request *Request) *RequestView {
 	}
 }
 
+// The client-facing hold-state vocabulary (MpBidDto.holdState). This is the
+// D06 rule made explicit: `released` is stated ONLY once the wallet CONFIRMED
+// the release; until then a terminal bid renders release_pending. A live bid
+// — and a won/selected bid, whose reservation was or will be captured as the
+// commission — renders `held`: the money is encumbered either way, and the
+// honest capture story belongs to the receipt, not this one-word gauge.
+const (
+	HoldStateHeld           = "held"
+	HoldStateReleasePending = "release_pending"
+	HoldStateReleased       = "released"
+)
+
 // BidView is the driver's own bid (MpBidSchema): their money, only theirs.
 type BidView struct {
 	BidID            string    `json:"bidId"`
@@ -105,9 +125,9 @@ type BidView struct {
 	BidVersion       int       `json:"bidVersion"`
 	State            string    `json:"state"`
 	DriverID         string    `json:"driverId"`
-	AmountMinor      int64     `json:"amountMinor"`
-	CommissionMinor  int64     `json:"commissionMinor"`
-	NetMinor         int64     `json:"netMinor"`
+	AmountMinor      Money     `json:"amountMinor"`
+	CommissionMinor  Money     `json:"commissionMinor"`
+	NetMinor         Money     `json:"netMinor"`
 	Slot             string    `json:"slot"`
 	DependsOnClaimID *string   `json:"dependsOnClaimId"`
 	ReservationID    string    `json:"reservationId"`
@@ -116,20 +136,23 @@ type BidView struct {
 	CreatedAt        time.Time `json:"createdAt"`
 }
 
-// holdStateFor derives the hold's state from the bid's: a live bid keeps its
-// reservation active, a won bid captured it, everything else released it.
-func holdStateFor(bidState string) string {
+// holdStateFor maps a bid row to the honest client vocabulary. Live and
+// won/captured bids read `held`; a terminal bid reads `released` only when
+// the release was financially confirmed (bid.HoldReleasedAt), otherwise
+// `release_pending` — an unresolved recovery row or an in-flight release must
+// never be dressed up as done.
+func holdStateFor(bid *Bid) string {
 	switch {
-	case machine.IsMpBidLive(bidState):
-		return machine.MpHoldActive
-	case bidState == machine.MpBidWon:
-		return machine.MpHoldCaptured
+	case machine.IsMpBidLive(bid.State), bid.State == machine.MpBidWon:
+		return HoldStateHeld
+	case bid.HoldReleasedAt != nil:
+		return HoldStateReleased
 	default:
-		return machine.MpHoldReleased
+		return HoldStateReleasePending
 	}
 }
 
-func bidViewOf(bid *Bid) *BidView {
+func bidViewOf(bid *Bid, currency string) *BidView {
 	var dependsOn *string
 	if bid.DependsOnClaimID != nil {
 		claim := bid.DependsOnClaimID.String()
@@ -142,13 +165,13 @@ func bidViewOf(bid *Bid) *BidView {
 		BidVersion:       bid.BidVersion,
 		State:            bid.State,
 		DriverID:         bid.DriverID.String(),
-		AmountMinor:      bid.AmountMinor,
-		CommissionMinor:  bid.CommissionMinor,
-		NetMinor:         bid.NetMinor,
+		AmountMinor:      money(bid.AmountMinor, currency),
+		CommissionMinor:  money(bid.CommissionMinor, currency),
+		NetMinor:         money(bid.NetMinor, currency),
 		Slot:             bid.Slot,
 		DependsOnClaimID: dependsOn,
 		ReservationID:    bid.ReservationID,
-		HoldState:        holdStateFor(bid.State),
+		HoldState:        holdStateFor(bid),
 		ExpiresAt:        bid.ExpiresAt,
 		CreatedAt:        bid.CreatedAt,
 	}
@@ -170,7 +193,7 @@ type OfferView struct {
 	BidID           string          `json:"bidId"`
 	BidVersion      int             `json:"bidVersion"`
 	RequestRevision int             `json:"requestRevision"`
-	AmountMinor     int64           `json:"amountMinor"`
+	AmountMinor     Money           `json:"amountMinor"`
 	Kind            string          `json:"kind"`
 	Driver          OfferDriverView `json:"driver"`
 	PickupLabel     string          `json:"pickupLabel"`
@@ -195,29 +218,36 @@ type RequestSnapshotView struct {
 	Seq     int          `json:"seq"`
 }
 
+// ExecutionRefView names the execution an award handed off to, exactly as the
+// contract's Award.executionRef documents it: {service, id}.
+type ExecutionRefView struct {
+	Service string `json:"service"`
+	ID      string `json:"id"`
+}
+
 // AwardView is the award as clients converge on it (MpAwardSchema): the
 // answer of POST .../select (202, pending) and of GET .../award until the saga
 // resolves it one way or the other.
 type AwardView struct {
-	AwardID         string        `json:"awardId"`
-	RequestID       string        `json:"requestId"`
-	BidID           string        `json:"bidId"`
-	State           string        `json:"state"`
-	RequestVersion  int           `json:"requestVersion"`
-	BidVersion      int           `json:"bidVersion"`
-	DriverID        string        `json:"driverId"`
-	RequesterID     string        `json:"requesterId"`
-	FareMinor       int64         `json:"fareMinor"`
-	CommissionMinor int64         `json:"commissionMinor"`
-	Slot            string        `json:"slot"`
-	ExecutionID     *string       `json:"executionId,omitempty"`
-	PickupWindow    *PickupWindow `json:"pickupWindow,omitempty"`
-	FailReason      *string       `json:"failReason,omitempty"`
-	CreatedAt       time.Time     `json:"createdAt"`
-	ResolvedAt      *time.Time    `json:"resolvedAt"`
+	AwardID         string            `json:"awardId"`
+	RequestID       string            `json:"requestId"`
+	BidID           string            `json:"bidId"`
+	State           string            `json:"state"`
+	RequestVersion  int               `json:"requestVersion"`
+	BidVersion      int               `json:"bidVersion"`
+	DriverID        string            `json:"driverId"`
+	RequesterID     string            `json:"requesterId"`
+	FareMinor       Money             `json:"fareMinor"`
+	CommissionMinor Money             `json:"commissionMinor"`
+	Slot            string            `json:"slot"`
+	ExecutionRef    *ExecutionRefView `json:"executionRef,omitempty"`
+	PickupWindow    *PickupWindow     `json:"pickupWindow,omitempty"`
+	FailReason      *string           `json:"failReason,omitempty"`
+	CreatedAt       time.Time         `json:"createdAt"`
+	ResolvedAt      *time.Time        `json:"resolvedAt"`
 }
 
-func awardViewOf(award *Award) *AwardView {
+func awardViewOf(award *Award, currency string) *AwardView {
 	view := &AwardView{
 		AwardID:         award.ID.String(),
 		RequestID:       award.RequestID.String(),
@@ -227,15 +257,18 @@ func awardViewOf(award *Award) *AwardView {
 		BidVersion:      award.BidVersion,
 		DriverID:        award.DriverID.String(),
 		RequesterID:     award.RequesterID.String(),
-		FareMinor:       award.FareMinor,
-		CommissionMinor: award.CommissionMinor,
+		FareMinor:       money(award.FareMinor, currency),
+		CommissionMinor: money(award.CommissionMinor, currency),
 		Slot:            award.Slot,
 		CreatedAt:       award.CreatedAt,
 		ResolvedAt:      award.ResolvedAt,
 	}
 	if award.ExecutionID != nil {
-		id := award.ExecutionID.String()
-		view.ExecutionID = &id
+		service := award.ExecutionService
+		if service == "" {
+			service = ServiceRide
+		}
+		view.ExecutionRef = &ExecutionRefView{Service: service, ID: award.ExecutionID.String()}
 	}
 	if award.PickupWindow != nil {
 		view.PickupWindow = &PickupWindow{
@@ -258,7 +291,7 @@ type FeedItemView struct {
 	Service         string    `json:"service"`
 	Title           string    `json:"title"`
 	Meta            string    `json:"meta"`
-	AskedMinor      int64     `json:"askedMinor"`
+	AskedMinor      Money     `json:"askedMinor"`
 	AskedByLabel    string    `json:"askedByLabel"`
 	CapabilityBadge *string   `json:"capabilityBadge"`
 	ExpiresAt       time.Time `json:"expiresAt"`
@@ -297,26 +330,61 @@ type EligibilityView struct {
 // PresetView is one server-generated quick offer (MpPresetSchema).
 type PresetView struct {
 	Key             string  `json:"key"`
-	AmountMinor     int64   `json:"amountMinor"`
-	CommissionMinor int64   `json:"commissionMinor"`
-	NetMinor        int64   `json:"netMinor"`
+	AmountMinor     Money   `json:"amountMinor"`
+	CommissionMinor Money   `json:"commissionMinor"`
+	NetMinor        Money   `json:"netMinor"`
 	Title           string  `json:"title"`
 	FeeNetLabel     string  `json:"feeNetLabel"`
 	Affordable      bool    `json:"affordable"`
-	ShortfallMinor  *int64  `json:"shortfallMinor"`
+	ShortfallMinor  *Money  `json:"shortfallMinor,omitempty"`
 	ShortfallLabel  *string `json:"shortfallLabel"`
 	Emphasized      bool    `json:"emphasized"`
 	Source          string  `json:"source"`
 }
 
 // DriverViewResult answers GET /v1/mp/requests/{id}/driver-view.
+// currentClaimId is the driver's current work claim — the mandatory
+// dependsOnClaimId for a next-slot bid — or null when none exists.
 type DriverViewResult struct {
-	Item          *FeedItemView    `json:"item"`
-	Eligibility   *EligibilityView `json:"eligibility"`
-	Presets       []*PresetView    `json:"presets"`
-	ProfileLine   *string          `json:"profileLine,omitempty"`
-	CeilingNotice *string          `json:"ceilingNotice,omitempty"`
-	MyBid         *BidView         `json:"myBid,omitempty"`
+	Item           *FeedItemView    `json:"item"`
+	Eligibility    *EligibilityView `json:"eligibility"`
+	Presets        []*PresetView    `json:"presets"`
+	ProfileLine    *string          `json:"profileLine,omitempty"`
+	CeilingNotice  *string          `json:"ceilingNotice,omitempty"`
+	MyBid          *BidView         `json:"myBid,omitempty"`
+	CurrentClaimID *string          `json:"currentClaimId"`
+}
+
+// ParkedAckView answers POST /v1/mp/driver/parked: the state the SERVER
+// acknowledges — a parked attestation over moving telemetry answers moving,
+// one over stale telemetry answers stale_location — which the client adopts.
+type ParkedAckView struct {
+	State             string    `json:"state"`
+	AvailabilityEpoch int64     `json:"availabilityEpoch"`
+	ConfirmedAt       time.Time `json:"confirmedAt"`
+	ExpiresAt         time.Time `json:"expiresAt"`
+	TTLSeconds        int       `json:"ttlSeconds"`
+}
+
+// DriverJobView is one claims-projection row (contract DriverJob): the
+// driver's current or queued job with its money and execution reference.
+type DriverJobView struct {
+	ClaimID         string            `json:"claimId"`
+	Slot            string            `json:"slot"`
+	Service         string            `json:"service"`
+	State           string            `json:"state"`
+	FareMinor       Money             `json:"fareMinor"`
+	CommissionMinor Money             `json:"commissionMinor"`
+	ReceiptID       *string           `json:"receiptId,omitempty"`
+	ExecutionRef    *ExecutionRefView `json:"executionRef,omitempty"`
+	PickupWindow    *PickupWindow     `json:"pickupWindow,omitempty"`
+}
+
+// DriverJobsView answers GET /v1/mp/driver/jobs (D05/D11).
+type DriverJobsView struct {
+	Current   *DriverJobView `json:"current,omitempty"`
+	Next      *DriverJobView `json:"next,omitempty"`
+	Promotion string         `json:"promotion"`
 }
 
 // RateProfileView is one versioned profile (MpRateProfileSchema).
@@ -360,9 +428,9 @@ type RatePreviewRow struct {
 // RatePreviewView answers POST /v1/mp/rate-profiles/preview.
 type RatePreviewView struct {
 	ProfileFormulaVersion int              `json:"profileFormulaVersion"`
-	GrossMinor            int64            `json:"grossMinor"`
-	CommissionMinor       int64            `json:"commissionMinor"`
-	NetMinor              int64            `json:"netMinor"`
+	GrossMinor            Money            `json:"grossMinor"`
+	CommissionMinor       Money            `json:"commissionMinor"`
+	NetMinor              Money            `json:"netMinor"`
 	FloorAdjusted         bool             `json:"floorAdjusted"`
 	ExceedsCeiling        bool             `json:"exceedsCeiling"`
 	Rows                  []RatePreviewRow `json:"rows"`

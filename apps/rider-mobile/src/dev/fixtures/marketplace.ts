@@ -90,7 +90,11 @@ export async function marketplaceFixtures(i: FixtureInput) {
     if (bidId === 'bid_tunde') return { status: 409, json: { code: 'version_conflict', message: 'Tunde withdrew this offer while you were deciding. Offers below are refreshed — nothing was charged. Pick again.' } };
     s.selected = bidId === 'bid_chidi' ? 'bid_chidi' : 'bid_emeka';
     s.awardPolls = 0;
-    return { status: 202, json: award('pending', s.selected === 'bid_chidi' ? 'next' : 'current', s.selected) };
+    // Contract 202 body is the WRAPPER { award, pickupPin? }. pickupPin appears only when the
+    // saga confirmed a current-slot ride award synchronously; this fixture answers pending
+    // (the journey converges via the award GET), so no PIN is emitted here — and replays/GETs
+    // never carry one by design.
+    return { status: 202, json: { award: award('pending', s.selected === 'bid_chidi' ? 'next' : 'current', s.selected) } };
   }
   if (i.method === 'GET' && /^\/v1\/mp\/requests\/req_mp_1\/award$/.test(i.path)) {
     if (!s.selected) return { status: 409, json: { code: 'award_unresolved', message: 'No selection has been made on this request.' } };

@@ -29,6 +29,8 @@ export type RequestDetailProps = {
   myBid: null | { version: number; amountMinor: Money; holdLabel: string; netLabel: string; closesLabel: string; revising: boolean; onRevise: () => void; onWithdraw: () => void };
   // Repo addition (task B): server insufficient_spendable rejection, verbatim, with the WalletHolds path.
   spendableError: null | { title: string; detail: string; walletLabel: string; onWallet: () => void };
+  // Any other submit/revise rejection, server message verbatim — never a silent refetch.
+  bidError: null | { title: string; detail: string };
 };
 
 export function RequestDetailScreen(p: RequestDetailProps) {
@@ -45,6 +47,7 @@ export function RequestDetailScreen(p: RequestDetailProps) {
         <Row label={p.kind === 'ride' ? 'Rider asks' : 'Sender asks'} value={<MoneyText money={p.askedMinor} variant="heading" />} last={!p.profileLine} />
         {p.profileLine ? <Row label="Your rate profile" value={p.profileLine} last /> : null}
       </Card>
+      {p.bidError ? <Banner tone="error" title={p.bidError.title} body={p.bidError.detail} /> : null}
       {p.spendableError ? (
         <>
           <Banner tone="error" title={p.spendableError.title} body={p.spendableError.detail} />

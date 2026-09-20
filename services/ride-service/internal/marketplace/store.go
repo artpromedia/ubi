@@ -68,7 +68,16 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 	var current bool
 	err := s.pool.QueryRow(ctx,
 		`SELECT to_regclass('mp.reservation_recovery') IS NOT NULL
-			AND to_regclass('mp.idempotency_keys') IS NOT NULL`).Scan(&current)
+			AND to_regclass('mp.idempotency_keys') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'reservation_recovery' AND column_name = 'payload')
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'bids' AND column_name = 'hold_released_at')
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'award_attempts' AND column_name = 'captured')`).Scan(&current)
 	return err == nil && current
 }
 
@@ -493,15 +502,18 @@ type Bid struct {
 	AvailabilityEpoch  int64
 	ReservationID      string
 	RateProfileVersion *int
-	ExpiresAt          time.Time
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// HoldReleasedAt is set only once the wallet CONFIRMED the hold's
+	// release. Until then a terminal bid's hold renders release_pending.
+	HoldReleasedAt *time.Time
+	ExpiresAt      time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 const bidColumns = `
 	id, request_id, request_revision, driver_id, state, bid_version,
 	amount_minor, commission_minor, net_minor, slot, depends_on_claim_id,
-	availability_epoch, reservation_id, rate_profile_version,
+	availability_epoch, reservation_id, rate_profile_version, hold_released_at,
 	expires_at, created_at, updated_at`
 
 func scanBid(row pgx.Row) (*Bid, error) {
@@ -509,7 +521,7 @@ func scanBid(row pgx.Row) (*Bid, error) {
 	err := row.Scan(
 		&bid.ID, &bid.RequestID, &bid.RequestRevision, &bid.DriverID, &bid.State, &bid.BidVersion,
 		&bid.AmountMinor, &bid.CommissionMinor, &bid.NetMinor, &bid.Slot, &bid.DependsOnClaimID,
-		&bid.AvailabilityEpoch, &bid.ReservationID, &bid.RateProfileVersion,
+		&bid.AvailabilityEpoch, &bid.ReservationID, &bid.RateProfileVersion, &bid.HoldReleasedAt,
 		&bid.ExpiresAt, &bid.CreatedAt, &bid.UpdatedAt,
 	)
 	if err != nil {
@@ -655,7 +667,12 @@ type BidUpdate struct {
 }
 
 // TransitionBid moves a bid, refusing anything the mpBid machine does not
-// allow, under the optimistic bid_version guard.
+// allow. The UPDATE re-qualifies on BOTH the optimistic bid_version guard and
+// the exact from-state, so a state-only transition (withdraw, expire, lost,
+// invalidated — which never bumps bid_version) can never overwrite a state a
+// concurrent writer committed in the meantime. Zero rows means the caller's
+// snapshot is stale: it must re-read (under lock) and re-assert, never
+// overwrite.
 func (s *Store) TransitionBid(ctx context.Context, tx pgx.Tx, bid *Bid, to string, update BidUpdate) (*Bid, error) {
 	if err := machine.Assert(machine.MpBid, bid.State, to); err != nil {
 		allowed, _ := machine.Allowed(machine.MpBid, bid.State)
@@ -665,26 +682,97 @@ func (s *Store) TransitionBid(ctx context.Context, tx pgx.Tx, bid *Bid, to strin
 	}
 	row := tx.QueryRow(ctx, `
 		UPDATE mp.bids SET
-			state = $3,
-			bid_version = COALESCE($4, bid_version),
-			amount_minor = COALESCE($5, amount_minor),
-			commission_minor = COALESCE($6, commission_minor),
-			net_minor = COALESCE($7, net_minor),
-			request_revision = COALESCE($8, request_revision),
-			expires_at = COALESCE($9, expires_at),
+			state = $4,
+			bid_version = COALESCE($5, bid_version),
+			amount_minor = COALESCE($6, amount_minor),
+			commission_minor = COALESCE($7, commission_minor),
+			net_minor = COALESCE($8, net_minor),
+			request_revision = COALESCE($9, request_revision),
+			expires_at = COALESCE($10, expires_at),
 			updated_at = now()
-		WHERE id = $1 AND bid_version = $2
+		WHERE id = $1 AND bid_version = $2 AND state = $3
 		RETURNING `+bidColumns,
-		bid.ID, bid.BidVersion, to,
+		bid.ID, bid.BidVersion, bid.State, to,
 		update.BidVersion, update.AmountMinor, update.CommissionMinor, update.NetMinor,
 		update.RequestRevision, update.ExpiresAt,
 	)
 	updated, err := scanBid(row)
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil, domain.Errorf(domain.CodeVersionConflict, "the bid changed while this call was in flight").
-			WithDetails(map[string]any{"bidId": bid.ID.String(), "expectedVersion": bid.BidVersion})
+			WithDetails(map[string]any{"bidId": bid.ID.String(), "expectedVersion": bid.BidVersion, "expectedState": bid.State})
 	}
 	return updated, err
+}
+
+// MarkHoldReleased records the wallet's CONFIRMATION that a bid's hold was
+// released. It is bookkeeping for the driver's honest holdState — never a
+// precondition for the money itself, which the release keys own.
+func (s *Store) MarkHoldReleased(ctx context.Context, db DB, bidID uuid.UUID, at time.Time) error {
+	_, err := db.Exec(ctx,
+		`UPDATE mp.bids SET hold_released_at = COALESCE(hold_released_at, $2) WHERE id = $1`,
+		bidID, at)
+	if err != nil {
+		return fmt.Errorf("failed to mark the hold released: %w", err)
+	}
+	return nil
+}
+
+// HasRevisedRevision reports whether a bid ever committed a driver revision
+// (a bid_revisions row written with reason 'revised'). The award saga's
+// compensation uses it to pick the honest live state to return the bid to,
+// because bid_version alone no longer says (selection bumps it too).
+func (s *Store) HasRevisedRevision(ctx context.Context, db DB, bidID uuid.UUID) (bool, error) {
+	var count int
+	err := db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM mp.bid_revisions WHERE bid_id = $1 AND reason = 'revised'`,
+		bidID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to count bid revisions: %w", err)
+	}
+	return count > 0, nil
+}
+
+// RequestCurrencies maps request ids to their currency, for views built from
+// bid rows alone (which do not restate the request's currency).
+func (s *Store) RequestCurrencies(ctx context.Context, db DB, requestIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := map[uuid.UUID]string{}
+	if len(requestIDs) == 0 {
+		return out, nil
+	}
+	rows, err := db.Query(ctx, `SELECT id, currency FROM mp.requests WHERE id = ANY($1)`, requestIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read request currencies: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var currency string
+		if err := rows.Scan(&id, &currency); err != nil {
+			return nil, fmt.Errorf("failed to read request currency: %w", err)
+		}
+		out[id] = currency
+	}
+	return out, rows.Err()
+}
+
+// Advisory-lock namespaces for the in-transaction cap re-checks. The pair
+// (namespace, hash of the subject id) scopes pg_advisory_xact_lock so a
+// driver's concurrent bid inserts (and a requester's concurrent publishes)
+// serialise against each other and the recount inside the transaction is
+// authoritative.
+const (
+	advisoryDriverBidCap     = int32(0x6d704243) // "mpBC"
+	advisoryRequesterOpenCap = int32(0x6d705243) // "mpRC"
+)
+
+// AcquireCapLock takes a transaction-scoped advisory lock for one subject in
+// one namespace. It is released automatically at commit/rollback.
+func (s *Store) AcquireCapLock(ctx context.Context, tx pgx.Tx, namespace int32, subject uuid.UUID) error {
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock($1, hashtext($2))`, namespace, subject.String()); err != nil {
+		return fmt.Errorf("failed to take the cap lock: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -882,8 +970,17 @@ const (
 	RecoveryAdjust  = "adjust"
 	// RecoveryReverse is a captured commission whose linked reversal could not
 	// be confirmed; the sweep re-drives it by the bid's award until the wallet
-	// answers.
+	// answers — but only once the award is genuinely off the confirmed path.
 	RecoveryReverse = "reverse"
+	// RecoveryReserveReplay is a Reserve whose outcome was never learned. The
+	// sweep REPLAYS the reserve under the SAME idempotency key (converging on
+	// whatever the wallet actually holds and learning the real reservation
+	// id), then releases THAT id. It never releases the idempotency key
+	// string — the wallet has never heard of such a reservation.
+	RecoveryReserveReplay = "reserve_replay"
+	// RecoverySettle is a marketplace completion settlement the engine still
+	// owes payment-service, idempotent on the award id.
+	RecoverySettle = "settle"
 )
 
 // RecoveryRow is one wallet operation the engine could not deliver.
@@ -894,25 +991,37 @@ type RecoveryRow struct {
 	BidID         *uuid.UUID
 	Action        string
 	AmountMinor   *int64
-	Attempts      int
-	LastError     string
-	NextRetryAt   time.Time
-	ResolvedAt    *time.Time
-	CreatedAt     time.Time
+	// Payload carries the full replay body for reserve_replay (a
+	// ReserveRecoveryPayload) and settle (a SettlementRequest).
+	Payload     json.RawMessage
+	Attempts    int
+	LastError   string
+	NextRetryAt time.Time
+	ResolvedAt  *time.Time
+	CreatedAt   time.Time
+}
+
+// ReserveRecoveryPayload is what a reserve_replay row needs to converge: the
+// exact reserve request and the exact idempotency key the lost call used.
+type ReserveRecoveryPayload struct {
+	Reserve    ReserveRequest `json:"reserve"`
+	ReserveKey string         `json:"reserveKey"`
 }
 
 // InsertRecovery writes down a wallet operation the sweep must retry. It runs
 // on the pool, outside the failed transaction, because it is the record OF
-// that failure.
+// that failure — except settlement intents, which are written INSIDE the
+// completion transaction so a crash cannot forget them.
 func (s *Store) InsertRecovery(ctx context.Context, db DB, row RecoveryRow) error {
 	if row.ID == uuid.Nil {
 		row.ID = uuid.New()
 	}
 	_, err := db.Exec(ctx, `
 		INSERT INTO mp.reservation_recovery (
-			id, reservation_id, driver_id, bid_id, action, amount_minor, last_error
-		) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		row.ID, row.ReservationID, row.DriverID, row.BidID, row.Action, row.AmountMinor, nullable(row.LastError))
+			id, reservation_id, driver_id, bid_id, action, amount_minor, payload, last_error
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		row.ID, row.ReservationID, row.DriverID, row.BidID, row.Action, row.AmountMinor,
+		row.Payload, nullable(row.LastError))
 	if err != nil {
 		return fmt.Errorf("failed to record the reservation recovery row: %w", err)
 	}
@@ -922,7 +1031,7 @@ func (s *Store) InsertRecovery(ctx context.Context, db DB, row RecoveryRow) erro
 // DueRecoveries lists unresolved recovery rows whose retry time has come.
 func (s *Store) DueRecoveries(ctx context.Context, db DB, now time.Time, limit int) ([]*RecoveryRow, error) {
 	rows, err := db.Query(ctx, `
-		SELECT id, reservation_id, driver_id, bid_id, action, amount_minor,
+		SELECT id, reservation_id, driver_id, bid_id, action, amount_minor, payload,
 			attempts, COALESCE(last_error, ''), next_retry_at, resolved_at, created_at
 		FROM mp.reservation_recovery
 		WHERE resolved_at IS NULL AND next_retry_at <= $1
@@ -936,7 +1045,7 @@ func (s *Store) DueRecoveries(ctx context.Context, db DB, now time.Time, limit i
 	for rows.Next() {
 		var row RecoveryRow
 		if err := rows.Scan(&row.ID, &row.ReservationID, &row.DriverID, &row.BidID, &row.Action,
-			&row.AmountMinor, &row.Attempts, &row.LastError, &row.NextRetryAt, &row.ResolvedAt, &row.CreatedAt); err != nil {
+			&row.AmountMinor, &row.Payload, &row.Attempts, &row.LastError, &row.NextRetryAt, &row.ResolvedAt, &row.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to read recovery row: %w", err)
 		}
 		due = append(due, &row)

@@ -6,6 +6,15 @@ import type { MpAward, MpOffer, MpPublishRequest, MpQuoteEnvelope, MpRequest, Mp
 
 export type { MpAward, MpOffer, MpQuoteEnvelope, MpRequest };
 
+/**
+ * POST /select 202 body per contracts/openapi/marketplace.yaml: the award is WRAPPED
+ * ({ award, pickupPin? }), never the bare award. `pickupPin` is present ONLY when this
+ * very call confirmed a current-slot ride award — it is revealed exactly once to the
+ * owner and deliberately absent from idempotent replays and from every award GET, so
+ * the caller must hold it the moment it arrives or it is gone for good.
+ */
+export type MpSelectResponse = { award: MpAward; pickupPin?: string };
+
 export type MpQuoteQuery = { service: MpService; vehicleClass: string; pickupLat: number; pickupLng: number; dropoffLat: number; dropoffLng: number; weightKg?: number };
 
 /**
@@ -55,7 +64,7 @@ export const marketplaceApi = {
   request: (requestId: string) => api<MpRequestSnapshot>('GET', '/v1/mp/requests/' + requestId),
   revise: (requestId: string, body: { requestedFareMinor: Money; quoteId?: string; expectedVersion: number }) => api<MpRequest>('POST', '/v1/mp/requests/' + requestId + '/revise', body),
   cancel: (requestId: string) => api<MpRequest>('POST', '/v1/mp/requests/' + requestId + '/cancel'),
-  select: (requestId: string, body: MpSelectBid) => api<MpAward>('POST', '/v1/mp/requests/' + requestId + '/select', body),
+  select: (requestId: string, body: MpSelectBid) => api<MpSelectResponse>('POST', '/v1/mp/requests/' + requestId + '/select', body),
   award: (requestId: string) => api<MpAward>('GET', '/v1/mp/requests/' + requestId + '/award'),
   // PROPOSED endpoints (see type docs above) — fixture-backed until the OpenAPI contract adds them.
   queue: (requestId: string) => api<MpQueueView>('GET', '/v1/mp/requests/' + requestId + '/queue'),

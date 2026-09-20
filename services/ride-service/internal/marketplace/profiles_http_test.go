@@ -67,7 +67,7 @@ func TestRateProfileSaveNeverTouchesLiveBids(t *testing.T) {
 	driver := h.Driver()
 
 	view, _ := publishAt(t, h, rider, 0)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	h.Wallet.SetSpendable(driver.UserID, 1_000_000)
 	created := submitBid(t, h, driver, view["requestId"].(string), amount, "")
@@ -112,10 +112,10 @@ func TestRatePreview(t *testing.T) {
 
 	// The fractional-km example. 10.5 km must NOT be rounded to 11 or 10 km.
 	fractional := preview(300_00, 0, 10_500)
-	if got := asInt64(t, fractional, "grossMinor"); got != 3_150_00 {
+	if got := moneyMinor(t, fractional, "grossMinor"); got != 3_150_00 {
 		t.Fatalf("gross for 10500m at 300.00/km: got %d, want 315000", got)
 	}
-	if got := asInt64(t, fractional, "commissionMinor"); got != marketplace.CommissionMinor(3_150_00) {
+	if got := moneyMinor(t, fractional, "commissionMinor"); got != marketplace.CommissionMinor(3_150_00) {
 		t.Fatalf("commission: got %d", got)
 	}
 	if fractional["floorAdjusted"].(bool) {
@@ -124,14 +124,14 @@ func TestRatePreview(t *testing.T) {
 
 	// The minimum trip fare binds a short trip.
 	minimumBinds := preview(300_00, 1_500_00, 1_000)
-	if got := asInt64(t, minimumBinds, "grossMinor"); got != 1_500_00 {
+	if got := moneyMinor(t, minimumBinds, "grossMinor"); got != 1_500_00 {
 		t.Fatalf("gross with binding minimum: got %d, want 150000", got)
 	}
 
 	// A tiny trip under the platform floor (45,000 in the fixture) is lifted
 	// to it, visibly.
 	floored := preview(300_00, 0, 1_000)
-	if got := asInt64(t, floored, "grossMinor"); got != 45_000 {
+	if got := moneyMinor(t, floored, "grossMinor"); got != 45_000 {
 		t.Fatalf("floored gross: got %d, want 45000", got)
 	}
 	if !floored["floorAdjusted"].(bool) {
@@ -143,7 +143,7 @@ func TestRatePreview(t *testing.T) {
 	if !ceiling["exceedsCeiling"].(bool) {
 		t.Fatal("a rate above maxPerKmMinor must set exceedsCeiling")
 	}
-	if got := asInt64(t, ceiling, "grossMinor"); got != (60_000*10_500+500)/1_000 {
+	if got := moneyMinor(t, ceiling, "grossMinor"); got != (60_000*10_500+500)/1_000 {
 		t.Fatalf("the ceiling flag must not clamp the gross: got %d", got)
 	}
 	if disclaimer, _ := ceiling["disclaimer"].(string); disclaimer == "" {
@@ -160,8 +160,8 @@ func TestDriverViewPresets(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0) // requested = the floor
 	requestID := view["requestId"].(string)
-	minimum := asInt64(t, view, "minimumFareMinor")
-	maximum := asInt64(t, view, "maximumFareMinor")
+	minimum := moneyMinor(t, view, "minimumFareMinor")
+	maximum := moneyMinor(t, view, "maximumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	h.Wallet.SetSpendable(driver.UserID, 1_000_000)
@@ -177,7 +177,7 @@ func TestDriverViewPresets(t *testing.T) {
 	seen := map[int64]bool{}
 	for _, raw := range presets {
 		preset := raw.(map[string]any)
-		amount := asInt64(t, preset, "amountMinor")
+		amount := moneyMinor(t, preset, "amountMinor")
 		if amount < minimum || amount > maximum {
 			t.Fatalf("preset %v is outside the bounds [%d, %d]", preset, minimum, maximum)
 		}
@@ -186,10 +186,10 @@ func TestDriverViewPresets(t *testing.T) {
 		}
 		seen[amount] = true
 		commission := marketplace.CommissionMinor(amount)
-		if got := asInt64(t, preset, "commissionMinor"); got != commission {
+		if got := moneyMinor(t, preset, "commissionMinor"); got != commission {
 			t.Fatalf("preset commission: got %d, want %d", got, commission)
 		}
-		if got := asInt64(t, preset, "netMinor"); got != amount-commission {
+		if got := moneyMinor(t, preset, "netMinor"); got != amount-commission {
 			t.Fatalf("preset net: got %d, want %d", got, amount-commission)
 		}
 		if !preset["affordable"].(bool) {
@@ -219,8 +219,8 @@ func TestDriverViewPresets(t *testing.T) {
 		if preset["affordable"].(bool) {
 			t.Fatalf("a driver with no spendable cannot afford a preset: %v", preset)
 		}
-		commission := asInt64(t, preset, "commissionMinor")
-		if got := asInt64(t, preset, "shortfallMinor"); got != commission {
+		commission := moneyMinor(t, preset, "commissionMinor")
+		if got := moneyMinor(t, preset, "shortfallMinor"); got != commission {
 			t.Fatalf("shortfall: got %d, want %d", got, commission)
 		}
 		if label, _ := preset["shortfallLabel"].(string); label == "" {

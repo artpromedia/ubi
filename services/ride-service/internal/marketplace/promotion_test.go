@@ -56,7 +56,7 @@ func setupQueuedAward(t *testing.T, h *testutil.Harness) *queuedFixture {
 	// Request A: published, bid on, selected — the driver's current job.
 	viewA, _ := publishRoute(t, h, f.riderA, origin, testutil.PlaceAt(origin, 3_000), 0)
 	f.requestA = viewA["requestId"].(string)
-	amountA := asInt64(t, viewA, "minimumFareMinor")
+	amountA := moneyMinor(t, viewA, "minimumFareMinor")
 	parkDriver(t, h, f.driver, origin)
 	bidA := fundedCurrentBid(t, h, f.driver, f.requestA, amountA)
 	selected := doSelect(t, h, f.riderA, f.requestA, map[string]any{
@@ -75,7 +75,7 @@ func setupQueuedAward(t *testing.T, h *testutil.Harness) *queuedFixture {
 	// the recomputed pickup window.
 	viewB, _ := publishRoute(t, h, f.riderB, testutil.PlaceAt(origin, 4_000), testutil.PlaceAt(origin, 9_000), 0)
 	f.requestB = viewB["requestId"].(string)
-	f.amountB = asInt64(t, viewB, "minimumFareMinor")
+	f.amountB = moneyMinor(t, viewB, "minimumFareMinor")
 
 	eligibility := evaluate(t, h, f.driver, f.requestB)
 	if !eligibility.Eligible || eligibility.Slot == nil || *eligibility.Slot != "next" {
@@ -84,7 +84,7 @@ func setupQueuedAward(t *testing.T, h *testutil.Harness) *queuedFixture {
 	queued := h.Do(http.MethodPost, "/mp/bids", f.driver, map[string]any{
 		"requestId":         f.requestB,
 		"requestRevision":   1,
-		"amountMinor":       f.amountB,
+		"amountMinor":       moneyBody(f.amountB),
 		"slot":              "next",
 		"dependsOnClaimId":  f.claimA.ID.String(),
 		"availabilityEpoch": eligibility.AvailabilityEpoch,
@@ -383,7 +383,7 @@ func TestSelectWorsenedWindowForcesReconfirmation(t *testing.T) {
 	// Current job A and a live queued bid on B.
 	viewA, _ := publishRoute(t, h, riderA, origin, testutil.PlaceAt(origin, 3_000), 0)
 	parkDriver(t, h, driver, origin)
-	bidA := fundedCurrentBid(t, h, driver, viewA["requestId"].(string), asInt64(t, viewA, "minimumFareMinor"))
+	bidA := fundedCurrentBid(t, h, driver, viewA["requestId"].(string), moneyMinor(t, viewA, "minimumFareMinor"))
 	requireStatus(t, doSelect(t, h, riderA, viewA["requestId"].(string), map[string]any{
 		"bidId": bidA["bidId"], "requestVersion": 1, "bidVersion": 1,
 	}, ""), http.StatusAccepted)
@@ -397,7 +397,7 @@ func TestSelectWorsenedWindowForcesReconfirmation(t *testing.T) {
 	}
 	queued := h.Do(http.MethodPost, "/mp/bids", driver, map[string]any{
 		"requestId": requestB, "requestRevision": 1,
-		"amountMinor": asInt64(t, viewB, "minimumFareMinor"),
+		"amountMinor": moneyBody(moneyMinor(t, viewB, "minimumFareMinor")),
 		"slot":        "next", "dependsOnClaimId": claimA.ID.String(),
 		"availabilityEpoch": eligibility.AvailabilityEpoch,
 	}, move.IdempotencyHeader, idemKey())

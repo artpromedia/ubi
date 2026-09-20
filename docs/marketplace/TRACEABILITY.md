@@ -33,10 +33,10 @@ paths in `contracts/openapi/marketplace.yaml`, machines in
 | D05 winner card | `JobsTimelineScreen` winnerToast | `award.confirmed` + fee receipt | `MpAward`, `MpCommissionReceipt` | `award.go` + `captureHold` | Go saga + ledger capture-once tests |
 | D06 lost/released | MyBids tab | `mp.bid.lost`, `mp.commission.released` | events | `award.go` loser resolution | Go one-release-per-loser test; realtime audience test |
 | D07 motion gate | MovingGate in feed | none rendered while moving | — | `eligibility.go` NOT_STATIONARY | jest moving-mode test (no bid affordances); Go parked-vs-motion test |
-| D08 completion/earnings | existing Statement pattern (annotation-only) | — | `mp_ride_completion*` kinds | `postMarketplaceCompletion` | ledger cash/digital worked example |
+| D08 completion/earnings | existing Statement pattern (annotation-only) | `POST /v1/wallet/mp/settlements` (internal, called by the engine on execution completion) | `mp_ride_completion*` kinds | `mp-settlement.ts` → `postMarketplaceCompletion` | ledger cash/digital worked example + settlement replay tests |
 | D09 rate profiles | `RateProfileScreen`+Container | `GET/PUT /v1/mp/rate-profiles`, `POST .../preview` | `MpRateProfile`, `MpRatePreview` | `profiles.go` (routed metres, half-up, visible floor, unclamped ceiling, future-only versions) | Go formula tests (fractional km, min binding, rounding) |
 | D10 eligibility reasons | blocked state in RequestDetail | evaluator `reasons[]` | `MP_ELIGIBILITY_REASONS` | `eligibility.go` (one evaluator for feed/bid/award/promotion) | Go per-reason tests (all six board codes + finishing-trip pass) |
-| D11 current+next timeline | `JobsTimelineScreen` | jobs projection (PROPOSED endpoint — fixture-backed) | `MpDriverClaim`, `mpClaim` machine | `promotion.go` (promote once, no second fee, no early navigation) | Go promotion race tests |
+| D11 current+next timeline | `JobsTimelineScreen` | `GET /v1/mp/driver/jobs` (DriverJob schema) | `MpDriverClaim`, `mpClaim` machine | `promotion.go` (promote once, no second fee, no early navigation) | Go promotion race tests |
 | D12 standing/appeals | annotation-only per MANIFEST | — | — | not in this slice (residual) | — |
 
 ## Admin boards

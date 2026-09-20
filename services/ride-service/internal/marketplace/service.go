@@ -32,15 +32,16 @@ type Actor = move.Actor
 // Deps are everything the marketplace engine needs; the composition root
 // builds all of them.
 type Deps struct {
-	Store   *Store
-	Config  cityconfig.Provider
-	Flags   *cityconfig.Flags
-	Pricing *pricing.Engine
-	Router  move.Router
-	Wallet  WalletPort
-	Funding FundingPort
-	Redis   *ridisc.Client
-	Logger  zerolog.Logger
+	Store      *Store
+	Config     cityconfig.Provider
+	Flags      *cityconfig.Flags
+	Pricing    *pricing.Engine
+	Router     move.Router
+	Wallet     WalletPort
+	Funding    FundingPort
+	Settlement SettlementPort
+	Redis      *ridisc.Client
+	Logger     zerolog.Logger
 	// Now is injectable so expiry, cooldown and dwell tests do not sleep.
 	Now func() time.Time
 }
@@ -68,6 +69,8 @@ func NewService(deps Deps) (*Service, error) {
 		return nil, errors.New("marketplace service needs a wallet port")
 	case deps.Funding == nil:
 		return nil, errors.New("marketplace service needs a rider funding port")
+	case deps.Settlement == nil:
+		return nil, errors.New("marketplace service needs a completion settlement port")
 	}
 	if deps.Now == nil {
 		deps.Now = func() time.Time { return time.Now().UTC() }

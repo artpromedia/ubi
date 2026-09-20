@@ -49,8 +49,13 @@ export function OfferInboxContainer() {
   useEffect(() => {
     if (award?.state !== 'confirmed') return;
     if (award.slot === 'next') nav.navigate('Queued', { requestId: params.requestId });
-    else nav.navigate('Ride', { screen: 'Assigned', params: { rideId: award.executionRef?.id ?? '' } });
-  }, [award?.state]);
+    else if (award.executionRef?.service === 'ride' && award.executionRef.id) {
+      // Real execution id only (contract executionRef {service,id}); never a placeholder.
+      // No pickupPin here: the one-time PIN exists only on the ORIGINAL select 202 body
+      // (BidDetailContainer holds it) — snapshot/award replays never carry it by design.
+      nav.navigate('Ride', { screen: 'Assigned', params: { rideId: award.executionRef.id } });
+    }
+  }, [award?.state, award?.executionRef?.id]);
   if (!snap) return <Screen title="Your request is live"><Skeleton height={90} /><Skeleton height={130} /><Skeleton height={130} /></Screen>;
   const r = snap.request;
   const dtos = displayOrder(arrivalRef.current, sortedIds).map(id => cacheRef.current.get(id)).filter((o): o is MpOfferDto => !!o);

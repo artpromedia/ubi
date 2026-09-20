@@ -237,6 +237,12 @@ export interface ReserveHoldInput {
   readonly requestRef: string;
   readonly amountMinor: number;
   readonly baseMinor: number;
+  /**
+   * The currency the caller denominated the Money bodies in. It must match
+   * the wallet/city currency — a mismatch is refused, never silently
+   * re-denominated 1:1 into the wallet currency.
+   */
+  readonly currency: string;
   readonly policyVersion: number;
   readonly cityId: string;
 }
@@ -259,6 +265,7 @@ export async function reserveHold(
     requestRef: input.requestRef,
     amountMinor: input.amountMinor,
     baseMinor: input.baseMinor,
+    currency: input.currency,
     policyVersion: input.policyVersion,
     cityId: input.cityId,
   });
@@ -279,6 +286,16 @@ export async function reserveHold(
   }
 
   const config = await deps.config.loadForWallet(input.cityId);
+  // The caller's denomination must be the city's, like funding authorization
+  // already requires: a config-skew between services fails loudly instead of
+  // reinterpreting the amount 1:1 into the wallet currency.
+  if (config.city.currency !== input.currency) {
+    throw new ContractError(
+      "validation_failed",
+      "the hold currency does not match the city's wallet currency",
+      { currency: input.currency, cityCurrency: config.city.currency },
+    );
+  }
 
   try {
     return await deps.db.$transaction(async (tx) => {
@@ -426,6 +443,8 @@ function isBidRefRace(error: unknown): boolean {
 export interface AdjustHoldInput {
   readonly amountMinor: number;
   readonly baseMinor: number;
+  /** Must match the hold's currency — a mismatch is refused, never adopted. */
+  readonly currency: string;
 }
 
 /**
@@ -452,6 +471,13 @@ export async function adjustHold(
       // Re-read under the wallet lock: the lock serialises every money
       // operation on this wallet, including rival hold changes.
       const hold = await requireHold(tx, reservationId);
+      if (hold.currency !== input.currency) {
+        throw new ContractError(
+          "validation_failed",
+          "the adjustment currency does not match the hold's currency",
+          { currency: input.currency, holdCurrency: hold.currency },
+        );
+      }
       assertTransition(HOLD_MACHINE, hold.state, "active");
 
       const oldAmountMinor = fromDbMinor(hold.amountMinor);
@@ -632,6 +658,16 @@ export async function releaseHold(
 
 export interface CaptureHoldInput {
   readonly awardId: string;
+  /**
+   * The award's PINNED commission (Money). The capture debits exactly this or
+   * refuses: a hold whose current amount differs — e.g. a bid revision's
+   * adjust raced the selection — is a `conflict`, so the saga compensates
+   * instead of debiting terms that were never awarded.
+   */
+  readonly expectedAmountMinor: {
+    readonly amountMinor: number;
+    readonly currency: string;
+  };
 }
 
 /**
@@ -641,7 +677,9 @@ export interface CaptureHoldInput {
  * derived from the award, so however many times — and under however many
  * client keys — selection is retried, the fee is debited exactly once and
  * every caller gets the original receipt. A capture for a DIFFERENT award on
- * the same reservation is a conflict, never a second debit.
+ * the same reservation is a conflict, never a second debit. The hold's
+ * current amount must equal the award's pinned `expectedAmountMinor` (checked
+ * under the wallet lock, BEFORE any state change) or the capture is refused.
  */
 export async function captureHold(
   deps: WalletDeps,
@@ -654,6 +692,39 @@ export async function captureHold(
   // award id is the idempotency authority for the single commission debit.
   const awardKey = scopedKey("capture", `award:${input.awardId}`);
   void clientKey;
+
+  const expected = input.expectedAmountMinor;
+  if (!Number.isInteger(expected.amountMinor) || expected.amountMinor <= 0) {
+    throw new ContractError(
+      "validation_failed",
+      "expectedAmountMinor must be a positive integer in minor units",
+      { expectedAmountMinor: expected.amountMinor },
+    );
+  }
+
+  // The award's pinned commission versus the hold as it stands NOW. Runs
+  // before any state change; the in-transaction call re-checks under the
+  // wallet lock, so a rival adjust cannot slip between check and debit.
+  const assertExpectedAmount = (hold: HoldRow): void => {
+    const currentMinor = fromDbMinor(hold.amountMinor);
+    if (
+      currentMinor !== expected.amountMinor ||
+      hold.currency !== expected.currency
+    ) {
+      throw new ContractError(
+        "conflict",
+        "the hold's current amount is not the award's pinned commission",
+        {
+          reservationId: hold.id,
+          awardId: input.awardId,
+          holdAmountMinor: currentMinor,
+          holdCurrency: hold.currency,
+          expectedAmountMinor: expected.amountMinor,
+          expectedCurrency: expected.currency,
+        },
+      );
+    }
+  };
 
   const capturedReplay = (hold: HoldRow): MpCaptureResult | null => {
     if (hold.state !== "captured" && hold.state !== "reversed") {
@@ -702,6 +773,10 @@ export async function captureHold(
       if (replay !== null) {
         return replay;
       }
+
+      // Refuse BEFORE any state change when the hold no longer carries the
+      // awarded terms (a revise-raise raced the selection).
+      assertExpectedAmount(hold);
 
       // active → capture_pending: the hold is now spoken for by this award.
       assertTransition(HOLD_MACHINE, hold.state, "capture_pending");

@@ -15,10 +15,21 @@ const mmss = (iso: string) => {
   return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 };
 
+/**
+ * Server holdState vocabulary (D06): held | release_pending | released, where
+ * `released` is only emitted after the wallet release is financially confirmed.
+ * Anything else (older servers, machine-internal values like 'active'/'captured',
+ * shape drift) is UNKNOWN and renders the safe pending state — never 'released':
+ * claiming the money is back before the wallet confirms is the one lie this
+ * screen must not tell.
+ */
+export const holdStateOrSafe = (v: unknown, safe: 'held' | 'release_pending'): 'held' | 'release_pending' | 'released' =>
+  v === 'held' || v === 'release_pending' || v === 'released' ? v : safe;
+
 // Live bid states keep a row in "My offers"; won bids move to Jobs and withdrawn ones
 // disappear at the driver's own request. `invalidated` means the slot filled elsewhere
 // (you won another request) — the hold releases, never a penalty.
-const bidRow = (b: MpBidDto): MyBid | null => {
+export const bidRow = (b: MpBidDto): MyBid | null => {
   const status = b.state === 'submitted' || b.state === 'revised' || b.state === 'selected_pending' ? 'awaiting'
     : b.state === 'lost' ? 'lost'
       : b.state === 'expired' ? 'expired'
@@ -31,9 +42,10 @@ const bidRow = (b: MpBidDto): MyBid | null => {
     amountMinor: b.amountMinor,
     status,
     holdMinor: b.commissionMinor,
-    // Server-composed projection when present; otherwise a lost/closed bid whose hold has
-    // not been confirmed released stays "release pending" — never claimed released early.
-    holdState: b.holdState ?? (status === 'awaiting' ? 'held' : 'release_pending'),
+    // Server-composed projection when it speaks the D06 vocabulary; anything unknown
+    // (and a lost/closed bid whose hold has not been confirmed released) stays the
+    // safe pending state — never claimed released early.
+    holdState: holdStateOrSafe(b.holdState, status === 'awaiting' ? 'held' : 'release_pending'),
     holdDetail: b.holdDetail ?? (status === 'awaiting' ? 'closes ' + mmss(b.expiresAt) : ''),
   };
 };

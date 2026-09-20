@@ -15,6 +15,15 @@ import { marketplaceApi } from '../api/marketplace';
 
 export type MotionState = 'parked_confirmed' | 'moving' | 'stale_location';
 
+/**
+ * The gate only ever adopts a state the server explicitly acknowledged. Any
+ * other/missing value (old server, shape drift) degrades to the safe paused
+ * state instead of leaving the gate undefined or pretending to be parked.
+ */
+export function motionStateOrSafe(v: unknown): MotionState {
+  return v === 'parked_confirmed' || v === 'moving' || v === 'stale_location' ? v : 'stale_location';
+}
+
 // Honest default: with no telemetry and no attestation yet, the location signal
 // is stale — bidding stays paused rather than silently pretending to be parked.
 let current: MotionState = 'stale_location';
@@ -61,10 +70,14 @@ export function useMotionGate(): MotionGate {
     setConfirming(true);
     setConfirmError(null);
     try {
-      // The state we adopt is the one the server acknowledged, never a local guess.
+      // The state we adopt is the one the server acknowledged, never a local
+      // guess. Contract ack shape: {state, availabilityEpoch, confirmedAt,
+      // expiresAt, ttlSeconds}; an unrecognized state degrades to the safe
+      // paused state rather than silently unlocking anything.
       const ack = await marketplaceApi.parked();
-      set(ack.state);
-      track('driver_mp_parked_confirmed', { state: ack.state });
+      const state = motionStateOrSafe(ack.state);
+      set(state);
+      track('driver_mp_parked_confirmed', { state });
     } catch (e) {
       setConfirmError(e instanceof Error ? e.message : 'Could not confirm — try again.');
     } finally {

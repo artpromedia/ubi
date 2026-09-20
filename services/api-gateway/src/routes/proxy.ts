@@ -92,6 +92,11 @@ const HEADERS_TO_FORWARD: readonly string[] = [
   "x-user-id",
   "x-user-role",
   "x-session-id",
+  // Client-declared active city context. Not an identity claim (the reserved
+  // x-ubi-city-id below carries the token's city), so the strip middleware
+  // leaves it alone; payment-service reads it for the marketplace wallet
+  // overview (GET /v1/wallet/mp/overview) city scoping.
+  "x-city-id",
   "x-ubi-city-id",
   "x-ubi-tenant-id",
   "x-ubi-scopes",

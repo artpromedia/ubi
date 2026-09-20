@@ -61,6 +61,7 @@ type Harness struct {
 	Marketplace *marketplace.Service
 	Wallet      *marketplace.FakeWallet
 	Funding     *marketplace.FakeFunding
+	Settlement  *marketplace.FakeSettlement
 
 	// CityID is unique per harness, so tests running side by side never share
 	// a city's config, flags, drivers or rides.
@@ -210,21 +211,23 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 
 	fakeWallet := marketplace.NewFakeWallet()
 	fakeFunding := marketplace.NewFakeFunding()
+	fakeSettlement := marketplace.NewFakeSettlement()
 	// The marketplace router prices with the harness clock, so a test that
 	// pins the hour gets the same ETA multiplier every run.
 	mpRouter := move.NewStraightLineRouter()
 	mpRouter.Now = clock.Now
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
-		Store:   mpStore,
-		Config:  cityconfig.NewStore(pool, nil, time.Second),
-		Flags:   cityconfig.NewFlags(pool),
-		Pricing: pricing.NewEngine(),
-		Router:  mpRouter,
-		Wallet:  fakeWallet,
-		Funding: fakeFunding,
-		Redis:   guards,
-		Logger:  zerolog.Nop(),
-		Now:     clock.Now,
+		Store:      mpStore,
+		Config:     cityconfig.NewStore(pool, nil, time.Second),
+		Flags:      cityconfig.NewFlags(pool),
+		Pricing:    pricing.NewEngine(),
+		Router:     mpRouter,
+		Wallet:     fakeWallet,
+		Funding:    fakeFunding,
+		Settlement: fakeSettlement,
+		Redis:      guards,
+		Logger:     zerolog.Nop(),
+		Now:        clock.Now,
 	})
 	if err != nil {
 		pool.Close()
@@ -241,7 +244,7 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	h := &Harness{
 		T: t, Pool: pool, Redis: redisClient, Service: service,
 		Router: router, Signer: signer, Clock: clock,
-		Marketplace: marketplaceService, Wallet: fakeWallet, Funding: fakeFunding,
+		Marketplace: marketplaceService, Wallet: fakeWallet, Funding: fakeFunding, Settlement: fakeSettlement,
 		CityID: cityID, ConfigVersion: version,
 	}
 

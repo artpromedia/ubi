@@ -19,9 +19,9 @@ func TestQuoteBounds(t *testing.T) {
 
 	quote := quoteEnvelope(t, h, rider, testutil.PickupFixture(), testutil.DropoffFixture())
 
-	suggested := asInt64(t, quote, "suggestedFareMinor")
-	minimum := asInt64(t, quote, "minimumFareMinor")
-	maximum := asInt64(t, quote, "maximumFareMinor")
+	suggested := moneyMinor(t, quote, "suggestedFareMinor")
+	minimum := moneyMinor(t, quote, "minimumFareMinor")
+	maximum := moneyMinor(t, quote, "maximumFareMinor")
 
 	// The fixture policy: absolute 40,000, cost 45,000, floor 7,000 bps,
 	// ceiling 20,000 bps.
@@ -68,8 +68,8 @@ func TestPublishValidation(t *testing.T) {
 	// Sentinels: -1 = floor-1, -2 = floor, -3 = ceiling, -4 = ceiling+1.
 	publish := func(sentinel int64) *httptest.ResponseRecorder {
 		quote := quoteEnvelope(t, h, rider, testutil.PickupFixture(), testutil.DropoffFixture())
-		minimum := asInt64(t, quote, "minimumFareMinor")
-		maximum := asInt64(t, quote, "maximumFareMinor")
+		minimum := moneyMinor(t, quote, "minimumFareMinor")
+		maximum := moneyMinor(t, quote, "maximumFareMinor")
 		amount := sentinel
 		switch sentinel {
 		case -1:
@@ -83,7 +83,7 @@ func TestPublishValidation(t *testing.T) {
 		}
 		return h.Do(http.MethodPost, "/mp/requests", rider, map[string]any{
 			"quoteId":            quote["quoteId"],
-			"requestedFareMinor": amount,
+			"requestedFareMinor": moneyBody(amount),
 			"paymentMethodId":    "wallet",
 		}, move.IdempotencyHeader, idemKey())
 	}
@@ -125,7 +125,7 @@ func TestRequestCap(t *testing.T) {
 	quote := quoteEnvelope(t, h, rider, testutil.PickupFixture(), testutil.DropoffFixture())
 	recorder := h.Do(http.MethodPost, "/mp/requests", rider, map[string]any{
 		"quoteId":            quote["quoteId"],
-		"requestedFareMinor": asInt64(t, quote, "minimumFareMinor"),
+		"requestedFareMinor": moneyBody(moneyMinor(t, quote, "minimumFareMinor")),
 		"paymentMethodId":    "wallet",
 	}, move.IdempotencyHeader, idemKey())
 	requireCode(t, recorder, http.StatusTooManyRequests, domain.CodeRequestCapReached)
@@ -141,7 +141,7 @@ func TestReviseInvalidatesBidsAndReleasesHolds(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	h.Wallet.SetSpendable(driver.UserID, 1_000_000)
@@ -153,13 +153,13 @@ func TestReviseInvalidatesBidsAndReleasesHolds(t *testing.T) {
 
 	// Wrong expected version first: optimistic concurrency answers 409.
 	stale := h.Do(http.MethodPost, "/mp/requests/"+requestID+"/revise", rider, map[string]any{
-		"requestedFareMinor": amount + 1_000,
+		"requestedFareMinor": moneyBody(amount + 1_000),
 		"expectedVersion":    99,
 	}, move.IdempotencyHeader, idemKey())
 	requireCode(t, stale, http.StatusConflict, domain.CodeVersionConflict)
 
 	recorder := h.Do(http.MethodPost, "/mp/requests/"+requestID+"/revise", rider, map[string]any{
-		"requestedFareMinor": amount + 1_000,
+		"requestedFareMinor": moneyBody(amount + 1_000),
 		"expectedVersion":    int(asInt64(t, view, "version")),
 	}, move.IdempotencyHeader, idemKey())
 	requireStatus(t, recorder, http.StatusOK)
@@ -187,7 +187,7 @@ func TestCancelReleasesBids(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	h.Wallet.SetSpendable(driver.UserID, 1_000_000)

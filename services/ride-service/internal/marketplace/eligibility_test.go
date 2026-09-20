@@ -217,7 +217,7 @@ func TestEligibilityFinishingTrip(t *testing.T) {
 	newPickup := testutil.PlaceAt(origin, 4_000)
 	view, _ := publishRoute(t, h, h.Rider(), newPickup, testutil.PlaceAt(origin, 9_000), 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	driver := h.Driver()
 	claimID := finishingTripFixture(t, h, driver, testutil.PlaceAt(origin, 2_500), origin, tripDropoff)
@@ -235,7 +235,7 @@ func TestEligibilityFinishingTrip(t *testing.T) {
 	wrongDependency := h.Do(http.MethodPost, "/mp/bids", driver, map[string]any{
 		"requestId":         requestID,
 		"requestRevision":   1,
-		"amountMinor":       amount,
+		"amountMinor":       moneyBody(amount),
 		"slot":              "next",
 		"dependsOnClaimId":  uuid.NewString(),
 		"availabilityEpoch": result.AvailabilityEpoch,
@@ -245,7 +245,7 @@ func TestEligibilityFinishingTrip(t *testing.T) {
 	queued := h.Do(http.MethodPost, "/mp/bids", driver, map[string]any{
 		"requestId":         requestID,
 		"requestRevision":   1,
-		"amountMinor":       amount,
+		"amountMinor":       moneyBody(amount),
 		"slot":              "next",
 		"dependsOnClaimId":  claimID.String(),
 		"availabilityEpoch": result.AvailabilityEpoch,

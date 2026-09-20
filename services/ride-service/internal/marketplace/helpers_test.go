@@ -68,6 +68,32 @@ func asInt64(t *testing.T, body map[string]any, key string) int64 {
 	return int64(value)
 }
 
+// testCurrency is the harness city's currency (the fixture's).
+const testCurrency = "NGN"
+
+// moneyBody builds the Money object a client sends for an amount.
+func moneyBody(minor int64) map[string]any {
+	return map[string]any{"amountMinor": minor, "currency": testCurrency}
+}
+
+// moneyMinor reads a Money object's amountMinor out of a decoded map, and
+// asserts the object shape (amountMinor + currency) while it is at it.
+func moneyMinor(t *testing.T, body map[string]any, key string) int64 {
+	t.Helper()
+	object, ok := body[key].(map[string]any)
+	if !ok {
+		t.Fatalf("%s is not a Money object in %v", key, body)
+	}
+	amount, ok := object["amountMinor"].(float64)
+	if !ok {
+		t.Fatalf("%s carries no amountMinor: %v", key, object)
+	}
+	if currency, ok := object["currency"].(string); !ok || currency == "" {
+		t.Fatalf("%s carries no currency: %v", key, object)
+	}
+	return int64(amount)
+}
+
 // quoteEnvelope asks for a marketplace quote between two places.
 func quoteEnvelope(t *testing.T, h *testutil.Harness, rider testutil.Actor, pickup, dropoff domain.Place) map[string]any {
 	t.Helper()
@@ -95,11 +121,11 @@ func publishRoute(t *testing.T, h *testutil.Harness, rider testutil.Actor, picku
 	t.Helper()
 	quote := quoteEnvelope(t, h, rider, pickup, dropoff)
 	if amountMinor == 0 {
-		amountMinor = asInt64(t, quote, "minimumFareMinor")
+		amountMinor = moneyMinor(t, quote, "minimumFareMinor")
 	}
 	recorder := h.Do(http.MethodPost, "/mp/requests", rider, map[string]any{
 		"quoteId":            quote["quoteId"],
-		"requestedFareMinor": amountMinor,
+		"requestedFareMinor": moneyBody(amountMinor),
 		"paymentMethodId":    "wallet",
 	}, move.IdempotencyHeader, idemKey())
 	requireStatus(t, recorder, http.StatusCreated)
@@ -166,7 +192,7 @@ func submitBid(t *testing.T, h *testutil.Harness, driver testutil.Actor, request
 	return h.Do(http.MethodPost, "/mp/bids", driver, map[string]any{
 		"requestId":         requestID,
 		"requestRevision":   1,
-		"amountMinor":       amountMinor,
+		"amountMinor":       moneyBody(amountMinor),
 		"slot":              "current",
 		"availabilityEpoch": 0,
 	}, move.IdempotencyHeader, key)

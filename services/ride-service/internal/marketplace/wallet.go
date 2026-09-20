@@ -15,6 +15,19 @@ import (
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 )
 
+// Money is the one cross-language money shape (contracts Money): integer
+// minor units with an explicit currency. Every client-facing amount and every
+// payment-service wire amount is a Money object, never a bare integer.
+type Money struct {
+	AmountMinor int64  `json:"amountMinor"`
+	Currency    string `json:"currency"`
+}
+
+// money builds a Money value.
+func money(amountMinor int64, currency string) Money {
+	return Money{AmountMinor: amountMinor, Currency: currency}
+}
+
 // ErrWalletUnknownOutcome marks a wallet call whose outcome this service does
 // not know: the request may or may not have been applied. The caller must
 // treat the money as possibly moved — record a recovery row and let the sweep
@@ -22,14 +35,15 @@ import (
 var ErrWalletUnknownOutcome = errors.New("wallet outcome unknown")
 
 // Hold is the wallet's view of one commission reservation
-// (contracts/openapi/marketplace.yaml → WalletHold).
+// (contracts/openapi/marketplace.yaml → WalletHold). Its money fields are
+// Money objects, exactly as payment-service serialises them.
 type Hold struct {
 	ReservationID string `json:"reservationId"`
 	BidID         string `json:"bidId"`
 	DriverID      string `json:"driverId"`
 	State         string `json:"state"`
-	AmountMinor   int64  `json:"amountMinor"`
-	BaseMinor     int64  `json:"baseMinor"`
+	AmountMinor   Money  `json:"amountMinor"`
+	BaseMinor     Money  `json:"baseMinor"`
 	PolicyVersion int    `json:"policyVersion"`
 }
 
@@ -40,23 +54,44 @@ type CaptureResult struct {
 	JournalEntryID string `json:"journalEntryId"`
 }
 
-// Overview is the driver's wallet with the one server-computed spendable.
+// Overview is the driver's wallet with the one server-computed spendable
+// (contract WalletOverview: Money objects throughout).
 type Overview struct {
-	ClearedMinor   int64  `json:"clearedMinor"`
-	HeldMinor      int64  `json:"heldMinor"`
-	SpendableMinor int64  `json:"spendableMinor"`
+	ClearedMinor   Money  `json:"clearedMinor"`
+	HeldMinor      Money  `json:"heldMinor"`
+	SpendableMinor Money  `json:"spendableMinor"`
 	Holds          []Hold `json:"holds"`
 }
 
-// ReserveRequest is the body of POST /v1/wallet/mp/holds/reserve.
+// ReserveRequest is the body of POST /v1/wallet/mp/holds/reserve. amountMinor
+// and baseMinor are Money objects per the contract.
 type ReserveRequest struct {
 	DriverID      uuid.UUID `json:"driverId"`
 	BidID         uuid.UUID `json:"bidId"`
 	RequestID     uuid.UUID `json:"requestId"`
-	AmountMinor   int64     `json:"amountMinor"`
-	BaseMinor     int64     `json:"baseMinor"`
+	AmountMinor   Money     `json:"amountMinor"`
+	BaseMinor     Money     `json:"baseMinor"`
 	PolicyVersion int       `json:"policyVersion"`
 	CityID        string    `json:"cityId"`
+}
+
+// ExecutionRef names the execution a marketplace award produced.
+type ExecutionRef struct {
+	Service string `json:"service"`
+	ID      string `json:"id"`
+}
+
+// SettlementRequest is the body of POST /v1/wallet/mp/settlements (M06): the
+// completion-time settlement of a marketplace execution. The 10% fee was
+// captured at selection and is NEVER charged here.
+type SettlementRequest struct {
+	AwardID      uuid.UUID    `json:"awardId"`
+	ExecutionRef ExecutionRef `json:"executionRef"`
+	RequesterID  uuid.UUID    `json:"requesterId"`
+	DriverID     uuid.UUID    `json:"driverId"`
+	FareMinor    Money        `json:"fareMinor"`
+	Method       string       `json:"method"`
+	CityID       string       `json:"cityId"`
 }
 
 // WalletPort is everything the marketplace engine asks of payment-service.
@@ -64,16 +99,27 @@ type ReserveRequest struct {
 // the wallet rather than moving money twice.
 type WalletPort interface {
 	Reserve(ctx context.Context, req ReserveRequest, idempotencyKey string) (*Hold, error)
-	Adjust(ctx context.Context, reservationID string, amountMinor, baseMinor int64, idempotencyKey string) (*Hold, error)
+	Adjust(ctx context.Context, reservationID string, amountMinor, baseMinor Money, idempotencyKey string) (*Hold, error)
 	Release(ctx context.Context, reservationID string, idempotencyKey string) (*Hold, error)
-	Capture(ctx context.Context, reservationID, awardID string, idempotencyKey string) (*CaptureResult, error)
+	// Capture debits the winning hold exactly once under the award id.
+	// expectedAmountMinor is the award's PINNED commission: a hold whose
+	// current amount differs is refused with a definite conflict, which the
+	// saga compensates instead of debiting terms that were never awarded.
+	Capture(ctx context.Context, reservationID, awardID string, expectedAmountMinor Money, idempotencyKey string) (*CaptureResult, error)
 	Reverse(ctx context.Context, reservationID, awardID, reason string, idempotencyKey string) (*Hold, error)
-	Overview(ctx context.Context, driverID uuid.UUID) (*Overview, error)
+	Overview(ctx context.Context, driverID uuid.UUID, cityID string) (*Overview, error)
+}
+
+// SettlementPort is the completion-settlement port (M06), idempotent on the
+// award id: a replay returns the original outcome and never moves money twice.
+type SettlementPort interface {
+	Settle(ctx context.Context, req SettlementRequest, idempotencyKey string) error
 }
 
 // HTTPWallet talks to payment-service's /v1/wallet/mp/* surface with the
 // internal service key. An HTTPWallet with no base URL refuses every call:
-// a wallet nobody wired must fail closed, not pretend to reserve.
+// a wallet nobody wired must fail closed, not pretend to reserve. It also
+// implements SettlementPort against POST /v1/wallet/mp/settlements.
 type HTTPWallet struct {
 	baseURL    string
 	serviceKey string
@@ -146,6 +192,12 @@ func (w *HTTPWallet) call(ctx context.Context, method, path string, body any, id
 		// The wallet answered a definite no; carry its code and details through.
 		return domain.Errorf(domain.Code(failure.Code), "%s", failure.Message).WithDetails(failure.Details)
 	}
+	if response.StatusCode == http.StatusConflict {
+		// A 409 is a DEFINITE refusal even without a parseable body: for
+		// capture it means the hold no longer matches the awarded terms, and
+		// the saga must compensate, never keep polling.
+		return domain.Errorf(domain.CodeConflict, "the wallet refused the call with status %d", response.StatusCode)
+	}
 	if response.StatusCode >= 500 {
 		return fmt.Errorf("%w: the wallet answered %d", ErrWalletUnknownOutcome, response.StatusCode)
 	}
@@ -162,7 +214,7 @@ func (w *HTTPWallet) Reserve(ctx context.Context, req ReserveRequest, idempotenc
 }
 
 // Adjust implements WalletPort.
-func (w *HTTPWallet) Adjust(ctx context.Context, reservationID string, amountMinor, baseMinor int64, idempotencyKey string) (*Hold, error) {
+func (w *HTTPWallet) Adjust(ctx context.Context, reservationID string, amountMinor, baseMinor Money, idempotencyKey string) (*Hold, error) {
 	var hold Hold
 	body := map[string]any{"amountMinor": amountMinor, "baseMinor": baseMinor}
 	if err := w.call(ctx, http.MethodPost, "/v1/wallet/mp/holds/"+reservationID+"/adjust", body, idempotencyKey, &hold); err != nil {
@@ -181,9 +233,9 @@ func (w *HTTPWallet) Release(ctx context.Context, reservationID string, idempote
 }
 
 // Capture implements WalletPort.
-func (w *HTTPWallet) Capture(ctx context.Context, reservationID, awardID string, idempotencyKey string) (*CaptureResult, error) {
+func (w *HTTPWallet) Capture(ctx context.Context, reservationID, awardID string, expectedAmountMinor Money, idempotencyKey string) (*CaptureResult, error) {
 	var result CaptureResult
-	body := map[string]any{"awardId": awardID}
+	body := map[string]any{"awardId": awardID, "expectedAmountMinor": expectedAmountMinor}
 	if err := w.call(ctx, http.MethodPost, "/v1/wallet/mp/holds/"+reservationID+"/capture", body, idempotencyKey, &result); err != nil {
 		return nil, err
 	}
@@ -200,11 +252,18 @@ func (w *HTTPWallet) Reverse(ctx context.Context, reservationID, awardID, reason
 	return &hold, nil
 }
 
-// Overview implements WalletPort.
-func (w *HTTPWallet) Overview(ctx context.Context, driverID uuid.UUID) (*Overview, error) {
+// Overview implements WalletPort against the service-authenticated internal
+// variant GET /v1/wallet/mp/holds/overview?driverId&cityId.
+func (w *HTTPWallet) Overview(ctx context.Context, driverID uuid.UUID, cityID string) (*Overview, error) {
 	var overview Overview
-	if err := w.call(ctx, http.MethodGet, "/v1/wallet/mp/overview?driverId="+driverID.String(), nil, "", &overview); err != nil {
+	path := "/v1/wallet/mp/holds/overview?driverId=" + driverID.String() + "&cityId=" + cityID
+	if err := w.call(ctx, http.MethodGet, path, nil, "", &overview); err != nil {
 		return nil, err
 	}
 	return &overview, nil
+}
+
+// Settle implements SettlementPort against POST /v1/wallet/mp/settlements.
+func (w *HTTPWallet) Settle(ctx context.Context, req SettlementRequest, idempotencyKey string) error {
+	return w.call(ctx, http.MethodPost, "/v1/wallet/mp/settlements", req, idempotencyKey, nil)
 }

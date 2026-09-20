@@ -23,6 +23,7 @@ import {
   getMpWalletOverview,
   releaseHold,
   reserveHold,
+  settleMarketplaceCompletion,
   type WalletDeps,
 } from "../ledger";
 import { reverseCapturedHold } from "../ledger/mp-holds";
@@ -50,7 +51,27 @@ const AdjustBody = z.object({
   baseMinor: MoneyBody,
 });
 
-const CaptureBody = z.object({ awardId: z.string().min(1) });
+const CaptureBody = z.object({
+  awardId: z.string().min(1),
+  // The award's pinned commission: capture debits exactly this or refuses
+  // with a conflict, so a revise-raise racing selection can never inflate
+  // the fee (contracts/openapi/marketplace.yaml).
+  expectedAmountMinor: MoneyBody,
+});
+
+const SettlementBody = z.object({
+  awardId: z.string().min(1),
+  executionRef: z.object({
+    service: z.enum(["ride", "delivery"]),
+    id: z.string().min(1),
+  }),
+  requesterId: z.string().min(1),
+  driverId: z.string().min(1),
+  fareMinor: MoneyBody,
+  tipMinor: MoneyBody.optional(),
+  method: z.enum(["wallet", "cash"]),
+  cityId: z.string().min(1),
+});
 
 const ReverseBody = z.object({
   awardId: z.string().min(1),
@@ -70,6 +91,21 @@ const FundingBody = z.object({
   currency: z.string().min(3).max(3),
   cityId: z.string().min(1),
 });
+
+/** Two Money bodies on one request must agree on their denomination. */
+function sharedCurrencyOf(
+  amount: { currency: string },
+  base: { currency: string },
+): string {
+  if (amount.currency !== base.currency) {
+    throw new ContractError(
+      "validation_failed",
+      "amountMinor and baseMinor must carry the same currency",
+      { amountCurrency: amount.currency, baseCurrency: base.currency },
+    );
+  }
+  return amount.currency;
+}
 
 function idempotencyKeyOf(c: Context): string {
   const raw = c.req.header(IDEMPOTENCY_HEADER);
@@ -119,11 +155,13 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
   const routes = new Hono();
 
   // Driver-facing: the wallet overview reads the authenticated caller's own
-  // wallet. Registered before the service-key guard takes the rest.
+  // wallet. Registered before the service-key guard takes the rest. The city
+  // arrives as a `cityId` query param or an X-City-ID header — the gateway
+  // and the apps disagree on which, so both work.
   routes.get("/overview", serviceAuth, async (c) => {
     try {
       const driverId = c.get("userId");
-      const cityId = c.req.header("X-City-ID");
+      const cityId = c.req.query("cityId") ?? c.req.header("X-City-ID");
       if (cityId === undefined || cityId.length === 0) {
         throw new ContractError(
           "city_unsupported",
@@ -138,6 +176,32 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
 
   routes.use("/holds/*", internalServiceAuth);
   routes.use("/funding/*", internalServiceAuth);
+  routes.use("/settlements", internalServiceAuth);
+
+  // Service-to-service variant of the overview: the marketplace engine names
+  // the driver to build affordability-checked presets (D02). It lives under
+  // /holds so the gateway's admin-only rule keeps user tokens away from it.
+  routes.get("/holds/overview", async (c) => {
+    try {
+      const driverId = c.req.query("driverId");
+      const cityId = c.req.query("cityId");
+      if (driverId === undefined || driverId.length === 0) {
+        throw new ContractError(
+          "validation_failed",
+          "driverId is a required query parameter",
+        );
+      }
+      if (cityId === undefined || cityId.length === 0) {
+        throw new ContractError(
+          "validation_failed",
+          "cityId is a required query parameter",
+        );
+      }
+      return c.json(await getMpWalletOverview(deps, driverId, cityId), 200);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
 
   // Award saga step 3 (M05): rider funding must cover the SELECTED amount.
   // Nothing is debited; see src/ledger/mp-funding.ts for the semantics. The
@@ -164,6 +228,7 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
           requestRef: body.requestId,
           amountMinor: body.amountMinor.amountMinor,
           baseMinor: body.baseMinor.amountMinor,
+          currency: sharedCurrencyOf(body.amountMinor, body.baseMinor),
           policyVersion: body.policyVersion,
           cityId: body.cityId,
         },
@@ -184,10 +249,42 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
         {
           amountMinor: body.amountMinor.amountMinor,
           baseMinor: body.baseMinor.amountMinor,
+          currency: sharedCurrencyOf(body.amountMinor, body.baseMinor),
         },
         idempotencyKeyOf(c),
       );
       return c.json(result.hold, 200);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/settlements", async (c) => {
+    try {
+      // Parity with every other mutation here: the header is required, but
+      // the award id is the idempotency authority.
+      idempotencyKeyOf(c);
+      const body = await parse(c, SettlementBody);
+      const result = await settleMarketplaceCompletion(deps, {
+        awardId: body.awardId,
+        executionRef: body.executionRef,
+        requesterId: body.requesterId,
+        driverId: body.driverId,
+        fareMinor: body.fareMinor,
+        tipMinor: body.tipMinor,
+        method: body.method,
+        cityId: body.cityId,
+      });
+      return c.json(
+        result.journalEntryId === null
+          ? { settled: result.settled, method: result.method }
+          : {
+              settled: result.settled,
+              method: result.method,
+              journalEntryId: result.journalEntryId,
+            },
+        200,
+      );
     } catch (error) {
       return fail(c, error);
     }
@@ -212,7 +309,10 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
       const result = await captureHold(
         deps,
         c.req.param("id"),
-        { awardId: body.awardId },
+        {
+          awardId: body.awardId,
+          expectedAmountMinor: body.expectedAmountMinor,
+        },
         idempotencyKeyOf(c),
       );
       return c.json(

@@ -13,6 +13,8 @@ interface UbiJestMatchers {
   toBeNull(): void;
   toBeDefined(): void;
   toContain(expected: unknown): void;
+  toEqual(expected: unknown): void;
+  toHaveLength(expected: number): void;
   readonly not: UbiJestMatchers;
 }
 
@@ -21,3 +23,8 @@ declare function describe(name: string, fn: () => void): void;
 declare function it(name: string, fn?: () => void | Promise<void>, timeout?: number): void;
 declare function beforeEach(fn: () => void | Promise<void>): void;
 declare function afterEach(fn: () => void | Promise<void>): void;
+
+declare namespace jest {
+  function fn(): (...args: unknown[]) => unknown;
+  function mock(moduleName: string, factory?: () => unknown): void;
+}

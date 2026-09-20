@@ -11,9 +11,13 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/config"
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/models"
 )
 
@@ -159,6 +163,64 @@ func TestIsMarketplaceManaged(t *testing.T) {
 			}
 			if got := isMarketplaceManaged(payload); got != tc.want {
 				t.Fatalf("isMarketplaceManaged(%q) = %v, want %v", tc.json, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMarketplaceAssignKeyUsable(t *testing.T) {
+	cases := []struct {
+		name string
+		key  string
+		want bool
+	}{
+		{"empty key fails closed", "", false},
+		{"committed repo default fails closed", "internal-key", false},
+		{"strong deployment key is usable", "prod-9f2c4a7e1b8d5f3a", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := marketplaceAssignKeyUsable(tc.key); got != tc.want {
+				t.Fatalf("marketplaceAssignKeyUsable(%q) = %v, want %v", tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+// The guard runs before any body decode or storage access, so the handler is
+// exercisable without a database: under the committed default key the
+// marketplace hand-off must answer 503 with an honest error, never mint a
+// delivery.
+func TestMarketplaceAssignFailsClosedUnderDefaultKey(t *testing.T) {
+	for _, key := range []string{"", "internal-key"} {
+		t.Run("key="+key, func(t *testing.T) {
+			h := &Handler{cfg: &config.Config{InternalServiceKey: key}}
+			body, err := json.Marshal(validAssignRequest())
+			if err != nil {
+				t.Fatalf("marshal request: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/marketplace-assign", bytes.NewReader(body))
+			rec := httptest.NewRecorder()
+
+			h.MarketplaceAssign(rec, req)
+
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+			}
+			var resp struct {
+				Success bool `json:"success"`
+				Error   *struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("response is not valid JSON: %v", err)
+			}
+			if resp.Success {
+				t.Fatal("success = true, want false")
+			}
+			if resp.Error == nil || resp.Error.Code != "SERVICE_KEY_NOT_CONFIGURED" {
+				t.Fatalf("error = %+v, want code SERVICE_KEY_NOT_CONFIGURED", resp.Error)
 			}
 		})
 	}

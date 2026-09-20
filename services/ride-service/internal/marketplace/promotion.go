@@ -2,6 +2,7 @@ package marketplace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -46,7 +47,45 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 		ride.State == machine.RiderPaymentFailed ||
 		ride.State == machine.RiderRated
 
+	// A COMPLETED marketplace execution owes payment-service its M06
+	// settlement (the fee was captured at selection and is never charged
+	// again). The intent is written durably INSIDE the claim-completion
+	// transaction, then settled after commit; the recovery sweep retries
+	// anything the wire lost. Everything the transaction must not fetch from
+	// the pool mid-flight is read first (pool-deadlock rule).
+	var settlement *SettlementRequest
+	var settlementRowID uuid.UUID
+	if completed && claim.AwardID != nil {
+		award, awardErr := s.deps.Store.AwardByID(ctx, s.deps.Store.Pool(), *claim.AwardID)
+		if awardErr != nil {
+			return awardErr
+		}
+		request, requestErr := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), award.RequestID)
+		if requestErr != nil {
+			return requestErr
+		}
+		method := "wallet"
+		if request.PaymentMethodID == "cash" {
+			method = "cash"
+		}
+		service := claim.ExecutionService
+		if service == "" {
+			service = ServiceRide
+		}
+		settlement = &SettlementRequest{
+			AwardID:      award.ID,
+			ExecutionRef: ExecutionRef{Service: service, ID: rideID.String()},
+			RequesterID:  award.RequesterID,
+			DriverID:     award.DriverID,
+			FareMinor:    money(award.FareMinor, request.Currency),
+			Method:       method,
+			CityID:       request.CityID,
+		}
+		settlementRowID = uuid.New()
+	}
+
 	now := s.now()
+	settlementRecorded := false
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		locked, err := s.deps.Store.ClaimForUpdate(ctx, tx, claim.ID)
 		if err != nil {
@@ -64,6 +103,26 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 		}
 		if _, err := s.deps.Store.TransitionClaim(ctx, tx, locked, to, ClaimUpdate{}); err != nil {
 			return err
+		}
+		if settlement != nil {
+			// The claim transition commits exactly once, so this intent is
+			// written exactly once — and the settlement itself is idempotent
+			// on the award id besides.
+			payload, marshalErr := json.Marshal(settlement)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			driverID := settlement.DriverID
+			if err := s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
+				ID:            settlementRowID,
+				ReservationID: settlementKeyFor(settlement.AwardID),
+				DriverID:      driverID,
+				Action:        RecoverySettle,
+				Payload:       payload,
+			}); err != nil {
+				return err
+			}
+			settlementRecorded = true
 		}
 		return writeEvent(ctx, tx, Event{
 			Name:           "mp.claim.released",
@@ -84,6 +143,19 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 	})
 	if err != nil {
 		return err
+	}
+
+	if settlementRecorded {
+		// The rows are committed: settle now, under the award's ONE
+		// settlement key. Any failure — definite or unknown — leaves the
+		// durable row for the sweep, which converges on the same key.
+		if settleErr := s.deps.Settlement.Settle(ctx, *settlement, settlementKeyFor(settlement.AwardID)); settleErr != nil {
+			s.deps.Logger.Warn().Err(settleErr).Str("award_id", settlement.AwardID.String()).
+				Msg("completion settlement unconfirmed; the sweep will retry it")
+		} else if resolveErr := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), settlementRowID, now); resolveErr != nil {
+			s.deps.Logger.Error().Err(resolveErr).Str("award_id", settlement.AwardID.String()).
+				Msg("could not resolve the settlement recovery row")
+		}
 	}
 
 	return s.promoteNextFor(ctx, claim.DriverID)
@@ -317,13 +389,13 @@ func (s *Service) writeQueueEtaEvent(ctx context.Context, tx pgx.Tx, award *Awar
 
 func (s *Service) writeWindowMissedEvent(ctx context.Context, tx pgx.Tx, award *Award, request *Request, window *AwardWindow, now time.Time) error {
 	return writeEvent(ctx, tx, Event{
-		Name:           "mp.queue.window_missed",
-		AggregateType:  subjectAward,
-		AggregateID:    award.ID.String(),
-		ToVersion:      window.EtaVersion,
-		CityID:         request.CityID,
-		ActorType:      "system",
-		ActorID:        "ride-service",
+		Name:          "mp.queue.window_missed",
+		AggregateType: subjectAward,
+		AggregateID:   award.ID.String(),
+		ToVersion:     window.EtaVersion,
+		CityID:        request.CityID,
+		ActorType:     "system",
+		ActorID:       "ride-service",
 		// One idempotency key per award: the missed-window event fires ONCE.
 		IdempotencyKey: "mp.queue.window_missed:" + award.ID.String(),
 		OccurredAt:     now,

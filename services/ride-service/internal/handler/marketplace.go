@@ -61,6 +61,7 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 		r.Get("/quote", h.Quote)
 		r.Get("/feed", h.Feed)
 		r.Post("/driver/parked", h.ConfirmParked)
+		r.Get("/driver/jobs", h.DriverJobs)
 
 		r.Route("/requests", func(r chi.Router) {
 			r.Post("/", h.PublishRequest)
@@ -448,6 +449,20 @@ func (h *MarketplaceHandler) ConfirmParked(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// DriverJobs handles GET /v1/mp/driver/jobs.
+func (h *MarketplaceHandler) DriverJobs(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	jobs, err := h.service.DriverJobs(r.Context(), actor)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, jobs)
 }
 
 // AdminRequests handles GET /v1/admin/mp/requests.

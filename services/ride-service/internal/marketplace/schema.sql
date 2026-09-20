@@ -258,3 +258,16 @@ CREATE TABLE IF NOT EXISTS mp.idempotency_keys (
     created_at   timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (scope, actor_id, key)
 );
+
+-- ---------------------------------------------------------------------------
+-- Post-review additions (idempotent, applied to existing databases too).
+--   * reservation_recovery.payload carries the full replay payload for the
+--     reserve_replay (unknown-outcome reserve) and settle actions.
+--   * bids.hold_released_at is the financial confirmation of the hold's
+--     release: the driver view says `released` only once this is set.
+--   * award_attempts.captured records, durably and BEFORE any reversal is
+--     driven, whether the compensation being recorded covers a captured fee.
+-- ---------------------------------------------------------------------------
+ALTER TABLE mp.reservation_recovery ADD COLUMN IF NOT EXISTS payload jsonb;
+ALTER TABLE mp.bids ADD COLUMN IF NOT EXISTS hold_released_at timestamptz;
+ALTER TABLE mp.award_attempts ADD COLUMN IF NOT EXISTS captured boolean NOT NULL DEFAULT false;

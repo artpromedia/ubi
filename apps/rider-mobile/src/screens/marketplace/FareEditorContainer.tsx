@@ -13,6 +13,11 @@ import { FareEditorScreen } from './FareEditorScreen';
 
 const majorToMoney = (raw: string, currency: string): Money => ({ amountMinor: (parseInt(raw.replace(/\D/g, ''), 10) || 0) * 100, currency });
 
+// Runtime guard: money fields must be contract Money objects ({amountMinor, currency}).
+// A malformed envelope (e.g. a bare integer) must never seed the editor — it would render 'NaN'.
+const isMoney = (m: unknown): m is Money =>
+  !!m && typeof m === 'object' && Number.isFinite((m as Money).amountMinor) && typeof (m as Money).currency === 'string';
+
 export function FareEditorContainer() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
   const { params } = useRoute<RouteProp<MarketplaceStackParamList, 'Fare'>>();
@@ -22,7 +27,10 @@ export function FareEditorContainer() {
     queryFn: () => marketplaceApi.quote({ service: qp.service, vehicleClass: qp.vehicleClass, pickupLat: qp.pickup.lat, pickupLng: qp.pickup.lng, dropoffLat: qp.dropoff.lat, dropoffLng: qp.dropoff.lng, weightKg: qp.weightKg }),
     retry: false, staleTime: 0,
   });
-  const quote = q.data;
+  // Treat an envelope whose money fields aren't valid contract Money objects as not yet
+  // loaded: the skeleton stays up and nothing NaN can ever be seeded or rendered.
+  const raw = q.data;
+  const quote = raw && isMoney(raw.suggestedFareMinor) && isMoney(raw.minimumFareMinor) && isMoney(raw.maximumFareMinor) ? raw : undefined;
   const [expired, setExpired] = useState(false);
   const [amountRaw, setAmountRaw] = useState('');
   const [amount, setAmount] = useState<Money | null>(null);

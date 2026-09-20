@@ -24,7 +24,7 @@ func TestBidReservesBeforeLive(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 
@@ -53,10 +53,10 @@ func TestBidReservesBeforeLive(t *testing.T) {
 	requireStatus(t, success, http.StatusCreated)
 	bidView := decode(t, success)
 	commission := marketplace.CommissionMinor(amount)
-	if got := asInt64(t, bidView, "commissionMinor"); got != commission {
+	if got := moneyMinor(t, bidView, "commissionMinor"); got != commission {
 		t.Fatalf("commission: got %d, want %d", got, commission)
 	}
-	if got := asInt64(t, bidView, "netMinor"); got != amount-commission {
+	if got := moneyMinor(t, bidView, "netMinor"); got != amount-commission {
 		t.Fatalf("net: got %d, want %d", got, amount-commission)
 	}
 	holds := h.Wallet.Holds()
@@ -64,7 +64,7 @@ func TestBidReservesBeforeLive(t *testing.T) {
 	if !ok {
 		t.Fatal("the bid's reservation does not exist in the wallet")
 	}
-	if hold.AmountMinor != commission || hold.State != machine.MpHoldActive {
+	if hold.AmountMinor.AmountMinor != commission || hold.State != machine.MpHoldActive {
 		t.Fatalf("hold: %+v, want active at %d", hold, commission)
 	}
 }
@@ -78,7 +78,7 @@ func TestBidInsufficientSpendable(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 	commission := marketplace.CommissionMinor(amount)
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
@@ -102,7 +102,7 @@ func TestOneLiveBidUnderConcurrency(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 	commission := marketplace.CommissionMinor(amount)
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
@@ -162,12 +162,12 @@ func TestBidCap(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		view, _ := publishAt(t, h, h.Rider(), 0)
 		lastRequest = view["requestId"].(string)
-		amount = asInt64(t, view, "minimumFareMinor")
+		amount = moneyMinor(t, view, "minimumFareMinor")
 		recorder := submitBid(t, h, driver, lastRequest, amount, "")
 		requireStatus(t, recorder, http.StatusCreated)
 	}
 	view, _ := publishAt(t, h, h.Rider(), 0)
-	amount = asInt64(t, view, "minimumFareMinor")
+	amount = moneyMinor(t, view, "minimumFareMinor")
 	recorder := submitBid(t, h, driver, view["requestId"].(string), amount, "")
 	requireCode(t, recorder, http.StatusTooManyRequests, domain.CodeBidCapReached)
 }
@@ -181,7 +181,7 @@ func TestReviseRaiseFailureKeepsOldBid(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 	commission := marketplace.CommissionMinor(amount)
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
@@ -194,7 +194,7 @@ func TestReviseRaiseFailureKeepsOldBid(t *testing.T) {
 
 	// Inside the cooldown the revision is refused outright.
 	tooSoon := h.Do(http.MethodPost, "/mp/bids/"+bidID+"/revise", driver, map[string]any{
-		"amountMinor":     amount + 2_000,
+		"amountMinor":     moneyBody(amount + 2_000),
 		"expectedVersion": 1,
 	}, move.IdempotencyHeader, idemKey())
 	requireCode(t, tooSoon, http.StatusTooManyRequests, domain.CodeBidRevisionCooldown)
@@ -203,7 +203,7 @@ func TestReviseRaiseFailureKeepsOldBid(t *testing.T) {
 
 	h.Wallet.FailAdjust = errors.New("wallet down")
 	failed := h.Do(http.MethodPost, "/mp/bids/"+bidID+"/revise", driver, map[string]any{
-		"amountMinor":     amount + 2_000,
+		"amountMinor":     moneyBody(amount + 2_000),
 		"expectedVersion": 1,
 	}, move.IdempotencyHeader, idemKey())
 	if failed.Code == http.StatusOK {
@@ -215,13 +215,13 @@ func TestReviseRaiseFailureKeepsOldBid(t *testing.T) {
 	if bid.AmountMinor != amount || bid.BidVersion != 1 || bid.State != machine.MpBidSubmitted {
 		t.Fatalf("the old bid changed after a failed raise: %+v", bid)
 	}
-	if hold := h.Wallet.Holds()[reservationID]; hold.AmountMinor != commission {
+	if hold := h.Wallet.Holds()[reservationID]; hold.AmountMinor.AmountMinor != commission {
 		t.Fatalf("the old hold changed after a failed raise: %+v", hold)
 	}
 
 	// With the wallet healthy the raise lands: hold first, then the row.
 	raised := h.Do(http.MethodPost, "/mp/bids/"+bidID+"/revise", driver, map[string]any{
-		"amountMinor":     amount + 2_000,
+		"amountMinor":     moneyBody(amount + 2_000),
 		"expectedVersion": 1,
 	}, move.IdempotencyHeader, idemKey())
 	requireStatus(t, raised, http.StatusOK)
@@ -230,8 +230,8 @@ func TestReviseRaiseFailureKeepsOldBid(t *testing.T) {
 		t.Fatalf("bidVersion after raise: got %v, want 2", raisedView["bidVersion"])
 	}
 	newCommission := marketplace.CommissionMinor(amount + 2_000)
-	if hold := h.Wallet.Holds()[reservationID]; hold.AmountMinor != newCommission {
-		t.Fatalf("hold after raise: got %d, want %d", hold.AmountMinor, newCommission)
+	if hold := h.Wallet.Holds()[reservationID]; hold.AmountMinor.AmountMinor != newCommission {
+		t.Fatalf("hold after raise: got %d, want %d", hold.AmountMinor.AmountMinor, newCommission)
 	}
 }
 
@@ -245,7 +245,7 @@ func TestWithdrawReleasesOnce(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	h.Wallet.SetSpendable(driver.UserID, 1_000_000)
@@ -287,7 +287,7 @@ func TestMyBidsCarriesHoldState(t *testing.T) {
 	driver := h.Driver()
 
 	view, _ := publishAt(t, h, rider, 0)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	h.Wallet.SetSpendable(driver.UserID, 1_000_000)
 	created := submitBid(t, h, driver, view["requestId"].(string), amount, "")
@@ -301,7 +301,7 @@ func TestMyBidsCarriesHoldState(t *testing.T) {
 		t.Fatalf("bids: got %d, want 1", len(bids))
 	}
 	entry := bids[0].(map[string]any)
-	if entry["holdState"] != machine.MpHoldActive {
-		t.Fatalf("holdState: got %v, want active", entry["holdState"])
+	if entry["holdState"] != marketplace.HoldStateHeld {
+		t.Fatalf("holdState: got %v, want held", entry["holdState"])
 	}
 }

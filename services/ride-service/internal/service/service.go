@@ -138,16 +138,18 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	if config.PaymentServiceURL == "" {
 		config.Logger.Warn().Msg("PAYMENT_SERVICE_URL is not set: marketplace bids will fail closed at the wallet")
 	}
+	httpWallet := marketplace.NewHTTPWallet(config.PaymentServiceURL, config.InternalServiceKey, nil)
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
-		Store:   marketplace.NewStore(pool),
-		Config:  cityconfig.NewStore(pool, runtime.Redis, config.ConfigCacheTTL),
-		Flags:   cityconfig.NewFlags(pool),
-		Pricing: pricing.NewEngine(),
-		Router:  router,
-		Wallet:  marketplace.NewHTTPWallet(config.PaymentServiceURL, config.InternalServiceKey, nil),
-		Funding: marketplace.NewHTTPFunding(config.PaymentServiceURL, config.InternalServiceKey, nil),
-		Redis:   ridisc.New(runtime.Redis),
-		Logger:  config.Logger,
+		Store:      marketplace.NewStore(pool),
+		Config:     cityconfig.NewStore(pool, runtime.Redis, config.ConfigCacheTTL),
+		Flags:      cityconfig.NewFlags(pool),
+		Pricing:    pricing.NewEngine(),
+		Router:     router,
+		Wallet:     httpWallet,
+		Funding:    marketplace.NewHTTPFunding(config.PaymentServiceURL, config.InternalServiceKey, nil),
+		Settlement: httpWallet,
+		Redis:      ridisc.New(runtime.Redis),
+		Logger:     config.Logger,
 	})
 	if err != nil {
 		runtime.Close()

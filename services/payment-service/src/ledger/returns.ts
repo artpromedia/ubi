@@ -16,11 +16,13 @@ import {
 
 import { publishEvent, writeAudit } from "./audit";
 import { assertFlagEnabled } from "./city-config";
+import { lockWallet, type WalletDeps } from "./context";
+import { assertSufficientFunds } from "./limits";
 import { fromDbMinor } from "./minor-units";
 import { postEntry } from "./post-entry";
+import { requireWallet } from "./wallets";
 import { generateId } from "../lib/utils";
 
-import type { WalletDeps } from "./context";
 import type { Actor, LedgerTx } from "./types";
 
 const TRANSFER_MACHINE = "walletTransfer" as const;
@@ -266,6 +268,29 @@ export async function respondToReturnRequest(
         amount,
         entryId: null,
       };
+    }
+
+    // The consented return debits the recipient, so it honors the ONE
+    // spendable calculation like every other debit path (M04): lock the
+    // wallet row, then spend against balance minus active bid holds. Without
+    // this, a return could strip the backing out of an active commission
+    // hold and let the later capture drive the wallet negative.
+    await lockWallet(tx, transfer.toWallet);
+    const recipientWallet = await requireWallet(tx, transfer.toWallet);
+    try {
+      await assertSufficientFunds(tx, recipientWallet, amount);
+    } catch (error) {
+      if (
+        error instanceof ContractError &&
+        error.code === "insufficient_spendable"
+      ) {
+        throw new ContractError(
+          "insufficient_spendable",
+          "returning this transfer would leave active bid holds unbacked — withdraw live bids to free spendable funds first",
+          error.details,
+        );
+      }
+      throw error;
     }
 
     const entry = await reverseTransfer(tx, {

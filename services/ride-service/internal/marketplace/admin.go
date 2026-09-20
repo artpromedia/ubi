@@ -18,7 +18,7 @@ type AdminRequestRow struct {
 	State      string             `json:"state"`
 	Service    string             `json:"service"`
 	CityID     string             `json:"cityId"`
-	AskedMinor int64              `json:"askedMinor"`
+	AskedMinor Money              `json:"askedMinor"`
 	Bids       int                `json:"bids"`
 	Reach      int                `json:"reach"`
 	Envelope   SearchEnvelopeView `json:"envelope"`
@@ -86,7 +86,7 @@ func (s *Service) AdminRequests(ctx context.Context, actor Actor, cityID, state,
 			State:      request.State,
 			Service:    request.Service,
 			CityID:     request.CityID,
-			AskedMinor: request.RequestedMinor,
+			AskedMinor: money(request.RequestedMinor, request.Currency),
 			Bids:       live,
 			Reach:      total,
 			Envelope: SearchEnvelopeView{

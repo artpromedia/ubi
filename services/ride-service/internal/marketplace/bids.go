@@ -2,6 +2,7 @@ package marketplace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -13,14 +14,23 @@ import (
 )
 
 // SubmitBid is the body of POST /v1/mp/bids (MpSubmitBidSchema).
+// amountMinor is a Money object per the contract.
 type SubmitBid struct {
 	RequestID          uuid.UUID  `json:"requestId"`
 	RequestRevision    int        `json:"requestRevision"`
-	AmountMinor        int64      `json:"amountMinor"`
+	AmountMinor        Money      `json:"amountMinor"`
 	Slot               string     `json:"slot"`
 	DependsOnClaimID   *uuid.UUID `json:"dependsOnClaimId,omitempty"`
 	AvailabilityEpoch  int64      `json:"availabilityEpoch"`
 	RateProfileVersion *int       `json:"rateProfileVersion,omitempty"`
+}
+
+// isBidRevisable reports whether a bid is in a state a DRIVER may revise:
+// submitted or revised, never selected_pending. The selected_pending→revised
+// machine edge exists ONLY for the award saga's compensation; a user revise
+// that lands after a selection pinned the terms must lose.
+func isBidRevisable(state string) bool {
+	return state == machine.MpBidSubmitted || state == machine.MpBidRevised
 }
 
 // CreateBid submits a funded bid (D02 → D03).
@@ -32,7 +42,9 @@ type SubmitBid struct {
 //  2. the 10% commission is RESERVED through the wallet, so a bid can never
 //     be live without cleared funds behind it;
 //  3. only then does the bid row become live, in one transaction with its
-//     event, its audit row and its idempotency record;
+//     event, its audit row and its idempotency record — with the per-driver
+//     cap RE-CHECKED inside that transaction under an advisory lock, so
+//     concurrent submissions cannot slip past it;
 //  4. if that transaction fails, the reservation is released (compensation),
 //     and a release that cannot be confirmed is written down for the sweep.
 func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, idempotencyKey string) (*BidView, int, error) {
@@ -88,9 +100,14 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 		return nil, 0, err
 	}
 
-	// Bounds are the request's stored ones — the server's numbers.
-	if req.AmountMinor < request.MinMinor || req.AmountMinor > request.MaxMinor {
-		return nil, 0, fareOutOfBounds(req.AmountMinor, request.MinMinor, request.MaxMinor,
+	// Bounds are the request's stored ones — the server's numbers — and the
+	// amount must be denominated in the request's currency.
+	if err := requireCurrency(req.AmountMinor, request.Currency, "amountMinor"); err != nil {
+		return nil, 0, err
+	}
+	amountMinor := req.AmountMinor.AmountMinor
+	if amountMinor < request.MinMinor || amountMinor > request.MaxMinor {
+		return nil, 0, fareOutOfBounds(amountMinor, request.MinMinor, request.MaxMinor,
 			request.Currency, config.CurrencyFractionDigits)
 	}
 
@@ -132,6 +149,8 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 			"a current-slot bid cannot depend on a claim")
 	}
 
+	// A fast, friendly refusal of an obviously-full cap. The AUTHORITATIVE
+	// enforcement is the in-transaction recount below.
 	liveBids, err := s.deps.Store.LiveBidCountForDriver(ctx, s.deps.Store.Pool(), actor.UserID)
 	if err != nil {
 		return nil, 0, asDomainError(err)
@@ -148,29 +167,39 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 		return nil, 0, asDomainError(err)
 	}
 
-	commission := CommissionMinor(req.AmountMinor)
+	commission := CommissionMinor(amountMinor)
 	bidID := uuid.New()
 
 	// RESERVE BEFORE LIVE. The reservation is keyed to the bid id, so a retry
 	// of this exact submission converges on one hold.
-	hold, err := s.deps.Wallet.Reserve(ctx, ReserveRequest{
+	reserveKey := "mp.reserve:" + bidID.String()
+	reserve := ReserveRequest{
 		DriverID:      actor.UserID,
 		BidID:         bidID,
 		RequestID:     request.ID,
-		AmountMinor:   commission,
-		BaseMinor:     req.AmountMinor,
+		AmountMinor:   money(commission, request.Currency),
+		BaseMinor:     money(amountMinor, request.Currency),
 		PolicyVersion: policy.PolicyVersion,
 		CityID:        request.CityID,
-	}, "mp.reserve:"+bidID.String())
+	}
+	hold, err := s.deps.Wallet.Reserve(ctx, reserve, reserveKey)
 	if err != nil {
 		if errors.Is(err, ErrWalletUnknownOutcome) {
-			// The reservation may exist. Write it down so the sweep releases
-			// whatever the wallet actually holds under this bid's key.
+			// The reservation may exist server-side. Write down a REPLAY of
+			// this exact reserve (same idempotency key): the sweep re-drives
+			// it, converges on the real reservation id, and releases THAT id
+			// — never the idempotency key string, which the wallet has never
+			// heard of as a reservation.
+			payload, marshalErr := json.Marshal(ReserveRecoveryPayload{Reserve: reserve, ReserveKey: reserveKey})
+			if marshalErr != nil {
+				s.deps.Logger.Error().Err(marshalErr).Msg("could not serialise the reserve recovery payload")
+			}
 			if recErr := s.deps.Store.InsertRecovery(ctx, s.deps.Store.Pool(), RecoveryRow{
-				ReservationID: "mp.reserve:" + bidID.String(),
+				ReservationID: reserveKey,
 				DriverID:      actor.UserID,
 				BidID:         &bidID,
-				Action:        RecoveryRelease,
+				Action:        RecoveryReserveReplay,
+				Payload:       payload,
 				LastError:     err.Error(),
 			}); recErr != nil {
 				s.deps.Logger.Error().Err(recErr).Msg("could not record unknown-outcome reservation")
@@ -188,9 +217,9 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 		DriverID:           actor.UserID,
 		State:              machine.MpBidSubmitted,
 		BidVersion:         1,
-		AmountMinor:        req.AmountMinor,
+		AmountMinor:        amountMinor,
 		CommissionMinor:    commission,
-		NetMinor:           req.AmountMinor - commission,
+		NetMinor:           amountMinor - commission,
 		Slot:               req.Slot,
 		DependsOnClaimID:   req.DependsOnClaimID,
 		AvailabilityEpoch:  eligibility.AvailabilityEpoch,
@@ -210,6 +239,22 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 		if locked.State != machine.MpRequestOpen || locked.Revision != request.Revision {
 			return domain.Errorf(domain.CodeVersionConflict,
 				"the request changed while this bid was in flight; review the new terms")
+		}
+		// The per-driver cap is enforced HERE, atomically with the insert:
+		// this driver's inserts serialise on the advisory lock and the
+		// recount inside the transaction is the authority, so N concurrent
+		// submissions can never end with more than the cap live.
+		if err := s.deps.Store.AcquireCapLock(ctx, tx, advisoryDriverBidCap, actor.UserID); err != nil {
+			return err
+		}
+		liveInTx, err := s.deps.Store.LiveBidCountForDriver(ctx, tx, actor.UserID)
+		if err != nil {
+			return err
+		}
+		if liveInTx >= policy.Bids.MaxLiveBidsPerDriver {
+			return domain.Errorf(domain.CodeBidCapReached,
+				"you already have %d live bids; withdraw one first", liveInTx).
+				WithDetails(map[string]any{"liveBids": liveInTx, "maximum": policy.Bids.MaxLiveBidsPerDriver})
 		}
 		if err := s.deps.Store.InsertBid(ctx, tx, bid); err != nil {
 			if errors.Is(err, errBidAlreadyLive) {
@@ -264,7 +309,7 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 		}); err != nil {
 			return err
 		}
-		view = bidViewOf(bid)
+		view = bidViewOf(bid, request.Currency)
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeBidCreate, actor.UserID, idempotencyKey, req, 201, view)
 	})
 	if err != nil {
@@ -277,9 +322,10 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 	return view, 201, nil
 }
 
-// ReviseBid is the body of POST /v1/mp/bids/{id}/revise.
+// ReviseBid is the body of POST /v1/mp/bids/{id}/revise. amountMinor is a
+// Money object per the contract.
 type ReviseBid struct {
-	AmountMinor     int64 `json:"amountMinor"`
+	AmountMinor     Money `json:"amountMinor"`
 	ExpectedVersion int   `json:"expectedVersion"`
 }
 
@@ -287,6 +333,12 @@ type ReviseBid struct {
 // failure the old bid stands untouched. A lower updates the row first and
 // releases the difference after commit, with the sweep backstopping a wallet
 // that cannot be reached.
+//
+// The transaction re-checks EVERYTHING that matters, under lock and in the
+// same order SelectWinner locks (request, then bid): the request must still
+// be open at the bid's revision, and the bid must be in a driver-revisable
+// state — submitted or revised, never selected_pending, whose revised edge
+// belongs to the award saga's compensation alone.
 func (s *Service) ReviseBid(ctx context.Context, actor Actor, bidID uuid.UUID, req ReviseBid, idempotencyKey string) (*BidView, int, error) {
 	if !actor.IsDriver() {
 		return nil, 0, domain.Errorf(domain.CodeForbidden, "only a driver can revise a bid")
@@ -316,8 +368,8 @@ func (s *Service) ReviseBid(ctx context.Context, actor Actor, bidID uuid.UUID, r
 	if bid.DriverID != actor.UserID {
 		return nil, 0, domain.Errorf(domain.CodeNotFound, "that bid does not exist")
 	}
-	if !machine.IsMpBidLive(bid.State) {
-		return nil, 0, domain.Errorf(domain.CodeBidNotLive, "this bid is no longer live").
+	if !isBidRevisable(bid.State) {
+		return nil, 0, domain.Errorf(domain.CodeBidNotLive, "this bid cannot be revised right now").
 			WithDetails(map[string]any{"state": bid.State})
 	}
 	if bid.BidVersion != req.ExpectedVersion {
@@ -352,18 +404,23 @@ func (s *Service) ReviseBid(ctx context.Context, actor Actor, bidID uuid.UUID, r
 		return nil, 0, domain.Errorf(domain.CodeVersionConflict,
 			"the request was revised; this bid is against old terms")
 	}
-	if req.AmountMinor < request.MinMinor || req.AmountMinor > request.MaxMinor {
-		return nil, 0, fareOutOfBounds(req.AmountMinor, request.MinMinor, request.MaxMinor,
+	if err := requireCurrency(req.AmountMinor, request.Currency, "amountMinor"); err != nil {
+		return nil, 0, err
+	}
+	amountMinor := req.AmountMinor.AmountMinor
+	if amountMinor < request.MinMinor || amountMinor > request.MaxMinor {
+		return nil, 0, fareOutOfBounds(amountMinor, request.MinMinor, request.MaxMinor,
 			request.Currency, config.CurrencyFractionDigits)
 	}
 
-	newCommission := CommissionMinor(req.AmountMinor)
+	newCommission := CommissionMinor(amountMinor)
 	raise := newCommission > bid.CommissionMinor
 
 	if raise {
 		// Raise: more money has to be held before the bid says so. On
 		// failure the old bid — and its old hold — stand untouched.
-		if _, err := s.deps.Wallet.Adjust(ctx, bid.ReservationID, newCommission, req.AmountMinor,
+		if _, err := s.deps.Wallet.Adjust(ctx, bid.ReservationID,
+			money(newCommission, request.Currency), money(amountMinor, request.Currency),
 			"mp.adjust:"+bid.ID.String()+":"+itoa(bid.BidVersion+1)); err != nil {
 			return nil, 0, asDomainError(err)
 		}
@@ -371,15 +428,30 @@ func (s *Service) ReviseBid(ctx context.Context, actor Actor, bidID uuid.UUID, r
 
 	var view *BidView
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		// Lock the REQUEST first (SelectWinner's lock order) and re-assert it
+		// is still open at this bid's revision: a selection or close that
+		// committed since the pool reads must win here, not at capture time.
+		lockedRequest, err := s.deps.Store.RequestForUpdate(ctx, tx, bid.RequestID)
+		if err != nil {
+			return err
+		}
+		if lockedRequest.State != machine.MpRequestOpen || !now.Before(lockedRequest.ExpiresAt) {
+			return domain.Errorf(domain.CodeRequestClosed, "this request is no longer taking bids").
+				WithDetails(map[string]any{"state": lockedRequest.State})
+		}
+		if lockedRequest.Revision != bid.RequestRevision {
+			return domain.Errorf(domain.CodeVersionConflict,
+				"the request was revised; this bid is against old terms")
+		}
 		locked, err := s.deps.Store.BidForUpdate(ctx, tx, bidID)
 		if err != nil {
 			return err
 		}
-		if locked.BidVersion != req.ExpectedVersion || !machine.IsMpBidLive(locked.State) {
+		if locked.BidVersion != req.ExpectedVersion || !isBidRevisable(locked.State) {
 			return domain.Errorf(domain.CodeVersionConflict, "the bid changed while this call was in flight")
 		}
 		newVersion := locked.BidVersion + 1
-		amount := req.AmountMinor
+		amount := amountMinor
 		net := amount - newCommission
 		commission := newCommission
 		moved, err := s.deps.Store.TransitionBid(ctx, tx, locked, machine.MpBidRevised, BidUpdate{
@@ -426,28 +498,12 @@ func (s *Service) ReviseBid(ctx context.Context, actor Actor, bidID uuid.UUID, r
 		}); err != nil {
 			return err
 		}
-		view = bidViewOf(moved)
+		view = bidViewOf(moved, request.Currency)
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeBidRevise, actor.UserID, idempotencyKey, req, 200, view)
 	})
 	if err != nil {
 		if raise {
-			// The raise held extra money for a revision that never happened:
-			// put the hold back where the live bid says it is.
-			if _, adjErr := s.deps.Wallet.Adjust(ctx, bid.ReservationID, bid.CommissionMinor, bid.AmountMinor,
-				"mp.adjust.compensate:"+bid.ID.String()+":"+itoa(bid.BidVersion+1)); adjErr != nil {
-				oldCommission := bid.CommissionMinor
-				theBid := bid.ID
-				if recErr := s.deps.Store.InsertRecovery(ctx, s.deps.Store.Pool(), RecoveryRow{
-					ReservationID: bid.ReservationID,
-					DriverID:      bid.DriverID,
-					BidID:         &theBid,
-					Action:        RecoveryAdjust,
-					AmountMinor:   &oldCommission,
-					LastError:     adjErr.Error(),
-				}); recErr != nil {
-					s.deps.Logger.Error().Err(recErr).Msg("could not record adjust compensation")
-				}
-			}
+			s.compensateRaisedHold(ctx, bid, request, amountMinor, newCommission, idempotencyKey)
 		}
 		return nil, 0, asDomainError(err)
 	}
@@ -456,7 +512,8 @@ func (s *Service) ReviseBid(ctx context.Context, actor Actor, bidID uuid.UUID, r
 		// Lower: the row now says less, so the hold follows it down. A wallet
 		// failure here is money held too long, never money lost — the sweep
 		// retries until the wallet agrees.
-		if _, err := s.deps.Wallet.Adjust(ctx, bid.ReservationID, newCommission, req.AmountMinor,
+		if _, err := s.deps.Wallet.Adjust(ctx, bid.ReservationID,
+			money(newCommission, request.Currency), money(amountMinor, request.Currency),
 			"mp.adjust:"+bid.ID.String()+":"+itoa(bid.BidVersion+1)); err != nil {
 			target := newCommission
 			theBid := bid.ID
@@ -473,6 +530,42 @@ func (s *Service) ReviseBid(ctx context.Context, actor Actor, bidID uuid.UUID, r
 		}
 	}
 	return view, 200, nil
+}
+
+// compensateRaisedHold puts a raised hold back after the revise transaction
+// failed — UNLESS the bid's committed state shows another, concurrent call
+// already committed the very revision this call attempted, in which case the
+// raised hold is exactly right and shrinking it would leave a live bid
+// under-reserved. The compensating adjust runs under a key unique to THIS
+// attempt (the caller's idempotency key), never one a rival attempt shares.
+func (s *Service) compensateRaisedHold(ctx context.Context, bid *Bid, request *Request, attemptedAmount, attemptedCommission int64, idempotencyKey string) {
+	targetAmount, targetCommission := bid.AmountMinor, bid.CommissionMinor
+	if fresh, freshErr := s.deps.Store.BidByID(ctx, s.deps.Store.Pool(), bid.ID); freshErr == nil {
+		if fresh.AmountMinor == attemptedAmount && fresh.CommissionMinor == attemptedCommission {
+			// A concurrent identical revise won: the committed bid carries the
+			// raised terms and the raised hold funds it. Nothing to undo.
+			return
+		}
+		// Otherwise the committed row is the truth to restore to (normally
+		// the pre-call amounts; under a rival different revise, its amounts).
+		targetAmount, targetCommission = fresh.AmountMinor, fresh.CommissionMinor
+	}
+	if _, adjErr := s.deps.Wallet.Adjust(ctx, bid.ReservationID,
+		money(targetCommission, request.Currency), money(targetAmount, request.Currency),
+		"mp.adjust.compensate:"+bid.ID.String()+":"+idempotencyKey); adjErr != nil {
+		theBid := bid.ID
+		target := targetCommission
+		if recErr := s.deps.Store.InsertRecovery(ctx, s.deps.Store.Pool(), RecoveryRow{
+			ReservationID: bid.ReservationID,
+			DriverID:      bid.DriverID,
+			BidID:         &theBid,
+			Action:        RecoveryAdjust,
+			AmountMinor:   &target,
+			LastError:     adjErr.Error(),
+		}); recErr != nil {
+			s.deps.Logger.Error().Err(recErr).Msg("could not record adjust compensation")
+		}
+	}
 }
 
 // Withdraw takes a live bid off the market and releases its hold exactly once.
@@ -563,7 +656,7 @@ func (s *Service) Withdraw(ctx context.Context, actor Actor, bidID uuid.UUID, id
 		}); err != nil {
 			return err
 		}
-		view = bidViewOf(moved)
+		view = bidViewOf(moved, request.Currency)
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeBidWithdraw, actor.UserID, idempotencyKey, body, 200, view)
 	})
 	if err != nil {
@@ -577,7 +670,8 @@ func (s *Service) Withdraw(ctx context.Context, actor Actor, bidID uuid.UUID, id
 }
 
 // MyBids answers GET /v1/mp/bids/mine (D06): the driver's bids with each
-// hold's state derived from the bid lifecycle.
+// hold's state derived from the bid lifecycle AND the wallet's confirmed
+// releases — never `released` before the money actually came back.
 func (s *Service) MyBids(ctx context.Context, actor Actor) ([]*BidView, error) {
 	if !actor.IsDriver() {
 		return nil, domain.Errorf(domain.CodeForbidden, "only a driver has bids")
@@ -586,9 +680,21 @@ func (s *Service) MyBids(ctx context.Context, actor Actor) ([]*BidView, error) {
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	requestIDs := make([]uuid.UUID, 0, len(bids))
+	seen := map[uuid.UUID]bool{}
+	for _, bid := range bids {
+		if !seen[bid.RequestID] {
+			seen[bid.RequestID] = true
+			requestIDs = append(requestIDs, bid.RequestID)
+		}
+	}
+	currencies, err := s.deps.Store.RequestCurrencies(ctx, s.deps.Store.Pool(), requestIDs)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
 	views := make([]*BidView, 0, len(bids))
 	for _, bid := range bids {
-		views = append(views, bidViewOf(bid))
+		views = append(views, bidViewOf(bid, currencies[bid.RequestID]))
 	}
 	return views, nil
 }

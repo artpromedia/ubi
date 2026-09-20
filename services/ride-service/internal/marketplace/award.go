@@ -186,7 +186,12 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 	// Transaction 1: claim the request and the driver's capacity atomically.
 	// The partial unique indexes — one live award per request, one current and
 	// one next claim per driver — are the final authority on both races.
+	//
+	// awardUnresolvedError reads the pool, and a pool read while holding this
+	// transaction's connection is the deadlock the pool-deadlock rule forbids
+	// — so the closure only RAISES a flag and the read happens after rollback.
 	var pendingView *SelectResult
+	var racedAwardPending bool
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		locked, err := s.deps.Store.RequestForUpdate(ctx, tx, request.ID)
 		if err != nil {
@@ -194,7 +199,9 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		}
 		switch {
 		case locked.State == machine.MpRequestAwardPending:
-			return s.awardUnresolvedError(ctx, locked)
+			racedAwardPending = true
+			return domain.Errorf(domain.CodeAwardUnresolved,
+				"a selection is already being resolved for this request")
 		case locked.State != machine.MpRequestOpen:
 			return domain.Errorf(domain.CodeRequestClosed, "this request is no longer open for selection").
 				WithDetails(map[string]any{"state": locked.State})
@@ -218,7 +225,13 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		if err != nil {
 			return err
 		}
-		if _, err := s.deps.Store.TransitionBid(ctx, tx, lockedBid, machine.MpBidSelectedPending, BidUpdate{}); err != nil {
+		// The selection BUMPS bid_version: any concurrent ReviseBid that
+		// pinned the pre-selection version now fails its optimistic guard,
+		// so the terms the award pinned can never be mutated mid-saga.
+		selectedVersion := lockedBid.BidVersion + 1
+		if _, err := s.deps.Store.TransitionBid(ctx, tx, lockedBid, machine.MpBidSelectedPending, BidUpdate{
+			BidVersion: &selectedVersion,
+		}); err != nil {
 			return err
 		}
 		if err := s.deps.Store.InsertAward(ctx, tx, award); err != nil {
@@ -302,10 +315,15 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		}); err != nil {
 			return err
 		}
-		pendingView = &SelectResult{Award: awardViewOf(award)}
+		pendingView = &SelectResult{Award: awardViewOf(award, request.Currency)}
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeSelect, actor.UserID, idempotencyKey, req, 202, pendingView)
 	})
 	if err != nil {
+		if racedAwardPending {
+			// Now that the transaction's connection is back in the pool, the
+			// detailed answer (naming the unresolved award) is safe to read.
+			return nil, 0, s.awardUnresolvedError(ctx, request)
+		}
 		return nil, 0, asDomainError(err)
 	}
 
@@ -320,7 +338,7 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 	}
 	result := pendingView
 	if resolved != nil {
-		result = &SelectResult{Award: awardViewOf(resolved), PickupPin: pin}
+		result = &SelectResult{Award: awardViewOf(resolved, request.Currency), PickupPin: pin}
 	}
 	return result, 202, nil
 }
@@ -375,7 +393,7 @@ func (s *Service) AwardForRequest(ctx context.Context, actor Actor, requestID uu
 	if request.RequesterID != actor.UserID && award.DriverID != actor.UserID {
 		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
 	}
-	return awardViewOf(award), nil
+	return awardViewOf(award, request.Currency), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +439,16 @@ func (s *Service) advanceAward(ctx context.Context, awardID uuid.UUID) (*Award, 
 			}
 			// finalize either confirmed or compensated; the loop reloads and
 			// returns the terminal state.
+		case AttemptStepCompensate:
+			// The COMPENSATION DECISION is durable: an award that got here is
+			// only ever resumed INTO the compensation path — never forward
+			// into finalize, whatever the original blocker did since.
+			reason := attempt.LastError
+			if reason == "" {
+				reason = "compensation_resumed"
+			}
+			s.compensateAward(ctx, award.ID, reason, attempt.Captured)
+			return s.reloadAward(ctx, awardID, pin, nil)
 		default:
 			return award, pin, fmt.Errorf("award %s has an unknown saga step %q", awardID, attempt.Step)
 		}
@@ -509,9 +537,18 @@ func (s *Service) runCaptureStep(ctx context.Context, award *Award, attempt *Awa
 	if err != nil {
 		return false, asDomainError(err)
 	}
+	request, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), award.RequestID)
+	if err != nil {
+		return false, asDomainError(err)
+	}
 	now := s.now()
 
-	result, capErr := s.deps.Wallet.Capture(ctx, bid.ReservationID, award.ID.String(), "mp.capture:"+award.ID.String())
+	// The capture carries the award's PINNED commission as the expected
+	// amount: a hold whose current amount differs (a revise raced the
+	// selection) is refused with a definite conflict and compensated —
+	// the wallet never debits terms that were not awarded.
+	result, capErr := s.deps.Wallet.Capture(ctx, bid.ReservationID, award.ID.String(),
+		money(award.CommissionMinor, request.Currency), "mp.capture:"+award.ID.String())
 	if capErr != nil {
 		if errors.Is(capErr, ErrWalletUnknownOutcome) {
 			retryAt := now.Add(stepBackoff(attempt.Attempts))
@@ -661,13 +698,26 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 		}
 
 		// Losers: every other live bid on this request loses, with one hold
-		// release each after commit.
+		// release each after commit. Each loser is RE-READ UNDER LOCK before
+		// its transition: the list is an MVCC snapshot, and a bid that
+		// concurrently reached a terminal state (withdrawn, expired) must be
+		// skipped, never overwritten to lost.
 		losers, err := s.deps.Store.LiveBidsForRequest(ctx, tx, request.ID)
 		if err != nil {
 			return err
 		}
-		for _, loser := range losers {
-			if loser.ID == wonBid.ID {
+		for _, snapshot := range losers {
+			if snapshot.ID == wonBid.ID {
+				continue
+			}
+			loser, err := s.deps.Store.BidForUpdate(ctx, tx, snapshot.ID)
+			if err != nil {
+				if errors.Is(err, domain.ErrNotFound) {
+					continue
+				}
+				return err
+			}
+			if !machine.IsMpBidLive(loser.State) {
 				continue
 			}
 			moved, err := s.deps.Store.TransitionBid(ctx, tx, loser, machine.MpBidLost, BidUpdate{})
@@ -703,7 +753,17 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 		if err != nil {
 			return err
 		}
-		for _, other := range clashing {
+		for _, clashSnapshot := range clashing {
+			other, err := s.deps.Store.BidForUpdate(ctx, tx, clashSnapshot.ID)
+			if err != nil {
+				if errors.Is(err, domain.ErrNotFound) {
+					continue
+				}
+				return err
+			}
+			if !machine.IsMpBidLive(other.State) {
+				continue
+			}
 			moved, err := s.deps.Store.TransitionBid(ctx, tx, other, machine.MpBidInvalidated, BidUpdate{})
 			if err != nil {
 				return err
@@ -840,6 +900,12 @@ func executionIDString(award *Award) string {
 // linked entry, the claim is released, the bid returns to its live state with
 // its hold intact, and the request reopens (or closes if it can no longer
 // stand). It is only ever called on DEFINITE failures.
+//
+// ORDERING IS THE POINT: the compensation decision is recorded DURABLY (the
+// attempt ledger moves to step `compensating`, with the captured flag) BEFORE
+// any wallet reversal is driven. A crash after the reversal can then only
+// resume into THIS path — the sweep can never march the award forward into
+// finalize and confirm it with its commission already handed back.
 func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason string, captured bool) {
 	award, err := s.deps.Store.AwardByID(ctx, s.deps.Store.Pool(), awardID)
 	if err != nil || award.State != machine.MpAwardPending {
@@ -848,6 +914,15 @@ func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason
 	bid, err := s.deps.Store.BidByID(ctx, s.deps.Store.Pool(), award.BidID)
 	if err != nil {
 		s.deps.Logger.Error().Err(err).Str("award_id", awardID.String()).Msg("compensation could not read the bid")
+		return
+	}
+
+	retryAt := s.now().Add(attemptRetryDelay)
+	if err := s.deps.Store.SaveCompensationDecision(ctx, s.deps.Store.Pool(), awardID, reason, captured, &retryAt); err != nil {
+		// Without the durable decision the reversal must not run: the sweep
+		// would otherwise resume this pending award forward into finalize.
+		s.deps.Logger.Error().Err(err).Str("award_id", awardID.String()).
+			Msg("could not record the compensation decision; deferring to the sweep")
 		return
 	}
 
@@ -892,14 +967,21 @@ func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason
 		}
 
 		// The bid goes back to the live state it was selected from; its hold
-		// was never released and still funds it.
+		// was never released and still funds it. Whether that state is
+		// `submitted` or `revised` is read from the revision history — the
+		// selection bumps bid_version too, so the version alone no longer
+		// says.
 		lockedBid, err := s.deps.Store.BidForUpdate(ctx, tx, award.BidID)
 		if err != nil {
 			return err
 		}
 		if lockedBid.State == machine.MpBidSelectedPending {
+			revised, err := s.deps.Store.HasRevisedRevision(ctx, tx, lockedBid.ID)
+			if err != nil {
+				return err
+			}
 			backTo := machine.MpBidSubmitted
-			if lockedBid.BidVersion > 1 {
+			if revised {
 				backTo = machine.MpBidRevised
 			}
 			if _, err := s.deps.Store.TransitionBid(ctx, tx, lockedBid, backTo, BidUpdate{}); err != nil {
@@ -1031,11 +1113,11 @@ func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason
 		}); err != nil {
 			return err
 		}
-		return s.deps.Store.SaveAttempt(ctx, tx, awardID, AttemptStepFinalize, AttemptStateFailed, reason, nil)
+		return s.deps.Store.SaveAttempt(ctx, tx, awardID, AttemptStepCompensate, AttemptStateFailed, reason, nil)
 	})
 	if err != nil {
 		s.deps.Logger.Error().Err(err).Str("award_id", awardID.String()).
-			Msg("award compensation failed; the sweep will retry the pending award")
+			Msg("award compensation failed; the sweep will resume the compensation")
 	}
 }
 

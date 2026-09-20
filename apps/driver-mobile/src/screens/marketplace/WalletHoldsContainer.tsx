@@ -6,7 +6,7 @@ import React from 'react';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Screen, Skeleton, Banner } from '@ubi/mobile-ui';
-import { track } from '@ubi/mobile-core';
+import { track, useCityConfig } from '@ubi/mobile-core';
 import type { RootStackParamList } from '../../navigation/routes';
 import { marketplaceApi } from '../../api/marketplace';
 import { WalletHoldsScreen, type WalletHold } from './WalletHoldsScreen';
@@ -14,7 +14,10 @@ import { WalletHoldsScreen, type WalletHold } from './WalletHoldsScreen';
 export function WalletHoldsContainer() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'WalletHolds'>>();
-  const q = useQuery({ queryKey: ['mp', 'wallet', 'overview'], queryFn: marketplaceApi.walletOverview, refetchInterval: 5_000 });
+  // `cityId` names the market whose currency/config applies (contract query param).
+  const { config } = useCityConfig();
+  const cityId = config?.cityId;
+  const q = useQuery({ queryKey: ['mp', 'wallet', 'overview', cityId ?? null], queryFn: () => marketplaceApi.walletOverview(cityId), refetchInterval: 5_000 });
   const topup = useMutation({
     mutationFn: (presetLabel: string) => marketplaceApi.topup(presetLabel),
     onSuccess: (_r, presetLabel) => { track('driver_mp_topup_started', { presetLabel }); void q.refetch(); },

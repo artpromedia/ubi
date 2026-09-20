@@ -97,7 +97,7 @@ func TestSelectCurrentSlotHappyPath(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	bidView := fundedCurrentBid(t, h, driver, requestID, amount)
@@ -202,7 +202,7 @@ func TestSelectStaleVersionsNeverAwardStaleTerms(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	bidView := fundedCurrentBid(t, h, driver, requestID, amount)
@@ -210,7 +210,7 @@ func TestSelectStaleVersionsNeverAwardStaleTerms(t *testing.T) {
 	// The driver revises the bid after the rider fetched version 1.
 	h.Clock.Advance(20 * time.Second) // clear the revision cooldown
 	revise := h.Do(http.MethodPost, "/mp/bids/"+bidView["bidId"].(string)+"/revise", driver, map[string]any{
-		"amountMinor":     amount + 500,
+		"amountMinor":     moneyBody(amount + 500),
 		"expectedVersion": 1,
 	}, move.IdempotencyHeader, idemKey())
 	requireStatus(t, revise, http.StatusOK)
@@ -260,7 +260,7 @@ func TestConcurrentSelectsOneRequest(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driverA, testutil.PickupFixture())
 	bidA := fundedCurrentBid(t, h, driverA, requestID, amount)
@@ -350,8 +350,8 @@ func TestConcurrentSelectsSameDriverSameSlot(t *testing.T) {
 	requestA, requestB := viewA["requestId"].(string), viewB["requestId"].(string)
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
-	bidA := fundedCurrentBid(t, h, driver, requestA, asInt64(t, viewA, "minimumFareMinor"))
-	bidB := fundedCurrentBid(t, h, driver, requestB, asInt64(t, viewB, "minimumFareMinor"))
+	bidA := fundedCurrentBid(t, h, driver, requestA, moneyMinor(t, viewA, "minimumFareMinor"))
+	bidB := fundedCurrentBid(t, h, driver, requestB, moneyMinor(t, viewB, "minimumFareMinor"))
 
 	var wg sync.WaitGroup
 	recorders := make([]*httptest.ResponseRecorder, 2)
@@ -432,8 +432,8 @@ func TestWinnerOtherCurrentBidsInvalidated(t *testing.T) {
 	requestA, requestB := viewA["requestId"].(string), viewB["requestId"].(string)
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
-	bidA := fundedCurrentBid(t, h, driver, requestA, asInt64(t, viewA, "minimumFareMinor"))
-	bidB := fundedCurrentBid(t, h, driver, requestB, asInt64(t, viewB, "minimumFareMinor"))
+	bidA := fundedCurrentBid(t, h, driver, requestA, moneyMinor(t, viewA, "minimumFareMinor"))
+	bidB := fundedCurrentBid(t, h, driver, requestB, moneyMinor(t, viewB, "minimumFareMinor"))
 
 	winner := doSelect(t, h, riderA, requestA, map[string]any{
 		"bidId": bidA["bidId"], "requestVersion": 1, "bidVersion": 1,
@@ -469,7 +469,7 @@ func TestFundingDefiniteFailureCompensates(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	bidView := fundedCurrentBid(t, h, driver, requestID, amount)
@@ -519,7 +519,7 @@ func TestCaptureUnknownOutcomeStaysPending(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	bidView := fundedCurrentBid(t, h, driver, requestID, amount)
@@ -593,7 +593,7 @@ func TestCaptureUnknownThenDefiniteRefusalCompensates(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	bidView := fundedCurrentBid(t, h, driver, requestID, amount)
@@ -638,7 +638,7 @@ func TestLegacyAcceptRefusesMarketplaceRide(t *testing.T) {
 
 	view, _ := publishAt(t, h, rider, 0)
 	requestID := view["requestId"].(string)
-	amount := asInt64(t, view, "minimumFareMinor")
+	amount := moneyMinor(t, view, "minimumFareMinor")
 
 	parkDriver(t, h, driver, testutil.PickupFixture())
 	bidView := fundedCurrentBid(t, h, driver, requestID, amount)

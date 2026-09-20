@@ -64,17 +64,22 @@ Marked unsupported/unresolved rather than papered over:
 1. **Execution surfaces are RN-01/RN-02 placeholders.** After
    `award.confirmed`, rider `Ride.Active`/PIN and driver trip execution
    screens do not exist yet in the RN apps (pre-existing gap the pack's
-   repo review also flagged). The marketplace hands off correctly (ride
-   rows, PIN generated/hashed, one-time reveal in the select response);
-   the in-trip UI is the outstanding RN port.
+   repo review also flagged). The marketplace hands off correctly — ride
+   rows with the execution ref, PIN generated/hashed, one-time reveal in
+   the select response now parsed and passed to the Assigned route by the
+   rider app — but the placeholder Assigned screen does not yet render the
+   PIN; the in-trip UI is the outstanding RN port.
 2. **R11 delivery custody server-side.** The return-consent/custody-proof
    endpoints for delivery exceptions are fixture-backed only
    (`apps/rider-mobile/src/api/marketplace.ts` marks them PROPOSED);
    delivery-service has no managed custody/returns model yet — its
    `deliveries` DDL is itself unmanaged (pre-existing schema drift risk).
-3. **Queued/jobs projections.** `GET /v1/mp/requests/:id/queue` (R10) and
-   `GET /v1/mp/driver/jobs` (D05/D11) are PROPOSED read projections served
-   by fixtures; the underlying state and events exist server-side.
+3. **R10 queue projection.** `GET /v1/mp/requests/:id/queue` remains a
+   PROPOSED read projection served by fixtures (the underlying state and
+   events exist server-side). `GET /v1/mp/driver/jobs` is now implemented
+   per the DriverJob contract; its schema carries no award-confirmed
+   "winner toast" composition, so the D05 winner card renders only from
+   fixtures until that projection is added.
 4. **Promotion-created ride PIN delivery.** The PIN for a ride created at
    promotion has no delivery channel to the rider yet (needs a realtime
    push or one-time reveal endpoint).
@@ -110,3 +115,13 @@ Marked unsupported/unresolved rather than papered over:
     only (no marketplace writes exist there); deep integration (Ask
     publishing marketplace requests under mandates) is out of scope and
     remains behind the existing action-grant boundary.
+13. **Quarantined legacy payment routes** (`routes/webhooks.ts`,
+    `payouts.ts`, `mobile-money.ts` — unmounted per QUARANTINE.md) contain
+    inline `X-Service-Key` comparisons that fail open when the env var is
+    unset; the live `internalServiceAuth` middleware now fails closed, and
+    the quarantined files should be cleaned up or deleted before any of
+    them is ever remounted.
+14. **Settlement events reuse existing names.** Marketplace completion
+    settlement posts under `transfer.posted`/`payment.cash_acknowledged`
+    with a marketplace aggregate; a dedicated `mp.settlement.completed`
+    event name in the closed catalog would make the ops timeline clearer.

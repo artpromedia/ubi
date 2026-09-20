@@ -14,12 +14,25 @@ import (
 )
 
 // PublishRequest is the whole of POST /v1/mp/requests. There are no bounds in
-// it: the bounds are the stored quote's.
+// it: the bounds are the stored quote's. requestedFareMinor is a Money object
+// per the contract, and its currency must be the quote's.
 type PublishRequest struct {
 	QuoteID            uuid.UUID      `json:"quoteId"`
-	RequestedFareMinor int64          `json:"requestedFareMinor"`
+	RequestedFareMinor Money          `json:"requestedFareMinor"`
 	PaymentMethodID    string         `json:"paymentMethodId"`
 	Delivery           map[string]any `json:"delivery,omitempty"`
+}
+
+// requireCurrency refuses a Money body whose currency does not name the
+// stored aggregate's currency — a mismatch is refused, never silently
+// re-denominated.
+func requireCurrency(got Money, want string, field string) error {
+	if got.Currency != want {
+		return domain.Errorf(domain.CodeValidationFailed,
+			"%s is denominated in %q but this trade is in %q", field, got.Currency, want).
+			WithDetails(map[string]any{"field": field, "currency": got.Currency, "expectedCurrency": want})
+	}
+	return nil
 }
 
 // fareOutOfBounds phrases the one structured bounds error every surface uses:
@@ -106,12 +119,19 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 	}
 
 	// The requested amount is validated against the STORED bounds, never
-	// against anything the client restated.
-	if req.RequestedFareMinor < quote.MinMinor || req.RequestedFareMinor > quote.MaxMinor {
-		return nil, 0, fareOutOfBounds(req.RequestedFareMinor, quote.MinMinor, quote.MaxMinor,
+	// against anything the client restated — and its currency must be the
+	// quote's, never silently reinterpreted.
+	if err := requireCurrency(req.RequestedFareMinor, quote.Currency, "requestedFareMinor"); err != nil {
+		return nil, 0, err
+	}
+	if req.RequestedFareMinor.AmountMinor < quote.MinMinor || req.RequestedFareMinor.AmountMinor > quote.MaxMinor {
+		return nil, 0, fareOutOfBounds(req.RequestedFareMinor.AmountMinor, quote.MinMinor, quote.MaxMinor,
 			quote.Currency, config.CurrencyFractionDigits)
 	}
 
+	// The open-request cap is ENFORCED inside the insert transaction (see
+	// below): a pool-side count here would be check-then-act under
+	// concurrency. This early read only phrases the friendly refusal fast.
 	openCount, err := s.deps.Store.OpenRequestCount(ctx, s.deps.Store.Pool(), actor.UserID)
 	if err != nil {
 		return nil, 0, asDomainError(err)
@@ -133,7 +153,7 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 		State:           machine.MpRequestOpen,
 		Revision:        1,
 		Version:         1,
-		RequestedMinor:  req.RequestedFareMinor,
+		RequestedMinor:  req.RequestedFareMinor.AmountMinor,
 		SuggestedMinor:  quote.SuggestedMinor,
 		MinMinor:        quote.MinMinor,
 		MaxMinor:        quote.MaxMinor,
@@ -151,6 +171,21 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 
 	var view *RequestView
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		// The cap is check-then-act unless the count and the insert commit
+		// atomically: serialise this requester's publishes and recount inside
+		// the transaction. The advisory lock is transaction-scoped.
+		if err := s.deps.Store.AcquireCapLock(ctx, tx, advisoryRequesterOpenCap, actor.UserID); err != nil {
+			return err
+		}
+		openInTx, err := s.deps.Store.OpenRequestCount(ctx, tx, actor.UserID)
+		if err != nil {
+			return err
+		}
+		if openInTx >= policy.Bids.MaxOpenRequestsPerRequester {
+			return domain.Errorf(domain.CodeRequestCapReached,
+				"you already have %d open requests; close one before publishing another", openInTx).
+				WithDetails(map[string]any{"openRequests": openInTx, "maximum": policy.Bids.MaxOpenRequestsPerRequester})
+		}
 		if err := s.deps.Store.InsertRequest(ctx, tx, request); err != nil {
 			return err
 		}
@@ -280,7 +315,7 @@ func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, n
 		BidID:           bid.ID.String(),
 		BidVersion:      bid.BidVersion,
 		RequestRevision: bid.RequestRevision,
-		AmountMinor:     bid.AmountMinor,
+		AmountMinor:     money(bid.AmountMinor, request.Currency),
 		Kind:            kind,
 		Driver:          maskedDriverView(bid.DriverID.String(), request.VehicleClass),
 		PickupLabel:     pickupLabel,
@@ -292,10 +327,22 @@ func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, n
 }
 
 // ReviseRequest is the body of POST /v1/mp/requests/{id}/revise.
+// requestedFareMinor is a Money object per the contract.
 type ReviseRequest struct {
-	RequestedFareMinor int64      `json:"requestedFareMinor"`
+	RequestedFareMinor Money      `json:"requestedFareMinor"`
 	QuoteID            *uuid.UUID `json:"quoteId,omitempty"`
 	ExpectedVersion    int        `json:"expectedVersion"`
+}
+
+// freshQuoteRouteToleranceMeters is how far a replacement quote's pickup or
+// dropoff may sit from the request's stored route and still count as "the
+// same route": float jitter and re-geocoding noise, never a different trip.
+const freshQuoteRouteToleranceMeters = 50.0
+
+// sameRoutePoint reports whether two stored coordinates name the same place
+// within the tight tolerance.
+func sameRoutePoint(a, b Area) bool {
+	return geo.HaversineDistance(a.Lat, a.Lng, b.Lat, b.Lng) <= freshQuoteRouteToleranceMeters
 }
 
 // ReviseRequest is a price-affecting edit: new revision, live bids
@@ -331,13 +378,20 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 		return nil, 0, domain.Errorf(domain.CodeNotFound, "that request does not exist")
 	}
 
-	config, _, err := s.policy(ctx, current.CityID)
+	config, policy, err := s.policy(ctx, current.CityID)
 	if err != nil {
 		return nil, 0, err
 	}
+	if err := requireCurrency(req.RequestedFareMinor, current.Currency, "requestedFareMinor"); err != nil {
+		return nil, 0, err
+	}
 
-	// Bounds for the new amount: the stored ones, or a fresh quote's when the
-	// route changed and the requester re-quoted.
+	// Bounds for the new amount: the stored ones, or a fresh quote's — and a
+	// fresh quote may only tighten/shift the bounds for the SAME trade. It
+	// must match the request's city, currency, service, vehicle class AND
+	// route (the stored pickup/dropoff within a tight tolerance), and carry
+	// the ACTIVE policy version; the cost-based floor is per route, so bounds
+	// priced for another route (or market) never govern this one.
 	minMinor, maxMinor := current.MinMinor, current.MaxMinor
 	quoteID := current.QuoteID
 	var freshQuote *Quote
@@ -363,11 +417,30 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 			return nil, 0, domain.Errorf(domain.CodeValidationFailed,
 				"a revision cannot change the request's service or vehicle class")
 		}
+		if freshQuote.CityID != current.CityID || freshQuote.Currency != current.Currency {
+			return nil, 0, domain.Errorf(domain.CodeValidationFailed,
+				"a revision cannot move the request to another city or currency").
+				WithDetails(map[string]any{
+					"quoteCityId": freshQuote.CityID, "requestCityId": current.CityID,
+					"quoteCurrency": freshQuote.Currency, "requestCurrency": current.Currency,
+				})
+		}
+		if !sameRoutePoint(freshQuote.Pickup, current.Pickup) || !sameRoutePoint(freshQuote.Dropoff, current.Dropoff) {
+			return nil, 0, domain.Errorf(domain.CodeValidationFailed,
+				"the replacement quote prices a different route than this request").
+				WithDetails(map[string]any{"field": "quoteId"})
+		}
+		if freshQuote.PolicyVersion != policy.PolicyVersion {
+			return nil, 0, domain.Errorf(domain.CodeValidationFailed,
+				"the replacement quote was priced under a policy that is no longer active; ask for a new one").
+				WithDetails(map[string]any{"quotedPolicyVersion": freshQuote.PolicyVersion, "activePolicyVersion": policy.PolicyVersion})
+		}
 		minMinor, maxMinor = freshQuote.MinMinor, freshQuote.MaxMinor
 		quoteID = freshQuote.ID
 	}
-	if req.RequestedFareMinor < minMinor || req.RequestedFareMinor > maxMinor {
-		return nil, 0, fareOutOfBounds(req.RequestedFareMinor, minMinor, maxMinor,
+	requestedMinor := req.RequestedFareMinor.AmountMinor
+	if requestedMinor < minMinor || requestedMinor > maxMinor {
+		return nil, 0, fareOutOfBounds(requestedMinor, minMinor, maxMinor,
 			current.Currency, config.CurrencyFractionDigits)
 	}
 
@@ -398,7 +471,7 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 		revision := request.Revision + 1
 		moved, err := s.deps.Store.TransitionRequest(ctx, tx, request, machine.MpRequestOpen, RequestUpdate{
 			Revision:       &revision,
-			RequestedMinor: &req.RequestedFareMinor,
+			RequestedMinor: &requestedMinor,
 			MinMinor:       &minMinor,
 			MaxMinor:       &maxMinor,
 			QuoteID:        &quoteID,
@@ -406,8 +479,8 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 		if err != nil {
 			return err
 		}
-		if err := s.deps.Store.InsertRequestRevision(ctx, tx, request.ID, revision, req.RequestedFareMinor, quoteID, map[string]any{
-			"requestedMinor": req.RequestedFareMinor,
+		if err := s.deps.Store.InsertRequestRevision(ctx, tx, request.ID, revision, requestedMinor, quoteID, map[string]any{
+			"requestedMinor": requestedMinor,
 			"minMinor":       minMinor,
 			"maxMinor":       maxMinor,
 		}); err != nil {
@@ -434,7 +507,7 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 			Payload: map[string]any{
 				"requestId":       request.ID.String(),
 				"revision":        revision,
-				"requestedMinor":  req.RequestedFareMinor,
+				"requestedMinor":  requestedMinor,
 				"invalidatedBids": len(invalidated),
 			},
 		}); err != nil {
@@ -447,7 +520,7 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 			SubjectType: subjectRequest,
 			SubjectID:   request.ID.String(),
 			Before:      map[string]any{"requestedMinor": request.RequestedMinor, "revision": request.Revision},
-			After:       map[string]any{"requestedMinor": req.RequestedFareMinor, "revision": revision},
+			After:       map[string]any{"requestedMinor": requestedMinor, "revision": revision},
 			Reason:      "requester revised the asked fare",
 		}); err != nil {
 			return err
@@ -626,7 +699,19 @@ func (s *Service) invalidateLiveBids(ctx context.Context, tx pgx.Tx, request *Re
 		return nil, err
 	}
 	invalidated := make([]*Bid, 0, len(bids))
-	for _, bid := range bids {
+	for _, snapshot := range bids {
+		// Re-read under lock: a bid that concurrently reached a terminal
+		// state must be skipped, never overwritten to invalidated.
+		bid, err := s.deps.Store.BidForUpdate(ctx, tx, snapshot.ID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if !machine.IsMpBidLive(bid.State) {
+			continue
+		}
 		moved, err := s.deps.Store.TransitionBid(ctx, tx, bid, machine.MpBidInvalidated, BidUpdate{})
 		if err != nil {
 			return nil, err
@@ -687,6 +772,12 @@ func (s *Service) releaseReservation(ctx context.Context, bid *Bid) {
 				Str("reservation_id", bid.ReservationID).
 				Msg("could not record the release for recovery")
 		}
+		return
+	}
+	// The wallet CONFIRMED the release: record it so the driver's holdState
+	// may honestly say `released` (until then it reads release_pending).
+	if err := s.deps.Store.MarkHoldReleased(ctx, s.deps.Store.Pool(), bid.ID, s.now()); err != nil {
+		s.deps.Logger.Error().Err(err).Str("bid_id", bid.ID.String()).Msg("could not record the confirmed release")
 	}
 }
 

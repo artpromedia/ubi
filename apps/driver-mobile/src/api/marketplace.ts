@@ -9,14 +9,17 @@ import type { MpBid, MpEligibility, MpFeedItem, MpFeedPage, MpPreset, MpRatePrev
 export type { MpBid, MpEligibility, MpFeedItem, MpPreset, MpRatePreview, MpRateProfile, MpSubmitBid, MpWalletOverview };
 
 /**
- * D06 "My offers" view. `title`, `holdState` and `holdDetail` are PROPOSED
- * contract additions the D06 board requires (request title and a server-composed
- * hold projection: a lost bid whose commission hold is not yet financially
- * confirmed released renders "release pending", never "released"). Until
- * packages/contracts MpBidSchema + contracts/openapi/marketplace.yaml carry
- * them, only fixtures serve them; see followups.
+ * D06 "My offers" view. The server emits holdState in the D06 vocabulary
+ * held | release_pending | released, where `released` appears ONLY after the
+ * wallet release is financially confirmed (a lost bid renders "release
+ * pending" until then — never "released" early). `title`/`holdDetail` are
+ * server-composed projections still pending in packages/contracts MpBidSchema
+ * + contracts/openapi/marketplace.yaml (Bid schema carries none of the three
+ * yet); see followups. Consumers must treat any OTHER value as unknown and
+ * render the safe pending state (see holdStateOrSafe in RequestFeedContainer).
  */
-export type MpBidDto = MpBid & { title?: string; holdState?: 'held' | 'release_pending' | 'released'; holdDetail?: string };
+export type MpHoldState = 'held' | 'release_pending' | 'released';
+export type MpBidDto = MpBid & { title?: string; holdState?: MpHoldState; holdDetail?: string };
 
 /** GET /v1/mp/requests/:id/driver-view (D02/D03/D10) per contracts/openapi/marketplace.yaml. */
 export type MpDriverView = {
@@ -26,6 +29,8 @@ export type MpDriverView = {
   profileLine?: string | null;
   ceilingNotice?: string | null;
   myBid?: MpBidDto | null;
+  /** The driver's current work claim id — the mandatory dependsOnClaimId for a next-slot bid. Absent/null unless a current claim exists. */
+  currentClaimId?: string | null;
 };
 
 /** `deferredPrompt` (D07 single deferred banner, server-phrased) is a PROPOSED MpFeedPage addition; fixture-only until contracts carry it. */
@@ -40,27 +45,38 @@ export type MpRateProfileSave = { cityId: string; service: MpService; vehicleCla
 export type MpRatePreviewBody = MpRateProfileSave & { exampleDistanceMeters: number };
 
 /**
- * D05 + D11 jobs timeline. PROPOSED endpoint — the driver needs a server-composed
- * projection of award.confirmed / commission.captured / claim.promoted / queue.*
- * (MATRIX D05/D11); contracts/openapi/marketplace.yaml does not carry it yet.
- * Fixture-only until then. The winner card exists ONLY when the server has a
- * durable award.confirmed — the client never promotes a bid on its own.
+ * D05 + D11 jobs timeline — GET /v1/mp/driver/jobs per the OpenAPI DriverJob
+ * schema (contracts/openapi/marketplace.yaml). A job card exists ONLY because
+ * the server has a durable award.confirmed — the client never promotes a bid
+ * on its own. `promotion: 'none'` means no promotion is in flight.
  */
-export type MpJobCardView = { claimId: string; slot: 'current' | 'next'; statusSuffix: string; title: string; fareMinor: Money; feeLine: string; feeReceiptId: string; detail: string; remainingLabel: string | null; tripId: string | null };
+export type MpExecutionRef = { service: MpService; id: string };
+export type MpDriverJob = {
+  claimId: string;
+  slot: 'current' | 'next';
+  service: MpService;
+  state: string;
+  fareMinor: Money;
+  commissionMinor: Money;
+  receiptId?: string | null;
+  executionRef?: MpExecutionRef | null;
+  pickupWindow?: { earliestSec: number; latestSec: number; etaVersion: number } | null;
+};
 export type MpJobsView = {
-  winnerToast: null | { title: string; fareMinor: Money; feeLine: string; receiptLine: string; addressesLine: string; tripId: string };
-  current: MpJobCardView | null;
-  next: MpJobCardView | null;
-  promotion: null | 'pending' | 'failed_revalidating';
+  current?: MpDriverJob | null;
+  next?: MpDriverJob | null;
+  promotion: 'none' | 'pending' | 'failed_revalidating';
 };
 
 /**
- * "I am safely parked" attestation (D07 / RN-02). PROPOSED endpoint: the server
- * records the attestation and re-evaluates eligibility — the attestation alone
- * never makes the driver biddable (production telemetry wiring is RN-02 scope;
- * the server keeps rejecting bids with NOT_STATIONARY until its own signals agree).
+ * "I am safely parked" attestation (D07 / RN-02) — POST /v1/mp/driver/parked
+ * per contracts/openapi/marketplace.yaml. The server records the attestation
+ * and re-evaluates eligibility; the response is the state the SERVER
+ * acknowledges and the attestation alone never makes the driver biddable
+ * (production telemetry wiring is RN-02 scope; the server keeps rejecting
+ * bids with NOT_STATIONARY until its own signals agree).
  */
-export type MpParkedAck = { state: 'parked_confirmed' | 'moving' | 'stale_location'; availabilityEpoch: number; confirmedAt: string };
+export type MpParkedAck = { state: 'parked_confirmed' | 'moving' | 'stale_location'; availabilityEpoch: number; confirmedAt: string; expiresAt: string; ttlSeconds: number };
 
 export const marketplaceApi = {
   feed: (cursor?: string) => api<MpFeedPageDto>('GET', '/v1/mp/feed' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : '')),
@@ -73,8 +89,8 @@ export const marketplaceApi = {
   // PUT carries an Idempotency-Key per the OpenAPI contract (api() adds it on POST only).
   saveRateProfile: (body: MpRateProfileSave) => api<MpRateProfile>('PUT', '/v1/mp/rate-profiles', body, { idempotent: true }),
   ratePreview: (body: MpRatePreviewBody) => api<MpRatePreview>('POST', '/v1/mp/rate-profiles/preview', body),
-  walletOverview: () => api<MpWalletOverviewDto>('GET', '/v1/wallet/mp/overview'),
-  // PROPOSED endpoints (see type docs above) — fixture-backed until the OpenAPI contract adds them.
+  // `cityId` names the market whose currency/config applies (contract: optional query param).
+  walletOverview: (cityId?: string) => api<MpWalletOverviewDto>('GET', '/v1/wallet/mp/overview' + (cityId ? '?cityId=' + encodeURIComponent(cityId) : '')),
   parked: () => api<MpParkedAck>('POST', '/v1/mp/driver/parked'),
   jobs: () => api<MpJobsView>('GET', '/v1/mp/driver/jobs'),
   // Top-up initiation returns the pending projection; it clears only on the wallet.topup.settled event (never an instant success).

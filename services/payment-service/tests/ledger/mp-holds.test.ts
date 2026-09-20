@@ -90,6 +90,7 @@ function reserveInput(
     requestRef: uid("req"),
     amountMinor: commissionMinor,
     baseMinor: commissionMinor * 10,
+    currency: funded.city.currency,
     policyVersion: 1,
     cityId: funded.city.cityId,
     ...overrides,
@@ -144,7 +145,7 @@ describe("the worked example, end to end", () => {
     const captured = await captureHold(
       deps,
       reserved.hold.reservationId,
-      { awardId },
+      { awardId, expectedAmountMinor: money(500_00, city.currency) },
       uid("idem"),
     );
     expect(captured.replayed).toBe(false);
@@ -203,7 +204,10 @@ describe("the worked example, end to end", () => {
     await captureHold(
       deps,
       cashReserved.hold.reservationId,
-      { awardId: cashAward },
+      {
+        awardId: cashAward,
+        expectedAmountMinor: money(500_00, city.currency),
+      },
       uid("idem"),
     );
     const cashRideId = uid("ride");
@@ -312,7 +316,7 @@ describe("adjusting a hold atomically", () => {
     const raised = await adjustHold(
       deps,
       reserved.hold.reservationId,
-      { amountMinor: 600_00, baseMinor: 6_000_00 },
+      { amountMinor: 600_00, baseMinor: 6_000_00, currency: city.currency },
       uid("idem"),
     );
     expect(raised.hold.amountMinor).toEqual(money(600_00, city.currency));
@@ -327,7 +331,11 @@ describe("adjusting a hold atomically", () => {
       adjustHold(
         deps,
         reserved.hold.reservationId,
-        { amountMinor: 1_100_00, baseMinor: 11_000_00 },
+        {
+          amountMinor: 1_100_00,
+          baseMinor: 11_000_00,
+          currency: city.currency,
+        },
         uid("idem"),
       ),
     ).rejects.toMatchObject({
@@ -344,7 +352,7 @@ describe("adjusting a hold atomically", () => {
     const lowered = await adjustHold(
       deps,
       reserved.hold.reservationId,
-      { amountMinor: 300_00, baseMinor: 3_000_00 },
+      { amountMinor: 300_00, baseMinor: 3_000_00, currency: city.currency },
       uid("idem"),
     );
     expect(lowered.hold.amountMinor).toEqual(money(300_00, city.currency));
@@ -434,7 +442,7 @@ describe("capturing and reversing under the award id", () => {
     const first = await captureHold(
       deps,
       reserved.hold.reservationId,
-      { awardId },
+      { awardId, expectedAmountMinor: money(500_00, city.currency) },
       uid("idem"),
     );
     // A retry under a DIFFERENT client key still answers the original
@@ -442,7 +450,7 @@ describe("capturing and reversing under the award id", () => {
     const replay = await captureHold(
       deps,
       reserved.hold.reservationId,
-      { awardId },
+      { awardId, expectedAmountMinor: money(500_00, city.currency) },
       uid("idem"),
     );
     expect(replay.replayed).toBe(true);
@@ -461,7 +469,10 @@ describe("capturing and reversing under the award id", () => {
       captureHold(
         deps,
         reserved.hold.reservationId,
-        { awardId: uid("awd") },
+        {
+          awardId: uid("awd"),
+          expectedAmountMinor: money(500_00, city.currency),
+        },
         uid("idem"),
       ),
     ).rejects.toMatchObject({ code: "conflict" });
@@ -508,6 +519,164 @@ describe("capturing and reversing under the award id", () => {
     expect(await balanceOf(db, driver.wallet.id, city.currency)).toEqual(
       money(1_000_00, city.currency),
     );
+  });
+});
+
+describe("capture against the award's pinned commission", () => {
+  it("refuses — before any state change — when a revise-raise moved the hold off the awarded terms", async () => {
+    const city = await seedCity(db);
+    const deps = makeDeps(db);
+    const driver = await fundedUser(city, 1_000_00);
+    const reserved = await reserveHold(
+      deps,
+      reserveInput(driver, 500_00),
+      uid("idem"),
+    );
+
+    // The revise-raise race: after the award pinned 500.00, an adjust
+    // raises the hold to 600.00 before the capture step lands.
+    await adjustHold(
+      deps,
+      reserved.hold.reservationId,
+      { amountMinor: 600_00, baseMinor: 6_000_00, currency: city.currency },
+      uid("idem"),
+    );
+
+    const awardId = uid("awd");
+    await expect(
+      captureHold(
+        deps,
+        reserved.hold.reservationId,
+        { awardId, expectedAmountMinor: money(500_00, city.currency) },
+        uid("idem"),
+      ),
+    ).rejects.toMatchObject({
+      code: "conflict",
+      details: expect.objectContaining({
+        holdAmountMinor: 600_00,
+        expectedAmountMinor: 500_00,
+      }),
+    });
+
+    // Nothing changed: the hold is still active at 600.00, no journal entry
+    // was posted, the wallet balance never moved.
+    const row = await db.mpCommissionHold.findUniqueOrThrow({
+      where: { id: reserved.hold.reservationId },
+    });
+    expect(row.state).toBe("active");
+    expect(row.awardRef).toBeNull();
+    expect(Number(row.amountMinor)).toBe(600_00);
+    expect(
+      await db.journalEntry.count({
+        where: { reference: `mp_award:${awardId}` },
+      }),
+    ).toBe(0);
+    expect(await balanceOf(db, driver.wallet.id, city.currency)).toEqual(
+      money(1_000_00, city.currency),
+    );
+
+    // The saga can still capture the terms that WERE awarded once the hold
+    // is back on them (compensation adjusted it down again).
+    await adjustHold(
+      deps,
+      reserved.hold.reservationId,
+      { amountMinor: 500_00, baseMinor: 5_000_00, currency: city.currency },
+      uid("idem"),
+    );
+    const captured = await captureHold(
+      deps,
+      reserved.hold.reservationId,
+      { awardId, expectedAmountMinor: money(500_00, city.currency) },
+      uid("idem"),
+    );
+    expect(captured.hold.state).toBe("captured");
+    expect(await balanceOf(db, driver.wallet.id, city.currency)).toEqual(
+      money(500_00, city.currency),
+    );
+
+    // Idempotent replay for the same award still answers the original
+    // receipt, whatever client key it arrives under.
+    const replay = await captureHold(
+      deps,
+      reserved.hold.reservationId,
+      { awardId, expectedAmountMinor: money(500_00, city.currency) },
+      uid("idem"),
+    );
+    expect(replay.replayed).toBe(true);
+    expect(replay.receiptId).toBe(captured.receiptId);
+  });
+
+  it("refuses a capture whose expected currency is not the hold's", async () => {
+    const city = await seedCity(db);
+    const deps = makeDeps(db);
+    const driver = await fundedUser(city, 1_000_00);
+    const reserved = await reserveHold(
+      deps,
+      reserveInput(driver, 500_00),
+      uid("idem"),
+    );
+
+    await expect(
+      captureHold(
+        deps,
+        reserved.hold.reservationId,
+        { awardId: uid("awd"), expectedAmountMinor: money(500_00, "GHS") },
+        uid("idem"),
+      ),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(await balanceOf(db, driver.wallet.id, city.currency)).toEqual(
+      money(1_000_00, city.currency),
+    );
+  });
+});
+
+describe("the Money bodies' currency", () => {
+  it("refuses a reserve denominated in a currency that is not the city's", async () => {
+    const city = await seedCity(db); // NGN
+    const deps = makeDeps(db);
+    const driver = await fundedUser(city, 1_000_00);
+
+    await expect(
+      reserveHold(
+        deps,
+        reserveInput(driver, 500_00, { currency: "GHS" }),
+        uid("idem"),
+      ),
+    ).rejects.toMatchObject({
+      code: "validation_failed",
+      details: expect.objectContaining({
+        currency: "GHS",
+        cityCurrency: city.currency,
+      }),
+    });
+    // Nothing was reserved — the mismatch was refused, not re-denominated.
+    expect(await activeHoldsMinor(db, driver.wallet.id, city.currency)).toEqual(
+      money(0, city.currency),
+    );
+  });
+
+  it("refuses an adjust denominated in a currency that is not the hold's", async () => {
+    const city = await seedCity(db);
+    const deps = makeDeps(db);
+    const driver = await fundedUser(city, 1_000_00);
+    const reserved = await reserveHold(
+      deps,
+      reserveInput(driver, 500_00),
+      uid("idem"),
+    );
+
+    await expect(
+      adjustHold(
+        deps,
+        reserved.hold.reservationId,
+        { amountMinor: 600_00, baseMinor: 6_000_00, currency: "GHS" },
+        uid("idem"),
+      ),
+    ).rejects.toMatchObject({ code: "validation_failed" });
+    const row = await db.mpCommissionHold.findUniqueOrThrow({
+      where: { id: reserved.hold.reservationId },
+    });
+    expect(Number(row.amountMinor)).toBe(500_00);
   });
 });
 

@@ -20,12 +20,23 @@ const mmss = (iso: string) => {
 };
 const LIVE_BID = new Set(['submitted', 'revised', 'selected_pending']);
 
+/**
+ * A rejected submit/revise must SURFACE the server's message — never a silent
+ * refetch. ApiError carries the server-phrased message verbatim; anything else
+ * (network, unexpected shape) still gets an honest generic banner.
+ */
+export const bidRejection = (e: unknown): { title: string; detail: string } => {
+  const message = e instanceof Error && e.message ? e.message : null;
+  return { title: 'Your offer wasn’t placed', detail: message ?? 'Something went wrong — the request view has been refreshed.' };
+};
+
 export function RequestDetailContainer() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
   const { params } = useRoute<RouteProp<RequestsStackParamList, 'Detail'>>();
   const gate = useMotionGate();
   const [choosingRevision, setChoosingRevision] = useState(false);
   const [spendErr, setSpendErr] = useState<{ title: string; detail: string } | null>(null);
+  const [bidErr, setBidErr] = useState<{ title: string; detail: string } | null>(null);
   const q = useQuery({
     queryKey: ['mp', 'driverView', params.requestId],
     queryFn: () => marketplaceApi.driverView(params.requestId),
@@ -33,8 +44,6 @@ export function RequestDetailContainer() {
     retry: false,
   });
   const view = q.data;
-  // Queued "next" bids must name the current claim they depend on (MpSubmitBid).
-  const jobsQ = useQuery({ queryKey: ['mp', 'jobs'], queryFn: marketplaceApi.jobs, enabled: view?.eligibility.slot === 'next' });
 
   const stillOpen = view ? Date.parse(view.item.expiresAt) > Date.now() : false;
   const toWallet = (shortfall: { title: string; detail: string } | null) => {
@@ -50,8 +59,10 @@ export function RequestDetailContainer() {
       setSpendErr({ title: 'Top-up needed to place this offer', detail: e.message });
       return;
     }
-    // Revision/eligibility races (version_conflict, request_closed, bid_not_live,
-    // NOT_STATIONARY rejections…): re-fetch and render the server's current view.
+    // Every other rejection SHOWS the server's message (queue_dependency_invalid,
+    // version_conflict, request_closed, bid_not_live, NOT_STATIONARY…) — never a
+    // silent refetch — and then re-fetches so the view underneath is current.
+    setBidErr(bidRejection(e));
     void q.refetch();
   };
   const submit = useMutation({
@@ -60,15 +71,18 @@ export function RequestDetailContainer() {
       requestRevision: view!.item.revision,
       amountMinor: preset.amountMinor,
       slot: view!.eligibility.slot ?? 'current',
-      ...(view!.eligibility.slot === 'next' && jobsQ.data?.current ? { dependsOnClaimId: jobsQ.data.current.claimId } : {}),
+      // A next-slot bid must name the driver's current claim; driver-view's
+      // currentClaimId is the server's own statement of it (the Jobs projection
+      // is a display view, not the dependency source).
+      ...(view!.eligibility.slot === 'next' && view!.currentClaimId ? { dependsOnClaimId: view!.currentClaimId } : {}),
       availabilityEpoch: view!.eligibility.availabilityEpoch,
     }),
-    onSuccess: (b) => { setSpendErr(null); track('driver_mp_bid_submitted', { requestId: params.requestId, bidId: b.bidId }); void q.refetch(); },
+    onSuccess: (b) => { setSpendErr(null); setBidErr(null); track('driver_mp_bid_submitted', { requestId: params.requestId, bidId: b.bidId }); void q.refetch(); },
     onError: onMoneyError,
   });
   const revise = useMutation({
     mutationFn: (p: { bidId: string; amountMinor: Money; expectedVersion: number }) => marketplaceApi.reviseBid(p.bidId, { amountMinor: p.amountMinor, expectedVersion: p.expectedVersion }),
-    onSuccess: (b) => { setSpendErr(null); track('driver_mp_bid_revised', { bidId: b.bidId, version: b.bidVersion }); void q.refetch(); },
+    onSuccess: (b) => { setSpendErr(null); setBidErr(null); track('driver_mp_bid_revised', { bidId: b.bidId, version: b.bidVersion }); void q.refetch(); },
     onError: onMoneyError,
   });
   const withdraw = useMutation({
@@ -104,6 +118,7 @@ export function RequestDetailContainer() {
   const onPreset = (key: string) => {
     const preset = view.presets.find((c) => c.key === key);
     if (!preset) return;
+    setBidErr(null);
     if (revising && myBidDto) {
       setChoosingRevision(false);
       revise.mutate({ bidId: myBidDto.bidId, amountMinor: preset.amountMinor, expectedVersion: myBidDto.bidVersion });
@@ -145,6 +160,7 @@ export function RequestDetailContainer() {
         onWithdraw: () => withdraw.mutate(myBidDto.bidId),
       } : null}
       spendableError={spendErr ? { ...spendErr, walletLabel: 'Top up in Wallet', onWallet: () => toWallet(spendErr) } : null}
+      bidError={bidErr}
     />
   );
 }

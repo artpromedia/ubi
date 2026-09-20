@@ -21,6 +21,7 @@ export * from "./pin";
 export * from "./post-entry";
 export * from "./providers";
 export * from "./mp-funding";
+export * from "./mp-settlement";
 export * from "./requests";
 export * from "./returns";
 export * from "./review";

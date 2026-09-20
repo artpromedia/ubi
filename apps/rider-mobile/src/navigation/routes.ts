@@ -2,7 +2,7 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
 export type AuthStackParamList = { Login: undefined; Otp: { verificationId: string }; Register: undefined };
-export type RideStackParamList = { Search: { prefill?: { destinationPlaceId?: string } } | undefined; Pickup: { placeId: string }; Quote: { quoteId: string }; Matching: { rideId: string }; Assigned: { rideId: string }; Pin: { rideId: string }; InTrip: { rideId: string }; Pay: { rideId: string }; Rate: { rideId: string }; Details: { rideId: string } };
+export type RideStackParamList = { Search: { prefill?: { destinationPlaceId?: string } } | undefined; Pickup: { placeId: string }; Quote: { quoteId: string }; Matching: { rideId: string }; Assigned: { rideId: string; pickupPin?: string }; Pin: { rideId: string }; InTrip: { rideId: string }; Pay: { rideId: string }; Rate: { rideId: string }; Details: { rideId: string } };
 export type BitesStackParamList = { Restaurants: undefined; Restaurant: { restaurantId: string }; Cart: undefined; OrderTracking: { orderId: string }; OrderDetails: { orderId: string } };
 export type SendStackParamList = { New: undefined; Tracking: { deliveryId: string }; Details: { deliveryId: string } };
 export type WalletStackParamList = { Home: undefined; Send: undefined; Request: undefined; Nip: undefined; Statement: { month?: string } | undefined; TopUp: undefined };

@@ -2,10 +2,12 @@ package marketplace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
@@ -342,55 +344,159 @@ func (s *Service) sweepRecoveries(ctx context.Context, now time.Time) {
 		return
 	}
 	for _, row := range due {
-		var opErr error
-		switch row.Action {
-		case RecoveryRelease:
-			_, opErr = s.deps.Wallet.Release(ctx, row.ReservationID, "mp.recovery:"+row.ID.String())
-		case RecoveryAdjust:
-			if row.BidID == nil || row.AmountMinor == nil {
-				opErr = errors.New("adjust recovery row is missing its bid or amount")
-			} else if bid, bidErr := s.deps.Store.BidByID(ctx, s.deps.Store.Pool(), *row.BidID); bidErr != nil {
-				opErr = bidErr
-			} else {
-				_, opErr = s.deps.Wallet.Adjust(ctx, row.ReservationID, *row.AmountMinor, bid.AmountMinor,
-					"mp.recovery:"+row.ID.String())
-			}
-		case RecoveryReverse:
-			// A reversal is idempotent under the award's one reversal key, so
-			// the retry converges on the same linked entry.
-			if row.BidID == nil {
-				opErr = errors.New("reverse recovery row is missing its bid")
-			} else if award, awardErr := s.deps.Store.AwardByBidID(ctx, s.deps.Store.Pool(), *row.BidID); awardErr != nil {
-				opErr = awardErr
-			} else {
-				_, opErr = s.deps.Wallet.Reverse(ctx, row.ReservationID, award.ID.String(),
-					"recovery", "mp.reverse:"+award.ID.String())
-			}
-		default:
-			opErr = fmt.Errorf("unknown recovery action %q", row.Action)
-		}
-
-		if opErr == nil {
+		resolved, opErr := s.runRecovery(ctx, row, now)
+		if resolved {
 			if err := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), row.ID, now); err != nil {
 				s.deps.Logger.Error().Err(err).Str("recovery_id", row.ID.String()).Msg("failed to resolve recovery")
 			}
 			continue
 		}
-		if mapped, ok := domain.AsError(opErr); ok && mapped.Code == domain.CodeNotFound {
-			// The wallet has never heard of this reservation: an unknown
-			// outcome that turned out to be "never applied". Nothing to
-			// release; the row is done.
-			if err := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), row.ID, now); err != nil {
-				s.deps.Logger.Error().Err(err).Str("recovery_id", row.ID.String()).Msg("failed to resolve recovery")
-			}
-			continue
+		lastError := "deferred"
+		if opErr != nil {
+			lastError = opErr.Error()
 		}
 		backoff := time.Duration(30*(row.Attempts+1)) * time.Second
 		if backoff > 10*time.Minute {
 			backoff = 10 * time.Minute
 		}
-		if err := s.deps.Store.DeferRecovery(ctx, s.deps.Store.Pool(), row.ID, opErr.Error(), now.Add(backoff)); err != nil {
+		if err := s.deps.Store.DeferRecovery(ctx, s.deps.Store.Pool(), row.ID, lastError, now.Add(backoff)); err != nil {
 			s.deps.Logger.Error().Err(err).Str("recovery_id", row.ID.String()).Msg("failed to defer recovery")
 		}
 	}
+}
+
+// isWalletNotFound reports the wallet's definite "never heard of it".
+func isWalletNotFound(err error) bool {
+	mapped, ok := domain.AsError(err)
+	return ok && mapped.Code == domain.CodeNotFound
+}
+
+// runRecovery drives one recovery row and reports whether it is resolved.
+func (s *Service) runRecovery(ctx context.Context, row *RecoveryRow, now time.Time) (bool, error) {
+	switch row.Action {
+	case RecoveryRelease:
+		_, opErr := s.deps.Wallet.Release(ctx, row.ReservationID, "mp.recovery:"+row.ID.String())
+		if opErr == nil {
+			s.markRowHoldReleased(ctx, row, now)
+			return true, nil
+		}
+		if isWalletNotFound(opErr) {
+			// The wallet has never heard of this reservation: an unknown
+			// outcome that turned out to be "never applied". Nothing to
+			// release; the row is done.
+			return true, nil
+		}
+		return false, opErr
+
+	case RecoveryAdjust:
+		if row.BidID == nil || row.AmountMinor == nil {
+			return false, errors.New("adjust recovery row is missing its bid or amount")
+		}
+		bid, bidErr := s.deps.Store.BidByID(ctx, s.deps.Store.Pool(), *row.BidID)
+		if bidErr != nil {
+			return false, bidErr
+		}
+		request, reqErr := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), bid.RequestID)
+		if reqErr != nil {
+			return false, reqErr
+		}
+		_, opErr := s.deps.Wallet.Adjust(ctx, row.ReservationID,
+			money(*row.AmountMinor, request.Currency), money(bid.AmountMinor, request.Currency),
+			"mp.recovery:"+row.ID.String())
+		if opErr == nil || isWalletNotFound(opErr) {
+			return true, opErr
+		}
+		return false, opErr
+
+	case RecoveryReverse:
+		// A reversal is idempotent under the award's one reversal key, so the
+		// retry converges on the same linked entry — but ONLY once the
+		// award's own state says the fee is genuinely owed back. A CONFIRMED
+		// award keeps its fee (the row resolves untouched); a still-pending
+		// award's compensation path owns the reversal, so the row defers.
+		if row.BidID == nil {
+			return false, errors.New("reverse recovery row is missing its bid")
+		}
+		award, awardErr := s.deps.Store.AwardByBidID(ctx, s.deps.Store.Pool(), *row.BidID)
+		if awardErr != nil {
+			return false, awardErr
+		}
+		switch award.State {
+		case machine.MpAwardConfirmed:
+			return true, nil
+		case machine.MpAwardPending:
+			return false, errors.New("award still pending; the compensation path owns the reversal")
+		}
+		_, opErr := s.deps.Wallet.Reverse(ctx, row.ReservationID, award.ID.String(),
+			"recovery", "mp.reverse:"+award.ID.String())
+		if opErr == nil || isWalletNotFound(opErr) {
+			return true, opErr
+		}
+		return false, opErr
+
+	case RecoveryReserveReplay:
+		// The reserve's outcome was never learned: REPLAY it under the SAME
+		// idempotency key. The wallet converges — answering the real
+		// reservation id whether or not the original applied — and then THAT
+		// id is released under the bid's one release key.
+		var payload ReserveRecoveryPayload
+		if err := json.Unmarshal(row.Payload, &payload); err != nil || payload.ReserveKey == "" {
+			return false, fmt.Errorf("reserve replay row has an unreadable payload: %v", err)
+		}
+		hold, resErr := s.deps.Wallet.Reserve(ctx, payload.Reserve, payload.ReserveKey)
+		if resErr != nil {
+			if mapped, ok := domain.AsError(resErr); ok && !errors.Is(resErr, ErrWalletUnknownOutcome) {
+				// A definite refusal (e.g. insufficient_spendable): the
+				// original reserve never applied and the replay applied
+				// nothing either. Nothing is held; the row is done.
+				s.deps.Logger.Info().Str("code", string(mapped.Code)).
+					Str("recovery_id", row.ID.String()).Msg("reserve replay refused; nothing was ever held")
+				return true, nil
+			}
+			return false, resErr
+		}
+		releaseKey := "mp.recovery:" + row.ID.String()
+		if row.BidID != nil {
+			releaseKey = releaseKeyFor(*row.BidID)
+		}
+		if _, relErr := s.deps.Wallet.Release(ctx, hold.ReservationID, releaseKey); relErr != nil && !isWalletNotFound(relErr) {
+			return false, relErr
+		}
+		s.markRowHoldReleased(ctx, row, now)
+		return true, nil
+
+	case RecoverySettle:
+		// Completion settlement, idempotent on the award id. NEVER resolved
+		// on an error — payment-service answering not_found for an award is
+		// not "settled", it is a bug to keep retrying loudly.
+		var settle SettlementRequest
+		if err := json.Unmarshal(row.Payload, &settle); err != nil {
+			return false, fmt.Errorf("settlement row has an unreadable payload: %v", err)
+		}
+		if opErr := s.deps.Settlement.Settle(ctx, settle, settlementKeyFor(settle.AwardID)); opErr != nil {
+			return false, opErr
+		}
+		return true, nil
+
+	default:
+		return false, fmt.Errorf("unknown recovery action %q", row.Action)
+	}
+}
+
+// markRowHoldReleased records the confirmed release on the bid row (when the
+// recovery row knows its bid), so the driver's holdState can honestly say
+// `released`.
+func (s *Service) markRowHoldReleased(ctx context.Context, row *RecoveryRow, now time.Time) {
+	if row.BidID == nil {
+		return
+	}
+	if err := s.deps.Store.MarkHoldReleased(ctx, s.deps.Store.Pool(), *row.BidID, now); err != nil {
+		s.deps.Logger.Error().Err(err).Str("bid_id", row.BidID.String()).Msg("could not record the confirmed release")
+	}
+}
+
+// settlementKeyFor is the ONE idempotency key an award's completion is ever
+// settled under, so the observer path and the sweep converge on one posting.
+func settlementKeyFor(awardID uuid.UUID) string {
+	return "mp.settle:" + awardID.String()
 }

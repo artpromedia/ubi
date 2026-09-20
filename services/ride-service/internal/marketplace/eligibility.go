@@ -255,14 +255,17 @@ func (s *Service) evaluateFinishingTrip(
 	return result, nil
 }
 
-// stationaryVerdict is the stationary gate: sustained dwell below the speed
-// gate for the configured window, a fresh and accurate latest fix, AND an
-// explicit parked confirmation. A confirmation cannot override telemetry that
-// shows the vehicle clearly moving, and no data means NOT stationary.
-func (s *Service) stationaryVerdict(ctx context.Context, driverID uuid.UUID, policy cityconfig.StationaryPolicy, now time.Time) (bool, string) {
+// motionVerdict classifies the driver's telemetry evidence for the parked
+// attestation and the stationary gate: parked state parked_confirmed (no
+// evidence of motion, fresh fix), moving (clear motion above the gate — which
+// no attestation may override), or stale_location (no usable, fresh, accurate
+// fix to judge by). `covered` says whether the sample ring reaches back
+// across the full dwell window; `reason` is the matching eligibility reason
+// code for anything short of a confirmed, covered stillness.
+func (s *Service) motionVerdict(ctx context.Context, driverID uuid.UUID, policy cityconfig.StationaryPolicy, now time.Time) (state string, covered bool, reason string) {
 	samples := s.deps.Redis.DriverSamples(ctx, driverID, 0)
 	if len(samples) == 0 {
-		return false, ReasonLocationStale
+		return ParkedStateStale, false, ReasonLocationStale
 	}
 
 	// Newest first. The newest sample must be fresh, accurate and honest
@@ -270,31 +273,30 @@ func (s *Service) stationaryVerdict(ctx context.Context, driverID uuid.UUID, pol
 	newest := samples[0]
 	age := now.Sub(newest.RecordedAt)
 	if age > time.Duration(policy.MaxLocationAgeSec)*time.Second || age < -time.Minute {
-		return false, ReasonLocationStale
+		return ParkedStateStale, false, ReasonLocationStale
 	}
 	if newest.AccuracyM <= 0 || newest.AccuracyM > float64(policy.MaxAccuracyMeters) {
-		return false, ReasonLocationInaccurate
+		return ParkedStateStale, false, ReasonLocationInaccurate
 	}
 
 	// Walk back through the window the dwell must cover. Any sample moving
 	// above the gate — reported or derived between consecutive fixes — is
 	// clear motion, whatever the parked button says.
 	windowStart := now.Add(-time.Duration(policy.MinDwellSec) * time.Second)
-	var covered bool
 	previous := newest
 	for index, sample := range samples {
 		if sample.RecordedAt.After(now.Add(time.Minute)) {
-			return false, ReasonLocationStale
+			return ParkedStateStale, false, ReasonLocationStale
 		}
 		if sample.SpeedMps > policy.MaxSpeedMps {
-			return false, ReasonNotStationary
+			return ParkedStateMoving, false, ReasonNotStationary
 		}
 		if index > 0 {
 			elapsed := previous.RecordedAt.Sub(sample.RecordedAt).Seconds()
 			if elapsed > 0.5 {
 				derived := geo.HaversineDistance(sample.Lat, sample.Lng, previous.Lat, previous.Lng) / elapsed
 				if derived > policy.MaxSpeedMps {
-					return false, ReasonNotStationary
+					return ParkedStateMoving, false, ReasonNotStationary
 				}
 			}
 			previous = sample
@@ -306,10 +308,22 @@ func (s *Service) stationaryVerdict(ctx context.Context, driverID uuid.UUID, pol
 	}
 	if !covered {
 		// The ring does not reach back across the dwell window: not enough
-		// evidence of sustained stillness.
-		return false, ReasonNotStationary
+		// evidence of sustained stillness (for the GATE; the attestation ack
+		// still reads parked_confirmed — no motion was seen).
+		return ParkedStateConfirmed, false, ReasonNotStationary
 	}
+	return ParkedStateConfirmed, true, ""
+}
 
+// stationaryVerdict is the stationary gate: sustained dwell below the speed
+// gate for the configured window, a fresh and accurate latest fix, AND an
+// explicit parked confirmation. A confirmation cannot override telemetry that
+// shows the vehicle clearly moving, and no data means NOT stationary.
+func (s *Service) stationaryVerdict(ctx context.Context, driverID uuid.UUID, policy cityconfig.StationaryPolicy, now time.Time) (bool, string) {
+	state, covered, reason := s.motionVerdict(ctx, driverID, policy, now)
+	if state != ParkedStateConfirmed || !covered {
+		return false, reason
+	}
 	if !s.deps.Redis.ParkedConfirmed(ctx, driverID) {
 		return false, ReasonNotStationary
 	}
@@ -337,10 +351,22 @@ func bearingDelta(a, b float64) float64 {
 	return delta
 }
 
+// The parked-ack states the contract defines: what the SERVER actually
+// accepted, which the client adopts instead of assuming.
+const (
+	ParkedStateConfirmed = "parked_confirmed"
+	ParkedStateMoving    = "moving"
+	ParkedStateStale     = "stale_location"
+)
+
 // ConfirmParked records the driver's explicit parked confirmation with a TTL
 // derived from the city's stationary policy (dwell window plus the motion
-// hysteresis). The confirmation is an input to the gate, never an override.
-func (s *Service) ConfirmParked(ctx context.Context, actor Actor) (map[string]any, error) {
+// hysteresis). The confirmation is an input to the gate, never an override:
+// an attestation over clearly-moving telemetry answers `moving` (and records
+// nothing), one over stale telemetry answers `stale_location`. The ack is the
+// contract's parked shape: {state, availabilityEpoch, confirmedAt, expiresAt,
+// ttlSeconds}.
+func (s *Service) ConfirmParked(ctx context.Context, actor Actor) (*ParkedAckView, error) {
 	if !actor.IsDriver() {
 		return nil, domain.Errorf(domain.CodeForbidden, "only a driver can confirm they are parked")
 	}
@@ -351,13 +377,27 @@ func (s *Service) ConfirmParked(ctx context.Context, actor Actor) (map[string]an
 	if err != nil {
 		return nil, err
 	}
+	now := s.now()
 	ttl := time.Duration(policy.Stationary.MinDwellSec+policy.Stationary.MotionCloseSec) * time.Second
-	if err := s.deps.Redis.ConfirmParked(ctx, actor.UserID, ttl); err != nil {
-		return nil, domain.Errorf(domain.CodeServiceUnavailable, "the parked confirmation could not be recorded").Wrap(err)
+
+	// What does the telemetry actually say? The server acknowledges only what
+	// it accepted — a parked press cannot outvote moving samples.
+	state, _, _ := s.motionVerdict(ctx, actor.UserID, policy.Stationary, now)
+	if state == ParkedStateConfirmed {
+		if err := s.deps.Redis.ConfirmParked(ctx, actor.UserID, ttl); err != nil {
+			return nil, domain.Errorf(domain.CodeServiceUnavailable, "the parked confirmation could not be recorded").Wrap(err)
+		}
 	}
-	return map[string]any{
-		"parked":     true,
-		"expiresAt":  s.now().Add(ttl).Format(time.RFC3339),
-		"ttlSeconds": int(ttl / time.Second),
+
+	epoch, err := s.deps.Store.AvailabilityEpoch(ctx, s.deps.Store.Pool(), actor.UserID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+	return &ParkedAckView{
+		State:             state,
+		AvailabilityEpoch: epoch,
+		ConfirmedAt:       now,
+		ExpiresAt:         now.Add(ttl),
+		TTLSeconds:        int(ttl / time.Second),
 	}, nil
 }

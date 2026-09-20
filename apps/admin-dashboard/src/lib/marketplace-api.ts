@@ -1,4 +1,4 @@
-import { apiClient } from './api-client';
+import { apiClient, newIdempotencyKey } from './api-client';
 import { fmt, type Money } from './growth-api';
 
 import type { MonitorRow, MonitorStat, TimelineEvent } from '@/components/marketplace/MarketplaceMonitorPage';
@@ -34,10 +34,12 @@ export const marketplaceApi = {
   timeline: (requestId: string) => apiClient.get<MpTimeline>('/v1/admin/mp/requests/' + requestId + '/timeline'),
   cityConfig: (cityId: string) => apiClient.get<CityConfigView>('/v1/config/cities/' + cityId),
   configHistory: (cityId: string) => apiClient.get<ConfigHistory>('/v1/config/cities/' + cityId + '/history'),
-  /** Policy edits go through the existing two-person config change-request flow. */
-  proposePolicyChange: (cityId: string, patch: Record<string, unknown>, reason: string) => apiClient.post<ChangeRequest>('/v1/config/change-requests', { cityId, patch, reason }),
-  /** Kill switch: stops NEW awards only (deny-by-default flag); audited single-actor path in config-service. */
-  stopAwards: (cityId: string, reason: string) => apiClient.put<FlagChange>('/v1/flags/marketplace_rides', { cityId, enabled: false, reason }),
+  /** Policy edits go through the existing two-person config change-request flow. config-service requires an idempotency-key header (min 8 chars) or it 422s. */
+  proposePolicyChange: (cityId: string, patch: Record<string, unknown>, reason: string) =>
+    apiClient.post<ChangeRequest>('/v1/config/change-requests', { cityId, patch, reason }, { idempotencyKey: newIdempotencyKey() }),
+  /** Kill switch: stops NEW awards only (deny-by-default flag); audited single-actor path in config-service. Requires an idempotency-key header or it 422s. */
+  stopAwards: (cityId: string, reason: string) =>
+    apiClient.put<FlagChange>('/v1/flags/marketplace_rides', { cityId, enabled: false, reason }, { idempotencyKey: newIdempotencyKey() }),
 };
 
 // ---------------------------------------------------------------------------

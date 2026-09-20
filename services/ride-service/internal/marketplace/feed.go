@@ -99,7 +99,7 @@ func feedItemOf(request *Request, distanceMeters float64) *FeedItemView {
 		Service:         request.Service,
 		Title:           title,
 		Meta:            meta,
-		AskedMinor:      request.RequestedMinor,
+		AskedMinor:      money(request.RequestedMinor, request.Currency),
 		AskedByLabel:    "Requester asks",
 		CapabilityBadge: badge,
 		ExpiresAt:       request.ExpiresAt,
@@ -256,8 +256,9 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 
 	// Presets are money: they need the wallet's one spendable number. If the
 	// wallet cannot answer, the view fails honestly rather than promising
-	// affordability nobody checked.
-	overview, err := s.deps.Wallet.Overview(ctx, actor.UserID)
+	// affordability nobody checked. The internal overview endpoint takes the
+	// driver AND the city whose currency/config applies.
+	overview, err := s.deps.Wallet.Overview(ctx, actor.UserID, request.CityID)
 	if err != nil {
 		return nil, asDomainError(err)
 	}
@@ -268,12 +269,21 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 		return nil, asDomainError(profileErr)
 	}
 
-	result.Presets, result.ProfileLine, result.CeilingNotice = s.buildPresets(ctx, request, config.CurrencyFractionDigits, overview.SpendableMinor, profile)
+	result.Presets, result.ProfileLine, result.CeilingNotice = s.buildPresets(ctx, request, config.CurrencyFractionDigits, overview.SpendableMinor.AmountMinor, profile)
 
 	if myBid, bidErr := s.deps.Store.LiveBidForDriverOnRequest(ctx, s.deps.Store.Pool(), request.ID, actor.UserID); bidErr == nil {
-		result.MyBid = bidViewOf(myBid)
+		result.MyBid = bidViewOf(myBid, request.Currency)
 	} else if !errors.Is(bidErr, domain.ErrNotFound) {
 		return nil, asDomainError(bidErr)
+	}
+
+	// The next-slot dependency the contract mandates: the driver's current
+	// claim id, or null when they have none.
+	if currentClaim, claimErr := s.deps.Store.CurrentClaim(ctx, s.deps.Store.Pool(), actor.UserID); claimErr == nil {
+		id := currentClaim.ID.String()
+		result.CurrentClaimID = &id
+	} else if !errors.Is(claimErr, domain.ErrNotFound) {
+		return nil, asDomainError(claimErr)
 	}
 
 	return result, nil
@@ -345,9 +355,9 @@ func (s *Service) buildPresets(ctx context.Context, request *Request, digits int
 		net := c.amount - commission
 		preset := &PresetView{
 			Key:             c.source + ":" + strconv.FormatInt(c.amount, 10),
-			AmountMinor:     c.amount,
-			CommissionMinor: commission,
-			NetMinor:        net,
+			AmountMinor:     money(c.amount, currency),
+			CommissionMinor: money(commission, currency),
+			NetMinor:        money(net, currency),
 			Title:           c.title,
 			FeeNetLabel:     "Fee " + formatMinor(commission, currency, digits) + " · You receive " + formatMinor(net, currency, digits),
 			Affordable:      spendableMinor >= commission,
@@ -355,8 +365,8 @@ func (s *Service) buildPresets(ctx context.Context, request *Request, digits int
 			Source:          c.source,
 		}
 		if !preset.Affordable {
-			shortfall := commission - spendableMinor
-			label := "Top up " + formatMinor(shortfall, currency, digits) + " to place this bid"
+			shortfall := money(commission-spendableMinor, currency)
+			label := "Top up " + formatMinor(shortfall.AmountMinor, currency, digits) + " to place this bid"
 			preset.ShortfallMinor = &shortfall
 			preset.ShortfallLabel = &label
 		}

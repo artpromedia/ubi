@@ -236,6 +236,10 @@ const (
 	AttemptStepFunding  = "funding"
 	AttemptStepCapture  = "capture"
 	AttemptStepFinalize = "finalize"
+	// AttemptStepCompensate is the durable COMPENSATION DECISION: it is
+	// written BEFORE any reversal is driven, so a crash mid-compensation
+	// resumes into the compensation path — never forward into finalize.
+	AttemptStepCompensate = "compensating"
 
 	AttemptStatePending = "pending"
 	AttemptStateUnknown = "unknown"
@@ -245,11 +249,14 @@ const (
 
 // AwardAttempt is the saga's position for one award.
 type AwardAttempt struct {
-	AwardID     uuid.UUID
-	Step        string
-	State       string
-	Attempts    int
-	LastError   string
+	AwardID   uuid.UUID
+	Step      string
+	State     string
+	Attempts  int
+	LastError string
+	// Captured records, with the compensation decision, whether the fee was
+	// (or may have been) captured and therefore must be reversed.
+	Captured    bool
 	NextRetryAt *time.Time
 	UpdatedAt   time.Time
 }
@@ -274,14 +281,36 @@ func (s *Store) SaveAttempt(ctx context.Context, db DB, awardID uuid.UUID, step,
 	return nil
 }
 
+// SaveCompensationDecision durably records that this award is being
+// COMPENSATED — with whether the fee was captured — before any money moves
+// back. The stalled-award sweep resumes such an award into compensateAward.
+func (s *Store) SaveCompensationDecision(ctx context.Context, db DB, awardID uuid.UUID, reason string, captured bool, nextRetryAt *time.Time) error {
+	_, err := db.Exec(ctx, `
+		INSERT INTO mp.award_attempts (award_id, step, state, attempts, last_error, captured, next_retry_at, updated_at)
+		VALUES ($1, $2, $3, 1, $4, $5, $6, now())
+		ON CONFLICT (award_id) DO UPDATE SET
+			step = EXCLUDED.step,
+			state = EXCLUDED.state,
+			attempts = mp.award_attempts.attempts + 1,
+			last_error = EXCLUDED.last_error,
+			captured = EXCLUDED.captured,
+			next_retry_at = EXCLUDED.next_retry_at,
+			updated_at = now()`,
+		awardID, AttemptStepCompensate, AttemptStatePending, nullable(reason), captured, nextRetryAt)
+	if err != nil {
+		return fmt.Errorf("failed to save the compensation decision: %w", err)
+	}
+	return nil
+}
+
 // AttemptFor reads the saga position for one award.
 func (s *Store) AttemptFor(ctx context.Context, db DB, awardID uuid.UUID) (*AwardAttempt, error) {
 	var attempt AwardAttempt
 	err := db.QueryRow(ctx, `
-		SELECT award_id, step, state, attempts, COALESCE(last_error, ''), next_retry_at, updated_at
+		SELECT award_id, step, state, attempts, COALESCE(last_error, ''), captured, next_retry_at, updated_at
 		FROM mp.award_attempts WHERE award_id = $1`, awardID).Scan(
 		&attempt.AwardID, &attempt.Step, &attempt.State, &attempt.Attempts,
-		&attempt.LastError, &attempt.NextRetryAt, &attempt.UpdatedAt)
+		&attempt.LastError, &attempt.Captured, &attempt.NextRetryAt, &attempt.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound

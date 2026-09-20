@@ -281,9 +281,9 @@ func (s *Service) PreviewRateProfile(ctx context.Context, actor Actor, req RateP
 
 	return &RatePreviewView{
 		ProfileFormulaVersion: profileFormulaVersion,
-		GrossMinor:            gross,
-		CommissionMinor:       commission,
-		NetMinor:              net,
+		GrossMinor:            money(gross, currency),
+		CommissionMinor:       money(commission, currency),
+		NetMinor:              money(net, currency),
 		FloorAdjusted:         floorAdjusted,
 		ExceedsCeiling:        exceedsCeiling,
 		Rows:                  rows,

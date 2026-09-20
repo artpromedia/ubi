@@ -51,6 +51,23 @@ type MarketplaceAssignRequest struct {
 	FencingToken   int64           `json:"fencingToken"`
 }
 
+// committedDefaultServiceKey is the INTERNAL_SERVICE_KEY fallback baked into
+// internal/config/config.go. It is public knowledge (it lives in the
+// repository), so it can never authenticate the marketplace award hand-off.
+const committedDefaultServiceKey = "internal-key"
+
+// marketplaceAssignKeyUsable reports whether the configured internal service
+// key is strong enough to guard the marketplace-assign hand-off. The endpoint
+// mints deliveries already DRIVER_ASSIGNED with payment_status AUTHORIZED, so
+// it must fail closed when the key is absent or still the committed default —
+// a real deployment has to set a strong INTERNAL_SERVICE_KEY for the
+// marketplace hand-off to function. Deliberately scoped to this handler: the
+// legacy payment/order webhooks keep their existing behavior. Pure —
+// unit-tested without a database.
+func marketplaceAssignKeyUsable(key string) bool {
+	return key != "" && key != committedDefaultServiceKey
+}
+
 // validateMarketplaceAssign returns the list of field problems in an
 // assignment payload. Pure — unit-tested without a database.
 func validateMarketplaceAssign(req *MarketplaceAssignRequest) []string {
@@ -196,6 +213,17 @@ func (h *Handler) findDeliveryByAwardID(ctx context.Context, awardID string) (*m
 // already DRIVER_ASSIGNED — the award saga has decided the winner, so this
 // row never passes through the open-market CONFIRMED pool.
 func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
+	// Fail closed under a missing or committed-default service key: ServiceAuth
+	// already matched the caller's X-Service-Key against the configured value,
+	// but when that value is the publicly known repo default (or empty) the
+	// match proves nothing, and this endpoint mints assigned, payment-authorized
+	// deliveries. 503, honestly: the deployment is misconfigured, not the caller.
+	if !marketplaceAssignKeyUsable(h.cfg.InternalServiceKey) {
+		respondError(w, http.StatusServiceUnavailable, "SERVICE_KEY_NOT_CONFIGURED",
+			"Marketplace assignment is disabled: INTERNAL_SERVICE_KEY must be set to a non-default value")
+		return
+	}
+
 	var req MarketplaceAssignRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
