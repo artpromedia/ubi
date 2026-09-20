@@ -11,12 +11,7 @@
  * Ownership is from the gateway context on every path: a thread that is not the
  * caller's is `not_found`, never readable by guessing an id (rule #18).
  */
-import {
-  ContractError,
-  isEnabled,
-  money,
-  type Money,
-} from "@ubi/contracts";
+import { ContractError, isEnabled, money, type Money } from "@ubi/contracts";
 
 import { actorKindFor, auditedTransaction, type OutboxInput } from "./audit";
 import { assertFlagEnabled } from "./flags";

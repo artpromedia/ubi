@@ -46,7 +46,10 @@ healthRoutes.get("/ready", async (c) => {
  * Detailed health check with dependency status
  */
 healthRoutes.get("/", async (c) => {
-  const checks: Record<string, { status: string; latency?: number; error?: string }> = {};
+  const checks: Record<
+    string,
+    { status: string; latency?: number; error?: string }
+  > = {};
 
   // Check PostgreSQL
   try {
@@ -67,7 +70,9 @@ healthRoutes.get("/", async (c) => {
   }
 
   // Overall status
-  const isHealthy = Object.values(checks).every((check) => check.status === "up");
+  const isHealthy = Object.values(checks).every(
+    (check) => check.status === "up",
+  );
 
   return c.json(
     {
@@ -78,7 +83,7 @@ healthRoutes.get("/", async (c) => {
       timestamp: new Date().toISOString(),
       checks,
     },
-    isHealthy ? 200 : 503
+    isHealthy ? 200 : 503,
   );
 });
 

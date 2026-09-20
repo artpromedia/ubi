@@ -95,7 +95,7 @@ const TableFooter = React.forwardRef<
     ref={ref}
     className={cn(
       "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
-      className
+      className,
     )}
     {...props}
   />
@@ -110,7 +110,7 @@ const TableRow = React.forwardRef<
     ref={ref}
     className={cn(
       "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
-      className
+      className,
     )}
     {...props}
   />
@@ -125,7 +125,7 @@ const TableHead = React.forwardRef<
     ref={ref}
     className={cn(
       "h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0",
-      className
+      className,
     )}
     {...props}
   />
@@ -198,7 +198,7 @@ const DataTableColumnHeader = ({
       {getSortIcon()}
     </Button>
   );
-}
+};
 
 // Row selection checkbox column
 function getSelectionColumn<TData>(): ColumnDef<TData> {
@@ -336,7 +336,7 @@ const DataTableViewOptions = <TData,>({
         {table
           .getAllColumns()
           .filter(
-            (column) => column.accessorFn !== undefined && column.getCanHide()
+            (column) => column.accessorFn !== undefined && column.getCanHide(),
           )
           .map((column) => {
             return (
@@ -380,7 +380,7 @@ const DataTableSearch = ({
       />
     </div>
   );
-}
+};
 
 // Main DataTable component
 interface DataTableProps<TData, TValue> {
@@ -414,7 +414,7 @@ const DataTable = <TData, TValue>({
 }: DataTableProps<TData, TValue>) => {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    []
+    [],
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
@@ -486,7 +486,7 @@ const DataTable = <TData, TValue>({
                         ? null
                         : flexRender(
                             header.column.columnDef.header,
-                            header.getContext()
+                            header.getContext(),
                           )}
                     </TableHead>
                   );
@@ -520,7 +520,7 @@ const DataTable = <TData, TValue>({
                       <TableCell key={cell.id}>
                         {flexRender(
                           cell.column.columnDef.cell,
-                          cell.getContext()
+                          cell.getContext(),
                         )}
                       </TableCell>
                     ))}
@@ -548,7 +548,7 @@ const DataTable = <TData, TValue>({
       )}
     </div>
   );
-}
+};
 
 export {
   DataTable,

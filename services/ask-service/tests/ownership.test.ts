@@ -37,7 +37,11 @@ beforeAll(async () => {
   cityId = await seedCity(db);
   owner = rider();
   attacker = rider();
-  ride.setTrip(victimTrip, { ownerId: owner.id, state: "in_progress", driverEtaMinutes: 2 });
+  ride.setTrip(victimTrip, {
+    ownerId: owner.id,
+    state: "in_progress",
+    driverEtaMinutes: 2,
+  });
 });
 
 afterAll(async () => {
@@ -92,10 +96,24 @@ describe("ownership from context", () => {
     // Owner creates a real execution.
     const travel = deps.travel;
     travel.setOffer(
-      { offerRef: "own_off", kind: "flight", title: "T", detail: null, priceMinor: 1000, currency: "NGN", termsVersion: "v1", terms: [] },
+      {
+        offerRef: "own_off",
+        kind: "flight",
+        title: "T",
+        detail: null,
+        priceMinor: 1000,
+        currency: "NGN",
+        termsVersion: "v1",
+        terms: [],
+      },
       { state: "confirmed" },
     );
-    const thread = await openThread(deps, { actor: owner, cityId, source: "home", correlationId: null });
+    const thread = await openThread(deps, {
+      actor: owner,
+      cityId,
+      source: "home",
+      correlationId: null,
+    });
     const msg = await handleMessage(deps, {
       actor: owner,
       cityId,

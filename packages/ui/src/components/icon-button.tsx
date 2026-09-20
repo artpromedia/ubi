@@ -7,9 +7,9 @@ import { cn } from "../lib/utils";
 
 /**
  * IconButton - Button for icon-only interactions
- * 
+ *
  * Accessible icon button with built-in aria-label requirement.
- * 
+ *
  * @example
  * import { Settings, X } from "lucide-react";
  * <IconButton label="Settings"><Settings /></IconButton>
@@ -22,10 +22,13 @@ const iconButtonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        secondary:
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        outline:
+          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
         ghost: "hover:bg-accent hover:text-accent-foreground",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        destructive:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         // UBI service variants
         move: "bg-ubi-move text-white hover:bg-ubi-move/90",
         bites: "bg-ubi-bites text-white hover:bg-ubi-bites/90",
@@ -48,11 +51,12 @@ const iconButtonVariants = cva(
       size: "md",
       rounded: "default",
     },
-  }
+  },
 );
 
 export interface IconButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof iconButtonVariants> {
   /** Required accessible label for screen readers */
   label: string;
@@ -61,14 +65,30 @@ export interface IconButtonProps
 }
 
 const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
-  ({ className, variant, size, rounded, label, loading, disabled, children, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      rounded,
+      label,
+      loading,
+      disabled,
+      children,
+      ...props
+    },
+    ref,
+  ) => {
     return (
       <button
         ref={ref}
         type="button"
         aria-label={label}
         disabled={disabled || loading}
-        className={cn(iconButtonVariants({ variant, size, rounded }), className)}
+        className={cn(
+          iconButtonVariants({ variant, size, rounded }),
+          className,
+        )}
         {...props}
       >
         {loading ? (
@@ -97,7 +117,7 @@ const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         )}
       </button>
     );
-  }
+  },
 );
 IconButton.displayName = "IconButton";
 

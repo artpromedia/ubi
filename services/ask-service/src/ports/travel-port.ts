@@ -155,17 +155,24 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
   return {
     async searchFlights(actor, input, limit): Promise<readonly TravelOffer[]> {
       try {
-        const response = await call("/v1/travel/flights/search", "POST", actor, {
-          ...input,
-          limit,
-        });
+        const response = await call(
+          "/v1/travel/flights/search",
+          "POST",
+          actor,
+          {
+            ...input,
+            limit,
+          },
+        );
         if (!response.ok) {
           unavailable();
         }
         const rows = (await response.json()) as { offers?: TravelOffer[] };
         return (rows.offers ?? []).slice(0, limit);
       } catch (error) {
-        if (error instanceof ContractError) {throw error;}
+        if (error instanceof ContractError) {
+          throw error;
+        }
         toolLogger.error({ err: error }, "flight search failed");
         unavailable();
       }
@@ -182,7 +189,9 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
         const rows = (await response.json()) as { offers?: TravelOffer[] };
         return (rows.offers ?? []).slice(0, limit);
       } catch (error) {
-        if (error instanceof ContractError) {throw error;}
+        if (error instanceof ContractError) {
+          throw error;
+        }
         toolLogger.error({ err: error }, "stay search failed");
         unavailable();
       }
@@ -202,7 +211,9 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
         }
         return (await response.json()) as ResolvedOffer;
       } catch (error) {
-        if (error instanceof ContractError) {throw error;}
+        if (error instanceof ContractError) {
+          throw error;
+        }
         toolLogger.error({ err: error }, "offer resolve failed");
         unavailable();
       }
@@ -222,7 +233,9 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
         }
         return (await response.json()) as BookingStatusResult;
       } catch (error) {
-        if (error instanceof ContractError) {throw error;}
+        if (error instanceof ContractError) {
+          throw error;
+        }
         toolLogger.error({ err: error }, "booking status failed");
         unavailable();
       }
@@ -238,7 +251,9 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
         }
         return (await response.json()) as BookedItem;
       } catch (error) {
-        if (error instanceof ContractError) {throw error;}
+        if (error instanceof ContractError) {
+          throw error;
+        }
         toolLogger.error({ err: error }, "book call failed");
         throw new ContractError(
           "service_unavailable",

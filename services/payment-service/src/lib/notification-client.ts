@@ -5,7 +5,6 @@
  * for sending push notifications, SMS, emails, and in-app messages.
  */
 
-
 import { notificationLogger } from "./logger.js";
 import { prisma } from "./prisma";
 

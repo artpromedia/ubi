@@ -12,12 +12,12 @@ import * as React from "react";
 import { Badge } from "./badge";
 import { Button } from "./button";
 import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
 } from "./command";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { cn } from "../lib/utils";
@@ -77,7 +77,10 @@ const Combobox = ({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className={cn("w-[--radix-popover-trigger-width] p-0", popoverClassName)}
+        className={cn(
+          "w-[--radix-popover-trigger-width] p-0",
+          popoverClassName,
+        )}
         align="start"
       >
         <Command>
@@ -109,7 +112,7 @@ const Combobox = ({
                   <Check
                     className={cn(
                       "ml-auto h-4 w-4",
-                      value === option.value ? "opacity-100" : "opacity-0"
+                      value === option.value ? "opacity-100" : "opacity-0",
                     )}
                   />
                 </CommandItem>
@@ -151,7 +154,7 @@ const MultiCombobox = ({
   const [open, setOpen] = React.useState(false);
 
   const selectedOptions = options.filter((option) =>
-    values.includes(option.value)
+    values.includes(option.value),
   );
 
   const handleSelect = (optionValue: string) => {
@@ -175,7 +178,10 @@ const MultiCombobox = ({
           role="combobox"
           aria-expanded={open}
           disabled={disabled}
-          className={cn("w-full justify-between font-normal h-auto min-h-10", className)}
+          className={cn(
+            "w-full justify-between font-normal h-auto min-h-10",
+            className,
+          )}
         >
           <div className="flex flex-wrap gap-1 flex-1">
             {selectedOptions.length > 0 ? (
@@ -201,7 +207,10 @@ const MultiCombobox = ({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className={cn("w-[--radix-popover-trigger-width] p-0", popoverClassName)}
+        className={cn(
+          "w-[--radix-popover-trigger-width] p-0",
+          popoverClassName,
+        )}
         align="start"
       >
         <Command>
@@ -230,7 +239,9 @@ const MultiCombobox = ({
                   <Check
                     className={cn(
                       "ml-auto h-4 w-4",
-                      values.includes(option.value) ? "opacity-100" : "opacity-0"
+                      values.includes(option.value)
+                        ? "opacity-100"
+                        : "opacity-0",
                     )}
                   />
                 </CommandItem>

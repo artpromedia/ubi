@@ -43,8 +43,12 @@ export async function takeDriverOffline(
     where: { id: input.driverId },
     select: { id: true, isOnline: true, isAvailable: true },
   });
-  if (driver === null) {return false;}
-  if (!driver.isOnline && !driver.isAvailable) {return false;}
+  if (driver === null) {
+    return false;
+  }
+  if (!driver.isOnline && !driver.isAvailable) {
+    return false;
+  }
 
   await tx.driver.update({
     where: { id: input.driverId },

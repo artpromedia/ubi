@@ -15,11 +15,7 @@ export {
 } from "./client";
 
 // Configuration
-export {
-  type ApiConfig,
-  type ApiError,
-  defaultConfig,
-} from "./config";
+export { type ApiConfig, type ApiError, defaultConfig } from "./config";
 
 // Common types
 export * from "./types";

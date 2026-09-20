@@ -7,7 +7,6 @@ import { newId } from "../lib/ids";
 
 import type { Prisma } from "@prisma/client";
 
-
 export type Tx = Prisma.TransactionClient;
 
 export interface AuditInput {

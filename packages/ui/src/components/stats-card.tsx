@@ -7,7 +7,6 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 
-
 import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import { cn } from "../lib/utils";
 
@@ -26,7 +25,7 @@ const statsTrendVariants = cva(
     defaultVariants: {
       trend: "neutral",
     },
-  }
+  },
 );
 
 interface StatsTrendProps extends VariantProps<typeof statsTrendVariants> {
@@ -41,8 +40,7 @@ const StatsTrend = ({
   label,
   showIcon = true,
 }: StatsTrendProps) => {
-  const Icon =
-    trend === "up" ? ArrowUp : trend === "down" ? ArrowDown : Minus;
+  const Icon = trend === "up" ? ArrowUp : trend === "down" ? ArrowDown : Minus;
 
   return (
     <span className={cn(statsTrendVariants({ trend }))}>
@@ -81,9 +79,7 @@ const StatsCard = ({
       <Card className={className} {...props}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-          {icon && (
-            <div className="h-8 w-8 animate-pulse rounded bg-muted" />
-          )}
+          {icon && <div className="h-8 w-8 animate-pulse rounded bg-muted" />}
         </CardHeader>
         <CardContent>
           <div className="h-8 w-32 animate-pulse rounded bg-muted mb-2" />
@@ -110,11 +106,7 @@ const StatsCard = ({
         {(description || trendValue) && (
           <div className="flex items-center gap-2 mt-1">
             {trendValue && (
-              <StatsTrend
-                trend={trend}
-                value={trendValue}
-                label={trendLabel}
-              />
+              <StatsTrend trend={trend} value={trendValue} label={trendLabel} />
             )}
             {description && !trendValue && (
               <p className="text-xs text-muted-foreground">{description}</p>
@@ -167,7 +159,7 @@ const StatsGrid = ({ children, columns = 4, className }: StatsGridProps) => (
         "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3": columns === 3,
         "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4": columns === 4,
       },
-      className
+      className,
     )}
   >
     {children}
@@ -175,4 +167,3 @@ const StatsGrid = ({ children, columns = 4, className }: StatsGridProps) => (
 );
 
 export { CompactStats, StatsCard, StatsGrid, StatsTrend, statsTrendVariants };
-

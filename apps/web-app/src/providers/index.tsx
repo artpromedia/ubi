@@ -20,9 +20,7 @@ export function Providers({ children }: ProvidersProps) {
     <QueryProvider>
       <ThemeProvider>
         <Suspense fallback={null}>
-          <AnalyticsProvider>
-            {children}
-          </AnalyticsProvider>
+          <AnalyticsProvider>{children}</AnalyticsProvider>
         </Suspense>
       </ThemeProvider>
     </QueryProvider>
@@ -32,4 +30,3 @@ export function Providers({ children }: ProvidersProps) {
 export { analytics, AnalyticsProvider } from "./analytics-provider";
 export { QueryProvider } from "./query-provider";
 export { ThemeProvider, useTheme } from "./theme-provider";
-

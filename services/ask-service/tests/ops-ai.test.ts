@@ -31,13 +31,20 @@ let actor: Actor;
 beforeAll(async () => {
   const db = testDb();
   const travel = new FakeTravelPort();
-  travel.setOffer(offer({ offerRef: "off1", termsVersion: "v1", priceMinor: 3_000_000 }));
+  travel.setOffer(
+    offer({ offerRef: "off1", termsVersion: "v1", priceMinor: 3_000_000 }),
+  );
   deps = makeDeps(db, { travel });
   cityId = await seedCity(db);
   actor = rider();
 
   // Produce a spread of actions: a read tool, a refusal, and a full confirm+run.
-  const thread = await openThread(deps, { actor, cityId, source: "home", correlationId: null });
+  const thread = await openThread(deps, {
+    actor,
+    cityId,
+    source: "home",
+    correlationId: null,
+  });
   await handleMessage(deps, {
     actor,
     cityId,
@@ -50,7 +57,7 @@ beforeAll(async () => {
     actor,
     cityId,
     threadId: thread.id,
-    text: 'p2p @tool p2p.send {}',
+    text: "p2p @tool p2p.send {}",
     clarifications: null,
     correlationId: null,
   });
@@ -80,7 +87,10 @@ afterAll(async () => {
 describe("ai action log ops views", () => {
   it("lists actions for an admin and audits the access", async () => {
     const before = await deps.db.aiActionAccessLog.count();
-    const actions = await listActions(deps, admin(), { since: null, limit: 500 });
+    const actions = await listActions(deps, admin(), {
+      since: null,
+      limit: 500,
+    });
     expect(actions.length).toBeGreaterThan(0);
     // The log carries model, prompt version and auth kind, never raw prompts.
     const withModel = actions.find((a) => a.model !== undefined);
@@ -106,6 +116,6 @@ describe("ai action log ops views", () => {
     expect(model?.unsafeActions).toBe(0);
     // A transactional action (review.confirm / execution.run) ran under a grant,
     // so it is counted as a task but contributes zero unsafe actions.
-    expect((model?.success ?? 0)).toBeGreaterThan(0);
+    expect(model?.success ?? 0).toBeGreaterThan(0);
   });
 });

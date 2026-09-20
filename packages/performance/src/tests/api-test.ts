@@ -132,7 +132,7 @@ export function testAuthEndpoints(): void {
     const otpResponse = http.post(
       `${baseUrl}/api/v1/auth/otp/request`,
       JSON.stringify({ phoneNumber: phone }),
-      { headers: createHeaders() }
+      { headers: createHeaders() },
     );
     authEndpoint.add(Date.now() - otpStart, { operation: "otp_request" });
 
@@ -148,7 +148,7 @@ export function testAuthEndpoints(): void {
     const loginResponse = http.post(
       `${baseUrl}/api/v1/auth/login`,
       JSON.stringify({ phoneNumber: phone, pin: "1234" }),
-      { headers: createHeaders() }
+      { headers: createHeaders() },
     );
     authEndpoint.add(Date.now() - loginStart, { operation: "login" });
   });
@@ -183,7 +183,7 @@ export function testRideEndpoints(): void {
         pickup: { latitude: pickup.lat, longitude: pickup.lng },
         dropoff: { latitude: dropoff.lat, longitude: dropoff.lng },
       }),
-      { headers }
+      { headers },
     );
     rideEstimateEndpoint.add(Date.now() - estimateStart);
 
@@ -204,7 +204,7 @@ export function testRideEndpoints(): void {
         rideType: "economy",
         paymentMethod: "wallet",
       }),
-      { headers }
+      { headers },
     );
     rideRequestEndpoint.add(Date.now() - requestStart);
 
@@ -221,7 +221,7 @@ export function testRideEndpoints(): void {
           http.post(
             `${baseUrl}/api/v1/rides/${body.data.ride.id}/cancel`,
             JSON.stringify({ reason: "load_test" }),
-            { headers }
+            { headers },
           );
         }
       } catch {
@@ -254,7 +254,7 @@ export function testFoodEndpoints(): void {
     const nearbyStart = Date.now();
     const nearbyResponse = http.get(
       `${baseUrl}/api/v1/restaurants/nearby?lat=${location.lat}&lng=${location.lng}`,
-      { headers }
+      { headers },
     );
     restaurantsEndpoint.add(Date.now() - nearbyStart);
 
@@ -279,7 +279,7 @@ export function testFoodEndpoints(): void {
     const menuStart = Date.now();
     const menuResponse = http.get(
       `${baseUrl}/api/v1/restaurants/${restaurantId}/menu`,
-      { headers }
+      { headers },
     );
     menuEndpoint.add(Date.now() - menuStart);
 
@@ -351,7 +351,7 @@ export function testPaymentEndpoints(): void {
 }
 
 export function handleSummary(
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): Record<string, string> {
   console.log("\n=== API Performance Baselines ===\n");
 
@@ -376,7 +376,7 @@ export function handleSummary(
     )?.[metric];
     if (m?.values) {
       console.log(
-        `${name}: p95=${m.values["p(95)"]?.toFixed(0)}ms, avg=${m.values.avg?.toFixed(0)}ms`
+        `${name}: p95=${m.values["p(95)"]?.toFixed(0)}ms, avg=${m.values.avg?.toFixed(0)}ms`,
       );
     }
   }

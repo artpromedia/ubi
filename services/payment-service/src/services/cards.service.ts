@@ -63,7 +63,7 @@ export class CardService {
 
     if (!wallet.features.cards) {
       throw new Error(
-        `Card feature not available for ${wallet.tier} tier. Upgrade to access cards.`
+        `Card feature not available for ${wallet.tier} tier. Upgrade to access cards.`,
       );
     }
 
@@ -80,7 +80,7 @@ export class CardService {
       type === "VIRTUAL" ? MAX_VIRTUAL_CARDS : MAX_PHYSICAL_CARDS;
     if (existingCards >= maxCards) {
       throw new Error(
-        `Maximum ${maxCards} ${type.toLowerCase()} cards allowed`
+        `Maximum ${maxCards} ${type.toLowerCase()} cards allowed`,
       );
     }
 
@@ -89,7 +89,7 @@ export class CardService {
     if (fee > 0) {
       const balance = await enhancedWalletService.getBalance(
         walletId,
-        currency as any
+        currency as any,
       );
       if (balance.available < fee) {
         throw new Error("Insufficient balance for card issuance fee");
@@ -160,7 +160,7 @@ export class CardService {
   async getCardDetails(
     cardId: string,
     walletId: string,
-    pin: string
+    pin: string,
   ): Promise<CardDetails> {
     // Verify wallet PIN
     const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
@@ -191,7 +191,9 @@ export class CardService {
       controls: card.controls as CardControls,
       deliveryStatus: (card as any).deliveryStatus,
       createdAt: card.createdAt,
-      cardNumber: card.cardNumberEncrypted ? this.decryptCardNumber(card.cardNumberEncrypted) : "",
+      cardNumber: card.cardNumberEncrypted
+        ? this.decryptCardNumber(card.cardNumberEncrypted)
+        : "",
       cvv: card.cvvEncrypted ? this.decryptCVV(card.cvvEncrypted) : "",
       expiryDate: `${card.expiryMonth.toString().padStart(2, "0")}/${card.expiryYear}`,
     };
@@ -203,7 +205,7 @@ export class CardService {
   async activateCard(
     cardId: string,
     walletId: string,
-    activationCode: string
+    activationCode: string,
   ): Promise<void> {
     const card = await prisma.card.findUnique({
       where: { id: cardId },
@@ -242,7 +244,7 @@ export class CardService {
   async setCardFreeze(
     cardId: string,
     walletId: string,
-    freeze: boolean
+    freeze: boolean,
   ): Promise<void> {
     const card = await prisma.card.findUnique({
       where: { id: cardId },
@@ -254,7 +256,7 @@ export class CardService {
 
     if (card.status === "TERMINATED" || card.status === "EXPIRED") {
       throw new Error(
-        `Cannot ${freeze ? "freeze" : "unfreeze"} ${card.status.toLowerCase()} card`
+        `Cannot ${freeze ? "freeze" : "unfreeze"} ${card.status.toLowerCase()} card`,
       );
     }
 
@@ -273,7 +275,7 @@ export class CardService {
     cardId: string,
     walletId: string,
     pin: string,
-    limits: Partial<CardLimits>
+    limits: Partial<CardLimits>,
   ): Promise<Card> {
     // Verify PIN
     const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
@@ -306,7 +308,7 @@ export class CardService {
   async updateControls(
     cardId: string,
     walletId: string,
-    controls: Partial<CardControls>
+    controls: Partial<CardControls>,
   ): Promise<Card> {
     const card = await prisma.card.findUnique({
       where: { id: cardId },
@@ -334,7 +336,7 @@ export class CardService {
     cardId: string,
     walletId: string,
     walletPin: string,
-    newCardPin: string
+    newCardPin: string,
   ): Promise<void> {
     // Verify wallet PIN
     const pinValid = await enhancedWalletService.verifyPin(walletId, walletPin);
@@ -369,7 +371,7 @@ export class CardService {
     cardId: string,
     walletId: string,
     pin: string,
-    reason?: string
+    reason?: string,
   ): Promise<void> {
     // Verify PIN
     const pinValid = await enhancedWalletService.verifyPin(walletId, pin);
@@ -402,9 +404,10 @@ export class CardService {
    * Process card authorization (called by card network)
    */
   async processAuthorization(
-    request: CardAuthorizationRequest
+    request: CardAuthorizationRequest,
   ): Promise<CardAuthorizationResult> {
-    const { cardId, amount, currency, merchantName, merchantCategory } = request;
+    const { cardId, amount, currency, merchantName, merchantCategory } =
+      request;
 
     const card = await prisma.card.findUnique({
       where: { id: cardId },
@@ -441,7 +444,7 @@ export class CardService {
     // Check balance
     const balance = await enhancedWalletService.getBalance(
       card.walletId,
-      currency as any
+      currency as any,
     );
     if (balance.available < amount) {
       return { approved: false, declineReason: "INSUFFICIENT_BALANCE" };
@@ -487,7 +490,7 @@ export class CardService {
    */
   async captureTransaction(
     authorizationId: string,
-    amount?: number
+    amount?: number,
   ): Promise<void> {
     const auth = await prisma.cardAuthorizationHold.findUnique({
       where: { id: authorizationId },
@@ -569,7 +572,7 @@ export class CardService {
    */
   async getTransactions(
     cardId: string,
-    options: { limit?: number; offset?: number } = {}
+    options: { limit?: number; offset?: number } = {},
   ): Promise<{ transactions: CardTransaction[]; total: number }> {
     const { limit = 20, offset = 0 } = options;
 
@@ -587,14 +590,21 @@ export class CardService {
       transactions: transactions.map((t: any) => ({
         id: t.id,
         cardId: t.cardId,
-        type: (t.transactionType as "purchase" | "atm_withdrawal" | "refund" | "reversal") || "purchase",
+        type:
+          (t.transactionType as
+            | "purchase"
+            | "atm_withdrawal"
+            | "refund"
+            | "reversal") || "purchase",
         amount: Number(t.amount),
         currency: t.currency,
         merchantName: t.merchantName || undefined,
         merchantCategory: t.merchantCategory || undefined,
         merchantCity: t.merchantCity,
         merchantCountry: t.merchantCountry,
-        status: (t.status as "pending" | "completed" | "declined" | "reversed") || "pending",
+        status:
+          (t.status as "pending" | "completed" | "declined" | "reversed") ||
+          "pending",
         declineReason: t.declineReason,
         createdAt: t.createdAt,
       })),
@@ -625,7 +635,7 @@ export class CardService {
       createdAt: Date;
       lastUsedAt: Date | null;
     },
-    _includeSensitive: boolean
+    _includeSensitive: boolean,
   ): Card {
     return {
       id: card.id,

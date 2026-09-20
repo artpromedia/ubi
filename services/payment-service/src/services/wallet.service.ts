@@ -863,8 +863,12 @@ export class WalletService {
     const where: any = { accountId };
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) {where.createdAt.gte = startDate;}
-      if (endDate) {where.createdAt.lte = endDate;}
+      if (startDate) {
+        where.createdAt.gte = startDate;
+      }
+      if (endDate) {
+        where.createdAt.lte = endDate;
+      }
     }
 
     const entries = await this.prisma.ledgerEntry.findMany({

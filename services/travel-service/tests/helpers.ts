@@ -18,7 +18,11 @@ import { money } from "@ubi/contracts";
 import { createCityConfigProvider } from "../src/ops/config";
 
 import type { TravelDeps } from "../src/ops/context";
-import type { PaymentPort, PaymentRequest, PaymentResult } from "../src/ports/payment-port";
+import type {
+  PaymentPort,
+  PaymentRequest,
+  PaymentResult,
+} from "../src/ports/payment-port";
 import type { JsonRecord, TravelDb } from "../src/ops/types";
 
 export const TEST_DATABASE_URL =
@@ -110,7 +114,11 @@ export async function seedCity(
       },
     },
     waitPolicy: { freeSec: 300, perMinMinor: 5_000 },
-    cancelPolicy: { riderFeeAfterAssignMinor: 30_000, driverFeeMinor: 0, freeWindowSec: 120 },
+    cancelPolicy: {
+      riderFeeAfterAssignMinor: 30_000,
+      driverFeeMinor: 0,
+      freeWindowSec: 120,
+    },
     pinRequired: true,
     quoteTtlSec: 120,
     offerTtlSec: 20,
@@ -119,7 +127,12 @@ export async function seedCity(
     maxPinAttempts: 3,
     paymentMethods: [{ id: "wallet", available: true }],
     kycTiers: [
-      { tier: "tier1", dailyOutMinor: 5_000_000, singleTransferMinor: 2_000_000, balanceCapMinor: 30_000_000 },
+      {
+        tier: "tier1",
+        dailyOutMinor: 5_000_000,
+        singleTransferMinor: 2_000_000,
+        balanceCapMinor: 30_000_000,
+      },
     ],
     serviceFeePct: 20,
     remittanceCapMinor: 1_000_000,
@@ -135,7 +148,13 @@ export async function seedCity(
   };
 
   await db.city.create({
-    data: { id: cityId, name: cityId, country: "NG", timezone: "Africa/Lagos", active: true },
+    data: {
+      id: cityId,
+      name: cityId,
+      country: "NG",
+      timezone: "Africa/Lagos",
+      active: true,
+    },
   });
   await db.cityConfigVersion.create({
     data: {
@@ -243,8 +262,20 @@ const FLIGHT_CATALOG = {
 
 const STAY_CATALOG = {
   properties: [
-    { id: "transcorp", name: "Transcorp Hilton", area: "Maitama", distanceKm: 2.1, fromPriceMinor: 37_000_000 },
-    { id: "fraser", name: "Fraser Suites", area: "Central Area", distanceKm: 3.4, fromPriceMinor: 41_260_000 },
+    {
+      id: "transcorp",
+      name: "Transcorp Hilton",
+      area: "Maitama",
+      distanceKm: 2.1,
+      fromPriceMinor: 37_000_000,
+    },
+    {
+      id: "fraser",
+      name: "Fraser Suites",
+      area: "Central Area",
+      distanceKm: 3.4,
+      fromPriceMinor: 41_260_000,
+    },
   ],
   rates: [
     {
@@ -253,7 +284,10 @@ const STAY_CATALOG = {
       roomName: "King Deluxe",
       board: "breakfast included",
       payNowMinor: 37_000_000,
-      cancellation: { freeUntil: "2026-09-11T12:00:00+01:00", penaltyAfter: "one night charged" },
+      cancellation: {
+        freeUntil: "2026-09-11T12:00:00+01:00",
+        penaltyAfter: "one night charged",
+      },
       capabilities: {
         holdSupported: false,
         merchantOfRecord: "ubi",
@@ -273,7 +307,10 @@ const STAY_CATALOG = {
       supplierCurrency: "USD",
       fxRate: 1574.8,
       fxLockedUntil: "2026-09-10T00:00:00Z",
-      cancellation: { freeUntil: "2026-09-10T12:00:00+01:00", penaltyAfter: "first night charged" },
+      cancellation: {
+        freeUntil: "2026-09-10T12:00:00+01:00",
+        penaltyAfter: "first night charged",
+      },
       capabilities: {
         holdSupported: false,
         merchantOfRecord: "supplier",
@@ -346,7 +383,9 @@ export async function setControl(
   key: string,
   control: JsonRecord,
 ): Promise<void> {
-  const supplier = await db.travelSupplier.findUnique({ where: { id: supplierId } });
+  const supplier = await db.travelSupplier.findUnique({
+    where: { id: supplierId },
+  });
   if (supplier === null) throw new Error("no such supplier");
   const config = (supplier.config ?? {}) as Record<string, unknown>;
   const existing = (config.control ?? {}) as Record<string, unknown>;
@@ -372,7 +411,11 @@ export class FakePayment implements PaymentPort {
   readonly calls: PaymentCall[] = [];
   private readonly refs = new Map<string, string>();
 
-  private record(op: string, request: PaymentRequest, entry: boolean): PaymentResult {
+  private record(
+    op: string,
+    request: PaymentRequest,
+    entry: boolean,
+  ): PaymentResult {
     this.calls.push({
       op,
       orderId: request.orderId,
@@ -390,7 +433,12 @@ export class FakePayment implements PaymentPort {
     }
     const ref = `${op}_${this.refs.size + 1}_${Math.abs(hash(request.idempotencyKey))}`;
     this.refs.set(request.idempotencyKey, ref);
-    return { ref, entryId: entry ? `je_${ref}` : null, amount: request.amount, replayed: false };
+    return {
+      ref,
+      entryId: entry ? `je_${ref}` : null,
+      amount: request.amount,
+      replayed: false,
+    };
   }
 
   async authorize(request: PaymentRequest): Promise<PaymentResult> {
@@ -428,7 +476,10 @@ export interface DepsOptions {
   readonly now?: () => Date;
 }
 
-export function makeDeps(db: TravelDb, options: DepsOptions = {}): {
+export function makeDeps(
+  db: TravelDb,
+  options: DepsOptions = {},
+): {
   deps: TravelDeps;
   payment: FakePayment;
 } {

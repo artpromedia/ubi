@@ -119,7 +119,9 @@ export function buildQueryParams(params: Record<string, unknown>): string {
   const searchParams = new URLSearchParams();
 
   Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null) {return;}
+    if (value === undefined || value === null) {
+      return;
+    }
 
     if (Array.isArray(value)) {
       value.forEach((v) => searchParams.append(key, String(v)));
@@ -134,9 +136,7 @@ export function buildQueryParams(params: Record<string, unknown>): string {
 }
 
 // Utility to parse paginated response
-export function parsePaginatedResponse<T>(
-  response: PaginatedResponse<T>
-): {
+export function parsePaginatedResponse<T>(response: PaginatedResponse<T>): {
   items: T[];
   pagination: PaginatedResponse<T>["meta"];
 } {

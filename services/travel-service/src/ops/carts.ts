@@ -77,9 +77,15 @@ function termsFor(offer: AdapterOffer): string[] {
       ? "UBI is the merchant of record"
       : "the supplier is the merchant of record",
   );
-  terms.push(caps.refundSupported ? "refundable per fare rules" : "non-refundable");
-  terms.push(caps.changeSupported ? "changes allowed per fare rules" : "no changes");
-  if (caps.payAtProperty === true) {terms.push("part payable at the property");}
+  terms.push(
+    caps.refundSupported ? "refundable per fare rules" : "non-refundable",
+  );
+  terms.push(
+    caps.changeSupported ? "changes allowed per fare rules" : "no changes",
+  );
+  if (caps.payAtProperty === true) {
+    terms.push("part payable at the property");
+  }
   const priceGuaranteeUntil = caps.priceGuaranteeUntil ?? null;
   if (priceGuaranteeUntil !== null) {
     terms.push(`price guaranteed until ${priceGuaranteeUntil}`);
@@ -91,7 +97,8 @@ function titleFor(offer: AdapterOffer): { title: string; detail: string } {
   const snap = offer.snapshot;
   if (offer.kind === "flight") {
     const carrier = typeof snap.carrier === "string" ? snap.carrier : "Flight";
-    const number = typeof snap.flightNumber === "string" ? snap.flightNumber : "";
+    const number =
+      typeof snap.flightNumber === "string" ? snap.flightNumber : "";
     const depart = typeof snap.departAt === "string" ? snap.departAt : "";
     return { title: `${carrier} ${number}`.trim(), detail: depart };
   }
@@ -112,7 +119,9 @@ async function priceItem(
     purchaseRef,
   );
   if (validation.soldOut) {
-    throw new ContractError("conflict", "that offer is sold out", { purchaseRef });
+    throw new ContractError("conflict", "that offer is sold out", {
+      purchaseRef,
+    });
   }
   const offer = validation.offer;
   const { title, detail } = titleFor(offer);
@@ -165,7 +174,7 @@ interface CartRow {
 
 export function cartView(row: CartRow): CartView {
   const items = Array.isArray(row.items) ? (row.items as PricedItem[]) : [];
-  const currency = row.currency ?? (items[0]?.currency ?? "NGN");
+  const currency = row.currency ?? items[0]?.currency ?? "NGN";
   return {
     id: row.id,
     status: row.status,
@@ -203,10 +212,17 @@ export async function createCart(
   },
 ): Promise<CartView> {
   if (input.items.length === 0) {
-    throw new ContractError("validation_failed", "a cart needs at least one item");
+    throw new ContractError(
+      "validation_failed",
+      "a cart needs at least one item",
+    );
   }
 
-  const scoped = scopedIdempotencyKey("travel.cart", input.actor.id, input.idempotencyKey);
+  const scoped = scopedIdempotencyKey(
+    "travel.cart",
+    input.actor.id,
+    input.idempotencyKey,
+  );
   const cartId = deterministicId("cart", scoped);
 
   const replay = await deps.db.travelCart.findUnique({ where: { id: cartId } });
@@ -249,7 +265,9 @@ export async function createCart(
     return cartView(created);
   } catch (error) {
     if (isUniqueViolation(error)) {
-      const existing = await deps.db.travelCart.findUnique({ where: { id: cartId } });
+      const existing = await deps.db.travelCart.findUnique({
+        where: { id: cartId },
+      });
       if (existing !== null) {
         return cartView(existing);
       }
@@ -266,9 +284,13 @@ export async function setPassengers(
     readonly passengers: readonly JsonRecord[];
   },
 ): Promise<CartView> {
-  const cart = await deps.db.travelCart.findUnique({ where: { id: input.cartId } });
+  const cart = await deps.db.travelCart.findUnique({
+    where: { id: input.cartId },
+  });
   if (cart === null || cart.userId !== input.actor.id) {
-    throw new ContractError("not_found", "no such cart", { cartId: input.cartId });
+    throw new ContractError("not_found", "no such cart", {
+      cartId: input.cartId,
+    });
   }
   if (cart.status === "checked_out" || cart.status === "expired") {
     throw new ContractError("conflict", "this cart can no longer be edited", {

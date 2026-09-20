@@ -225,8 +225,12 @@ userRoutes.get("/", async (c) => {
 
   const where: Record<string, unknown> = {};
 
-  if (role) {where.role = role;}
-  if (status) {where.status = status;}
+  if (role) {
+    where.role = role;
+  }
+  if (status) {
+    where.status = status;
+  }
   if (search) {
     where.OR = [
       { firstName: { contains: search, mode: "insensitive" } },

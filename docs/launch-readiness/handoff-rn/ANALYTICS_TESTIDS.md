@@ -1,6 +1,7 @@
 # Analytics events + testID additions
 
 ## testIDs to add to packages/contracts/src/test-ids.ts (same convention test)
+
 ```ts
 ask: { home: { entry: "rider.home.askUbi" }, plan: { card: "ask.plan.card", review: "ask.plan.review", editInForm: "ask.plan.editInForm" },
   clarify: { form: "ask.clarify.form", submit: "ask.clarify.submit" }, answer: { sources: "ask.answer.sources" },
@@ -21,29 +22,31 @@ web: { ask: { panel: "web.ask.panel" }, handoff: { banner: "web.handoff.banner",
 ```
 
 ## Analytics events (client → @ubi/analytics; server events remain the truth for money)
-| Event | Props | Fired from |
-|---|---|---|
-| ask_thread_opened | source (home/web/deeplink), flagsOn | AskScreen mount |
-| ask_message_sent | threadId, chars, hasAttachedPlan | composer |
-| ask_plan_rendered | threadId, liveCards, suggestionCards | PlanCard |
-| ask_edit_in_form | threadId, target route | PlanCard |
-| ask_review_opened / ask_review_confirmed / ask_review_expired | reviewId, items, totalMinor, termsVersion | TransactionReviewSheet |
-| ask_execution_viewed | executionId, outcome (processing/partial/confirmed/failed) | ExecutionStatusScreen |
-| ask_handoff_started | threadId, includeTranscript | HandoffSheet |
-| mandate_created / mandate_paused / mandate_revoked | mandateId, action, caps | MandateEditor |
-| mandate_receipt_viewed | executionId, outcome (done/blocked) | MandateReceiptScreen |
-| travel_search | mode, from, to, dates, pax, withStay | FlightSearchScreen |
-| travel_results_viewed | searchId, count, soldOut, guaranteedCount | FlightResultsScreen |
-| travel_offer_selected | offerId, fareFamily, priceMinor | OfferCard |
-| travel_checkout_viewed / travel_checkout_paid / travel_checkout_repriced | cartId, items, totalMinor, diffMinor | TravelCheckoutScreen |
-| travel_order_status_viewed | orderId, state | OrderStatusScreen |
-| travel_disruption_viewed / travel_switch_confirmed / travel_refund_requested | orderId, covered, ruleId | DisruptionScreen |
-| reservation_attached / reservation_failed | orderId, pickupAt, classId, reason | AttachAirportRideScreen |
-| quote_savings_shown / quote_savings_changed | quoteId, adjustmentTypes[], reason | SavingsBreakdown |
-| benefits_viewed · benefit_change_viewed | credits, offers, changeKind | BenefitsScreen |
-| referral_shared · referral_status_viewed | channel, stageCounts | ReferralsScreen |
-| driver_incentive_strip_shown · driver_incentives_viewed · driver_commission_detail_viewed · driver_statement_viewed | kind, endsAt, eligibleUsed/cap | driver screens |
-| web_handoff_clicked / web_handoff_fallback | tripId, hasApp?, attributionToken | HandoffBanner |
-| growth_campaign_saved / simulated / submitted / decision | campaignId, version, state | admin |
-| growth_assistant_proposal_saved | threadId, draftCampaignId | admin |
+
+| Event                                                                                                               | Props                                                      | Fired from              |
+| ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------- |
+| ask_thread_opened                                                                                                   | source (home/web/deeplink), flagsOn                        | AskScreen mount         |
+| ask_message_sent                                                                                                    | threadId, chars, hasAttachedPlan                           | composer                |
+| ask_plan_rendered                                                                                                   | threadId, liveCards, suggestionCards                       | PlanCard                |
+| ask_edit_in_form                                                                                                    | threadId, target route                                     | PlanCard                |
+| ask_review_opened / ask_review_confirmed / ask_review_expired                                                       | reviewId, items, totalMinor, termsVersion                  | TransactionReviewSheet  |
+| ask_execution_viewed                                                                                                | executionId, outcome (processing/partial/confirmed/failed) | ExecutionStatusScreen   |
+| ask_handoff_started                                                                                                 | threadId, includeTranscript                                | HandoffSheet            |
+| mandate_created / mandate_paused / mandate_revoked                                                                  | mandateId, action, caps                                    | MandateEditor           |
+| mandate_receipt_viewed                                                                                              | executionId, outcome (done/blocked)                        | MandateReceiptScreen    |
+| travel_search                                                                                                       | mode, from, to, dates, pax, withStay                       | FlightSearchScreen      |
+| travel_results_viewed                                                                                               | searchId, count, soldOut, guaranteedCount                  | FlightResultsScreen     |
+| travel_offer_selected                                                                                               | offerId, fareFamily, priceMinor                            | OfferCard               |
+| travel_checkout_viewed / travel_checkout_paid / travel_checkout_repriced                                            | cartId, items, totalMinor, diffMinor                       | TravelCheckoutScreen    |
+| travel_order_status_viewed                                                                                          | orderId, state                                             | OrderStatusScreen       |
+| travel_disruption_viewed / travel_switch_confirmed / travel_refund_requested                                        | orderId, covered, ruleId                                   | DisruptionScreen        |
+| reservation_attached / reservation_failed                                                                           | orderId, pickupAt, classId, reason                         | AttachAirportRideScreen |
+| quote_savings_shown / quote_savings_changed                                                                         | quoteId, adjustmentTypes[], reason                         | SavingsBreakdown        |
+| benefits_viewed · benefit_change_viewed                                                                             | credits, offers, changeKind                                | BenefitsScreen          |
+| referral_shared · referral_status_viewed                                                                            | channel, stageCounts                                       | ReferralsScreen         |
+| driver_incentive_strip_shown · driver_incentives_viewed · driver_commission_detail_viewed · driver_statement_viewed | kind, endsAt, eligibleUsed/cap                             | driver screens          |
+| web_handoff_clicked / web_handoff_fallback                                                                          | tripId, hasApp?, attributionToken                          | HandoffBanner           |
+| growth_campaign_saved / simulated / submitted / decision                                                            | campaignId, version, state                                 | admin                   |
+| growth_assistant_proposal_saved                                                                                     | threadId, draftCampaignId                                  | admin                   |
+
 No PII in any property. Server-side events (contracts/events) carry money and outcomes.

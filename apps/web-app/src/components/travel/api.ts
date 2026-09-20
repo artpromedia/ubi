@@ -172,9 +172,7 @@ export function streamAskMessage(
 }
 
 function emitFrame(frame: string, onEvent: (event: AskEvent) => void): void {
-  const dataLine = frame
-    .split("\n")
-    .find((line) => line.startsWith("data:"));
+  const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
   if (!dataLine) return;
   const payload = dataLine.slice(5).trim();
   if (!payload || payload === "[DONE]") return;

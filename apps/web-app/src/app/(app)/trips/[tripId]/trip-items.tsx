@@ -26,8 +26,8 @@ export function TripItems({ tripId }: { tripId: string }) {
   if (isError || !trip) {
     return (
       <p className="p-4 text-[12.5px] text-[#C53030]">
-        We couldn&apos;t load this trip. The link may have expired — open the UBI app to
-        manage it.
+        We couldn&apos;t load this trip. The link may have expired — open the
+        UBI app to manage it.
       </p>
     );
   }
@@ -41,7 +41,10 @@ export function TripItems({ tripId }: { tripId: string }) {
         All times {trip.timezone} · you&apos;re on the web version
       </p>
       {trip.items.map((it, i) => (
-        <Card key={it.orderId ?? it.reservationId ?? it.title + i} className="space-y-1.5 rounded-2xl p-4">
+        <Card
+          key={it.orderId ?? it.reservationId ?? it.title + i}
+          className="space-y-1.5 rounded-2xl p-4"
+        >
           <div className="flex items-center justify-between">
             {it.dateLabel ? (
               <span className="text-[11px] font-semibold uppercase tracking-wide text-[#2B6CB0]">
@@ -54,13 +57,19 @@ export function TripItems({ tripId }: { tripId: string }) {
               {it.status.replace(/_/g, " ")}
             </Badge>
           </div>
-          <div className="text-[15px] font-semibold text-[#191414]">{it.title}</div>
-          {it.subtitle ? <div className="text-xs text-[#666]">{it.subtitle}</div> : null}
-          {it.refs ? <div className="text-xs text-[#666]">{it.refs}</div> : null}
+          <div className="text-[15px] font-semibold text-[#191414]">
+            {it.title}
+          </div>
+          {it.subtitle ? (
+            <div className="text-xs text-[#666]">{it.subtitle}</div>
+          ) : null}
+          {it.refs ? (
+            <div className="text-xs text-[#666]">{it.refs}</div>
+          ) : null}
           {it.kind === "ride_reservation" ? (
             <p className="text-xs text-[#666]">
-              Rides are booked in the app (live driver tracking needs it). We&apos;ll remind
-              you on landing.{" "}
+              Rides are booked in the app (live driver tracking needs it).
+              We&apos;ll remind you on landing.{" "}
               <a
                 className="font-semibold text-[#18A349]"
                 href={"https://links.ubi.africa/trips/" + tripId}

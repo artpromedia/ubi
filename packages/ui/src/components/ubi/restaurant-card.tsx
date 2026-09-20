@@ -43,7 +43,7 @@ const restaurantCardVariants = cva(
       size: "md",
       interactive: true,
     },
-  }
+  },
 );
 
 export interface RestaurantCardProps
@@ -102,7 +102,7 @@ const RestaurantCard = React.forwardRef<HTMLDivElement, RestaurantCardProps>(
       onClick,
       ...props
     },
-    ref
+    ref,
   ) => {
     return (
       <div
@@ -113,7 +113,7 @@ const RestaurantCard = React.forwardRef<HTMLDivElement, RestaurantCardProps>(
             interactive: interactive || !!onClick,
           }),
           !isOpen && "opacity-75",
-          className
+          className,
         )}
         onClick={onClick}
         role={onClick ? "button" : undefined}
@@ -163,7 +163,7 @@ const RestaurantCard = React.forwardRef<HTMLDivElement, RestaurantCardProps>(
             <h3
               className={cn(
                 "font-semibold truncate",
-                size === "sm" ? "text-sm" : "text-base"
+                size === "sm" ? "text-sm" : "text-base",
               )}
             >
               {name}
@@ -224,7 +224,7 @@ const RestaurantCard = React.forwardRef<HTMLDivElement, RestaurantCardProps>(
         </div>
       </div>
     );
-  }
+  },
 );
 RestaurantCard.displayName = "RestaurantCard";
 

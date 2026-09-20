@@ -173,10 +173,15 @@ const TextInner = <E extends React.ElementType = "p">(
 ) => {
   // Determine the element to render
   const getComponent = (): React.ElementType => {
-    if (asChild) {return Slot;}
-    if (as) {return as;}
-    if (variant && variantElementMap[variant])
-      {return variantElementMap[variant];}
+    if (asChild) {
+      return Slot;
+    }
+    if (as) {
+      return as;
+    }
+    if (variant && variantElementMap[variant]) {
+      return variantElementMap[variant];
+    }
     return "p";
   };
   const Component = getComponent();

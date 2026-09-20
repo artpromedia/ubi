@@ -76,7 +76,11 @@ function getH3Neighbors(h3Index: string): string[] {
   ];
 
   return offsets.map(([latOff, lngOff]) =>
-    latLngToH3(center.latitude + (latOff ?? 0), center.longitude + (lngOff ?? 0), resolution)
+    latLngToH3(
+      center.latitude + (latOff ?? 0),
+      center.longitude + (lngOff ?? 0),
+      resolution,
+    ),
   );
 }
 
@@ -117,7 +121,7 @@ export class DemandForecastService implements IDemandForecastService {
   // ===========================================================================
 
   async getForecast(
-    request: DemandForecastRequest
+    request: DemandForecastRequest,
   ): Promise<DemandForecastResponse> {
     const startTime = Date.now();
     const forecasts: DemandForecast[] = [];
@@ -129,7 +133,7 @@ export class DemandForecastService implements IDemandForecastService {
           h3Index,
           resolution,
           horizon,
-          request.includeConfidenceIntervals
+          request.includeConfidenceIntervals,
         );
         forecasts.push(forecast);
       }
@@ -147,7 +151,7 @@ export class DemandForecastService implements IDemandForecastService {
     h3Index: string,
     resolution: number,
     horizonMinutes: number,
-    includeConfidence?: boolean
+    includeConfidence?: boolean,
   ): Promise<DemandForecast> {
     // Check cache
     const cacheKey = `${h3Index}:${horizonMinutes}`;
@@ -194,7 +198,7 @@ export class DemandForecastService implements IDemandForecastService {
     const predictedSupply = this.predictSupply(
       h3Index,
       forecastTime,
-      currentSupply
+      currentSupply,
     );
 
     // Calculate confidence based on data availability and horizon
@@ -250,7 +254,7 @@ export class DemandForecastService implements IDemandForecastService {
 
   private calculateDemandFactors(
     forecastTime: Date,
-    features: Record<string, unknown>
+    features: Record<string, unknown>,
   ): DemandFactors {
     const hour = forecastTime.getHours();
     const dayOfWeek = forecastTime.getDay();
@@ -313,7 +317,7 @@ export class DemandForecastService implements IDemandForecastService {
   private predictSupply(
     _h3Index: string,
     forecastTime: Date,
-    currentSupply: number
+    currentSupply: number,
   ): number {
     const hour = forecastTime.getHours();
 
@@ -352,7 +356,7 @@ export class DemandForecastService implements IDemandForecastService {
   // ===========================================================================
 
   async getSupplyOptimizations(
-    request: SupplyOptimizationRequest
+    request: SupplyOptimizationRequest,
   ): Promise<SupplyOptimizationResponse> {
     const startTime = Date.now();
     const optimizations: SupplyOptimization[] = [];
@@ -363,7 +367,7 @@ export class DemandForecastService implements IDemandForecastService {
       const forecast = await this.generateForecast(
         targetH3,
         7,
-        request.optimizationHorizon
+        request.optimizationHorizon,
       );
       const gap = forecast.predictedDemand - forecast.predictedSupply;
 
@@ -372,7 +376,7 @@ export class DemandForecastService implements IDemandForecastService {
         const optimization = await this.generateOptimization(
           targetH3,
           gap,
-          request.maxIncentiveBudget
+          request.maxIncentiveBudget,
         );
 
         if (optimization) {
@@ -393,7 +397,7 @@ export class DemandForecastService implements IDemandForecastService {
     // Calculate expected improvement
     const expectedImprovement = optimizations.reduce(
       (sum, opt) => sum + opt.expectedImpact,
-      0
+      0,
     );
 
     return {
@@ -407,7 +411,7 @@ export class DemandForecastService implements IDemandForecastService {
   private async generateOptimization(
     targetH3: string,
     driversNeeded: number,
-    maxBudget?: number
+    maxBudget?: number,
   ): Promise<SupplyOptimization | null> {
     // Find nearby cells with surplus drivers
     const neighbors = getH3Neighbors(targetH3);
@@ -438,7 +442,7 @@ export class DemandForecastService implements IDemandForecastService {
     const baseIncentive = 200; // Base bonus in NGN
     const incentiveAmount = Math.min(
       baseIncentive * (1 + urgency),
-      maxBudget || 500
+      maxBudget || 500,
     );
 
     const now = new Date();
@@ -463,7 +467,7 @@ export class DemandForecastService implements IDemandForecastService {
   async recordActual(
     forecastId: string,
     actualDemand: number,
-    actualSupply: number
+    actualSupply: number,
   ): Promise<void> {
     // In production, would update database and calculate accuracy
     this.eventEmitter.emit("forecast:actual", {
@@ -503,7 +507,9 @@ export class DemandForecastService implements IDemandForecastService {
   }
 
   private generateId(): string {
-    return `fcst_${Date.now()}_${Math.random().toString(36).substring(2, 2 + 9)}`;
+    return `fcst_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 2 + 9)}`;
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {
@@ -609,7 +615,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   constructor(
     featureStore: FeatureStoreService,
-    demandService: DemandForecastService
+    demandService: DemandForecastService,
   ) {
     this.featureStore = featureStore;
     this.demandService = demandService;
@@ -630,13 +636,13 @@ export class DynamicPricingService implements IDynamicPricingService {
     // Calculate route estimates
     const { distanceKm, durationMinutes } = this.calculateRouteEstimates(
       request.pickupLocation,
-      request.dropoffLocation
+      request.dropoffLocation,
     );
 
     // Get surge for pickup location
     const pickupH3 = latLngToH3(
       request.pickupLocation.latitude,
-      request.pickupLocation.longitude
+      request.pickupLocation.longitude,
     );
     const surgeState = await this.getSurgeZone(pickupH3);
 
@@ -672,7 +678,7 @@ export class DynamicPricingService implements IDynamicPricingService {
         bookingFee: config.bookingFeeNGN,
         tollEstimate: await this.estimateTolls(
           request.pickupLocation,
-          request.dropoffLocation
+          request.dropoffLocation,
         ),
         surgeComponents:
           surgeMultiplier > 1
@@ -687,7 +693,7 @@ export class DynamicPricingService implements IDynamicPricingService {
             : [],
         discountComponents: this.buildDiscountComponents(
           promotionDiscount,
-          subscriptionDiscount
+          subscriptionDiscount,
         ),
       };
     }
@@ -717,7 +723,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private calculateRouteEstimates(
     pickup: GeoLocation,
-    dropoff: GeoLocation
+    dropoff: GeoLocation,
   ): { distanceKm: number; durationMinutes: number } {
     // Haversine distance
     const R = 6371; // Earth's radius in km
@@ -751,7 +757,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private async getUserDiscounts(
     userId?: string,
-    _subtotal?: number
+    _subtotal?: number,
   ): Promise<{ promotionDiscount: number; subscriptionDiscount: number }> {
     if (!userId) {
       return { promotionDiscount: 0, subscriptionDiscount: 0 };
@@ -763,7 +769,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private async estimateTolls(
     _pickup: GeoLocation,
-    _dropoff: GeoLocation
+    _dropoff: GeoLocation,
   ): Promise<number> {
     // In production, check if route passes through toll roads
     return 0;
@@ -771,7 +777,7 @@ export class DynamicPricingService implements IDynamicPricingService {
 
   private buildDiscountComponents(
     promotionDiscount: number,
-    subscriptionDiscount: number
+    subscriptionDiscount: number,
   ): DiscountComponent[] {
     const components: DiscountComponent[] = [];
 
@@ -830,19 +836,19 @@ export class DynamicPricingService implements IDynamicPricingService {
     const currentDemand = Number(locationFeatures.location_demand_current || 0);
     const currentSupply = Number(locationFeatures.location_supply_current || 0);
     const existingMultiplier = Number(
-      locationFeatures.location_surge_multiplier || 1.0
+      locationFeatures.location_surge_multiplier || 1.0,
     );
 
     // Calculate optimal surge multiplier
     const calculatedMultiplier = this.calculateSurgeMultiplier(
       currentDemand,
-      currentSupply
+      currentSupply,
     );
 
     // Smooth transition (don't jump too quickly)
     const smoothedMultiplier = this.smoothSurgeTransition(
       existingMultiplier,
-      calculatedMultiplier
+      calculatedMultiplier,
     );
 
     // Get forecast for trend
@@ -881,7 +887,7 @@ export class DynamicPricingService implements IDynamicPricingService {
     await this.featureStore.setFeatureValue(
       "location_surge_multiplier",
       h3Index,
-      smoothedMultiplier
+      smoothedMultiplier,
     );
 
     return surgeState;
@@ -891,7 +897,7 @@ export class DynamicPricingService implements IDynamicPricingService {
     // Calculate new surge based on demand/supply
     const multiplier = this.calculateSurgeMultiplier(
       request.demand,
-      request.supply
+      request.supply,
     );
 
     // Get current state
@@ -916,7 +922,7 @@ export class DynamicPricingService implements IDynamicPricingService {
     await this.featureStore.setFeatureValue(
       "location_surge_multiplier",
       request.h3Index,
-      smoothedMultiplier
+      smoothedMultiplier,
     );
 
     this.eventEmitter.emit("surge:updated", surgeState);
@@ -983,7 +989,9 @@ export class DynamicPricingService implements IDynamicPricingService {
   }
 
   private generateId(): string {
-    return `quote_${Date.now()}_${Math.random().toString(36).substring(2, 2 + 9)}`;
+    return `quote_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 2 + 9)}`;
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {

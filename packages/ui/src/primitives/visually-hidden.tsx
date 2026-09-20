@@ -6,10 +6,10 @@ import { cn } from "../lib/utils";
 
 /**
  * VisuallyHidden - Accessibility utility component
- * 
+ *
  * Hides content visually while keeping it accessible to screen readers.
  * Essential for providing context to assistive technologies.
- * 
+ *
  * @example
  * <button>
  *   <Icon><X /></Icon>
@@ -31,14 +31,14 @@ const VisuallyHidden = React.forwardRef<HTMLSpanElement, VisuallyHiddenProps>(
           // Screen reader only styles
           "absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0",
           "[clip:rect(0,0,0,0)]",
-          className
+          className,
         )}
         {...props}
       >
         {children}
       </span>
     );
-  }
+  },
 );
 VisuallyHidden.displayName = "VisuallyHidden";
 

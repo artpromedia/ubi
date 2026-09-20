@@ -107,7 +107,9 @@ export async function writeOutboxEventOnce(
     where: { idempotencyKey: input.idempotencyKey },
     select: { id: true },
   });
-  if (existing !== null) {return undefined;}
+  if (existing !== null) {
+    return undefined;
+  }
   return writeOutboxEvent(tx, input);
 }
 
@@ -120,7 +122,9 @@ export async function findOutboxByIdempotencyKey(
   idempotencyKey: string,
 ): Promise<Record<string, unknown> | undefined> {
   const row = await tx.outboxEvent.findUnique({ where: { idempotencyKey } });
-  if (row === null) {return undefined;}
+  if (row === null) {
+    return undefined;
+  }
   return typeof row.payload === "object" &&
     row.payload !== null &&
     !Array.isArray(row.payload)

@@ -466,8 +466,12 @@ export class PayoutService {
    * Get MoMo country code from provider
    */
   private getMomoCountry(provider: PaymentProvider): "GH" | "RW" | "UG" {
-    if (provider === PaymentProvider.MTN_MOMO_GH) {return "GH";}
-    if (provider === PaymentProvider.MTN_MOMO_RW) {return "RW";}
+    if (provider === PaymentProvider.MTN_MOMO_GH) {
+      return "GH";
+    }
+    if (provider === PaymentProvider.MTN_MOMO_RW) {
+      return "RW";
+    }
     return "UG";
   }
 

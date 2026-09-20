@@ -1,6 +1,6 @@
 /**
  * UBI Base ESLint Configuration
- * 
+ *
  * This is the foundation ESLint config that all other configs extend.
  * It includes rules that apply to all TypeScript code in the monorepo.
  */
@@ -12,11 +12,7 @@ module.exports = {
     ecmaVersion: "latest",
     sourceType: "module",
   },
-  plugins: [
-    "@typescript-eslint",
-    "import",
-    "turbo",
-  ],
+  plugins: ["@typescript-eslint", "import", "turbo"],
   extends: [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
@@ -131,8 +127,8 @@ module.exports = {
     "no-alert": "error",
     "prefer-const": "error",
     "no-var": "error",
-    "eqeqeq": ["error", "always"],
-    "curly": ["error", "all"],
+    eqeqeq: ["error", "always"],
+    curly: ["error", "all"],
     "no-nested-ternary": "warn",
     "no-unneeded-ternary": "error",
     "spaced-comment": ["error", "always", { markers: ["/"] }],

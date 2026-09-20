@@ -359,7 +359,9 @@ function collect(node: unknown, out: string[]): void {
     return;
   }
   if (node !== null && typeof node === "object") {
-    for (const value of Object.values(node)) {collect(value, out);}
+    for (const value of Object.values(node)) {
+      collect(value, out);
+    }
   }
 }
 

@@ -63,7 +63,7 @@ export function canCancelOrder(status: OrderStatusType): boolean {
  * Get next valid statuses for an order
  */
 export function getNextValidStatuses(
-  current: OrderStatusType
+  current: OrderStatusType,
 ): OrderStatusType[] {
   const transitions: Record<OrderStatusType, OrderStatusType[]> = {
     PENDING: ["CONFIRMED", "CANCELLED"],

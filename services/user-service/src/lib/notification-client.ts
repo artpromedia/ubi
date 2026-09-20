@@ -93,7 +93,10 @@ class NotificationClient {
    * Send an SMS message
    */
   async sendSMS(params: SendSMSParams): Promise<NotificationResponse> {
-    const response = await this.request<NotificationResponse>("/sms/send", params);
+    const response = await this.request<NotificationResponse>(
+      "/sms/send",
+      params,
+    );
     return response;
   }
 
@@ -129,7 +132,10 @@ class NotificationClient {
    * Send an email
    */
   async sendEmail(params: SendEmailParams): Promise<NotificationResponse> {
-    const response = await this.request<NotificationResponse>("/email/send", params);
+    const response = await this.request<NotificationResponse>(
+      "/email/send",
+      params,
+    );
     return response;
   }
 
@@ -142,10 +148,13 @@ class NotificationClient {
       templateData: Record<string, unknown>;
     },
   ): Promise<NotificationResponse> {
-    const response = await this.request<NotificationResponse>("/email/template", {
-      ...params,
-      templateId,
-    });
+    const response = await this.request<NotificationResponse>(
+      "/email/template",
+      {
+        ...params,
+        templateId,
+      },
+    );
     return response;
   }
 }

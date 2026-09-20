@@ -1062,7 +1062,7 @@ export default function () {
         Authorization: `Bearer ${__ENV.API_TOKEN}`,
         "Idempotency-Key": `test-${__VU}-${__ITER}`,
       },
-    }
+    },
   );
 
   check(res, {

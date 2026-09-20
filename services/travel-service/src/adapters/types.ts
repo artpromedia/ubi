@@ -191,7 +191,10 @@ export interface SupplierContext {
 /** Servicing surface shared by both kinds once an order exists. */
 export interface ServicingAdapter {
   readonly adapter: string;
-  refreshOffer(ctx: SupplierContext, offerRef: string): Promise<OfferValidation>;
+  refreshOffer(
+    ctx: SupplierContext,
+    offerRef: string,
+  ): Promise<OfferValidation>;
   /** Optional inventory hold / prebook; absent when the supplier does not hold. */
   hold?(ctx: SupplierContext, offerRef: string): Promise<HoldResult>;
   book(ctx: SupplierContext, request: BookRequest): Promise<BookResult>;
@@ -224,7 +227,10 @@ export interface StaySearchParams {
 
 export interface FlightSupplyAdapter extends ServicingAdapter {
   readonly kind: "flight";
-  search(ctx: SupplierContext, params: FlightSearchParams): Promise<SearchResult>;
+  search(
+    ctx: SupplierContext,
+    params: FlightSearchParams,
+  ): Promise<SearchResult>;
 }
 
 export interface StaySupplyAdapter extends ServicingAdapter {

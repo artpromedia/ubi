@@ -173,7 +173,11 @@ export class SOSEmergencyService extends EventEmitter {
 
     // Notify assigned agent
     if (incident.assignedAgentId) {
-      void this.notifyAgent(incident.assignedAgentId, "sos_cancelled", incident);
+      void this.notifyAgent(
+        incident.assignedAgentId,
+        "sos_cancelled",
+        incident,
+      );
     }
 
     // Archive incident
@@ -188,7 +192,9 @@ export class SOSEmergencyService extends EventEmitter {
 
   async verifyCancellation(incidentId: string, pin: string): Promise<boolean> {
     const incident = this.activeIncidents.get(incidentId);
-    if (!incident) {return false;}
+    if (!incident) {
+      return false;
+    }
 
     // In production, verify PIN against user's safety PIN
     const isValid = await this.verifyUserPin(incident.userId, pin);
@@ -279,7 +285,9 @@ export class SOSEmergencyService extends EventEmitter {
     reason: string,
   ): Promise<boolean> {
     const incident = this.activeIncidents.get(incidentId);
-    if (!incident) {return false;}
+    if (!incident) {
+      return false;
+    }
 
     incident.status = "FALSE_ALARM";
     incident.resolvedAt = new Date();
@@ -783,7 +791,9 @@ export class SOSEmergencyService extends EventEmitter {
     _incident: SOSIncident,
   ): Promise<void> {
     const agent = this.safetyAgents.get(agentId);
-    if (!agent) {return;}
+    if (!agent) {
+      return;
+    }
 
     // In production, send push notification to agent dashboard
     sosLogger.info(
@@ -996,21 +1006,33 @@ export class SOSEmergencyService extends EventEmitter {
       }
     }
 
-    if (updates.name !== undefined) {existing.name = updates.name;}
-    if (updates.phoneNumber !== undefined)
-      {existing.phoneNumber = updates.phoneNumber;}
-    if (updates.relationship !== undefined)
-      {existing.relationship = updates.relationship;}
-    if (updates.isPrimary !== undefined) {existing.isPrimary = updates.isPrimary;}
-    if (updates.whatsappEnabled !== undefined)
-      {existing.whatsappEnabled = updates.whatsappEnabled;}
-    if (updates.telegramEnabled !== undefined)
-      {existing.telegramEnabled = updates.telegramEnabled;}
-    if (updates.emailEnabled !== undefined)
-      {existing.emailEnabled = updates.emailEnabled;}
-    if (updates.email !== undefined) {existing.email = updates.email;}
-    if (updates.notifyOnTrip !== undefined)
-      {existing.notifyOnTrip = updates.notifyOnTrip;}
+    if (updates.name !== undefined) {
+      existing.name = updates.name;
+    }
+    if (updates.phoneNumber !== undefined) {
+      existing.phoneNumber = updates.phoneNumber;
+    }
+    if (updates.relationship !== undefined) {
+      existing.relationship = updates.relationship;
+    }
+    if (updates.isPrimary !== undefined) {
+      existing.isPrimary = updates.isPrimary;
+    }
+    if (updates.whatsappEnabled !== undefined) {
+      existing.whatsappEnabled = updates.whatsappEnabled;
+    }
+    if (updates.telegramEnabled !== undefined) {
+      existing.telegramEnabled = updates.telegramEnabled;
+    }
+    if (updates.emailEnabled !== undefined) {
+      existing.emailEnabled = updates.emailEnabled;
+    }
+    if (updates.email !== undefined) {
+      existing.email = updates.email;
+    }
+    if (updates.notifyOnTrip !== undefined) {
+      existing.notifyOnTrip = updates.notifyOnTrip;
+    }
 
     return existing;
   }

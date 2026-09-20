@@ -3,19 +3,21 @@
 // (Keychain, safe-area) so components render under react-test-renderer without a
 // device. babel-jest is pinned to an absolute path because pnpm's strict
 // node_modules does not hoist it into this app's tree.
-const path = require('path');
-const reactNativeDir = path.dirname(require.resolve('react-native/package.json'));
-const babelJest = require.resolve('babel-jest', { paths: [reactNativeDir] });
+const path = require("path");
+const reactNativeDir = path.dirname(
+  require.resolve("react-native/package.json"),
+);
+const babelJest = require.resolve("babel-jest", { paths: [reactNativeDir] });
 
 /** @type {import('jest').Config} */
 module.exports = {
-  preset: 'react-native',
+  preset: "react-native",
   rootDir: __dirname,
   transform: {
-    '^.+\\.(js|jsx|ts|tsx)$': babelJest,
+    "^.+\\.(js|jsx|ts|tsx)$": babelJest,
   },
-  setupFilesAfterEnv: ['<rootDir>/jest/setup.js'],
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  setupFilesAfterEnv: ["<rootDir>/jest/setup.js"],
+  moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   // The React Native transform is heavy; when all suites compile at once on a
   // cold cache the async provider tests can briefly starve. A generous timeout
   // keeps the run deterministic without slowing the (sub-second) happy path.
@@ -28,9 +30,6 @@ module.exports = {
   // ignore the rest of node_modules. @ubi/* packages resolve to real paths under
   // packages/ (outside node_modules), so they are always transformed.
   transformIgnorePatterns: [
-    'node_modules/(?!.*(?:react-native|@react-navigation))',
+    "node_modules/(?!.*(?:react-native|@react-navigation))",
   ],
-  // The first render in a suite pays the whole babel transform of the app graph;
-  // on slow CI runners that alone can exceed jest's 5s default.
-  testTimeout: 20000,
 };

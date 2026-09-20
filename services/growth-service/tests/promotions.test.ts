@@ -328,8 +328,8 @@ describe("promotion budget", () => {
       "v1",
       "v2",
     ]);
-    expect(resolution.dropped.map((d) => d.candidate.campaignVersionId)).toEqual(
-      ["v3"],
-    );
+    expect(
+      resolution.dropped.map((d) => d.candidate.campaignVersionId),
+    ).toEqual(["v3"]);
   });
 });

@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     telephone: false,
   },
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL || "https://app.ubi.africa"
+    process.env.NEXT_PUBLIC_APP_URL || "https://app.ubi.africa",
   ),
   alternates: {
     canonical: "/",

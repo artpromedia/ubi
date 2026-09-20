@@ -112,7 +112,9 @@ export function reachableStates(machine: MachineName): ReadonlySet<string> {
   const queue: string[] = [definition.initial];
   while (queue.length > 0) {
     const current = queue.shift();
-    if (current === undefined) {break;}
+    if (current === undefined) {
+      break;
+    }
     for (const next of transitionsFor(machine, current)) {
       if (!seen.has(next)) {
         seen.add(next);

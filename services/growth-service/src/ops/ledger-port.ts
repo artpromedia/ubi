@@ -127,7 +127,13 @@ export function createHttpLedger(options: LedgerHttpOptions): LedgerPort {
   const incentivePath = options.incentivePath ?? "/v1/finance/incentives";
   const benefitPath = options.benefitPath ?? "/v1/finance/benefits";
 
-  async function post(path: string, payload: unknown, key: string, actor: Actor, cityId: string | null): Promise<PostedEntry> {
+  async function post(
+    path: string,
+    payload: unknown,
+    key: string,
+    actor: Actor,
+    cityId: string | null,
+  ): Promise<PostedEntry> {
     const url = `${options.baseUrl.replace(/\/+$/, "")}${path}`;
     const headers: Record<string, string> = {
       "content-type": "application/json",

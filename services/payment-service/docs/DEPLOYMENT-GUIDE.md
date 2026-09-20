@@ -643,7 +643,7 @@ app.get("/health/ready", async (c) => {
   if (!dbHealthy || !redisHealthy) {
     return c.json(
       { status: "not ready", db: dbHealthy, redis: redisHealthy },
-      503
+      503,
     );
   }
 

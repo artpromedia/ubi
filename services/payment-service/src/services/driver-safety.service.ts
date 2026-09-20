@@ -87,7 +87,9 @@ export class DriverSafetyService extends EventEmitter {
     for (const incident of incidents) {
       const daysAgo =
         (Date.now() - incident.reportedAt.getTime()) / (24 * 60 * 60 * 1000);
-      if (daysAgo > 365) {continue;} // Only consider last year
+      if (daysAgo > 365) {
+        continue;
+      } // Only consider last year
 
       const recency = Math.max(0, 1 - daysAgo / 365);
 
@@ -209,7 +211,9 @@ export class DriverSafetyService extends EventEmitter {
     updates: Partial<RiskZone>,
   ): Promise<RiskZone | null> {
     const zone = this.riskZones.get(zoneId);
-    if (!zone) {return null;}
+    if (!zone) {
+      return null;
+    }
 
     Object.assign(zone, updates);
     this.riskZones.set(zoneId, zone);
@@ -585,11 +589,15 @@ export class DriverSafetyService extends EventEmitter {
     const atWeeklyLimit = weeklyHours >= this.MAX_WEEKLY_HOURS;
 
     let fatigueLevel: "low" | "medium" | "high" | "critical" = "low";
-    if (continuousDrivingHours >= this.MAX_CONTINUOUS_DRIVING_HOURS * 0.8)
-      {fatigueLevel = "medium";}
-    if (continuousDrivingHours >= this.MAX_CONTINUOUS_DRIVING_HOURS)
-      {fatigueLevel = "high";}
-    if (needsBreak && atWeeklyLimit) {fatigueLevel = "critical";}
+    if (continuousDrivingHours >= this.MAX_CONTINUOUS_DRIVING_HOURS * 0.8) {
+      fatigueLevel = "medium";
+    }
+    if (continuousDrivingHours >= this.MAX_CONTINUOUS_DRIVING_HOURS) {
+      fatigueLevel = "high";
+    }
+    if (needsBreak && atWeeklyLimit) {
+      fatigueLevel = "critical";
+    }
 
     const assessment: FatigueAssessment = {
       driverId,

@@ -49,7 +49,9 @@ export const cache = {
    */
   async get<T>(key: string): Promise<T | null> {
     const value = await redis.get(key);
-    if (!value) {return null;}
+    if (!value) {
+      return null;
+    }
 
     try {
       return JSON.parse(value) as T;
@@ -88,7 +90,9 @@ export const cache = {
     ttlSeconds: number,
   ): Promise<T> {
     const cached = await this.get<T>(key);
-    if (cached !== null) {return cached;}
+    if (cached !== null) {
+      return cached;
+    }
 
     const value = await fn();
     await this.set(key, value, ttlSeconds);

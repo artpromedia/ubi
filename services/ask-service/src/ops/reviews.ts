@@ -78,7 +78,8 @@ export async function getReview(
   const now = deps.now();
   if (
     row.status === "expired" ||
-    (row.status === "awaiting_confirmation" && row.expiresAt.getTime() <= now.getTime())
+    (row.status === "awaiting_confirmation" &&
+      row.expiresAt.getTime() <= now.getTime())
   ) {
     throw new ReviewExpiredError();
   }

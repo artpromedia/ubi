@@ -31,7 +31,9 @@ export function createHeaders(token?: string): AuthHeaders {
     Authorization: token ? `Bearer ${token}` : "",
     "Content-Type": "application/json",
     Accept: "application/json",
-    "X-Request-ID": `k6-${Date.now()}-${Math.random().toString(36).substring(2, 2 + 9)}`,
+    "X-Request-ID": `k6-${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 2 + 9)}`,
     "X-Client-Version": "1.0.0",
     "X-Device-Type": "web",
   };
@@ -57,7 +59,7 @@ export interface ApiResponse<T = unknown> {
 export function checkedGet<T>(
   url: string,
   headers: AuthHeaders,
-  checkName: string
+  checkName: string,
 ): ApiResponse<T> | null {
   const response = http.get(url, { headers });
 
@@ -87,7 +89,7 @@ export function checkedPost<T, B = unknown>(
   body: B,
   headers: AuthHeaders,
   checkName: string,
-  expectedStatus: number = 200
+  expectedStatus: number = 200,
 ): ApiResponse<T> | null {
   const response = http.post(url, JSON.stringify(body), { headers });
 
@@ -117,7 +119,7 @@ export function checkedPut<T, B = unknown>(
   url: string,
   body: B,
   headers: AuthHeaders,
-  checkName: string
+  checkName: string,
 ): ApiResponse<T> | null {
   const response = http.put(url, JSON.stringify(body), { headers });
 
@@ -144,7 +146,7 @@ export function checkedPut<T, B = unknown>(
 export function checkedDelete(
   url: string,
   headers: AuthHeaders,
-  checkName: string
+  checkName: string,
 ): boolean {
   const response = http.del(url, null, { headers });
 
@@ -173,7 +175,7 @@ export interface BatchRequest {
 
 export function batchRequests(
   requests: BatchRequest[],
-  checkName: string
+  checkName: string,
 ): RefinedResponse<ResponseType>[] {
   const batchArray = requests.map((req) => {
     return {
@@ -200,7 +202,7 @@ export function batchRequests(
 export function withRetry<T>(
   fn: () => T | null,
   maxRetries: number = 3,
-  backoffMs: number = 1000
+  backoffMs: number = 1000,
 ): T | null {
   let lastError: unknown;
   let retryCount = 0;
@@ -221,8 +223,6 @@ export function withRetry<T>(
     }
   }
 
-  console.error(
-    `All ${maxRetries} retries failed. Last error: ${lastError}`
-  );
+  console.error(`All ${maxRetries} retries failed. Last error: ${lastError}`);
   return null;
 }

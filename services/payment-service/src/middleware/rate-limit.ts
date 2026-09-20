@@ -6,7 +6,6 @@ import { rateLimiter } from "../lib/redis";
 
 import type { Context, Next } from "hono";
 
-
 interface RateLimitOptions {
   limit: number;
   windowSeconds: number;
@@ -51,7 +50,7 @@ export function rateLimit(options: RateLimitOptions) {
             },
           },
         },
-        429
+        429,
       );
     }
 

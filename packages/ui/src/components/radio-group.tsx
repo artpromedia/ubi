@@ -38,7 +38,7 @@ const RadioGroupItem = React.forwardRef<
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-[state=checked]:border-primary",
-        className
+        className,
       )}
       {...props}
     >
@@ -53,8 +53,9 @@ RadioGroupItem.displayName = RadioGroupPrimitive.Item.displayName;
 /**
  * Radio Group with label support
  */
-export interface RadioOptionProps
-  extends React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Item> {
+export interface RadioOptionProps extends React.ComponentPropsWithoutRef<
+  typeof RadioGroupPrimitive.Item
+> {
   label: string;
   description?: string;
 }
@@ -85,8 +86,9 @@ RadioOption.displayName = "RadioOption";
 /**
  * Radio Card for larger selectable cards
  */
-export interface RadioCardProps
-  extends React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Item> {
+export interface RadioCardProps extends React.ComponentPropsWithoutRef<
+  typeof RadioGroupPrimitive.Item
+> {
   children: React.ReactNode;
 }
 
@@ -103,7 +105,7 @@ const RadioCard = React.forwardRef<
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-[state=checked]:border-primary data-[state=checked]:bg-primary/5",
-        className
+        className,
       )}
       {...props}
     >
@@ -114,4 +116,3 @@ const RadioCard = React.forwardRef<
 RadioCard.displayName = "RadioCard";
 
 export { RadioCard, RadioGroup, RadioGroupItem, RadioOption };
-

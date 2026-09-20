@@ -28,11 +28,12 @@ const avatarVariants = cva(
     defaultVariants: {
       size: "md",
     },
-  }
+  },
 );
 
 export interface AvatarProps
-  extends React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Root>,
+  extends
+    React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Root>,
     VariantProps<typeof avatarVariants> {
   /** Show online/offline status indicator */
   status?: "online" | "offline" | "away" | "busy";
@@ -65,7 +66,7 @@ const Avatar = React.forwardRef<
           size === "md" && "h-2.5 w-2.5",
           size === "lg" && "h-3 w-3",
           size === "xl" && "h-3.5 w-3.5",
-          size === "2xl" && "h-4 w-4"
+          size === "2xl" && "h-4 w-4",
         )}
       />
     )}
@@ -93,7 +94,7 @@ const AvatarFallback = React.forwardRef<
     ref={ref}
     className={cn(
       "flex h-full w-full items-center justify-center rounded-full bg-muted font-medium text-muted-foreground",
-      className
+      className,
     )}
     {...props}
   />
@@ -120,11 +121,7 @@ const AvatarGroup = React.forwardRef<HTMLDivElement, AvatarGroupProps>(
     const remainingCount = childArray.length - max;
 
     return (
-      <div
-        ref={ref}
-        className={cn("flex -space-x-2", className)}
-        {...props}
-      >
+      <div ref={ref} className={cn("flex -space-x-2", className)} {...props}>
         {visibleChildren.map((child, index) => (
           <div
             key={index}
@@ -132,14 +129,16 @@ const AvatarGroup = React.forwardRef<HTMLDivElement, AvatarGroupProps>(
             style={{ zIndex: visibleChildren.length - index }}
           >
             {React.isValidElement(child) &&
-              React.cloneElement(child as React.ReactElement<AvatarProps>, { size })}
+              React.cloneElement(child as React.ReactElement<AvatarProps>, {
+                size,
+              })}
           </div>
         ))}
         {remainingCount > 0 && (
           <div
             className={cn(
               avatarVariants({ size }),
-              "flex items-center justify-center bg-muted ring-2 ring-background"
+              "flex items-center justify-center bg-muted ring-2 ring-background",
             )}
             style={{ zIndex: 0 }}
           >
@@ -150,9 +149,8 @@ const AvatarGroup = React.forwardRef<HTMLDivElement, AvatarGroupProps>(
         )}
       </div>
     );
-  }
+  },
 );
 AvatarGroup.displayName = "AvatarGroup";
 
 export { Avatar, AvatarFallback, AvatarGroup, AvatarImage, avatarVariants };
-

@@ -26,7 +26,10 @@ interface RunResult {
   reasonCode: string | null;
   replayed: boolean;
   execution: { id: string; outcome: string; reasonCode: string | null };
-  grant: { id: string; total: { amountMinor: number; currency: string } } | null;
+  grant: {
+    id: string;
+    total: { amountMinor: number; currency: string };
+  } | null;
 }
 
 interface Envelope<T> {

@@ -44,15 +44,22 @@ function linkedFromOrder(order: OrderRecord, disrupted: boolean): JsonRecord {
       ? (order.supplierRefs as JsonRecord)
       : {};
   const subtitleParts: string[] = [];
-  if (typeof refs.pnr === "string") {subtitleParts.push(`PNR ${refs.pnr}`);}
-  if (typeof refs.bookingRef === "string") {subtitleParts.push(`Ref ${refs.bookingRef}`);}
+  if (typeof refs.pnr === "string") {
+    subtitleParts.push(`PNR ${refs.pnr}`);
+  }
+  if (typeof refs.bookingRef === "string") {
+    subtitleParts.push(`Ref ${refs.bookingRef}`);
+  }
   return {
     kind: order.kind,
     orderId: order.id,
     title: order.kind === "flight" ? "Flight" : "Stay",
     subtitle: subtitleParts.join(" · "),
     status: ORDER_STATUS[order.state] ?? "supplier_pending",
-    charged: { amountMinor: Number(order.chargedMinor), currency: order.currency },
+    charged: {
+      amountMinor: Number(order.chargedMinor),
+      currency: order.currency,
+    },
     policy:
       typeof order.policy === "object" && order.policy !== null
         ? JSON.stringify(order.policy)
@@ -99,7 +106,10 @@ export async function getLinked(
       items.push({
         kind: "ride_reservation",
         reservationId: reservation.reservationId,
-        title: reservation.direction === "to_airport" ? "Ride to airport" : "Ride from airport",
+        title:
+          reservation.direction === "to_airport"
+            ? "Ride to airport"
+            : "Ride from airport",
         status: "reserved",
         actions: [],
       });

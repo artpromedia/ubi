@@ -26,7 +26,12 @@ import {
 
 import { cartView, type CartView, type PricedItem } from "./carts";
 import { toJson } from "./json";
-import { advanceOrder, orderView, type OrderRow, type OrderView } from "./ladder";
+import {
+  advanceOrder,
+  orderView,
+  type OrderRow,
+  type OrderView,
+} from "./ladder";
 import { withOutbox } from "./outbox";
 import { adapterFor, contextFor, loadSupplier } from "./suppliers";
 import { deterministicId, generateId } from "../lib/ids";
@@ -38,7 +43,11 @@ import type { BookResult, OfferValidation } from "../adapters/types";
 
 export type CheckoutResult =
   | { readonly kind: "repriced"; readonly cart: CartView }
-  | { readonly kind: "ok"; readonly tripId: string; readonly orders: readonly OrderView[] };
+  | {
+      readonly kind: "ok";
+      readonly tripId: string;
+      readonly orders: readonly OrderView[];
+    };
 
 export interface CheckoutInput {
   readonly actor: Actor;
@@ -83,9 +92,13 @@ export async function checkout(
     );
   }
 
-  const cart = await deps.db.travelCart.findUnique({ where: { id: input.cartId } });
+  const cart = await deps.db.travelCart.findUnique({
+    where: { id: input.cartId },
+  });
   if (cart === null || cart.userId !== input.actor.id) {
-    throw new ContractError("not_found", "no such cart", { cartId: input.cartId });
+    throw new ContractError("not_found", "no such cart", {
+      cartId: input.cartId,
+    });
   }
 
   const scoped = scopedIdempotencyKey(
@@ -97,7 +110,9 @@ export async function checkout(
 
   // Whole-checkout replay: the trip already exists, so return the orders the
   // first attempt created rather than booking again.
-  const existingTrip = await deps.db.travelTrip.findUnique({ where: { id: tripId } });
+  const existingTrip = await deps.db.travelTrip.findUnique({
+    where: { id: tripId },
+  });
   if (existingTrip !== null) {
     const orders = await deps.db.travelOrder.findMany({
       where: { tripId },
@@ -110,7 +125,9 @@ export async function checkout(
     };
   }
 
-  const items = Array.isArray(cart.items) ? (cart.items as unknown as PricedItem[]) : [];
+  const items = Array.isArray(cart.items)
+    ? (cart.items as unknown as PricedItem[])
+    : [];
   if (items.length === 0) {
     throw new ContractError("validation_failed", "this cart has no items");
   }
@@ -196,7 +213,9 @@ export async function checkout(
   const orders: OrderView[] = [];
   for (let index = 0; index < revalidated.length; index += 1) {
     const item = revalidated[index];
-    if (item === undefined) {continue;}
+    if (item === undefined) {
+      continue;
+    }
     const order = await executeItem(deps, {
       input,
       scoped,
@@ -243,7 +262,9 @@ async function executeItem(
   const orderId = deterministicId("tord", `${scoped}:${index}`);
 
   // Per-item replay: this item was already processed on an earlier attempt.
-  const existing = await deps.db.travelOrder.findUnique({ where: { id: orderId } });
+  const existing = await deps.db.travelOrder.findUnique({
+    where: { id: orderId },
+  });
   if (existing !== null) {
     return orderView(existing as unknown as OrderRow);
   }
@@ -273,7 +294,9 @@ async function executeItem(
           : BigInt(offer.supplierPrice.amountMinor),
       supplierCurrency: offer.supplierPrice?.currency ?? null,
       fxRate: offer.fx?.rate ?? null,
-      fxLockedUntil: offer.fx?.lockedUntil ? new Date(offer.fx.lockedUntil) : null,
+      fxLockedUntil: offer.fx?.lockedUntil
+        ? new Date(offer.fx.lockedUntil)
+        : null,
       payAtPropertyMinor: BigInt(offer.payAtProperty?.amountMinor ?? 0),
       policy: toJson(offer.policy),
       protectionRuleId: item.priced.protectionRuleId,
@@ -342,7 +365,10 @@ async function executeItem(
       orderId,
       to: "failed_released",
       input,
-      detail: { reason: book.reason ?? "supplier_rejected", releaseRef: release.ref },
+      detail: {
+        reason: book.reason ?? "supplier_rejected",
+        releaseRef: release.ref,
+      },
       releasedMinor: release.amount.amountMinor,
     });
     return orderView(current);
@@ -384,7 +410,10 @@ async function executeItem(
     orderId,
     to: "confirmed",
     input,
-    detail: { supplierRefs: book.supplierRefs as unknown as JsonValue, captureRef: capture.ref },
+    detail: {
+      supplierRefs: book.supplierRefs as unknown as JsonValue,
+      captureRef: capture.ref,
+    },
     supplierRefs: book.supplierRefs as unknown as JsonRecord,
     chargedMinor: capture.amount.amountMinor,
   });
@@ -434,7 +463,8 @@ async function writeDocuments(
     }
     return;
   }
-  const ref = book.supplierRefs.bookingRef ?? book.supplierRefs.orderRef ?? orderId;
+  const ref =
+    book.supplierRefs.bookingRef ?? book.supplierRefs.orderRef ?? orderId;
   await deps.db.travelDocument.create({
     data: {
       id: generateId("tdoc"),
@@ -462,7 +492,9 @@ async function transition(
   args: TransitionArgs,
 ): Promise<OrderRow> {
   const row = await withOutbox(deps.db, async (tx) => {
-    const order = await tx.travelOrder.findUnique({ where: { id: args.orderId } });
+    const order = await tx.travelOrder.findUnique({
+      where: { id: args.orderId },
+    });
     if (order === null) {
       throw new ContractError("not_found", "order vanished mid-checkout", {
         orderId: args.orderId,
@@ -477,10 +509,16 @@ async function transition(
       detail: args.detail,
       occurredAt: deps.now(),
       correlationId: args.input.correlationId,
-      ...(args.supplierRefs === undefined ? {} : { supplierRefs: args.supplierRefs }),
+      ...(args.supplierRefs === undefined
+        ? {}
+        : { supplierRefs: args.supplierRefs }),
       ...(args.heldMinor === undefined ? {} : { heldMinor: args.heldMinor }),
-      ...(args.chargedMinor === undefined ? {} : { chargedMinor: args.chargedMinor }),
-      ...(args.releasedMinor === undefined ? {} : { releasedMinor: args.releasedMinor }),
+      ...(args.chargedMinor === undefined
+        ? {}
+        : { chargedMinor: args.chargedMinor }),
+      ...(args.releasedMinor === undefined
+        ? {}
+        : { releasedMinor: args.releasedMinor }),
     });
     return { result: result.order, events: result.events };
   });

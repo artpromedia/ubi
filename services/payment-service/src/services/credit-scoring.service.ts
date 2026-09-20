@@ -73,7 +73,9 @@ export class CreditScoringService {
       name: "Wallet Activity",
       score: walletActivityScore.score,
       weight: FACTOR_WEIGHTS.WALLET_ACTIVITY,
-      impact: this.convertImpactLevel(this.getImpactLevel(walletActivityScore.score)),
+      impact: this.convertImpactLevel(
+        this.getImpactLevel(walletActivityScore.score),
+      ),
       details: walletActivityScore.description,
     });
 
@@ -83,7 +85,9 @@ export class CreditScoringService {
       name: "Payment History",
       score: paymentHistoryScore.score,
       weight: FACTOR_WEIGHTS.PAYMENT_HISTORY,
-      impact: this.convertImpactLevel(this.getImpactLevel(paymentHistoryScore.score)),
+      impact: this.convertImpactLevel(
+        this.getImpactLevel(paymentHistoryScore.score),
+      ),
       details: paymentHistoryScore.description,
     });
 
@@ -113,7 +117,9 @@ export class CreditScoringService {
       name: "Account Age",
       score: accountAgeScore.score,
       weight: FACTOR_WEIGHTS.ACCOUNT_AGE,
-      impact: this.convertImpactLevel(this.getImpactLevel(accountAgeScore.score)),
+      impact: this.convertImpactLevel(
+        this.getImpactLevel(accountAgeScore.score),
+      ),
       details: accountAgeScore.description,
     });
 
@@ -212,7 +218,7 @@ export class CreditScoringService {
    */
   async getScoreHistory(
     userId: string,
-    limit: number = 12
+    limit: number = 12,
   ): Promise<Array<{ score: number; calculatedAt: Date }>> {
     const scores = await prisma.creditScore.findMany({
       where: { userId },
@@ -251,7 +257,7 @@ export class CreditScoringService {
     if (score < SCORE_RANGES.FAIR.min) {
       eligible = false;
       reasons.push(
-        `Credit score (${score}) below minimum requirement (${SCORE_RANGES.FAIR.min})`
+        `Credit score (${score}) below minimum requirement (${SCORE_RANGES.FAIR.min})`,
       );
     }
 
@@ -272,7 +278,7 @@ export class CreditScoringService {
 
     // Check account age
     const accountAgeMonths = this.getAccountAgeInMonths(
-      user?.createdAt || new Date()
+      user?.createdAt || new Date(),
     );
     if (accountAgeMonths < 3) {
       eligible = false;
@@ -296,7 +302,7 @@ export class CreditScoringService {
       }
 
       reasons.push(
-        `Your score of ${score} qualifies for loans up to ${maxLoanAmount}`
+        `Your score of ${score} qualifies for loans up to ${maxLoanAmount}`,
       );
     }
 
@@ -320,7 +326,7 @@ export class CreditScoringService {
 
     // Sort factors by impact (lowest score first)
     const sortedFactors = [...scoreResult.factors].sort(
-      (a, b) => a.score - b.score
+      (a, b) => a.score - b.score,
     );
 
     for (const factor of sortedFactors.slice(0, 3)) {
@@ -357,7 +363,7 @@ export class CreditScoringService {
   // ===========================================
 
   private async calculateWalletActivityScore(
-    userId: string
+    userId: string,
   ): Promise<{ score: number; description: string }> {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
@@ -394,7 +400,7 @@ export class CreditScoringService {
   }
 
   private async calculatePaymentHistoryScore(
-    userId: string
+    userId: string,
   ): Promise<{ score: number; description: string }> {
     const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
 
@@ -408,7 +414,7 @@ export class CreditScoringService {
 
     const totalPayments = payments.length;
     const completedPayments = payments.filter(
-      (p) => p.status === "COMPLETED"
+      (p) => p.status === "COMPLETED",
     ).length;
     const failedPayments = payments.filter((p) => p.status === "FAILED").length;
 
@@ -437,7 +443,7 @@ export class CreditScoringService {
   }
 
   private async calculateSavingsScore(
-    userId: string
+    userId: string,
   ): Promise<{ score: number; description: string }> {
     const wallet = await prisma.wallet.findUnique({
       where: { userId },
@@ -454,7 +460,7 @@ export class CreditScoringService {
 
     const totalSavings = pockets.reduce(
       (sum: number, p: any) => sum + Number(p.currentBalance),
-      0
+      0,
     );
     const hasAutoSave = pockets.some((p: any) => p.autoSaveEnabled);
     const hasRoundUp = pockets.some((p: any) => p.roundUpEnabled);
@@ -485,7 +491,7 @@ export class CreditScoringService {
   }
 
   private async calculateIncomeStabilityScore(
-    userId: string
+    userId: string,
   ): Promise<{ score: number; description: string }> {
     const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
 
@@ -607,7 +613,9 @@ export class CreditScoringService {
     return "LOW";
   }
 
-  private convertImpactLevel(level: "HIGH" | "MEDIUM" | "LOW"): "positive" | "negative" | "neutral" {
+  private convertImpactLevel(
+    level: "HIGH" | "MEDIUM" | "LOW",
+  ): "positive" | "negative" | "neutral" {
     if (level === "HIGH") return "positive";
     if (level === "MEDIUM") return "neutral";
     return "negative";
@@ -616,12 +624,12 @@ export class CreditScoringService {
   private getAccountAgeInMonths(createdAt: Date): number {
     const now = new Date();
     return Math.floor(
-      (now.getTime() - createdAt.getTime()) / (30 * 24 * 60 * 60 * 1000)
+      (now.getTime() - createdAt.getTime()) / (30 * 24 * 60 * 60 * 1000),
     );
   }
 
   private async getPreviousScore(
-    userId: string
+    userId: string,
   ): Promise<{ score: number } | null> {
     const previous = await prisma.creditScore.findFirst({
       where: { userId },
@@ -635,7 +643,7 @@ export class CreditScoringService {
 
   private async saveScore(
     userId: string,
-    result: CreditScoreResult
+    result: CreditScoreResult,
   ): Promise<void> {
     await prisma.creditScore.create({
       data: {

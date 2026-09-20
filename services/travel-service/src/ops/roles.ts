@@ -7,7 +7,10 @@
  * see their own orders, so a forbidden order is reported as `not_found` rather
  * than being made discoverable.
  */
-export const TRAVELLER_ROLES: ReadonlySet<string> = new Set(["rider", "driver"]);
+export const TRAVELLER_ROLES: ReadonlySet<string> = new Set([
+  "rider",
+  "driver",
+]);
 
 export const OPS_ROLES: ReadonlySet<string> = new Set([
   "admin",
@@ -23,7 +26,11 @@ export function isOpsRole(role: string): boolean {
 }
 
 export function actorTypeFor(role: string): string {
-  if (role === "rider") {return "rider";}
-  if (role === "driver") {return "driver";}
+  if (role === "rider") {
+    return "rider";
+  }
+  if (role === "driver") {
+    return "driver";
+  }
   return "agent";
 }

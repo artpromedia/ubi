@@ -191,9 +191,9 @@ describe("wallet transfer machine", () => {
 describe("travel order machine", () => {
   it("starts at payment_authorized and walks the confirm→ticket ladder", () => {
     expect(initialState("travelOrder")).toBe("payment_authorized");
-    expect(canTransition("travelOrder", "payment_authorized", "submitted")).toBe(
-      true,
-    );
+    expect(
+      canTransition("travelOrder", "payment_authorized", "submitted"),
+    ).toBe(true);
     expect(canTransition("travelOrder", "confirmed", "ticketed")).toBe(true);
     expect(canTransition("travelOrder", "ticketed", "completed")).toBe(true);
   });
@@ -218,9 +218,9 @@ describe("travel order machine", () => {
       "confirmed",
       "failed_released",
     ]);
-    expect(canTransition("travelOrder", "unknown_reconciling", "ticketed")).toBe(
-      false,
-    );
+    expect(
+      canTransition("travelOrder", "unknown_reconciling", "ticketed"),
+    ).toBe(false);
   });
 
   it("keeps failed_released, completed and refunded terminal", () => {

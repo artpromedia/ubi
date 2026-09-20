@@ -273,7 +273,6 @@ without it.
 > in `services/payment-service/QUARANTINE.md`. The original finding, below, is kept
 > for the record.
 
-
 `services/payment-service/src/types/prisma.d.ts` contains
 `declare module "@prisma/client" { ... }`. That is an **ambient module
 declaration**, so it _replaces_ the generated Prisma client's types for the whole

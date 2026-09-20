@@ -297,7 +297,9 @@ class OutboxRelayImpl implements OutboxRelay {
   }
 
   start(): void {
-    if (this.running) {return;}
+    if (this.running) {
+      return;
+    }
     this.running = true;
     this.schedule(0);
   }
@@ -314,7 +316,9 @@ class OutboxRelayImpl implements OutboxRelay {
     } catch (err) {
       this.logger.error({ err: errorMessage(err) }, "outbox relay pass failed");
     } finally {
-      if (this.running) {this.schedule(this.pollIntervalMs);}
+      if (this.running) {
+        this.schedule(this.pollIntervalMs);
+      }
     }
   }
 

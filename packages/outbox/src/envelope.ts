@@ -80,9 +80,15 @@ export function envelopeFromRow(row: RawOutboxRow): EnvelopeParse {
     cityId: row.city_id,
     payload: row.payload,
   };
-  if (row.sequence !== null) {candidate.sequence = Number(row.sequence);}
-  if (row.correlation_id !== null) {candidate.correlationId = row.correlation_id;}
-  if (row.causation_id !== null) {candidate.causationId = row.causation_id;}
+  if (row.sequence !== null) {
+    candidate.sequence = Number(row.sequence);
+  }
+  if (row.correlation_id !== null) {
+    candidate.correlationId = row.correlation_id;
+  }
+  if (row.causation_id !== null) {
+    candidate.causationId = row.causation_id;
+  }
 
   const parsed = EventEnvelopeSchema.safeParse(candidate);
   if (!parsed.success) {

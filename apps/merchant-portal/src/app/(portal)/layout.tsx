@@ -15,9 +15,7 @@ export default function PortalLayout({
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         <MerchantHeader />
-        <main className="flex-1 p-6 overflow-y-auto">
-          {children}
-        </main>
+        <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
     </div>
   );

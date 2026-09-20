@@ -158,8 +158,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         where: { phone: body.phone },
         select: { id: true, email: true, role: true, status: true },
       });
-      if (user === null)
-        {throw new ContractError("not_found", "No account uses that number");}
+      if (user === null) {
+        throw new ContractError("not_found", "No account uses that number");
+      }
       if (user.status === "SUSPENDED") {
         throw new ContractError("forbidden", "This account is suspended");
       }
@@ -294,8 +295,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         where: { id: principal.userId },
         select: { email: true },
       });
-      if (user === null)
-        {throw new ContractError("not_found", "Account not found");}
+      if (user === null) {
+        throw new ContractError("not_found", "Account not found");
+      }
 
       const outcome = await passSelfieStepUp(
         deps,
@@ -343,8 +345,9 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         where: { id: principal.userId },
         select: { email: true },
       });
-      if (user === null)
-        {throw new ContractError("not_found", "Account not found");}
+      if (user === null) {
+        throw new ContractError("not_found", "Account not found");
+      }
 
       const outcome = await approveFromTrustedDevice(
         deps,

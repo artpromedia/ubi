@@ -75,10 +75,7 @@ export function mandateToView(
     constraints: mandate.constraints,
     status: mandate.status,
     usage: {
-      amountUsed: money(
-        allowance?.amountUsedMinor ?? 0n,
-        mandate.currency,
-      ),
+      amountUsed: money(allowance?.amountUsedMinor ?? 0n, mandate.currency),
       runsUsed: allowance?.runsUsed ?? 0,
       periodStart: allowance === null ? null : isoDate(allowance.periodStart),
     },

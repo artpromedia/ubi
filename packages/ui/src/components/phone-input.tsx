@@ -85,7 +85,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
       id,
       name,
     },
-    ref
+    ref,
   ) => {
     const [isOpen, setIsOpen] = React.useState(false);
     const [selectedCountry, setSelectedCountry] = React.useState<Country>(
@@ -100,7 +100,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
             dialCode: "+234",
           }
         );
-      }
+      },
     );
     const [phoneNumber, setPhoneNumber] = React.useState(value?.number || "");
     const dropdownRef = React.useRef<HTMLDivElement>(null);
@@ -165,7 +165,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
             error ? "border-destructive" : "border-input",
             "focus-within:ring-2 focus-within:ring-offset-2",
             error ? "focus-within:ring-destructive" : "focus-within:ring-ring",
-            disabled && "cursor-not-allowed opacity-50"
+            disabled && "cursor-not-allowed opacity-50",
           )}
         >
           {/* Country selector */}
@@ -175,7 +175,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
             disabled={disabled}
             className={cn(
               "flex items-center gap-1 px-3 border-r border-input hover:bg-accent/50 transition-colors rounded-l-lg",
-              disabled && "cursor-not-allowed"
+              disabled && "cursor-not-allowed",
             )}
             aria-expanded={isOpen}
             aria-haspopup="listbox"
@@ -187,7 +187,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
             <ChevronDown
               className={cn(
                 "h-4 w-4 text-muted-foreground transition-transform",
-                isOpen && "rotate-180"
+                isOpen && "rotate-180",
               )}
             />
           </button>
@@ -205,7 +205,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
             className={cn(
               "flex-1 bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground",
               "focus-visible:outline-none",
-              disabled && "cursor-not-allowed"
+              disabled && "cursor-not-allowed",
             )}
           />
         </div>
@@ -224,7 +224,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
                 className={cn(
                   "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                   "hover:bg-accent hover:text-accent-foreground",
-                  country.code === selectedCountry.code && "bg-accent"
+                  country.code === selectedCountry.code && "bg-accent",
                 )}
                 role="option"
                 aria-selected={country.code === selectedCountry.code}
@@ -240,7 +240,7 @@ const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
         )}
       </div>
     );
-  }
+  },
 );
 PhoneInput.displayName = "PhoneInput";
 

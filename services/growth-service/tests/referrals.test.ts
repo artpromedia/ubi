@@ -5,13 +5,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  closeTestDb,
-  makeDeps,
-  seedCampaign,
-  testDb,
-  uid,
-} from "./helpers";
+import { closeTestDb, makeDeps, seedCampaign, testDb, uid } from "./helpers";
 import {
   claimAttribution,
   decideReview,
@@ -158,7 +152,9 @@ describe("qualification and reward", () => {
     });
     expect(result.outcome).toBe("rewarded");
 
-    const rewarded = await db.referral.findUnique({ where: { id: referralId } });
+    const rewarded = await db.referral.findUnique({
+      where: { id: referralId },
+    });
     expect(rewarded?.stage).toBe("rewarded");
     const rewardReservation = await db.promotionReservation.findFirst({
       where: { subjectId: referralId, adjustmentType: "referral_reward" },
@@ -173,7 +169,9 @@ describe("qualification and reward", () => {
       termsRef: "referral-terms-v2#3",
       correlationId: null,
     });
-    const reversed = await db.referral.findUnique({ where: { id: referralId } });
+    const reversed = await db.referral.findUnique({
+      where: { id: referralId },
+    });
     expect(reversed?.stage).toBe("reversed");
     const reservationAfter = await db.promotionReservation.findFirst({
       where: { subjectId: referralId, adjustmentType: "referral_reward" },
@@ -190,7 +188,11 @@ describe("qualification and reward", () => {
       referralId,
       qualifyingRideId: uid("ride"),
       signals: [
-        { rule: "shared_device", severity: "high", text: "same device fingerprint" },
+        {
+          rule: "shared_device",
+          severity: "high",
+          text: "same device fingerprint",
+        },
       ],
       correlationId: null,
     });
@@ -210,7 +212,9 @@ describe("qualification and reward", () => {
       correlationId: null,
     });
     expect(decision.stage).toBe("rewarded");
-    const rewarded = await db.referral.findUnique({ where: { id: referralId } });
+    const rewarded = await db.referral.findUnique({
+      where: { id: referralId },
+    });
     expect(rewarded?.stage).toBe("rewarded");
   });
 
@@ -221,7 +225,9 @@ describe("qualification and reward", () => {
       cityId: null,
       referralId,
       qualifyingRideId: uid("ride"),
-      signals: [{ rule: "shared_payment", severity: "high", text: "same card" }],
+      signals: [
+        { rule: "shared_payment", severity: "high", text: "same card" },
+      ],
       correlationId: null,
     });
     if (result.outcome !== "in_review") throw new Error("expected review");

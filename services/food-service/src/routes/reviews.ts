@@ -113,7 +113,9 @@ reviewRoutes.post("/", zValidator("json", createReviewSchema), async (c) => {
 
   // Calculate overall rating
   const ratings = [data.restaurantRating, data.foodRating];
-  if (data.deliveryRating) {ratings.push(data.deliveryRating);}
+  if (data.deliveryRating) {
+    ratings.push(data.deliveryRating);
+  }
   const overallRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
 
   const review = await prisma.review.create({

@@ -63,7 +63,9 @@ export async function auth(c: Context, next: Next): Promise<void> {
 
     await next();
   } catch (error) {
-    if (error instanceof HTTPException) {throw error;}
+    if (error instanceof HTTPException) {
+      throw error;
+    }
     throw new HTTPException(401, { message: "Invalid or expired token" });
   }
 }

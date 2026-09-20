@@ -10,26 +10,26 @@ requester selects the winner; the fee is debited exactly once at selection;
 one current execution plus at most one queued next job per driver across
 rides AND deliveries.
 
-| Doc | Contents |
-| --- | --- |
-| [TRACEABILITY.md](./TRACEABILITY.md) | Every board and business rule → contract, route, schema, test |
-| [RUNBOOK.md](./RUNBOOK.md) | Operating the engine: sweeps, reconciliation, kill switch, recovery |
-| [ROLLOUT.md](./ROLLOUT.md) | Activation checklist, policy values to record, residual blockers |
-| [../adr/0002-marketplace-award-authority.md](../adr/0002-marketplace-award-authority.md) | Architecture: one award authority, thin execution adapters |
+| Doc                                                                                      | Contents                                                            |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [TRACEABILITY.md](./TRACEABILITY.md)                                                     | Every board and business rule → contract, route, schema, test       |
+| [RUNBOOK.md](./RUNBOOK.md)                                                               | Operating the engine: sweeps, reconciliation, kill switch, recovery |
+| [ROLLOUT.md](./ROLLOUT.md)                                                               | Activation checklist, policy values to record, residual blockers    |
+| [../adr/0002-marketplace-award-authority.md](../adr/0002-marketplace-award-authority.md) | Architecture: one award authority, thin execution adapters          |
 
 ## Where the code lives
 
-| Concern | Location |
-| --- | --- |
-| Wire contracts | `packages/contracts/src/marketplace.ts`, `city-config.ts` (policy), `contracts/openapi/marketplace.yaml`, `contracts/state-machines.json` (mp*), `contracts/events/catalog-additions.md` |
-| Award engine (M02/M03/M03A/M05/M05A) | `services/ride-service/internal/marketplace/` (+ `internal/machine`, `internal/cityconfig/marketplace.go`, `internal/handler/marketplace.go`) |
-| Wallet encumbrances + settlement (M04/M06) | `services/payment-service/src/ledger/{mp-holds,mp-funding,balances,limits,ride-posting}.ts`, `src/routes/mp-holds.ts`, migration `20260920000000_mp_commission_holds` |
-| Realtime fan-out (M07) | `services/realtime-gateway/src/marketplace-events.ts` |
-| Gateway routing/scopes | `services/api-gateway/src/routes/proxy.ts`, `src/identity/scopes.ts` |
-| Delivery adapter | `services/delivery-service/internal/handlers/marketplace.go` |
-| Rider app (M08) | `apps/rider-mobile/src/screens/marketplace/`, `src/api/marketplace.ts` |
-| Driver app (M08) | `apps/driver-mobile/src/screens/marketplace/`, `src/api/marketplace.ts`, `src/lib/motion.ts` |
-| Admin console (M09) | `apps/admin-dashboard/src/app/(admin)/marketplace/`, `src/lib/marketplace-api.ts` |
+| Concern                                    | Location                                                                                                                                                                                  |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wire contracts                             | `packages/contracts/src/marketplace.ts`, `city-config.ts` (policy), `contracts/openapi/marketplace.yaml`, `contracts/state-machines.json` (mp\*), `contracts/events/catalog-additions.md` |
+| Award engine (M02/M03/M03A/M05/M05A)       | `services/ride-service/internal/marketplace/` (+ `internal/machine`, `internal/cityconfig/marketplace.go`, `internal/handler/marketplace.go`)                                             |
+| Wallet encumbrances + settlement (M04/M06) | `services/payment-service/src/ledger/{mp-holds,mp-funding,balances,limits,ride-posting}.ts`, `src/routes/mp-holds.ts`, migration `20260920000000_mp_commission_holds`                     |
+| Realtime fan-out (M07)                     | `services/realtime-gateway/src/marketplace-events.ts`                                                                                                                                     |
+| Gateway routing/scopes                     | `services/api-gateway/src/routes/proxy.ts`, `src/identity/scopes.ts`                                                                                                                      |
+| Delivery adapter                           | `services/delivery-service/internal/handlers/marketplace.go`                                                                                                                              |
+| Rider app (M08)                            | `apps/rider-mobile/src/screens/marketplace/`, `src/api/marketplace.ts`                                                                                                                    |
+| Driver app (M08)                           | `apps/driver-mobile/src/screens/marketplace/`, `src/api/marketplace.ts`, `src/lib/motion.ts`                                                                                              |
+| Admin console (M09)                        | `apps/admin-dashboard/src/app/(admin)/marketplace/`, `src/lib/marketplace-api.ts`                                                                                                         |
 
 ## Core invariants and where they are enforced
 

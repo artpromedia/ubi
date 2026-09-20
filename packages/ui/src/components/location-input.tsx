@@ -21,8 +21,10 @@ import { cn } from "../lib/utils";
  * />
  */
 
-export interface LocationInputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> {
+export interface LocationInputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "type"
+> {
   /** Label text */
   label?: string;
   /** Variant determines the icon color */
@@ -41,15 +43,8 @@ const variantColors = {
 
 const LocationInput = React.forwardRef<HTMLInputElement, LocationInputProps>(
   (
-    {
-      className,
-      label,
-      variant = "pickup",
-      error,
-      loading = false,
-      ...props
-    },
-    ref
+    { className, label, variant = "pickup", error, loading = false, ...props },
+    ref,
   ) => {
     return (
       <div className="w-full">
@@ -61,10 +56,7 @@ const LocationInput = React.forwardRef<HTMLInputElement, LocationInputProps>(
         <div className="relative">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
             <span
-              className={cn(
-                "h-2.5 w-2.5 rounded-full",
-                variantColors[variant]
-              )}
+              className={cn("h-2.5 w-2.5 rounded-full", variantColors[variant])}
             />
           </div>
           <Input
@@ -73,7 +65,7 @@ const LocationInput = React.forwardRef<HTMLInputElement, LocationInputProps>(
             className={cn(
               "pl-8 pr-8",
               error && "border-destructive focus-visible:ring-destructive",
-              className
+              className,
             )}
             {...props}
           />
@@ -102,12 +94,10 @@ const LocationInput = React.forwardRef<HTMLInputElement, LocationInputProps>(
             </div>
           )}
         </div>
-        {error && (
-          <p className="text-xs text-destructive mt-1">{error}</p>
-        )}
+        {error && <p className="text-xs text-destructive mt-1">{error}</p>}
       </div>
     );
-  }
+  },
 );
 LocationInput.displayName = "LocationInput";
 

@@ -52,21 +52,20 @@
 // Core exports
 export { Analytics, createAnalytics } from "./analytics";
 export type {
-    AnalyticsConfig,
-    AnalyticsEventProperties,
-    UBIEventName,
-    UserTraits
+  AnalyticsConfig,
+  AnalyticsEventProperties,
+  UBIEventName,
+  UserTraits,
 } from "./analytics";
 
 // Provider exports
 export {
-    AmplitudeProvider,
-    ConsoleProvider,
-    GoogleAnalytics4Provider,
-    MixpanelProvider,
-    PostHogProvider,
-    SegmentProvider,
-    createProvider
+  AmplitudeProvider,
+  ConsoleProvider,
+  GoogleAnalytics4Provider,
+  MixpanelProvider,
+  PostHogProvider,
+  SegmentProvider,
+  createProvider,
 } from "./providers";
 export type { ProviderConfig, ProviderType } from "./providers";
-

@@ -32,12 +32,12 @@ test.describe("Payment Method Management", () => {
 
     // Should show payment methods list
     await expect(
-      authenticatedPage.locator("[data-testid='payment-methods-list']")
+      authenticatedPage.locator("[data-testid='payment-methods-list']"),
     ).toBeVisible();
 
     // Should show mobile money option
     await expect(
-      authenticatedPage.getByText(/opay|m-pesa|mtn|mobile money/i)
+      authenticatedPage.getByText(/opay|m-pesa|mtn|mobile money/i),
     ).toBeVisible();
   });
 
@@ -124,7 +124,7 @@ test.describe("Payment Method Management", () => {
       /\/api\/users\/.*\/payment-methods\/pm_001\/default/,
       {
         success: true,
-      }
+      },
     );
 
     // Click on set default
@@ -182,12 +182,12 @@ test.describe("Mobile Money Flow", () => {
 
     // Should show STK push instruction
     await expect(
-      authenticatedPage.getByText(/enter.*pin|check.*phone/i)
+      authenticatedPage.getByText(/enter.*pin|check.*phone/i),
     ).toBeVisible();
 
     // Should show waiting indicator
     await expect(
-      authenticatedPage.locator("[data-testid='payment-pending']")
+      authenticatedPage.locator("[data-testid='payment-pending']"),
     ).toBeVisible();
   });
 
@@ -211,7 +211,7 @@ test.describe("Mobile Money Flow", () => {
 
     // Should redirect or show approval flow
     await expect(
-      authenticatedPage.getByText(/redirecting|approve|opay/i)
+      authenticatedPage.getByText(/redirecting|approve|opay/i),
     ).toBeVisible();
   });
 
@@ -243,7 +243,7 @@ test.describe("Mobile Money Flow", () => {
 
     // Should show retry option
     await expect(
-      authenticatedPage.getByRole("button", { name: /retry|try again/i })
+      authenticatedPage.getByRole("button", { name: /retry|try again/i }),
     ).toBeVisible();
   });
 });
@@ -333,7 +333,7 @@ test.describe("Wallet Operations", () => {
 
     // Should show transactions
     await expect(
-      authenticatedPage.locator("[data-testid='transaction-list']")
+      authenticatedPage.locator("[data-testid='transaction-list']"),
     ).toBeVisible();
 
     // Should show transaction types
@@ -374,7 +374,7 @@ test.describe("Payment during Checkout", () => {
 
     // Should show success
     await expect(
-      authenticatedPage.getByText(/paid|success|complete/i)
+      authenticatedPage.getByText(/paid|success|complete/i),
     ).toBeVisible();
   });
 
@@ -406,7 +406,7 @@ test.describe("Payment during Checkout", () => {
 
     // Should show success
     await expect(
-      authenticatedPage.getByText(/order placed|success/i)
+      authenticatedPage.getByText(/order placed|success/i),
     ).toBeVisible();
   });
 
@@ -434,10 +434,10 @@ test.describe("Payment during Checkout", () => {
 
     // Should show error with top-up option
     await expect(
-      authenticatedPage.getByText(/insufficient|not enough/i)
+      authenticatedPage.getByText(/insufficient|not enough/i),
     ).toBeVisible();
     await expect(
-      authenticatedPage.getByRole("button", { name: /top up/i })
+      authenticatedPage.getByRole("button", { name: /top up/i }),
     ).toBeVisible();
   });
 });
@@ -448,7 +448,7 @@ test.describe("Payment Security", () => {
 
     // Card numbers should be masked
     await expect(
-      authenticatedPage.getByText(/\*{4}\s*\d{4}|\*\*\*\*\s*\d{4}/)
+      authenticatedPage.getByText(/\*{4}\s*\d{4}|\*\*\*\*\s*\d{4}/),
     ).toBeVisible();
   });
 
@@ -465,7 +465,7 @@ test.describe("Payment Security", () => {
     });
 
     await authenticatedPage.goto(
-      "/payment/checkout?amount=100000&currency=NGN"
+      "/payment/checkout?amount=100000&currency=NGN",
     );
 
     // Should show PIN input
@@ -514,7 +514,7 @@ test.describe("Receipts and Invoices", () => {
 
     // Should show receipt details
     await expect(
-      authenticatedPage.getByText(/receipt|payment confirmation/i)
+      authenticatedPage.getByText(/receipt|payment confirmation/i),
     ).toBeVisible();
     await expect(authenticatedPage.getByText(/₦2,500|2500/)).toBeVisible();
   });
@@ -524,7 +524,7 @@ test.describe("Receipts and Invoices", () => {
 
     // Download button should be available
     await expect(
-      authenticatedPage.getByRole("button", { name: /download|save|pdf/i })
+      authenticatedPage.getByRole("button", { name: /download|save|pdf/i }),
     ).toBeVisible();
   });
 });

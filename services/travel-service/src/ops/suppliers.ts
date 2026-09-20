@@ -50,7 +50,9 @@ export async function loadSupplier(
 ): Promise<LoadedSupplier> {
   const row = await db.travelSupplier.findUnique({ where: { id: supplierId } });
   if (row === null) {
-    throw new ContractError("not_found", "no such travel supplier", { supplierId });
+    throw new ContractError("not_found", "no such travel supplier", {
+      supplierId,
+    });
   }
   return toLoaded(row);
 }
@@ -82,7 +84,9 @@ export function contextFor(
   return { supplierId: supplier.id, config: supplier.config, now };
 }
 
-export function flightAdapterFor(supplier: LoadedSupplier): FlightSupplyAdapter {
+export function flightAdapterFor(
+  supplier: LoadedSupplier,
+): FlightSupplyAdapter {
   return resolveFlightAdapter(supplier);
 }
 

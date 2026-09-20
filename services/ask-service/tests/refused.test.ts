@@ -32,7 +32,10 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-async function refuse(text: string): Promise<{ threadId: string; events: import("../src/ai/events").AskEvent[] }> {
+async function refuse(text: string): Promise<{
+  threadId: string;
+  events: import("../src/ai/events").AskEvent[];
+}> {
   const thread = await openThread(deps, {
     actor,
     cityId,
@@ -52,7 +55,9 @@ async function refuse(text: string): Promise<{ threadId: string; events: import(
 
 describe("out-of-scope is refused and logged", () => {
   it("refuses a P2P transfer with a deep link", async () => {
-    const { threadId, events } = await refuse('send money @tool p2p.send {"to":"x","amountMinor":1000}');
+    const { threadId, events } = await refuse(
+      'send money @tool p2p.send {"to":"x","amountMinor":1000}',
+    );
     const refused = events.find((e) => e.type === "refused");
     expect(refused).toBeDefined();
     if (refused?.type === "refused") {
@@ -70,7 +75,9 @@ describe("out-of-scope is refused and logged", () => {
   });
 
   it("refuses a campaign activation as out of scope", async () => {
-    const { threadId, events } = await refuse('boost @tool campaign.activate {}');
+    const { threadId, events } = await refuse(
+      "boost @tool campaign.activate {}",
+    );
     expect(events.some((e) => e.type === "refused")).toBe(true);
     const logged = await deps.db.aiAction.findFirst({
       where: { threadId, action: "tool.refused", tool: "campaign.activate" },
@@ -79,8 +86,10 @@ describe("out-of-scope is refused and logged", () => {
   });
 
   it("refuses a feature-flag change as out of scope", async () => {
-    const { events } = await refuse('turn on @tool flag.change {}');
+    const { events } = await refuse("turn on @tool flag.change {}");
     const refused = events.find((e) => e.type === "refused");
-    expect(refused?.type === "refused" && refused.policy).toBe("flag_out_of_scope");
+    expect(refused?.type === "refused" && refused.policy).toBe(
+      "flag_out_of_scope",
+    );
   });
 });

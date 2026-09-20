@@ -151,7 +151,7 @@ const ServiceSelector = React.forwardRef<HTMLDivElement, ServiceSelectorProps>(
       variant = "pill",
       ...props
     },
-    ref
+    ref,
   ) => {
     return (
       <div
@@ -176,13 +176,13 @@ const ServiceSelector = React.forwardRef<HTMLDivElement, ServiceSelectorProps>(
                 aria-checked={isSelected}
                 className={cn(
                   "flex flex-col items-center gap-1 p-2 rounded-lg transition-colors",
-                  isSelected ? config.lightBg : "hover:bg-accent"
+                  isSelected ? config.lightBg : "hover:bg-accent",
                 )}
               >
                 <div
                   className={cn(
                     "p-2 rounded-full transition-colors",
-                    isSelected ? config.color : "bg-muted"
+                    isSelected ? config.color : "bg-muted",
                   )}
                 >
                   <Icon className="h-5 w-5" />
@@ -190,7 +190,7 @@ const ServiceSelector = React.forwardRef<HTMLDivElement, ServiceSelectorProps>(
                 <span
                   className={cn(
                     "text-xs font-medium",
-                    isSelected ? config.textColor : "text-muted-foreground"
+                    isSelected ? config.textColor : "text-muted-foreground",
                   )}
                 >
                   {config.label}
@@ -211,13 +211,13 @@ const ServiceSelector = React.forwardRef<HTMLDivElement, ServiceSelectorProps>(
                   "flex flex-col items-start p-4 rounded-xl border-2 transition-all min-w-[140px]",
                   isSelected
                     ? cn(config.borderColor, config.lightBg)
-                    : "border-transparent bg-card hover:border-border"
+                    : "border-transparent bg-card hover:border-border",
                 )}
               >
                 <div
                   className={cn(
                     "p-2 rounded-lg mb-2",
-                    isSelected ? config.color : "bg-muted"
+                    isSelected ? config.color : "bg-muted",
                   )}
                 >
                   <Icon className="h-5 w-5" />
@@ -242,7 +242,7 @@ const ServiceSelector = React.forwardRef<HTMLDivElement, ServiceSelectorProps>(
                 "inline-flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all",
                 isSelected
                   ? cn(config.color, config.hoverColor)
-                  : "bg-muted hover:bg-muted/80 text-foreground"
+                  : "bg-muted hover:bg-muted/80 text-foreground",
               )}
             >
               <Icon className="h-4 w-4" />
@@ -252,7 +252,7 @@ const ServiceSelector = React.forwardRef<HTMLDivElement, ServiceSelectorProps>(
         })}
       </div>
     );
-  }
+  },
 );
 ServiceSelector.displayName = "ServiceSelector";
 
@@ -278,7 +278,7 @@ const ServiceBadge = React.forwardRef<HTMLSpanElement, ServiceBadgeProps>(
           "inline-flex items-center gap-1 rounded-full font-medium",
           config.color,
           size === "sm" ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-sm",
-          className
+          className,
         )}
         {...props}
       >
@@ -286,7 +286,7 @@ const ServiceBadge = React.forwardRef<HTMLSpanElement, ServiceBadgeProps>(
         {showLabel && config.label}
       </span>
     );
-  }
+  },
 );
 ServiceBadge.displayName = "ServiceBadge";
 

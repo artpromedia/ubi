@@ -23,12 +23,17 @@ import { isMandateAction, type MandateRunInput } from "./schemas";
 import { isoDate, runResultView, type RunResultView } from "./serialize";
 import { guardTransition } from "./transition";
 import { insertGrant } from "../grants/grants";
-import { writeAudit ,type  Tx } from "../identity/audit";
+import { writeAudit, type Tx } from "../identity/audit";
 import { newId } from "../identity/ids";
 import { eventIdempotencyKey, writeOutboxEvent } from "../identity/outbox";
 
 import type { AiActionDeps } from "../grants/types";
-import type { ActionGrant, Mandate, MandateExecution, Prisma } from "@prisma/client";
+import type {
+  ActionGrant,
+  Mandate,
+  MandateExecution,
+  Prisma,
+} from "@prisma/client";
 
 const DEFAULT_GRANT_TTL_SECONDS = 900;
 
@@ -48,7 +53,9 @@ interface Constraint {
 }
 
 function readConstraints(value: Prisma.JsonValue): Constraint[] {
-  if (!Array.isArray(value)) {return [];}
+  if (!Array.isArray(value)) {
+    return [];
+  }
   const out: Constraint[] = [];
   for (const entry of value) {
     if (
@@ -89,10 +96,18 @@ function preReserveBlock(
   mandate: Mandate,
   input: MandateRunInput,
 ): BlockReason | null {
-  if (mandate.status === "paused") {return "mandate_paused";}
-  if (mandate.status === "revoked") {return "mandate_revoked";}
-  if (mandate.status === "expired") {return "mandate_expired";}
-  if (!isMandateAction(mandate.action)) {return "action_not_allowed";}
+  if (mandate.status === "paused") {
+    return "mandate_paused";
+  }
+  if (mandate.status === "revoked") {
+    return "mandate_revoked";
+  }
+  if (mandate.status === "expired") {
+    return "mandate_expired";
+  }
+  if (!isMandateAction(mandate.action)) {
+    return "action_not_allowed";
+  }
 
   if (input.price.amountMinor > Number(mandate.perRunCapMinor)) {
     return "price_above_cap";
@@ -280,7 +295,9 @@ export async function runMandate(
   const triggeredBy = input.triggeredBy ?? "mandate-runner";
   const periodStartStr = isoDate(currentPeriodStart(now));
 
-  const load = await deps.prisma.mandate.findUnique({ where: { id: mandateId } });
+  const load = await deps.prisma.mandate.findUnique({
+    where: { id: mandateId },
+  });
   if (load === null) {
     throw new ContractError("not_found", "No such mandate");
   }

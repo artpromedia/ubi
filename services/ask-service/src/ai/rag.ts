@@ -47,8 +47,7 @@ export function createRetriever(embedder: EmbeddingProvider): Retriever {
       const topK = input.topK ?? DEFAULT_TOP_K;
       const candidates = docsForMarket(input.cityId)
         .filter(
-          (doc) =>
-            doc.roles.length === 0 || doc.roles.includes(input.role),
+          (doc) => doc.roles.length === 0 || doc.roles.includes(input.role),
         )
         .slice(0, MAX_CANDIDATES);
       if (candidates.length === 0) {

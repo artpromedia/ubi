@@ -78,7 +78,7 @@ export function ThemeProvider({
     if (metaThemeColor) {
       metaThemeColor.setAttribute(
         "content",
-        resolvedTheme === "dark" ? "#191414" : "#FFFFFF"
+        resolvedTheme === "dark" ? "#191414" : "#FFFFFF",
       );
     }
   }, [resolvedTheme, mounted]);
@@ -86,7 +86,7 @@ export function ThemeProvider({
   // Memoize context value to prevent unnecessary re-renders
   const contextValue = useMemo(
     () => ({ theme, resolvedTheme, setTheme }),
-    [theme, resolvedTheme, setTheme]
+    [theme, resolvedTheme, setTheme],
   );
 
   // Prevent flash of wrong theme

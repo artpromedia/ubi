@@ -23,7 +23,11 @@ import { generateId } from "../lib/ids";
 
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord, JsonValue } from "./types";
-import type { AdapterOffer, FlightSearchParams, StaySearchParams } from "../adapters/types";
+import type {
+  AdapterOffer,
+  FlightSearchParams,
+  StaySearchParams,
+} from "../adapters/types";
 
 function serializeOffer(offer: AdapterOffer): JsonRecord {
   return {
@@ -34,7 +38,9 @@ function serializeOffer(offer: AdapterOffer): JsonRecord {
     currency: offer.price.currency,
     supplierPriceMinor: offer.supplierPrice?.amountMinor ?? null,
     supplierCurrency: offer.supplierPrice?.currency ?? null,
-    fx: offer.fx ? { rate: offer.fx.rate, lockedUntil: offer.fx.lockedUntil } : null,
+    fx: offer.fx
+      ? { rate: offer.fx.rate, lockedUntil: offer.fx.lockedUntil }
+      : null,
     payAtPropertyMinor: offer.payAtProperty?.amountMinor ?? null,
     capabilities: offer.capabilities as unknown as JsonValue,
     policy: offer.policy,
@@ -63,7 +69,10 @@ export async function flightSearch(
 
   const supplier = await pickSupplier(deps.db, "flight");
   const adapter = flightAdapterFor(supplier);
-  const result = await adapter.search(contextFor(supplier, deps.now), input.params);
+  const result = await adapter.search(
+    contextFor(supplier, deps.now),
+    input.params,
+  );
 
   const searchId = generateId("tsr");
   const offers = result.offers.map(serializeOffer);
@@ -121,7 +130,9 @@ export async function refreshFlightSearch(
   actor: Actor,
   searchId: string,
 ): Promise<FlightSearchResult> {
-  const row = await deps.db.travelSearch.findUnique({ where: { id: searchId } });
+  const row = await deps.db.travelSearch.findUnique({
+    where: { id: searchId },
+  });
   if (row === null || row.kind !== "flight") {
     throw new ContractError("not_found", "no such flight search", { searchId });
   }
@@ -129,7 +140,10 @@ export async function refreshFlightSearch(
     throw new ContractError("not_found", "no such flight search", { searchId });
   }
   if (row.supplierId === null) {
-    throw new ContractError("service_unavailable", "the search has no supplier");
+    throw new ContractError(
+      "service_unavailable",
+      "the search has no supplier",
+    );
   }
   const supplier = await pickSupplierById(deps, row.supplierId);
   const adapter = flightAdapterFor(supplier);
@@ -173,7 +187,10 @@ export async function staySearch(
 
   const supplier = await pickSupplier(deps.db, "stay");
   const adapter = stayAdapterFor(supplier);
-  const result = await adapter.search(contextFor(supplier, deps.now), input.params);
+  const result = await adapter.search(
+    contextFor(supplier, deps.now),
+    input.params,
+  );
 
   const searchId = generateId("tsr");
   const offers = result.offers.map(serializeOffer);
@@ -230,17 +247,26 @@ export async function stayRates(
   propertyId: string,
   searchId: string,
 ): Promise<readonly JsonRecord[]> {
-  const row = await deps.db.travelSearch.findUnique({ where: { id: searchId } });
+  const row = await deps.db.travelSearch.findUnique({
+    where: { id: searchId },
+  });
   if (row === null || row.kind !== "stay" || row.userId !== actor.id) {
     throw new ContractError("not_found", "no such stay search", { searchId });
   }
   if (row.supplierId === null) {
-    throw new ContractError("service_unavailable", "the search has no supplier");
+    throw new ContractError(
+      "service_unavailable",
+      "the search has no supplier",
+    );
   }
   const supplier = await pickSupplierById(deps, row.supplierId);
   const adapter = stayAdapterFor(supplier);
   const params = row.params as unknown as StaySearchParams;
-  const rates = await adapter.rates(contextFor(supplier, deps.now), propertyId, params);
+  const rates = await adapter.rates(
+    contextFor(supplier, deps.now),
+    propertyId,
+    params,
+  );
   return rates.map((rate) => serializeOffer(rate).snapshot as JsonRecord);
 }
 

@@ -231,8 +231,7 @@ function interpretOpenAi(payload: unknown): ModelResponse {
     const call = entry as OpenAiToolCall;
     return {
       id: typeof call.id === "string" ? call.id : `call_${index}`,
-      name:
-        typeof call.function?.name === "string" ? call.function.name : "",
+      name: typeof call.function?.name === "string" ? call.function.name : "",
       arguments: parseArguments(call.function?.arguments),
     };
   });

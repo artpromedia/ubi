@@ -12,8 +12,9 @@ import * as React from "react";
 
 import { cn } from "../lib/utils";
 
-export interface CheckboxProps
-  extends React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root> {
+export interface CheckboxProps extends React.ComponentPropsWithoutRef<
+  typeof CheckboxPrimitive.Root
+> {
   /** Indeterminate state for partial selection */
   indeterminate?: boolean;
   /** Label text */
@@ -38,7 +39,7 @@ const Checkbox = React.forwardRef<
         "data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary",
         "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground data-[state=indeterminate]:border-primary",
         error && "border-destructive",
-        className
+        className,
       )}
       checked={indeterminate ? "indeterminate" : props.checked}
       {...props}
@@ -68,7 +69,7 @@ const Checkbox = React.forwardRef<
             htmlFor={props.id}
             className={cn(
               "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
-              error && "text-destructive"
+              error && "text-destructive",
             )}
           >
             {label}

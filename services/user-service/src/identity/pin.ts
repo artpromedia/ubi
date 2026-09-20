@@ -81,8 +81,9 @@ async function walletsFor(
 
 function worst(wallets: readonly WalletRow[]): WalletRow {
   const [first, ...rest] = wallets;
-  if (first === undefined)
-    {throw new ContractError("not_found", "You don't have a wallet yet");}
+  if (first === undefined) {
+    throw new ContractError("not_found", "You don't have a wallet yet");
+  }
   return rest.reduce(
     (acc, candidate) =>
       candidate.pinFailedAttempts > acc.pinFailedAttempts ? candidate : acc,
@@ -183,7 +184,9 @@ export async function verifyPin(
       },
     });
 
-    if (!willLock) {return;}
+    if (!willLock) {
+      return;
+    }
 
     const revision = await auditRevision(tx, "user", context.userId);
     await writeAudit(tx, {

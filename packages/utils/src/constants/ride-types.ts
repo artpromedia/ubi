@@ -111,7 +111,7 @@ export function calculateEstimatedFare(
   type: RideTypeValue,
   distanceKm: number,
   durationMinutes: number,
-  surgeMultiplier = 1
+  surgeMultiplier = 1,
 ): number {
   const config = RIDE_TYPE_CONFIG[type];
   const fare =

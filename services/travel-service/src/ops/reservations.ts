@@ -97,7 +97,13 @@ export async function createReservation(
     await withOutbox(deps.db, async () => ({
       result: undefined,
       events: [
-        reservationEvent("reservation.requested", reservationId, input, occurredAt, actorType),
+        reservationEvent(
+          "reservation.requested",
+          reservationId,
+          input,
+          occurredAt,
+          actorType,
+        ),
         {
           ...reservationEvent(
             "reservation.reservation_failed",
@@ -138,8 +144,20 @@ export async function createReservation(
     return {
       result: undefined,
       events: [
-        reservationEvent("reservation.requested", reservationId, input, occurredAt, actorType),
-        reservationEvent("reservation.reserved", reservationId, input, occurredAt, actorType),
+        reservationEvent(
+          "reservation.requested",
+          reservationId,
+          input,
+          occurredAt,
+          actorType,
+        ),
+        reservationEvent(
+          "reservation.reserved",
+          reservationId,
+          input,
+          occurredAt,
+          actorType,
+        ),
       ],
     };
   });

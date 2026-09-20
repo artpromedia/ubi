@@ -13,7 +13,6 @@ import { assertPermission } from "./roles";
 import type { GrowthDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
 
-
 export async function reconForDate(
   deps: GrowthDeps,
   actor: Actor,
@@ -50,7 +49,8 @@ export async function reconForDate(
 
     // The counters must equal the row sums, allowing for reversed netting.
     const unexplained =
-      Number(b.reservedMinor) - reservedRows +
+      Number(b.reservedMinor) -
+      reservedRows +
       (Number(b.consumedMinor) - (consumedRows - reversedRows)) +
       (Number(b.reversedMinor) - reversedRows);
     totalUnexplained += Math.abs(unexplained);

@@ -121,7 +121,9 @@ export const stripInboundIdentityHeaders = createMiddleware(
     const forged: string[] = [];
 
     for (const name of [...headers.keys()]) {
-      if (!isReservedIdentityHeader(name)) {continue;}
+      if (!isReservedIdentityHeader(name)) {
+        continue;
+      }
       forged.push(name);
       headers.delete(name);
     }
@@ -157,8 +159,12 @@ function modesFor(
   safeMode: boolean,
 ): readonly IdentityMode[] {
   const modes: IdentityMode[] = [];
-  if (auth.mode === "limited") {modes.push("limited");}
-  if (safeMode) {modes.push("wallet_safe");}
+  if (auth.mode === "limited") {
+    modes.push("limited");
+  }
+  if (safeMode) {
+    modes.push("wallet_safe");
+  }
   return modes;
 }
 
@@ -229,11 +235,15 @@ export const identityContextMiddleware = createMiddleware(
     headers.set(REQUEST_ID_HEADER, requestId);
     headers.set("x-ubi-scopes", context.scopes.join(" "));
     headers.set("x-ubi-modes", context.modes.join(" "));
-    if (context.sessionId !== null)
-      {headers.set("x-session-id", context.sessionId);}
-    if (context.cityId !== null) {headers.set("x-ubi-city-id", context.cityId);}
-    if (context.tenantId !== null)
-      {headers.set("x-ubi-tenant-id", context.tenantId);}
+    if (context.sessionId !== null) {
+      headers.set("x-session-id", context.sessionId);
+    }
+    if (context.cityId !== null) {
+      headers.set("x-ubi-city-id", context.cityId);
+    }
+    if (context.tenantId !== null) {
+      headers.set("x-ubi-tenant-id", context.tenantId);
+    }
 
     c.header(REQUEST_ID_HEADER, requestId);
 

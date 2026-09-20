@@ -55,7 +55,7 @@ const serviceColors = {
 const TripTimeline = React.forwardRef<HTMLDivElement, TripTimelineProps>(
   (
     { className, steps, variant = "vertical", service = "move", ...props },
-    ref
+    ref,
   ) => {
     const colors = serviceColors[service];
 
@@ -78,10 +78,10 @@ const TripTimeline = React.forwardRef<HTMLDivElement, TripTimelineProps>(
                       cn(
                         "ring-4 ring-offset-2",
                         colors.current,
-                        `ring-${service === "move" ? "ubi-move" : service === "bites" ? "ubi-bites" : "ubi-send"}/20`
+                        `ring-${service === "move" ? "ubi-move" : service === "bites" ? "ubi-bites" : "ubi-send"}/20`,
                       ),
                     step.status === "upcoming" && "bg-muted",
-                    step.status === "error" && "bg-destructive"
+                    step.status === "error" && "bg-destructive",
                   )}
                 >
                   {step.status === "completed" ? (
@@ -97,7 +97,7 @@ const TripTimeline = React.forwardRef<HTMLDivElement, TripTimelineProps>(
                     "mt-2 text-xs text-center max-w-[80px]",
                     step.status === "current"
                       ? "font-medium"
-                      : "text-muted-foreground"
+                      : "text-muted-foreground",
                   )}
                 >
                   {step.label}
@@ -115,7 +115,7 @@ const TripTimeline = React.forwardRef<HTMLDivElement, TripTimelineProps>(
                   <div
                     className={cn(
                       "h-full transition-all",
-                      step.status === "completed" ? colors.line : "bg-muted"
+                      step.status === "completed" ? colors.line : "bg-muted",
                     )}
                   />
                 </div>
@@ -141,11 +141,11 @@ const TripTimeline = React.forwardRef<HTMLDivElement, TripTimelineProps>(
                     cn(
                       "ring-4 ring-offset-2",
                       colors.current,
-                      `ring-${service === "move" ? "ubi-move" : service === "bites" ? "ubi-bites" : "ubi-send"}/20`
+                      `ring-${service === "move" ? "ubi-move" : service === "bites" ? "ubi-bites" : "ubi-send"}/20`,
                     ),
                   step.status === "upcoming" &&
                     "bg-muted border-2 border-muted-foreground/20",
-                  step.status === "error" && "bg-destructive"
+                  step.status === "error" && "bg-destructive",
                 )}
               >
                 {step.status === "completed" ? (
@@ -162,7 +162,7 @@ const TripTimeline = React.forwardRef<HTMLDivElement, TripTimelineProps>(
                 <div
                   className={cn(
                     "w-0.5 flex-1 min-h-[24px]",
-                    step.status === "completed" ? colors.line : "bg-muted"
+                    step.status === "completed" ? colors.line : "bg-muted",
                   )}
                 />
               )}
@@ -175,7 +175,7 @@ const TripTimeline = React.forwardRef<HTMLDivElement, TripTimelineProps>(
                   className={cn(
                     "font-medium text-sm",
                     step.status === "upcoming" && "text-muted-foreground",
-                    step.status === "error" && "text-destructive"
+                    step.status === "error" && "text-destructive",
                   )}
                 >
                   {step.label}
@@ -202,7 +202,7 @@ const TripTimeline = React.forwardRef<HTMLDivElement, TripTimelineProps>(
         ))}
       </div>
     );
-  }
+  },
 );
 TripTimeline.displayName = "TripTimeline";
 

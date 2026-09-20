@@ -6,7 +6,6 @@
 import type { Tx } from "./audit";
 import type { ActorType } from "@ubi/contracts";
 
-
 /**
  * Maps a UBI user role onto the closed `ActorType` set from
  * contracts/events/catalog.md. An operator or admin acts as `agent`; a
@@ -46,6 +45,8 @@ export async function auditRevision(
   subjectType: string,
   subjectId: string,
 ): Promise<number> {
-  const revisions = await tx.auditLog.count({ where: { subjectType, subjectId } });
+  const revisions = await tx.auditLog.count({
+    where: { subjectType, subjectId },
+  });
   return revisions;
 }

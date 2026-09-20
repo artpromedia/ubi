@@ -142,7 +142,7 @@ export function toBeValidTransaction(received: unknown) {
  */
 export function toBeValidCurrency(
   received: unknown,
-  expectedCurrency?: string
+  expectedCurrency?: string,
 ) {
   const currency = received as string;
   const validCurrencies = Object.keys(CURRENCIES);
@@ -219,7 +219,9 @@ export function toBeValidCardNumber(received: unknown) {
 
   for (let i = cleaned.length - 1; i >= 0; i--) {
     const char = cleaned[i];
-    if (!char) {continue;}
+    if (!char) {
+      continue;
+    }
     let digit = Number.parseInt(char, 10);
 
     if (isEven) {

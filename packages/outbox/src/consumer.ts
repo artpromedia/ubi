@@ -15,7 +15,6 @@ import { EventEnvelopeSchema, type EventEnvelope } from "@ubi/contracts";
 
 import type { Redis } from "ioredis";
 
-
 export type OutboxHandler = (
   envelope: EventEnvelope,
   channel: string,

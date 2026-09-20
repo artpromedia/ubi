@@ -31,7 +31,7 @@ module.exports = {
     // screen, which the RN handoff explicitly avoids. Correctness rules stay on.
     "import/order": "off",
     "import/newline-after-import": "off",
-    "curly": "off",
+    curly: "off",
     "react/function-component-definition": "off",
     "@typescript-eslint/no-unused-vars": [
       "error",

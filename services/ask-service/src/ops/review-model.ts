@@ -53,10 +53,10 @@ export function parseStoredReview(value: unknown): StoredReview {
 }
 
 /** A stable fingerprint of the exact offers and their terms versions. */
-export function fingerprintResolved(
-  offers: readonly ResolvedOffer[],
-): string {
-  return offers.map((offer) => `${offer.offerRef}:${offer.termsVersion}`).join("|");
+export function fingerprintResolved(offers: readonly ResolvedOffer[]): string {
+  return offers
+    .map((offer) => `${offer.offerRef}:${offer.termsVersion}`)
+    .join("|");
 }
 
 export function resolvedToStoredItem(offer: ResolvedOffer): StoredReviewItem {

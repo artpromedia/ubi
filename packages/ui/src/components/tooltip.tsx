@@ -25,7 +25,7 @@ const TooltipContent = React.forwardRef<
     className={cn(
       "z-popover overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md",
       "animate-fade-in",
-      className
+      className,
     )}
     {...props}
   />
@@ -63,7 +63,9 @@ const SimpleTooltip = ({
 };
 
 export {
-    SimpleTooltip, Tooltip, TooltipContent,
-    TooltipProvider, TooltipTrigger
+  SimpleTooltip,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 };
-

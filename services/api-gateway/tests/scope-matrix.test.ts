@@ -390,14 +390,8 @@ describe("limited mode and wallet safe mode scope matrix", () => {
         expect(result.code).toBe("forbidden");
       }
       expect(
-        (
-          await call(
-            "full",
-            "POST",
-            "/v1/wallet/mp/funding/authorize",
-            "admin",
-          )
-        ).status,
+        (await call("full", "POST", "/v1/wallet/mp/funding/authorize", "admin"))
+          .status,
       ).toBe(200);
     });
 

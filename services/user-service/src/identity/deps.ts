@@ -131,7 +131,9 @@ const FaceProviderResponseSchema = z.object({
 let cachedDeps: IdentityDeps | undefined;
 
 export function defaultIdentityDeps(): IdentityDeps {
-  if (cachedDeps !== undefined) {return cachedDeps;}
+  if (cachedDeps !== undefined) {
+    return cachedDeps;
+  }
 
   const baseUrl = process.env.CONFIG_SERVICE_URL;
   if (baseUrl === undefined || baseUrl.length === 0) {

@@ -47,7 +47,9 @@ export async function readRiskState(
   userId: string,
   now: Date = new Date(),
 ): Promise<RiskState> {
-  if (store === undefined) {return FAIL_CLOSED;}
+  if (store === undefined) {
+    return FAIL_CLOSED;
+  }
 
   let raw: string | null;
   try {
@@ -56,14 +58,18 @@ export async function readRiskState(
     return FAIL_CLOSED;
   }
 
-  if (raw === null) {return OPEN;}
+  if (raw === null) {
+    return OPEN;
+  }
 
   const until = new Date(raw);
   if (Number.isNaN(until.getTime())) {
     // A value we cannot read is a value we cannot clear on.
     return FAIL_CLOSED;
   }
-  if (until.getTime() <= now.getTime()) {return OPEN;}
+  if (until.getTime() <= now.getTime()) {
+    return OPEN;
+  }
 
   return {
     safeMode: true,

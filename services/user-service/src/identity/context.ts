@@ -39,7 +39,9 @@ export interface IdentityPrincipal {
 
 function keyFrom(name: string): Uint8Array | undefined {
   const secret = process.env[name];
-  if (secret === undefined || secret.length === 0) {return undefined;}
+  if (secret === undefined || secret.length === 0) {
+    return undefined;
+  }
   if (secret.length < MIN_SECRET_LENGTH) {
     throw new Error(`${name} must be at least ${MIN_SECRET_LENGTH} characters`);
   }
@@ -84,7 +86,9 @@ export async function verifyIdentityContext(
       const userId = stringOrNull(payload.sub);
       const role = stringOrNull(payload.role);
       const requestId = stringOrNull(payload.rid);
-      if (userId === null || role === null || requestId === null) {break;}
+      if (userId === null || role === null || requestId === null) {
+        break;
+      }
 
       return {
         userId,
@@ -168,7 +172,9 @@ export function requireScope(
   principal: IdentityPrincipal,
   scope: string,
 ): void {
-  if (principal.scopes.includes(scope)) {return;}
+  if (principal.scopes.includes(scope)) {
+    return;
+  }
   if (principal.modes.includes("wallet_safe")) {
     throw new ContractError(
       "safe_mode_active",

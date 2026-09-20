@@ -91,7 +91,7 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
     setExpandedItems((prev) =>
       prev.includes(name)
         ? prev.filter((item) => item !== name)
-        : [...prev, name]
+        : [...prev, name],
     );
   };
 
@@ -114,7 +114,7 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
       <aside
         className={cn(
           "fixed top-0 left-0 z-50 h-full w-64 bg-gray-950 border-r border-gray-800 flex flex-col transition-transform lg:translate-x-0",
-          isOpen ? "translate-x-0" : "-translate-x-full"
+          isOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
         {/* Header */}
@@ -161,7 +161,7 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
                       "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition",
                       isActive(item.href)
                         ? "bg-orange-500/10 text-orange-500"
-                        : "text-gray-400 hover:text-white hover:bg-gray-800"
+                        : "text-gray-400 hover:text-white hover:bg-gray-800",
                     )}
                   >
                     <span className="flex items-center gap-3">
@@ -171,7 +171,7 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
                     <ChevronDown
                       className={cn(
                         "w-4 h-4 transition-transform",
-                        expandedItems.includes(item.name) && "rotate-180"
+                        expandedItems.includes(item.name) && "rotate-180",
                       )}
                     />
                   </button>
@@ -192,7 +192,7 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
                             "block px-3 py-2 rounded-lg text-sm transition",
                             pathname === child.href
                               ? "bg-orange-500/10 text-orange-500"
-                              : "text-gray-400 hover:text-white hover:bg-gray-800"
+                              : "text-gray-400 hover:text-white hover:bg-gray-800",
                           )}
                         >
                           {child.name}
@@ -208,7 +208,7 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
                     "flex items-center justify-between px-3 py-2 rounded-lg text-sm transition",
                     isActive(item.href)
                       ? "bg-orange-500/10 text-orange-500"
-                      : "text-gray-400 hover:text-white hover:bg-gray-800"
+                      : "text-gray-400 hover:text-white hover:bg-gray-800",
                   )}
                 >
                   <span className="flex items-center gap-3">
@@ -237,7 +237,7 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition",
                 pathname === item.href
                   ? "bg-orange-500/10 text-orange-500"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800",
               )}
             >
               <item.icon className="w-5 h-5" />

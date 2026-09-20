@@ -25,7 +25,7 @@ const Skeleton = React.forwardRef<HTMLDivElement, SkeletonProps>(
         className={cn(
           "animate-pulse bg-muted",
           circle ? "rounded-full" : "rounded-md",
-          className
+          className,
         )}
         style={{
           width,
@@ -35,7 +35,7 @@ const Skeleton = React.forwardRef<HTMLDivElement, SkeletonProps>(
         {...props}
       />
     );
-  }
+  },
 );
 Skeleton.displayName = "Skeleton";
 
@@ -62,7 +62,7 @@ const SkeletonText = React.forwardRef<HTMLDivElement, SkeletonTextProps>(
         ))}
       </div>
     );
-  }
+  },
 );
 SkeletonText.displayName = "SkeletonText";
 
@@ -92,7 +92,7 @@ const SkeletonAvatar = React.forwardRef<HTMLDivElement, SkeletonAvatarProps>(
         {...props}
       />
     );
-  }
+  },
 );
 SkeletonAvatar.displayName = "SkeletonAvatar";
 
@@ -121,7 +121,7 @@ const SkeletonCard = React.forwardRef<HTMLDivElement, SkeletonCardProps>(
         </div>
       </div>
     );
-  }
+  },
 );
 SkeletonCard.displayName = "SkeletonCard";
 
@@ -133,28 +133,34 @@ interface SkeletonTableRowProps extends React.HTMLAttributes<HTMLDivElement> {
   columns?: number;
 }
 
-const SkeletonTableRow = React.forwardRef<HTMLDivElement, SkeletonTableRowProps>(
-  ({ className, columns = 4, ...props }, ref) => {
-    return (
-      <div
-        ref={ref}
-        className={cn("flex items-center gap-4 py-4 border-b", className)}
-        {...props}
-      >
-        {Array.from({ length: columns }).map((_, i) => (
-          <Skeleton
-            key={i}
-            className="h-4 flex-1"
-            style={{
-              maxWidth: i === 0 ? "200px" : undefined,
-            }}
-          />
-        ))}
-      </div>
-    );
-  }
-);
+const SkeletonTableRow = React.forwardRef<
+  HTMLDivElement,
+  SkeletonTableRowProps
+>(({ className, columns = 4, ...props }, ref) => {
+  return (
+    <div
+      ref={ref}
+      className={cn("flex items-center gap-4 py-4 border-b", className)}
+      {...props}
+    >
+      {Array.from({ length: columns }).map((_, i) => (
+        <Skeleton
+          key={i}
+          className="h-4 flex-1"
+          style={{
+            maxWidth: i === 0 ? "200px" : undefined,
+          }}
+        />
+      ))}
+    </div>
+  );
+});
 SkeletonTableRow.displayName = "SkeletonTableRow";
 
-export { Skeleton, SkeletonAvatar, SkeletonCard, SkeletonTableRow, SkeletonText };
-
+export {
+  Skeleton,
+  SkeletonAvatar,
+  SkeletonCard,
+  SkeletonTableRow,
+  SkeletonText,
+};

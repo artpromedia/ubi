@@ -139,10 +139,18 @@ export async function advanceOrder(
   if (input.supplierRefs !== undefined) {
     data.supplierRefs = toJson({ ...input.supplierRefs });
   }
-  if (input.heldMinor !== undefined) {data.heldMinor = BigInt(input.heldMinor);}
-  if (input.chargedMinor !== undefined) {data.chargedMinor = BigInt(input.chargedMinor);}
-  if (input.releasedMinor !== undefined) {data.releasedMinor = BigInt(input.releasedMinor);}
-  if (input.protectionRuleId !== undefined) {data.protectionRuleId = input.protectionRuleId;}
+  if (input.heldMinor !== undefined) {
+    data.heldMinor = BigInt(input.heldMinor);
+  }
+  if (input.chargedMinor !== undefined) {
+    data.chargedMinor = BigInt(input.chargedMinor);
+  }
+  if (input.releasedMinor !== undefined) {
+    data.releasedMinor = BigInt(input.releasedMinor);
+  }
+  if (input.protectionRuleId !== undefined) {
+    data.protectionRuleId = input.protectionRuleId;
+  }
 
   const updated = await tx.travelOrder.update({
     where: { id: input.order.id },
@@ -174,7 +182,8 @@ export async function advanceOrder(
               to: input.to,
               held: input.heldMinor ?? Number(input.order.heldMinor),
               charged: input.chargedMinor ?? Number(input.order.chargedMinor),
-              released: input.releasedMinor ?? Number(input.order.releasedMinor),
+              released:
+                input.releasedMinor ?? Number(input.order.releasedMinor),
               ...(input.eventPayload ?? {}),
             },
           },
@@ -236,9 +245,15 @@ export function buildLadder(order: OrderRow): LadderStep[] {
     if (failed) {
       return index === 0
         ? { step, state: "done" }
-        : { step, state: "skipped", detail: "released — the booking was not taken" };
+        : {
+            step,
+            state: "skipped",
+            detail: "released — the booking was not taken",
+          };
     }
-    if (index < current) {return { step, state: "done" };}
+    if (index < current) {
+      return { step, state: "done" };
+    }
     if (index === current) {
       if (reconciling) {
         return {
@@ -273,7 +288,10 @@ export interface OrderView {
   readonly released: Money;
   readonly payAtProperty: Money | null;
   readonly policy: JsonRecord;
-  readonly protection: { readonly covered: boolean; readonly ruleId: string | null };
+  readonly protection: {
+    readonly covered: boolean;
+    readonly ruleId: string | null;
+  };
   readonly stateAt: string;
 }
 

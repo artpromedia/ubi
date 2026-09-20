@@ -22,9 +22,13 @@ export function etagMatches(
   ifNoneMatch: string | undefined,
   etag: string,
 ): boolean {
-  if (ifNoneMatch === undefined || ifNoneMatch.trim() === "") {return false;}
+  if (ifNoneMatch === undefined || ifNoneMatch.trim() === "") {
+    return false;
+  }
   const candidates = ifNoneMatch.split(",").map((part) => part.trim());
-  if (candidates.includes("*")) {return true;}
+  if (candidates.includes("*")) {
+    return true;
+  }
   return candidates.some(
     (candidate) => candidate === etag || candidate === `W/${etag}`,
   );

@@ -6,9 +6,9 @@ import { cn } from "../lib/utils";
 
 /**
  * OTPInput - One-Time Password input for verification codes
- * 
+ *
  * @example
- * <OTPInput 
+ * <OTPInput
  *   length={6}
  *   value={otp}
  *   onChange={setOtp}
@@ -53,7 +53,7 @@ const OTPInput = React.forwardRef<HTMLDivElement, OTPInputProps>(
       size = "md",
       className,
     },
-    ref
+    ref,
   ) => {
     const inputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
     const [activeIndex, setActiveIndex] = React.useState(-1);
@@ -80,11 +80,11 @@ const OTPInput = React.forwardRef<HTMLDivElement, OTPInputProps>(
     const handleChange = (index: number, digit: string) => {
       // Only allow single digits
       const sanitized = digit.replace(/\D/g, "").slice(0, 1);
-      
+
       const newValue = value.split("");
       newValue[index] = sanitized;
       const result = newValue.join("").slice(0, length);
-      
+
       onChange?.(result);
 
       // Move to next input if digit entered
@@ -93,10 +93,13 @@ const OTPInput = React.forwardRef<HTMLDivElement, OTPInputProps>(
       }
     };
 
-    const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleKeyDown = (
+      index: number,
+      e: React.KeyboardEvent<HTMLInputElement>,
+    ) => {
       if (e.key === "Backspace") {
         e.preventDefault();
-        
+
         if (value[index]) {
           // Clear current digit
           const newValue = value.split("");
@@ -118,9 +121,12 @@ const OTPInput = React.forwardRef<HTMLDivElement, OTPInputProps>(
 
     const handlePaste = (e: React.ClipboardEvent) => {
       e.preventDefault();
-      const pastedData = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, length);
+      const pastedData = e.clipboardData
+        .getData("text")
+        .replace(/\D/g, "")
+        .slice(0, length);
       onChange?.(pastedData);
-      
+
       // Focus appropriate input after paste
       const focusIndex = Math.min(pastedData.length, length - 1);
       inputRefs.current[focusIndex]?.focus();
@@ -170,13 +176,15 @@ const OTPInput = React.forwardRef<HTMLDivElement, OTPInputProps>(
               error
                 ? "border-destructive focus-visible:ring-destructive"
                 : "border-input",
-              activeIndex === index && !error && "border-primary ring-2 ring-primary/20"
+              activeIndex === index &&
+                !error &&
+                "border-primary ring-2 ring-primary/20",
             )}
           />
         ))}
       </div>
     );
-  }
+  },
 );
 OTPInput.displayName = "OTPInput";
 

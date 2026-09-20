@@ -59,7 +59,7 @@ function calculateRidePrice(
   distanceKm: number,
   rideType: RideType,
   currency: string,
-  hasSurge: boolean = false
+  hasSurge: boolean = false,
 ): {
   baseFare: number;
   distanceFare: number;
@@ -127,7 +127,7 @@ export function createRide(options: RideFactoryOptions = {}): TestRide {
     distance,
     rideType,
     currency,
-    includeSurge
+    includeSurge,
   );
 
   const rideId = uuid();
@@ -199,7 +199,7 @@ export function createRide(options: RideFactoryOptions = {}): TestRide {
       ride.driverArrivedAt = new Date(startTime.getTime() + 300000);
       ride.rideStartedAt = new Date(startTime.getTime() + 360000);
       ride.rideCompletedAt = new Date(
-        startTime.getTime() + 360000 + estimatedDuration * 60000
+        startTime.getTime() + 360000 + estimatedDuration * 60000,
       );
       ride.actualDuration =
         estimatedDuration + faker.number.int({ min: -5, max: 10 });
@@ -243,7 +243,7 @@ export function createRide(options: RideFactoryOptions = {}): TestRide {
  */
 export function createScheduledRide(
   scheduledTime: Date,
-  options: Omit<RideFactoryOptions, "status"> = {}
+  options: Omit<RideFactoryOptions, "status"> = {},
 ): TestRide {
   const ride = createRide({
     ...options,
@@ -258,7 +258,7 @@ export function createScheduledRide(
  */
 export function createRides(
   count: number,
-  options?: RideFactoryOptions
+  options?: RideFactoryOptions,
 ): TestRide[] {
   return Array.from({ length: count }, () => createRide(options));
 }
@@ -267,7 +267,7 @@ export function createRides(
  * Create a ride with a specific scenario
  */
 export function createRideScenario(
-  scenario: "long_distance" | "short_trip" | "surge" | "airport" | "late_night"
+  scenario: "long_distance" | "short_trip" | "surge" | "airport" | "late_night",
 ): TestRide {
   switch (scenario) {
     case "long_distance":
@@ -303,7 +303,7 @@ export function createRideScenario(
  */
 export function createRideHistory(
   riderId: string,
-  count: number = 10
+  count: number = 10,
 ): TestRide[] {
   return Array.from({ length: count }, (_, i) => {
     const ride = createRide({ status: randomPick(["completed", "cancelled"]) });

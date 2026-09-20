@@ -55,7 +55,7 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
           name: "geolocation",
         });
         setLocationPermission(
-          permission.state as "granted" | "denied" | "prompt"
+          permission.state as "granted" | "denied" | "prompt",
         );
       }
 
@@ -66,7 +66,7 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
             timeout,
             maximumAge,
           });
-        }
+        },
       );
 
       const coords: Coordinates = {
@@ -122,7 +122,7 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
       (error) => {
         console.warn("Watch location error:", error.message);
       },
-      { enableHighAccuracy, timeout, maximumAge }
+      { enableHighAccuracy, timeout, maximumAge },
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
@@ -223,7 +223,7 @@ export function useOnlineStatus(): boolean {
 
 export function useLocalStorage<T>(
   key: string,
-  initialValue: T
+  initialValue: T,
 ): [T, (value: T | ((prev: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
     if (globalThis.window === undefined) return initialValue;
@@ -251,7 +251,7 @@ export function useLocalStorage<T>(
         console.warn(`Error setting localStorage key "${key}":`, error);
       }
     },
-    [key, storedValue]
+    [key, storedValue],
   );
 
   return [storedValue, setValue];
@@ -281,7 +281,7 @@ export function useClipboard(options: UseClipboardOptions = {}) {
         return false;
       }
     },
-    [timeout]
+    [timeout],
   );
 
   return { copy, hasCopied };

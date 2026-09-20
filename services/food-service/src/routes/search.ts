@@ -390,8 +390,12 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
     ],
   };
 
-  if (cuisine) {restaurantWhere.cuisineTypes = { has: cuisine };}
-  if (minRating) {restaurantWhere.rating = { gte: minRating };}
+  if (cuisine) {
+    restaurantWhere.cuisineTypes = { has: cuisine };
+  }
+  if (minRating) {
+    restaurantWhere.rating = { gte: minRating };
+  }
 
   // Location-based search
   let restaurants: any[] = [];
@@ -501,7 +505,9 @@ async function performSearch(params: z.infer<typeof searchSchema>) {
 
     restaurants = restaurants.filter((r) => {
       const hours = r.openingHours?.find((h: any) => h.day === currentDay);
-      if (!hours || hours.isClosed) {return false;}
+      if (!hours || hours.isClosed) {
+        return false;
+      }
       return currentTime >= hours.open && currentTime <= hours.close;
     });
   }

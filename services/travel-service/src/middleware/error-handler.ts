@@ -27,7 +27,10 @@ export function failure(c: Context, error: unknown): Response {
         })),
       },
     );
-    return c.json(validation.toBody(), validation.status as ContentfulStatusCode);
+    return c.json(
+      validation.toBody(),
+      validation.status as ContentfulStatusCode,
+    );
   }
 
   const contract = toContractError(error);

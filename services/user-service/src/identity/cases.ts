@@ -63,8 +63,9 @@ export async function decideIdentityCase(
   const existing = await deps.prisma.identityCase.findUnique({
     where: { id: input.caseId },
   });
-  if (existing === null)
-    {throw new ContractError("not_found", "Identity case not found");}
+  if (existing === null) {
+    throw new ContractError("not_found", "Identity case not found");
+  }
   if (existing.status === "decided") {
     throw new ContractError("conflict", "That case has already been decided", {
       decision: existing.decision,
@@ -75,7 +76,9 @@ export async function decideIdentityCase(
     where: { id: existing.driverId },
     select: { userId: true },
   });
-  if (driver === null) {throw new ContractError("not_found", "Driver not found");}
+  if (driver === null) {
+    throw new ContractError("not_found", "Driver not found");
+  }
   if (driver.userId === input.reviewerId) {
     throw new ContractError("forbidden", "You cannot review your own case");
   }
@@ -140,7 +143,9 @@ export async function decideIdentityCase(
       reason: input.reason,
     });
 
-    if (!applied) {return;}
+    if (!applied) {
+      return;
+    }
 
     if (input.decision === "deactivate") {
       await tx.user.update({

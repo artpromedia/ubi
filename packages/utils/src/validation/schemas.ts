@@ -20,14 +20,17 @@ export const phoneSchema = z
   .string()
   .regex(
     /^\+?[1-9]\d{1,14}$/,
-    "Please enter a valid phone number in international format"
+    "Please enter a valid phone number in international format",
   );
 
 export const nameSchema = z
   .string()
   .min(2, "Name must be at least 2 characters")
   .max(100, "Name must be less than 100 characters")
-  .regex(/^[a-zA-Z\s'-]+$/, "Name can only contain letters, spaces, hyphens, and apostrophes");
+  .regex(
+    /^[a-zA-Z\s'-]+$/,
+    "Name can only contain letters, spaces, hyphens, and apostrophes",
+  );
 
 // ===========================================
 // Location Schemas
@@ -101,8 +104,8 @@ export const paymentMethodSchema = z.enum([
   "cash",
   "card",
   "wallet",
-  "mpesa",      // Kenya
-  "mtn_momo",   // Ghana, Rwanda
+  "mpesa", // Kenya
+  "mtn_momo", // Ghana, Rwanda
   "airtel_money",
   "paystack",
   "flutterwave",
@@ -125,11 +128,15 @@ export const menuItemSchema = z.object({
   name: z.string().min(1),
   quantity: z.number().int().positive(),
   price: amountSchema,
-  options: z.array(z.object({
-    name: z.string(),
-    value: z.string(),
-    price: amountSchema.optional(),
-  })).optional(),
+  options: z
+    .array(
+      z.object({
+        name: z.string(),
+        value: z.string(),
+        price: amountSchema.optional(),
+      }),
+    )
+    .optional(),
   specialInstructions: z.string().max(500).optional(),
 });
 
@@ -146,7 +153,12 @@ export const foodOrderSchema = z.object({
 // Delivery Schemas
 // ===========================================
 
-export const packageSizeSchema = z.enum(["small", "medium", "large", "extra_large"]);
+export const packageSizeSchema = z.enum([
+  "small",
+  "medium",
+  "large",
+  "extra_large",
+]);
 
 export const deliveryRequestSchema = z.object({
   pickup: locationSchema,

@@ -60,7 +60,10 @@ export function createReferralRoutes(deps: GrowthDeps): Hono {
   routes.get("/:id", async (c) => {
     try {
       assertFlagEnabled(await deps.flags.flagsFor(cityOf(c)), "referrals");
-      return c.json(await getReferral(deps, actorOf(c), c.req.param("id")), 200);
+      return c.json(
+        await getReferral(deps, actorOf(c), c.req.param("id")),
+        200,
+      );
     } catch (error) {
       return failure(c, error);
     }

@@ -58,7 +58,10 @@ const VersionInputSchema = z.object({
     stacksWith: z.array(z.string()).optional(),
     priority: z.number().int().optional(),
   }),
-  funding: z.object({ party: z.string().min(1), costCentre: z.string().optional() }),
+  funding: z.object({
+    party: z.string().min(1),
+    costCentre: z.string().optional(),
+  }),
   budgetLimit: MoneySchema,
   experiment: z.record(z.unknown()).optional(),
   copy: z.string().max(4000),
@@ -107,7 +110,9 @@ export function createGrowthAdminRoutes(deps: GrowthDeps): Hono {
           stacking: body.stacking,
           funding: body.funding,
           budgetLimit: body.budgetLimit,
-          ...(body.experiment === undefined ? {} : { experiment: body.experiment }),
+          ...(body.experiment === undefined
+            ? {}
+            : { experiment: body.experiment }),
           copy: body.copy,
         },
         idempotencyKey: idempotencyKeyOf(c),
@@ -121,7 +126,10 @@ export function createGrowthAdminRoutes(deps: GrowthDeps): Hono {
 
   routes.get("/campaigns/:id", async (c) => {
     try {
-      return c.json(await getCampaign(deps, actorOf(c), c.req.param("id")), 200);
+      return c.json(
+        await getCampaign(deps, actorOf(c), c.req.param("id")),
+        200,
+      );
     } catch (error) {
       return failure(c, error);
     }

@@ -147,7 +147,10 @@ function canonicalJson(value: JsonValue): string {
   const record = value as { readonly [key: string]: JsonValue };
   const keys = Object.keys(record).sort();
   const body = keys
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key] as JsonValue)}`)
+    .map(
+      (key) =>
+        `${JSON.stringify(key)}:${canonicalJson(record[key] as JsonValue)}`,
+    )
     .join(",");
   return `{${body}}`;
 }
@@ -217,7 +220,10 @@ function insufficientSpendable(
   );
 }
 
-async function requireHold(tx: LedgerTx, reservationId: string): Promise<HoldRow> {
+async function requireHold(
+  tx: LedgerTx,
+  reservationId: string,
+): Promise<HoldRow> {
   const row = await tx.mpCommissionHold.findUnique({
     where: { id: reservationId },
   });
@@ -485,11 +491,7 @@ export async function adjustHold(
       if (deltaMinor > 0) {
         const spendable = await spendableOf(tx, hold.walletId, hold.currency);
         if (spendable.amountMinor < deltaMinor) {
-          const held = await activeHoldsMinor(
-            tx,
-            hold.walletId,
-            hold.currency,
-          );
+          const held = await activeHoldsMinor(tx, hold.walletId, hold.currency);
           throw insufficientSpendable(
             deltaMinor,
             spendable.amountMinor,
@@ -798,7 +800,10 @@ export async function captureHold(
             walletId: hold.walletId,
             counterpartRef: `award:${input.awardId}`,
           },
-          { account: "ubi_commission", counterpartRef: `award:${input.awardId}` },
+          {
+            account: "ubi_commission",
+            counterpartRef: `award:${input.awardId}`,
+          },
           amountMinor,
           hold.currency,
         ),

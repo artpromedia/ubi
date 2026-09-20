@@ -29,7 +29,9 @@ beforeEach(() => resetTravel(db));
 async function confirmedOrder(penaltyMinor: number) {
   const cityId = await seedCity(db);
   const supplierId = await seedFlightSupplier(db, {
-    control: { "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" } },
+    control: {
+      "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" },
+    },
   });
   const { deps, payment } = makeDeps(db);
   const actor = rider();
@@ -55,14 +57,17 @@ async function confirmedOrder(penaltyMinor: number) {
   const orderId = result.orders[0]?.id ?? "";
   // The supplier's cancel penalty is keyed on our own order reference.
   if (penaltyMinor > 0) {
-    await setControl(db, supplierId, orderId, { cancelPenaltyMinor: penaltyMinor });
+    await setControl(db, supplierId, orderId, {
+      cancelPenaltyMinor: penaltyMinor,
+    });
   }
   return { cityId, deps, payment, actor, orderId };
 }
 
 describe("refunds", () => {
   it("cancel opens a refund with the penalty applied, then pays out at the last hop", async () => {
-    const { cityId, deps, payment, actor, orderId } = await confirmedOrder(1_500_000);
+    const { cityId, deps, payment, actor, orderId } =
+      await confirmedOrder(1_500_000);
 
     const refund = await cancelOrder(deps, {
       actor,
@@ -79,8 +84,20 @@ describe("refunds", () => {
     expect(order?.state).toBe("cancelled");
 
     // Advance the ladder one legal hop at a time.
-    await advanceRefund(deps, { refundId: refund.id, to: "supplier_confirmed", actor, cityId, correlationId: null });
-    await advanceRefund(deps, { refundId: refund.id, to: "supplier_refund_pending", actor, cityId, correlationId: null });
+    await advanceRefund(deps, {
+      refundId: refund.id,
+      to: "supplier_confirmed",
+      actor,
+      cityId,
+      correlationId: null,
+    });
+    await advanceRefund(deps, {
+      refundId: refund.id,
+      to: "supplier_refund_pending",
+      actor,
+      cityId,
+      correlationId: null,
+    });
     const paidOut = await advanceRefund(deps, {
       refundId: refund.id,
       to: "refunded_to_wallet",
@@ -105,15 +122,33 @@ describe("refunds", () => {
       correlationId: null,
     });
     await expect(
-      advanceRefund(deps, { refundId: refund.id, to: "refunded_to_wallet", actor, cityId, correlationId: null }),
+      advanceRefund(deps, {
+        refundId: refund.id,
+        to: "refunded_to_wallet",
+        actor,
+        cityId,
+        correlationId: null,
+      }),
     ).rejects.toMatchObject({ code: "illegal_transition" });
   });
 
   it("replays a cancel: the same refund is returned, not a second one", async () => {
     const { cityId, deps, actor, orderId } = await confirmedOrder(0);
     const key = idemKey();
-    const first = await cancelOrder(deps, { actor, cityId, orderId, idempotencyKey: key, correlationId: null });
-    const second = await cancelOrder(deps, { actor, cityId, orderId, idempotencyKey: key, correlationId: null });
+    const first = await cancelOrder(deps, {
+      actor,
+      cityId,
+      orderId,
+      idempotencyKey: key,
+      correlationId: null,
+    });
+    const second = await cancelOrder(deps, {
+      actor,
+      cityId,
+      orderId,
+      idempotencyKey: key,
+      correlationId: null,
+    });
     expect(second.id).toBe(first.id);
     const count = await db.travelRefund.count({ where: { orderId } });
     expect(count).toBe(1);

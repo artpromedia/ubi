@@ -8,13 +8,14 @@
  * is only `confirmed` and a `ticketed` order are both cancellable; an order that
  * never got past `unknown_reconciling` is not — it must be reconciled first.
  */
-import {
-  ContractError,
-  money,
-  scopedIdempotencyKey,
-} from "@ubi/contracts";
+import { ContractError, money, scopedIdempotencyKey } from "@ubi/contracts";
 
-import { advanceOrder, orderView, type OrderRow, type OrderView } from "./ladder";
+import {
+  advanceOrder,
+  orderView,
+  type OrderRow,
+  type OrderView,
+} from "./ladder";
 import { withOutbox } from "./outbox";
 import { buildRefundRequest, refundView, type RefundView } from "./refunds";
 import { actorTypeFor, isOpsRole } from "./roles";
@@ -23,7 +24,10 @@ import { adapterFor, contextFor, loadSupplier } from "./suppliers";
 import type { TravelDeps } from "./context";
 import type { Actor, JsonValue } from "./types";
 
-function assertMayRead(actor: Actor, order: { userId: string; id: string }): void {
+function assertMayRead(
+  actor: Actor,
+  order: { userId: string; id: string },
+): void {
   if (order.userId === actor.id || isOpsRole(actor.role)) {
     return;
   }
@@ -36,7 +40,9 @@ export async function getOrder(
   actor: Actor,
   orderId: string,
 ): Promise<OrderView> {
-  const order = await deps.db.travelOrder.findUnique({ where: { id: orderId } });
+  const order = await deps.db.travelOrder.findUnique({
+    where: { id: orderId },
+  });
   if (order === null) {
     throw new ContractError("not_found", "no such order", { orderId });
   }
@@ -56,9 +62,13 @@ export async function cancelOrder(
     readonly correlationId: string | null;
   },
 ): Promise<RefundView> {
-  const order = await deps.db.travelOrder.findUnique({ where: { id: input.orderId } });
+  const order = await deps.db.travelOrder.findUnique({
+    where: { id: input.orderId },
+  });
   if (order === null) {
-    throw new ContractError("not_found", "no such order", { orderId: input.orderId });
+    throw new ContractError("not_found", "no such order", {
+      orderId: input.orderId,
+    });
   }
   assertMayRead(input.actor, order);
 
@@ -102,10 +112,14 @@ export async function cancelOrder(
     idempotencyKey: scoped,
   });
   if (!cancel.accepted) {
-    throw new ContractError("conflict", "the supplier will not cancel this order", {
-      orderId: input.orderId,
-      reason: cancel.reason ?? null,
-    });
+    throw new ContractError(
+      "conflict",
+      "the supplier will not cancel this order",
+      {
+        orderId: input.orderId,
+        reason: cancel.reason ?? null,
+      },
+    );
   }
 
   const penaltyMinor = Math.min(cancel.penalty.amountMinor, charged);
@@ -169,9 +183,15 @@ function jsonRefs(value: unknown): {
     orderRef?: string;
     ticketNumbers?: string[];
   } = {};
-  if (typeof record.pnr === "string") {refs.pnr = record.pnr;}
-  if (typeof record.bookingRef === "string") {refs.bookingRef = record.bookingRef;}
-  if (typeof record.orderRef === "string") {refs.orderRef = record.orderRef;}
+  if (typeof record.pnr === "string") {
+    refs.pnr = record.pnr;
+  }
+  if (typeof record.bookingRef === "string") {
+    refs.bookingRef = record.bookingRef;
+  }
+  if (typeof record.orderRef === "string") {
+    refs.orderRef = record.orderRef;
+  }
   if (Array.isArray(record.ticketNumbers)) {
     refs.ticketNumbers = record.ticketNumbers.filter(
       (entry): entry is string => typeof entry === "string",

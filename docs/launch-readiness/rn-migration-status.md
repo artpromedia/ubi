@@ -10,20 +10,20 @@ needs a credential, runner or hardware absent from this environment.
 
 ## What is implemented and verified
 
-| Area | What | Evidence |
-|---|---|---|
-| Contracts | +9 flags, +78 events, +new testIDs, +10 state machines (21 total) | packages/contracts tsc 0, 94 tests |
-| Database | 35 Prisma models (migrations 009–012) + forward migration | validate ok; chain applies to empty DB; zero drift |
-| travel-service (new) | flight/stay adapters + capabilities, per-item orders, the travelOrder ladder (PNR≠ticket, reconcile-before-repurchase), refunds, disruptions, verified+deduped webhooks, settlements, ops/travel | tsc 0; 19 vitest on real Postgres |
-| ask-service (new) | ModelProvider/EmbeddingProvider interfaces, RAG+citations, bounded read tools (identity from context), grant-gated transactional tools, redaction, refused out-of-scope, ai_actions + ops/ai | tsc 0; 29 vitest (incl. prompt-injection, wrong-user, redaction, expired/replayed grant) |
-| growth-service (new) | campaigns + two-person approval, budget reserve/consume/release, distinct benefit objects, referrals + abuse review, driver rebates as separate journal lines, marketing drafts (k≥50) | tsc 0; 30 vitest |
-| user-service | single-use action grants (mint service-to-service, atomic verify+consume) + standing mandates (allow-list, atomic per-run allowance, revoke) | tsc 0; 238 vitest (+30 new) |
-| RN shared packages | mobile-tokens, mobile-ui (14 components), mobile-core (session/api/realtime/flags/money) | tsc 0 each |
-| apps/rider-mobile | typed navigation, new feature screens (Ask, Travel, Benefits, Mandates) wired through the api boundary, fixtures gated | tsc 0; **17 jest** (FlagGate DENY_ALL, money parity, screen renders) |
-| apps/driver-mobile | typed navigation, incentives/earnings screens, incentive strip | tsc 0; **23 jest** |
-| apps/admin-dashboard | growth (campaigns/referrals/assistant) + ops (travel/ai-actions) pages | tsc 0; next build compiles all 6 routes |
-| apps/web-app | ask/benefits/travel/trips pages + web→app handoff with fallback | tsc 0; next build green |
-| CI | `rn-mobile` job (tsc + jest for both apps, real, in the merge gate); stale Flutter job removed | ci.yml valid; commands verified locally |
+| Area                 | What                                                                                                                                                                                             | Evidence                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Contracts            | +9 flags, +78 events, +new testIDs, +10 state machines (21 total)                                                                                                                                | packages/contracts tsc 0, 94 tests                                                       |
+| Database             | 35 Prisma models (migrations 009–012) + forward migration                                                                                                                                        | validate ok; chain applies to empty DB; zero drift                                       |
+| travel-service (new) | flight/stay adapters + capabilities, per-item orders, the travelOrder ladder (PNR≠ticket, reconcile-before-repurchase), refunds, disruptions, verified+deduped webhooks, settlements, ops/travel | tsc 0; 19 vitest on real Postgres                                                        |
+| ask-service (new)    | ModelProvider/EmbeddingProvider interfaces, RAG+citations, bounded read tools (identity from context), grant-gated transactional tools, redaction, refused out-of-scope, ai_actions + ops/ai     | tsc 0; 29 vitest (incl. prompt-injection, wrong-user, redaction, expired/replayed grant) |
+| growth-service (new) | campaigns + two-person approval, budget reserve/consume/release, distinct benefit objects, referrals + abuse review, driver rebates as separate journal lines, marketing drafts (k≥50)           | tsc 0; 30 vitest                                                                         |
+| user-service         | single-use action grants (mint service-to-service, atomic verify+consume) + standing mandates (allow-list, atomic per-run allowance, revoke)                                                     | tsc 0; 238 vitest (+30 new)                                                              |
+| RN shared packages   | mobile-tokens, mobile-ui (14 components), mobile-core (session/api/realtime/flags/money)                                                                                                         | tsc 0 each                                                                               |
+| apps/rider-mobile    | typed navigation, new feature screens (Ask, Travel, Benefits, Mandates) wired through the api boundary, fixtures gated                                                                           | tsc 0; **17 jest** (FlagGate DENY_ALL, money parity, screen renders)                     |
+| apps/driver-mobile   | typed navigation, incentives/earnings screens, incentive strip                                                                                                                                   | tsc 0; **23 jest**                                                                       |
+| apps/admin-dashboard | growth (campaigns/referrals/assistant) + ops (travel/ai-actions) pages                                                                                                                           | tsc 0; next build compiles all 6 routes                                                  |
+| apps/web-app         | ask/benefits/travel/trips pages + web→app handoff with fallback                                                                                                                                  | tsc 0; next build green                                                                  |
+| CI                   | `rn-mobile` job (tsc + jest for both apps, real, in the merge gate); stale Flutter job removed                                                                                                   | ci.yml valid; commands verified locally                                                  |
 
 **Monorepo-wide: `turbo run typecheck` 41/41 green; ~500 backend+contract tests +
 40 RN jest tests all pass; the merge gate (build, test, go-build, db-check,
@@ -57,6 +57,7 @@ contracts, rn-mobile) is green.**
    payment-service; the ports are typed and tested with fakes.
 
 ## Not done, by scope
+
 - Full retained-journey RN port (item 4 above).
 - Wiring each service's outbox runner into its bootstrap (runners exist; not auto-started).
 - The mobile-tokens generator remains a stub; the theme is hand-mirrored and key-verified against packages/design-tokens.

@@ -20,7 +20,9 @@ export const SERVICE_KEY_HEADER = "x-service-key";
 function equal(a: string, b: string): boolean {
   const left = Buffer.from(a, "utf8");
   const right = Buffer.from(b, "utf8");
-  if (left.length !== right.length) {return false;}
+  if (left.length !== right.length) {
+    return false;
+  }
   return timingSafeEqual(left, right);
 }
 
@@ -69,7 +71,8 @@ export function requireReviewerRole(role: string): void {
     normalised === "admin" ||
     normalised === "agent" ||
     normalised === "super_admin"
-  )
-    {return;}
+  ) {
+    return;
+  }
   throw new ContractError("forbidden", "Only a reviewer can decide this");
 }

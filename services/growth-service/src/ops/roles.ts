@@ -94,7 +94,9 @@ const ROLE_SET: ReadonlySet<string> = new Set([
   ...END_USER_ROLES,
 ]);
 
-export function isKnownRole(role: string): role is GrowthAdminRole | EndUserRole {
+export function isKnownRole(
+  role: string,
+): role is GrowthAdminRole | EndUserRole {
   return ROLE_SET.has(role);
 }
 

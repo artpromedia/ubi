@@ -170,7 +170,7 @@ export function LocationSearch({
         <div
           className={cn(
             "absolute left-3 top-1/2 -translate-y-1/2",
-            type === "pickup" ? "text-ubi-green" : "text-ubi-bites"
+            type === "pickup" ? "text-ubi-green" : "text-ubi-bites",
           )}
         >
           <MapPin className="h-5 w-5" />
@@ -266,7 +266,7 @@ export function LocationSearch({
                   <div
                     className={cn(
                       "flex h-10 w-10 items-center justify-center rounded-full",
-                      iconClass
+                      iconClass,
                     )}
                   >
                     {icon}

@@ -78,7 +78,7 @@ export class MLServiceFactory {
     this.demandService = new DemandForecastService(this.featureStore);
     this.pricingService = new DynamicPricingService(
       this.featureStore,
-      this.demandService
+      this.demandService,
     );
     this.fraudService = new FraudDetectionService(this.featureStore);
     this.churnService = new ChurnPredictionService(this.featureStore);

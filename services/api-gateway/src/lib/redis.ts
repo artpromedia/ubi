@@ -27,8 +27,12 @@ export function setIdentityStateStore(
 }
 
 export function getIdentityStateStore(): IdentityStateStore | undefined {
-  if (override !== undefined) {return override;}
-  if (initialised) {return client;}
+  if (override !== undefined) {
+    return override;
+  }
+  if (initialised) {
+    return client;
+  }
   initialised = true;
 
   const url = process.env.REDIS_URL;

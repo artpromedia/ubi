@@ -79,7 +79,10 @@ export function createDeps(): AskDeps {
       serviceKey,
     }),
     grants: createHttpGrantPort({ baseUrl: USER_SERVICE_URL, serviceKey }),
-    support: createHttpSupportPort({ baseUrl: SUPPORT_SERVICE_URL, serviceKey }),
+    support: createHttpSupportPort({
+      baseUrl: SUPPORT_SERVICE_URL,
+      serviceKey,
+    }),
     limits: DEFAULT_LIMITS,
     now: () => new Date(),
   };

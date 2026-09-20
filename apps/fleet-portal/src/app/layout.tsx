@@ -9,7 +9,8 @@ export const metadata: Metadata = {
     default: "UBI Fleet Portal",
     template: "%s | UBI Fleet",
   },
-  description: "Manage your UBI driver fleet - monitor drivers, vehicles, and performance",
+  description:
+    "Manage your UBI driver fleet - monitor drivers, vehicles, and performance",
   robots: {
     index: false,
     follow: false,

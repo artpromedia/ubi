@@ -30,7 +30,10 @@ import { PaymentProvider, PaymentStatus } from "@prisma/client";
 
 import { type MoMoConfig, MoMoService } from "../providers/momo.service";
 import { type MpesaConfig, MpesaService } from "../providers/mpesa.service";
-import { type PaystackConfig, PaystackService } from "../providers/paystack.service";
+import {
+  type PaystackConfig,
+  PaystackService,
+} from "../providers/paystack.service";
 import { WalletService } from "../services/wallet.service";
 
 import type { ExtendedPrismaClient } from "../lib/prisma";
@@ -326,108 +329,108 @@ export class PaymentGateway {
       // Route to appropriate provider
       switch (provider) {
         case PaymentProvider.MPESA: {
-            if (!this.mpesaService || !phoneNumber) {
-              throw new Error("M-Pesa requires phone number");
-            }
-            const mpesaResult = await this.mpesaService.initiatePayment({
-              userId,
-              phoneNumber,
-              amount,
-              transactionId,
-              description,
-            });
-            response = {
-              paymentTransactionId: mpesaResult.paymentTransactionId,
-              provider: PaymentProvider.MPESA,
-              status: mpesaResult.status,
-              checkoutRequestId: mpesaResult.checkoutRequestId,
-            };
-            break;
+          if (!this.mpesaService || !phoneNumber) {
+            throw new Error("M-Pesa requires phone number");
+          }
+          const mpesaResult = await this.mpesaService.initiatePayment({
+            userId,
+            phoneNumber,
+            amount,
+            transactionId,
+            description,
+          });
+          response = {
+            paymentTransactionId: mpesaResult.paymentTransactionId,
+            provider: PaymentProvider.MPESA,
+            status: mpesaResult.status,
+            checkoutRequestId: mpesaResult.checkoutRequestId,
+          };
+          break;
         }
 
         case PaymentProvider.MTN_MOMO_GH: {
-            if (!this.momoGhanaService || !phoneNumber) {
-              throw new Error("MTN MoMo requires phone number");
-            }
-            const momoGhResult = await this.momoGhanaService.initiatePayment({
-              userId,
-              phoneNumber,
-              amount,
-              transactionId,
-              description,
-            });
-            response = {
-              paymentTransactionId: momoGhResult.paymentTransactionId,
-              provider: PaymentProvider.MTN_MOMO_GH,
-              status: momoGhResult.status,
-              referenceId: momoGhResult.referenceId,
-            };
-            break;
+          if (!this.momoGhanaService || !phoneNumber) {
+            throw new Error("MTN MoMo requires phone number");
+          }
+          const momoGhResult = await this.momoGhanaService.initiatePayment({
+            userId,
+            phoneNumber,
+            amount,
+            transactionId,
+            description,
+          });
+          response = {
+            paymentTransactionId: momoGhResult.paymentTransactionId,
+            provider: PaymentProvider.MTN_MOMO_GH,
+            status: momoGhResult.status,
+            referenceId: momoGhResult.referenceId,
+          };
+          break;
         }
 
         case PaymentProvider.MTN_MOMO_RW: {
-            if (!this.momoRwandaService || !phoneNumber) {
-              throw new Error("MTN MoMo requires phone number");
-            }
-            const momoRwResult = await this.momoRwandaService.initiatePayment({
-              userId,
-              phoneNumber,
-              amount,
-              transactionId,
-              description,
-            });
-            response = {
-              paymentTransactionId: momoRwResult.paymentTransactionId,
-              provider: PaymentProvider.MTN_MOMO_RW,
-              status: momoRwResult.status,
-              referenceId: momoRwResult.referenceId,
-            };
-            break;
+          if (!this.momoRwandaService || !phoneNumber) {
+            throw new Error("MTN MoMo requires phone number");
+          }
+          const momoRwResult = await this.momoRwandaService.initiatePayment({
+            userId,
+            phoneNumber,
+            amount,
+            transactionId,
+            description,
+          });
+          response = {
+            paymentTransactionId: momoRwResult.paymentTransactionId,
+            provider: PaymentProvider.MTN_MOMO_RW,
+            status: momoRwResult.status,
+            referenceId: momoRwResult.referenceId,
+          };
+          break;
         }
 
         case PaymentProvider.MTN_MOMO_UG: {
-            if (!this.momoUgandaService || !phoneNumber) {
-              throw new Error("MTN MoMo requires phone number");
-            }
-            const momoUgResult = await this.momoUgandaService.initiatePayment({
-              userId,
-              phoneNumber,
-              amount,
-              transactionId,
-              description,
-            });
-            response = {
-              paymentTransactionId: momoUgResult.paymentTransactionId,
-              provider: PaymentProvider.MTN_MOMO_UG,
-              status: momoUgResult.status,
-              referenceId: momoUgResult.referenceId,
-            };
-            break;
+          if (!this.momoUgandaService || !phoneNumber) {
+            throw new Error("MTN MoMo requires phone number");
+          }
+          const momoUgResult = await this.momoUgandaService.initiatePayment({
+            userId,
+            phoneNumber,
+            amount,
+            transactionId,
+            description,
+          });
+          response = {
+            paymentTransactionId: momoUgResult.paymentTransactionId,
+            provider: PaymentProvider.MTN_MOMO_UG,
+            status: momoUgResult.status,
+            referenceId: momoUgResult.referenceId,
+          };
+          break;
         }
 
         case PaymentProvider.PAYSTACK: {
-            if (!this.paystackService) {
-              throw new Error("Paystack not configured");
-            }
-            const paystackResult = await this.paystackService.initiatePayment({
-              userId,
-              email,
-              amount,
-              currency: currency as any,
-              transactionId,
-              description,
-              callbackUrl,
-            });
-            response = {
-              paymentTransactionId: paystackResult.paymentTransactionId,
-              provider: PaymentProvider.PAYSTACK,
-              status: "pending",
-              authorizationUrl: paystackResult.authorizationUrl,
-              paystackReference: paystackResult.reference,
-              requiresAction: true,
-              actionUrl: paystackResult.authorizationUrl,
-            };
-            break;
+          if (!this.paystackService) {
+            throw new Error("Paystack not configured");
+          }
+          const paystackResult = await this.paystackService.initiatePayment({
+            userId,
+            email,
+            amount,
+            currency: currency as any,
+            transactionId,
+            description,
+            callbackUrl,
+          });
+          response = {
+            paymentTransactionId: paystackResult.paymentTransactionId,
+            provider: PaymentProvider.PAYSTACK,
+            status: "pending",
+            authorizationUrl: paystackResult.authorizationUrl,
+            paystackReference: paystackResult.reference,
+            requiresAction: true,
+            actionUrl: paystackResult.authorizationUrl,
+          };
+          break;
         }
 
         default:

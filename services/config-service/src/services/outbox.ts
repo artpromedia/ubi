@@ -84,6 +84,8 @@ export async function findOutboxByIdempotencyKey(
   idempotencyKey: string,
 ): Promise<Record<string, unknown> | undefined> {
   const row = await tx.outboxEvent.findUnique({ where: { idempotencyKey } });
-  if (row === null) {return undefined;}
+  if (row === null) {
+    return undefined;
+  }
   return asJsonObject(row.payload);
 }

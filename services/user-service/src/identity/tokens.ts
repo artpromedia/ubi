@@ -72,10 +72,15 @@ export async function issueAccessToken(
     mode: input.mode,
     deviceId: input.deviceId,
   };
-  if (scopes !== null) {claims.scopes = [...scopes];}
-  if (input.sessionId !== undefined) {claims.sid = input.sessionId;}
-  if (input.cityId !== undefined && input.cityId !== null)
-    {claims.cityId = input.cityId;}
+  if (scopes !== null) {
+    claims.scopes = [...scopes];
+  }
+  if (input.sessionId !== undefined) {
+    claims.sid = input.sessionId;
+  }
+  if (input.cityId !== undefined && input.cityId !== null) {
+    claims.cityId = input.cityId;
+  }
 
   const accessToken = await new jose.SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })

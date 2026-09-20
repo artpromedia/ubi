@@ -92,7 +92,7 @@ driverRoutes.post("/apply", async (c) => {
   if (user.driver) {
     throw new UbiError(
       ErrorCodes.DUPLICATE_ENTRY,
-      "You already have a driver application"
+      "You already have a driver application",
     );
   }
 
@@ -104,7 +104,7 @@ driverRoutes.post("/apply", async (c) => {
   if (existingLicense) {
     throw new UbiError(
       ErrorCodes.DUPLICATE_ENTRY,
-      "This license number is already registered"
+      "This license number is already registered",
     );
   }
 
@@ -116,7 +116,7 @@ driverRoutes.post("/apply", async (c) => {
   if (existingPlate) {
     throw new UbiError(
       ErrorCodes.DUPLICATE_ENTRY,
-      "This plate number is already registered"
+      "This plate number is already registered",
     );
   }
 
@@ -158,7 +158,7 @@ driverRoutes.post("/apply", async (c) => {
       }
 
       return { vehicle: newVehicle, driver: newDriver };
-    }
+    },
   );
 
   return c.json({
@@ -354,7 +354,7 @@ driverRoutes.put("/me/status", async (c) => {
   if (!existingDriver.verifiedAt) {
     throw new UbiError(
       ErrorCodes.DRIVER_NOT_VERIFIED,
-      "Your driver profile is not yet verified"
+      "Your driver profile is not yet verified",
     );
   }
 
@@ -433,7 +433,7 @@ driverRoutes.get("/me/earnings", async (c) => {
       acc[e.type] = (acc[e.type] ?? 0) + amount;
       return acc;
     },
-    initialValue
+    initialValue,
   );
 
   return c.json({

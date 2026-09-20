@@ -41,7 +41,10 @@ export interface EligibilityInput {
 }
 
 export interface PromotionsPort {
-  eligibility(actor: Actor, input: EligibilityInput): Promise<EligibilityResult>;
+  eligibility(
+    actor: Actor,
+    input: EligibilityInput,
+  ): Promise<EligibilityResult>;
   explainIncentive(
     actor: Actor,
     postingId: string,
@@ -113,7 +116,9 @@ export function createHttpPromotionsPort(
         }
         return (await response.json()) as EligibilityResult;
       } catch (error) {
-        if (error instanceof ContractError) {throw error;}
+        if (error instanceof ContractError) {
+          throw error;
+        }
         toolLogger.error({ err: error }, "eligibility call failed");
         throw new ContractError(
           "service_unavailable",
@@ -142,7 +147,9 @@ export function createHttpPromotionsPort(
         }
         return (await response.json()) as IncentiveExplanation;
       } catch (error) {
-        if (error instanceof ContractError) {throw error;}
+        if (error instanceof ContractError) {
+          throw error;
+        }
         toolLogger.error({ err: error }, "incentive explain call failed");
         throw new ContractError(
           "service_unavailable",

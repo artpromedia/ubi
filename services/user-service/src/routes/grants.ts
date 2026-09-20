@@ -19,7 +19,10 @@ import {
   mintGrant,
   MintGrantSchema,
 } from "../grants/grants";
-import { requireInternalService, SERVICE_KEY_HEADER } from "../grants/service-auth";
+import {
+  requireInternalService,
+  SERVICE_KEY_HEADER,
+} from "../grants/service-auth";
 import {
   contractRoute,
   ok,

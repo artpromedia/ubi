@@ -355,7 +355,9 @@ export class BackgroundCheckService extends EventEmitter {
     const checks = await this.getUserBackgroundChecks(userId);
 
     for (const check of checks) {
-      if (!check.validUntil) {continue;}
+      if (!check.validUntil) {
+        continue;
+      }
 
       // Alert if check is expiring soon (within 30 days)
       const daysUntilExpiry =

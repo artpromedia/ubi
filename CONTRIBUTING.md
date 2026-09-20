@@ -67,14 +67,14 @@ git checkout -b feature/your-feature-name
 
 ### Branch Naming Convention
 
-| Prefix | Purpose | Example |
-|--------|---------|---------|
-| `feature/` | New features | `feature/add-ride-sharing` |
-| `fix/` | Bug fixes | `fix/payment-timeout` |
-| `docs/` | Documentation | `docs/api-reference` |
-| `chore/` | Maintenance | `chore/upgrade-deps` |
-| `refactor/` | Code refactoring | `refactor/user-service` |
-| `test/` | Test additions | `test/payment-service` |
+| Prefix      | Purpose          | Example                    |
+| ----------- | ---------------- | -------------------------- |
+| `feature/`  | New features     | `feature/add-ride-sharing` |
+| `fix/`      | Bug fixes        | `fix/payment-timeout`      |
+| `docs/`     | Documentation    | `docs/api-reference`       |
+| `chore/`    | Maintenance      | `chore/upgrade-deps`       |
+| `refactor/` | Code refactoring | `refactor/user-service`    |
+| `test/`     | Test additions   | `test/payment-service`     |
 
 ### 2. Make Changes
 
@@ -105,30 +105,30 @@ git commit -m "chore(deps): upgrade Next.js to 15.1"
 
 #### Commit Types
 
-| Type | Description |
-|------|-------------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation only |
-| `style` | Formatting, no code change |
+| Type       | Description                 |
+| ---------- | --------------------------- |
+| `feat`     | New feature                 |
+| `fix`      | Bug fix                     |
+| `docs`     | Documentation only          |
+| `style`    | Formatting, no code change  |
 | `refactor` | Code change, no feature/fix |
-| `perf` | Performance improvement |
-| `test` | Adding tests |
-| `chore` | Maintenance tasks |
-| `ci` | CI/CD changes |
+| `perf`     | Performance improvement     |
+| `test`     | Adding tests                |
+| `chore`    | Maintenance tasks           |
+| `ci`       | CI/CD changes               |
 
 #### Commit Scopes
 
-| Scope | Description |
-|-------|-------------|
-| `rides` | Ride service changes |
-| `food` | Food service changes |
+| Scope      | Description              |
+| ---------- | ------------------------ |
+| `rides`    | Ride service changes     |
+| `food`     | Food service changes     |
 | `delivery` | Delivery service changes |
-| `payments` | Payment service changes |
-| `auth` | Authentication changes |
-| `ui` | UI component changes |
-| `api` | API gateway changes |
-| `deps` | Dependency updates |
+| `payments` | Payment service changes  |
+| `auth`     | Authentication changes   |
+| `ui`       | UI component changes     |
+| `api`      | API gateway changes      |
+| `deps`     | Dependency updates       |
 
 ### 4. Push and Create PR
 
@@ -165,11 +165,11 @@ interface RideRequest {
 
 // ✅ Good: Use enums for constants
 enum RideStatus {
-  PENDING = 'PENDING',
-  ACCEPTED = 'ACCEPTED',
-  IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETED = 'COMPLETED',
-  CANCELLED = 'CANCELLED',
+  PENDING = "PENDING",
+  ACCEPTED = "ACCEPTED",
+  IN_PROGRESS = "IN_PROGRESS",
+  COMPLETED = "COMPLETED",
+  CANCELLED = "CANCELLED",
 }
 
 // ✅ Good: Handle errors properly
@@ -177,8 +177,8 @@ try {
   const result = await processPayment(payment);
   return { success: true, data: result };
 } catch (error) {
-  logger.error('Payment failed', { error, paymentId: payment.id });
-  throw new PaymentError('Payment processing failed', error);
+  logger.error("Payment failed", { error, paymentId: payment.id });
+  throw new PaymentError("Payment processing failed", error);
 }
 ```
 
@@ -199,9 +199,7 @@ export function RideCard({ ride, onSelect, isLoading = false }: RideCardProps) {
 
   return (
     <Card onClick={handleSelect} disabled={isLoading}>
-      <CardContent>
-        {/* ... */}
-      </CardContent>
+      <CardContent>{/* ... */}</CardContent>
     </Card>
   );
 }
@@ -290,16 +288,16 @@ services/ride-service/
 
 ### Naming Conventions
 
-| Item | Convention | Example |
-|------|------------|---------|
-| Files | kebab-case | `ride-service.ts` |
-| Components | PascalCase | `RideCard.tsx` |
-| Functions | camelCase | `calculateFare()` |
-| Constants | SCREAMING_SNAKE | `MAX_RETRY_COUNT` |
-| Interfaces | PascalCase | `RideRequest` |
-| Types | PascalCase | `RideStatus` |
-| Go files | snake_case | `ride_handler.go` |
-| Go packages | lowercase | `rides` |
+| Item        | Convention      | Example           |
+| ----------- | --------------- | ----------------- |
+| Files       | kebab-case      | `ride-service.ts` |
+| Components  | PascalCase      | `RideCard.tsx`    |
+| Functions   | camelCase       | `calculateFare()` |
+| Constants   | SCREAMING_SNAKE | `MAX_RETRY_COUNT` |
+| Interfaces  | PascalCase      | `RideRequest`     |
+| Types       | PascalCase      | `RideStatus`      |
+| Go files    | snake_case      | `ride_handler.go` |
+| Go packages | lowercase       | `rides`           |
 
 ## Pull Request Process
 
@@ -321,24 +319,30 @@ When creating a PR, use this template:
 
 ```markdown
 ## Description
+
 Brief description of changes
 
 ## Type of Change
+
 - [ ] Bug fix
 - [ ] New feature
 - [ ] Breaking change
 - [ ] Documentation update
 
 ## Related Issues
+
 Closes #123
 
 ## Testing
+
 Describe tests added/modified
 
 ## Screenshots
+
 If applicable
 
 ## Checklist
+
 - [ ] Tests pass
 - [ ] Lint passes
 - [ ] Documentation updated

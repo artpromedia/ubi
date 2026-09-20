@@ -8,14 +8,14 @@ import { cn } from "../lib/utils";
 
 /**
  * Banner - Full-width notification banner
- * 
+ *
  * Used for important announcements, promotions, or system messages.
- * 
+ *
  * @example
  * <Banner variant="info" dismissible>
  *   New feature: Track your ride in real-time!
  * </Banner>
- * 
+ *
  * <Banner variant="promo" action={{ label: "Learn More", onClick: () => {} }}>
  *   Get 50% off your next UBI Bites order
  * </Banner>
@@ -27,11 +27,14 @@ const bannerVariants = cva(
     variants: {
       variant: {
         info: "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200",
-        success: "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200",
-        warning: "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
+        success:
+          "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200",
+        warning:
+          "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
         error: "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200",
         // UBI promotional banners
-        promo: "bg-gradient-to-r from-ubi-green/10 to-ubi-bites/10 text-foreground",
+        promo:
+          "bg-gradient-to-r from-ubi-green/10 to-ubi-bites/10 text-foreground",
         "promo-move": "bg-ubi-move/10 text-ubi-move dark:text-ubi-move",
         "promo-bites": "bg-ubi-bites/10 text-ubi-bites dark:text-ubi-bites",
         "promo-send": "bg-ubi-send/10 text-ubi-send dark:text-ubi-send",
@@ -45,7 +48,7 @@ const bannerVariants = cva(
       variant: "info",
       position: "inline",
     },
-  }
+  },
 );
 
 const iconMap = {
@@ -60,7 +63,8 @@ const iconMap = {
 };
 
 export interface BannerProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof bannerVariants> {
   /** Show icon based on variant */
   showIcon?: boolean;
@@ -88,7 +92,7 @@ const Banner = React.forwardRef<HTMLDivElement, BannerProps>(
       children,
       ...props
     },
-    ref
+    ref,
   ) => {
     const [isVisible, setIsVisible] = React.useState(true);
     const IconComponent = variant ? iconMap[variant] : Info;
@@ -98,7 +102,9 @@ const Banner = React.forwardRef<HTMLDivElement, BannerProps>(
       onDismiss?.();
     };
 
-    if (!isVisible) {return null;}
+    if (!isVisible) {
+      return null;
+    }
 
     return (
       <div
@@ -130,7 +136,7 @@ const Banner = React.forwardRef<HTMLDivElement, BannerProps>(
         )}
       </div>
     );
-  }
+  },
 );
 Banner.displayName = "Banner";
 

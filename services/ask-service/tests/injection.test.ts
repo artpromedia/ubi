@@ -121,7 +121,10 @@ describe("prompt injection cannot change permissions", () => {
   it("user-text injection cannot read another user's trip", async () => {
     const db = testDb();
     const ride = new FakeRidePort();
-    ride.setTrip("trip_someone_else", { ownerId: "someone_else", state: "in_progress" });
+    ride.setTrip("trip_someone_else", {
+      ownerId: "someone_else",
+      state: "in_progress",
+    });
     const deps = makeDeps(db, { ride });
     const threadId = await askWith(
       deps,

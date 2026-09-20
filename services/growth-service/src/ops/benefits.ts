@@ -24,7 +24,9 @@ export async function getBenefits(
 ): Promise<JsonRecord> {
   assertPermission(actor.role, "benefits.read.self");
   const now = deps.now();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const today = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
 
   // Credits — a promo balance with a per-ride cap and a scope (CLAUDE.md #26).
   const creditRows = await deps.db.userCredit.findMany({
@@ -65,7 +67,10 @@ export async function getBenefits(
         state: { in: ["reserved", "consumed"] },
       },
     });
-    const caps = v.caps as { perUser?: number; minSpend?: { amountMinor?: number } } | null;
+    const caps = v.caps as {
+      perUser?: number;
+      minSpend?: { amountMinor?: number };
+    } | null;
     const perUser = caps?.perUser ?? null;
     let status: string;
     let statusAt: string | null = null;
@@ -100,7 +105,8 @@ export async function getBenefits(
             ? null
             : moneyJson(money(caps.minSpend.amountMinor, v.currency)),
         maxUses: perUser,
-        stacking: (v.stacking as { priority?: number } | null)?.priority ?? null,
+        stacking:
+          (v.stacking as { priority?: number } | null)?.priority ?? null,
         fundedBy: (v.funding as { party?: string } | null)?.party ?? null,
       },
       campaignVersionId: v.id,
@@ -140,7 +146,12 @@ function changeView(r: {
   reasonCode: string | null;
   termsRef: string | null;
 }): JsonRecord {
-  const kind = r.state === "consumed" ? "earned" : r.state === "reversed" ? "reversed" : "expired";
+  const kind =
+    r.state === "consumed"
+      ? "earned"
+      : r.state === "reversed"
+        ? "reversed"
+        : "expired";
   return {
     id: r.id,
     kind,
@@ -166,7 +177,9 @@ export async function getBenefitChange(
     where: { id: changeId },
   });
   if (r === null || r.userId !== actor.id) {
-    throw new ContractError("not_found", "no such benefit change", { changeId });
+    throw new ContractError("not_found", "no such benefit change", {
+      changeId,
+    });
   }
   return changeView(r);
 }

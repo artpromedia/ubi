@@ -51,7 +51,10 @@ export async function proposeMessage(
   const proposal: JsonRecord = {
     brief: input.text,
     audienceRule: "all",
-    benefit: { type: "fare_discount", note: "draft — sized and approved by a human" },
+    benefit: {
+      type: "fare_discount",
+      note: "draft — sized and approved by a human",
+    },
     copy: [
       {
         locale: "en-NG",
@@ -134,7 +137,10 @@ export async function proposeMessage(
         subjectId: input.threadId,
         reason: "assistant produced a draft proposal",
         before: null,
-        after: { threadId: input.threadId, cohortSuppressed: totalUsers < MIN_COHORT },
+        after: {
+          threadId: input.threadId,
+          cohortSuppressed: totalUsers < MIN_COHORT,
+        },
         correlationId: input.correlationId,
       },
       events,

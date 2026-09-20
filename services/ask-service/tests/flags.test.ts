@@ -27,7 +27,12 @@ describe("assistant flag", () => {
     const deps = makeDeps(db);
     const cityId = await seedCity(db, { aiAssistant: false });
     await expect(
-      openThread(deps, { actor: rider(), cityId, source: "home", correlationId: null }),
+      openThread(deps, {
+        actor: rider(),
+        cityId,
+        source: "home",
+        correlationId: null,
+      }),
     ).rejects.toMatchObject({ code: "feature_disabled", status: 404 });
   });
 });
@@ -59,7 +64,9 @@ describe("transactions flag", () => {
     });
     expect(result.reviewId).toBeNull();
     expect(result.events.some((e) => e.type === "review_ready")).toBe(false);
-    const reviews = await db.askReview.findMany({ where: { threadId: thread.id } });
+    const reviews = await db.askReview.findMany({
+      where: { threadId: thread.id },
+    });
     expect(reviews).toHaveLength(0);
   });
 });

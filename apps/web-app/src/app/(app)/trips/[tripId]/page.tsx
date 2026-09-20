@@ -1,4 +1,7 @@
-import { HandoffBanner, HandoffFallbackNote } from "@/components/travel/HandoffBanner";
+import {
+  HandoffBanner,
+  HandoffFallbackNote,
+} from "@/components/travel/HandoffBanner";
 import { TripItems } from "./trip-items";
 
 const one = (v: string | string[] | undefined): string | undefined =>
@@ -19,7 +22,11 @@ export default async function TripPage({
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col bg-[#F5F5F5]">
-      <HandoffBanner tripId={tripId} referralCode={referralCode} campaign={campaign} />
+      <HandoffBanner
+        tripId={tripId}
+        referralCode={referralCode}
+        campaign={campaign}
+      />
       <main className="flex-1 space-y-2.5 p-4">
         <TripItems tripId={tripId} />
       </main>

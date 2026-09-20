@@ -11,8 +11,9 @@ import * as React from "react";
 
 import { cn } from "../lib/utils";
 
-export interface ProgressProps
-  extends React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root> {
+export interface ProgressProps extends React.ComponentPropsWithoutRef<
+  typeof ProgressPrimitive.Root
+> {
   /** Size variant */
   size?: "sm" | "md" | "lg";
   /** Color variant */
@@ -26,44 +27,60 @@ export interface ProgressProps
 const Progress = React.forwardRef<
   React.ElementRef<typeof ProgressPrimitive.Root>,
   ProgressProps
->(({ className, value, size = "md", variant = "default", showLabel, indeterminate, ...props }, ref) => (
-  <div className="relative">
-    <ProgressPrimitive.Root
-      ref={ref}
-      className={cn(
-        "relative w-full overflow-hidden rounded-full bg-secondary",
-        {
-          "h-1": size === "sm",
-          "h-2": size === "md",
-          "h-4": size === "lg",
-        },
-        className
-      )}
-      {...props}
-    >
-      <ProgressPrimitive.Indicator
+>(
+  (
+    {
+      className,
+      value,
+      size = "md",
+      variant = "default",
+      showLabel,
+      indeterminate,
+      ...props
+    },
+    ref,
+  ) => (
+    <div className="relative">
+      <ProgressPrimitive.Root
+        ref={ref}
         className={cn(
-          "h-full transition-all",
+          "relative w-full overflow-hidden rounded-full bg-secondary",
           {
-            "bg-primary": variant === "default",
-            "bg-success": variant === "success",
-            "bg-warning": variant === "warning",
-            "bg-error": variant === "error",
+            "h-1": size === "sm",
+            "h-2": size === "md",
+            "h-4": size === "lg",
           },
-          indeterminate && "animate-shimmer bg-gradient-to-r from-primary/50 via-primary to-primary/50 bg-[length:200%_100%]"
+          className,
         )}
-        style={{ 
-          transform: indeterminate ? "translateX(0)" : `translateX(-${100 - (value || 0)}%)` 
-        }}
-      />
-    </ProgressPrimitive.Root>
-    {showLabel && !indeterminate && (
-      <span className="absolute right-0 top-1/2 -translate-y-1/2 text-xs text-muted-foreground ml-2">
-        {Math.round(value || 0)}%
-      </span>
-    )}
-  </div>
-));
+        {...props}
+      >
+        <ProgressPrimitive.Indicator
+          className={cn(
+            "h-full transition-all",
+            {
+              "bg-primary": variant === "default",
+              "bg-success": variant === "success",
+              "bg-warning": variant === "warning",
+              "bg-error": variant === "error",
+            },
+            indeterminate &&
+              "animate-shimmer bg-gradient-to-r from-primary/50 via-primary to-primary/50 bg-[length:200%_100%]",
+          )}
+          style={{
+            transform: indeterminate
+              ? "translateX(0)"
+              : `translateX(-${100 - (value || 0)}%)`,
+          }}
+        />
+      </ProgressPrimitive.Root>
+      {showLabel && !indeterminate && (
+        <span className="absolute right-0 top-1/2 -translate-y-1/2 text-xs text-muted-foreground ml-2">
+          {Math.round(value || 0)}%
+        </span>
+      )}
+    </div>
+  ),
+);
 Progress.displayName = ProgressPrimitive.Root.displayName;
 
 /**
@@ -96,7 +113,7 @@ const CircularProgress = React.forwardRef<SVGSVGElement, CircularProgressProps>(
       className,
       ...props
     },
-    ref
+    ref,
   ) => {
     const radius = (size - strokeWidth) / 2;
     const circumference = radius * 2 * Math.PI;
@@ -113,10 +130,7 @@ const CircularProgress = React.forwardRef<SVGSVGElement, CircularProgressProps>(
       <div className="relative inline-flex items-center justify-center">
         <svg
           ref={ref}
-          className={cn(
-            indeterminate && "animate-spin-slow",
-            className
-          )}
+          className={cn(indeterminate && "animate-spin-slow", className)}
           width={size}
           height={size}
           viewBox={`0 0 ${size} ${size}`}
@@ -135,7 +149,7 @@ const CircularProgress = React.forwardRef<SVGSVGElement, CircularProgressProps>(
           <circle
             className={cn(
               colorMap[variant],
-              "transition-all duration-300 ease-in-out"
+              "transition-all duration-300 ease-in-out",
             )}
             strokeWidth={strokeWidth}
             strokeLinecap="round"
@@ -158,9 +172,8 @@ const CircularProgress = React.forwardRef<SVGSVGElement, CircularProgressProps>(
         )}
       </div>
     );
-  }
+  },
 );
 CircularProgress.displayName = "CircularProgress";
 
 export { CircularProgress, Progress };
-

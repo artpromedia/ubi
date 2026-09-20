@@ -89,7 +89,7 @@ const DriverMarker = React.forwardRef<HTMLDivElement, DriverMarkerProps>(
       onClick,
       ...props
     },
-    ref
+    ref,
   ) => {
     const Icon = VehicleIcons[type];
 
@@ -98,7 +98,7 @@ const DriverMarker = React.forwardRef<HTMLDivElement, DriverMarkerProps>(
         ref={ref}
         className={cn(
           "relative inline-flex items-center justify-center",
-          className
+          className,
         )}
         onClick={onClick}
         role={onClick ? "button" : undefined}
@@ -110,7 +110,7 @@ const DriverMarker = React.forwardRef<HTMLDivElement, DriverMarkerProps>(
           <span
             className={cn(
               "absolute inset-0 rounded-full animate-ping opacity-75",
-              serviceColors[service]
+              serviceColors[service],
             )}
           />
         )}
@@ -121,7 +121,7 @@ const DriverMarker = React.forwardRef<HTMLDivElement, DriverMarkerProps>(
             "relative rounded-full shadow-lg flex items-center justify-center transition-transform",
             sizeClasses[size],
             serviceColors[service],
-            onClick && "cursor-pointer hover:scale-110"
+            onClick && "cursor-pointer hover:scale-110",
           )}
         >
           {/* Vehicle icon with rotation */}
@@ -136,12 +136,12 @@ const DriverMarker = React.forwardRef<HTMLDivElement, DriverMarkerProps>(
           className={cn(
             "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-white",
             statusColors[status],
-            size === "sm" ? "w-2 h-2" : "w-3 h-3"
+            size === "sm" ? "w-2 h-2" : "w-3 h-3",
           )}
         />
       </div>
     );
-  }
+  },
 );
 DriverMarker.displayName = "DriverMarker";
 
@@ -188,7 +188,7 @@ const LocationMarker = React.forwardRef<HTMLDivElement, LocationMarkerProps>(
             "drop-shadow-md",
             size === "sm" && "w-6 h-8",
             size === "md" && "w-8 h-10",
-            size === "lg" && "w-10 h-12"
+            size === "lg" && "w-10 h-12",
           )}
           viewBox="0 0 24 32"
           fill="none"
@@ -201,7 +201,7 @@ const LocationMarker = React.forwardRef<HTMLDivElement, LocationMarkerProps>(
         </svg>
       </div>
     );
-  }
+  },
 );
 LocationMarker.displayName = "LocationMarker";
 

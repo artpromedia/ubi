@@ -105,7 +105,9 @@ export function AskPanel({ context }: { context: AskContext }) {
       (err) => {
         setBusy(false);
         if (err)
-          setError("Connection lost — your message was kept, tap send to retry.");
+          setError(
+            "Connection lost — your message was kept, tap send to retry.",
+          );
       },
     );
   };
@@ -123,13 +125,15 @@ export function AskPanel({ context }: { context: AskContext }) {
         <span className="font-heading text-sm font-semibold text-[#191414]">
           Ask UBI
         </span>
-        <span className="ml-auto text-[11px] text-[#666]">same rules as the app</span>
+        <span className="ml-auto text-[11px] text-[#666]">
+          same rules as the app
+        </span>
       </div>
       <div className="flex-1 space-y-2.5 overflow-auto p-4 text-[12.5px] leading-relaxed text-[#191414]">
         {blocks.length === 0 && !error ? (
           <p className="text-[#666]">
-            Ask about these flights — which lets you change the day for free, what a Saver
-            refund covers, or whether protection is offered.
+            Ask about these flights — which lets you change the day for free,
+            what a Saver refund covers, or whether protection is offered.
           </p>
         ) : null}
         {blocks.map((b) => {
@@ -168,8 +172,8 @@ export function AskPanel({ context }: { context: AskContext }) {
           }
           return (
             <p key={b.id} className="text-[#666]">
-              That isn&apos;t something Ask UBI can do here — use the regular screen, it opens
-              with everything you need.
+              That isn&apos;t something Ask UBI can do here — use the regular
+              screen, it opens with everything you need.
             </p>
           );
         })}

@@ -124,7 +124,7 @@ export function Sidebar() {
 
   const toggleExpanded = (name: string) => {
     setExpandedItems((prev) =>
-      prev.includes(name) ? prev.filter((i) => i !== name) : [...prev, name]
+      prev.includes(name) ? prev.filter((i) => i !== name) : [...prev, name],
     );
   };
 
@@ -132,7 +132,7 @@ export function Sidebar() {
     <aside
       className={cn(
         "h-screen bg-card border-r border-border flex flex-col transition-all duration-300 sticky top-0",
-        isCollapsed ? "w-[72px]" : "w-64"
+        isCollapsed ? "w-[72px]" : "w-64",
       )}
     >
       {/* Logo */}
@@ -193,7 +193,7 @@ export function Sidebar() {
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group",
                     isActive
                       ? "bg-cyan-500/10 text-cyan-500"
-                      : "text-gray-400 hover:bg-surface hover:text-white"
+                      : "text-gray-400 hover:bg-surface hover:text-white",
                   )}
                 >
                   <item.icon className="w-5 h-5 flex-shrink-0" />
@@ -211,7 +211,7 @@ export function Sidebar() {
                         <ChevronRight
                           className={cn(
                             "w-4 h-4 transition-transform",
-                            isExpanded && "rotate-90"
+                            isExpanded && "rotate-90",
                           )}
                         />
                       )}
@@ -239,7 +239,7 @@ export function Sidebar() {
                                   "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
                                   isChildActive
                                     ? "text-cyan-500 bg-cyan-500/5"
-                                    : "text-gray-500 hover:text-gray-300 hover:bg-surface"
+                                    : "text-gray-500 hover:text-gray-300 hover:bg-surface",
                                 )}
                               >
                                 <span className="w-1.5 h-1.5 rounded-full bg-current" />
@@ -271,7 +271,7 @@ export function Sidebar() {
                     "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
                     isActive
                       ? "bg-cyan-500/10 text-cyan-500"
-                      : "text-gray-500 hover:bg-surface hover:text-white"
+                      : "text-gray-500 hover:bg-surface hover:text-white",
                   )}
                 >
                   <item.icon className="w-4 h-4 flex-shrink-0" />

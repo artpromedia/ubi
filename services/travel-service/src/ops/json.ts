@@ -9,8 +9,9 @@
 import type { JsonRecord, JsonValue } from "./types";
 import type { Prisma } from "@prisma/client/index";
 
-
-export function toJson(value: JsonValue | JsonRecord | unknown): Prisma.InputJsonValue {
+export function toJson(
+  value: JsonValue | JsonRecord | unknown,
+): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 

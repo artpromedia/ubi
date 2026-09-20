@@ -7,11 +7,7 @@
 import { AppHeader, ServiceTabsCompact } from "@/components";
 import { Providers } from "@/providers";
 
-export default function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <Providers>
       <div className="flex min-h-screen flex-col">

@@ -5,7 +5,12 @@
  */
 import type { Money } from "@ubi/contracts";
 
-export type CardKind = "flight" | "stay" | "ride_estimate" | "ride_quote" | "policy";
+export type CardKind =
+  | "flight"
+  | "stay"
+  | "ride_estimate"
+  | "ride_quote"
+  | "policy";
 export type CardStatus = "suggestion" | "live" | "expired";
 
 export interface Card {
@@ -52,5 +57,9 @@ export type AskEvent =
       readonly reviewId: string;
       readonly totals: Money;
     }
-  | { readonly type: "refused"; readonly deepLink: string; readonly policy: string }
+  | {
+      readonly type: "refused";
+      readonly deepLink: string;
+      readonly policy: string;
+    }
   | { readonly type: "done" };

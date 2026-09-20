@@ -227,7 +227,7 @@ export default function DashboardPage() {
               <span
                 className={cn(
                   "text-sm font-medium",
-                  stat.change >= 0 ? "text-green-500" : "text-red-500"
+                  stat.change >= 0 ? "text-green-500" : "text-red-500",
                 )}
               >
                 {Math.abs(stat.change)}%
@@ -268,7 +268,13 @@ export default function DashboardPage() {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={weeklyData}>
                 <defs>
-                  <linearGradient id="colorDeliveries" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient
+                    id="colorDeliveries"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
                     <stop offset="5%" stopColor="#10AEBA" stopOpacity={0.3} />
                     <stop offset="95%" stopColor="#10AEBA" stopOpacity={0} />
                   </linearGradient>
@@ -303,7 +309,9 @@ export default function DashboardPage() {
           className="merchant-card"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Pending Pickups</h2>
+            <h2 className="text-lg font-semibold text-white">
+              Pending Pickups
+            </h2>
             <Link
               href="/pickups"
               className="text-sm text-cyan-500 hover:text-cyan-400 flex items-center gap-1"
@@ -315,10 +323,7 @@ export default function DashboardPage() {
 
           <div className="space-y-3">
             {pendingPickups.map((pickup) => (
-              <div
-                key={pickup.id}
-                className="p-3 bg-gray-900 rounded-lg"
-              >
+              <div key={pickup.id} className="p-3 bg-gray-900 rounded-lg">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
                     <div className="p-2 bg-cyan-500/10 rounded-lg">
@@ -343,7 +348,7 @@ export default function DashboardPage() {
                       "text-xs font-medium px-2 py-1 rounded",
                       pickup.status === "confirmed"
                         ? "bg-green-500/10 text-green-500"
-                        : "bg-yellow-500/10 text-yellow-500"
+                        : "bg-yellow-500/10 text-yellow-500",
                     )}
                   >
                     {pickup.status}
@@ -371,7 +376,9 @@ export default function DashboardPage() {
         className="merchant-card"
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Recent Deliveries</h2>
+          <h2 className="text-lg font-semibold text-white">
+            Recent Deliveries
+          </h2>
           <Link
             href="/deliveries"
             className="text-sm text-cyan-500 hover:text-cyan-400 flex items-center gap-1"
@@ -398,19 +405,25 @@ export default function DashboardPage() {
               {recentDeliveries.map((delivery) => (
                 <tr key={delivery.id}>
                   <td>
-                    <span className="font-mono text-cyan-500">{delivery.id}</span>
+                    <span className="font-mono text-cyan-500">
+                      {delivery.id}
+                    </span>
                   </td>
                   <td>
                     <div>
-                      <p className="font-medium text-white">{delivery.recipient}</p>
-                      <p className="text-xs text-gray-500">{delivery.address}</p>
+                      <p className="font-medium text-white">
+                        {delivery.recipient}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {delivery.address}
+                      </p>
                     </div>
                   </td>
                   <td>
                     <span
                       className={cn(
                         "merchant-badge",
-                        getPriorityClass(delivery.priority)
+                        getPriorityClass(delivery.priority),
                       )}
                     >
                       {delivery.priority}
@@ -420,7 +433,7 @@ export default function DashboardPage() {
                     <span
                       className={cn(
                         "merchant-badge",
-                        getDeliveryStatusClass(delivery.status)
+                        getDeliveryStatusClass(delivery.status),
                       )}
                     >
                       {delivery.status.replace("-", " ")}
@@ -485,7 +498,9 @@ export default function DashboardPage() {
           transition={{ delay: 0.8 }}
           className="merchant-card"
         >
-          <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
+          <h2 className="text-lg font-semibold text-white mb-4">
+            Quick Actions
+          </h2>
 
           <div className="grid grid-cols-2 gap-3">
             <Link
@@ -538,7 +553,10 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-              <div className="h-full bg-cyan-500 rounded-full" style={{ width: "84.56%" }} />
+              <div
+                className="h-full bg-cyan-500 rounded-full"
+                style={{ width: "84.56%" }}
+              />
             </div>
           </div>
         </motion.div>

@@ -182,7 +182,7 @@ export class EnhancedWalletService {
    */
   async getBalance(
     walletId: string,
-    currency: Currency
+    currency: Currency,
   ): Promise<WalletBalance> {
     const balance = await prisma.walletBalance.findUnique({
       where: {
@@ -272,7 +272,7 @@ export class EnhancedWalletService {
 
     if (currentBalance.total + amount > tierLimits.maxBalance) {
       throw new Error(
-        `Credit would exceed maximum balance of ${tierLimits.maxBalance}`
+        `Credit would exceed maximum balance of ${tierLimits.maxBalance}`,
       );
     }
 
@@ -523,7 +523,7 @@ export class EnhancedWalletService {
    */
   async captureHold(
     holdId: string,
-    amount?: number
+    amount?: number,
   ): Promise<{ captured: number }> {
     const hold = await prisma.balanceHold.findUnique({
       where: { id: holdId },
@@ -580,7 +580,7 @@ export class EnhancedWalletService {
   async checkLimit(
     walletId: string,
     amount: number,
-    type: "p2p" | "bills" | "cards" | "international"
+    type: "p2p" | "bills" | "cards" | "international",
   ): Promise<LimitCheckResult> {
     const wallet = await prisma.wallet.findUnique({
       where: { id: walletId },
@@ -800,7 +800,7 @@ export class EnhancedWalletService {
       endDate?: Date;
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ): Promise<{ transactions: WalletTransaction[]; total: number }> {
     const {
       currency,
@@ -908,7 +908,7 @@ export class EnhancedWalletService {
 
   private async updateLimitUsage(
     walletId: string,
-    amount: number
+    amount: number,
   ): Promise<void> {
     const wallet = await prisma.wallet.findUnique({
       where: { id: walletId },
@@ -934,7 +934,7 @@ export class EnhancedWalletService {
       updates.monthlyLimitResetAt = new Date(
         now.getFullYear(),
         now.getMonth() + 1,
-        1
+        1,
       );
     } else {
       updates.monthlyLimitUsed = { increment: amount };

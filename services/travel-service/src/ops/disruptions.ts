@@ -15,7 +15,12 @@
 import { ContractError, money, type Money } from "@ubi/contracts";
 
 import { toJson } from "./json";
-import { advanceOrder, orderView, type OrderRow, type OrderView } from "./ladder";
+import {
+  advanceOrder,
+  orderView,
+  type OrderRow,
+  type OrderView,
+} from "./ladder";
 import { withOutbox } from "./outbox";
 import { actorTypeFor, isOpsRole } from "./roles";
 import { adapterFor, contextFor, loadSupplier } from "./suppliers";
@@ -58,9 +63,13 @@ export async function createDisruption(
   deps: TravelDeps,
   input: CreateDisruptionInput,
 ): Promise<void> {
-  const order = await deps.db.travelOrder.findUnique({ where: { id: input.orderId } });
+  const order = await deps.db.travelOrder.findUnique({
+    where: { id: input.orderId },
+  });
   if (order === null) {
-    throw new ContractError("not_found", "no such order", { orderId: input.orderId });
+    throw new ContractError("not_found", "no such order", {
+      orderId: input.orderId,
+    });
   }
   const existing = await deps.db.travelDisruption.findFirst({
     where: { orderId: input.orderId, resolvedAt: null },
@@ -186,7 +195,9 @@ export async function getDisruption(
   actor: Actor,
   orderId: string,
 ): Promise<JsonRecord> {
-  const order = await deps.db.travelOrder.findUnique({ where: { id: orderId } });
+  const order = await deps.db.travelOrder.findUnique({
+    where: { id: orderId },
+  });
   if (order === null) {
     throw new ContractError("not_found", "no such order", { orderId });
   }
@@ -198,7 +209,9 @@ export async function getDisruption(
     orderBy: { verifiedAt: "desc" },
   })) as DisruptionRow | null;
   if (row === null) {
-    throw new ContractError("not_found", "no disruption on this order", { orderId });
+    throw new ContractError("not_found", "no disruption on this order", {
+      orderId,
+    });
   }
   const currency = order.currency;
   const alternatives = Array.isArray(row.alternatives)
@@ -214,7 +227,10 @@ export async function getDisruption(
       covered: row.covered,
       ruleId: row.ruleId,
       fundedBy: row.fundedBy,
-      cap: row.capMinor === null ? null : { amountMinor: Number(row.capMinor), currency },
+      cap:
+        row.capMinor === null
+          ? null
+          : { amountMinor: Number(row.capMinor), currency },
       reason: row.covered ? null : "not covered under a funded rule",
     },
     airlineOptions: airlineOptions.map((alt) => altView(alt, currency)),
@@ -234,12 +250,18 @@ export async function switchOrder(
     readonly correlationId: string | null;
   },
 ): Promise<OrderView> {
-  const order = await deps.db.travelOrder.findUnique({ where: { id: input.orderId } });
+  const order = await deps.db.travelOrder.findUnique({
+    where: { id: input.orderId },
+  });
   if (order === null) {
-    throw new ContractError("not_found", "no such order", { orderId: input.orderId });
+    throw new ContractError("not_found", "no such order", {
+      orderId: input.orderId,
+    });
   }
   if (order.userId !== input.actor.id && !isOpsRole(input.actor.role)) {
-    throw new ContractError("not_found", "no such order", { orderId: input.orderId });
+    throw new ContractError("not_found", "no such order", {
+      orderId: input.orderId,
+    });
   }
   const row = (await deps.db.travelDisruption.findFirst({
     where: { orderId: input.orderId, resolvedAt: null },
@@ -271,7 +293,10 @@ export async function switchOrder(
     });
   }
   const now = deps.now();
-  if (chosen.heldUntil === undefined || new Date(chosen.heldUntil).getTime() < now.getTime()) {
+  if (
+    chosen.heldUntil === undefined ||
+    new Date(chosen.heldUntil).getTime() < now.getTime()
+  ) {
     throw new ContractError("conflict", "that alternative is no longer held", {
       alternativeId: input.alternativeId,
     });
@@ -293,8 +318,12 @@ export async function switchOrder(
   }
 
   const refs: JsonRecord = {};
-  if (change.supplierRefs.pnr !== undefined) {refs.pnr = change.supplierRefs.pnr;}
-  if (change.supplierRefs.orderRef !== undefined) {refs.orderRef = change.supplierRefs.orderRef;}
+  if (change.supplierRefs.pnr !== undefined) {
+    refs.pnr = change.supplierRefs.pnr;
+  }
+  if (change.supplierRefs.orderRef !== undefined) {
+    refs.orderRef = change.supplierRefs.orderRef;
+  }
   if (change.supplierRefs.ticketNumbers !== undefined) {
     refs.ticketNumbers = [...change.supplierRefs.ticketNumbers];
   }

@@ -293,7 +293,9 @@ export class FlutterwaveClient {
       };
     }>
   > {
-    const response = await this.request(`/transactions/${transactionId}/verify`);
+    const response = await this.request(
+      `/transactions/${transactionId}/verify`,
+    );
     return response;
   }
 
@@ -301,7 +303,9 @@ export class FlutterwaveClient {
    * Verify transaction by reference
    */
   async verifyByReference(txRef: string): Promise<FlutterwaveResponse<any>> {
-    const response = await this.request(`/transactions/verify_by_reference?tx_ref=${txRef}`);
+    const response = await this.request(
+      `/transactions/verify_by_reference?tx_ref=${txRef}`,
+    );
     return response;
   }
 
@@ -407,7 +411,9 @@ export class FlutterwaveClient {
       }[]
     >
   > {
-    const response = await this.request(`/transfers/fee?amount=${amount}&currency=${currency}`);
+    const response = await this.request(
+      `/transfers/fee?amount=${amount}&currency=${currency}`,
+    );
     return response;
   }
 
@@ -432,7 +438,9 @@ export class FlutterwaveClient {
     }>
   > {
     const body: any = { id: transactionId };
-    if (amount) {body.amount = amount;}
+    if (amount) {
+      body.amount = amount;
+    }
 
     const response = await this.request("/transactions/refund", "POST", body);
     return response;

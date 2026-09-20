@@ -22,7 +22,12 @@
  */
 import { ContractError, money, type Money } from "@ubi/contracts";
 
-import { auditedTransaction, type OutboxInput ,type  AuditedTx,type  AuditRecord } from "./audit";
+import {
+  auditedTransaction,
+  type OutboxInput,
+  type AuditedTx,
+  type AuditRecord,
+} from "./audit";
 import { assertPermission } from "./roles";
 import { deterministicId } from "../lib/ids";
 
@@ -30,7 +35,10 @@ import type { GrowthDeps } from "./context";
 import type { IncentiveSettlement } from "./ledger-port";
 import type { Actor, JsonRecord } from "./types";
 
-export type RebateKind = "percentage_points" | "percent_of_commission" | "window";
+export type RebateKind =
+  | "percentage_points"
+  | "percent_of_commission"
+  | "window";
 
 export interface RuleRow {
   id: string;
@@ -108,7 +116,10 @@ export function computeRebate(
     const amount = roundKobo((baseCommission * reductionBps) / 10_000);
     return {
       amountMinor: amount,
-      effectiveBps: baseBps === 0 ? 0 : baseBps - Math.round((baseBps * reductionBps) / 10_000),
+      effectiveBps:
+        baseBps === 0
+          ? 0
+          : baseBps - Math.round((baseBps * reductionBps) / 10_000),
       commissionBaseMinor: base,
       baseCommissionMinor: baseCommission,
     };
@@ -149,10 +160,16 @@ async function lockRule(tx: AuditedTx, ruleId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM driver_incentive_rules WHERE id = ${ruleId} FOR UPDATE`;
 }
 
-function settlementFor(rule: RuleRow, trip: TripBreakdown): IncentiveSettlement {
+function settlementFor(
+  rule: RuleRow,
+  trip: TripBreakdown,
+): IncentiveSettlement {
   // Cash trips: the driver already holds the cash and owes UBI the commission,
   // so a rebate nets against what is owed rather than paying out (CLAUDE.md #27).
-  if (rule.cashSettlement === "nets_against_owed" && trip.paymentMethod === "cash") {
+  if (
+    rule.cashSettlement === "nets_against_owed" &&
+    trip.paymentMethod === "cash"
+  ) {
     return "driver_owed";
   }
   return "driver_wallet";
@@ -283,7 +300,9 @@ async function postIncentiveLine(
     });
 
     const eventName =
-      kind === "rebate" ? "incentive.rebate.posted" : "incentive.window.applied";
+      kind === "rebate"
+        ? "incentive.rebate.posted"
+        : "incentive.window.applied";
     const event: OutboxInput = {
       name: eventName,
       aggregateType: "driver",
@@ -487,7 +506,10 @@ export async function reverseRebate(
         subjectId: created.id,
         reason: input.reasonCode,
         before: { originalPosting: original.id },
-        after: { tripId: input.tripId, amountMinor: Number(original.amountMinor) },
+        after: {
+          tripId: input.tripId,
+          amountMinor: Number(original.amountMinor),
+        },
         correlationId: input.correlationId,
       },
       events: [event],
@@ -622,7 +644,11 @@ export async function getIncentivesOverview(
   const windows: JsonRecord[] = [];
   for (const rule of rules) {
     const agg = await deps.db.driverIncentivePosting.aggregate({
-      where: { ruleId: rule.id, driverId: actor.id, kind: rule.kind === "window" ? "window_waiver" : "rebate" },
+      where: {
+        ruleId: rule.id,
+        driverId: actor.id,
+        kind: rule.kind === "window" ? "window_waiver" : "rebate",
+      },
       _sum: { amountMinor: true },
       _count: true,
     });
@@ -636,11 +662,13 @@ export async function getIncentivesOverview(
         endsAt: rule.endsAt?.toISOString() ?? null,
         zones: rule.zones,
         tripCap: rule.eligibleTripCap,
-        moneyCapMinor: rule.moneyCapMinor === null ? null : Number(rule.moneyCapMinor),
+        moneyCapMinor:
+          rule.moneyCapMinor === null ? null : Number(rule.moneyCapMinor),
         currency,
         used: { trips: agg._count, savedMinor },
         live:
-          (rule.startsAt === null || rule.startsAt.getTime() <= now.getTime()) &&
+          (rule.startsAt === null ||
+            rule.startsAt.getTime() <= now.getTime()) &&
           (rule.endsAt === null || rule.endsAt.getTime() > now.getTime()),
         rule: "trips started in the window",
       });
@@ -661,7 +689,9 @@ export async function getIncentivesOverview(
           rebatedSoFarMinor: savedMinor,
           currency,
         },
-        fundedBy: (rule.campaignVersion.funding as { party?: string } | null)?.party ?? null,
+        fundedBy:
+          (rule.campaignVersion.funding as { party?: string } | null)?.party ??
+          null,
       });
     }
   }
@@ -669,7 +699,11 @@ export async function getIncentivesOverview(
   const anyLive = rebates.length > 0 || windows.some((w) => w.live === true);
   return {
     strip: anyLive
-      ? { headline: "Incentive live", detail: "See your incentives", badge: "LIVE" }
+      ? {
+          headline: "Incentive live",
+          detail: "See your incentives",
+          badge: "LIVE",
+        }
       : null,
     rebates,
     windows,
@@ -718,7 +752,10 @@ export async function getRebateDetail(
       { label: "Rounding", value: rule.rounding },
     ],
     note: {
-      title: rule.kind === "percentage_points" ? "Percentage points" : "Percent of commission",
+      title:
+        rule.kind === "percentage_points"
+          ? "Percentage points"
+          : "Percent of commission",
       body:
         rule.kind === "percentage_points"
           ? "Your commission rate is reduced by the stated points."
@@ -753,7 +790,10 @@ export async function commissionIncentivesLive(
     let spendMinor = 0;
     const perDriver = new Map<string, number>();
     for (const p of postings) {
-      const signed = p.kind === "rebate_reversal" ? -Number(p.amountMinor) : Number(p.amountMinor);
+      const signed =
+        p.kind === "rebate_reversal"
+          ? -Number(p.amountMinor)
+          : Number(p.amountMinor);
       spendMinor += signed;
       perDriver.set(p.driverId, (perDriver.get(p.driverId) ?? 0) + signed);
     }
@@ -771,7 +811,8 @@ export async function commissionIncentivesLive(
       kind: rule.kind,
       currency: rule.campaignVersion.currency,
       spendMinor,
-      wordingCheck: rule.kind === "percentage_points" ? "points" : "percent_of_commission",
+      wordingCheck:
+        rule.kind === "percentage_points" ? "points" : "percent_of_commission",
     });
   }
 
@@ -820,7 +861,9 @@ export async function getStatement(
             : "rebate",
     label: p.kind,
     amountMinor:
-      p.kind === "rebate_reversal" ? -Number(p.amountMinor) : Number(p.amountMinor),
+      p.kind === "rebate_reversal"
+        ? -Number(p.amountMinor)
+        : Number(p.amountMinor),
     currency: p.currency,
     tone: toneFor(p.kind),
   }));

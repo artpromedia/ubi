@@ -158,7 +158,9 @@ export class Analytics {
   async initialize(
     providerConfigs: Record<string, Record<string, unknown>>,
   ): Promise<void> {
-    if (this.config.disabled) {return;}
+    if (this.config.disabled) {
+      return;
+    }
 
     const initPromises = this.providers.map(async (provider) => {
       const config = providerConfigs[provider.name];
@@ -178,7 +180,9 @@ export class Analytics {
     // Process queued events
     while (this.queue.length > 0) {
       const fn = this.queue.shift();
-      if (fn) {await fn();}
+      if (fn) {
+        await fn();
+      }
     }
   }
 
@@ -186,7 +190,9 @@ export class Analytics {
    * Identify a user
    */
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (this.config.disabled) {return;}
+    if (this.config.disabled) {
+      return;
+    }
 
     this.userId = userId;
     this.userTraits = { ...this.userTraits, ...traits };
@@ -218,7 +224,9 @@ export class Analytics {
     eventName: UBIEventName | string,
     properties?: Record<string, unknown>,
   ): Promise<void> {
-    if (this.config.disabled) {return;}
+    if (this.config.disabled) {
+      return;
+    }
 
     const event: BaseEvent = {
       name: eventName,
@@ -259,7 +267,9 @@ export class Analytics {
     path: string,
     properties?: Omit<PageViewEvent["properties"], "path">,
   ): Promise<void> {
-    if (this.config.disabled) {return;}
+    if (this.config.disabled) {
+      return;
+    }
 
     const event: PageViewEvent = {
       name: "page_view",
@@ -295,7 +305,9 @@ export class Analytics {
    * Set user properties
    */
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (this.config.disabled) {return;}
+    if (this.config.disabled) {
+      return;
+    }
 
     await Promise.all(
       this.providers.map(async (provider) => {

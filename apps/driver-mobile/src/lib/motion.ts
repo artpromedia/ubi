@@ -9,11 +9,11 @@
 // UI (moving ⇒ bid controls are not rendered at all). It never enables bidding on
 // its own — the marketplace engine re-evaluates eligibility per request and
 // rejects with NOT_STATIONARY, and the UI renders that reason (D10).
-import { useEffect, useState } from 'react';
-import { track } from '@ubi/mobile-core';
-import { marketplaceApi } from '../api/marketplace';
+import { useEffect, useState } from "react";
+import { track } from "@ubi/mobile-core";
+import { marketplaceApi } from "../api/marketplace";
 
-export type MotionState = 'parked_confirmed' | 'moving' | 'stale_location';
+export type MotionState = "parked_confirmed" | "moving" | "stale_location";
 
 /**
  * The gate only ever adopts a state the server explicitly acknowledged. Any
@@ -21,12 +21,14 @@ export type MotionState = 'parked_confirmed' | 'moving' | 'stale_location';
  * state instead of leaving the gate undefined or pretending to be parked.
  */
 export function motionStateOrSafe(v: unknown): MotionState {
-  return v === 'parked_confirmed' || v === 'moving' || v === 'stale_location' ? v : 'stale_location';
+  return v === "parked_confirmed" || v === "moving" || v === "stale_location"
+    ? v
+    : "stale_location";
 }
 
 // Honest default: with no telemetry and no attestation yet, the location signal
 // is stale — bidding stays paused rather than silently pretending to be parked.
-let current: MotionState = 'stale_location';
+let current: MotionState = "stale_location";
 const listeners = new Set<(s: MotionState) => void>();
 function set(next: MotionState) {
   if (next === current) return;
@@ -40,7 +42,7 @@ export function setMotionForDev(next: MotionState) {
 }
 /** Test/dev reset so suites start from the honest default. */
 export function resetMotionForDev() {
-  if (__DEV__) set('stale_location');
+  if (__DEV__) set("stale_location");
 }
 export function currentMotion(): MotionState {
   return current;
@@ -64,7 +66,9 @@ export function useMotionGate(): MotionGate {
     const l = (s: MotionState) => setMotion(s);
     listeners.add(l);
     setMotion(current); // catch a change between render and subscribe (React bails out when unchanged)
-    return () => { listeners.delete(l); };
+    return () => {
+      listeners.delete(l);
+    };
   }, []);
   const confirmParked = async () => {
     setConfirming(true);
@@ -77,9 +81,11 @@ export function useMotionGate(): MotionGate {
       const ack = await marketplaceApi.parked();
       const state = motionStateOrSafe(ack.state);
       set(state);
-      track('driver_mp_parked_confirmed', { state });
+      track("driver_mp_parked_confirmed", { state });
     } catch (e) {
-      setConfirmError(e instanceof Error ? e.message : 'Could not confirm — try again.');
+      setConfirmError(
+        e instanceof Error ? e.message : "Could not confirm — try again.",
+      );
     } finally {
       setConfirming(false);
     }

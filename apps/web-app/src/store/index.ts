@@ -69,7 +69,7 @@ export const useAuthStore = create<AuthState>()(
               state.accessToken = accessToken;
               state.refreshToken = refreshToken;
             }),
-        }))
+        })),
       ),
       {
         name: "ubi-auth",
@@ -78,10 +78,10 @@ export const useAuthStore = create<AuthState>()(
           accessToken: state.accessToken,
           refreshToken: state.refreshToken,
         }),
-      }
+      },
     ),
-    { name: "auth-store" }
-  )
+    { name: "auth-store" },
+  ),
 );
 
 // ===========================================
@@ -159,7 +159,7 @@ export const useUserStore = create<UserState>()(
         removeSavedAddress: (id) =>
           set((state) => {
             state.savedAddresses = state.savedAddresses.filter(
-              (a) => a.id !== id
+              (a) => a.id !== id,
             );
           }),
 
@@ -172,10 +172,10 @@ export const useUserStore = create<UserState>()(
       })),
       {
         name: "ubi-user",
-      }
+      },
     ),
-    { name: "user-store" }
-  )
+    { name: "user-store" },
+  ),
 );
 
 // ===========================================
@@ -194,13 +194,13 @@ export interface LocationState {
   // Actions
   setCurrentLocation: (location: Coordinates | null) => void;
   setSelectedPickup: (
-    pickup: { address: string; coordinates: Coordinates } | null
+    pickup: { address: string; coordinates: Coordinates } | null,
   ) => void;
   setSelectedDropoff: (
-    dropoff: { address: string; coordinates: Coordinates } | null
+    dropoff: { address: string; coordinates: Coordinates } | null,
   ) => void;
   setLocationPermission: (
-    permission: LocationState["locationPermission"]
+    permission: LocationState["locationPermission"],
   ) => void;
   setLocationLoading: (loading: boolean) => void;
   setLocationError: (error: string | null) => void;
@@ -263,10 +263,10 @@ export const useLocationStore = create<LocationState>()(
             state.selectedPickup = null;
             state.selectedDropoff = null;
           }),
-      }))
+      })),
     ),
-    { name: "location-store" }
-  )
+    { name: "location-store" },
+  ),
 );
 
 // ===========================================
@@ -342,10 +342,10 @@ export const useUIStore = create<UIState>()(
         partialize: (state) => ({
           theme: state.theme,
         }),
-      }
+      },
     ),
-    { name: "ui-store" }
-  )
+    { name: "ui-store" },
+  ),
 );
 
 // ===========================================
@@ -439,10 +439,10 @@ export const useRideStore = create<RideState>()(
             }
             state.activeRide = null;
           }),
-      }))
+      })),
     ),
-    { name: "ride-store" }
-  )
+    { name: "ride-store" },
+  ),
 );
 
 // ===========================================
@@ -502,7 +502,7 @@ export const useCartStore = create<CartState>()(
         subtotal: () =>
           get().items.reduce(
             (sum, item) => sum + item.price * item.quantity,
-            0
+            0,
           ),
         total: () =>
           get().subtotal() +
@@ -528,7 +528,7 @@ export const useCartStore = create<CartState>()(
             state.restaurantName = item.restaurantName || null;
 
             const existingIndex = state.items.findIndex(
-              (i) => i.id === item.id
+              (i) => i.id === item.id,
             );
             if (existingIndex >= 0) {
               const existingItem = state.items[existingIndex];
@@ -588,8 +588,8 @@ export const useCartStore = create<CartState>()(
       })),
       {
         name: "ubi-cart",
-      }
+      },
     ),
-    { name: "cart-store" }
-  )
+    { name: "cart-store" },
+  ),
 );

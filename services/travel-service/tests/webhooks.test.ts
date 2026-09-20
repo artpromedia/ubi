@@ -33,7 +33,9 @@ async function confirmedFlightOrder(): Promise<{
 }> {
   const cityId = await seedCity(db);
   const supplierId = await seedFlightSupplier(db, {
-    control: { "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" } },
+    control: {
+      "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" },
+    },
   });
   const { deps } = makeDeps(db);
   const actor = rider();
@@ -59,7 +61,10 @@ async function confirmedFlightOrder(): Promise<{
   return { cityId, supplierId, orderId: result.orders[0]?.id ?? "", deps };
 }
 
-function signed(secret: string, envelope: WebhookEnvelope): { rawBody: string; signature: string } {
+function signed(
+  secret: string,
+  envelope: WebhookEnvelope,
+): { rawBody: string; signature: string } {
   const rawBody = JSON.stringify(envelope);
   return { rawBody, signature: computeSignature(secret, rawBody) };
 }
@@ -74,7 +79,13 @@ describe("webhooks", () => {
       supplierRefs: { pnr: "AP7QX2", ticketNumbers: ["0572101234567"] },
     };
     const { rawBody, signature } = signed("flight-secret", envelope);
-    const outcome = await receiveWebhook(deps, { supplierId, cityId, rawBody, signature, envelope });
+    const outcome = await receiveWebhook(deps, {
+      supplierId,
+      cityId,
+      rawBody,
+      signature,
+      envelope,
+    });
     expect(outcome.result).toBe("processed");
 
     const order = await db.travelOrder.findUnique({ where: { id: orderId } });
@@ -93,14 +104,30 @@ describe("webhooks", () => {
     };
     const { rawBody, signature } = signed("flight-secret", envelope);
 
-    const first = await receiveWebhook(deps, { supplierId, cityId, rawBody, signature, envelope });
+    const first = await receiveWebhook(deps, {
+      supplierId,
+      cityId,
+      rawBody,
+      signature,
+      envelope,
+    });
     expect(first.result).toBe("processed");
-    const eventsAfterFirst = await db.travelOrderEvent.count({ where: { orderId } });
+    const eventsAfterFirst = await db.travelOrderEvent.count({
+      where: { orderId },
+    });
 
-    const second = await receiveWebhook(deps, { supplierId, cityId, rawBody, signature, envelope });
+    const second = await receiveWebhook(deps, {
+      supplierId,
+      cityId,
+      rawBody,
+      signature,
+      envelope,
+    });
     expect(second.result).toBe("duplicate");
 
-    const eventsAfterSecond = await db.travelOrderEvent.count({ where: { orderId } });
+    const eventsAfterSecond = await db.travelOrderEvent.count({
+      where: { orderId },
+    });
     expect(eventsAfterSecond).toBe(eventsAfterFirst);
     const docs = await db.travelDocument.count({ where: { orderId } });
     expect(docs).toBe(1); // not doubled
@@ -126,7 +153,9 @@ describe("webhooks", () => {
 
     const order = await db.travelOrder.findUnique({ where: { id: orderId } });
     expect(order?.state).toBe("confirmed"); // unchanged
-    const row = await db.travelWebhook.findFirst({ where: { externalId: "wh-bad-sig" } });
+    const row = await db.travelWebhook.findFirst({
+      where: { externalId: "wh-bad-sig" },
+    });
     expect(row?.signatureOk).toBe(false);
     expect(row?.processedAt).toBeNull();
   });

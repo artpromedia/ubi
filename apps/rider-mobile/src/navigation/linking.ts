@@ -1,18 +1,74 @@
-import type { LinkingOptions } from '@react-navigation/native';
-import type { RootStackParamList } from './routes';
+import type { LinkingOptions } from "@react-navigation/native";
+import type { RootStackParamList } from "./routes";
 // Universal Links / App Links (domain ubi.africa) + custom scheme. Disabled verticals resolve to FlagOff via the FlagGate on each stack root.
 export const linking: LinkingOptions<RootStackParamList> = {
-  prefixes: ['ubi://', 'https://ubi.africa', 'https://links.ubi.africa'],
+  prefixes: ["ubi://", "https://ubi.africa", "https://links.ubi.africa"],
   config: {
     screens: {
-      Main: { screens: { Home: 'home', Activity: 'activity', Wallet: { screens: { Home: 'wallet', Statement: 'wallet/statement' } }, Account: { screens: { Profile: 'profile', Benefits: 'benefits', Referrals: 'benefits/referrals', Automation: 'profile/automation', MandateReceipt: 'profile/automation/receipts/:executionId' } } } },
-      Ride: { screens: { Search: 'home/ride/search', Matching: 'home/ride/:rideId/tracking', Details: 'home/ride/:rideId/details' } },
-      Bites: { screens: { Restaurants: 'home/food/restaurants', Restaurant: 'home/food/restaurant/:restaurantId', Cart: 'home/food/cart', OrderTracking: 'home/food/order/:orderId/tracking', OrderDetails: 'home/food/order/:orderId/details' } },
-      Send: { screens: { New: 'home/delivery/new', Tracking: 'home/delivery/:deliveryId/tracking', Details: 'home/delivery/:deliveryId/details' } },
-      Ask: { screens: { Thread: 'ask', Execution: 'ask/executions/:executionId' } },
-      Travel: { screens: { FlightSearch: 'travel', FlightResults: 'travel/flights/:searchId', Itinerary: 'trips/:tripId', OrderStatus: 'travel/orders/:orderId', Disruption: 'travel/orders/:orderId/disruption', RefundStatus: 'travel/refunds/:refundId' } },
-      Marketplace: { screens: { Details: 'home/marketplace/new', Offers: 'home/marketplace/:requestId/offers', BidDetail: 'home/marketplace/:requestId/offers/:bidId', Queued: 'home/marketplace/:requestId/queued', DeliveryReturn: 'home/marketplace/delivery/:deliveryId/return' } }, // Fare carries an object param (quoteParams) and is reached in-app only.
-      FlagOff: 'unavailable/:feature',
+      Main: {
+        screens: {
+          Home: "home",
+          Activity: "activity",
+          Wallet: {
+            screens: { Home: "wallet", Statement: "wallet/statement" },
+          },
+          Account: {
+            screens: {
+              Profile: "profile",
+              Benefits: "benefits",
+              Referrals: "benefits/referrals",
+              Automation: "profile/automation",
+              MandateReceipt: "profile/automation/receipts/:executionId",
+            },
+          },
+        },
+      },
+      Ride: {
+        screens: {
+          Search: "home/ride/search",
+          Matching: "home/ride/:rideId/tracking",
+          Details: "home/ride/:rideId/details",
+        },
+      },
+      Bites: {
+        screens: {
+          Restaurants: "home/food/restaurants",
+          Restaurant: "home/food/restaurant/:restaurantId",
+          Cart: "home/food/cart",
+          OrderTracking: "home/food/order/:orderId/tracking",
+          OrderDetails: "home/food/order/:orderId/details",
+        },
+      },
+      Send: {
+        screens: {
+          New: "home/delivery/new",
+          Tracking: "home/delivery/:deliveryId/tracking",
+          Details: "home/delivery/:deliveryId/details",
+        },
+      },
+      Ask: {
+        screens: { Thread: "ask", Execution: "ask/executions/:executionId" },
+      },
+      Travel: {
+        screens: {
+          FlightSearch: "travel",
+          FlightResults: "travel/flights/:searchId",
+          Itinerary: "trips/:tripId",
+          OrderStatus: "travel/orders/:orderId",
+          Disruption: "travel/orders/:orderId/disruption",
+          RefundStatus: "travel/refunds/:refundId",
+        },
+      },
+      Marketplace: {
+        screens: {
+          Details: "home/marketplace/new",
+          Offers: "home/marketplace/:requestId/offers",
+          BidDetail: "home/marketplace/:requestId/offers/:bidId",
+          Queued: "home/marketplace/:requestId/queued",
+          DeliveryReturn: "home/marketplace/delivery/:deliveryId/return",
+        },
+      }, // Fare carries an object param (quoteParams) and is reached in-app only.
+      FlagOff: "unavailable/:feature",
     },
   },
 };

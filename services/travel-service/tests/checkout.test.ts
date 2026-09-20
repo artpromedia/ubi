@@ -25,13 +25,19 @@ const db = testDb();
 afterAll(closeTestDb);
 beforeEach(() => resetTravel(db));
 
-const GRANT = { grantId: "grant_test", assuranceMethod: null, expectedTotal: null };
+const GRANT = {
+  grantId: "grant_test",
+  assuranceMethod: null,
+  expectedTotal: null,
+};
 
 describe("checkout", () => {
   it("creates one order per item, and partial success is possible across suppliers", async () => {
     const cityId = await seedCity(db);
     await seedFlightSupplier(db, {
-      control: { "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" } },
+      control: {
+        "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" },
+      },
     });
     await seedStaySupplier(db, {
       control: { "transcorp-king": { bookOutcome: "failed" } },
@@ -80,7 +86,9 @@ describe("checkout", () => {
   it("a PNR (confirmed) is not a ticket — no documents until ticketing", async () => {
     const cityId = await seedCity(db);
     await seedFlightSupplier(db, {
-      control: { "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" } },
+      control: {
+        "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" },
+      },
     });
     const { deps } = makeDeps(db);
     const actor = rider();
@@ -88,7 +96,9 @@ describe("checkout", () => {
     const cart = await createCart(deps, {
       actor,
       cityId,
-      items: [{ kind: "flight", offerRef: "AP-P4-7120", fareFamilyId: "saver" }],
+      items: [
+        { kind: "flight", offerRef: "AP-P4-7120", fareFamilyId: "saver" },
+      ],
       idempotencyKey: idemKey(),
       correlationId: null,
     });
@@ -105,7 +115,9 @@ describe("checkout", () => {
     const order = result.orders[0];
     expect(order?.state).toBe("confirmed");
 
-    const docs = await db.travelDocument.count({ where: { orderId: order?.id } });
+    const docs = await db.travelDocument.count({
+      where: { orderId: order?.id },
+    });
     expect(docs).toBe(0);
 
     // The ladder shows supplier_confirmed done/active but ticketed still pending.
@@ -124,7 +136,9 @@ describe("checkout", () => {
     const cart = await createCart(deps, {
       actor,
       cityId,
-      items: [{ kind: "flight", offerRef: "AP-P4-7120", fareFamilyId: "saver" }],
+      items: [
+        { kind: "flight", offerRef: "AP-P4-7120", fareFamilyId: "saver" },
+      ],
       idempotencyKey: idemKey(),
       correlationId: null,
     });
@@ -147,7 +161,10 @@ describe("checkout", () => {
     expect(payment.countOp("release")).toBe(0);
 
     // The supplier now confirms the booking under OUR reference.
-    await setControl(db, supplierId, orderId, { lookupState: "confirmed", pnr: "AP9ZZ1" });
+    await setControl(db, supplierId, orderId, {
+      lookupState: "confirmed",
+      pnr: "AP9ZZ1",
+    });
     const reconciled = await reconcile(deps, {
       actor,
       cityId,
@@ -168,7 +185,9 @@ describe("checkout", () => {
   it("replays the same trip and orders for a repeated idempotency key", async () => {
     const cityId = await seedCity(db);
     await seedFlightSupplier(db, {
-      control: { "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" } },
+      control: {
+        "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" },
+      },
     });
     const { deps, payment } = makeDeps(db);
     const actor = rider();
@@ -176,7 +195,9 @@ describe("checkout", () => {
     const cart = await createCart(deps, {
       actor,
       cityId,
-      items: [{ kind: "flight", offerRef: "AP-P4-7120", fareFamilyId: "saver" }],
+      items: [
+        { kind: "flight", offerRef: "AP-P4-7120", fareFamilyId: "saver" },
+      ],
       idempotencyKey: idemKey(),
       correlationId: null,
     });
@@ -199,7 +220,8 @@ describe("checkout", () => {
       idempotencyKey: key,
       correlationId: null,
     });
-    if (first.kind !== "ok" || second.kind !== "ok") throw new Error("expected ok");
+    if (first.kind !== "ok" || second.kind !== "ok")
+      throw new Error("expected ok");
     expect(second.tripId).toBe(first.tripId);
     expect(second.orders[0]?.id).toBe(first.orders[0]?.id);
     // The replay did not authorize or capture a second time.

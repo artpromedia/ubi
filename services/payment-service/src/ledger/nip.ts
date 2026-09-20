@@ -141,9 +141,9 @@ export async function createNipTransfer(
   }
 
   const wallet = await deps.db.$transaction(async (tx) => {
-      const row = await ensureWallet(tx, "user", input.actor.id, config.city);
-      return row;
-    });
+    const row = await ensureWallet(tx, "user", input.actor.id, config.city);
+    return row;
+  });
   assertNotLocked(wallet);
   assertNotSafeMode(wallet, now);
   await verifyWalletPin(deps, input.actor, wallet, input.pin, config, now);

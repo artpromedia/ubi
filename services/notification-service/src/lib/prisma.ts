@@ -70,5 +70,8 @@ export async function withRetry<T>(
     }
   }
 
-  throw lastError ?? new Error("withRetry exhausted retries without capturing an error");
+  throw (
+    lastError ??
+    new Error("withRetry exhausted retries without capturing an error")
+  );
 }

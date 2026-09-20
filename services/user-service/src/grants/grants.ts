@@ -17,7 +17,7 @@ import { z } from "zod";
 
 import { ContractError, MoneySchema } from "@ubi/contracts";
 
-import { writeAudit ,type  Tx } from "../identity/audit";
+import { writeAudit, type Tx } from "../identity/audit";
 import { deterministicId } from "../identity/ids";
 import {
   eventIdempotencyKey,
@@ -76,7 +76,8 @@ export function grantToView(grant: ActionGrant): GrantView {
     assurance: grant.assurance as GrantAssurance,
     mandateId: grant.mandateId,
     expiresAt: grant.expiresAt.toISOString(),
-    consumedAt: grant.consumedAt === null ? null : grant.consumedAt.toISOString(),
+    consumedAt:
+      grant.consumedAt === null ? null : grant.consumedAt.toISOString(),
     createdAt: grant.createdAt.toISOString(),
   };
 }

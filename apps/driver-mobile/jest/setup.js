@@ -5,18 +5,20 @@
 
 // Secure storage (react-native-keychain) — @ubi/mobile-core/session imports it
 // at module load. Return "no stored session" so nothing reaches the keychain.
-jest.mock('react-native-keychain', () => ({
+jest.mock("react-native-keychain", () => ({
   getGenericPassword: jest.fn().mockResolvedValue(false),
   setGenericPassword: jest.fn().mockResolvedValue(true),
   resetGenericPassword: jest.fn().mockResolvedValue(true),
-  ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'AccessibleWhenUnlockedThisDeviceOnly' },
+  ACCESSIBLE: {
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: "AccessibleWhenUnlockedThisDeviceOnly",
+  },
 }));
 
 // Safe-area context — @ubi/mobile-ui Screen/Sheet import it. Pass children
 // through and report zero insets.
-jest.mock('react-native-safe-area-context', () => {
-  const React = require('react');
-  const { View } = require('react-native');
+jest.mock("react-native-safe-area-context", () => {
+  const React = require("react");
+  const { View } = require("react-native");
   const inset = { top: 0, right: 0, bottom: 0, left: 0 };
   const frame = { x: 0, y: 0, width: 390, height: 844 };
   const pass = ({ children }) => React.createElement(View, null, children);

@@ -56,7 +56,7 @@ const config: Config = {
           "0%": { transform: "translateX(0)" },
           "100%": { transform: "translateX(100%)" },
         },
-        "flash": {
+        flash: {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.5" },
         },
@@ -64,7 +64,7 @@ const config: Config = {
       animation: {
         "slide-in-from-right": "slide-in-from-right 0.3s ease-out",
         "slide-out-to-right": "slide-out-to-right 0.3s ease-in",
-        "flash": "flash 2s infinite",
+        flash: "flash 2s infinite",
       },
     },
   },

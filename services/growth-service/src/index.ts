@@ -94,9 +94,11 @@ if (process.env.NODE_ENV !== "test") {
   const shutdown = (signal: string): void => {
     logger.info({ signal }, "shutting down");
     server.close();
-    void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).then(() => {
-      process.exit(0);
-    });
+    void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).then(
+      () => {
+        process.exit(0);
+      },
+    );
   };
 
   process.on("SIGTERM", () => {

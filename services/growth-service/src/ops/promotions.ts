@@ -25,7 +25,12 @@ import {
   type Money,
 } from "@ubi/contracts";
 
-import { auditedTransaction, type OutboxInput ,type  AuditedTx,type  AuditRecord } from "./audit";
+import {
+  auditedTransaction,
+  type OutboxInput,
+  type AuditedTx,
+  type AuditRecord,
+} from "./audit";
 import { isUniqueViolation } from "./errors";
 import { actorTypeFor } from "./roles";
 import { deterministicId } from "../lib/ids";
@@ -65,7 +70,11 @@ export interface ReservationView {
 }
 
 export type ReserveResult =
-  | { readonly reserved: true; readonly reservation: ReservationView; readonly replayed: boolean }
+  | {
+      readonly reserved: true;
+      readonly reservation: ReservationView;
+      readonly replayed: boolean;
+    }
   | { readonly reserved: false; readonly reasonCode: ReserveDenyReason };
 
 interface BudgetLockRow {
@@ -90,9 +99,13 @@ async function lockBudget(
     FOR UPDATE OF b`;
   const row = rows[0];
   if (row === undefined) {
-    throw new ContractError("not_found", "no budget for that campaign version", {
-      campaignVersionId,
-    });
+    throw new ContractError(
+      "not_found",
+      "no budget for that campaign version",
+      {
+        campaignVersionId,
+      },
+    );
   }
   return row;
 }
@@ -190,7 +203,10 @@ export async function reserve(
   input: ReserveInput,
 ): Promise<ReserveResult> {
   if (input.amount.amountMinor <= 0) {
-    throw new ContractError("validation_failed", "a reservation must be a positive amount");
+    throw new ContractError(
+      "validation_failed",
+      "a reservation must be a positive amount",
+    );
   }
   const scoped = scopedIdempotencyKey(
     "growth.promotion.reserve",
@@ -203,7 +219,11 @@ export async function reserve(
     where: { id: reservationId },
   });
   if (existing !== null) {
-    return { reserved: true, reservation: reservationView(existing), replayed: true };
+    return {
+      reserved: true,
+      reservation: reservationView(existing),
+      replayed: true,
+    };
   }
 
   const version = await deps.db.campaignVersion.findUnique({
@@ -216,16 +236,25 @@ export async function reserve(
     });
   }
   if (input.amount.currency !== version.currency) {
-    throw new ContractError("validation_failed", "reservation currency must match the campaign version");
+    throw new ContractError(
+      "validation_failed",
+      "reservation currency must match the campaign version",
+    );
   }
   // A promise is only made while the campaign is live and inside its window. An
   // `exhausted` campaign is still let through to the budget check so the denial
   // it earns is the honest `budget_exhausted`, not a vague `scope`.
   const now = deps.now();
-  if (version.campaign.state !== "active" && version.campaign.state !== "exhausted") {
+  if (
+    version.campaign.state !== "active" &&
+    version.campaign.state !== "exhausted"
+  ) {
     return { reserved: false, reasonCode: "scope" };
   }
-  if (now.getTime() < version.windowStart.getTime() || now.getTime() >= version.windowEnd.getTime()) {
+  if (
+    now.getTime() < version.windowStart.getTime() ||
+    now.getTime() >= version.windowEnd.getTime()
+  ) {
     return { reserved: false, reasonCode: "scope" };
   }
 
@@ -311,7 +340,10 @@ export async function reserve(
         },
       ];
       // Reserving the last of the budget exhausts it.
-      if (committed + amountMinor >= budget.budget_limit_minor && budget.exhausted_at === null) {
+      if (
+        committed + amountMinor >= budget.budget_limit_minor &&
+        budget.exhausted_at === null
+      ) {
         await tx.campaignBudget.update({
           where: { campaignVersionId: input.campaignVersionId },
           data: { exhaustedAt: now },
@@ -321,7 +353,11 @@ export async function reserve(
       }
 
       return {
-        result: { reserved: true, reservation: reservationView(created), replayed: false },
+        result: {
+          reserved: true,
+          reservation: reservationView(created),
+          replayed: false,
+        },
         audit: {
           actor: input.actor,
           action: "growth.promotion.reserved",
@@ -345,7 +381,11 @@ export async function reserve(
         where: { id: reservationId },
       });
       if (replay !== null) {
-        return { reserved: true, reservation: reservationView(replay), replayed: true };
+        return {
+          reserved: true,
+          reservation: reservationView(replay),
+          replayed: true,
+        };
       }
     }
     throw error;
@@ -369,7 +409,11 @@ function denyOutcome(
       subjectId: input.campaignVersionId,
       reason: reasonCode,
       before: null,
-      after: { userId: input.userId, reasonCode, amountMinor: input.amount.amountMinor },
+      after: {
+        userId: input.userId,
+        reasonCode,
+        amountMinor: input.amount.amountMinor,
+      },
       correlationId: input.correlationId,
     },
   };
@@ -388,7 +432,10 @@ function exhaustionEvent(input: ReserveInput, now: Date): OutboxInput {
     idempotencyKey: `promotion.exhausted:${input.campaignVersionId}`,
     correlationId: input.correlationId,
     occurredAt: now,
-    payload: { campaignVersionId: input.campaignVersionId, at: now.toISOString() },
+    payload: {
+      campaignVersionId: input.campaignVersionId,
+      at: now.toISOString(),
+    },
   };
 }
 

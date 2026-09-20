@@ -209,7 +209,7 @@ function generateRestaurantName(cuisine: string): string {
  * Create a test restaurant
  */
 export function createRestaurant(
-  options: RestaurantFactoryOptions = {}
+  options: RestaurantFactoryOptions = {},
 ): TestRestaurant {
   const {
     city = "lagos",
@@ -259,7 +259,7 @@ export function createRestaurant(
  * Create a menu item
  */
 export function createMenuItem(
-  options: MenuItemFactoryOptions = {}
+  options: MenuItemFactoryOptions = {},
 ): TestMenuItem {
   const {
     cuisine = randomPick(CUISINE_TYPES),
@@ -313,7 +313,7 @@ export function createMenuItem(
  * Create a food order
  */
 export function createFoodOrder(
-  options: FoodOrderFactoryOptions = {}
+  options: FoodOrderFactoryOptions = {},
 ): TestFoodOrder {
   const {
     status = "delivered",
@@ -462,7 +462,7 @@ export function createFoodOrder(
  */
 export function createRestaurants(
   count: number,
-  options?: RestaurantFactoryOptions
+  options?: RestaurantFactoryOptions,
 ): TestRestaurant[] {
   return Array.from({ length: count }, () => createRestaurant(options));
 }
@@ -472,11 +472,11 @@ export function createRestaurants(
  */
 export function createRestaurantWithMenu(
   itemCount: number = 10,
-  options?: RestaurantFactoryOptions
+  options?: RestaurantFactoryOptions,
 ): { restaurant: TestRestaurant; menu: TestMenuItem[] } {
   const restaurant = createRestaurant(options);
   const menu = Array.from({ length: itemCount }, () =>
-    createMenuItem({ cuisine: restaurant.cuisine[0] })
+    createMenuItem({ cuisine: restaurant.cuisine[0] }),
   );
   return { restaurant, menu };
 }
@@ -486,7 +486,7 @@ export function createRestaurantWithMenu(
  */
 export function createFoodOrders(
   count: number,
-  options?: FoodOrderFactoryOptions
+  options?: FoodOrderFactoryOptions,
 ): TestFoodOrder[] {
   return Array.from({ length: count }, () => createFoodOrder(options));
 }

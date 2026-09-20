@@ -154,7 +154,9 @@ export async function verifyIdentityContext(
       const userId = stringOrNull(payload.sub);
       const role = stringOrNull(payload.role);
       const requestId = stringOrNull(payload.rid);
-      if (userId === null || role === null || requestId === null) {break;}
+      if (userId === null || role === null || requestId === null) {
+        break;
+      }
 
       return {
         userId,

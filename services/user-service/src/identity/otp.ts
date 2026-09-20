@@ -92,7 +92,9 @@ export async function requestOtp(
   }
 
   const sends = await deps.cache.incr(sendsKey(id));
-  if (sends === 1) {await deps.cache.expire(sendsKey(id), 3600);}
+  if (sends === 1) {
+    await deps.cache.expire(sendsKey(id), 3600);
+  }
   if (sends > policy.otpMaxSendsPerHour) {
     throw new ContractError(
       "rate_limited",

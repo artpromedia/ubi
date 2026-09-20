@@ -28,7 +28,7 @@ test.describe("Authentication Flow", () => {
 
     // Should see login prompt or redirect to login
     await expect(
-      page.getByRole("button", { name: /sign in|login|get started/i })
+      page.getByRole("button", { name: /sign in|login|get started/i }),
     ).toBeVisible();
   });
 
@@ -76,7 +76,7 @@ test.describe("Authentication Flow", () => {
     // Should show OTP input screen
     await expect(page.getByText(/enter.*code|verification/i)).toBeVisible();
     await expect(
-      page.getByPlaceholder(/otp|code|digit/i).first()
+      page.getByPlaceholder(/otp|code|digit/i).first(),
     ).toBeVisible();
   });
 
@@ -228,7 +228,7 @@ test.describe("Logout", () => {
 
     // Should clear local storage
     const token = await authenticatedPage.evaluate(() =>
-      localStorage.getItem("auth_token")
+      localStorage.getItem("auth_token"),
     );
     expect(token).toBeNull();
   });

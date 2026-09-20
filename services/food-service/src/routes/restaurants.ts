@@ -566,7 +566,9 @@ restaurantRoutes.get("/:id/stats", async (c) => {
 // ============================================
 
 function isRestaurantOpen(openingHours: any): boolean {
-  if (!Array.isArray(openingHours) || openingHours.length === 0) {return false;}
+  if (!Array.isArray(openingHours) || openingHours.length === 0) {
+    return false;
+  }
 
   const now = new Date();
   const days = [
@@ -583,7 +585,9 @@ function isRestaurantOpen(openingHours: any): boolean {
 
   const todayHours = openingHours.find((h) => h.day === currentDay);
 
-  if (!todayHours || todayHours.isClosed) {return false;}
+  if (!todayHours || todayHours.isClosed) {
+    return false;
+  }
 
   return (
     currentTime >= todayHours.openTime && currentTime <= todayHours.closeTime

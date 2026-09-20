@@ -9,10 +9,15 @@
  */
 import { ContractError } from "@ubi/contracts";
 
-import { isMandateAction ,type  Assurance,type  MandateInput,type  MandatePatch } from "./schemas";
+import {
+  isMandateAction,
+  type Assurance,
+  type MandateInput,
+  type MandatePatch,
+} from "./schemas";
 import { mandateToView, type MandateView } from "./serialize";
 import { guardTransition } from "./transition";
-import { writeAudit ,type  Tx } from "../identity/audit";
+import { writeAudit, type Tx } from "../identity/audit";
 import { actorTypeFor, auditRevision } from "../identity/common";
 import { deterministicId } from "../identity/ids";
 import {
@@ -281,7 +286,10 @@ async function ownedMandate(
 }
 
 const PATCH_EVENT: Readonly<
-  Record<MandatePatch["op"], "mandate.edited" | "mandate.paused" | "mandate.resumed" | "mandate.revoked">
+  Record<
+    MandatePatch["op"],
+    "mandate.edited" | "mandate.paused" | "mandate.resumed" | "mandate.revoked"
+  >
 > = {
   edit: "mandate.edited",
   pause: "mandate.paused",

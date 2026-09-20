@@ -221,7 +221,12 @@
   "askReview": {
     "initial": "awaiting_confirmation",
     "transitions": {
-      "awaiting_confirmation": ["executing", "expired", "superseded", "cancelled"]
+      "awaiting_confirmation": [
+        "executing",
+        "expired",
+        "superseded",
+        "cancelled"
+      ]
     },
     "rule": "material change ⇒ grant invalid ⇒ superseded; the model cannot mint or extend a grant (CLAUDE.md #18)"
   },
@@ -236,8 +241,17 @@
     "initial": "payment_authorized",
     "transitions": {
       "payment_authorized": ["submitted"],
-      "submitted": ["supplier_pending", "confirmed", "failed_released", "unknown_reconciling"],
-      "supplier_pending": ["confirmed", "failed_released", "unknown_reconciling"],
+      "submitted": [
+        "supplier_pending",
+        "confirmed",
+        "failed_released",
+        "unknown_reconciling"
+      ],
+      "supplier_pending": [
+        "confirmed",
+        "failed_released",
+        "unknown_reconciling"
+      ],
       "unknown_reconciling": ["confirmed", "failed_released"],
       "confirmed": ["ticketed", "cancelled", "disrupted"],
       "ticketed": ["cancelled", "disrupted", "completed"],
@@ -324,8 +338,22 @@
   "mpBid": {
     "initial": "submitted",
     "transitions": {
-      "submitted": ["revised", "selected_pending", "withdrawn", "expired", "invalidated", "lost"],
-      "revised": ["revised", "selected_pending", "withdrawn", "expired", "invalidated", "lost"],
+      "submitted": [
+        "revised",
+        "selected_pending",
+        "withdrawn",
+        "expired",
+        "invalidated",
+        "lost"
+      ],
+      "revised": [
+        "revised",
+        "selected_pending",
+        "withdrawn",
+        "expired",
+        "invalidated",
+        "lost"
+      ],
       "selected_pending": ["won", "submitted", "revised", "lost", "invalidated"]
     },
     "rule": "one live bid per driver/request revision; selection carries expected request+bid versions; award failure returns the bid to its live state, never silently re-terms it"

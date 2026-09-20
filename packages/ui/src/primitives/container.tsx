@@ -7,10 +7,10 @@ import { cn } from "../lib/utils";
 
 /**
  * Container - A responsive container primitive
- * 
+ *
  * Provides consistent max-width and padding across breakpoints.
  * Used for page layouts and section containers.
- * 
+ *
  * @example
  * <Container size="lg" className="py-8">
  *   <h1>Page content</h1>
@@ -55,13 +55,25 @@ const containerVariants = cva("mx-auto w-full", {
 });
 
 export interface ContainerProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends
+    React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof containerVariants> {
-  as?: "div" | "section" | "article" | "main" | "header" | "footer" | "aside" | "nav";
+  as?:
+    | "div"
+    | "section"
+    | "article"
+    | "main"
+    | "header"
+    | "footer"
+    | "aside"
+    | "nav";
 }
 
 const Container = React.forwardRef<HTMLDivElement, ContainerProps>(
-  ({ as: Component = "div", className, size, padding, center, ...props }, ref) => {
+  (
+    { as: Component = "div", className, size, padding, center, ...props },
+    ref,
+  ) => {
     return (
       <Component
         ref={ref}
@@ -69,7 +81,7 @@ const Container = React.forwardRef<HTMLDivElement, ContainerProps>(
         {...props}
       />
     );
-  }
+  },
 );
 Container.displayName = "Container";
 

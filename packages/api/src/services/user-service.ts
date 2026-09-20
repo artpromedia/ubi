@@ -7,11 +7,11 @@
 import { type ApiClient, getApiClient } from "../client";
 
 import type {
-    Address,
-    ApiResponse,
-    PaginatedResponse,
-    PaginationParams,
-    Timestamps,
+  Address,
+  ApiResponse,
+  PaginatedResponse,
+  PaginationParams,
+  Timestamps,
 } from "../types";
 
 // User types
@@ -154,7 +154,10 @@ export class UserServiceApi {
     return this.client.post("auth/forgot-password", data);
   }
 
-  async resetPassword(token: string, newPassword: string): Promise<ApiResponse<void>> {
+  async resetPassword(
+    token: string,
+    newPassword: string,
+  ): Promise<ApiResponse<void>> {
     return this.client.post("auth/reset-password", { token, newPassword });
   }
 
@@ -175,11 +178,15 @@ export class UserServiceApi {
     return this.client.get(`${this.basePath}/me`);
   }
 
-  async updateMe(data: UpdateProfileRequest): Promise<ApiResponse<UserProfile>> {
+  async updateMe(
+    data: UpdateProfileRequest,
+  ): Promise<ApiResponse<UserProfile>> {
     return this.client.patch(`${this.basePath}/me`, data);
   }
 
-  async changePassword(data: ChangePasswordRequest): Promise<ApiResponse<void>> {
+  async changePassword(
+    data: ChangePasswordRequest,
+  ): Promise<ApiResponse<void>> {
     return this.client.post(`${this.basePath}/me/change-password`, data);
   }
 
@@ -196,11 +203,16 @@ export class UserServiceApi {
     return this.client.get(`${this.basePath}/me/addresses`);
   }
 
-  async addAddress(address: Omit<Address, "id">): Promise<ApiResponse<Address>> {
+  async addAddress(
+    address: Omit<Address, "id">,
+  ): Promise<ApiResponse<Address>> {
     return this.client.post(`${this.basePath}/me/addresses`, address);
   }
 
-  async updateAddress(id: string, address: Partial<Address>): Promise<ApiResponse<Address>> {
+  async updateAddress(
+    id: string,
+    address: Partial<Address>,
+  ): Promise<ApiResponse<Address>> {
     return this.client.patch(`${this.basePath}/me/addresses/${id}`, address);
   }
 
@@ -222,7 +234,9 @@ export class UserServiceApi {
   }
 
   async setDefaultPaymentMethod(id: string): Promise<ApiResponse<void>> {
-    return this.client.post(`${this.basePath}/me/payment-methods/${id}/default`);
+    return this.client.post(
+      `${this.basePath}/me/payment-methods/${id}/default`,
+    );
   }
 
   // Admin endpoints
@@ -234,11 +248,17 @@ export class UserServiceApi {
     return this.client.get(`${this.basePath}/${id}`);
   }
 
-  async updateUser(id: string, data: UpdateProfileRequest): Promise<ApiResponse<UserProfile>> {
+  async updateUser(
+    id: string,
+    data: UpdateProfileRequest,
+  ): Promise<ApiResponse<UserProfile>> {
     return this.client.patch(`${this.basePath}/${id}`, data);
   }
 
-  async updateUserStatus(id: string, status: UserStatus): Promise<ApiResponse<User>> {
+  async updateUserStatus(
+    id: string,
+    status: UserStatus,
+  ): Promise<ApiResponse<User>> {
     return this.client.patch(`${this.basePath}/${id}/status`, { status });
   }
 

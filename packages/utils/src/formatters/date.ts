@@ -7,7 +7,7 @@
  */
 export function formatDate(
   date: Date | string | number,
-  locale = "en-US"
+  locale = "en-US",
 ): string {
   const d = new Date(date);
   return d.toLocaleDateString(locale, {
@@ -22,7 +22,7 @@ export function formatDate(
  */
 export function formatDateTime(
   date: Date | string | number,
-  locale = "en-US"
+  locale = "en-US",
 ): string {
   const d = new Date(date);
   return d.toLocaleString(locale, {
@@ -39,7 +39,7 @@ export function formatDateTime(
  */
 export function formatTime(
   date: Date | string | number,
-  locale = "en-US"
+  locale = "en-US",
 ): string {
   const d = new Date(date);
   return d.toLocaleTimeString(locale, {

@@ -70,7 +70,7 @@ export function toBeErrorResponse(received: unknown, expectedStatus?: number) {
  */
 export function toHaveResponseData<T>(
   received: unknown,
-  validator?: (data: T) => boolean
+  validator?: (data: T) => boolean,
 ) {
   const response = received as TestApiResponse<T>;
 
@@ -103,7 +103,7 @@ export function toHaveResponseData<T>(
  */
 export function toMatchApiSchema(
   received: unknown,
-  schema: Record<string, string | Record<string, unknown>>
+  schema: Record<string, string | Record<string, unknown>>,
 ) {
   const response = received as TestApiResponse<Record<string, unknown>>;
 

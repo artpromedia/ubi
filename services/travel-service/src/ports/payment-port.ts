@@ -90,7 +90,10 @@ export function createHttpPayment(options: PaymentHttpOptions): PaymentPort {
   const basePath = options.basePath ?? "/v1/finance/travel";
   const timeoutMs = options.timeoutMs ?? 10_000;
 
-  async function call(op: PaymentOp, request: PaymentRequest): Promise<PaymentResult> {
+  async function call(
+    op: PaymentOp,
+    request: PaymentRequest,
+  ): Promise<PaymentResult> {
     const url = `${options.baseUrl.replace(/\/+$/, "")}${basePath}/${op}`;
     const headers: Record<string, string> = {
       "content-type": "application/json",
@@ -144,7 +147,10 @@ export function createHttpPayment(options: PaymentHttpOptions): PaymentPort {
       if (error instanceof ContractError) {
         throw error;
       }
-      paymentLogger.error({ err: error, op, orderId: request.orderId }, "payment call failed");
+      paymentLogger.error(
+        { err: error, op, orderId: request.orderId },
+        "payment call failed",
+      );
       throw new ContractError(
         "service_unavailable",
         `payment-service is not reachable; the ${op} did not happen`,

@@ -13,7 +13,12 @@
  */
 import { ContractError, money } from "@ubi/contracts";
 
-import { advanceOrder, orderView, type OrderRow, type OrderView } from "./ladder";
+import {
+  advanceOrder,
+  orderView,
+  type OrderRow,
+  type OrderView,
+} from "./ladder";
 import { withOutbox } from "./outbox";
 import { actorTypeFor } from "./roles";
 import { adapterFor, contextFor, loadSupplier } from "./suppliers";
@@ -33,9 +38,13 @@ export async function reconcileOrder(
     readonly correlationId: string | null;
   },
 ): Promise<OrderView> {
-  const order = await deps.db.travelOrder.findUnique({ where: { id: input.orderId } });
+  const order = await deps.db.travelOrder.findUnique({
+    where: { id: input.orderId },
+  });
   if (order === null) {
-    throw new ContractError("not_found", "no such order", { orderId: input.orderId });
+    throw new ContractError("not_found", "no such order", {
+      orderId: input.orderId,
+    });
   }
   if (order.state !== "unknown_reconciling") {
     // Only an uncertain order is reconciled; anything else is already resolved.
@@ -44,9 +53,16 @@ export async function reconcileOrder(
 
   const supplier = await loadSupplier(deps.db, order.supplierId);
   const adapter = adapterFor(supplier);
-  const lookup = await adapter.reconcile(contextFor(supplier, deps.now), order.id);
+  const lookup = await adapter.reconcile(
+    contextFor(supplier, deps.now),
+    order.id,
+  );
 
-  if (lookup.state === "pending" || lookup.state === "unknown" || !lookup.found) {
+  if (
+    lookup.state === "pending" ||
+    lookup.state === "unknown" ||
+    !lookup.found
+  ) {
     // Still uncertain. Leave it exactly where it is; do not touch the hold.
     reconcileLogger.info(
       { orderId: order.id, state: lookup.state },
@@ -111,7 +127,11 @@ export async function reconcileOrder(
     });
     let latest = advance.order;
     const events = [...advance.events];
-    if (lookup.state === "ticketed" && lookup.documentsIssued && order.kind === "flight") {
+    if (
+      lookup.state === "ticketed" &&
+      lookup.documentsIssued &&
+      order.kind === "flight"
+    ) {
       const ticketed = await advanceOrder(tx, {
         order: latest,
         to: "ticketed",
@@ -133,7 +153,9 @@ export async function reconcileOrder(
 
 function supplierRefsJson(lookup: LookupResult): JsonRecord {
   const refs: JsonRecord = {};
-  if (lookup.supplierRefs.pnr !== undefined) {refs.pnr = lookup.supplierRefs.pnr;}
+  if (lookup.supplierRefs.pnr !== undefined) {
+    refs.pnr = lookup.supplierRefs.pnr;
+  }
   if (lookup.supplierRefs.bookingRef !== undefined) {
     refs.bookingRef = lookup.supplierRefs.bookingRef;
   }
@@ -159,10 +181,17 @@ export async function recordSettlement(
     readonly invoicedMinor: number;
     readonly correlationId: string | null;
   },
-): Promise<{ readonly settlementId: string; readonly differenceMinor: number }> {
-  const order = await deps.db.travelOrder.findUnique({ where: { id: input.orderId } });
+): Promise<{
+  readonly settlementId: string;
+  readonly differenceMinor: number;
+}> {
+  const order = await deps.db.travelOrder.findUnique({
+    where: { id: input.orderId },
+  });
   if (order === null) {
-    throw new ContractError("not_found", "no such order", { orderId: input.orderId });
+    throw new ContractError("not_found", "no such order", {
+      orderId: input.orderId,
+    });
   }
   const chargedMinor = Number(order.chargedMinor);
   const differenceMinor = chargedMinor - input.invoicedMinor;

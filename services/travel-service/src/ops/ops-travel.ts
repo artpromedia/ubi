@@ -32,7 +32,9 @@ function moneyObj(amountMinor: number, currency: string): JsonRecord {
   return { amountMinor, currency };
 }
 
-export async function listExceptions(deps: TravelDeps): Promise<readonly JsonRecord[]> {
+export async function listExceptions(
+  deps: TravelDeps,
+): Promise<readonly JsonRecord[]> {
   const exceptions: JsonRecord[] = [];
 
   const unknowns = await deps.db.travelOrder.findMany({
@@ -87,7 +89,11 @@ export async function listExceptions(deps: TravelDeps): Promise<readonly JsonRec
   }
 
   const refunds = await deps.db.travelRefund.findMany({
-    where: { stage: { in: ["requested", "supplier_confirmed", "supplier_refund_pending"] } },
+    where: {
+      stage: {
+        in: ["requested", "supplier_confirmed", "supplier_refund_pending"],
+      },
+    },
     orderBy: { createdAt: "asc" },
   });
   for (const refund of refunds) {
@@ -113,7 +119,12 @@ export async function listExceptions(deps: TravelDeps): Promise<readonly JsonRec
       kind: "settlement_difference",
       state: "unresolved",
       since: settlement.createdAt.toISOString(),
-      money: { difference: moneyObj(Number(settlement.differenceMinor), settlement.currency) },
+      money: {
+        difference: moneyObj(
+          Number(settlement.differenceMinor),
+          settlement.currency,
+        ),
+      },
       nextAction: "accept_difference | dispute_difference",
     });
   }
@@ -140,12 +151,20 @@ export async function applyExceptionAction(
         orderId: input.orderId,
         correlationId: input.correlationId,
       });
-      return { action: input.action, orderId: input.orderId, state: order.state };
+      return {
+        action: input.action,
+        orderId: input.orderId,
+        state: order.state,
+      };
     }
     case "escalate": {
-      const order = await deps.db.travelOrder.findUnique({ where: { id: input.orderId } });
+      const order = await deps.db.travelOrder.findUnique({
+        where: { id: input.orderId },
+      });
       if (order === null) {
-        throw new ContractError("not_found", "no such order", { orderId: input.orderId });
+        throw new ContractError("not_found", "no such order", {
+          orderId: input.orderId,
+        });
       }
       await deps.db.travelOrderEvent.create({
         data: {
@@ -169,10 +188,15 @@ export async function applyExceptionAction(
           orderId: input.orderId,
         });
       }
-      const resolution = input.action === "accept_difference" ? "accepted" : "disputed";
+      const resolution =
+        input.action === "accept_difference" ? "accepted" : "disputed";
       await deps.db.travelSettlement.update({
         where: { id: settlement.id },
-        data: { resolution, resolvedBy: input.actor.id, resolvedAt: deps.now() },
+        data: {
+          resolution,
+          resolvedBy: input.actor.id,
+          resolvedAt: deps.now(),
+        },
       });
       return { action: input.action, settlementId: settlement.id, resolution };
     }
@@ -182,7 +206,9 @@ export async function applyExceptionAction(
         orderBy: { createdAt: "desc" },
       });
       if (refund === null) {
-        throw new ContractError("not_found", "no open refund", { orderId: input.orderId });
+        throw new ContractError("not_found", "no open refund", {
+          orderId: input.orderId,
+        });
       }
       const next =
         refund.stage === "requested"
@@ -193,7 +219,11 @@ export async function applyExceptionAction(
               ? "refunded_to_wallet"
               : null;
       if (next === null) {
-        return { action: input.action, refundId: refund.id, stage: refund.stage };
+        return {
+          action: input.action,
+          refundId: refund.id,
+          stage: refund.stage,
+        };
       }
       const view = await advanceRefund(deps, {
         refundId: refund.id,
@@ -212,7 +242,9 @@ export async function applyExceptionAction(
 }
 
 export async function providersHealth(deps: TravelDeps): Promise<JsonRecord> {
-  const suppliers = await deps.db.travelSupplier.findMany({ orderBy: { id: "asc" } });
+  const suppliers = await deps.db.travelSupplier.findMany({
+    orderBy: { id: "asc" },
+  });
   const providers: JsonRecord[] = [];
   for (const supplier of suppliers) {
     const loaded = await loadSupplier(deps.db, supplier.id);
@@ -220,14 +252,26 @@ export async function providersHealth(deps: TravelDeps): Promise<JsonRecord> {
     const health = await adapter.providerHealth(contextFor(loaded, deps.now));
 
     const [confirmed, ticketed, failed, unknown, pending] = await Promise.all([
-      deps.db.travelOrder.count({ where: { supplierId: supplier.id, state: "confirmed" } }),
-      deps.db.travelOrder.count({ where: { supplierId: supplier.id, state: "ticketed" } }),
-      deps.db.travelOrder.count({ where: { supplierId: supplier.id, state: "failed_released" } }),
-      deps.db.travelOrder.count({ where: { supplierId: supplier.id, state: "unknown_reconciling" } }),
-      deps.db.travelOrder.count({ where: { supplierId: supplier.id, state: "supplier_pending" } }),
+      deps.db.travelOrder.count({
+        where: { supplierId: supplier.id, state: "confirmed" },
+      }),
+      deps.db.travelOrder.count({
+        where: { supplierId: supplier.id, state: "ticketed" },
+      }),
+      deps.db.travelOrder.count({
+        where: { supplierId: supplier.id, state: "failed_released" },
+      }),
+      deps.db.travelOrder.count({
+        where: { supplierId: supplier.id, state: "unknown_reconciling" },
+      }),
+      deps.db.travelOrder.count({
+        where: { supplierId: supplier.id, state: "supplier_pending" },
+      }),
     ]);
     const totalOrders = confirmed + ticketed + failed + unknown + pending;
-    const webhooksTotal = await deps.db.travelWebhook.count({ where: { supplierId: supplier.id } });
+    const webhooksTotal = await deps.db.travelWebhook.count({
+      where: { supplierId: supplier.id },
+    });
     const webhooksRejected = await deps.db.travelWebhook.count({
       where: { supplierId: supplier.id, signatureOk: false },
     });
@@ -239,9 +283,18 @@ export async function providersHealth(deps: TravelDeps): Promise<JsonRecord> {
       reachable: health.reachable,
       liveCallsBlocked: health.liveCallsBlocked,
       note: health.note ?? null,
-      orders: { confirmed, ticketed, failed, unknown, pending, total: totalOrders },
+      orders: {
+        confirmed,
+        ticketed,
+        failed,
+        unknown,
+        pending,
+        total: totalOrders,
+      },
       successRate:
-        totalOrders === 0 ? null : Math.round(((confirmed + ticketed) / totalOrders) * 100) / 100,
+        totalOrders === 0
+          ? null
+          : Math.round(((confirmed + ticketed) / totalOrders) * 100) / 100,
       webhooks: { total: webhooksTotal, rejected: webhooksRejected },
     });
   }
@@ -253,7 +306,9 @@ export async function providersHealth(deps: TravelDeps): Promise<JsonRecord> {
 
   return {
     providers,
-    unresolvedSettlementDifferenceMinor: Number(settlementDiff._sum.differenceMinor ?? 0n),
+    unresolvedSettlementDifferenceMinor: Number(
+      settlementDiff._sum.differenceMinor ?? 0n,
+    ),
     generatedAt: deps.now().toISOString(),
   };
 }

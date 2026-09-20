@@ -407,7 +407,14 @@ export interface IVRSession {
 export interface IVRAction {
   type: IVRActionType;
   payload?: Record<string, unknown>;
-  action?: "play" | "say" | "gather" | "record" | "dial" | "hangup" | "redirect";
+  action?:
+    | "play"
+    | "say"
+    | "gather"
+    | "record"
+    | "dial"
+    | "hangup"
+    | "redirect";
   audio?: string; // Audio file to play
   text?: string; // Text to say (TTS)
   voice?: string; // TTS voice
@@ -562,7 +569,13 @@ export interface CompressedResponse<T = unknown> {
   originalSize: number;
   compressedSize: number;
   compressionRatio: number;
-  encoding: "gzip" | "brotli" | "msgpack" | "msgpack+gzip" | "identity" | "none";
+  encoding:
+    | "gzip"
+    | "brotli"
+    | "msgpack"
+    | "msgpack+gzip"
+    | "identity"
+    | "none";
 }
 
 export interface LiteTrip {
@@ -691,7 +704,7 @@ export interface IOfflineSyncService {
   getDeltaSync(request: DeltaSyncRequest): Promise<DeltaSyncResponse>;
   resolveConflict(
     conflictId: string,
-    resolution: ConflictResolution
+    resolution: ConflictResolution,
   ): Promise<void>;
   getSyncState(userId: string, deviceId: string): Promise<SyncState | null>;
 }
@@ -711,7 +724,7 @@ export interface ISMSService {
     to: string,
     templateCode: string,
     data: Record<string, unknown>,
-    language?: string
+    language?: string,
   ): Promise<string>;
   parseCommand(message: string): ParsedSMSCommand;
 }
@@ -721,7 +734,7 @@ export interface IVoiceService {
   processInput(
     callId: string,
     input: string,
-    inputType: "dtmf" | "speech"
+    inputType: "dtmf" | "speech",
   ): Promise<IVRAction>;
   transferToAgent(callId: string, skill?: string): Promise<IVRAction>;
   endCall(callId: string): Promise<void>;
@@ -731,7 +744,7 @@ export interface IAccessibilityService {
   getPreferences(userId: string): Promise<AccessibilityPreferences>;
   updatePreferences(
     userId: string,
-    prefs: Partial<AccessibilityPreferences>
+    prefs: Partial<AccessibilityPreferences>,
   ): Promise<void>;
   parseVoiceCommand(transcript: string, context?: string): VoiceCommand;
   getScreenReaderText(screenName: string, language: string): Promise<string>;
@@ -740,21 +753,24 @@ export interface IAccessibilityService {
 export interface ITranslationService {
   translate(request: TranslationRequest): Promise<string>;
   translateBatch(
-    requests: TranslationRequest[]
+    requests: TranslationRequest[],
   ): Promise<Record<string, string>>;
   getLanguages(): Promise<Language[]>;
   getNamespace(
     namespace: string,
-    language: string
+    language: string,
   ): Promise<Record<string, string>>;
 }
 
 export interface ILowBandwidthService {
   compressResponse<T>(data: T): Promise<CompressedResponse<T>>;
-  getLiteTrip(tripId: string, networkType?: NetworkType): Promise<LiteTrip | null>;
+  getLiteTrip(
+    tripId: string,
+    networkType?: NetworkType,
+  ): Promise<LiteTrip | null>;
   getLiteFareEstimate(
     origin: GeoLocation,
-    destination: GeoLocation
+    destination: GeoLocation,
   ): Promise<LiteFareEstimate>;
   searchPlacesOffline(query: string, city: string): Promise<CachedPlace[]>;
   getDataUsageStats(userId: string): Promise<DataUsageStats>;

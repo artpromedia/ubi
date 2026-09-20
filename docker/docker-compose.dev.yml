@@ -5,7 +5,7 @@ services:
   # =============================================================================
   # DATABASES
   # =============================================================================
-  
+
   postgres:
     image: postgis/postgis:15-3.4-alpine
     container_name: ubi-postgres
@@ -30,7 +30,7 @@ services:
   # =============================================================================
   # CACHING
   # =============================================================================
-  
+
   redis:
     image: redis:7-alpine
     container_name: ubi-redis
@@ -51,7 +51,7 @@ services:
   # =============================================================================
   # MESSAGE QUEUE (Optional - for async processing)
   # =============================================================================
-  
+
   # rabbitmq:
   #   image: rabbitmq:3-management-alpine
   #   container_name: ubi-rabbitmq
@@ -70,7 +70,7 @@ services:
   # =============================================================================
   # MONITORING (Optional)
   # =============================================================================
-  
+
   # grafana:
   #   image: grafana/grafana:latest
   #   container_name: ubi-grafana
@@ -99,7 +99,7 @@ services:
   # =============================================================================
   # ADMIN TOOLS
   # =============================================================================
-  
+
   # pgadmin:
   #   image: dpage/pgadmin4:latest
   #   container_name: ubi-pgadmin
@@ -130,7 +130,7 @@ services:
   # =============================================================================
   # MINIO (S3-compatible storage for local development)
   # =============================================================================
-  
+
   minio:
     image: minio/minio:latest
     container_name: ubi-minio
@@ -155,14 +155,14 @@ services:
   # =============================================================================
   # MAILHOG (Email testing)
   # =============================================================================
-  
+
   mailhog:
     image: mailhog/mailhog:latest
     container_name: ubi-mailhog
     restart: unless-stopped
     ports:
-      - "1025:1025"  # SMTP
-      - "8025:8025"  # Web UI
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
     networks:
       - ubi-network
 

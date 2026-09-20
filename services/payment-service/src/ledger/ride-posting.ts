@@ -342,7 +342,8 @@ export async function postMarketplaceCompletion(
       reference: ref,
       occurredAt: input.occurredAt,
       idempotencyKey: input.idempotencyKey,
-      description: "marketplace cash trip: wallet tip only (fee captured at selection)",
+      description:
+        "marketplace cash trip: wallet tip only (fee captured at selection)",
       lines: [
         {
           account: "tips",

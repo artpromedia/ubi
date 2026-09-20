@@ -24,10 +24,7 @@
 
 import type { Redis } from "ioredis";
 import type { EventEnvelope } from "@ubi/contracts";
-import {
-  subscribeOutbox,
-  type OutboxSubscription,
-} from "@ubi/outbox";
+import { subscribeOutbox, type OutboxSubscription } from "@ubi/outbox";
 import type { ConnectionManager } from "./connection-manager.js";
 import { logger as rootLogger } from "./lib/logger.js";
 import type { WebSocketMessage } from "./types/index.js";
@@ -151,7 +148,9 @@ export async function handleMarketplaceEnvelope(
 
   const message = translateEnvelope(envelope);
   await Promise.all(
-    audience.map((userId) => connectionManager.broadcastToUser(userId, message)),
+    audience.map((userId) =>
+      connectionManager.broadcastToUser(userId, message),
+    ),
   );
 
   logger.debug(

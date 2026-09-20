@@ -20,7 +20,6 @@ import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
 
-
 import { defaultIdentityDeps } from "./identity/deps";
 import { logger } from "./lib/logger.js";
 import { prisma } from "./lib/prisma";

@@ -122,11 +122,20 @@ function toWindow(input: VersionInput): {
 } {
   const windowStart = new Date(input.window.start);
   const windowEnd = new Date(input.window.end);
-  if (Number.isNaN(windowStart.getTime()) || Number.isNaN(windowEnd.getTime())) {
-    throw new ContractError("validation_failed", "the window is not a valid date range");
+  if (
+    Number.isNaN(windowStart.getTime()) ||
+    Number.isNaN(windowEnd.getTime())
+  ) {
+    throw new ContractError(
+      "validation_failed",
+      "the window is not a valid date range",
+    );
   }
   if (windowEnd.getTime() <= windowStart.getTime()) {
-    throw new ContractError("validation_failed", "the window must end after it starts");
+    throw new ContractError(
+      "validation_failed",
+      "the window must end after it starts",
+    );
   }
   return { windowStart, windowEnd };
 }
@@ -137,7 +146,9 @@ async function loadCampaign(
 ): Promise<CampaignRow> {
   const row = await deps.db.campaign.findUnique({ where: { id } });
   if (row === null) {
-    throw new ContractError("not_found", "no such campaign", { campaignId: id });
+    throw new ContractError("not_found", "no such campaign", {
+      campaignId: id,
+    });
   }
   return row;
 }
@@ -235,7 +246,9 @@ export async function createCampaign(
   const campaignId = deterministicId("cmp", scoped);
   const versionId = deterministicId("cver", `${scoped}:v1`);
 
-  const replay = await deps.db.campaign.findUnique({ where: { id: campaignId } });
+  const replay = await deps.db.campaign.findUnique({
+    where: { id: campaignId },
+  });
   if (replay !== null) {
     return campaignView(deps, replay);
   }
@@ -451,7 +464,12 @@ export async function simulateVersion(
   assertPermission(input.actor.role, "campaign.simulate");
   const campaign = await loadCampaign(deps, input.campaignId);
   const version = await deps.db.campaignVersion.findUnique({
-    where: { campaignId_version: { campaignId: input.campaignId, version: input.version } },
+    where: {
+      campaignId_version: {
+        campaignId: input.campaignId,
+        version: input.version,
+      },
+    },
   });
   if (version === null) {
     throw new ContractError("not_found", "no such campaign version", {
@@ -507,7 +525,9 @@ export async function simulateVersion(
   }
   const low = Math.max(0, expectedRedemptionPct * 0.5);
   const high = Math.min(1, expectedRedemptionPct * 1.5);
-  const expectedSpendMinor = Math.round(maxLiabilityMinor * expectedRedemptionPct);
+  const expectedSpendMinor = Math.round(
+    maxLiabilityMinor * expectedRedemptionPct,
+  );
 
   // Overlapping active campaigns in the same market are flagged, not merged.
   const overlaps = (
@@ -604,7 +624,11 @@ export async function submitVersion(
   return auditedTransaction(deps.db, async (tx) => {
     await tx.campaign.update({
       where: { id: input.campaignId },
-      data: { state: "awaiting_approval", stateAt: now, stateBy: input.actor.id },
+      data: {
+        state: "awaiting_approval",
+        stateAt: now,
+        stateBy: input.actor.id,
+      },
     });
     await tx.campaignVersion.update({
       where: { id: version.id },
@@ -622,7 +646,11 @@ export async function submitVersion(
       idempotencyKey: `campaign.version.submitted:${version.id}`,
       correlationId: input.correlationId,
       occurredAt: now,
-      payload: { campaignId: input.campaignId, version: input.version, approvalId },
+      payload: {
+        campaignId: input.campaignId,
+        version: input.version,
+        approvalId,
+      },
     };
     return {
       result: { approvalId, state: "awaiting_approval" },
@@ -705,7 +733,11 @@ export async function performAction(
       idempotencyKey: `${name}:${latest.id}:${input.idempotencyKey}`,
       correlationId: input.correlationId,
       occurredAt: now,
-      payload: { campaignId: input.campaignId, version: latest.version, ...extra },
+      payload: {
+        campaignId: input.campaignId,
+        version: latest.version,
+        ...extra,
+      },
     });
   };
 
@@ -718,16 +750,24 @@ export async function performAction(
         input.approvalId !== undefined &&
         latest.approvalId !== input.approvalId
       ) {
-        throw new ContractError("validation_failed", "approval id does not match the submitted version");
+        throw new ContractError(
+          "validation_failed",
+          "approval id does not match the submitted version",
+        );
       }
       if (campaign.state === "awaiting_approval") {
         if (latest.approvedBy !== null) {
-          throw new ContractError("already_approved", "this version is already approved");
+          throw new ContractError(
+            "already_approved",
+            "this version is already approved",
+          );
         }
         assertTransition(MACHINE, "awaiting_approval", "scheduled");
         hops.push("scheduled");
         approvedBy = input.actor.id;
-        pushEvent("campaign.version.approved", { approvalId: latest.approvalId });
+        pushEvent("campaign.version.approved", {
+          approvalId: latest.approvalId,
+        });
       }
       // Go live now if we are inside the window; otherwise it stays scheduled.
       const from = hops[hops.length - 1] ?? campaign.state;
@@ -767,10 +807,16 @@ export async function performAction(
       // A budget increase moves money and is therefore two-person as well.
       assertTwoPerson(campaign, input.actor);
       if (input.newBudget === null || input.newBudget === undefined) {
-        throw new ContractError("validation_failed", "raise_budget needs a newBudget");
+        throw new ContractError(
+          "validation_failed",
+          "raise_budget needs a newBudget",
+        );
       }
       if (input.newBudget.currency !== latest.currency) {
-        throw new ContractError("validation_failed", "budget currency must match the version currency");
+        throw new ContractError(
+          "validation_failed",
+          "budget currency must match the version currency",
+        );
       }
       const proposed = BigInt(input.newBudget.amountMinor);
       if (proposed <= latest.budgetLimitMinor) {
@@ -822,7 +868,10 @@ export async function performAction(
         subjectType: "campaign",
         subjectId: input.campaignId,
         reason: input.reason ?? input.action,
-        before: { state: campaign.state, budgetMinor: Number(latest.budgetLimitMinor) },
+        before: {
+          state: campaign.state,
+          budgetMinor: Number(latest.budgetLimitMinor),
+        },
         after: {
           state: finalState,
           approvedBy,
@@ -874,7 +923,9 @@ export async function getOutcome(
   });
   const claimTotal = claims.reduce((sum, c) => sum + c._count, 0);
   const pct = (kind: string): number => {
-    if (claimTotal === 0) {return 0;}
+    if (claimTotal === 0) {
+      return 0;
+    }
     const found = claims.find((c) => c.kind === kind);
     return found === undefined ? 0 : found._count / claimTotal;
   };

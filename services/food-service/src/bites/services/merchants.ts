@@ -13,7 +13,7 @@
  */
 import { ContractError } from "@ubi/contracts";
 
-import { auditedTransaction ,type  OutboxInput } from "../audit.js";
+import { auditedTransaction, type OutboxInput } from "../audit.js";
 import { assertFlagEnabled } from "../city-config.js";
 import { generateId } from "../lib/ids.js";
 import { actorTypeFor, assertPermission } from "../roles.js";

@@ -17,7 +17,9 @@ import type {
 let app: admin.app.App | null = null;
 
 function getApp(): admin.app.App {
-  if (app) {return app;}
+  if (app) {
+    return app;
+  }
 
   const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
 

@@ -53,7 +53,11 @@ describe("rebate arithmetic (pure)", () => {
   it("rounds one kobo per trip, half away from zero", () => {
     const rule = ruleRow({ kind: "percentage_points", reductionBps: 500 });
     // 3,333 * 5% = 166.65 → 167
-    const trip: TripBreakdown = { fareMinor: 3_333, currency: "NGN", paymentMethod: "wallet" };
+    const trip: TripBreakdown = {
+      fareMinor: 3_333,
+      currency: "NGN",
+      paymentMethod: "wallet",
+    };
     expect(computeRebate(rule, trip).amountMinor).toBe(167);
   });
 
@@ -89,7 +93,11 @@ describe("rebate arithmetic (pure)", () => {
       paymentMethod: "wallet",
     };
     const excluded = computeRebate(
-      ruleRow({ kind: "percentage_points", reductionBps: 500, exclusions: ["tips", "tolls", "taxes"] }),
+      ruleRow({
+        kind: "percentage_points",
+        reductionBps: 500,
+        exclusions: ["tips", "tolls", "taxes"],
+      }),
       trip,
     );
     expect(excluded.amountMinor).toBe(500); // 10,000 base only
@@ -103,7 +111,11 @@ describe("rebate arithmetic (pure)", () => {
 
   it("does not let a fleet split change the rebate (split is applied after)", () => {
     const rule = ruleRow({ kind: "percentage_points", reductionBps: 500 });
-    const base: TripBreakdown = { fareMinor: 10_000, currency: "NGN", paymentMethod: "wallet" };
+    const base: TripBreakdown = {
+      fareMinor: 10_000,
+      currency: "NGN",
+      paymentMethod: "wallet",
+    };
     const withSplit: TripBreakdown = { ...base, fleetSplitBps: 6_000 };
     expect(computeRebate(rule, base).amountMinor).toBe(
       computeRebate(rule, withSplit).amountMinor,

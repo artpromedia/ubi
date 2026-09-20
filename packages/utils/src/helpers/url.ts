@@ -20,16 +20,16 @@ export function parseQueryString(queryString: string): Record<string, string> {
  * Build query string from object
  */
 export function buildQueryString(
-  params: Record<string, string | number | boolean | undefined | null>
+  params: Record<string, string | number | boolean | undefined | null>,
 ): string {
   const searchParams = new URLSearchParams();
-  
+
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
       searchParams.append(key, String(value));
     }
   });
-  
+
   const result = searchParams.toString();
   return result ? `?${result}` : "";
 }
@@ -86,10 +86,10 @@ export function joinPath(...segments: string[]): string {
  */
 export function updateQueryParams(
   url: string,
-  params: Record<string, string | number | boolean | undefined | null>
+  params: Record<string, string | number | boolean | undefined | null>,
 ): string {
   const parsed = new URL(url, "http://dummy");
-  
+
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null) {
       parsed.searchParams.delete(key);
@@ -97,12 +97,12 @@ export function updateQueryParams(
       parsed.searchParams.set(key, String(value));
     }
   });
-  
+
   // Return relative URL if input was relative
   if (!url.startsWith("http")) {
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   }
-  
+
   return parsed.toString();
 }
 
@@ -112,11 +112,11 @@ export function updateQueryParams(
 export function removeQueryParams(url: string, keys: string[]): string {
   const parsed = new URL(url, "http://dummy");
   keys.forEach((key) => parsed.searchParams.delete(key));
-  
+
   if (!url.startsWith("http")) {
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   }
-  
+
   return parsed.toString();
 }
 
@@ -172,7 +172,7 @@ export function generateDeepLink(params: DeepLinkParams): string {
  */
 export function generateUniversalLink(
   params: DeepLinkParams,
-  baseUrl = "https://app.ubi.africa"
+  baseUrl = "https://app.ubi.africa",
 ): string {
   const { action, ...rest } = params;
   const queryString = buildQueryString(rest);
@@ -192,7 +192,7 @@ export function parseDeepLink(url: string): DeepLinkParams | null {
       const params = parseQueryString(parsed.search);
       return { action, ...params };
     }
-    
+
     // Handle universal links
     if (url.includes("ubi.africa")) {
       const parsed = new URL(url);
@@ -200,7 +200,7 @@ export function parseDeepLink(url: string): DeepLinkParams | null {
       const params = parseQueryString(parsed.search);
       return { action, ...params };
     }
-    
+
     return null;
   } catch {
     return null;
@@ -226,7 +226,7 @@ export function generateShareUrl(baseUrl: string, utm: UTMParams): string {
     utm_term: utm.term,
     utm_content: utm.content,
   };
-  
+
   return updateQueryParams(baseUrl, params);
 }
 

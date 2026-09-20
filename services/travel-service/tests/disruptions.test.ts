@@ -44,7 +44,9 @@ const ALT: AlternativeInput = {
 async function confirmedOrder() {
   const cityId = await seedCity(db);
   await seedFlightSupplier(db, {
-    control: { "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" } },
+    control: {
+      "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" },
+    },
   });
   const { deps } = makeDeps(db);
   const actor = rider();
@@ -135,7 +137,14 @@ describe("disruptions", () => {
     expect(disruption.eligibility.covered).toBe(false);
 
     await expect(
-      switchOrder(deps, { actor, cityId, orderId, alternativeId: ALT.id, grantId: null, correlationId: null }),
+      switchOrder(deps, {
+        actor,
+        cityId,
+        orderId,
+        alternativeId: ALT.id,
+        grantId: null,
+        correlationId: null,
+      }),
     ).rejects.toMatchObject({ code: "conflict" });
 
     const order = await db.travelOrder.findUnique({ where: { id: orderId } });

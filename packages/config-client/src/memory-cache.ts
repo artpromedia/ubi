@@ -22,16 +22,22 @@ export class MemoryCache<T> {
 
   fresh(key: string, now: number): CacheEntry<T> | undefined {
     const entry = this.entries.get(key);
-    if (entry === undefined) {return undefined;}
+    if (entry === undefined) {
+      return undefined;
+    }
     return entry.expiresAt > now ? entry : undefined;
   }
 
   set(key: string, entry: CacheEntry<T>): void {
-    if (this.entries.has(key)) {this.entries.delete(key);}
+    if (this.entries.has(key)) {
+      this.entries.delete(key);
+    }
     this.entries.set(key, entry);
     while (this.entries.size > this.maxEntries) {
       const oldest = this.entries.keys().next();
-      if (oldest.done === true) {break;}
+      if (oldest.done === true) {
+        break;
+      }
       this.entries.delete(oldest.value);
     }
   }
@@ -47,7 +53,9 @@ export class MemoryCache<T> {
   /** Drops every entry whose key starts with the prefix. Used on invalidation. */
   deleteByPrefix(prefix: string): string[] {
     const keys = this.keysWithPrefix(prefix);
-    for (const key of keys) {this.entries.delete(key);}
+    for (const key of keys) {
+      this.entries.delete(key);
+    }
     return keys;
   }
 

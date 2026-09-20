@@ -59,7 +59,12 @@ healthRoutes.get("/ready", async (c) => {
     checks,
   };
 
-  const statusCode = overallStatus === "healthy" ? 200 : overallStatus === "degraded" ? 200 : 503;
+  const statusCode =
+    overallStatus === "healthy"
+      ? 200
+      : overallStatus === "degraded"
+        ? 200
+        : 503;
   return c.json(response, statusCode);
 });
 
@@ -119,7 +124,10 @@ async function checkRedis(): Promise<HealthCheck["checks"][0]> {
 
   const start = Date.now();
   try {
-    const redis = new Redis(redisUrl, { lazyConnect: true, connectTimeout: 5000 });
+    const redis = new Redis(redisUrl, {
+      lazyConnect: true,
+      connectTimeout: 5000,
+    });
     await redis.ping();
     redis.disconnect();
 

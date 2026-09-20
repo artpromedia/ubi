@@ -24,8 +24,8 @@ describe("Web App - Payment Service Contract", () => {
         .given(
           PROVIDER_STATES.WALLET_HAS_BALANCE.replace(
             "%s %s %s",
-            "user_123 5000 NGN"
-          )
+            "user_123 5000 NGN",
+          ),
         )
         .uponReceiving("a request for wallet balance")
         .withRequest({
@@ -51,7 +51,7 @@ describe("Web App - Payment Service Contract", () => {
                 pendingBalance: decimal(0),
                 lastUpdated: datetime(
                   "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                  "2024-01-15T10:30:00.000Z"
+                  "2024-01-15T10:30:00.000Z",
                 ),
               },
             },
@@ -107,7 +107,7 @@ describe("Web App - Payment Service Contract", () => {
                 status: regex(/^(pending|completed)$/, "pending"),
                 createdAt: datetime(
                   "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                  "2024-01-15T10:30:00.000Z"
+                  "2024-01-15T10:30:00.000Z",
                 ),
               },
               // For mobile money, might include STK push info
@@ -165,14 +165,14 @@ describe("Web App - Payment Service Contract", () => {
                 id: string("pm_001"),
                 type: regex(
                   /^(card|mobile_money|wallet|bank_transfer)$/,
-                  "mobile_money"
+                  "mobile_money",
                 ),
                 provider: string("mpesa"),
                 lastFour: regex(/^\d{4}$/, "5678"),
                 isDefault: boolean(true),
                 createdAt: datetime(
                   "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                  "2024-01-15T10:30:00.000Z"
+                  "2024-01-15T10:30:00.000Z",
                 ),
               }),
             },
@@ -187,7 +187,7 @@ describe("Web App - Payment Service Contract", () => {
               Authorization: "Bearer valid_token",
               Accept: "application/json",
             },
-          }
+          },
         );
 
         const body = await response.json();
@@ -250,7 +250,7 @@ describe("Web App - Payment Service Contract", () => {
               provider: "mpesa",
               phoneNumber: "+254712345678",
             }),
-          }
+          },
         );
 
         expect(response.status).toBe(201);
@@ -309,7 +309,7 @@ describe("Web App - Payment Service Contract", () => {
               type: "card",
               token: "tok_visa_4242",
             }),
-          }
+          },
         );
 
         expect(response.status).toBe(201);
@@ -382,7 +382,7 @@ describe("Web App - Payment Service Contract", () => {
                 rideId: "ride_abc123",
               },
             }),
-          }
+          },
         );
 
         const body = await response.json();
@@ -419,7 +419,7 @@ describe("Web App - Payment Service Contract", () => {
               currency: string("NGN"),
               paidAt: datetime(
                 "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                "2024-01-15T10:30:00.000Z"
+                "2024-01-15T10:30:00.000Z",
               ),
               receipt: {
                 id: string("rcpt_001"),
@@ -437,7 +437,7 @@ describe("Web App - Payment Service Contract", () => {
               Authorization: "Bearer valid_token",
               Accept: "application/json",
             },
-          }
+          },
         );
 
         const body = await response.json();
@@ -481,7 +481,7 @@ describe("Web App - Payment Service Contract", () => {
                 description: string("Ride payment"),
                 createdAt: datetime(
                   "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
-                  "2024-01-15T10:30:00.000Z"
+                  "2024-01-15T10:30:00.000Z",
                 ),
               }),
               pagination: {
@@ -502,7 +502,7 @@ describe("Web App - Payment Service Contract", () => {
               Authorization: "Bearer valid_token",
               Accept: "application/json",
             },
-          }
+          },
         );
 
         const body = await response.json();

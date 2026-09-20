@@ -17,7 +17,7 @@
  */
 import { z } from "zod";
 
-import { money ,type  Money } from "@ubi/contracts";
+import { money, type Money } from "@ubi/contracts";
 
 import { generateId } from "../lib/ids";
 
@@ -25,7 +25,6 @@ import type { Card, ClarifyField, Source } from "./events";
 import type { ToolSchema, ToolSpec } from "./model-provider";
 import type { AskDeps } from "../ops/context";
 import type { Actor, AskRole } from "../ops/types";
-
 
 export interface ReviewProposalItem {
   readonly kind: "flight" | "stay" | "ride_reservation";
@@ -124,7 +123,9 @@ const rideQuoteTool: AskTool = {
       quotedAt: quote.quotedAt,
       title: `${quote.vehicleClass} ride`,
       subtitle:
-        quote.etaMinutes === null ? undefined : `about ${quote.etaMinutes} min away`,
+        quote.etaMinutes === null
+          ? undefined
+          : `about ${quote.etaMinutes} min away`,
       price: priceMoney(quote.priceMinor, quote.currency),
       editInForm: { route: "Ride.Search", params: { ...input } },
     };
@@ -136,7 +137,9 @@ const rideQuoteTool: AskTool = {
   },
 };
 
-const rideStatusSchema = z.object({ tripId: z.string().min(1).max(64) }).strict();
+const rideStatusSchema = z
+  .object({ tripId: z.string().min(1).max(64) })
+  .strict();
 
 const rideStatusTool: AskTool = {
   name: "ride.status",
@@ -385,9 +388,7 @@ const incentiveTool: AskTool = {
   },
 };
 
-const policySchema = z
-  .object({ query: z.string().min(1).max(400) })
-  .strict();
+const policySchema = z.object({ query: z.string().min(1).max(400) }).strict();
 
 const policyTool: AskTool = {
   name: "support.policy",
@@ -468,7 +469,10 @@ const clarifyTool: AskTool = {
           properties: {
             key: { type: "string" },
             label: { type: "string" },
-            kind: { type: "string", enum: ["chips", "passenger", "date", "text"] },
+            kind: {
+              type: "string",
+              enum: ["chips", "passenger", "date", "text"],
+            },
             options: { type: "array", items: { type: "string" } },
             required: { type: "boolean" },
           },
@@ -533,7 +537,10 @@ const proposeTool: AskTool = {
     const termsParts: string[] = [];
 
     for (const item of input.items) {
-      const offer = await ctx.deps.travel.resolveOffer(ctx.actor, item.offerRef);
+      const offer = await ctx.deps.travel.resolveOffer(
+        ctx.actor,
+        item.offerRef,
+      );
       if (offer === null) {
         return {
           content: `Offer ${item.offerRef} could not be resolved; it may have expired. Search again for a fresh price.`,
@@ -621,7 +628,7 @@ export const FORBIDDEN_CAPABILITIES: Readonly<
     policy: "p2p_out_of_scope",
     deepLink: "ubi://wallet/send",
   },
-  "send_money": { policy: "p2p_out_of_scope", deepLink: "ubi://wallet/send" },
+  send_money: { policy: "p2p_out_of_scope", deepLink: "ubi://wallet/send" },
   "account.admin": {
     policy: "account_admin_out_of_scope",
     deepLink: "ubi://account",

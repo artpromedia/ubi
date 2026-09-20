@@ -84,10 +84,17 @@ export function createCityConfigProvider(db: TravelTx): CityConfigProvider {
       const parsed = CityConfigSchema.safeParse(version.config);
       if (!parsed.success) {
         logger.error(
-          { cityId, version: version.version, issues: parsed.error.issues.length },
+          {
+            cityId,
+            version: version.version,
+            issues: parsed.error.issues.length,
+          },
           "active city config failed validation",
         );
-        throw configUnavailable(cityId, "active config version failed validation");
+        throw configUnavailable(
+          cityId,
+          "active config version failed validation",
+        );
       }
 
       const flags = await loadFlags(cityId);

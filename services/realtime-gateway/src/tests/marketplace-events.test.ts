@@ -55,9 +55,11 @@ function makeManager() {
   return {
     broadcasts,
     manager: {
-      broadcastToUser: vi.fn(async (userId: string, message: WebSocketMessage) => {
-        broadcasts.push({ userId, message });
-      }),
+      broadcastToUser: vi.fn(
+        async (userId: string, message: WebSocketMessage) => {
+          broadcasts.push({ userId, message });
+        },
+      ),
     },
   };
 }
@@ -74,7 +76,13 @@ class FakeRedis extends EventEmitter {
   quit = vi.fn(async () => "OK");
   duplicate = () => this;
   set = vi.fn(
-    async (key: string, _value: string, _ex: string, _ttl: number, _nx: string) => {
+    async (
+      key: string,
+      _value: string,
+      _ex: string,
+      _ttl: number,
+      _nx: string,
+    ) => {
       if (this.seen.has(key)) return null;
       this.seen.add(key);
       return "OK" as const;

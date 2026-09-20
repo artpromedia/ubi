@@ -124,7 +124,9 @@ async function loadActiveRow(
     where: { cityId, activatedAt: { not: null } },
     orderBy: { version: "desc" },
   });
-  if (row === null || row.activatedAt === null) {return undefined;}
+  if (row === null || row.activatedAt === null) {
+    return undefined;
+  }
   return {
     version: row.version,
     config: row.config,
@@ -164,10 +166,14 @@ export async function getActiveConfig(cityId: string): Promise<ActiveConfig> {
       return loaded;
     },
     (raw) => {
-      if (typeof raw !== "object" || raw === null) {return undefined;}
+      if (typeof raw !== "object" || raw === null) {
+        return undefined;
+      }
       const candidate = raw as Partial<ActiveConfig>;
       const parsed = CityConfigSchema.safeParse(candidate.config);
-      if (!parsed.success) {return undefined;}
+      if (!parsed.success) {
+        return undefined;
+      }
       if (
         typeof candidate.version !== "number" ||
         typeof candidate.activatedAt !== "string"
@@ -575,7 +581,9 @@ export async function getHistory(
     where: { cityId },
     orderBy: { version: "desc" },
   });
-  if (versions.length === 0) {return [];}
+  if (versions.length === 0) {
+    return [];
+  }
 
   // The version row records the activating approver; the full approver list
   // lives on the audit row written in the same transaction.

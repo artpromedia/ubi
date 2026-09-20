@@ -15,7 +15,7 @@ import {
   type TravelRefundState,
 } from "@ubi/contracts";
 
-import { withOutbox ,type  OutboxInput } from "./outbox";
+import { withOutbox, type OutboxInput } from "./outbox";
 import { actorTypeFor, isOpsRole } from "./roles";
 import { deterministicId } from "../lib/ids";
 
@@ -151,11 +151,15 @@ export async function getRefund(
   actor: Actor,
   refundId: string,
 ): Promise<RefundView> {
-  const row = await deps.db.travelRefund.findUnique({ where: { id: refundId } });
+  const row = await deps.db.travelRefund.findUnique({
+    where: { id: refundId },
+  });
   if (row === null) {
     throw new ContractError("not_found", "no such refund", { refundId });
   }
-  const order = await deps.db.travelOrder.findUnique({ where: { id: row.orderId } });
+  const order = await deps.db.travelOrder.findUnique({
+    where: { id: row.orderId },
+  });
   if (order === null) {
     throw new ContractError("not_found", "no such refund", { refundId });
   }
@@ -181,9 +185,13 @@ export async function advanceRefund(
     readonly supplierRef?: string;
   },
 ): Promise<RefundView> {
-  const row = await deps.db.travelRefund.findUnique({ where: { id: input.refundId } });
+  const row = await deps.db.travelRefund.findUnique({
+    where: { id: input.refundId },
+  });
   if (row === null) {
-    throw new ContractError("not_found", "no such refund", { refundId: input.refundId });
+    throw new ContractError("not_found", "no such refund", {
+      refundId: input.refundId,
+    });
   }
   assertTransition(MACHINE, row.stage, input.to);
 
@@ -191,7 +199,7 @@ export async function advanceRefund(
   if (input.to === "refunded_to_wallet") {
     const posted = await deps.payment.refund({
       orderId: row.orderId,
-      userId: (await requireOrderUser(deps, row.orderId)),
+      userId: await requireOrderUser(deps, row.orderId),
       amount: money(Number(row.amountMinor), row.currency),
       cityId: input.cityId,
       reason: `travel refund ${row.id}`,
@@ -240,7 +248,10 @@ export async function advanceRefund(
   });
 }
 
-async function requireOrderUser(deps: TravelDeps, orderId: string): Promise<string> {
+async function requireOrderUser(
+  deps: TravelDeps,
+  orderId: string,
+): Promise<string> {
   const order = await deps.db.travelOrder.findUnique({
     where: { id: orderId },
     select: { userId: true },

@@ -117,8 +117,9 @@ export async function listDriverDocuments(
   const owners: { ownerType: string; ownerId: string }[] = [
     { ownerType: "driver", ownerId: driverId },
   ];
-  if (vehicleId !== null)
-    {owners.push({ ownerType: "vehicle", ownerId: vehicleId });}
+  if (vehicleId !== null) {
+    owners.push({ ownerType: "vehicle", ownerId: vehicleId });
+  }
 
   const rows = await deps.prisma.identityDocument.findMany({
     where: { OR: owners },
@@ -128,7 +129,9 @@ export async function listDriverDocuments(
   const seen = new Set<string>();
   const documents: DocumentView[] = [];
   for (const row of rows) {
-    if (seen.has(row.type)) {continue;}
+    if (seen.has(row.type)) {
+      continue;
+    }
     seen.add(row.type);
     documents.push({
       id: row.id,
@@ -288,8 +291,9 @@ export async function reviewDocument(
   const document = await deps.prisma.identityDocument.findUnique({
     where: { id: input.documentId },
   });
-  if (document === null)
-    {throw new ContractError("not_found", "Document not found");}
+  if (document === null) {
+    throw new ContractError("not_found", "Document not found");
+  }
 
   const updated = await deps.prisma.$transaction(async (tx) => {
     const row = await tx.identityDocument.update({
@@ -354,7 +358,9 @@ async function driversForDocument(
   ownerType: string,
   ownerId: string,
 ): Promise<readonly string[]> {
-  if (ownerType === "driver") {return [ownerId];}
+  if (ownerType === "driver") {
+    return [ownerId];
+  }
   const drivers = await deps.prisma.driver.findMany({
     where: { vehicleId: ownerId },
     select: { id: true },
@@ -390,7 +396,9 @@ export async function sweepDocumentExpiry(
   const offline = new Set<string>();
 
   for (const document of documents) {
-    if (document.expiresAt === null) {continue;}
+    if (document.expiresAt === null) {
+      continue;
+    }
     // Hoisted: the narrowing above is lost inside the transaction closure below,
     // because expiresAt is a mutable property rather than a local binding.
     const expiresAt = document.expiresAt;
@@ -398,7 +406,9 @@ export async function sweepDocumentExpiry(
 
     if (remaining > 0) {
       const threshold = thresholds.find((candidate) => remaining <= candidate);
-      if (threshold === undefined) {continue;}
+      if (threshold === undefined) {
+        continue;
+      }
 
       const emitted = await deps.prisma.$transaction(async (tx) => {
         const wrote = await writeOutboxEventOnce(tx, {
@@ -427,7 +437,9 @@ export async function sweepDocumentExpiry(
         });
         return wrote;
       });
-      if (emitted !== undefined) {remindersEmitted += 1;}
+      if (emitted !== undefined) {
+        remindersEmitted += 1;
+      }
       continue;
     }
 
@@ -442,7 +454,9 @@ export async function sweepDocumentExpiry(
         where: { id: document.id, status: "valid" },
         data: { status: "expired" },
       });
-      if (updated.count === 0) {return;}
+      if (updated.count === 0) {
+        return;
+      }
       expired += 1;
 
       await writeAudit(tx, {
@@ -489,7 +503,9 @@ export async function sweepDocumentExpiry(
           cityId: policy.cityId,
           occurredAt: now,
         });
-        if (wasOnline) {offline.add(driverId);}
+        if (wasOnline) {
+          offline.add(driverId);
+        }
       }
 
       if (document.ownerType === "vehicle") {

@@ -49,7 +49,9 @@ async function publishHold(
   now: Date,
 ): Promise<void> {
   const ttlSeconds = Math.ceil((until.getTime() - now.getTime()) / 1000);
-  if (ttlSeconds <= 0) {return;}
+  if (ttlSeconds <= 0) {
+    return;
+  }
   await cache.set(safeModeKey(userId), until.toISOString(), "EX", ttlSeconds);
 }
 
@@ -79,7 +81,9 @@ export async function recordSimSwap(
     const existing = await tx.simSwapSignal.findUnique({
       where: { id: signalId },
     });
-    if (existing !== null) {return false;}
+    if (existing !== null) {
+      return false;
+    }
 
     await tx.simSwapSignal.create({
       data: {
@@ -177,7 +181,9 @@ export async function safeModeState(
     where: { userId, handled: false },
     orderBy: { reportedAt: "desc" },
   });
-  if (signal === null) {return { active: false, until: null };}
+  if (signal === null) {
+    return { active: false, until: null };
+  }
 
   const policy = await deps.policy.forCity(null);
   const until = new Date(signal.reportedAt.getTime() + policy.safeModeMs);
@@ -193,7 +199,9 @@ export async function assertNotInSafeMode(
   action: string,
 ): Promise<void> {
   const state = await safeModeState(deps, userId);
-  if (!state.active) {return;}
+  if (!state.active) {
+    return;
+  }
   throw new ContractError(
     "safe_mode_active",
     "Your wallet is in safe mode after a SIM-swap report. This action is paused until the hold lifts.",
@@ -234,7 +242,9 @@ export async function sweepSafeModeExits(
           reportedAt: { gt: cutoff },
         },
       });
-      if (stillHeld !== null) {return false;}
+      if (stillHeld !== null) {
+        return false;
+      }
 
       await tx.wallet.updateMany({
         where: {

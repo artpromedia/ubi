@@ -7,10 +7,10 @@ import { cn } from "../lib/utils";
 
 /**
  * Icon - An icon wrapper primitive
- * 
+ *
  * Provides consistent sizing and accessibility for icons.
  * Works with lucide-react or any SVG icon.
- * 
+ *
  * @example
  * import { Car } from "lucide-react";
  * <Icon size="lg" color="primary"><Car /></Icon>
@@ -54,7 +54,8 @@ const iconVariants = cva("inline-flex items-center justify-center shrink-0", {
 type IconVariantProps = VariantProps<typeof iconVariants>;
 
 export interface IconProps
-  extends Omit<React.HTMLAttributes<HTMLSpanElement>, "color">,
+  extends
+    Omit<React.HTMLAttributes<HTMLSpanElement>, "color">,
     IconVariantProps {
   /** Accessible label for screen readers */
   label?: string;
@@ -67,9 +68,15 @@ const Icon = React.forwardRef<HTMLSpanElement, IconProps>(
     // Clone the child to apply size classes to the SVG
     const child = React.Children.only(children);
     const styledChild = React.isValidElement(child)
-      ? React.cloneElement(child as React.ReactElement<{ className?: string }>, {
-          className: cn("h-full w-full", (child.props as { className?: string }).className),
-        })
+      ? React.cloneElement(
+          child as React.ReactElement<{ className?: string }>,
+          {
+            className: cn(
+              "h-full w-full",
+              (child.props as { className?: string }).className,
+            ),
+          },
+        )
       : children;
 
     return (
@@ -84,7 +91,7 @@ const Icon = React.forwardRef<HTMLSpanElement, IconProps>(
         {styledChild}
       </span>
     );
-  }
+  },
 );
 Icon.displayName = "Icon";
 

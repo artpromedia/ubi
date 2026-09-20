@@ -44,8 +44,9 @@ export function createDeviceRoutes(deps: IdentityDeps): Hono {
         where: { id: principal.userId },
         select: { email: true, status: true },
       });
-      if (user === null)
-        {throw new ContractError("not_found", "Account not found");}
+      if (user === null) {
+        throw new ContractError("not_found", "Account not found");
+      }
       if (user.status === "SUSPENDED") {
         throw new ContractError("forbidden", "This account is suspended");
       }

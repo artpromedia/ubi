@@ -83,7 +83,9 @@ const PassengersBody = z.array(
 const CheckoutBody = z.object({
   paymentMethodId: z.string().min(1),
   grantId: z.string().optional(),
-  assurance: z.object({ method: z.string(), proof: z.string().optional() }).optional(),
+  assurance: z
+    .object({ method: z.string(), proof: z.string().optional() })
+    .optional(),
   expectedTotal: MoneySchema.optional(),
 });
 
@@ -113,7 +115,11 @@ export function createTravelRoutes(deps: TravelDeps): Hono {
 
   routes.get("/flights/searches/:id", async (c) => {
     try {
-      const result = await refreshFlightSearch(deps, actorOf(c), c.req.param("id"));
+      const result = await refreshFlightSearch(
+        deps,
+        actorOf(c),
+        c.req.param("id"),
+      );
       return c.json(result, 200);
     } catch (error) {
       return failure(c, error);

@@ -8,31 +8,31 @@ reproduce each locally. Requires Postgres 16 + PostGIS and Redis (a fresh
 
 `ci-success` requires `[build, test, go-build, db-check, contracts]`. All green:
 
-| Job | Status | What it runs / proof |
-|---|---|---|
-| `typecheck` | ✅ **36 / 36** | `turbo run typecheck` — every package and service, 0 errors |
-| `build` | ✅ green | `turbo run build` — 21 packages/services build; the 7 Next.js apps build individually (a batch run only times out under local concurrency) |
-| `test` | ✅ green | 664 vitest tests + 6 Go packages (see below) |
-| `go-build` | ✅ green | ride-, delivery-, location-service build + vet clean |
-| `db-check` | ✅ green | empty DB provisions from the migration chain; zero schema drift; the ledger invariant is asserted to reject an unbalanced entry |
-| `contracts` | ✅ green | all six OpenAPI docs parse, resolve and declare auth |
+| Job         | Status         | What it runs / proof                                                                                                                       |
+| ----------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `typecheck` | ✅ **36 / 36** | `turbo run typecheck` — every package and service, 0 errors                                                                                |
+| `build`     | ✅ green       | `turbo run build` — 21 packages/services build; the 7 Next.js apps build individually (a batch run only times out under local concurrency) |
+| `test`      | ✅ green       | 664 vitest tests + 6 Go packages (see below)                                                                                               |
+| `go-build`  | ✅ green       | ride-, delivery-, location-service build + vet clean                                                                                       |
+| `db-check`  | ✅ green       | empty DB provisions from the migration chain; zero schema drift; the ledger invariant is asserted to reject an unbalanced entry            |
+| `contracts` | ✅ green       | all six OpenAPI docs parse, resolve and declare auth                                                                                       |
 
 ### Test counts (664 vitest + 32 Flutter + Go)
 
-| Suite | Tests |
-|---|---|
-| packages/contracts | 64 |
-| packages/config-client | 24 |
-| packages/outbox | 8 |
-| services/config-service | 79 |
-| services/api-gateway | 73 |
-| services/user-service | 208 |
-| services/support-service | 55 |
-| services/notification-service | 30 |
-| services/food-service (legacy 21 + Bites 27, minus overlap) | 38 |
-| services/payment-service (ledger + finance) | 85 |
-| ride-service (Go) | 5 packages + integration, `-race` clean |
-| mobile/packages/core (Flutter) | 32 |
+| Suite                                                       | Tests                                   |
+| ----------------------------------------------------------- | --------------------------------------- |
+| packages/contracts                                          | 64                                      |
+| packages/config-client                                      | 24                                      |
+| packages/outbox                                             | 8                                       |
+| services/config-service                                     | 79                                      |
+| services/api-gateway                                        | 73                                      |
+| services/user-service                                       | 208                                     |
+| services/support-service                                    | 55                                      |
+| services/notification-service                               | 30                                      |
+| services/food-service (legacy 21 + Bites 27, minus overlap) | 38                                      |
+| services/payment-service (ledger + finance)                 | 85                                      |
+| ride-service (Go)                                           | 5 packages + integration, `-race` clean |
+| mobile/packages/core (Flutter)                              | 32                                      |
 
 ## Jobs that are not green, and why
 

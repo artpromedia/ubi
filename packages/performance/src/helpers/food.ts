@@ -48,7 +48,7 @@ export interface FoodOrder {
 export function getNearbyRestaurants(
   accessToken: string,
   latitude: number,
-  longitude: number
+  longitude: number,
 ): Restaurant[] | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/restaurants/nearby?lat=${latitude}&lng=${longitude}`;
@@ -78,7 +78,7 @@ export function searchRestaurants(
   accessToken: string,
   query: string,
   latitude: number,
-  longitude: number
+  longitude: number,
 ): Restaurant[] | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/restaurants/search?q=${encodeURIComponent(query)}&lat=${latitude}&lng=${longitude}`;
@@ -106,7 +106,7 @@ export function searchRestaurants(
 // Get restaurant menu
 export function getRestaurantMenu(
   accessToken: string,
-  restaurantId: string
+  restaurantId: string,
 ): MenuItem[] | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/restaurants/${restaurantId}/menu`;
@@ -136,7 +136,7 @@ export function addToCart(
   accessToken: string,
   restaurantId: string,
   itemId: string,
-  quantity: number = 1
+  quantity: number = 1,
 ): boolean {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/cart/items`;
@@ -144,7 +144,7 @@ export function addToCart(
   const response = http.post(
     url,
     JSON.stringify({ restaurantId, itemId, quantity }),
-    { headers: createHeaders(accessToken) }
+    { headers: createHeaders(accessToken) },
   );
 
   return check(response, {
@@ -189,7 +189,7 @@ export function placeFoodOrder(
     longitude: number;
     address: string;
   },
-  paymentMethod: string = "wallet"
+  paymentMethod: string = "wallet",
 ): FoodOrder | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/food-orders`;
@@ -200,7 +200,7 @@ export function placeFoodOrder(
       deliveryAddress,
       paymentMethod,
     }),
-    { headers: createHeaders(accessToken) }
+    { headers: createHeaders(accessToken) },
   );
 
   const passed = check(response, {
@@ -232,7 +232,7 @@ export function placeFoodOrder(
 // Get order status
 export function getOrderStatus(
   accessToken: string,
-  orderId: string
+  orderId: string,
 ): FoodOrder | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/food-orders/${orderId}`;
@@ -260,7 +260,7 @@ export function getOrderStatus(
 // Full food ordering flow simulation
 export function simulateFoodOrderFlow(
   accessToken: string,
-  city: string = "lagos"
+  city: string = "lagos",
 ): boolean {
   const location = generateLocation(city);
 
@@ -268,7 +268,7 @@ export function simulateFoodOrderFlow(
   const restaurants = getNearbyRestaurants(
     accessToken,
     location.lat,
-    location.lng
+    location.lng,
   );
 
   if (!restaurants || restaurants.length === 0) {

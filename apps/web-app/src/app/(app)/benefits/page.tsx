@@ -9,10 +9,14 @@ export default function BenefitsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-3 p-6">
-      <h1 className="font-heading text-2xl font-semibold text-[#191414]">Benefits</h1>
+      <h1 className="font-heading text-2xl font-semibold text-[#191414]">
+        Benefits
+      </h1>
 
       {isPending ? (
-        <Card className="rounded-2xl p-4 text-sm text-[#666]">Loading your benefits…</Card>
+        <Card className="rounded-2xl p-4 text-sm text-[#666]">
+          Loading your benefits…
+        </Card>
       ) : null}
       {isError ? (
         <Card className="rounded-2xl p-4 text-sm text-[#C53030]">
@@ -34,7 +38,9 @@ export default function BenefitsPage() {
                 .map((c) => formatMoney(c.amount) + " expires " + c.expiresAt)
                 .join(" · ")}
               {b.credits[0]
-                ? " · use up to " + formatMoney(b.credits[0].perRideCap) + " per ride · rides only"
+                ? " · use up to " +
+                  formatMoney(b.credits[0].perRideCap) +
+                  " per ride · rides only"
                 : ""}
             </div>
           </Card>
@@ -60,12 +66,17 @@ export default function BenefitsPage() {
           <Card className="divide-y divide-[#F0F0F0] rounded-2xl px-4">
             {b.changes.map((c) => (
               <div key={c.id} className="flex gap-3 py-3">
-                <Badge className={"h-fit text-[10px] uppercase " + changeTone(c.kind)}>
+                <Badge
+                  className={
+                    "h-fit text-[10px] uppercase " + changeTone(c.kind)
+                  }
+                >
                   {c.kind}
                 </Badge>
                 <div className="flex-1 text-sm">
                   <div className="text-[#191414]">
-                    {(c.kind === "earned" ? "+" : "−") + formatMoney(c.amount)} · {c.title}
+                    {(c.kind === "earned" ? "+" : "−") + formatMoney(c.amount)}{" "}
+                    · {c.title}
                   </div>
                   <div className="text-xs text-[#666]">{c.explanation}</div>
                   {c.termsRef ? (

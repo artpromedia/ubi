@@ -55,7 +55,10 @@ export interface TurnResult {
   readonly aiActions: readonly AiActionInput[];
   readonly answerText: string;
   readonly proposal: ReviewProposal | null;
-  readonly refused: { readonly policy: string; readonly deepLink: string } | null;
+  readonly refused: {
+    readonly policy: string;
+    readonly deepLink: string;
+  } | null;
   readonly clarify: readonly ClarifyField[] | null;
   readonly providerRefs: readonly string[];
   readonly usageTokens: number;

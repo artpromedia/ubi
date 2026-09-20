@@ -7,7 +7,7 @@ import { cn } from "../lib/utils";
 
 /**
  * RatingDisplay - Display star ratings
- * 
+ *
  * @example
  * <RatingDisplay value={4.5} />
  * <RatingDisplay value={4.8} showValue maxStars={5} />
@@ -28,7 +28,8 @@ const ratingVariants = cva("inline-flex items-center gap-1", {
 });
 
 export interface RatingDisplayProps
-  extends Omit<React.HTMLAttributes<HTMLDivElement>, "value">,
+  extends
+    Omit<React.HTMLAttributes<HTMLDivElement>, "value">,
     VariantProps<typeof ratingVariants> {
   /** Rating value (0-5) */
   value: number;
@@ -42,7 +43,15 @@ export interface RatingDisplayProps
   color?: "default" | "move" | "bites" | "send";
 }
 
-const StarIcon = ({ filled, half, className }: { filled?: boolean; half?: boolean; className?: string }) => (
+const StarIcon = ({
+  filled,
+  half,
+  className,
+}: {
+  filled?: boolean;
+  half?: boolean;
+  className?: string;
+}) => (
   <svg
     className={className}
     fill={filled ? "currentColor" : half ? "url(#half)" : "none"}
@@ -84,7 +93,7 @@ const RatingDisplay = React.forwardRef<HTMLDivElement, RatingDisplayProps>(
       color = "default",
       ...props
     },
-    ref
+    ref,
   ) => {
     const fullStars = Math.floor(value);
     const hasHalfStar = value % 1 >= 0.5;
@@ -102,39 +111,47 @@ const RatingDisplay = React.forwardRef<HTMLDivElement, RatingDisplayProps>(
         {Array.from({ length: fullStars }).map((_, i) => (
           <StarIcon key={`full-${i}`} filled />
         ))}
-        
+
         {/* Half star */}
         {hasHalfStar && <StarIcon half />}
-        
+
         {/* Empty stars */}
         {Array.from({ length: emptyStars }).map((_, i) => (
-          <StarIcon key={`empty-${i}`} className="text-gray-300 dark:text-gray-600" />
+          <StarIcon
+            key={`empty-${i}`}
+            className="text-gray-300 dark:text-gray-600"
+          />
         ))}
-        
+
         {/* Numeric value */}
         {showValue && (
-          <span className="ml-1 font-medium text-foreground">{value.toFixed(1)}</span>
+          <span className="ml-1 font-medium text-foreground">
+            {value.toFixed(1)}
+          </span>
         )}
-        
+
         {/* Review count */}
         {reviewCount !== undefined && (
-          <span className="text-muted-foreground">({reviewCount.toLocaleString()})</span>
+          <span className="text-muted-foreground">
+            ({reviewCount.toLocaleString()})
+          </span>
         )}
       </div>
     );
-  }
+  },
 );
 RatingDisplay.displayName = "RatingDisplay";
 
 /**
  * RatingInput - Interactive star rating input
- * 
+ *
  * @example
  * <RatingInput value={rating} onChange={setRating} />
  */
 
 export interface RatingInputProps
-  extends Omit<React.HTMLAttributes<HTMLDivElement>, "value" | "onChange">,
+  extends
+    Omit<React.HTMLAttributes<HTMLDivElement>, "value" | "onChange">,
     VariantProps<typeof ratingVariants> {
   /** Current value */
   value: number;
@@ -163,17 +180,22 @@ const RatingInput = React.forwardRef<HTMLDivElement, RatingInputProps>(
       color = "default",
       ...props
     },
-    ref
+    ref,
   ) => {
     const [hoverValue, setHoverValue] = React.useState<number | null>(null);
     const displayValue = hoverValue ?? value;
 
-    const handleMouseMove = (index: number, event: React.MouseEvent<HTMLButtonElement>) => {
-      if (disabled) {return;}
-      
+    const handleMouseMove = (
+      index: number,
+      event: React.MouseEvent<HTMLButtonElement>,
+    ) => {
+      if (disabled) {
+        return;
+      }
+
       const rect = event.currentTarget.getBoundingClientRect();
       const position = (event.clientX - rect.left) / rect.width;
-      
+
       if (allowHalf && position < 0.5) {
         setHoverValue(index + 0.5);
       } else {
@@ -181,12 +203,17 @@ const RatingInput = React.forwardRef<HTMLDivElement, RatingInputProps>(
       }
     };
 
-    const handleClick = (index: number, event: React.MouseEvent<HTMLButtonElement>) => {
-      if (disabled) {return;}
-      
+    const handleClick = (
+      index: number,
+      event: React.MouseEvent<HTMLButtonElement>,
+    ) => {
+      if (disabled) {
+        return;
+      }
+
       const rect = event.currentTarget.getBoundingClientRect();
       const position = (event.clientX - rect.left) / rect.width;
-      
+
       if (allowHalf && position < 0.5) {
         onChange(index + 0.5);
       } else {
@@ -201,7 +228,7 @@ const RatingInput = React.forwardRef<HTMLDivElement, RatingInputProps>(
           ratingVariants({ size }),
           colorClasses[color],
           disabled && "opacity-50 cursor-not-allowed",
-          className
+          className,
         )}
         role="radiogroup"
         aria-label="Rating"
@@ -226,14 +253,18 @@ const RatingInput = React.forwardRef<HTMLDivElement, RatingInputProps>(
               <StarIcon
                 filled={isFilled}
                 half={isHalf}
-                className={!isFilled && !isHalf ? "text-gray-300 dark:text-gray-600" : undefined}
+                className={
+                  !isFilled && !isHalf
+                    ? "text-gray-300 dark:text-gray-600"
+                    : undefined
+                }
               />
             </button>
           );
         })}
       </div>
     );
-  }
+  },
 );
 RatingInput.displayName = "RatingInput";
 

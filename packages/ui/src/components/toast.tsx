@@ -23,7 +23,7 @@ const ToastViewport = React.forwardRef<
     ref={ref}
     className={cn(
       "fixed top-0 z-toast flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
-      className
+      className,
     )}
     {...props}
   />
@@ -45,7 +45,7 @@ const toastVariants = cva(
     defaultVariants: {
       variant: "default",
     },
-  }
+  },
 );
 
 const Toast = React.forwardRef<
@@ -75,7 +75,7 @@ const ToastAction = React.forwardRef<
       "disabled:pointer-events-none disabled:opacity-50",
       "group-[.success]:border-success/30 group-[.success]:hover:border-success/50",
       "group-[.error]:border-destructive/30 group-[.error]:hover:border-destructive/50",
-      className
+      className,
     )}
     {...props}
   />
@@ -92,7 +92,7 @@ const ToastClose = React.forwardRef<
       "absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity",
       "hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring",
       "group-hover:opacity-100",
-      className
+      className,
     )}
     toast-close=""
     {...props}
@@ -148,6 +148,14 @@ const getToastIcon = (variant?: string) => {
 };
 
 export {
-    getToastIcon, Toast, ToastAction, ToastClose, ToastDescription, ToastProvider, ToastTitle, ToastViewport, type ToastActionElement, type ToastProps
+  getToastIcon,
+  Toast,
+  ToastAction,
+  ToastClose,
+  ToastDescription,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+  type ToastActionElement,
+  type ToastProps,
 };
-

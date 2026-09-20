@@ -256,15 +256,24 @@ function flightOfferView(flight: FixtureFlight): JsonRecord {
     fareFamilies: flight.fareFamilies.map((family) => ({
       id: family.id,
       name: family.name,
-      price: { amountMinor: family.priceMinor, currency: flight.capabilities.currency },
+      price: {
+        amountMinor: family.priceMinor,
+        currency: flight.capabilities.currency,
+      },
       base:
         family.baseMinor === undefined
           ? null
-          : { amountMinor: family.baseMinor, currency: flight.capabilities.currency },
+          : {
+              amountMinor: family.baseMinor,
+              currency: flight.capabilities.currency,
+            },
       taxes:
         family.taxesMinor === undefined
           ? null
-          : { amountMinor: family.taxesMinor, currency: flight.capabilities.currency },
+          : {
+              amountMinor: family.taxesMinor,
+              currency: flight.capabilities.currency,
+            },
       baggage: family.baggage,
       changeRule: family.changeRule,
       refundRule: family.refundRule,
@@ -331,7 +340,9 @@ function bookResultFrom(
   }
   const supplierRefs = {
     ...(control.pnr === undefined ? {} : { pnr: control.pnr }),
-    ...(control.bookingRef === undefined ? {} : { bookingRef: control.bookingRef }),
+    ...(control.bookingRef === undefined
+      ? {}
+      : { bookingRef: control.bookingRef }),
     ...(control.orderRef === undefined
       ? { orderRef: `SUP-${ourRef}` }
       : { orderRef: control.orderRef }),
@@ -357,7 +368,9 @@ function lookupResultFrom(control: Control, currency: string): LookupResult {
   }
   const supplierRefs = {
     ...(control.pnr === undefined ? {} : { pnr: control.pnr }),
-    ...(control.bookingRef === undefined ? {} : { bookingRef: control.bookingRef }),
+    ...(control.bookingRef === undefined
+      ? {}
+      : { bookingRef: control.bookingRef }),
     ...(control.ticketNumbers === undefined
       ? {}
       : { ticketNumbers: control.ticketNumbers }),
@@ -400,7 +413,10 @@ const servicingMixin = {
     };
   },
 
-  async cancel(ctx: SupplierContext, request: CancelRequest): Promise<CancelResult> {
+  async cancel(
+    ctx: SupplierContext,
+    request: CancelRequest,
+  ): Promise<CancelResult> {
     const cfg = parseConfig(ctx);
     const control = controlFor(cfg, request.ourRef);
     const penaltyMinor = control.cancelPenaltyMinor ?? 0;
@@ -411,7 +427,10 @@ const servicingMixin = {
     };
   },
 
-  async refund(ctx: SupplierContext, request: RefundRequest): Promise<RefundResult> {
+  async refund(
+    ctx: SupplierContext,
+    request: RefundRequest,
+  ): Promise<RefundResult> {
     const cfg = parseConfig(ctx);
     const control = controlFor(cfg, request.ourRef);
     const stage = control.refundStage ?? "supplier_confirmed";
@@ -420,7 +439,10 @@ const servicingMixin = {
       : { stage, supplierRef: `RF-${request.ourRef}` };
   },
 
-  async change(ctx: SupplierContext, request: ChangeRequest): Promise<ChangeResult> {
+  async change(
+    ctx: SupplierContext,
+    request: ChangeRequest,
+  ): Promise<ChangeResult> {
     const cfg = parseConfig(ctx);
     const control = controlFor(cfg, request.alternativeRef, request.ourRef);
     const supplierRefs = {
@@ -457,14 +479,21 @@ export function createFixtureFlightAdapter(): FlightSupplyAdapter {
       );
       const offers = matching.map((flight) => {
         const first = flight.fareFamilies[0];
-        return flightFareOffer(cfg, flight, first === undefined ? "" : first.id, now);
+        return flightFareOffer(
+          cfg,
+          flight,
+          first === undefined ? "" : first.id,
+          now,
+        );
       });
       const cacheSeconds = cfg.cacheSeconds ?? 0;
       return {
         offers,
         pricesAsOf: now,
         cacheUntil:
-          cacheSeconds > 0 ? new Date(now.getTime() + cacheSeconds * 1000) : null,
+          cacheSeconds > 0
+            ? new Date(now.getTime() + cacheSeconds * 1000)
+            : null,
         latencyMs: 0,
       };
     },
@@ -484,7 +513,7 @@ export function createFixtureFlightAdapter(): FlightSupplyAdapter {
       const offer = flightFareOffer(
         cfg,
         flight,
-        fareFamilyId ?? (flight.fareFamilies[0]?.id ?? ""),
+        fareFamilyId ?? flight.fareFamilies[0]?.id ?? "",
         ctx.now(),
       );
       const control = controlFor(cfg, offerRef, baseRef);
@@ -493,7 +522,10 @@ export function createFixtureFlightAdapter(): FlightSupplyAdapter {
       return { available: !soldOut, repriced, soldOut, offer };
     },
 
-    async book(ctx: SupplierContext, request: BookRequest): Promise<BookResult> {
+    async book(
+      ctx: SupplierContext,
+      request: BookRequest,
+    ): Promise<BookResult> {
       const cfg = parseConfig(ctx);
       const control = controlFor(cfg, request.offerRef, request.ourRef);
       return bookResultFrom(control, request.ourRef, cfg.currency);
@@ -547,10 +579,16 @@ function rateOffer(cfg: FixtureConfig, rate: FixtureRate): AdapterOffer {
       supplierPrice:
         supplierPrice === null
           ? null
-          : { amountMinor: supplierPrice.amountMinor, currency: supplierPrice.currency },
+          : {
+              amountMinor: supplierPrice.amountMinor,
+              currency: supplierPrice.currency,
+            },
       fx: fx === null ? null : { rate: fx.rate, lockedUntil: fx.lockedUntil },
       taxesNote: rate.taxesNote ?? null,
-      cancellation: { freeUntil: rate.cancellation.freeUntil, penaltyAfter: rate.cancellation.penaltyAfter },
+      cancellation: {
+        freeUntil: rate.cancellation.freeUntil,
+        penaltyAfter: rate.cancellation.penaltyAfter,
+      },
       capabilities: capsJson(rate.capabilities),
       protectionRuleId: rate.protectionRuleId ?? null,
     },
@@ -591,7 +629,10 @@ export function createFixtureStayAdapter(): StaySupplyAdapter {
           area: property.area,
           distanceKm: property.distanceKm,
           distanceTo: property.distanceTo ?? null,
-          fromPrice: { amountMinor: property.fromPriceMinor, currency: cfg.currency },
+          fromPrice: {
+            amountMinor: property.fromPriceMinor,
+            currency: cfg.currency,
+          },
           photos: property.photos ?? [],
         },
         price: money(property.fromPriceMinor, cfg.currency),
@@ -610,7 +651,9 @@ export function createFixtureStayAdapter(): StaySupplyAdapter {
         offers,
         pricesAsOf: now,
         cacheUntil:
-          cacheSeconds > 0 ? new Date(now.getTime() + cacheSeconds * 1000) : null,
+          cacheSeconds > 0
+            ? new Date(now.getTime() + cacheSeconds * 1000)
+            : null,
         latencyMs: 0,
       };
     },
@@ -642,7 +685,10 @@ export function createFixtureStayAdapter(): StaySupplyAdapter {
       return { available: !soldOut, repriced, soldOut, offer };
     },
 
-    async book(ctx: SupplierContext, request: BookRequest): Promise<BookResult> {
+    async book(
+      ctx: SupplierContext,
+      request: BookRequest,
+    ): Promise<BookResult> {
       const cfg = parseConfig(ctx);
       const control = controlFor(cfg, request.offerRef, request.ourRef);
       return bookResultFrom(control, request.ourRef, cfg.currency);

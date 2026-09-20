@@ -41,7 +41,9 @@ const REFERRAL_URL_BASE =
   process.env.REFERRAL_URL_BASE ?? "https://ubi.africa/r";
 
 export function referralCodeFor(userId: string): string {
-  const digest = createHash("sha256").update(`referral:${userId}`).digest("hex");
+  const digest = createHash("sha256")
+    .update(`referral:${userId}`)
+    .digest("hex");
   return `R${digest.slice(0, 8).toUpperCase()}`;
 }
 
@@ -67,7 +69,9 @@ async function activeProgram(
 }
 
 function rewardOf(version: ReferralProgramVersion): Money {
-  const value = version.value as { reward?: { amountMinor?: number; currency?: string } } | null;
+  const value = version.value as {
+    reward?: { amountMinor?: number; currency?: string };
+  } | null;
   const amountMinor = value?.reward?.amountMinor ?? 0;
   const currency = value?.reward?.currency ?? version.currency;
   return money(amountMinor, currency);
@@ -129,7 +133,10 @@ export async function getProgram(
       state: "consumed",
     },
   });
-  const earnedMinor = rewarded.reduce((sum, r) => sum + Number(r.amountMinor), 0);
+  const earnedMinor = rewarded.reduce(
+    (sum, r) => sum + Number(r.amountMinor),
+    0,
+  );
 
   return {
     code,
@@ -138,8 +145,8 @@ export async function getProgram(
     refereeBenefit:
       program === null ? money(0, currency) : refereeBenefitOf(program),
     qualifyingEvent:
-      (program?.value as { qualifyingEvent?: string } | null)?.qualifyingEvent ??
-      "first completed and paid ride",
+      (program?.value as { qualifyingEvent?: string } | null)
+        ?.qualifyingEvent ?? "first completed and paid ride",
     monthlyCap: program === null ? null : monthlyCapOf(program),
     earnedTotal: money(earnedMinor, currency),
     referrals: referrals.map((r) => ({
@@ -189,8 +196,13 @@ export async function share(
   // resolved back to this referrer by code. Nothing is created without one.
   const program = await activeProgram(deps);
   if (program !== null) {
-    const templateId = deterministicId("ref", `template:${program.id}:${actor.id}`);
-    const existing = await deps.db.referral.findUnique({ where: { id: templateId } });
+    const templateId = deterministicId(
+      "ref",
+      `template:${program.id}:${actor.id}`,
+    );
+    const existing = await deps.db.referral.findUnique({
+      where: { id: templateId },
+    });
     if (existing === null) {
       await deps.db.referral.create({
         data: {
@@ -305,7 +317,11 @@ export async function claimAttribution(
         },
       ];
 
-      if (kind === "referral" && referrerId !== null && programVersionId !== null) {
+      if (
+        kind === "referral" &&
+        referrerId !== null &&
+        programVersionId !== null
+      ) {
         const referralId = deterministicId(
           "ref",
           `claim:${programVersionId}:${referrerId}:${input.actor.id}`,
@@ -377,7 +393,8 @@ export async function claimAttribution(
       });
       if (existing !== null) {
         return {
-          attributed: existing.kind === "referral" || existing.kind === "campaign",
+          attributed:
+            existing.kind === "referral" || existing.kind === "campaign",
           kind: existing.kind as AttributionKind,
         };
       }
@@ -442,7 +459,11 @@ export async function qualifyReferral(
     await auditedTransaction(deps.db, async (tx) => {
       await tx.referral.update({
         where: { id: referral.id },
-        data: { stage: "qualifying", stageAt: now, qualifyingRideId: input.qualifyingRideId },
+        data: {
+          stage: "qualifying",
+          stageAt: now,
+          qualifyingRideId: input.qualifyingRideId,
+        },
       });
       return {
         result: null,
@@ -461,12 +482,18 @@ export async function qualifyReferral(
     referral.stage = "qualifying";
   }
   if (referral.stage !== "qualifying") {
-    throw new ContractError("conflict", "referral is not awaiting qualification", {
-      stage: referral.stage,
-    });
+    throw new ContractError(
+      "conflict",
+      "referral is not awaiting qualification",
+      {
+        stage: referral.stage,
+      },
+    );
   }
 
-  const highSignals = (input.signals ?? []).filter((s) => s.severity === "high");
+  const highSignals = (input.signals ?? []).filter(
+    (s) => s.severity === "high",
+  );
   if (highSignals.length > 0) {
     // Human review — never an auto-deny.
     const caseId = deterministicId("rvc", `review:${referral.id}`);
@@ -493,7 +520,10 @@ export async function qualifyReferral(
           subjectId: referral.id,
           reason: "abuse signals require human review",
           before: { stage: "qualifying" },
-          after: { stage: "in_review", signalCount: (input.signals ?? []).length },
+          after: {
+            stage: "in_review",
+            signalCount: (input.signals ?? []).length,
+          },
           correlationId: input.correlationId,
         },
         events: [
@@ -554,14 +584,19 @@ async function rewardReferral(
   }
   const reward = rewardOf(program);
   if (reward.amountMinor <= 0) {
-    throw new ContractError("validation_failed", "referral programme has no reward configured");
+    throw new ContractError(
+      "validation_failed",
+      "referral programme has no reward configured",
+    );
   }
   const now = deps.now();
 
   // Monthly cap on referral rewards (from the programme value).
   const cap = monthlyCapOf(program);
   if (cap !== null) {
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    );
     const rewardedThisMonth = await deps.db.promotionReservation.count({
       where: {
         userId: input.referrerId,
@@ -586,7 +621,11 @@ async function rewardReferral(
     adjustmentType: "referral_reward",
     amount: reward,
     expiresAt: program.windowEnd,
-    idempotencyKey: scopedIdempotencyKey("referral.reward", input.referralId, input.referralId),
+    idempotencyKey: scopedIdempotencyKey(
+      "referral.reward",
+      input.referralId,
+      input.referralId,
+    ),
     correlationId: input.correlationId,
   });
   if (!reserved.reserved) {
@@ -883,7 +922,10 @@ export async function decideReview(
       fromStage: "in_review",
       correlationId: input.correlationId,
     });
-    return { decision: input.decision, stage: result.outcome === "rewarded" ? "rewarded" : referral.stage };
+    return {
+      decision: input.decision,
+      stage: result.outcome === "rewarded" ? "rewarded" : referral.stage,
+    };
   }
 
   if (input.decision === "deny") {

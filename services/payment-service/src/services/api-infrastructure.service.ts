@@ -43,7 +43,10 @@ interface WebhookExtended extends Webhook {
   failureCount?: number;
 }
 
-interface WebhookDeliveryLogExtended extends Omit<WebhookDeliveryLog, "attemptNumber" | "success" | "statusCode" | "createdAt"> {
+interface WebhookDeliveryLogExtended extends Omit<
+  WebhookDeliveryLog,
+  "attemptNumber" | "success" | "statusCode" | "createdAt"
+> {
   status: "pending" | "delivered" | "failed";
   retryCount: number;
   timestamp: Date;
@@ -163,7 +166,8 @@ export class ApiInfrastructureService extends EventEmitter {
   private rateLimitBuckets: Map<string, RateLimitBucket> = new Map();
   private apiRequests: Map<string, ApiRequest[]> = new Map(); // organizationId -> requests
   private webhooks: Map<string, WebhookExtended> = new Map();
-  private webhookDeliveries: Map<string, WebhookDeliveryLogExtended[]> = new Map();
+  private webhookDeliveries: Map<string, WebhookDeliveryLogExtended[]> =
+    new Map();
   private webhookQueue: WebhookDeliveryLogExtended[] = [];
 
   constructor() {
@@ -189,7 +193,7 @@ export class ApiInfrastructureService extends EventEmitter {
       expiresAt?: Date;
       rateLimitTier?: string;
       metadata?: Record<string, string>;
-    }
+    },
   ): Promise<{ apiKey: ApiKeyExtended; secret: string }> {
     // Generate secure key
     const keyPrefix =
@@ -201,7 +205,8 @@ export class ApiInfrastructureService extends EventEmitter {
     const keyHash = this.hashApiKey(secret);
 
     const rateLimitTier = keyData.rateLimitTier || "starter";
-    const rateLimits: RateLimitConfig = (DEFAULT_RATE_LIMITS[rateLimitTier] || DEFAULT_RATE_LIMITS.starter) as RateLimitConfig;
+    const rateLimits: RateLimitConfig = (DEFAULT_RATE_LIMITS[rateLimitTier] ||
+      DEFAULT_RATE_LIMITS.starter) as RateLimitConfig;
 
     const apiKey: ApiKeyExtended = {
       id: nanoid(),
@@ -244,7 +249,7 @@ export class ApiInfrastructureService extends EventEmitter {
   async validateApiKey(
     secret: string,
     clientIp: string,
-    requiredScope?: ApiKeyScope
+    requiredScope?: ApiKeyScope,
   ): Promise<{
     valid: boolean;
     apiKey?: ApiKeyExtended;
@@ -300,7 +305,7 @@ export class ApiInfrastructureService extends EventEmitter {
    * Rotate an API key (generate new secret)
    */
   async rotateApiKey(
-    keyId: string
+    keyId: string,
   ): Promise<{ apiKey: ApiKeyExtended; secret: string }> {
     const existingKey = this.apiKeys.get(keyId);
     if (!existingKey) {
@@ -356,7 +361,7 @@ export class ApiInfrastructureService extends EventEmitter {
       expiresAt?: Date;
       rateLimits?: RateLimitConfig;
       isActive?: boolean;
-    }
+    },
   ): Promise<ApiKeyExtended> {
     const apiKey = this.apiKeys.get(keyId);
     if (!apiKey) {
@@ -379,10 +384,10 @@ export class ApiInfrastructureService extends EventEmitter {
    */
   async listApiKeys(
     organizationId: string,
-    environment?: ApiKeyEnvironment
+    environment?: ApiKeyEnvironment,
   ): Promise<ApiKeyExtended[]> {
     let keys = Array.from(this.apiKeys.values()).filter(
-      (k) => k.organizationId === organizationId
+      (k) => k.organizationId === organizationId,
     );
 
     if (environment) {
@@ -445,19 +450,19 @@ export class ApiInfrastructureService extends EventEmitter {
       // Calculate retry after
       if (minuteExceeded) {
         result.retryAfter = Math.ceil(
-          (bucket.minute.resetAt.getTime() - now.getTime()) / 1000
+          (bucket.minute.resetAt.getTime() - now.getTime()) / 1000,
         );
       } else if (hourExceeded) {
         result.retryAfter = Math.ceil(
-          (bucket.hour.resetAt.getTime() - now.getTime()) / 1000
+          (bucket.hour.resetAt.getTime() - now.getTime()) / 1000,
         );
       } else if (dayExceeded) {
         result.retryAfter = Math.ceil(
-          (bucket.day.resetAt.getTime() - now.getTime()) / 1000
+          (bucket.day.resetAt.getTime() - now.getTime()) / 1000,
         );
       } else {
         result.retryAfter = Math.ceil(
-          (bucket.month.resetAt.getTime() - now.getTime()) / 1000
+          (bucket.month.resetAt.getTime() - now.getTime()) / 1000,
         );
       }
     }
@@ -546,7 +551,7 @@ export class ApiInfrastructureService extends EventEmitter {
       dateFrom?: Date;
       dateTo?: Date;
     },
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<ApiRequest>> {
     let requests = this.apiRequests.get(organizationId) || [];
 
@@ -580,11 +585,11 @@ export class ApiInfrastructureService extends EventEmitter {
   async getUsageStats(
     organizationId: string,
     dateFrom: Date,
-    dateTo: Date
+    dateTo: Date,
   ): Promise<ApiUsageStats> {
     let requests = this.apiRequests.get(organizationId) || [];
     requests = requests.filter(
-      (r) => r.timestamp >= dateFrom && r.timestamp <= dateTo
+      (r) => r.timestamp >= dateFrom && r.timestamp <= dateTo,
     );
 
     const stats: ApiUsageStats = {
@@ -643,7 +648,7 @@ export class ApiInfrastructureService extends EventEmitter {
       events: WebhookEvent[];
       description?: string;
       headers?: Record<string, string>;
-    }
+    },
   ): Promise<WebhookExtended> {
     // Validate URL
     try {
@@ -697,7 +702,7 @@ export class ApiInfrastructureService extends EventEmitter {
       description?: string;
       headers?: Record<string, string>;
       isActive?: boolean;
-    }
+    },
   ): Promise<WebhookExtended> {
     const webhook = this.webhooks.get(webhookId);
     if (!webhook) {
@@ -761,7 +766,7 @@ export class ApiInfrastructureService extends EventEmitter {
    */
   async listWebhooks(organizationId: string): Promise<WebhookExtended[]> {
     return Array.from(this.webhooks.values()).filter(
-      (w) => w.organizationId === organizationId
+      (w) => w.organizationId === organizationId,
     );
   }
 
@@ -770,7 +775,7 @@ export class ApiInfrastructureService extends EventEmitter {
    */
   async getWebhookDeliveries(
     webhookId: string,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<PaginatedResponse<WebhookDeliveryLogExtended>> {
     const deliveries = this.webhookDeliveries.get(webhookId) || [];
     deliveries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
@@ -784,13 +789,13 @@ export class ApiInfrastructureService extends EventEmitter {
   async dispatchWebhook(
     organizationId: string,
     event: WebhookEvent,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
   ): Promise<void> {
     const webhooks = Array.from(this.webhooks.values()).filter(
       (w) =>
         w.organizationId === organizationId &&
         w.isActive &&
-        w.events.includes(event)
+        w.events.includes(event),
     );
 
     for (const webhook of webhooks) {
@@ -802,7 +807,9 @@ export class ApiInfrastructureService extends EventEmitter {
   /**
    * Retry failed webhook delivery
    */
-  async retryWebhookDelivery(deliveryId: string): Promise<WebhookDeliveryLogExtended> {
+  async retryWebhookDelivery(
+    deliveryId: string,
+  ): Promise<WebhookDeliveryLogExtended> {
     // Find delivery across all webhooks
     for (const [webhookId, deliveries] of this.webhookDeliveries) {
       const delivery = deliveries.find((d) => d.id === deliveryId);
@@ -842,7 +849,7 @@ export class ApiInfrastructureService extends EventEmitter {
     const delivery = this.createWebhookDelivery(
       webhook,
       "delivery.created" as WebhookEvent, // Use a generic event for testing
-      testPayload
+      testPayload,
     );
 
     // Process immediately
@@ -861,7 +868,7 @@ export class ApiInfrastructureService extends EventEmitter {
   generateWebhookSignature(
     payload: string,
     secret: string,
-    timestamp: number
+    timestamp: number,
   ): string {
     const signedPayload = `${timestamp}.${payload}`;
     const signature = crypto
@@ -879,7 +886,7 @@ export class ApiInfrastructureService extends EventEmitter {
     payload: string,
     signature: string,
     secret: string,
-    tolerance: number = 300 // 5 minutes
+    tolerance: number = 300, // 5 minutes
   ): boolean {
     try {
       const parts = signature.split(",");
@@ -909,7 +916,7 @@ export class ApiInfrastructureService extends EventEmitter {
       // Timing-safe comparison
       return crypto.timingSafeEqual(
         Buffer.from(expectedSignature),
-        Buffer.from(computedSignature)
+        Buffer.from(computedSignature),
       );
     } catch {
       return false;
@@ -953,7 +960,12 @@ export class ApiInfrastructureService extends EventEmitter {
 
   private ipToNumber(ip: string): number {
     const parts = ip.split(".").map(Number);
-    return ((parts[0] || 0) << 24) | ((parts[1] || 0) << 16) | ((parts[2] || 0) << 8) | (parts[3] || 0);
+    return (
+      ((parts[0] || 0) << 24) |
+      ((parts[1] || 0) << 16) |
+      ((parts[2] || 0) << 8) |
+      (parts[3] || 0)
+    );
   }
 
   private initializeRateLimits(keyId: string, _limits: RateLimitConfig): void {
@@ -1003,7 +1015,7 @@ export class ApiInfrastructureService extends EventEmitter {
   private createWebhookDelivery(
     webhook: WebhookExtended,
     event: WebhookEvent,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
   ): WebhookDeliveryLogExtended {
     const delivery: WebhookDeliveryLogExtended = {
       id: nanoid(),
@@ -1029,7 +1041,7 @@ export class ApiInfrastructureService extends EventEmitter {
   }
 
   private async processWebhookDelivery(
-    delivery: WebhookDeliveryLogExtended
+    delivery: WebhookDeliveryLogExtended,
   ): Promise<void> {
     const webhook = this.webhooks.get(delivery.webhookId);
     if (!webhook || !webhook.isActive) {
@@ -1083,9 +1095,9 @@ export class ApiInfrastructureService extends EventEmitter {
           WEBHOOK_RETRY_CONFIG.initialDelayMs *
             Math.pow(
               WEBHOOK_RETRY_CONFIG.backoffMultiplier,
-              delivery.retryCount - 1
+              delivery.retryCount - 1,
             ),
-          WEBHOOK_RETRY_CONFIG.maxDelayMs
+          WEBHOOK_RETRY_CONFIG.maxDelayMs,
         );
         delivery.nextRetryAt = new Date(Date.now() + delay);
 
@@ -1114,7 +1126,7 @@ export class ApiInfrastructureService extends EventEmitter {
 
   private paginate<T>(
     items: T[],
-    params: PaginationParams
+    params: PaginationParams,
   ): PaginatedResponse<T> {
     const page = params.page || 1;
     const limit = params.limit || 20;

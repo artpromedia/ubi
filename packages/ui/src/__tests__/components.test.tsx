@@ -8,12 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { Badge } from "../components/badge";
 import { Button } from "../components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/card";
 
 describe("Button", () => {
   it("renders its label inside a button element", () => {

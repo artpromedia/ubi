@@ -21,7 +21,8 @@ export function OfferRow({ offer }: { offer: FlightOffer }) {
           {hm(offer.departAt)} → {hm(offer.arriveAt)}
         </div>
         <div className="text-xs text-[#666]">
-          {offer.carrier} {offer.flightNumber} · {Math.floor(offer.durationMin / 60)}h{" "}
+          {offer.carrier} {offer.flightNumber} ·{" "}
+          {Math.floor(offer.durationMin / 60)}h{" "}
           {String(offer.durationMin % 60).padStart(2, "0")}m
           {offer.departTerminal
             ? " · " + offer.departTerminal + " → " + offer.arriveTerminal
@@ -29,8 +30,8 @@ export function OfferRow({ offer }: { offer: FlightOffer }) {
         </div>
         {offer.capabilities.priceGuaranteeUntil ? (
           <div className="mt-1 text-[11px] text-[#2B6CB0]">
-            Price guaranteed to {hm(offer.capabilities.priceGuaranteeUntil)} if you book now ·
-            not a seat reservation
+            Price guaranteed to {hm(offer.capabilities.priceGuaranteeUntil)} if
+            you book now · not a seat reservation
           </div>
         ) : (
           <div className="mt-1 text-[11px] text-[#B8860B]">

@@ -57,7 +57,7 @@ export function AppHeader({
     <header
       className={cn(
         "sticky top-0 z-50 flex h-14 items-center justify-between border-b border-gray-200 bg-white/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-gray-800 dark:bg-gray-900/95 dark:supports-[backdrop-filter]:bg-gray-900/60",
-        className
+        className,
       )}
     >
       {/* Left section */}

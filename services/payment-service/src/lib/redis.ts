@@ -123,7 +123,9 @@ export class DistributedLock {
 
     while (attempts < retries) {
       lockValue = await this.acquire(key, ttl);
-      if (lockValue) {break;}
+      if (lockValue) {
+        break;
+      }
 
       attempts++;
       await new Promise((resolve) =>
@@ -159,7 +161,9 @@ export class CacheHelper {
 
   async get<T>(key: string): Promise<T | null> {
     const value = await redis.get(this.prefix + key);
-    if (!value) {return null;}
+    if (!value) {
+      return null;
+    }
 
     try {
       return JSON.parse(value) as T;
@@ -184,7 +188,9 @@ export class CacheHelper {
     ttl?: number,
   ): Promise<T> {
     const cached = await this.get<T>(key);
-    if (cached !== null) {return cached;}
+    if (cached !== null) {
+      return cached;
+    }
 
     const value = await fn();
     await this.set(key, value, ttl);
@@ -193,7 +199,9 @@ export class CacheHelper {
 
   async invalidatePattern(pattern: string): Promise<number> {
     const keys = await redis.keys(this.prefix + pattern);
-    if (keys.length === 0) {return 0;}
+    if (keys.length === 0) {
+      return 0;
+    }
 
     return redis.del(...keys);
   }

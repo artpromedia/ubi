@@ -70,7 +70,9 @@ export default function TravelPage() {
                   : "border border-[#E5E5E5] bg-white text-[#191414]")
               }
             >
-              {k === "bag" ? "Bag included" : k.charAt(0).toUpperCase() + k.slice(1)}
+              {k === "bag"
+                ? "Bag included"
+                : k.charAt(0).toUpperCase() + k.slice(1)}
             </button>
           ))}
           {search.data ? (
@@ -86,14 +88,17 @@ export default function TravelPage() {
         </div>
         {search.isError ? (
           <p className="text-sm text-[#C53030]">
-            We couldn&apos;t load flights just now. Check your dates and try again.
+            We couldn&apos;t load flights just now. Check your dates and try
+            again.
           </p>
         ) : null}
-        {search.data?.offers.map((o) => <OfferRow key={o.offerRef} offer={o} />)}
+        {search.data?.offers.map((o) => (
+          <OfferRow key={o.offerRef} offer={o} />
+        ))}
         {!search.data && !search.isPending ? (
           <p className="text-sm text-[#666]">
-            Domestic flights only for now. Prices include taxes; UBI&apos;s service fee per
-            ticket is shown before you pay.
+            Domestic flights only for now. Prices include taxes; UBI&apos;s
+            service fee per ticket is shown before you pay.
           </p>
         ) : null}
       </section>

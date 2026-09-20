@@ -20,7 +20,11 @@ import { PrismaClient } from "@prisma/client";
 import { createHashEmbeddingProvider } from "../src/ai/embedding-provider";
 import { createRetriever, type Retriever } from "../src/ai/rag";
 import { createFlagProvider } from "../src/ops/flags";
-import { DEFAULT_LIMITS, type AskDeps, type AskLimits } from "../src/ops/context";
+import {
+  DEFAULT_LIMITS,
+  type AskDeps,
+  type AskLimits,
+} from "../src/ops/context";
 
 import type {
   ModelProvider,
@@ -50,8 +54,16 @@ import type {
   IncentiveExplanation,
   PromotionsPort,
 } from "../src/ports/promotions-port";
-import type { GrantMintRequest, GrantPort, MintedGrant } from "../src/ports/grant-port";
-import type { OpenCaseInput, OpenedCase, SupportPort } from "../src/ports/support-port";
+import type {
+  GrantMintRequest,
+  GrantPort,
+  MintedGrant,
+} from "../src/ports/grant-port";
+import type {
+  OpenCaseInput,
+  OpenedCase,
+  SupportPort,
+} from "../src/ports/support-port";
 import type { Actor, AskDb } from "../src/ops/types";
 
 export const TEST_DATABASE_URL =
@@ -144,7 +156,10 @@ export function admin(id?: string): Actor {
 // ---------------------------------------------------------------------------
 
 /** Captures a balanced-brace JSON object starting at `start` (which is a `{`). */
-function readJsonObject(text: string, start: number): { json: string; end: number } | null {
+function readJsonObject(
+  text: string,
+  start: number,
+): { json: string; end: number } | null {
   let depth = 0;
   let inString = false;
   let escaped = false;
@@ -235,7 +250,11 @@ export class DeterministicModelProvider implements ModelProvider {
         const marker = `${source.scope}:${obey.name}`;
         if (!this.obeyed.has(marker)) {
           this.obeyed.add(marker);
-          return { text: "", toolCalls: [this.call(obey.name, obey.args)], usage };
+          return {
+            text: "",
+            toolCalls: [this.call(obey.name, obey.args)],
+            usage,
+          };
         }
       }
     }
@@ -249,7 +268,11 @@ export class DeterministicModelProvider implements ModelProvider {
           usage,
         };
       }
-      return { text: "How can I help with your trip or booking?", toolCalls: [], usage };
+      return {
+        text: "How can I help with your trip or booking?",
+        toolCalls: [],
+        usage,
+      };
     }
 
     return {
@@ -320,10 +343,16 @@ export class FakeTravelPort implements TravelPort {
   readonly booked: BookInput[] = [];
   private readonly offers = new Map<string, ResolvedOffer>();
   private readonly outcomes = new Map<string, FakeOfferOutcome>();
-  private readonly orders = new Map<string, { ownerId: string; state: string }>();
+  private readonly orders = new Map<
+    string,
+    { ownerId: string; state: string }
+  >();
   searchResults: TravelOffer[] = [];
 
-  setOffer(offer: ResolvedOffer, outcome: FakeOfferOutcome = { state: "confirmed" }): void {
+  setOffer(
+    offer: ResolvedOffer,
+    outcome: FakeOfferOutcome = { state: "confirmed" },
+  ): void {
     this.offers.set(offer.offerRef, offer);
     this.outcomes.set(offer.offerRef, outcome);
   }
@@ -350,7 +379,10 @@ export class FakeTravelPort implements TravelPort {
   ): Promise<readonly TravelOffer[]> {
     return this.searchResults.slice(0, limit);
   }
-  async resolveOffer(_actor: Actor, offerRef: string): Promise<ResolvedOffer | null> {
+  async resolveOffer(
+    _actor: Actor,
+    offerRef: string,
+  ): Promise<ResolvedOffer | null> {
     return this.offers.get(offerRef) ?? null;
   }
   async bookingStatus(
@@ -432,8 +464,7 @@ export class FakeGrantPort implements GrantPort {
       return {
         grantId: existing.id,
         expiresAt: existing.expiresAt.toISOString(),
-        assurance:
-          existing.assurance === "biometric" ? "biometric" : "pin",
+        assurance: existing.assurance === "biometric" ? "biometric" : "pin",
       };
     }
     const grantId = uid("grn");
@@ -448,8 +479,7 @@ export class FakeGrantPort implements GrantPort {
         totalMinor: BigInt(request.totalMinor),
         currency: request.currency,
         idempotencyKey: request.idempotencyKey,
-        assurance:
-          request.assurance === "biometric" ? "biometric" : "pin",
+        assurance: request.assurance === "biometric" ? "biometric" : "pin",
         expiresAt: request.expiresAt,
       },
     });
@@ -503,7 +533,8 @@ export function makeDeps(db: AskDb, overrides: DepsOverrides = {}): TestDeps {
   const promotions = (overrides.promotions ??
     new FakePromotionsPort()) as FakePromotionsPort;
   const grants = (overrides.grants ?? new FakeGrantPort(db)) as FakeGrantPort;
-  const support = (overrides.support ?? new FakeSupportPort()) as FakeSupportPort;
+  const support = (overrides.support ??
+    new FakeSupportPort()) as FakeSupportPort;
   return {
     db,
     flags: createFlagProvider(db),

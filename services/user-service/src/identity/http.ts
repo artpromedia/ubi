@@ -18,7 +18,6 @@ import { authLogger } from "../lib/logger.js";
 
 import type { Context } from "hono";
 
-
 export type IdentityHandler = (c: Context) => Promise<Response>;
 
 export function contractRoute(handler: IdentityHandler): IdentityHandler {

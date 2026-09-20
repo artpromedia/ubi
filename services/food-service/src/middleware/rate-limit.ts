@@ -6,7 +6,6 @@ import { RateLimiter } from "../lib/redis";
 
 import type { Context, Next } from "hono";
 
-
 // Pre-configured rate limiters
 const limiters: Record<string, RateLimiter> = {
   default: new RateLimiter("default", 100, 60), // 100 req/min
@@ -42,7 +41,7 @@ export function rateLimit(limiterName: keyof typeof limiters = "default") {
     if (!result.allowed) {
       c.header(
         "Retry-After",
-        Math.ceil((result.resetAt.getTime() - Date.now()) / 1000).toString()
+        Math.ceil((result.resetAt.getTime() - Date.now()) / 1000).toString(),
       );
 
       return c.json(
@@ -54,7 +53,7 @@ export function rateLimit(limiterName: keyof typeof limiters = "default") {
             retryAfter: result.resetAt.toISOString(),
           },
         },
-        429
+        429,
       );
     }
 
@@ -68,7 +67,7 @@ export function rateLimit(limiterName: keyof typeof limiters = "default") {
 export function createRateLimiter(
   prefix: string,
   limit: number,
-  windowSeconds: number
+  windowSeconds: number,
 ) {
   const limiter = new RateLimiter(prefix, limit, windowSeconds);
 
@@ -89,7 +88,7 @@ export function createRateLimiter(
     if (!result.allowed) {
       c.header(
         "Retry-After",
-        Math.ceil((result.resetAt.getTime() - Date.now()) / 1000).toString()
+        Math.ceil((result.resetAt.getTime() - Date.now()) / 1000).toString(),
       );
 
       return c.json(
@@ -101,7 +100,7 @@ export function createRateLimiter(
             retryAfter: result.resetAt.toISOString(),
           },
         },
-        429
+        429,
       );
     }
 

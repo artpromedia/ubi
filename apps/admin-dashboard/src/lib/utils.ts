@@ -23,7 +23,7 @@ export function formatNumber(num: number): string {
  */
 export function formatCurrency(
   amount: number,
-  currency: string = "NGN"
+  currency: string = "NGN",
 ): string {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",

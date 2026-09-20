@@ -23,11 +23,18 @@
  * account) is deliberately ops scope — the ledger never fakes a settlement it
  * could not fund.
  */
-import { ContractError, type Money, scopedIdempotencyKey } from "@ubi/contracts";
+import {
+  ContractError,
+  type Money,
+  scopedIdempotencyKey,
+} from "@ubi/contracts";
 
 import { publishEvent, writeAudit } from "./audit";
 import { isIdempotencyRace } from "./idempotency";
-import { postMarketplaceCompletion, type RidePaymentMethod } from "./ride-posting";
+import {
+  postMarketplaceCompletion,
+  type RidePaymentMethod,
+} from "./ride-posting";
 import { ensureWallet } from "./wallets";
 
 import type { WalletDeps } from "./context";

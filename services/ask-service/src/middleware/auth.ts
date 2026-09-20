@@ -13,7 +13,7 @@ import {
   IdempotencyKeySchema,
 } from "@ubi/contracts";
 
-import { isAskRole ,type  Actor } from "../ops/types";
+import { isAskRole, type Actor } from "../ops/types";
 
 import type { Context, Next } from "hono";
 
@@ -66,10 +66,7 @@ export async function adminAuth(
     );
   }
   if (role === undefined || !ADMIN_ROLES.includes(role)) {
-    return c.json(
-      { code: "forbidden", message: "admin access required" },
-      403,
-    );
+    return c.json({ code: "forbidden", message: "admin access required" }, 403);
   }
   c.set("actor", { id: userId, role });
   await next();

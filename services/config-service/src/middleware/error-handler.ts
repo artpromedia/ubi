@@ -12,7 +12,6 @@ import { logger } from "../lib/logger";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
-
 function bodyFor(error: unknown): { body: ErrorBody; status: number } {
   if (error instanceof ContractError) {
     return { body: error.toBody(), status: error.status };

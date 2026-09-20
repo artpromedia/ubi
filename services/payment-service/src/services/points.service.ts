@@ -107,7 +107,7 @@ export class PointsService {
 
     const expiringNext30Days = expiringBatches.reduce(
       (sum: number, batch: any) => sum + Number(batch.remainingPoints),
-      0
+      0,
     );
 
     return {
@@ -321,7 +321,7 @@ export class PointsService {
 
     if (account.availablePoints < points) {
       throw new Error(
-        `Insufficient points. Available: ${account.availablePoints}, Required: ${points}`
+        `Insufficient points. Available: ${account.availablePoints}, Required: ${points}`,
       );
     }
 
@@ -458,7 +458,7 @@ export class PointsService {
             type: "EXPIRE",
             points: BigInt(-expiredPoints),
             balanceAfter: BigInt(
-              Number(batch.account.availablePoints) - expiredPoints
+              Number(batch.account.availablePoints) - expiredPoints,
             ),
             description: "Points expired",
             batchId: batch.id,
@@ -485,7 +485,7 @@ export class PointsService {
       limit?: number;
       offset?: number;
       type?: PointsTransactionType;
-    } = {}
+    } = {},
   ): Promise<{ transactions: PointsTransaction[]; total: number }> {
     const { limit = 20, offset = 0, type } = options;
 
@@ -548,7 +548,7 @@ export class PointsService {
     const percentToNext = Math.min(
       100,
       ((tierPoints - currentThreshold) / (nextThreshold - currentThreshold)) *
-        100
+        100,
     );
 
     return {

@@ -208,7 +208,9 @@ export function generatePhoneNumber(country: string = "nigeria"): string {
     ghana: ["+23324", "+23326", "+23327"],
   };
 
-  const prefix = prefixes[country]?.[Math.floor(Math.random() * prefixes[country].length)] || "+234803";
+  const prefix =
+    prefixes[country]?.[Math.floor(Math.random() * prefixes[country].length)] ||
+    "+234803";
   const suffix = Math.floor(Math.random() * 10000000)
     .toString()
     .padStart(7, "0");
@@ -216,7 +218,10 @@ export function generatePhoneNumber(country: string = "nigeria"): string {
   return prefix + suffix;
 }
 
-export function generateLocation(city: string = "lagos"): { lat: number; lng: number } {
+export function generateLocation(city: string = "lagos"): {
+  lat: number;
+  lng: number;
+} {
   const cities: Record<string, { lat: number; lng: number; radius: number }> = {
     lagos: { lat: 6.5244, lng: 3.3792, radius: 0.1 },
     nairobi: { lat: -1.2921, lng: 36.8219, radius: 0.08 },
@@ -235,7 +240,9 @@ export function generateLocation(city: string = "lagos"): { lat: number; lng: nu
 }
 
 // Weighted random selection
-export function weightedRandom<T>(items: Array<{ item: T; weight: number }>): T {
+export function weightedRandom<T>(
+  items: Array<{ item: T; weight: number }>,
+): T {
   const totalWeight = items.reduce((sum, { weight }) => sum + weight, 0);
   let random = Math.random() * totalWeight;
 
@@ -248,7 +255,10 @@ export function weightedRandom<T>(items: Array<{ item: T; weight: number }>): T 
 }
 
 // Sleep with jitter (simulate realistic user behavior)
-export function sleepWithJitter(baseMs: number, jitterPercent: number = 20): number {
+export function sleepWithJitter(
+  baseMs: number,
+  jitterPercent: number = 20,
+): number {
   const jitter = baseMs * (jitterPercent / 100);
   return baseMs + (Math.random() - 0.5) * 2 * jitter;
 }

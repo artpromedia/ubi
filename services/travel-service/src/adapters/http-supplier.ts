@@ -53,7 +53,11 @@ const httpConfigSchema = z.object({
 });
 
 function providerName(adapter: string): string {
-  return adapter === "duffel" ? "Duffel" : adapter === "nuitee" ? "Nuitee/LiteAPI" : adapter;
+  return adapter === "duffel"
+    ? "Duffel"
+    : adapter === "nuitee"
+      ? "Nuitee/LiteAPI"
+      : adapter;
 }
 
 /**
@@ -67,7 +71,8 @@ function credentialsPresent(ctx: SupplierContext, adapter: string): boolean {
     return false;
   }
   const envKey = `TRAVEL_SECRET_${parsed.data.secretRef.toUpperCase()}`;
-  const present = typeof process.env[envKey] === "string" && process.env[envKey] !== "";
+  const present =
+    typeof process.env[envKey] === "string" && process.env[envKey] !== "";
   if (!present) {
     adapterLogger.warn(
       { supplierId: ctx.supplierId, adapter },
@@ -86,7 +91,10 @@ function blocked(adapter: string): never {
 }
 
 function servicing(adapter: string): {
-  refreshOffer(ctx: SupplierContext, offerRef: string): Promise<OfferValidation>;
+  refreshOffer(
+    ctx: SupplierContext,
+    offerRef: string,
+  ): Promise<OfferValidation>;
   book(ctx: SupplierContext, request: BookRequest): Promise<BookResult>;
   lookup(ctx: SupplierContext, ourRef: string): Promise<LookupResult>;
   change(ctx: SupplierContext, request: ChangeRequest): Promise<ChangeResult>;
@@ -97,12 +105,18 @@ function servicing(adapter: string): {
   providerHealth(ctx: SupplierContext): Promise<ProviderHealth>;
 } {
   return {
-    async refreshOffer(ctx: SupplierContext, offerRef: string): Promise<OfferValidation> {
+    async refreshOffer(
+      ctx: SupplierContext,
+      offerRef: string,
+    ): Promise<OfferValidation> {
       void offerRef;
       credentialsPresent(ctx, adapter);
       blocked(adapter);
     },
-    async book(ctx: SupplierContext, request: BookRequest): Promise<BookResult> {
+    async book(
+      ctx: SupplierContext,
+      request: BookRequest,
+    ): Promise<BookResult> {
       void request;
       credentialsPresent(ctx, adapter);
       blocked(adapter);
@@ -112,17 +126,26 @@ function servicing(adapter: string): {
       credentialsPresent(ctx, adapter);
       blocked(adapter);
     },
-    async change(ctx: SupplierContext, request: ChangeRequest): Promise<ChangeResult> {
+    async change(
+      ctx: SupplierContext,
+      request: ChangeRequest,
+    ): Promise<ChangeResult> {
       void request;
       credentialsPresent(ctx, adapter);
       blocked(adapter);
     },
-    async cancel(ctx: SupplierContext, request: CancelRequest): Promise<CancelResult> {
+    async cancel(
+      ctx: SupplierContext,
+      request: CancelRequest,
+    ): Promise<CancelResult> {
       void request;
       credentialsPresent(ctx, adapter);
       blocked(adapter);
     },
-    async refund(ctx: SupplierContext, request: RefundRequest): Promise<RefundResult> {
+    async refund(
+      ctx: SupplierContext,
+      request: RefundRequest,
+    ): Promise<RefundResult> {
       void request;
       credentialsPresent(ctx, adapter);
       blocked(adapter);
@@ -132,7 +155,10 @@ function servicing(adapter: string): {
       credentialsPresent(ctx, adapter);
       blocked(adapter);
     },
-    async reconcile(ctx: SupplierContext, ourRef: string): Promise<LookupResult> {
+    async reconcile(
+      ctx: SupplierContext,
+      ourRef: string,
+    ): Promise<LookupResult> {
       void ourRef;
       credentialsPresent(ctx, adapter);
       blocked(adapter);
@@ -158,7 +184,10 @@ export function createDuffelFlightAdapter(): FlightSupplyAdapter {
   return {
     adapter: "duffel",
     kind: "flight",
-    async search(ctx: SupplierContext, params: FlightSearchParams): Promise<SearchResult> {
+    async search(
+      ctx: SupplierContext,
+      params: FlightSearchParams,
+    ): Promise<SearchResult> {
       void params;
       credentialsPresent(ctx, "duffel");
       blocked("duffel");
@@ -173,7 +202,10 @@ export function createNuiteeStayAdapter(): StaySupplyAdapter {
   return {
     adapter: "nuitee",
     kind: "stay",
-    async search(ctx: SupplierContext, params: StaySearchParams): Promise<SearchResult> {
+    async search(
+      ctx: SupplierContext,
+      params: StaySearchParams,
+    ): Promise<SearchResult> {
       void params;
       credentialsPresent(ctx, "nuitee");
       blocked("nuitee");

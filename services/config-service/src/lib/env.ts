@@ -7,7 +7,9 @@
 
 function readInt(name: string, fallback: number): number {
   const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") {return fallback;}
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(`${name} must be a positive integer, received "${raw}"`);

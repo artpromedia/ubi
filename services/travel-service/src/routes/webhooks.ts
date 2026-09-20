@@ -57,14 +57,20 @@ export function createWebhookRoutes(deps: TravelDeps): Hono {
       const supplierId = c.req.param("supplierId");
       const cityId = c.req.header("X-City-ID");
       if (cityId === undefined || cityId.length === 0) {
-        throw new ContractError("city_unsupported", "the webhook does not name a city");
+        throw new ContractError(
+          "city_unsupported",
+          "the webhook does not name a city",
+        );
       }
       const rawBody = await c.req.text();
       let parsedEnvelope: unknown;
       try {
         parsedEnvelope = JSON.parse(rawBody);
       } catch {
-        throw new ContractError("validation_failed", "the webhook body is not JSON");
+        throw new ContractError(
+          "validation_failed",
+          "the webhook body is not JSON",
+        );
       }
       const envelope = EnvelopeSchema.parse(parsedEnvelope) as WebhookEnvelope;
       const signature = c.req.header("X-Signature") ?? null;

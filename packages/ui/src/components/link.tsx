@@ -8,14 +8,14 @@ import { cn } from "../lib/utils";
 
 /**
  * Link - A styled anchor component
- * 
+ *
  * Use for navigation links with consistent styling.
  * Works with Next.js Link when using asChild.
- * 
+ *
  * @example
  * <Link href="/about">About us</Link>
  * <Link href="/home" variant="nav">Home</Link>
- * 
+ *
  * // With Next.js Link
  * <Link asChild>
  *   <NextLink href="/dashboard">Dashboard</NextLink>
@@ -28,12 +28,14 @@ const linkVariants = cva(
     variants: {
       variant: {
         default: "text-primary underline-offset-4 hover:underline",
-        muted: "text-muted-foreground underline-offset-4 hover:text-foreground hover:underline",
+        muted:
+          "text-muted-foreground underline-offset-4 hover:text-foreground hover:underline",
         nav: "text-foreground hover:text-primary no-underline font-medium",
         subtle: "text-foreground/80 hover:text-foreground no-underline",
         // Service links
         move: "text-ubi-move hover:text-ubi-move/80 underline-offset-4 hover:underline",
-        bites: "text-ubi-bites hover:text-ubi-bites/80 underline-offset-4 hover:underline",
+        bites:
+          "text-ubi-bites hover:text-ubi-bites/80 underline-offset-4 hover:underline",
         send: "text-ubi-send hover:text-ubi-send/80 underline-offset-4 hover:underline",
       },
       size: {
@@ -52,11 +54,12 @@ const linkVariants = cva(
       size: "md",
       underline: "hover",
     },
-  }
+  },
 );
 
 export interface LinkProps
-  extends React.AnchorHTMLAttributes<HTMLAnchorElement>,
+  extends
+    React.AnchorHTMLAttributes<HTMLAnchorElement>,
     VariantProps<typeof linkVariants> {
   /** Render as child element (for Next.js Link) */
   asChild?: boolean;
@@ -65,9 +68,20 @@ export interface LinkProps
 }
 
 const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
-  ({ className, variant, size, underline, asChild = false, external, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      underline,
+      asChild = false,
+      external,
+      ...props
+    },
+    ref,
+  ) => {
     const Comp = asChild ? Slot : "a";
-    
+
     const externalProps = external
       ? { target: "_blank", rel: "noopener noreferrer" }
       : {};
@@ -80,7 +94,7 @@ const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
         {...props}
       />
     );
-  }
+  },
 );
 Link.displayName = "Link";
 

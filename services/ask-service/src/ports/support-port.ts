@@ -103,7 +103,9 @@ export function createHttpSupportPort(
               : 0,
         };
       } catch (error) {
-        if (error instanceof ContractError) {throw error;}
+        if (error instanceof ContractError) {
+          throw error;
+        }
         toolLogger.error({ err: error }, "support case open failed");
         throw new ContractError(
           "service_unavailable",

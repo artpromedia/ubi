@@ -169,13 +169,17 @@ describe("action grants — verify + consume", () => {
     const grantId = await mint(actorId, "2026-09-09T11:00:00.000Z");
     const consumeKey = key();
 
-    const first = await post<Envelope<{ consumedAt: string; replayed: boolean }>>(
+    const first = await post<
+      Envelope<{ consumedAt: string; replayed: boolean }>
+    >(
       harness.app,
       `/internal/grants/${grantId}/consume`,
       serviceHeaders(consumeKey),
       {},
     );
-    const retry = await post<Envelope<{ consumedAt: string; replayed: boolean }>>(
+    const retry = await post<
+      Envelope<{ consumedAt: string; replayed: boolean }>
+    >(
       harness.app,
       `/internal/grants/${grantId}/consume`,
       serviceHeaders(consumeKey),
@@ -205,12 +209,9 @@ describe("action grants — verify + consume", () => {
     local.setNow(new Date("2026-09-09T12:00:00.000Z"));
 
     // A replayed mint still returns the original (now-expired) grant.
-    const replay = await post<Envelope<{ grant: GrantView; replayed: boolean }>>(
-      local.app,
-      "/internal/grants",
-      serviceHeaders(idem),
-      body,
-    );
+    const replay = await post<
+      Envelope<{ grant: GrantView; replayed: boolean }>
+    >(local.app, "/internal/grants", serviceHeaders(idem), body);
     expect(replay.status).toBe(200);
     expect(replay.body.data?.replayed).toBe(true);
     expect(replay.body.data?.grant.id).toBe(grantId);

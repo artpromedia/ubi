@@ -547,7 +547,7 @@ export default function () {
               timestamp: Date.now(),
               isAvailable: true,
             },
-          })
+          }),
         );
       }, 5000);
     });
@@ -559,7 +559,7 @@ export default function () {
           JSON.stringify({
             type: "heartbeat_ack",
             payload: { timestamp: Date.now() },
-          })
+          }),
         );
       }
     });

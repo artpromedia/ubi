@@ -66,7 +66,7 @@ const MenuItem = React.forwardRef<HTMLDivElement, MenuItemProps>(
       variant = "default",
       ...props
     },
-    ref
+    ref,
   ) => {
     const handleIncrement = () => {
       if (quantity > 0) {
@@ -92,7 +92,7 @@ const MenuItem = React.forwardRef<HTMLDivElement, MenuItemProps>(
           !available && "opacity-60",
           available && "hover:bg-accent/30",
           variant === "compact" && "p-3 gap-3",
-          className
+          className,
         )}
         {...props}
       >
@@ -101,7 +101,7 @@ const MenuItem = React.forwardRef<HTMLDivElement, MenuItemProps>(
           <div
             className={cn(
               "relative shrink-0 rounded-lg overflow-hidden bg-muted",
-              variant === "detailed" ? "w-28 h-28" : "w-20 h-20"
+              variant === "detailed" ? "w-28 h-28" : "w-20 h-20",
             )}
           >
             <img
@@ -126,7 +126,7 @@ const MenuItem = React.forwardRef<HTMLDivElement, MenuItemProps>(
               <h3
                 className={cn(
                   "font-medium",
-                  variant === "compact" ? "text-sm" : "text-base"
+                  variant === "compact" ? "text-sm" : "text-base",
                 )}
               >
                 {name}
@@ -172,7 +172,7 @@ const MenuItem = React.forwardRef<HTMLDivElement, MenuItemProps>(
                   key={i}
                   className={cn(
                     "text-xs",
-                    i < spiceLevel ? "text-red-500" : "text-gray-300"
+                    i < spiceLevel ? "text-red-500" : "text-gray-300",
                   )}
                 >
                   🌶️
@@ -224,7 +224,7 @@ const MenuItem = React.forwardRef<HTMLDivElement, MenuItemProps>(
         </div>
       </div>
     );
-  }
+  },
 );
 MenuItem.displayName = "MenuItem";
 

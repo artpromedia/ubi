@@ -78,7 +78,11 @@ describe("rider discount never posts a negative driver line", () => {
       correlationId: null,
       benefitPosting: {
         funding: "ubi_marketing",
-        beneficiary: { account: "driver_payout", walletId: null, ref: driverId },
+        beneficiary: {
+          account: "driver_payout",
+          walletId: null,
+          ref: driverId,
+        },
       },
     });
 
@@ -112,7 +116,10 @@ describe("rider discount never posts a negative driver line", () => {
       where: {
         account: { startsWith: "driver_" },
         counterpartRef: {
-          in: [`reservation:${reserved.reservation.id}`, `trip:${tripId}:rebate`],
+          in: [
+            `reservation:${reserved.reservation.id}`,
+            `trip:${tripId}:rebate`,
+          ],
         },
       },
     });

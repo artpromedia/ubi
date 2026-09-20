@@ -72,7 +72,7 @@ const PaymentMethodCard = React.forwardRef<
       disabled,
       ...props
     },
-    ref
+    ref,
   ) => {
     const Icon = paymentIcons[type];
 
@@ -89,7 +89,7 @@ const PaymentMethodCard = React.forwardRef<
             ? "border-primary bg-primary/5"
             : "border-transparent bg-card hover:border-border",
           disabled && "opacity-50 cursor-not-allowed",
-          className
+          className,
         )}
         {...props}
       >
@@ -120,14 +120,14 @@ const PaymentMethodCard = React.forwardRef<
         <div
           className={cn(
             "h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0",
-            selected ? "border-primary" : "border-muted-foreground/30"
+            selected ? "border-primary" : "border-muted-foreground/30",
           )}
         >
           {selected && <div className="h-2.5 w-2.5 rounded-full bg-primary" />}
         </div>
       </div>
     );
-  }
+  },
 );
 PaymentMethodCard.displayName = "PaymentMethodCard";
 
@@ -151,7 +151,7 @@ const AddPaymentMethod = React.forwardRef<
       className={cn(
         "flex items-center gap-3 p-3 rounded-lg border-2 border-dashed border-muted-foreground/30 w-full",
         "hover:border-primary hover:bg-primary/5 transition-colors",
-        className
+        className,
       )}
       {...props}
     >

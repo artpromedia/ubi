@@ -146,7 +146,7 @@ preferencesRoutes.patch(
     }
 
     return c.json({ success: true, data: { preferences } });
-  }
+  },
 );
 
 /**
@@ -188,7 +188,7 @@ preferencesRoutes.get("/check", serviceAuth, async (c) => {
           message: "userId and channel required",
         },
       },
-      400
+      400,
     );
   }
 
@@ -221,7 +221,7 @@ preferencesRoutes.get("/check", serviceAuth, async (c) => {
     const isQuietHours = checkQuietHours(
       preferences.quietHoursStart!,
       preferences.quietHoursEnd!,
-      preferences.quietHoursTimezone!
+      preferences.quietHoursTimezone!,
     );
 
     // Only block non-critical during quiet hours
@@ -315,7 +315,7 @@ preferencesRoutes.get("/unsubscribe-token", auth, (c) => {
         success: false,
         error: { code: "INVALID_PARAMS", message: "channel required" },
       },
-      400
+      400,
     );
   }
 
@@ -353,7 +353,7 @@ preferencesRoutes.post("/unsubscribe", async (c) => {
             message: "Unsubscribe token has expired",
           },
         },
-        400
+        400,
       );
     }
 
@@ -386,7 +386,7 @@ preferencesRoutes.post("/unsubscribe", async (c) => {
         success: false,
         error: { code: "INVALID_TOKEN", message: "Invalid unsubscribe token" },
       },
-      400
+      400,
     );
   }
 });
@@ -426,7 +426,7 @@ function getDefaultPreferences() {
 function checkQuietHours(
   start: string,
   end: string,
-  timezone: string
+  timezone: string,
 ): boolean {
   try {
     const now = new Date();

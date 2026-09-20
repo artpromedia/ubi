@@ -6,8 +6,8 @@
  */
 
 export interface CountryConfig {
-  code: string;        // ISO 3166-1 alpha-2
-  code3: string;       // ISO 3166-1 alpha-3
+  code: string; // ISO 3166-1 alpha-2
+  code3: string; // ISO 3166-1 alpha-3
   name: string;
   nativeName: string;
   currency: string;
@@ -110,7 +110,9 @@ export function getCountryByCode(code: string): CountryConfig | undefined {
 /**
  * Get country by phone code
  */
-export function getCountryByPhoneCode(phoneCode: string): CountryConfig | undefined {
+export function getCountryByPhoneCode(
+  phoneCode: string,
+): CountryConfig | undefined {
   const normalized = phoneCode.startsWith("+") ? phoneCode : `+${phoneCode}`;
   return Object.values(UBI_COUNTRIES).find((c) => c.phoneCode === normalized);
 }
@@ -118,7 +120,9 @@ export function getCountryByPhoneCode(phoneCode: string): CountryConfig | undefi
 /**
  * Detect country from phone number
  */
-export function detectCountryFromPhone(phone: string): CountryConfig | undefined {
+export function detectCountryFromPhone(
+  phone: string,
+): CountryConfig | undefined {
   const cleaned = phone.replace(/\D/g, "");
 
   for (const country of Object.values(UBI_COUNTRIES)) {

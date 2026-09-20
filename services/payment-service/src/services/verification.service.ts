@@ -446,7 +446,9 @@ export class VerificationService extends EventEmitter {
     documentType: DocumentType,
   ): VerificationProvider | null {
     const countryConfig = COUNTRY_CONFIGS[country];
-    if (!countryConfig) {return this.providers.get("onfido") || null;}
+    if (!countryConfig) {
+      return this.providers.get("onfido") || null;
+    }
 
     // Try country-specific providers first
     for (const providerName of countryConfig.verificationProviders) {
@@ -953,7 +955,9 @@ export class VerificationService extends EventEmitter {
   private async getVerification(id: string): Promise<UserVerification | null> {
     for (const [, verifications] of this.verificationCache) {
       const found = verifications.find((v) => v.id === id);
-      if (found) {return found;}
+      if (found) {
+        return found;
+      }
     }
     return null;
   }
@@ -966,7 +970,9 @@ export class VerificationService extends EventEmitter {
   private sanitizeExtractedData(
     data?: ExtractedDocumentData,
   ): ExtractedDocumentData | undefined {
-    if (!data) {return undefined;}
+    if (!data) {
+      return undefined;
+    }
 
     return {
       ...data,
@@ -977,7 +983,9 @@ export class VerificationService extends EventEmitter {
   }
 
   private maskDocumentNumber(number: string): string {
-    if (number.length <= 4) {return "****";}
+    if (number.length <= 4) {
+      return "****";
+    }
     return "*".repeat(number.length - 4) + number.slice(-4);
   }
 
@@ -1012,10 +1020,7 @@ export class VerificationService extends EventEmitter {
     };
   }
 
-  private checkBlink(
-    _videoData: Buffer,
-    blinkTimes: number[],
-  ): LivenessCheck {
+  private checkBlink(_videoData: Buffer, blinkTimes: number[]): LivenessCheck {
     // In production, analyze video frames for blinks
     return {
       type: "blink",
@@ -1047,9 +1052,7 @@ export class VerificationService extends EventEmitter {
     };
   }
 
-  private checkAntiSpoofing(
-    _videoData: Buffer,
-  ): LivenessCheck {
+  private checkAntiSpoofing(_videoData: Buffer): LivenessCheck {
     // In production, check for:
     // - 2D photo presentation
     // - Screen reflection/moire patterns
@@ -1161,9 +1164,7 @@ class SmileIDProvider implements VerificationProvider {
     };
   }
 
-  async checkStatus(
-    reference: string,
-  ): Promise<ProviderStatusResult> {
+  async checkStatus(reference: string): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1199,9 +1200,7 @@ class IPRSProvider implements VerificationProvider {
     };
   }
 
-  async checkStatus(
-    reference: string,
-  ): Promise<ProviderStatusResult> {
+  async checkStatus(reference: string): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1233,9 +1232,7 @@ class XDSProvider implements VerificationProvider {
     };
   }
 
-  async checkStatus(
-    reference: string,
-  ): Promise<ProviderStatusResult> {
+  async checkStatus(reference: string): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1259,9 +1256,7 @@ class HomeAffairsProvider implements VerificationProvider {
     };
   }
 
-  async checkStatus(
-    reference: string,
-  ): Promise<ProviderStatusResult> {
+  async checkStatus(reference: string): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1301,9 +1296,7 @@ class OnfidoProvider implements VerificationProvider {
     };
   }
 
-  async checkStatus(
-    reference: string,
-  ): Promise<ProviderStatusResult> {
+  async checkStatus(reference: string): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1340,9 +1333,7 @@ class YouVerifyProvider implements VerificationProvider {
     };
   }
 
-  async checkStatus(
-    reference: string,
-  ): Promise<ProviderStatusResult> {
+  async checkStatus(reference: string): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",

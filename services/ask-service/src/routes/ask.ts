@@ -117,7 +117,9 @@ export function createAskRoutes(deps: AskDeps): Hono {
       return failure(c, error);
     }
 
-    if (!(await withinRateLimit(actor.id, deps.limits.perUserMessagesPerMinute))) {
+    if (
+      !(await withinRateLimit(actor.id, deps.limits.perUserMessagesPerMinute))
+    ) {
       return c.json(
         { code: "rate_limited", message: "too many messages; slow down" },
         429,

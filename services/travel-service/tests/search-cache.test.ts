@@ -37,31 +37,44 @@ describe("search cache never bypasses checkout revalidation", () => {
     const search = await staySearch(deps, {
       actor,
       cityId,
-      params: { city: "Abuja", checkIn: "2026-09-12", checkOut: "2026-09-14", guests: 2 },
+      params: {
+        city: "Abuja",
+        checkIn: "2026-09-12",
+        checkOut: "2026-09-14",
+        guests: 2,
+      },
       correlationId: null,
     });
-    const searchRow = await db.travelSearch.findUnique({ where: { id: search.searchId } });
+    const searchRow = await db.travelSearch.findUnique({
+      where: { id: search.searchId },
+    });
     expect(searchRow?.cacheUntil).not.toBeNull(); // a cache exists...
 
     // Two carts priced at the original ₦370,000.
     const cart1 = await createCart(deps, {
       actor,
       cityId,
-      items: [{ kind: "stay", offerRef: "transcorp-king", rateId: "transcorp-king" }],
+      items: [
+        { kind: "stay", offerRef: "transcorp-king", rateId: "transcorp-king" },
+      ],
       idempotencyKey: idemKey(),
       correlationId: null,
     });
     const cart2 = await createCart(deps, {
       actor,
       cityId,
-      items: [{ kind: "stay", offerRef: "transcorp-king", rateId: "transcorp-king" }],
+      items: [
+        { kind: "stay", offerRef: "transcorp-king", rateId: "transcorp-king" },
+      ],
       idempotencyKey: idemKey(),
       correlationId: null,
     });
     expect(cart1.total.amountMinor).toBe(37_000_000);
 
     // The supplier's price moves after the search was cached.
-    await setControl(db, supplierId, "transcorp-king", { repriceToMinor: 40_000_000 });
+    await setControl(db, supplierId, "transcorp-king", {
+      repriceToMinor: 40_000_000,
+    });
 
     // ...yet checkout revalidates and refuses to charge the stale price.
     const repriced = await checkout(deps, {

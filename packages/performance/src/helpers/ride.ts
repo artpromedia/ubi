@@ -51,16 +51,14 @@ export interface Ride {
 export function getRideEstimate(
   accessToken: string,
   pickup: Location,
-  dropoff: Location
+  dropoff: Location,
 ): RideEstimate[] | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/rides/estimate`;
 
-  const response = http.post(
-    url,
-    JSON.stringify({ pickup, dropoff }),
-    { headers: createHeaders(accessToken) }
-  );
+  const response = http.post(url, JSON.stringify({ pickup, dropoff }), {
+    headers: createHeaders(accessToken),
+  });
 
   rideRequests.add(1);
 
@@ -95,7 +93,7 @@ export function requestRide(
   accessToken: string,
   pickup: Location,
   dropoff: Location,
-  rideType: string = "economy"
+  rideType: string = "economy",
 ): Ride | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/rides`;
@@ -108,7 +106,7 @@ export function requestRide(
       rideType,
       paymentMethod: "wallet",
     }),
-    { headers: createHeaders(accessToken) }
+    { headers: createHeaders(accessToken) },
   );
 
   rideRequests.add(1);
@@ -142,7 +140,7 @@ export function requestRide(
 // Get ride status
 export function getRideStatus(
   accessToken: string,
-  rideId: string
+  rideId: string,
 ): Ride | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/rides/${rideId}`;
@@ -171,16 +169,14 @@ export function getRideStatus(
 export function cancelRide(
   accessToken: string,
   rideId: string,
-  reason: string = "user_cancelled"
+  reason: string = "user_cancelled",
 ): boolean {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/rides/${rideId}/cancel`;
 
-  const response = http.post(
-    url,
-    JSON.stringify({ reason }),
-    { headers: createHeaders(accessToken) }
-  );
+  const response = http.post(url, JSON.stringify({ reason }), {
+    headers: createHeaders(accessToken),
+  });
 
   return check(response, {
     "Cancel ride - status is 200": (r) => r.status === 200,
@@ -192,16 +188,14 @@ export function rateRide(
   accessToken: string,
   rideId: string,
   rating: number,
-  comment?: string
+  comment?: string,
 ): boolean {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/rides/${rideId}/rate`;
 
-  const response = http.post(
-    url,
-    JSON.stringify({ rating, comment }),
-    { headers: createHeaders(accessToken) }
-  );
+  const response = http.post(url, JSON.stringify({ rating, comment }), {
+    headers: createHeaders(accessToken),
+  });
 
   return check(response, {
     "Rate ride - status is 200": (r) => r.status === 200,
@@ -211,7 +205,7 @@ export function rateRide(
 // Get nearby drivers
 export function getNearbyDrivers(
   accessToken: string,
-  location: Location
+  location: Location,
 ): { id: string; location: Location }[] | null {
   const baseUrl = getBaseUrl("apiGateway");
   const url = `${baseUrl}/api/v1/drivers/nearby?lat=${location.latitude}&lng=${location.longitude}`;
@@ -239,20 +233,24 @@ export function getNearbyDrivers(
 // Full ride flow simulation
 export function simulateRideFlow(
   accessToken: string,
-  city: string = "lagos"
+  city: string = "lagos",
 ): boolean {
   // Generate random pickup and dropoff within city
   const pickup = generateLocation(city);
   const dropoff = generateLocation(city);
 
   // Step 1: Get ride estimate
-  const estimates = getRideEstimate(accessToken, {
-    latitude: pickup.lat,
-    longitude: pickup.lng,
-  }, {
-    latitude: dropoff.lat,
-    longitude: dropoff.lng,
-  });
+  const estimates = getRideEstimate(
+    accessToken,
+    {
+      latitude: pickup.lat,
+      longitude: pickup.lng,
+    },
+    {
+      latitude: dropoff.lat,
+      longitude: dropoff.lng,
+    },
+  );
 
   if (!estimates || estimates.length === 0) {
     console.error("Failed to get ride estimates");
@@ -266,7 +264,7 @@ export function simulateRideFlow(
     accessToken,
     { latitude: pickup.lat, longitude: pickup.lng },
     { latitude: dropoff.lat, longitude: dropoff.lng },
-    "economy"
+    "economy",
   );
 
   if (!ride) {

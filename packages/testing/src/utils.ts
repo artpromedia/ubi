@@ -20,7 +20,7 @@ export async function wait(ms: number): Promise<void> {
  */
 export async function waitFor(
   condition: () => boolean | Promise<boolean>,
-  options: { timeout?: number; interval?: number } = {}
+  options: { timeout?: number; interval?: number } = {},
 ): Promise<void> {
   const { timeout = 5000, interval = 100 } = options;
   const startTime = Date.now();
@@ -40,7 +40,7 @@ export async function waitFor(
  */
 export async function retry<T>(
   fn: () => Promise<T>,
-  options: { maxAttempts?: number; delay?: number; backoff?: number } = {}
+  options: { maxAttempts?: number; delay?: number; backoff?: number } = {},
 ): Promise<T> {
   const { maxAttempts = 3, delay = 1000, backoff = 2 } = options;
   let lastError: Error | undefined;
@@ -119,7 +119,7 @@ export const NETWORK_PROFILES: Record<string, NetworkProfile> = {
  * Simulate network delay
  */
 export async function simulateNetworkDelay(
-  profile: NetworkProfile
+  profile: NetworkProfile,
 ): Promise<void> {
   await wait(profile.latency);
 }
@@ -150,7 +150,7 @@ export function getTestConfig(): TestConfig {
  */
 export function relativeDate(
   offset: number,
-  unit: "days" | "hours" | "minutes" | "seconds" = "days"
+  unit: "days" | "hours" | "minutes" | "seconds" = "days",
 ): Date {
   const date = new Date();
   const multipliers = {
@@ -245,7 +245,7 @@ export function uuid(): string {
  */
 export function assertDefined<T>(
   value: T | null | undefined,
-  message?: string
+  message?: string,
 ): asserts value is T {
   if (value === null || value === undefined) {
     throw new Error(message || "Expected value to be defined");
@@ -257,7 +257,7 @@ export function assertDefined<T>(
  */
 export function assert(
   condition: boolean,
-  message?: string
+  message?: string,
 ): asserts condition {
   if (!condition) {
     throw new Error(message || "Assertion failed");
@@ -357,7 +357,7 @@ const CITY_COORDS: Record<
  */
 export function randomLocationInCity(
   city: keyof typeof CITY_COORDS,
-  radiusKm: number = 10
+  radiusKm: number = 10,
 ): { latitude: number; longitude: number } {
   const cityData = CITY_COORDS[city];
   if (!cityData) {

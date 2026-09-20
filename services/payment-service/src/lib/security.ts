@@ -236,7 +236,9 @@ export async function sanitizeInput(c: Context, next: Next) {
 }
 
 function sanitizeObject(obj: unknown): unknown {
-  if (obj === null || obj === undefined) {return obj;}
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
 
   if (typeof obj === "string") {
     // Remove script tags and other XSS vectors
@@ -448,13 +450,17 @@ function maskValue(value: string, fieldName: string): string {
   // Phone number masking
   if (/(phone|mobile|cell)/.test(lowerField) && value.length >= 10) {
     const masked = maskPhoneNumber(value);
-    if (masked) {return masked;}
+    if (masked) {
+      return masked;
+    }
   }
 
   // Email masking
   if (/(email)/.test(lowerField) && value.includes("@")) {
     const masked = maskEmail(value);
-    if (masked) {return masked;}
+    if (masked) {
+      return masked;
+    }
   }
 
   // Card/account number masking - show last 4
@@ -484,7 +490,9 @@ function maskObject(
   depth: number = 0,
 ): Record<string, unknown> {
   // Prevent infinite recursion
-  if (depth > 10) {return obj;}
+  if (depth > 10) {
+    return obj;
+  }
 
   const masked: Record<string, unknown> = {};
 
@@ -697,7 +705,9 @@ export function validateCardDataHandling(data: Record<string, unknown>): void {
  * Mask card number for display
  */
 export function maskCardNumber(cardNumber: string): string {
-  if (cardNumber.length < 8) {return "****";}
+  if (cardNumber.length < 8) {
+    return "****";
+  }
   return "**** **** **** " + cardNumber.slice(-4);
 }
 

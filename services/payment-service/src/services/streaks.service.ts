@@ -60,7 +60,7 @@ export class StreaksService {
    */
   async recordActivity(
     userId: string,
-    _activityType: string = "general"
+    _activityType: string = "general",
   ): Promise<{
     streak: UserStreak;
     isNewDay: boolean;
@@ -242,7 +242,7 @@ export class StreaksService {
    */
   async getHistory(
     userId: string,
-    days: number = 30
+    days: number = 30,
   ): Promise<
     Array<{
       date: Date;
@@ -276,7 +276,7 @@ export class StreaksService {
   async getCalendar(
     userId: string,
     month: number,
-    year: number
+    year: number,
   ): Promise<
     Array<{
       date: Date;
@@ -299,7 +299,7 @@ export class StreaksService {
     });
 
     const activityMap = new Map(
-      history.map((h: any) => [h.date.toISOString().split("T")[0], h])
+      history.map((h: any) => [h.date.toISOString().split("T")[0], h]),
     );
 
     const calendar: Array<{
@@ -409,7 +409,7 @@ export class StreaksService {
    */
   async getLeaderboard(
     type: "current" | "longest" = "current",
-    limit: number = 10
+    limit: number = 10,
   ): Promise<
     Array<{
       userId: string;
@@ -438,7 +438,7 @@ export class StreaksService {
 
   private async checkMilestone(
     userId: string,
-    streak: number
+    streak: number,
   ): Promise<StreakMilestone | undefined> {
     // Check if this streak value is a milestone
     const milestone = MILESTONES.find((m) => m.days === streak);

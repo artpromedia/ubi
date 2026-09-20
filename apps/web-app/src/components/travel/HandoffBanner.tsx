@@ -46,9 +46,14 @@ export function HandoffBanner({
       data-testid={WEB_TEST_IDS.handoff.banner}
       className="flex items-center gap-3 bg-[#191414] px-4 py-3 text-white"
     >
-      <div className="h-9 w-9 shrink-0 rounded-[10px] bg-[#1DB954]" aria-hidden />
+      <div
+        className="h-9 w-9 shrink-0 rounded-[10px] bg-[#1DB954]"
+        aria-hidden
+      />
       <div className="flex-1">
-        <div className="text-[13px] font-semibold">Manage this trip in the UBI app</div>
+        <div className="text-[13px] font-semibold">
+          Manage this trip in the UBI app
+        </div>
         <div className="text-[11.5px] text-[#A3A3A3]">
           Live updates, boarding pass, rides — your referral code carries over
         </div>
@@ -78,12 +83,13 @@ export function HandoffFallbackNote({
       data-testid={WEB_TEST_IDS.handoff.fallback}
       className="border-t border-[#E5E5E5] bg-white px-4 py-3 text-[11.5px] leading-relaxed text-[#666]"
     >
-      &quot;Open&quot; tries the installed app first (App Link / Universal Link). If it
-      isn&apos;t installed you go to the store; your code{" "}
-      <span className="font-mono text-[#191414]">{referralCode ?? "—"}</span> and campaign{" "}
-      <span className="font-mono text-[#191414]">{campaign ?? "—"}</span> are kept
-      server-side against your account for 30 days — nothing is lost if the store link drops
-      them. Everything above also works right here.
+      &quot;Open&quot; tries the installed app first (App Link / Universal
+      Link). If it isn&apos;t installed you go to the store; your code{" "}
+      <span className="font-mono text-[#191414]">{referralCode ?? "—"}</span>{" "}
+      and campaign{" "}
+      <span className="font-mono text-[#191414]">{campaign ?? "—"}</span> are
+      kept server-side against your account for 30 days — nothing is lost if the
+      store link drops them. Everything above also works right here.
     </p>
   );
 }

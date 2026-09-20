@@ -67,7 +67,9 @@ export async function receiveWebhook(
     typeof supplier.config.webhookSecret === "string"
       ? supplier.config.webhookSecret
       : "";
-  const signatureOk = secret.length > 0 && verifySignature(secret, input.rawBody, input.signature);
+  const signatureOk =
+    secret.length > 0 &&
+    verifySignature(secret, input.rawBody, input.signature);
 
   // Fast-path dedupe: a callback we have already recorded is a no-op. The unique
   // (supplier_id, external_id) index below is the race-safe backstop.
@@ -80,7 +82,12 @@ export async function receiveWebhook(
     },
   });
   if (seen !== null) {
-    await publishWebhookEvent(deps, "travel.webhook.duplicate", input, signatureOk);
+    await publishWebhookEvent(
+      deps,
+      "travel.webhook.duplicate",
+      input,
+      signatureOk,
+    );
     return { result: "duplicate" };
   }
 
@@ -98,7 +105,12 @@ export async function receiveWebhook(
     });
   } catch (error) {
     if (isUnique(error)) {
-      await publishWebhookEvent(deps, "travel.webhook.duplicate", input, signatureOk);
+      await publishWebhookEvent(
+        deps,
+        "travel.webhook.duplicate",
+        input,
+        signatureOk,
+      );
       return { result: "duplicate" };
     }
     throw error;
@@ -109,11 +121,21 @@ export async function receiveWebhook(
       { supplierId: input.supplierId, externalId: input.envelope.externalId },
       "webhook signature rejected",
     );
-    await publishWebhookEvent(deps, "travel.webhook.rejected", input, signatureOk);
+    await publishWebhookEvent(
+      deps,
+      "travel.webhook.rejected",
+      input,
+      signatureOk,
+    );
     return { result: "rejected", reason: "signature_invalid" };
   }
 
-  await publishWebhookEvent(deps, "travel.webhook.received", input, signatureOk);
+  await publishWebhookEvent(
+    deps,
+    "travel.webhook.received",
+    input,
+    signatureOk,
+  );
   const action = await process(deps, input.cityId, input.envelope);
   await deps.db.travelWebhook.update({
     where: { id: webhookId },
@@ -138,19 +160,29 @@ async function process(
     case "refund_supplier_confirmed":
       return advanceRefundByOrder(deps, cityId, envelope, "supplier_confirmed");
     case "refund_pending":
-      return advanceRefundByOrder(deps, cityId, envelope, "supplier_refund_pending");
+      return advanceRefundByOrder(
+        deps,
+        cityId,
+        envelope,
+        "supplier_refund_pending",
+      );
     case "refund_paid":
       return advanceRefundByOrder(deps, cityId, envelope, "refunded_to_wallet");
     case "disruption":
       return raiseDisruption(deps, cityId, envelope);
     default:
-      webhookLogger.info({ type: envelope.type }, "unhandled webhook type; recorded only");
+      webhookLogger.info(
+        { type: envelope.type },
+        "unhandled webhook type; recorded only",
+      );
       return "recorded";
   }
 }
 
 async function loadOrderByRef(deps: TravelDeps, ref: string | undefined) {
-  if (ref === undefined) {return null;}
+  if (ref === undefined) {
+    return null;
+  }
   const order = await deps.db.travelOrder.findUnique({ where: { id: ref } });
   return order;
 }
@@ -162,7 +194,9 @@ async function confirmOrder(
   ticketed: boolean,
 ): Promise<string> {
   const order = await loadOrderByRef(deps, envelope.orderRef);
-  if (order === null) {return "order_not_found";}
+  if (order === null) {
+    return "order_not_found";
+  }
   const refs = (envelope.supplierRefs ?? {}) as JsonRecord;
 
   // supplier_pending → confirmed (capture the still-open hold).
@@ -193,8 +227,13 @@ async function confirmOrder(
   }
 
   if (ticketed && order.kind === "flight") {
-    const fresh = await deps.db.travelOrder.findUnique({ where: { id: order.id } });
-    if (fresh !== null && canTransition("travelOrder", fresh.state, "ticketed")) {
+    const fresh = await deps.db.travelOrder.findUnique({
+      where: { id: order.id },
+    });
+    if (
+      fresh !== null &&
+      canTransition("travelOrder", fresh.state, "ticketed")
+    ) {
       await withOutbox(deps.db, async (tx) => {
         const advance = await advanceOrder(tx, {
           order: fresh as unknown as OrderRow,
@@ -208,10 +247,14 @@ async function confirmOrder(
         });
         return { result: advance.order, events: advance.events };
       });
-      const tickets = Array.isArray(refs.ticketNumbers) ? refs.ticketNumbers : [];
+      const tickets = Array.isArray(refs.ticketNumbers)
+        ? refs.ticketNumbers
+        : [];
       let index = 0;
       for (const number of tickets) {
-        if (typeof number !== "string") {continue;}
+        if (typeof number !== "string") {
+          continue;
+        }
         await deps.db.travelDocument.create({
           data: {
             id: generateId("tdoc"),
@@ -236,7 +279,9 @@ async function failOrder(
   envelope: WebhookEnvelope,
 ): Promise<string> {
   const order = await loadOrderByRef(deps, envelope.orderRef);
-  if (order === null) {return "order_not_found";}
+  if (order === null) {
+    return "order_not_found";
+  }
   if (!canTransition("travelOrder", order.state, "failed_released")) {
     return "already_resolved";
   }
@@ -272,12 +317,16 @@ async function advanceRefundByOrder(
   to: "supplier_confirmed" | "supplier_refund_pending" | "refunded_to_wallet",
 ): Promise<string> {
   const order = await loadOrderByRef(deps, envelope.orderRef);
-  if (order === null) {return "order_not_found";}
+  if (order === null) {
+    return "order_not_found";
+  }
   const refund = await deps.db.travelRefund.findFirst({
     where: { orderId: order.id },
     orderBy: { createdAt: "desc" },
   });
-  if (refund === null) {return "refund_not_found";}
+  if (refund === null) {
+    return "refund_not_found";
+  }
   if (!canTransition("travelRefund", refund.stage, to)) {
     return "already_at_stage";
   }
@@ -300,7 +349,9 @@ async function raiseDisruption(
   envelope: WebhookEnvelope,
 ): Promise<string> {
   const order = await loadOrderByRef(deps, envelope.orderRef);
-  if (order === null || envelope.disruption === undefined) {return "order_not_found";}
+  if (order === null || envelope.disruption === undefined) {
+    return "order_not_found";
+  }
   const d = envelope.disruption;
   await createDisruption(deps, {
     actor: SYSTEM_ACTOR,
@@ -322,7 +373,10 @@ async function raiseDisruption(
 
 async function publishWebhookEvent(
   deps: TravelDeps,
-  name: "travel.webhook.received" | "travel.webhook.duplicate" | "travel.webhook.rejected",
+  name:
+    | "travel.webhook.received"
+    | "travel.webhook.duplicate"
+    | "travel.webhook.rejected",
   input: {
     readonly supplierId: string;
     readonly cityId: string;

@@ -82,7 +82,9 @@ export class ConfigCache {
       observedGeneration = generation ?? "0";
       if (cached !== null && cached !== undefined) {
         const revived = revive(JSON.parse(cached) as unknown);
-        if (revived !== undefined) {return revived;}
+        if (revived !== undefined) {
+          return revived;
+        }
         cacheLogger.warn({ scope }, "discarding unreadable cache entry");
       }
     } catch (err) {

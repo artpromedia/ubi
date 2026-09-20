@@ -6,26 +6,31 @@
  */
 
 // Secure storage (react-native-keychain) — used by @ubi/mobile-core session.
-jest.mock('react-native-keychain', () => ({
+jest.mock("react-native-keychain", () => ({
   __esModule: true,
   getGenericPassword: jest.fn(async () => false),
   setGenericPassword: jest.fn(async () => true),
   resetGenericPassword: jest.fn(async () => true),
-  ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'AccessibleWhenUnlockedThisDeviceOnly' },
-  ACCESS_CONTROL: { BIOMETRY_CURRENT_SET: 'BiometryCurrentSet' },
-  AUTHENTICATION_TYPE: { BIOMETRICS: 'AuthenticationWithBiometrics' },
+  ACCESSIBLE: {
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: "AccessibleWhenUnlockedThisDeviceOnly",
+  },
+  ACCESS_CONTROL: { BIOMETRY_CURRENT_SET: "BiometryCurrentSet" },
+  AUTHENTICATION_TYPE: { BIOMETRICS: "AuthenticationWithBiometrics" },
 }));
 
 // Safe-area context — used by @ubi/mobile-ui Screen/Sheet. Passthrough views + zero insets.
-jest.mock('react-native-safe-area-context', () => {
-  const React = require('react');
-  const { View } = require('react-native');
+jest.mock("react-native-safe-area-context", () => {
+  const React = require("react");
+  const { View } = require("react-native");
   const insets = { top: 0, bottom: 0, left: 0, right: 0 };
   const frame = { x: 0, y: 0, width: 390, height: 844 };
   return {
     __esModule: true,
-    SafeAreaProvider: ({ children }) => React.createElement(React.Fragment, null, children),
-    SafeAreaView: React.forwardRef((props, ref) => React.createElement(View, { ...props, ref })),
+    SafeAreaProvider: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+    SafeAreaView: React.forwardRef((props, ref) =>
+      React.createElement(View, { ...props, ref }),
+    ),
     SafeAreaConsumer: ({ children }) => children(insets),
     SafeAreaInsetsContext: React.createContext(insets),
     useSafeAreaInsets: () => insets,
@@ -35,23 +40,33 @@ jest.mock('react-native-safe-area-context', () => {
 });
 
 // MMKV fast storage.
-jest.mock('react-native-mmkv', () => ({
+jest.mock("react-native-mmkv", () => ({
   __esModule: true,
   MMKV: class {
-    getString() { return undefined; }
-    getBoolean() { return undefined; }
-    getNumber() { return undefined; }
+    getString() {
+      return undefined;
+    }
+    getBoolean() {
+      return undefined;
+    }
+    getNumber() {
+      return undefined;
+    }
     set() {}
     delete() {}
-    contains() { return false; }
+    contains() {
+      return false;
+    }
     clearAll() {}
-    getAllKeys() { return []; }
+    getAllKeys() {
+      return [];
+    }
   },
 }));
 
 // NetInfo connectivity.
-jest.mock('@react-native-community/netinfo', () => {
-  const state = { isConnected: true, isInternetReachable: true, type: 'wifi' };
+jest.mock("@react-native-community/netinfo", () => {
+  const state = { isConnected: true, isInternetReachable: true, type: "wifi" };
   return {
     __esModule: true,
     default: {
@@ -66,16 +81,24 @@ jest.mock('@react-native-community/netinfo', () => {
 });
 
 // Reanimated — minimal stub (nothing under test animates).
-jest.mock('react-native-reanimated', () => {
-  const React = require('react');
-  const { View, Text, ScrollView } = require('react-native');
+jest.mock("react-native-reanimated", () => {
+  const React = require("react");
+  const { View, Text, ScrollView } = require("react-native");
   const noop = () => {};
   return {
     __esModule: true,
-    default: { View, Text, ScrollView, createAnimatedComponent: (c) => c, call: noop },
+    default: {
+      View,
+      Text,
+      ScrollView,
+      createAnimatedComponent: (c) => c,
+      call: noop,
+    },
     useSharedValue: (v) => ({ value: v }),
-    useAnimatedStyle: (fn) => (typeof fn === 'function' ? fn() : {}),
-    useDerivedValue: (fn) => ({ value: typeof fn === 'function' ? fn() : undefined }),
+    useAnimatedStyle: (fn) => (typeof fn === "function" ? fn() : {}),
+    useDerivedValue: (fn) => ({
+      value: typeof fn === "function" ? fn() : undefined,
+    }),
     withTiming: (v) => v,
     withSpring: (v) => v,
     withDelay: (_, v) => v,
@@ -83,7 +106,7 @@ jest.mock('react-native-reanimated', () => {
     runOnUI: (fn) => fn,
     Easing: { linear: noop, inOut: () => noop, out: () => noop, ease: noop },
     interpolate: (v) => v,
-    Extrapolation: { CLAMP: 'clamp' },
+    Extrapolation: { CLAMP: "clamp" },
     createAnimatedComponent: (c) => c,
     View,
     Text,
@@ -92,29 +115,58 @@ jest.mock('react-native-reanimated', () => {
 });
 
 // Gesture handler — passthrough host components.
-jest.mock('react-native-gesture-handler', () => {
-  const React = require('react');
-  const { View, ScrollView, FlatList, TextInput, TouchableOpacity } = require('react-native');
+jest.mock("react-native-gesture-handler", () => {
+  const React = require("react");
+  const {
+    View,
+    ScrollView,
+    FlatList,
+    TextInput,
+    TouchableOpacity,
+  } = require("react-native");
   const pass = (name) => {
-    const C = ({ children, ...rest }) => React.createElement(View, rest, children);
+    const C = ({ children, ...rest }) =>
+      React.createElement(View, rest, children);
     C.displayName = name;
     return C;
   };
   const gesture = () => {
     const g = {};
-    for (const k of ['onBegin', 'onStart', 'onEnd', 'onUpdate', 'onFinalize', 'enabled', 'activeOffsetX', 'activeOffsetY', 'failOffsetX', 'failOffsetY', 'simultaneousWithExternalGesture']) {
+    for (const k of [
+      "onBegin",
+      "onStart",
+      "onEnd",
+      "onUpdate",
+      "onFinalize",
+      "enabled",
+      "activeOffsetX",
+      "activeOffsetY",
+      "failOffsetX",
+      "failOffsetY",
+      "simultaneousWithExternalGesture",
+    ]) {
       g[k] = () => g;
     }
     return g;
   };
   return {
     __esModule: true,
-    GestureHandlerRootView: ({ children, ...rest }) => React.createElement(View, rest, children),
+    GestureHandlerRootView: ({ children, ...rest }) =>
+      React.createElement(View, rest, children),
     GestureDetector: ({ children }) => children,
-    Gesture: { Pan: gesture, Tap: gesture, Pinch: gesture, Fling: gesture, LongPress: gesture, Race: gesture, Simultaneous: gesture, Exclusive: gesture },
-    Swipeable: pass('Swipeable'),
-    PanGestureHandler: pass('PanGestureHandler'),
-    TapGestureHandler: pass('TapGestureHandler'),
+    Gesture: {
+      Pan: gesture,
+      Tap: gesture,
+      Pinch: gesture,
+      Fling: gesture,
+      LongPress: gesture,
+      Race: gesture,
+      Simultaneous: gesture,
+      Exclusive: gesture,
+    },
+    Swipeable: pass("Swipeable"),
+    PanGestureHandler: pass("PanGestureHandler"),
+    TapGestureHandler: pass("TapGestureHandler"),
     ScrollView,
     FlatList,
     TextInput,
@@ -125,36 +177,37 @@ jest.mock('react-native-gesture-handler', () => {
 });
 
 // Maps — passthrough MapView + marker stubs.
-jest.mock('react-native-maps', () => {
-  const React = require('react');
-  const { View } = require('react-native');
+jest.mock("react-native-maps", () => {
+  const React = require("react");
+  const { View } = require("react-native");
   const stub = (name) => {
-    const C = ({ children, ...rest }) => React.createElement(View, rest, children);
+    const C = ({ children, ...rest }) =>
+      React.createElement(View, rest, children);
     C.displayName = name;
     return C;
   };
-  const MapView = stub('MapView');
+  const MapView = stub("MapView");
   return {
     __esModule: true,
     default: MapView,
     MapView,
-    Marker: stub('Marker'),
-    Polyline: stub('Polyline'),
-    Callout: stub('Callout'),
-    PROVIDER_GOOGLE: 'google',
+    Marker: stub("Marker"),
+    Polyline: stub("Polyline"),
+    Callout: stub("Callout"),
+    PROVIDER_GOOGLE: "google",
   };
 });
 
 // Firebase app + messaging.
-jest.mock('@react-native-firebase/app', () => ({
+jest.mock("@react-native-firebase/app", () => ({
   __esModule: true,
   default: () => ({ options: {} }),
   firebase: { app: () => ({ options: {} }) },
 }));
-jest.mock('@react-native-firebase/messaging', () => {
+jest.mock("@react-native-firebase/messaging", () => {
   const messaging = () => ({
     requestPermission: jest.fn(async () => 1),
-    getToken: jest.fn(async () => 'test-fcm-token'),
+    getToken: jest.fn(async () => "test-fcm-token"),
     onMessage: jest.fn(() => () => {}),
     onNotificationOpenedApp: jest.fn(() => () => {}),
     getInitialNotification: jest.fn(async () => null),
@@ -166,11 +219,11 @@ jest.mock('@react-native-firebase/messaging', () => {
 });
 
 // Notifee local notifications.
-jest.mock('@notifee/react-native', () => ({
+jest.mock("@notifee/react-native", () => ({
   __esModule: true,
   default: {
-    displayNotification: jest.fn(async () => 'notif-id'),
-    createChannel: jest.fn(async () => 'channel-id'),
+    displayNotification: jest.fn(async () => "notif-id"),
+    createChannel: jest.fn(async () => "channel-id"),
     onForegroundEvent: jest.fn(() => () => {}),
     onBackgroundEvent: jest.fn(),
     requestPermission: jest.fn(async () => ({ authorizationStatus: 1 })),
@@ -181,31 +234,43 @@ jest.mock('@notifee/react-native', () => ({
 }));
 
 // Permissions.
-jest.mock('react-native-permissions', () => ({
+jest.mock("react-native-permissions", () => ({
   __esModule: true,
-  check: jest.fn(async () => 'granted'),
-  request: jest.fn(async () => 'granted'),
-  checkNotifications: jest.fn(async () => ({ status: 'granted', settings: {} })),
-  requestNotifications: jest.fn(async () => ({ status: 'granted', settings: {} })),
+  check: jest.fn(async () => "granted"),
+  request: jest.fn(async () => "granted"),
+  checkNotifications: jest.fn(async () => ({
+    status: "granted",
+    settings: {},
+  })),
+  requestNotifications: jest.fn(async () => ({
+    status: "granted",
+    settings: {},
+  })),
   openSettings: jest.fn(async () => {}),
-  RESULTS: { UNAVAILABLE: 'unavailable', DENIED: 'denied', LIMITED: 'limited', GRANTED: 'granted', BLOCKED: 'blocked' },
+  RESULTS: {
+    UNAVAILABLE: "unavailable",
+    DENIED: "denied",
+    LIMITED: "limited",
+    GRANTED: "granted",
+    BLOCKED: "blocked",
+  },
   PERMISSIONS: { IOS: {}, ANDROID: {} },
 }));
 
 // Device info.
-jest.mock('react-native-device-info', () => ({
+jest.mock("react-native-device-info", () => ({
   __esModule: true,
   default: {
-    getUniqueId: jest.fn(async () => 'test-device-id'),
-    getUniqueIdSync: jest.fn(() => 'test-device-id'),
-    getVersion: jest.fn(() => '0.0.1'),
-    getBuildNumber: jest.fn(() => '1'),
-    getBundleId: jest.fn(() => 'africa.ubi.app'),
-    getModel: jest.fn(() => 'jest'),
-    getSystemName: jest.fn(() => 'iOS'),
-    getSystemVersion: jest.fn(() => '17.0'),
+    getUniqueId: jest.fn(async () => "test-device-id"),
+    getUniqueIdSync: jest.fn(() => "test-device-id"),
+    getVersion: jest.fn(() => "0.0.1"),
+    getBuildNumber: jest.fn(() => "1"),
+    getBundleId: jest.fn(() => "africa.ubi.app"),
+    getModel: jest.fn(() => "jest"),
+    getSystemName: jest.fn(() => "iOS"),
+    getSystemVersion: jest.fn(() => "17.0"),
     hasNotch: jest.fn(() => false),
   },
-  getUniqueId: jest.fn(async () => 'test-device-id'),
-  getVersion: jest.fn(() => '0.0.1'),
+  getUniqueId: jest.fn(async () => "test-device-id"),
+  getVersion: jest.fn(() => "0.0.1"),
 }));

@@ -108,7 +108,10 @@ export async function requireServiceAuth(c: Context, next: Next) {
   }
 
   if (!result.ok) {
-    logger.warn({ path: c.req.path }, "Rejected unauthenticated service request");
+    logger.warn(
+      { path: c.req.path },
+      "Rejected unauthenticated service request",
+    );
     return c.json(
       {
         error: {

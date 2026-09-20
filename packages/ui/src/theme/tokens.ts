@@ -201,7 +201,8 @@ export const shadows = {
   none: "none",
   // UBI specific shadows
   card: "0 2px 8px -2px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.06)",
-  dropdown: "0 4px 12px -2px rgb(0 0 0 / 0.12), 0 2px 6px -2px rgb(0 0 0 / 0.08)",
+  dropdown:
+    "0 4px 12px -2px rgb(0 0 0 / 0.12), 0 2px 6px -2px rgb(0 0 0 / 0.08)",
   modal: "0 24px 48px -12px rgb(0 0 0 / 0.18)",
 } as const;
 

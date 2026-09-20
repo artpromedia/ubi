@@ -26,7 +26,11 @@ import {
   type Money,
 } from "@ubi/contracts";
 
-import { auditedTransaction ,type  AuditedTx,type  OutboxInput } from "../audit.js";
+import {
+  auditedTransaction,
+  type AuditedTx,
+  type OutboxInput,
+} from "../audit.js";
 import { assertFlagEnabled } from "../city-config.js";
 import { deterministicId, numericCode } from "../lib/ids.js";
 import { orderLogger } from "../lib/logger.js";

@@ -19,7 +19,11 @@ import {
   createNuiteeStayAdapter,
 } from "./http-supplier";
 
-import type { FlightSupplyAdapter, StaySupplyAdapter, SupplyAdapter } from "./types";
+import type {
+  FlightSupplyAdapter,
+  StaySupplyAdapter,
+  SupplyAdapter,
+} from "./types";
 
 export interface SupplierRow {
   readonly id: string;

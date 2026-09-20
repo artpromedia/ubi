@@ -78,7 +78,7 @@ interface WalletFactoryOptions {
 function generateMobileMoneyPhone(country: string): string {
   const format = PHONE_FORMATS[country] || PHONE_FORMATS.NG;
   const number = format.format.replace(/X/g, () =>
-    Math.floor(Math.random() * 10).toString()
+    Math.floor(Math.random() * 10).toString(),
   );
   return `${format.code}${number}`;
 }
@@ -105,7 +105,7 @@ function generateTestCardNumber(brand: string): string {
  * Create a test payment method
  */
 export function createPaymentMethod(
-  options: PaymentMethodFactoryOptions = {}
+  options: PaymentMethodFactoryOptions = {},
 ): TestPaymentMethod {
   const {
     type = randomPick(["card", "mobile_money"]),
@@ -142,12 +142,12 @@ export function createPaymentMethod(
 
     case "mobile_money": {
       const availableProviders = MOBILE_MONEY_PROVIDERS.filter((p) =>
-        p.countries.includes(country)
+        p.countries.includes(country),
       );
       const provider = randomPick(
         availableProviders.length > 0
           ? availableProviders
-          : MOBILE_MONEY_PROVIDERS
+          : MOBILE_MONEY_PROVIDERS,
       );
       return {
         ...baseMethod,
@@ -200,7 +200,7 @@ export function createPaymentMethod(
  * Create a test transaction
  */
 export function createTransaction(
-  options: TransactionFactoryOptions = {}
+  options: TransactionFactoryOptions = {},
 ): TestTransaction {
   const {
     type = randomPick([...TRANSACTION_TYPES]),
@@ -328,10 +328,10 @@ export function createWallet(options: WalletFactoryOptions = {}) {
  */
 export function createPaymentMethods(
   count: number,
-  options?: PaymentMethodFactoryOptions
+  options?: PaymentMethodFactoryOptions,
 ): TestPaymentMethod[] {
   return Array.from({ length: count }, (_, i) =>
-    createPaymentMethod({ ...options, isDefault: i === 0 })
+    createPaymentMethod({ ...options, isDefault: i === 0 }),
   );
 }
 
@@ -340,7 +340,7 @@ export function createPaymentMethods(
  */
 export function createTransactions(
   count: number,
-  options?: TransactionFactoryOptions
+  options?: TransactionFactoryOptions,
 ): TestTransaction[] {
   return Array.from({ length: count }, () => createTransaction(options));
 }
@@ -350,7 +350,7 @@ export function createTransactions(
  */
 export function createTransactionHistory(
   userId: string,
-  count: number = 20
+  count: number = 20,
 ): TestTransaction[] {
   return Array.from({ length: count }, (_, i) => {
     const transaction = createTransaction({

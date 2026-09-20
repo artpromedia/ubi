@@ -122,7 +122,9 @@ export class WomenSafetyService extends EventEmitter {
     const matches: FemaleDriverMatch[] = [];
 
     for (const driver of this.femaleDrivers.values()) {
-      if (!driver.isAvailable || !driver.isActive) {continue;}
+      if (!driver.isAvailable || !driver.isActive) {
+        continue;
+      }
 
       // Calculate distance
       const distance = this.calculateDistance(location, driver.currentLocation);
@@ -142,8 +144,12 @@ export class WomenSafetyService extends EventEmitter {
     // Sort by distance and verified status
     const sorted = [...matches].sort((a, b) => {
       // Prefer verified drivers
-      if (a.verifiedFemale && !b.verifiedFemale) {return -1;}
-      if (!a.verifiedFemale && b.verifiedFemale) {return 1;}
+      if (a.verifiedFemale && !b.verifiedFemale) {
+        return -1;
+      }
+      if (!a.verifiedFemale && b.verifiedFemale) {
+        return 1;
+      }
       // Then by distance
       return a.distance - b.distance;
     });
@@ -297,20 +303,28 @@ export class WomenSafetyService extends EventEmitter {
     const prefs = await this.getPreferences(riderId);
 
     // Always require if preference is on
-    if (prefs.pinVerificationEnabled) {return true;}
+    if (prefs.pinVerificationEnabled) {
+      return true;
+    }
 
     // Check time-based rules
     const hour = new Date().getHours();
     const isNightTime = hour >= 22 || hour < 6;
 
     // Auto-enable for night trips
-    if (isNightTime) {return true;}
+    if (isNightTime) {
+      return true;
+    }
 
     // Check if route goes through high-risk areas
-    if (tripDetails.hasHighRiskZones) {return true;}
+    if (tripDetails.hasHighRiskZones) {
+      return true;
+    }
 
     // Check quiet hours
-    if (prefs.quietHoursEnabled && this.isInQuietHours(prefs)) {return true;}
+    if (prefs.quietHoursEnabled && this.isInQuietHours(prefs)) {
+      return true;
+    }
 
     return false;
   }

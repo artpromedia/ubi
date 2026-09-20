@@ -6,7 +6,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { consumeGrant, GrantConsumeError } from "../src/ops/grants";
-import { closeTestDb, makeDeps, rider, testDb, uid, type TestDeps } from "./helpers";
+import {
+  closeTestDb,
+  makeDeps,
+  rider,
+  testDb,
+  uid,
+  type TestDeps,
+} from "./helpers";
 
 import type { AskTx } from "../src/ops/types";
 
