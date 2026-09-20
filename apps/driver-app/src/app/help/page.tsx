@@ -9,6 +9,7 @@ import {
   Phone,
   Shield,
 } from "lucide-react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -71,7 +72,7 @@ const faqItems = [
   },
 ];
 
-export default function HelpPage() {
+function HelpContent() {
   const searchParams = useSearchParams();
   const tripId = searchParams.get("tripId");
 
@@ -178,5 +179,15 @@ export default function HelpPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// useSearchParams() bails out of static prerendering, so Next.js requires it
+// behind a Suspense boundary; without one, `next build` fails this page.
+export default function HelpPage() {
+  return (
+    <Suspense fallback={null}>
+      <HelpContent />
+    </Suspense>
   );
 }

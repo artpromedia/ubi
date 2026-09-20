@@ -4,9 +4,9 @@ import { useAuth } from "@/lib/hooks";
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
-export default function VerifyPage() {
+function VerifyForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const phone = searchParams.get("phone") || "";
@@ -201,5 +201,15 @@ export default function VerifyPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// useSearchParams() bails out of static prerendering, so Next.js requires it
+// behind a Suspense boundary; without one, `next build` fails this page.
+export default function VerifyPage() {
+  return (
+    <Suspense fallback={null}>
+      <VerifyForm />
+    </Suspense>
   );
 }
