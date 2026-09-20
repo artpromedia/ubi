@@ -9,6 +9,7 @@ import {
   ChevronDown,
   CreditCard,
   FileCheck,
+  Gavel,
   HelpCircle,
   LayoutDashboard,
   LogOut,
@@ -89,6 +90,15 @@ const navigation = [
       { name: "Document Review", href: "/verification" },
       { name: "Background Checks", href: "/verification/background" },
       { name: "Liveness Checks", href: "/verification/liveness" },
+    ],
+  },
+  {
+    name: "Marketplace",
+    href: "/marketplace",
+    icon: Gavel,
+    children: [
+      { name: "Live Requests", href: "/marketplace" },
+      { name: "Policies", href: "/marketplace/policies" },
     ],
   },
   {

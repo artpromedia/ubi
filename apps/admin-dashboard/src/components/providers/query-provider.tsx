@@ -39,6 +39,7 @@ function getQueryClient(): QueryClient {
 }
 
 export function QueryProvider({ children }: { children: ReactNode }) {
+  // eslint-disable-next-line react/hook-use-state -- client is created once per mount, no setter needed
   const [queryClient] = useState(getQueryClient);
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

@@ -30,12 +30,12 @@ export default function ReferralsReviewPage() {
           {!sel ? <p>Select a case. Reviewers see masked phones and ride facts only — no documents, no messages.</p> : (<>
             <div className="flex items-center justify-between"><div className="font-heading text-sm font-semibold text-foreground">{sel.id} · {sel.referral}</div><Badge className="bg-amber-500/15 text-amber-400">IN REVIEW · {Math.round(sel.waitingHours)} H</Badge></div>
             <p>{sel.reward}</p>
-            <Card className="p-3"><div className="mb-1 text-[10px] font-semibold tracking-wider">WHY IT'S HERE</div><p>{sel.why}</p></Card>
+            <Card className="p-3"><div className="mb-1 text-[10px] font-semibold tracking-wider">WHY IT&apos;S HERE</div><p>{sel.why}</p></Card>
             <Card className="p-3"><div className="mb-1 text-[10px] font-semibold tracking-wider">WHAT THE REVIEWER SEES</div><p>{sel.maskedView}</p></Card>
             <div className="space-y-2"><div className="text-[10px] font-semibold tracking-wider">DECISION · RECORDED WITH REASON</div>
               <select value={reason} onChange={e => setReason(e.target.value)} className="w-full rounded-lg border border-border bg-card p-2">{['household_shared_device_ok', 'identity_pending', 'ring_pattern_same_card', 'velocity_anomaly', 'legitimate_after_review'].map(r => <option key={r} value={r}>{r}</option>)}</select>
               <div className="flex flex-wrap gap-2"><Button data-testid="growth.abuse.decision" size="sm" disabled={decide.isPending} onClick={() => decide.mutate('qualify')}>Qualify · release {fmt(sel.heldReward)}</Button><Button size="sm" variant="outline" disabled={decide.isPending} onClick={() => decide.mutate('hold')}>Hold 48 h · ask for ID</Button><Button size="sm" variant="outline" className="text-red-400" disabled={decide.isPending} onClick={() => decide.mutate('deny')}>Deny · reverse</Button></div>
-              <p>Deny requires a reason code the rider will see in Benefits › Recent changes. Reversals post as compensating entries; the referee's discount is reclaimed only where the terms allow.</p></div>
+              <p>Deny requires a reason code the rider will see in Benefits › Recent changes. Reversals post as compensating entries; the referee&apos;s discount is reclaimed only where the terms allow.</p></div>
           </>)}
         </aside>
       </div>

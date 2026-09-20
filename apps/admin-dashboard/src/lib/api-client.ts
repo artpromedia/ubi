@@ -84,6 +84,20 @@ class AdminApiClient {
     });
     return decode<T>(res);
   }
+
+  async put<T>(
+    url: string,
+    body?: unknown,
+    options?: RequestOptions,
+  ): Promise<T> {
+    const res = await fetch(this.baseUrl + url, {
+      method: "PUT",
+      headers: this.headers(options?.headers),
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: options?.signal,
+    });
+    return decode<T>(res);
+  }
 }
 
 export const apiClient = new AdminApiClient(ADMIN_API_URL);

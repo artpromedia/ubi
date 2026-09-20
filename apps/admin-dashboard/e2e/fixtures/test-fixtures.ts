@@ -2,7 +2,8 @@
  * E2E Test Fixtures for Admin Dashboard
  */
 
-import { test as base, expect, Page } from "@playwright/test";
+/* eslint-disable no-empty-pattern, react-hooks/rules-of-hooks -- Playwright fixture `use` is not a React hook, and `{}` is the idiomatic empty fixture arg. */
+import { test as base, expect, type Page } from "@playwright/test";
 
 // =============================================================================
 // Types
