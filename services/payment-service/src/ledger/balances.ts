@@ -44,6 +44,44 @@ export async function balanceFromView(
 }
 
 /**
+ * The sum of marketplace commission holds still encumbering the wallet. A hold
+ * is a table row, never a journal movement (the worked example: a 1 000.00
+ * wallet with a 500.00 hold still *totals* 1 000.00 — only spendable drops), so
+ * the journal-derived balance above stays untouched while a bid is live.
+ * `capture_pending` still encumbers: the money is spoken for until the award
+ * resolves one way or the other.
+ */
+export async function activeHoldsMinor(
+  tx: LedgerTx,
+  walletId: string,
+  currency: string,
+): Promise<Money> {
+  const result = await tx.mpCommissionHold.aggregate({
+    _sum: { amountMinor: true },
+    where: {
+      walletId,
+      currency,
+      state: { in: ["active", "capture_pending"] },
+    },
+  });
+  return money(fromNullableDbMinor(result._sum.amountMinor), currency);
+}
+
+/**
+ * The one spendable calculation (M04/D04): cleared journal balance minus
+ * active holds. Every debit path checks this figure, not the raw balance.
+ */
+export async function spendableOf(
+  tx: LedgerTx,
+  walletId: string,
+  currency: string,
+): Promise<Money> {
+  const balance = await balanceOf(tx, walletId, currency);
+  const held = await activeHoldsMinor(tx, walletId, currency);
+  return money(balance.amountMinor - held.amountMinor, currency);
+}
+
+/**
  * How much the owner has already moved out of the wallet today on their own
  * instruction — transfers, split-fare payments and NIP payouts. Ride fares are
  * excluded: a KYC tier caps transfers, not spending.

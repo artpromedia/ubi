@@ -25,6 +25,7 @@ import { errorHandler, paymentRateLimit, serviceAuth } from "./middleware";
 import { adminRoutes } from "./routes/admin";
 import fraudRoutes from "./routes/fraud";
 import { healthRoutes } from "./routes/health";
+import { createMpHoldRoutes } from "./routes/mp-holds";
 import { safetyRoutes } from "./routes/safety";
 import { createFinanceRoutes } from "./finance/routes";
 import { createRemedyRoutes } from "./finance/remedies";
@@ -106,6 +107,10 @@ app.route("/admin", adminRoutes);
 // route modules apply their own auth, so they are safe under any mount order.
 const ledgerDeps = walletDeps();
 app.use("/v1/wallet/*", paymentRateLimit);
+// Marketplace commission holds (M04). Mounted BEFORE the general wallet
+// routes: the wallet router guards everything under it with user session
+// auth, and the hold mutations are service-key calls from the award engine.
+app.route("/v1/wallet/mp", createMpHoldRoutes(ledgerDeps));
 app.route("/v1/wallet", createWalletV1Routes(ledgerDeps));
 app.use("/v1/finance/*", paymentRateLimit);
 app.route("/v1/finance", createFinanceRoutes(ledgerDeps));

@@ -13,7 +13,7 @@ import {
   subtractMoney,
 } from "@ubi/contracts";
 
-import { balanceOf, outboundToday } from "./balances";
+import { activeHoldsMinor, balanceOf, outboundToday } from "./balances";
 import { dayWindow } from "./day-window";
 
 import type { LedgerTx } from "./types";
@@ -112,6 +112,13 @@ export async function assertWithinBalanceCap(
   }
 }
 
+/**
+ * Every debit path spends against *spendable* funds: the cleared journal
+ * balance minus active marketplace holds (M04). A genuinely short balance is
+ * still `insufficient_funds`; a balance that covers the amount but is
+ * encumbered by holds is the distinct `insufficient_spendable`, carrying the
+ * exact shortfall so the caller can phrase it.
+ */
 export async function assertSufficientFunds(
   tx: LedgerTx,
   wallet: WalletRecord,
@@ -125,6 +132,21 @@ export async function assertSufficientFunds(
       {
         balanceMinor: balance.amountMinor,
         requiredMinor: amount.amountMinor,
+      },
+    );
+  }
+  const held = await activeHoldsMinor(tx, wallet.id, wallet.currency);
+  const spendableMinor = balance.amountMinor - held.amountMinor;
+  if (spendableMinor < amount.amountMinor) {
+    throw new ContractError(
+      "insufficient_spendable",
+      "the balance covers that amount, but active bid holds encumber it",
+      {
+        balanceMinor: balance.amountMinor,
+        heldMinor: held.amountMinor,
+        spendableMinor,
+        requiredMinor: amount.amountMinor,
+        shortfallMinor: amount.amountMinor - spendableMinor,
       },
     );
   }
