@@ -5,6 +5,7 @@
  */
 
 import { setupWorker } from "msw/browser";
+
 import { handlers } from "./handlers";
 
 /**
@@ -18,12 +19,13 @@ export const worker = setupWorker(...handlers);
 export async function startMswWorker(options?: {
   onUnhandledRequest?: "warn" | "error" | "bypass";
 }) {
-  return worker.start({
+  const registration = await worker.start({
     onUnhandledRequest: options?.onUnhandledRequest || "warn",
     serviceWorker: {
       url: "/mockServiceWorker.js",
     },
   });
+  return registration;
 }
 
 /**

@@ -127,7 +127,7 @@ export const TripStatusCard = ({
   onCallDriver,
   onMessageDriver,
   onSafetyPress,
-  onShareTrip,
+  onShareTrip: _onShareTrip,
   ...props
 }: TripStatusCardProps) => {
   const config = statusConfig[status];

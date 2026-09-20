@@ -4,8 +4,9 @@
  * Custom matchers for validating payments, transactions, and currencies.
  */
 
-import type { TestPaymentMethod, TestTransaction } from "../types";
 import { CURRENCIES } from "../utils";
+
+import type { TestPaymentMethod, TestTransaction } from "../types";
 
 export interface PaymentMatchers<R = unknown> {
   toBeValidPaymentMethod(): R;
@@ -218,7 +219,7 @@ export function toBeValidCardNumber(received: unknown) {
 
   for (let i = cleaned.length - 1; i >= 0; i--) {
     const char = cleaned[i];
-    if (!char) continue;
+    if (!char) {continue;}
     let digit = Number.parseInt(char, 10);
 
     if (isEven) {

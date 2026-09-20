@@ -5,6 +5,7 @@
  */
 
 import ky, { type KyInstance, type Options } from "ky";
+
 import { createKyOptions, defaultConfig, type ApiConfig, type ApiError } from "./config";
 
 export class ApiClient {

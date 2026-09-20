@@ -3,6 +3,7 @@
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
+
 import { cn } from "../lib/utils";
 
 /**
@@ -172,10 +173,10 @@ const TextInner = <E extends React.ElementType = "p">(
 ) => {
   // Determine the element to render
   const getComponent = (): React.ElementType => {
-    if (asChild) return Slot;
-    if (as) return as;
+    if (asChild) {return Slot;}
+    if (as) {return as;}
     if (variant && variantElementMap[variant])
-      return variantElementMap[variant];
+      {return variantElementMap[variant];}
     return "p";
   };
   const Component = getComponent();

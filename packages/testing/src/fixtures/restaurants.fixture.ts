@@ -4,9 +4,10 @@
  * Pre-defined test restaurants and menu items.
  */
 
-import type { TestFoodOrder, TestMenuItem, TestRestaurant } from "../types";
 import { LAGOS_LOCATIONS, NAIROBI_LOCATIONS } from "./locations.fixture";
 import { TEST_RIDERS } from "./users.fixture";
+
+import type { TestFoodOrder, TestMenuItem, TestRestaurant } from "../types";
 
 /**
  * Test restaurants

@@ -12,7 +12,7 @@ import type {
 } from "./analytics";
 
 // Re-export AnalyticsProvider type for convenience
-export type { AnalyticsProvider } from "./analytics";
+export type { AnalyticsProvider };
 
 // Provider types
 export type ProviderType =
@@ -74,7 +74,7 @@ export class GoogleAnalytics4Provider implements AnalyticsProvider {
   name = "google_analytics_4";
 
   async initialize(config: { measurementId: string }): Promise<void> {
-    if (globalThis.window === undefined) return;
+    if (globalThis.window === undefined) {return;}
 
     // Load gtag script
     const script = document.createElement("script");
@@ -93,7 +93,7 @@ export class GoogleAnalytics4Provider implements AnalyticsProvider {
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (globalThis.window === undefined || !(globalThis as any).gtag) return;
+    if (globalThis.window === undefined || !(globalThis as any).gtag) {return;}
 
     (globalThis as any).gtag("set", { user_id: userId });
     if (traits) {
@@ -102,13 +102,13 @@ export class GoogleAnalytics4Provider implements AnalyticsProvider {
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (globalThis.window === undefined || !(globalThis as any).gtag) return;
+    if (globalThis.window === undefined || !(globalThis as any).gtag) {return;}
 
     (globalThis as any).gtag("event", event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (globalThis.window === undefined || !(globalThis as any).gtag) return;
+    if (globalThis.window === undefined || !(globalThis as any).gtag) {return;}
 
     (globalThis as any).gtag("event", "page_view", {
       page_path: event.properties.path,
@@ -118,13 +118,13 @@ export class GoogleAnalytics4Provider implements AnalyticsProvider {
   }
 
   async reset(): Promise<void> {
-    if (globalThis.window === undefined || !(globalThis as any).gtag) return;
+    if (globalThis.window === undefined || !(globalThis as any).gtag) {return;}
 
     (globalThis as any).gtag("set", { user_id: null });
   }
 
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (globalThis.window === undefined || !(globalThis as any).gtag) return;
+    if (globalThis.window === undefined || !(globalThis as any).gtag) {return;}
 
     (globalThis as any).gtag("set", "user_properties", properties);
   }
@@ -139,10 +139,9 @@ export class MixpanelProvider implements AnalyticsProvider {
     token: string;
     options?: Record<string, unknown>;
   }): Promise<void> {
-    if (globalThis.window === undefined) return;
+    if (globalThis.window === undefined) {return;}
 
     // Load Mixpanel library dynamically
-    // @ts-ignore - Optional peer dependency
     const { default: mixpanel } = await import("mixpanel-browser");
     mixpanel.init(config.token, {
       track_pageview: false, // We handle this manually
@@ -152,7 +151,7 @@ export class MixpanelProvider implements AnalyticsProvider {
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {return;}
 
     this.mixpanel.identify(userId);
     if (traits) {
@@ -161,25 +160,25 @@ export class MixpanelProvider implements AnalyticsProvider {
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {return;}
 
     this.mixpanel.track(event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {return;}
 
     this.mixpanel.track("Page View", event.properties);
   }
 
   async reset(): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {return;}
 
     this.mixpanel.reset();
   }
 
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (!this.mixpanel) return;
+    if (!this.mixpanel) {return;}
 
     this.mixpanel.people.set(properties);
   }
@@ -194,17 +193,15 @@ export class AmplitudeProvider implements AnalyticsProvider {
     apiKey: string;
     options?: Record<string, unknown>;
   }): Promise<void> {
-    if (globalThis.window === undefined) return;
+    if (globalThis.window === undefined) {return;}
 
-    // @ts-ignore - Optional peer dependency
     const { init } = await import("@amplitude/analytics-browser");
-    // @ts-ignore - Optional peer dependency
     this.amplitude = await import("@amplitude/analytics-browser");
     init(config.apiKey, undefined, config.options);
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {return;}
 
     this.amplitude.setUserId(userId);
     if (traits) {
@@ -217,25 +214,25 @@ export class AmplitudeProvider implements AnalyticsProvider {
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {return;}
 
     this.amplitude.track(event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {return;}
 
     this.amplitude.track("Page View", event.properties);
   }
 
   async reset(): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {return;}
 
     this.amplitude.reset();
   }
 
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (!this.amplitude) return;
+    if (!this.amplitude) {return;}
 
     const identify = new this.amplitude.Identify();
     Object.entries(properties).forEach(([key, value]) => {
@@ -255,7 +252,7 @@ export class PostHogProvider implements AnalyticsProvider {
     host?: string;
     options?: Record<string, unknown>;
   }): Promise<void> {
-    if (globalThis.window === undefined) return;
+    if (globalThis.window === undefined) {return;}
 
     const posthogModule = await import("posthog-js");
     const posthog = posthogModule.default;
@@ -268,31 +265,31 @@ export class PostHogProvider implements AnalyticsProvider {
   }
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {return;}
 
     this.posthog.identify(userId, traits);
   }
 
   async track(event: BaseEvent): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {return;}
 
     this.posthog.capture(event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {return;}
 
     this.posthog.capture("$pageview", event.properties);
   }
 
   async reset(): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {return;}
 
     this.posthog.reset();
   }
 
   async setUserProperties(properties: Record<string, unknown>): Promise<void> {
-    if (!this.posthog) return;
+    if (!this.posthog) {return;}
 
     this.posthog.setPersonProperties(properties);
   }
@@ -303,13 +300,13 @@ export class SegmentProvider implements AnalyticsProvider {
   name = "segment";
 
   async initialize(config: { writeKey: string }): Promise<void> {
-    if (globalThis.window === undefined) return;
+    if (globalThis.window === undefined) {return;}
 
     // Load Segment analytics.js
     const analytics = ((globalThis as any).analytics =
       (globalThis as any).analytics || []);
     if (!analytics.initialize) {
-      if (analytics.invoked) return;
+      if (analytics.invoked) {return;}
       analytics.invoked = true;
       analytics.methods = [
         "trackSubmit",
@@ -334,8 +331,7 @@ export class SegmentProvider implements AnalyticsProvider {
         "addDestinationMiddleware",
       ];
       analytics.factory = function (method: string) {
-        return function () {
-          const args = Array.prototype.slice.call(arguments);
+        return function (...args: unknown[]) {
           args.unshift(method);
           analytics.push(args);
           return analytics;
@@ -363,21 +359,21 @@ export class SegmentProvider implements AnalyticsProvider {
 
   async identify(userId: string, traits?: UserTraits): Promise<void> {
     if (globalThis.window === undefined || !(globalThis as any).analytics)
-      return;
+      {return;}
 
     (globalThis as any).analytics.identify(userId, traits);
   }
 
   async track(event: BaseEvent): Promise<void> {
     if (globalThis.window === undefined || !(globalThis as any).analytics)
-      return;
+      {return;}
 
     (globalThis as any).analytics.track(event.name, event.properties);
   }
 
   async page(event: PageViewEvent): Promise<void> {
     if (globalThis.window === undefined || !(globalThis as any).analytics)
-      return;
+      {return;}
 
     (globalThis as any).analytics.page(
       event.properties.title,
@@ -387,7 +383,7 @@ export class SegmentProvider implements AnalyticsProvider {
 
   async reset(): Promise<void> {
     if (globalThis.window === undefined || !(globalThis as any).analytics)
-      return;
+      {return;}
 
     (globalThis as any).analytics.reset();
   }

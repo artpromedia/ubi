@@ -5,7 +5,7 @@
  */
 
 import { faker } from "@faker-js/faker";
-import type { TestDriver, TestRide, TestRider, TestRideStatus } from "../types";
+
 import { randomPick, uuid } from "../utils";
 import {
   calculateDistance,
@@ -13,6 +13,8 @@ import {
   createRideLocations,
 } from "./location.factory";
 import { createDriver, createRider } from "./user.factory";
+
+import type { TestDriver, TestRide, TestRider, TestRideStatus } from "../types";
 
 const RIDE_TYPES = [
   "economy",
@@ -190,7 +192,7 @@ export function createRide(options: RideFactoryOptions = {}): TestRide {
       };
       break;
 
-    case "completed":
+    case "completed": {
       const startTime = faker.date.past();
       ride.searchStartedAt = startTime;
       ride.driverAssignedAt = new Date(startTime.getTime() + 60000);
@@ -218,6 +220,7 @@ export function createRide(options: RideFactoryOptions = {}): TestRide {
         ]),
       };
       break;
+    }
 
     case "cancelled":
       ride.searchStartedAt = faker.date.recent();
@@ -276,17 +279,19 @@ export function createRideScenario(
     case "surge":
       return createRide({ includeSurge: true });
 
-    case "airport":
+    case "airport": {
       const airportRide = createRide({ rideType: "premium" });
       airportRide.dropoff.address = "International Airport, Arrivals";
       return airportRide;
+    }
 
-    case "late_night":
+    case "late_night": {
       const lateRide = createRide({ includeSurge: true });
       const lateTime = new Date();
       lateTime.setHours(2, 30, 0, 0);
       lateRide.createdAt = lateTime;
       return lateRide;
+    }
 
     default:
       return createRide();

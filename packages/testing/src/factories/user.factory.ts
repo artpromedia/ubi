@@ -5,8 +5,10 @@
  */
 
 import { faker } from "@faker-js/faker";
-import type { TestDriver, TestRider, TestUser } from "../types";
+
 import { PHONE_FORMATS, randomPick, uuid } from "../utils";
+
+import type { TestDriver, TestRider, TestUser } from "../types";
 
 // African first names (diverse across regions)
 const AFRICAN_FIRST_NAMES = {

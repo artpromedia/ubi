@@ -24,14 +24,14 @@ export function isServer(): boolean {
 export type DeviceType = "mobile" | "tablet" | "desktop";
 
 export function getDeviceType(): DeviceType {
-  if (!isBrowser()) return "desktop";
+  if (!isBrowser()) {return "desktop";}
   
   const ua = navigator.userAgent.toLowerCase();
   const isMobile = /android|webos|iphone|ipod|blackberry|iemobile|opera mini/i.test(ua);
   const isTablet = /ipad|tablet|playbook|silk|(android(?!.*mobile))/i.test(ua);
   
-  if (isTablet) return "tablet";
-  if (isMobile) return "mobile";
+  if (isTablet) {return "tablet";}
+  if (isMobile) {return "mobile";}
   return "desktop";
 }
 
@@ -60,7 +60,7 @@ export function isDesktop(): boolean {
  * Check if device has touch support
  */
 export function hasTouch(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return "ontouchstart" in window || navigator.maxTouchPoints > 0;
 }
 
@@ -76,7 +76,7 @@ export type OperatingSystem =
   | "unknown";
 
 export function getOperatingSystem(): OperatingSystem {
-  if (!isBrowser()) return "unknown";
+  if (!isBrowser()) {return "unknown";}
   
   const ua = navigator.userAgent.toLowerCase();
   const platform = navigator.platform?.toLowerCase() || "";
@@ -84,10 +84,10 @@ export function getOperatingSystem(): OperatingSystem {
   if (/iphone|ipad|ipod/.test(ua) || /mac/.test(platform) && hasTouch()) {
     return "ios";
   }
-  if (/android/.test(ua)) return "android";
-  if (/win/.test(platform)) return "windows";
-  if (/mac/.test(platform)) return "macos";
-  if (/linux/.test(platform)) return "linux";
+  if (/android/.test(ua)) {return "android";}
+  if (/win/.test(platform)) {return "windows";}
+  if (/mac/.test(platform)) {return "macos";}
+  if (/linux/.test(platform)) {return "linux";}
   
   return "unknown";
 }
@@ -119,16 +119,16 @@ export type Browser =
   | "unknown";
 
 export function getBrowser(): Browser {
-  if (!isBrowser()) return "unknown";
+  if (!isBrowser()) {return "unknown";}
   
   const ua = navigator.userAgent.toLowerCase();
   
-  if (/samsungbrowser/.test(ua)) return "samsung";
-  if (/edg/.test(ua)) return "edge";
-  if (/opr|opera/.test(ua)) return "opera";
-  if (/chrome/.test(ua)) return "chrome";
-  if (/firefox/.test(ua)) return "firefox";
-  if (/safari/.test(ua)) return "safari";
+  if (/samsungbrowser/.test(ua)) {return "samsung";}
+  if (/edg/.test(ua)) {return "edge";}
+  if (/opr|opera/.test(ua)) {return "opera";}
+  if (/chrome/.test(ua)) {return "chrome";}
+  if (/firefox/.test(ua)) {return "firefox";}
+  if (/safari/.test(ua)) {return "safari";}
   
   return "unknown";
 }
@@ -137,7 +137,7 @@ export function getBrowser(): Browser {
  * Check if running as PWA (installed)
  */
 export function isPWA(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
@@ -150,7 +150,7 @@ export function isPWA(): boolean {
  * Check if service workers are supported
  */
 export function supportsServiceWorker(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return "serviceWorker" in navigator;
 }
 
@@ -158,7 +158,7 @@ export function supportsServiceWorker(): boolean {
  * Check if push notifications are supported
  */
 export function supportsPushNotifications(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return "PushManager" in window && "Notification" in window;
 }
 
@@ -166,7 +166,7 @@ export function supportsPushNotifications(): boolean {
  * Check if geolocation is supported
  */
 export function supportsGeolocation(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return "geolocation" in navigator;
 }
 
@@ -174,7 +174,7 @@ export function supportsGeolocation(): boolean {
  * Check if web share API is supported
  */
 export function supportsWebShare(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return "share" in navigator;
 }
 
@@ -182,7 +182,7 @@ export function supportsWebShare(): boolean {
  * Check if clipboard API is supported
  */
 export function supportsClipboard(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return "clipboard" in navigator;
 }
 
@@ -190,7 +190,7 @@ export function supportsClipboard(): boolean {
  * Check if vibration API is supported
  */
 export function supportsVibration(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return "vibrate" in navigator;
 }
 
@@ -232,7 +232,7 @@ export function getNetworkInfo(): NetworkInfo {
  * Check if device is online
  */
 export function isOnline(): boolean {
-  if (!isBrowser()) return true;
+  if (!isBrowser()) {return true;}
   return navigator.onLine;
 }
 
@@ -240,7 +240,7 @@ export function isOnline(): boolean {
  * Check if user prefers reduced motion
  */
 export function prefersReducedMotion(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
@@ -248,7 +248,7 @@ export function prefersReducedMotion(): boolean {
  * Check if user prefers dark mode
  */
 export function prefersDarkMode(): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
@@ -270,7 +270,7 @@ export function getViewport(): { width: number; height: number } {
  * Check if element is in viewport
  */
 export function isInViewport(element: Element, threshold = 0): boolean {
-  if (!isBrowser()) return false;
+  if (!isBrowser()) {return false;}
   
   const rect = element.getBoundingClientRect();
   const viewport = getViewport();

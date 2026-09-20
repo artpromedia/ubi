@@ -11,9 +11,10 @@
  * A dedicated command connection is used for the SET because the subscribing
  * connection is in subscriber mode and cannot run ordinary commands.
  */
-import { Redis } from "ioredis";
-
 import { EventEnvelopeSchema, type EventEnvelope } from "@ubi/contracts";
+
+import type { Redis } from "ioredis";
+
 
 export type OutboxHandler = (
   envelope: EventEnvelope,

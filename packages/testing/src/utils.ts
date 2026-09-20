@@ -12,7 +12,7 @@ import type { NetworkProfile, TestConfig } from "./types";
  * Wait for a specified amount of time
  */
 export async function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -56,7 +56,7 @@ export async function retry<T>(
     }
   }
 
-  throw lastError;
+  throw lastError ?? new Error(`retry failed after ${maxAttempts} attempts`);
 }
 
 // =============================================================================
@@ -121,7 +121,7 @@ export const NETWORK_PROFILES: Record<string, NetworkProfile> = {
 export async function simulateNetworkDelay(
   profile: NetworkProfile
 ): Promise<void> {
-  return wait(profile.latency);
+  await wait(profile.latency);
 }
 
 // =============================================================================

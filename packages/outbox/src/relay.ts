@@ -27,11 +27,12 @@
  *    and it is never published. Quarantining one row never crashes the loop nor
  *    blocks other aggregates.
  */
-import type { EventEnvelope } from "@ubi/contracts";
 
 import { backoffDelayMs } from "./backoff";
 import { eventTypeChannel, subjectChannel } from "./channels";
 import { envelopeFromRow, type RawOutboxRow } from "./envelope";
+
+import type { EventEnvelope } from "@ubi/contracts";
 
 /** The subset of a Prisma transaction client the relay needs. */
 export interface OutboxRelayTx {
@@ -197,7 +198,7 @@ class OutboxRelayImpl implements OutboxRelay {
 
   async tick(): Promise<OutboxTickResult> {
     const nowMs = this.now().getTime();
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRawUnsafe<RawOutboxRow[]>(
         CLAIM_SQL,
         this.maxAttempts,
@@ -286,6 +287,7 @@ class OutboxRelayImpl implements OutboxRelay {
         skippedBackoff,
       };
     });
+    return result;
   }
 
   private async publishEnvelope(envelope: EventEnvelope): Promise<void> {
@@ -295,7 +297,7 @@ class OutboxRelayImpl implements OutboxRelay {
   }
 
   start(): void {
-    if (this.running) return;
+    if (this.running) {return;}
     this.running = true;
     this.schedule(0);
   }
@@ -312,7 +314,7 @@ class OutboxRelayImpl implements OutboxRelay {
     } catch (err) {
       this.logger.error({ err: errorMessage(err) }, "outbox relay pass failed");
     } finally {
-      if (this.running) this.schedule(this.pollIntervalMs);
+      if (this.running) {this.schedule(this.pollIntervalMs);}
     }
   }
 

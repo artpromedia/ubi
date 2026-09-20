@@ -33,7 +33,7 @@ import {
   Settings2,
 } from "lucide-react";
 import * as React from "react";
-import { cn } from "../lib/utils";
+
 import { Button } from "./button";
 import { Checkbox } from "./checkbox";
 import {
@@ -50,6 +50,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./select";
+import { cn } from "../lib/utils";
 
 // Base table components
 const Table = React.forwardRef<
@@ -165,11 +166,11 @@ interface DataTableColumnHeaderProps extends React.HTMLAttributes<HTMLDivElement
   title: string;
 }
 
-function DataTableColumnHeader({
+const DataTableColumnHeader = ({
   column,
   title,
   className,
-}: Readonly<DataTableColumnHeaderProps>) {
+}: Readonly<DataTableColumnHeaderProps>) => {
   if (!column.getCanSort()) {
     return <div className={cn(className)}>{title}</div>;
   }
@@ -233,10 +234,10 @@ interface DataTablePaginationProps<TData> {
   readonly pageSizeOptions?: number[];
 }
 
-function DataTablePagination<TData>({
+const DataTablePagination = <TData,>({
   table,
   pageSizeOptions = [10, 20, 30, 40, 50],
-}: DataTablePaginationProps<TData>) {
+}: DataTablePaginationProps<TData>) => {
   return (
     <div className="flex items-center justify-between px-2">
       <div className="flex-1 text-sm text-muted-foreground">
@@ -309,16 +310,16 @@ function DataTablePagination<TData>({
       </div>
     </div>
   );
-}
+};
 
 // Column visibility toggle
 interface DataTableViewOptionsProps<TData> {
   readonly table: TanstackTable<TData>;
 }
 
-function DataTableViewOptions<TData>({
+const DataTableViewOptions = <TData,>({
   table,
-}: DataTableViewOptionsProps<TData>) {
+}: DataTableViewOptionsProps<TData>) => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -352,7 +353,7 @@ function DataTableViewOptions<TData>({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+};
 
 // Search input for filtering
 interface DataTableSearchProps {
@@ -361,11 +362,11 @@ interface DataTableSearchProps {
   readonly placeholder?: string;
 }
 
-function DataTableSearch({
+const DataTableSearch = ({
   table,
   column,
   placeholder = "Search...",
-}: DataTableSearchProps) {
+}: DataTableSearchProps) => {
   return (
     <div className="relative">
       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -397,7 +398,7 @@ interface DataTableProps<TData, TValue> {
   readonly isLoading?: boolean;
 }
 
-function DataTable<TData, TValue>({
+const DataTable = <TData, TValue>({
   columns,
   data,
   searchColumn,
@@ -410,7 +411,7 @@ function DataTable<TData, TValue>({
   toolbar,
   emptyMessage = "No results.",
   isLoading = false,
-}: DataTableProps<TData, TValue>) {
+}: DataTableProps<TData, TValue>) => {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []

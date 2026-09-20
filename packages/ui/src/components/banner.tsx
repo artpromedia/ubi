@@ -1,8 +1,9 @@
 "use client";
 
-import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { AlertCircle, CheckCircle, Info, XCircle, X } from "lucide-react";
+import * as React from "react";
+
 import { cn } from "../lib/utils";
 
 /**
@@ -97,7 +98,7 @@ const Banner = React.forwardRef<HTMLDivElement, BannerProps>(
       onDismiss?.();
     };
 
-    if (!isVisible) return null;
+    if (!isVisible) {return null;}
 
     return (
       <div

@@ -4,13 +4,14 @@
  * Pre-defined test rides for common scenarios.
  */
 
-import type { TestRide } from "../types";
 import {
   LAGOS_LOCATIONS,
   NAIROBI_LOCATIONS,
   RIDE_ROUTES,
 } from "./locations.fixture";
 import { TEST_DRIVERS, TEST_RIDERS } from "./users.fixture";
+
+import type { TestRide } from "../types";
 
 /**
  * Completed ride fixture

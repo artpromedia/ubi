@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "../lib/utils";
+
 import { Card, CardContent } from "./card";
+import { cn } from "../lib/utils";
 
 /**
  * RideCard - Display ride information

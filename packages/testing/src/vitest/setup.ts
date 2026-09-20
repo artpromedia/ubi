@@ -5,6 +5,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
+
 import { setupMatchers } from "../matchers/setup";
 
 // Setup custom matchers
@@ -104,26 +105,25 @@ if (process.env.CI) {
 
 if (typeof globalThis.fetch === "undefined") {
   // @ts-expect-error - Polyfill fetch if not available
-  globalThis.fetch = vi.fn(() =>
-    Promise.resolve({
+  globalThis.fetch = vi.fn(async () => {
+    await Promise.resolve();
+    return {
       ok: true,
-      json: () => Promise.resolve({}),
-      text: () => Promise.resolve(""),
+      json: async () => {
+        await Promise.resolve();
+        return {};
+      },
+      text: async () => {
+        await Promise.resolve();
+        return "";
+      },
       status: 200,
-    })
-  );
+    };
+  });
 }
 
 // =============================================================================
 // Date Mocking Helper
 // =============================================================================
-
-declare global {
-  namespace Vi {
-    interface JestAssertion<T = unknown> {
-      toBeWithinRange(floor: number, ceiling: number): T;
-    }
-  }
-}
 
 export {};

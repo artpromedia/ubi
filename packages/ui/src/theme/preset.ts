@@ -5,7 +5,6 @@
  * Import this preset in your app's tailwind.config.ts
  */
 
-import type { Config } from "tailwindcss";
 import {
   animation,
   borderRadius,
@@ -15,6 +14,8 @@ import {
   typography,
   zIndex,
 } from "./tokens";
+
+import type { Config } from "tailwindcss";
 
 export const ubiPreset: Partial<Config> = {
   darkMode: ["class"],

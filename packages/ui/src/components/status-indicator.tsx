@@ -18,8 +18,11 @@ import {
     Utensils,
     XCircle
 } from "lucide-react";
-import * as React from "react";
+
 import { cn } from "../lib/utils";
+
+import type * as React from "react";
+
 
 // Status dot indicator
 const statusDotVariants = cva("rounded-full", {

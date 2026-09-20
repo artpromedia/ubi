@@ -5,6 +5,7 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
+
 import type { PaginatedResponse, PaginationParams } from "./types";
 
 // Query key factory

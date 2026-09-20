@@ -24,25 +24,35 @@ export function createMockRedis() {
   >();
 
   return {
-    get: async (key: string) => store.get(key) ?? null,
+    get: async (key: string) => {
+      await Promise.resolve();
+      return store.get(key) ?? null;
+    },
     set: async (key: string, value: string) => {
+      await Promise.resolve();
       store.set(key, value);
       return "OK";
     },
     setex: async (key: string, _seconds: number, value: string) => {
+      await Promise.resolve();
       store.set(key, value);
       return "OK";
     },
     del: async (...keys: string[]) => {
+      await Promise.resolve();
       let deleted = 0;
       for (const key of keys) {
-        if (store.delete(key)) deleted++;
+        if (store.delete(key)) {deleted++;}
       }
       return deleted;
     },
-    expire: async (_key: string, _seconds: number) => 1,
+    expire: async (_key: string, _seconds: number) => {
+      await Promise.resolve();
+      return 1;
+    },
     sadd: async (key: string, ...members: string[]) => {
-      if (!sets.has(key)) sets.set(key, new Set());
+      await Promise.resolve();
+      if (!sets.has(key)) {sets.set(key, new Set());}
       const set = sets.get(key)!;
       let added = 0;
       for (const member of members) {
@@ -54,15 +64,17 @@ export function createMockRedis() {
       return added;
     },
     srem: async (key: string, ...members: string[]) => {
+      await Promise.resolve();
       const set = sets.get(key);
-      if (!set) return 0;
+      if (!set) {return 0;}
       let removed = 0;
       for (const member of members) {
-        if (set.delete(member)) removed++;
+        if (set.delete(member)) {removed++;}
       }
       return removed;
     },
     smembers: async (key: string) => {
+      await Promise.resolve();
       const set = sets.get(key);
       return set ? Array.from(set) : [];
     },
@@ -71,7 +83,8 @@ export function createMockRedis() {
       field: string | Record<string, string>,
       value?: string
     ) => {
-      if (!hashes.has(key)) hashes.set(key, new Map());
+      await Promise.resolve();
+      if (!hashes.has(key)) {hashes.set(key, new Map());}
       const hash = hashes.get(key)!;
       if (typeof field === "object") {
         for (const [k, v] of Object.entries(field)) {
@@ -83,21 +96,27 @@ export function createMockRedis() {
       return 1;
     },
     hget: async (key: string, field: string) => {
+      await Promise.resolve();
       const hash = hashes.get(key);
       return hash?.get(field) ?? null;
     },
     hgetall: async (key: string) => {
+      await Promise.resolve();
       const hash = hashes.get(key);
-      if (!hash) return {};
+      if (!hash) {return {};}
       return Object.fromEntries(hash);
     },
-    publish: async (_channel: string, _message: string) => 0,
+    publish: async (_channel: string, _message: string) => {
+      await Promise.resolve();
+      return 0;
+    },
     subscribe: async (
       channel: string,
       callback?: (channel: string, message: string) => void
     ) => {
+      await Promise.resolve();
       if (callback) {
-        if (!subscribers.has(channel)) subscribers.set(channel, []);
+        if (!subscribers.has(channel)) {subscribers.set(channel, []);}
         subscribers.get(channel)!.push(callback);
       }
     },
@@ -107,9 +126,13 @@ export function createMockRedis() {
       _subcommand: string,
       ..._args: string[]
     ): Promise<(string | number)[]> => {
+      await Promise.resolve();
       return ["", 0];
     },
-    quit: async () => "OK",
+    quit: async () => {
+      await Promise.resolve();
+      return "OK";
+    },
     // Test helpers
     _store: store,
     _sets: sets,
@@ -148,7 +171,7 @@ export function createMockWebSocket() {
     }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on: (event: string, callback: (...args: any[]) => void) => {
-      if (!listeners.has(event)) listeners.set(event, []);
+      if (!listeners.has(event)) {listeners.set(event, []);}
       listeners.get(event)!.push(callback);
     },
     // Test helpers
@@ -209,7 +232,7 @@ export function createMockEventEmitter() {
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on: (event: string, callback: (...args: any[]) => void) => {
-      if (!listeners.has(event)) listeners.set(event, []);
+      if (!listeners.has(event)) {listeners.set(event, []);}
       listeners.get(event)!.push(callback);
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -217,7 +240,7 @@ export function createMockEventEmitter() {
       const eventListeners = listeners.get(event);
       if (eventListeners) {
         const index = eventListeners.indexOf(callback);
-        if (index > -1) eventListeners.splice(index, 1);
+        if (index > -1) {eventListeners.splice(index, 1);}
       }
     },
     emit: (event: string, ...args: unknown[]) => {

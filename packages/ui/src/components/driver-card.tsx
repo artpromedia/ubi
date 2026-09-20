@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "../lib/utils";
-import { Card, CardContent } from "./card";
+
 import { Avatar, AvatarFallback, AvatarImage } from "./avatar";
+import { Card, CardContent } from "./card";
+import { cn } from "../lib/utils";
 
 /**
  * DriverCard - Display driver information
@@ -50,7 +51,7 @@ const DriverCard = React.forwardRef<HTMLDivElement, DriverCardProps>(
       vehiclePlate,
       vehicleColor,
       avatarUrl,
-      phone,
+      phone: _phone,
       compact = false,
       ...props
     },

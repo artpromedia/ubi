@@ -4,8 +4,9 @@
  * Pre-defined test payment methods, transactions, and test tokens.
  */
 
-import type { TestPaymentMethod, TestTransaction } from "../types";
 import { TEST_RIDERS } from "./users.fixture";
+
+import type { TestPaymentMethod, TestTransaction } from "../types";
 
 /**
  * Test payment methods

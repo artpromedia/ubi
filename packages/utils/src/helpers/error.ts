@@ -389,7 +389,8 @@ export function catchAsync<T extends (...args: unknown[]) => Promise<unknown>>(
   fn: T
 ): T {
   return (async (...args: unknown[]) => {
-    return await fn(...args);
+    const result = await fn(...args);
+    return result;
   }) as T;
 }
 

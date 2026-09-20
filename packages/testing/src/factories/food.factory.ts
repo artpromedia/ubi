@@ -5,6 +5,10 @@
  */
 
 import { faker } from "@faker-js/faker";
+
+import { randomInt, randomPick, uuid } from "../utils";
+import { createLocation } from "./location.factory";
+
 import type {
   TestFoodOrder,
   TestMenuItem,
@@ -12,8 +16,6 @@ import type {
   TestOrderStatus,
   TestRestaurant,
 } from "../types";
-import { randomInt, randomPick, uuid } from "../utils";
-import { createLocation } from "./location.factory";
 
 // African cuisine categories and items
 const CUISINE_TYPES = [
@@ -420,7 +422,7 @@ export function createFoodOrder(
       };
       break;
 
-    case "delivered":
+    case "delivered": {
       const startTime = faker.date.past();
       order.confirmedAt = new Date(startTime.getTime() + 60000);
       order.preparingAt = new Date(startTime.getTime() + 120000);
@@ -439,6 +441,7 @@ export function createFoodOrder(
         ]),
       };
       break;
+    }
 
     case "cancelled":
       order.cancelledAt = now;

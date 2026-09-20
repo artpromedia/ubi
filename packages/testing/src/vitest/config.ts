@@ -5,6 +5,7 @@
  */
 
 import path from "node:path";
+
 import { defineConfig, type UserConfig } from "vitest/config";
 
 export interface UbiTestConfigOptions {

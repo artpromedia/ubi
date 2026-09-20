@@ -8,11 +8,13 @@
 
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
-import * as React from "react";
 import { DayPicker } from "react-day-picker";
-import { cn } from "../lib/utils";
+
 import { Button, buttonVariants } from "./button";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
+import { cn } from "../lib/utils";
+
+import type * as React from "react";
 
 // Calendar component
 const Calendar = ({

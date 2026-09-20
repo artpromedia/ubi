@@ -2,14 +2,16 @@
  * React Analytics Hooks and Components
  */
 
-import React, {
+import {
   createContext,
   useContext,
   useEffect,
   useCallback,
+  type ComponentType,
   type ReactNode,
 } from "react";
-import { Analytics, type AnalyticsConfig, type UBIEventName, type UserTraits } from "./analytics";
+
+import type { Analytics, AnalyticsConfig, UBIEventName, UserTraits } from "./analytics";
 
 // Analytics context
 const AnalyticsContext = createContext<Analytics | null>(null);
@@ -20,10 +22,10 @@ interface AnalyticsProviderProps {
   children: ReactNode;
 }
 
-export function AnalyticsProvider({
+export const AnalyticsProvider = ({
   analytics,
   children,
-}: AnalyticsProviderProps): ReactNode {
+}: AnalyticsProviderProps): ReactNode => {
   return (
     <AnalyticsContext.Provider value={analytics}>
       {children}
@@ -169,14 +171,15 @@ export function useTrackClick(
 
 // Higher-order component for tracking page views
 export function withPageTracking<P extends object>(
-  WrappedComponent: React.ComponentType<P>,
+  WrappedComponent: ComponentType<P>,
   pageName: string,
   properties?: Record<string, unknown>
 ) {
-  return function PageTrackedComponent(props: P) {
+  const PageTrackedComponent = (props: P) => {
     usePageView(pageName, properties);
     return <WrappedComponent {...props} />;
   };
+  return PageTrackedComponent;
 }
 
 export { type AnalyticsConfig, type UBIEventName, type UserTraits };

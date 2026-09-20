@@ -8,8 +8,8 @@
  * Sleep for a given duration
  * @param ms - Milliseconds to sleep
  */
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -117,7 +117,8 @@ export async function timeout<T>(
     setTimeout(() => reject(new Error(message)), ms);
   });
 
-  return Promise.race([promise, timeoutPromise]);
+  const result = await Promise.race([promise, timeoutPromise]);
+  return result;
 }
 
 /**
@@ -136,14 +137,14 @@ export async function mapWithConcurrency<T, R>(
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    if (item === undefined) continue;
+    if (item === undefined) {continue;}
     
     const promise = fn(item, i).then((result) => {
       results[i] = result;
     });
 
     const executingPromise = promise.finally(() => {
-      executing.splice(executing.indexOf(executingPromise), 1);
+      void executing.splice(executing.indexOf(executingPromise), 1);
     });
 
     executing.push(executingPromise);
@@ -171,7 +172,7 @@ export function debounce<T extends (...args: unknown[]) => Promise<unknown>>(
   let resolveFunction: ((value: ReturnType<T>) => void) | undefined;
   let rejectFunction: ((reason?: unknown) => void) | undefined;
 
-  return (...args: Parameters<T>): Promise<ReturnType<T>> => {
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
@@ -194,7 +195,8 @@ export function debounce<T extends (...args: unknown[]) => Promise<unknown>>(
       }
     }, ms);
 
-    return pendingPromise;
+    const result = await pendingPromise;
+    return result;
   };
 }
 
@@ -219,7 +221,8 @@ export function throttle<T extends (...args: unknown[]) => Promise<unknown>>(
 
     lastCallTime = now;
     pendingPromise = fn(...args) as Promise<ReturnType<T>>;
-    return pendingPromise;
+    const result = await pendingPromise;
+    return result;
   };
 }
 
@@ -255,11 +258,12 @@ export class AsyncMutex {
       return () => this.release();
     }
 
-    return new Promise((resolve) => {
+    const release = await new Promise<() => void>((resolve) => {
       this.queue.push(() => {
         resolve(() => this.release());
       });
     });
+    return release;
   }
 
   private release(): void {
@@ -382,7 +386,8 @@ export async function settleAll<T>(
     { status: "fulfilled"; value: T } | { status: "rejected"; reason: unknown }
   >
 > {
-  return Promise.allSettled(promises);
+  const results = await Promise.allSettled(promises);
+  return results;
 }
 
 /**

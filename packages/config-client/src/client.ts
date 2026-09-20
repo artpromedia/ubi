@@ -11,6 +11,8 @@
  *             revalidate. A caller that cannot get config must fail the
  *             request, not guess (CLAUDE.md #1, #6).
  */
+import { z } from "zod";
+
 import {
   type CityConfig,
   CityConfigSchema,
@@ -20,9 +22,9 @@ import {
   ERROR_CODES,
   type FlagSet,
 } from "@ubi/contracts";
-import { z } from "zod";
 
 import { MemoryCache } from "./memory-cache";
+
 import type {
   CacheStore,
   ConfigClientOptions,
@@ -64,7 +66,7 @@ function configUnavailable(cityId: string, cause: string): ContractError {
 
 /** Maps a service error body onto a canonical code, defaulting to config_unavailable. */
 function codeFromBody(body: unknown): ErrorCode | undefined {
-  if (typeof body !== "object" || body === null) return undefined;
+  if (typeof body !== "object" || body === null) {return undefined;}
   const code = (body as { code?: unknown }).code;
   return typeof code === "string" && ERROR_CODE_SET.has(code)
     ? (code as ErrorCode)
@@ -88,7 +90,12 @@ export class ConfigClient {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.ttlSec = options.ttlSec ?? DEFAULT_TTL_SEC;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.doFetch = options.fetch ?? ((input, init) => fetch(input, init));
+    this.doFetch =
+      options.fetch ??
+      (async (input, init) => {
+        const response = await fetch(input, init);
+        return response;
+      });
     this.store = options.cache;
     this.serviceKey = options.serviceKey;
     this.now = options.now ?? (() => Date.now());
@@ -124,10 +131,10 @@ export class ConfigClient {
     key: string,
     revive: (raw: unknown) => T | undefined,
   ): Promise<T | undefined> {
-    if (this.store === undefined) return undefined;
+    if (this.store === undefined) {return undefined;}
     try {
       const raw = await this.store.get(key);
-      if (raw === null) return undefined;
+      if (raw === null) {return undefined;}
       return revive(JSON.parse(raw) as unknown);
     } catch {
       return undefined;
@@ -135,7 +142,7 @@ export class ConfigClient {
   }
 
   private async writeStore(key: string, value: unknown): Promise<void> {
-    if (this.store === undefined) return;
+    if (this.store === undefined) {return;}
     try {
       await this.store.set(key, JSON.stringify(value), "EX", this.ttlSec);
     } catch {
@@ -151,16 +158,17 @@ export class ConfigClient {
   async getCityConfig(cityId: string): Promise<CityConfig> {
     const key = this.configKey(cityId);
     const fresh = this.configs.fresh(key, this.now());
-    if (fresh !== undefined) return fresh.value.config;
+    if (fresh !== undefined) {return fresh.value.config;}
 
     const pending = this.inFlight.get(key);
-    if (pending !== undefined) return pending;
+    if (pending !== undefined) {return pending;}
 
     const load = this.loadCityConfig(cityId, key).finally(() => {
       this.inFlight.delete(key);
     });
     this.inFlight.set(key, load);
-    return load;
+    const config = await load;
+    return config;
   }
 
   private async loadCityConfig(
@@ -168,10 +176,10 @@ export class ConfigClient {
     key: string,
   ): Promise<CityConfig> {
     const shared = await this.readStore<CachedConfig>(key, (raw) => {
-      if (typeof raw !== "object" || raw === null) return undefined;
+      if (typeof raw !== "object" || raw === null) {return undefined;}
       const candidate = raw as { config?: unknown; etag?: unknown };
       const parsed = CityConfigSchema.safeParse(candidate.config);
-      if (!parsed.success) return undefined;
+      if (!parsed.success) {return undefined;}
       return {
         config: parsed.data,
         etag: typeof candidate.etag === "string" ? candidate.etag : undefined,
@@ -257,7 +265,7 @@ export class ConfigClient {
   async getFlags(query: FlagQuery = {}): Promise<FlagSet> {
     const key = this.flagKey(query);
     const fresh = this.flags.fresh(key, this.now());
-    if (fresh !== undefined) return fresh.value;
+    if (fresh !== undefined) {return fresh.value;}
 
     const shared = await this.readStore<FlagSet>(key, (raw) => {
       const parsed = FlagMapSchema.safeParse(raw);
@@ -275,8 +283,8 @@ export class ConfigClient {
     }
 
     const search = new URLSearchParams();
-    if (query.cityId !== undefined) search.set("cityId", query.cityId);
-    if (query.userId !== undefined) search.set("userId", query.userId);
+    if (query.cityId !== undefined) {search.set("cityId", query.cityId);}
+    if (query.userId !== undefined) {search.set("userId", query.userId);}
     const suffix = search.size === 0 ? "" : `?${search.toString()}`;
 
     try {
@@ -286,9 +294,9 @@ export class ConfigClient {
           : { "x-service-key": this.serviceKey }),
         ...(query.userId === undefined ? {} : { "x-user-id": query.userId }),
       });
-      if (!response.ok) return DENY_ALL;
+      if (!response.ok) {return DENY_ALL;}
       const parsed = FlagMapSchema.safeParse(await this.safeJson(response));
-      if (!parsed.success) return DENY_ALL;
+      if (!parsed.success) {return DENY_ALL;}
       const flags = Object.freeze(parsed.data) as FlagSet;
       this.flags.set(key, {
         value: flags,
@@ -310,7 +318,7 @@ export class ConfigClient {
   async watchInvalidations(subscriber: InvalidationSubscriber): Promise<void> {
     await subscriber.subscribe(CONFIG_INVALIDATION_CHANNEL);
     subscriber.on("message", (channel, message) => {
-      if (channel !== CONFIG_INVALIDATION_CHANNEL) return;
+      if (channel !== CONFIG_INVALIDATION_CHANNEL) {return;}
       let parsed: unknown;
       try {
         parsed = JSON.parse(message) as unknown;
@@ -344,7 +352,7 @@ export class ConfigClient {
   }
 
   private async dropShared(...keys: string[]): Promise<void> {
-    if (this.store === undefined || keys.length === 0) return;
+    if (this.store === undefined || keys.length === 0) {return;}
     try {
       await this.store.del(...keys);
     } catch {

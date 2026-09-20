@@ -19,7 +19,7 @@ export {
 } from "./trip-status-card";
 export {
   TripTimeline,
-  type TimelineStep,
+  type TimelineStep as TripTimelineStep,
   type TripTimelineProps,
 } from "./trip-timeline";
 

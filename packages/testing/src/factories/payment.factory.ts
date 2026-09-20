@@ -6,8 +6,10 @@
  */
 
 import { faker } from "@faker-js/faker";
-import type { TestPaymentMethod, TestTransaction } from "../types";
+
 import { CURRENCIES, PHONE_FORMATS, randomPick, uuid } from "../utils";
+
+import type { TestPaymentMethod, TestTransaction } from "../types";
 
 // African mobile money providers
 const MOBILE_MONEY_PROVIDERS = [

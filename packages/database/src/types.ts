@@ -4,7 +4,7 @@
  * Common database-related types used across the monorepo.
  */
 
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 
 /**
  * Transaction client type for Prisma transactions
@@ -47,6 +47,3 @@ export interface SortInput {
   field: string;
   order: SortOrder;
 }
-
-// Re-export useful Prisma types
-export type { Prisma };
