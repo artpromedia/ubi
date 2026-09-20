@@ -130,6 +130,8 @@ func main() {
 			r.Use(appMiddleware.ServiceAuth(cfg.InternalServiceKey))
 			r.Post("/payment", h.PaymentWebhook)
 			r.Post("/order", h.OrderWebhook)
+			// Marketplace award saga hand-off (idempotent on awardId).
+			r.Post("/marketplace-assign", h.MarketplaceAssign)
 		})
 	})
 

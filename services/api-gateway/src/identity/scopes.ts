@@ -53,6 +53,9 @@ export const SCOPES = [
   "auth:step_up",
   "driver:online",
   "driver:documents:write",
+  "mp:request",
+  "mp:bid",
+  "mp:admin:read",
   "support:write",
   "admin:all",
 ] as const;
@@ -98,6 +101,8 @@ const RIDER_SCOPES: readonly Scope[] = [
   "security:contacts:change",
   "device:enroll",
   "auth:step_up",
+  // Publish, revise, cancel and award negotiated-fare requests (M-series).
+  "mp:request",
   "support:write",
 ];
 
@@ -105,6 +110,9 @@ const DRIVER_SCOPES: readonly Scope[] = [
   ...RIDER_SCOPES,
   "driver:online",
   "driver:documents:write",
+  // Bid on marketplace requests and manage rate profiles. Every live bid
+  // carries a wallet-held commission reservation.
+  "mp:bid",
 ];
 
 const MERCHANT_SCOPES: readonly Scope[] = [
@@ -134,6 +142,11 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
  * Everything a limited-mode session keeps: book with cash, view history, read
  * your own profile and wallet balance, and complete the step-up that ends the
  * limitation. Nothing that moves money, nothing that changes security.
+ *
+ * The marketplace scopes (mp:request, mp:bid, mp:admin:read) are DELIBERATELY
+ * absent: a bid reserves a wallet commission hold and an award authorizes
+ * rider funding, so every /v1/mp route stays off the limited-mode allowlist —
+ * the precedent restricts limited mode to cash booking plus reads.
  */
 export const LIMITED_MODE_SCOPES: readonly Scope[] = [
   "profile:read",
@@ -249,6 +262,27 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     anyOf: ["security:pin:change"],
   },
   { methods: "*", prefix: "/v1/payments", anyOf: ["wallet:read"] },
+  // Marketplace (negotiated fares). GET on the request family serves both the
+  // owner snapshot/award poll (mp:request) and the driver-view (mp:bid); the
+  // downstream engine enforces ownership. Writes on the request family are
+  // requester actions only.
+  { methods: ["GET"], prefix: "/v1/mp/quote", anyOf: ["mp:request"] },
+  {
+    methods: ["GET"],
+    prefix: "/v1/mp/requests",
+    anyOf: ["mp:request", "mp:bid"],
+  },
+  { methods: ["POST"], prefix: "/v1/mp/requests", anyOf: ["mp:request"] },
+  { methods: ["GET"], prefix: "/v1/mp/feed", anyOf: ["mp:bid"] },
+  { methods: "*", prefix: "/v1/mp/bids", anyOf: ["mp:bid"] },
+  { methods: "*", prefix: "/v1/mp/rate-profiles", anyOf: ["mp:bid"] },
+  { methods: ["GET"], prefix: "/v1/admin/mp", anyOf: ["mp:admin:read"] },
+  // Commission-hold ledger endpoints are service-to-service (payment-service
+  // verifies the service key); at the gateway only admin/service tokens may
+  // even reach them. GET /v1/wallet/mp/overview stays covered by the
+  // GET /v1/wallet → wallet:read family rule above.
+  { methods: "*", prefix: "/v1/wallet/mp/holds", anyOf: ["admin:all"] },
+  { methods: "*", prefix: "/v1/wallets/mp/holds", anyOf: ["admin:all"] },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
   { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },
   { methods: ["POST"], prefix: "/v1/packages", anyOf: ["shipment:create"] },

@@ -125,14 +125,24 @@ func (h *Handler) AcceptDelivery(w http.ResponseWriter, r *http.Request) {
 	// Check delivery status
 	var status string
 	var customerID string
+	var packageJSON []byte
 	err = h.db.Pool.QueryRow(r.Context(),
-		"SELECT status, customer_id FROM deliveries WHERE id = $1",
+		"SELECT status, customer_id, package FROM deliveries WHERE id = $1",
 		deliveryID,
-	).Scan(&status, &customerID)
+	).Scan(&status, &customerID, &packageJSON)
 
 	if err != nil {
 		h.rdb.Delete(r.Context(), lockKey)
 		respondError(w, http.StatusNotFound, "NOT_FOUND", "Delivery not found")
+		return
+	}
+
+	// Marketplace-managed deliveries are assigned by the award saga (fenced,
+	// exactly-once); the open-market accept must never claim one. Refused
+	// BEFORE any state change.
+	if isMarketplaceManaged(packageJSON) {
+		h.rdb.Delete(r.Context(), lockKey)
+		respondError(w, http.StatusConflict, "MARKETPLACE_MANAGED", "This delivery is assigned through the marketplace award flow and cannot be accepted from the open market")
 		return
 	}
 

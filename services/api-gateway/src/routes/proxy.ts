@@ -257,6 +257,15 @@ proxyRoutes.all("/locations/*", (c) =>
   proxyToService("rides", downstreamPath(c), c),
 );
 
+// Marketplace (negotiated-fare) routes — the marketplace engine lives in the
+// ride-service, so /mp/* rides on the existing rides registry entry. The
+// wallet-side marketplace endpoints (/wallet/mp/*) are served by
+// payment-service and already flow through the /wallet/* mount below.
+proxyRoutes.all("/mp/*", (c) => proxyToService("rides", downstreamPath(c), c));
+proxyRoutes.all("/admin/mp/*", (c) =>
+  proxyToService("rides", downstreamPath(c), c),
+);
+
 // Food Service routes
 proxyRoutes.all("/food/*", (c) => proxyToService("food", downstreamPath(c), c));
 proxyRoutes.all("/restaurants/*", (c) =>
