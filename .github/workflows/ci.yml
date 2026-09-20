@@ -340,6 +340,13 @@ jobs:
       - name: Provision an empty database from the migration chain
         run: pnpm --filter @ubi/database exec prisma migrate deploy
 
+      - name: Create the shadow database
+        # migrate diff replays the chain into an EXISTING shadow database; the
+        # service container only provisions ubi_ci.
+        run: |
+          PGPASSWORD=ubi_ci_password psql -h localhost -U ubi -d ubi_ci \
+            -c 'CREATE DATABASE ubi_ci_shadow'
+
       - name: Fail on schema drift
         # migrate diff between what the migrations produce and what the schema
         # declares must be empty; --exit-code makes a non-empty diff fail.

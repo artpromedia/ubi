@@ -16,7 +16,7 @@
   },
   "scripts": {
     "dev": "tsup --watch",
-    "build": "tsup",
+    "build": "pnpm run codegen && tsup",
     "codegen": "node scripts/generate-state-machines.mjs",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
