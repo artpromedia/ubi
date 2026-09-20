@@ -82,7 +82,9 @@ jobs:
         run: pnpm format:check
 
       - name: Run ESLint
-        run: pnpm lint:affected
+        # Bounded concurrency: ten parallel eslint processes exhaust the
+        # runner's memory and take the whole job down as "cancelled".
+        run: pnpm exec turbo run lint --affected --concurrency=4
 
   typecheck:
     name: TypeScript Check
@@ -107,7 +109,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run TypeScript check
-        run: pnpm typecheck:affected
+        # Bounded concurrency: parallel tsc processes are memory-hungry too.
+        run: pnpm exec turbo run typecheck --affected --concurrency=4
 
   # ===========================================
   # BUILD
@@ -135,7 +138,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build affected packages
-        run: pnpm build:affected
+        # Next.js builds spawn their own worker pools; more than two at once
+        # exhausts the runner's memory.
+        run: pnpm exec turbo run build --affected --concurrency=2
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -179,7 +184,18 @@ jobs:
           name: build-artifacts
 
       - name: Run tests
-        run: pnpm test:affected
+        # Hermetic unit suites only: packages/* and apps/* run with nothing but
+        # node. Suites that need real infrastructure run where it is
+        # provisioned instead — the Node services and @ubi/outbox
+        # (Postgres/Redis) in the Testing Pipeline (test.yml), the Go services
+        # in this workflow's go-build jobs. @ubi/contract-testing's pact
+        # provider verification needs running providers and has no CI home yet.
+        # (--affected cannot be combined with --filter, and this scope is
+        # small and fast, so it simply always runs.)
+        run: >-
+          pnpm exec turbo run test --concurrency=4
+          --filter='./packages/*' --filter='./apps/*'
+          --filter='!@ubi/outbox' --filter='!@ubi/contract-testing'
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4

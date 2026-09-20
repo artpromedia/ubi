@@ -27,8 +27,8 @@ type MpFixState = {
   returnTries: number;
   returnState: "unreachable" | "retrying" | "return_approved" | "held_at_point";
 };
-// eslint-disable-next-line no-var -- global augmentation requires `var`
 declare global {
+  // eslint-disable-next-line no-var -- global augmentation requires `var`
   var __ubiMpFix: MpFixState | undefined;
 }
 const fresh = (): MpFixState => ({

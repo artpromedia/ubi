@@ -46,8 +46,8 @@ type MpDriverFixState = {
     state: "pending" | "cleared" | "failed";
   }[];
 };
-// eslint-disable-next-line no-var -- `declare global { var … }` is the only way to type a globalThis slot
 declare global {
+  // eslint-disable-next-line no-var -- `declare global { var … }` is the only way to type a globalThis slot
   var __ubiMpDriverFix: MpDriverFixState | undefined;
 }
 const fresh = (): MpDriverFixState => ({

@@ -125,9 +125,10 @@ export type RootStackParamList = {
   Sos: { rideId?: string } | undefined;
   SecureConfirm: { purpose: string; onProof: (proof: string) => void };
 };
-// eslint-disable-next-line @typescript-eslint/no-namespace, @typescript-eslint/no-empty-object-type -- react-navigation's documented global-typing pattern
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- react-navigation's documented global-typing pattern
   namespace ReactNavigation {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- the extends clause is the whole point
     interface RootParamList extends RootStackParamList {}
   }
 }

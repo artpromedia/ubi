@@ -71,7 +71,21 @@ function ensureDatabase(): void {
     `SELECT 1 FROM pg_database WHERE datname = '${name}'`,
   );
   if (exists === "") {
-    psql(DATABASE_URL, `CREATE DATABASE "${name}" OWNER ubi`);
+    try {
+      psql(DATABASE_URL, `CREATE DATABASE "${name}" OWNER ubi`);
+    } catch (error) {
+      // Suites bootstrap in parallel, so two of them can pass the existence
+      // check above and race the CREATE; the loser gets "already exists"
+      // (42P04, or the pg_database duplicate-key form), which means another
+      // suite finished the job — only a different failure is real.
+      const stderrText =
+        error instanceof Error && "stderr" in error
+          ? String((error as { stderr: unknown }).stderr)
+          : "";
+      if (!/already exists/.test(stderrText + String(error))) {
+        throw error;
+      }
+    }
   }
 
   const migrated = execFileSync(

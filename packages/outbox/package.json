@@ -30,6 +30,7 @@
     "ioredis": "^5.4.1"
   },
   "devDependencies": {
+    "@prisma/client": "^6.1.0",
     "@types/node": "^22.10.2",
     "@ubi/eslint-config": "workspace:*",
     "@ubi/typescript-config": "workspace:*",

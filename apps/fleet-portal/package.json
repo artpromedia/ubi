@@ -10,7 +10,6 @@
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {

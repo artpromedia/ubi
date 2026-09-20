@@ -538,7 +538,7 @@ export async function travelFixtures(i: FixtureInput) {
     });
   return undefined;
 }
-// eslint-disable-next-line no-var -- global augmentation requires `var`
 declare global {
+  // eslint-disable-next-line no-var -- global augmentation requires `var`
   var __ubiRepriceOnce: boolean | undefined;
 }
