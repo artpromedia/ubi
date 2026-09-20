@@ -30,4 +30,7 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!.*(?:react-native|@react-navigation))',
   ],
+  // The first render in a suite pays the whole babel transform of the app graph;
+  // on slow CI runners that alone can exceed jest's 5s default.
+  testTimeout: 20000,
 };

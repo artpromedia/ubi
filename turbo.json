@@ -177,12 +177,15 @@
         "**/openapi.json",
         "**/schema.prisma",
         "codegen.ts",
-        "codegen.yaml"
+        "codegen.yaml",
+        "scripts/generate-state-machines.mjs",
+        "$TURBO_ROOT$/contracts/state-machines.json"
       ],
       "outputs": [
         "**/generated/**",
         "**/__generated__/**",
-        "**/src/generated/**"
+        "**/src/generated/**",
+        "**/*.generated.ts"
       ],
       "cache": true
     },

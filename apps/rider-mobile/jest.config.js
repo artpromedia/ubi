@@ -39,4 +39,7 @@ module.exports = {
   setupFilesAfterEnv: [path.resolve(__dirname, 'jest.setup.js')],
   testMatch: ['<rootDir>/__tests__/**/*.test.{ts,tsx}'],
   clearMocks: true,
+  // The first render in a suite pays the whole babel transform of the app graph;
+  // on slow CI runners that alone can exceed jest's 5s default.
+  testTimeout: 20000,
 };
