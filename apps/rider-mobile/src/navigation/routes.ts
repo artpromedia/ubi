@@ -13,12 +13,22 @@ export type TravelStackParamList = {
   PassengerDetails: { cartId: string; index: number }; Checkout: { cartId: string }; OrderStatus: { orderId: string }; Itinerary: { tripId: string }; Servicing: { orderId: string };
   RefundStatus: { refundId: string }; Disruption: { orderId: string }; AttachAirportRide: { orderId: string; direction: 'to_airport' | 'from_airport' }; LinkedOrders: { tripId: string };
 };
+/** Inputs the fare editor needs to price a marketplace request (GET /v1/mp/quote). Areas are coarse label+centroid, never a house number. */
+export type MarketplaceQuoteParams = { service: 'ride' | 'delivery'; vehicleClass: string; pickup: { label: string; lat: number; lng: number }; dropoff: { label: string; lat: number; lng: number }; weightKg?: number; handling?: string[] };
+export type MarketplaceStackParamList = {
+  Details: undefined;
+  Fare: { quoteParams: MarketplaceQuoteParams };
+  Offers: { requestId: string; unavailableNotice?: string };
+  BidDetail: { requestId: string; bidId: string };
+  Queued: { requestId: string };
+  DeliveryReturn: { deliveryId: string };
+};
 export type AccountStackParamList = { Profile: undefined; Edit: undefined; Places: undefined; Payments: undefined; Settings: undefined; Benefits: undefined; Referrals: undefined; Automation: undefined; MandateEditor: { mandateId?: string } | undefined; MandateReceipt: { executionId: string } };
 export type MainTabParamList = { Home: undefined; Activity: undefined; Wallet: NavigatorScreenParams<WalletStackParamList>; Account: NavigatorScreenParams<AccountStackParamList> };
 export type RootStackParamList = {
   Splash: undefined; Onboarding: undefined; Auth: NavigatorScreenParams<AuthStackParamList>; Main: NavigatorScreenParams<MainTabParamList>;
   Ride: NavigatorScreenParams<RideStackParamList>; Bites: NavigatorScreenParams<BitesStackParamList>; Send: NavigatorScreenParams<SendStackParamList>;
-  Ask: NavigatorScreenParams<AskStackParamList>; Travel: NavigatorScreenParams<TravelStackParamList>;
+  Ask: NavigatorScreenParams<AskStackParamList>; Travel: NavigatorScreenParams<TravelStackParamList>; Marketplace: NavigatorScreenParams<MarketplaceStackParamList>;
   FlagOff: { feature: string }; Sos: { rideId?: string } | undefined; SecureConfirm: { purpose: string; onProof: (proof: string) => void };
 };
 declare global { namespace ReactNavigation { interface RootParamList extends RootStackParamList {} } }

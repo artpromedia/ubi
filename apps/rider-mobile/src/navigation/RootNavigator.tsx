@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTheme, FlagGate } from '@ubi/mobile-ui';
 import { linking } from './linking';
-import type { RootStackParamList, MainTabParamList, AskStackParamList, TravelStackParamList, AccountStackParamList } from './routes';
+import type { RootStackParamList, MainTabParamList, AskStackParamList, TravelStackParamList, AccountStackParamList, MarketplaceStackParamList } from './routes';
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { AskScreen } from '../screens/ask/AskScreen';
 import { ExecutionStatusScreen } from '../screens/ask/ExecutionStatusScreen';
@@ -24,6 +24,12 @@ import { RefundStatusScreen } from '../screens/travel/RefundStatusScreen';
 import { DisruptionScreen } from '../screens/travel/DisruptionScreen';
 import { AttachAirportRideScreen } from '../screens/travel/AttachAirportRideScreen';
 import { LinkedOrdersScreen } from '../screens/travel/LinkedOrdersScreen';
+import { RequestDetailsScreen } from '../screens/marketplace/RequestDetailsScreen';
+import { FareEditorContainer } from '../screens/marketplace/FareEditorContainer';
+import { OfferInboxContainer } from '../screens/marketplace/OfferInboxContainer';
+import { BidDetailContainer } from '../screens/marketplace/BidDetailContainer';
+import { QueuedTrackerContainer } from '../screens/marketplace/QueuedTrackerContainer';
+import { DeliveryReturnContainer } from '../screens/marketplace/DeliveryReturnContainer';
 // RN-01 ports: Splash, Onboarding, Auth, Ride, Bites, Send, Wallet, Activity, Account.Profile/Edit/Places/Payments/Settings, Sos, SecureConfirm (see MIGRATION_MAP.md).
 import { PlaceholderScreen } from '../screens/PlaceholderScreen';
 
@@ -32,6 +38,7 @@ const Tabs = createBottomTabNavigator<MainTabParamList>();
 const AskStack = createNativeStackNavigator<AskStackParamList>();
 const TravelStack = createNativeStackNavigator<TravelStackParamList>();
 const AccountStack = createNativeStackNavigator<AccountStackParamList>();
+const MarketplaceStack = createNativeStackNavigator<MarketplaceStackParamList>();
 
 function AccountNavigator() {
   return (
@@ -91,6 +98,20 @@ function TravelNavigator({ navigation }: { navigation: { navigate: (s: 'Main') =
     </FlagGate>
   );
 }
+function MarketplaceNavigator({ navigation }: { navigation: { navigate: (s: 'Main') => void } }) {
+  return (
+    <FlagGate flag="marketplace_rides" featureName="Fare marketplace" onDismiss={() => navigation.navigate('Main')}>
+      <MarketplaceStack.Navigator screenOptions={{ headerShown: false }}>
+        <MarketplaceStack.Screen name="Details" component={RequestDetailsScreen} />
+        <MarketplaceStack.Screen name="Fare" component={FareEditorContainer} />
+        <MarketplaceStack.Screen name="Offers" component={OfferInboxContainer} />
+        <MarketplaceStack.Screen name="BidDetail" component={BidDetailContainer} />
+        <MarketplaceStack.Screen name="Queued" component={QueuedTrackerContainer} />
+        <MarketplaceStack.Screen name="DeliveryReturn" component={DeliveryReturnContainer} />
+      </MarketplaceStack.Navigator>
+    </FlagGate>
+  );
+}
 export function RootNavigator() {
   const t = useTheme();
   const navTheme = t.mode === 'dark' ? { ...DarkTheme, colors: { ...DarkTheme.colors, background: t.colors.bg } } : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: t.colors.bg2 } };
@@ -106,6 +127,7 @@ export function RootNavigator() {
         <Root.Screen name="Send" component={PlaceholderScreen} />
         <Root.Screen name="Ask" component={AskNavigator as never} />
         <Root.Screen name="Travel" component={TravelNavigator as never} />
+        <Root.Screen name="Marketplace" component={MarketplaceNavigator as never} />
         <Root.Screen name="FlagOff" component={PlaceholderScreen} />
         <Root.Group screenOptions={{ presentation: 'modal' }}>
           <Root.Screen name="Sos" component={PlaceholderScreen} />

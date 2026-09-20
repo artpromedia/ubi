@@ -9,6 +9,8 @@ import type {
   AskStackParamList,
   TravelStackParamList,
   AccountStackParamList,
+  MarketplaceStackParamList,
+  MarketplaceQuoteParams,
   RootStackParamList,
 } from '../navigation/routes';
 
@@ -41,8 +43,20 @@ type _RoutePropParity = Expect<Equal<
   NativeStackScreenProps<TravelStackParamList, 'AttachAirportRide'>['route']['params']
 >>;
 
+// Marketplace (M08, boards R01–R11): the params each container consumes.
+type _MpFare = Expect<Equal<MarketplaceStackParamList['Fare'], { quoteParams: MarketplaceQuoteParams }>>;
+type _MpOffers = Expect<Equal<MarketplaceStackParamList['Offers'], { requestId: string; unavailableNotice?: string }>>;
+type _MpBidDetail = Expect<Equal<MarketplaceStackParamList['BidDetail'], { requestId: string; bidId: string }>>;
+type _MpQueued = Expect<Equal<MarketplaceStackParamList['Queued'], { requestId: string }>>;
+type _MpDeliveryReturn = Expect<Equal<MarketplaceStackParamList['DeliveryReturn'], { deliveryId: string }>>;
+type _MpRoutePropParity = Expect<Equal<
+  RouteProp<MarketplaceStackParamList, 'Fare'>['params'],
+  NativeStackScreenProps<MarketplaceStackParamList, 'Fare'>['route']['params']
+>>;
+
 // The nested navigators are reachable from the root param list.
 type _RootHasAsk = Expect<Extends<'Ask', keyof RootStackParamList>>;
 type _RootHasTravel = Expect<Extends<'Travel', keyof RootStackParamList>>;
+type _RootHasMarketplace = Expect<Extends<'Marketplace', keyof RootStackParamList>>;
 
 export const routeAssertions = true;

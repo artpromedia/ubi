@@ -11,7 +11,7 @@ import { benefitsApi } from '../../api/benefits';
 export function HomeScreen() {
   const t = useTheme();
   const nav = useNavigation<{ navigate: (name: string, params?: unknown) => void }>();
-  const ask = useFlag('ai_assistant'); const travel = useFlag('flights_booking') || useFlag('stays_booking'); const bites = useFlag('bites'); const send = useFlag('send'); const promos = useFlag('rider_promotions');
+  const ask = useFlag('ai_assistant'); const travel = useFlag('flights_booking') || useFlag('stays_booking'); const bites = useFlag('bites'); const send = useFlag('send'); const promos = useFlag('rider_promotions'); const marketplace = useFlag('marketplace_rides');
   const benefits = useQuery({ queryKey: ['benefits'], queryFn: benefitsApi.get, enabled: promos });
   const tile = (label: string, detail: string, tint: string, onPress: () => void) => (
     <Pressable key={label} accessibilityRole="button" onPress={onPress} style={{ flex: 1, minWidth: '46%' }}>
@@ -37,6 +37,7 @@ export function HomeScreen() {
       ) : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
         {tile('Move', 'Rides now or later', t.colors.primaryTint, () => nav.navigate('Ride', { screen: 'Search' }))}
+        {marketplace ? tile('Name your fare', 'You set the price, drivers offer', t.colors.okTint, () => { track('mp_details_opened', { source: 'home' }); nav.navigate('Marketplace', { screen: 'Details' }); }) : null}
         {travel ? tile('Flights & stays', 'Domestic flights, hotels', t.colors.travelTint, () => nav.navigate('Travel', { screen: 'FlightSearch' })) : null}
         {bites ? tile('Bites', 'Food from nearby', t.colors.bitesTint, () => nav.navigate('Bites', { screen: 'Restaurants' })) : null}
         {send ? tile('Send', 'Packages across town', t.colors.sendTint, () => nav.navigate('Send', { screen: 'New' })) : null}
