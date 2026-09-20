@@ -416,9 +416,9 @@ describe("POST /v1/wallet/mp/settlements semantics (settleMarketplaceCompletion)
     // The debit refuses honestly; nothing is recorded, so nothing pretends
     // the fare settled. Chasing the rider (dunning) is deliberately not the
     // ledger's job.
-    await expect(settleMarketplaceCompletion(deps, input)).rejects.toMatchObject(
-      { code: "insufficient_funds" },
-    );
+    await expect(
+      settleMarketplaceCompletion(deps, input),
+    ).rejects.toMatchObject({ code: "insufficient_funds" });
     expect(await balanceOf(db, driver.wallet.id, city.currency)).toEqual(
       money(0, city.currency),
     );

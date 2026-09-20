@@ -24,6 +24,14 @@ describe("FlutterwaveClient Encryption", () => {
   let client: FlutterwaveClient;
 
   beforeEach(() => {
+    // vi.stubEnv persists across tests (this suite never calls
+    // vi.unstubAllEnvs), so a test that stubs a bad key would otherwise leak
+    // it into every later test — that leak is what previously broke the
+    // "encryption roundtrip" tests after the too-short-key validation tests
+    // ran. Re-stub the known-good config before constructing each client.
+    vi.stubEnv("FLUTTERWAVE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+    vi.stubEnv("FLUTTERWAVE_SECRET_KEY", TEST_SECRET_KEY);
+    vi.stubEnv("FLUTTERWAVE_PUBLIC_KEY", TEST_PUBLIC_KEY);
     client = new FlutterwaveClient();
   });
 

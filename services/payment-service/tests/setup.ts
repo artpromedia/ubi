@@ -76,6 +76,18 @@ export const mockPrismaClient = {
     update: vi.fn(),
     count: vi.fn(),
   },
+  riskFactor: {
+    create: vi.fn(),
+    createMany: vi.fn(),
+    findMany: vi.fn(),
+  },
+  dispute: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    count: vi.fn(),
+  },
   reconciliationReport: {
     findFirst: vi.fn(),
     findMany: vi.fn(),

@@ -1,480 +1,519 @@
 /**
  * Fraud Detection Service Unit Tests
  * UBI Payment Service
+ *
+ * Tests the REAL FraudDetectionService surface:
+ *   assessRisk / getPendingReviews / approveTransaction / rejectTransaction
+ *
+ * assessRisk computes five weighted factors (velocity 40%, amount 25%,
+ * geography 15%, device 10%, history 10%) through these Prisma calls, in
+ * order:
+ *   1. paymentTransaction.count      (last hour)
+ *   2. paymentTransaction.count      (last day)
+ *   3. paymentTransaction.aggregate  ({ _sum }) (last hour)
+ *   4. paymentTransaction.aggregate  ({ _sum }) (last day)
+ *   5. paymentTransaction.aggregate  ({ _avg, _max, _count }) (amount anomaly)
+ *   6. paymentTransaction.findMany   (geo history — only when location given)
+ *   7. paymentTransaction.findMany   (device history — only when device/IP given)
+ *      riskAssessment.findFirst      (blacklist — only when device/IP is known)
+ *   8. riskAssessment.count / dispute.count / user.findUnique (user history)
+ *   9. riskAssessment.create + riskFactor.create x5 (only when
+ *      paymentTransactionId ties the assessment to a payment)
  */
 
-import { Currency, PaymentProvider } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RiskAction, RiskLevel } from "@prisma/client";
+import { beforeEach, describe, expect, it, type Mock } from "vitest";
+
 import {
-  mockPrismaClient,
-  mockRedisClient,
-  resetMocks,
-  testUser,
-} from "../setup";
+  FraudDetectionService,
+  type RiskAssessmentResult,
+} from "../../src/services/fraud-detection.service";
+import { mockPrismaClient, resetMocks, testUser } from "../setup";
 
-// Mock dependencies
-vi.mock("../../src/lib/prisma", () => ({
-  prisma: mockPrismaClient,
-}));
+import type { ExtendedPrismaClient } from "../../src/lib/prisma";
 
-vi.mock("../../src/lib/redis", () => ({
-  redis: mockRedisClient,
-}));
+const prismaMock = mockPrismaClient as unknown as {
+  paymentTransaction: { count: Mock; aggregate: Mock; findMany: Mock };
+  riskAssessment: {
+    findFirst: Mock;
+    findMany: Mock;
+    create: Mock;
+    update: Mock;
+    count: Mock;
+  };
+  riskFactor: { create: Mock };
+  dispute: { count: Mock };
+  user: { findUnique: Mock };
+};
 
-import { FraudDetectionService } from "../../src/services/fraud-detection.service";
+function factor(result: RiskAssessmentResult, name: string) {
+  return result.factors.find((f) => f.name === name);
+}
+
+/**
+ * Mock the velocity queries (2 counts + 2 {_sum} aggregates) followed by the
+ * amount-anomaly aggregate ({_avg,_max,_count}) — the shapes the real service
+ * reads.
+ */
+function mockVelocityAndAmount(params: {
+  hourCount: number;
+  dayCount: number;
+  hourAmount: number;
+  dayAmount: number;
+  avgAmount: number | null;
+  maxAmount: number | null;
+  completedCount: number;
+}) {
+  prismaMock.paymentTransaction.count
+    .mockResolvedValueOnce(params.hourCount)
+    .mockResolvedValueOnce(params.dayCount);
+  prismaMock.paymentTransaction.aggregate
+    .mockResolvedValueOnce({ _sum: { amount: params.hourAmount } })
+    .mockResolvedValueOnce({ _sum: { amount: params.dayAmount } })
+    .mockResolvedValueOnce({
+      _avg: { amount: params.avgAmount },
+      _max: { amount: params.maxAmount },
+      _count: params.completedCount,
+    });
+}
+
+/** Clean user history: no risky assessments, no disputes, old account. */
+function mockCleanHistory(accountAgeDays = 90) {
+  prismaMock.riskAssessment.count.mockResolvedValue(0);
+  prismaMock.dispute.count.mockResolvedValue(0);
+  prismaMock.user.findUnique.mockResolvedValue({
+    id: testUser.id,
+    createdAt: new Date(Date.now() - accountAgeDays * 24 * 60 * 60 * 1000),
+  });
+}
 
 describe("FraudDetectionService", () => {
   let fraudService: FraudDetectionService;
 
   beforeEach(() => {
     resetMocks();
-    fraudService = new FraudDetectionService(mockPrismaClient, mockRedisClient);
+    fraudService = new FraudDetectionService(
+      mockPrismaClient as unknown as ExtendedPrismaClient,
+    );
   });
 
   // ===========================================
-  // RISK ASSESSMENT TESTS
+  // RISK ASSESSMENT — assessRisk
   // ===========================================
 
   describe("assessRisk", () => {
     const baseRequest = {
       userId: testUser.id,
-      amount: 5000,
-      currency: Currency.KES,
-      provider: PaymentProvider.MPESA,
-      type: "WALLET_TOPUP" as const,
+      amount: 2000,
+      currency: "KES",
       ipAddress: "41.89.0.1",
       deviceId: "device-123",
-      metadata: {},
     };
 
-    it("should return LOW risk for normal transaction", async () => {
-      // Mock normal user behavior
-      (
-        mockPrismaClient.paymentTransaction.count as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(10);
-      (
-        mockPrismaClient.paymentTransaction.aggregate as ReturnType<
-          typeof vi.fn
-        >
-      ).mockResolvedValue({ _sum: { amount: 50000 } });
-      (
-        mockPrismaClient.riskAssessment.findMany as ReturnType<typeof vi.fn>
-      ).mockResolvedValue([]);
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-      (mockRedisClient.incr as ReturnType<typeof vi.fn>).mockResolvedValue(1);
-      (
-        mockPrismaClient.riskAssessment.create as ReturnType<typeof vi.fn>
-      ).mockResolvedValue({
-        id: "risk-123",
-        riskScore: 15,
-        riskLevel: "LOW",
-        action: "ALLOW",
+    it("should return LOW risk / ALLOW for a normal transaction on a known device", async () => {
+      // velocity: freq max(10, 4) * 0.5 + amount max(4, 2.5) * 0.5 = 7
+      mockVelocityAndAmount({
+        hourCount: 1,
+        dayCount: 2,
+        hourAmount: 2000,
+        dayAmount: 5000,
+        avgAmount: 2000, // request amount == average → no anomaly (10)
+        maxAmount: 3000,
+        completedCount: 25,
       });
+      // device: known (has prior tx), not blacklisted → 10
+      prismaMock.paymentTransaction.findMany.mockResolvedValue([
+        { id: "ptx-1" },
+      ]);
+      prismaMock.riskAssessment.findFirst.mockResolvedValue(null);
+      mockCleanHistory();
 
       const result = await fraudService.assessRisk(baseRequest);
 
-      expect(result).toBeDefined();
-      expect(result.riskLevel).toBe("LOW");
-      expect(result.action).toBe("ALLOW");
-      expect(result.riskScore).toBeLessThan(30);
+      expect(factor(result, "velocity")?.score).toBe(7);
+      expect(factor(result, "amount")?.score).toBe(10);
+      expect(factor(result, "geography")?.score).toBe(0); // no location data
+      expect(factor(result, "device")?.score).toBe(10);
+      expect(factor(result, "history")?.score).toBe(5);
+
+      // 7*0.4 + 10*0.25 + 0 + 10*0.1 + 5*0.1 = 6.8 → 7
+      expect(result.riskScore).toBe(7);
+      expect(result.riskLevel).toBe(RiskLevel.LOW);
+      expect(result.action).toBe(RiskAction.ALLOW);
+      expect(result.requiresReview).toBe(false);
+      expect(result.requires3DS).toBe(false);
+      expect(result.reasons).toEqual(["No specific risk factors identified"]);
+
+      // No paymentTransactionId → the assessment is NOT persisted
+      expect(prismaMock.riskAssessment.create).not.toHaveBeenCalled();
+      expect(prismaMock.riskFactor.create).not.toHaveBeenCalled();
     });
 
-    it("should return HIGH risk for unusually large amount", async () => {
-      const largeRequest = {
-        ...baseRequest,
-        amount: 500000, // Very large amount
-      };
+    it("should return HIGH risk / REVIEW for a large amount from a new country, and persist when tied to a payment", async () => {
+      // velocity: freq max(50, 40)*0.5 + amount max(60, 50)*0.5 = 55
+      mockVelocityAndAmount({
+        hourCount: 5,
+        dayCount: 20,
+        hourAmount: 30000,
+        dayAmount: 100000,
+        avgAmount: 2000, // 500000 is 249x deviation → 80
+        maxAmount: 4000,
+        completedCount: 25,
+      });
+      prismaMock.paymentTransaction.findMany
+        // geo history: previous COMPLETED tx from a different country → 70
+        .mockResolvedValueOnce([
+          {
+            metadata: {
+              location: { country: "KE", lat: -1.286389, lng: 36.817223 },
+            },
+          },
+        ])
+        // device history: device known → blacklist check
+        .mockResolvedValueOnce([{ id: "ptx-1" }]);
+      prismaMock.riskAssessment.findFirst.mockResolvedValue(null); // not blacklisted → 10
+      prismaMock.riskAssessment.count.mockResolvedValue(1); // 1 prior HIGH/CRITICAL assessment → 25
+      prismaMock.riskAssessment.create.mockResolvedValue({
+        id: "assessment-1",
+      });
+      prismaMock.riskFactor.create.mockResolvedValue({});
 
-      // Mock user with low average transaction
-      (
-        mockPrismaClient.paymentTransaction.count as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(5);
-      (
-        mockPrismaClient.paymentTransaction.aggregate as ReturnType<
-          typeof vi.fn
-        >
-      ).mockResolvedValue({ _sum: { amount: 10000 }, _avg: { amount: 2000 } });
-      (
-        mockPrismaClient.riskAssessment.findMany as ReturnType<typeof vi.fn>
-      ).mockResolvedValue([]);
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-      (mockRedisClient.incr as ReturnType<typeof vi.fn>).mockResolvedValue(1);
-      (
-        mockPrismaClient.riskAssessment.create as ReturnType<typeof vi.fn>
-      ).mockResolvedValue({
-        id: "risk-124",
-        riskScore: 75,
-        riskLevel: "HIGH",
-        action: "REVIEW",
+      const result = await fraudService.assessRisk({
+        ...baseRequest,
+        amount: 500000,
+        paymentTransactionId: "ptx-500",
+        location: { latitude: 6.5244, longitude: 3.3792, country: "NG" },
       });
 
-      const result = await fraudService.assessRisk(largeRequest);
+      expect(factor(result, "velocity")?.score).toBe(55);
+      expect(factor(result, "amount")?.score).toBe(80);
+      expect(factor(result, "geography")?.score).toBe(70);
+      expect(factor(result, "device")?.score).toBe(10);
+      expect(factor(result, "history")?.score).toBe(25);
 
-      expect(result).toBeDefined();
-      expect(result.riskLevel).toBe("HIGH");
-      expect(result.action).toBe("REVIEW");
-    });
-
-    it("should BLOCK transaction from blacklisted IP", async () => {
-      const blacklistedRequest = {
-        ...baseRequest,
-        ipAddress: "192.168.1.100",
-      };
-
-      // Mock blacklisted IP
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockImplementation(
-        (key: string) => {
-          if (key.includes("blacklist:ip")) {
-            return Promise.resolve("1");
-          }
-          return Promise.resolve(null);
-        }
+      // 55*0.4 + 80*0.25 + 70*0.15 + 10*0.1 + 25*0.1 = 56
+      expect(result.riskScore).toBe(56);
+      expect(result.riskLevel).toBe(RiskLevel.HIGH);
+      expect(result.action).toBe(RiskAction.REVIEW);
+      expect(result.requiresReview).toBe(true);
+      expect(result.requires3DS).toBe(true);
+      expect(result.reasons).toContain(
+        "Transaction requires manual review before processing",
       );
-      (
-        mockPrismaClient.riskAssessment.create as ReturnType<typeof vi.fn>
-      ).mockResolvedValue({
-        id: "risk-125",
-        riskScore: 100,
-        riskLevel: "CRITICAL",
-        action: "BLOCK",
+      expect(result.reasons).toContain(
+        "Transaction amount significantly higher than usual",
+      );
+      expect(result.reasons).toContain("Transaction from unusual location");
+
+      // Tied to a payment → persisted with the real column names
+      expect(prismaMock.riskAssessment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          paymentTransactionId: "ptx-500",
+          userId: testUser.id,
+          score: 56,
+          level: RiskLevel.HIGH,
+          action: RiskAction.REVIEW,
+          deviceFingerprint: "device-123",
+          ipAddress: "41.89.0.1",
+        }),
       });
-
-      const result = await fraudService.assessRisk(blacklistedRequest);
-
-      expect(result).toBeDefined();
-      expect(result.action).toBe("BLOCK");
-      expect(result.riskLevel).toBe("CRITICAL");
+      expect(result.assessmentId).toBe("assessment-1");
+      expect(prismaMock.riskFactor.create).toHaveBeenCalledTimes(5);
+      expect(prismaMock.riskFactor.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          riskAssessmentId: "assessment-1",
+          name: "velocity",
+          score: 55,
+        }),
+      });
     });
 
-    it("should require 3DS for card payment with medium risk", async () => {
-      const cardRequest = {
+    it("should BLOCK as CRITICAL on velocity abuse combined with other anomalies", async () => {
+      // velocity: freq max(100, 100)*0.5 + amount max(100, 100)*0.5 = 100
+      mockVelocityAndAmount({
+        hourCount: 100,
+        dayCount: 200,
+        hourAmount: 500000,
+        dayAmount: 1000000,
+        avgAmount: 1000, // 50000 is 49x deviation → 80
+        maxAmount: 2000,
+        completedCount: 50,
+      });
+      prismaMock.paymentTransaction.findMany
+        // geo history: different country → 70
+        .mockResolvedValueOnce([
+          {
+            metadata: {
+              location: { country: "KE", lat: -1.286389, lng: 36.817223 },
+            },
+          },
+        ])
+        // device history: never seen → new device → 50 (no blacklist lookup)
+        .mockResolvedValueOnce([]);
+      prismaMock.riskAssessment.count.mockResolvedValue(2); // → 50
+
+      const result = await fraudService.assessRisk({
         ...baseRequest,
-        provider: PaymentProvider.CARD,
         amount: 50000,
-      };
-
-      (
-        mockPrismaClient.paymentTransaction.count as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(3);
-      (
-        mockPrismaClient.paymentTransaction.aggregate as ReturnType<
-          typeof vi.fn
-        >
-      ).mockResolvedValue({ _sum: { amount: 15000 } });
-      (
-        mockPrismaClient.riskAssessment.findMany as ReturnType<typeof vi.fn>
-      ).mockResolvedValue([]);
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-      (mockRedisClient.incr as ReturnType<typeof vi.fn>).mockResolvedValue(2);
-      (
-        mockPrismaClient.riskAssessment.create as ReturnType<typeof vi.fn>
-      ).mockResolvedValue({
-        id: "risk-126",
-        riskScore: 45,
-        riskLevel: "MEDIUM",
-        action: "REQUIRE_3DS",
+        deviceId: "device-fresh",
+        location: { latitude: 6.5244, longitude: 3.3792, country: "NG" },
       });
 
-      const result = await fraudService.assessRisk(cardRequest);
-
-      expect(result).toBeDefined();
-      expect(result.action).toBe("REQUIRE_3DS");
-    });
-
-    it("should detect velocity abuse (too many transactions)", async () => {
-      // Mock high transaction velocity
-      (mockRedisClient.incr as ReturnType<typeof vi.fn>).mockResolvedValue(25);
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-      (
-        mockPrismaClient.paymentTransaction.count as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(100);
-      (
-        mockPrismaClient.paymentTransaction.aggregate as ReturnType<
-          typeof vi.fn
-        >
-      ).mockResolvedValue({ _sum: { amount: 500000 } });
-      (
-        mockPrismaClient.riskAssessment.findMany as ReturnType<typeof vi.fn>
-      ).mockResolvedValue([]);
-      (
-        mockPrismaClient.riskAssessment.create as ReturnType<typeof vi.fn>
-      ).mockResolvedValue({
-        id: "risk-127",
-        riskScore: 85,
-        riskLevel: "HIGH",
-        action: "BLOCK",
-        factors: { velocityAbuse: true },
-      });
-
-      const result = await fraudService.assessRisk(baseRequest);
-
-      expect(result).toBeDefined();
-      expect(result.action).toBe("BLOCK");
-      expect(result.factors).toContainEqual(
-        expect.objectContaining({ factor: "velocity" })
+      expect(factor(result, "velocity")?.score).toBe(100);
+      expect(factor(result, "device")?.score).toBe(50);
+      // 100*0.4 + 80*0.25 + 70*0.15 + 50*0.1 + 50*0.1 ≈ 80.5
+      expect(result.riskScore).toBeGreaterThan(75);
+      expect(result.riskLevel).toBe(RiskLevel.CRITICAL);
+      expect(result.action).toBe(RiskAction.BLOCK);
+      expect(result.requiresReview).toBe(true);
+      expect(result.reasons).toContain(
+        "Transaction flagged as high risk - requires immediate review",
       );
     });
-  });
 
-  // ===========================================
-  // RISK FACTOR TESTS
-  // ===========================================
+    it("should require 3DS for a MEDIUM-risk card payment (and ALLOW it)", async () => {
+      // velocity: freq max(30, 20)*0.5 + amount max(20, 20)*0.5 = 25
+      mockVelocityAndAmount({
+        hourCount: 3,
+        dayCount: 10,
+        hourAmount: 10000,
+        dayAmount: 40000,
+        avgAmount: 2000, // 4000 = 2x average → 60
+        maxAmount: 3000,
+        completedCount: 10,
+      });
+      // device: never seen before → 50
+      prismaMock.paymentTransaction.findMany.mockResolvedValue([]);
+      mockCleanHistory(30);
 
-  describe("calculateRiskFactors", () => {
-    it("should increase risk for new user", async () => {
-      // New user with 0 transactions
-      (
-        mockPrismaClient.paymentTransaction.count as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(0);
+      const result = await fraudService.assessRisk({
+        ...baseRequest,
+        amount: 4000,
+        paymentMethod: "card",
+      });
 
-      const factors = await fraudService.calculateAccountAgeRisk(testUser.id);
-
-      expect(factors.score).toBeGreaterThan(0);
-      expect(factors.factor).toBe("account_age");
+      expect(factor(result, "velocity")?.score).toBe(25);
+      expect(factor(result, "amount")?.score).toBe(60);
+      expect(factor(result, "device")?.score).toBe(50);
+      // 25*0.4 + 60*0.25 + 0 + 50*0.1 + 5*0.1 ≈ 30.5 → MEDIUM
+      expect(result.riskLevel).toBe(RiskLevel.MEDIUM);
+      expect(result.action).toBe(RiskAction.ALLOW);
+      expect(result.requires3DS).toBe(true); // card at MEDIUM risk forces 3DS
+      expect(result.requiresReview).toBe(false);
     });
 
-    it("should increase risk for unusual time", async () => {
-      // Mock a 3 AM transaction
-      const unusualHour = new Date();
-      unusualHour.setHours(3);
+    it("should score a large first transaction from a brand-new user as an amount anomaly", async () => {
+      mockVelocityAndAmount({
+        hourCount: 0,
+        dayCount: 0,
+        hourAmount: 0,
+        dayAmount: 0,
+        avgAmount: null, // no completed history
+        maxAmount: null,
+        completedCount: 0,
+      });
+      prismaMock.riskAssessment.count.mockResolvedValue(0);
+      prismaMock.dispute.count.mockResolvedValue(0);
+      prismaMock.user.findUnique.mockResolvedValue(null);
 
-      const factor = fraudService.calculateTimeRisk(unusualHour);
-
-      expect(factor.score).toBeGreaterThan(0);
-      expect(factor.reason).toContain("unusual");
-    });
-
-    it("should increase risk for geo anomaly", async () => {
-      const request = {
+      const result = await fraudService.assessRisk({
         userId: testUser.id,
-        ipAddress: "203.0.113.1", // Different region
-        amount: 5000,
-        currency: Currency.KES,
-      };
+        amount: 5000, // above the 1000 high-amount threshold for new users
+        currency: "KES",
+        // no device/IP → device factor 30, no findMany calls
+      });
 
-      // Mock user's usual location
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
-        JSON.stringify({ country: "KE", city: "Nairobi" })
+      expect(factor(result, "velocity")?.score).toBe(0);
+      expect(factor(result, "amount")?.score).toBe(75);
+      expect(factor(result, "device")?.score).toBe(30); // missing device data is suspicious
+      expect(prismaMock.paymentTransaction.findMany).not.toHaveBeenCalled();
+      expect(result.riskLevel).toBe(RiskLevel.LOW); // 22 — amount is only 25% of the weight
+      expect(result.action).toBe(RiskAction.ALLOW);
+    });
+
+    it("should max out the device factor when the device was used in a blocked assessment", async () => {
+      mockVelocityAndAmount({
+        hourCount: 0,
+        dayCount: 0,
+        hourAmount: 0,
+        dayAmount: 0,
+        avgAmount: 1000,
+        maxAmount: 1000,
+        completedCount: 5,
+      });
+      // device known for this user...
+      prismaMock.paymentTransaction.findMany.mockResolvedValue([
+        { id: "ptx-1" },
+      ]);
+      // ...but it appears on a BLOCK assessment (device blacklist) → 100
+      prismaMock.riskAssessment.findFirst.mockResolvedValue({ id: "blk-1" });
+      mockCleanHistory();
+
+      const result = await fraudService.assessRisk({
+        userId: testUser.id,
+        amount: 1000,
+        currency: "KES",
+        deviceId: "device-burned",
+      });
+
+      expect(prismaMock.riskAssessment.findFirst).toHaveBeenCalledWith({
+        where: {
+          action: RiskAction.BLOCK,
+          deviceFingerprint: "device-burned",
+        },
+      });
+      expect(factor(result, "device")?.score).toBe(100);
+      expect(result.reasons).toContain("New or suspicious device detected");
+    });
+
+    it("should raise the history factor for users with open disputes", async () => {
+      mockVelocityAndAmount({
+        hourCount: 0,
+        dayCount: 0,
+        hourAmount: 0,
+        dayAmount: 0,
+        avgAmount: 1000,
+        maxAmount: 1000,
+        completedCount: 5,
+      });
+      prismaMock.paymentTransaction.findMany.mockResolvedValue([
+        { id: "ptx-1" },
+      ]);
+      prismaMock.riskAssessment.findFirst.mockResolvedValue(null);
+      prismaMock.riskAssessment.count.mockResolvedValue(0);
+      prismaMock.dispute.count.mockResolvedValue(2); // 2 unresolved disputes → 60
+
+      const result = await fraudService.assessRisk({
+        userId: testUser.id,
+        amount: 1000,
+        currency: "KES",
+        deviceId: "device-123",
+      });
+
+      expect(prismaMock.dispute.count).toHaveBeenCalledWith({
+        where: { userId: testUser.id, status: { not: "won" } },
+      });
+      expect(factor(result, "history")?.score).toBe(60);
+      expect(result.reasons).toContain(
+        "User has previous fraud flags or disputes",
       );
-
-      const factor = await fraudService.calculateGeoRisk(request);
-
-      // If IP geo differs from usual, should add risk
-      expect(factor).toBeDefined();
+      // Disputes found → the account-age lookup is skipped
+      expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
     });
   });
 
   // ===========================================
-  // BLACKLIST TESTS
+  // REVIEW QUEUE — getPendingReviews / approve / reject
   // ===========================================
 
-  describe("blacklistManagement", () => {
-    it("should add IP to blacklist", async () => {
-      (mockRedisClient.set as ReturnType<typeof vi.fn>).mockResolvedValue("OK");
-
-      await fraudService.blacklistIP("192.168.1.100", "Fraud detected");
-
-      expect(mockRedisClient.set).toHaveBeenCalledWith(
-        expect.stringContaining("blacklist:ip:192.168.1.100"),
-        expect.any(String),
-        expect.anything(),
-        expect.anything()
-      );
-    });
-
-    it("should add device to blacklist", async () => {
-      (mockRedisClient.set as ReturnType<typeof vi.fn>).mockResolvedValue("OK");
-
-      await fraudService.blacklistDevice("device-malicious", "Fraud detected");
-
-      expect(mockRedisClient.set).toHaveBeenCalledWith(
-        expect.stringContaining("blacklist:device:device-malicious"),
-        expect.any(String),
-        expect.anything(),
-        expect.anything()
-      );
-    });
-
-    it("should check if IP is blacklisted", async () => {
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue("1");
-
-      const isBlacklisted = await fraudService.isIPBlacklisted("192.168.1.100");
-
-      expect(isBlacklisted).toBe(true);
-    });
-
-    it("should check if device is blacklisted", async () => {
-      (mockRedisClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-
-      const isBlacklisted =
-        await fraudService.isDeviceBlacklisted("device-123");
-
-      expect(isBlacklisted).toBe(false);
-    });
-  });
-
-  // ===========================================
-  // REVIEW QUEUE TESTS
-  // ===========================================
-
-  describe("reviewQueue", () => {
-    it("should get pending reviews", async () => {
-      const mockAssessments = [
+  describe("review queue", () => {
+    it("should list pending reviews mapped from the persisted assessment rows", async () => {
+      const rows = [
         {
           id: "risk-1",
-          riskScore: 65,
-          riskLevel: "HIGH",
-          action: "REVIEW",
-          status: "pending",
-          createdAt: new Date(),
+          userId: testUser.id,
+          score: 88,
+          level: RiskLevel.CRITICAL,
+          action: RiskAction.BLOCK,
+          factors: [{ name: "velocity", score: 100 }],
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          ipLocation: { country: "KE" },
+          paymentTransaction: {
+            user: { id: testUser.id, email: testUser.email },
+          },
         },
         {
           id: "risk-2",
-          riskScore: 55,
-          riskLevel: "MEDIUM",
-          action: "REVIEW",
-          status: "pending",
-          createdAt: new Date(),
+          userId: "user-456",
+          score: 60,
+          level: RiskLevel.HIGH,
+          action: RiskAction.REVIEW,
+          factors: [],
+          createdAt: new Date("2026-01-02T00:00:00Z"),
+          ipLocation: null,
+          paymentTransaction: null,
         },
       ];
-
-      (
-        mockPrismaClient.riskAssessment.findMany as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(mockAssessments);
+      prismaMock.riskAssessment.findMany.mockResolvedValue(rows);
 
       const reviews = await fraudService.getPendingReviews();
 
+      expect(prismaMock.riskAssessment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            action: { in: [RiskAction.REVIEW, RiskAction.BLOCK] },
+            score: { gte: 50 },
+            reviewedAt: null,
+          },
+          orderBy: { score: "desc" },
+          take: 20,
+          skip: 0,
+        }),
+      );
       expect(reviews).toHaveLength(2);
-      expect(reviews[0].status).toBe("pending");
-    });
-
-    it("should approve review and allow transaction", async () => {
-      const mockAssessment = {
+      expect(reviews[0]).toMatchObject({
         id: "risk-1",
-        paymentTransactionId: "payment-123",
-        status: "pending",
-      };
-
-      (
-        mockPrismaClient.riskAssessment.findFirst as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(mockAssessment);
-      (
-        mockPrismaClient.riskAssessment.update as ReturnType<typeof vi.fn>
-      ).mockResolvedValue({ ...mockAssessment, status: "approved" });
-
-      const result = await fraudService.reviewAssessment(
-        "risk-1",
-        "approved",
-        "admin-123",
-        "Manual review passed"
-      );
-
-      expect(result.status).toBe("approved");
-    });
-
-    it("should reject review and block transaction", async () => {
-      const mockAssessment = {
-        id: "risk-1",
-        paymentTransactionId: "payment-123",
         userId: testUser.id,
-        status: "pending",
-      };
+        riskScore: 88,
+        riskLevel: RiskLevel.CRITICAL,
+        action: RiskAction.BLOCK,
+        user: { id: testUser.id, email: testUser.email },
+      });
+      expect(reviews[1].user).toBeUndefined(); // no linked payment → no user
+    });
 
-      (
-        mockPrismaClient.riskAssessment.findFirst as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(mockAssessment);
-      (
-        mockPrismaClient.riskAssessment.update as ReturnType<typeof vi.fn>
-      ).mockResolvedValue({ ...mockAssessment, status: "rejected" });
-      (
-        mockPrismaClient.paymentTransaction.update as ReturnType<typeof vi.fn>
-      ).mockResolvedValue({});
+    it("should pass pagination and minimum-score options through to the query", async () => {
+      prismaMock.riskAssessment.findMany.mockResolvedValue([]);
 
-      const result = await fraudService.reviewAssessment(
+      await fraudService.getPendingReviews({
+        limit: 5,
+        offset: 10,
+        minRiskScore: 80,
+      });
+
+      expect(prismaMock.riskAssessment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ score: { gte: 80 } }),
+          take: 5,
+          skip: 10,
+        }),
+      );
+    });
+
+    it("should approve a transaction by setting ALLOW with review metadata", async () => {
+      prismaMock.riskAssessment.update.mockResolvedValue({});
+
+      await fraudService.approveTransaction("risk-1", "admin-123");
+
+      expect(prismaMock.riskAssessment.update).toHaveBeenCalledWith({
+        where: { id: "risk-1" },
+        data: {
+          action: RiskAction.ALLOW,
+          reviewedAt: expect.any(Date),
+          reviewedBy: "admin-123",
+          reviewNotes: "Manually approved",
+        },
+      });
+    });
+
+    it("should reject a transaction by setting BLOCK with the given reason", async () => {
+      prismaMock.riskAssessment.update.mockResolvedValue({});
+
+      await fraudService.rejectTransaction(
         "risk-1",
-        "rejected",
         "admin-123",
-        "Confirmed fraud"
+        "Confirmed fraud",
       );
 
-      expect(result.status).toBe("rejected");
-      expect(mockPrismaClient.paymentTransaction.update).toHaveBeenCalledWith({
-        where: { id: "payment-123" },
-        data: expect.objectContaining({ status: "FAILED" }),
+      expect(prismaMock.riskAssessment.update).toHaveBeenCalledWith({
+        where: { id: "risk-1" },
+        data: {
+          action: RiskAction.BLOCK,
+          reviewedAt: expect.any(Date),
+          reviewedBy: "admin-123",
+          reviewNotes: "Confirmed fraud",
+        },
       });
-    });
-  });
-
-  // ===========================================
-  // PATTERN DETECTION TESTS
-  // ===========================================
-
-  describe("patternDetection", () => {
-    it("should detect structuring pattern", async () => {
-      // Multiple transactions just under reporting threshold
-      const transactions = Array(5).fill({
-        amount: "9900.0000",
-        createdAt: new Date(),
-      });
-
-      (
-        mockPrismaClient.paymentTransaction.findMany as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(transactions);
-
-      const patterns = await fraudService.detectPatterns(testUser.id);
-
-      expect(patterns).toContainEqual(
-        expect.objectContaining({ pattern: "structuring" })
-      );
-    });
-
-    it("should detect round amount pattern", async () => {
-      // Multiple round amounts
-      const transactions = [
-        { amount: "10000.0000", createdAt: new Date() },
-        { amount: "5000.0000", createdAt: new Date() },
-        { amount: "20000.0000", createdAt: new Date() },
-        { amount: "15000.0000", createdAt: new Date() },
-      ];
-
-      (
-        mockPrismaClient.paymentTransaction.findMany as ReturnType<typeof vi.fn>
-      ).mockResolvedValue(transactions);
-
-      const patterns = await fraudService.detectPatterns(testUser.id);
-
-      expect(patterns).toContainEqual(
-        expect.objectContaining({ pattern: "round_amounts" })
-      );
-    });
-  });
-
-  // ===========================================
-  // METRICS TESTS
-  // ===========================================
-
-  describe("metrics", () => {
-    it("should calculate fraud metrics", async () => {
-      (mockPrismaClient.riskAssessment.count as ReturnType<typeof vi.fn>)
-        .mockResolvedValueOnce(1000) // total assessments
-        .mockResolvedValueOnce(50) // blocked
-        .mockResolvedValueOnce(30); // flagged for review
-
-      (
-        mockPrismaClient.paymentTransaction.aggregate as ReturnType<
-          typeof vi.fn
-        >
-      ).mockResolvedValue({ _sum: { amount: 50000000 } });
-
-      const metrics = await fraudService.getMetrics({
-        startDate: new Date("2024-01-01"),
-        endDate: new Date("2024-01-31"),
-      });
-
-      expect(metrics).toBeDefined();
-      expect(metrics.totalAssessments).toBe(1000);
-      expect(metrics.blockedCount).toBe(50);
-      expect(metrics.blockRate).toBe(5);
     });
   });
 });

@@ -6,14 +6,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TripMonitorService } from "../../src/services/trip-monitor.service";
 
-// Mock the notification client
+// Mock the notification client. The real client resolves a
+// { success: boolean; error?: string } result; the service reads
+// `result.success` on every call, so the mock must always resolve that shape.
+// Implementations are passed to vi.fn(impl) — vitest.config.ts sets
+// `mockReset: true`, which restores the ORIGINAL implementation before each
+// test but wipes anything attached via .mockResolvedValue() at factory time
+// (that wipe is what previously left notifyTripShared returning undefined
+// inside createTripShare).
 vi.mock("../../src/lib/notification-client", () => ({
   notificationClient: {
-    notifyTripShared: vi.fn().mockResolvedValue({ success: true }),
-    notifyTripEnded: vi.fn().mockResolvedValue({ success: true }),
-    sendSafetyCheck: vi.fn().mockResolvedValue({ success: true }),
-    notifyCrashDetected: vi.fn().mockResolvedValue({ success: true }),
-    notifyRouteDeviation: vi.fn().mockResolvedValue({ success: true }),
+    /* eslint-disable require-await -- default impls must be passed to vi.fn(impl) to survive mockReset */
+    notifyTripShared: vi.fn(async () => ({ success: true })),
+    notifyTripEnded: vi.fn(async () => ({ success: true })),
+    sendSafetyCheck: vi.fn(async () => ({ success: true })),
+    notifyCrashDetected: vi.fn(async () => ({ success: true })),
+    notifyRouteDeviation: vi.fn(async () => ({ success: true })),
+    /* eslint-enable require-await */
   },
 }));
 

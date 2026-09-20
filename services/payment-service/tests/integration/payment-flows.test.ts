@@ -35,7 +35,7 @@ describe("Payment Flow Integration Tests", () => {
             amount: 1000,
             currency: "KES",
           }),
-        }
+        },
       );
 
       // Verify initiation was successful
@@ -80,12 +80,14 @@ describe("Payment Flow Integration Tests", () => {
             "X-User-ID": "test-user-123",
             Authorization: "Bearer test-token",
           },
-        }
+        },
       );
 
       expect(balanceResponse.status).toBe(200);
       const balanceData = await balanceResponse.json();
-      expect(Number.parseFloat(balanceData.data.balance)).toBeGreaterThanOrEqual(1000);
+      expect(
+        Number.parseFloat(balanceData.data.balance),
+      ).toBeGreaterThanOrEqual(1000);
     });
 
     it("should handle failed M-Pesa payment", async () => {
@@ -104,7 +106,7 @@ describe("Payment Flow Integration Tests", () => {
             amount: 500,
             currency: "KES",
           }),
-        }
+        },
       );
 
       const initiateData = await initiateResponse.json();
@@ -137,7 +139,7 @@ describe("Payment Flow Integration Tests", () => {
             "X-User-ID": "test-user-456",
             Authorization: "Bearer test-token",
           },
-        }
+        },
       );
 
       const txnData = await transactionResponse.json();
@@ -281,7 +283,7 @@ describe("Payment Flow Integration Tests", () => {
           body: JSON.stringify({
             reason: "Ride cancelled by rider",
           }),
-        }
+        },
       );
 
       expect(releaseResponse.status).toBe(200);
@@ -395,7 +397,7 @@ describe("Payment Flow Integration Tests", () => {
             "X-User-ID": driverId,
             Authorization: "Bearer test-token",
           },
-        }
+        },
       );
 
       const statusData = await payoutStatusResponse.json();
@@ -493,7 +495,7 @@ describe("Payment Flow Integration Tests", () => {
             resolution:
               "Verified with Paystack - timing issue, transaction confirmed",
           }),
-        }
+        },
       );
 
       expect(resolveResponse.status).toBe(200);
@@ -545,7 +547,7 @@ describe("Payment Flow Integration Tests", () => {
           headers: {
             Authorization: "Bearer admin-token",
           },
-        }
+        },
       );
 
       expect(processResponse.status).toBe(200);

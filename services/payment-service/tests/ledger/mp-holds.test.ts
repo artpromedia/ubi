@@ -132,7 +132,11 @@ describe("the worked example, end to end", () => {
       money(500_00, city.currency),
     );
 
-    const overview = await getMpWalletOverview(deps, driver.userId, city.cityId);
+    const overview = await getMpWalletOverview(
+      deps,
+      driver.userId,
+      city.cityId,
+    );
     expect(overview.clearedMinor).toEqual(money(1_000_00, city.currency));
     expect(overview.heldMinor).toEqual(money(500_00, city.currency));
     expect(overview.spendableMinor).toEqual(money(500_00, city.currency));
@@ -458,7 +462,10 @@ describe("capturing and reversing under the award id", () => {
     expect(replay.journalEntryId).toBe(first.journalEntryId);
 
     const captureEntries = await db.journalEntry.count({
-      where: { kind: "mp_commission_capture", reference: `mp_award:${awardId}` },
+      where: {
+        kind: "mp_commission_capture",
+        reference: `mp_award:${awardId}`,
+      },
     });
     expect(captureEntries).toBe(1);
     expect(await balanceOf(db, driver.wallet.id, city.currency)).toEqual(
@@ -785,9 +792,7 @@ describe("idempotency and payload hashing", () => {
       reserveHold(deps, input, key),
       reserveHold(deps, input, key),
     ]);
-    expect(results[0]?.hold.reservationId).toBe(
-      results[1]?.hold.reservationId,
-    );
+    expect(results[0]?.hold.reservationId).toBe(results[1]?.hold.reservationId);
     expect(await activeHoldsMinor(db, driver.wallet.id, city.currency)).toEqual(
       money(500_00, city.currency),
     );

@@ -34,9 +34,12 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-async function riderWith(
-  amountMinor: number,
-): Promise<{ cityId: string; currency: string; userId: string; walletId: string }> {
+async function riderWith(amountMinor: number): Promise<{
+  cityId: string;
+  currency: string;
+  userId: string;
+  walletId: string;
+}> {
   const city = await seedCity(db);
   const user = await seedUser(db, "Rider");
   const config = await createCityConfigProvider(db).load(city.cityId);

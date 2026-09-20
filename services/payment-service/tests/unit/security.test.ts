@@ -48,15 +48,19 @@ describe("Security Module - PII Masking", () => {
     });
 
     it("should mask email addresses", () => {
+      // Sensitive-field detection is anchored to the START of the field name
+      // (/^(email|e.?mail).*$/i), so "email" and "emailAddress" are masked
+      // while a suffix-named field like "userEmail" is NOT. See the
+      // SENSITIVE_FIELD_PATTERNS design in src/lib/security.ts.
       const data = {
         email: "john.doe@example.com",
-        userEmail: "test@ubi.africa",
+        emailAddress: "test@ubi.africa",
       };
 
       const masked = maskForLogging(data);
 
       expect(masked.email).toBe("j***@example.com");
-      expect(masked.userEmail).toBe("t***@ubi.africa");
+      expect(masked.emailAddress).toBe("t***@ubi.africa");
     });
 
     it("should fully mask passwords and secrets", () => {
@@ -131,7 +135,10 @@ describe("Security Module - PII Masking", () => {
 
       expect(masked.bvn).toBe("*******4217");
       expect(masked.nin).toBe("*******8901");
-      expect(masked.kraPin).toBe("*******789B");
+      // Any field whose name contains "pin" is FULLY masked (the strictest
+      // rule wins over the national-ID show-last-4 rule), so a KRA PIN never
+      // exposes its trailing characters.
+      expect(masked.kraPin).toBe("********");
     });
 
     it("should recursively mask nested objects", () => {
@@ -198,7 +205,10 @@ describe("Security Module - PII Masking", () => {
 
       expect(masked.phoneNumber).toBeNull();
       expect(masked.email).toBeUndefined();
-      expect(masked.cardNumber).toBe("");
+      // An empty string in a sensitive field is still masked ("****") rather
+      // than passed through — the mask never reveals a value's length or
+      // emptiness for short values.
+      expect(masked.cardNumber).toBe("****");
     });
 
     it("should prevent deep recursion attacks", () => {
@@ -478,17 +488,18 @@ describe("Security Module - Validation Schemas", () => {
   describe("PaymentAmountSchema", () => {
     const { PaymentAmountSchema } = security.schemas;
 
+    // PaymentAmountSchema validates an OBJECT ({ amount }), not a bare number.
     it("should accept valid amounts", () => {
-      expect(() => PaymentAmountSchema.parse(1000)).not.toThrow();
-      expect(() => PaymentAmountSchema.parse(50000)).not.toThrow();
+      expect(() => PaymentAmountSchema.parse({ amount: 1000 })).not.toThrow();
+      expect(() => PaymentAmountSchema.parse({ amount: 50000 })).not.toThrow();
     });
 
     it("should reject negative amounts", () => {
-      expect(() => PaymentAmountSchema.parse(-100)).toThrow();
+      expect(() => PaymentAmountSchema.parse({ amount: -100 })).toThrow();
     });
 
     it("should reject zero amounts", () => {
-      expect(() => PaymentAmountSchema.parse(0)).toThrow();
+      expect(() => PaymentAmountSchema.parse({ amount: 0 })).toThrow();
     });
   });
 

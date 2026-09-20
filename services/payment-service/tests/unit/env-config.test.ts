@@ -330,12 +330,42 @@ describe("Paystack Configuration Validation", () => {
 
 describe("Security Configuration Validation", () => {
   it("should detect dev patterns in production secrets", () => {
-    const devPatterns = ["dev-secret", "test-secret", "changeme", "local"];
+    // Exercise the real dev-credential check in validateEnvironment: in a
+    // non-dev environment, a JWT_SECRET containing "changeme" passes the
+    // schema (it contains none of dev/test/local/secret, which would be hard
+    // errors) but must be flagged with a warning by checkDevCredentials.
+    const env = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://prod-server:5432/ubi",
+      REDIS_URL: "redis://prod-redis:6379",
+      JWT_SECRET: "changeme" + "a".repeat(56), // 64 chars, dev placeholder
+      SERVICE_SECRET: "prod-service-value-32chars-min!!",
+      ENCRYPTION_KEY: "a".repeat(64),
+      MPESA_CONSUMER_KEY: "prod-consumer-key",
+      MPESA_CONSUMER_SECRET: "prod-consumer-value",
+      MPESA_SHORTCODE: "174379",
+      MPESA_PASSKEY: "a".repeat(40),
+      MPESA_ENVIRONMENT: "production",
+      MPESA_B2C_SHORT_CODE: "600000",
+      MPESA_B2C_INITIATOR_NAME: "initiator",
+      MPESA_B2C_SECURITY_CREDENTIAL: "credential",
+      MPESA_B2C_QUEUE_TIMEOUT_URL: "https://api.ubi.africa/timeout",
+      MPESA_B2C_RESULT_URL: "https://api.ubi.africa/result",
+      PAYSTACK_SECRET_KEY: "sk_live_" + "x".repeat(40),
+      PAYSTACK_PUBLIC_KEY: "pk_live_" + "x".repeat(40),
+      API_BASE_URL: "https://api.ubi.africa",
+    };
 
-    for (const pattern of devPatterns) {
-      const secret = `some-${pattern}-value`;
-      expect(/(dev|test|local|secret)/i.test(secret)).toBe(true);
-    }
+    const result = validateEnvironment(env as NodeJS.ProcessEnv);
+
+    expect(result.valid).toBe(true);
+    expect(
+      result.warnings.some(
+        (w) =>
+          w.includes("JWT_SECRET") &&
+          w.includes("development/test credentials"),
+      ),
+    ).toBe(true);
   });
 
   it("should validate encryption key is proper hex", () => {

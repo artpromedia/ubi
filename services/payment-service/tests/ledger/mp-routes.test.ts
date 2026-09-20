@@ -31,7 +31,6 @@ import { reserveHold } from "../../src/ledger/mp-holds";
 import { ensureWallet, type WalletRecord } from "../../src/ledger/wallets";
 import { createMpHoldRoutes } from "../../src/routes/mp-holds";
 
-
 const db = testDb();
 const deps = makeDeps(db);
 const app = createMpHoldRoutes(deps);
@@ -150,7 +149,9 @@ describe("the internal service-key guard", () => {
     }
     // Nothing was reserved through the mis-provisioned window.
     expect(
-      await db.mpCommissionHold.count({ where: { walletId: driver.wallet.id } }),
+      await db.mpCommissionHold.count({
+        where: { walletId: driver.wallet.id },
+      }),
     ).toBe(0);
   });
 });
@@ -258,28 +259,22 @@ describe("POST /holds/:id/capture wire shape", () => {
     const hold = (await reserve.json()) as { reservationId: string };
 
     // The old body — awardId alone — is no longer a legal capture.
-    const legacy = await app.request(
-      `/holds/${hold.reservationId}/capture`,
-      {
-        method: "POST",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ awardId: uid("awd") }),
-      },
-    );
+    const legacy = await app.request(`/holds/${hold.reservationId}/capture`, {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ awardId: uid("awd") }),
+    });
     expect(legacy.status).toBe(422);
 
     const awardId = uid("awd");
-    const captured = await app.request(
-      `/holds/${hold.reservationId}/capture`,
-      {
-        method: "POST",
-        headers: serviceHeaders(),
-        body: JSON.stringify({
-          awardId,
-          expectedAmountMinor: money(500_00, driver.city.currency),
-        }),
-      },
-    );
+    const captured = await app.request(`/holds/${hold.reservationId}/capture`, {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        awardId,
+        expectedAmountMinor: money(500_00, driver.city.currency),
+      }),
+    });
     expect(captured.status).toBe(200);
     const body = (await captured.json()) as {
       hold: { state: string };

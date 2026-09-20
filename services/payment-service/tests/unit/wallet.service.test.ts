@@ -18,6 +18,30 @@ vi.mock("../../src/lib/prisma", () => ({
   prisma: mockPrismaClient,
 }));
 
+// Mock the performance layer (wallet balance cache + metrics). Without this,
+// getBalance() reads/writes the REAL redis behind src/lib/performance.ts and
+// one test's cached balance (30s TTL) leaks into the next — "zero balances
+// for non-existent account" received the previous test's cached balances.
+// Implementations are passed to vi.fn(impl) so the global `mockReset: true`
+// restores them before every test instead of wiping them.
+/* eslint-disable require-await -- default impls must be passed to vi.fn(impl) to survive mockReset */
+vi.mock("../../src/lib/performance.js", () => ({
+  walletCache: {
+    getBalance: vi.fn(async () => null), // always a cache miss in unit tests
+    setBalance: vi.fn(async () => undefined),
+    invalidateBalance: vi.fn(async () => undefined),
+    getOrFetch: vi.fn(),
+  },
+  performanceMonitor: {
+    recordCacheMetric: vi.fn(async () => undefined),
+    recordTiming: vi.fn(async () => undefined),
+    incrementCounter: vi.fn(async () => undefined),
+    getCounter: vi.fn(async () => 0),
+    createTimer: vi.fn(),
+  },
+}));
+/* eslint-enable require-await */
+
 describe("WalletService", () => {
   let walletService: WalletService;
 

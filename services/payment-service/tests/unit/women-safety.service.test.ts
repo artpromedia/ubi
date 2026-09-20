@@ -7,12 +7,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { notificationClient } from "../../src/lib/notification-client";
 import { WomenSafetyService } from "../../src/services/women-safety.service";
 
-// Mock the notification client
+// Mock the notification client. The real client resolves a
+// { success: boolean; error?: string } result from its fetch to the
+// notification service; the service reads `result.success` on every call, so
+// the mock must always resolve that shape. Implementations are passed to
+// vi.fn(impl) — vitest.config.ts sets `mockReset: true`, which restores the
+// ORIGINAL implementation before each test but wipes anything attached via
+// .mockResolvedValue() at factory time (that wipe is what previously left
+// notifyTripShared returning undefined inside autoShareTrip).
 vi.mock("../../src/lib/notification-client", () => ({
   notificationClient: {
-    notifyTripShared: vi.fn().mockResolvedValue({ success: true }),
-    notifyTripEnded: vi.fn().mockResolvedValue({ success: true }),
-    sendEmergencyPush: vi.fn().mockResolvedValue({ success: true }),
+    /* eslint-disable require-await -- default impls must be passed to vi.fn(impl) to survive mockReset */
+    notifyTripShared: vi.fn(async () => ({ success: true })),
+    notifyTripEnded: vi.fn(async () => ({ success: true })),
+    sendEmergencyPush: vi.fn(async () => ({ success: true })),
+    /* eslint-enable require-await */
   },
 }));
 

@@ -19,8 +19,19 @@ import {
   WalletCache,
 } from "../src/lib/performance.js";
 
-// Mock Redis
-const mockRedis = {
+// Mock Redis.
+//
+// The mock MUST target "../src/lib/redis.js" — the module src/lib/performance.ts
+// actually imports. This file previously mocked "../lib/redis.js" (a path that
+// does not exist), so the mock never applied and every cache test here talked
+// to the REAL redis at REDIS_URL, accumulating state across runs (e.g. timing
+// stats and hit rates kept drifting).
+//
+// vi.hoisted is required because vi.mock factories are hoisted above the
+// imports: a plain top-level const would not be initialized yet when the
+// factory runs. The multi() implementation is passed to vi.fn(impl) so the
+// global `mockReset: true` restores it before each test instead of wiping it.
+const mockRedis = vi.hoisted(() => ({
   get: vi.fn(),
   set: vi.fn(),
   setex: vi.fn(),
@@ -42,21 +53,23 @@ const mockRedis = {
     expire: vi.fn().mockReturnThis(),
     incr: vi.fn().mockReturnThis(),
     hincrby: vi.fn().mockReturnThis(),
-    exec: vi.fn().mockResolvedValue([]),
+    // eslint-disable-next-line require-await -- impl must be passed to vi.fn(impl) to survive mockReset
+    exec: vi.fn(async () => []),
   })),
-};
+}));
 
-vi.mock("../lib/redis.js", () => ({
+vi.mock("../src/lib/redis.js", () => ({
   redis: mockRedis,
   cache: {
     get: vi.fn(),
     set: vi.fn(),
+    del: vi.fn(),
     getOrSet: vi.fn(),
     invalidatePattern: vi.fn(),
   },
 }));
 
-vi.mock("../lib/logger.js", () => ({
+vi.mock("../src/lib/logger.js", () => ({
   perfLogger: {
     debug: vi.fn(),
     info: vi.fn(),
