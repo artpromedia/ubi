@@ -501,6 +501,42 @@ components:
             expiresAt: { type: string, format: date-time },
           },
       }
+    DriverJob:
+      {
+        type: object,
+        required: [claimId, slot, service, state, fareMinor, commissionMinor],
+        properties:
+          {
+            claimId: { type: string },
+            slot: { type: string, enum: [current, next] },
+            service: { type: string, enum: [ride, delivery] },
+            state: { type: string },
+            fareMinor: { $ref: "#/components/schemas/Money" },
+            commissionMinor: { $ref: "#/components/schemas/Money" },
+            receiptId: { type: string },
+            executionRef:
+              {
+                type: object,
+                required: [service, id],
+                properties:
+                  {
+                    service: { type: string, enum: [ride, delivery] },
+                    id: { type: string },
+                  },
+              },
+            pickupWindow:
+              {
+                type: object,
+                required: [earliestSec, latestSec, etaVersion],
+                properties:
+                  {
+                    earliestSec: { type: integer },
+                    latestSec: { type: integer },
+                    etaVersion: { type: integer },
+                  },
+              },
+          },
+      }
     RateProfile:
       {
         type: object,
@@ -734,9 +770,19 @@ paths:
               }
       responses:
         "202":
+          description: "The award (pending, or already confirmed when the saga completed synchronously). `pickupPin` is present ONLY when this call confirmed a current-slot ride award: it is revealed exactly once to the owner and deliberately absent from idempotent replays."
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Award" }
+              schema:
+                {
+                  type: object,
+                  required: [award],
+                  properties:
+                    {
+                      award: { $ref: "#/components/schemas/Award" },
+                      pickupPin: { type: string },
+                    },
+                }
         "409":
           content:
             application/json:
@@ -801,6 +847,54 @@ paths:
                       profileLine: { type: string },
                       ceilingNotice: { type: string },
                       myBid: { $ref: "#/components/schemas/Bid" },
+                      currentClaimId:
+                        {
+                          type: string,
+                          description: "The driver's current work claim id — the mandatory dependsOnClaimId for a next-slot bid. Null unless a current claim exists.",
+                        },
+                    },
+                }
+  /v1/mp/driver/parked:
+    post:
+      summary: Explicit safely-parked attestation (driver)
+      description: "Records the attestation the stationary gate combines with telemetry (it can never override clearly moving samples). The response is the state the SERVER acknowledges; the client adopts it rather than assuming."
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [state, availabilityEpoch, confirmedAt, expiresAt, ttlSeconds],
+                  properties:
+                    {
+                      state: { type: string, enum: [parked_confirmed, moving, stale_location] },
+                      availabilityEpoch: { type: integer },
+                      confirmedAt: { type: string, format: date-time },
+                      expiresAt: { type: string, format: date-time },
+                      ttlSeconds: { type: integer },
+                    },
+                }
+  /v1/mp/driver/jobs:
+    get:
+      summary: Driver claims projection (D05 winner card + D11 current-plus-next timeline)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [promotion],
+                  properties:
+                    {
+                      current: { $ref: "#/components/schemas/DriverJob" },
+                      next: { $ref: "#/components/schemas/DriverJob" },
+                      promotion:
+                        {
+                          type: string,
+                          enum: [none, pending, failed_revalidating],
+                        },
                     },
                 }
   /v1/mp/bids:
@@ -1000,11 +1094,80 @@ paths:
   /v1/wallet/mp/overview:
     get:
       summary: Driver wallet with holds and spendable (D04) — served by payment-service
+      description: "User-facing: reads the AUTHENTICATED caller's own wallet. `cityId` names the market whose currency/config applies (also accepted as an X-City-ID header)."
+      parameters:
+        - { name: cityId, in: query, required: false, schema: { type: string } }
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WalletOverview" }
+  /v1/wallet/mp/holds/overview:
+    get:
+      summary: Wallet overview for a named driver (internal, marketplace engine)
+      description: "Service-authenticated variant the engine uses to build affordability-checked presets. Lives under /holds so the gateway's admin-only rule covers it; user tokens can never name another driver."
+      security: [{ serviceKey: [] }]
+      parameters:
+        - { name: driverId, in: query, required: true, schema: { type: string } }
+        - { name: cityId, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletOverview" }
+  /v1/wallet/mp/settlements:
+    post:
+      summary: Marketplace completion settlement (internal, M06)
+      description: "Called by the marketplace engine when a marketplace execution completes. The 10% fee was captured at selection and is NEVER charged here: wallet trips debit the rider the agreed fare and credit the driver the FULL fare (tips bypass commission); cash trips post nothing except a wallet tip. Idempotent on the award id — a replay returns the original outcome."
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, executionRef, requesterId, driverId, fareMinor, method, cityId],
+                properties:
+                  {
+                    awardId: { type: string },
+                    executionRef:
+                      {
+                        type: object,
+                        required: [service, id],
+                        properties:
+                          {
+                            service: { type: string, enum: [ride, delivery] },
+                            id: { type: string },
+                          },
+                      },
+                    requesterId: { type: string },
+                    driverId: { type: string },
+                    fareMinor: { $ref: "#/components/schemas/Money" },
+                    tipMinor: { $ref: "#/components/schemas/Money" },
+                    method: { type: string, enum: [wallet, cash] },
+                    cityId: { type: string },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [settled, method],
+                  properties:
+                    {
+                      settled: { type: boolean, const: true },
+                      method: { type: string },
+                      journalEntryId: { type: string },
+                    },
+                }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/wallet/mp/holds/reserve:
     post:
       summary: Reserve a commission hold (internal, marketplace engine → payment-service)
@@ -1083,7 +1246,7 @@ paths:
   /v1/wallet/mp/holds/{reservationId}/capture:
     post:
       summary: Capture the winning hold exactly once under the award id (internal)
-      description: "Posts the single 10% commission journal debit (wallet → ubi_commission) with counterpart award reference. Idempotent on the award id; a repeat answers the original receipt. Completion settlement must not charge the fee again."
+      description: "Posts the single 10% commission journal debit (wallet → ubi_commission) with counterpart award reference. Idempotent on the award id; a repeat answers the original receipt. `expectedAmountMinor` is the award's pinned commission: a hold whose current amount differs (e.g. a bid revision raced the selection) is REFUSED with 409 conflict so the saga compensates instead of debiting terms that were never awarded. Completion settlement must not charge the fee again."
       security: [{ serviceKey: [] }]
       parameters:
         - { name: reservationId, in: path, required: true, schema: { type: string } }
@@ -1094,8 +1257,12 @@ paths:
             schema:
               {
                 type: object,
-                required: [awardId],
-                properties: { awardId: { type: string } },
+                required: [awardId, expectedAmountMinor],
+                properties:
+                  {
+                    awardId: { type: string },
+                    expectedAmountMinor: { $ref: "#/components/schemas/Money" },
+                  },
               }
       responses:
         "200":
