@@ -39,6 +39,13 @@ export const SUBJECT_TYPES = [
   "fleet",
   "assignment",
   "recon",
+  // negotiated-fare marketplace (M01)
+  "mp_request",
+  "mp_bid",
+  "mp_award",
+  "mp_claim",
+  "mp_hold",
+  "rate_profile",
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
@@ -304,6 +311,35 @@ export const EVENT_NAMES = [
   "ai.action.logged",
   // Support opened from an Ask thread
   "support.case.opened",
+  // ── Negotiated-fare marketplace (contracts/events/catalog-additions.md) ──
+  // The `mp.` prefix keeps these distinct from wallet money requests
+  // (request.created/request.paid) and legacy dispatch offers (offer.*).
+  "mp.request.published",
+  "mp.request.revised",
+  "mp.request.closed",
+  "mp.request.reopened",
+  "mp.bid.submitted",
+  "mp.bid.revised",
+  "mp.bid.withdrawn",
+  "mp.bid.expired",
+  "mp.bid.invalidated",
+  "mp.bid.lost",
+  "mp.bid.won",
+  "mp.award.pending",
+  "mp.award.confirmed",
+  "mp.award.failed",
+  "mp.award.cancelled",
+  "mp.commission.reserved",
+  "mp.commission.adjusted",
+  "mp.commission.released",
+  "mp.commission.captured",
+  "mp.commission.reversed",
+  "mp.claim.created",
+  "mp.claim.promoted",
+  "mp.claim.released",
+  "mp.queue.eta_updated",
+  "mp.queue.window_missed",
+  "mp.rate_profile.saved",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

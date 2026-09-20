@@ -57,6 +57,19 @@ export const ERROR_CODES = [
   // ops
   "recon_unexplained",
   "remedy_not_permitted",
+  // negotiated-fare marketplace (M01)
+  "market_not_configured",
+  "fare_out_of_bounds",
+  "request_closed",
+  "bid_not_live",
+  "bid_revision_cooldown",
+  "bid_cap_reached",
+  "request_cap_reached",
+  "insufficient_spendable",
+  "slot_unavailable",
+  "queue_dependency_invalid",
+  "award_unresolved",
+  "rate_profile_out_of_bounds",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -116,6 +129,24 @@ const STATUS_BY_CODE: Readonly<Record<ErrorCode, number>> = {
   limited_mode: 403,
   recon_unexplained: 409,
   remedy_not_permitted: 403,
+  // Unconfigured production markets fail closed rather than inventing bounds.
+  market_not_configured: 503,
+  fare_out_of_bounds: 422,
+  request_closed: 409,
+  bid_not_live: 409,
+  bid_revision_cooldown: 429,
+  bid_cap_reached: 429,
+  request_cap_reached: 429,
+  // Distinct from insufficient_funds: the cleared balance may cover the amount,
+  // but active bid holds and other encumbrances make it unspendable.
+  insufficient_spendable: 422,
+  slot_unavailable: 409,
+  queue_dependency_invalid: 409,
+  // A hold whose award is unresolved can neither expire nor release; the award
+  // must reconcile first (M04). Also returned when a second selection races a
+  // pending award on the same request.
+  award_unresolved: 409,
+  rate_profile_out_of_bounds: 422,
 };
 
 export function statusForErrorCode(code: ErrorCode): number {

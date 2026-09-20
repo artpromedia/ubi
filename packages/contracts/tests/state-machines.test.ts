@@ -41,6 +41,12 @@ describe("canonical state machines", () => {
         "campaign",
         "referral",
         "promotionReservation",
+        // Negotiated-fare marketplace machines (M01/M02).
+        "mpRequest",
+        "mpBid",
+        "mpHold",
+        "mpAward",
+        "mpClaim",
       ].sort(),
     );
   });

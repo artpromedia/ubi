@@ -15,3 +15,4 @@ export * from "./flags";
 export * from "./errors";
 export * from "./idempotency";
 export * from "./test-ids";
+export * from "./marketplace";
