@@ -6,7 +6,7 @@ import type { LinkedItem } from '../../api/travel';
 
 /** Board 21c/21e. One card per order/reservation with its own status word, refs, policy and actions. */
 export function ItemCard({ item, onAction }: { item: LinkedItem; onAction: (key: string) => void }) {
-  const t = useTheme();
+  useTheme();
   const tone = item.kind === 'ride_reservation' ? 'primaryInk' : 'travelInk';
   return (
     <Card testID={item.kind === 'ride_reservation' ? TID.travel.linked.ride : TID.travel.itinerary.item} tone={item.status === 'not_reserved' ? 'error' : 'default'} style={{ gap: 6, opacity: item.status === 'not_booked' ? 0.75 : 1 }}>

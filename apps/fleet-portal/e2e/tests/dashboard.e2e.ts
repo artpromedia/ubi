@@ -63,7 +63,7 @@ test.describe("Dashboard Overview", () => {
   test("should show trend indicators", async ({ authenticatedPage }) => {
     const page = authenticatedPage;
 
-    const trends = page.getByText(/\+?\-?\d+\.?\d*%/);
+    const trends = page.getByText(/\+?-?\d+\.?\d*%/);
     expect(await trends.count()).toBeGreaterThan(0);
   });
 });

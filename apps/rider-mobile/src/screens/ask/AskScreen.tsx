@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, TextInput, Pressable, FlatList, KeyboardAvoidingView, Platform, Linking } from 'react-native';
+import { View, TextInput, Pressable, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Screen, Text, Button, Banner, useTheme } from '@ubi/mobile-ui';
 import { track, TID } from '@ubi/mobile-core';

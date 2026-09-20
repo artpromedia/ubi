@@ -8,7 +8,7 @@ import { benefitsApi } from '../../api/benefits';
 
 /** Board 22b — credit (multi-expiry), offers with their status, recent changes with reason + terms. */
 export function BenefitsScreen() {
-  const t = useTheme();
+  useTheme();
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
   const q = useQuery({ queryKey: ['benefits'], queryFn: benefitsApi.get });
   React.useEffect(() => { if (q.data) track('benefits_viewed', { credits: q.data.credits.length, offers: q.data.offers.length }); }, [q.data]);

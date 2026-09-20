@@ -47,7 +47,7 @@ test.describe("Dashboard Overview", () => {
     const page = authenticatedPage;
 
     // Percentage changes
-    const trends = page.getByText(/\+?\-?\d+\.?\d*%/);
+    const trends = page.getByText(/\+?-?\d+\.?\d*%/);
     expect(await trends.count()).toBeGreaterThan(0);
   });
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { View, TextInput, Alert } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -32,7 +32,7 @@ export function MandateEditorScreen() {
   } });
   const revoke = () => Alert.alert('Revoke this automation?', 'Future runs stop immediately. Anything already booked stays booked.', [{ text: 'Keep' }, { text: 'Revoke', style: 'destructive', onPress: () => nav.navigate('SecureConfirm', { purpose: 'Revoke automation', onProof: async (proof: string) => { await mandatesApi.patch(params!.mandateId!, 'revoke', undefined, proof); track('mandate_revoked', {}); await qc.invalidateQueries({ queryKey: ['mandates'] }); nav.goBack(); } }) }]);
 
-  const field = (label: string, child: React.ReactNode) => <View style={{ gap: 6 }}><Text variant="label" tone="text2">{label}</Text>{child}</View>;
+  const field = (label: string, child: ReactNode) => <View style={{ gap: 6 }}><Text variant="label" tone="text2">{label}</Text>{child}</View>;
   const box = { paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: t.colors.border, borderRadius: t.radius.control, backgroundColor: t.colors.card };
   return (
     <Screen title={m.title} onBack={nav.goBack} bg="bg" footer={<View style={{ gap: 8 }}><Button testID={TID.mandates.edit.savePin} label="Save with PIN" onPress={save} />{params?.mandateId ? <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Button label={existing.data?.status === 'paused' ? 'Resume' : 'Pause'} kind="ghost" size="md" onPress={async () => { await mandatesApi.patch(params.mandateId!, existing.data?.status === 'paused' ? 'resume' : 'pause'); await qc.invalidateQueries({ queryKey: ['mandates'] }); nav.goBack(); }} /><Button testID={TID.mandates.edit.revoke} label="Revoke" kind="danger" size="md" onPress={revoke} /></View> : null}</View>}>

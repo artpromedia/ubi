@@ -104,19 +104,23 @@ export default function PrivacySettingsPage() {
     try {
       const response = await driverService.requestDataDownload();
       if (response.success) {
+        // eslint-disable-next-line no-alert -- blocking browser dialog is the intended UX for this account/data action
         alert(
           "Your data export request has been submitted. You will receive an email with a download link.",
         );
       } else {
+        // eslint-disable-next-line no-alert -- blocking browser dialog is the intended UX for this account/data action
         alert(response.error?.message || "Failed to request data download");
       }
     } catch (err) {
       console.error("Failed to request data download:", err);
+      // eslint-disable-next-line no-alert -- blocking browser dialog is the intended UX for this account/data action
       alert("An error occurred. Please try again.");
     }
   };
 
   const handleDeleteAccount = async () => {
+    // eslint-disable-next-line no-alert -- blocking browser dialog is the intended UX for this account/data action
     const confirmed = confirm(
       "Are you sure you want to delete your account? This action cannot be undone.",
     );
@@ -125,14 +129,17 @@ export default function PrivacySettingsPage() {
     try {
       const response = await driverService.requestAccountDeletion();
       if (response.success) {
+        // eslint-disable-next-line no-alert -- blocking browser dialog is the intended UX for this account/data action
         alert(
           "Account deletion request submitted. You will receive a confirmation email.",
         );
       } else {
+        // eslint-disable-next-line no-alert -- blocking browser dialog is the intended UX for this account/data action
         alert(response.error?.message || "Failed to submit deletion request");
       }
     } catch (err) {
       console.error("Failed to request account deletion:", err);
+      // eslint-disable-next-line no-alert -- blocking browser dialog is the intended UX for this account/data action
       alert("An error occurred. Please try again.");
     }
   };

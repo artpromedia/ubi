@@ -3,7 +3,7 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Screen, Text, Card, Button, Banner, Ladder, Row, MoneyText, useTheme, type LadderStep } from '@ubi/mobile-ui';
 import type { Money } from '@ubi/mobile-core';
-import { TEST_IDS, dynamicTestId } from '@ubi/contracts';
+import { TEST_IDS } from '@ubi/contracts';
 
 /** R05 + R09. Selection carries requestVersion + bidVersion; success renders ONLY on award.confirmed. */
 export type BidDetailProps = {

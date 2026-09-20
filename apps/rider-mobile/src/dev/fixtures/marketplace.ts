@@ -3,7 +3,7 @@
 // numbers here are policy (production markets fail closed until configured). The journey is
 // stateful across successive GETs: offers arrive over time, one is withdrawn, awards resolve
 // only via the award GET, and reversals go Pending → confirmed. No fabricated payment success.
-import { ok, NGN, type FixtureInput } from './index';
+import { ok, NGN, type FixtureInput } from './shared';
 
 const PICKUP = { label: 'Lekki Phase 1', lat: 6.4478, lng: 3.4723 };
 const DROPOFF = { label: 'Victoria Island', lat: 6.4281, lng: 3.4216 };
@@ -15,6 +15,7 @@ type MpFixState = {
   publishedAt: string; selected: 'bid_emeka' | 'bid_chidi' | null; cancelled: boolean; queueCancelled: boolean;
   returnTries: number; returnState: 'unreachable' | 'retrying' | 'return_approved' | 'held_at_point';
 };
+// eslint-disable-next-line no-var -- global augmentation requires `var`
 declare global { var __ubiMpFix: MpFixState | undefined; }
 const fresh = (): MpFixState => ({ polls: 0, lowPolls: 0, awardPolls: 0, queuePolls: 0, queueCancelPolls: 0, publishedAt: new Date().toISOString(), selected: null, cancelled: false, queueCancelled: false, returnTries: 0, returnState: 'unreachable' });
 const st = () => (globalThis.__ubiMpFix ??= fresh());

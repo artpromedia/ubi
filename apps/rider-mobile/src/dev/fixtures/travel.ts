@@ -1,4 +1,4 @@
-import { ok, NGN, type FixtureInput } from './index';
+import { ok, NGN, type FixtureInput } from './shared';
 const cap = (g?: string) => ({ holdSupported: false, priceGuaranteeUntil: g, merchantOfRecord: 'ubi', changeSupported: true, refundSupported: true, currency: 'NGN' });
 const search = { searchId: 'srch_1', pricesAsOf: new Date().toISOString(), from: 'LOS', to: 'ABV', date: '2026-09-12', passengers: 1, offers: [
   { offerRef: 'off_p4_7120', carrier: 'Air Peace', flightNumber: 'P4 7120', aircraft: 'Boeing 737', departAt: '2026-09-12T06:45:00+01:00', arriveAt: '2026-09-12T07:55:00+01:00', departTerminal: 'MMA2', arriveTerminal: 'ABV T1', durationMin: 70, stops: 0, capabilities: cap(), fareFamilies: [{ id: 'saver', name: 'Saver', price: NGN(148500), base: NGN(140100), taxes: NGN(8400), baggage: '20 kg bag', changeRule: 'change ₦15,000', refundRule: 'no refund', protectionOffered: false }, { id: 'flex', name: 'Flex', price: NGN(171200), baggage: '23 kg bag', changeRule: 'free change', refundRule: 'refund −₦10,000', protectionOffered: true }] },
@@ -45,4 +45,5 @@ export async function travelFixtures(i: FixtureInput) {
   if (i.path === '/v1/reservations' && i.method === 'POST') return ok({ reservationId: 'res_x', status: 'reservation_failed', reason: 'No reserved Comfort drivers accepted a 04:40 in Victoria Island.' });
   return undefined;
 }
+// eslint-disable-next-line no-var -- global augmentation requires `var`
 declare global { var __ubiRepriceOnce: boolean | undefined; }

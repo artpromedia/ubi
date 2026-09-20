@@ -1,4 +1,4 @@
-import { ok, NGN, type FixtureInput } from './index';
+import { ok, NGN, type FixtureInput } from './shared';
 // Board 20a–20c cast: Adaeze, Fri 12 – Sun 14 Sep 2026, P4 7120, Transcorp Hilton.
 export async function askFixtures(i: FixtureInput) {
   if (i.method === 'POST' && i.path === '/v1/ask/threads') return { status: 201, json: { id: 'th_77', createdAt: new Date().toISOString() } };

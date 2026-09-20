@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { TravelStackParamList } from '../../navigation/routes';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Screen, Text, Card, Chip, Row, Button, MoneyText, Skeleton, Banner, useTheme } from '@ubi/mobile-ui';
+import { Screen, Text, Card, Chip, Row, Button, Skeleton, Banner, useTheme } from '@ubi/mobile-ui';
 import { TID, track, formatMinor } from '@ubi/mobile-core';
 import { travelApi } from '../../api/travel';
 
@@ -29,7 +29,7 @@ export function AttachAirportRideScreen() {
           <Row onPress={() => nav.navigate('Ride', { screen: 'Search' })}><View style={{ flex: 1 }}><Text variant="label" tone="text3">From</Text><Text variant="bodySmStrong">{s.from}</Text></View><Text variant="bodySmStrong" tone="link">Change</Text></Row>
           <Row last><View style={{ flex: 1 }}><Text variant="label" tone="text3">Class</Text><View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>{s.classes.map(c => <Chip key={c.id} label={c.label + ' · ' + formatMinor(c.price)} selected={cls === c.id} onPress={() => setCls(c.id)} />)}</View></View></Row>
         </Card>
-        <Card style={{ gap: 4 }}><Text variant="label" tone="text2">This ride's own terms</Text><Text variant="caption">{s.terms}</Text></Card>
+        <Card style={{ gap: 4 }}><Text variant="label" tone="text2">This ride&apos;s own terms</Text><Text variant="caption">{s.terms}</Text></Card>
       </>)}
     </Screen>
   );

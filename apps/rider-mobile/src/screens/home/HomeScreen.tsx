@@ -11,7 +11,7 @@ import { benefitsApi } from '../../api/benefits';
 export function HomeScreen() {
   const t = useTheme();
   const nav = useNavigation<{ navigate: (name: string, params?: unknown) => void }>();
-  const ask = useFlag('ai_assistant'); const travel = useFlag('flights_booking') || useFlag('stays_booking'); const bites = useFlag('bites'); const send = useFlag('send'); const promos = useFlag('rider_promotions'); const marketplace = useFlag('marketplace_rides');
+  const ask = useFlag('ai_assistant'); const flightsOn = useFlag('flights_booking'); const staysOn = useFlag('stays_booking'); const travel = flightsOn || staysOn; const bites = useFlag('bites'); const send = useFlag('send'); const promos = useFlag('rider_promotions'); const marketplace = useFlag('marketplace_rides');
   const benefits = useQuery({ queryKey: ['benefits'], queryFn: benefitsApi.get, enabled: promos });
   const tile = (label: string, detail: string, tint: string, onPress: () => void) => (
     <Pressable key={label} accessibilityRole="button" onPress={onPress} style={{ flex: 1, minWidth: '46%' }}>

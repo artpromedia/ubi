@@ -2,7 +2,7 @@
  * E2E Test Fixtures for Fleet Portal
  */
 
-import { test as base, expect, Page } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
 
 interface FleetUser {
   id: string;
@@ -56,11 +56,12 @@ interface FleetFixtures {
 }
 
 export const test = base.extend<FleetFixtures>({
-  fleetUser: async ({}, use) => {
-    await use(TEST_FLEET_USERS.owner);
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixtures require a destructuring pattern for the first arg
+  fleetUser: async ({}, run) => {
+    await run(TEST_FLEET_USERS.owner);
   },
 
-  authenticatedPage: async ({ page, fleetUser }, use) => {
+  authenticatedPage: async ({ page, fleetUser }, run) => {
     await page.goto("/");
 
     await page.evaluate(
@@ -72,10 +73,10 @@ export const test = base.extend<FleetFixtures>({
     );
 
     await page.goto("/dashboard");
-    await use(page);
+    await run(page);
   },
 
-  loginAsFleet: async ({ page }, use) => {
+  loginAsFleet: async ({ page }, run) => {
     const login = async (role: keyof typeof TEST_FLEET_USERS = "owner") => {
       const user = TEST_FLEET_USERS[role];
 
@@ -88,10 +89,10 @@ export const test = base.extend<FleetFixtures>({
       );
     };
 
-    await use(login);
+    await run(login);
   },
 
-  mockApiResponse: async ({ page }, use) => {
+  mockApiResponse: async ({ page }, run) => {
     const mock = async (
       urlPattern: string | RegExp,
       response: unknown,
@@ -106,7 +107,7 @@ export const test = base.extend<FleetFixtures>({
       });
     };
 
-    await use(mock);
+    await run(mock);
   },
 });
 

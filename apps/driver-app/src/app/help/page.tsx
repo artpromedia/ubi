@@ -165,7 +165,7 @@ export default function HelpPage() {
           <div className="rounded-xl bg-red-50 border border-red-200 p-4">
             <h3 className="font-bold text-red-800">Emergency?</h3>
             <p className="text-sm text-red-700 mt-1">
-              If you're in immediate danger, call emergency services:
+              If you&apos;re in immediate danger, call emergency services:
             </p>
             <a
               href="tel:999"

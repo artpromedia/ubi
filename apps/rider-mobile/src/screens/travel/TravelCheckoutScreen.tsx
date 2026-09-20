@@ -22,7 +22,7 @@ export function TravelCheckoutScreen() {
     finally { setBusy(false); }
   } }); };
   return (
-    <Screen title="Review & pay" onBack={nav.goBack} footer={c ? <View style={{ gap: 8 }}><Button testID={TID.travel.checkout.payPin} label={'Pay ' + formatMinor(c.total) + ' with PIN'} loading={busy} onPress={pay} /><Text variant="caption" tone="text2" align="center">Prices are checked once more with the suppliers before charging. If anything changed, you'll see it first.</Text></View> : undefined}>
+    <Screen title="Review & pay" onBack={nav.goBack} footer={c ? <View style={{ gap: 8 }}><Button testID={TID.travel.checkout.payPin} label={'Pay ' + formatMinor(c.total) + ' with PIN'} loading={busy} onPress={pay} /><Text variant="caption" tone="text2" align="center">Prices are checked once more with the suppliers before charging. If anything changed, you&apos;ll see it first.</Text></View> : undefined}>
       {!c ? <Skeleton height={260} /> : (<>
         {repriced ? <Banner tone="warn" title="A price changed before booking" body={'Was ' + formatMinor(c.previousTotal) + ', now ' + formatMinor(c.total) + '. Nothing was charged. Review and pay again if you agree.'} /> : null}
         {err ? <Banner tone="error" body={err} /> : null}
@@ -32,7 +32,7 @@ export function TravelCheckoutScreen() {
           {c.adjustments.map(a => <Row key={a.label} label={a.label} value={a.amount ? <MoneyText money={a.amount} variant="bodySmStrong" tone="primaryInk" /> : <Text variant="bodySmStrong" tone="text2">{a.note}</Text>} />)}
           <Row last><Text variant="bodyStrong" style={{ flex: 1 }}>Total now</Text><MoneyText money={c.total} variant="bodyStrong" /></Row>
         </Card>
-        <Card style={{ gap: 6 }}><Text variant="label" tone="text2">Terms you're agreeing to</Text>{c.termsSummary.map(s => <Text key={s} variant="caption">{s}</Text>)}<Text variant="caption" tone="link">{c.termsLinks.join(' · ')}</Text></Card>
+        <Card style={{ gap: 6 }}><Text variant="label" tone="text2">Terms you&apos;re agreeing to</Text>{c.termsSummary.map(s => <Text key={s} variant="caption">{s}</Text>)}<Text variant="caption" tone="link">{c.termsLinks.join(' · ')}</Text></Card>
         <Card><Row last onPress={() => nav.navigate('PaymentMethodPicker', { cartId: c.id })}><View style={{ flex: 1 }}><Text variant="bodySmStrong">{c.paymentMethod.label}</Text><Text variant="caption" tone="text2">{c.paymentMethod.detail}</Text></View><Text variant="bodySmStrong" tone="link">Change</Text></Row></Card>
       </>)}
     </Screen>

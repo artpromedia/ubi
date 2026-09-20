@@ -9,8 +9,7 @@
 // ===========================================
 
 import { useLocationStore } from "@/store";
-import type { Coordinates } from "@ubi/utils";
-import { supportsGeolocation } from "@ubi/utils";
+import { type Coordinates, supportsGeolocation } from "@ubi/utils";
 import { useCallback, useEffect, useState } from "react";
 
 interface UseGeolocationOptions {
@@ -37,6 +36,7 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     locationError,
   } = useLocationStore();
 
+  // eslint-disable-next-line react/hook-use-state -- setter intentionally omitted; browser support cannot change after mount
   const [isSupported] = useState(() => supportsGeolocation());
 
   const requestLocation = useCallback(async () => {

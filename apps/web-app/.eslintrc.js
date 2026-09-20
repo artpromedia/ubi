@@ -1,9 +1,38 @@
+/**
+ * Workaround for ESLint's plugin-uniqueness check: `@ubi/eslint-config/next`
+ * extends `next/core-web-vitals`, and eslint-config-next (pinned by
+ * marketing-site, publicly hoisted by pnpm) bundles its own instance of
+ * eslint-plugin-import that collides with @ubi/eslint-config's copy
+ * ("ESLint couldn't determine the plugin \"import\" uniquely").
+ * We therefore extend the shared react config plus the @next/next plugin's
+ * core-web-vitals preset directly (it declares no import plugin) and reuse
+ * the shared Next rule set verbatim, so the effective rules stay the same.
+ */
+const ubiNext = require("@ubi/eslint-config/next");
+
 /** @type {import("eslint").Linter.Config} */
 module.exports = {
   root: true,
-  extends: ["@ubi/eslint-config/next"],
+  ignorePatterns: ["next-env.d.ts"],
+  extends: ["@ubi/eslint-config/react", "plugin:@next/next/core-web-vitals"],
   parserOptions: {
     project: "./tsconfig.json",
     tsconfigRootDir: __dirname,
   },
+  rules: ubiNext.rules,
+  overrides: [
+    ...ubiNext.overrides,
+    {
+      // e2e/ and playwright.config.ts are excluded from tsconfig.json (Next
+      // build scope), so lint them without a type-aware parser project.
+      files: ["e2e/**/*.ts", "playwright.config.ts"],
+      parserOptions: { project: null },
+      settings: {
+        // @ubi/testing is a workspace package the e2e suite gets from the
+        // monorepo when Playwright runs; it is not linked into this app's
+        // node_modules, so tell the import resolver it exists out-of-band.
+        "import/core-modules": ["@ubi/testing"],
+      },
+    },
+  ],
 };

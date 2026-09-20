@@ -1,4 +1,4 @@
-import { ok, NGN, type FixtureInput } from './index';
+import { ok, NGN, type FixtureInput } from './shared';
 export async function benefitsFixtures(i: FixtureInput) {
   if (i.method === 'GET' && i.path === '/v1/benefits') return ok({ creditTotal: NGN(1500), credits: [{ amount: NGN(500), expiresAt: 'Tue 30 Sep', perRideCap: NGN(500), scope: 'rides', restrictions: ['rides only, not travel', "can't be withdrawn"] }, { amount: NGN(1000), expiresAt: '31 Oct', perRideCap: NGN(500), scope: 'rides' }],
     offers: [

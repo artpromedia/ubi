@@ -146,10 +146,11 @@ export default function HomePage() {
 
                 {/* Pickup location */}
                 <div className="mb-3">
-                  <label className="mb-1.5 block text-sm font-medium">Pickup from</label>
+                  <label htmlFor="send-pickup-address" className="mb-1.5 block text-sm font-medium">Pickup from</label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ubi-send" />
                     <input
+                      id="send-pickup-address"
                       type="text"
                       placeholder="Enter pickup address"
                       className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm focus:border-ubi-send focus:outline-none focus:ring-1 focus:ring-ubi-send dark:border-gray-700 dark:bg-gray-900"
@@ -159,10 +160,11 @@ export default function HomePage() {
 
                 {/* Dropoff location */}
                 <div className="mb-4">
-                  <label className="mb-1.5 block text-sm font-medium">Deliver to</label>
+                  <label htmlFor="send-dropoff-address" className="mb-1.5 block text-sm font-medium">Deliver to</label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ubi-bites" />
                     <input
+                      id="send-dropoff-address"
                       type="text"
                       placeholder="Enter delivery address"
                       className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm focus:border-ubi-send focus:outline-none focus:ring-1 focus:ring-ubi-send dark:border-gray-700 dark:bg-gray-900"

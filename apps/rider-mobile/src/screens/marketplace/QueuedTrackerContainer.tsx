@@ -11,7 +11,7 @@ import { marketplaceApi } from '../../api/marketplace';
 import { QueuedTrackerScreen } from './QueuedTrackerScreen';
 
 export function QueuedTrackerContainer() {
-  const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void; goBack: () => void }>();
+  useNavigation();
   const { params } = useRoute<RouteProp<MarketplaceStackParamList, 'Queued'>>();
   const qc = useQueryClient();
   const [cancelled, setCancelled] = useState(false);

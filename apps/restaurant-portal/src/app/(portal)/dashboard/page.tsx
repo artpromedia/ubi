@@ -131,7 +131,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Dashboard</h1>
           <p className="text-gray-400 mt-1">
-            Welcome back, Mama's Bistro! Here's your day at a glance.
+            Welcome back, Mama&apos;s Bistro! Here&apos;s your day at a glance.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -338,7 +338,7 @@ export default function DashboardPage() {
       >
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-lg font-semibold text-white">Today's Revenue</h2>
+            <h2 className="text-lg font-semibold text-white">Today&apos;s Revenue</h2>
             <p className="text-sm text-gray-400 mt-1">
               Total: {formatCurrency(626000)}
             </p>

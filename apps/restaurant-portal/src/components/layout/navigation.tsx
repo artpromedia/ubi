@@ -254,7 +254,7 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-white truncate">
-                Mama's Bistro
+                Mama&apos;s Bistro
               </p>
               <p className="text-xs text-gray-500 truncate">Lagos, Nigeria</p>
             </div>

@@ -30,7 +30,7 @@ export function FlightSearchScreen() {
       {staysOn ? <Card><Toggle label="Add a hotel in Abuja" detail="Same dates · 1 guest · booked separately" value={form.withStay} onChange={v => setForm({ ...form, withStay: v })} /></Card> : null}
       {search.isError ? <Banner tone="error" body="Search is unavailable right now. Try again in a moment." /> : null}
       <Button testID={TID.flights.search.submit} label="Search flights" loading={search.isPending} onPress={() => search.mutate()} />
-      <Text variant="caption" tone="text2">Domestic flights only for now. Prices include taxes; UBI's service fee per ticket is shown before you pay. Times are local (WAT, UTC+1).</Text>
+      <Text variant="caption" tone="text2">Domestic flights only for now. Prices include taxes; UBI&apos;s service fee per ticket is shown before you pay. Times are local (WAT, UTC+1).</Text>
     </Screen>
   );
 }

@@ -4,7 +4,7 @@
  * Custom Playwright fixtures for UBI tests.
  */
 
-import { test as base, Page } from "@playwright/test";
+import { test as base, type Page } from "@playwright/test";
 import { TEST_AUTH_TOKENS, TEST_RIDERS } from "@ubi/testing";
 
 // =============================================================================
@@ -99,7 +99,7 @@ interface UbiFixtures {
 
 export const test = base.extend<UbiFixtures>({
   // Authenticated page with pre-set auth token
-  authenticatedPage: async ({ page, context }, use) => {
+  authenticatedPage: async ({ page, context }, run) => {
     // Set auth token in storage
     await context.addCookies([
       {
@@ -124,11 +124,11 @@ export const test = base.extend<UbiFixtures>({
       );
     });
 
-    await use(page);
+    await run(page);
   },
 
   // Authenticated rider fixture
-  rider: async (_, use) => {
+  rider: async (_, run) => {
     const rider: AuthenticatedUser = {
       id: TEST_RIDERS.ADAOBI_RIDER.id,
       email: TEST_RIDERS.ADAOBI_RIDER.email,
@@ -136,11 +136,11 @@ export const test = base.extend<UbiFixtures>({
       token: TEST_AUTH_TOKENS.VALID_TOKEN,
     };
 
-    await use(rider);
+    await run(rider);
   },
 
   // Network throttling
-  setNetworkConditions: async ({ page }, use) => {
+  setNetworkConditions: async ({ page }, run) => {
     const cdpSession = await page.context().newCDPSession(page);
 
     const setConditions = async (profile: keyof typeof NETWORK_PROFILES) => {
@@ -153,7 +153,7 @@ export const test = base.extend<UbiFixtures>({
       });
     };
 
-    await use(setConditions);
+    await run(setConditions);
 
     // Reset network conditions after test
     await cdpSession.send("Network.emulateNetworkConditions", {
@@ -165,17 +165,17 @@ export const test = base.extend<UbiFixtures>({
   },
 
   // Geolocation mocking
-  mockLocation: async ({ context }, use) => {
+  mockLocation: async ({ context }, run) => {
     const setLocation = async (latitude: number, longitude: number) => {
       await context.setGeolocation({ latitude, longitude });
       await context.grantPermissions(["geolocation"]);
     };
 
-    await use(setLocation);
+    await run(setLocation);
   },
 
   // API response mocking
-  mockApiResponse: async ({ page }, use) => {
+  mockApiResponse: async ({ page }, run) => {
     const mock = async (
       urlPattern: string | RegExp,
       response: unknown,
@@ -190,7 +190,7 @@ export const test = base.extend<UbiFixtures>({
       });
     };
 
-    await use(mock);
+    await run(mock);
   },
 });
 

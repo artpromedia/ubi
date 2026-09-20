@@ -19,7 +19,7 @@ export function RateCard({ rate, selected, onPress }: { rate: Rate; selected: bo
             <Row label="Pay now to UBI" value={<MoneyText money={rate.payNow} variant="bodySmStrong" />} />
             <Row label={rate.approximate ? 'Pay at the hotel (their rate on the day)' : 'Pay at the hotel'} value={<MoneyText money={rate.payAtProperty} variant="bodySmStrong" />} last />
             {rate.taxesNote ? <Text variant="caption" tone="text2">{rate.taxesNote}</Text> : null}
-            {rate.supplierPrice && rate.fx ? <Text variant="caption" tone="text2">Hotel quotes in {rate.supplierPrice.currency} {(rate.supplierPrice.amountMinor / 100).toFixed(2)}; charged in naira at UBI's rate {rate.fx.rate.toLocaleString('en-NG')} fixed when you pay.</Text> : null}
+            {rate.supplierPrice && rate.fx ? <Text variant="caption" tone="text2">Hotel quotes in {rate.supplierPrice.currency} {(rate.supplierPrice.amountMinor / 100).toFixed(2)}; charged in naira at UBI&apos;s rate {rate.fx.rate.toLocaleString('en-NG')} fixed when you pay.</Text> : null}
           </View>
           <Text variant="caption" tone={rate.capabilities.refundSupported ? 'primaryInk' : 'warnInk'}>{rate.capabilities.refundSupported ? 'Free cancellation until ' + dt(rate.cancellation.freeUntil) + ' · ' + rate.cancellation.penaltyAfter : 'Non-refundable after ' + dt(rate.cancellation.freeUntil) + ' · UBI cannot refund an amount the hotel charges'}</Text>
         </>)}

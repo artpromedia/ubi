@@ -38,6 +38,7 @@ export function OfferInboxContainer() {
   }
   const [sort, setSort] = useState<'price' | 'eta'>('price');
   const [sortedIds, setSortedIds] = useState<string[] | null>(null);
+  // eslint-disable-next-line react/hook-use-state -- tick state only forces a re-render; the value is never read
   const [, setClock] = useState(0); // re-render for elapsed/expiry labels
   useEffect(() => { const t = setInterval(() => setClock(c => c + 1), 1_000); return () => clearInterval(t); }, []);
   const cancel = useMutation({

@@ -15,11 +15,11 @@ export function HandoffSheet({ visible, threadId, onDismiss, onOpened }: { visib
         <Text variant="title">Talk to UBI Support</Text>
         <Text variant="bodySm" tone="text2">A person picks up where the assistant stopped. Support is open 24/7.</Text>
         <Card style={{ gap: 6 }}>
-          <Text variant="label" tone="text2">What we'll share with the agent</Text>
+          <Text variant="label" tone="text2">What we&apos;ll share with the agent</Text>
           <Text variant="bodySm">Your recent messages and plan cards, and any bookings or attempts made from this conversation.</Text>
           <Toggle label="Include the conversation" value={include} onChange={setInclude} />
         </Card>
-        <Text variant="caption" tone="text2">Your PIN, card and ID documents are never part of the conversation, so they're never shared.</Text>
+        <Text variant="caption" tone="text2">Your PIN, card and ID documents are never part of the conversation, so they&apos;re never shared.</Text>
         {err ? <Text variant="caption" tone="errorInk">{err}</Text> : null}
         <Button testID={TID.ask.handoff.start} label="Start chat with support" kind="inverse" loading={busy} onPress={start} />
         <Button label={'Call ' + (config?.supportPhone ?? 'support') + ' instead'} kind="ghost" size="md" onPress={onDismiss} />

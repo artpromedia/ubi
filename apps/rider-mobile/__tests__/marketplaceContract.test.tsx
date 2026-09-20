@@ -4,11 +4,14 @@
 // 2. The fare editor never seeds/renders 'NaN' from a malformed (non-Money) quote envelope —
 //    it stays on the skeleton instead.
 // 3. The dev fixture serves the exact select wrapper shape.
-import React from 'react';
+import type React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@ubi/mobile-ui';
 import { TEST_IDS } from '@ubi/contracts';
+import { BidDetailContainer } from '../src/screens/marketplace/BidDetailContainer';
+import { FareEditorContainer } from '../src/screens/marketplace/FareEditorContainer';
+import type * as marketplaceFixturesModule from '../src/dev/fixtures/marketplace';
 
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
@@ -48,10 +51,8 @@ jest.mock('../src/api/marketplace', () => ({
   },
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- require() after jest.mock so the mocked module instance is what the test holds
 const { marketplaceApi } = require('../src/api/marketplace') as { marketplaceApi: Record<string, jest.Mock> };
-import { BidDetailContainer } from '../src/screens/marketplace/BidDetailContainer';
-import { FareEditorContainer } from '../src/screens/marketplace/FareEditorContainer';
 
 const NGN = (major: number) => ({ amountMinor: major * 100, currency: 'NGN' });
 const iso = (ms: number) => new Date(Date.now() + ms).toISOString();
@@ -160,8 +161,7 @@ describe('FareEditorContainer — malformed quote money never renders NaN', () =
 describe('dev fixture — select 202 body is the contract wrapper', () => {
   it('wraps the award ({ award }) instead of serving it bare', async () => {
     (globalThis as { __ubiMpFix?: unknown }).__ubiMpFix = undefined; // fixtures keep state on globalThis; reset it
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { marketplaceFixtures } = jest.requireActual('../src/dev/fixtures/marketplace') as typeof import('../src/dev/fixtures/marketplace');
+    const { marketplaceFixtures } = jest.requireActual('../src/dev/fixtures/marketplace') as typeof marketplaceFixturesModule;
     const res = await marketplaceFixtures({ method: 'POST', path: '/v1/mp/requests/req_mp_1/select', body: { bidId: 'bid_emeka', requestVersion: 1, bidVersion: 1 } });
     expect(res?.status).toBe(202);
     const json = (res as { json: { award?: { awardId: string; bidId: string }; bidId?: string } }).json;

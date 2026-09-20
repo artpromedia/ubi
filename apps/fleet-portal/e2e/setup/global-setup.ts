@@ -2,7 +2,7 @@
  * Global Setup for Fleet Portal E2E Tests
  */
 
-import { FullConfig } from "@playwright/test";
+import type { FullConfig } from "@playwright/test";
 
 async function globalSetup(config: FullConfig): Promise<void> {
   console.log("🚚 Starting Fleet Portal E2E test setup...");

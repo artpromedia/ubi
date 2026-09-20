@@ -9,6 +9,4 @@ export function installDevFixtures() {
   const all = [askFixtures, travelFixtures, benefitsFixtures, mandateFixtures, marketplaceFixtures];
   installFixtures(async (input) => { for (const h of all) { const r = await h(input); if (r) return r; } return undefined; });
 }
-export type FixtureInput = { method: string; path: string; body?: unknown };
-export const ok = (json: unknown) => ({ status: 200, json });
-export const NGN = (major: number) => ({ amountMinor: Math.round(major * 100), currency: 'NGN' });
+export { ok, NGN, type FixtureInput } from './shared';

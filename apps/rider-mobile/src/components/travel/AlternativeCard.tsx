@@ -7,7 +7,7 @@ import type { Alternative } from '../../api/travel';
 const hm = (iso: string) => new Date(iso).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Africa/Lagos' });
 /** Board 21d. "₦0 to you" appears only when customerPays is zero AND the server holds the seat (heldUntil). */
 export function AlternativeCard({ a, selected, onPress }: { a: Alternative; selected: boolean; onPress: () => void }) {
-  const t = useTheme();
+  useTheme();
   const free = a.customerPays.amountMinor === 0;
   return (
     <Pressable testID={TID.travel.disruption.alternative} accessibilityRole="radio" accessibilityState={{ selected }} onPress={onPress}>

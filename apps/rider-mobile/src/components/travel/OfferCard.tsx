@@ -16,7 +16,7 @@ export function FareFamilyOption({ f, selected, onPress }: { f: FareFamily; sele
 }
 /** Board 21a. "Price guaranteed to" only when the adapter returned priceGuaranteeUntil; sold-out offers stay visible. */
 export function OfferCard({ offer, selectedFamily, onSelectFamily, emphasis }: { offer: FlightOffer; selectedFamily?: string; onSelectFamily: (id: string) => void; emphasis?: boolean }) {
-  const t = useTheme();
+  useTheme();
   const g = offer.capabilities.priceGuaranteeUntil;
   return (
     <Card testID={TID.flights.results.offer} emphasis={emphasis} style={{ gap: 8, opacity: offer.soldOut ? 0.7 : 1 }}>

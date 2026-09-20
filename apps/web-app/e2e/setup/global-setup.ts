@@ -4,7 +4,7 @@
  * Runs before all tests to set up the test environment.
  */
 
-import { FullConfig } from "@playwright/test";
+import type { FullConfig } from "@playwright/test";
 
 async function globalSetup(config: FullConfig): Promise<void> {
   console.log("🚀 Starting E2E test setup...");

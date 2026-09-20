@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { View } from 'react-native';
 import { Text, MoneyText, Banner, useTheme } from '@ubi/mobile-ui';
 import { TID, type Money } from '@ubi/mobile-core';

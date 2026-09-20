@@ -74,6 +74,7 @@ const mockTripDetail = {
 export default function TripDetailPage() {
   const params = useParams();
   const tripId = params.id as string;
+  // eslint-disable-next-line react/hook-use-state -- setter intentionally omitted; the state is initialized once and never updated
   const [trip] = useState(mockTripDetail);
 
   return (

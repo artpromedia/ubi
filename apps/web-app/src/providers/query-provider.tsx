@@ -56,6 +56,7 @@ interface QueryProviderProps {
 }
 
 export function QueryProvider({ children }: QueryProviderProps) {
+  // eslint-disable-next-line react/hook-use-state -- setter intentionally omitted; the client is created once per mount
   const [queryClient] = useState(getQueryClient);
 
   return (

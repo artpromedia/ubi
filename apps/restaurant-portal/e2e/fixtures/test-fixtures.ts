@@ -2,7 +2,7 @@
  * E2E Test Fixtures for Restaurant Portal
  */
 
-import { test as base, expect, Page } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
 
 // =============================================================================
 // Types
@@ -81,11 +81,12 @@ interface RestaurantFixtures {
 }
 
 export const test = base.extend<RestaurantFixtures>({
-  restaurantUser: async ({}, use) => {
-    await use(TEST_RESTAURANT_USERS.owner);
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixtures require a destructuring pattern for the first arg
+  restaurantUser: async ({}, run) => {
+    await run(TEST_RESTAURANT_USERS.owner);
   },
 
-  authenticatedPage: async ({ page, restaurantUser }, use) => {
+  authenticatedPage: async ({ page, restaurantUser }, run) => {
     await page.goto("/");
 
     await page.evaluate(
@@ -97,10 +98,10 @@ export const test = base.extend<RestaurantFixtures>({
     );
 
     await page.goto("/dashboard");
-    await use(page);
+    await run(page);
   },
 
-  loginAsRestaurant: async ({ page }, use) => {
+  loginAsRestaurant: async ({ page }, run) => {
     const login = async (
       role: keyof typeof TEST_RESTAURANT_USERS = "owner",
     ) => {
@@ -115,10 +116,10 @@ export const test = base.extend<RestaurantFixtures>({
       );
     };
 
-    await use(login);
+    await run(login);
   },
 
-  mockApiResponse: async ({ page }, use) => {
+  mockApiResponse: async ({ page }, run) => {
     const mock = async (
       urlPattern: string | RegExp,
       response: unknown,
@@ -133,10 +134,11 @@ export const test = base.extend<RestaurantFixtures>({
       });
     };
 
-    await use(mock);
+    await run(mock);
   },
 
-  createMockOrder: async ({}, use) => {
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixtures require a destructuring pattern for the first arg
+  createMockOrder: async ({}, run) => {
     const createOrder = (overrides: Partial<Order> = {}): Order => ({
       id: `ORD-${Date.now()}`,
       items: ["Jollof Rice (2)", "Suya", "Chapman"],
@@ -148,7 +150,7 @@ export const test = base.extend<RestaurantFixtures>({
       ...overrides,
     });
 
-    await use(createOrder);
+    await run(createOrder);
   },
 });
 

@@ -31,4 +31,5 @@ export type RootStackParamList = {
   Ask: NavigatorScreenParams<AskStackParamList>; Travel: NavigatorScreenParams<TravelStackParamList>; Marketplace: NavigatorScreenParams<MarketplaceStackParamList>;
   FlagOff: { feature: string }; Sos: { rideId?: string } | undefined; SecureConfirm: { purpose: string; onProof: (proof: string) => void };
 };
+// eslint-disable-next-line @typescript-eslint/no-namespace, @typescript-eslint/no-empty-object-type -- react-navigation's documented global-typing pattern
 declare global { namespace ReactNavigation { interface RootParamList extends RootStackParamList {} } }

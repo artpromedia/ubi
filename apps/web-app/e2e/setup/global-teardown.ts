@@ -4,7 +4,7 @@
  * Runs after all tests to clean up the test environment.
  */
 
-import { FullConfig } from "@playwright/test";
+import type { FullConfig } from "@playwright/test";
 
 async function globalTeardown(_config: FullConfig): Promise<void> {
   console.log("🧹 Cleaning up E2E test environment...");
