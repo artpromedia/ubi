@@ -13,19 +13,20 @@
  *            UPDATE, so a second consume fails and an expired grant fails.
  *            Idempotent on the consume key: the same key replays the result.
  */
-import type { ActionGrant, Prisma } from "@prisma/client";
-import { ContractError, MoneySchema } from "@ubi/contracts";
 import { z } from "zod";
 
-import type { Tx } from "../identity/audit";
-import { writeAudit } from "../identity/audit";
+import { ContractError, MoneySchema } from "@ubi/contracts";
+
+import { writeAudit ,type  Tx } from "../identity/audit";
 import { deterministicId } from "../identity/ids";
 import {
   eventIdempotencyKey,
   findOutboxByIdempotencyKey,
   writeOutboxEvent,
 } from "../identity/outbox";
+
 import type { AiActionDeps } from "./types";
+import type { ActionGrant, Prisma } from "@prisma/client";
 
 export const GRANT_ASSURANCES = ["pin", "biometric", "mandate"] as const;
 export type GrantAssurance = (typeof GRANT_ASSURANCES)[number];
@@ -191,7 +192,7 @@ export async function mintGrant(
   const now = deps.now();
   const expiresAt = new Date(body.expiresAt);
 
-  return deps.prisma.$transaction(async (tx) => {
+  const txResult = await deps.prisma.$transaction(async (tx) => {
     // A replay returns the original grant untouched — even once it has expired.
     // The future-expiry check therefore only guards a genuinely new mint.
     const existing = await tx.actionGrant.findUnique({
@@ -227,6 +228,7 @@ export async function mintGrant(
     );
     return { grant: grantToView(grant), replayed: false };
   });
+  return txResult;
 }
 
 export const ConsumeGrantSchema = z.object({
@@ -256,7 +258,7 @@ export async function consumeGrant(
   const now = deps.now();
   const eventKey = eventIdempotencyKey("action_grant.consumed", consumeKey);
 
-  return deps.prisma.$transaction(async (tx) => {
+  const txResult = await deps.prisma.$transaction(async (tx) => {
     const prior = await findOutboxByIdempotencyKey(tx, eventKey);
     if (prior !== undefined) {
       const grant = await tx.actionGrant.findUniqueOrThrow({
@@ -338,4 +340,5 @@ export async function consumeGrant(
       replayed: false,
     };
   });
+  return txResult;
 }

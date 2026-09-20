@@ -11,6 +11,7 @@
  *    activation, its audit row and its outbox row are one transaction.
  */
 import { Prisma } from "@prisma/client";
+
 import {
   type CityConfig,
   CityConfigSchema,
@@ -18,6 +19,8 @@ import {
   scopedIdempotencyKey,
 } from "@ubi/contracts";
 
+import { type Tx, writeAudit } from "./audit";
+import { writeOutboxEvent } from "./outbox";
 import { configCache } from "../lib/cache";
 import { strongEtag } from "../lib/etag";
 import { deterministicId, newId } from "../lib/ids";
@@ -31,9 +34,8 @@ import {
 } from "../lib/json";
 import { configLogger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
+
 import type { Actor } from "../middleware/actor";
-import { type Tx, writeAudit } from "./audit";
-import { writeOutboxEvent } from "./outbox";
 
 /** Approvals required before a change request activates, the author excluded. */
 export const REQUIRED_APPROVALS = 2;
@@ -122,7 +124,7 @@ async function loadActiveRow(
     where: { cityId, activatedAt: { not: null } },
     orderBy: { version: "desc" },
   });
-  if (row === null || row.activatedAt === null) return undefined;
+  if (row === null || row.activatedAt === null) {return undefined;}
   return {
     version: row.version,
     config: row.config,
@@ -155,14 +157,17 @@ async function loadActiveConfig(cityId: string): Promise<ActiveConfig> {
 
 /** Read-through Redis cache; a miss after an activation can never serve the old version. */
 export async function getActiveConfig(cityId: string): Promise<ActiveConfig> {
-  return configCache.read<ActiveConfig>(
+  const active = await configCache.read<ActiveConfig>(
     { kind: "config", scopeId: cityId },
-    () => loadActiveConfig(cityId),
+    async () => {
+      const loaded = await loadActiveConfig(cityId);
+      return loaded;
+    },
     (raw) => {
-      if (typeof raw !== "object" || raw === null) return undefined;
+      if (typeof raw !== "object" || raw === null) {return undefined;}
       const candidate = raw as Partial<ActiveConfig>;
       const parsed = CityConfigSchema.safeParse(candidate.config);
-      if (!parsed.success) return undefined;
+      if (!parsed.success) {return undefined;}
       if (
         typeof candidate.version !== "number" ||
         typeof candidate.activatedAt !== "string"
@@ -177,6 +182,7 @@ export async function getActiveConfig(cityId: string): Promise<ActiveConfig> {
       };
     },
   );
+  return active;
 }
 
 async function nextVersion(client: Tx, cityId: string): Promise<number> {
@@ -569,7 +575,7 @@ export async function getHistory(
     where: { cityId },
     orderBy: { version: "desc" },
   });
-  if (versions.length === 0) return [];
+  if (versions.length === 0) {return [];}
 
   // The version row records the activating approver; the full approver list
   // lives on the audit row written in the same transaction.

@@ -387,7 +387,7 @@ export async function postCashSettlement(
       "a settlement must move a positive amount",
     );
   }
-  return postEntry(tx, {
+  const entry = await postEntry(tx, {
     kind: "cash_settlement",
     reference: input.reference,
     occurredAt: input.occurredAt,
@@ -407,4 +407,5 @@ export async function postCashSettlement(
       },
     ],
   });
+  return entry;
 }

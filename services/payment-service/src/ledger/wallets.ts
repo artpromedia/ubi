@@ -53,9 +53,10 @@ export async function findWallet(
   ownerId: string,
   currency: string,
 ): Promise<WalletRecord | null> {
-  return tx.wallet.findUnique({
+  const wallet = await tx.wallet.findUnique({
     where: { ownerType_ownerId_currency: { ownerType, ownerId, currency } },
   });
+  return wallet;
 }
 
 /**

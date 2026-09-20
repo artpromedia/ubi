@@ -3,9 +3,10 @@
  * rows, written inside the same transaction as the change itself — if the
  * change rolls back, so does its audit record.
  */
+import { newId } from "../lib/ids";
+
 import type { Prisma } from "@prisma/client";
 
-import { newId } from "../lib/ids";
 
 export type Tx = Prisma.TransactionClient;
 
@@ -48,5 +49,8 @@ export async function auditRevision(
   subjectType: string,
   subjectId: string,
 ): Promise<number> {
-  return tx.auditLog.count({ where: { subjectType, subjectId } });
+  const revisions = await tx.auditLog.count({
+    where: { subjectType, subjectId },
+  });
+  return revisions;
 }

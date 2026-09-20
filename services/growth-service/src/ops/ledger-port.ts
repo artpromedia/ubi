@@ -190,7 +190,7 @@ export function createHttpLedger(options: LedgerHttpOptions): LedgerPort {
     async postIncentive(
       request: IncentivePostingRequest,
     ): Promise<PostedEntry> {
-      return post(
+      const posted = await post(
         incentivePath,
         {
           ruleId: request.ruleId,
@@ -206,10 +206,11 @@ export function createHttpLedger(options: LedgerHttpOptions): LedgerPort {
         request.actor,
         request.cityId,
       );
+      return posted;
     },
 
     async postBenefit(request: BenefitPostingRequest): Promise<PostedEntry> {
-      return post(
+      const posted = await post(
         benefitPath,
         {
           reservationId: request.reservationId,
@@ -225,6 +226,7 @@ export function createHttpLedger(options: LedgerHttpOptions): LedgerPort {
         request.actor,
         request.cityId,
       );
+      return posted;
     },
   };
 }

@@ -160,7 +160,7 @@ export async function recordExternalTotal(
 ): Promise<ReconRailView> {
   const context = await runContext(deps, input.cityId, input.date);
 
-  return deps.db.$transaction(async (tx) => {
+  const view = await deps.db.$transaction(async (tx) => {
     await requireOpenRun(tx, input.date, context.currency);
     await ensureRun(tx, context);
 
@@ -211,6 +211,7 @@ export async function recordExternalTotal(
 
     return railView(tx, railId, input.rail, context.currency);
   });
+  return view;
 }
 
 async function ensureRun(tx: LedgerTx, context: RunContext): Promise<void> {
@@ -532,7 +533,7 @@ export async function assignBreak(
 ): Promise<ReconBreakView> {
   const now = deps.now();
 
-  return deps.db.$transaction(async (tx) => {
+  const assigned = await deps.db.$transaction(async (tx) => {
     const entry = await tx.reconBreak.findUnique({
       where: { id: input.breakId },
     });
@@ -578,6 +579,7 @@ export async function assignBreak(
       resolvedAt: entry.resolvedAt?.toISOString() ?? null,
     };
   });
+  return assigned;
 }
 
 export interface ResolveBreakInput {

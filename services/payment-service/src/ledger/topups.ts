@@ -93,9 +93,10 @@ export async function createTopup(
     );
   }
 
-  const wallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", input.actor.id, config.city),
-  );
+  const wallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", input.actor.id, config.city);
+      return row;
+    });
   assertNotLocked(wallet);
 
   const amount = money(input.amountMinor, config.city.currency);

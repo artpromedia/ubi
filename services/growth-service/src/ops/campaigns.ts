@@ -322,7 +322,10 @@ export async function createCampaign(
         },
         events: [event],
       };
-    }).then((row) => campaignView(deps, row));
+    }).then(async (row) => {
+      const view = await campaignView(deps, row);
+      return view;
+    });
   } catch (error) {
     if (isUniqueViolation(error)) {
       const existing = await deps.db.campaign.findUnique({
@@ -354,7 +357,12 @@ export async function listCampaigns(
     orderBy: { createdAt: "desc" },
     take: 200,
   });
-  return Promise.all(rows.map((row) => campaignView(deps, row)));
+  return Promise.all(
+    rows.map(async (row) => {
+      const view = await campaignView(deps, row);
+      return view;
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -413,16 +421,21 @@ async function eligibleUserCount(
 ): Promise<number> {
   const rule = audienceRule.trim().toLowerCase();
   if (rule === "" || rule === "all") {
-    return deps.db.user.count();
+    const total = await deps.db.user.count();
+    return total;
   }
   const country = /^country:([a-z]{2})$/.exec(rule);
   if (country !== null) {
-    return deps.db.user.count({ where: { country: country[1]?.toUpperCase() } });
+    const inCountry = await deps.db.user.count({
+      where: { country: country[1]?.toUpperCase() },
+    });
+    return inCountry;
   }
   warnings.push(
     "audience rule not recognised by the simulator; counting the whole user base as an upper bound",
   );
-  return deps.db.user.count();
+  const upperBound = await deps.db.user.count();
+  return upperBound;
 }
 
 export async function simulateVersion(
@@ -700,7 +713,11 @@ export async function performAction(
     case "activate": {
       // Approval step. Only a second person may take a campaign past approval.
       assertTwoPerson(campaign, input.actor);
-      if (input.approvalId != null && latest.approvalId !== input.approvalId) {
+      if (
+        input.approvalId !== null &&
+        input.approvalId !== undefined &&
+        latest.approvalId !== input.approvalId
+      ) {
         throw new ContractError("validation_failed", "approval id does not match the submitted version");
       }
       if (campaign.state === "awaiting_approval") {
@@ -749,7 +766,7 @@ export async function performAction(
     case "raise_budget": {
       // A budget increase moves money and is therefore two-person as well.
       assertTwoPerson(campaign, input.actor);
-      if (input.newBudget == null) {
+      if (input.newBudget === null || input.newBudget === undefined) {
         throw new ContractError("validation_failed", "raise_budget needs a newBudget");
       }
       if (input.newBudget.currency !== latest.currency) {
@@ -857,7 +874,7 @@ export async function getOutcome(
   });
   const claimTotal = claims.reduce((sum, c) => sum + c._count, 0);
   const pct = (kind: string): number => {
-    if (claimTotal === 0) return 0;
+    if (claimTotal === 0) {return 0;}
     const found = claims.find((c) => c.kind === kind);
     return found === undefined ? 0 : found._count / claimTotal;
   };

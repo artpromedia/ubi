@@ -9,18 +9,20 @@
  * - Multi-provider integration
  * - Country-specific checks
  */
+/* eslint-disable require-await -- provider integrations are stubbed pending real vendor APIs; methods are async by their service contract */
 
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
+
 import { bgCheckLogger } from "../lib/logger";
 import {
-  BackgroundCheck,
-  BackgroundCheckFinding,
-  BackgroundCheckRequest,
-  BackgroundCheckStatus,
-  BackgroundCheckType,
+  type BackgroundCheck,
+  type BackgroundCheckFinding,
+  type BackgroundCheckRequest,
+  type BackgroundCheckStatus,
+  type BackgroundCheckType,
   COUNTRY_CONFIGS,
-  DocumentType,
+  type DocumentType,
 } from "../types/safety.types";
 
 // =============================================================================
@@ -153,7 +155,7 @@ export class BackgroundCheckService extends EventEmitter {
           { checkId: check.id, checkType },
           "[BackgroundCheck] Check initiated",
         );
-      } catch (error) {
+      } catch (_error) {
         check.status = "COMPLETED_FAIL";
         results.push({
           checkType,
@@ -353,7 +355,7 @@ export class BackgroundCheckService extends EventEmitter {
     const checks = await this.getUserBackgroundChecks(userId);
 
     for (const check of checks) {
-      if (!check.validUntil) continue;
+      if (!check.validUntil) {continue;}
 
       // Alert if check is expiring soon (within 30 days)
       const daysUntilExpiry =

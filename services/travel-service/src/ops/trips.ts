@@ -44,8 +44,8 @@ function linkedFromOrder(order: OrderRecord, disrupted: boolean): JsonRecord {
       ? (order.supplierRefs as JsonRecord)
       : {};
   const subtitleParts: string[] = [];
-  if (typeof refs.pnr === "string") subtitleParts.push(`PNR ${refs.pnr}`);
-  if (typeof refs.bookingRef === "string") subtitleParts.push(`Ref ${refs.bookingRef}`);
+  if (typeof refs.pnr === "string") {subtitleParts.push(`PNR ${refs.pnr}`);}
+  if (typeof refs.bookingRef === "string") {subtitleParts.push(`Ref ${refs.bookingRef}`);}
   return {
     kind: order.kind,
     orderId: order.id,

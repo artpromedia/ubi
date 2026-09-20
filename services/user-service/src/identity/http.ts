@@ -6,15 +6,18 @@
  * contract assigns. Clients branch on `code`, never on message text, so copy
  * can change without changing behaviour.
  */
+import { z } from "zod";
+
 import {
   ContractError,
   IDEMPOTENCY_HEADER,
   IdempotencyKeySchema,
 } from "@ubi/contracts";
-import type { Context } from "hono";
-import { z } from "zod";
 
 import { authLogger } from "../lib/logger.js";
+
+import type { Context } from "hono";
+
 
 export type IdentityHandler = (c: Context) => Promise<Response>;
 

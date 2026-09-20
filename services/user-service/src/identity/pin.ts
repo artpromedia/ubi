@@ -13,15 +13,17 @@
  * enters a cooling window during which the money service applies the tighter
  * new-recipient rules.
  */
-import { ContractError } from "@ubi/contracts";
 import { z } from "zod";
+
+import { ContractError } from "@ubi/contracts";
 
 import { writeAudit } from "./audit";
 import { actorTypeFor, auditRevision } from "./common";
-import type { IdentityDeps } from "./deps";
 import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
 import { assertNotInSafeMode } from "./safe-mode";
 import { hashSecret, verifySecret } from "./secret-hash";
+
+import type { IdentityDeps } from "./deps";
 
 export const PinSchema = z
   .string()
@@ -80,7 +82,7 @@ async function walletsFor(
 function worst(wallets: readonly WalletRow[]): WalletRow {
   const [first, ...rest] = wallets;
   if (first === undefined)
-    throw new ContractError("not_found", "You don't have a wallet yet");
+    {throw new ContractError("not_found", "You don't have a wallet yet");}
   return rest.reduce(
     (acc, candidate) =>
       candidate.pinFailedAttempts > acc.pinFailedAttempts ? candidate : acc,
@@ -181,7 +183,7 @@ export async function verifyPin(
       },
     });
 
-    if (!willLock) return;
+    if (!willLock) {return;}
 
     const revision = await auditRevision(tx, "user", context.userId);
     await writeAudit(tx, {

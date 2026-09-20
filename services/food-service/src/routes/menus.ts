@@ -5,6 +5,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { prisma } from "../lib/prisma";
 import { cache } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -264,6 +265,7 @@ menuRoutes.post("/categories/reorder", async (c) => {
 
   // Update sort order for each category
   await prisma.$transaction(
+    // eslint-disable-next-line @typescript-eslint/promise-function-async -- $transaction's array form needs PrismaPromises; an async wrapper would detach these updates from the transaction
     categoryIds.map((id, index) =>
       prisma.menuCategory.update({
         where: { id },
@@ -540,6 +542,7 @@ menuRoutes.post(
 
     // Update all items. GAP: `availability` enum maps onto `isAvailable`.
     await prisma.$transaction(
+      // eslint-disable-next-line @typescript-eslint/promise-function-async -- $transaction's array form needs PrismaPromises; an async wrapper would detach these updates from the transaction
       items.map((item) =>
         prisma.menuItem.update({
           where: { id: item.id },

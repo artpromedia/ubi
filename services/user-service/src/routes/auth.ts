@@ -4,16 +4,18 @@
  * Handles user registration, login, OTP verification, and token management.
  */
 
+import bcrypt from "bcrypt";
+import { Hono } from "hono";
+import * as jose from "jose";
+import { z } from "zod";
+
 import {
   ErrorCodes,
   generateOTP,
   generateReferralCode,
   UbiError,
 } from "@ubi/utils";
-import bcrypt from "bcrypt";
-import { Hono } from "hono";
-import * as jose from "jose";
-import { z } from "zod";
+
 import { authLogger } from "../lib/logger.js";
 import {
   notificationClient,

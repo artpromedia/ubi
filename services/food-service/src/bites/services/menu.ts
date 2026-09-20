@@ -11,6 +11,7 @@ import { ContractError } from "@ubi/contracts";
 
 import { assertFlagEnabled } from "../city-config.js";
 import { assertPermission } from "../roles.js";
+
 import type { BitesDeps } from "../context.js";
 import type { Actor, BitesTx } from "../lib/types.js";
 import type { MenuItemForPricing } from "../pricing.js";

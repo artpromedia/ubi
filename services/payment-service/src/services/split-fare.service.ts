@@ -23,7 +23,6 @@ import {
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 
-import type { Currency } from "@prisma/client";
 import type {
   AcceptSplitParams,
   AcceptSplitResult,
@@ -41,6 +40,7 @@ import type {
   SplitStatusResult,
   SplitType,
 } from "../types/split-fare.types";
+import type { Currency } from "@prisma/client";
 
 // ===========================================
 // CONSTANTS
@@ -1688,7 +1688,10 @@ export class SplitFareService {
     }
 
     return Promise.all(
-      splits.map(async (split) => this.getSplitStatus(split.id)),
+      splits.map(async (split) => {
+        const status = await this.getSplitStatus(split.id);
+        return status;
+      }),
     );
   }
 }

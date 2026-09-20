@@ -13,6 +13,8 @@
  * Bites does not own the ledger. It asks payment-service to hold, release,
  * capture and refund; it never posts a journal line itself.
  */
+import { z } from "zod";
+
 import {
   assertTransition,
   ContractError,
@@ -23,9 +25,8 @@ import {
   sumMoney,
   type Money,
 } from "@ubi/contracts";
-import { z } from "zod";
 
-import { auditedTransaction } from "../audit.js";
+import { auditedTransaction ,type  AuditedTx,type  OutboxInput } from "../audit.js";
 import { assertFlagEnabled } from "../city-config.js";
 import { deterministicId, numericCode } from "../lib/ids.js";
 import { orderLogger } from "../lib/logger.js";
@@ -39,7 +40,6 @@ import {
 import { actorTypeFor, assertPermission } from "../roles.js";
 import { loadItemForPricing, MERCHANT_APPROVED } from "./menu.js";
 
-import type { AuditedTx, OutboxInput } from "../audit.js";
 import type { BitesDeps } from "../context.js";
 import type { Actor, JsonRecord } from "../lib/types.js";
 

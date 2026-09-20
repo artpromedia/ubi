@@ -7,16 +7,18 @@
  * while supplying a city config and an SMS sink of their own. No production
  * path contains a stub.
  */
-import type { PrismaClient } from "@prisma/client";
-import { ConfigClient } from "@ubi/config-client";
-import { ContractError } from "@ubi/contracts";
 import { z } from "zod";
 
+import { ConfigClient } from "@ubi/config-client";
+import { ContractError } from "@ubi/contracts";
+
+import { createPolicyProvider, type PolicyProvider } from "./policy";
 import { notificationClient } from "../lib/notification-client.js";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
-import { createPolicyProvider, type PolicyProvider } from "./policy";
+
 import type { FaceVerification, FaceVerifier } from "./step-up";
+import type { PrismaClient } from "@prisma/client";
 
 /** The subset of a Redis client the identity module uses. `ioredis` satisfies it. */
 export interface IdentityCache {
@@ -129,7 +131,7 @@ const FaceProviderResponseSchema = z.object({
 let cachedDeps: IdentityDeps | undefined;
 
 export function defaultIdentityDeps(): IdentityDeps {
-  if (cachedDeps !== undefined) return cachedDeps;
+  if (cachedDeps !== undefined) {return cachedDeps;}
 
   const baseUrl = process.env.CONFIG_SERVICE_URL;
   if (baseUrl === undefined || baseUrl.length === 0) {

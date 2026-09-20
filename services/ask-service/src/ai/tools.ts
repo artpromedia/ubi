@@ -17,14 +17,15 @@
  */
 import { z } from "zod";
 
-import type { Money } from "@ubi/contracts";
-import { money } from "@ubi/contracts";
+import { money ,type  Money } from "@ubi/contracts";
 
-import type { ToolSchema, ToolSpec } from "./model-provider";
+import { generateId } from "../lib/ids";
+
 import type { Card, ClarifyField, Source } from "./events";
+import type { ToolSchema, ToolSpec } from "./model-provider";
 import type { AskDeps } from "../ops/context";
 import type { Actor, AskRole } from "../ops/types";
-import { generateId } from "../lib/ids";
+
 
 export interface ReviewProposalItem {
   readonly kind: "flight" | "stay" | "ride_reservation";
@@ -480,6 +481,7 @@ const clarifyTool: AskTool = {
     additionalProperties: false,
   },
   roles: ["rider", "driver"],
+  // eslint-disable-next-line require-await -- AskTool.run is async by contract; this tool only echoes its parsed arguments
   async run(_ctx, args): Promise<AskToolResult> {
     const { fields } = clarifySchema.parse(args);
     return {

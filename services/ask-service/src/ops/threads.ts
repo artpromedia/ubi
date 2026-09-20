@@ -18,15 +18,15 @@ import {
   type Money,
 } from "@ubi/contracts";
 
-import { assertFlagEnabled } from "./flags";
 import { actorKindFor, auditedTransaction, type OutboxInput } from "./audit";
-import { redact } from "../ai/redaction";
+import { assertFlagEnabled } from "./flags";
 import { runTurn, type StoredMessage } from "../ai/loop";
+import { redact } from "../ai/redaction";
 import { generateId } from "../lib/ids";
 
-import type { AskEvent } from "../ai/events";
 import type { AskDeps } from "./context";
 import type { Actor, AskRole, JsonRecord } from "./types";
+import type { AskEvent } from "../ai/events";
 import type { Prisma } from "@prisma/client/index";
 
 function asJson(value: unknown): Prisma.InputJsonValue {
@@ -356,6 +356,7 @@ export async function handoff(
   });
 
   const actorType = actorKindFor(input.actor.role);
+  // eslint-disable-next-line require-await -- auditedTransaction's work callback is async by contract; this one only describes rows
   await auditedTransaction(deps.db, async () => ({
     result: null,
     aiActions: [

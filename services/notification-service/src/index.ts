@@ -11,7 +11,6 @@ import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 
 import { logger } from "./lib/logger.js";
-
 import { disconnect as disconnectPrisma } from "./lib/prisma";
 import {
   closeConnections as closeRedis,
@@ -72,35 +71,35 @@ async function subscribeToEvents() {
     await subscribeToChannel("payments");
 
     // Handle ride events
-    onEvent("ride:completed", async (data) => {
+    onEvent("ride:completed", (data) => {
       logger.debug({ event: "ride:completed", data }, "Event received");
       // Trigger receipt email, rating request, etc.
     });
 
-    onEvent("ride:driver_arrived", async (data) => {
+    onEvent("ride:driver_arrived", (data) => {
       logger.debug({ event: "ride:driver_arrived", data }, "Event received");
       // Send push notification to rider
     });
 
     // Handle food order events
-    onEvent("food:order_ready", async (data) => {
+    onEvent("food:order_ready", (data) => {
       logger.debug({ event: "food:order_ready", data }, "Event received");
       // Notify customer
     });
 
     // Handle delivery events
-    onEvent("delivery:picked_up", async (data) => {
+    onEvent("delivery:picked_up", (data) => {
       logger.debug({ event: "delivery:picked_up", data }, "Event received");
       // Notify sender and recipient
     });
 
     // Handle payment events
-    onEvent("payment:successful", async (data) => {
+    onEvent("payment:successful", (data) => {
       logger.debug({ event: "payment:successful", data }, "Event received");
       // Send receipt email
     });
 
-    onEvent("payment:failed", async (data) => {
+    onEvent("payment:failed", (data) => {
       logger.debug({ event: "payment:failed", data }, "Event received");
       // Notify user
     });
@@ -111,7 +110,7 @@ async function subscribeToEvents() {
   }
 }
 
-subscribeToEvents();
+void subscribeToEvents();
 
 // Graceful shutdown
 process.on("SIGINT", shutdown);

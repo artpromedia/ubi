@@ -14,12 +14,12 @@
  */
 import { ContractError, money, type Money } from "@ubi/contracts";
 
-import { generateId } from "../lib/ids";
-import { advanceOrder, orderView, type OrderRow, type OrderView } from "./ladder";
 import { toJson } from "./json";
+import { advanceOrder, orderView, type OrderRow, type OrderView } from "./ladder";
 import { withOutbox } from "./outbox";
 import { actorTypeFor, isOpsRole } from "./roles";
 import { adapterFor, contextFor, loadSupplier } from "./suppliers";
+import { generateId } from "../lib/ids";
 
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
@@ -293,8 +293,8 @@ export async function switchOrder(
   }
 
   const refs: JsonRecord = {};
-  if (change.supplierRefs.pnr !== undefined) refs.pnr = change.supplierRefs.pnr;
-  if (change.supplierRefs.orderRef !== undefined) refs.orderRef = change.supplierRefs.orderRef;
+  if (change.supplierRefs.pnr !== undefined) {refs.pnr = change.supplierRefs.pnr;}
+  if (change.supplierRefs.orderRef !== undefined) {refs.orderRef = change.supplierRefs.orderRef;}
   if (change.supplierRefs.ticketNumbers !== undefined) {
     refs.ticketNumbers = [...change.supplierRefs.ticketNumbers];
   }

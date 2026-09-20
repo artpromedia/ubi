@@ -8,8 +8,8 @@
  * supplier and production seeds `duffel` / `nuitee`, and the flows are identical.
  */
 import type { CityConfigProvider } from "./config";
-import type { PaymentPort } from "../ports/payment-port";
 import type { TravelDb } from "./types";
+import type { PaymentPort } from "../ports/payment-port";
 
 export interface TravelDeps {
   readonly db: TravelDb;

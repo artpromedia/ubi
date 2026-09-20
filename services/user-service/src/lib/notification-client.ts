@@ -93,7 +93,8 @@ class NotificationClient {
    * Send an SMS message
    */
   async sendSMS(params: SendSMSParams): Promise<NotificationResponse> {
-    return this.request<NotificationResponse>("/sms/send", params);
+    const response = await this.request<NotificationResponse>("/sms/send", params);
+    return response;
   }
 
   /**
@@ -101,11 +102,12 @@ class NotificationClient {
    * Returns the OTP in development mode for testing
    */
   async sendOTP(params: SendOTPParams): Promise<NotificationResponse> {
-    return this.request<NotificationResponse>("/sms/otp", {
+    const response = await this.request<NotificationResponse>("/sms/otp", {
       ...params,
       length: params.length || 6,
       expiresInMinutes: params.expiresInMinutes || 5,
     });
+    return response;
   }
 
   /**
@@ -116,14 +118,19 @@ class NotificationClient {
     code: string,
     purpose: SendOTPParams["purpose"],
   ): Promise<{ success: boolean; valid: boolean }> {
-    return this.request("/sms/otp/verify", { phone, code, purpose });
+    const response = await this.request<{ success: boolean; valid: boolean }>(
+      "/sms/otp/verify",
+      { phone, code, purpose },
+    );
+    return response;
   }
 
   /**
    * Send an email
    */
   async sendEmail(params: SendEmailParams): Promise<NotificationResponse> {
-    return this.request<NotificationResponse>("/email/send", params);
+    const response = await this.request<NotificationResponse>("/email/send", params);
+    return response;
   }
 
   /**
@@ -135,10 +142,11 @@ class NotificationClient {
       templateData: Record<string, unknown>;
     },
   ): Promise<NotificationResponse> {
-    return this.request<NotificationResponse>("/email/template", {
+    const response = await this.request<NotificationResponse>("/email/template", {
       ...params,
       templateId,
     });
+    return response;
   }
 }
 

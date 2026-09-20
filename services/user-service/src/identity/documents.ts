@@ -14,11 +14,11 @@
  * A document row holds a REFERENCE to the file in object storage, never the
  * file. Nothing here writes document contents to Postgres or to a log.
  */
-import { ContractError } from "@ubi/contracts";
 import { z } from "zod";
 
+import { ContractError } from "@ubi/contracts";
+
 import { writeAudit } from "./audit";
-import type { IdentityDeps } from "./deps";
 import { APPEAL_MESSAGE, APPEAL_PATH, takeDriverOffline } from "./driver";
 import { deterministicId, newId } from "./ids";
 import {
@@ -26,6 +26,8 @@ import {
   writeOutboxEvent,
   writeOutboxEventOnce,
 } from "./outbox";
+
+import type { IdentityDeps } from "./deps";
 
 export const DRIVER_DOCUMENT_TYPES = [
   "licence",
@@ -116,7 +118,7 @@ export async function listDriverDocuments(
     { ownerType: "driver", ownerId: driverId },
   ];
   if (vehicleId !== null)
-    owners.push({ ownerType: "vehicle", ownerId: vehicleId });
+    {owners.push({ ownerType: "vehicle", ownerId: vehicleId });}
 
   const rows = await deps.prisma.identityDocument.findMany({
     where: { OR: owners },
@@ -126,7 +128,7 @@ export async function listDriverDocuments(
   const seen = new Set<string>();
   const documents: DocumentView[] = [];
   for (const row of rows) {
-    if (seen.has(row.type)) continue;
+    if (seen.has(row.type)) {continue;}
     seen.add(row.type);
     documents.push({
       id: row.id,
@@ -287,7 +289,7 @@ export async function reviewDocument(
     where: { id: input.documentId },
   });
   if (document === null)
-    throw new ContractError("not_found", "Document not found");
+    {throw new ContractError("not_found", "Document not found");}
 
   const updated = await deps.prisma.$transaction(async (tx) => {
     const row = await tx.identityDocument.update({
@@ -352,7 +354,7 @@ async function driversForDocument(
   ownerType: string,
   ownerId: string,
 ): Promise<readonly string[]> {
-  if (ownerType === "driver") return [ownerId];
+  if (ownerType === "driver") {return [ownerId];}
   const drivers = await deps.prisma.driver.findMany({
     where: { vehicleId: ownerId },
     select: { id: true },
@@ -388,7 +390,7 @@ export async function sweepDocumentExpiry(
   const offline = new Set<string>();
 
   for (const document of documents) {
-    if (document.expiresAt === null) continue;
+    if (document.expiresAt === null) {continue;}
     // Hoisted: the narrowing above is lost inside the transaction closure below,
     // because expiresAt is a mutable property rather than a local binding.
     const expiresAt = document.expiresAt;
@@ -396,10 +398,10 @@ export async function sweepDocumentExpiry(
 
     if (remaining > 0) {
       const threshold = thresholds.find((candidate) => remaining <= candidate);
-      if (threshold === undefined) continue;
+      if (threshold === undefined) {continue;}
 
-      const emitted = await deps.prisma.$transaction(async (tx) =>
-        writeOutboxEventOnce(tx, {
+      const emitted = await deps.prisma.$transaction(async (tx) => {
+        const wrote = await writeOutboxEventOnce(tx, {
           name: "document.expiring",
           subjectType: "document",
           subjectId: document.id,
@@ -422,9 +424,10 @@ export async function sweepDocumentExpiry(
             label: label(document.type),
           },
           occurredAt: now,
-        }),
-      );
-      if (emitted !== undefined) remindersEmitted += 1;
+        });
+        return wrote;
+      });
+      if (emitted !== undefined) {remindersEmitted += 1;}
       continue;
     }
 
@@ -439,7 +442,7 @@ export async function sweepDocumentExpiry(
         where: { id: document.id, status: "valid" },
         data: { status: "expired" },
       });
-      if (updated.count === 0) return;
+      if (updated.count === 0) {return;}
       expired += 1;
 
       await writeAudit(tx, {
@@ -486,7 +489,7 @@ export async function sweepDocumentExpiry(
           cityId: policy.cityId,
           occurredAt: now,
         });
-        if (wasOnline) offline.add(driverId);
+        if (wasOnline) {offline.add(driverId);}
       }
 
       if (document.ownerType === "vehicle") {

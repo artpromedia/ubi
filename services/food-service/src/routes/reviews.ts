@@ -5,6 +5,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { prisma } from "../lib/prisma";
 import { cache, redis } from "../lib/redis";
 import { generateId } from "../lib/utils";
@@ -112,7 +113,7 @@ reviewRoutes.post("/", zValidator("json", createReviewSchema), async (c) => {
 
   // Calculate overall rating
   const ratings = [data.restaurantRating, data.foodRating];
-  if (data.deliveryRating) ratings.push(data.deliveryRating);
+  if (data.deliveryRating) {ratings.push(data.deliveryRating);}
   const overallRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
 
   const review = await prisma.review.create({
@@ -247,11 +248,11 @@ reviewRoutes.put("/:id", zValidator("json", updateReviewSchema), async (c) => {
       data.restaurantRating ?? review.restaurantRating,
     ];
     const food = data.foodRating ?? review.foodRating;
-    if (food != null) {
+    if (food !== null && food !== undefined) {
       ratings.push(food);
     }
     const delivery = data.deliveryRating ?? review.deliveryRating;
-    if (delivery != null) {
+    if (delivery !== null && delivery !== undefined) {
       ratings.push(delivery);
     }
     overallRating = ratings.reduce((a, b) => a + b, 0) / (ratings.length || 1);

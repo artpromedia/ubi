@@ -5,6 +5,8 @@
  * https://flutterwave.com
  */
 
+import * as nodeCrypto from "node:crypto";
+
 import { Currency } from "../types";
 
 interface FlutterwaveConfig {
@@ -106,7 +108,8 @@ export class FlutterwaveClient {
     };
   }
 
-  private async request<T>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- T is an assertion about the parsed JSON; defaulting to any restores the pre-lint inference for delegating methods
+  private async request<T = any>(
     endpoint: string,
     method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
     body?: any,
@@ -137,7 +140,8 @@ export class FlutterwaveClient {
       link: string;
     }>
   > {
-    return this.request("/payments", "POST", params);
+    const response = await this.request("/payments", "POST", params);
+    return response;
   }
 
   /**
@@ -175,9 +179,10 @@ export class FlutterwaveClient {
   > {
     // Encrypt card data
     const encryptedData = this.encryptCardData(params);
-    return this.request("/charges?type=card", "POST", {
+    const response = await this.request("/charges?type=card", "POST", {
       client: encryptedData,
     });
+    return response;
   }
 
   /**
@@ -187,10 +192,11 @@ export class FlutterwaveClient {
     flwRef: string,
     otp: string,
   ): Promise<FlutterwaveResponse<any>> {
-    return this.request("/validate-charge", "POST", {
+    const response = await this.request("/validate-charge", "POST", {
       otp,
       flw_ref: flwRef,
     });
+    return response;
   }
 
   /**
@@ -237,7 +243,8 @@ export class FlutterwaveClient {
       );
     }
 
-    return this.request(endpoint, "POST", params);
+    const response = await this.request(endpoint, "POST", params);
+    return response;
   }
 
   /**
@@ -257,7 +264,8 @@ export class FlutterwaveClient {
       note: string;
     }>
   > {
-    return this.request("/charges?type=ussd", "POST", params);
+    const response = await this.request("/charges?type=ussd", "POST", params);
+    return response;
   }
 
   /**
@@ -285,14 +293,16 @@ export class FlutterwaveClient {
       };
     }>
   > {
-    return this.request(`/transactions/${transactionId}/verify`);
+    const response = await this.request(`/transactions/${transactionId}/verify`);
+    return response;
   }
 
   /**
    * Verify transaction by reference
    */
   async verifyByReference(txRef: string): Promise<FlutterwaveResponse<any>> {
-    return this.request(`/transactions/verify_by_reference?tx_ref=${txRef}`);
+    const response = await this.request(`/transactions/verify_by_reference?tx_ref=${txRef}`);
+    return response;
   }
 
   /**
@@ -307,7 +317,8 @@ export class FlutterwaveClient {
       }[]
     >
   > {
-    return this.request(`/banks/${country}`);
+    const response = await this.request(`/banks/${country}`);
+    return response;
   }
 
   /**
@@ -322,10 +333,11 @@ export class FlutterwaveClient {
       account_name: string;
     }>
   > {
-    return this.request("/accounts/resolve", "POST", {
+    const response = await this.request("/accounts/resolve", "POST", {
       account_number: accountNumber,
       account_bank: accountBank,
     });
+    return response;
   }
 
   /**
@@ -348,7 +360,8 @@ export class FlutterwaveClient {
       bank_name: string;
     }>
   > {
-    return this.request("/transfers", "POST", params);
+    const response = await this.request("/transfers", "POST", params);
+    return response;
   }
 
   /**
@@ -364,17 +377,19 @@ export class FlutterwaveClient {
       currency: string;
     }>
   > {
-    return this.request("/transfers", "POST", {
+    const response = await this.request("/transfers", "POST", {
       ...params,
       account_bank: "MPS", // Mobile Money code
     });
+    return response;
   }
 
   /**
    * Get transfer by ID
    */
   async getTransfer(transferId: number): Promise<FlutterwaveResponse<any>> {
-    return this.request(`/transfers/${transferId}`);
+    const response = await this.request(`/transfers/${transferId}`);
+    return response;
   }
 
   /**
@@ -392,7 +407,8 @@ export class FlutterwaveClient {
       }[]
     >
   > {
-    return this.request(`/transfers/fee?amount=${amount}&currency=${currency}`);
+    const response = await this.request(`/transfers/fee?amount=${amount}&currency=${currency}`);
+    return response;
   }
 
   /**
@@ -416,9 +432,10 @@ export class FlutterwaveClient {
     }>
   > {
     const body: any = { id: transactionId };
-    if (amount) body.amount = amount;
+    if (amount) {body.amount = amount;}
 
-    return this.request("/transactions/refund", "POST", body);
+    const response = await this.request("/transactions/refund", "POST", body);
+    return response;
   }
 
   /**
@@ -434,7 +451,7 @@ export class FlutterwaveClient {
    * - Memory is cleared after use where possible
    */
   private encryptCardData(data: any): string {
-    const crypto = require("node:crypto");
+    const crypto = nodeCrypto;
 
     // Validate encryption key exists and is proper length
     if (!this.config.encryptionKey || this.config.encryptionKey.length < 24) {
@@ -472,7 +489,7 @@ export class FlutterwaveClient {
    * In production, decryption is handled by Flutterwave servers
    */
   private decryptCardData(encryptedData: string): any {
-    const crypto = require("node:crypto");
+    const crypto = nodeCrypto;
 
     if (!this.config.encryptionKey || this.config.encryptionKey.length < 24) {
       throw new Error(

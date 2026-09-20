@@ -5,6 +5,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
+
 import { prisma } from '../lib/prisma';
 import { redis } from '../lib/redis';
 import { generateId, generateOTP } from '../lib/utils';

@@ -5,7 +5,6 @@
  * Different limits for different user types and endpoints.
  */
 
-import type { Context, Next } from "hono";
 import { createMiddleware } from "hono/factory";
 import Redis from "ioredis";
 import {
@@ -13,7 +12,10 @@ import {
   RateLimiterRedis,
   type RateLimiterAbstract,
 } from "rate-limiter-flexible";
+
 import { rateLimitLogger } from "../lib/logger.js";
+
+import type { Context, Next } from "hono";
 
 // Initialize Redis connection
 let redis: Redis | null = null;

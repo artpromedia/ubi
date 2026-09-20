@@ -12,8 +12,7 @@
  *
  * See middleware/identity.ts for the canonical header contract.
  */
-import type { Context } from "hono";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 
 import { proxyLogger } from "../lib/logger.js";
 import { IDENTITY_HEADER, REQUEST_ID_HEADER } from "../middleware/identity";
@@ -54,7 +53,9 @@ const SERVICE_REGISTRY: Record<
 
 function serviceUrl(serviceName: string): string | undefined {
   const entry = SERVICE_REGISTRY[serviceName];
-  if (entry === undefined) return undefined;
+  if (entry === undefined) {
+    return undefined;
+  }
   const configured = process.env[entry.env];
   return configured !== undefined && configured.length > 0
     ? configured
@@ -213,117 +214,71 @@ const proxyToService = async (
 /** The gateway mounts /v1; downstream services do not carry the version prefix. */
 const downstreamPath = (c: Context): string => c.req.path.replace(/^\/v1/, "");
 
+/** Builds a route callback: an async handler that awaits the proxy hop. */
+const forward =
+  (serviceName: string) =>
+  async (c: Context): Promise<Response> => {
+    const response = await proxyToService(serviceName, downstreamPath(c), c);
+    return response;
+  };
+
 // ===========================================
 // Route Definitions
 // ===========================================
 
 // User Service routes
-proxyRoutes.all("/auth/*", (c) => proxyToService("auth", downstreamPath(c), c));
-proxyRoutes.all("/users/*", (c) =>
-  proxyToService("users", downstreamPath(c), c),
-);
+proxyRoutes.all("/auth/*", forward("auth"));
+proxyRoutes.all("/users/*", forward("users"));
 
 // Identity (slice 03) — device enrolment, step-up, documents, review cases.
 // These are registered BEFORE /drivers/* so driver documents reach the
 // user-service rather than the ride-service.
-proxyRoutes.all("/devices", (c) =>
-  proxyToService("devices", downstreamPath(c), c),
-);
-proxyRoutes.all("/devices/*", (c) =>
-  proxyToService("devices", downstreamPath(c), c),
-);
-proxyRoutes.all("/identity/*", (c) =>
-  proxyToService("identity", downstreamPath(c), c),
-);
-proxyRoutes.all("/webhooks/telco/*", (c) =>
-  proxyToService("identity", downstreamPath(c), c),
-);
-proxyRoutes.all("/drivers/me/documents", (c) =>
-  proxyToService("identity", downstreamPath(c), c),
-);
-proxyRoutes.all("/drivers/me/documents/*", (c) =>
-  proxyToService("identity", downstreamPath(c), c),
-);
-proxyRoutes.all("/drivers/me/eligibility", (c) =>
-  proxyToService("identity", downstreamPath(c), c),
-);
+proxyRoutes.all("/devices", forward("devices"));
+proxyRoutes.all("/devices/*", forward("devices"));
+proxyRoutes.all("/identity/*", forward("identity"));
+proxyRoutes.all("/webhooks/telco/*", forward("identity"));
+proxyRoutes.all("/drivers/me/documents", forward("identity"));
+proxyRoutes.all("/drivers/me/documents/*", forward("identity"));
+proxyRoutes.all("/drivers/me/eligibility", forward("identity"));
 
 // Ride Service routes
-proxyRoutes.all("/rides/*", (c) =>
-  proxyToService("rides", downstreamPath(c), c),
-);
-proxyRoutes.all("/drivers/*", (c) =>
-  proxyToService("rides", downstreamPath(c), c),
-);
-proxyRoutes.all("/pricing/*", (c) =>
-  proxyToService("rides", downstreamPath(c), c),
-);
-proxyRoutes.all("/locations/*", (c) =>
-  proxyToService("rides", downstreamPath(c), c),
-);
+proxyRoutes.all("/rides/*", forward("rides"));
+proxyRoutes.all("/drivers/*", forward("rides"));
+proxyRoutes.all("/pricing/*", forward("rides"));
+proxyRoutes.all("/locations/*", forward("rides"));
 
 // Marketplace (negotiated-fare) routes — the marketplace engine lives in the
 // ride-service, so /mp/* rides on the existing rides registry entry. The
 // wallet-side marketplace endpoints (/wallet/mp/*) are served by
 // payment-service and already flow through the /wallet/* mount below.
-proxyRoutes.all("/mp/*", (c) => proxyToService("rides", downstreamPath(c), c));
-proxyRoutes.all("/admin/mp/*", (c) =>
-  proxyToService("rides", downstreamPath(c), c),
-);
+proxyRoutes.all("/mp/*", forward("rides"));
+proxyRoutes.all("/admin/mp/*", forward("rides"));
 
 // Food Service routes
-proxyRoutes.all("/food/*", (c) => proxyToService("food", downstreamPath(c), c));
-proxyRoutes.all("/restaurants/*", (c) =>
-  proxyToService("restaurants", downstreamPath(c), c),
-);
-proxyRoutes.all("/menus/*", (c) =>
-  proxyToService("food", downstreamPath(c), c),
-);
+proxyRoutes.all("/food/*", forward("food"));
+proxyRoutes.all("/restaurants/*", forward("restaurants"));
+proxyRoutes.all("/menus/*", forward("food"));
 
 // Delivery Service routes
-proxyRoutes.all("/delivery/*", (c) =>
-  proxyToService("delivery", downstreamPath(c), c),
-);
-proxyRoutes.all("/packages/*", (c) =>
-  proxyToService("packages", downstreamPath(c), c),
-);
+proxyRoutes.all("/delivery/*", forward("delivery"));
+proxyRoutes.all("/packages/*", forward("packages"));
 
 // Payment Service routes
-proxyRoutes.all("/payments/*", (c) =>
-  proxyToService("payments", downstreamPath(c), c),
-);
-proxyRoutes.all("/wallets/*", (c) =>
-  proxyToService("wallets", downstreamPath(c), c),
-);
-proxyRoutes.all("/wallet/*", (c) =>
-  proxyToService("wallets", downstreamPath(c), c),
-);
-proxyRoutes.all("/transactions/*", (c) =>
-  proxyToService("payments", downstreamPath(c), c),
-);
+proxyRoutes.all("/payments/*", forward("payments"));
+proxyRoutes.all("/wallets/*", forward("wallets"));
+proxyRoutes.all("/wallet/*", forward("wallets"));
+proxyRoutes.all("/transactions/*", forward("payments"));
 
 // Notification Service routes
-proxyRoutes.all("/notifications/*", (c) =>
-  proxyToService("notifications", downstreamPath(c), c),
-);
+proxyRoutes.all("/notifications/*", forward("notifications"));
 
 // Analytics Service routes
-proxyRoutes.all("/analytics/*", (c) =>
-  proxyToService("analytics", downstreamPath(c), c),
-);
-proxyRoutes.all("/reports/*", (c) =>
-  proxyToService("analytics", downstreamPath(c), c),
-);
+proxyRoutes.all("/analytics/*", forward("analytics"));
+proxyRoutes.all("/reports/*", forward("analytics"));
 
 // CEERION Service routes (EV financing)
-proxyRoutes.all("/ceerion/*", (c) =>
-  proxyToService("ceerion", downstreamPath(c), c),
-);
-proxyRoutes.all("/vehicles/*", (c) =>
-  proxyToService("vehicles", downstreamPath(c), c),
-);
-proxyRoutes.all("/financing/*", (c) =>
-  proxyToService("ceerion", downstreamPath(c), c),
-);
+proxyRoutes.all("/ceerion/*", forward("ceerion"));
+proxyRoutes.all("/vehicles/*", forward("vehicles"));
+proxyRoutes.all("/financing/*", forward("ceerion"));
 
 export { proxyRoutes };

@@ -10,9 +10,9 @@
  * - System health monitoring
  */
 
-import { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import {
   notificationClient,
   NotificationPriority,
@@ -22,6 +22,8 @@ import { prisma } from "../lib/prisma";
 import { PaystackService } from "../providers/paystack.service";
 import { FraudDetectionService } from "../services/fraud-detection.service";
 import { PayoutService } from "../services/payout.service";
+
+import type { Prisma } from "@prisma/client";
 
 const adminRoutes = new Hono();
 

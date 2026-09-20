@@ -3,6 +3,7 @@
  */
 
 import { Hono } from "hono";
+
 import { checkPrismaConnection } from "../lib/prisma";
 import { checkRedisConnection } from "../lib/redis";
 

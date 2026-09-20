@@ -10,6 +10,11 @@
  * Prices are the server's, quoted live with an age. The assistant renders them;
  * it never computes a fare (CLAUDE.md #1).
  */
+
+import { ContractError } from "@ubi/contracts";
+
+import { toolLogger } from "../lib/logger";
+
 import type { Actor } from "../ops/types";
 
 export interface RideQuote {
@@ -38,10 +43,6 @@ export interface RidePort {
   quote(actor: Actor, input: RideQuoteInput): Promise<RideQuote>;
   status(actor: Actor, tripId: string): Promise<RideStatusResult | null>;
 }
-
-import { ContractError } from "@ubi/contracts";
-
-import { toolLogger } from "../lib/logger";
 
 interface RideHttpOptions {
   readonly baseUrl: string;

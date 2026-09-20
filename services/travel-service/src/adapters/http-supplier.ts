@@ -16,13 +16,13 @@
  * Duffel is flights; Nuitee is stays. Flight support is NEVER inferred from the
  * hotel API (CLAUDE.md — "do NOT infer Nuitee flight support from a hotel API").
  */
+/* eslint-disable require-await -- the SupplyAdapter interfaces are async by contract; these blocked shells fail synchronously until credentials exist */
 import { z } from "zod";
 
 import { ContractError } from "@ubi/contracts";
 
 import { adapterLogger } from "../lib/logger";
 
-import type { JsonRecord } from "../ops/types";
 import type {
   AdapterOffer,
   BookRequest,
@@ -44,6 +44,7 @@ import type {
   StatusResult,
   SupplierContext,
 } from "./types";
+import type { JsonRecord } from "../ops/types";
 
 const httpConfigSchema = z.object({
   baseUrl: z.string().url().optional(),

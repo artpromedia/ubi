@@ -17,8 +17,8 @@
  */
 import { assertKnownEventName, type EventName } from "@ubi/contracts";
 
-import { generateId } from "../lib/ids";
 import { findSensitive } from "../ai/redaction";
+import { generateId } from "../lib/ids";
 
 import type { Actor, JsonRecord, AskDb, AskTx } from "./types";
 
@@ -150,7 +150,7 @@ export async function auditedTransaction<T>(
   db: AskDb,
   work: (tx: AuditedTx) => Promise<AuditedOutcome<T>>,
 ): Promise<T> {
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const outcome = await work(tx as AuditedTx);
     for (const action of outcome.aiActions ?? []) {
       await writeAiAction(tx, action);
@@ -160,6 +160,7 @@ export async function auditedTransaction<T>(
     }
     return outcome.result;
   });
+  return result;
 }
 
 export function actorKindFor(role: string): ActorKind {

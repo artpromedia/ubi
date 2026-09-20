@@ -3,6 +3,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+
 import { dbLogger } from "./logger.js";
 
 declare global {
@@ -69,5 +70,5 @@ export async function withRetry<T>(
     }
   }
 
-  throw lastError;
+  throw lastError ?? new Error("withRetry exhausted retries without capturing an error");
 }

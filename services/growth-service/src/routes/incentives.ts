@@ -5,13 +5,13 @@
  */
 import { Hono } from "hono";
 
+import { actorOf, cityOf, failure, gatewayAuth } from "../middleware";
 import { assertFlagEnabled } from "../ops/config";
 import {
   getIncentivesOverview,
   getRebateDetail,
   getStatement,
 } from "../ops/incentives";
-import { actorOf, cityOf, failure, gatewayAuth } from "../middleware";
 
 import type { GrowthDeps } from "../ops/context";
 

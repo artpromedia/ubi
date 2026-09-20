@@ -155,9 +155,21 @@ export function createHttpPayment(options: PaymentHttpOptions): PaymentPort {
   }
 
   return {
-    authorize: (request) => call("authorize", request),
-    capture: (request) => call("capture", request),
-    release: (request) => call("release", request),
-    refund: (request) => call("refund", request),
+    authorize: async (request) => {
+      const result = await call("authorize", request);
+      return result;
+    },
+    capture: async (request) => {
+      const result = await call("capture", request);
+      return result;
+    },
+    release: async (request) => {
+      const result = await call("release", request);
+      return result;
+    },
+    refund: async (request) => {
+      const result = await call("refund", request);
+      return result;
+    },
   };
 }

@@ -12,6 +12,7 @@
  */
 
 import { Hono } from "hono";
+
 import { safetyLogger } from "../lib/logger";
 import { backgroundCheckService } from "../services/background-check.service";
 import { driverSafetyService } from "../services/driver-safety.service";
@@ -20,7 +21,8 @@ import { sosEmergencyService } from "../services/sos.service";
 import { tripMonitorService } from "../services/trip-monitor.service";
 import { verificationService } from "../services/verification.service";
 import { womenSafetyService } from "../services/women-safety.service";
-import { DocumentType } from "../types/safety.types";
+
+import type { DocumentType } from "../types/safety.types";
 
 export const safetyRoutes = new Hono();
 
@@ -614,7 +616,7 @@ safetyRoutes.post("/trip/monitor/stop", async (c) => {
  * Get trip safety status
  * GET /trip/:tripId/status
  */
-safetyRoutes.get("/trip/:tripId/status", async (c) => {
+safetyRoutes.get("/trip/:tripId/status", (c) => {
   try {
     const tripId = c.req.param("tripId");
 

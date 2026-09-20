@@ -197,7 +197,8 @@ export class UbiClient {
   /**
    * Make an authenticated API request
    */
-  async request<T>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- T is an assertion about the parsed JSON; defaulting to any restores the pre-lint inference for delegating methods
+  async request<T = any>(
     method: string,
     path: string,
     data?: any,
@@ -252,7 +253,7 @@ export class UbiClient {
       }
     }
 
-    throw lastError;
+    throw lastError ?? new Error("request failed after retries without capturing an error");
   }
 
   private async fetchWithTimeout(
@@ -277,8 +278,8 @@ export class UbiClient {
     }
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
@@ -309,14 +310,16 @@ export class DeliveryClient {
    * Get a delivery quote
    */
   async createQuote(request: DeliveryQuoteRequest): Promise<DeliveryQuote> {
-    return this.client.request("POST", "/delivery/quotes", request);
+    const response = await this.client.request("POST", "/delivery/quotes", request);
+    return response;
   }
 
   /**
    * Create a delivery
    */
   async create(request: DeliveryRequest): Promise<Delivery> {
-    return this.client.request("POST", "/delivery/deliveries", request);
+    const response = await this.client.request("POST", "/delivery/deliveries", request);
+    return response;
   }
 
   /**
@@ -327,16 +330,18 @@ export class DeliveryClient {
     deliveries: Delivery[];
     totalDeliveries: number;
   }> {
-    return this.client.request("POST", "/delivery/deliveries/batch", {
+    const response = await this.client.request("POST", "/delivery/deliveries/batch", {
       deliveries,
     });
+    return response;
   }
 
   /**
    * Get a delivery by ID
    */
   async get(deliveryId: string): Promise<Delivery> {
-    return this.client.request("GET", `/delivery/deliveries/${deliveryId}`);
+    const response = await this.client.request("GET", `/delivery/deliveries/${deliveryId}`);
+    return response;
   }
 
   /**
@@ -352,39 +357,42 @@ export class DeliveryClient {
   ): Promise<PaginatedResponse<Delivery>> {
     const params = new URLSearchParams();
 
-    if (filters?.status) params.append("status", filters.status);
+    if (filters?.status) {params.append("status", filters.status);}
     if (filters?.dateFrom)
-      params.append("dateFrom", filters.dateFrom.toISOString());
-    if (filters?.dateTo) params.append("dateTo", filters.dateTo.toISOString());
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+      {params.append("dateFrom", filters.dateFrom.toISOString());}
+    if (filters?.dateTo) {params.append("dateTo", filters.dateTo.toISOString());}
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/delivery/deliveries${query ? `?${query}` : ""}`
     );
+    return response;
   }
 
   /**
    * Track a delivery by tracking number
    */
   async track(trackingNumber: string): Promise<TrackingInfo> {
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/delivery/deliveries/track/${trackingNumber}`
     );
+    return response;
   }
 
   /**
    * Cancel a delivery
    */
   async cancel(deliveryId: string, reason?: string): Promise<Delivery> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       `/delivery/deliveries/${deliveryId}/cancel`,
       { reason }
     );
+    return response;
   }
 
   /**
@@ -395,7 +403,8 @@ export class DeliveryClient {
       dateFrom: dateFrom.toISOString(),
       dateTo: dateTo.toISOString(),
     });
-    return this.client.request("GET", `/delivery/deliveries/stats?${params}`);
+    const response = await this.client.request("GET", `/delivery/deliveries/stats?${params}`);
+    return response;
   }
 }
 
@@ -410,7 +419,8 @@ export class HealthcareClient {
    * Register a healthcare provider
    */
   async registerProvider(providerData: any): Promise<any> {
-    return this.client.request("POST", "/healthcare/providers", providerData);
+    const response = await this.client.request("POST", "/healthcare/providers", providerData);
+    return response;
   }
 
   /**
@@ -420,21 +430,23 @@ export class HealthcareClient {
     pagination?: PaginationParams
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/healthcare/providers${query ? `?${query}` : ""}`
     );
+    return response;
   }
 
   /**
    * Create a medical delivery
    */
   async createDelivery(delivery: any): Promise<any> {
-    return this.client.request("POST", "/healthcare/deliveries", delivery);
+    const response = await this.client.request("POST", "/healthcare/deliveries", delivery);
+    return response;
   }
 
   /**
@@ -445,29 +457,31 @@ export class HealthcareClient {
     pagination?: PaginationParams
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (filters?.providerId) params.append("providerId", filters.providerId);
-    if (filters?.status) params.append("status", filters.status);
+    if (filters?.providerId) {params.append("providerId", filters.providerId);}
+    if (filters?.status) {params.append("status", filters.status);}
     if (filters?.deliveryType)
-      params.append("deliveryType", filters.deliveryType);
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+      {params.append("deliveryType", filters.deliveryType);}
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/healthcare/deliveries${query ? `?${query}` : ""}`
     );
+    return response;
   }
 
   /**
    * Create patient transport
    */
   async createPatientTransport(transport: any): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       "/healthcare/patient-transport",
       transport
     );
+    return response;
   }
 
   /**
@@ -478,16 +492,17 @@ export class HealthcareClient {
     pagination?: PaginationParams
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (filters?.providerId) params.append("providerId", filters.providerId);
-    if (filters?.status) params.append("status", filters.status);
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (filters?.providerId) {params.append("providerId", filters.providerId);}
+    if (filters?.status) {params.append("status", filters.status);}
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/healthcare/patient-transport${query ? `?${query}` : ""}`
     );
+    return response;
   }
 }
 
@@ -502,25 +517,28 @@ export class SchoolClient {
    * Register a school
    */
   async registerSchool(schoolData: any): Promise<any> {
-    return this.client.request("POST", "/school/schools", schoolData);
+    const response = await this.client.request("POST", "/school/schools", schoolData);
+    return response;
   }
 
   /**
    * Get school by ID
    */
   async getSchool(schoolId: string): Promise<any> {
-    return this.client.request("GET", `/school/schools/${schoolId}`);
+    const response = await this.client.request("GET", `/school/schools/${schoolId}`);
+    return response;
   }
 
   /**
    * Register a student
    */
   async registerStudent(schoolId: string, studentData: any): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       `/school/schools/${schoolId}/students`,
       studentData
     );
+    return response;
   }
 
   /**
@@ -532,28 +550,30 @@ export class SchoolClient {
     pagination?: PaginationParams
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (filters?.grade) params.append("grade", filters.grade);
-    if (filters?.className) params.append("className", filters.className);
-    if (filters?.routeId) params.append("routeId", filters.routeId);
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (filters?.grade) {params.append("grade", filters.grade);}
+    if (filters?.className) {params.append("className", filters.className);}
+    if (filters?.routeId) {params.append("routeId", filters.routeId);}
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/school/schools/${schoolId}/students${query ? `?${query}` : ""}`
     );
+    return response;
   }
 
   /**
    * Create a route
    */
   async createRoute(schoolId: string, routeData: any): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       `/school/schools/${schoolId}/routes`,
       routeData
     );
+    return response;
   }
 
   /**
@@ -561,60 +581,66 @@ export class SchoolClient {
    */
   async listRoutes(schoolId: string, type?: string): Promise<any[]> {
     const params = type ? `?type=${type}` : "";
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/school/schools/${schoolId}/routes${params}`
     );
+    return response;
   }
 
   /**
    * Start a route
    */
   async startRoute(routeId: string, driverInfo: any): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       `/school/routes/${routeId}/start`,
       driverInfo
     );
+    return response;
   }
 
   /**
    * Record student pickup
    */
   async recordPickup(activeRouteId: string, data: any): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       `/school/active-routes/${activeRouteId}/pickup`,
       data
     );
+    return response;
   }
 
   /**
    * Record student dropoff
    */
   async recordDropoff(activeRouteId: string, data: any): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       `/school/active-routes/${activeRouteId}/dropoff`,
       data
     );
+    return response;
   }
 
   /**
    * Complete a route
    */
   async completeRoute(activeRouteId: string): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       `/school/active-routes/${activeRouteId}/complete`
     );
+    return response;
   }
 
   /**
    * Get student location
    */
   async getStudentLocation(studentId: string): Promise<any> {
-    return this.client.request("GET", `/school/students/${studentId}/location`);
+    const response = await this.client.request("GET", `/school/students/${studentId}/location`);
+    return response;
   }
 
   /**
@@ -626,14 +652,15 @@ export class SchoolClient {
     dateTo?: Date
   ): Promise<any[]> {
     const params = new URLSearchParams();
-    if (dateFrom) params.append("dateFrom", dateFrom.toISOString());
-    if (dateTo) params.append("dateTo", dateTo.toISOString());
+    if (dateFrom) {params.append("dateFrom", dateFrom.toISOString());}
+    if (dateTo) {params.append("dateTo", dateTo.toISOString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/school/students/${studentId}/trips${query ? `?${query}` : ""}`
     );
+    return response;
   }
 }
 
@@ -648,14 +675,16 @@ export class CorporateClient {
    * Get organization details
    */
   async getOrganization(): Promise<any> {
-    return this.client.request("GET", "/corporate/organization");
+    const response = await this.client.request("GET", "/corporate/organization");
+    return response;
   }
 
   /**
    * Update organization
    */
   async updateOrganization(updates: any): Promise<any> {
-    return this.client.request("PATCH", "/corporate/organization", updates);
+    const response = await this.client.request("PATCH", "/corporate/organization", updates);
+    return response;
   }
 
   /**
@@ -665,57 +694,63 @@ export class CorporateClient {
     pagination?: PaginationParams
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/corporate/members${query ? `?${query}` : ""}`
     );
+    return response;
   }
 
   /**
    * Add a member
    */
   async addMember(memberData: any): Promise<any> {
-    return this.client.request("POST", "/corporate/members", memberData);
+    const response = await this.client.request("POST", "/corporate/members", memberData);
+    return response;
   }
 
   /**
    * Update a member
    */
   async updateMember(memberId: string, updates: any): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "PATCH",
       `/corporate/members/${memberId}`,
       updates
     );
+    return response;
   }
 
   /**
    * Remove a member
    */
   async removeMember(memberId: string): Promise<void> {
-    return this.client.request("DELETE", `/corporate/members/${memberId}`);
+    const response = await this.client.request("DELETE", `/corporate/members/${memberId}`);
+    return response;
   }
 
   /**
    * List cost centers
    */
   async listCostCenters(): Promise<any[]> {
-    return this.client.request("GET", "/corporate/cost-centers");
+    const response = await this.client.request("GET", "/corporate/cost-centers");
+    return response;
   }
 
   /**
    * Create a cost center
    */
   async createCostCenter(costCenterData: any): Promise<any> {
-    return this.client.request(
+    const response = await this.client.request(
       "POST",
       "/corporate/cost-centers",
       costCenterData
     );
+    return response;
   }
 }
 
@@ -730,23 +765,26 @@ export class BillingClient {
    * Get current subscription
    */
   async getSubscription(): Promise<any> {
-    return this.client.request("GET", "/billing/subscription");
+    const response = await this.client.request("GET", "/billing/subscription");
+    return response;
   }
 
   /**
    * Create subscription
    */
   async createSubscription(planId: string): Promise<any> {
-    return this.client.request("POST", "/billing/subscription", { planId });
+    const response = await this.client.request("POST", "/billing/subscription", { planId });
+    return response;
   }
 
   /**
    * Cancel subscription
    */
   async cancelSubscription(cancelImmediately?: boolean): Promise<any> {
-    return this.client.request("POST", "/billing/subscription/cancel", {
+    const response = await this.client.request("POST", "/billing/subscription/cancel", {
       cancelImmediately,
     });
+    return response;
   }
 
   /**
@@ -757,7 +795,8 @@ export class BillingClient {
       periodStart: periodStart.toISOString(),
       periodEnd: periodEnd.toISOString(),
     });
-    return this.client.request("GET", `/billing/usage?${params}`);
+    const response = await this.client.request("GET", `/billing/usage?${params}`);
+    return response;
   }
 
   /**
@@ -768,29 +807,32 @@ export class BillingClient {
     pagination?: PaginationParams
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (status) params.append("status", status);
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (status) {params.append("status", status);}
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/billing/invoices${query ? `?${query}` : ""}`
     );
+    return response;
   }
 
   /**
    * Get invoice by ID
    */
   async getInvoice(invoiceId: string): Promise<any> {
-    return this.client.request("GET", `/billing/invoices/${invoiceId}`);
+    const response = await this.client.request("GET", `/billing/invoices/${invoiceId}`);
+    return response;
   }
 
   /**
    * Get credit balance
    */
   async getCreditBalance(): Promise<any> {
-    return this.client.request("GET", "/billing/credits");
+    const response = await this.client.request("GET", "/billing/credits");
+    return response;
   }
 
   /**
@@ -800,28 +842,31 @@ export class BillingClient {
     pagination?: PaginationParams
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/billing/credits/transactions${query ? `?${query}` : ""}`
     );
+    return response;
   }
 
   /**
    * List payment methods
    */
   async listPaymentMethods(): Promise<any[]> {
-    return this.client.request("GET", "/billing/payment-methods");
+    const response = await this.client.request("GET", "/billing/payment-methods");
+    return response;
   }
 
   /**
    * Add payment method
    */
   async addPaymentMethod(method: any): Promise<any> {
-    return this.client.request("POST", "/billing/payment-methods", method);
+    const response = await this.client.request("POST", "/billing/payment-methods", method);
+    return response;
   }
 }
 
@@ -836,7 +881,8 @@ export class WebhookClient {
    * List webhooks
    */
   async list(): Promise<any[]> {
-    return this.client.request("GET", "/webhooks");
+    const response = await this.client.request("GET", "/webhooks");
+    return response;
   }
 
   /**
@@ -848,28 +894,32 @@ export class WebhookClient {
     description?: string;
     headers?: Record<string, string>;
   }): Promise<any> {
-    return this.client.request("POST", "/webhooks", webhookData);
+    const response = await this.client.request("POST", "/webhooks", webhookData);
+    return response;
   }
 
   /**
    * Update a webhook
    */
   async update(webhookId: string, updates: any): Promise<any> {
-    return this.client.request("PATCH", `/webhooks/${webhookId}`, updates);
+    const response = await this.client.request("PATCH", `/webhooks/${webhookId}`, updates);
+    return response;
   }
 
   /**
    * Delete a webhook
    */
   async delete(webhookId: string): Promise<void> {
-    return this.client.request("DELETE", `/webhooks/${webhookId}`);
+    const response = await this.client.request("DELETE", `/webhooks/${webhookId}`);
+    return response;
   }
 
   /**
    * Test a webhook
    */
   async test(webhookId: string): Promise<any> {
-    return this.client.request("POST", `/webhooks/${webhookId}/test`);
+    const response = await this.client.request("POST", `/webhooks/${webhookId}/test`);
+    return response;
   }
 
   /**
@@ -880,14 +930,15 @@ export class WebhookClient {
     pagination?: PaginationParams
   ): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
-    if (pagination?.page) params.append("page", pagination.page.toString());
-    if (pagination?.limit) params.append("limit", pagination.limit.toString());
+    if (pagination?.page) {params.append("page", pagination.page.toString());}
+    if (pagination?.limit) {params.append("limit", pagination.limit.toString());}
 
     const query = params.toString();
-    return this.client.request(
+    const response = await this.client.request(
       "GET",
       `/webhooks/${webhookId}/deliveries${query ? `?${query}` : ""}`
     );
+    return response;
   }
 
   /**

@@ -5,9 +5,11 @@
  * for another user's flag evaluation.
  */
 import { ContractError } from "@ubi/contracts";
-import type { Context } from "hono";
 
 import { internalServiceKey } from "../lib/env";
+
+import type { Context } from "hono";
+
 
 export interface Actor {
   readonly id: string;
@@ -51,7 +53,7 @@ export function requireConfigAdmin(c: Context): Actor {
 
 function isInternalCaller(c: Context): boolean {
   const expected = internalServiceKey();
-  if (expected === undefined) return false;
+  if (expected === undefined) {return false;}
   return c.req.header(SERVICE_KEY_HEADER) === expected;
 }
 

@@ -14,9 +14,9 @@ import {
   scopedIdempotencyKey,
 } from "@ubi/contracts";
 
-import { deterministicId } from "../lib/ids";
 import { withOutbox } from "./outbox";
 import { actorTypeFor, isOpsRole } from "./roles";
+import { deterministicId } from "../lib/ids";
 
 import type { TravelDeps } from "./context";
 import type { Actor } from "./types";
@@ -93,6 +93,7 @@ export async function createReservation(
     // requested → reservation_failed. No link row is created; the flight must be
     // booked before a ride can be reserved against it.
     assertTransition(MACHINE, "requested", "reservation_failed");
+    // eslint-disable-next-line require-await -- withOutbox's work callback is async by contract; this one only describes rows
     await withOutbox(deps.db, async () => ({
       result: undefined,
       events: [

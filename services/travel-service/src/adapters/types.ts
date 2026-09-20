@@ -15,8 +15,8 @@
  * (book / lookup / change / cancel / refund / status / reconcile / health)
  * because an order, once created, is serviced the same way whatever it holds.
  */
-import type { Money } from "@ubi/contracts";
 import type { JsonRecord } from "../ops/types";
+import type { Money } from "@ubi/contracts";
 
 /**
  * The capability record stamped on every offer. `merchantOfRecord` decides who

@@ -20,12 +20,15 @@
  * trusts a device, never lifts limited mode, never lifts safe mode and never
  * unlocks money — see `step-up.ts` and `pin.ts`, which refuse it explicitly.
  */
-import { ContractError } from "@ubi/contracts";
 import { createHash, randomInt } from "node:crypto";
+
 import { z } from "zod";
 
-import type { IdentityDeps } from "./deps";
+import { ContractError } from "@ubi/contracts";
+
 import { hashSecret, verifySecret } from "./secret-hash";
+
+import type { IdentityDeps } from "./deps";
 
 export const OTP_PURPOSES = ["login", "verification"] as const;
 export type OtpPurpose = (typeof OTP_PURPOSES)[number];
@@ -89,7 +92,7 @@ export async function requestOtp(
   }
 
   const sends = await deps.cache.incr(sendsKey(id));
-  if (sends === 1) await deps.cache.expire(sendsKey(id), 3600);
+  if (sends === 1) {await deps.cache.expire(sendsKey(id), 3600);}
   if (sends > policy.otpMaxSendsPerHour) {
     throw new ContractError(
       "rate_limited",

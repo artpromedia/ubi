@@ -11,11 +11,14 @@
  * - Velocity rule engine
  * - Risk scoring & decisioning
  */
+/* eslint-disable require-await -- detection heuristics are computed in-memory pending real signals; methods are async by their service contract */
 
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
+
 import { safetyLogger } from "../lib/logger";
-import {
+
+import type {
   ATODetection,
   ATOSignal,
   AbuseDetection,
@@ -225,8 +228,8 @@ export class SafetyFraudService extends EventEmitter {
   private getATORecommendation(
     score: number,
   ): "allow" | "challenge" | "block_and_verify" {
-    if (score >= 0.8) return "block_and_verify";
-    if (score >= 0.5) return "challenge";
+    if (score >= 0.8) {return "block_and_verify";}
+    if (score >= 0.5) {return "challenge";}
     return "allow";
   }
 
@@ -347,10 +350,10 @@ export class SafetyFraudService extends EventEmitter {
   ): Promise<number> {
     let score = 100;
 
-    if (deviceInfo.isEmulator) score -= 50;
-    if (deviceInfo.isRooted) score -= 30;
-    if (deviceInfo.hasMockLocation) score -= 40;
-    if (deviceInfo.hasVpn) score -= 10;
+    if (deviceInfo.isEmulator) {score -= 50;}
+    if (deviceInfo.isRooted) {score -= 30;}
+    if (deviceInfo.hasMockLocation) {score -= 40;}
+    if (deviceInfo.hasVpn) {score -= 10;}
 
     return Math.max(score / 100, 0);
   }
@@ -358,10 +361,10 @@ export class SafetyFraudService extends EventEmitter {
   private detectDeviceRiskFlags(deviceInfo: DeviceInfo): string[] {
     const flags: string[] = [];
 
-    if (deviceInfo.isEmulator) flags.push("emulator");
-    if (deviceInfo.isRooted) flags.push("rooted");
-    if (deviceInfo.hasMockLocation) flags.push("mock_location");
-    if (deviceInfo.hasVpn) flags.push("vpn");
+    if (deviceInfo.isEmulator) {flags.push("emulator");}
+    if (deviceInfo.isRooted) {flags.push("rooted");}
+    if (deviceInfo.hasMockLocation) {flags.push("mock_location");}
+    if (deviceInfo.hasVpn) {flags.push("vpn");}
 
     return flags;
   }
@@ -489,9 +492,9 @@ export class SafetyFraudService extends EventEmitter {
   private getAbuseRecommendation(
     score: number,
   ): "allow" | "block_promo" | "flag_account" | "suspend" {
-    if (score >= 0.9) return "suspend";
-    if (score >= 0.7) return "flag_account";
-    if (score >= 0.5) return "block_promo";
+    if (score >= 0.9) {return "suspend";}
+    if (score >= 0.7) {return "flag_account";}
+    if (score >= 0.5) {return "block_promo";}
     return "allow";
   }
 
@@ -616,8 +619,8 @@ export class SafetyFraudService extends EventEmitter {
   private getFakeDriverRecommendation(
     score: number,
   ): "clear" | "investigate" | "suspend" {
-    if (score >= 0.8) return "suspend";
-    if (score >= 0.5) return "investigate";
+    if (score >= 0.8) {return "suspend";}
+    if (score >= 0.5) {return "investigate";}
     return "clear";
   }
 
@@ -712,7 +715,7 @@ export class SafetyFraudService extends EventEmitter {
         const setJ = deviceSets[j];
         if (setI && setJ) {
           for (const device of setI) {
-            if (setJ.has(device)) return true;
+            if (setJ.has(device)) {return true;}
           }
         }
       }
@@ -738,8 +741,8 @@ export class SafetyFraudService extends EventEmitter {
       score += connections.reduce((sum, c) => sum + c.evidenceStrength * 10, 0);
     }
 
-    if (deviceSharing) score += 30;
-    if (referralChain) score += 20;
+    if (deviceSharing) {score += 30;}
+    if (referralChain) {score += 20;}
 
     return Math.min(score / 100, 1);
   }
@@ -1022,11 +1025,11 @@ export class SafetyFraudService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   private scoreToRiskLevel(score: number): RiskLevel {
-    if (score >= 0.9) return "CRITICAL";
-    if (score >= 0.8) return "VERY_HIGH";
-    if (score >= 0.6) return "HIGH";
-    if (score >= 0.4) return "MEDIUM";
-    if (score >= 0.2) return "LOW";
+    if (score >= 0.9) {return "CRITICAL";}
+    if (score >= 0.8) {return "VERY_HIGH";}
+    if (score >= 0.6) {return "HIGH";}
+    if (score >= 0.4) {return "MEDIUM";}
+    if (score >= 0.2) {return "LOW";}
     return "VERY_LOW";
   }
 
@@ -1034,12 +1037,12 @@ export class SafetyFraudService extends EventEmitter {
     score: number,
     _signals: RiskSignal[],
   ): FraudActionType {
-    if (score >= 0.9) return "TERMINATE";
-    if (score >= 0.8) return "SUSPEND";
-    if (score >= 0.7) return "RESTRICT";
-    if (score >= 0.6) return "FLAG_FOR_REVIEW";
-    if (score >= 0.4) return "CHALLENGE";
-    if (score >= 0.2) return "ALLOW";
+    if (score >= 0.9) {return "TERMINATE";}
+    if (score >= 0.8) {return "SUSPEND";}
+    if (score >= 0.7) {return "RESTRICT";}
+    if (score >= 0.6) {return "FLAG_FOR_REVIEW";}
+    if (score >= 0.4) {return "CHALLENGE";}
+    if (score >= 0.2) {return "ALLOW";}
     return "ALLOW";
   }
 
@@ -1053,7 +1056,7 @@ export class SafetyFraudService extends EventEmitter {
       ["NEW_DEVICE", "DEVICE_REPUTATION", "EMULATOR"].includes(s.type),
     );
 
-    if (hasHighSeverity || hasDeviceRisk) return "biometric";
+    if (hasHighSeverity || hasDeviceRisk) {return "biometric";}
     return "otp";
   }
 
@@ -1096,7 +1099,7 @@ export class SafetyFraudService extends EventEmitter {
     // Run background analysis every hour
     setInterval(
       () => {
-        this.runBackgroundAnalysis();
+        void this.runBackgroundAnalysis();
       },
       60 * 60 * 1000,
     );
@@ -1152,6 +1155,7 @@ interface CollusionConnection {
   evidenceStrength: number;
 }
 
+// eslint-disable-next-line @typescript-eslint/naming-convention -- IP is Internet Protocol here, not an interface-name prefix
 interface IPReputationResult {
   isProxy: boolean;
   isVpn: boolean;

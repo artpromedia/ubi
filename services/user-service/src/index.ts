@@ -19,10 +19,10 @@ import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { timing } from "hono/timing";
-import { logger } from "./lib/logger.js";
 
-import type { AiActionDeps } from "./grants/types";
+
 import { defaultIdentityDeps } from "./identity/deps";
+import { logger } from "./lib/logger.js";
 import { prisma } from "./lib/prisma";
 import { errorHandler } from "./middleware/error-handler";
 import { serviceAuthMiddleware } from "./middleware/service-auth";
@@ -36,6 +36,8 @@ import { createKycRoutes } from "./routes/kyc";
 import { createMandateRoutes } from "./routes/mandates";
 import { sessionRoutes } from "./routes/sessions";
 import { userRoutes } from "./routes/users";
+
+import type { AiActionDeps } from "./grants/types";
 
 // Environment configuration
 const PORT = Number.parseInt(process.env.PORT || "4001", 10);

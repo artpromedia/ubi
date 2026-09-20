@@ -10,15 +10,17 @@
  * needs one — restoring access is not the dangerous direction. Neither reviewer
  * may be the driver.
  */
-import { ContractError } from "@ubi/contracts";
 import { z } from "zod";
+
+import { ContractError } from "@ubi/contracts";
 
 import { writeAudit } from "./audit";
 import { auditRevision } from "./common";
-import type { IdentityDeps } from "./deps";
 import { APPEAL_MESSAGE, APPEAL_PATH } from "./driver";
 import { newId } from "./ids";
 import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
+
+import type { IdentityDeps } from "./deps";
 
 export const CASE_DECISIONS = ["reinstate", "deactivate"] as const;
 export type CaseDecision = (typeof CASE_DECISIONS)[number];
@@ -62,7 +64,7 @@ export async function decideIdentityCase(
     where: { id: input.caseId },
   });
   if (existing === null)
-    throw new ContractError("not_found", "Identity case not found");
+    {throw new ContractError("not_found", "Identity case not found");}
   if (existing.status === "decided") {
     throw new ContractError("conflict", "That case has already been decided", {
       decision: existing.decision,
@@ -73,7 +75,7 @@ export async function decideIdentityCase(
     where: { id: existing.driverId },
     select: { userId: true },
   });
-  if (driver === null) throw new ContractError("not_found", "Driver not found");
+  if (driver === null) {throw new ContractError("not_found", "Driver not found");}
   if (driver.userId === input.reviewerId) {
     throw new ContractError("forbidden", "You cannot review your own case");
   }
@@ -138,7 +140,7 @@ export async function decideIdentityCase(
       reason: input.reason,
     });
 
-    if (!applied) return;
+    if (!applied) {return;}
 
     if (input.decision === "deactivate") {
       await tx.user.update({

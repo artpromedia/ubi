@@ -7,16 +7,12 @@
  * resume or revoke a mandate — these endpoints answer only to the gateway's
  * signed user identity.
  */
-import type {
-  Mandate,
-  MandateAllowance,
-  MandateExecution,
-  Prisma,
-} from "@prisma/client";
 import { ContractError } from "@ubi/contracts";
 
-import type { Tx } from "../identity/audit";
-import { writeAudit } from "../identity/audit";
+import { isMandateAction ,type  Assurance,type  MandateInput,type  MandatePatch } from "./schemas";
+import { mandateToView, type MandateView } from "./serialize";
+import { guardTransition } from "./transition";
+import { writeAudit ,type  Tx } from "../identity/audit";
 import { actorTypeFor, auditRevision } from "../identity/common";
 import { deterministicId } from "../identity/ids";
 import {
@@ -24,11 +20,14 @@ import {
   findOutboxByIdempotencyKey,
   writeOutboxEvent,
 } from "../identity/outbox";
+
 import type { AiActionDeps } from "../grants/types";
-import type { Assurance, MandateInput, MandatePatch } from "./schemas";
-import { isMandateAction } from "./schemas";
-import { mandateToView, type MandateView } from "./serialize";
-import { guardTransition } from "./transition";
+import type {
+  Mandate,
+  MandateAllowance,
+  MandateExecution,
+  Prisma,
+} from "@prisma/client";
 
 /** UTC first-of-month for the period the given instant falls in. */
 export function currentPeriodStart(now: Date): Date {
@@ -118,7 +117,7 @@ async function currentAllowance(
   mandateId: string,
   now: Date,
 ): Promise<MandateAllowance | null> {
-  return tx.mandateAllowance.findUnique({
+  const allowance = await tx.mandateAllowance.findUnique({
     where: {
       mandateId_periodStart: {
         mandateId,
@@ -126,6 +125,7 @@ async function currentAllowance(
       },
     },
   });
+  return allowance;
 }
 
 async function lastRunAt(tx: Tx, mandateId: string): Promise<Date | null> {
@@ -167,7 +167,7 @@ export async function createMandate(
 
   const id = deterministicId("mnd", actor.userId, idempotencyKey);
 
-  return deps.prisma.$transaction(async (tx) => {
+  const txResult = await deps.prisma.$transaction(async (tx) => {
     const existing = await tx.mandate.findUnique({ where: { id } });
     if (existing !== null) {
       return { mandate: await viewOf(tx, existing, now), replayed: true };
@@ -233,6 +233,7 @@ export async function createMandate(
 
     return { mandate: await viewOf(tx, mandate, now), replayed: false };
   });
+  return txResult;
 }
 
 export async function listMandates(
@@ -299,7 +300,7 @@ export async function patchMandate(
   const eventName = PATCH_EVENT[patch.op];
   const eventKey = eventIdempotencyKey(eventName, id, idempotencyKey);
 
-  return deps.prisma.$transaction(async (tx) => {
+  const txResult = await deps.prisma.$transaction(async (tx) => {
     const replay = await findOutboxByIdempotencyKey(tx, eventKey);
     if (replay !== undefined) {
       const mandate = await ownedMandate(tx, actor.userId, id);
@@ -398,6 +399,7 @@ export async function patchMandate(
 
     return viewOf(tx, updated, now);
   });
+  return txResult;
 }
 
 export async function listExecutions(

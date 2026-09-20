@@ -21,13 +21,13 @@ import {
 } from "../middleware";
 import { parseBody, parseOptionalBody } from "./parse";
 import { redis } from "../lib/redis";
+import { getExecution } from "../ops/executions";
 import {
   confirmReview,
   getReview,
   ReviewExpiredError,
   TermsChangedError,
 } from "../ops/reviews";
-import { getExecution } from "../ops/executions";
 import { handleMessage, handoff, openThread } from "../ops/threads";
 
 import type { AskDeps } from "../ops/context";

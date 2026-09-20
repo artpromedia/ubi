@@ -23,7 +23,9 @@
  */
 
 import { randomUUID } from "node:crypto";
+
 import { Prisma, RiskAction, RiskLevel } from "@prisma/client";
+
 import type { ExtendedPrismaClient } from "../lib/prisma";
 
 /**

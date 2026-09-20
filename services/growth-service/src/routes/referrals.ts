@@ -8,13 +8,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { assertFlagEnabled } from "../ops/config";
-import {
-  claimAttribution,
-  getProgram,
-  getReferral,
-  share,
-} from "../ops/referrals";
 import {
   actorOf,
   cityOf,
@@ -25,6 +18,13 @@ import {
   optionalCityOf,
 } from "../middleware";
 import { parseBody } from "./parse";
+import { assertFlagEnabled } from "../ops/config";
+import {
+  claimAttribution,
+  getProgram,
+  getReferral,
+  share,
+} from "../ops/referrals";
 
 import type { GrowthDeps } from "../ops/context";
 

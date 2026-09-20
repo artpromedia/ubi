@@ -2,11 +2,13 @@
  * Error Handler Middleware
  */
 
-import { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { ZodError } from "zod";
+
 import { logger } from "../lib/logger.js";
+
+import type { Context, Next } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 /**
  * Custom API Error

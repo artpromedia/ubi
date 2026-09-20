@@ -2,9 +2,11 @@
  * Rate Limiting Middleware
  */
 
-import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+
 import { RateLimiter } from '../lib/redis';
+
+import type { Context, Next } from 'hono';
 
 // ============================================
 // Default Rate Limiters

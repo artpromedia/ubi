@@ -13,8 +13,8 @@
  * fields for them yet — when it gains them, `forCity` should read them the same
  * way it reads `maxPinAttempts` and these constants should disappear.
  */
-import type { CityConfig } from "@ubi/contracts";
-import { ContractError } from "@ubi/contracts";
+import { ContractError, type CityConfig } from "@ubi/contracts";
+
 
 /** Slice 03: "SIM-swap webhook → wallet.safe_mode(24h)". */
 export const SAFE_MODE_HOURS = 24;
@@ -98,9 +98,9 @@ export function policyFromCityConfig(config: CityConfig): IdentityPolicy {
  * present the request is refused rather than defaulted into a market.
  */
 export function resolveCityId(contextCityId: string | null): string {
-  if (contextCityId !== null && contextCityId.length > 0) return contextCityId;
+  if (contextCityId !== null && contextCityId.length > 0) {return contextCityId;}
   const configured = process.env.IDENTITY_DEFAULT_CITY_ID;
-  if (configured !== undefined && configured.length > 0) return configured;
+  if (configured !== undefined && configured.length > 0) {return configured;}
   throw new ContractError(
     "city_unsupported",
     "This request is not scoped to a city, so no policy could be applied",

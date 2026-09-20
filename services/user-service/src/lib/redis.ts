@@ -6,6 +6,7 @@
  */
 
 import Redis from "ioredis";
+
 import { redisLogger } from "./logger.js";
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";

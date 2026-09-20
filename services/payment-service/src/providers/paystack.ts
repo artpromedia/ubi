@@ -101,7 +101,8 @@ export class PaystackClient {
     };
   }
 
-  private async request<T>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- T is an assertion about the parsed JSON; defaulting to any restores the pre-lint inference for delegating methods
+  private async request<T = any>(
     endpoint: string,
     method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
     body?: any
@@ -134,7 +135,8 @@ export class PaystackClient {
       reference: string;
     }>
   > {
-    return this.request("/transaction/initialize", "POST", params);
+    const response = await this.request("/transaction/initialize", "POST", params);
+    return response;
   }
 
   /**
@@ -143,7 +145,8 @@ export class PaystackClient {
   async verifyTransaction(
     reference: string
   ): Promise<PaystackResponse<VerifyTransactionResponse>> {
-    return this.request(`/transaction/verify/${reference}`);
+    const response = await this.request(`/transaction/verify/${reference}`);
+    return response;
   }
 
   /**
@@ -156,7 +159,8 @@ export class PaystackClient {
     reference?: string;
     metadata?: Record<string, any>;
   }): Promise<PaystackResponse<VerifyTransactionResponse>> {
-    return this.request("/transaction/charge_authorization", "POST", params);
+    const response = await this.request("/transaction/charge_authorization", "POST", params);
+    return response;
   }
 
   /**
@@ -166,10 +170,11 @@ export class PaystackClient {
     reference: string,
     otp: string
   ): Promise<PaystackResponse<any>> {
-    return this.request("/transaction/submit_otp", "POST", {
+    const response = await this.request("/transaction/submit_otp", "POST", {
       reference,
       otp,
     });
+    return response;
   }
 
   /**
@@ -179,10 +184,11 @@ export class PaystackClient {
     reference: string,
     pin: string
   ): Promise<PaystackResponse<any>> {
-    return this.request("/transaction/submit_pin", "POST", {
+    const response = await this.request("/transaction/submit_pin", "POST", {
       reference,
       pin,
     });
+    return response;
   }
 
   /**
@@ -201,7 +207,8 @@ export class PaystackClient {
       }[]
     >
   > {
-    return this.request(`/bank?country=${country}`);
+    const response = await this.request(`/bank?country=${country}`);
+    return response;
   }
 
   /**
@@ -217,9 +224,10 @@ export class PaystackClient {
       bank_id: number;
     }>
   > {
-    return this.request(
+    const response = await this.request(
       `/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`
     );
+    return response;
   }
 
   /**
@@ -247,7 +255,8 @@ export class PaystackClient {
       };
     }>
   > {
-    return this.request("/transferrecipient", "POST", params);
+    const response = await this.request("/transferrecipient", "POST", params);
+    return response;
   }
 
   /**
@@ -270,7 +279,8 @@ export class PaystackClient {
       updatedAt: string;
     }>
   > {
-    return this.request("/transfer", "POST", params);
+    const response = await this.request("/transfer", "POST", params);
+    return response;
   }
 
   /**
@@ -280,17 +290,19 @@ export class PaystackClient {
     transferCode: string,
     otp: string
   ): Promise<PaystackResponse<any>> {
-    return this.request("/transfer/finalize_transfer", "POST", {
+    const response = await this.request("/transfer/finalize_transfer", "POST", {
       transfer_code: transferCode,
       otp,
     });
+    return response;
   }
 
   /**
    * Verify a transfer
    */
   async verifyTransfer(reference: string): Promise<PaystackResponse<any>> {
-    return this.request(`/transfer/verify/${reference}`);
+    const response = await this.request(`/transfer/verify/${reference}`);
+    return response;
   }
 
   /**
@@ -316,9 +328,10 @@ export class PaystackClient {
     }>
   > {
     const body: any = { transaction: reference };
-    if (amount) body.amount = amount;
+    if (amount) {body.amount = amount;}
 
-    return this.request("/refund", "POST", body);
+    const response = await this.request("/refund", "POST", body);
+    return response;
   }
 
   /**

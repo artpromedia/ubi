@@ -4,9 +4,9 @@
  */
 import { Hono } from "hono";
 
+import { actorOf, cityOf, failure, gatewayAuth } from "../middleware";
 import { getBenefits, getBenefitChange } from "../ops/benefits";
 import { assertFlagEnabled } from "../ops/config";
-import { actorOf, cityOf, failure, gatewayAuth } from "../middleware";
 
 import type { GrowthDeps } from "../ops/context";
 

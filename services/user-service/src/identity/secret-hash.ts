@@ -52,7 +52,7 @@ export async function verifySecret(
   encoded: string,
 ): Promise<boolean> {
   const parts = encoded.split("$");
-  if (parts.length !== 6 || parts[0] !== PREFIX) return false;
+  if (parts.length !== 6 || parts[0] !== PREFIX) {return false;}
 
   const N = Number(parts[1]);
   const r = Number(parts[2]);

@@ -15,12 +15,11 @@ import {
   type TravelRefundState,
 } from "@ubi/contracts";
 
-import { deterministicId } from "../lib/ids";
-import { withOutbox } from "./outbox";
+import { withOutbox ,type  OutboxInput } from "./outbox";
 import { actorTypeFor, isOpsRole } from "./roles";
+import { deterministicId } from "../lib/ids";
 
 import type { TravelDeps } from "./context";
-import type { OutboxInput } from "./outbox";
 import type { Actor, JsonRecord } from "./types";
 
 const MACHINE = "travelRefund" as const;

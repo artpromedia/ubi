@@ -3,11 +3,10 @@
  * change endpoint is the audited single-actor path (the two-person path for
  * flags is a config change request against the same city).
  */
-import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
+
 import { IDEMPOTENCY_HEADER } from "@ubi/contracts";
 
-import { effectiveUserId, requireConfigAdmin } from "../middleware/actor";
-import { evaluateFlags, setFlag } from "../services/flags.service";
 import {
   FlagChangeBody,
   FlagChangeResponse,
@@ -18,6 +17,8 @@ import {
   errorResponses,
   jsonContent,
 } from "./schemas";
+import { effectiveUserId, requireConfigAdmin } from "../middleware/actor";
+import { evaluateFlags, setFlag } from "../services/flags.service";
 
 const evaluateRoute = createRoute({
   method: "get",

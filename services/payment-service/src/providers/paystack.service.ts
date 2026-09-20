@@ -28,10 +28,13 @@ import { paystackLogger } from "../lib/logger";
  * - Webhook signature mismatch → Reject
  */
 
-import { Currency, PaymentProvider, PaymentStatus } from "@prisma/client";
-import type { ExtendedPrismaClient } from "../lib/prisma";
 import crypto from "node:crypto";
+
+import { type Currency, PaymentProvider, PaymentStatus } from "@prisma/client";
+
 import { paystackLogger } from "../lib/logger.js";
+
+import type { ExtendedPrismaClient } from "../lib/prisma";
 
 export interface PaystackConfig {
   secretKey: string;
@@ -262,7 +265,8 @@ export class PaystackService {
   /**
    * Make authenticated request to Paystack API
    */
-  private async makeRequest<T>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- T is an assertion about the parsed JSON; defaulting to any restores the pre-lint inference for delegating methods
+  private async makeRequest<T = any>(
     endpoint: string,
     options: RequestInit = {},
   ): Promise<T> {
@@ -482,7 +486,10 @@ export class PaystackService {
       transaction: number;
     };
   }> {
-    return this.makeRequest(`/refund/${refundId}`, { method: "GET" });
+    const refund = await this.makeRequest(`/refund/${refundId}`, {
+      method: "GET",
+    });
+    return refund;
   }
 
   /**

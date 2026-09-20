@@ -17,6 +17,9 @@ import { logger as honoLogger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import { createRemedyRoutes } from "./finance/remedies";
+import { createFinanceRoutes } from "./finance/routes";
+import { walletDeps } from "./ledger/wiring";
 import { analyticsService } from "./lib/analytics";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
@@ -27,9 +30,6 @@ import fraudRoutes from "./routes/fraud";
 import { healthRoutes } from "./routes/health";
 import { createMpHoldRoutes } from "./routes/mp-holds";
 import { safetyRoutes } from "./routes/safety";
-import { createFinanceRoutes } from "./finance/routes";
-import { createRemedyRoutes } from "./finance/remedies";
-import { walletDeps } from "./ledger/wiring";
 import { createWalletV1Routes } from "./routes/wallet-v1";
 
 // NOTE: The B2B (/b2b), loyalty (/loyalty) and driver-experience (/drivers)
@@ -146,7 +146,7 @@ const server = serve({
 });
 
 // Graceful shutdown
-const shutdown = async (signal: string) => {
+const shutdown = (signal: string): void => {
   logger.info({ signal }, "Shutdown signal received, closing gracefully...");
 
   server.close(async () => {
@@ -169,7 +169,11 @@ const shutdown = async (signal: string) => {
   }, 30000);
 };
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM");
+});
+process.on("SIGINT", () => {
+  shutdown("SIGINT");
+});
 
 export default app;

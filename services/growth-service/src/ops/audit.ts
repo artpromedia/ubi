@@ -131,7 +131,7 @@ export async function auditedTransaction<T>(
   db: GrowthDb,
   work: (tx: AuditedTx) => Promise<AuditedOutcome<T>>,
 ): Promise<T> {
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const outcome = await work(tx as AuditedTx);
     await writeAudit(tx, outcome.audit);
     for (const event of outcome.events ?? []) {
@@ -139,4 +139,5 @@ export async function auditedTransaction<T>(
     }
     return outcome.result;
   });
+  return result;
 }

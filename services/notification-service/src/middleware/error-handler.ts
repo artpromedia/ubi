@@ -2,10 +2,12 @@
  * Error Handler Middleware
  */
 
-import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
+
 import { logger } from "../lib/logger.js";
+
+import type { Context } from "hono";
 
 // Type guards for Prisma errors
 function isPrismaKnownRequestError(
@@ -111,7 +113,7 @@ interface ErrorResponse {
 export function errorHandler(err: Error, c: Context): Response {
   logger.error({ err }, "Request error");
 
-  let response: ErrorResponse = {
+  const response: ErrorResponse = {
     success: false,
     error: {
       code: "INTERNAL_ERROR",

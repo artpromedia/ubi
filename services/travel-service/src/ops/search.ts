@@ -9,7 +9,6 @@
  */
 import { ContractError } from "@ubi/contracts";
 
-import { generateId } from "../lib/ids";
 import { assertFlagEnabled } from "./config";
 import { cleanJson, toJson } from "./json";
 import { withOutbox } from "./outbox";
@@ -20,10 +19,11 @@ import {
   pickSupplier,
   stayAdapterFor,
 } from "./suppliers";
+import { generateId } from "../lib/ids";
 
-import type { AdapterOffer, FlightSearchParams, StaySearchParams } from "../adapters/types";
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord, JsonValue } from "./types";
+import type { AdapterOffer, FlightSearchParams, StaySearchParams } from "../adapters/types";
 
 function serializeOffer(offer: AdapterOffer): JsonRecord {
   return {
@@ -244,6 +244,7 @@ export async function stayRates(
   return rates.map((rate) => serializeOffer(rate).snapshot as JsonRecord);
 }
 
-function pickSupplierById(deps: TravelDeps, supplierId: string) {
-  return loadSupplier(deps.db, supplierId);
+async function pickSupplierById(deps: TravelDeps, supplierId: string) {
+  const supplier = await loadSupplier(deps.db, supplierId);
+  return supplier;
 }

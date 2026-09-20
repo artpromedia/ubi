@@ -24,17 +24,17 @@ import {
   type TravelOrderState,
 } from "@ubi/contracts";
 
-import { deterministicId, generateId } from "../lib/ids";
-import { orderLogger } from "../lib/logger";
+import { cartView, type CartView, type PricedItem } from "./carts";
+import { toJson } from "./json";
 import { advanceOrder, orderView, type OrderRow, type OrderView } from "./ladder";
 import { withOutbox } from "./outbox";
 import { adapterFor, contextFor, loadSupplier } from "./suppliers";
-import { cartView, type CartView, type PricedItem } from "./carts";
-import { toJson } from "./json";
+import { deterministicId, generateId } from "../lib/ids";
+import { orderLogger } from "../lib/logger";
 
-import type { BookResult, OfferValidation } from "../adapters/types";
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord, JsonValue } from "./types";
+import type { BookResult, OfferValidation } from "../adapters/types";
 
 export type CheckoutResult =
   | { readonly kind: "repriced"; readonly cart: CartView }
@@ -196,7 +196,7 @@ export async function checkout(
   const orders: OrderView[] = [];
   for (let index = 0; index < revalidated.length; index += 1) {
     const item = revalidated[index];
-    if (item === undefined) continue;
+    if (item === undefined) {continue;}
     const order = await executeItem(deps, {
       input,
       scoped,
@@ -461,7 +461,7 @@ async function transition(
   deps: TravelDeps,
   args: TransitionArgs,
 ): Promise<OrderRow> {
-  return withOutbox(deps.db, async (tx) => {
+  const row = await withOutbox(deps.db, async (tx) => {
     const order = await tx.travelOrder.findUnique({ where: { id: args.orderId } });
     if (order === null) {
       throw new ContractError("not_found", "order vanished mid-checkout", {
@@ -484,4 +484,5 @@ async function transition(
     });
     return { result: result.order, events: result.events };
   });
+  return row;
 }

@@ -42,9 +42,10 @@ export async function walletOverview(
 ): Promise<WalletOverview> {
   const now = deps.now();
   const config = await deps.config.load(cityId);
-  const wallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", actor.id, config.city),
-  );
+  const wallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", actor.id, config.city);
+      return row;
+    });
   const limits = await limitStatus(deps.db, wallet, config.city, now);
   const balance = await balanceOf(deps.db, wallet.id, wallet.currency);
 
@@ -104,9 +105,10 @@ export async function setWalletLock(
   }
 
   const config = await deps.config.load(input.cityId);
-  const wallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", ownerId, config.city),
-  );
+  const wallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", ownerId, config.city);
+      return row;
+    });
 
   return deps.db.$transaction(async (tx) => {
     await tx.wallet.update({
@@ -172,9 +174,10 @@ export async function resetPin(
     );
   }
 
-  const wallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", input.actor.id, config.city),
-  );
+  const wallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", input.actor.id, config.city);
+      return row;
+    });
   const pinHash = await hashPin(input.newPin);
   const coolingUntil = new Date(
     now.getTime() + config.policy.pinResetCoolingMinutes * 60_000,
@@ -253,9 +256,10 @@ export async function setInitialPin(
   pin: string,
 ): Promise<{ readonly walletId: string }> {
   const config = await deps.config.load(cityId);
-  const wallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", actor.id, config.city),
-  );
+  const wallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", actor.id, config.city);
+      return row;
+    });
   if (wallet.pinHash !== null) {
     throw new ContractError(
       "conflict",

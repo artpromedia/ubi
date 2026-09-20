@@ -7,6 +7,8 @@
  * injected the same way: production points them at the private endpoints, tests
  * inject a deterministic model provider that does real tool-selection.
  */
+import type { FlagProvider } from "./flags";
+import type { AskDb } from "./types";
 import type { EmbeddingProvider } from "../ai/embedding-provider";
 import type { ModelProvider } from "../ai/model-provider";
 import type { Retriever } from "../ai/rag";
@@ -15,8 +17,6 @@ import type { PromotionsPort } from "../ports/promotions-port";
 import type { RidePort } from "../ports/ride-port";
 import type { SupportPort } from "../ports/support-port";
 import type { TravelPort } from "../ports/travel-port";
-import type { FlagProvider } from "./flags";
-import type { AskDb } from "./types";
 
 export interface AskLimits {
   /** Max provider round-trips per message turn (rule #18 — bounded loop). */

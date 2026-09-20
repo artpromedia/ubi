@@ -16,8 +16,8 @@
  * It returns a plain description of what happened. Persisting the assistant
  * message, the review and the ai_actions rows is the caller's single transaction.
  */
-import { assertNoSensitive, redact } from "./redaction";
 import { PROMPT_VERSION, SYSTEM_PROMPT } from "./prompt";
+import { assertNoSensitive, redact } from "./redaction";
 import {
   FORBIDDEN_CAPABILITIES,
   toolByName,
@@ -28,8 +28,8 @@ import {
 
 import type { AskEvent, Card, ClarifyField, Source } from "./events";
 import type { ModelMessage } from "./model-provider";
-import type { AskDeps } from "../ops/context";
 import type { AiActionInput, ActorKind } from "../ops/audit";
+import type { AskDeps } from "../ops/context";
 import type { Actor, AskRole } from "../ops/types";
 
 export interface StoredMessage {

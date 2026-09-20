@@ -2,8 +2,10 @@
  * Rate Limit Middleware
  */
 
-import { Context, Next } from "hono";
 import { rateLimiter } from "../lib/redis";
+
+import type { Context, Next } from "hono";
+
 
 interface RateLimitOptions {
   limit: number;

@@ -20,9 +20,10 @@ import { ContractError } from "@ubi/contracts";
 
 import { writeAudit } from "./audit";
 import { auditRevision } from "./common";
-import type { IdentityCache, IdentityDeps } from "./deps";
 import { deterministicId } from "./ids";
 import { eventIdempotencyKey, writeOutboxEventOnce } from "./outbox";
+
+import type { IdentityCache, IdentityDeps } from "./deps";
 
 /** Must match services/api-gateway/src/identity/state.ts. */
 export function safeModeKey(userId: string): string {
@@ -48,7 +49,7 @@ async function publishHold(
   now: Date,
 ): Promise<void> {
   const ttlSeconds = Math.ceil((until.getTime() - now.getTime()) / 1000);
-  if (ttlSeconds <= 0) return;
+  if (ttlSeconds <= 0) {return;}
   await cache.set(safeModeKey(userId), until.toISOString(), "EX", ttlSeconds);
 }
 
@@ -78,7 +79,7 @@ export async function recordSimSwap(
     const existing = await tx.simSwapSignal.findUnique({
       where: { id: signalId },
     });
-    if (existing !== null) return false;
+    if (existing !== null) {return false;}
 
     await tx.simSwapSignal.create({
       data: {
@@ -167,14 +168,16 @@ export async function safeModeState(
     where: { ownerId: userId, safeModeUntil: { gt: now } },
     orderBy: { safeModeUntil: "desc" },
   });
-  if (held?.safeModeUntil != null)
-    return { active: true, until: held.safeModeUntil };
+  const heldUntil = held?.safeModeUntil ?? null;
+  if (heldUntil !== null) {
+    return { active: true, until: heldUntil };
+  }
 
   const signal = await deps.prisma.simSwapSignal.findFirst({
     where: { userId, handled: false },
     orderBy: { reportedAt: "desc" },
   });
-  if (signal === null) return { active: false, until: null };
+  if (signal === null) {return { active: false, until: null };}
 
   const policy = await deps.policy.forCity(null);
   const until = new Date(signal.reportedAt.getTime() + policy.safeModeMs);
@@ -190,7 +193,7 @@ export async function assertNotInSafeMode(
   action: string,
 ): Promise<void> {
   const state = await safeModeState(deps, userId);
-  if (!state.active) return;
+  if (!state.active) {return;}
   throw new ContractError(
     "safe_mode_active",
     "Your wallet is in safe mode after a SIM-swap report. This action is paused until the hold lifts.",
@@ -231,7 +234,7 @@ export async function sweepSafeModeExits(
           reportedAt: { gt: cutoff },
         },
       });
-      if (stillHeld !== null) return false;
+      if (stillHeld !== null) {return false;}
 
       await tx.wallet.updateMany({
         where: {

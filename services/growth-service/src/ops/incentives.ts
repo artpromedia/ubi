@@ -22,11 +22,10 @@
  */
 import { ContractError, money, type Money } from "@ubi/contracts";
 
-import { auditedTransaction, type OutboxInput } from "./audit";
+import { auditedTransaction, type OutboxInput ,type  AuditedTx,type  AuditRecord } from "./audit";
 import { assertPermission } from "./roles";
 import { deterministicId } from "../lib/ids";
 
-import type { AuditedTx, AuditRecord } from "./audit";
 import type { GrowthDeps } from "./context";
 import type { IncentiveSettlement } from "./ledger-port";
 import type { Actor, JsonRecord } from "./types";
@@ -362,18 +361,20 @@ function capDenied(
   };
 }
 
-export function postRebate(
+export async function postRebate(
   deps: GrowthDeps,
   input: PostRebateInput,
 ): Promise<PostingResult> {
-  return postIncentiveLine(deps, input, "rebate");
+  const result = await postIncentiveLine(deps, input, "rebate");
+  return result;
 }
 
-export function postWindowWaiver(
+export async function postWindowWaiver(
   deps: GrowthDeps,
   input: PostRebateInput,
 ): Promise<PostingResult> {
-  return postIncentiveLine(deps, input, "window_waiver");
+  const result = await postIncentiveLine(deps, input, "window_waiver");
+  return result;
 }
 
 // ---------------------------------------------------------------------------

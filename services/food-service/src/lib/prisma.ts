@@ -3,9 +3,11 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+
 import { dbLogger } from "./logger.js";
 
 declare global {
+  // eslint-disable-next-line no-var -- `declare global` augmentation requires `var` for a global binding
   var prisma: PrismaClient | undefined;
 }
 
@@ -73,7 +75,7 @@ export async function withRetry<T>(
     }
   }
 
-  throw lastError;
+  throw lastError ?? new Error("operation failed after retries without capturing an error");
 }
 
 export default prisma;

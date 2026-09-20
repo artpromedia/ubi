@@ -4,10 +4,13 @@
  * Catches and formats all errors consistently.
  */
 
-import { ErrorCodes, formatErrorForLogging, UbiError } from "@ubi/utils";
-import type { Context } from "hono";
 import { z } from "zod";
+
+import { ErrorCodes, formatErrorForLogging, UbiError } from "@ubi/utils";
+
 import { logger } from "../lib/logger.js";
+
+import type { Context } from "hono";
 
 export const errorHandler = (error: Error, c: Context) => {
   const isDev = process.env.NODE_ENV === "development";

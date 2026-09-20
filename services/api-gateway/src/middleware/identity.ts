@@ -50,20 +50,22 @@
  * `x-internal-service` is stripped for the same reason: user-service treats it
  * as a bypass of authentication.
  */
-import { ContractError } from "@ubi/contracts";
-import type { Context, Next } from "hono";
 import { createMiddleware } from "hono/factory";
 
-import type { AuthContext } from "./auth";
-import { authLogger } from "../lib/logger.js";
-import { getIdentityStateStore } from "../lib/redis";
+import { ContractError } from "@ubi/contracts";
+
 import { type IdentityContext, signIdentityContext } from "../identity/context";
-import { readRiskState } from "../identity/state";
 import {
   authorizeRequest,
   effectiveScopes,
   type IdentityMode,
 } from "../identity/scopes";
+import { readRiskState } from "../identity/state";
+import { authLogger } from "../lib/logger.js";
+import { getIdentityStateStore } from "../lib/redis";
+
+import type { AuthContext } from "./auth";
+import type { Context, Next } from "hono";
 
 export const IDENTITY_HEADER = "x-ubi-identity";
 export const REQUEST_ID_HEADER = "x-request-id";
@@ -119,7 +121,7 @@ export const stripInboundIdentityHeaders = createMiddleware(
     const forged: string[] = [];
 
     for (const name of [...headers.keys()]) {
-      if (!isReservedIdentityHeader(name)) continue;
+      if (!isReservedIdentityHeader(name)) {continue;}
       forged.push(name);
       headers.delete(name);
     }
@@ -132,7 +134,8 @@ export const stripInboundIdentityHeaders = createMiddleware(
       );
     }
 
-    return next();
+    await next();
+    return;
   },
 );
 
@@ -154,8 +157,8 @@ function modesFor(
   safeMode: boolean,
 ): readonly IdentityMode[] {
   const modes: IdentityMode[] = [];
-  if (auth.mode === "limited") modes.push("limited");
-  if (safeMode) modes.push("wallet_safe");
+  if (auth.mode === "limited") {modes.push("limited");}
+  if (safeMode) {modes.push("wallet_safe");}
   return modes;
 }
 
@@ -227,10 +230,10 @@ export const identityContextMiddleware = createMiddleware(
     headers.set("x-ubi-scopes", context.scopes.join(" "));
     headers.set("x-ubi-modes", context.modes.join(" "));
     if (context.sessionId !== null)
-      headers.set("x-session-id", context.sessionId);
-    if (context.cityId !== null) headers.set("x-ubi-city-id", context.cityId);
+      {headers.set("x-session-id", context.sessionId);}
+    if (context.cityId !== null) {headers.set("x-ubi-city-id", context.cityId);}
     if (context.tenantId !== null)
-      headers.set("x-ubi-tenant-id", context.tenantId);
+      {headers.set("x-ubi-tenant-id", context.tenantId);}
 
     c.header(REQUEST_ID_HEADER, requestId);
 
@@ -245,7 +248,10 @@ export const identityContextMiddleware = createMiddleware(
 export const scopeEnforcementMiddleware = createMiddleware(
   async (c: Context, next: Next) => {
     const identity = c.get("identity") as IdentityContext | undefined;
-    if (identity === undefined) return next();
+    if (identity === undefined) {
+      await next();
+      return;
+    }
 
     try {
       authorizeRequest({
@@ -276,6 +282,7 @@ export const scopeEnforcementMiddleware = createMiddleware(
       throw error;
     }
 
-    return next();
+    await next();
+    return;
   },
 );

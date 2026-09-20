@@ -5,9 +5,11 @@
  * for sending push notifications, SMS, emails, and in-app messages.
  */
 
-import { Prisma } from "@prisma/client";
+
 import { notificationLogger } from "./logger.js";
 import { prisma } from "./prisma";
+
+import type { Prisma } from "@prisma/client";
 
 // Notification service configuration
 const NOTIFICATION_SERVICE_URL =
@@ -185,7 +187,12 @@ class NotificationClient {
     const batchSize = 50;
     for (let i = 0; i < payloads.length; i += batchSize) {
       const batch = payloads.slice(i, i + batchSize);
-      const results = await Promise.all(batch.map(async (p) => this.send(p)));
+      const results = await Promise.all(
+        batch.map(async (p) => {
+          const result = await this.send(p);
+          return result;
+        }),
+      );
 
       for (const result of results) {
         if (result.success) {
@@ -288,7 +295,7 @@ class NotificationClient {
     targetAmount: number,
     currency: string,
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId,
       title: "Savings Goal Achieved! 🎉",
       body: `Congratulations! You've reached your ${currency} ${targetAmount.toLocaleString()} savings target for "${pocketName}".`,
@@ -296,6 +303,7 @@ class NotificationClient {
       priority: NotificationPriority.HIGH,
       data: { pocketName, targetAmount, currency },
     });
+    return response;
   }
 
   /**
@@ -308,7 +316,7 @@ class NotificationClient {
     currency: string,
     daysOverdue: number,
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId,
       title: "Loan Payment Overdue",
       body: `Your loan payment of ${currency} ${amountDue.toLocaleString()} is ${daysOverdue} day${daysOverdue > 1 ? "s" : ""} overdue. Please make a payment to avoid penalties.`,
@@ -316,6 +324,7 @@ class NotificationClient {
       priority: NotificationPriority.HIGH,
       data: { loanId, amountDue, currency, daysOverdue },
     });
+    return response;
   }
 
   /**
@@ -360,7 +369,7 @@ class NotificationClient {
     note?: string,
   ): Promise<SendResult> {
     const noteText = note ? `: "${note}"` : ".";
-    return this.send({
+    const response = await this.send({
       userId: payerId,
       title: "Money Request",
       body: `${requesterName} requested ${currency} ${amount.toLocaleString()}${noteText}`,
@@ -368,6 +377,7 @@ class NotificationClient {
       priority: NotificationPriority.HIGH,
       data: { requesterId, amount, currency, requesterName, note },
     });
+    return response;
   }
 
   /**
@@ -379,13 +389,14 @@ class NotificationClient {
     amount: number,
     currency: string,
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId: requesterId,
       title: "Request Declined",
       body: `${payerName} declined your request for ${currency} ${amount.toLocaleString()}.`,
       type: NotificationType.MONEY_REQUEST_DECLINED,
       data: { payerName, amount, currency },
     });
+    return response;
   }
 
   /**
@@ -397,13 +408,14 @@ class NotificationClient {
     currency: string,
     reason: string,
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId,
       title: "Refund Processed",
       body: `${currency} ${amount.toLocaleString()} has been refunded to your wallet.`,
       type: NotificationType.REFUND_PROCESSED,
       data: { amount, currency, reason },
     });
+    return response;
   }
 
   /**
@@ -415,7 +427,7 @@ class NotificationClient {
     currency: string,
     payoutMethod: string,
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId,
       title: "Payout Successful! 💵",
       body: `${currency} ${amount.toLocaleString()} has been sent to your ${payoutMethod}.`,
@@ -423,6 +435,7 @@ class NotificationClient {
       priority: NotificationPriority.HIGH,
       data: { amount, currency, payoutMethod },
     });
+    return response;
   }
 
   // ===========================================
@@ -499,7 +512,7 @@ class NotificationClient {
     body: string,
     data?: Record<string, unknown>,
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId,
       title,
       body,
@@ -513,6 +526,7 @@ class NotificationClient {
         vibrate: true,
       },
     });
+    return response;
   }
 
   /**
@@ -709,7 +723,7 @@ class NotificationClient {
     reason: string,
     checkId: string,
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId,
       title: "Safety Check 🛡️",
       body: `Are you okay? ${reason}`,
@@ -725,6 +739,7 @@ class NotificationClient {
         timeoutSeconds: 60,
       },
     });
+    return response;
   }
 
   /**
@@ -735,7 +750,7 @@ class NotificationClient {
     tripId: string,
     location: { lat: number; lng: number },
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId,
       title: "Crash Detected! 🚨",
       body: "We detected a possible accident. Emergency contacts will be notified if you don't respond.",
@@ -749,6 +764,7 @@ class NotificationClient {
         autoEscalateSeconds: 30,
       },
     });
+    return response;
   }
 
   /**
@@ -763,7 +779,7 @@ class NotificationClient {
       deviationDistance: number;
     },
   ): Promise<SendResult> {
-    return this.send({
+    const response = await this.send({
       userId,
       title: "Route Change Detected",
       body: "Your trip has deviated from the expected route. Tap to view details.",
@@ -775,6 +791,7 @@ class NotificationClient {
         ...deviationDetails,
       },
     });
+    return response;
   }
 }
 

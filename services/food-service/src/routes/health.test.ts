@@ -5,6 +5,9 @@
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 
+// Import after mocking
+import { healthRoutes } from "./health";
+
 // Mock dependencies before importing routes
 vi.mock("../lib/prisma", () => ({
   prisma: {
@@ -25,9 +28,6 @@ vi.mock("../lib/redis", () => ({
   },
   checkConnection: vi.fn().mockResolvedValue(true),
 }));
-
-// Import after mocking
-import { healthRoutes } from "./health";
 
 describe("Health Routes", () => {
   const app = new Hono();

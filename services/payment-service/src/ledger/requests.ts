@@ -253,12 +253,14 @@ export async function payRequest(
     );
   }
 
-  const payerWallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", input.actor.id, config.city),
-  );
-  const payeeWallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", request.toUser, config.city),
-  );
+  const payerWallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", input.actor.id, config.city);
+      return row;
+    });
+  const payeeWallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", request.toUser, config.city);
+      return row;
+    });
 
   assertNotLocked(payerWallet);
   assertNotSafeMode(payerWallet, now);

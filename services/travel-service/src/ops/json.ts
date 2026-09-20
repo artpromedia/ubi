@@ -6,9 +6,9 @@
  * value we persist here is an object or an array, never a bare null, so this
  * narrow cast is safe and keeps the write sites readable.
  */
+import type { JsonRecord, JsonValue } from "./types";
 import type { Prisma } from "@prisma/client/index";
 
-import type { JsonRecord, JsonValue } from "./types";
 
 export function toJson(value: JsonValue | JsonRecord | unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;

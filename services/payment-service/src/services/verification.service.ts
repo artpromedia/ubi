@@ -9,29 +9,33 @@
  * - Multi-provider integration (SmileID, IPRS, XDS, Onfido)
  * - Verification level management
  */
+/* eslint-disable require-await -- verification vendors are stubbed pending real integrations; methods are async by their service contract */
 
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
+
 import { verificationLogger } from "../lib/logger";
 import {
   COUNTRY_CONFIGS,
-  DocumentSubmission,
-  DocumentType,
-  ExtractedDocumentData,
-  FaceMatchResult,
-  LivenessResult,
-  ProviderVerifyParams,
-  ProviderVerifyResult,
-  SafetyEvent,
-  SelfieCapture,
-  UserVerification,
-  VerificationCapabilities,
-  VerificationLevel,
-  VerificationLevelConfig,
-  VerificationProvider,
-  VerificationResult,
-  VerificationStatus,
-  VerificationType,
+  type DocumentSubmission,
+  type DocumentType,
+  type ExtractedDocumentData,
+  type FaceMatchResult,
+  type LivenessCheck,
+  type LivenessResult,
+  type ProviderStatusResult,
+  type ProviderVerifyParams,
+  type ProviderVerifyResult,
+  type SafetyEvent,
+  type SelfieCapture,
+  type UserVerification,
+  type VerificationCapabilities,
+  type VerificationLevel,
+  type VerificationLevelConfig,
+  type VerificationProvider,
+  type VerificationResult,
+  type VerificationStatus,
+  type VerificationType,
 } from "../types/safety.types";
 
 // =============================================================================
@@ -442,7 +446,7 @@ export class VerificationService extends EventEmitter {
     documentType: DocumentType,
   ): VerificationProvider | null {
     const countryConfig = COUNTRY_CONFIGS[country];
-    if (!countryConfig) return this.providers.get("onfido") || null;
+    if (!countryConfig) {return this.providers.get("onfido") || null;}
 
     // Try country-specific providers first
     for (const providerName of countryConfig.verificationProviders) {
@@ -494,7 +498,7 @@ export class VerificationService extends EventEmitter {
     challengeResponse: LivenessChallengeResponse,
   ): Promise<LivenessResult> {
     // In production, this would use ML models or a provider like SmileID
-    const checks: import("../types/safety.types").LivenessCheck[] = [];
+    const checks: LivenessCheck[] = [];
     let totalScore = 0;
     let spoofingDetected = false;
 
@@ -949,7 +953,7 @@ export class VerificationService extends EventEmitter {
   private async getVerification(id: string): Promise<UserVerification | null> {
     for (const [, verifications] of this.verificationCache) {
       const found = verifications.find((v) => v.id === id);
-      if (found) return found;
+      if (found) {return found;}
     }
     return null;
   }
@@ -962,7 +966,7 @@ export class VerificationService extends EventEmitter {
   private sanitizeExtractedData(
     data?: ExtractedDocumentData,
   ): ExtractedDocumentData | undefined {
-    if (!data) return undefined;
+    if (!data) {return undefined;}
 
     return {
       ...data,
@@ -973,7 +977,7 @@ export class VerificationService extends EventEmitter {
   }
 
   private maskDocumentNumber(number: string): string {
-    if (number.length <= 4) return "****";
+    if (number.length <= 4) {return "****";}
     return "*".repeat(number.length - 4) + number.slice(-4);
   }
 
@@ -1011,7 +1015,7 @@ export class VerificationService extends EventEmitter {
   private checkBlink(
     _videoData: Buffer,
     blinkTimes: number[],
-  ): import("../types/safety.types").LivenessCheck {
+  ): LivenessCheck {
     // In production, analyze video frames for blinks
     return {
       type: "blink",
@@ -1024,7 +1028,7 @@ export class VerificationService extends EventEmitter {
   private checkHeadMovement(
     _videoData: Buffer,
     movements: { direction: string; timestamp: number }[],
-  ): import("../types/safety.types").LivenessCheck {
+  ): LivenessCheck {
     return {
       type: "head_movement",
       passed: movements.length >= 2,
@@ -1035,7 +1039,7 @@ export class VerificationService extends EventEmitter {
   private checkExpression(
     _videoData: Buffer,
     _expression: string,
-  ): import("../types/safety.types").LivenessCheck {
+  ): LivenessCheck {
     return {
       type: "expression",
       passed: true,
@@ -1045,7 +1049,7 @@ export class VerificationService extends EventEmitter {
 
   private checkAntiSpoofing(
     _videoData: Buffer,
-  ): import("../types/safety.types").LivenessCheck {
+  ): LivenessCheck {
     // In production, check for:
     // - 2D photo presentation
     // - Screen reflection/moire patterns
@@ -1159,7 +1163,7 @@ class SmileIDProvider implements VerificationProvider {
 
   async checkStatus(
     reference: string,
-  ): Promise<import("../types/safety.types").ProviderStatusResult> {
+  ): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1197,7 +1201,7 @@ class IPRSProvider implements VerificationProvider {
 
   async checkStatus(
     reference: string,
-  ): Promise<import("../types/safety.types").ProviderStatusResult> {
+  ): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1231,7 +1235,7 @@ class XDSProvider implements VerificationProvider {
 
   async checkStatus(
     reference: string,
-  ): Promise<import("../types/safety.types").ProviderStatusResult> {
+  ): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1257,7 +1261,7 @@ class HomeAffairsProvider implements VerificationProvider {
 
   async checkStatus(
     reference: string,
-  ): Promise<import("../types/safety.types").ProviderStatusResult> {
+  ): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1299,7 +1303,7 @@ class OnfidoProvider implements VerificationProvider {
 
   async checkStatus(
     reference: string,
-  ): Promise<import("../types/safety.types").ProviderStatusResult> {
+  ): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",
@@ -1338,7 +1342,7 @@ class YouVerifyProvider implements VerificationProvider {
 
   async checkStatus(
     reference: string,
-  ): Promise<import("../types/safety.types").ProviderStatusResult> {
+  ): Promise<ProviderStatusResult> {
     return {
       reference,
       status: "approved",

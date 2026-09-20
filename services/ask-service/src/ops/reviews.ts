@@ -25,8 +25,8 @@ import {
 } from "@ubi/contracts";
 
 import { actorKindFor, auditedTransaction, type OutboxInput } from "./audit";
-import { consumeGrant } from "./grants";
 import { runExecution } from "./executions";
+import { consumeGrant } from "./grants";
 import {
   fingerprintResolved,
   parseStoredReview,
@@ -37,9 +37,9 @@ import {
 } from "./review-model";
 import { deterministicId, generateId } from "../lib/ids";
 
-import type { ResolvedOffer } from "../ports/travel-port";
 import type { AskDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
+import type { ResolvedOffer } from "../ports/travel-port";
 import type { Prisma } from "@prisma/client/index";
 
 function asJson(value: unknown): Prisma.InputJsonValue {

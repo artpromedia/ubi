@@ -9,6 +9,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+
 import { dbLogger, perfLogger } from "./logger.js";
 import { DATABASE_POOL_CONFIG, performanceMonitor } from "./performance.js";
 
@@ -74,7 +75,7 @@ function createPrismaClient() {
 
         // Record query timing metrics
         const operationName = `${model || "unknown"}.${operation}`;
-        performanceMonitor.recordTiming("prisma.query", duration, {
+        void performanceMonitor.recordTiming("prisma.query", duration, {
           model: model || "unknown",
           action: operation,
         });

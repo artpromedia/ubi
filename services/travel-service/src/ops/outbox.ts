@@ -84,11 +84,12 @@ export async function withOutbox<T>(
   db: TravelDb,
   work: (tx: OutboxTx) => Promise<OutboxOutcome<T>>,
 ): Promise<T> {
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const outcome = await work(tx as OutboxTx);
     for (const event of outcome.events ?? []) {
       await publishEvent(tx, event);
     }
     return outcome.result;
   });
+  return result;
 }

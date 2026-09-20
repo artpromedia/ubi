@@ -25,12 +25,11 @@ import {
   type Money,
 } from "@ubi/contracts";
 
-import { auditedTransaction, type OutboxInput } from "./audit";
+import { auditedTransaction, type OutboxInput ,type  AuditedTx,type  AuditRecord } from "./audit";
 import { isUniqueViolation } from "./errors";
 import { actorTypeFor } from "./roles";
 import { deterministicId } from "../lib/ids";
 
-import type { AuditedTx, AuditRecord } from "./audit";
 import type { GrowthDeps } from "./context";
 import type { BenefitFunding, BenefitBeneficiary } from "./ledger-port";
 import type { Actor, JsonRecord } from "./types";

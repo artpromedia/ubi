@@ -11,15 +11,17 @@
  * two users claiming the same install id get two different device rows and
  * neither can inherit the other's trust.
  */
-import { ContractError } from "@ubi/contracts";
 import { z } from "zod";
+
+import { ContractError } from "@ubi/contracts";
 
 import { writeAudit } from "./audit";
 import { actorTypeFor, auditRevision } from "./common";
-import type { IdentityDeps } from "./deps";
 import { deterministicId } from "./ids";
 import { eventIdempotencyKey, writeOutboxEventOnce } from "./outbox";
 import { issueAccessToken, type IssuedToken } from "./tokens";
+
+import type { IdentityDeps } from "./deps";
 
 export const STEP_UP_METHODS = ["old_device_approve", "selfie_nin"] as const;
 export type StepUpMethod = (typeof STEP_UP_METHODS)[number];

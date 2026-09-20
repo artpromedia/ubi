@@ -5,9 +5,10 @@
  * Supports both access tokens and API keys for service-to-service communication.
  */
 
-import type { Context, Next } from "hono";
 import { createMiddleware } from "hono/factory";
 import * as jose from "jose";
+
+import type { Context, Next } from "hono";
 
 // Types
 interface JWTPayload {
@@ -282,7 +283,8 @@ export const requirePermission = (permission: string) => {
 
     // Service accounts have all permissions
     if (auth.role === "service" || auth.permissions.includes("*")) {
-      return next();
+      await next();
+      return;
     }
 
     // Check for specific permission
@@ -299,7 +301,8 @@ export const requirePermission = (permission: string) => {
       );
     }
 
-    return next();
+    await next();
+    return;
   });
 };
 
@@ -337,6 +340,7 @@ export const requireRole = (...roles: string[]) => {
       );
     }
 
-    return next();
+    await next();
+    return;
   });
 };

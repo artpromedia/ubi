@@ -67,6 +67,7 @@ export function createHashEmbeddingProvider(): EmbeddingProvider {
     model: "ubi-hash-embed",
     revision: "1",
     dimensions: HASH_DIMENSIONS,
+    // eslint-disable-next-line require-await -- EmbeddingProvider.embed is async by contract; this offline embedder computes synchronously
     async embed(
       texts: readonly string[],
     ): Promise<readonly (readonly number[])[]> {

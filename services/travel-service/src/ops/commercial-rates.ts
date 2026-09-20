@@ -10,8 +10,8 @@
  */
 import { ContractError } from "@ubi/contracts";
 
-import { generateId } from "../lib/ids";
 import { toJson } from "./json";
+import { generateId } from "../lib/ids";
 
 import type { TravelDeps } from "./context";
 import type { JsonRecord, JsonValue } from "./types";

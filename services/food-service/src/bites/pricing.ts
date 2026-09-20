@@ -8,6 +8,8 @@
  * options each allows — are enforced here so an incomplete or over-filled
  * selection is refused before it reaches the cart.
  */
+import { z } from "zod";
+
 import {
   addMoney,
   money,
@@ -15,7 +17,6 @@ import {
   type Money,
   ContractError,
 } from "@ubi/contracts";
-import { z } from "zod";
 
 export interface OptionForPricing {
   readonly id: string;

@@ -15,11 +15,11 @@
  * a repriced offer, a supplier timeout that must reconcile, a PNR that is not
  * yet a ticket, a refund the supplier rejects — without any mock inside a route.
  */
+/* eslint-disable require-await -- the SupplyAdapter interfaces are async by contract; this deterministic fixture computes every answer synchronously */
 import { z } from "zod";
 
 import { money } from "@ubi/contracts";
 
-import type { JsonRecord } from "../ops/types";
 import type {
   AdapterOffer,
   BookRequest,
@@ -43,6 +43,7 @@ import type {
   SupplierContext,
   SupplyCapabilities,
 } from "./types";
+import type { JsonRecord } from "../ops/types";
 
 // ---------------------------------------------------------------------------
 // Config schema (the supplier row's `config` JSON)

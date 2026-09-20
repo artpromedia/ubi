@@ -66,9 +66,10 @@ export async function buildStatement(
   const config = await deps.config.load(input.cityId);
   const window = rangeWindow(input.from, input.to, config.city.timezone);
 
-  const wallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", input.actor.id, config.city),
-  );
+  const wallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", input.actor.id, config.city);
+      return row;
+    });
 
   return deps.db.$transaction(async (tx) => {
     const statement = await computeStatement(tx, {

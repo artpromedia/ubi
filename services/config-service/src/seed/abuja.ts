@@ -52,10 +52,11 @@ export async function seedAbuja(
   env: SeedEnv = process.env,
 ): Promise<SeedResult> {
   assertSeedAllowed(env);
-  return await seedCityConfig({
+  const result = await seedCityConfig({
     city: ABUJA_CITY,
     config: abujaConfig,
     enabledFlags: ABUJA_ENABLED_FLAGS,
     reason: "initial abuja configuration",
   });
+  return result;
 }

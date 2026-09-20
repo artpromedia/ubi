@@ -16,8 +16,9 @@ import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
-import { logger } from "./lib/logger.js";
 
+import { createBitesModule, startIssueSweep } from "./bites/index.js";
+import { logger } from "./lib/logger.js";
 import { disconnect as disconnectPrisma } from "./lib/prisma";
 import { disconnect as disconnectRedis } from "./lib/redis";
 import { errorHandler, rateLimit, serviceAuth } from "./middleware";
@@ -27,7 +28,6 @@ import { orderRoutes } from "./routes/orders";
 import { restaurantRoutes } from "./routes/restaurants";
 import { reviewRoutes } from "./routes/reviews";
 import { searchRoutes } from "./routes/search";
-import { createBitesModule, startIssueSweep } from "./bites/index.js";
 
 const app = new Hono();
 
@@ -119,7 +119,7 @@ const server = serve({
 });
 
 // Graceful shutdown
-const shutdown = async (signal: string) => {
+const shutdown = (signal: string): void => {
   logger.info({ signal }, "Shutdown signal received, closing gracefully...");
 
   server.close(async () => {
@@ -138,7 +138,11 @@ const shutdown = async (signal: string) => {
   }, 30000);
 };
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM");
+});
+process.on("SIGINT", () => {
+  shutdown("SIGINT");
+});
 
 export default app;

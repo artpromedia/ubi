@@ -329,7 +329,7 @@ export function effectiveScopes(input: EffectiveScopeInput): readonly Scope[] {
 }
 
 function ruleMatches(rule: RouteRule, path: string, method: string): boolean {
-  if (path !== rule.prefix && !path.startsWith(`${rule.prefix}/`)) return false;
+  if (path !== rule.prefix && !path.startsWith(`${rule.prefix}/`)) {return false;}
   return rule.methods === "*" || rule.methods.includes(method.toUpperCase());
 }
 
@@ -337,7 +337,7 @@ function ruleMatches(rule: RouteRule, path: string, method: string): boolean {
 export function ruleFor(path: string, method: string): RouteRule | undefined {
   let best: RouteRule | undefined;
   for (const rule of ROUTE_RULES) {
-    if (!ruleMatches(rule, path, method)) continue;
+    if (!ruleMatches(rule, path, method)) {continue;}
     if (best === undefined) {
       best = rule;
       continue;
@@ -375,7 +375,7 @@ export function authorizeRequest(input: AuthorizeInput): void {
 
   if (rule === undefined) {
     // Limited mode is an allowlist: an undeclared route is not on it.
-    if (!input.modes.includes("limited")) return;
+    if (!input.modes.includes("limited")) {return;}
     throw deniedError(input.modes, {
       path: input.path,
       method: input.method.toUpperCase(),
@@ -383,7 +383,7 @@ export function authorizeRequest(input: AuthorizeInput): void {
     });
   }
 
-  if (rule.anyOf.some((scope) => input.scopes.includes(scope))) return;
+  if (rule.anyOf.some((scope) => input.scopes.includes(scope))) {return;}
 
   const ceiling = scopesForRole(input.role);
   const grantedByRole = rule.anyOf.filter((scope) => ceiling.includes(scope));

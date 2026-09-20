@@ -28,12 +28,14 @@
  */
 
 import { Currency, PaymentProvider, PayoutStatus } from "@prisma/client";
-import type { ExtendedPrismaClient } from "../lib/prisma";
+
+import { WalletService } from "./wallet.service";
 import { payoutLogger } from "../lib/logger";
 import { MoMoService } from "../providers/momo.service";
 import { MpesaService } from "../providers/mpesa.service";
 import { PaystackService } from "../providers/paystack.service";
-import { WalletService } from "./wallet.service";
+
+import type { ExtendedPrismaClient } from "../lib/prisma";
 
 export interface CashoutRequest {
   userId: string; // User ID (driver or merchant)
@@ -464,8 +466,8 @@ export class PayoutService {
    * Get MoMo country code from provider
    */
   private getMomoCountry(provider: PaymentProvider): "GH" | "RW" | "UG" {
-    if (provider === PaymentProvider.MTN_MOMO_GH) return "GH";
-    if (provider === PaymentProvider.MTN_MOMO_RW) return "RW";
+    if (provider === PaymentProvider.MTN_MOMO_GH) {return "GH";}
+    if (provider === PaymentProvider.MTN_MOMO_RW) {return "RW";}
     return "UG";
   }
 

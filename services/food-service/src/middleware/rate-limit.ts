@@ -2,8 +2,10 @@
  * Rate Limiting Middleware
  */
 
-import { Context, Next } from "hono";
 import { RateLimiter } from "../lib/redis";
+
+import type { Context, Next } from "hono";
+
 
 // Pre-configured rate limiters
 const limiters: Record<string, RateLimiter> = {

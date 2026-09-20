@@ -6,8 +6,9 @@
  * administration and campaign actions are NOT — they are refused with 422 and
  * routed to their conventional flow elsewhere.
  */
-import { MoneySchema } from "@ubi/contracts";
 import { z } from "zod";
+
+import { MoneySchema } from "@ubi/contracts";
 
 export const MANDATE_ACTIONS = [
   "airport_pickup.reserve",

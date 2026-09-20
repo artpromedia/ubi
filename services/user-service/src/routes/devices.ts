@@ -10,15 +10,15 @@
  * Identity comes from the gateway's SIGNED context, never from `x-auth-user-id`
  * (see identity/context.ts).
  */
-import { ContractError } from "@ubi/contracts";
 import { Hono } from "hono";
+
+import { ContractError } from "@ubi/contracts";
 
 import {
   getIdentity,
   requireIdentity,
   requireScope,
 } from "../identity/context";
-import type { IdentityDeps } from "../identity/deps";
 import {
   enrollDevice,
   EnrollDeviceSchema,
@@ -26,6 +26,8 @@ import {
 } from "../identity/devices";
 import { contractRoute, ok, parseBody } from "../identity/http";
 import { prisma } from "../lib/prisma";
+
+import type { IdentityDeps } from "../identity/deps";
 
 export function createDeviceRoutes(deps: IdentityDeps): Hono {
   const routes = new Hono();
@@ -43,7 +45,7 @@ export function createDeviceRoutes(deps: IdentityDeps): Hono {
         select: { email: true, status: true },
       });
       if (user === null)
-        throw new ContractError("not_found", "Account not found");
+        {throw new ContractError("not_found", "Account not found");}
       if (user.status === "SUSPENDED") {
         throw new ContractError("forbidden", "This account is suspended");
       }

@@ -11,13 +11,13 @@
 import { ContractError } from "@ubi/contracts";
 
 import {
-  createDuffelFlightAdapter,
-  createNuiteeStayAdapter,
-} from "./http-supplier";
-import {
   createFixtureFlightAdapter,
   createFixtureStayAdapter,
 } from "./fixture";
+import {
+  createDuffelFlightAdapter,
+  createNuiteeStayAdapter,
+} from "./http-supplier";
 
 import type { FlightSupplyAdapter, StaySupplyAdapter, SupplyAdapter } from "./types";
 

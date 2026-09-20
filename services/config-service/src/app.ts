@@ -3,9 +3,10 @@
  * tests drive the real routes through `app.request()` without opening a socket.
  */
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { ContractError } from "@ubi/contracts";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
+
+import { ContractError } from "@ubi/contracts";
 
 import { errorHandler } from "./middleware/error-handler";
 import { registerConfigRoutes } from "./routes/config";

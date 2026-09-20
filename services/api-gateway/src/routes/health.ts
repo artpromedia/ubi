@@ -121,7 +121,7 @@ async function checkRedis(): Promise<HealthCheck["checks"][0]> {
   try {
     const redis = new Redis(redisUrl, { lazyConnect: true, connectTimeout: 5000 });
     await redis.ping();
-    await redis.disconnect();
+    redis.disconnect();
 
     return {
       name: "redis",
@@ -166,7 +166,7 @@ function checkMemory(): HealthCheck["checks"][0] {
 }
 
 async function checkEventLoopLag(): Promise<HealthCheck["checks"][0]> {
-  return new Promise((resolve) => {
+  const check = await new Promise<HealthCheck["checks"][0]>((resolve) => {
     const start = Date.now();
     setImmediate(() => {
       const lag = Date.now() - start;
@@ -194,6 +194,7 @@ async function checkEventLoopLag(): Promise<HealthCheck["checks"][0]> {
       }
     });
   });
+  return check;
 }
 
 export { healthRoutes };

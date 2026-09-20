@@ -201,11 +201,12 @@ async function recordRejection(
   });
 }
 
-function findByIdempotency(
+async function findByIdempotency(
   deps: WalletDeps,
   key: string,
 ): Promise<TransferRow | null> {
-  return deps.db.transfer.findUnique({ where: { idempotencyKey: key } });
+  const transfer = await deps.db.transfer.findUnique({ where: { idempotencyKey: key } });
+  return transfer;
 }
 
 export async function sendTransfer(
@@ -220,9 +221,10 @@ export async function sendTransfer(
 
   const existing = await findByIdempotency(deps, idempotencyKey);
   if (existing !== null) {
-    return deps.db.$transaction((tx) =>
-      replayOutcome(tx, existing, input.toUserId),
-    );
+    return deps.db.$transaction(async (tx) => {
+        const row = await replayOutcome(tx, existing, input.toUserId);
+        return row;
+      });
   }
 
   const config = await deps.config.loadForWallet(input.cityId);
@@ -754,9 +756,10 @@ async function handleTransferFailure(
   if (isIdempotencyRace(original)) {
     const winner = await findByIdempotency(deps, params.idempotencyKey);
     if (winner !== null) {
-      return deps.db.$transaction((tx) =>
-        replayOutcome(tx, winner, params.toUserId),
-      );
+      return deps.db.$transaction(async (tx) => {
+          const row = await replayOutcome(tx, winner, params.toUserId);
+          return row;
+        });
     }
   }
 
@@ -777,8 +780,8 @@ async function handleTransferFailure(
   }
 
   if (original instanceof ContractError && original.code === "risk_hold") {
-    return deps.db.$transaction((tx) =>
-      holdTransfer(tx, {
+    return deps.db.$transaction(async (tx) => {
+        const row = await holdTransfer(tx, {
         actor: params.actor,
         cityId: params.cityId,
         transferId: params.transferId,
@@ -793,8 +796,9 @@ async function handleTransferFailure(
           "new_recipient",
         slaMinutes: params.slaMinutes,
         now: params.now,
-      }),
-    );
+      });
+        return row;
+      });
   }
 
   if (original instanceof ContractError && original.code === "limit_exceeded") {

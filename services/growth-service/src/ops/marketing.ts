@@ -82,6 +82,7 @@ export async function proposeMessage(
   };
 
   const now = deps.now();
+  // eslint-disable-next-line require-await -- auditedTransaction's work callback is async by contract; this one only describes rows
   await auditedTransaction(deps.db, async (_tx) => {
     const events: OutboxInput[] = [
       {

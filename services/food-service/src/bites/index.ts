@@ -6,7 +6,6 @@
  * the same routes run against the real singletons in production and against a
  * real, isolated database with a fake payment service in the tests.
  */
-import { createBitesDeps } from "./wiring.js";
 import {
   createCartRoutes,
   createDiscoveryRoutes,
@@ -14,6 +13,7 @@ import {
   createOrderRoutes,
 } from "./routes.js";
 import { sweepDueIssues } from "./services/orders.js";
+import { createBitesDeps } from "./wiring.js";
 
 import type { BitesDeps } from "./context.js";
 import type { Hono } from "hono";

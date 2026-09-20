@@ -14,15 +14,15 @@
  */
 import { canTransition, money } from "@ubi/contracts";
 
-import { generateId } from "../lib/ids";
-import { webhookLogger } from "../lib/logger";
-import { verifySignature } from "../adapters/signature";
-import { advanceRefund } from "./refunds";
 import { createDisruption, type AlternativeInput } from "./disruptions";
+import { toJson } from "./json";
 import { advanceOrder, type OrderRow } from "./ladder";
 import { withOutbox } from "./outbox";
-import { toJson } from "./json";
+import { advanceRefund } from "./refunds";
 import { loadSupplier } from "./suppliers";
+import { verifySignature } from "../adapters/signature";
+import { generateId } from "../lib/ids";
+import { webhookLogger } from "../lib/logger";
 
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
@@ -122,6 +122,7 @@ export async function receiveWebhook(
   return { result: "processed", action };
 }
 
+// eslint-disable-next-line require-await -- every branch delegates to an async helper; kept async for its Promise<string> contract
 async function process(
   deps: TravelDeps,
   cityId: string,
@@ -149,8 +150,9 @@ async function process(
 }
 
 async function loadOrderByRef(deps: TravelDeps, ref: string | undefined) {
-  if (ref === undefined) return null;
-  return deps.db.travelOrder.findUnique({ where: { id: ref } });
+  if (ref === undefined) {return null;}
+  const order = await deps.db.travelOrder.findUnique({ where: { id: ref } });
+  return order;
 }
 
 async function confirmOrder(
@@ -160,7 +162,7 @@ async function confirmOrder(
   ticketed: boolean,
 ): Promise<string> {
   const order = await loadOrderByRef(deps, envelope.orderRef);
-  if (order === null) return "order_not_found";
+  if (order === null) {return "order_not_found";}
   const refs = (envelope.supplierRefs ?? {}) as JsonRecord;
 
   // supplier_pending → confirmed (capture the still-open hold).
@@ -209,7 +211,7 @@ async function confirmOrder(
       const tickets = Array.isArray(refs.ticketNumbers) ? refs.ticketNumbers : [];
       let index = 0;
       for (const number of tickets) {
-        if (typeof number !== "string") continue;
+        if (typeof number !== "string") {continue;}
         await deps.db.travelDocument.create({
           data: {
             id: generateId("tdoc"),
@@ -234,7 +236,7 @@ async function failOrder(
   envelope: WebhookEnvelope,
 ): Promise<string> {
   const order = await loadOrderByRef(deps, envelope.orderRef);
-  if (order === null) return "order_not_found";
+  if (order === null) {return "order_not_found";}
   if (!canTransition("travelOrder", order.state, "failed_released")) {
     return "already_resolved";
   }
@@ -270,12 +272,12 @@ async function advanceRefundByOrder(
   to: "supplier_confirmed" | "supplier_refund_pending" | "refunded_to_wallet",
 ): Promise<string> {
   const order = await loadOrderByRef(deps, envelope.orderRef);
-  if (order === null) return "order_not_found";
+  if (order === null) {return "order_not_found";}
   const refund = await deps.db.travelRefund.findFirst({
     where: { orderId: order.id },
     orderBy: { createdAt: "desc" },
   });
-  if (refund === null) return "refund_not_found";
+  if (refund === null) {return "refund_not_found";}
   if (!canTransition("travelRefund", refund.stage, to)) {
     return "already_at_stage";
   }
@@ -298,7 +300,7 @@ async function raiseDisruption(
   envelope: WebhookEnvelope,
 ): Promise<string> {
   const order = await loadOrderByRef(deps, envelope.orderRef);
-  if (order === null || envelope.disruption === undefined) return "order_not_found";
+  if (order === null || envelope.disruption === undefined) {return "order_not_found";}
   const d = envelope.disruption;
   await createDisruption(deps, {
     actor: SYSTEM_ACTOR,
@@ -328,6 +330,7 @@ async function publishWebhookEvent(
   },
   signatureOk: boolean,
 ): Promise<void> {
+  // eslint-disable-next-line require-await -- withOutbox's work callback is async by contract; this one only describes rows
   await withOutbox(deps.db, async () => ({
     result: undefined,
     events: [

@@ -13,16 +13,16 @@
  */
 import { ContractError, money } from "@ubi/contracts";
 
-import { generateId } from "../lib/ids";
-import { reconcileLogger } from "../lib/logger";
 import { advanceOrder, orderView, type OrderRow, type OrderView } from "./ladder";
 import { withOutbox } from "./outbox";
 import { actorTypeFor } from "./roles";
 import { adapterFor, contextFor, loadSupplier } from "./suppliers";
+import { generateId } from "../lib/ids";
+import { reconcileLogger } from "../lib/logger";
 
-import type { LookupResult } from "../adapters/types";
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
+import type { LookupResult } from "../adapters/types";
 
 export async function reconcileOrder(
   deps: TravelDeps,
@@ -133,7 +133,7 @@ export async function reconcileOrder(
 
 function supplierRefsJson(lookup: LookupResult): JsonRecord {
   const refs: JsonRecord = {};
-  if (lookup.supplierRefs.pnr !== undefined) refs.pnr = lookup.supplierRefs.pnr;
+  if (lookup.supplierRefs.pnr !== undefined) {refs.pnr = lookup.supplierRefs.pnr;}
   if (lookup.supplierRefs.bookingRef !== undefined) {
     refs.bookingRef = lookup.supplierRefs.bookingRef;
   }

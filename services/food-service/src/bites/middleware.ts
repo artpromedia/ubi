@@ -7,7 +7,7 @@
  * `{ code, message, details? }` with the canonical code and its status, so a
  * client branches on `code`, never on a message.
  */
-import { ZodError } from "zod";
+import { ZodError, type z } from "zod";
 
 import {
   ContractError,
@@ -22,7 +22,6 @@ import { isKnownRole } from "./roles.js";
 import type { Actor } from "./lib/types.js";
 import type { Context, Next } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import type { z } from "zod";
 
 declare module "hono" {
   interface ContextVariableMap {

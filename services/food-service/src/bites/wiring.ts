@@ -7,9 +7,9 @@
  * on a rejection fails loudly rather than silently capturing, and a refund is
  * not posted at all.
  */
-import { prisma } from "../lib/prisma.js";
 import { createCityConfigProvider } from "./city-config.js";
 import { createHttpPayments } from "./payment-port.js";
+import { prisma } from "../lib/prisma.js";
 
 import type { BitesDeps } from "./context.js";
 import type { BitesDb } from "./lib/types.js";

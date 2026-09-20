@@ -9,12 +9,13 @@
  * Neither one deactivates the account. A driver who is offline is told why and
  * how to appeal (slice 03 guards).
  */
-import type { Prisma } from "@prisma/client";
 
 import { writeAudit, type Tx } from "./audit";
 import { auditRevision } from "./common";
-import type { IdentityDeps } from "./deps";
 import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
+
+import type { IdentityDeps } from "./deps";
+import type { Prisma } from "@prisma/client";
 
 /** Where a driver disputes an offline decision. Shown with every reason. */
 export const APPEAL_PATH = "/support/cases?topic=identity_review";
@@ -42,8 +43,8 @@ export async function takeDriverOffline(
     where: { id: input.driverId },
     select: { id: true, isOnline: true, isAvailable: true },
   });
-  if (driver === null) return false;
-  if (!driver.isOnline && !driver.isAvailable) return false;
+  if (driver === null) {return false;}
+  if (!driver.isOnline && !driver.isAvailable) {return false;}
 
   await tx.driver.update({
     where: { id: input.driverId },

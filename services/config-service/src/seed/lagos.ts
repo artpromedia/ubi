@@ -185,12 +185,13 @@ export async function seedLagos(
   env: SeedEnv = process.env,
 ): Promise<SeedResult> {
   assertSeedAllowed(env);
-  return await seedCityConfig({
+  const result = await seedCityConfig({
     city: LAGOS_CITY,
     config: lagosConfig,
     enabledFlags: LAGOS_ENABLED_FLAGS,
     reason: "initial lagos configuration",
   });
+  return result;
 }
 
 /** Cache scopes a caller should invalidate after seeding into a running system. */

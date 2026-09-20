@@ -5,10 +5,12 @@
  * Logs errors for debugging and monitoring.
  */
 
+import { z } from "zod";
+
+import { logger } from "../lib/logger.js";
+
 import type { Context } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
-import { z } from "zod";
-import { logger } from "../lib/logger.js";
 
 // Error types
 interface ApiError {

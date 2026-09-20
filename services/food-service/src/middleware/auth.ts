@@ -2,9 +2,11 @@
  * Authentication Middleware
  */
 
-import { Context, Next } from "hono";
 import { verify } from "jsonwebtoken";
+
 import { redis } from "../lib/redis";
+
+import type { Context, Next } from "hono";
 
 // Augment Hono's ContextVariableMap for type-safe context variables
 declare module "hono" {

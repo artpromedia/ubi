@@ -12,9 +12,10 @@
  * before forwarding. `POST /v1/auth/step-up/selfie` at the edge arrives here as
  * `POST /auth/step-up/selfie`.
  */
-import { ContractError } from "@ubi/contracts";
 import { Hono } from "hono";
 import { z } from "zod";
+
+import { ContractError } from "@ubi/contracts";
 
 import {
   decideIdentityCase,
@@ -26,7 +27,6 @@ import {
   requireIdentity,
   requireScope,
 } from "../identity/context";
-import type { IdentityDeps } from "../identity/deps";
 import { enrollDevice } from "../identity/devices";
 import {
   listDriverDocuments,
@@ -75,6 +75,8 @@ import {
   SelfieStepUpSchema,
 } from "../identity/step-up";
 import { prisma } from "../lib/prisma";
+
+import type { IdentityDeps } from "../identity/deps";
 
 const SimSwapWebhookSchema = z.object({
   phone: z.string().regex(/^\+?[1-9]\d{7,14}$/, "phone must be in E.164 form"),
@@ -157,7 +159,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         select: { id: true, email: true, role: true, status: true },
       });
       if (user === null)
-        throw new ContractError("not_found", "No account uses that number");
+        {throw new ContractError("not_found", "No account uses that number");}
       if (user.status === "SUSPENDED") {
         throw new ContractError("forbidden", "This account is suspended");
       }
@@ -293,7 +295,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         select: { email: true },
       });
       if (user === null)
-        throw new ContractError("not_found", "Account not found");
+        {throw new ContractError("not_found", "Account not found");}
 
       const outcome = await passSelfieStepUp(
         deps,
@@ -342,7 +344,7 @@ export function createIdentityRoutes(deps: IdentityDeps): Hono {
         select: { email: true },
       });
       if (user === null)
-        throw new ContractError("not_found", "Account not found");
+        {throw new ContractError("not_found", "Account not found");}
 
       const outcome = await approveFromTrustedDevice(
         deps,

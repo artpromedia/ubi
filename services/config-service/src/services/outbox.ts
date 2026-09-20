@@ -7,7 +7,6 @@
  * the closed `EVENT_NAMES` set *before* the row is inserted, so nothing can be
  * persisted that a consumer would refuse to parse.
  */
-import type { Prisma } from "@prisma/client";
 import {
   type ActorType,
   type EventEnvelope,
@@ -16,9 +15,11 @@ import {
   assertKnownEventName,
 } from "@ubi/contracts";
 
-import { asJsonObject } from "../lib/json";
 import { newId } from "../lib/ids";
+import { asJsonObject } from "../lib/json";
+
 import type { Tx } from "./audit";
+import type { Prisma } from "@prisma/client";
 
 export interface OutboxInput {
   readonly name: string;
@@ -83,6 +84,6 @@ export async function findOutboxByIdempotencyKey(
   idempotencyKey: string,
 ): Promise<Record<string, unknown> | undefined> {
   const row = await tx.outboxEvent.findUnique({ where: { idempotencyKey } });
-  if (row === null) return undefined;
+  if (row === null) {return undefined;}
   return asJsonObject(row.payload);
 }

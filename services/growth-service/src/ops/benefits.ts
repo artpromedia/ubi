@@ -70,9 +70,10 @@ export async function getBenefits(
     let status: string;
     let statusAt: string | null = null;
     let reasonCode: string | null = null;
-    if (v.budget?.exhaustedAt != null) {
+    const exhaustedAt = v.budget?.exhaustedAt ?? null;
+    if (exhaustedAt !== null) {
       status = "used_up";
-      statusAt = v.budget.exhaustedAt.toISOString();
+      statusAt = exhaustedAt.toISOString();
     } else if (now.getTime() < v.windowStart.getTime()) {
       status = "scheduled";
     } else if (now.getTime() >= v.windowEnd.getTime()) {

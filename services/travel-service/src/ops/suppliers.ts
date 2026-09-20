@@ -10,13 +10,13 @@ import { ContractError } from "@ubi/contracts";
 
 import { resolveFlightAdapter, resolveStayAdapter } from "../adapters/registry";
 
+import type { JsonRecord, TravelTx } from "./types";
 import type {
   FlightSupplyAdapter,
   StaySupplyAdapter,
   SupplyAdapter,
   SupplierContext,
 } from "../adapters/types";
-import type { JsonRecord, TravelTx } from "./types";
 
 export interface LoadedSupplier {
   readonly id: string;

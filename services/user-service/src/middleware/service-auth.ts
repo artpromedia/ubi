@@ -4,8 +4,9 @@
  * Validates requests from API Gateway with user context headers.
  */
 
-import type { Context, Next } from "hono";
 import { createMiddleware } from "hono/factory";
+
+import type { Context, Next } from "hono";
 
 export const serviceAuthMiddleware = createMiddleware(async (c: Context, next: Next) => {
   // Check for service-to-service auth headers from API Gateway
@@ -19,7 +20,8 @@ export const serviceAuthMiddleware = createMiddleware(async (c: Context, next: N
   const path = c.req.path;
   const publicPaths = ["/health", "/docs"];
   if (publicPaths.some((p) => path.startsWith(p))) {
-    return next();
+    await next();
+    return;
   }
 
   // For external requests, require auth context from gateway
@@ -40,5 +42,6 @@ export const serviceAuthMiddleware = createMiddleware(async (c: Context, next: N
   c.set("userId", userId);
   c.set("userRole", userRole);
 
-  return next();
+  await next();
+  return;
 });

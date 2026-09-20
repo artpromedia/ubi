@@ -9,9 +9,10 @@
  * `before` / `after` hold state, never PII: no phone numbers, no selfie, no
  * document contents (CLAUDE.md #7, #12).
  */
+import { newId } from "./ids";
+
 import type { Prisma } from "@prisma/client";
 
-import { newId } from "./ids";
 
 export type Tx = Prisma.TransactionClient;
 

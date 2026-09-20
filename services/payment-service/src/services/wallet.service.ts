@@ -13,15 +13,17 @@
 
 import {
   AccountType,
-  Currency,
+  type Currency,
   EntryType,
   TransactionStatus,
   TransactionType,
 } from "@prisma/client";
 import { nanoid } from "nanoid";
+
 import { walletLogger } from "../lib/logger.js";
-import type { ExtendedPrismaClient } from "../lib/prisma";
 import { performanceMonitor, walletCache } from "../lib/performance.js";
+
+import type { ExtendedPrismaClient } from "../lib/prisma";
 
 export interface TransferParams {
   fromAccountId: string;
@@ -218,7 +220,7 @@ export class WalletService {
       throw new Error("Amount must be positive");
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Get or create user wallet
       const userAccount = await this.getOrCreateWalletAccount(
         userId,
@@ -306,6 +308,7 @@ export class WalletService {
         newBalance: userNewBalance,
       };
     });
+    return result;
   }
 
   /**
@@ -321,7 +324,7 @@ export class WalletService {
       throw new Error("Amount must be positive");
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Get user wallet
       const userAccount = await tx.walletAccount.findFirst({
         where: {
@@ -424,6 +427,7 @@ export class WalletService {
         newBalance: userNewBalance,
       };
     });
+    return result;
   }
 
   /**
@@ -450,7 +454,7 @@ export class WalletService {
       throw new Error("Cannot transfer to same account");
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Get from account
       const fromAccount = await tx.walletAccount.findUnique({
         where: { id: fromAccountId },
@@ -543,6 +547,7 @@ export class WalletService {
         toBalance: toNewBalance,
       };
     });
+    return result;
   }
 
   /**
@@ -564,7 +569,7 @@ export class WalletService {
       throw new Error("Amount must be positive");
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Get account
       const account = await tx.walletAccount.findUnique({
         where: { id: accountId },
@@ -606,13 +611,14 @@ export class WalletService {
 
       return hold;
     });
+    return result;
   }
 
   /**
    * Release held funds
    */
   async releaseFunds(holdId: string) {
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const hold = await tx.balanceHold.findUnique({
         where: { id: holdId },
         include: { account: true },
@@ -647,6 +653,7 @@ export class WalletService {
 
       return hold;
     });
+    return result;
   }
 
   /**
@@ -661,7 +668,7 @@ export class WalletService {
       metadata?: Record<string, any>;
     },
   ) {
-    return await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const hold = await tx.balanceHold.findUnique({
         where: { id: holdId },
         include: { account: true },
@@ -760,6 +767,7 @@ export class WalletService {
         toBalance: toNewBalance,
       };
     });
+    return result;
   }
 
   /**
@@ -824,7 +832,7 @@ export class WalletService {
       metadata?: Record<string, any>;
     },
   ) {
-    return await tx.ledgerEntry.create({
+    const result = await tx.ledgerEntry.create({
       data: {
         transactionId: params.transactionId,
         accountId: params.accountId,
@@ -835,6 +843,7 @@ export class WalletService {
         metadata: params.metadata,
       },
     });
+    return result;
   }
 
   /**
@@ -854,8 +863,8 @@ export class WalletService {
     const where: any = { accountId };
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) where.createdAt.lte = endDate;
+      if (startDate) {where.createdAt.gte = startDate;}
+      if (endDate) {where.createdAt.lte = endDate;}
     }
 
     const entries = await this.prisma.ledgerEntry.findMany({

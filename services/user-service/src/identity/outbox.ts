@@ -10,7 +10,6 @@
  * `idempotency_key` is unique in the database. That is what makes a replayed
  * request — or a reminder sweep that runs twice — produce one event and not two.
  */
-import type { Prisma } from "@prisma/client";
 import {
   type ActorType,
   assertKnownEventName,
@@ -19,8 +18,10 @@ import {
   type SubjectType,
 } from "@ubi/contracts";
 
-import type { Tx } from "./audit";
 import { deterministicId, newId } from "./ids";
+
+import type { Tx } from "./audit";
+import type { Prisma } from "@prisma/client";
 
 /**
  * Builds an idempotency key that always fits the envelope's 64-character limit.
@@ -106,7 +107,7 @@ export async function writeOutboxEventOnce(
     where: { idempotencyKey: input.idempotencyKey },
     select: { id: true },
   });
-  if (existing !== null) return undefined;
+  if (existing !== null) {return undefined;}
   return writeOutboxEvent(tx, input);
 }
 
@@ -119,7 +120,7 @@ export async function findOutboxByIdempotencyKey(
   idempotencyKey: string,
 ): Promise<Record<string, unknown> | undefined> {
   const row = await tx.outboxEvent.findUnique({ where: { idempotencyKey } });
-  if (row === null) return undefined;
+  if (row === null) {return undefined;}
   return typeof row.payload === "object" &&
     row.payload !== null &&
     !Array.isArray(row.payload)

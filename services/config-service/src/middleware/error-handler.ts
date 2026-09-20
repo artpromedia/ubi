@@ -3,12 +3,15 @@
  * ({ code, message, details }) with the status `@ubi/contracts` assigns to that
  * code. Clients branch on `code`, never on message text.
  */
-import { ContractError, type ErrorBody } from "@ubi/contracts";
-import type { Context } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { ZodError } from "zod";
 
+import { ContractError, type ErrorBody } from "@ubi/contracts";
+
 import { logger } from "../lib/logger";
+
+import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+
 
 function bodyFor(error: unknown): { body: ErrorBody; status: number } {
   if (error instanceof ContractError) {

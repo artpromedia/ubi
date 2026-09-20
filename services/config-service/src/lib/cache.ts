@@ -13,11 +13,12 @@
  *  2. Redis is never authoritative. Any Redis failure degrades to a direct
  *     Postgres read; it never fails the request and never invents a value.
  */
-import type { Redis } from "ioredis";
 
 import { CONFIG_CACHE_TTL_SEC } from "./env";
 import { cacheLogger } from "./logger";
 import { CONFIG_INVALIDATION_CHANNEL, redis as defaultRedis } from "./redis";
+
+import type { Redis } from "ioredis";
 
 export type CacheKind = "config" | "flags";
 
@@ -81,7 +82,7 @@ export class ConfigCache {
       observedGeneration = generation ?? "0";
       if (cached !== null && cached !== undefined) {
         const revived = revive(JSON.parse(cached) as unknown);
-        if (revived !== undefined) return revived;
+        if (revived !== undefined) {return revived;}
         cacheLogger.warn({ scope }, "discarding unreadable cache entry");
       }
     } catch (err) {

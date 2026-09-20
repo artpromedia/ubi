@@ -16,7 +16,6 @@ import {
   parseBody,
   requireIdempotencyKey,
 } from "../identity/http";
-import type { AiActionDeps } from "../grants/types";
 import {
   createMandate,
   listExecutions,
@@ -30,6 +29,8 @@ import {
   MandatePatchSchema,
 } from "../mandates/schemas";
 import { executionToView } from "../mandates/serialize";
+
+import type { AiActionDeps } from "../grants/types";
 
 const CreateMandateSchema = MandateInputSchema.extend({
   assurance: AssuranceSchema.optional(),

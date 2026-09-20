@@ -13,9 +13,8 @@ import {
   IdempotencyKeySchema,
 } from "@ubi/contracts";
 
-import { isAskRole } from "../ops/types";
+import { isAskRole ,type  Actor } from "../ops/types";
 
-import type { Actor } from "../ops/types";
 import type { Context, Next } from "hono";
 
 declare module "hono" {

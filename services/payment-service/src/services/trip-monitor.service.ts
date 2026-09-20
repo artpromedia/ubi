@@ -9,12 +9,15 @@
  * - Safety check-ins
  * - Automatic escalation
  */
+/* eslint-disable require-await -- monitoring state is held in-memory pending real telemetry; methods are async by their service contract */
 
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
+
 import { tripMonitorLogger } from "../lib/logger";
 import { notificationClient } from "../lib/notification-client";
-import {
+
+import type {
   AccelData,
   AnomalyDetails,
   CrashDetection,
@@ -121,7 +124,7 @@ export class TripMonitorService extends EventEmitter {
     reason: "completed" | "cancelled" | "incident",
   ): Promise<void> {
     const session = this.activeSessions.get(tripId);
-    if (!session) return;
+    if (!session) {return;}
 
     session.status = reason === "incident" ? "incident" : "completed";
 
@@ -176,7 +179,7 @@ export class TripMonitorService extends EventEmitter {
         previousLocation,
         location,
       );
-      if (jumpAnomaly) anomalies.push(jumpAnomaly);
+      if (jumpAnomaly) {anomalies.push(jumpAnomaly);}
     }
 
     // Check route deviation
@@ -185,16 +188,16 @@ export class TripMonitorService extends EventEmitter {
       session,
       location,
     );
-    if (deviationAnomaly) anomalies.push(deviationAnomaly);
+    if (deviationAnomaly) {anomalies.push(deviationAnomaly);}
 
     // Check unexpected stop
     const stopAnomaly = await this.detectUnexpectedStop(tripId, history);
-    if (stopAnomaly) anomalies.push(stopAnomaly);
+    if (stopAnomaly) {anomalies.push(stopAnomaly);}
 
     // Check speed anomaly
     if (location.speed !== undefined) {
       const speedAnomaly = this.detectSpeedAnomaly(tripId, location);
-      if (speedAnomaly) anomalies.push(speedAnomaly);
+      if (speedAnomaly) {anomalies.push(speedAnomaly);}
     }
 
     // Process anomalies
@@ -230,7 +233,7 @@ export class TripMonitorService extends EventEmitter {
     session: TripSafetySession,
     currentLocation: Location,
   ): TripAnomaly | null {
-    if (!session.expectedRoute || session.expectedRoute.length < 2) return null;
+    if (!session.expectedRoute || session.expectedRoute.length < 2) {return null;}
 
     const distanceFromRoute = this.calculateDistanceFromRoute(
       currentLocation,
@@ -259,14 +262,14 @@ export class TripMonitorService extends EventEmitter {
     tripId: string,
     history: Location[],
   ): Promise<TripAnomaly | null> {
-    if (history.length < 10) return null;
+    if (history.length < 10) {return null;}
 
     const recentLocations = history.slice(-10);
     const firstLoc = recentLocations[0];
     const lastLoc = recentLocations.at(-1);
 
     // Check if vehicle has been stationary
-    if (!firstLoc || !lastLoc) return null;
+    if (!firstLoc || !lastLoc) {return null;}
 
     const distance = this.calculateDistance(firstLoc, lastLoc);
     const timeDiff =
@@ -279,14 +282,14 @@ export class TripMonitorService extends EventEmitter {
       timeDiffSeconds > this.UNEXPECTED_STOP_THRESHOLD_SECONDS
     ) {
       const session = this.activeSessions.get(tripId);
-      if (!session) return null;
+      if (!session) {return null;}
 
       // Check if this is near expected stops (dropoff, pickup)
       const isExpectedStop = this.isNearExpectedStop(
         lastLoc,
         session.expectedRoute,
       );
-      if (isExpectedStop) return null;
+      if (isExpectedStop) {return null;}
 
       return this.createAnomaly(
         tripId,
@@ -307,7 +310,7 @@ export class TripMonitorService extends EventEmitter {
     tripId: string,
     location: Location,
   ): TripAnomaly | null {
-    if (!location.speed) return null;
+    if (!location.speed) {return null;}
 
     const speedKmh = location.speed * 3.6; // Convert m/s to km/h
 
@@ -370,13 +373,13 @@ export class TripMonitorService extends EventEmitter {
     data: AccelData,
   ): Promise<CrashDetection | null> {
     const session = this.activeSessions.get(tripId);
-    if (!session) return null;
+    if (!session) {return null;}
 
     const buffer = this.crashBuffer.get(tripId) || [];
     buffer.push(data);
 
     // Keep last 50 readings
-    if (buffer.length > 50) buffer.shift();
+    if (buffer.length > 50) {buffer.shift();}
     this.crashBuffer.set(tripId, buffer);
 
     // Calculate G-force
@@ -475,7 +478,7 @@ export class TripMonitorService extends EventEmitter {
 
     // Schedule timeout
     setTimeout(
-      () => this.handleSafetyCheckTimeout(checkId),
+      async () => this.handleSafetyCheckTimeout(checkId),
       this.SAFETY_CHECK_TIMEOUT_SECONDS * 1000,
     );
 
@@ -533,7 +536,7 @@ export class TripMonitorService extends EventEmitter {
 
   private async handleSafetyCheckTimeout(checkId: string): Promise<void> {
     const check = this.safetyChecks.get(checkId);
-    if (check?.status !== "SENT") return;
+    if (check?.status !== "SENT") {return;}
 
     check.status = "NO_RESPONSE";
     check.responseType = "no_response";
@@ -687,7 +690,7 @@ export class TripMonitorService extends EventEmitter {
     contactIds: string[],
   ): Promise<void> {
     const session = this.activeSessions.get(tripId);
-    if (!session) return;
+    if (!session) {return;}
 
     const riderName = await this.getRiderName(session.riderId);
 
@@ -795,7 +798,7 @@ export class TripMonitorService extends EventEmitter {
     isActive: boolean,
   ): Promise<void> {
     const session = this.activeSessions.get(tripId);
-    if (!session) return;
+    if (!session) {return;}
 
     if (!isActive) {
       // Phone went inactive - could indicate danger
@@ -906,7 +909,7 @@ export class TripMonitorService extends EventEmitter {
     segStart: Location | undefined,
     segEnd: Location | undefined,
   ): number {
-    if (!segStart || !segEnd) return Infinity;
+    if (!segStart || !segEnd) {return Infinity;}
 
     const dx = segEnd.lng - segStart.lng;
     const dy = segEnd.lat - segStart.lat;
@@ -960,9 +963,9 @@ export class TripMonitorService extends EventEmitter {
   }
 
   private calculateDeviationSeverity(distanceMeters: number): IncidentSeverity {
-    if (distanceMeters > 2000) return "CRITICAL";
-    if (distanceMeters > 1000) return "HIGH";
-    if (distanceMeters > 500) return "MEDIUM";
+    if (distanceMeters > 2000) {return "CRITICAL";}
+    if (distanceMeters > 1000) {return "HIGH";}
+    if (distanceMeters > 500) {return "MEDIUM";}
     return "LOW";
   }
 
@@ -970,10 +973,10 @@ export class TripMonitorService extends EventEmitter {
     location: Location,
     route: Location[] | undefined,
   ): boolean {
-    if (!route || route.length < 2) return false;
+    if (!route || route.length < 2) {return false;}
 
     const dropoff = route.at(-1);
-    if (!dropoff) return false;
+    if (!dropoff) {return false;}
 
     const distanceToDropoff = this.calculateDistance(location, dropoff);
 
@@ -1074,7 +1077,7 @@ export class TripMonitorService extends EventEmitter {
             lastLocation,
           );
 
-          this.handleAnomaly(session, anomaly);
+          void this.handleAnomaly(session, anomaly);
         }
       }
     }

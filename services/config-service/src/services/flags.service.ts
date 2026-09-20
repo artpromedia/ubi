@@ -145,7 +145,10 @@ export async function evaluateFlags(params: {
 }): Promise<FlagMap> {
   const snapshot = await configCache.read<FlagSnapshot>(
     flagScope(params.cityId),
-    async () => loadSnapshot(params.cityId),
+    async () => {
+      const loaded = await loadSnapshot(params.cityId);
+      return loaded;
+    },
     reviveSnapshot,
   );
   return evaluate(snapshot, params.userId);
@@ -309,18 +312,18 @@ export async function setFlag(input: SetFlagInput): Promise<SetFlagResult> {
     };
   }
 
-  const result = await prisma.$transaction(
-    async (tx) =>
-      await applyFlagChange(tx, flag, {
-        key,
-        cityId,
-        enabled,
-        reason,
-        segment: input.segment,
-        actor,
-        idempotencyKey,
-      }),
-  );
+  const result = await prisma.$transaction(async (tx) => {
+    const applied = await applyFlagChange(tx, flag, {
+      key,
+      cityId,
+      enabled,
+      reason,
+      segment: input.segment,
+      actor,
+      idempotencyKey,
+    });
+    return applied;
+  });
 
   const affectedCities =
     cityId === null

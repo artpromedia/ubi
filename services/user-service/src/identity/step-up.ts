@@ -18,16 +18,18 @@
  * SCORE and the pass/fail, and a driver additionally gets a `face_checks` row
  * with the score (CLAUDE.md #6).
  */
-import { ContractError } from "@ubi/contracts";
 import { z } from "zod";
+
+import { ContractError } from "@ubi/contracts";
 
 import { writeAudit } from "./audit";
 import { actorTypeFor, auditRevision } from "./common";
-import type { IdentityDeps } from "./deps";
 import { APPEAL_MESSAGE, APPEAL_PATH, takeDriverOffline } from "./driver";
 import { newId } from "./ids";
 import { eventIdempotencyKey, writeOutboxEvent } from "./outbox";
 import { issueAccessToken, type IssuedToken } from "./tokens";
+
+import type { IdentityDeps } from "./deps";
 
 /**
  * The biometric provider. Liveness and NIN matching happen there; this service

@@ -140,9 +140,10 @@ export async function createNipTransfer(
     );
   }
 
-  const wallet = await deps.db.$transaction((tx) =>
-    ensureWallet(tx, "user", input.actor.id, config.city),
-  );
+  const wallet = await deps.db.$transaction(async (tx) => {
+      const row = await ensureWallet(tx, "user", input.actor.id, config.city);
+      return row;
+    });
   assertNotLocked(wallet);
   assertNotSafeMode(wallet, now);
   await verifyWalletPin(deps, input.actor, wallet, input.pin, config, now);
@@ -325,7 +326,7 @@ export async function applyNipCallback(
   const now = deps.now();
   const actor: Actor = { id: "bank-webhook", role: "system" };
 
-  return deps.db.$transaction(async (tx) => {
+  const outcome = await deps.db.$transaction(async (tx) => {
     const transfer = await tx.nipTransfer.findFirst({
       where: { sessionId: callback.sessionId },
     });
@@ -464,6 +465,7 @@ export async function applyNipCallback(
       entryId: entry,
     };
   });
+  return outcome;
 }
 
 async function postReversal(

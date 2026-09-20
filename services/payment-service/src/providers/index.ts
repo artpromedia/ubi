@@ -3,13 +3,6 @@
  */
 
 // Client classes for direct API calls
-export { FlutterwaveClient } from "./flutterwave";
-export { PaystackClient } from "./paystack";
-
-// Full service classes with database integration
-export { MoMoService } from "./momo.service";
-export { MpesaService } from "./mpesa.service";
-export { PaystackService } from "./paystack.service";
 // NOTE: OrangeMoneyService (XOF) and TelebirrService are deferred PSP
 // collection/payout integrations (fictional prisma.providerBalance model,
 // unsupported currency) quarantined out of the build (tsconfig "exclude");
@@ -18,6 +11,14 @@ export { PaystackService } from "./paystack.service";
 import { Currency } from "../types";
 import { FlutterwaveClient } from "./flutterwave";
 import { PaystackClient } from "./paystack";
+
+export { FlutterwaveClient } from "./flutterwave";
+export { PaystackClient } from "./paystack";
+
+// Full service classes with database integration
+export { MoMoService } from "./momo.service";
+export { MpesaService } from "./mpesa.service";
+export { PaystackService } from "./paystack.service";
 
 /**
  * Payment Provider Factory

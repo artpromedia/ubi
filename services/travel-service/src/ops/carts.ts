@@ -17,14 +17,14 @@ import {
   type Money,
 } from "@ubi/contracts";
 
-import { deterministicId } from "../lib/ids";
+import { isUniqueViolation } from "./errors";
 import { toJson } from "./json";
 import { adapterFor, contextFor, pickSupplier } from "./suppliers";
-import { isUniqueViolation } from "./errors";
+import { deterministicId } from "../lib/ids";
 
-import type { AdapterOffer } from "../adapters/types";
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
+import type { AdapterOffer } from "../adapters/types";
 
 export interface CartItemInput {
   readonly kind: "flight" | "stay";
@@ -79,9 +79,10 @@ function termsFor(offer: AdapterOffer): string[] {
   );
   terms.push(caps.refundSupported ? "refundable per fare rules" : "non-refundable");
   terms.push(caps.changeSupported ? "changes allowed per fare rules" : "no changes");
-  if (caps.payAtProperty === true) terms.push("part payable at the property");
-  if (caps.priceGuaranteeUntil != null) {
-    terms.push(`price guaranteed until ${caps.priceGuaranteeUntil}`);
+  if (caps.payAtProperty === true) {terms.push("part payable at the property");}
+  const priceGuaranteeUntil = caps.priceGuaranteeUntil ?? null;
+  if (priceGuaranteeUntil !== null) {
+    terms.push(`price guaranteed until ${priceGuaranteeUntil}`);
   }
   return terms;
 }

@@ -5,6 +5,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+
 import { prisma } from "../lib/prisma";
 import { generateId } from "../lib/utils";
 import { auth, serviceAuth } from "../middleware/auth";
@@ -304,7 +305,7 @@ preferencesRoutes.get("/check", serviceAuth, async (c) => {
 /**
  * GET /preferences/unsubscribe - Generate unsubscribe token
  */
-preferencesRoutes.get("/unsubscribe-token", auth, async (c) => {
+preferencesRoutes.get("/unsubscribe-token", auth, (c) => {
   const userId = c.get("userId");
   const channel = c.req.query("channel") as NotificationChannel;
 

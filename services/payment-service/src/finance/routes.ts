@@ -5,7 +5,7 @@
  * Every action here is typed and audited, and the day-close is gated on the
  * ledger rather than on a reviewer's judgement.
  */
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 
 import { ContractError } from "@ubi/contracts";
@@ -25,7 +25,6 @@ import {
 
 import type { WalletDeps } from "../ledger/context";
 import type { Actor } from "../ledger/types";
-import type { Context } from "hono";
 
 const ExternalBody = z.object({
   amountMinor: z.number().int(),

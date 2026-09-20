@@ -13,13 +13,12 @@
  */
 import { ContractError } from "@ubi/contracts";
 
-import { auditedTransaction } from "../audit.js";
+import { auditedTransaction ,type  OutboxInput } from "../audit.js";
 import { assertFlagEnabled } from "../city-config.js";
 import { generateId } from "../lib/ids.js";
 import { actorTypeFor, assertPermission } from "../roles.js";
 import { MERCHANT_APPROVED } from "./menu.js";
 
-import type { OutboxInput } from "../audit.js";
 import type { BitesDeps } from "../context.js";
 import type { Actor, JsonRecord } from "../lib/types.js";
 
@@ -297,7 +296,7 @@ export async function createOutlet(
 ): Promise<{ readonly outletId: string }> {
   assertOwnsMerchant(params.actor, params.merchantId);
   const outletId = generateId("outlet");
-  return auditedTransaction(deps.db, async (tx) => {
+  const created = await auditedTransaction(deps.db, async (tx) => {
     await tx.outlet.create({
       data: {
         id: outletId,
@@ -321,6 +320,7 @@ export async function createOutlet(
       },
     };
   });
+  return created;
 }
 
 export interface OptionGroupInput {

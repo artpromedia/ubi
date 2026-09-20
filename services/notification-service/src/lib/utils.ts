@@ -163,7 +163,7 @@ export function truncateForSMS(
   message: string,
   maxLength: number = 160
 ): string {
-  if (message.length <= maxLength) return message;
+  if (message.length <= maxLength) {return message;}
   return message.slice(0, maxLength - 3) + "...";
 }
 
@@ -265,10 +265,10 @@ export function formatRelativeTime(date: Date): string {
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffSecs < 60) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffSecs < 60) {return "just now";}
+  if (diffMins < 60) {return `${diffMins}m ago`;}
+  if (diffHours < 24) {return `${diffHours}h ago`;}
+  if (diffDays < 7) {return `${diffDays}d ago`;}
 
   return date.toLocaleDateString();
 }
@@ -319,7 +319,7 @@ export function sanitizeNotificationText(text: string): string {
  */
 export function maskEmail(email: string): string {
   const [local, domain] = email.split("@");
-  if (!domain || !local) return "***@***";
+  if (!domain || !local) {return "***@***";}
 
   const maskedLocal =
     local.length > 2
@@ -330,6 +330,6 @@ export function maskEmail(email: string): string {
 }
 
 export function maskPhone(phone: string): string {
-  if (phone.length < 4) return "***";
+  if (phone.length < 4) {return "***";}
   return phone.slice(0, -4).replace(/\d/g, "*") + phone.slice(-4);
 }

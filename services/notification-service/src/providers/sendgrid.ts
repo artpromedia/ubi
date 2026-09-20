@@ -3,6 +3,7 @@
  */
 
 import sgMail from "@sendgrid/mail";
+
 import { emailLogger } from "../lib/logger.js";
 
 // Initialize SendGrid
@@ -216,12 +217,13 @@ class EmailService {
     to: string,
     data: Record<string, any>,
   ): Promise<EmailResult> {
-    return this.send({
+    const result = await this.send({
       to,
       subject: "", // Subject from template
       templateId,
       templateData: data,
     });
+    return result;
   }
 
   /**
@@ -235,16 +237,17 @@ class EmailService {
     const templateId = process.env.SENDGRID_VERIFICATION_TEMPLATE_ID;
 
     if (templateId) {
-      return this.send({
+      const result = await this.send({
         to,
         subject: "Verify your UBI account",
         templateId,
         templateData: { code, name },
       });
+      return result;
     }
 
     // Fallback to plain HTML
-    return this.send({
+    const result = await this.send({
       to,
       subject: "Verify your UBI account",
       html: `
@@ -261,6 +264,7 @@ class EmailService {
         </div>
       `,
     });
+    return result;
   }
 
   /**
@@ -274,15 +278,16 @@ class EmailService {
     const templateId = process.env.SENDGRID_PASSWORD_RESET_TEMPLATE_ID;
 
     if (templateId) {
-      return this.send({
+      const result = await this.send({
         to,
         subject: "Reset your UBI password",
         templateId,
         templateData: { resetLink, name },
       });
+      return result;
     }
 
-    return this.send({
+    const result = await this.send({
       to,
       subject: "Reset your UBI password",
       html: `
@@ -301,6 +306,7 @@ class EmailService {
         </div>
       `,
     });
+    return result;
   }
 
   /**
@@ -323,13 +329,14 @@ class EmailService {
     const templateId = process.env.SENDGRID_RECEIPT_TEMPLATE_ID;
 
     if (templateId) {
-      return this.send({
+      const result = await this.send({
         to,
         subject: `Your UBI ${data.orderType} receipt - ${data.orderId}`,
         templateId,
         templateData: data,
         categories: ["receipt", data.orderType],
       });
+      return result;
     }
 
     const itemsHtml = data.items
@@ -346,7 +353,7 @@ class EmailService {
           .join("")
       : "";
 
-    return this.send({
+    const result = await this.send({
       to,
       subject: `Your UBI ${data.orderType} receipt - ${data.orderId}`,
       html: `
@@ -391,6 +398,7 @@ class EmailService {
       `,
       categories: ["receipt", data.orderType],
     });
+    return result;
   }
 
   /**

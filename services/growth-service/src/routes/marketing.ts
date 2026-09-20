@@ -6,7 +6,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { proposeMessage } from "../ops/marketing";
 import {
   actorOf,
   correlationIdOf,
@@ -15,6 +14,7 @@ import {
   optionalCityOf,
 } from "../middleware";
 import { parseBody } from "./parse";
+import { proposeMessage } from "../ops/marketing";
 
 import type { GrowthDeps } from "../ops/context";
 

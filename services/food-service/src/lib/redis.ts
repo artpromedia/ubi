@@ -3,6 +3,7 @@
  */
 
 import Redis from "ioredis";
+
 import { redisLogger } from "./logger.js";
 
 // Main Redis client
@@ -69,7 +70,7 @@ export const cache = {
    */
   async get<T>(key: string): Promise<T | null> {
     const value = await redis.get(key);
-    if (!value) return null;
+    if (!value) {return null;}
     try {
       return JSON.parse(value) as T;
     } catch {
@@ -129,7 +130,8 @@ export const cache = {
    * Increment counter
    */
   async increment(key: string, amount = 1): Promise<number> {
-    return redis.incrby(key, amount);
+    const value = await redis.incrby(key, amount);
+    return value;
   },
 
   /**

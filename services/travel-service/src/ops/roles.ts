@@ -23,7 +23,7 @@ export function isOpsRole(role: string): boolean {
 }
 
 export function actorTypeFor(role: string): string {
-  if (role === "rider") return "rider";
-  if (role === "driver") return "driver";
+  if (role === "rider") {return "rider";}
+  if (role === "driver") {return "driver";}
   return "agent";
 }

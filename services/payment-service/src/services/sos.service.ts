@@ -9,21 +9,23 @@
  * - Law enforcement integration
  * - Safety team dashboard integration
  */
+/* eslint-disable require-await -- emergency contacts are held in-process (see QUARANTINE.md); methods are async by their service contract */
 
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
+
 import { sosLogger } from "../lib/logger";
 import { notificationClient } from "../lib/notification-client";
 import {
   COUNTRY_CONFIGS,
-  EmergencyContact,
-  EmergencyNotification,
-  Location,
-  SafetyAgent,
-  SOSEscalationLevel,
-  SOSIncident,
-  SOSResponse,
-  UserSafetyContext,
+  type EmergencyContact,
+  type EmergencyNotification,
+  type Location,
+  type SafetyAgent,
+  type SOSEscalationLevel,
+  type SOSIncident,
+  type SOSResponse,
+  type UserSafetyContext,
 } from "../types/safety.types";
 
 // =============================================================================
@@ -171,7 +173,7 @@ export class SOSEmergencyService extends EventEmitter {
 
     // Notify assigned agent
     if (incident.assignedAgentId) {
-      this.notifyAgent(incident.assignedAgentId, "sos_cancelled", incident);
+      void this.notifyAgent(incident.assignedAgentId, "sos_cancelled", incident);
     }
 
     // Archive incident
@@ -186,7 +188,7 @@ export class SOSEmergencyService extends EventEmitter {
 
   async verifyCancellation(incidentId: string, pin: string): Promise<boolean> {
     const incident = this.activeIncidents.get(incidentId);
-    if (!incident) return false;
+    if (!incident) {return false;}
 
     // In production, verify PIN against user's safety PIN
     const isValid = await this.verifyUserPin(incident.userId, pin);
@@ -277,7 +279,7 @@ export class SOSEmergencyService extends EventEmitter {
     reason: string,
   ): Promise<boolean> {
     const incident = this.activeIncidents.get(incidentId);
-    if (!incident) return false;
+    if (!incident) {return false;}
 
     incident.status = "FALSE_ALARM";
     incident.resolvedAt = new Date();
@@ -307,19 +309,19 @@ export class SOSEmergencyService extends EventEmitter {
   private startEscalationTimer(incident: SOSIncident): void {
     // Level 1 -> Level 2
     setTimeout(
-      () => this.checkAndEscalate(incident.id, "LEVEL_2"),
+      async () => this.checkAndEscalate(incident.id, "LEVEL_2"),
       this.LEVEL_1_TIMEOUT * 1000,
     );
 
     // Level 2 -> Level 3
     setTimeout(
-      () => this.checkAndEscalate(incident.id, "LEVEL_3"),
+      async () => this.checkAndEscalate(incident.id, "LEVEL_3"),
       this.LEVEL_2_TIMEOUT * 1000,
     );
 
     // Level 3 -> Level 4
     setTimeout(
-      () => this.checkAndEscalate(incident.id, "LEVEL_4"),
+      async () => this.checkAndEscalate(incident.id, "LEVEL_4"),
       this.LEVEL_3_TIMEOUT * 1000,
     );
   }
@@ -781,7 +783,7 @@ export class SOSEmergencyService extends EventEmitter {
     _incident: SOSIncident,
   ): Promise<void> {
     const agent = this.safetyAgents.get(agentId);
-    if (!agent) return;
+    if (!agent) {return;}
 
     // In production, send push notification to agent dashboard
     sosLogger.info(
@@ -994,21 +996,21 @@ export class SOSEmergencyService extends EventEmitter {
       }
     }
 
-    if (updates.name !== undefined) existing.name = updates.name;
+    if (updates.name !== undefined) {existing.name = updates.name;}
     if (updates.phoneNumber !== undefined)
-      existing.phoneNumber = updates.phoneNumber;
+      {existing.phoneNumber = updates.phoneNumber;}
     if (updates.relationship !== undefined)
-      existing.relationship = updates.relationship;
-    if (updates.isPrimary !== undefined) existing.isPrimary = updates.isPrimary;
+      {existing.relationship = updates.relationship;}
+    if (updates.isPrimary !== undefined) {existing.isPrimary = updates.isPrimary;}
     if (updates.whatsappEnabled !== undefined)
-      existing.whatsappEnabled = updates.whatsappEnabled;
+      {existing.whatsappEnabled = updates.whatsappEnabled;}
     if (updates.telegramEnabled !== undefined)
-      existing.telegramEnabled = updates.telegramEnabled;
+      {existing.telegramEnabled = updates.telegramEnabled;}
     if (updates.emailEnabled !== undefined)
-      existing.emailEnabled = updates.emailEnabled;
-    if (updates.email !== undefined) existing.email = updates.email;
+      {existing.emailEnabled = updates.emailEnabled;}
+    if (updates.email !== undefined) {existing.email = updates.email;}
     if (updates.notifyOnTrip !== undefined)
-      existing.notifyOnTrip = updates.notifyOnTrip;
+      {existing.notifyOnTrip = updates.notifyOnTrip;}
 
     return existing;
   }

@@ -33,6 +33,7 @@ export interface UserTraits {
   [key: string]: unknown;
 }
 
+// eslint-disable-next-line @typescript-eslint/naming-convention -- public name kept: the deferred driver services (quarantined) still import IAnalyticsService
 export interface IAnalyticsService {
   track(
     event: string,
@@ -340,11 +341,15 @@ export const analyticsService = new AnalyticsServiceImpl();
 
 // Export interface adapter for driver services
 export const analyticsAdapter: IAnalyticsService = {
-  track: async (event, properties, userId) =>
-    analyticsService.track(event, properties, userId),
-  identify: async (userId, traits) => analyticsService.identify(userId, traits),
-  group: async (userId, groupId, traits) =>
-    analyticsService.group(userId, groupId, traits),
+  track: async (event, properties, userId) => {
+    await analyticsService.track(event, properties, userId);
+  },
+  identify: async (userId, traits) => {
+    await analyticsService.identify(userId, traits);
+  },
+  group: async (userId, groupId, traits) => {
+    await analyticsService.group(userId, groupId, traits);
+  },
 };
 
 export default analyticsService;

@@ -16,14 +16,14 @@ import {
 } from "./ai/embedding-provider";
 import { createHttpModelProvider } from "./ai/model-provider";
 import { createRetriever } from "./ai/rag";
+import { prisma } from "./lib/prisma";
+import { DEFAULT_LIMITS, type AskDeps } from "./ops/context";
 import { createFlagProvider } from "./ops/flags";
 import { createHttpGrantPort } from "./ports/grant-port";
 import { createHttpPromotionsPort } from "./ports/promotions-port";
 import { createHttpRidePort } from "./ports/ride-port";
 import { createHttpSupportPort } from "./ports/support-port";
 import { createHttpTravelPort } from "./ports/travel-port";
-import { prisma } from "./lib/prisma";
-import { DEFAULT_LIMITS, type AskDeps } from "./ops/context";
 
 import type { AskDb } from "./ops/types";
 

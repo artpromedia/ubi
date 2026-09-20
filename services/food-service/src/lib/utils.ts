@@ -277,7 +277,7 @@ export async function retry<T>(
     }
   }
 
-  throw lastError;
+  throw lastError ?? new Error("operation failed after retries without capturing an error");
 }
 
 /**

@@ -30,13 +30,15 @@
  */
 
 import {
-  Currency,
+  type Currency,
   PaymentProvider,
   PaymentStatus,
-  Prisma,
+  type Prisma,
 } from "@prisma/client";
 import { nanoid } from "nanoid";
+
 import { momoLogger } from "../lib/logger.js";
+
 import type { ExtendedPrismaClient } from "../lib/prisma";
 
 export interface MoMoConfig {

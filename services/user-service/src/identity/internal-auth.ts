@@ -10,8 +10,9 @@
  * The gateway strips `x-service-key` and every `x-internal-*` header from
  * client requests, so these credentials cannot be presented from the internet.
  */
-import { ContractError } from "@ubi/contracts";
 import { createHmac, timingSafeEqual } from "node:crypto";
+
+import { ContractError } from "@ubi/contracts";
 
 export const TELCO_SIGNATURE_HEADER = "x-telco-signature";
 export const SERVICE_KEY_HEADER = "x-service-key";
@@ -19,7 +20,7 @@ export const SERVICE_KEY_HEADER = "x-service-key";
 function equal(a: string, b: string): boolean {
   const left = Buffer.from(a, "utf8");
   const right = Buffer.from(b, "utf8");
-  if (left.length !== right.length) return false;
+  if (left.length !== right.length) {return false;}
   return timingSafeEqual(left, right);
 }
 
@@ -69,6 +70,6 @@ export function requireReviewerRole(role: string): void {
     normalised === "agent" ||
     normalised === "super_admin"
   )
-    return;
+    {return;}
   throw new ContractError("forbidden", "Only a reviewer can decide this");
 }

@@ -3,19 +3,21 @@
  */
 
 import admin from "firebase-admin";
+
+import { pushLogger } from "../lib/logger.js";
+import { NotificationPriority } from "../types";
+
 import type {
   Message,
   MulticastMessage,
   TopicMessage,
 } from "firebase-admin/messaging";
-import { pushLogger } from "../lib/logger.js";
-import { NotificationPriority } from "../types";
 
 // Initialize Firebase Admin
 let app: admin.app.App | null = null;
 
 function getApp(): admin.app.App {
-  if (app) return app;
+  if (app) {return app;}
 
   const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
 

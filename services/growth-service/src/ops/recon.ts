@@ -8,10 +8,11 @@
  * version's unexplained ≠ 0 — the same rule the finance ledger recon uses
  * (`recon_unexplained`).
  */
+import { assertPermission } from "./roles";
+
 import type { GrowthDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
 
-import { assertPermission } from "./roles";
 
 export async function reconForDate(
   deps: GrowthDeps,

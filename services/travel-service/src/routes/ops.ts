@@ -4,7 +4,7 @@
  * role (a traveller role is refused). The commercial-rates and settlement routes
  * are the config/recon surface behind the launch comparison harness.
  */
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { z } from "zod";
 
 import {
@@ -15,22 +15,21 @@ import {
   gatewayAuth,
 } from "../middleware";
 import { parseBody } from "./parse";
-import { isOpsRole } from "../ops/roles";
+import {
+  listCommercialRates,
+  upsertCommercialRate,
+} from "../ops/commercial-rates";
 import {
   applyExceptionAction,
   EXCEPTION_ACTIONS,
   listExceptions,
   providersHealth,
 } from "../ops/ops-travel";
-import {
-  listCommercialRates,
-  upsertCommercialRate,
-} from "../ops/commercial-rates";
 import { recordSettlement } from "../ops/reconcile";
+import { isOpsRole } from "../ops/roles";
 
 import type { TravelDeps } from "../ops/context";
 import type { JsonRecord } from "../ops/types";
-import type { Context, Next } from "hono";
 
 async function opsOnly(c: Context, next: Next): Promise<void | Response> {
   const actor = c.get("actor");

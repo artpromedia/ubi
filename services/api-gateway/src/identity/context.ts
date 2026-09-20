@@ -16,8 +16,9 @@
  * key can be rotated without a flag day; the `kid` header says which key signed
  * a given context.
  */
-import { ContractError } from "@ubi/contracts";
 import * as jose from "jose";
+
+import { ContractError } from "@ubi/contracts";
 
 import {
   type IdentityMode,
@@ -103,7 +104,7 @@ export async function signIdentityContext(
   const { kid, key } = currentSigningKey();
   const now = Math.floor(Date.now() / 1000);
 
-  return new jose.SignJWT({
+  const signed = await new jose.SignJWT({
     role: context.role,
     scp: [...context.scopes],
     mod: [...context.modes],
@@ -120,6 +121,7 @@ export async function signIdentityContext(
     .setIssuedAt(now)
     .setExpirationTime(now + ttlSeconds)
     .sign(key);
+  return signed;
 }
 
 function stringOrNull(value: unknown): string | null {
@@ -152,7 +154,7 @@ export async function verifyIdentityContext(
       const userId = stringOrNull(payload.sub);
       const role = stringOrNull(payload.role);
       const requestId = stringOrNull(payload.rid);
-      if (userId === null || role === null || requestId === null) break;
+      if (userId === null || role === null || requestId === null) {break;}
 
       return {
         userId,

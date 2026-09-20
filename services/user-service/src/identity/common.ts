@@ -3,9 +3,9 @@
  * and a monotonic revision for aggregates that carry no version column of their
  * own.
  */
+import type { Tx } from "./audit";
 import type { ActorType } from "@ubi/contracts";
 
-import type { Tx } from "./audit";
 
 /**
  * Maps a UBI user role onto the closed `ActorType` set from
@@ -46,5 +46,6 @@ export async function auditRevision(
   subjectType: string,
   subjectId: string,
 ): Promise<number> {
-  return tx.auditLog.count({ where: { subjectType, subjectId } });
+  const revisions = await tx.auditLog.count({ where: { subjectType, subjectId } });
+  return revisions;
 }

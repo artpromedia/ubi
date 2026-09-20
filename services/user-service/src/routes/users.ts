@@ -4,9 +4,11 @@
  * Handles user profile management and queries.
  */
 
-import { ErrorCodes, UbiError } from "@ubi/utils";
 import { Hono } from "hono";
 import { z } from "zod";
+
+import { ErrorCodes, UbiError } from "@ubi/utils";
+
 import { prisma } from "../lib/prisma";
 
 const userRoutes = new Hono();
@@ -79,7 +81,7 @@ userRoutes.get("/me", async (c) => {
   }
 
   // Remove sensitive fields
-  const { passwordHash, ...safeUser } = user;
+  const { passwordHash: _passwordHash, ...safeUser } = user;
 
   return c.json({
     success: true,
@@ -196,7 +198,7 @@ userRoutes.get("/:id", async (c) => {
     throw new UbiError(ErrorCodes.USER_NOT_FOUND, "User not found");
   }
 
-  const { passwordHash, ...safeUser } = user;
+  const { passwordHash: _passwordHash, ...safeUser } = user;
 
   return c.json({
     success: true,
@@ -223,8 +225,8 @@ userRoutes.get("/", async (c) => {
 
   const where: Record<string, unknown> = {};
 
-  if (role) where.role = role;
-  if (status) where.status = status;
+  if (role) {where.role = role;}
+  if (status) {where.status = status;}
   if (search) {
     where.OR = [
       { firstName: { contains: search, mode: "insensitive" } },

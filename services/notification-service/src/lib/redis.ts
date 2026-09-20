@@ -3,6 +3,7 @@
  */
 
 import Redis from "ioredis";
+
 import { redisLogger } from "./logger.js";
 
 // Create Redis clients
@@ -48,7 +49,7 @@ export const cache = {
    */
   async get<T>(key: string): Promise<T | null> {
     const value = await redis.get(key);
-    if (!value) return null;
+    if (!value) {return null;}
 
     try {
       return JSON.parse(value) as T;
@@ -87,7 +88,7 @@ export const cache = {
     ttlSeconds: number,
   ): Promise<T> {
     const cached = await this.get<T>(key);
-    if (cached !== null) return cached;
+    if (cached !== null) {return cached;}
 
     const value = await fn();
     await this.set(key, value, ttlSeconds);
@@ -98,7 +99,8 @@ export const cache = {
    * Increment counter
    */
   async increment(key: string, by = 1): Promise<number> {
-    return redis.incrby(key, by);
+    const value = await redis.incrby(key, by);
+    return value;
   },
 
   /**
@@ -149,7 +151,8 @@ export async function publishEvent(
   data: unknown,
 ): Promise<number> {
   const message = JSON.stringify({ event, data, timestamp: Date.now() });
-  return redis.publish("notifications", message);
+  const receivers = await redis.publish("notifications", message);
+  return receivers;
 }
 
 // Handle incoming messages
@@ -161,7 +164,7 @@ subscriber.on("message", (_channel, message) => {
     if (eventHandlers) {
       eventHandlers.forEach((handler) => {
         try {
-          handler(data);
+          void handler(data);
         } catch (error) {
           redisLogger.error({ err: error, event }, "Error in event handler");
         }
@@ -274,7 +277,8 @@ export const otpStore = {
    */
   async get(identifier: string): Promise<string | null> {
     const key = `otp:${identifier}`;
-    return redis.get(key);
+    const otp = await redis.get(key);
+    return otp;
   },
 
   /**

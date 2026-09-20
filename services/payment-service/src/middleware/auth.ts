@@ -4,7 +4,7 @@
  * Extracts user information from API Gateway headers
  */
 
-import { Context, Next } from "hono";
+import type { Context, Next } from "hono";
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -44,9 +44,9 @@ export async function serviceAuth(
 
   // Set context variables
   c.set("userId", userId);
-  if (userEmail) c.set("userEmail", userEmail);
-  if (userRole) c.set("userRole", userRole);
-  if (sessionId) c.set("sessionId", sessionId);
+  if (userEmail) {c.set("userEmail", userEmail);}
+  if (userRole) {c.set("userRole", userRole);}
+  if (sessionId) {c.set("sessionId", sessionId);}
 
   await next();
 }
@@ -63,9 +63,9 @@ export async function optionalAuth(c: Context, next: Next) {
 
   if (userId) {
     c.set("userId", userId);
-    if (userEmail) c.set("userEmail", userEmail);
-    if (userRole) c.set("userRole", userRole);
-    if (sessionId) c.set("sessionId", sessionId);
+    if (userEmail) {c.set("userEmail", userEmail);}
+    if (userRole) {c.set("userRole", userRole);}
+    if (sessionId) {c.set("sessionId", sessionId);}
   }
 
   await next();

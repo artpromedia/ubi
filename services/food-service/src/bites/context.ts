@@ -6,8 +6,8 @@
  * payment service — with no mock layer anywhere in `src/`.
  */
 import type { CityConfigProvider } from "./city-config.js";
-import type { PaymentPort } from "./payment-port.js";
 import type { BitesDb } from "./lib/types.js";
+import type { PaymentPort } from "./payment-port.js";
 
 export interface BitesDeps {
   readonly db: BitesDb;

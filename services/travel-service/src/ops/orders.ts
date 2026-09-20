@@ -169,9 +169,9 @@ function jsonRefs(value: unknown): {
     orderRef?: string;
     ticketNumbers?: string[];
   } = {};
-  if (typeof record.pnr === "string") refs.pnr = record.pnr;
-  if (typeof record.bookingRef === "string") refs.bookingRef = record.bookingRef;
-  if (typeof record.orderRef === "string") refs.orderRef = record.orderRef;
+  if (typeof record.pnr === "string") {refs.pnr = record.pnr;}
+  if (typeof record.bookingRef === "string") {refs.bookingRef = record.bookingRef;}
+  if (typeof record.orderRef === "string") {refs.orderRef = record.orderRef;}
   if (Array.isArray(record.ticketNumbers)) {
     refs.ticketNumbers = record.ticketNumbers.filter(
       (entry): entry is string => typeof entry === "string",

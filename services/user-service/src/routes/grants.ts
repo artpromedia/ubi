@@ -20,7 +20,6 @@ import {
   MintGrantSchema,
 } from "../grants/grants";
 import { requireInternalService, SERVICE_KEY_HEADER } from "../grants/service-auth";
-import type { AiActionDeps } from "../grants/types";
 import {
   contractRoute,
   ok,
@@ -29,6 +28,8 @@ import {
 } from "../identity/http";
 import { runMandate } from "../mandates/run";
 import { MandateRunSchema } from "../mandates/schemas";
+
+import type { AiActionDeps } from "../grants/types";
 
 export function createGrantRoutes(deps: AiActionDeps): Hono {
   const routes = new Hono();

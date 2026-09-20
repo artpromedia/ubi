@@ -73,7 +73,8 @@ export async function orderEventCount(
   tx: TravelTx,
   orderId: string,
 ): Promise<number> {
-  return tx.travelOrderEvent.count({ where: { orderId } });
+  const count = await tx.travelOrderEvent.count({ where: { orderId } });
+  return count;
 }
 
 export interface AdvanceInput {
@@ -138,10 +139,10 @@ export async function advanceOrder(
   if (input.supplierRefs !== undefined) {
     data.supplierRefs = toJson({ ...input.supplierRefs });
   }
-  if (input.heldMinor !== undefined) data.heldMinor = BigInt(input.heldMinor);
-  if (input.chargedMinor !== undefined) data.chargedMinor = BigInt(input.chargedMinor);
-  if (input.releasedMinor !== undefined) data.releasedMinor = BigInt(input.releasedMinor);
-  if (input.protectionRuleId !== undefined) data.protectionRuleId = input.protectionRuleId;
+  if (input.heldMinor !== undefined) {data.heldMinor = BigInt(input.heldMinor);}
+  if (input.chargedMinor !== undefined) {data.chargedMinor = BigInt(input.chargedMinor);}
+  if (input.releasedMinor !== undefined) {data.releasedMinor = BigInt(input.releasedMinor);}
+  if (input.protectionRuleId !== undefined) {data.protectionRuleId = input.protectionRuleId;}
 
   const updated = await tx.travelOrder.update({
     where: { id: input.order.id },
@@ -237,7 +238,7 @@ export function buildLadder(order: OrderRow): LadderStep[] {
         ? { step, state: "done" }
         : { step, state: "skipped", detail: "released — the booking was not taken" };
     }
-    if (index < current) return { step, state: "done" };
+    if (index < current) {return { step, state: "done" };}
     if (index === current) {
       if (reconciling) {
         return {

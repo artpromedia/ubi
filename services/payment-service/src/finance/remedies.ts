@@ -10,18 +10,18 @@
  * references the case, so the original ride, order or transfer stays exactly as
  * it was posted and the correction is visible beside it.
  */
-import { ContractError, IDEMPOTENCY_HEADER, money } from "@ubi/contracts";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
+
+import { ContractError, IDEMPOTENCY_HEADER, money } from "@ubi/contracts";
 
 import { postEntry } from "../ledger/post-entry";
 import { ensureWallet, type WalletOwnerType } from "../ledger/wallets";
 import { logger } from "../lib/logger";
 import { internalServiceAuth } from "../middleware";
 
-import type { WalletDeps } from "../ledger/context";
 import type { LedgerAccount } from "../ledger/accounts";
-import type { Context } from "hono";
+import type { WalletDeps } from "../ledger/context";
 
 /**
  * The typed remedies, and the account each one draws from.

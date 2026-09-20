@@ -14,20 +14,21 @@
  * committed values, so the period cap and run count can never be exceeded no
  * matter how many runs fire at once.
  */
-import type { ActionGrant, Mandate, MandateExecution, Prisma } from "@prisma/client";
-import { ContractError } from "@ubi/contracts";
 import { randomBytes } from "node:crypto";
 
-import type { Tx } from "../identity/audit";
-import { writeAudit } from "../identity/audit";
-import { insertGrant } from "../grants/grants";
-import { newId } from "../identity/ids";
-import { eventIdempotencyKey, writeOutboxEvent } from "../identity/outbox";
-import type { AiActionDeps } from "../grants/types";
+import { ContractError } from "@ubi/contracts";
+
 import { currentPeriodStart } from "./mandates";
 import { isMandateAction, type MandateRunInput } from "./schemas";
 import { isoDate, runResultView, type RunResultView } from "./serialize";
 import { guardTransition } from "./transition";
+import { insertGrant } from "../grants/grants";
+import { writeAudit ,type  Tx } from "../identity/audit";
+import { newId } from "../identity/ids";
+import { eventIdempotencyKey, writeOutboxEvent } from "../identity/outbox";
+
+import type { AiActionDeps } from "../grants/types";
+import type { ActionGrant, Mandate, MandateExecution, Prisma } from "@prisma/client";
 
 const DEFAULT_GRANT_TTL_SECONDS = 900;
 
@@ -47,7 +48,7 @@ interface Constraint {
 }
 
 function readConstraints(value: Prisma.JsonValue): Constraint[] {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value)) {return [];}
   const out: Constraint[] = [];
   for (const entry of value) {
     if (
@@ -88,10 +89,10 @@ function preReserveBlock(
   mandate: Mandate,
   input: MandateRunInput,
 ): BlockReason | null {
-  if (mandate.status === "paused") return "mandate_paused";
-  if (mandate.status === "revoked") return "mandate_revoked";
-  if (mandate.status === "expired") return "mandate_expired";
-  if (!isMandateAction(mandate.action)) return "action_not_allowed";
+  if (mandate.status === "paused") {return "mandate_paused";}
+  if (mandate.status === "revoked") {return "mandate_revoked";}
+  if (mandate.status === "expired") {return "mandate_expired";}
+  if (!isMandateAction(mandate.action)) {return "action_not_allowed";}
 
   if (input.price.amountMinor > Number(mandate.perRunCapMinor)) {
     return "price_above_cap";
@@ -399,7 +400,7 @@ async function mintRunGrant(
       ? new Date(input.grantExpiresAt)
       : new Date(now.getTime() + grantTtlSeconds() * 1000);
 
-  return insertGrant(
+  const grant = await insertGrant(
     tx,
     {
       actorId: mandate.userId,
@@ -416,6 +417,7 @@ async function mintRunGrant(
     },
     { actorId: triggeredBy, cityId: null },
   );
+  return grant;
 }
 
 async function recordExecuted(

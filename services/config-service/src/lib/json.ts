@@ -17,12 +17,12 @@ export function canonicalJson(value: unknown): string {
 }
 
 function canonicalise(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalise);
+  if (Array.isArray(value)) {return value.map(canonicalise);}
   if (isPlainObject(value)) {
     const out: JsonObject = {};
     for (const key of Object.keys(value).sort()) {
       const entry = value[key];
-      if (entry === undefined) continue;
+      if (entry === undefined) {continue;}
       out[key] = canonicalise(entry);
     }
     return out;
@@ -71,7 +71,7 @@ export function applyPatch(base: JsonObject, patch: JsonObject): JsonObject {
       delete out[key];
       continue;
     }
-    if (value === undefined) continue;
+    if (value === undefined) {continue;}
     const current = out[key];
     if (isPlainObject(value)) {
       out[key] = applyPatch(isPlainObject(current) ? current : {}, value);
