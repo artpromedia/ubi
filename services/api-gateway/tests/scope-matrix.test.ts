@@ -378,6 +378,29 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       ).toBe(200);
     });
 
+    it("keeps rider funding authorization away from user tokens too", async () => {
+      for (const role of ["rider", "driver"]) {
+        const result = await call(
+          "full",
+          "POST",
+          "/v1/wallet/mp/funding/authorize",
+          role,
+        );
+        expect(result.status).toBe(403);
+        expect(result.code).toBe("forbidden");
+      }
+      expect(
+        (
+          await call(
+            "full",
+            "POST",
+            "/v1/wallet/mp/funding/authorize",
+            "admin",
+          )
+        ).status,
+      ).toBe(200);
+    });
+
     it("never reaches the marketplace upstream when a limited-mode bid is denied", async () => {
       upstream.received.length = 0;
       const result = await call("limited", "POST", "/v1/mp/bids", "driver");

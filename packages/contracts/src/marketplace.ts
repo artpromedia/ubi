@@ -202,6 +202,12 @@ export const MpOfferSchema = z.object({
   withdrawn: z.boolean(),
   /** Disclosed criteria when the server recommends this offer; never sponsored. */
   whyRecommended: z.string().nullable(),
+  /** Server-computed rider-side booking fee, when the market charges one. */
+  bookingFeeMinor: MoneySchema.nullable().optional(),
+  /** Server-computed total the rider pays for this offer. */
+  totalMinor: MoneySchema.nullable().optional(),
+  /** Server-phrased comparison to the requested amount (e.g. "+₦200"). */
+  deltaLabel: z.string().nullable().optional(),
 });
 export type MpOffer = z.infer<typeof MpOfferSchema>;
 
@@ -296,6 +302,9 @@ export const MpWalletHoldSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
   releasedAt: z.string().datetime({ offset: true }).nullable(),
   capturedAt: z.string().datetime({ offset: true }).nullable(),
+  /** The request the funded bid belongs to and, once selected, its award. */
+  requestRef: z.string().nullable().optional(),
+  awardRef: z.string().nullable().optional(),
 });
 export type MpWalletHold = z.infer<typeof MpWalletHoldSchema>;
 
@@ -341,6 +350,8 @@ export const MpAwardSchema = z.object({
     .nullable(),
   createdAt: z.string().datetime({ offset: true }),
   resolvedAt: z.string().datetime({ offset: true }).nullable(),
+  /** Human-phrased reason on award.failed; the request reopened if still valid. */
+  failReason: z.string().nullable().optional(),
 });
 export type MpAward = z.infer<typeof MpAwardSchema>;
 

@@ -18,6 +18,7 @@ import {
 
 import {
   adjustHold,
+  authorizeMarketplaceFunding,
   captureHold,
   getMpWalletOverview,
   releaseHold,
@@ -54,6 +55,20 @@ const CaptureBody = z.object({ awardId: z.string().min(1) });
 const ReverseBody = z.object({
   awardId: z.string().min(1),
   reason: z.string().min(1).max(280),
+});
+
+/**
+ * Matches ride-service's FundingRequest wire shape (marketplace/funding.go):
+ * a bare integer amount, not a Money object.
+ */
+const FundingBody = z.object({
+  requesterId: z.string().min(1),
+  requestId: z.string().min(1),
+  awardId: z.string().min(1),
+  paymentMethodId: z.string().min(1),
+  amountMinor: z.number().int().positive(),
+  currency: z.string().min(3).max(3),
+  cityId: z.string().min(1),
 });
 
 function idempotencyKeyOf(c: Context): string {
@@ -122,6 +137,21 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
   });
 
   routes.use("/holds/*", internalServiceAuth);
+  routes.use("/funding/*", internalServiceAuth);
+
+  // Award saga step 3 (M05): rider funding must cover the SELECTED amount.
+  // Nothing is debited; see src/ledger/mp-funding.ts for the semantics. The
+  // Idempotency-Key (the award id) is required for parity with every other
+  // mutation here, though the check is re-evaluated on purpose.
+  routes.post("/funding/authorize", async (c) => {
+    try {
+      idempotencyKeyOf(c);
+      const body = await parse(c, FundingBody);
+      return c.json(await authorizeMarketplaceFunding(deps, body), 200);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
 
   routes.post("/holds/reserve", async (c) => {
     try {

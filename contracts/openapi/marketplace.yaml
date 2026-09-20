@@ -276,6 +276,21 @@ components:
                 type: string,
                 description: "Disclosed recommendation criteria. Never sponsored, never auto-selecting.",
               },
+            bookingFeeMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Server-computed rider-side booking fee, when the market charges one.",
+              },
+            totalMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Server-computed total the rider pays for this offer.",
+              },
+            deltaLabel:
+              {
+                type: string,
+                description: "Server-phrased comparison to the requested amount (e.g. \"+₦200\").",
+              },
           },
       }
     Bid:
@@ -461,6 +476,11 @@ components:
               },
             createdAt: { type: string, format: date-time },
             resolvedAt: { type: string, format: date-time },
+            failReason:
+              {
+                type: string,
+                description: "Human-phrased reason on award.failed; the request reopened if still valid.",
+              },
           },
       }
     FeedItem:
@@ -1090,6 +1110,89 @@ paths:
                       hold: { $ref: "#/components/schemas/WalletHold" },
                       receiptId: { type: string },
                       journalEntryId: { type: string },
+                    },
+                }
+  /v1/wallet/mp/funding/authorize:
+    post:
+      summary: Rider funding authorization for a selection (internal, M05 step 3)
+      description: "Service-authenticated. Verifies the SELECTED amount is payable with the request's stored payment method: wallet methods require spendable (balance minus active holds) to cover the fare on a non-locked, non-safe-mode wallet; other configured methods pass on availability. Nothing is debited — settlement stays at completion — and the check is deliberately re-evaluated per call rather than cached. 2xx = authorized; 4xx carries a canonical error code (insufficient_funds with the exact shortfall, payment_method_unavailable, wallet_locked); 5xx is an unknown outcome the award saga keeps pending."
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [requesterId, requestId, awardId, paymentMethodId, amountMinor, currency, cityId],
+                properties:
+                  {
+                    requesterId: { type: string },
+                    requestId: { type: string },
+                    awardId: { type: string },
+                    paymentMethodId: { type: string },
+                    amountMinor: { type: integer, description: "Bare integer minor units (matches ride-service's FundingRequest wire shape)." },
+                    currency: { type: string },
+                    cityId: { type: string },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [authorized, awardId, paymentMethodId],
+                  properties:
+                    {
+                      authorized: { type: boolean, const: true },
+                      awardId: { type: string },
+                      paymentMethodId: { type: string },
+                    },
+                }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/webhooks/marketplace-assign:
+    post:
+      summary: Delivery execution hand-off (internal, marketplace engine → delivery-service)
+      description: "Service-authenticated adapter per ADR-0002. Idempotent on awardId: creates the delivery already DRIVER_ASSIGNED with the award id, agreed fare (authoritative in minor units in the marketplace/ledger) and fencing token carried in the package metadata; a replay returns the existing delivery. Marketplace-managed deliveries are refused by the legacy first-come AcceptDelivery path."
+      security: [{ serviceKey: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, requestId, driverId, customerId, fareMinor, currency, pickup, dropoff, fencingToken],
+                properties:
+                  {
+                    awardId: { type: string },
+                    requestId: { type: string },
+                    driverId: { type: string },
+                    customerId: { type: string },
+                    fareMinor: { type: integer },
+                    currency: { type: string },
+                    pickup: { $ref: "#/components/schemas/Area" },
+                    dropoff: { $ref: "#/components/schemas/Area" },
+                    packageDetails: { $ref: "#/components/schemas/DeliveryDetails" },
+                    fencingToken: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [deliveryId, awardId],
+                  properties:
+                    {
+                      deliveryId: { type: string },
+                      awardId: { type: string },
                     },
                 }
   /v1/wallet/mp/holds/{reservationId}/reverse:

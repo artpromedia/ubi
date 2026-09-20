@@ -283,6 +283,8 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   // GET /v1/wallet → wallet:read family rule above.
   { methods: "*", prefix: "/v1/wallet/mp/holds", anyOf: ["admin:all"] },
   { methods: "*", prefix: "/v1/wallets/mp/holds", anyOf: ["admin:all"] },
+  { methods: "*", prefix: "/v1/wallet/mp/funding", anyOf: ["admin:all"] },
+  { methods: "*", prefix: "/v1/wallets/mp/funding", anyOf: ["admin:all"] },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
   { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },
   { methods: ["POST"], prefix: "/v1/packages", anyOf: ["shipment:create"] },
