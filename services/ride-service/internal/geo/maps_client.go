@@ -80,7 +80,7 @@ type AutocompleteResponse struct {
 // Autocomplete performs Places Autocomplete search
 func (c *MapsClient) Autocomplete(ctx context.Context, req AutocompleteRequest) (*AutocompleteResponse, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("Google Maps API key not configured")
+		return nil, fmt.Errorf("google maps API key not configured")
 	}
 
 	params := url.Values{
@@ -126,7 +126,7 @@ func (c *MapsClient) Autocomplete(ctx context.Context, req AutocompleteRequest) 
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -173,11 +173,11 @@ type GeocodeRequest struct {
 
 // GeocodeResult represents a geocoding result
 type GeocodeResult struct {
-	PlaceID          string            `json:"place_id"`
-	FormattedAddress string            `json:"formatted_address"`
-	Geometry         GeocodeGeometry   `json:"geometry"`
+	PlaceID           string             `json:"place_id"`
+	FormattedAddress  string             `json:"formatted_address"`
+	Geometry          GeocodeGeometry    `json:"geometry"`
 	AddressComponents []AddressComponent `json:"address_components"`
-	Types            []string          `json:"types"`
+	Types             []string           `json:"types"`
 }
 
 // GeocodeGeometry contains location data
@@ -207,7 +207,7 @@ type GeocodeResponse struct {
 // Geocode converts an address to coordinates
 func (c *MapsClient) Geocode(ctx context.Context, req GeocodeRequest) (*GeocodeResponse, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("Google Maps API key not configured")
+		return nil, fmt.Errorf("google maps API key not configured")
 	}
 
 	params := url.Values{
@@ -237,7 +237,7 @@ func (c *MapsClient) Geocode(ctx context.Context, req GeocodeRequest) (*GeocodeR
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -271,7 +271,7 @@ type ReverseGeocodeRequest struct {
 // ReverseGeocode converts coordinates to an address
 func (c *MapsClient) ReverseGeocode(ctx context.Context, req ReverseGeocodeRequest) (*GeocodeResponse, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("Google Maps API key not configured")
+		return nil, fmt.Errorf("google maps API key not configured")
 	}
 
 	params := url.Values{
@@ -298,7 +298,7 @@ func (c *MapsClient) ReverseGeocode(ctx context.Context, req ReverseGeocodeReque
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -336,7 +336,7 @@ type DirectionsRequest struct {
 
 // DirectionsRoute represents a route in the directions response
 type DirectionsRoute struct {
-	Summary          string         `json:"summary"`
+	Summary          string          `json:"summary"`
 	Legs             []DirectionsLeg `json:"legs"`
 	OverviewPolyline struct {
 		Points string `json:"points"`
@@ -362,10 +362,10 @@ type DirectionsLeg struct {
 		Value int    `json:"value"` // seconds
 		Text  string `json:"text"`
 	} `json:"duration_in_traffic"`
-	StartLocation Coordinate `json:"start_location"`
-	EndLocation   Coordinate `json:"end_location"`
-	StartAddress  string     `json:"start_address"`
-	EndAddress    string     `json:"end_address"`
+	StartLocation Coordinate       `json:"start_location"`
+	EndLocation   Coordinate       `json:"end_location"`
+	StartAddress  string           `json:"start_address"`
+	EndAddress    string           `json:"end_address"`
 	Steps         []DirectionsStep `json:"steps"`
 }
 
@@ -398,7 +398,7 @@ type DirectionsResponse struct {
 // GetDirections fetches driving directions between two points
 func (c *MapsClient) GetDirections(ctx context.Context, req DirectionsRequest) (*DirectionsResponse, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("Google Maps API key not configured")
+		return nil, fmt.Errorf("google maps API key not configured")
 	}
 
 	params := url.Values{
@@ -449,7 +449,7 @@ func (c *MapsClient) GetDirections(ctx context.Context, req DirectionsRequest) (
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -481,15 +481,15 @@ type PlaceDetailsRequest struct {
 
 // PlaceDetails represents detailed place information
 type PlaceDetails struct {
-	PlaceID          string            `json:"place_id"`
-	Name             string            `json:"name"`
-	FormattedAddress string            `json:"formatted_address"`
-	Geometry         GeocodeGeometry   `json:"geometry"`
+	PlaceID           string             `json:"place_id"`
+	Name              string             `json:"name"`
+	FormattedAddress  string             `json:"formatted_address"`
+	Geometry          GeocodeGeometry    `json:"geometry"`
 	AddressComponents []AddressComponent `json:"address_components"`
-	FormattedPhone   string            `json:"formatted_phone_number"`
-	Website          string            `json:"website"`
-	URL              string            `json:"url"` // Google Maps URL
-	Types            []string          `json:"types"`
+	FormattedPhone    string             `json:"formatted_phone_number"`
+	Website           string             `json:"website"`
+	URL               string             `json:"url"` // Google Maps URL
+	Types             []string           `json:"types"`
 }
 
 // PlaceDetailsResponse represents the place details API response
@@ -502,7 +502,7 @@ type PlaceDetailsResponse struct {
 // GetPlaceDetails fetches detailed information about a place
 func (c *MapsClient) GetPlaceDetails(ctx context.Context, req PlaceDetailsRequest) (*PlaceDetailsResponse, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("Google Maps API key not configured")
+		return nil, fmt.Errorf("google maps API key not configured")
 	}
 
 	params := url.Values{
@@ -532,7 +532,7 @@ func (c *MapsClient) GetPlaceDetails(ctx context.Context, req PlaceDetailsReques
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -599,7 +599,7 @@ type DistanceMatrixResponse struct {
 // GetDistanceMatrix calculates distances and durations between multiple origins and destinations
 func (c *MapsClient) GetDistanceMatrix(ctx context.Context, req DistanceMatrixRequest) (*DistanceMatrixResponse, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("Google Maps API key not configured")
+		return nil, fmt.Errorf("google maps API key not configured")
 	}
 
 	// Build origins string
@@ -657,7 +657,7 @@ func (c *MapsClient) GetDistanceMatrix(ctx context.Context, req DistanceMatrixRe
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

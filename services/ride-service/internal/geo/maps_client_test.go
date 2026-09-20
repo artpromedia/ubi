@@ -28,16 +28,16 @@ func TestMapsClient_Autocomplete(t *testing.T) {
 			Status: "OK",
 			Predictions: []AutocompletePrediction{
 				{
-					PlaceID:     "ChIJN1t_tDeuEmsRUsoyG83frY4",
-					Description: "Murtala Muhammed International Airport, Lagos, Nigeria",
-					MainText:    "Murtala Muhammed International Airport",
+					PlaceID:       "ChIJN1t_tDeuEmsRUsoyG83frY4",
+					Description:   "Murtala Muhammed International Airport, Lagos, Nigeria",
+					MainText:      "Murtala Muhammed International Airport",
 					SecondaryText: "Lagos, Nigeria",
 				},
 			},
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -93,7 +93,7 @@ func TestMapsClient_Geocode(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -147,7 +147,7 @@ func TestMapsClient_ReverseGeocode(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -207,7 +207,7 @@ func TestMapsClient_GetDirections(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -286,7 +286,7 @@ func TestMapsClient_APIError(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 

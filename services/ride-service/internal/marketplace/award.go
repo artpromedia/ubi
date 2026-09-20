@@ -667,7 +667,7 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 			service := "ride"
 			update.ExecutionService = &service
 			update.ExecutionID = &ride.ID
-			if claim, err = s.deps.Store.TransitionClaim(ctx, tx, claim, machine.MpClaimCurrent, ClaimUpdate{
+			if _, err = s.deps.Store.TransitionClaim(ctx, tx, claim, machine.MpClaimCurrent, ClaimUpdate{
 				ExecutionService: &service,
 				ExecutionID:      &ride.ID,
 			}); err != nil {
@@ -680,7 +680,7 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 				return err
 			}
 		} else {
-			if claim, err = s.deps.Store.TransitionClaim(ctx, tx, claim, machine.MpClaimNext, ClaimUpdate{}); err != nil {
+			if _, err = s.deps.Store.TransitionClaim(ctx, tx, claim, machine.MpClaimNext, ClaimUpdate{}); err != nil {
 				return err
 			}
 			if lockedRequest, err = s.deps.Store.TransitionRequest(ctx, tx, lockedRequest, machine.MpRequestAwarded, RequestUpdate{}); err != nil {

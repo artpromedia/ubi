@@ -169,7 +169,7 @@ func (t *H3TrafficService) AggregateTraffic(cellID string) error {
 	var totalSpeed float64
 	for _, record := range records {
 		var speed float64
-		fmt.Sscanf(record.Member.(string), "%*d:%f", &speed)
+		_, _ = fmt.Sscanf(record.Member.(string), "%*d:%f", &speed)
 		totalSpeed += speed
 	}
 	avgSpeed := totalSpeed / float64(len(records))

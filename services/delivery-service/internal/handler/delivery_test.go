@@ -104,7 +104,7 @@ func (h *DeliveryHandler) CreateDelivery(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *DeliveryHandler) GetDelivery(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +126,7 @@ func (h *DeliveryHandler) GetDelivery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *DeliveryHandler) AcceptDelivery(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +158,7 @@ func (h *DeliveryHandler) AcceptDelivery(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *DeliveryHandler) PickupDelivery(w http.ResponseWriter, r *http.Request) {
@@ -178,12 +178,12 @@ func (h *DeliveryHandler) PickupDelivery(w http.ResponseWriter, r *http.Request)
 	delivery.Status = "picked_up"
 
 	resp := DeliveryResponse{
-		ID:      delivery.ID,
-		Status:  delivery.Status,
+		ID:     delivery.ID,
+		Status: delivery.Status,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *DeliveryHandler) CompleteDelivery(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +208,7 @@ func (h *DeliveryHandler) CompleteDelivery(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *DeliveryHandler) CancelDelivery(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +233,7 @@ func (h *DeliveryHandler) CancelDelivery(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *DeliveryHandler) GetEstimate(w http.ResponseWriter, r *http.Request) {
@@ -245,7 +245,7 @@ func (h *DeliveryHandler) GetEstimate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // ========================================
@@ -279,7 +279,9 @@ func TestCreateDelivery_Success(t *testing.T) {
 	}
 
 	var resp DeliveryResponse
-	json.NewDecoder(rec.Body).Decode(&resp)
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 
 	if resp.ID == "" {
 		t.Error("Expected delivery ID")
@@ -311,7 +313,9 @@ func TestDeliveryLifecycle_HappyPath(t *testing.T) {
 	router.ServeHTTP(rec, httpReq)
 
 	var delivery DeliveryResponse
-	json.NewDecoder(rec.Body).Decode(&delivery)
+	if err := json.NewDecoder(rec.Body).Decode(&delivery); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 	deliveryID := delivery.ID
 
 	// Accept delivery
@@ -325,7 +329,9 @@ func TestDeliveryLifecycle_HappyPath(t *testing.T) {
 		}
 
 		var resp DeliveryResponse
-		json.NewDecoder(rec.Body).Decode(&resp)
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
 		if resp.Status != "accepted" {
 			t.Errorf("Expected status 'accepted', got '%s'", resp.Status)
 		}
@@ -345,7 +351,9 @@ func TestDeliveryLifecycle_HappyPath(t *testing.T) {
 		}
 
 		var resp DeliveryResponse
-		json.NewDecoder(rec.Body).Decode(&resp)
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
 		if resp.Status != "picked_up" {
 			t.Errorf("Expected status 'picked_up', got '%s'", resp.Status)
 		}
@@ -362,7 +370,9 @@ func TestDeliveryLifecycle_HappyPath(t *testing.T) {
 		}
 
 		var resp DeliveryResponse
-		json.NewDecoder(rec.Body).Decode(&resp)
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("Failed to decode response: %v", err)
+		}
 		if resp.Status != "delivered" {
 			t.Errorf("Expected status 'delivered', got '%s'", resp.Status)
 		}
@@ -388,7 +398,9 @@ func TestDelivery_InvalidStatusTransitions(t *testing.T) {
 	router.ServeHTTP(rec, httpReq)
 
 	var delivery DeliveryResponse
-	json.NewDecoder(rec.Body).Decode(&delivery)
+	if err := json.NewDecoder(rec.Body).Decode(&delivery); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 	deliveryID := delivery.ID
 
 	testCases := []struct {
@@ -404,8 +416,8 @@ func TestDelivery_InvalidStatusTransitions(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:       "Cannot complete without pickup",
-			action:     "complete",
+			name:   "Cannot complete without pickup",
+			action: "complete",
 			setup: func() {
 				// Accept first
 				req := httptest.NewRequest(http.MethodPost, "/deliveries/"+deliveryID+"/accept", nil)
@@ -426,7 +438,9 @@ func TestDelivery_InvalidStatusTransitions(t *testing.T) {
 			router.ServeHTTP(createRec, createReq)
 
 			var d DeliveryResponse
-			json.NewDecoder(createRec.Body).Decode(&d)
+			if err := json.NewDecoder(createRec.Body).Decode(&d); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
 
 			tc.setup()
 
@@ -474,7 +488,9 @@ func TestCancelDelivery_Success(t *testing.T) {
 	router.ServeHTTP(rec, httpReq)
 
 	var delivery DeliveryResponse
-	json.NewDecoder(rec.Body).Decode(&delivery)
+	if err := json.NewDecoder(rec.Body).Decode(&delivery); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 
 	// Cancel delivery
 	cancelReq := httptest.NewRequest(http.MethodPost, "/deliveries/"+delivery.ID+"/cancel", nil)
@@ -486,7 +502,9 @@ func TestCancelDelivery_Success(t *testing.T) {
 	}
 
 	var cancelResp DeliveryResponse
-	json.NewDecoder(cancelRec.Body).Decode(&cancelResp)
+	if err := json.NewDecoder(cancelRec.Body).Decode(&cancelResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 	if cancelResp.Status != "cancelled" {
 		t.Errorf("Expected status 'cancelled', got '%s'", cancelResp.Status)
 	}
@@ -506,7 +524,9 @@ func TestGetEstimate(t *testing.T) {
 	}
 
 	var resp DeliveryEstimateResponse
-	json.NewDecoder(rec.Body).Decode(&resp)
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 
 	if resp.DeliveryFee <= 0 {
 		t.Error("Expected positive delivery fee")

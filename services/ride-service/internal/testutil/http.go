@@ -127,7 +127,7 @@ func ParseResponse(t *testing.T, resp *http.Response) *Response {
 	if err != nil {
 		t.Fatalf("Failed to read response body: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	return &Response{
 		Response: resp,
@@ -173,7 +173,7 @@ func NewRequestRecorder() *RequestRecorder {
 func (rr *RequestRecorder) Handler(statusCode int, responseBody interface{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		r.Body.Close()
+		_ = r.Body.Close()
 
 		rr.Requests = append(rr.Requests, &RecordedRequest{
 			Method:  r.Method,
@@ -185,7 +185,7 @@ func (rr *RequestRecorder) Handler(statusCode int, responseBody interface{}) htt
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
 		if responseBody != nil {
-			json.NewEncoder(w).Encode(responseBody)
+			_ = json.NewEncoder(w).Encode(responseBody)
 		}
 	}
 }
@@ -301,8 +301,12 @@ func AssertJSON(t *testing.T, resp *Response, expected interface{}) {
 
 	// Normalize both JSON strings
 	var expectedMap, actualMap interface{}
-	json.Unmarshal(expectedBytes, &expectedMap)
-	json.Unmarshal(resp.Body, &actualMap)
+	if err := json.Unmarshal(expectedBytes, &expectedMap); err != nil {
+		t.Fatalf("Failed to unmarshal expected JSON: %v", err)
+	}
+	if err := json.Unmarshal(resp.Body, &actualMap); err != nil {
+		t.Fatalf("Failed to unmarshal actual JSON: %v", err)
+	}
 
 	expectedNorm, _ := json.Marshal(expectedMap)
 	actualNorm, _ := json.Marshal(actualMap)

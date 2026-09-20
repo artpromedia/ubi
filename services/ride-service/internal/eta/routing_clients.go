@@ -61,7 +61,7 @@ type googleDirectionsResponse struct {
 // GetRoute gets route from Google Maps Directions API
 func (g *GoogleMapsClient) GetRoute(ctx context.Context, req *ETARequest) (*RouteResponse, error) {
 	if g.apiKey == "" {
-		return nil, fmt.Errorf("Google Maps API key not configured")
+		return nil, fmt.Errorf("google maps API key not configured")
 	}
 
 	params := url.Values{}
@@ -82,7 +82,7 @@ func (g *GoogleMapsClient) GetRoute(ctx context.Context, req *ETARequest) (*Rout
 	if err != nil {
 		return nil, fmt.Errorf("failed to call Google Maps API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -95,7 +95,7 @@ func (g *GoogleMapsClient) GetRoute(ctx context.Context, req *ETARequest) (*Rout
 	}
 
 	if dirResp.Status != "OK" {
-		return nil, fmt.Errorf("Google Maps API error: %s - %s", dirResp.Status, dirResp.ErrorMessage)
+		return nil, fmt.Errorf("google maps API error: %s - %s", dirResp.Status, dirResp.ErrorMessage)
 	}
 
 	if len(dirResp.Routes) == 0 || len(dirResp.Routes[0].Legs) == 0 {
@@ -160,7 +160,7 @@ type mapboxDirectionsResponse struct {
 // GetRoute gets route from Mapbox Directions API
 func (m *MapboxClient) GetRoute(ctx context.Context, req *ETARequest) (*RouteResponse, error) {
 	if m.accessToken == "" {
-		return nil, fmt.Errorf("Mapbox access token not configured")
+		return nil, fmt.Errorf("mapbox access token not configured")
 	}
 
 	// Mapbox expects coordinates as lng,lat
@@ -185,7 +185,7 @@ func (m *MapboxClient) GetRoute(ctx context.Context, req *ETARequest) (*RouteRes
 	if err != nil {
 		return nil, fmt.Errorf("failed to call Mapbox API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -198,7 +198,7 @@ func (m *MapboxClient) GetRoute(ctx context.Context, req *ETARequest) (*RouteRes
 	}
 
 	if dirResp.Code != "Ok" {
-		return nil, fmt.Errorf("Mapbox API error: %s - %s", dirResp.Code, dirResp.Message)
+		return nil, fmt.Errorf("mapbox API error: %s - %s", dirResp.Code, dirResp.Message)
 	}
 
 	if len(dirResp.Routes) == 0 {
@@ -282,7 +282,7 @@ func (o *OSRMClient) GetRoute(ctx context.Context, req *ETARequest) (*RouteRespo
 	if err != nil {
 		return nil, fmt.Errorf("failed to call OSRM: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"math/rand"
-	"time"
 )
 
 var (
@@ -30,10 +29,6 @@ var (
 		"Ofada Rice", "Asun", "Gizdodo", "Plantain", "Chicken",
 	}
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 // RandomFirstName returns a random African first name
 func RandomFirstName() string {

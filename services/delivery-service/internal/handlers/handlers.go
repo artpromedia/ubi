@@ -55,19 +55,13 @@ type errorInfo struct {
 func respond(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(response{Success: true, Data: data})
-}
-
-func respondWithMeta(w http.ResponseWriter, status int, data, meta interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(response{Success: true, Data: data, Meta: meta})
+	_ = json.NewEncoder(w).Encode(response{Success: true, Data: data})
 }
 
 func respondError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(response{
+	_ = json.NewEncoder(w).Encode(response{
 		Success: false,
 		Error:   &errorInfo{Code: code, Message: message},
 	})
@@ -128,7 +122,7 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(response{
+	_ = json.NewEncoder(w).Encode(response{
 		Success: statusCode == http.StatusOK,
 		Data: map[string]interface{}{
 			"status":    status,
@@ -158,7 +152,7 @@ type CreateDeliveryRequest struct {
 
 func (h *Handler) CreateDelivery(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-	
+
 	var req CreateDeliveryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
@@ -245,7 +239,7 @@ func (h *Handler) CreateDelivery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish event
-	h.rdb.Publish(r.Context(), "delivery:created", map[string]interface{}{
+	_ = h.rdb.Publish(r.Context(), "delivery:created", map[string]interface{}{
 		"deliveryId":     delivery.ID,
 		"trackingNumber": delivery.TrackingNumber,
 		"customerId":     userID,
@@ -338,7 +332,7 @@ func (h *Handler) ListDeliveries(w http.ResponseWriter, r *http.Request) {
 			Currency       string
 			CreatedAt      time.Time
 		}
-		rows.Scan(&d.ID, &d.TrackingNumber, &d.Type, &d.Status, &d.TotalFare, &d.Currency, &d.CreatedAt)
+		_ = rows.Scan(&d.ID, &d.TrackingNumber, &d.Type, &d.Status, &d.TotalFare, &d.Currency, &d.CreatedAt)
 		deliveries = append(deliveries, map[string]interface{}{
 			"id":             d.ID,
 			"trackingNumber": d.TrackingNumber,
@@ -386,7 +380,7 @@ func (h *Handler) GetActiveDeliveries(w http.ResponseWriter, r *http.Request) {
 			EstimatedMinutes int
 			CreatedAt        time.Time
 		}
-		rows.Scan(&d.ID, &d.TrackingNumber, &d.Type, &d.Status, &d.TotalFare, &d.Currency, &d.EstimatedMinutes, &d.CreatedAt)
+		_ = rows.Scan(&d.ID, &d.TrackingNumber, &d.Type, &d.Status, &d.TotalFare, &d.Currency, &d.EstimatedMinutes, &d.CreatedAt)
 		deliveries = append(deliveries, map[string]interface{}{
 			"id":               d.ID,
 			"trackingNumber":   d.TrackingNumber,
@@ -470,7 +464,7 @@ func (h *Handler) TrackDelivery(w http.ResponseWriter, r *http.Request) {
 			Note      *string
 			CreatedAt time.Time
 		}
-		eventRows.Scan(&evt.Type, &evt.Status, &evt.Location, &evt.Note, &evt.CreatedAt)
+		_ = eventRows.Scan(&evt.Type, &evt.Status, &evt.Location, &evt.Note, &evt.CreatedAt)
 		events = append(events, map[string]interface{}{
 			"type":      evt.Type,
 			"status":    evt.Status,
@@ -494,7 +488,7 @@ func (h *Handler) CancelDelivery(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Reason string `json:"reason"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	// Check if delivery can be cancelled
 	var status string
@@ -530,7 +524,7 @@ func (h *Handler) CancelDelivery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish event
-	h.rdb.Publish(r.Context(), "delivery:cancelled", map[string]interface{}{
+	_ = h.rdb.Publish(r.Context(), "delivery:cancelled", map[string]interface{}{
 		"deliveryId": deliveryID,
 		"customerId": userID,
 		"reason":     req.Reason,
@@ -574,11 +568,11 @@ func (h *Handler) AddTip(w http.ResponseWriter, r *http.Request) {
 // ============================================
 
 type QuoteRequest struct {
-	PickupLocation  models.Location   `json:"pickupLocation"`
-	DropoffLocation models.Location   `json:"dropoffLocation"`
-	PackageSize     models.PackageSize `json:"packageSize"`
+	PickupLocation  models.Location     `json:"pickupLocation"`
+	DropoffLocation models.Location     `json:"dropoffLocation"`
+	PackageSize     models.PackageSize  `json:"packageSize"`
 	Type            models.DeliveryType `json:"type"`
-	Currency        models.Currency   `json:"currency"`
+	Currency        models.Currency     `json:"currency"`
 }
 
 func (h *Handler) GetQuote(w http.ResponseWriter, r *http.Request) {
@@ -643,7 +637,7 @@ func (h *Handler) GetZones(w http.ResponseWriter, r *http.Request) {
 			IsActive        bool
 			SurgeMultiplier float64
 		}
-		rows.Scan(&z.ID, &z.Name, &z.City, &z.Country, &z.IsActive, &z.SurgeMultiplier)
+		_ = rows.Scan(&z.ID, &z.Name, &z.City, &z.Country, &z.IsActive, &z.SurgeMultiplier)
 		zones = append(zones, map[string]interface{}{
 			"id":              z.ID,
 			"name":            z.Name,
@@ -676,10 +670,10 @@ func (h *Handler) PaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		PaymentStatus string `json:"status"`
 		PaymentMethod string `json:"method"`
 	}
-	json.NewDecoder(r.Body).Decode(&payload)
+	_ = json.NewDecoder(r.Body).Decode(&payload)
 
 	if payload.PaymentStatus == "SUCCESS" {
-		h.db.Pool.Exec(r.Context(),
+		_, _ = h.db.Pool.Exec(r.Context(),
 			`UPDATE deliveries SET 
 				payment_status = 'PAID',
 				payment_id = $1,
@@ -692,7 +686,7 @@ func (h *Handler) PaymentWebhook(w http.ResponseWriter, r *http.Request) {
 		)
 
 		// Publish for driver matching
-		h.rdb.Publish(r.Context(), "delivery:confirmed", map[string]string{
+		_ = h.rdb.Publish(r.Context(), "delivery:confirmed", map[string]string{
 			"deliveryId": payload.DeliveryID,
 		})
 	}

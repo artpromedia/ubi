@@ -55,7 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to Redis")
 	}
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	// Initialize handlers
 	h := handlers.New(db, rdb, cfg)

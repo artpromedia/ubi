@@ -108,13 +108,13 @@ func NewTestInfra(t *testing.T) *TestInfra {
 // Cleanup tears down all test infrastructure
 func (ti *TestInfra) Cleanup() {
 	if ti.DB != nil && ti.DB.DB != nil {
-		ti.DB.DB.Close()
+		_ = ti.DB.DB.Close()
 	}
 	if ti.DB != nil && ti.DB.Container != nil {
-		ti.DB.Container.Terminate(ti.ctx)
+		_ = ti.DB.Container.Terminate(ti.ctx)
 	}
 	if ti.Redis != nil && ti.Redis.Container != nil {
-		ti.Redis.Container.Terminate(ti.ctx)
+		_ = ti.Redis.Container.Terminate(ti.ctx)
 	}
 }
 
@@ -122,9 +122,9 @@ func (ti *TestInfra) Cleanup() {
 func (ti *TestInfra) SetupTestEnv(t *testing.T) {
 	t.Helper()
 
-	os.Setenv("DATABASE_URL", ti.DB.DSN)
-	os.Setenv("REDIS_URL", ti.Redis.URL)
-	os.Setenv("ENVIRONMENT", "test")
+	_ = os.Setenv("DATABASE_URL", ti.DB.DSN)
+	_ = os.Setenv("REDIS_URL", ti.Redis.URL)
+	_ = os.Setenv("ENVIRONMENT", "test")
 }
 
 // RunMigrations runs database migrations
@@ -165,6 +165,6 @@ func (ti *TestInfra) ResetDatabase(t *testing.T) {
 	}
 
 	for _, table := range tables {
-		ti.DB.DB.Exec("TRUNCATE TABLE " + table + " CASCADE")
+		_, _ = ti.DB.DB.Exec("TRUNCATE TABLE " + table + " CASCADE")
 	}
 }

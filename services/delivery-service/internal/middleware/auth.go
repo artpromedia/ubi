@@ -19,16 +19,16 @@ import (
 type ContextKey string
 
 const (
-	UserIDKey   ContextKey = "userId"
-	UserRoleKey ContextKey = "userRole"
+	UserIDKey    ContextKey = "userId"
+	UserRoleKey  ContextKey = "userRole"
 	UserEmailKey ContextKey = "userEmail"
 )
 
 // Claims represents JWT claims
 type Claims struct {
-	UserID   string `json:"userId"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+	UserID string `json:"userId"`
+	Email  string `json:"email"`
+	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -152,5 +152,5 @@ func GetUserRole(ctx context.Context) string {
 func respondError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write([]byte(`{"success":false,"error":{"code":"` + code + `","message":"` + message + `"}}`))
+	_, _ = w.Write([]byte(`{"success":false,"error":{"code":"` + code + `","message":"` + message + `"}}`))
 }

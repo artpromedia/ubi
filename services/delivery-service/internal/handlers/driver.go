@@ -73,18 +73,18 @@ func (h *Handler) GetAvailableDeliveries(w http.ResponseWriter, r *http.Request)
 			PickupDistanceKm float64
 		}
 
-		rows.Scan(
+		_ = rows.Scan(
 			&d.ID, &d.TrackingNumber, &d.Type, &d.PickupLocation, &d.DropoffLocation,
 			&d.Package, &d.DistanceKm, &d.EstimatedMinutes, &d.TotalFare, &d.Currency, &d.CreatedAt,
 			&d.PickupDistanceKm,
 		)
 
 		var pickup, dropoff models.Location
-		json.Unmarshal(d.PickupLocation, &pickup)
-		json.Unmarshal(d.DropoffLocation, &dropoff)
+		_ = json.Unmarshal(d.PickupLocation, &pickup)
+		_ = json.Unmarshal(d.DropoffLocation, &dropoff)
 
 		var pkg models.Package
-		json.Unmarshal(d.Package, &pkg)
+		_ = json.Unmarshal(d.Package, &pkg)
 
 		deliveries = append(deliveries, map[string]interface{}{
 			"id":               d.ID,
@@ -132,7 +132,7 @@ func (h *Handler) AcceptDelivery(w http.ResponseWriter, r *http.Request) {
 	).Scan(&status, &customerID, &packageJSON)
 
 	if err != nil {
-		h.rdb.Delete(r.Context(), lockKey)
+		_ = h.rdb.Delete(r.Context(), lockKey)
 		respondError(w, http.StatusNotFound, "NOT_FOUND", "Delivery not found")
 		return
 	}
@@ -141,13 +141,13 @@ func (h *Handler) AcceptDelivery(w http.ResponseWriter, r *http.Request) {
 	// exactly-once); the open-market accept must never claim one. Refused
 	// BEFORE any state change.
 	if isMarketplaceManaged(packageJSON) {
-		h.rdb.Delete(r.Context(), lockKey)
+		_ = h.rdb.Delete(r.Context(), lockKey)
 		respondError(w, http.StatusConflict, "MARKETPLACE_MANAGED", "This delivery is assigned through the marketplace award flow and cannot be accepted from the open market")
 		return
 	}
 
 	if status != "CONFIRMED" {
-		h.rdb.Delete(r.Context(), lockKey)
+		_ = h.rdb.Delete(r.Context(), lockKey)
 		respondError(w, http.StatusBadRequest, "INVALID_STATUS", "Delivery cannot be accepted")
 		return
 	}
@@ -164,7 +164,7 @@ func (h *Handler) AcceptDelivery(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		h.rdb.Delete(r.Context(), lockKey)
+		_ = h.rdb.Delete(r.Context(), lockKey)
 		respondError(w, http.StatusInternalServerError, "DATABASE_ERROR", "Failed to accept delivery")
 		return
 	}
@@ -173,7 +173,7 @@ func (h *Handler) AcceptDelivery(w http.ResponseWriter, r *http.Request) {
 	h.createDeliveryEvent(r.Context(), deliveryID, "driver_assigned", "DRIVER_ASSIGNED", nil, nil)
 
 	// Publish event
-	h.rdb.Publish(r.Context(), "delivery:driver_assigned", map[string]interface{}{
+	_ = h.rdb.Publish(r.Context(), "delivery:driver_assigned", map[string]interface{}{
 		"deliveryId": deliveryID,
 		"driverId":   driverID,
 		"customerId": customerID,
@@ -196,7 +196,7 @@ func (h *Handler) ConfirmPickup(w http.ResponseWriter, r *http.Request) {
 		Lat   float64 `json:"latitude"`
 		Lon   float64 `json:"longitude"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	// Verify driver assignment
 	var status string
@@ -236,7 +236,7 @@ func (h *Handler) ConfirmPickup(w http.ResponseWriter, r *http.Request) {
 	h.createDeliveryEvent(r.Context(), deliveryID, "picked_up", "PICKED_UP", location, &req.Note)
 
 	// Notify customer
-	h.rdb.Publish(r.Context(), "delivery:picked_up", map[string]interface{}{
+	_ = h.rdb.Publish(r.Context(), "delivery:picked_up", map[string]interface{}{
 		"deliveryId": deliveryID,
 		"driverId":   driverID,
 		"customerId": customerID,
@@ -257,7 +257,7 @@ func (h *Handler) ConfirmDelivery(w http.ResponseWriter, r *http.Request) {
 		Lat       float64 `json:"latitude"`
 		Lon       float64 `json:"longitude"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	// Verify driver assignment and status
 	var status, customerID string
@@ -306,7 +306,7 @@ func (h *Handler) ConfirmDelivery(w http.ResponseWriter, r *http.Request) {
 	h.createDeliveryEvent(r.Context(), deliveryID, "delivered", "DELIVERED", location, &req.Note)
 
 	// Notify and trigger payout
-	h.rdb.Publish(r.Context(), "delivery:delivered", map[string]interface{}{
+	_ = h.rdb.Publish(r.Context(), "delivery:delivered", map[string]interface{}{
 		"deliveryId": deliveryID,
 		"driverId":   driverID,
 		"customerId": customerID,
@@ -349,15 +349,12 @@ func (h *Handler) UpdateDriverLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Add to geo index for spatial queries
-	err = h.rdb.GeoAdd(r.Context(), "drivers:active", req.Longitude, req.Latitude, driverID)
-	if err != nil {
-		// Non-critical, continue
-	}
+	// Add to geo index for spatial queries. Non-critical, continue on error.
+	_ = h.rdb.GeoAdd(r.Context(), "drivers:active", req.Longitude, req.Latitude, driverID)
 
 	// Check if driver has active delivery and publish location update
 	var activeDeliveryID string
-	h.db.Pool.QueryRow(r.Context(),
+	_ = h.db.Pool.QueryRow(r.Context(),
 		`SELECT id FROM deliveries 
 		WHERE driver_id = $1 AND status IN ('DRIVER_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT')
 		LIMIT 1`,
@@ -365,7 +362,7 @@ func (h *Handler) UpdateDriverLocation(w http.ResponseWriter, r *http.Request) {
 	).Scan(&activeDeliveryID)
 
 	if activeDeliveryID != "" {
-		h.rdb.Publish(r.Context(), "delivery:location:"+activeDeliveryID, location)
+		_ = h.rdb.Publish(r.Context(), "delivery:location:"+activeDeliveryID, location)
 	}
 
 	respond(w, http.StatusOK, map[string]interface{}{
@@ -379,17 +376,9 @@ func (h *Handler) createDeliveryEvent(ctx context.Context, deliveryID, eventType
 	eventID := "evt_" + uuid.New().String()[:12]
 	locationJSON, _ := json.Marshal(location)
 
-	h.db.Pool.Exec(ctx,
+	_, _ = h.db.Pool.Exec(ctx,
 		`INSERT INTO delivery_events (id, delivery_id, type, status, location, note, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
 		eventID, deliveryID, eventType, status, locationJSON, note,
 	)
-}
-
-type contextKey string
-
-const contextKeyContext contextKey = "context"
-
-func (h *Handler) createDeliveryEvent2(r *http.Request, deliveryID, eventType, status string, location interface{}, note *string) {
-	h.createDeliveryEvent(r.Context(), deliveryID, eventType, status, location, note)
 }

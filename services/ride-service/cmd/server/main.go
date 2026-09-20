@@ -232,25 +232,25 @@ func newHealth(runtime *service.Runtime, environment string) *health {
 func (h *health) live(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status":"ok","timestamp":%q}`, time.Now().UTC().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(w, `{"status":"ok","timestamp":%q}`, time.Now().UTC().Format(time.RFC3339))
 }
 
 func (h *health) ready(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(headerContentType, contentTypeJSON)
 	if err := h.runtime.DB.Ping(r.Context()); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		fmt.Fprint(w, `{"status":"not ready","dependency":"database"}`)
+		_, _ = fmt.Fprint(w, `{"status":"not ready","dependency":"database"}`)
 		return
 	}
 	if h.runtime.Redis != nil {
 		if err := h.runtime.Redis.Ping(r.Context()).Err(); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, `{"status":"not ready","dependency":"redis"}`)
+			_, _ = fmt.Fprint(w, `{"status":"not ready","dependency":"redis"}`)
 			return
 		}
 	}
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status":"ready","timestamp":%q}`, time.Now().UTC().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(w, `{"status":"ready","timestamp":%q}`, time.Now().UTC().Format(time.RFC3339))
 }
 
 func (h *health) detailed(w http.ResponseWriter, r *http.Request) {
@@ -267,7 +267,7 @@ func (h *health) detailed(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w,
+	_, _ = fmt.Fprintf(w,
 		`{"status":"healthy","service":"ride-service","environment":%q,"timestamp":%q,"dependencies":{"database":%q,"redis":%q}}`,
 		h.environment, time.Now().UTC().Format(time.RFC3339), database, redisStatus)
 }

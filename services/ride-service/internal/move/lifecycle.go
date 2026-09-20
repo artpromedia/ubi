@@ -255,14 +255,15 @@ func (s *Service) VerifyPin(ctx context.Context, actor Actor, rideID uuid.UUID, 
 
 		state := ride.State
 		var moved *domain.Ride
-		if state == machine.RiderDriverArrived {
+		switch state {
+		case machine.RiderDriverArrived:
 			moved, err = s.deps.Store.Transition(ctx, tx, ride, machine.RiderPinVerification, RideUpdate{
 				PinAttempts: &attempts, PinVerifiedAt: &now,
 			})
 			if err != nil {
 				return err
 			}
-		} else if state == machine.RiderPinVerification {
+		case machine.RiderPinVerification:
 			if err := s.deps.Store.RecordPinAttempt(ctx, tx, ride.ID, attempts, false); err != nil {
 				return err
 			}
@@ -276,7 +277,7 @@ func (s *Service) VerifyPin(ctx context.Context, actor Actor, rideID uuid.UUID, 
 				return err
 			}
 			moved.PinVerifiedAt = &now
-		} else {
+		default:
 			return domain.Errorf(domain.CodeIllegalTransition,
 				"a PIN can only be verified once the driver has arrived").
 				WithDetails(map[string]any{"state": state})

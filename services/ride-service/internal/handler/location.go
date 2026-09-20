@@ -223,7 +223,7 @@ func (h *LocationHandler) ReverseGeocode(w http.ResponseWriter, r *http.Request)
 
 	// Return first result
 	first := result.Results[0]
-	
+
 	// Extract useful address components
 	var city, country, postalCode string
 	for _, comp := range first.AddressComponents {
@@ -303,7 +303,7 @@ func (h *LocationHandler) GetPlaceDetails(w http.ResponseWriter, r *http.Request
 func writeJSONResponse(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func writeJSONError(w http.ResponseWriter, status int, code, message string) {

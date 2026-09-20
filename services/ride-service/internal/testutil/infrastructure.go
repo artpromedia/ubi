@@ -250,7 +250,7 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 
 	t.Cleanup(func() {
 		h.cleanup(context.Background())
-		redisClient.Close()
+		_ = redisClient.Close()
 		pool.Close()
 	})
 	return h

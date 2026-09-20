@@ -233,7 +233,7 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 	if problems := validateMarketplaceAssign(&req); len(problems) > 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(response{
+		_ = json.NewEncoder(w).Encode(response{
 			Success: false,
 			Error: &errorInfo{
 				Code:    "VALIDATION_ERROR",
@@ -270,14 +270,14 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 	// Re-check under the lock: the earlier holder may have committed between
 	// our first lookup and the SETNX.
 	if existing, lookupErr := h.findDeliveryByAwardID(r.Context(), req.AwardID); lookupErr == nil && existing != nil {
-		h.rdb.Delete(r.Context(), lockKey)
+		_ = h.rdb.Delete(r.Context(), lockKey)
 		respond(w, http.StatusOK, existing)
 		return
 	}
 
 	packageJSON, err := marketplacePackageJSON(req.PackageDetails, req.AwardID, req.RequestID, req.FareMinor, req.FencingToken)
 	if err != nil {
-		h.rdb.Delete(r.Context(), lockKey)
+		_ = h.rdb.Delete(r.Context(), lockKey)
 		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to encode package details")
 		return
 	}
@@ -336,7 +336,7 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 	).Scan(&createdAt)
 
 	if err != nil {
-		h.rdb.Delete(r.Context(), lockKey)
+		_ = h.rdb.Delete(r.Context(), lockKey)
 		log.Error().Err(err).Str("awardId", req.AwardID).Msg("Failed to create marketplace delivery")
 		respondError(w, http.StatusInternalServerError, "DATABASE_ERROR", "Failed to create delivery")
 		return
@@ -344,7 +344,7 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 
 	// Audit trail + the existing realtime channel, matching AcceptDelivery.
 	h.createDeliveryEvent(r.Context(), deliveryID, "driver_assigned", string(models.DeliveryStatusDriverAssigned), nil, nil)
-	h.rdb.Publish(r.Context(), "delivery:driver_assigned", map[string]interface{}{
+	_ = h.rdb.Publish(r.Context(), "delivery:driver_assigned", map[string]interface{}{
 		"deliveryId":         deliveryID,
 		"driverId":           req.DriverID,
 		"customerId":         req.CustomerID,
