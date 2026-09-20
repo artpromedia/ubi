@@ -200,6 +200,46 @@ const MATRIX: readonly MatrixCase[] = [
     limited: "deny",
     safe: "allow",
   },
+  // Marketplace: every /v1/mp route is deliberately off the limited-mode
+  // allowlist — bids and awards move wallet-held money. Safe mode only denies
+  // P2P/NIP and security changes, so full-mode marketplace use survives it.
+  {
+    method: "GET",
+    path: "/v1/mp/quote",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/mp/requests",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/mp/requests/req_123/select",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/mp/requests/req_123/award",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  // The wallet marketplace overview is a read served by payment-service and
+  // stays inside the wallet:read family (reads survive limited mode).
+  {
+    method: "GET",
+    path: "/v1/wallet/mp/overview",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
 ];
 
 describe("limited mode and wallet safe mode scope matrix", () => {
@@ -258,6 +298,115 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       (await call("limited_and_safe", "POST", "/v1/auth/step-up/selfie"))
         .status,
     ).toBe(200);
+  });
+
+  describe("marketplace scopes", () => {
+    it("lets a driver read the feed and bid, but not a rider", async () => {
+      expect((await call("full", "GET", "/v1/mp/feed", "driver")).status).toBe(
+        200,
+      );
+      expect((await call("full", "POST", "/v1/mp/bids", "driver")).status).toBe(
+        200,
+      );
+      const riderFeed = await call("full", "GET", "/v1/mp/feed", "rider");
+      expect(riderFeed.status).toBe(403);
+      expect(riderFeed.code).toBe("forbidden");
+      const riderBid = await call("full", "POST", "/v1/mp/bids", "rider");
+      expect(riderBid.status).toBe(403);
+      expect(riderBid.code).toBe("forbidden");
+    });
+
+    it("refuses a limited-mode driver's bid as a mode restriction", async () => {
+      const result = await call("limited", "POST", "/v1/mp/bids", "driver");
+      expect(result.status).toBe(403);
+      expect(result.code).toBe("limited_mode");
+    });
+
+    it("lets a driver manage rate profiles, but not in limited mode", async () => {
+      expect(
+        (await call("full", "PUT", "/v1/mp/rate-profiles", "driver")).status,
+      ).toBe(200);
+      expect(
+        (await call("limited", "PUT", "/v1/mp/rate-profiles", "driver")).code,
+      ).toBe("limited_mode");
+    });
+
+    it("lets a driver open the driver-view under the request family", async () => {
+      expect(
+        (
+          await call(
+            "full",
+            "GET",
+            "/v1/mp/requests/req_123/driver-view",
+            "driver",
+          )
+        ).status,
+      ).toBe(200);
+    });
+
+    it("reserves the admin monitor for admin tokens", async () => {
+      expect(
+        (await call("full", "GET", "/v1/admin/mp/requests", "admin")).status,
+      ).toBe(200);
+      const rider = await call("full", "GET", "/v1/admin/mp/requests", "rider");
+      expect(rider.status).toBe(403);
+      expect(rider.code).toBe("forbidden");
+      const driver = await call(
+        "full",
+        "GET",
+        "/v1/admin/mp/requests",
+        "driver",
+      );
+      expect(driver.status).toBe(403);
+      expect(driver.code).toBe("forbidden");
+    });
+
+    it("keeps the commission-hold ledger endpoints away from user tokens", async () => {
+      for (const role of ["rider", "driver"]) {
+        const result = await call(
+          "full",
+          "POST",
+          "/v1/wallet/mp/holds/reserve",
+          role,
+        );
+        expect(result.status).toBe(403);
+        expect(result.code).toBe("forbidden");
+      }
+      expect(
+        (await call("full", "POST", "/v1/wallet/mp/holds/reserve", "admin"))
+          .status,
+      ).toBe(200);
+    });
+
+    it("keeps rider funding authorization away from user tokens too", async () => {
+      for (const role of ["rider", "driver"]) {
+        const result = await call(
+          "full",
+          "POST",
+          "/v1/wallet/mp/funding/authorize",
+          role,
+        );
+        expect(result.status).toBe(403);
+        expect(result.code).toBe("forbidden");
+      }
+      expect(
+        (
+          await call(
+            "full",
+            "POST",
+            "/v1/wallet/mp/funding/authorize",
+            "admin",
+          )
+        ).status,
+      ).toBe(200);
+    });
+
+    it("never reaches the marketplace upstream when a limited-mode bid is denied", async () => {
+      upstream.received.length = 0;
+      const result = await call("limited", "POST", "/v1/mp/bids", "driver");
+      expect(result.status).toBe(403);
+      expect(upstream.received).toHaveLength(0);
+    });
   });
 
   it("refuses a scope the role never had, without blaming a mode", async () => {

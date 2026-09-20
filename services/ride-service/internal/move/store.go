@@ -41,14 +41,61 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 // Pool exposes the underlying pool to readers that do not mutate state.
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
+// migrationLockKey serialises schema application across processes. The script
+// carries an ALTER TABLE (ACCESS EXCLUSIVE even as a no-op), and two processes
+// applying overlapping schemas at once can deadlock; the advisory lock makes
+// them take turns instead. The mp schema uses the same key on purpose.
+const migrationLockKey = int64(0x72696465) // "ride"
+
+// schemaCurrent reports whether the newest object this script creates already
+// exists, in which case the whole script is a no-op and is skipped without
+// taking a single DDL lock — CREATE INDEX IF NOT EXISTS still locks the table
+// even when it changes nothing, and that lock can deadlock a live workload.
+func (s *Store) schemaCurrent(ctx context.Context) bool {
+	var current bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'ride' AND table_name = 'rides'
+				AND column_name = 'marketplace_award_id'
+		)`).Scan(&current)
+	return err == nil && current
+}
+
 // Migrate applies the ride schema. Every statement is IF NOT EXISTS, so it is
 // idempotent; it runs from tests and from an explicit boot flag, never
-// implicitly on every start.
+// implicitly on every start. Application is serialised across processes by an
+// advisory lock and retried when a concurrent workload makes it the deadlock
+// victim — the script is safe to re-run.
 func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx, schemaSQL); err != nil {
-		return fmt.Errorf("failed to apply ride schema: %w", err)
+	if s.schemaCurrent(ctx) {
+		return nil
 	}
-	return nil
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire a connection for migration: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLockKey); err != nil {
+		return fmt.Errorf("failed to take the migration lock: %w", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, migrationLockKey)
+	}()
+	if s.schemaCurrent(ctx) {
+		return nil
+	}
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, lastErr = conn.Exec(ctx, schemaSQL); lastErr == nil {
+			return nil
+		}
+		var pgErr *pgconn.PgError
+		if !errors.As(lastErr, &pgErr) || pgErr.Code != "40P01" {
+			break
+		}
+	}
+	return fmt.Errorf("failed to apply ride schema: %w", lastErr)
 }
 
 // InTx runs fn in a transaction, rolling back on any error or panic.
@@ -226,6 +273,20 @@ func (s *Store) InsertRide(ctx context.Context, db DB, ride *domain.Ride, pinHas
 // RideByID reads one ride.
 func (s *Store) RideByID(ctx context.Context, db DB, id uuid.UUID) (*domain.Ride, error) {
 	return scanRide(db.QueryRow(ctx, `SELECT `+rideColumns+` FROM ride.rides WHERE id = $1`, id))
+}
+
+// MarketplaceAwardID reads the marketplace award a ride was created by, or nil
+// for a classic ride. The legacy accept path refuses marketplace-managed work.
+func (s *Store) MarketplaceAwardID(ctx context.Context, db DB, rideID uuid.UUID) (*uuid.UUID, error) {
+	var awardID *uuid.UUID
+	err := db.QueryRow(ctx, `SELECT marketplace_award_id FROM ride.rides WHERE id = $1`, rideID).Scan(&awardID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to read the ride's marketplace award: %w", err)
+	}
+	return awardID, nil
 }
 
 // RideForUpdate reads and locks one ride for the rest of the transaction, so

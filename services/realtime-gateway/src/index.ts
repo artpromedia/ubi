@@ -5,10 +5,14 @@
 
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { Redis } from "ioredis";
 import { WebSocketServer } from "ws";
+import type { OutboxSubscription } from "@ubi/outbox";
 import { ConnectionManager } from "./connection-manager.js";
 import { isTokenExpired, verifyToken } from "./lib/auth.js";
 import { logger, wsLogger } from "./lib/logger.js";
+import { requireServiceAuth } from "./lib/service-auth.js";
+import { subscribeMarketplaceEvents } from "./marketplace-events.js";
 import type { UserType } from "./types/index.js";
 
 const app = new Hono();
@@ -44,8 +48,22 @@ app.get("/stats", (c) => {
   return c.json(stats);
 });
 
-// Broadcast endpoint for other services
-app.post("/broadcast/user/:userId", async (c) => {
+// Subscribe to marketplace outbox events (event:mp.*) for realtime fan-out.
+// Dedicated connection: subscribeOutbox puts it in subscriber mode.
+const marketplaceRedis = new Redis(redisUrl);
+let marketplaceSubscription: OutboxSubscription | null = null;
+subscribeMarketplaceEvents(marketplaceRedis, connectionManager)
+  .then((subscription) => {
+    marketplaceSubscription = subscription;
+  })
+  .catch((err) => {
+    logger.error({ err }, "Failed to subscribe to marketplace outbox events");
+  });
+
+// Broadcast endpoint for other services.
+// Gated by service credentials (svc_ token or X-Service-Key) so money-relevant
+// pushes (marketplace bids/awards/holds) cannot be forged by arbitrary callers.
+app.post("/broadcast/user/:userId", requireServiceAuth, async (c) => {
   const userId = c.req.param("userId");
   const message = await c.req.json();
 
@@ -80,6 +98,10 @@ wss.on("connection", async (ws, req) => {
   const token =
     url.searchParams.get("token") ||
     req.headers.authorization?.replace("Bearer ", "");
+  // SECURITY NOTE: userType is client-asserted via query param, not derived
+  // from the JWT role claim. Any flow that authorizes by userType (e.g.
+  // driver-only messages) must verify the role server-side (JWT role/
+  // permissions or a driver-service lookup) before trusting it.
   const userType = url.searchParams.get("userType") as UserType;
   const deviceId = url.searchParams.get("deviceId") || "unknown";
   const platform =
@@ -172,6 +194,14 @@ async function gracefulShutdown(signal: string) {
     logger.warn("Shutdown timeout reached, forcing exit");
     process.exit(1);
   }, 10000);
+
+  // Stop marketplace outbox subscription
+  try {
+    await marketplaceSubscription?.stop();
+    await marketplaceRedis.quit();
+  } catch (err) {
+    logger.warn({ err }, "Error stopping marketplace subscription");
+  }
 
   // Clean up connection manager
   await connectionManager.cleanup();

@@ -19,6 +19,27 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   /** Abort signal for cancellation. */
   signal?: AbortSignal;
+  /**
+   * Sent as the `idempotency-key` header. config-service requires it (min 8
+   * chars, url-safe) on mutating routes like PUT /v1/flags/{key} and
+   * POST /v1/config/change-requests — omit it and those calls 422.
+   */
+  idempotencyKey?: string;
+}
+
+/**
+ * Fresh url-safe idempotency key satisfying the contract's IdempotencyKeySchema
+ * (8–64 chars, `[A-Za-z0-9_.:-]`).
+ */
+export function newIdempotencyKey(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* fall through to the non-crypto fallback */
+  }
+  return `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function authToken(): string | null {
@@ -52,11 +73,14 @@ async function decode<T>(res: Response): Promise<T> {
 class AdminApiClient {
   constructor(private readonly baseUrl: string) {}
 
-  private headers(extra?: Record<string, string>): Record<string, string> {
+  private headers(options?: RequestOptions): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...extra,
+      ...options?.headers,
     };
+    if (options?.idempotencyKey) {
+      headers["idempotency-key"] = options.idempotencyKey;
+    }
     const token = authToken();
     if (token) headers.Authorization = `Bearer ${token}`;
     return headers;
@@ -65,7 +89,7 @@ class AdminApiClient {
   async get<T>(url: string, options?: RequestOptions): Promise<T> {
     const res = await fetch(this.baseUrl + url, {
       method: "GET",
-      headers: this.headers(options?.headers),
+      headers: this.headers(options),
       signal: options?.signal,
     });
     return decode<T>(res);
@@ -78,7 +102,21 @@ class AdminApiClient {
   ): Promise<T> {
     const res = await fetch(this.baseUrl + url, {
       method: "POST",
-      headers: this.headers(options?.headers),
+      headers: this.headers(options),
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: options?.signal,
+    });
+    return decode<T>(res);
+  }
+
+  async put<T>(
+    url: string,
+    body?: unknown,
+    options?: RequestOptions,
+  ): Promise<T> {
+    const res = await fetch(this.baseUrl + url, {
+      method: "PUT",
+      headers: this.headers(options),
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: options?.signal,
     });

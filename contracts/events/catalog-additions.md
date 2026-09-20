@@ -31,3 +31,21 @@ All events: envelope {id, type, occurredAt, actor, idempotencyKey, seq, version}
 | marketing.proposal.created / saved_as_draft | ai-marketing | threadId, draftCampaignId, model, promptVersion | admin, ops.ai |
 | ai.action.logged | ask-service / mandate-runner / ai-marketing | actor, action, tool, model, revision, promptVersion, authRef, outcome, reasonCode, tokens, cost | ops.ai (90 d retention) |
 | support.case.opened{source: ask} | support-service | caseId, threadId, includeTranscript | support console |
+
+## Negotiated-fare marketplace (M01–M09)
+
+Producer for `mp.request.*`, `mp.bid.*`, `mp.award.*`, `mp.claim.*`, `mp.queue.*` and `mp.rate_profile.*` is the marketplace engine in ride-service; `mp.commission.*` is produced by payment-service in the same transaction as the hold/journal write. Every event goes through the transactional outbox with subject `mp_request.{id}` / `mp_bid.{id}` / `mp_award.{id}` / `mp_claim.{id}` / `mp_hold.{id}` and carries request `revision` alongside aggregate from/to versions. Audiences are enforced at fan-out: bid events reach only the bidding driver and the request owner — never rival bidders. Amounts appear only in events addressed to a party entitled to see them.
+
+| Event | Producer | Payload keys | Consumers |
+| --- | --- | --- | --- |
+| mp.request.published / revised / reopened | marketplace (ride-service) | requestId, revision, service, cityId, askedMinor, envelope{step, radiusMeters, pickupEtaSec}, expiresAt | eligible driver feeds, rider app, admin monitor |
+| mp.request.closed{reason: awarded·cancelled·expired·no_offers} | marketplace | requestId, revision, reason | driver feeds (card invalidation), rider app, admin |
+| mp.bid.submitted / revised / withdrawn / expired / invalidated | marketplace | bidId, requestId, requestRevision, bidVersion, driverId, amountMinor, slot, reservationId | request owner (offer inbox), bidding driver only |
+| mp.bid.lost | marketplace | bidId, requestId, driverId, releaseState | losing driver only ("Requester chose another driver…") |
+| mp.bid.won | marketplace | bidId, requestId, driverId, awardId | winning driver only |
+| mp.award.pending / confirmed / failed / cancelled | marketplace | awardId, requestId, bidId, requestVersion, bidVersion, driverId, slot, fareMinor, executionRef?, failReason? | request owner, winning driver, admin reconciliation |
+| mp.commission.reserved / adjusted / released / captured / reversed | payment-service | reservationId, bidId, driverId, amountMinor, awardId?, journalEntryId?, receiptId? | driver wallet UI, marketplace engine, finance recon |
+| mp.claim.created / promoted / released | marketplace | claimId, driverId, slot, service, awardId?, dependsOnClaimId?, fencingToken | execution services (fenced ownership), driver app jobs timeline |
+| mp.queue.eta_updated | marketplace | awardId, requestId, etaVersion, windowSec{earliest, latest}, inWindow | request owner (queued tracker), driver app |
+| mp.queue.window_missed | marketplace | awardId, requestId, toleranceSec, options[wait, cancel_free] | request owner, admin queue monitor |
+| mp.rate_profile.saved | marketplace | profileId, driverId, version, cityId, service, vehicleClass | driver app (future calculations only — never mutates live bids) |

@@ -1,0 +1,1463 @@
+openapi: 3.1.0
+info:
+  {
+    title: "UBI Negotiated-Fare Marketplace",
+    version: 0.1.0,
+    description: "Requester-selected fare marketplace for rides and package deliveries (M01–M09). The requester publishes a server-bounded fare, eligible drivers submit funded private bids (10% commission reserved at bid), and the requester selects the winner (commission debited exactly once at selection). Rider/driver routes are served by ride-service behind the gateway (/mp/* proxy); wallet hold routes are served by payment-service; both are documented here as one contract. Money is integer minor units with explicit currency from city config. All mutating POSTs accept Idempotency-Key. Unconfigured markets fail closed with market_not_configured.",
+  }
+servers: [{ url: https://api.ubi.africa }]
+components:
+  securitySchemes:
+    {
+      bearer: { type: http, scheme: bearer },
+      serviceKey: { type: apiKey, in: header, name: X-Service-Key },
+    }
+  parameters:
+    IdemKey:
+      {
+        name: Idempotency-Key,
+        in: header,
+        required: true,
+        schema: { type: string, maxLength: 64 },
+      }
+    Cursor:
+      {
+        name: cursor,
+        in: query,
+        required: false,
+        schema: { type: string },
+      }
+  schemas:
+    Money:
+      {
+        type: object,
+        required: [amountMinor, currency],
+        properties:
+          {
+            amountMinor: { type: integer },
+            currency: { type: string, example: NGN },
+          },
+      }
+    Error:
+      {
+        type: object,
+        required: [code, message],
+        properties:
+          {
+            code:
+              {
+                type: string,
+                description: "Canonical error code from @ubi/contracts (e.g. market_not_configured, fare_out_of_bounds, insufficient_spendable, slot_unavailable, award_unresolved, version_conflict).",
+              },
+            message: { type: string },
+            details: { type: object, additionalProperties: true },
+          },
+      }
+    Area:
+      {
+        type: object,
+        required: [label, lat, lng],
+        description: "Privacy-safe approximate area. Exact addresses are released only to the awarded driver via the execution service.",
+        properties:
+          {
+            label: { type: string },
+            lat: { type: number },
+            lng: { type: number },
+          },
+      }
+    QuoteEnvelope:
+      {
+        type: object,
+        required:
+          [
+            quoteId,
+            service,
+            vehicleClass,
+            cityId,
+            currency,
+            suggestedFareMinor,
+            minimumFareMinor,
+            maximumFareMinor,
+            expiresAt,
+            pricingVersion,
+            policyVersion,
+            breakdown,
+            routedDistanceMeters,
+            routedDurationSec,
+          ],
+        properties:
+          {
+            quoteId: { type: string },
+            service: { type: string, enum: [ride, delivery] },
+            vehicleClass: { type: string },
+            cityId: { type: string },
+            currency: { type: string },
+            suggestedFareMinor: { $ref: "#/components/schemas/Money" },
+            minimumFareMinor: { $ref: "#/components/schemas/Money" },
+            maximumFareMinor: { $ref: "#/components/schemas/Money" },
+            expiresAt: { type: string, format: date-time },
+            pricingVersion: { type: string },
+            policyVersion: { type: integer },
+            breakdown:
+              {
+                type: array,
+                items:
+                  {
+                    type: object,
+                    required: [label, amountMinor],
+                    properties:
+                      {
+                        label: { type: string },
+                        amountMinor: { $ref: "#/components/schemas/Money" },
+                      },
+                  },
+              },
+            routedDistanceMeters: { type: integer },
+            routedDurationSec: { type: integer },
+          },
+      }
+    DeliveryDetails:
+      {
+        type: object,
+        required: [weightKg],
+        properties:
+          {
+            weightKg: { type: number },
+            lengthCm: { type: number },
+            widthCm: { type: number },
+            heightCm: { type: number },
+            handling: { type: array, items: { type: string } },
+          },
+      }
+    SearchEnvelope:
+      {
+        type: object,
+        required: [step, radiusMeters, pickupEtaSec],
+        properties:
+          {
+            step: { type: integer },
+            radiusMeters: { type: integer },
+            pickupEtaSec: { type: integer },
+          },
+      }
+    Request:
+      {
+        type: object,
+        required:
+          [
+            requestId,
+            state,
+            revision,
+            version,
+            service,
+            vehicleClass,
+            cityId,
+            currency,
+            requesterId,
+            quoteId,
+            requestedFareMinor,
+            suggestedFareMinor,
+            minimumFareMinor,
+            maximumFareMinor,
+            pickup,
+            dropoff,
+            searchEnvelope,
+            policyVersion,
+            pricingVersion,
+            expiresAt,
+            createdAt,
+          ],
+        properties:
+          {
+            requestId: { type: string },
+            state:
+              {
+                type: string,
+                enum:
+                  [
+                    draft,
+                    open,
+                    award_pending,
+                    awarded,
+                    execution,
+                    cancelled,
+                    expired,
+                    no_offers,
+                  ],
+              },
+            revision: { type: integer },
+            version: { type: integer },
+            service: { type: string, enum: [ride, delivery] },
+            vehicleClass: { type: string },
+            cityId: { type: string },
+            currency: { type: string },
+            requesterId: { type: string },
+            quoteId: { type: string },
+            requestedFareMinor: { $ref: "#/components/schemas/Money" },
+            suggestedFareMinor: { $ref: "#/components/schemas/Money" },
+            minimumFareMinor: { $ref: "#/components/schemas/Money" },
+            maximumFareMinor: { $ref: "#/components/schemas/Money" },
+            pickup: { $ref: "#/components/schemas/Area" },
+            dropoff: { $ref: "#/components/schemas/Area" },
+            delivery: { $ref: "#/components/schemas/DeliveryDetails" },
+            searchEnvelope: { $ref: "#/components/schemas/SearchEnvelope" },
+            policyVersion: { type: integer },
+            pricingVersion: { type: string },
+            expiresAt: { type: string, format: date-time },
+            createdAt: { type: string, format: date-time },
+            closeReason:
+              {
+                type: string,
+                enum: [awarded, cancelled, expired, no_offers],
+              },
+          },
+      }
+    Offer:
+      {
+        type: object,
+        description: "Rider-facing view of one driver's bid. Never leaks rival prices or identities; bids are private per driver.",
+        required:
+          [
+            bidId,
+            bidVersion,
+            requestRevision,
+            amountMinor,
+            kind,
+            driver,
+            pickupLabel,
+            expiresAt,
+            withdrawn,
+          ],
+        properties:
+          {
+            bidId: { type: string },
+            bidVersion: { type: integer },
+            requestRevision: { type: integer },
+            amountMinor: { $ref: "#/components/schemas/Money" },
+            kind: { type: string, enum: [immediate, finishing_trip] },
+            driver:
+              {
+                type: object,
+                required:
+                  [
+                    displayName,
+                    initials,
+                    rating,
+                    completedTrips,
+                    vehicle,
+                    plateMasked,
+                  ],
+                properties:
+                  {
+                    displayName: { type: string },
+                    initials: { type: string },
+                    rating: { type: string },
+                    completedTrips: { type: integer },
+                    vehicle: { type: string },
+                    plateMasked: { type: string },
+                  },
+              },
+            pickupLabel: { type: string },
+            pickupWindow:
+              {
+                type: object,
+                required: [earliestSec, latestSec, etaVersion],
+                properties:
+                  {
+                    earliestSec: { type: integer },
+                    latestSec: { type: integer },
+                    etaVersion: { type: integer },
+                  },
+              },
+            expiresAt: { type: string, format: date-time },
+            withdrawn: { type: boolean },
+            whyRecommended:
+              {
+                type: string,
+                description: "Disclosed recommendation criteria. Never sponsored, never auto-selecting.",
+              },
+            bookingFeeMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Server-computed rider-side booking fee, when the market charges one.",
+              },
+            totalMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Server-computed total the rider pays for this offer.",
+              },
+            deltaLabel:
+              {
+                type: string,
+                description: "Server-phrased comparison to the requested amount (e.g. \"+₦200\").",
+              },
+          },
+      }
+    Bid:
+      {
+        type: object,
+        description: "Driver's own bid with their money view (commission and net). One live bid per driver per request revision.",
+        required:
+          [
+            bidId,
+            requestId,
+            requestRevision,
+            bidVersion,
+            state,
+            driverId,
+            amountMinor,
+            commissionMinor,
+            netMinor,
+            slot,
+            reservationId,
+            expiresAt,
+            createdAt,
+          ],
+        properties:
+          {
+            bidId: { type: string },
+            requestId: { type: string },
+            requestRevision: { type: integer },
+            bidVersion: { type: integer },
+            state:
+              {
+                type: string,
+                enum:
+                  [
+                    submitted,
+                    revised,
+                    selected_pending,
+                    won,
+                    lost,
+                    withdrawn,
+                    expired,
+                    invalidated,
+                  ],
+              },
+            driverId: { type: string },
+            amountMinor: { $ref: "#/components/schemas/Money" },
+            commissionMinor: { $ref: "#/components/schemas/Money" },
+            netMinor: { $ref: "#/components/schemas/Money" },
+            slot: { type: string, enum: [current, next] },
+            dependsOnClaimId: { type: string },
+            reservationId: { type: string },
+            expiresAt: { type: string, format: date-time },
+            createdAt: { type: string, format: date-time },
+          },
+      }
+    Preset:
+      {
+        type: object,
+        description: "Server-generated quick offer: deduplicated, in bounds, affordability-checked against spendable funds. Clients never compute fee or net.",
+        required:
+          [
+            key,
+            amountMinor,
+            commissionMinor,
+            netMinor,
+            title,
+            feeNetLabel,
+            affordable,
+            emphasized,
+            source,
+          ],
+        properties:
+          {
+            key: { type: string },
+            amountMinor: { $ref: "#/components/schemas/Money" },
+            commissionMinor: { $ref: "#/components/schemas/Money" },
+            netMinor: { $ref: "#/components/schemas/Money" },
+            title: { type: string },
+            feeNetLabel: { type: string },
+            affordable: { type: boolean },
+            shortfallMinor: { $ref: "#/components/schemas/Money" },
+            shortfallLabel: { type: string },
+            emphasized: { type: boolean },
+            source:
+              {
+                type: string,
+                enum: [requested, lower, higher, rate_profile],
+              },
+          },
+      }
+    EligibilityReason:
+      {
+        type: object,
+        required: [code, title, detail],
+        properties:
+          {
+            code:
+              {
+                type: string,
+                enum:
+                  [
+                    OUTSIDE_RADIUS,
+                    PICKUP_ETA_TOO_LONG,
+                    LOCATION_STALE,
+                    LOCATION_INACCURATE,
+                    NOT_STATIONARY,
+                    NOT_NEAR_COMPLETION,
+                    WRONG_DIRECTION,
+                    SLOT_FULL,
+                    QUEUE_DISABLED,
+                    UNSUPPORTED_CAPABILITY,
+                    ACCOUNT_NOT_ELIGIBLE,
+                    OFFLINE,
+                    INSUFFICIENT_SPENDABLE,
+                    ROUTING_UNAVAILABLE,
+                  ],
+              },
+            title: { type: string },
+            detail: { type: string },
+          },
+      }
+    Eligibility:
+      {
+        type: object,
+        required: [eligible, reasons, policyVersion, availabilityEpoch, evaluatedAt],
+        properties:
+          {
+            eligible: { type: boolean },
+            slot: { type: string, enum: [current, next] },
+            reasons:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/EligibilityReason" },
+              },
+            policyVersion: { type: integer },
+            availabilityEpoch: { type: integer },
+            evaluatedAt: { type: string, format: date-time },
+          },
+      }
+    Award:
+      {
+        type: object,
+        required:
+          [
+            awardId,
+            requestId,
+            bidId,
+            state,
+            requestVersion,
+            bidVersion,
+            driverId,
+            requesterId,
+            fareMinor,
+            commissionMinor,
+            slot,
+            createdAt,
+          ],
+        properties:
+          {
+            awardId: { type: string },
+            requestId: { type: string },
+            bidId: { type: string },
+            state:
+              {
+                type: string,
+                enum: [pending, confirmed, failed, compensated, cancelled],
+              },
+            requestVersion: { type: integer },
+            bidVersion: { type: integer },
+            driverId: { type: string },
+            requesterId: { type: string },
+            fareMinor: { $ref: "#/components/schemas/Money" },
+            commissionMinor: { $ref: "#/components/schemas/Money" },
+            slot: { type: string, enum: [current, next] },
+            executionRef:
+              {
+                type: object,
+                required: [service, id],
+                properties:
+                  {
+                    service: { type: string, enum: [ride, delivery] },
+                    id: { type: string },
+                  },
+              },
+            createdAt: { type: string, format: date-time },
+            resolvedAt: { type: string, format: date-time },
+            failReason:
+              {
+                type: string,
+                description: "Human-phrased reason on award.failed; the request reopened if still valid.",
+              },
+          },
+      }
+    FeedItem:
+      {
+        type: object,
+        required:
+          [requestId, revision, service, title, meta, askedMinor, askedByLabel, expiresAt],
+        properties:
+          {
+            requestId: { type: string },
+            revision: { type: integer },
+            service: { type: string, enum: [ride, delivery] },
+            title: { type: string },
+            meta: { type: string },
+            askedMinor: { $ref: "#/components/schemas/Money" },
+            askedByLabel: { type: string },
+            capabilityBadge: { type: string },
+            expiresAt: { type: string, format: date-time },
+          },
+      }
+    DriverJob:
+      {
+        type: object,
+        required: [claimId, slot, service, state, fareMinor, commissionMinor],
+        properties:
+          {
+            claimId: { type: string },
+            slot: { type: string, enum: [current, next] },
+            service: { type: string, enum: [ride, delivery] },
+            state: { type: string },
+            fareMinor: { $ref: "#/components/schemas/Money" },
+            commissionMinor: { $ref: "#/components/schemas/Money" },
+            receiptId: { type: string },
+            executionRef:
+              {
+                type: object,
+                required: [service, id],
+                properties:
+                  {
+                    service: { type: string, enum: [ride, delivery] },
+                    id: { type: string },
+                  },
+              },
+            pickupWindow:
+              {
+                type: object,
+                required: [earliestSec, latestSec, etaVersion],
+                properties:
+                  {
+                    earliestSec: { type: integer },
+                    latestSec: { type: integer },
+                    etaVersion: { type: integer },
+                  },
+              },
+          },
+      }
+    RateProfile:
+      {
+        type: object,
+        required:
+          [
+            profileId,
+            driverId,
+            version,
+            cityId,
+            service,
+            vehicleClass,
+            currency,
+            perKmMinor,
+            minimumTripFareMinor,
+            components,
+            createdAt,
+          ],
+        properties:
+          {
+            profileId: { type: string },
+            driverId: { type: string },
+            version: { type: integer },
+            cityId: { type: string },
+            service: { type: string, enum: [ride, delivery] },
+            vehicleClass: { type: string },
+            currency: { type: string },
+            perKmMinor: { type: integer, description: "Gross (before 10% commission) minor units per routed km." },
+            minimumTripFareMinor: { type: integer },
+            components:
+              {
+                type: object,
+                properties:
+                  {
+                    perMinuteMinor: { type: integer },
+                    pickupPerKmMinor: { type: integer },
+                    handlingMinor: { type: integer },
+                  },
+              },
+            createdAt: { type: string, format: date-time },
+          },
+      }
+    WalletHold:
+      {
+        type: object,
+        required: [reservationId, bidId, driverId, state, amountMinor, commissionBps, createdAt],
+        properties:
+          {
+            reservationId: { type: string },
+            bidId: { type: string },
+            driverId: { type: string },
+            state:
+              {
+                type: string,
+                enum: [active, capture_pending, captured, released, reversed],
+              },
+            amountMinor: { $ref: "#/components/schemas/Money" },
+            commissionBps: { type: integer, const: 1000 },
+            baseMinor: { $ref: "#/components/schemas/Money" },
+            roundingRule: { type: string, const: half_up },
+            policyVersion: { type: integer },
+            createdAt: { type: string, format: date-time },
+            releasedAt: { type: string, format: date-time },
+            capturedAt: { type: string, format: date-time },
+          },
+      }
+    WalletOverview:
+      {
+        type: object,
+        description: "The single spendable calculation: cleared journal balance minus active holds. Every debit path honors it.",
+        required: [clearedMinor, heldMinor, spendableMinor, holds],
+        properties:
+          {
+            clearedMinor: { $ref: "#/components/schemas/Money" },
+            heldMinor: { $ref: "#/components/schemas/Money" },
+            spendableMinor: { $ref: "#/components/schemas/Money" },
+            holds:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/WalletHold" },
+              },
+          },
+      }
+security: [{ bearer: [] }]
+paths:
+  /v1/mp/quote:
+    get:
+      summary: Bounded fare quote envelope (R02)
+      description: "Prices the trip/delivery with the deterministic engine, wraps the signed quote with negotiation bounds (floor = max(absolute, cost-based, bps-of-suggested); ceiling = bps-of-suggested). 503 market_not_configured when the city/service/vehicle has no marketplace policy."
+      parameters:
+        - { name: service, in: query, required: true, schema: { type: string, enum: [ride, delivery] } }
+        - { name: vehicleClass, in: query, required: true, schema: { type: string } }
+        - { name: pickupLat, in: query, required: true, schema: { type: number } }
+        - { name: pickupLng, in: query, required: true, schema: { type: number } }
+        - { name: dropoffLat, in: query, required: true, schema: { type: number } }
+        - { name: dropoffLng, in: query, required: true, schema: { type: number } }
+        - { name: weightKg, in: query, required: false, schema: { type: number } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuoteEnvelope" }
+        "503":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests:
+    post:
+      summary: Publish a request (R03)
+      description: "Validates the requested amount against the quote's snapshotted bounds server-side (fare_out_of_bounds with a structured field error otherwise). Requires a live, owned, unconsumed quote. One open request per requester per policy cap."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [quoteId, requestedFareMinor, paymentMethodId],
+                properties:
+                  {
+                    quoteId: { type: string },
+                    requestedFareMinor: { $ref: "#/components/schemas/Money" },
+                    paymentMethodId: { type: string },
+                    delivery: { $ref: "#/components/schemas/DeliveryDetails" },
+                  },
+              }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Request" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}:
+    get:
+      summary: Owner snapshot (R04) — request plus private offers
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [request, offers, seq],
+                  properties:
+                    {
+                      request: { $ref: "#/components/schemas/Request" },
+                      offers:
+                        {
+                          type: array,
+                          items: { $ref: "#/components/schemas/Offer" },
+                        },
+                      award: { $ref: "#/components/schemas/Award" },
+                      seq: { type: integer },
+                    },
+                }
+  /v1/mp/requests/{requestId}/revise:
+    post:
+      summary: Price-affecting edit — new revision, bids invalidated, holds released
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [requestedFareMinor, expectedVersion],
+                properties:
+                  {
+                    requestedFareMinor: { $ref: "#/components/schemas/Money" },
+                    quoteId: { type: string, description: "Required when route/service details changed — a fresh quote re-snapshots bounds." },
+                    expectedVersion: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Request" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/cancel:
+    post:
+      summary: Cancel an open request (releases all bid holds)
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Request" }
+  /v1/mp/requests/{requestId}/select:
+    post:
+      summary: Select the winner (R05, M05 award saga)
+      description: "Authenticated request owner only. Pins requestVersion and bidVersion (version_conflict on stale terms). Runs the award saga: claim request + driver capacity atomically, authorize rider funding for the selected amount, capture the winning commission hold exactly once under the award id, commit execution, resolve losers. Answers 202 with the pending award; the client converges on award.confirmed/failed via events or GET. award_unresolved is returned to a second selection racing a pending award."
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [bidId, requestVersion, bidVersion],
+                properties:
+                  {
+                    bidId: { type: string },
+                    requestVersion: { type: integer },
+                    bidVersion: { type: integer },
+                    pickupWindowConsent:
+                      {
+                        type: object,
+                        required: [etaVersion, accepted],
+                        description: "Required for finishing-trip (next-slot) winners; etaVersion must match the currently displayed window or the server returns the refreshed window for reconfirmation.",
+                        properties:
+                          {
+                            etaVersion: { type: integer },
+                            accepted: { type: boolean, const: true },
+                          },
+                      },
+                  },
+              }
+      responses:
+        "202":
+          description: "The award (pending, or already confirmed when the saga completed synchronously). `pickupPin` is present ONLY when this call confirmed a current-slot ride award: it is revealed exactly once to the owner and deliberately absent from idempotent replays."
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [award],
+                  properties:
+                    {
+                      award: { $ref: "#/components/schemas/Award" },
+                      pickupPin: { type: string },
+                    },
+                }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/award:
+    get:
+      summary: Award state (poll/converge)
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Award" }
+  /v1/mp/feed:
+    get:
+      summary: Paginated eligible open-request feed (D01)
+      description: "All requests the driver is eligible to discover in their current envelope. Receiving the feed never reserves the driver or removes availability."
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [items, availabilityEpoch],
+                  properties:
+                    {
+                      items:
+                        {
+                          type: array,
+                          items: { $ref: "#/components/schemas/FeedItem" },
+                        },
+                      nextCursor: { type: string },
+                      availabilityEpoch: { type: integer },
+                    },
+                }
+  /v1/mp/requests/{requestId}/driver-view:
+    get:
+      summary: Driver detail — privacy-limited request, presets, eligibility, own bid (D02/D03/D10)
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [item, eligibility, presets],
+                  properties:
+                    {
+                      item: { $ref: "#/components/schemas/FeedItem" },
+                      eligibility: { $ref: "#/components/schemas/Eligibility" },
+                      presets:
+                        {
+                          type: array,
+                          items: { $ref: "#/components/schemas/Preset" },
+                        },
+                      profileLine: { type: string },
+                      ceilingNotice: { type: string },
+                      myBid: { $ref: "#/components/schemas/Bid" },
+                      currentClaimId:
+                        {
+                          type: string,
+                          description: "The driver's current work claim id — the mandatory dependsOnClaimId for a next-slot bid. Null unless a current claim exists.",
+                        },
+                    },
+                }
+  /v1/mp/driver/parked:
+    post:
+      summary: Explicit safely-parked attestation (driver)
+      description: "Records the attestation the stationary gate combines with telemetry (it can never override clearly moving samples). The response is the state the SERVER acknowledges; the client adopts it rather than assuming."
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [state, availabilityEpoch, confirmedAt, expiresAt, ttlSeconds],
+                  properties:
+                    {
+                      state: { type: string, enum: [parked_confirmed, moving, stale_location] },
+                      availabilityEpoch: { type: integer },
+                      confirmedAt: { type: string, format: date-time },
+                      expiresAt: { type: string, format: date-time },
+                      ttlSeconds: { type: integer },
+                    },
+                }
+  /v1/mp/driver/jobs:
+    get:
+      summary: Driver claims projection (D05 winner card + D11 current-plus-next timeline)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [promotion],
+                  properties:
+                    {
+                      current: { $ref: "#/components/schemas/DriverJob" },
+                      next: { $ref: "#/components/schemas/DriverJob" },
+                      promotion:
+                        {
+                          type: string,
+                          enum: [none, pending, failed_revalidating],
+                        },
+                    },
+                }
+  /v1/mp/bids:
+    post:
+      summary: Submit a funded bid (D02 → D03)
+      description: "Server revalidates eligibility and bounds, then reserves the 10% commission against cleared spendable funds through payment-service BEFORE the bid becomes live (insufficient_spendable with the exact shortfall otherwise). Slot intent (current|next) and the dependency claim are recorded at creation and never silently changed."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [requestId, requestRevision, amountMinor, slot, availabilityEpoch],
+                properties:
+                  {
+                    requestId: { type: string },
+                    requestRevision: { type: integer },
+                    amountMinor: { $ref: "#/components/schemas/Money" },
+                    slot: { type: string, enum: [current, next] },
+                    dependsOnClaimId: { type: string },
+                    availabilityEpoch: { type: integer },
+                    rateProfileVersion: { type: integer },
+                  },
+              }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Bid" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/bids/{bidId}/revise:
+    post:
+      summary: Revise a live bid (raise re-reserves the delta first; lower releases it)
+      parameters:
+        - { name: bidId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [amountMinor, expectedVersion],
+                properties:
+                  {
+                    amountMinor: { $ref: "#/components/schemas/Money" },
+                    expectedVersion: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Bid" }
+        "429":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/bids/{bidId}/withdraw:
+    post:
+      summary: Withdraw a live bid (releases its hold once)
+      parameters:
+        - { name: bidId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Bid" }
+  /v1/mp/bids/mine:
+    get:
+      summary: Driver's own bids with hold states (D06)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [bids],
+                  properties:
+                    {
+                      bids:
+                        {
+                          type: array,
+                          items: { $ref: "#/components/schemas/Bid" },
+                        },
+                    },
+                }
+  /v1/mp/rate-profiles:
+    get:
+      summary: Driver rate profiles (D09)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [profiles],
+                  properties:
+                    {
+                      profiles:
+                        {
+                          type: array,
+                          items: { $ref: "#/components/schemas/RateProfile" },
+                        },
+                    },
+                }
+    put:
+      summary: Save a rate profile (new version; future calculations only)
+      description: "Bounds-checked against rateProfileBounds (rate_profile_out_of_bounds). A save never mutates outstanding bids or awarded work."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [cityId, service, vehicleClass, perKmMinor, minimumTripFareMinor],
+                properties:
+                  {
+                    cityId: { type: string },
+                    service: { type: string, enum: [ride, delivery] },
+                    vehicleClass: { type: string },
+                    perKmMinor: { type: integer },
+                    minimumTripFareMinor: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RateProfile" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/rate-profiles/preview:
+    post:
+      summary: Server-computed profile example (the only place example maths happens)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [cityId, service, vehicleClass, perKmMinor, minimumTripFareMinor, exampleDistanceMeters],
+                properties:
+                  {
+                    cityId: { type: string },
+                    service: { type: string, enum: [ride, delivery] },
+                    vehicleClass: { type: string },
+                    perKmMinor: { type: integer },
+                    minimumTripFareMinor: { type: integer },
+                    exampleDistanceMeters: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [profileFormulaVersion, grossMinor, commissionMinor, netMinor, floorAdjusted, exceedsCeiling, rows, disclaimer],
+                  properties:
+                    {
+                      profileFormulaVersion: { type: integer },
+                      grossMinor: { $ref: "#/components/schemas/Money" },
+                      commissionMinor: { $ref: "#/components/schemas/Money" },
+                      netMinor: { $ref: "#/components/schemas/Money" },
+                      floorAdjusted: { type: boolean },
+                      exceedsCeiling: { type: boolean },
+                      rows:
+                        {
+                          type: array,
+                          items:
+                            {
+                              type: object,
+                              required: [label, value],
+                              properties:
+                                {
+                                  label: { type: string },
+                                  value: { type: string },
+                                  tone: { type: string, enum: [ok, errorInk] },
+                                },
+                            },
+                        },
+                      disclaimer: { type: string },
+                    },
+                }
+  /v1/wallet/mp/overview:
+    get:
+      summary: Driver wallet with holds and spendable (D04) — served by payment-service
+      description: "User-facing: reads the AUTHENTICATED caller's own wallet. `cityId` names the market whose currency/config applies (also accepted as an X-City-ID header)."
+      parameters:
+        - { name: cityId, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletOverview" }
+  /v1/wallet/mp/holds/overview:
+    get:
+      summary: Wallet overview for a named driver (internal, marketplace engine)
+      description: "Service-authenticated variant the engine uses to build affordability-checked presets. Lives under /holds so the gateway's admin-only rule covers it; user tokens can never name another driver."
+      security: [{ serviceKey: [] }]
+      parameters:
+        - { name: driverId, in: query, required: true, schema: { type: string } }
+        - { name: cityId, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletOverview" }
+  /v1/wallet/mp/settlements:
+    post:
+      summary: Marketplace completion settlement (internal, M06)
+      description: "Called by the marketplace engine when a marketplace execution completes. The 10% fee was captured at selection and is NEVER charged here: wallet trips debit the rider the agreed fare and credit the driver the FULL fare (tips bypass commission); cash trips post nothing except a wallet tip. Idempotent on the award id — a replay returns the original outcome."
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, executionRef, requesterId, driverId, fareMinor, method, cityId],
+                properties:
+                  {
+                    awardId: { type: string },
+                    executionRef:
+                      {
+                        type: object,
+                        required: [service, id],
+                        properties:
+                          {
+                            service: { type: string, enum: [ride, delivery] },
+                            id: { type: string },
+                          },
+                      },
+                    requesterId: { type: string },
+                    driverId: { type: string },
+                    fareMinor: { $ref: "#/components/schemas/Money" },
+                    tipMinor: { $ref: "#/components/schemas/Money" },
+                    method: { type: string, enum: [wallet, cash] },
+                    cityId: { type: string },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [settled, method],
+                  properties:
+                    {
+                      settled: { type: boolean, const: true },
+                      method: { type: string },
+                      journalEntryId: { type: string },
+                    },
+                }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/wallet/mp/holds/reserve:
+    post:
+      summary: Reserve a commission hold (internal, marketplace engine → payment-service)
+      description: "Service-authenticated. Idempotent on the reservation key with payload-hash conflict detection. Reserves the full commission per live bid against cleared spendable funds; fails with insufficient_spendable and the exact shortfall."
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [driverId, bidId, requestId, amountMinor, baseMinor, policyVersion, cityId],
+                properties:
+                  {
+                    driverId: { type: string },
+                    bidId: { type: string },
+                    requestId: { type: string },
+                    amountMinor: { $ref: "#/components/schemas/Money" },
+                    baseMinor: { $ref: "#/components/schemas/Money" },
+                    policyVersion: { type: integer },
+                    cityId: { type: string },
+                  },
+              }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletHold" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/wallet/mp/holds/{reservationId}/adjust:
+    post:
+      summary: Atomically raise/lower a hold (internal)
+      description: "A raise succeeds only if the extra reservation fits spendable funds (the old hold stays valid otherwise); a lower releases the difference."
+      security: [{ serviceKey: [] }]
+      parameters:
+        - { name: reservationId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [amountMinor, baseMinor],
+                properties:
+                  {
+                    amountMinor: { $ref: "#/components/schemas/Money" },
+                    baseMinor: { $ref: "#/components/schemas/Money" },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletHold" }
+  /v1/wallet/mp/holds/{reservationId}/release:
+    post:
+      summary: Release a hold once (internal; refuses while its award is unresolved)
+      security: [{ serviceKey: [] }]
+      parameters:
+        - { name: reservationId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletHold" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/wallet/mp/holds/{reservationId}/capture:
+    post:
+      summary: Capture the winning hold exactly once under the award id (internal)
+      description: "Posts the single 10% commission journal debit (wallet → ubi_commission) with counterpart award reference. Idempotent on the award id; a repeat answers the original receipt. `expectedAmountMinor` is the award's pinned commission: a hold whose current amount differs (e.g. a bid revision raced the selection) is REFUSED with 409 conflict so the saga compensates instead of debiting terms that were never awarded. Completion settlement must not charge the fee again."
+      security: [{ serviceKey: [] }]
+      parameters:
+        - { name: reservationId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, expectedAmountMinor],
+                properties:
+                  {
+                    awardId: { type: string },
+                    expectedAmountMinor: { $ref: "#/components/schemas/Money" },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [hold, receiptId, journalEntryId],
+                  properties:
+                    {
+                      hold: { $ref: "#/components/schemas/WalletHold" },
+                      receiptId: { type: string },
+                      journalEntryId: { type: string },
+                    },
+                }
+  /v1/wallet/mp/funding/authorize:
+    post:
+      summary: Rider funding authorization for a selection (internal, M05 step 3)
+      description: "Service-authenticated. Verifies the SELECTED amount is payable with the request's stored payment method: wallet methods require spendable (balance minus active holds) to cover the fare on a non-locked, non-safe-mode wallet; other configured methods pass on availability. Nothing is debited — settlement stays at completion — and the check is deliberately re-evaluated per call rather than cached. 2xx = authorized; 4xx carries a canonical error code (insufficient_funds with the exact shortfall, payment_method_unavailable, wallet_locked); 5xx is an unknown outcome the award saga keeps pending."
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [requesterId, requestId, awardId, paymentMethodId, amountMinor, currency, cityId],
+                properties:
+                  {
+                    requesterId: { type: string },
+                    requestId: { type: string },
+                    awardId: { type: string },
+                    paymentMethodId: { type: string },
+                    amountMinor: { type: integer, description: "Bare integer minor units (matches ride-service's FundingRequest wire shape)." },
+                    currency: { type: string },
+                    cityId: { type: string },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [authorized, awardId, paymentMethodId],
+                  properties:
+                    {
+                      authorized: { type: boolean, const: true },
+                      awardId: { type: string },
+                      paymentMethodId: { type: string },
+                    },
+                }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/webhooks/marketplace-assign:
+    post:
+      summary: Delivery execution hand-off (internal, marketplace engine → delivery-service)
+      description: "Service-authenticated adapter per ADR-0002. Idempotent on awardId: creates the delivery already DRIVER_ASSIGNED with the award id, agreed fare (authoritative in minor units in the marketplace/ledger) and fencing token carried in the package metadata; a replay returns the existing delivery. Marketplace-managed deliveries are refused by the legacy first-come AcceptDelivery path."
+      security: [{ serviceKey: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, requestId, driverId, customerId, fareMinor, currency, pickup, dropoff, fencingToken],
+                properties:
+                  {
+                    awardId: { type: string },
+                    requestId: { type: string },
+                    driverId: { type: string },
+                    customerId: { type: string },
+                    fareMinor: { type: integer },
+                    currency: { type: string },
+                    pickup: { $ref: "#/components/schemas/Area" },
+                    dropoff: { $ref: "#/components/schemas/Area" },
+                    packageDetails: { $ref: "#/components/schemas/DeliveryDetails" },
+                    fencingToken: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [deliveryId, awardId],
+                  properties:
+                    {
+                      deliveryId: { type: string },
+                      awardId: { type: string },
+                    },
+                }
+  /v1/wallet/mp/holds/{reservationId}/reverse:
+    post:
+      summary: Reverse a captured fee with a linked journal entry (internal; compensation)
+      security: [{ serviceKey: [] }]
+      parameters:
+        - { name: reservationId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, reason],
+                properties:
+                  {
+                    awardId: { type: string },
+                    reason: { type: string },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletHold" }
+  /v1/admin/mp/requests:
+    get:
+      summary: Marketplace monitor (A01)
+      parameters:
+        - { name: cityId, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [rows],
+                  properties:
+                    {
+                      rows:
+                        {
+                          type: array,
+                          items:
+                            {
+                              type: object,
+                              required: [requestId, state, service, cityId],
+                              properties:
+                                {
+                                  requestId: { type: string },
+                                  state: { type: string },
+                                  service: { type: string },
+                                  cityId: { type: string },
+                                  askedMinor: { $ref: "#/components/schemas/Money" },
+                                  bids: { type: integer },
+                                  reach: { type: integer },
+                                  envelope: { $ref: "#/components/schemas/SearchEnvelope" },
+                                },
+                            },
+                        },
+                      nextCursor: { type: string },
+                    },
+                }
+  /v1/admin/mp/requests/{requestId}/timeline:
+    get:
+      summary: Versioned request/bid/award timeline (A02) — append-only, no mutations
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [requestId, policyVersion, events],
+                  properties:
+                    {
+                      requestId: { type: string },
+                      policyVersion: { type: integer },
+                      events:
+                        {
+                          type: array,
+                          items:
+                            {
+                              type: object,
+                              required: [at, type, detail],
+                              properties:
+                                {
+                                  at: { type: string, format: date-time },
+                                  type: { type: string },
+                                  detail: { type: string },
+                                },
+                            },
+                        },
+                    },
+                }

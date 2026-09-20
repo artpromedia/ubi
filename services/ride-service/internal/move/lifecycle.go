@@ -490,6 +490,10 @@ func (s *Service) Complete(ctx context.Context, actor Actor, rideID uuid.UUID) (
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	// Post-commit: a marketplace-managed ride may have a queued next job to
+	// promote. The observer is a courtesy; the marketplace sweep is the
+	// durable backstop.
+	s.notifyExecutionTerminal(ctx, rideID)
 	return view, nil
 }
 
@@ -638,6 +642,13 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 	})
 	if err != nil {
 		return nil, asDomainError(err)
+	}
+	if view != nil && !machine.IsRiderActive(view.State) {
+		// A rider cancellation is terminal; the marketplace may have a claim
+		// to release and a queued job to revalidate from the driver's ACTUAL
+		// position. (A driver cancellation goes to rematching, which is not
+		// terminal.)
+		s.notifyExecutionTerminal(ctx, rideID)
 	}
 	return view, nil
 }

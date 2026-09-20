@@ -1665,11 +1665,12 @@ model Wallet {
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
   lines        JournalLine[]
-  transfersOut Transfer[]        @relation("TransferFrom")
-  transfersIn  Transfer[]        @relation("TransferTo")
+  transfersOut Transfer[]         @relation("TransferFrom")
+  transfersIn  Transfer[]         @relation("TransferTo")
   nipTransfers NipTransfer[]
   topups       Topup[]
   statements   WalletStatement[]
+  mpHolds      MpCommissionHold[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -1819,6 +1820,42 @@ model Topup {
   @@index([walletId, createdAt])
   @@index([status])
   @@map("topups")
+}
+
+/// Marketplace commission reservation (M04). A hold is NOT a journal movement:
+/// the wallet's cleared balance stays untouched while the hold is active, and
+/// spendable = balanceOf − SUM(active holds). Money only moves at capture,
+/// through a normal journal entry.
+model MpCommissionHold {
+  id              String    @id
+  walletId        String    @map("wallet_id")
+  driverId        String    @map("driver_id")
+  bidRef          String    @unique @map("bid_ref")
+  requestRef      String    @map("request_ref")
+  awardRef        String?   @map("award_ref")
+  receiptId       String?   @map("receipt_id")
+  journalEntryId  String?   @map("journal_entry_id")
+  reversalEntryId String?   @map("reversal_entry_id")
+  amountMinor     BigInt    @map("amount_minor")
+  baseMinor       BigInt    @map("base_minor")
+  currency        String
+  /// Snapshot of the rate at reservation time — always 1000 (10%).
+  commissionBps   Int       @map("commission_bps")
+  /// Snapshot of the rounding rule — always "half_up".
+  roundingRule    String    @map("rounding_rule")
+  policyVersion   Int       @map("policy_version")
+  state           String
+  idempotencyKey  String    @unique @map("idempotency_key")
+  payloadHash     String    @map("payload_hash")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  capturedAt      DateTime? @map("captured_at")
+  releasedAt      DateTime? @map("released_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, state], map: "mp_commission_holds_spendable")
+  @@map("mp_commission_holds")
 }
 
 model WalletStatement {

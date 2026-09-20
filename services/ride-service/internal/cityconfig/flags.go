@@ -14,6 +14,11 @@ const (
 	FlagMove         = "move"
 	FlagRideRequest  = "ride_request"
 	FlagDriverOnline = "driver_online"
+	// Marketplace verticals (M-slices). Each vertical opens on its own flag,
+	// deny by default; queued "next job" bidding has a flag of its own on top.
+	FlagMarketplaceRides      = "marketplace_rides"
+	FlagMarketplaceDelivery   = "marketplace_delivery"
+	FlagMarketplaceQueuedJobs = "marketplace_queued_jobs"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

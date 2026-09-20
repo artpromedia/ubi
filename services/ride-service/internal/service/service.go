@@ -19,6 +19,7 @@ import (
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/geo"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/marketplace"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/matching"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/pricing"
@@ -36,16 +37,23 @@ type Config struct {
 	QuoteSigningSecret string
 	GoogleMapsKey      string
 	ConfigCacheTTL     time.Duration
+	// PaymentServiceURL and InternalServiceKey wire the marketplace's wallet
+	// port. Leaving them empty is legal: the marketplace surface still mounts,
+	// and every funded action fails closed at the wallet instead of
+	// pretending to reserve.
+	PaymentServiceURL  string
+	InternalServiceKey string
 	Logger             zerolog.Logger
 }
 
 // Runtime is a wired service and the resources it owns.
 type Runtime struct {
-	Service *move.Service
-	Maps    *geo.MapsClient
-	DB      *pgxpool.Pool
-	Redis   *goredis.Client
-	logger  zerolog.Logger
+	Service     *move.Service
+	Marketplace *marketplace.Service
+	Maps        *geo.MapsClient
+	DB          *pgxpool.Pool
+	Redis       *goredis.Client
+	logger      zerolog.Logger
 }
 
 // Build wires the service. It returns an error rather than a half-built
@@ -127,14 +135,48 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	}
 	runtime.Service = moveService
 
+	if config.PaymentServiceURL == "" {
+		config.Logger.Warn().Msg("PAYMENT_SERVICE_URL is not set: marketplace bids will fail closed at the wallet")
+	}
+	httpWallet := marketplace.NewHTTPWallet(config.PaymentServiceURL, config.InternalServiceKey, nil)
+	marketplaceService, err := marketplace.NewService(marketplace.Deps{
+		Store:      marketplace.NewStore(pool),
+		Config:     cityconfig.NewStore(pool, runtime.Redis, config.ConfigCacheTTL),
+		Flags:      cityconfig.NewFlags(pool),
+		Pricing:    pricing.NewEngine(),
+		Router:     router,
+		Wallet:     httpWallet,
+		Funding:    marketplace.NewHTTPFunding(config.PaymentServiceURL, config.InternalServiceKey, nil),
+		Settlement: httpWallet,
+		Redis:      ridisc.New(runtime.Redis),
+		Logger:     config.Logger,
+	})
+	if err != nil {
+		runtime.Close()
+		return nil, err
+	}
+	runtime.Marketplace = marketplaceService
+
+	// The move core tells the marketplace when an execution ride ends, so a
+	// queued next job can be promoted; the marketplace sweep is the durable
+	// backstop for this callback. Defined in move, implemented in marketplace:
+	// no import cycle.
+	moveService.SetExecutionObserver(marketplaceService)
+
 	return runtime, nil
 }
 
-// Migrate applies the ride schema. It is called from an explicit boot flag, not
-// on every start: a service that migrates itself on every deploy will one day
-// migrate itself during an incident.
+// Migrate applies the ride and mp schemas. It is called from an explicit boot
+// flag, not on every start: a service that migrates itself on every deploy
+// will one day migrate itself during an incident.
 func (r *Runtime) Migrate(ctx context.Context) error {
-	return r.Service.Store().Migrate(ctx)
+	if err := r.Service.Store().Migrate(ctx); err != nil {
+		return err
+	}
+	if r.Marketplace != nil {
+		return r.Marketplace.Store().Migrate(ctx)
+	}
+	return nil
 }
 
 // Close releases the runtime's resources.

@@ -4,8 +4,9 @@ import { askFixtures } from './ask';
 import { travelFixtures } from './travel';
 import { benefitsFixtures } from './benefits';
 import { mandateFixtures } from './mandates';
+import { marketplaceFixtures } from './marketplace';
 export function installDevFixtures() {
-  const all = [askFixtures, travelFixtures, benefitsFixtures, mandateFixtures];
+  const all = [askFixtures, travelFixtures, benefitsFixtures, mandateFixtures, marketplaceFixtures];
   installFixtures(async (input) => { for (const h of all) { const r = await h(input); if (r) return r; } return undefined; });
 }
 export type FixtureInput = { method: string; path: string; body?: unknown };

@@ -3,7 +3,7 @@ import { View, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
-import { Screen, Text, Card, StatusPill, MoneyText, Skeleton, useTheme } from '@ubi/mobile-ui';
+import { Screen, Text, Card, StatusPill, Skeleton, useTheme } from '@ubi/mobile-ui';
 import { TID, track, bpsToPercent, formatMinor } from '@ubi/mobile-core';
 import type { IncentivesStackParamList } from '../../navigation/routes';
 import { incentivesApi, type Rebate, type Window } from '../../api/incentives';

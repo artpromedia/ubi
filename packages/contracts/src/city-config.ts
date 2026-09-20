@@ -66,6 +66,98 @@ export const AirportConfigSchema = z.object({
   doors: z.record(z.string()),
 });
 
+/**
+ * Negotiated-fare marketplace policy (M01). Every number the marketplace needs
+ * lives here, versioned per city — radii, ETA budgets, dwell, cooldowns, caps,
+ * bounds. No code constant may stand in for a missing value: a city without a
+ * marketplace policy (or with a service/vehicle pair missing from `fareBounds`)
+ * FAILS CLOSED with `market_not_configured`. Values shown in fixtures are test
+ * data, never production defaults.
+ */
+export const MarketplaceFareBoundsSchema = z.object({
+  /** Absolute floor for the negotiated service fare, minor units. */
+  absoluteFloorMinor: z.number().int().positive(),
+  /** Versioned cost-based floor component, minor units (operating-cost model). */
+  costFloorMinor: z.number().int().nonnegative(),
+  /** Floor as basis points of the suggested fare. Effective floor = max of the three. */
+  floorBpsOfSuggested: z.number().int().min(0).max(10_000),
+  /** Ceiling as basis points of the suggested fare — mistake/abuse protection. */
+  ceilingBpsOfSuggested: z.number().int().min(10_000),
+});
+export type MarketplaceFareBounds = z.infer<typeof MarketplaceFareBoundsSchema>;
+
+export const SearchEnvelopePolicySchema = z.object({
+  initialRadiusMeters: z.number().int().positive(),
+  maxRadiusMeters: z.number().int().positive(),
+  initialPickupEtaSec: z.number().int().positive(),
+  maxPickupEtaSec: z.number().int().positive(),
+  /** Expand after this long open without a sufficient offer count. */
+  expandAfterSec: z.number().int().positive(),
+  /** Offers below this count allow expansion at the timeout. */
+  minOffersBeforeExpand: z.number().int().nonnegative(),
+  /** Radius/ETA grow by these factors per step, clamped at the maxima. */
+  expansionSteps: z.number().int().min(1).max(10),
+});
+
+export const StationaryPolicySchema = z.object({
+  /** Sustained dwell below the speed gate before interactive bidding opens. */
+  minDwellSec: z.number().int().positive(),
+  maxSpeedMps: z.number().nonnegative(),
+  maxLocationAgeSec: z.number().int().positive(),
+  maxAccuracyMeters: z.number().int().positive(),
+  /** Hysteresis: once open, motion above the gate for this long closes it. */
+  motionCloseSec: z.number().int().positive(),
+});
+
+export const FinishingTripPolicySchema = z.object({
+  /** Current job must have at most this much estimated service time left. */
+  maxRemainingSec: z.number().int().positive(),
+  /** Completion/handoff buffer added to the predicted pickup time. */
+  completionBufferSec: z.number().int().nonnegative(),
+  uncertaintyBufferSec: z.number().int().nonnegative(),
+  /** Max bearing delta between post-dropoff heading-to-pickup and corridor. */
+  corridorMaxBearingDeltaDeg: z.number().int().min(0).max(180),
+});
+
+export const MarketplaceBidPolicySchema = z.object({
+  bidExpirySec: z.number().int().positive(),
+  requestExpirySec: z.number().int().positive(),
+  revisionCooldownSec: z.number().int().nonnegative(),
+  maxLiveBidsPerDriver: z.number().int().positive(),
+  maxOpenRequestsPerRequester: z.number().int().positive(),
+});
+
+export const QueuePolicySchema = z.object({
+  /** Beyond this drift from the accepted window the rider may exit fee-free. */
+  pickupWindowToleranceSec: z.number().int().nonnegative(),
+});
+
+export const RateProfileBoundsSchema = z.object({
+  maxPerKmMinor: z.number().int().positive(),
+  maxMinimumTripFareMinor: z.number().int().positive(),
+});
+
+export const MarketplacePolicySchema = z.object({
+  policyVersion: z.number().int().positive(),
+  /**
+   * User-mandated marketplace commission: 10%, 1,000 basis points, on the
+   * accepted negotiated service fare (tips, goods value, taxes and pass-through
+   * tolls excluded). Fixed by contract — not grantable to any admin role.
+   */
+  commissionBps: z.literal(1_000),
+  /** Documented integer rounding for the commission (half-up per spec). */
+  commissionRounding: z.literal("half_up"),
+  /** Keyed `service:vehicleClass` (e.g. "ride:go", "delivery:moto"). */
+  fareBounds: z.record(MarketplaceFareBoundsSchema),
+  searchEnvelope: SearchEnvelopePolicySchema,
+  stationary: StationaryPolicySchema,
+  finishingTrip: FinishingTripPolicySchema,
+  bids: MarketplaceBidPolicySchema,
+  queue: QueuePolicySchema,
+  rateProfileBounds: z.record(RateProfileBoundsSchema),
+});
+export type MarketplacePolicy = z.infer<typeof MarketplacePolicySchema>;
+
 export const CityConfigSchema = z.object({
   cityId: z.string().min(1),
   version: z.number().int().positive(),
@@ -93,9 +185,29 @@ export const CityConfigSchema = z.object({
   reservationFreeReleaseSec: z.number().int().nonnegative(),
   airport: AirportConfigSchema,
   taxes: z.record(z.number()),
+  /** Absent ⇒ the negotiated-fare marketplace is not configured here: fail closed. */
+  marketplace: MarketplacePolicySchema.optional(),
 });
 
 export type CityConfig = z.infer<typeof CityConfigSchema>;
+
+/**
+ * The only way to read marketplace fare bounds. Throws the fail-closed error
+ * when the city has no policy or the service/vehicle pair is unconfigured.
+ */
+export function marketplaceBoundsFor(
+  config: CityConfig,
+  service: "ride" | "delivery",
+  vehicleClass: string,
+): MarketplaceFareBounds {
+  const bounds = config.marketplace?.fareBounds[`${service}:${vehicleClass}`];
+  if (bounds === undefined) {
+    throw new Error(
+      `city ${config.cityId} v${config.version} has no marketplace fare bounds for "${service}:${vehicleClass}" — market not configured, failing closed`,
+    );
+  }
+  return bounds;
+}
 
 export function fareTableFor(
   config: CityConfig,

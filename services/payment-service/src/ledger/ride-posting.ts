@@ -20,7 +20,10 @@ import {
   splitPercent,
 } from "@ubi/contracts";
 
+import { lockWallet } from "./context";
+import { assertSufficientFunds } from "./limits";
 import { postEntry } from "./post-entry";
+import { requireWallet } from "./wallets";
 
 import type { JournalLineInput, LedgerTx, PostedEntry } from "./types";
 
@@ -190,6 +193,175 @@ export async function postRideCompletion(
   });
 
   return { entry, breakdown };
+}
+
+// ── Marketplace settlement mode (M06) ──────────────────────────────────────
+
+export interface MarketplaceCompletionInput {
+  readonly rideId: string;
+  readonly awardId: string;
+  readonly method: RidePaymentMethod;
+  /** Present for a wallet-paid trip; absent for cash. */
+  readonly riderWalletId?: string | undefined;
+  readonly driverWalletId: string;
+  readonly fareMinor: number;
+  readonly tipMinor?: number | undefined;
+  readonly currency: string;
+  readonly occurredAt: Date;
+  readonly idempotencyKey: string;
+}
+
+export interface MarketplaceCompletionResult {
+  /** Null for a cash trip with no wallet movement — nothing was posted. */
+  readonly entry: PostedEntry | null;
+}
+
+/**
+ * Completion posting for a NEGOTIATED-FARE (marketplace) trip.
+ *
+ * The 10% commission was already captured at selection (`captureHold`, entry
+ * kind `mp_commission_capture`), so completion must NOT charge it again:
+ *  - wallet trip: debit the rider the fare, credit the driver the FULL fare —
+ *    no `ubi_commission` line here, ever. Tips bypass commission and post on
+ *    their own `tips` lines;
+ *  - cash trip (worked example section 3): the driver already collected the
+ *    fare in cash and UBI's fee left their wallet at selection, so there is
+ *    no `cash_owed` to record for the fee — posting one would charge the 10%
+ *    a second time. With no wallet tip either, there is nothing to post at
+ *    all, and this function honestly posts nothing.
+ *
+ * Unlike the legacy `postRideCompletion` (deliberately untouched), the rider
+ * debit here is guarded: the caller's transaction takes the wallet row lock
+ * and the spendable check (balance minus active bid holds) before any line is
+ * written, so a completion cannot race the rider's wallet negative.
+ */
+export async function postMarketplaceCompletion(
+  tx: LedgerTx,
+  input: MarketplaceCompletionInput,
+): Promise<MarketplaceCompletionResult> {
+  const currency = input.currency;
+  const tipMinor = input.tipMinor ?? 0;
+  if (
+    !Number.isInteger(input.fareMinor) ||
+    !Number.isInteger(tipMinor) ||
+    input.fareMinor < 0 ||
+    tipMinor < 0
+  ) {
+    throw new ContractError(
+      "validation_failed",
+      "marketplace completion amounts must be nonnegative integer minor units",
+      { rideId: input.rideId },
+    );
+  }
+
+  const ref = `mp_ride:${input.rideId}`;
+  const lines: JournalLineInput[] = [];
+
+  if (input.method === "wallet") {
+    if (input.riderWalletId === undefined) {
+      throw new ContractError(
+        "validation_failed",
+        "a wallet-paid trip needs the rider's wallet",
+        { rideId: input.rideId },
+      );
+    }
+    if (input.fareMinor === 0 && tipMinor === 0) {
+      throw new ContractError(
+        "validation_failed",
+        "a wallet completion must move something",
+        { rideId: input.rideId },
+      );
+    }
+
+    // Guard the rider debit: lock, then spend against spendable funds.
+    await lockWallet(tx, input.riderWalletId);
+    const riderWallet = await requireWallet(tx, input.riderWalletId);
+    await assertSufficientFunds(
+      tx,
+      riderWallet,
+      money(input.fareMinor + tipMinor, currency),
+    );
+
+    if (input.fareMinor > 0) {
+      lines.push(
+        {
+          account: "wallet",
+          walletId: input.riderWalletId,
+          amount: money(-input.fareMinor, currency),
+          counterpartRef: `${ref}:fare`,
+        },
+        {
+          // The FULL fare: the 10% fee already left this driver's wallet at
+          // selection (award:<id> capture entry) — no commission line here.
+          account: "wallet",
+          walletId: input.driverWalletId,
+          amount: money(input.fareMinor, currency),
+          counterpartRef: `${ref}:driver_share`,
+        },
+      );
+    }
+    if (tipMinor > 0) {
+      lines.push(
+        {
+          account: "tips",
+          walletId: input.riderWalletId,
+          amount: money(-tipMinor, currency),
+          counterpartRef: `${ref}:tip`,
+        },
+        {
+          account: "tips",
+          walletId: input.driverWalletId,
+          amount: money(tipMinor, currency),
+          counterpartRef: `${ref}:tip`,
+        },
+      );
+    }
+
+    const entry = await postEntry(tx, {
+      kind: "mp_ride_completion",
+      reference: ref,
+      occurredAt: input.occurredAt,
+      idempotencyKey: input.idempotencyKey,
+      description: "marketplace trip settlement (fee captured at selection)",
+      lines,
+    });
+    return { entry };
+  }
+
+  // Cash trip. The rider handed the driver the fare (and any tip) directly,
+  // and UBI's 10% was captured from the driver's wallet at selection — the
+  // worked example, section 3: posting a cash_owed fee here would take the
+  // commission twice. A wallet tip is the only value that can still cross
+  // UBI's books on a cash marketplace trip.
+  if (tipMinor > 0 && input.riderWalletId !== undefined) {
+    await lockWallet(tx, input.riderWalletId);
+    const riderWallet = await requireWallet(tx, input.riderWalletId);
+    await assertSufficientFunds(tx, riderWallet, money(tipMinor, currency));
+    const entry = await postEntry(tx, {
+      kind: "mp_ride_completion_cash",
+      reference: ref,
+      occurredAt: input.occurredAt,
+      idempotencyKey: input.idempotencyKey,
+      description: "marketplace cash trip: wallet tip only (fee captured at selection)",
+      lines: [
+        {
+          account: "tips",
+          walletId: input.riderWalletId,
+          amount: money(-tipMinor, currency),
+          counterpartRef: `${ref}:tip`,
+        },
+        {
+          account: "tips",
+          walletId: input.driverWalletId,
+          amount: money(tipMinor, currency),
+          counterpartRef: `${ref}:tip`,
+        },
+      ],
+    });
+    return { entry };
+  }
+
+  return { entry: null };
 }
 
 export interface CashSettlementInput {

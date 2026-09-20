@@ -11,6 +11,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Send: { screens: { New: 'home/delivery/new', Tracking: 'home/delivery/:deliveryId/tracking', Details: 'home/delivery/:deliveryId/details' } },
       Ask: { screens: { Thread: 'ask', Execution: 'ask/executions/:executionId' } },
       Travel: { screens: { FlightSearch: 'travel', FlightResults: 'travel/flights/:searchId', Itinerary: 'trips/:tripId', OrderStatus: 'travel/orders/:orderId', Disruption: 'travel/orders/:orderId/disruption', RefundStatus: 'travel/refunds/:refundId' } },
+      Marketplace: { screens: { Details: 'home/marketplace/new', Offers: 'home/marketplace/:requestId/offers', BidDetail: 'home/marketplace/:requestId/offers/:bidId', Queued: 'home/marketplace/:requestId/queued', DeliveryReturn: 'home/marketplace/delivery/:deliveryId/return' } }, // Fare carries an object param (quoteParams) and is reached in-app only.
       FlagOff: 'unavailable/:feature',
     },
   },

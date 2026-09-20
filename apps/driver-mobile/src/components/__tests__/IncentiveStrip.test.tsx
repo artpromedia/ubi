@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { render } from '@testing-library/react-native';
 import { ThemeProvider } from '@ubi/mobile-ui';
 import { TID } from '@ubi/mobile-core';

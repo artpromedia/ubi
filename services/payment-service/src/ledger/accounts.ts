@@ -80,6 +80,13 @@ export const ENTRY_KINDS = [
   "nip_reversal",
   "ride_completion",
   "ride_completion_cash",
+  /** The single 10% marketplace commission debit, captured at selection (M04). */
+  "mp_commission_capture",
+  /** Linked compensation for a captured marketplace commission — never an edit. */
+  "mp_commission_reversal",
+  /** Negotiated-fare completion: full fare to the driver, fee already captured (M06). */
+  "mp_ride_completion",
+  "mp_ride_completion_cash",
   "cash_settlement",
   "recon_adjustment",
   /** A typed support remedy: counter-lines that make a case good. */

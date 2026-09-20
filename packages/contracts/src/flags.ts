@@ -33,6 +33,14 @@ export const FLAG_KEYS = [
   "driver_commission_rebates",
   "referrals",
   "ai_marketing",
+  // Negotiated-fare marketplace (M01). Scoped by city AND service: rides and
+  // package delivery roll out independently, and the queued next-job slot
+  // (finishing-trip matching) can trail a stationary-only pilot. Deny-by-default
+  // is automatic; an unconfigured market also fails closed on policy (see
+  // MarketplacePolicySchema in city-config.ts).
+  "marketplace_rides",
+  "marketplace_delivery",
+  "marketplace_queued_jobs",
 ] as const;
 
 export type FlagKey = (typeof FLAG_KEYS)[number];

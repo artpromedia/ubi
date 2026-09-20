@@ -74,14 +74,26 @@ export async function optionalAuth(c: Context, next: Next) {
 /**
  * Internal service auth middleware
  * For service-to-service communication
+ *
+ * Fails CLOSED: when INTERNAL_SERVICE_KEY is unset or empty, every request is
+ * refused. The old `serviceKey !== process.env.INTERNAL_SERVICE_KEY` guard
+ * accepted a request that simply omitted the header in a mis-provisioned
+ * deployment (`undefined !== undefined` is false), which silently exposed the
+ * marketplace hold/capture/reverse money endpoints without any credential.
  */
 export async function internalServiceAuth(
   c: Context,
   next: Next
 ): Promise<void | Response> {
   const serviceKey = c.req.header("X-Service-Key");
+  const expectedKey = process.env.INTERNAL_SERVICE_KEY;
 
-  if (serviceKey !== process.env.INTERNAL_SERVICE_KEY) {
+  if (
+    expectedKey === undefined ||
+    expectedKey.length === 0 ||
+    serviceKey === undefined ||
+    serviceKey !== expectedKey
+  ) {
     return c.json(
       {
         success: false,

@@ -53,6 +53,10 @@ type Config struct {
 	ConfigCacheTTL     time.Duration
 	ShutdownTimeout    time.Duration
 	AllowedOrigins     []string
+
+	PaymentServiceURL        string
+	InternalServiceKey       string
+	MarketplaceSweepInterval time.Duration
 }
 
 func main() {
@@ -72,6 +76,8 @@ func main() {
 		QuoteSigningSecret: config.QuoteSigningSecret,
 		GoogleMapsKey:      config.GoogleMapsKey,
 		ConfigCacheTTL:     config.ConfigCacheTTL,
+		PaymentServiceURL:  config.PaymentServiceURL,
+		InternalServiceKey: config.InternalServiceKey,
 		Logger:             log.Logger,
 	})
 	if err != nil {
@@ -104,7 +110,8 @@ func main() {
 	router.Use(middleware.Compress(5))
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins: config.AllowedOrigins,
-		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+		// PUT is for /v1/mp/rate-profiles (contracts/openapi/marketplace.yaml).
+		AllowedMethods: []string{"GET", "POST", "PUT", "OPTIONS"},
 		AllowedHeaders: []string{
 			headerAccept, headerContentType, headerRequestID, headerIdempotency,
 			"If-None-Match",
@@ -124,11 +131,21 @@ func main() {
 
 	// Every /v1 route is behind the identity middleware. There is no route on
 	// this service that serves an anonymous caller.
-	router.Mount("/v1", rideHandler.Routes(handler.RequireIdentity(verifier), locationHandler))
+	var marketplaceHandler *handler.MarketplaceHandler
+	if runtime.Marketplace != nil {
+		marketplaceHandler = handler.NewMarketplaceHandler(runtime.Marketplace, log.Logger)
+	}
+	router.Mount("/v1", rideHandler.Routes(handler.RequireIdentity(verifier), locationHandler, marketplaceHandler))
 
 	// The dispatcher is a sweep over durable rows, not a per-ride goroutine, so
 	// a restart resumes matching instead of losing it.
 	go runtime.Service.RunDispatcher(ctx, config.DispatchInterval)
+
+	// The marketplace sweeper is the same shape: bid/request expiry, envelope
+	// expansion and wallet recovery are durable row scans, never RAM.
+	if runtime.Marketplace != nil {
+		go runtime.Marketplace.RunSweeper(ctx, config.MarketplaceSweepInterval)
+	}
 
 	server := &http.Server{
 		Addr:              ":" + config.Port,
@@ -174,6 +191,10 @@ func loadConfig() *Config {
 		ConfigCacheTTL:     getDuration("RIDE_CONFIG_CACHE_TTL_MS", 60*time.Second),
 		ShutdownTimeout:    getDuration("RIDE_SHUTDOWN_TIMEOUT_MS", 30*time.Second),
 		AllowedOrigins:     []string{"https://app.ubi.africa", "https://admin.ubi.africa", "http://localhost:*"},
+
+		PaymentServiceURL:        getEnv("PAYMENT_SERVICE_URL", ""),
+		InternalServiceKey:       getEnv("INTERNAL_SERVICE_KEY", ""),
+		MarketplaceSweepInterval: getDuration("RIDE_MP_SWEEP_INTERVAL_MS", time.Second),
 	}
 }
 

@@ -4,6 +4,12 @@ export type TripStackParamList = { Offer: { requestId: string }; Navigate: { tri
 export type EarningsStackParamList = { Overview: undefined; Statement: { periodId: string }; TripDetail: { tripId: string }; Payouts: undefined; Cashout: undefined };
 export type IncentivesStackParamList = { Overview: undefined; CommissionDetail: { incentiveId: string }; Referrals: undefined; Window: { windowId: string } };
 export type AccountStackParamList = { Profile: undefined; Edit: undefined; Vehicle: undefined; Documents: undefined; UploadDocument: { documentType: string }; Ratings: undefined; Settings: undefined; FleetArrangement: undefined; LivenessCheck: undefined; Ask: undefined };
-export type MainTabParamList = { Home: undefined; Earnings: NavigatorScreenParams<EarningsStackParamList>; Incentives: NavigatorScreenParams<IncentivesStackParamList>; Account: NavigatorScreenParams<AccountStackParamList> };
-export type RootStackParamList = { Splash: undefined; Onboarding: undefined; Auth: NavigatorScreenParams<AuthStackParamList>; Main: NavigatorScreenParams<MainTabParamList>; Trip: NavigatorScreenParams<TripStackParamList>; Sos: { tripId?: string } | undefined; FlagOff: { feature: string }; SecureConfirm: { purpose: string; onProof: (proof: string) => void } };
+// Negotiated-fare marketplace (M08, boards D01–D12). Detail carries only the server id;
+// WalletHolds params are serializable server-phrased strings (the exact insufficient_spendable
+// shortfall message) plus a returnTo so the driver lands back on the still-open request (D04).
+export type RequestsStackParamList = { Feed: undefined; Detail: { requestId: string } };
+export type WalletHoldsParams = { shortfall?: { title: string; detail: string }; returnTo?: { requestId: string; label: string } } | undefined;
+export type MainTabParamList = { Home: undefined; Requests: NavigatorScreenParams<RequestsStackParamList>; Earnings: NavigatorScreenParams<EarningsStackParamList>; Incentives: NavigatorScreenParams<IncentivesStackParamList>; Account: NavigatorScreenParams<AccountStackParamList> };
+export type RootStackParamList = { Splash: undefined; Onboarding: undefined; Auth: NavigatorScreenParams<AuthStackParamList>; Main: NavigatorScreenParams<MainTabParamList>; Trip: NavigatorScreenParams<TripStackParamList>; WalletHolds: WalletHoldsParams; Rates: undefined; Jobs: undefined; Sos: { tripId?: string } | undefined; FlagOff: { feature: string }; SecureConfirm: { purpose: string; onProof: (proof: string) => void } };
+// eslint-disable-next-line @typescript-eslint/no-namespace, @typescript-eslint/no-empty-object-type -- react-navigation's documented global-typing pattern
 declare global { namespace ReactNavigation { interface RootParamList extends RootStackParamList {} } }

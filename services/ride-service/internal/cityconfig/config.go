@@ -93,6 +93,10 @@ type CityConfig struct {
 	MaxPinAttempts         int                  `json:"maxPinAttempts"`
 	PaymentMethods         []PaymentMethod      `json:"paymentMethods"`
 	ServiceFeePct          float64              `json:"serviceFeePct"`
+	// Marketplace is the optional negotiated-fare marketplace policy. Absent
+	// means the marketplace is not configured here and every marketplace read
+	// fails closed with ErrMarketNotConfigured (see marketplace.go).
+	Marketplace *MarketplacePolicy `json:"marketplace,omitempty"`
 }
 
 // Validate refuses a configuration that would make this service invent a
@@ -121,6 +125,13 @@ func (c *CityConfig) Validate() error {
 		return fmt.Errorf("%w: city %s has no PIN attempt limit", ErrUnavailable, c.CityID)
 	case len(c.PaymentMethods) == 0:
 		return fmt.Errorf("%w: city %s has no payment methods", ErrUnavailable, c.CityID)
+	}
+	if c.Marketplace != nil {
+		// The block is optional, but a present-and-broken policy refuses the
+		// whole config: a half-readable marketplace must not half-open.
+		if err := c.Marketplace.Validate(c.CityID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

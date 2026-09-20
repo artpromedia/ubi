@@ -1,4 +1,5 @@
 import { CampaignForm } from '@/components/growth/CampaignForm';
+
 export default function NewCampaignPage() {
   return (
     <div className="space-y-4 p-6">

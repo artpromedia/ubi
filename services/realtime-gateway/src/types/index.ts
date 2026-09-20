@@ -28,6 +28,7 @@ export type WebSocketMessage =
   | { type: 'order_status'; payload: OrderStatusPayload }
   | { type: 'dispatch_request'; payload: DispatchRequestPayload }
   | { type: 'dispatch_response'; payload: DispatchResponsePayload }
+  | { type: 'marketplace_event'; payload: MarketplaceEventPayload }
   | { type: 'error'; payload: ErrorPayload };
 
 export interface LocationUpdate {
@@ -117,6 +118,29 @@ export interface DispatchResponsePayload {
   requestId: string;
   accepted: boolean;
   reason?: string;
+}
+
+/**
+ * Client-facing translation of a marketplace (mp.*) outbox event envelope.
+ * The gateway subscribes to `event:mp.*` and routes each event ONLY to the
+ * users the producing engine named in the envelope payload — it never
+ * broadcasts marketplace events.
+ */
+export interface MarketplaceEventPayload {
+  /** Canonical event name, e.g. 'mp.bid.submitted' */
+  name: string;
+  /** Envelope subject, e.g. { type: 'mp_bid', id: 'bid_123' } */
+  subject: { type: string; id: string };
+  /** The marketplace request this event relates to, when resolvable */
+  requestId?: string;
+  /** Request/bid revision number, when the payload carries one */
+  revision?: number;
+  /** Outbox sequence number for client-side gap detection */
+  seq?: number;
+  /** ISO-8601 timestamp from the envelope */
+  occurredAt: string;
+  /** Envelope payload minus recipient-list routing keys */
+  data: Record<string, unknown>;
 }
 
 export interface ErrorPayload {

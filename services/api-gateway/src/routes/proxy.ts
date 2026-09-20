@@ -92,6 +92,11 @@ const HEADERS_TO_FORWARD: readonly string[] = [
   "x-user-id",
   "x-user-role",
   "x-session-id",
+  // Client-declared active city context. Not an identity claim (the reserved
+  // x-ubi-city-id below carries the token's city), so the strip middleware
+  // leaves it alone; payment-service reads it for the marketplace wallet
+  // overview (GET /v1/wallet/mp/overview) city scoping.
+  "x-city-id",
   "x-ubi-city-id",
   "x-ubi-tenant-id",
   "x-ubi-scopes",
@@ -254,6 +259,15 @@ proxyRoutes.all("/pricing/*", (c) =>
   proxyToService("rides", downstreamPath(c), c),
 );
 proxyRoutes.all("/locations/*", (c) =>
+  proxyToService("rides", downstreamPath(c), c),
+);
+
+// Marketplace (negotiated-fare) routes — the marketplace engine lives in the
+// ride-service, so /mp/* rides on the existing rides registry entry. The
+// wallet-side marketplace endpoints (/wallet/mp/*) are served by
+// payment-service and already flow through the /wallet/* mount below.
+proxyRoutes.all("/mp/*", (c) => proxyToService("rides", downstreamPath(c), c));
+proxyRoutes.all("/admin/mp/*", (c) =>
   proxyToService("rides", downstreamPath(c), c),
 );
 

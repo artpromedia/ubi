@@ -41,6 +41,20 @@ const (
 	CodePinNotVerified           Code = "pin_not_verified"
 	CodeReasonCodeRequired       Code = "reason_code_required"
 	CodeNoActiveRide             Code = "no_active_ride"
+
+	// Marketplace codes (packages/contracts/src/errors.ts, M-slices).
+	CodeMarketNotConfigured    Code = "market_not_configured"
+	CodeFareOutOfBounds        Code = "fare_out_of_bounds"
+	CodeRequestClosed          Code = "request_closed"
+	CodeBidNotLive             Code = "bid_not_live"
+	CodeBidRevisionCooldown    Code = "bid_revision_cooldown"
+	CodeBidCapReached          Code = "bid_cap_reached"
+	CodeRequestCapReached      Code = "request_cap_reached"
+	CodeInsufficientSpendable  Code = "insufficient_spendable"
+	CodeSlotUnavailable        Code = "slot_unavailable"
+	CodeQueueDependencyInvalid Code = "queue_dependency_invalid"
+	CodeAwardUnresolved        Code = "award_unresolved"
+	CodeRateProfileOutOfBounds Code = "rate_profile_out_of_bounds"
 )
 
 var statusByCode = map[Code]int{
@@ -70,6 +84,19 @@ var statusByCode = map[Code]int{
 	CodePinNotVerified:           http.StatusConflict,
 	CodeReasonCodeRequired:       http.StatusUnprocessableEntity,
 	CodeNoActiveRide:             http.StatusNotFound,
+
+	CodeMarketNotConfigured:    http.StatusServiceUnavailable,
+	CodeFareOutOfBounds:        http.StatusUnprocessableEntity,
+	CodeRequestClosed:          http.StatusConflict,
+	CodeBidNotLive:             http.StatusConflict,
+	CodeBidRevisionCooldown:    http.StatusTooManyRequests,
+	CodeBidCapReached:          http.StatusTooManyRequests,
+	CodeRequestCapReached:      http.StatusTooManyRequests,
+	CodeInsufficientSpendable:  http.StatusUnprocessableEntity,
+	CodeSlotUnavailable:        http.StatusConflict,
+	CodeQueueDependencyInvalid: http.StatusConflict,
+	CodeAwardUnresolved:        http.StatusConflict,
+	CodeRateProfileOutOfBounds: http.StatusUnprocessableEntity,
 }
 
 // StatusFor returns the HTTP status every UBI service uses for a code.

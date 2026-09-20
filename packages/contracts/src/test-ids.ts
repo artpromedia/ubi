@@ -238,10 +238,116 @@ export const TEST_IDS = {
     travel: { health: "ops.travel.health", exception: "ops.travel.exception" },
     ai: { actions: "ops.ai.actions" },
   },
+  /**
+   * Negotiated-fare marketplace (design handoff `contracts/testids.marketplace.ts`).
+   * Namespaced `mp.<app>.<screen>.<element>` — one segment deeper than the
+   * legacy pattern so marketplace ids can never collide with an existing
+   * screen id. List-item ids append a server id at the call site
+   * (`dynamicTestId(TEST_IDS.mp.rider.offers.card, bidId)`).
+   */
+  mp: {
+    rider: {
+      fare: {
+        amountInput: "mp.rider.fare.amount",
+        minMaxHint: "mp.rider.fare.bounds",
+        presetChip: "mp.rider.fare.preset",
+        breakdown: "mp.rider.fare.breakdown",
+        refreshQuote: "mp.rider.fare.refresh",
+        review: "mp.rider.fare.review",
+      },
+      review: { send: "mp.rider.review.send", edit: "mp.rider.review.edit" },
+      offers: {
+        list: "mp.rider.offers.list",
+        card: "mp.rider.offers.card",
+        sortPrice: "mp.rider.offers.sortPrice",
+        sortEta: "mp.rider.offers.sortEta",
+        cancelRequest: "mp.rider.offers.cancel",
+        repost: "mp.rider.offers.repost",
+      },
+      bid: {
+        choose: "mp.rider.bid.choose",
+        back: "mp.rider.bid.back",
+        windowConsent: "mp.rider.bid.windowConsent",
+        whyRecommended: "mp.rider.bid.why",
+      },
+      queued: {
+        ladder: "mp.rider.queued.ladder",
+        keepWaiting: "mp.rider.queued.wait",
+        cancelFree: "mp.rider.queued.cancelFree",
+      },
+      delivery: {
+        approveReturn: "mp.rider.delivery.approveReturn",
+        retryRecipient: "mp.rider.delivery.retry",
+        holdAtPoint: "mp.rider.delivery.hold",
+      },
+    },
+    driver: {
+      feed: {
+        list: "mp.driver.feed.list",
+        card: "mp.driver.feed.card",
+        myBids: "mp.driver.feed.myBids",
+        movingBanner: "mp.driver.feed.movingBanner",
+      },
+      detail: {
+        preset: "mp.driver.detail.preset",
+        custom: "mp.driver.detail.custom",
+        skip: "mp.driver.detail.skip",
+        reason: "mp.driver.detail.reason",
+      },
+      bid: {
+        revise: "mp.driver.bid.revise",
+        withdraw: "mp.driver.bid.withdraw",
+        status: "mp.driver.bid.status",
+      },
+      wallet: {
+        spendable: "mp.driver.wallet.spendable",
+        held: "mp.driver.wallet.held",
+        hold: "mp.driver.wallet.hold",
+        topup: "mp.driver.wallet.topup",
+        backToRequest: "mp.driver.wallet.back",
+      },
+      rates: {
+        rateInput: "mp.driver.rates.rate",
+        minInput: "mp.driver.rates.min",
+        preview: "mp.driver.rates.preview",
+        save: "mp.driver.rates.save",
+      },
+      jobs: {
+        current: "mp.driver.jobs.current",
+        next: "mp.driver.jobs.next",
+        feeReceipt: "mp.driver.jobs.fee",
+      },
+    },
+    admin: {
+      monitor: {
+        table: "mp.admin.monitor.table",
+        timeline: "mp.admin.monitor.timeline",
+      },
+      policy: {
+        publish: "mp.admin.policy.publish",
+        stopAwards: "mp.admin.policy.stopAwards",
+        audit: "mp.admin.policy.audit",
+      },
+      recon: { case: "mp.admin.recon.case", sweep: "mp.admin.recon.sweep" },
+    },
+  },
 } as const;
 
+/**
+ * `<app>.<screen>.<element>`, with one optional extra namespace segment for
+ * the marketplace (`mp.<app>.<screen>.<element>`).
+ */
 const TEST_ID_PATTERN =
-  /^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/;
+  /^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)?$/;
+
+/**
+ * List-item ids: a registry base plus a server identifier suffix
+ * (`mp.rider.offers.card.bid_123`). The base must be a registered id; the
+ * suffix is data and deliberately exempt from the camelCase rule.
+ */
+export function dynamicTestId(base: string, suffix: string | number): string {
+  return `${base}.${suffix}`;
+}
 
 export function isValidTestId(value: string): boolean {
   return TEST_ID_PATTERN.test(value);

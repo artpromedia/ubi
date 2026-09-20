@@ -309,5 +309,52 @@
       "consumed": ["reversed"]
     },
     "rule": "budget reserved on a promise, consumed on qualification, released on expiry (CLAUDE.md #29)"
+  },
+  "mpRequest": {
+    "initial": "draft",
+    "transitions": {
+      "draft": ["open", "cancelled"],
+      "open": ["open", "award_pending", "cancelled", "expired", "no_offers"],
+      "award_pending": ["awarded", "open", "cancelled"],
+      "awarded": ["execution", "cancelled"],
+      "execution": []
+    },
+    "rule": "requester selects the winner; open→open is a price/detail revision that invalidates bids and releases holds; award_pending never times out while a debit may still commit (M05)"
+  },
+  "mpBid": {
+    "initial": "submitted",
+    "transitions": {
+      "submitted": ["revised", "selected_pending", "withdrawn", "expired", "invalidated", "lost"],
+      "revised": ["revised", "selected_pending", "withdrawn", "expired", "invalidated", "lost"],
+      "selected_pending": ["won", "submitted", "revised", "lost", "invalidated"]
+    },
+    "rule": "one live bid per driver/request revision; selection carries expected request+bid versions; award failure returns the bid to its live state, never silently re-terms it"
+  },
+  "mpHold": {
+    "initial": "active",
+    "transitions": {
+      "active": ["active", "capture_pending", "released"],
+      "capture_pending": ["captured", "active"],
+      "captured": ["reversed"]
+    },
+    "rule": "one reservation per live bid against cleared spendable funds; active→active is an atomic raise/lower; a hold under an unresolved award neither expires nor releases; reversal is a linked journal entry, never an edit (M04)"
+  },
+  "mpAward": {
+    "initial": "pending",
+    "transitions": {
+      "pending": ["confirmed", "failed"],
+      "confirmed": ["cancelled"],
+      "failed": ["compensated"]
+    },
+    "rule": "award id is the idempotency key for the single commission capture; unknown financial outcomes stay pending until reconciled; cancelled (pre-service) reverses the fee with a linked entry (M05)"
+  },
+  "mpClaim": {
+    "initial": "award_pending",
+    "transitions": {
+      "award_pending": ["current", "next", "released"],
+      "current": ["completed", "released"],
+      "next": ["current", "released"]
+    },
+    "rule": "one current + at most one dependent next claim per driver across rides AND deliveries, DB-enforced; next→current promotion happens exactly once, after real completion and revalidated eligibility, never collecting the fee again (M05A)"
   }
 }

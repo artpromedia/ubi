@@ -19,6 +19,7 @@ import (
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/handler"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/marketplace"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/matching"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/pricing"
@@ -56,6 +57,12 @@ type Harness struct {
 	Signer  *move.QuoteSigner
 	Clock   *Clock
 
+	// Marketplace pieces, wired when the harness is built WithMarketplace().
+	Marketplace *marketplace.Service
+	Wallet      *marketplace.FakeWallet
+	Funding     *marketplace.FakeFunding
+	Settlement  *marketplace.FakeSettlement
+
 	// CityID is unique per harness, so tests running side by side never share
 	// a city's config, flags, drivers or rides.
 	CityID        string
@@ -70,6 +77,7 @@ type harnessOptions struct {
 	policy       matching.Policy
 	flags        map[string]bool
 	withoutRedis bool
+	marketplace  bool
 }
 
 // WithCityConfig replaces the seeded city configuration.
@@ -95,6 +103,18 @@ func WithoutRedisGuards() HarnessOption {
 // WithFlag sets a feature flag for the harness city.
 func WithFlag(key string, enabled bool) HarnessOption {
 	return func(o *harnessOptions) { o.flags[key] = enabled }
+}
+
+// WithMarketplace attaches the marketplace policy fixture to the city config
+// and opens the ride/delivery marketplace flags (queued jobs stays off; a
+// test that wants it adds WithFlag(cityconfig.FlagMarketplaceQueuedJobs, true)).
+func WithMarketplace() HarnessOption {
+	return func(o *harnessOptions) {
+		o.marketplace = true
+		o.config["marketplace"] = MarketplacePolicyFixture()
+		o.flags[cityconfig.FlagMarketplaceRides] = true
+		o.flags[cityconfig.FlagMarketplaceDelivery] = true
+	}
 }
 
 // NewHarness builds the service against live Postgres and Redis, seeds a city,
@@ -139,13 +159,19 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	}
 
 	store := move.NewStore(pool)
+	mpStore := marketplace.NewStore(pool)
 	// Once per test binary: the DDL is idempotent, but two harnesses running it
 	// at the same instant would queue behind each other's schema locks for no
 	// benefit.
-	migrateOnce.Do(func() { migrateErr = store.Migrate(ctx) })
+	migrateOnce.Do(func() {
+		if migrateErr = store.Migrate(ctx); migrateErr != nil {
+			return
+		}
+		migrateErr = mpStore.Migrate(ctx)
+	})
 	if migrateErr != nil {
 		pool.Close()
-		t.Fatalf("failed to apply the ride schema: %v", migrateErr)
+		t.Fatalf("failed to apply the ride/mp schemas: %v", migrateErr)
 	}
 
 	version, ok := options.config["version"].(int)
@@ -183,12 +209,42 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 		t.Fatalf("failed to build the move service: %v", err)
 	}
 
+	fakeWallet := marketplace.NewFakeWallet()
+	fakeFunding := marketplace.NewFakeFunding()
+	fakeSettlement := marketplace.NewFakeSettlement()
+	// The marketplace router prices with the harness clock, so a test that
+	// pins the hour gets the same ETA multiplier every run.
+	mpRouter := move.NewStraightLineRouter()
+	mpRouter.Now = clock.Now
+	marketplaceService, err := marketplace.NewService(marketplace.Deps{
+		Store:      mpStore,
+		Config:     cityconfig.NewStore(pool, nil, time.Second),
+		Flags:      cityconfig.NewFlags(pool),
+		Pricing:    pricing.NewEngine(),
+		Router:     mpRouter,
+		Wallet:     fakeWallet,
+		Funding:    fakeFunding,
+		Settlement: fakeSettlement,
+		Redis:      guards,
+		Logger:     zerolog.Nop(),
+		Now:        clock.Now,
+	})
+	if err != nil {
+		pool.Close()
+		t.Fatalf("failed to build the marketplace service: %v", err)
+	}
+	// Production parity: the move core notifies the marketplace post-commit
+	// when an execution ride ends (service.Build wires the same observer).
+	service.SetExecutionObserver(marketplaceService)
+
 	rideHandler := handler.NewRideHandler(service, zerolog.Nop())
-	router := rideHandler.Routes(handler.RequireIdentity(handler.NewInternalContextVerifier("", 0)), nil)
+	marketplaceHandler := handler.NewMarketplaceHandler(marketplaceService, zerolog.Nop())
+	router := rideHandler.Routes(handler.RequireIdentity(handler.NewInternalContextVerifier("", 0)), nil, marketplaceHandler)
 
 	h := &Harness{
 		T: t, Pool: pool, Redis: redisClient, Service: service,
 		Router: router, Signer: signer, Clock: clock,
+		Marketplace: marketplaceService, Wallet: fakeWallet, Funding: fakeFunding, Settlement: fakeSettlement,
 		CityID: cityID, ConfigVersion: version,
 	}
 
@@ -204,6 +260,14 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 // fails, so a red test does not leave a city behind for the next one.
 func (h *Harness) cleanup(ctx context.Context) {
 	statements := []string{
+		`DELETE FROM mp.reservation_recovery WHERE bid_id IN (SELECT id FROM mp.bids WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
+		`DELETE FROM mp.driver_claims WHERE driver_id IN (SELECT driver_id FROM ride.driver_sessions WHERE city_id = $1)`,
+		`DELETE FROM mp.driver_claims WHERE award_id IN (SELECT id FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
+		`DELETE FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1)`,
+		`DELETE FROM mp.bids WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1)`,
+		`DELETE FROM mp.requests WHERE city_id = $1`,
+		`DELETE FROM mp.quotes WHERE city_id = $1`,
+		`DELETE FROM mp.rate_profiles WHERE city_id = $1`,
 		`DELETE FROM ride.offers WHERE ride_id IN (SELECT id FROM ride.rides WHERE city_id = $1)`,
 		`DELETE FROM ride.rides WHERE city_id = $1`,
 		`DELETE FROM ride.quotes WHERE city_id = $1`,
@@ -218,10 +282,15 @@ func (h *Harness) cleanup(ctx context.Context) {
 			h.T.Logf("cleanup statement failed (%s): %v", statement, err)
 		}
 	}
-	// The idempotency rows are keyed by actor, not city, so they are cleared by
-	// scope instead.
-	if _, err := h.Pool.Exec(ctx, `DELETE FROM ride.idempotency_keys WHERE created_at < now()`); err != nil {
+	// The idempotency rows are keyed by actor, not city, so they are cleared
+	// by age instead. Only aged rows: several test binaries share this
+	// database, and deleting rows written moments ago would yank another
+	// binary's in-flight replay out from under it.
+	if _, err := h.Pool.Exec(ctx, `DELETE FROM ride.idempotency_keys WHERE created_at < now() - interval '1 hour'`); err != nil {
 		h.T.Logf("cleanup of idempotency keys failed: %v", err)
+	}
+	if _, err := h.Pool.Exec(ctx, `DELETE FROM mp.idempotency_keys WHERE created_at < now() - interval '1 hour'`); err != nil {
+		h.T.Logf("cleanup of mp idempotency keys failed: %v", err)
 	}
 }
 

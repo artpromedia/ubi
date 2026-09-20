@@ -14,6 +14,7 @@ export function CampaignForm({ author }: { author: string }) {
   const save = async () => { setBusy('save'); const c = await growthApi.createDraft(body()); setId(c.id); setBusy(undefined); return c.id; };
   const simulate = async () => { setBusy('sim'); const cid = id ?? await save(); const l = await growthApi.simulate(cid, 1); setLiab(l); setAt(new Date().toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })); setBusy(undefined); };
   const submit = async () => { setBusy('submit'); const cid = id ?? await save(); await growthApi.submit(cid, 1); setBusy(undefined); };
+  // eslint-disable-next-line react/no-unstable-nested-components -- small uncontrolled field helper; extracting it would need the enclosing v/set closures threaded through as props
   const F = ({ label, k, wide, textarea }: { label: string; k: keyof typeof v; wide?: boolean; textarea?: boolean }) => (
     <div className={wide ? 'col-span-2 space-y-1' : 'space-y-1'}><Label className="text-[10px] tracking-wider text-muted-foreground uppercase">{label}</Label>{textarea ? <textarea className="w-full rounded-lg border border-border bg-card p-2 text-sm" rows={2} value={v[k]} onChange={set(k)} /> : <Input value={v[k]} onChange={set(k)} />}</div>
   );

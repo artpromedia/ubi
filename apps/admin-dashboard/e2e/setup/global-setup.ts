@@ -2,7 +2,7 @@
  * Global Setup for Admin Dashboard E2E Tests
  */
 
-import { FullConfig } from "@playwright/test";
+import type { FullConfig } from "@playwright/test";
 
 async function globalSetup(config: FullConfig): Promise<void> {
   console.log("🔧 Starting Admin Dashboard E2E test setup...");
