@@ -197,7 +197,7 @@ describe("JWT Authentication", () => {
 
   describe("getTokenTimeToLive", () => {
     it("should return positive TTL for valid token", async () => {
-      const token = await generateTestToken({ expiresIn: "1h" } as any);
+      const token = await generateTestToken({}, { expiresIn: "1h" });
       const ttl = getTokenTimeToLive(token);
 
       // Should be roughly 3600 seconds (1 hour)
