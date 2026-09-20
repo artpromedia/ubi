@@ -85,6 +85,11 @@ CREATE TABLE IF NOT EXISTS ride.rides (
     updated_at         timestamptz NOT NULL DEFAULT now()
 );
 
+-- Marketplace-awarded rides are marked so the legacy accept path can refuse
+-- them (the award saga assigns them; nothing else may). Set by the marketplace
+-- award path, read by AcceptOffer.
+ALTER TABLE ride.rides ADD COLUMN IF NOT EXISTS marketplace_award_id uuid;
+
 -- One live ride per rider and one live ride per driver. The partial unique
 -- index is the database's own refusal of a double assignment; it does not
 -- depend on any application lock being taken.

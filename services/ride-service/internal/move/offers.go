@@ -62,6 +62,15 @@ func (s *Service) AcceptOffer(ctx context.Context, actor Actor, offerID uuid.UUI
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	// Marketplace-managed work never flows through the legacy accept path: a
+	// ride created by a marketplace award is assigned by the award saga, and
+	// letting a stray legacy offer take it would assign it twice.
+	if awardID, err := s.deps.Store.MarketplaceAwardID(ctx, s.deps.Store.Pool(), offer.RideID); err != nil {
+		return nil, asDomainError(err)
+	} else if awardID != nil {
+		return nil, domain.Errorf(domain.CodeRequestClosed,
+			"this job is managed by the marketplace and cannot be accepted here")
+	}
 	config, err := s.config(ctx, pending.CityID)
 	if err != nil {
 		return nil, err

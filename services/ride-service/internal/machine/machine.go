@@ -21,6 +21,16 @@ const (
 	Rider Name = "rider"
 	// Driver is the driver machine: offline → available → … → available.
 	Driver Name = "driver"
+	// MpRequest is the marketplace request machine: draft → open → … → execution.
+	MpRequest Name = "mpRequest"
+	// MpBid is the marketplace bid machine: submitted → … → won/lost.
+	MpBid Name = "mpBid"
+	// MpHold is the wallet commission-hold machine: active → … → reversed.
+	MpHold Name = "mpHold"
+	// MpAward is the award saga machine: pending → confirmed/failed.
+	MpAward Name = "mpAward"
+	// MpClaim is the driver capacity claim machine: award_pending → … → released.
+	MpClaim Name = "mpClaim"
 )
 
 // ErrIllegalTransition is returned for any move the contract does not allow.
@@ -72,6 +82,57 @@ const (
 	DriverCompleted          = "completed"
 	DriverCancelled          = "cancelled"
 	DriverSafetyHold         = "safety_hold"
+)
+
+// Marketplace request machine states (contracts/state-machines.json → mpRequest).
+const (
+	MpRequestDraft        = "draft"
+	MpRequestOpen         = "open"
+	MpRequestAwardPending = "award_pending"
+	MpRequestAwarded      = "awarded"
+	MpRequestExecution    = "execution"
+	MpRequestCancelled    = "cancelled"
+	MpRequestExpired      = "expired"
+	MpRequestNoOffers     = "no_offers"
+)
+
+// Marketplace bid machine states (contracts/state-machines.json → mpBid).
+const (
+	MpBidSubmitted       = "submitted"
+	MpBidRevised         = "revised"
+	MpBidSelectedPending = "selected_pending"
+	MpBidWithdrawn       = "withdrawn"
+	MpBidExpired         = "expired"
+	MpBidInvalidated     = "invalidated"
+	MpBidLost            = "lost"
+	MpBidWon             = "won"
+)
+
+// Marketplace hold machine states (contracts/state-machines.json → mpHold).
+const (
+	MpHoldActive         = "active"
+	MpHoldCapturePending = "capture_pending"
+	MpHoldCaptured       = "captured"
+	MpHoldReleased       = "released"
+	MpHoldReversed       = "reversed"
+)
+
+// Marketplace award machine states (contracts/state-machines.json → mpAward).
+const (
+	MpAwardPending     = "pending"
+	MpAwardConfirmed   = "confirmed"
+	MpAwardFailed      = "failed"
+	MpAwardCancelled   = "cancelled"
+	MpAwardCompensated = "compensated"
+)
+
+// Marketplace claim machine states (contracts/state-machines.json → mpClaim).
+const (
+	MpClaimAwardPending = "award_pending"
+	MpClaimCurrent      = "current"
+	MpClaimNext         = "next"
+	MpClaimCompleted    = "completed"
+	MpClaimReleased     = "released"
 )
 
 // machines is the contract, transcribed. Order inside a slice is irrelevant;
@@ -129,6 +190,84 @@ var machines = map[Name]struct {
 			DriverNoShow: {},
 		},
 	},
+	MpRequest: {
+		initial: MpRequestDraft,
+		transitions: map[string][]string{
+			MpRequestDraft:        {MpRequestOpen, MpRequestCancelled},
+			MpRequestOpen:         {MpRequestOpen, MpRequestAwardPending, MpRequestCancelled, MpRequestExpired, MpRequestNoOffers},
+			MpRequestAwardPending: {MpRequestAwarded, MpRequestOpen, MpRequestCancelled},
+			MpRequestAwarded:      {MpRequestExecution, MpRequestCancelled},
+			MpRequestExecution:    {},
+			// Terminal states the contract lists only as destinations.
+			MpRequestCancelled: {},
+			MpRequestExpired:   {},
+			MpRequestNoOffers:  {},
+		},
+	},
+	MpBid: {
+		initial: MpBidSubmitted,
+		transitions: map[string][]string{
+			MpBidSubmitted:       {MpBidRevised, MpBidSelectedPending, MpBidWithdrawn, MpBidExpired, MpBidInvalidated, MpBidLost},
+			MpBidRevised:         {MpBidRevised, MpBidSelectedPending, MpBidWithdrawn, MpBidExpired, MpBidInvalidated, MpBidLost},
+			MpBidSelectedPending: {MpBidWon, MpBidSubmitted, MpBidRevised, MpBidLost, MpBidInvalidated},
+			// Terminal states the contract lists only as destinations.
+			MpBidWithdrawn:   {},
+			MpBidExpired:     {},
+			MpBidInvalidated: {},
+			MpBidLost:        {},
+			MpBidWon:         {},
+		},
+	},
+	MpHold: {
+		initial: MpHoldActive,
+		transitions: map[string][]string{
+			MpHoldActive:         {MpHoldActive, MpHoldCapturePending, MpHoldReleased},
+			MpHoldCapturePending: {MpHoldCaptured, MpHoldActive},
+			MpHoldCaptured:       {MpHoldReversed},
+			// Terminal states the contract lists only as destinations.
+			MpHoldReleased: {},
+			MpHoldReversed: {},
+		},
+	},
+	MpAward: {
+		initial: MpAwardPending,
+		transitions: map[string][]string{
+			MpAwardPending:   {MpAwardConfirmed, MpAwardFailed},
+			MpAwardConfirmed: {MpAwardCancelled},
+			MpAwardFailed:    {MpAwardCompensated},
+			// Terminal states the contract lists only as destinations.
+			MpAwardCancelled:   {},
+			MpAwardCompensated: {},
+		},
+	},
+	MpClaim: {
+		initial: MpClaimAwardPending,
+		transitions: map[string][]string{
+			MpClaimAwardPending: {MpClaimCurrent, MpClaimNext, MpClaimReleased},
+			MpClaimCurrent:      {MpClaimCompleted, MpClaimReleased},
+			MpClaimNext:         {MpClaimCurrent, MpClaimReleased},
+			// Terminal states the contract lists only as destinations.
+			MpClaimCompleted: {},
+			MpClaimReleased:  {},
+		},
+	},
+}
+
+// MpBidLiveStates are the bid states in which a bid still competes for the
+// request and still holds its commission reservation. The partial unique index
+// bids_one_live_per_driver_request depends on this list being right.
+func MpBidLiveStates() []string {
+	return []string{MpBidSubmitted, MpBidRevised, MpBidSelectedPending}
+}
+
+// IsMpBidLive reports whether a bid in this state is still live.
+func IsMpBidLive(state string) bool {
+	for _, s := range MpBidLiveStates() {
+		if s == state {
+			return true
+		}
+	}
+	return false
 }
 
 // Initial returns the machine's initial state.

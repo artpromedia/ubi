@@ -11,6 +11,7 @@ import (
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/geo"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
+	ridisc "github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/redis"
 )
 
 // Limits on a reported location. These are physics and sensor quality, not
@@ -169,6 +170,9 @@ func (s *Service) IngestLocations(ctx context.Context, actor Actor, points []dom
 	}
 
 	result := &LocationBatchResult{Points: make([]domain.LocationOutcome, 0, len(points))}
+	// Accepted fixes also feed the marketplace stationary gate's recent-sample
+	// ring, pushed only after the batch commits.
+	var accepted []ridisc.DriverSample
 
 	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		if _, err := s.deps.Store.EnsureSession(ctx, tx, actor.UserID, actor.CityID); err != nil {
@@ -230,6 +234,10 @@ func (s *Service) IngestLocations(ctx context.Context, actor Actor, points []dom
 			}
 			lat, lng, at := point.Lat, point.Lng, point.RecordedAt
 			lastSeq, lastLat, lastLng, lastAt = point.Seq, &lat, &lng, &at
+			accepted = append(accepted, ridisc.DriverSample{
+				Lat: point.Lat, Lng: point.Lng, AccuracyM: point.AccuracyM,
+				SpeedMps: point.SpeedMps, RecordedAt: point.RecordedAt,
+			})
 			result.Accepted++
 			result.Points = append(result.Points, outcome)
 		}
@@ -240,6 +248,7 @@ func (s *Service) IngestLocations(ctx context.Context, actor Actor, points []dom
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	s.deps.Redis.RecordDriverSamples(ctx, actor.UserID, accepted)
 	return result, nil
 }
 

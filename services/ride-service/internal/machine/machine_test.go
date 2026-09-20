@@ -29,7 +29,7 @@ func loadContract(t *testing.T) map[string]contractMachine {
 		t.Fatalf("failed to parse the state machine contract: %v", err)
 	}
 	machines := map[string]contractMachine{}
-	for _, name := range []string{"rider", "driver"} {
+	for _, name := range []string{"rider", "driver", "mpRequest", "mpBid", "mpHold", "mpAward", "mpClaim"} {
 		section, ok := document[name]
 		if !ok {
 			t.Fatalf("the contract has no %q machine", name)
@@ -141,6 +141,14 @@ func TestAssertRefusesIllegalTransitions(t *testing.T) {
 		{"a rated ride is terminal", machine.Rider, machine.RiderRated, machine.RiderInProgress},
 		{"a driver cannot start a trip without a verified PIN", machine.Driver, machine.DriverWaiting, machine.DriverInTrip},
 		{"an offline driver cannot receive an offer", machine.Driver, machine.DriverOffline, machine.DriverOfferReceived},
+		{"an awarded request cannot reopen", machine.MpRequest, machine.MpRequestAwarded, machine.MpRequestOpen},
+		{"an expired request cannot be awarded", machine.MpRequest, machine.MpRequestExpired, machine.MpRequestAwardPending},
+		{"a withdrawn bid is terminal", machine.MpBid, machine.MpBidWithdrawn, machine.MpBidSubmitted},
+		{"a bid cannot win without selection", machine.MpBid, machine.MpBidSubmitted, machine.MpBidWon},
+		{"a released hold cannot be captured", machine.MpHold, machine.MpHoldReleased, machine.MpHoldCaptured},
+		{"a hold cannot be captured before capture_pending", machine.MpHold, machine.MpHoldActive, machine.MpHoldCaptured},
+		{"a confirmed award cannot fail", machine.MpAward, machine.MpAwardConfirmed, machine.MpAwardFailed},
+		{"a current claim cannot demote to next", machine.MpClaim, machine.MpClaimCurrent, machine.MpClaimNext},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -164,6 +172,14 @@ func TestAssertAllowsContractTransitions(t *testing.T) {
 		{machine.Driver, machine.DriverWaiting, machine.DriverPinVerified},
 		{machine.Driver, machine.DriverPinVerified, machine.DriverInTrip},
 		{machine.Driver, machine.DriverCollectingPayment, machine.DriverCompleted},
+		{machine.MpRequest, machine.MpRequestOpen, machine.MpRequestOpen},
+		{machine.MpRequest, machine.MpRequestAwardPending, machine.MpRequestOpen},
+		{machine.MpBid, machine.MpBidRevised, machine.MpBidRevised},
+		{machine.MpBid, machine.MpBidSelectedPending, machine.MpBidSubmitted},
+		{machine.MpHold, machine.MpHoldActive, machine.MpHoldActive},
+		{machine.MpHold, machine.MpHoldCapturePending, machine.MpHoldActive},
+		{machine.MpAward, machine.MpAwardFailed, machine.MpAwardCompensated},
+		{machine.MpClaim, machine.MpClaimNext, machine.MpClaimCurrent},
 	}
 	for _, transition := range legal {
 		if err := machine.Assert(transition.machine, transition.from, transition.to); err != nil {

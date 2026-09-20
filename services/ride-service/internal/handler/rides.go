@@ -144,10 +144,16 @@ func etagMatches(header, etag string) bool {
 // ---------------------------------------------------------------------------
 
 // Routes mounts the /v1 surface. The caller supplies the identity middleware so
-// a test can mount the same routes with the same guard.
-func (h *RideHandler) Routes(identity func(http.Handler) http.Handler, locations *LocationHandler) chi.Router {
+// a test can mount the same routes with the same guard. `marketplace` may be
+// nil, in which case the /mp surface is simply absent (404), exactly what a
+// deployment without the marketplace engine should answer.
+func (h *RideHandler) Routes(identity func(http.Handler) http.Handler, locations *LocationHandler, marketplace *MarketplaceHandler) chi.Router {
 	r := chi.NewRouter()
 	r.Use(identity)
+
+	if marketplace != nil {
+		marketplace.mount(r)
+	}
 
 	r.Post("/quotes", h.CreateQuote)
 

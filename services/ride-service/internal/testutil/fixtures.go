@@ -75,6 +75,77 @@ func CityConfigFixture(cityID string, version int) map[string]any {
 	}
 }
 
+// MarketplacePolicyFixture is a complete, valid marketplace policy block in
+// the shape MarketplacePolicySchema defines. The numbers are test data — round
+// on purpose, and never production defaults (the schema comment says so too).
+func MarketplacePolicyFixture() map[string]any {
+	fareBounds := map[string]any{
+		"absoluteFloorMinor":    40_000,
+		"costFloorMinor":        45_000,
+		"floorBpsOfSuggested":   7_000,
+		"ceilingBpsOfSuggested": 20_000,
+	}
+	rateBounds := map[string]any{
+		"maxPerKmMinor":           50_000,
+		"maxMinimumTripFareMinor": 500_000,
+	}
+	return map[string]any{
+		"policyVersion":      1,
+		"commissionBps":      1_000,
+		"commissionRounding": "half_up",
+		"fareBounds": map[string]any{
+			"ride:go":      fareBounds,
+			"ride:comfort": fareBounds,
+			"delivery:go":  fareBounds,
+		},
+		"searchEnvelope": map[string]any{
+			"initialRadiusMeters":   3_000,
+			"maxRadiusMeters":       9_000,
+			"initialPickupEtaSec":   600,
+			"maxPickupEtaSec":       1_500,
+			"expandAfterSec":        30,
+			"minOffersBeforeExpand": 2,
+			"expansionSteps":        3,
+		},
+		"stationary": map[string]any{
+			"minDwellSec":       60,
+			"maxSpeedMps":       1.5,
+			"maxLocationAgeSec": 120,
+			"maxAccuracyMeters": 50,
+			"motionCloseSec":    20,
+		},
+		"finishingTrip": map[string]any{
+			"maxRemainingSec":            600,
+			"completionBufferSec":        120,
+			"uncertaintyBufferSec":       60,
+			"corridorMaxBearingDeltaDeg": 90,
+		},
+		"bids": map[string]any{
+			"bidExpirySec":                120,
+			"requestExpirySec":            600,
+			"revisionCooldownSec":         15,
+			"maxLiveBidsPerDriver":        3,
+			"maxOpenRequestsPerRequester": 2,
+		},
+		"queue": map[string]any{
+			"pickupWindowToleranceSec": 300,
+		},
+		"rateProfileBounds": map[string]any{
+			"ride:go":      rateBounds,
+			"ride:comfort": rateBounds,
+			"delivery:go":  rateBounds,
+		},
+	}
+}
+
+// MarketplaceCityConfigFixture is the city fixture with the marketplace block
+// attached, for harness cities that carry a marketplace policy.
+func MarketplaceCityConfigFixture(cityID string, version int) map[string]any {
+	config := CityConfigFixture(cityID, version)
+	config["marketplace"] = MarketplacePolicyFixture()
+	return config
+}
+
 // PickupFixture is the reference pickup point used across the ride tests.
 func PickupFixture() domain.Place {
 	return domain.Place{Lat: 6.5244, Lng: 3.3792, Address: "Test pickup"}

@@ -31,6 +31,13 @@ func (s *Service) Dispatch(ctx context.Context, rideID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
+	// Marketplace-managed rides are assigned by the award saga, never by ring
+	// dispatch: offering one to the pool would assign it twice.
+	if awardID, err := s.deps.Store.MarketplaceAwardID(ctx, s.deps.Store.Pool(), rideID); err != nil {
+		return err
+	} else if awardID != nil {
+		return nil
+	}
 	config, err := s.config(ctx, pending.CityID)
 	if err != nil {
 		return err

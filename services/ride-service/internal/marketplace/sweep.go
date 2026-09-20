@@ -1,0 +1,396 @@
+package marketplace
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
+)
+
+// sweepBatch bounds one pass over each table. Plumbing, not policy.
+const sweepBatch = 100
+
+// Sweep is one pass of the marketplace's durable background work:
+//
+//  1. expire overdue live bids and release their holds once;
+//  2. close open requests past expiry with zero live bids as no_offers;
+//  3. expand search envelopes per policy — preserving valid bids and never
+//     bumping the revision;
+//  4. retry wallet operations the engine still owes (orphan reservations,
+//     failed releases, adjusts and reversals);
+//  5. resume stalled award sagas — re-polling an unknown capture by award id
+//     until the outcome is definite, NEVER timeout-reopening while a debit
+//     may still commit;
+//  6. settle finished current claims and promote queued next claims exactly
+//     once (the durable backstop for a lost completion callback);
+//  7. recompute queued pickup windows (eta_updated / window_missed once);
+//  8. cancel queued awards whose driver went offline, with the fee reversed.
+//
+// It is a plain function over rows, so a restart resumes rather than forgets,
+// a test can drive it a tick at a time, and an operator can run it as a job.
+func (s *Service) Sweep(ctx context.Context) error {
+	now := s.now()
+	s.sweepExpiredBids(ctx, now)
+	s.sweepExpiredRequests(ctx, now)
+	s.sweepEnvelopes(ctx, now)
+	s.sweepRecoveries(ctx, now)
+	s.sweepStalledAwards(ctx, now)
+	s.sweepPromotions(ctx)
+	s.sweepQueuedWindows(ctx, now)
+	s.sweepQueuedDriverFailures(ctx)
+	return nil
+}
+
+// RunSweeper sweeps on a ticker until the context is cancelled.
+func (s *Service) RunSweeper(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.Sweep(ctx); err != nil {
+				s.deps.Logger.Error().Err(err).Msg("marketplace sweep failed")
+			}
+		}
+	}
+}
+
+func (s *Service) sweepExpiredBids(ctx context.Context, now time.Time) {
+	bids, err := s.deps.Store.ExpiredLiveBids(ctx, s.deps.Store.Pool(), now, sweepBatch)
+	if err != nil {
+		s.deps.Logger.Error().Err(err).Msg("failed to list expired bids")
+		return
+	}
+	for _, bid := range bids {
+		expired, err := s.expireBid(ctx, bid, now)
+		if err != nil {
+			s.deps.Logger.Error().Err(err).Str("bid_id", bid.ID.String()).Msg("failed to expire bid")
+			continue
+		}
+		if expired != nil {
+			// The row is terminal: the hold is released exactly once, under
+			// the bid's one release key; failures land in recovery.
+			s.releaseReservation(ctx, expired)
+		}
+	}
+}
+
+// expireBid marks one overdue bid expired. A nil bid with a nil error means
+// another sweeper or a user action got there first.
+func (s *Service) expireBid(ctx context.Context, bid *Bid, now time.Time) (*Bid, error) {
+	var expired *Bid
+	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		locked, err := s.deps.Store.BidForUpdate(ctx, tx, bid.ID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return nil
+			}
+			return err
+		}
+		if !machine.IsMpBidLive(locked.State) || locked.ExpiresAt.After(now) {
+			return nil
+		}
+		moved, err := s.deps.Store.TransitionBid(ctx, tx, locked, machine.MpBidExpired, BidUpdate{})
+		if err != nil {
+			return err
+		}
+		expired = moved
+		return writeEvent(ctx, tx, Event{
+			Name:           "mp.bid.expired",
+			AggregateType:  subjectBid,
+			AggregateID:    bid.ID.String(),
+			ToVersion:      moved.BidVersion,
+			ActorType:      "system",
+			ActorID:        "ride-service",
+			IdempotencyKey: "mp.bid.expired:" + bid.ID.String(),
+			OccurredAt:     now,
+			Payload: map[string]any{
+				"bidId":         bid.ID.String(),
+				"requestId":     bid.RequestID.String(),
+				"driverId":      bid.DriverID.String(),
+				"reservationId": bid.ReservationID,
+			},
+		})
+	})
+	return expired, err
+}
+
+// expiredOpenRequests lists open requests past their deadline.
+func (s *Store) expiredOpenRequests(ctx context.Context, db DB, now time.Time, limit int) ([]*Request, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+requestColumns+`
+		FROM mp.requests
+		WHERE state = $1 AND expires_at <= $2
+		ORDER BY expires_at ASC
+		LIMIT $3`, machine.MpRequestOpen, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list expired requests: %w", err)
+	}
+	defer rows.Close()
+	var requests []*Request
+	for rows.Next() {
+		request, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+	return requests, rows.Err()
+}
+
+func (s *Service) sweepExpiredRequests(ctx context.Context, now time.Time) {
+	requests, err := s.deps.Store.expiredOpenRequests(ctx, s.deps.Store.Pool(), now, sweepBatch)
+	if err != nil {
+		s.deps.Logger.Error().Err(err).Msg("failed to list expired requests")
+		return
+	}
+	for _, request := range requests {
+		if err := s.closeRequestNoOffers(ctx, request, now); err != nil {
+			s.deps.Logger.Error().Err(err).Str("request_id", request.ID.String()).Msg("failed to close expired request")
+		}
+	}
+}
+
+// closeRequestNoOffers closes an expired request that attracted no live bids.
+// A request that still carries live bids is left for the requester (and for
+// the bid-expiry sweep, after which this pass closes it).
+func (s *Service) closeRequestNoOffers(ctx context.Context, request *Request, now time.Time) error {
+	return s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		locked, err := s.deps.Store.RequestForUpdate(ctx, tx, request.ID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return nil
+			}
+			return err
+		}
+		if locked.State != machine.MpRequestOpen || locked.ExpiresAt.After(now) {
+			return nil
+		}
+		live, err := s.deps.Store.LiveBidCountForRequest(ctx, tx, locked.ID)
+		if err != nil {
+			return err
+		}
+		if live > 0 {
+			return nil
+		}
+		reason := "no_offers"
+		fromVersion := locked.Version
+		moved, err := s.deps.Store.TransitionRequest(ctx, tx, locked, machine.MpRequestNoOffers, RequestUpdate{
+			CloseReason: &reason,
+		})
+		if err != nil {
+			return err
+		}
+		return writeEvent(ctx, tx, Event{
+			Name:           "mp.request.closed",
+			AggregateType:  subjectRequest,
+			AggregateID:    locked.ID.String(),
+			FromVersion:    &fromVersion,
+			ToVersion:      moved.Version,
+			CityID:         locked.CityID,
+			ActorType:      "system",
+			ActorID:        "ride-service",
+			IdempotencyKey: "mp.request.closed:" + locked.ID.String(),
+			OccurredAt:     now,
+			Payload: map[string]any{
+				"requestId": locked.ID.String(),
+				"reason":    reason,
+			},
+		})
+	})
+}
+
+// expandableRequests lists open requests whose envelope may grow: still open,
+// not past expiry, steps left, and past the expansion deadline for their step.
+func (s *Store) expandableRequests(ctx context.Context, db DB, now time.Time, limit int) ([]*Request, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+requestColumns+`
+		FROM mp.requests
+		WHERE state = $1 AND expires_at > $2
+		ORDER BY created_at ASC
+		LIMIT $3`, machine.MpRequestOpen, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list expandable requests: %w", err)
+	}
+	defer rows.Close()
+	var requests []*Request
+	for rows.Next() {
+		request, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+	return requests, rows.Err()
+}
+
+func (s *Service) sweepEnvelopes(ctx context.Context, now time.Time) {
+	requests, err := s.deps.Store.expandableRequests(ctx, s.deps.Store.Pool(), now, sweepBatch)
+	if err != nil {
+		s.deps.Logger.Error().Err(err).Msg("failed to list requests for expansion")
+		return
+	}
+	for _, request := range requests {
+		if err := s.expandEnvelope(ctx, request, now); err != nil {
+			s.deps.Logger.Error().Err(err).Str("request_id", request.ID.String()).Msg("envelope expansion failed")
+		}
+	}
+}
+
+// expandEnvelope grows one request's search envelope per policy: after
+// expandAfterSec per step, only while the offer count is below the policy's
+// threshold, stepping linearly to the maxima. Existing valid bids are
+// PRESERVED — an envelope change is not a revision and invalidates nothing.
+func (s *Service) expandEnvelope(ctx context.Context, request *Request, now time.Time) error {
+	_, policy, err := s.policy(ctx, request.CityID)
+	if err != nil {
+		// A city whose policy vanished mid-flight expands nothing.
+		return nil
+	}
+	envelope := policy.SearchEnvelope
+
+	if request.EnvelopeStep >= envelope.ExpansionSteps {
+		return nil
+	}
+	due := request.CreatedAt.Add(time.Duration((request.EnvelopeStep+1)*envelope.ExpandAfterSec) * time.Second)
+	if now.Before(due) {
+		return nil
+	}
+
+	return s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		locked, err := s.deps.Store.RequestForUpdate(ctx, tx, request.ID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return nil
+			}
+			return err
+		}
+		if locked.State != machine.MpRequestOpen || locked.EnvelopeStep != request.EnvelopeStep {
+			return nil
+		}
+		live, err := s.deps.Store.LiveBidCountForRequest(ctx, tx, locked.ID)
+		if err != nil {
+			return err
+		}
+		if live >= envelope.MinOffersBeforeExpand {
+			return nil
+		}
+
+		step := locked.EnvelopeStep + 1
+		radius := envelope.InitialRadiusMeters +
+			(envelope.MaxRadiusMeters-envelope.InitialRadiusMeters)*step/envelope.ExpansionSteps
+		eta := envelope.InitialPickupEtaSec +
+			(envelope.MaxPickupEtaSec-envelope.InitialPickupEtaSec)*step/envelope.ExpansionSteps
+		if radius > envelope.MaxRadiusMeters {
+			radius = envelope.MaxRadiusMeters
+		}
+		if eta > envelope.MaxPickupEtaSec {
+			eta = envelope.MaxPickupEtaSec
+		}
+
+		fromVersion := locked.Version
+		// open → open, envelope fields only: the revision does not move, so
+		// every live bid stays valid and every hold stays where it is.
+		moved, err := s.deps.Store.TransitionRequest(ctx, tx, locked, machine.MpRequestOpen, RequestUpdate{
+			EnvelopeStep:    &step,
+			EnvelopeRadiusM: &radius,
+			EnvelopeEtaSec:  &eta,
+		})
+		if err != nil {
+			return err
+		}
+		return writeEvent(ctx, tx, Event{
+			Name:           "mp.request.revised",
+			AggregateType:  subjectRequest,
+			AggregateID:    locked.ID.String(),
+			FromVersion:    &fromVersion,
+			ToVersion:      moved.Version,
+			CityID:         locked.CityID,
+			ActorType:      "system",
+			ActorID:        "ride-service",
+			IdempotencyKey: "mp.request.envelope:" + locked.ID.String() + ":" + itoa(step),
+			OccurredAt:     now,
+			Payload: map[string]any{
+				"requestId": locked.ID.String(),
+				"revision":  moved.Revision,
+				"envelope": map[string]any{
+					"step":         step,
+					"radiusMeters": radius,
+					"pickupEtaSec": eta,
+				},
+				"envelopeOnly": true,
+			},
+		})
+	})
+}
+
+// sweepRecoveries retries the wallet operations the engine still owes.
+func (s *Service) sweepRecoveries(ctx context.Context, now time.Time) {
+	due, err := s.deps.Store.DueRecoveries(ctx, s.deps.Store.Pool(), now, sweepBatch)
+	if err != nil {
+		s.deps.Logger.Error().Err(err).Msg("failed to list due recoveries")
+		return
+	}
+	for _, row := range due {
+		var opErr error
+		switch row.Action {
+		case RecoveryRelease:
+			_, opErr = s.deps.Wallet.Release(ctx, row.ReservationID, "mp.recovery:"+row.ID.String())
+		case RecoveryAdjust:
+			if row.BidID == nil || row.AmountMinor == nil {
+				opErr = errors.New("adjust recovery row is missing its bid or amount")
+			} else if bid, bidErr := s.deps.Store.BidByID(ctx, s.deps.Store.Pool(), *row.BidID); bidErr != nil {
+				opErr = bidErr
+			} else {
+				_, opErr = s.deps.Wallet.Adjust(ctx, row.ReservationID, *row.AmountMinor, bid.AmountMinor,
+					"mp.recovery:"+row.ID.String())
+			}
+		case RecoveryReverse:
+			// A reversal is idempotent under the award's one reversal key, so
+			// the retry converges on the same linked entry.
+			if row.BidID == nil {
+				opErr = errors.New("reverse recovery row is missing its bid")
+			} else if award, awardErr := s.deps.Store.AwardByBidID(ctx, s.deps.Store.Pool(), *row.BidID); awardErr != nil {
+				opErr = awardErr
+			} else {
+				_, opErr = s.deps.Wallet.Reverse(ctx, row.ReservationID, award.ID.String(),
+					"recovery", "mp.reverse:"+award.ID.String())
+			}
+		default:
+			opErr = fmt.Errorf("unknown recovery action %q", row.Action)
+		}
+
+		if opErr == nil {
+			if err := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), row.ID, now); err != nil {
+				s.deps.Logger.Error().Err(err).Str("recovery_id", row.ID.String()).Msg("failed to resolve recovery")
+			}
+			continue
+		}
+		if mapped, ok := domain.AsError(opErr); ok && mapped.Code == domain.CodeNotFound {
+			// The wallet has never heard of this reservation: an unknown
+			// outcome that turned out to be "never applied". Nothing to
+			// release; the row is done.
+			if err := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), row.ID, now); err != nil {
+				s.deps.Logger.Error().Err(err).Str("recovery_id", row.ID.String()).Msg("failed to resolve recovery")
+			}
+			continue
+		}
+		backoff := time.Duration(30*(row.Attempts+1)) * time.Second
+		if backoff > 10*time.Minute {
+			backoff = 10 * time.Minute
+		}
+		if err := s.deps.Store.DeferRecovery(ctx, s.deps.Store.Pool(), row.ID, opErr.Error(), now.Add(backoff)); err != nil {
+			s.deps.Logger.Error().Err(err).Str("recovery_id", row.ID.String()).Msg("failed to defer recovery")
+		}
+	}
+}

@@ -39,6 +39,9 @@ type Deps struct {
 // Service is the Move core.
 type Service struct {
 	deps Deps
+	// observer, when set, hears about terminal ride transitions post-commit
+	// (see SetExecutionObserver); nil means nobody is listening.
+	observer ExecutionObserver
 }
 
 // NewService validates its dependencies rather than discovering a nil one

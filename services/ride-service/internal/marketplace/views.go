@@ -1,0 +1,402 @@
+package marketplace
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
+)
+
+// QuoteEnvelopeView answers GET /v1/mp/quote (MpQuoteEnvelopeSchema).
+type QuoteEnvelopeView struct {
+	QuoteID              string         `json:"quoteId"`
+	Service              string         `json:"service"`
+	VehicleClass         string         `json:"vehicleClass"`
+	CityID               string         `json:"cityId"`
+	Currency             string         `json:"currency"`
+	SuggestedFareMinor   int64          `json:"suggestedFareMinor"`
+	MinimumFareMinor     int64          `json:"minimumFareMinor"`
+	MaximumFareMinor     int64          `json:"maximumFareMinor"`
+	ExpiresAt            time.Time      `json:"expiresAt"`
+	PricingVersion       string         `json:"pricingVersion"`
+	PolicyVersion        int            `json:"policyVersion"`
+	Breakdown            []BreakdownRow `json:"breakdown"`
+	RoutedDistanceMeters int64          `json:"routedDistanceMeters"`
+	RoutedDurationSec    int64          `json:"routedDurationSec"`
+}
+
+// SearchEnvelopeView is the request's current search envelope.
+type SearchEnvelopeView struct {
+	Step         int `json:"step"`
+	RadiusMeters int `json:"radiusMeters"`
+	PickupEtaSec int `json:"pickupEtaSec"`
+}
+
+// RequestView is the owner's view of a request (MpRequestSchema).
+type RequestView struct {
+	RequestID          string             `json:"requestId"`
+	State              string             `json:"state"`
+	Revision           int                `json:"revision"`
+	Version            int                `json:"version"`
+	Service            string             `json:"service"`
+	VehicleClass       string             `json:"vehicleClass"`
+	CityID             string             `json:"cityId"`
+	Currency           string             `json:"currency"`
+	RequesterID        string             `json:"requesterId"`
+	QuoteID            string             `json:"quoteId"`
+	RequestedFareMinor int64              `json:"requestedFareMinor"`
+	SuggestedFareMinor int64              `json:"suggestedFareMinor"`
+	MinimumFareMinor   int64              `json:"minimumFareMinor"`
+	MaximumFareMinor   int64              `json:"maximumFareMinor"`
+	Pickup             Area               `json:"pickup"`
+	Dropoff            Area               `json:"dropoff"`
+	Delivery           map[string]any     `json:"delivery"`
+	SearchEnvelope     SearchEnvelopeView `json:"searchEnvelope"`
+	PolicyVersion      int                `json:"policyVersion"`
+	PricingVersion     string             `json:"pricingVersion"`
+	ExpiresAt          time.Time          `json:"expiresAt"`
+	CreatedAt          time.Time          `json:"createdAt"`
+	CloseReason        *string            `json:"closeReason"`
+}
+
+func requestViewOf(request *Request) *RequestView {
+	var closeReason *string
+	if request.CloseReason != "" {
+		reason := request.CloseReason
+		closeReason = &reason
+	}
+	return &RequestView{
+		RequestID:          request.ID.String(),
+		State:              request.State,
+		Revision:           request.Revision,
+		Version:            request.Version,
+		Service:            request.Service,
+		VehicleClass:       request.VehicleClass,
+		CityID:             request.CityID,
+		Currency:           request.Currency,
+		RequesterID:        request.RequesterID.String(),
+		QuoteID:            request.QuoteID.String(),
+		RequestedFareMinor: request.RequestedMinor,
+		SuggestedFareMinor: request.SuggestedMinor,
+		MinimumFareMinor:   request.MinMinor,
+		MaximumFareMinor:   request.MaxMinor,
+		Pickup:             request.Pickup,
+		Dropoff:            request.Dropoff,
+		Delivery:           request.Delivery,
+		SearchEnvelope: SearchEnvelopeView{
+			Step:         request.EnvelopeStep,
+			RadiusMeters: request.EnvelopeRadiusM,
+			PickupEtaSec: request.EnvelopeEtaSec,
+		},
+		PolicyVersion:  request.PolicyVersion,
+		PricingVersion: request.PricingVersion,
+		ExpiresAt:      request.ExpiresAt,
+		CreatedAt:      request.CreatedAt,
+		CloseReason:    closeReason,
+	}
+}
+
+// BidView is the driver's own bid (MpBidSchema): their money, only theirs.
+type BidView struct {
+	BidID            string    `json:"bidId"`
+	RequestID        string    `json:"requestId"`
+	RequestRevision  int       `json:"requestRevision"`
+	BidVersion       int       `json:"bidVersion"`
+	State            string    `json:"state"`
+	DriverID         string    `json:"driverId"`
+	AmountMinor      int64     `json:"amountMinor"`
+	CommissionMinor  int64     `json:"commissionMinor"`
+	NetMinor         int64     `json:"netMinor"`
+	Slot             string    `json:"slot"`
+	DependsOnClaimID *string   `json:"dependsOnClaimId"`
+	ReservationID    string    `json:"reservationId"`
+	HoldState        string    `json:"holdState"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+	CreatedAt        time.Time `json:"createdAt"`
+}
+
+// holdStateFor derives the hold's state from the bid's: a live bid keeps its
+// reservation active, a won bid captured it, everything else released it.
+func holdStateFor(bidState string) string {
+	switch {
+	case machine.IsMpBidLive(bidState):
+		return machine.MpHoldActive
+	case bidState == machine.MpBidWon:
+		return machine.MpHoldCaptured
+	default:
+		return machine.MpHoldReleased
+	}
+}
+
+func bidViewOf(bid *Bid) *BidView {
+	var dependsOn *string
+	if bid.DependsOnClaimID != nil {
+		claim := bid.DependsOnClaimID.String()
+		dependsOn = &claim
+	}
+	return &BidView{
+		BidID:            bid.ID.String(),
+		RequestID:        bid.RequestID.String(),
+		RequestRevision:  bid.RequestRevision,
+		BidVersion:       bid.BidVersion,
+		State:            bid.State,
+		DriverID:         bid.DriverID.String(),
+		AmountMinor:      bid.AmountMinor,
+		CommissionMinor:  bid.CommissionMinor,
+		NetMinor:         bid.NetMinor,
+		Slot:             bid.Slot,
+		DependsOnClaimID: dependsOn,
+		ReservationID:    bid.ReservationID,
+		HoldState:        holdStateFor(bid.State),
+		ExpiresAt:        bid.ExpiresAt,
+		CreatedAt:        bid.CreatedAt,
+	}
+}
+
+// OfferDriverView is what a requester may know about a bidding driver:
+// display fields only, never rival prices, never another bidder's identity.
+type OfferDriverView struct {
+	DisplayName    string `json:"displayName"`
+	Initials       string `json:"initials"`
+	Rating         string `json:"rating"`
+	CompletedTrips int    `json:"completedTrips"`
+	Vehicle        string `json:"vehicle"`
+	PlateMasked    string `json:"plateMasked"`
+}
+
+// OfferView is the rider-facing view of one bid (MpOfferSchema).
+type OfferView struct {
+	BidID           string          `json:"bidId"`
+	BidVersion      int             `json:"bidVersion"`
+	RequestRevision int             `json:"requestRevision"`
+	AmountMinor     int64           `json:"amountMinor"`
+	Kind            string          `json:"kind"`
+	Driver          OfferDriverView `json:"driver"`
+	PickupLabel     string          `json:"pickupLabel"`
+	PickupWindow    *PickupWindow   `json:"pickupWindow"`
+	ExpiresAt       time.Time       `json:"expiresAt"`
+	Withdrawn       bool            `json:"withdrawn"`
+	WhyRecommended  *string         `json:"whyRecommended"`
+}
+
+// PickupWindow is a finishing-trip offer's predicted pickup window.
+type PickupWindow struct {
+	EarliestSec int `json:"earliestSec"`
+	LatestSec   int `json:"latestSec"`
+	EtaVersion  int `json:"etaVersion"`
+}
+
+// RequestSnapshotView answers GET /v1/mp/requests/{id}.
+type RequestSnapshotView struct {
+	Request *RequestView `json:"request"`
+	Offers  []*OfferView `json:"offers"`
+	Award   *AwardView   `json:"award,omitempty"`
+	Seq     int          `json:"seq"`
+}
+
+// AwardView is the award as clients converge on it (MpAwardSchema): the
+// answer of POST .../select (202, pending) and of GET .../award until the saga
+// resolves it one way or the other.
+type AwardView struct {
+	AwardID         string        `json:"awardId"`
+	RequestID       string        `json:"requestId"`
+	BidID           string        `json:"bidId"`
+	State           string        `json:"state"`
+	RequestVersion  int           `json:"requestVersion"`
+	BidVersion      int           `json:"bidVersion"`
+	DriverID        string        `json:"driverId"`
+	RequesterID     string        `json:"requesterId"`
+	FareMinor       int64         `json:"fareMinor"`
+	CommissionMinor int64         `json:"commissionMinor"`
+	Slot            string        `json:"slot"`
+	ExecutionID     *string       `json:"executionId,omitempty"`
+	PickupWindow    *PickupWindow `json:"pickupWindow,omitempty"`
+	FailReason      *string       `json:"failReason,omitempty"`
+	CreatedAt       time.Time     `json:"createdAt"`
+	ResolvedAt      *time.Time    `json:"resolvedAt"`
+}
+
+func awardViewOf(award *Award) *AwardView {
+	view := &AwardView{
+		AwardID:         award.ID.String(),
+		RequestID:       award.RequestID.String(),
+		BidID:           award.BidID.String(),
+		State:           award.State,
+		RequestVersion:  award.RequestVersion,
+		BidVersion:      award.BidVersion,
+		DriverID:        award.DriverID.String(),
+		RequesterID:     award.RequesterID.String(),
+		FareMinor:       award.FareMinor,
+		CommissionMinor: award.CommissionMinor,
+		Slot:            award.Slot,
+		CreatedAt:       award.CreatedAt,
+		ResolvedAt:      award.ResolvedAt,
+	}
+	if award.ExecutionID != nil {
+		id := award.ExecutionID.String()
+		view.ExecutionID = &id
+	}
+	if award.PickupWindow != nil {
+		view.PickupWindow = &PickupWindow{
+			EarliestSec: award.PickupWindow.EarliestSec,
+			LatestSec:   award.PickupWindow.LatestSec,
+			EtaVersion:  award.PickupWindow.EtaVersion,
+		}
+	}
+	if award.FailReason != "" {
+		reason := award.FailReason
+		view.FailReason = &reason
+	}
+	return view
+}
+
+// FeedItemView is one privacy-limited feed card (MpFeedItemSchema).
+type FeedItemView struct {
+	RequestID       string    `json:"requestId"`
+	Revision        int       `json:"revision"`
+	Service         string    `json:"service"`
+	Title           string    `json:"title"`
+	Meta            string    `json:"meta"`
+	AskedMinor      int64     `json:"askedMinor"`
+	AskedByLabel    string    `json:"askedByLabel"`
+	CapabilityBadge *string   `json:"capabilityBadge"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+}
+
+// FeedPageView answers GET /v1/mp/feed.
+type FeedPageView struct {
+	Items             []*FeedItemView `json:"items"`
+	NextCursor        *string         `json:"nextCursor"`
+	AvailabilityEpoch int64           `json:"availabilityEpoch"`
+}
+
+// EligibilityReasonView is one machine-readable reason with its human words.
+type EligibilityReasonView struct {
+	Code   string `json:"code"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+}
+
+// EligibilityView is the single server-owned eligibility answer
+// (MpEligibilitySchema). The driver app renders it verbatim; it never
+// computes eligibility locally.
+type EligibilityView struct {
+	Eligible          bool                    `json:"eligible"`
+	Slot              *string                 `json:"slot"`
+	Reasons           []EligibilityReasonView `json:"reasons"`
+	PolicyVersion     int                     `json:"policyVersion"`
+	AvailabilityEpoch int64                   `json:"availabilityEpoch"`
+	EvaluatedAt       time.Time               `json:"evaluatedAt"`
+
+	// predictedPickupSec is server-internal: the finishing-trip pickup
+	// prediction the driver-view phrases into a label.
+	predictedPickupSec int
+}
+
+// PresetView is one server-generated quick offer (MpPresetSchema).
+type PresetView struct {
+	Key             string  `json:"key"`
+	AmountMinor     int64   `json:"amountMinor"`
+	CommissionMinor int64   `json:"commissionMinor"`
+	NetMinor        int64   `json:"netMinor"`
+	Title           string  `json:"title"`
+	FeeNetLabel     string  `json:"feeNetLabel"`
+	Affordable      bool    `json:"affordable"`
+	ShortfallMinor  *int64  `json:"shortfallMinor"`
+	ShortfallLabel  *string `json:"shortfallLabel"`
+	Emphasized      bool    `json:"emphasized"`
+	Source          string  `json:"source"`
+}
+
+// DriverViewResult answers GET /v1/mp/requests/{id}/driver-view.
+type DriverViewResult struct {
+	Item          *FeedItemView    `json:"item"`
+	Eligibility   *EligibilityView `json:"eligibility"`
+	Presets       []*PresetView    `json:"presets"`
+	ProfileLine   *string          `json:"profileLine,omitempty"`
+	CeilingNotice *string          `json:"ceilingNotice,omitempty"`
+	MyBid         *BidView         `json:"myBid,omitempty"`
+}
+
+// RateProfileView is one versioned profile (MpRateProfileSchema).
+type RateProfileView struct {
+	ProfileID            string                `json:"profileId"`
+	DriverID             string                `json:"driverId"`
+	Version              int                   `json:"version"`
+	CityID               string                `json:"cityId"`
+	Service              string                `json:"service"`
+	VehicleClass         string                `json:"vehicleClass"`
+	Currency             string                `json:"currency"`
+	PerKmMinor           int64                 `json:"perKmMinor"`
+	MinimumTripFareMinor int64                 `json:"minimumTripFareMinor"`
+	Components           RateProfileComponents `json:"components"`
+	CreatedAt            time.Time             `json:"createdAt"`
+}
+
+func rateProfileViewOf(profile *RateProfile) *RateProfileView {
+	return &RateProfileView{
+		ProfileID:            profile.ID.String(),
+		DriverID:             profile.DriverID.String(),
+		Version:              profile.Version,
+		CityID:               profile.CityID,
+		Service:              profile.Service,
+		VehicleClass:         profile.VehicleClass,
+		Currency:             profile.Currency,
+		PerKmMinor:           profile.PerKmMinor,
+		MinimumTripFareMinor: profile.MinTripMinor,
+		Components:           profile.Components,
+		CreatedAt:            profile.CreatedAt,
+	}
+}
+
+// RatePreviewRow is one labelled line of the preview breakdown.
+type RatePreviewRow struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+	Tone  string `json:"tone,omitempty"`
+}
+
+// RatePreviewView answers POST /v1/mp/rate-profiles/preview.
+type RatePreviewView struct {
+	ProfileFormulaVersion int              `json:"profileFormulaVersion"`
+	GrossMinor            int64            `json:"grossMinor"`
+	CommissionMinor       int64            `json:"commissionMinor"`
+	NetMinor              int64            `json:"netMinor"`
+	FloorAdjusted         bool             `json:"floorAdjusted"`
+	ExceedsCeiling        bool             `json:"exceedsCeiling"`
+	Rows                  []RatePreviewRow `json:"rows"`
+	Disclaimer            string           `json:"disclaimer"`
+}
+
+// formatMinor renders integer minor units as a human money string using the
+// city's currency exponent — display only, never arithmetic.
+func formatMinor(minor int64, currency string, fractionDigits int) string {
+	if fractionDigits <= 0 {
+		return fmt.Sprintf("%s %d", currency, minor)
+	}
+	divisor := int64(1)
+	for i := 0; i < fractionDigits; i++ {
+		divisor *= 10
+	}
+	sign := ""
+	if minor < 0 {
+		sign = "-"
+		minor = -minor
+	}
+	return fmt.Sprintf("%s%s %d.%0*d", sign, currency, minor/divisor, fractionDigits, minor%divisor)
+}
+
+// maskedDriverView derives display fields server-side without restating PII
+// this service does not own: a stable pseudonymous name from the driver id.
+func maskedDriverView(driverID string, vehicleClass string) OfferDriverView {
+	tag := strings.ToUpper(digest("mp.driver.display:" + driverID)[:4])
+	return OfferDriverView{
+		DisplayName:    "Driver " + tag,
+		Initials:       tag[:2],
+		Rating:         "–",
+		CompletedTrips: 0,
+		Vehicle:        vehicleClass,
+		PlateMasked:    "•••",
+	}
+}
