@@ -1,6 +1,9 @@
 // DEV ONLY (__DEV__ && UBI_FIXTURES=1). Board 22c–22d cast: Chinedu Okafor, week of 8 Sep 2026, base 20%, 5-pt rebate.
 import { installFixtures } from '@ubi/mobile-core';
-const NGN = (major: number) => ({ amountMinor: Math.round(major * 100), currency: 'NGN' });
+import { marketplaceFixtures } from './marketplace';
+export type FixtureInput = { method: string; path: string; body?: unknown };
+export const ok = (json: unknown) => ({ status: 200, json });
+export const NGN = (major: number) => ({ amountMinor: Math.round(major * 100), currency: 'NGN' });
 const rebate = { id: 'inc_reb_w37', title: 'Lower commission · this week', baseBps: 2000, reductionBps: 500, kind: 'percentage_points', effectiveBps: 1500, endsAt: '2026-09-14T23:59:59+01:00', eligible: { used: 14, cap: 30, rebatedSoFar: NGN(2170) }, fundedBy: 'UBI', appliesTo: 'Not tips, tolls or taxes', example: { tripRef: 'rd_314', fare: NGN(3100), commissionBefore: NGN(620), commissionAfter: NGN(465), rebate: NGN(155), ifPercentOfCommission: NGN(31) } };
 const overview = { strip: { badge: '0%', headline: 'Commission-free until 22:00 · 3 of 10 trips used', detail: "Cap ₦5,000 saved · ₦1,640 so far · details when you're parked" }, rebates: [rebate],
   windows: [{ id: 'win_sat', title: 'Commission-free window', startsAt: '2026-09-13T18:00:00+01:00', endsAt: '2026-09-13T22:00:00+01:00', zones: ['Lagos Island', 'Lekki'], tripCap: 10, moneyCap: NGN(5000), used: { trips: 3, saved: NGN(1640) }, live: true, rule: 'started in the window' }],
@@ -12,10 +15,11 @@ const statement = { periodId: '2026-W37', title: 'Week of 8 Sep', status: 'draft
   lines: [{ ledgerLineId: 'jl_1', kind: 'fares', label: 'Fares · 47 trips', amount: NGN(151900), tone: 'neutral' }, { ledgerLineId: 'jl_2', kind: 'tips_tolls', label: 'Tips · tolls (not commissionable)', amount: NGN(6400), tone: 'neutral' }, { ledgerLineId: 'jl_3', kind: 'commission', label: 'UBI commission · 20%', amount: NGN(-30380), tone: 'negative' }, { ledgerLineId: 'jl_4', kind: 'rebate', label: 'Commission rebate · 5 pts · 30 trips', amount: NGN(4810), tone: 'positive' }, { ledgerLineId: 'jl_5', kind: 'window_waiver', label: 'Commission-free window · Sat · 7 trips', amount: NGN(3940), tone: 'positive' }, { ledgerLineId: 'jl_6', kind: 'rebate_reversal', label: 'Rebate reversed · rd_301 refunded', amount: NGN(-140), tone: 'negative' }, { ledgerLineId: 'jl_7', kind: 'cash_collected', label: 'Cash you collected (you keep)', amount: NGN(-72300), tone: 'neutral' }, { ledgerLineId: 'jl_8', kind: 'remittance', label: 'Remittance → Okafor Motors', amount: NGN(-35000), tone: 'warning' }, { ledgerLineId: 'jl_9', kind: 'payout', label: 'To your wallet Monday', amount: NGN(29230), tone: 'positive' }],
   trips: [{ tripId: 'rd_402', title: 'Sat 19:42 · Lekki → Ikoyi', fare: NGN(4200), paymentMethod: 'cash', commission: NGN(840), windowWaiver: true, windowNote: 'window · 5 of 10', owedToUbi: NGN(0) }, { tripId: 'rd_314', title: 'Sat 16:05 · VI → Nike Art Gallery', fare: NGN(3100), paymentMethod: 'cash', commission: NGN(620), rebate: NGN(155), owedToUbi: NGN(465) }, { tripId: 'rd_301', title: 'Fri 08:10 · Ikeja → MMA2', fare: NGN(2800), paymentMethod: 'wallet', commission: NGN(560), owedToUbi: NGN(0), refunded: true, reversal: { amount: NGN(140), reason: 'rider refund (safety case)' } }] };
 export function installDevFixtures() {
-  installFixtures(async ({ path }) => {
+  installFixtures(async (input) => {
+    const { path } = input;
     if (path === '/v1/driver/incentives') return { status: 200, json: overview };
     if (path.startsWith('/v1/driver/incentives/')) return { status: 200, json: detail };
     if (path.startsWith('/v1/driver/statements/')) return { status: 200, json: statement };
-    return undefined;
+    return marketplaceFixtures(input);
   });
 }

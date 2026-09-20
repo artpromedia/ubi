@@ -9,6 +9,7 @@
     "ios": "react-native run-ios",
     "typecheck": "tsc --noEmit",
     "test": "jest",
+    "lint": "eslint . --ext .ts,.tsx",
     "e2e": "maestro test .maestro"
   },
   "dependencies": {
