@@ -12,8 +12,7 @@ concurrency:
 
 env:
   NODE_VERSION: "20"
-  PNPM_VERSION: "8"
-  GO_VERSION: "1.21"
+  GO_VERSION: "1.24"
 
 jobs:
   # Determine what changed
@@ -51,9 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -76,9 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -99,14 +94,17 @@ jobs:
     if: needs.changes.outputs.packages == 'true' || github.event_name == 'push'
     strategy:
       fail-fast: false
+      # @ubi/database and @ubi/testing define no test script at all, so they
+      # have no place in a test matrix. @ubi/ui and @ubi/utils do define
+      # `test` (vitest run) but currently contain zero test files, so their
+      # entries fail with "No test files found" until tests are written —
+      # that is the packages' truth, not a CI wiring problem.
       matrix:
-        package: [ui, utils, database, testing]
+        package: [ui, utils]
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -120,7 +118,10 @@ jobs:
         run: pnpm build --filter="@ubi/${{ matrix.package }}^..."
 
       - name: Run unit tests
-        run: pnpm --filter="@ubi/${{ matrix.package }}" test:unit -- --coverage
+        # `test` is the script these packages actually define; test:unit never
+        # existed here, and --coverage is not runnable (no coverage provider
+        # installed in these workspaces).
+        run: pnpm --filter="@ubi/${{ matrix.package }}" test
         env:
           CI: true
 
@@ -148,12 +149,38 @@ jobs:
             payment-service,
             notification-service,
           ]
+    # payment-service's ledger tests assert behaviour that only exists in a
+    # real database (the deferred double-entry trigger, row locks, idempotency
+    # keys), so the job provisions PostGIS + Redis and applies the prisma
+    # migrations. The other services' suites don't touch them; one uniform job
+    # is simpler and the idle services are harmless.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_dev_password
+          POSTGRES_DB: ubi_wallet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_wallet_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -166,10 +193,19 @@ jobs:
       - name: Build dependencies
         run: pnpm build --filter="@ubi/${{ matrix.service }}^..."
 
+      - name: Run database migrations
+        run: DATABASE_URL=postgresql://ubi:ubi_dev_password@localhost:5432/ubi_wallet_test pnpm --filter @ubi/database exec prisma migrate deploy
+
       - name: Run unit tests
-        run: pnpm --filter="@ubi/${{ matrix.service }}" test:unit -- --coverage
+        # `test` is the script every service in this matrix actually defines
+        # (test:unit only ever existed in payment-service). For
+        # payment-service, `test` is the fuller suite that includes the
+        # DB-backed ledger tests — the financial safety net — driven by
+        # WALLET_TEST_DATABASE_URL below.
+        run: pnpm --filter="@ubi/${{ matrix.service }}" test
         env:
           CI: true
+          WALLET_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_wallet_test
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
@@ -188,6 +224,33 @@ jobs:
       fail-fast: false
       matrix:
         service: [ride-service, delivery-service]
+    # ride-service's test harness runs against live Postgres (PostGIS) + Redis
+    # and expects the prisma-managed public tables, so the job provisions both
+    # and applies the migrations first. delivery-service doesn't need them,
+    # but one uniform job is simpler and the idle services are harmless.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_dev_password
+          POSTGRES_DB: ubi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -196,8 +259,24 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: services/${{ matrix.service }}/go.sum
 
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run database migrations
+        run: DATABASE_URL=postgresql://ubi:ubi_dev_password@localhost:5432/ubi_test pnpm --filter @ubi/database exec prisma migrate deploy
+
       - name: Run tests
         working-directory: services/${{ matrix.service }}
+        env:
+          RIDE_TEST_DATABASE_URL: postgres://ubi:ubi_dev_password@localhost:5432/ubi_test?sslmode=disable
+          RIDE_TEST_REDIS_URL: redis://localhost:6379/1
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
@@ -240,9 +319,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -281,9 +358,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -341,9 +416,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -406,9 +479,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
