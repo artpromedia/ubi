@@ -198,6 +198,76 @@ func formatUnix(at time.Time) string {
 	return strconv.FormatInt(at.Unix(), 10)
 }
 
+// TestSecretRotationAcceptsEveryListedKey: RIDE_INTERNAL_CONTEXT_SECRET is a
+// comma-separated key list. Every listed key verifies (so a rotation has no
+// flag day), the FIRST key signs, and a key that is not listed never verifies.
+func TestSecretRotationAcceptsEveryListedKey(t *testing.T) {
+	const (
+		newKey = "rotated-in-key-for-the-tests-000001"
+		oldKey = "rotated-out-key-for-the-tests-00001"
+	)
+	rotated := NewInternalContextVerifier(" "+newKey+" , "+oldKey+" ,, ", 5*time.Minute)
+	oldOnly := NewInternalContextVerifier(oldKey, 5*time.Minute)
+	newOnly := NewInternalContextVerifier(newKey, 5*time.Minute)
+	stranger := NewInternalContextVerifier("a-key-nobody-ever-configured-000001", 5*time.Minute)
+
+	userID := uuid.New()
+	issuedAt := time.Now()
+
+	signedBy := func(signer *InternalContextVerifier) *http.Request {
+		request := httptest.NewRequest(http.MethodGet, "/v1/rides/active", nil)
+		request.Header.Set("x-auth-user-id", userID.String())
+		request.Header.Set("x-auth-user-role", move.RoleRider)
+		request.Header.Set("x-auth-city-id", "LOS")
+		request.Header.Set("x-auth-issued-at", formatUnix(issuedAt))
+		request.Header.Set("x-auth-signature", signer.Sign(userID.String(), move.RoleRider, "LOS", issuedAt))
+		return request
+	}
+
+	t.Run("the old key still verifies while listed", func(t *testing.T) {
+		if recorder := serve(t, rotated, signedBy(oldOnly)); recorder.Code != http.StatusOK {
+			t.Fatalf("status: got %d, want 200 (%s)", recorder.Code, recorder.Body.String())
+		}
+	})
+	t.Run("the new key verifies", func(t *testing.T) {
+		if recorder := serve(t, rotated, signedBy(newOnly)); recorder.Code != http.StatusOK {
+			t.Fatalf("status: got %d, want 200 (%s)", recorder.Code, recorder.Body.String())
+		}
+	})
+	t.Run("an unlisted key is refused", func(t *testing.T) {
+		if recorder := serve(t, rotated, signedBy(stranger)); recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("status: got %d, want 401", recorder.Code)
+		}
+	})
+	t.Run("the first key is the signing key", func(t *testing.T) {
+		want := newOnly.Sign(userID.String(), move.RoleRider, "LOS", issuedAt)
+		got := rotated.Sign(userID.String(), move.RoleRider, "LOS", issuedAt)
+		if got != want {
+			t.Fatalf("a rotated verifier must sign with its first key: got %q, want %q", got, want)
+		}
+	})
+	t.Run("a disabled verifier signs nothing", func(t *testing.T) {
+		if got := NewInternalContextVerifier("", 0).Sign(userID.String(), move.RoleRider, "LOS", issuedAt); got != "" {
+			t.Fatalf("an empty verifier must not produce a signature: %q", got)
+		}
+	})
+}
+
+// TestSigningParityWithTheGateway pins the exact canonical bytes both sides of
+// the boundary sign: `ubi.internal.v1|user|role|city|issuedAt`, HMAC-SHA256,
+// base64url without padding. The SAME fixture is asserted by the gateway's
+// tests/ride-signature.test.ts, so a drift on either side turns a test red
+// instead of turning production traffic into 401s.
+func TestSigningParityWithTheGateway(t *testing.T) {
+	verifier := NewInternalContextVerifier("parity-fixture-secret", 5*time.Minute)
+	issuedAt := time.Unix(1758400000, 0).UTC()
+	got := verifier.Sign("9d5b7f2e-0000-4000-8000-000000000001", "rider", "LOS", issuedAt)
+	const want = "v-vS7A-Mp7ynOjzi_dH7Jpyev-XT4hVBDI2Fg_xMjac"
+	if got != want {
+		t.Fatalf("parity fixture: got %q, want %q — the gateway and this service no longer agree on the canonical payload", got, want)
+	}
+}
+
 func TestETagsTrackTheRideVersion(t *testing.T) {
 	if got := etagFor(4); got != `W/"4"` {
 		t.Fatalf("etag: got %q, want %q", got, `W/"4"`)

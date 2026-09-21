@@ -38,6 +38,13 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
+	// Fail closed before anything is wired: in production a missing or
+	// committed-default internal key / JWT secret is a refusal to start,
+	// never a warning (docs/security/INTERNAL_IDENTITY.md).
+	if err := cfg.ValidateProduction(); err != nil {
+		log.Fatal().Err(err).Msg("refusing to start: production secrets are not configured")
+	}
+
 	log.Info().
 		Str("service", "delivery-service").
 		Str("version", cfg.Version).

@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -39,6 +40,13 @@ const (
 	headerIdempotency = "Idempotency-Key"
 )
 
+// envAllowUnsignedIdentity is the explicit development-only bypass for running
+// without RIDE_INTERNAL_CONTEXT_SECRET. It exists so that the unsigned posture
+// is always a decision someone wrote down — and so that production can refuse
+// it: a deployment that sets it in production fails to boot rather than
+// quietly trusting unsigned identity headers.
+const envAllowUnsignedIdentity = "RIDE_ALLOW_UNSIGNED_IDENTITY"
+
 // Config is the process configuration.
 type Config struct {
 	Port               string
@@ -48,6 +56,8 @@ type Config struct {
 	GoogleMapsKey      string
 	QuoteSigningSecret string
 	InternalSecret     string
+	IdentityMaxAge     time.Duration
+	AllowUnsigned      string
 	MigrateOnBoot      bool
 	DispatchInterval   time.Duration
 	ConfigCacheTTL     time.Duration
@@ -66,6 +76,19 @@ func main() {
 	}
 
 	config := loadConfig()
+
+	// The trust boundary is validated before anything is wired: in production a
+	// missing internal-context secret (or an attempt to bypass it) is a refusal
+	// to start, never a warning.
+	verifier := handler.NewInternalContextVerifier(config.InternalSecret, config.IdentityMaxAge)
+	if err := validateIdentityConfig(config.Environment, verifier.Enabled(), config.AllowUnsigned); err != nil {
+		log.Fatal().Err(err).Msg("refusing to start: the internal identity boundary is not configured")
+	}
+	if verifier.Enabled() {
+		log.Info().Msg("gateway identity signatures are required")
+	} else {
+		log.Warn().Msg("RIDE_INTERNAL_CONTEXT_SECRET is not set: gateway identity headers are trusted unsigned (development only)")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -90,13 +113,6 @@ func main() {
 			log.Fatal().Err(err).Msg("failed to apply the ride schema")
 		}
 		log.Info().Msg("ride schema applied")
-	}
-
-	verifier := handler.NewInternalContextVerifier(config.InternalSecret, 5*time.Minute)
-	if verifier.Enabled() {
-		log.Info().Msg("gateway identity signatures are required")
-	} else {
-		log.Warn().Msg("RIDE_INTERNAL_CONTEXT_SECRET is not set: gateway identity headers are trusted unsigned")
 	}
 
 	rideHandler := handler.NewRideHandler(runtime.Service, log.Logger)
@@ -124,7 +140,11 @@ func main() {
 	}))
 	router.Use(httprate.LimitByIP(300, time.Minute))
 
-	health := newHealth(runtime, config.Environment)
+	// Belt and braces for the fatal above: were the process somehow running in
+	// production without signature checking, readiness would still never say
+	// ready, so no traffic is routed to an unauthenticated boundary.
+	identityReady := verifier.Enabled() || !isProductionEnvironment(config.Environment)
+	health := newHealth(runtime, config.Environment, identityReady)
 	router.Get("/health/live", health.live)
 	router.Get("/health/ready", health.ready)
 	router.Get("/health", health.detailed)
@@ -179,13 +199,18 @@ func main() {
 
 func loadConfig() *Config {
 	return &Config{
-		Port:               getEnv("PORT", "4002"),
-		Environment:        getEnv("NODE_ENV", "development"),
+		Port: getEnv("PORT", "4002"),
+		// UBI_ENV is the repo-wide deployment-environment name for Go services
+		// (docs/security/INTERNAL_IDENTITY.md). NODE_ENV is kept as a fallback
+		// because this service historically read it.
+		Environment:        getEnv("UBI_ENV", getEnv("NODE_ENV", "development")),
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
 		RedisURL:           getEnv("REDIS_URL", ""),
 		GoogleMapsKey:      getEnv("GOOGLE_MAPS_API_KEY", ""),
 		QuoteSigningSecret: getEnv("RIDE_QUOTE_SIGNING_SECRET", ""),
 		InternalSecret:     getEnv("RIDE_INTERNAL_CONTEXT_SECRET", ""),
+		IdentityMaxAge:     getDuration("RIDE_INTERNAL_CONTEXT_MAX_AGE_MS", 5*time.Minute),
+		AllowUnsigned:      getEnv(envAllowUnsignedIdentity, ""),
 		MigrateOnBoot:      getEnv("RIDE_MIGRATE_ON_BOOT", "false") == "true",
 		DispatchInterval:   getDuration("RIDE_DISPATCH_INTERVAL_MS", time.Second),
 		ConfigCacheTTL:     getDuration("RIDE_CONFIG_CACHE_TTL_MS", 60*time.Second),
@@ -196,6 +221,39 @@ func loadConfig() *Config {
 		InternalServiceKey:       getEnv("INTERNAL_SERVICE_KEY", ""),
 		MarketplaceSweepInterval: getDuration("RIDE_MP_SWEEP_INTERVAL_MS", time.Second),
 	}
+}
+
+// isProductionEnvironment reports whether an environment name means "real
+// riders, real money". Both spellings deployments actually use are covered, so
+// a shorthand cannot dodge the fail-closed rule.
+func isProductionEnvironment(environment string) bool {
+	switch strings.ToLower(strings.TrimSpace(environment)) {
+	case "production", "prod":
+		return true
+	default:
+		return false
+	}
+}
+
+// validateIdentityConfig is the fail-closed rule for the gateway trust
+// boundary, kept pure so a unit test can prove it:
+//
+//   - production + no usable RIDE_INTERNAL_CONTEXT_SECRET → error (fatal);
+//   - production + RIDE_ALLOW_UNSIGNED_IDENTITY set to ANY value → error
+//     (fatal), even when a secret is also configured — the bypass variable
+//     must never survive into a production manifest;
+//   - development keeps today's behavior (unsigned allowed, loudly warned).
+func validateIdentityConfig(environment string, verifierEnabled bool, allowUnsigned string) error {
+	if !isProductionEnvironment(environment) {
+		return nil
+	}
+	if strings.TrimSpace(allowUnsigned) != "" {
+		return fmt.Errorf("%s is set in production; it is a development-only bypass and must be removed from the environment", envAllowUnsignedIdentity)
+	}
+	if !verifierEnabled {
+		return fmt.Errorf("RIDE_INTERNAL_CONTEXT_SECRET must be set in production: without it, gateway identity headers would be trusted unsigned")
+	}
+	return nil
 }
 
 func getEnv(key, fallback string) string {
@@ -223,10 +281,14 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 type health struct {
 	runtime     *service.Runtime
 	environment string
+	// identityReady is false only when this is a production process whose
+	// identity boundary is unsigned — a state main() refuses to reach, but one
+	// readiness must also never bless.
+	identityReady bool
 }
 
-func newHealth(runtime *service.Runtime, environment string) *health {
-	return &health{runtime: runtime, environment: environment}
+func newHealth(runtime *service.Runtime, environment string, identityReady bool) *health {
+	return &health{runtime: runtime, environment: environment, identityReady: identityReady}
 }
 
 func (h *health) live(w http.ResponseWriter, _ *http.Request) {
@@ -237,6 +299,11 @@ func (h *health) live(w http.ResponseWriter, _ *http.Request) {
 
 func (h *health) ready(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(headerContentType, contentTypeJSON)
+	if !h.identityReady {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprint(w, `{"status":"not ready","dependency":"identity"}`)
+		return
+	}
 	if err := h.runtime.DB.Ping(r.Context()); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = fmt.Fprint(w, `{"status":"not ready","dependency":"database"}`)

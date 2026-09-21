@@ -56,6 +56,13 @@ import { ContractError } from "@ubi/contracts";
 
 import { type IdentityContext, signIdentityContext } from "../identity/context";
 import {
+  RIDE_CITY_HEADER,
+  RIDE_ISSUED_AT_HEADER,
+  RIDE_SIGNATURE_HEADER,
+  rideContextKeys,
+  signRideContext,
+} from "../identity/ride-context";
+import {
   authorizeRequest,
   effectiveScopes,
   type IdentityMode,
@@ -76,6 +83,12 @@ export const RESERVED_IDENTITY_HEADERS: readonly string[] = [
   "x-auth-user-id",
   "x-auth-user-role",
   "x-auth-user-email",
+  // The ride-service HMAC context (identity/ride-context.ts). The x-auth-
+  // prefix below already strips these; they are listed so the contract is
+  // explicit.
+  "x-auth-city-id",
+  "x-auth-issued-at",
+  "x-auth-signature",
   "x-user-id",
   "x-user-role",
   "x-user-email",
@@ -240,9 +253,30 @@ export const identityContextMiddleware = createMiddleware(
     }
     if (context.cityId !== null) {
       headers.set("x-ubi-city-id", context.cityId);
+      headers.set(RIDE_CITY_HEADER, context.cityId);
     }
     if (context.tenantId !== null) {
       headers.set("x-ubi-tenant-id", context.tenantId);
+    }
+
+    // The Go ride-service verifies these instead of the JWS (identity/
+    // ride-context.ts holds the shared canonical payload). Signed with the
+    // FIRST configured key; absent entirely when no key is configured, which
+    // the ride-service accepts only in development.
+    const rideKeys = rideContextKeys();
+    if (rideKeys.length > 0) {
+      const issuedAt = Math.floor(Date.now() / 1000);
+      headers.set(RIDE_ISSUED_AT_HEADER, String(issuedAt));
+      headers.set(
+        RIDE_SIGNATURE_HEADER,
+        signRideContext(
+          rideKeys[0] as string,
+          context.userId,
+          context.role,
+          context.cityId ?? "",
+          issuedAt,
+        ),
+      );
     }
 
     c.header(REQUEST_ID_HEADER, requestId);

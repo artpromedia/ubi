@@ -90,6 +90,13 @@ const HEADERS_TO_FORWARD: readonly string[] = [
   IDENTITY_HEADER,
   "x-auth-user-id",
   "x-auth-user-role",
+  // The ride-service HMAC context, written by the identity middleware and
+  // verified by services/ride-service/internal/handler/identity.go. Safe to
+  // copy for the same reason as the rest: the strip middleware deleted any
+  // client-supplied version before the gateway signed its own.
+  "x-auth-city-id",
+  "x-auth-issued-at",
+  "x-auth-signature",
   "x-user-id",
   "x-user-role",
   "x-session-id",
