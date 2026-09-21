@@ -27,6 +27,14 @@ const (
 	scopeBidWithdraw     = "mp.bid.withdraw"
 	scopeRateProfileSave = "mp.rate_profile.save"
 	scopeAdminRepair     = "mp.admin.repair"
+
+	// C08 admin resolution/standing scopes.
+	scopeAdminRecoveryRetry   = "mp.admin.recovery_retry"
+	scopeAdminAwardReconcile  = "mp.admin.award_reconcile"
+	scopeStandingPropose      = "mp.admin.standing.propose"
+	scopeStandingApprove      = "mp.admin.standing.approve"
+	scopeStandingAppeal       = "mp.admin.standing.appeal"
+	scopeStandingAppealDecide = "mp.admin.standing.appeal_decide"
 )
 
 // ValidateIdempotencyKey mirrors IdempotencyKeySchema, via the move package so

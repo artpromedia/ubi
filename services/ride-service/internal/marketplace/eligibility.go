@@ -89,6 +89,18 @@ func (s *Service) EvaluateEligibility(ctx context.Context, actor Actor, request 
 		return result
 	}
 
+	// C08: a driver under an in-effect standing suspension is not eligible
+	// for any marketplace work — checked before anything else, the same way
+	// ReasonOffline short-circuits below. The suspension is admin-owned,
+	// audited and appealable (see standing.go); nothing here can lift it.
+	blocked, err := s.driverBlocked(ctx, actor.UserID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+	if blocked {
+		return refuse(ReasonAccountNotEligible), nil
+	}
+
 	epoch, err := s.deps.Store.AvailabilityEpoch(ctx, s.deps.Store.Pool(), actor.UserID)
 	if err != nil {
 		return nil, asDomainError(err)

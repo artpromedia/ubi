@@ -124,6 +124,211 @@ export type FlagChange = {
   replayed: boolean;
 };
 
+// ---------------------------------------------------------------------------
+// C08 — admin resolution, standing and appeals: types mirroring the new
+// ride-service admin read models/commands (services/ride-service/internal/
+// marketplace/{standing,resolution}.go). These are admin-only views, so —
+// like MpRequestRow/MpTimeline above — they are declared here rather than in
+// @ubi/contracts, which carries only the cross-app/cross-service surface.
+// ---------------------------------------------------------------------------
+
+export type PendingSagaView = {
+  awardId: string;
+  requestId: string;
+  driverId: string;
+  cityId: string;
+  step: string;
+  attemptState: string;
+  attempts: number;
+  lastError?: string;
+  ageSec: number;
+  nextRetryAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type PendingSagasPage = {
+  rows: PendingSagaView[];
+  nextCursor?: string;
+};
+export type ReconcileAwardResult = {
+  awardId: string;
+  dryRun: boolean;
+  beforeState: string;
+  afterState: string;
+  outcome: "preview" | "resolved" | "unresolved";
+  detail?: string;
+  updatedAt: string;
+};
+
+export type RecoveryView = {
+  id: string;
+  action: string;
+  driverId: string;
+  bidId?: string;
+  reservationId: string;
+  amountMinor?: number;
+  attempts: number;
+  lastError?: string;
+  ageSec: number;
+  nextRetryAt: string;
+  resolvedAt?: string;
+  createdAt: string;
+};
+export type RecoveriesPage = { rows: RecoveryView[]; nextCursor?: string };
+export type RetryRecoveryResult = {
+  row: RecoveryView;
+  outcome: "preview" | "resolved" | "deferred" | "already_resolved";
+  detail?: string;
+};
+
+export type CancellationView = {
+  rideId: string;
+  awardId?: string;
+  requestId?: string;
+  cityId: string;
+  driverId?: string;
+  riderId: string;
+  state: string;
+  reasonCode?: string;
+  at: string;
+};
+export type CancellationsPage = {
+  rows: CancellationView[];
+  nextCursor?: string;
+};
+
+/** Mirrors standingReasonCodes in ride-service's standing.go — the closed
+ * set a proposal or a decision must cite. Kept here, not invented per form,
+ * so the operator UI and the server's fail-closed validation never drift. */
+export const STANDING_REASON_CODES = [
+  "repeated_cancellation",
+  "no_show_pattern",
+  "fraud_suspected",
+  "safety_complaint",
+  "policy_violation",
+  "appeal_reviewed",
+  "performance_recovered",
+  "other",
+] as const;
+
+export type StandingActionView = {
+  id: string;
+  driverId: string;
+  cityId: string;
+  actionType: "warning" | "suspension" | "reinstatement";
+  reasonCode: string;
+  reasonNote?: string;
+  status:
+    | "pending_approval"
+    | "active"
+    | "rejected"
+    | "appealed"
+    | "appeal_upheld"
+    | "appeal_denied";
+  proposedBy: string;
+  proposedAt: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  decisionReason?: string;
+  appealedBy?: string;
+  appealedAt?: string;
+  appealNote?: string;
+  appealDecidedBy?: string;
+  appealDecidedAt?: string;
+  appealReason?: string;
+  requiresApproval: boolean;
+  updatedAt: string;
+};
+export type StandingActionsPage = {
+  rows: StandingActionView[];
+  nextCursor?: string;
+};
+export type DriverStandingView = {
+  driverId: string;
+  cityId: string;
+  windowDays: number;
+  totalRides: number;
+  completions: number;
+  driverCancellations: number;
+  riderCancellations: number;
+  noShows: number;
+  cancellationRate: number;
+  blocked: boolean;
+  activeAction?: StandingActionView;
+  history: StandingActionView[];
+};
+export type DriverStandingRow = {
+  driverId: string;
+  cityId: string;
+  windowDays: number;
+  totalRides: number;
+  completions: number;
+  driverCancellations: number;
+  noShows: number;
+  cancellationRate: number;
+};
+export type DriverStandingListPage = {
+  rows: DriverStandingRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  windowDays: number;
+  minRides: number;
+};
+
+export type ResolutionStage = {
+  name: string;
+  status: "view" | "proposed" | "committed" | "failed" | "unavailable";
+  detail: string;
+  at?: string;
+};
+export type ResolutionAwardView = {
+  awardId: string;
+  state: string;
+  driverId: string;
+  fareMinor: Money;
+  commissionMinor: Money;
+  captureReceiptId?: string;
+  failReason?: string;
+  sagaStep?: string;
+  sagaState?: string;
+  sagaAttempts?: number;
+  captured: boolean;
+  updatedAt: string;
+};
+export type ResolutionExecutionView = {
+  rideId: string;
+  state: string;
+  active: boolean;
+  cancelledByRole?: string;
+  cancelReasonCode?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+};
+export type ResolutionView = {
+  requestId: string;
+  cityId: string;
+  requestState: string;
+  closeReason?: string;
+  award?: ResolutionAwardView;
+  execution?: ResolutionExecutionView;
+  recoveries: RecoveryView[];
+  stages: ResolutionStage[];
+  events: { at: string; type: string; detail: string }[];
+  driverBlocked?: boolean;
+  gaps: string[];
+};
+
+/** Builds a `?a=b&c=d` query string, dropping undefined/empty values. */
+function toQuery(params: Record<string, string | number | undefined>): string {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== "")
+    .map(
+      ([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(String(v)),
+    );
+  return parts.length > 0 ? "?" + parts.join("&") : "";
+}
+
 export const marketplaceApi = {
   requests: (cityId?: string) =>
     apiClient.get<{ rows: MpRequestRow[]; nextCursor?: string }>(
@@ -133,6 +338,108 @@ export const marketplaceApi = {
   timeline: (requestId: string) =>
     apiClient.get<MpTimeline>(
       "/v1/admin/mp/requests/" + requestId + "/timeline",
+    ),
+  resolution: (requestId: string) =>
+    apiClient.get<ResolutionView>(
+      "/v1/admin/mp/requests/" + requestId + "/resolution",
+    ),
+  repairStrandedRides: (
+    body: { dryRun: boolean; rideIds?: string[]; limit?: number },
+    idempotencyKey?: string,
+  ) =>
+    apiClient.post<unknown>(
+      "/v1/admin/mp/repairs/stranded-rides",
+      body,
+      idempotencyKey ? { idempotencyKey } : undefined,
+    ),
+
+  pendingSagas: (cityId?: string, cursor?: string) =>
+    apiClient.get<PendingSagasPage>(
+      "/v1/admin/mp/pending-sagas" + toQuery({ cityId, cursor }),
+    ),
+  reconcileAward: (
+    awardId: string,
+    body: { dryRun: boolean; expectedUpdatedAt?: string },
+  ) =>
+    apiClient.post<ReconcileAwardResult>(
+      "/v1/admin/mp/awards/" + awardId + "/reconcile",
+      body,
+      body.dryRun ? undefined : { idempotencyKey: newIdempotencyKey() },
+    ),
+
+  recoveries: (action?: string, cursor?: string) =>
+    apiClient.get<RecoveriesPage>(
+      "/v1/admin/mp/recoveries" + toQuery({ action, cursor }),
+    ),
+  retryRecovery: (
+    id: string,
+    body: { dryRun: boolean; expectedAttempts?: number },
+  ) =>
+    apiClient.post<RetryRecoveryResult>(
+      "/v1/admin/mp/recoveries/" + id + "/retry",
+      body,
+      body.dryRun ? undefined : { idempotencyKey: newIdempotencyKey() },
+    ),
+
+  cancellations: (cityId?: string, driverId?: string, cursor?: string) =>
+    apiClient.get<CancellationsPage>(
+      "/v1/admin/mp/cancellations" + toQuery({ cityId, driverId, cursor }),
+    ),
+
+  driverStandingList: (
+    cityId?: string,
+    windowDays?: number,
+    minRides?: number,
+  ) =>
+    apiClient.get<DriverStandingListPage>(
+      "/v1/admin/mp/drivers/standing" +
+        toQuery({ cityId, windowDays, minRides }),
+    ),
+  driverStanding: (driverId: string, windowDays?: number) =>
+    apiClient.get<DriverStandingView>(
+      "/v1/admin/mp/drivers/" +
+        driverId +
+        "/standing" +
+        toQuery({ windowDays }),
+    ),
+  proposeStandingAction: (
+    driverId: string,
+    body: {
+      actionType: "warning" | "suspension" | "reinstatement";
+      reasonCode: string;
+      reasonNote?: string;
+      cityId: string;
+    },
+  ) =>
+    apiClient.post<StandingActionView>(
+      "/v1/admin/mp/drivers/" + driverId + "/standing-actions",
+      body,
+      { idempotencyKey: newIdempotencyKey() },
+    ),
+  standingActionsQueue: (status?: string, cursor?: string) =>
+    apiClient.get<StandingActionsPage>(
+      "/v1/admin/mp/standing-actions" + toQuery({ status, cursor }),
+    ),
+  decideStandingAction: (
+    id: string,
+    body: { approve: boolean; reason: string },
+  ) =>
+    apiClient.post<StandingActionView>(
+      "/v1/admin/mp/standing-actions/" + id + "/decide",
+      body,
+      { idempotencyKey: newIdempotencyKey() },
+    ),
+  fileAppeal: (id: string, body: { note: string }) =>
+    apiClient.post<StandingActionView>(
+      "/v1/admin/mp/standing-actions/" + id + "/appeal",
+      body,
+      { idempotencyKey: newIdempotencyKey() },
+    ),
+  decideAppeal: (id: string, body: { uphold: boolean; reason: string }) =>
+    apiClient.post<StandingActionView>(
+      "/v1/admin/mp/standing-actions/" + id + "/appeal-decision",
+      body,
+      { idempotencyKey: newIdempotencyKey() },
     ),
   cityConfig: (cityId: string) =>
     apiClient.get<CityConfigView>("/v1/config/cities/" + cityId),
@@ -403,3 +710,66 @@ export const canPublishPolicy = (config?: CityConfigView): boolean => {
   const { fields, error } = boundsFields(config);
   return error === null && fields.every((f) => !f.invalid);
 };
+
+// ---------------------------------------------------------------------------
+// C08 pure formatting helpers (unit-tested): server rows → presentational tone.
+// ---------------------------------------------------------------------------
+
+/** Human-friendly age from a row's ageSec — "3m 12s", "2h 04m", "5d". */
+export const ageLine = (ageSec: number): string => {
+  if (ageSec < 60) return ageSec + "s";
+  if (ageSec < 3600) {
+    return Math.floor(ageSec / 60) + "m " + (ageSec % 60) + "s";
+  }
+  if (ageSec < 86_400) {
+    const h = Math.floor(ageSec / 3600);
+    const m = Math.floor((ageSec % 3600) / 60);
+    return h + "h " + String(m).padStart(2, "0") + "m";
+  }
+  return Math.floor(ageSec / 86_400) + "d";
+};
+
+export type Tone = "view" | "proposed" | "committed" | "failed" | "unavailable";
+
+/** Maps a resolution-stage / command-outcome status to a rendering tone. */
+export const outcomeTone = (status: string): Tone => {
+  switch (status) {
+    case "committed":
+    case "resolved":
+    case "active":
+    case "confirmed":
+      return "committed";
+    case "proposed":
+    case "pending_approval":
+    case "deferred":
+    case "appealed":
+      return "proposed";
+    case "failed":
+    case "rejected":
+    case "appeal_denied":
+      return "failed";
+    case "unavailable":
+      return "unavailable";
+    default:
+      return "view";
+  }
+};
+
+export const pctRate = (rate: number): string =>
+  (rate * 100).toLocaleString("en-NG", { maximumFractionDigits: 1 }) + "%";
+
+/** Redacts a resolution/standing view to a plain-text export with no PII
+ * beyond opaque ids (no coordinates, no PIN vault fields, no raw tokens —
+ * none of those are on these views to begin with, but this is the one seam
+ * every export from these boards goes through, so a future field addition
+ * cannot leak silently). */
+export const redactedExport = (data: unknown): string =>
+  JSON.stringify(
+    data,
+    (key, value) => {
+      const blocked = /pin|token|secret|password|ciphertext|nonce/i;
+      if (blocked.test(key)) return "[redacted]";
+      return value;
+    },
+    2,
+  );

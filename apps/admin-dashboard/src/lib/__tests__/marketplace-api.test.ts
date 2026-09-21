@@ -2,11 +2,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ageLine,
   boundsFields,
   canPublishPolicy,
   envelopeLine,
   eventTone,
   monitorStats,
+  outcomeTone,
+  pctRate,
+  redactedExport,
   toMonitorRow,
   toMonitorState,
   toTimelineEvents,
@@ -254,5 +258,65 @@ describe("envelopeLine", () => {
       envelopeLine({ step: 2, radiusMeters: 3_500, pickupEtaSec: 540 }),
     ).toBe("3.5 km · 9 min · step 2");
     expect(envelopeLine(undefined)).toBe("—");
+  });
+});
+
+describe("ageLine (C08)", () => {
+  it("renders seconds, minutes, hours and days at the right breakpoints", () => {
+    expect(ageLine(45)).toBe("45s");
+    expect(ageLine(125)).toBe("2m 5s");
+    expect(ageLine(3_725)).toBe("1h 02m");
+    expect(ageLine(90_000)).toBe("1d");
+  });
+});
+
+describe("outcomeTone (C08)", () => {
+  it("maps committed-family outcomes to committed", () => {
+    expect(outcomeTone("resolved")).toBe("committed");
+    expect(outcomeTone("active")).toBe("committed");
+    expect(outcomeTone("committed")).toBe("committed");
+  });
+  it("maps in-flight outcomes to proposed", () => {
+    expect(outcomeTone("deferred")).toBe("proposed");
+    expect(outcomeTone("pending_approval")).toBe("proposed");
+    expect(outcomeTone("appealed")).toBe("proposed");
+  });
+  it("maps refusal outcomes to failed", () => {
+    expect(outcomeTone("rejected")).toBe("failed");
+    expect(outcomeTone("appeal_denied")).toBe("failed");
+  });
+  it("maps unavailable straight through and everything else to view", () => {
+    expect(outcomeTone("unavailable")).toBe("unavailable");
+    expect(outcomeTone("something_new")).toBe("view");
+  });
+});
+
+describe("pctRate (C08)", () => {
+  it("formats a fraction as a percentage", () => {
+    expect(pctRate(0.5)).toBe("50%");
+    expect(pctRate(0)).toBe("0%");
+    expect(pctRate(1)).toBe("100%");
+  });
+});
+
+describe("redactedExport (C08)", () => {
+  it("redacts pin/token/secret-shaped keys and keeps everything else", () => {
+    const json = redactedExport({
+      requestId: "req-1",
+      driverPin: "1234",
+      accessToken: "abc",
+      clientSecret: "xyz",
+      ciphertext: "binary",
+      nonce: "n",
+      amountMinor: 500,
+    });
+    const parsed = JSON.parse(json);
+    expect(parsed.requestId).toBe("req-1");
+    expect(parsed.amountMinor).toBe(500);
+    expect(parsed.driverPin).toBe("[redacted]");
+    expect(parsed.accessToken).toBe("[redacted]");
+    expect(parsed.clientSecret).toBe("[redacted]");
+    expect(parsed.ciphertext).toBe("[redacted]");
+    expect(parsed.nonce).toBe("[redacted]");
   });
 });

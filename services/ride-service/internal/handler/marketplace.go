@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -92,7 +93,24 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 	r.Route("/admin/mp", func(r chi.Router) {
 		r.Get("/requests", h.AdminRequests)
 		r.Get("/requests/{requestId}/timeline", h.AdminRequestTimeline)
+		r.Get("/requests/{requestId}/resolution", h.AdminResolution)
 		r.Post("/repairs/stranded-rides", h.RepairStrandedRides)
+
+		// C08: stuck-saga & failed-reservation-recovery board.
+		r.Get("/pending-sagas", h.AdminPendingSagas)
+		r.Post("/awards/{awardId}/reconcile", h.AdminReconcileAward)
+		r.Get("/recoveries", h.AdminRecoveries)
+		r.Post("/recoveries/{recoveryId}/retry", h.AdminRetryRecovery)
+
+		// C08: cancellations/no-shows + driver standing & appeals.
+		r.Get("/cancellations", h.AdminCancellations)
+		r.Get("/drivers/standing", h.AdminDriverStandingList)
+		r.Get("/drivers/{driverId}/standing", h.AdminDriverStanding)
+		r.Post("/drivers/{driverId}/standing-actions", h.AdminProposeStandingAction)
+		r.Get("/standing-actions", h.AdminStandingActions)
+		r.Post("/standing-actions/{actionId}/decide", h.AdminDecideStandingAction)
+		r.Post("/standing-actions/{actionId}/appeal", h.AdminFileAppeal)
+		r.Post("/standing-actions/{actionId}/appeal-decision", h.AdminDecideAppeal)
 	})
 }
 
@@ -564,4 +582,275 @@ func (h *MarketplaceHandler) AdminRequestTimeline(w http.ResponseWriter, r *http
 		return
 	}
 	writeJSON(w, http.StatusOK, timeline)
+}
+
+// AdminResolution handles GET /v1/admin/mp/requests/{requestId}/resolution:
+// the unified resolution timeline (C08).
+func (h *MarketplaceHandler) AdminResolution(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, err := uuidParam(r, "requestId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.AdminResolution(r.Context(), actor, requestID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// AdminPendingSagas handles GET /v1/admin/mp/pending-sagas (C08).
+func (h *MarketplaceHandler) AdminPendingSagas(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	page, err := h.service.AdminPendingSagas(r.Context(), actor, query.Get("cityId"), query.Get("cursor"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+// AdminReconcileAward handles POST /v1/admin/mp/awards/{awardId}/reconcile (C08).
+func (h *MarketplaceHandler) AdminReconcileAward(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	awardID, err := uuidParam(r, "awardId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.ReconcileAwardRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	result, status, err := h.service.AdminReconcileAward(r.Context(), actor, awardID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, result)
+}
+
+// AdminRecoveries handles GET /v1/admin/mp/recoveries (C08).
+func (h *MarketplaceHandler) AdminRecoveries(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	page, err := h.service.AdminRecoveries(r.Context(), actor, query.Get("action"), query.Get("cursor"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+// AdminRetryRecovery handles POST /v1/admin/mp/recoveries/{recoveryId}/retry (C08).
+func (h *MarketplaceHandler) AdminRetryRecovery(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	recoveryID, err := uuidParam(r, "recoveryId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.RetryRecoveryRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	result, status, err := h.service.AdminRetryRecovery(r.Context(), actor, recoveryID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, result)
+}
+
+// AdminCancellations handles GET /v1/admin/mp/cancellations (C08).
+func (h *MarketplaceHandler) AdminCancellations(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	page, err := h.service.AdminCancellations(r.Context(), actor, query.Get("cityId"), query.Get("driverId"), query.Get("cursor"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+// AdminDriverStandingList handles GET /v1/admin/mp/drivers/standing (C08):
+// the pattern-detection board (A06 addendum).
+func (h *MarketplaceHandler) AdminDriverStandingList(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	page, err := h.service.AdminDriverStandingList(r.Context(), actor, query.Get("cityId"),
+		intQuery(query, "windowDays"), intQuery(query, "minRides"), intQuery(query, "limit"), intQuery(query, "offset"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+// AdminDriverStanding handles GET /v1/admin/mp/drivers/{driverId}/standing (C08).
+func (h *MarketplaceHandler) AdminDriverStanding(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	driverID, err := uuidParam(r, "driverId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.AdminDriverStanding(r.Context(), actor, driverID, intQuery(r.URL.Query(), "windowDays"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// AdminProposeStandingAction handles POST /v1/admin/mp/drivers/{driverId}/standing-actions (C08).
+func (h *MarketplaceHandler) AdminProposeStandingAction(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	driverID, err := uuidParam(r, "driverId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.ProposeStandingActionRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.AdminProposeStandingAction(r.Context(), actor, driverID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// AdminStandingActions handles GET /v1/admin/mp/standing-actions (C08): the
+// review queue, filterable by status.
+func (h *MarketplaceHandler) AdminStandingActions(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	page, err := h.service.AdminStandingActions(r.Context(), actor, query.Get("status"), query.Get("cursor"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+// AdminDecideStandingAction handles POST /v1/admin/mp/standing-actions/{actionId}/decide (C08).
+func (h *MarketplaceHandler) AdminDecideStandingAction(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	actionID, err := uuidParam(r, "actionId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.DecideStandingActionRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.AdminDecideStandingAction(r.Context(), actor, actionID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// AdminFileAppeal handles POST /v1/admin/mp/standing-actions/{actionId}/appeal (C08).
+func (h *MarketplaceHandler) AdminFileAppeal(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	actionID, err := uuidParam(r, "actionId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.FileAppealRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.AdminFileAppeal(r.Context(), actor, actionID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// AdminDecideAppeal handles POST /v1/admin/mp/standing-actions/{actionId}/appeal-decision (C08).
+func (h *MarketplaceHandler) AdminDecideAppeal(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	actionID, err := uuidParam(r, "actionId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.DecideAppealRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.AdminDecideAppeal(r.Context(), actor, actionID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// intQuery reads an optional non-negative integer query parameter, 0 when
+// absent or unparsable — every caller treats 0 as "use the default".
+func intQuery(query url.Values, name string) int {
+	value, err := strconv.Atoi(query.Get(name))
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
 }

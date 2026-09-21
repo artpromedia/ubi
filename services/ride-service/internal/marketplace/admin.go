@@ -133,6 +133,21 @@ func (s *Service) AdminRequestTimeline(ctx context.Context, actor Actor, request
 		return nil, asDomainError(err)
 	}
 
+	events, err := s.outboxTimelineEvents(ctx, requestID)
+	if err != nil {
+		return nil, err
+	}
+	return &AdminTimeline{
+		RequestID:     request.ID.String(),
+		PolicyVersion: request.PolicyVersion,
+		Events:        events,
+	}, nil
+}
+
+// outboxTimelineEvents reads the append-only mp.* outbox history for one
+// request — the shared read behind both the plain per-request timeline (A02)
+// and the unified resolution view (C08).
+func (s *Service) outboxTimelineEvents(ctx context.Context, requestID uuid.UUID) ([]*TimelineEvent, error) {
 	rows, err := s.deps.Store.Pool().Query(ctx, `
 		SELECT name, occurred_at, payload
 		FROM public.outbox_events
@@ -144,11 +159,7 @@ func (s *Service) AdminRequestTimeline(ctx context.Context, actor Actor, request
 	}
 	defer rows.Close()
 
-	timeline := &AdminTimeline{
-		RequestID:     request.ID.String(),
-		PolicyVersion: request.PolicyVersion,
-		Events:        []*TimelineEvent{},
-	}
+	events := []*TimelineEvent{}
 	for rows.Next() {
 		var name string
 		var at time.Time
@@ -156,14 +167,10 @@ func (s *Service) AdminRequestTimeline(ctx context.Context, actor Actor, request
 		if err := rows.Scan(&name, &at, &payload); err != nil {
 			return nil, asDomainError(err)
 		}
-		timeline.Events = append(timeline.Events, &TimelineEvent{
-			At:     at,
-			Type:   name,
-			Detail: string(payload),
-		})
+		events = append(events, &TimelineEvent{At: at, Type: name, Detail: string(payload)})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, asDomainError(err)
 	}
-	return timeline, nil
+	return events, nil
 }

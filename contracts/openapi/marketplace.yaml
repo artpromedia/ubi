@@ -2244,3 +2244,353 @@ paths:
                         },
                     },
                 }
+  /v1/admin/mp/repairs/stranded-rides:
+    post:
+      summary: G04 repair — converge marketplace rides stranded in `rematching` (dryRun preview, then apply; Idempotency-Key on apply)
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties:
+                  {
+                    dryRun: { type: boolean },
+                    rideIds: { type: array, items: { type: string } },
+                    limit: { type: integer, maximum: 50 },
+                  },
+              }
+      responses:
+        "200":
+          description: Dry-run listing or applied repair results, per ride.
+  /v1/admin/mp/requests/{requestId}/resolution:
+    get:
+      summary: C08 unified resolution timeline — request → award → funding → commission → execution → settlement → notification
+      parameters:
+        [
+          {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses:
+        "200":
+          description: The composed resolution case for one request, with a per-stage status (view/proposed/committed/failed/unavailable) and named data-source gaps.
+  /v1/admin/mp/pending-sagas:
+    get:
+      summary: C08 stuck-saga board — awards stuck in `award_pending`, oldest first, with saga step/attempts
+      parameters:
+        [
+          {
+            name: cityId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/Cursor" },
+        ]
+      responses:
+        "200": { description: Paginated pending-saga rows. }
+  /v1/admin/mp/awards/{awardId}/reconcile:
+    post:
+      summary: C08 — ask the engine to advance ONE stuck award's saga now (same step the sweep would take); dryRun previews, apply requires expectedUpdatedAt + Idempotency-Key
+      parameters:
+        [
+          { name: awardId, in: path, required: true, schema: { type: string } },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties:
+                  {
+                    dryRun: { type: boolean },
+                    expectedUpdatedAt: { type: string, format: date-time },
+                  },
+              }
+      responses:
+        "200":
+          { description: The reconcile outcome (preview/resolved/unresolved). }
+        "409":
+          {
+            description: version_conflict — the award changed since expectedUpdatedAt was read.,
+          }
+  /v1/admin/mp/recoveries:
+    get:
+      summary: C08 failed reservation-recovery board — unresolved mp.reservation_recovery rows, oldest first
+      parameters:
+        [
+          {
+            name: action,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/Cursor" },
+        ]
+      responses:
+        "200": { description: Paginated recovery rows. }
+  /v1/admin/mp/recoveries/{recoveryId}/retry:
+    post:
+      summary: C08 — force one recovery row's retry now (same runRecovery the sweep uses); dryRun previews, apply requires expectedAttempts + Idempotency-Key
+      parameters:
+        [
+          {
+            name: recoveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties:
+                  {
+                    dryRun: { type: boolean },
+                    expectedAttempts: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          {
+            description: The retry outcome (preview/resolved/deferred/already_resolved).,
+          }
+        "409":
+          {
+            description: version_conflict — the row's attempts changed since expectedAttempts was read.,
+          }
+  /v1/admin/mp/cancellations:
+    get:
+      summary: C08 cancellations/no-shows board — marketplace-managed rides ended cancelled_by_driver/cancelled_by_rider/no_show, newest first
+      parameters:
+        [
+          {
+            name: cityId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          {
+            name: driverId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/Cursor" },
+        ]
+      responses:
+        "200": { description: Paginated cancellation/no-show rows. }
+  /v1/admin/mp/drivers/standing:
+    get:
+      summary: C08 pattern-detection board (abuse addendum A06) — drivers whose trailing-window cancellation rate is worst first, computed live
+      parameters:
+        [
+          {
+            name: cityId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          {
+            name: windowDays,
+            in: query,
+            required: false,
+            schema: { type: integer },
+          },
+          {
+            name: minRides,
+            in: query,
+            required: false,
+            schema: { type: integer },
+          },
+          {
+            name: limit,
+            in: query,
+            required: false,
+            schema: { type: integer },
+          },
+          {
+            name: offset,
+            in: query,
+            required: false,
+            schema: { type: integer },
+          },
+        ]
+      responses:
+        "200": { description: Offset-paginated driver standing rows. }
+  /v1/admin/mp/drivers/{driverId}/standing:
+    get:
+      summary: C08 — one driver's completion/cancellation/no-show aggregate, blocked state and standing-action history
+      parameters:
+        [
+          {
+            name: driverId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+          {
+            name: windowDays,
+            in: query,
+            required: false,
+            schema: { type: integer },
+          },
+        ]
+      responses:
+        "200": { description: The driver standing summary. }
+  /v1/admin/mp/drivers/{driverId}/standing-actions:
+    post:
+      summary: C08 — propose a standing action (warning/suspension/reinstatement). Suspension/reinstatement are PROTECTED and stay pending_approval until a second, distinct operator approves them; a reasonCode is required. Idempotency-Key required.
+      parameters:
+        [
+          {
+            name: driverId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [actionType, reasonCode, cityId],
+                properties:
+                  {
+                    actionType:
+                      {
+                        type: string,
+                        enum: [warning, suspension, reinstatement],
+                      },
+                    reasonCode: { type: string },
+                    reasonNote: { type: string },
+                    cityId: { type: string },
+                  },
+              }
+      responses:
+        "201": { description: The created standing-action row. }
+  /v1/admin/mp/standing-actions:
+    get:
+      summary: C08 — the standing-action review queue, filterable by status, newest first
+      parameters:
+        [
+          {
+            name: status,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/Cursor" },
+        ]
+      responses:
+        "200": { description: Paginated standing-action rows. }
+  /v1/admin/mp/standing-actions/{actionId}/decide:
+    post:
+      summary: C08 maker-checker — approve or reject a pending protected standing action. The proposer can never decide their own proposal (403 forbidden). A reason is required. Idempotency-Key required.
+      parameters:
+        [
+          {
+            name: actionId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [approve, reason],
+                properties:
+                  { approve: { type: boolean }, reason: { type: string } },
+              }
+      responses:
+        "200": { description: The decided standing-action row. }
+        "403":
+          {
+            description: forbidden — the proposer cannot decide their own proposal.,
+          }
+        "409":
+          {
+            description: version_conflict — this action is no longer pending_approval.,
+          }
+  /v1/admin/mp/standing-actions/{actionId}/appeal:
+    post:
+      summary: C08 — record that an active suspension is being appealed (e.g. filed through support). A note is required. Idempotency-Key required.
+      parameters:
+        [
+          {
+            name: actionId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [note],
+                properties: { note: { type: string } },
+              }
+      responses:
+        "200": { description: The appealed standing-action row. }
+        "409":
+          {
+            description: version_conflict — only an active suspension can be appealed.,
+          }
+  /v1/admin/mp/standing-actions/{actionId}/appeal-decision:
+    post:
+      summary: C08 maker-checker — decide a filed appeal (uphold overturns the suspension; deny leaves it standing). The operator who filed the appeal can never decide it (403 forbidden). A reason is required. Idempotency-Key required.
+      parameters:
+        [
+          {
+            name: actionId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [uphold, reason],
+                properties:
+                  { uphold: { type: boolean }, reason: { type: string } },
+              }
+      responses:
+        "200": { description: The decided standing-action row. }
+        "403":
+          {
+            description: forbidden — the appeal filer cannot decide their own appeal.,
+          }
+        "409":
+          { description: version_conflict — this action has no pending appeal. }
