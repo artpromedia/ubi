@@ -9,7 +9,8 @@ export const metadata: Metadata = {
     default: "UBI Restaurant Portal",
     template: "%s | UBI Restaurant",
   },
-  description: "Manage your restaurant on UBI Bites - orders, menu, payouts",
+  description:
+    "UBI Bites' restaurant portal. Not yet available — restaurant onboarding is arranged directly with UBI.",
   robots: {
     index: false,
     follow: false,

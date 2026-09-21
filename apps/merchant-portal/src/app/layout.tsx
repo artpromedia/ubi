@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     default: "UBI Send - Merchant Portal",
   },
   description:
-    "Manage your deliveries, track shipments, and grow your business with UBI Send.",
+    "UBI Send's merchant portal. Not yet available — merchant onboarding is arranged directly with UBI.",
   robots: {
     index: false,
     follow: false,

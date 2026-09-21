@@ -10,12 +10,14 @@ import {
   closeTestDb,
   FakeLedger,
   makeDeps,
+  money,
   seedIncentiveRule,
   testDb,
   uid,
 } from "./helpers";
 import {
   computeRebate,
+  postMilestone,
   postRebate,
   postWindowWaiver,
   reverseRebate,
@@ -268,6 +270,100 @@ describe("posting driver incentives", () => {
     }
     const count = await db.driverIncentivePosting.count({
       where: { tripId, kind: "rebate" },
+    });
+    expect(count).toBe(1);
+  });
+
+  it("does not post the same trip's rebate twice when two callers race", async () => {
+    // Simulates the same "trip completed" event reaching this service twice at
+    // once (e.g. a redelivered webhook), not a simple sequential retry.
+    const ledger = new FakeLedger(db);
+    const deps: GrowthDeps = makeDeps(db, { ledger });
+    const rule = await seedIncentiveRule(db, {});
+    const driverId = uid("driver");
+    const tripId = uid("trip");
+    const trip: TripBreakdown = {
+      fareMinor: 10_000,
+      currency: "NGN",
+      paymentMethod: "wallet",
+    };
+
+    const [a, b] = await Promise.all([
+      postRebate(deps, {
+        actor: ACTOR,
+        cityId: null,
+        ruleId: rule.ruleId,
+        driverId,
+        tripId,
+        trip,
+        correlationId: null,
+      }),
+      postRebate(deps, {
+        actor: ACTOR,
+        cityId: null,
+        ruleId: rule.ruleId,
+        driverId,
+        tripId,
+        trip,
+        correlationId: null,
+      }),
+    ]);
+    expect(a.posted).toBe(true);
+    expect(b.posted).toBe(true);
+    if (a.posted && b.posted) {
+      expect(a.posting.id).toBe(b.posting.id);
+      expect([a.replayed, b.replayed].sort()).toEqual([false, true]);
+    }
+
+    const count = await db.driverIncentivePosting.count({
+      where: { tripId, kind: "rebate" },
+    });
+    expect(count).toBe(1);
+    const driverLines = await db.journalLine.findMany({
+      where: { counterpartRef: `trip:${tripId}:rebate` },
+    });
+    expect(driverLines.filter((l) => Number(l.amountMinor) > 0)).toHaveLength(
+      1,
+    );
+  });
+
+  it("does not post the same trip's milestone bonus twice when two callers race", async () => {
+    const ledger = new FakeLedger(db);
+    const deps: GrowthDeps = makeDeps(db, { ledger });
+    const rule = await seedIncentiveRule(db, {});
+    const driverId = uid("driver");
+    const tripId = uid("trip");
+
+    const [a, b] = await Promise.all([
+      postMilestone(deps, {
+        actor: ACTOR,
+        cityId: null,
+        ruleId: rule.ruleId,
+        driverId,
+        tripId,
+        amount: money(50_000, "NGN"),
+        milestone: "100_trips",
+        correlationId: null,
+      }),
+      postMilestone(deps, {
+        actor: ACTOR,
+        cityId: null,
+        ruleId: rule.ruleId,
+        driverId,
+        tripId,
+        amount: money(50_000, "NGN"),
+        milestone: "100_trips",
+        correlationId: null,
+      }),
+    ]);
+    expect(a.posted).toBe(true);
+    expect(b.posted).toBe(true);
+    if (a.posted && b.posted) {
+      expect(a.posting.id).toBe(b.posting.id);
+      expect([a.replayed, b.replayed].sort()).toEqual([false, true]);
+    }
+    const count = await db.driverIncentivePosting.count({
+      where: { tripId, kind: "milestone" },
     });
     expect(count).toBe(1);
   });

@@ -12,20 +12,7 @@ import { useTheme } from "@/providers";
 import { useAuthStore, useUIStore, useUserStore } from "@/store";
 import { Button, Logo } from "@ubi/ui";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Bell,
-  Gift,
-  Heart,
-  HelpCircle,
-  LogOut,
-  MapPin,
-  Menu,
-  Moon,
-  Settings,
-  Sun,
-  User,
-  Wallet,
-} from "lucide-react";
+import { Bell, LogOut, Menu, Moon, Sun, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -171,27 +158,10 @@ export function AppHeader({
 
                       {/* Menu items */}
                       <nav className="py-2">
-                        <MenuLink href={ROUTES.profile} icon={User}>
-                          Profile
-                        </MenuLink>
-                        <MenuLink href={ROUTES.wallet} icon={Wallet}>
-                          Wallet
-                        </MenuLink>
-                        <MenuLink href={ROUTES.addresses} icon={MapPin}>
-                          Saved Places
-                        </MenuLink>
-                        <MenuLink href={ROUTES.history} icon={Heart}>
-                          Trip History
-                        </MenuLink>
-                        <MenuLink href={ROUTES.promotions} icon={Gift}>
-                          Promotions
-                        </MenuLink>
-                        <MenuLink href={ROUTES.settings} icon={Settings}>
-                          Settings
-                        </MenuLink>
-                        <MenuLink href={ROUTES.help} icon={HelpCircle}>
-                          Help & Support
-                        </MenuLink>
+                        <p className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
+                          Profile, wallet, saved places and support aren&apos;t
+                          available from this web menu yet.
+                        </p>
                       </nav>
 
                       {/* Logout */}
@@ -222,23 +192,5 @@ export function AppHeader({
         )}
       </div>
     </header>
-  );
-}
-
-interface MenuLinkProps {
-  readonly href: string;
-  readonly icon: typeof User;
-  readonly children: React.ReactNode;
-}
-
-function MenuLink({ href, icon: Icon, children }: Readonly<MenuLinkProps>) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
-    >
-      <Icon className="h-4 w-4" />
-      {children}
-    </Link>
   );
 }

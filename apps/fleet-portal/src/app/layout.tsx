@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s | UBI Fleet",
   },
   description:
-    "Manage your UBI driver fleet - monitor drivers, vehicles, and performance",
+    "UBI's fleet management portal. Not yet available — fleet arrangements are agreed directly with UBI.",
   robots: {
     index: false,
     follow: false,
