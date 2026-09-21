@@ -124,6 +124,134 @@ components:
             handling: { type: array, items: { type: string } },
           },
       }
+    ProofReference:
+      {
+        type: object,
+        description: "A proof REFERENCE only, never the bytes (C07 — no object storage client is wired into delivery-service today; see docs/marketplace/DELIVERY_CUSTODY.md).",
+        required: [objectKey, contentType, sizeBytes, sha256],
+        properties:
+          {
+            objectKey:
+              {
+                type: string,
+                description: "Client-supplied storage key; validated (no path traversal, no leading slash, 4-256 chars).",
+              },
+            contentType:
+              { type: string, enum: [image/jpeg, image/png, image/webp] },
+            sizeBytes: { type: integer, maximum: 15728640 },
+            sha256:
+              {
+                type: string,
+                description: "64-character hex digest; case-insensitive, stored lowercase.",
+              },
+          },
+      }
+    ProofResult:
+      {
+        type: object,
+        required: [proofId, deliveryId, type, replay, custodyState],
+        properties:
+          {
+            proofId: { type: string },
+            deliveryId: { type: string },
+            type: { type: string, enum: [pickup, delivery] },
+            replay:
+              {
+                type: boolean,
+                description: "True when this exact proof (same delivery, type, checksum) was already recorded.",
+              },
+            custodyState: { type: string },
+          },
+      }
+    CustodyStateResult:
+      {
+        type: object,
+        required: [deliveryId, custodyState],
+        properties:
+          { deliveryId: { type: string }, custodyState: { type: string } },
+      }
+    ReturnProposalResult:
+      {
+        type: object,
+        required:
+          [returnId, deliveryId, custodyState, chargeStatus, consentExpiresAt],
+        properties:
+          {
+            returnId: { type: string },
+            deliveryId: { type: string },
+            custodyState: { type: string },
+            chargeStatus:
+              {
+                type: string,
+                enum: [not_required, unsupported],
+                description: "not_required: fee-free (or will resolve to a hold point). unsupported: a fee was proposed but cannot be authorized — see the endpoint description.",
+              },
+            consentExpiresAt: { type: string, format: date-time },
+          },
+      }
+    CustodyEvent:
+      {
+        type: object,
+        required: [toState, actorType, createdAt],
+        properties:
+          {
+            fromState: { type: string },
+            toState: { type: string },
+            actorType:
+              { type: string, enum: [sender, driver, recipient, system, ops] },
+            reason: { type: string },
+            createdAt: { type: string, format: date-time },
+          },
+      }
+    CustodyTimeline:
+      {
+        type: object,
+        required: [deliveryId, state, version, events],
+        properties:
+          {
+            deliveryId: { type: string },
+            state: { type: string },
+            version: { type: integer },
+            openReturn:
+              {
+                type: object,
+                nullable: true,
+                description: "The latest return proposal for this delivery, if any (absent entirely when none was ever proposed).",
+                required:
+                  [
+                    returnId,
+                    chargeStatus,
+                    consentState,
+                    consentExpiresAt,
+                    feeMinor,
+                    currency,
+                  ],
+                properties:
+                  {
+                    returnId: { type: string },
+                    chargeStatus:
+                      { type: string, enum: [not_required, unsupported] },
+                    consentState:
+                      {
+                        type: string,
+                        enum: [pending, consented, rejected, expired],
+                      },
+                    consentExpiresAt: { type: string, format: date-time },
+                    feeMinor: { type: integer },
+                    currency:
+                      {
+                        type: string,
+                        description: "Empty when feeMinor is 0.",
+                      },
+                  },
+              },
+            events:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/CustodyEvent" },
+              },
+          },
+      }
     SearchEnvelope:
       {
         type: object,
@@ -1813,6 +1941,199 @@ paths:
                   properties:
                     { deliveryId: { type: string }, awardId: { type: string } },
                 }
+  /api/v1/deliveries/{deliveryId}/custody:
+    get:
+      summary: Custody timeline (C07, G08) — sender or assigned driver only
+      description: "Marketplace-managed deliveries only (no delivery_custody row exists for an open-market delivery). Foreign actor, unknown delivery id, or a legacy delivery with no custody row all answer 404 — the marketplace 404 convention: existence is not revealed to a caller who is not a party."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustodyTimeline" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/deliveries/{deliveryId}/custody/pickup-proof:
+    post:
+      summary: Post a pickup custody proof (C07) — assigned driver only
+      description: "A proof REFERENCE, never the bytes: no S3/MinIO client is wired into delivery-service today, so this validates and stores a client-supplied object key + checksum + content-type only (see docs/marketplace/DELIVERY_CUSTODY.md). Idempotent on (deliveryId, type, sha256): an identical replay answers 200 with the existing row, never a second one. courier_assigned -> picked_up -> in_transit (a pickup starts transit immediately)."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProofReference" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProofResult" }
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProofResult" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/deliveries/{deliveryId}/custody/delivery-proof:
+    post:
+      summary: Post a delivery custody proof (C07) — assigned driver only
+      description: "Reaches `delivered` from in_transit, delivery_attempted or delivery_retry directly; from recipient_unreachable it chains through delivery_retry — a successful retry IS a delivery proof, there is no separate 'start retry' call. Same idempotency rule as pickup-proof."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProofReference" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProofResult" }
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProofResult" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/deliveries/{deliveryId}/custody/recipient-unreachable:
+    post:
+      summary: Report the recipient unreachable (C07) — assigned driver only
+      description: "in_transit -> delivery_attempted -> recipient_unreachable. Starts the return/hold-point timer (recipient_unreachable_at); the safe default (held_at_point) applies automatically once a subsequent return proposal's consent window elapses with no sender response — never an auto-charge."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { reason: { type: string } } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustodyStateResult" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/deliveries/{deliveryId}/custody/return/propose:
+    post:
+      summary: Propose a return (C07) — sender or assigned driver
+      description: "recipient_unreachable -> return_proposed only. A proposed feeMinor is recorded honestly but NEVER authorizes a charge: delivery-service owns no money, and there is no payment-service delivery-return funding endpoint to call without reusing the delivery's own award-scoped commission/fare reservation — which this must never do (see docs/marketplace/DELIVERY_CUSTODY.md 'return-leg charge'). A fee-bearing proposal is gated `chargeStatus: unsupported`; only `not_required` (fee-free, or diverted to a hold point) can complete."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [reason],
+                properties:
+                  {
+                    reason: { type: string },
+                    feeMinor: { type: integer, default: 0 },
+                    currency:
+                      {
+                        type: string,
+                        description: "Required when feeMinor > 0",
+                      },
+                  },
+              }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReturnProposalResult" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/deliveries/{deliveryId}/custody/return/consent:
+    post:
+      summary: Sender consent/reject on a proposed return (C07) — sender ONLY
+      description: "The assigned driver may propose a return but never authorize or refuse one (403 otherwise). `action: consent` on a chargeStatus=unsupported return is refused with RETURN_CHARGE_UNSUPPORTED (409) — consent is necessary but never sufficient for a charged return. `action: reject` always succeeds and moves to held_at_point, exactly like an unanswered consent window expiring (the lazy expiry check runs at the top of this endpoint, GET custody, and collected-at-point)."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [action],
+                properties:
+                  { action: { type: string, enum: [consent, reject] } },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustodyStateResult" }
+        "403":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "STATE_CONFLICT (no pending proposal) or RETURN_CHARGE_UNSUPPORTED (consenting to a charged return)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/deliveries/{deliveryId}/custody/collected:
+    post:
+      summary: Collected at a hold point (C07) — assigned driver or ops
+      description: "held_at_point -> collected. Also accepts recipient_unreachable or return_proposed directly, chaining through held_at_point, so a driver taking the parcel straight to a hold point converges on the same endpoint."
+      parameters:
+        - {
+            name: deliveryId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustodyStateResult" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/wallet/mp/holds/{reservationId}/reverse:
     post:
       summary: Reverse a captured fee with a linked journal entry (internal; compensation)

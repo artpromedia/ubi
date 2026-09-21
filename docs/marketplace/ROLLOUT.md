@@ -69,11 +69,34 @@ Marked unsupported/unresolved rather than papered over:
    the select response now parsed and passed to the Assigned route by the
    rider app — but the placeholder Assigned screen does not yet render the
    PIN; the in-trip UI is the outstanding RN port.
-2. **R11 delivery custody server-side.** The return-consent/custody-proof
-   endpoints for delivery exceptions are fixture-backed only
-   (`apps/rider-mobile/src/api/marketplace.ts` marks them PROPOSED);
-   delivery-service has no managed custody/returns model yet — its
-   `deliveries` DDL is itself unmanaged (pre-existing schema drift risk).
+2. **R11 delivery custody server-side — CLOSED for the flows below (C07).**
+   delivery-service now owns a real custody/return state machine (an
+   additive extension of the `shipment` contract machine) backed by
+   Prisma-owned tables (`delivery_custody`, `custody_events`,
+   `delivery_proofs`, `delivery_returns` — migration
+   `20260921033947_delivery_custody`, real FKs to `deliveries`), with
+   endpoints for pickup/delivery proof, recipient-unreachable, return
+   propose/consent/reject, and collected-at-point, gated to the delivery's
+   sender and assigned driver (gateway identity; foreign actor → 404). The
+   rider app's `deliveryReturnState`/`deliveryReturnConsent`/`postmarkPickup`
+   calls now hit these real endpoints for a marketplace-managed delivery
+   (see `docs/marketplace/DELIVERY_CUSTODY.md`). **Still gated/residual:**
+   `marketplace_delivery` stays OFF (this closure does not flip it); a
+   return-leg CHARGE is recorded but cannot complete — no payment-service
+   delivery-return funding endpoint exists, so only a fee-free return or a
+   hold-point resolution can finish (`RETURN_CHARGE_UNSUPPORTED` otherwise);
+   the object-storage upload/serve path is not wired (proof rows are a
+   validated reference — object key + checksum — never the bytes); and the
+   gateway-identity signature on these routes is unsigned-trust when
+   `RIDE_INTERNAL_CONTEXT_SECRET` is unset, same posture as G03 pre-C03. A
+   deeper, pre-existing defect was also found and partially closed while
+   wiring this: `deliveries.sender_id`/`driver_id`/most of its data columns
+   didn't match what delivery-service's Go code assumed at all (invalid
+   UUID ids, nonexistent columns/enum values) — MarketplaceAssign could not
+   previously insert a row against the real schema. The column/enum
+   mismatch is fixed; a further FK detail (`sender_id` requires a `riders`
+   profile row, not a bare user id) is named but not closed — see the C07
+   report.
 3. **R10 queue projection.** `GET /v1/mp/requests/:id/queue` remains a
    PROPOSED read projection served by fixtures (the underlying state and
    events exist server-side). `GET /v1/mp/driver/jobs` is now implemented

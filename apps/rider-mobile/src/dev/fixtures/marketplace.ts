@@ -204,46 +204,59 @@ const award = (
   resolvedAt: state === "pending" ? null : new Date().toISOString(),
 });
 
-const custody = (state: MpFixState["returnState"]) => [
-  {
-    label: "Picked up from you",
-    detail: "Photo + code verified 14:02",
-    state: "done",
-  },
-  {
-    label: "Delivery attempted · recipient unreachable",
-    detail: "2 attempts · 14:31 and 14:40",
-    state: "done",
-  },
-  state === "return_approved"
-    ? {
-        label: "Returning to sender",
-        detail: "Return fee funded · courier heading back",
-        state: "active",
-      }
-    : state === "held_at_point"
-      ? {
-          label: "Held at partner pickup point",
-          detail: "Ajose Adeogun collection point",
-          state: "active",
-        }
-      : {
-          label: "Waiting on your decision",
-          detail: "Courier holds the package meanwhile",
-          state: "active",
-        },
-  {
-    label: state === "held_at_point" ? "Collected" : "Returned to you",
-    state: "pending",
-  },
-];
-const returnView = () => ({
-  state: st().returnState,
-  situation:
-    "2 delivery attempts made — the recipient isn’t answering (11 min). The courier is waiting at Adeola Odeku St with your package.",
-  returnFeeMinor: NGN(900),
-  custody: custody(st().returnState),
-});
+// Maps the fixture's simplified state onto delivery-service's real custody
+// state names (C07), so this fixture returns the SAME shape the real
+// GET/POST custody endpoints do — mapCustodyToReturnView (src/api/marketplace.ts)
+// runs on both, unmodified.
+const CUSTODY_STATE_FOR: Record<MpFixState["returnState"], string> = {
+  unreachable: "recipient_unreachable",
+  retrying: "delivery_retry",
+  return_approved: "return_to_sender",
+  held_at_point: "held_at_point",
+};
+const returnTimeline = () => {
+  const uiState = st().returnState;
+  const custodyState = CUSTODY_STATE_FOR[uiState];
+  const fee = NGN(900);
+  return {
+    deliveryId: "del_fixture",
+    state: custodyState,
+    version: 1,
+    openReturn:
+      uiState === "unreachable" || uiState === "return_approved"
+        ? {
+            returnId: "ret_fixture",
+            chargeStatus: "not_required" as const,
+            consentState:
+              uiState === "return_approved"
+                ? ("consented" as const)
+                : ("pending" as const),
+            consentExpiresAt: iso(24 * 60 * 60 * 1000),
+            feeMinor: fee.amountMinor,
+            currency: fee.currency,
+          }
+        : null,
+    events: [
+      {
+        toState: "recipient_unreachable",
+        actorType: "driver",
+        reason:
+          "2 delivery attempts made — the recipient isn’t answering (11 min). The courier is waiting at Adeola Odeku St with your package.",
+        createdAt: iso(-11 * 60 * 1000),
+      },
+      ...(custodyState !== "recipient_unreachable"
+        ? [
+            {
+              fromState: "recipient_unreachable",
+              toState: custodyState,
+              actorType: "system",
+              createdAt: new Date().toISOString(),
+            },
+          ]
+        : []),
+    ],
+  };
+};
 
 export async function marketplaceFixtures(i: FixtureInput) {
   const s = st();
@@ -529,37 +542,53 @@ export async function marketplaceFixtures(i: FixtureInput) {
       delayed: null,
     });
   }
-  // PROPOSED endpoint pair (R11b) — recipient-unreachable resolution; see src/api/marketplace.ts.
+  // Delivery custody/returns (C07, G08) — REAL delivery-service endpoints in
+  // production; see src/api/marketplace.ts. This fixture mirrors the real
+  // custody-timeline shape (state/openReturn/events), not a bespoke one, so
+  // mapCustodyToReturnView behaves identically against either.
   if (
     i.method === "GET" &&
-    /^\/v1\/mp\/delivery\/[^/]+\/return-state$/.test(i.path)
+    /^\/v1\/delivery\/deliveries\/[^/]+\/custody$/.test(i.path)
   )
-    return ok(returnView());
+    return ok(returnTimeline());
   if (
     i.method === "POST" &&
-    /^\/v1\/mp\/delivery\/[^/]+\/return-consent$/.test(i.path)
+    /^\/v1\/delivery\/deliveries\/[^/]+\/custody\/return\/consent$/.test(i.path)
   ) {
     const action = (i.body as { action?: string })?.action;
-    if (action === "retry_recipient") {
-      s.returnState = "retrying";
-      return ok(returnView());
-    }
-    if (action === "hold_at_point") {
+    // "retry_recipient" is not a real server action (see the type doc in
+    // src/api/marketplace.ts) — the real endpoint would answer
+    // VALIDATION_ERROR; the fixture mirrors that rather than pretending it
+    // works.
+    if (action === "retry_recipient")
+      return {
+        status: 400,
+        json: {
+          code: "VALIDATION_ERROR",
+          message: 'action must be "consent" or "reject"',
+        },
+      };
+    if (action === "reject") {
       s.returnState = "held_at_point";
-      return ok(returnView());
+      return ok(returnTimeline());
     }
+    if (action !== "consent")
+      return {
+        status: 400,
+        json: { code: "VALIDATION_ERROR", message: "unknown action" },
+      };
     s.returnTries += 1;
     if (s.returnTries === 1)
       return {
-        status: 422,
+        status: 409,
         json: {
-          code: "insufficient_spendable",
+          code: "RETURN_CHARGE_UNSUPPORTED",
           message:
-            "Wallet balance too low for the ₦900 return fee. Top up, then approve again.",
+            "This return proposes a fee delivery-service cannot yet authorize. Reject it to hold the package at a pickup point instead.",
         },
       };
     s.returnState = "return_approved";
-    return ok(returnView());
+    return ok(returnTimeline());
   }
   return undefined;
 }

@@ -22,32 +22,32 @@ type CustomerFixture struct {
 
 // RestaurantFixture represents a test restaurant
 type RestaurantFixture struct {
-	ID           string
-	Name         string
-	Lat          float64
-	Lng          float64
-	Address      string
-	PhoneNumber  string
-	PrepTimeMin  int
-	Rating       float64
-	IsOpen       bool
-	CreatedAt    time.Time
+	ID          string
+	Name        string
+	Lat         float64
+	Lng         float64
+	Address     string
+	PhoneNumber string
+	PrepTimeMin int
+	Rating      float64
+	IsOpen      bool
+	CreatedAt   time.Time
 }
 
 // CourierFixture represents a test courier
 type CourierFixture struct {
-	ID             string
-	UserID         string
-	Name           string
-	PhoneNumber    string
-	VehicleType    string
-	Rating         float64
+	ID              string
+	UserID          string
+	Name            string
+	PhoneNumber     string
+	VehicleType     string
+	Rating          float64
 	TotalDeliveries int
-	Status         string
-	CurrentLat     float64
-	CurrentLng     float64
-	LastLocationAt time.Time
-	CreatedAt      time.Time
+	Status          string
+	CurrentLat      float64
+	CurrentLng      float64
+	LastLocationAt  time.Time
+	CreatedAt       time.Time
 }
 
 // DeliveryFixture represents a test delivery
@@ -79,11 +79,11 @@ type DeliveryFixture struct {
 
 // DeliveryItemFixture represents a delivery item
 type DeliveryItemFixture struct {
-	ID          string
-	Name        string
-	Quantity    int
-	Price       int64
-	Notes       string
+	ID       string
+	Name     string
+	Quantity int
+	Price    int64
+	Notes    string
 }
 
 // LocationFixture represents a location
@@ -526,7 +526,7 @@ func GenerateCouriers(count int, location LocationFixture) []CourierFixture {
 		lng := location.Lng + (float64(i/10)-5.0)*0.005
 
 		couriers[i] = NewCourierBuilder().
-			WithName(RandomFirstName() + " " + RandomLastName()).
+			WithName(RandomFirstName()+" "+RandomLastName()).
 			WithVehicleType(vehicleTypes[i%len(vehicleTypes)]).
 			WithLocation(lat, lng).
 			WithRating(4.0+float64(i%10)/10.0, 50+i*10).

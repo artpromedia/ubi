@@ -19,18 +19,25 @@ type Config struct {
 	RedisURL           string
 	JWTSecret          string
 	InternalServiceKey string
-	
+	// InternalContextSecret verifies the gateway's signed caller identity on
+	// the custody/return routes (internal/identity). It intentionally reads
+	// the SAME env var ride-service reads (RIDE_INTERNAL_CONTEXT_SECRET): the
+	// gateway signs one identity context per request and forwards it to
+	// whichever backend the route proxies to, keyed by one shared secret, not
+	// a secret per downstream service. See docs/security/INTERNAL_IDENTITY.md.
+	InternalContextSecret string
+
 	// Pricing
-	BaseFare           float64
-	PerKmRate          float64
-	PerMinuteRate      float64
-	MinimumFare        float64
-	ServiceFeePercent  float64
-	
+	BaseFare          float64
+	PerKmRate         float64
+	PerMinuteRate     float64
+	MinimumFare       float64
+	ServiceFeePercent float64
+
 	// Service URLs
-	PaymentServiceURL  string
-	UserServiceURL     string
-	NotificationURL    string
+	PaymentServiceURL string
+	UserServiceURL    string
+	NotificationURL   string
 }
 
 // Committed defaults. They live in this repository, so they are public
@@ -48,23 +55,24 @@ func Load() *Config {
 		// UBI_ENV is the repo-wide deployment-environment name for Go services
 		// (docs/security/INTERNAL_IDENTITY.md); ENV stays as a fallback because
 		// this service historically read it.
-		Env:                getEnv("UBI_ENV", getEnv("ENV", "development")),
-		DatabaseURL:        getEnv("DATABASE_URL", "postgres://ubi:ubi@localhost:5432/ubi_delivery?sslmode=disable"),
-		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:          getEnv("JWT_SECRET", defaultJWTSecret),
-		InternalServiceKey: getEnv("INTERNAL_SERVICE_KEY", defaultInternalServiceKey),
-		
+		Env:                   getEnv("UBI_ENV", getEnv("ENV", "development")),
+		DatabaseURL:           getEnv("DATABASE_URL", "postgres://ubi:ubi@localhost:5432/ubi_delivery?sslmode=disable"),
+		RedisURL:              getEnv("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:             getEnv("JWT_SECRET", defaultJWTSecret),
+		InternalServiceKey:    getEnv("INTERNAL_SERVICE_KEY", defaultInternalServiceKey),
+		InternalContextSecret: getEnv("RIDE_INTERNAL_CONTEXT_SECRET", ""),
+
 		// Pricing defaults (NGN)
 		BaseFare:          500.0,
 		PerKmRate:         150.0,
 		PerMinuteRate:     15.0,
 		MinimumFare:       800.0,
 		ServiceFeePercent: 0.05,
-		
+
 		// Service URLs
-		PaymentServiceURL:  getEnv("PAYMENT_SERVICE_URL", "http://localhost:4003"),
-		UserServiceURL:     getEnv("USER_SERVICE_URL", "http://localhost:4001"),
-		NotificationURL:    getEnv("NOTIFICATION_SERVICE_URL", "http://localhost:4006"),
+		PaymentServiceURL: getEnv("PAYMENT_SERVICE_URL", "http://localhost:4003"),
+		UserServiceURL:    getEnv("USER_SERVICE_URL", "http://localhost:4001"),
+		NotificationURL:   getEnv("NOTIFICATION_SERVICE_URL", "http://localhost:4006"),
 	}
 }
 

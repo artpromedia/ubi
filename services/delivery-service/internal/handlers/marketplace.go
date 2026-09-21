@@ -17,6 +17,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -26,15 +27,46 @@ import (
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/models"
 )
 
-// Keys stored inside the deliveries.package jsonb column. The deliveries DDL
-// is unmanaged (no migration owns it), so the marketplace linkage rides in
-// the existing jsonb column instead of new columns — NO DDL changes here.
+// Keys stored inside the deliveries.marketplace_metadata jsonb column
+// (packages/database/prisma migration 20260921033947_delivery_custody). This
+// is the hand-off's own metadata, never authoritative money — the agreed fare
+// stays authoritative in the marketplace/ledger in integer minor units.
+//
+// History note: an earlier version of this adapter documented the linkage as
+// riding in a `deliveries.package` jsonb column and said the deliveries DDL
+// was wholly unmanaged. Both were wrong — `deliveries` is Prisma-owned
+// (packages/database/prisma baseline) and has never had a `package` column;
+// this adapter could not actually insert a row against the real schema
+// (invalid UUID id, nonexistent customer_id/driver_id/pickup_location/package
+// columns — see the C07 report for the full account). `marketplace_metadata`
+// and `driver_id` are the two columns that migration adds so this hand-off
+// can genuinely run.
 const (
 	packageKeyMarketplaceAwardID = "marketplaceAwardId"
 	packageKeyAgreedFareMinor    = "agreedFareMinor"
 	packageKeyFencingToken       = "marketplaceFencingToken"
 	packageKeyRequestID          = "marketplaceRequestId"
 )
+
+// deliveryCurrencies are the ISO-4217 codes the deliveries.currency column
+// (a Postgres enum generated from Prisma's `Currency`) actually accepts.
+// UGX/TZS/XOF, which storageFareFromMinor and validateMarketplaceAssign's
+// generic "3 letters" check would otherwise wave through, are NOT members —
+// inserting one would fail with an opaque enum error, so this is checked
+// explicitly and refused with a clear message instead.
+var deliveryCurrencies = map[string]struct{}{
+	"NGN": {}, "KES": {}, "ZAR": {}, "GHS": {}, "RWF": {}, "ETB": {}, "USD": {},
+}
+
+// placeholderPaymentMethod is stored on every marketplace-assigned delivery.
+// The marketplace-assign payload carries no payment method — funding is
+// decided upstream by the marketplace engine/payment-service — and
+// deliveries.payment_method is a required, non-nullable enum column with no
+// "marketplace_managed" member. WALLET is the least misleading choice given
+// the marketplace's own funding is wallet-first (G02/C02); this is a known
+// placeholder, not a real payment-method record, until the marketplace-assign
+// payload is extended to carry the funding method it actually used.
+const placeholderPaymentMethod = "WALLET"
 
 // MarketplaceAssignRequest is the body of the internal
 // POST /api/v1/webhooks/marketplace-assign call from the marketplace engine.
@@ -89,6 +121,8 @@ func validateMarketplaceAssign(req *MarketplaceAssignRequest) []string {
 	}
 	if len(req.Currency) != 3 {
 		problems = append(problems, "currency must be a 3-letter ISO-4217 code")
+	} else if _, ok := deliveryCurrencies[req.Currency]; !ok {
+		problems = append(problems, "currency "+req.Currency+" is not one deliveries.currency accepts")
 	}
 	if req.Pickup.Latitude == 0 && req.Pickup.Longitude == 0 {
 		problems = append(problems, "pickup location is required")
@@ -134,35 +168,33 @@ func storageFareFromMinor(fareMinor int64, currency string) float64 {
 	return float64(fareMinor/divisor) + float64(fareMinor%divisor)/float64(divisor)
 }
 
-// marketplacePackageJSON embeds the marketplace linkage (award id, agreed
-// fare in minor units, fencing token, request id) into the package jsonb
-// payload. Pure — unit-tested without a database.
-func marketplacePackageJSON(pkg models.Package, awardID, requestID string, fareMinor, fencingToken int64) ([]byte, error) {
-	raw, err := json.Marshal(pkg)
-	if err != nil {
-		return nil, err
+// marketplaceMetadataJSON builds the deliveries.marketplace_metadata payload:
+// the hand-off's own linkage (award id, agreed fare in minor units, fencing
+// token, request id) — never authoritative money. Pure — unit-tested without
+// a database. (Package attributes — size/weight/description/fragile/POD — are
+// stored on their own real columns now; they no longer pass through this
+// jsonb blob, unlike the "package" shape an earlier version of this file
+// assumed.)
+func marketplaceMetadataJSON(awardID, requestID string, fareMinor, fencingToken int64) ([]byte, error) {
+	doc := map[string]interface{}{
+		packageKeyMarketplaceAwardID: awardID,
+		packageKeyRequestID:          requestID,
+		packageKeyAgreedFareMinor:    fareMinor,
+		packageKeyFencingToken:       fencingToken,
 	}
-	var doc map[string]interface{}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, err
-	}
-	doc[packageKeyMarketplaceAwardID] = awardID
-	doc[packageKeyRequestID] = requestID
-	doc[packageKeyAgreedFareMinor] = fareMinor
-	doc[packageKeyFencingToken] = fencingToken
 	return json.Marshal(doc)
 }
 
-// isMarketplaceManaged reports whether a delivery's package jsonb carries a
-// marketplace award reference, meaning its assignment lifecycle belongs to
-// the marketplace award saga and the open-market accept path must refuse it.
-// Pure — unit-tested without a database.
-func isMarketplaceManaged(packageJSON []byte) bool {
-	if len(packageJSON) == 0 {
+// isMarketplaceManaged reports whether a delivery's marketplace_metadata
+// jsonb carries a marketplace award reference, meaning its assignment
+// lifecycle belongs to the marketplace award saga and the open-market accept
+// path must refuse it. Pure — unit-tested without a database.
+func isMarketplaceManaged(metadataJSON []byte) bool {
+	if len(metadataJSON) == 0 {
 		return false
 	}
 	var doc map[string]interface{}
-	if err := json.Unmarshal(packageJSON, &doc); err != nil {
+	if err := json.Unmarshal(metadataJSON, &doc); err != nil {
 		return false
 	}
 	awardID, ok := doc[packageKeyMarketplaceAwardID].(string)
@@ -188,12 +220,12 @@ type marketplaceDeliverySummary struct {
 // the natural key of the hand-off.
 func (h *Handler) findDeliveryByAwardID(ctx context.Context, awardID string) (*marketplaceDeliverySummary, error) {
 	query := `
-		SELECT id, tracking_number, status, COALESCE(driver_id, ''), customer_id,
-			package->>'` + packageKeyMarketplaceAwardID + `',
-			COALESCE((package->>'` + packageKeyAgreedFareMinor + `')::bigint, 0),
+		SELECT id, tracking_number, status, COALESCE(driver_id::text, ''), sender_id::text,
+			marketplace_metadata->>'` + packageKeyMarketplaceAwardID + `',
+			COALESCE((marketplace_metadata->>'` + packageKeyAgreedFareMinor + `')::bigint, 0),
 			currency, created_at
 		FROM deliveries
-		WHERE package->>'` + packageKeyMarketplaceAwardID + `' = $1
+		WHERE marketplace_metadata->>'` + packageKeyMarketplaceAwardID + `' = $1
 		LIMIT 1
 	`
 	var d marketplaceDeliverySummary
@@ -275,50 +307,50 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	packageJSON, err := marketplacePackageJSON(req.PackageDetails, req.AwardID, req.RequestID, req.FareMinor, req.FencingToken)
+	metadataJSON, err := marketplaceMetadataJSON(req.AwardID, req.RequestID, req.FareMinor, req.FencingToken)
 	if err != nil {
 		_ = h.rdb.Delete(r.Context(), lockKey)
-		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to encode package details")
+		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to encode marketplace metadata")
 		return
 	}
 
-	distance := haversineDistance(
-		req.Pickup.Latitude, req.Pickup.Longitude,
-		req.Dropoff.Latitude, req.Dropoff.Longitude,
-	)
-	estimatedMinutes := int((distance / 20.0) * 60)
-	if estimatedMinutes < 15 {
-		estimatedMinutes = 15
-	}
-
-	deliveryID := "del_" + uuid.New().String()[:12]
+	// deliveries.id is UUID (packages/database/prisma baseline), not a
+	// prefixed string: a previous "del_" + uuid[:12] shape here produced
+	// something like "del_3fa85f64-571", which Postgres rejects outright
+	// ("invalid input syntax for type uuid") — this handler could not
+	// actually insert a row against the real schema. Found and fixed while
+	// wiring delivery_custody's FK to this same column (C07/G08); the
+	// analogous "del_"/"evt_" shapes in handlers.go/driver.go are a
+	// pre-existing, separate defect on the legacy open-market path this
+	// prompt does not touch (its events insert into a table — delivery_events
+	// — that has no migration at all, so those calls already no-op there;
+	// see the C07 report).
+	deliveryID := uuid.New().String()
 	trackingNumber := generateTrackingNumber()
 
-	pickupLoc, _ := json.Marshal(req.Pickup)
-	dropoffLoc, _ := json.Marshal(req.Dropoff)
-	emptyContact, _ := json.Marshal(models.ContactInfo{})
-
-	// Legacy float column at the storage boundary ONLY: the authoritative
-	// agreed amount is integer minor units, kept in the marketplace/ledger
-	// and mirrored in package->>'agreedFareMinor'.
-	storageFare := storageFareFromMinor(req.FareMinor, req.Currency)
+	// Legacy `price` column at the storage boundary ONLY: the authoritative
+	// agreed amount is integer minor units, kept in the marketplace/ledger and
+	// mirrored in marketplace_metadata->>'agreedFareMinor'. Passed as text so
+	// pgx's simple parameter binding doesn't have to guess a NUMERIC(12,2)
+	// representation for a bare float64.
+	storagePrice := fmt.Sprintf("%.2f", storageFareFromMinor(req.FareMinor, req.Currency))
 
 	query := `
 		INSERT INTO deliveries (
-			id, tracking_number, customer_id, driver_id, type, status,
-			pickup_location, dropoff_location, pickup_contact, dropoff_contact,
-			package, distance_km, estimated_minutes,
-			base_fare, distance_fare, time_fare, surge_fare, service_fee, insurance_fee, total_fare,
-			currency, payment_status,
-			confirmed_at, driver_assigned_at,
+			id, tracking_number, sender_id, driver_id, status,
+			pickup_address, pickup_latitude, pickup_longitude, pickup_contact, pickup_phone,
+			dropoff_address, dropoff_latitude, dropoff_longitude, dropoff_contact, dropoff_phone,
+			package_size, package_weight, package_description, is_fragile, requires_signature,
+			price, currency, payment_method, payment_status,
+			marketplace_metadata,
 			created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10,
-			$11, $12, $13,
-			0, 0, 0, 0, 0, 0, $14,
-			$15, $16,
-			NOW(), NOW(),
+			$1, $2, $3, $4, $5,
+			$6, $7, $8, $9, $10,
+			$11, $12, $13, $14, $15,
+			$16, $17, $18, $19, $20,
+			$21::numeric, $22, $23, $24,
+			$25,
 			NOW(), NOW()
 		)
 		RETURNING created_at
@@ -326,13 +358,25 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 
 	var createdAt time.Time
 	err = h.db.Pool.QueryRow(r.Context(), query,
-		deliveryID, trackingNumber, req.CustomerID, req.DriverID, models.DeliveryTypeStandard, models.DeliveryStatusDriverAssigned,
-		pickupLoc, dropoffLoc, emptyContact, emptyContact,
-		packageJSON, distance, estimatedMinutes,
-		storageFare,
-		// AUTHORIZED, not PAID: the award saga authorized rider funding;
-		// capture/settlement stays with the marketplace and payment-service.
-		req.Currency, "AUTHORIZED",
+		deliveryID, trackingNumber, req.CustomerID, req.DriverID,
+		// DeliveryStatus (Prisma enum: PENDING, PICKED_UP, IN_TRANSIT,
+		// OUT_FOR_DELIVERY, DELIVERED, FAILED, RETURNED) has no
+		// "driver_assigned"/"confirmed" member, so PENDING is the closest
+		// honest pre-pickup value; the delivery_custody row this handler also
+		// seeds (courier_assigned) is the actual source of truth for "a
+		// driver is already assigned" from here on.
+		"PENDING",
+		req.Pickup.Address, req.Pickup.Latitude, req.Pickup.Longitude, "", "",
+		req.Dropoff.Address, req.Dropoff.Latitude, req.Dropoff.Longitude, "", "",
+		string(req.PackageDetails.Size), req.PackageDetails.Weight, req.PackageDetails.Description,
+		req.PackageDetails.Fragile, req.PackageDetails.RequiresPOD,
+		storagePrice, req.Currency, placeholderPaymentMethod,
+		// PENDING, not a settlement claim: PaymentStatus (Prisma enum) has no
+		// "authorized" member. The award saga already authorized rider
+		// funding; capture/settlement stays with the marketplace and
+		// payment-service and this column does not attempt to mirror it.
+		"PENDING",
+		metadataJSON,
 	).Scan(&createdAt)
 
 	if err != nil {
@@ -340,6 +384,21 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Str("awardId", req.AwardID).Msg("Failed to create marketplace delivery")
 		respondError(w, http.StatusInternalServerError, "DATABASE_ERROR", "Failed to create delivery")
 		return
+	}
+
+	// Custody tracking (C07, G08): every marketplace-managed delivery gets a
+	// delivery_custody row, seeded at CourierAssigned since the award saga
+	// already picked the driver. Best-effort and logged rather than fatal:
+	// the delivery itself is already committed above, and a transient failure
+	// here should not turn an otherwise-successful award hand-off into a 500
+	// the marketplace engine would retry into a duplicate-award investigation.
+	// A delivery that is missing its custody row simply has no custody
+	// endpoints available yet — GetCustodyTimeline and friends 404 on it —
+	// until an operator re-runs custodyForMarketplaceAssign; that gap is
+	// visible in logs, not silent.
+	if err := h.custodyForMarketplaceAssign(r.Context(), deliveryID, req.CustomerID, req.DriverID); err != nil {
+		log.Error().Err(err).Str("deliveryId", deliveryID).Str("awardId", req.AwardID).
+			Msg("Failed to seed delivery custody tracking for a marketplace-assigned delivery")
 	}
 
 	// Audit trail + the existing realtime channel, matching AcceptDelivery.

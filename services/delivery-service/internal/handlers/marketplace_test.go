@@ -100,11 +100,11 @@ func TestStorageFareFromMinor(t *testing.T) {
 	}
 }
 
-func TestMarketplacePackageJSON(t *testing.T) {
+func TestMarketplaceMetadataJSON(t *testing.T) {
 	req := validAssignRequest()
-	raw, err := marketplacePackageJSON(req.PackageDetails, req.AwardID, req.RequestID, req.FareMinor, req.FencingToken)
+	raw, err := marketplaceMetadataJSON(req.AwardID, req.RequestID, req.FareMinor, req.FencingToken)
 	if err != nil {
-		t.Fatalf("marketplacePackageJSON returned error: %v", err)
+		t.Fatalf("marketplaceMetadataJSON returned error: %v", err)
 	}
 
 	var doc map[string]interface{}
@@ -126,18 +126,10 @@ func TestMarketplacePackageJSON(t *testing.T) {
 		t.Fatalf("fencingToken = %v, want 7", got)
 	}
 
-	// Original package fields survive (the POD gate reads requiresPod).
-	if got := doc["description"]; got != "Documents" {
-		t.Fatalf("description = %v, want Documents", got)
-	}
-	if got := doc["requiresPod"]; got != true {
-		t.Fatalf("requiresPod = %v, want true", got)
-	}
-
 	// The guard recognizes what the adapter wrote: the same payload the
 	// insert stores is the payload AcceptDelivery later refuses.
 	if !isMarketplaceManaged(raw) {
-		t.Fatal("isMarketplaceManaged should be true for adapter-written package JSON")
+		t.Fatal("isMarketplaceManaged should be true for adapter-written metadata JSON")
 	}
 }
 
