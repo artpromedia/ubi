@@ -19,11 +19,11 @@ in production every service below refuses to run unauthenticated.
 
 ## Signatures on the wire
 
-| What | Headers | Key env var | Verifier |
-| --- | --- | --- | --- |
-| Identity context JWS (HS256, 120 s TTL) | `x-ubi-identity` | `UBI_IDENTITY_SECRET` (+ `_PREVIOUS`, `_KEY_ID`) | api-gateway (`src/identity/context.ts`), user-service (`src/identity/context.ts`) |
-| Ride-service HMAC context | `x-auth-signature`, `x-auth-issued-at`, `x-auth-city-id` | `RIDE_INTERNAL_CONTEXT_SECRET` | ride-service (`internal/handler/identity.go`); signer: api-gateway (`src/identity/ride-context.ts`) |
-| Service-to-service key | `X-Service-Key` | `INTERNAL_SERVICE_KEY` | payment-service (`internalServiceAuth`, fail-closed), delivery-service (`ServiceAuth` + boot guard) |
+| What                                    | Headers                                                  | Key env var                                      | Verifier                                                                                                                       |
+| --------------------------------------- | -------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Identity context JWS (HS256, 120 s TTL) | `x-ubi-identity`                                         | `UBI_IDENTITY_SECRET` (+ `_PREVIOUS`, `_KEY_ID`) | api-gateway (`src/identity/context.ts`), user-service (`src/identity/context.ts`), payment-service (`src/identity/context.ts`) |
+| Ride-service HMAC context               | `x-auth-signature`, `x-auth-issued-at`, `x-auth-city-id` | `RIDE_INTERNAL_CONTEXT_SECRET`                   | ride-service (`internal/handler/identity.go`); signer: api-gateway (`src/identity/ride-context.ts`)                            |
+| Service-to-service key                  | `X-Service-Key`                                          | `INTERNAL_SERVICE_KEY`                           | payment-service (`internalServiceAuth`, fail-closed), delivery-service (`ServiceAuth` + boot guard)                            |
 
 The ride HMAC signs the canonical payload
 `ubi.internal.v1|<userId>|<role>|<cityId>|<issuedAt unix seconds>`
@@ -66,7 +66,15 @@ be tuned with `RIDE_INTERNAL_CONTEXT_MAX_AGE_MS` on the ride-service.
   when `INTERNAL_SERVICE_KEY` is unset. The quarantined legacy routes with
   fail-open key checks stay unmounted, enforced structurally by the router
   registry in `src/index.ts` and the tripwire test
-  `tests/routes-inventory.test.ts` (see `QUARANTINE.md`).
+  `tests/routes-inventory.test.ts` (see `QUARANTINE.md`). `serviceAuth`
+  (`src/middleware/auth.ts`) — guarding `/fraud/*`, `/safety/*`, `/admin/*`,
+  `/v1/wallet/*` (including the marketplace wallet overview) and
+  `/v1/finance/*` — verifies a presented `x-ubi-identity` JWS in every
+  environment and it wins when present; with `NODE_ENV=production` it is
+  REQUIRED, so the plain `X-User-ID` mirror (previously trusted alone, which
+  let any caller with service-network access read another driver's wallet by
+  setting the header) is refused, and a missing/misconfigured
+  `UBI_IDENTITY_SECRET` is a 503, never a fall back to the unsigned header.
 
 ## Rotating `RIDE_INTERNAL_CONTEXT_SECRET`
 
@@ -87,10 +95,10 @@ change itself.
 ## Known non-goals of this boundary (deployment scope)
 
 - **Network isolation is still required.** The mirrors are trusted by some
-  services in development, payment-service reads `X-User-ID` for the wallet
-  overview, and location-service exposes an entirely unauthenticated internal
-  API (`services/location-service`, no identity surface at all). None of these
-  may be reachable from outside the service network.
+  services in development — payment-service reads `X-User-ID` there when no
+  JWS is presented — and location-service exposes an entirely unauthenticated
+  internal API (`services/location-service`, no identity surface at all).
+  None of these may be reachable from outside the service network.
 - The gateway does not proxy WebSockets; the realtime-gateway is a separate
   ingress with its own authentication and is not covered by the header
   stripping described here.
