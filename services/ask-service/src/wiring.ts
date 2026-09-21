@@ -20,6 +20,7 @@ import { prisma } from "./lib/prisma";
 import { DEFAULT_LIMITS, type AskDeps } from "./ops/context";
 import { createFlagProvider } from "./ops/flags";
 import { createHttpGrantPort } from "./ports/grant-port";
+import { createHttpMarketplacePort } from "./ports/marketplace-port";
 import { createHttpPromotionsPort } from "./ports/promotions-port";
 import { createHttpRidePort } from "./ports/ride-port";
 import { createHttpSupportPort } from "./ports/support-port";
@@ -73,6 +74,12 @@ export function createDeps(): AskDeps {
     embedder,
     retriever: createRetriever(embedder),
     ride: createHttpRidePort({ baseUrl: RIDE_SERVICE_URL, serviceKey }),
+    // Marketplace rider routes are served by ride-service behind the gateway's
+    // /v1/mp/* proxy; the assistant calls them as the user, deny-by-default.
+    marketplace: createHttpMarketplacePort({
+      baseUrl: RIDE_SERVICE_URL,
+      serviceKey,
+    }),
     travel: createHttpTravelPort({ baseUrl: TRAVEL_SERVICE_URL, serviceKey }),
     promotions: createHttpPromotionsPort({
       baseUrl: PROMOTIONS_SERVICE_URL,

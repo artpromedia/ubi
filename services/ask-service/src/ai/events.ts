@@ -10,6 +10,7 @@ export type CardKind =
   | "stay"
   | "ride_estimate"
   | "ride_quote"
+  | "mp_offer"
   | "policy";
 export type CardStatus = "suggestion" | "live" | "expired";
 
