@@ -6,13 +6,14 @@ import type {
   MpAward,
   MpOffer,
   MpPublishRequest,
+  MpQueueView,
   MpQuoteEnvelope,
   MpRequest,
   MpSelectBid,
   MpService,
 } from "@ubi/contracts";
 
-export type { MpAward, MpOffer, MpQuoteEnvelope, MpRequest };
+export type { MpAward, MpOffer, MpQueueView, MpQuoteEnvelope, MpRequest };
 
 /**
  * POST /select 202 body per contracts/openapi/marketplace.yaml: the award is WRAPPED
@@ -55,30 +56,13 @@ export type MpRequestSnapshot = {
 };
 
 /**
- * R10 queued-job tracker view. PROPOSED endpoint — the rider needs a server-composed
- * projection of queue.eta_updated / award.cancelled / commission.reversed (MATRIX R10);
- * contracts/openapi/marketplace.yaml does not carry it yet. Fixture-only until then.
+ * R10 queued-job tracker view. NOW REAL (G07): served by ride-service at
+ * GET /v1/mp/requests/:id/queue and defined by @ubi/contracts MpQueueViewSchema
+ * (re-exported above). The container reads a subset (driverFirstName, steps,
+ * fareMinor, windowLabel, eta, delayed); the projection also carries the
+ * authorized/versioned fields (version, asOf, status, promotion, driver,
+ * pickupWindow, actions) for optimistic refresh and stale-ETA detection.
  */
-export type MpQueueView = {
-  driverFirstName: string;
-  steps: {
-    label: string;
-    detail?: string;
-    state: "done" | "active" | "pending" | "skipped";
-  }[];
-  fareMinor: Money;
-  windowLabel: string;
-  eta: { label: string; inWindow: boolean };
-  delayed: {
-    noticeTitle: string;
-    noticeBody: string;
-    keepLabel: string;
-    reversal: {
-      riderHold: "releasing" | "released";
-      driverFee: "pending" | "reversed";
-    } | null;
-  } | null;
-};
 
 /** R11b recipient-unreachable resolution view. PROPOSED endpoint pair (MATRIX R11). */
 export type MpDeliveryReturnState = {
@@ -135,9 +119,10 @@ export const marketplaceApi = {
     ),
   award: (requestId: string) =>
     api<MpAward>("GET", "/v1/mp/requests/" + requestId + "/award"),
-  // PROPOSED endpoints (see type docs above) — fixture-backed until the OpenAPI contract adds them.
+  // Rider queue projection (R10 / G07) — real ride-service endpoint.
   queue: (requestId: string) =>
     api<MpQueueView>("GET", "/v1/mp/requests/" + requestId + "/queue"),
+  // PROPOSED endpoints (see type docs above) — fixture-backed until the OpenAPI contract adds them.
   deliveryReturnState: (deliveryId: string) =>
     api<MpDeliveryReturnState>(
       "GET",

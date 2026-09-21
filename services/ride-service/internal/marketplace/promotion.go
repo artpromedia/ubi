@@ -487,7 +487,11 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 		if err != nil {
 			return err
 		}
-		_ = pin // Delivered to the requester out of band (see slice notes).
+		// The plaintext PIN was encrypted into the vault inside createExecutionRide
+		// (same tx). A promotion has no rider call in flight, so the requester
+		// retrieves it over the authenticated REST channel (GET .../pin); it is
+		// deliberately never put on the promotion event or any push.
+		_ = pin
 
 		service := "ride"
 		slot := SlotCurrent

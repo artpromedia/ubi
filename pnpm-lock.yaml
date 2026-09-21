@@ -1951,12 +1951,18 @@ importers:
       '@types/jsonwebtoken':
         specifier: ^9.0.10
         version: 9.0.10
+      '@ubi/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@ubi/database':
         specifier: workspace:*
         version: link:../../packages/database
       '@ubi/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@ubi/outbox':
+        specifier: workspace:*
+        version: link:../../packages/outbox
       '@ubi/utils':
         specifier: workspace:*
         version: link:../../packages/utils

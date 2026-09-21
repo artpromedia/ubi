@@ -317,7 +317,7 @@ func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, n
 		RequestRevision: bid.RequestRevision,
 		AmountMinor:     money(bid.AmountMinor, request.Currency),
 		Kind:            kind,
-		Driver:          maskedDriverView(bid.DriverID.String(), request.VehicleClass),
+		Driver:          verifiedDriverView(bid.DriverID.String(), request.VehicleClass),
 		PickupLabel:     pickupLabel,
 		PickupWindow:    window,
 		ExpiresAt:       bid.ExpiresAt,

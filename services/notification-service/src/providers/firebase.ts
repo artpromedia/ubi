@@ -215,6 +215,81 @@ class FirebaseService {
   }
 
   /**
+   * Send a data+notification multicast and classify per-token failures, so the
+   * caller can DEACTIVATE tokens FCM reports as unregistered/invalid (token
+   * rotation) while RETRYING transient failures. `invalidTokens` are safe to
+   * drop; `retryableTokens` should be retried later.
+   */
+  async sendClassifiedMulticast(payload: MulticastPayload): Promise<{
+    successCount: number;
+    failureCount: number;
+    invalidTokens: string[];
+    retryableTokens: string[];
+    error?: string;
+  }> {
+    try {
+      const messaging = getApp().messaging();
+      if (payload.tokens.length === 0) {
+        return {
+          successCount: 0,
+          failureCount: 0,
+          invalidTokens: [],
+          retryableTokens: [],
+        };
+      }
+      const message: MulticastMessage = {
+        tokens: payload.tokens,
+        notification: {
+          title: payload.title,
+          body: payload.body,
+          imageUrl: payload.imageUrl,
+        },
+        data: payload.data,
+        android: { priority: this.mapPriority(payload.priority) },
+        apns: { payload: { aps: { contentAvailable: true } } },
+      };
+      const response = await messaging.sendEachForMulticast(message);
+      const invalidTokens: string[] = [];
+      const retryableTokens: string[] = [];
+      response.responses.forEach((resp, idx) => {
+        if (resp.success) {
+          return;
+        }
+        const token = payload.tokens[idx];
+        if (!token) {
+          return;
+        }
+        const code = resp.error?.code ?? "";
+        if (
+          code === "messaging/registration-token-not-registered" ||
+          code === "messaging/invalid-registration-token" ||
+          code === "messaging/invalid-argument"
+        ) {
+          invalidTokens.push(token);
+        } else {
+          retryableTokens.push(token);
+        }
+      });
+      return {
+        successCount: response.successCount,
+        failureCount: response.failureCount,
+        invalidTokens,
+        retryableTokens,
+      };
+    } catch (error) {
+      pushLogger.error({ err: error }, "Firebase classified multicast error");
+      // A whole-call failure (e.g. FCM unreachable) is retryable for every token.
+      return {
+        successCount: 0,
+        failureCount: payload.tokens.length,
+        invalidTokens: [],
+        retryableTokens: [...payload.tokens],
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  /**
    * Send push notification to topic subscribers
    */
   async sendToTopic(payload: TopicPayload): Promise<SendResult> {

@@ -69,6 +69,7 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 	err := s.pool.QueryRow(ctx,
 		`SELECT to_regclass('mp.reservation_recovery') IS NOT NULL
 			AND to_regclass('mp.idempotency_keys') IS NOT NULL
+			AND to_regclass('mp.execution_pins') IS NOT NULL
 			AND EXISTS (
 				SELECT 1 FROM information_schema.columns
 				WHERE table_schema = 'mp' AND table_name = 'reservation_recovery' AND column_name = 'payload')

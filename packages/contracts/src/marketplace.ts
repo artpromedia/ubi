@@ -180,6 +180,36 @@ export const MpBidSchema = z.object({
 export type MpBid = z.infer<typeof MpBidSchema>;
 
 /**
+ * Rider-facing driver display (G09). ride-service does NOT own verified driver
+ * identity — names, plates, photos and the rating/trip history all live in
+ * user-service, and this service holds no projection of them and makes no
+ * cross-service call for them (see docs/marketplace/DRIVER_IDENTITY.md).
+ *
+ * `profileStatus` is the honesty gate. When it is "unavailable" the server has
+ * NOT joined a verified profile, so `displayName` is a stable pseudonym (never
+ * a claimed real name), `rating` is the "–" no-value marker and `completedTrips`
+ * is a placeholder 0 — none of which a client may present as a real, verified
+ * figure. `vehicle` IS server-verified: it is the class the driver is eligible
+ * for and bidding on. When a verified join lands, `profileStatus` becomes
+ * "verified" and the fields carry real values (and can then be widened to
+ * nullable across the contract + apps in one change).
+ *
+ * The offer, winner (post-selection) and queue projections all derive this from
+ * the SAME server function, so a driver never renders inconsistently.
+ */
+export const MpOfferDriverSchema = z.object({
+  displayName: z.string().min(1),
+  initials: z.string().min(1),
+  rating: z.string().min(1),
+  completedTrips: z.number().int().nonnegative(),
+  vehicle: z.string().min(1),
+  plateMasked: z.string().min(1),
+  /** Whether a verified user-service profile backs the identity/rating fields. */
+  profileStatus: z.enum(["verified", "unavailable"]),
+});
+export type MpOfferDriver = z.infer<typeof MpOfferDriverSchema>;
+
+/**
  * Rider-facing offer view (R04/R05). Deliberately excludes anything that would
  * leak rival bids; deltas and pickup labels are server-phrased strings.
  */
@@ -189,14 +219,7 @@ export const MpOfferSchema = z.object({
   requestRevision: z.number().int().min(1),
   amountMinor: MoneySchema,
   kind: z.enum(["immediate", "finishing_trip"]),
-  driver: z.object({
-    displayName: z.string().min(1),
-    initials: z.string().min(1),
-    rating: z.string().min(1),
-    completedTrips: z.number().int().nonnegative(),
-    vehicle: z.string().min(1),
-    plateMasked: z.string().min(1),
-  }),
+  driver: MpOfferDriverSchema,
   /** "Pickup in 4 min · 1.2 km away" or "Pickup window 12–18 min". */
   pickupLabel: z.string().min(1),
   pickupWindow: z
@@ -461,6 +484,121 @@ export const MpFeedPageSchema = z.object({
   availabilityEpoch: z.number().int().min(0),
 });
 export type MpFeedPage = z.infer<typeof MpFeedPageSchema>;
+
+// ── Rider queue projection (R10 / G07) ──────────────────────────────────────
+
+/**
+ * One ladder row in the rider's queue tracker. `state` matches the RN Ladder
+ * component vocabulary; `label`/`detail` are server-phrased strings.
+ */
+export const MpQueueStepSchema = z.object({
+  label: z.string().min(1),
+  detail: z.string().min(1).optional(),
+  state: z.enum(["done", "active", "pending", "skipped"]),
+});
+
+/**
+ * Rider-facing queue projection served by `GET /v1/mp/requests/:id/queue`
+ * (G07). It is authorized (owner-only, foreign rider → 404), versioned
+ * (`version` mirrors the request version for optimistic refresh) and carries
+ * an `asOf` freshness stamp so a client can detect a stale ETA. Every field is
+ * composed server-side from the real award/claim/promotion/execution state —
+ * the client renders, it never derives.
+ *
+ * Money and rival-bid privacy: the fare shown is the rider's own agreed fare;
+ * nothing about other bidders or the driver's other trip leaks through it.
+ */
+export const MpQueueViewSchema = z.object({
+  requestId: z.string().min(1),
+  /** Optimistic-refresh cursor; mirrors the request version. */
+  version: z.number().int().min(1),
+  /** When the server composed this projection (ETA freshness). */
+  asOf: z.string().datetime({ offset: true }),
+  /**
+   * Composed lifecycle the rider is in:
+   *  - `queued`    — awarded to a finishing-trip driver, waiting behind their trip
+   *  - `promoting` — the dependency finished; the queued job is being started
+   *  - `assigned`  — the execution ride exists and the driver is en route
+   *  - `arrived`   — the driver is at pickup (PIN relevant)
+   *  - `in_progress` — the trip has started
+   *  - `settled`   — the ride reached a terminal/complete state
+   *  - `cancelled` — the request/award was cancelled
+   */
+  status: z.enum([
+    "queued",
+    "promoting",
+    "assigned",
+    "arrived",
+    "in_progress",
+    "settled",
+    "cancelled",
+  ]),
+  /** The queued-claim promotion state (mirrors DriverJobs.promotion). */
+  promotion: z.enum(["none", "pending", "failed_revalidating"]),
+  /** Consistent with the offer/winner projections (same server function). */
+  driver: MpOfferDriverSchema,
+  /** Pseudonymous display convenience for the tracker header (== driver.displayName). */
+  driverFirstName: z.string().min(1),
+  steps: z.array(MpQueueStepSchema),
+  fareMinor: MoneySchema,
+  /** The pickup window the rider consented to, phrased (e.g. "12–18 min"). */
+  windowLabel: z.string().min(1),
+  eta: z.object({
+    label: z.string().min(1),
+    /** Whether the current estimate still falls inside the accepted window. */
+    inWindow: z.boolean(),
+    /** Raw seconds for clients that re-phrase; null when unknown. */
+    etaSeconds: z.number().int().nonnegative().nullable(),
+    /** Freshness of THIS ETA specifically. */
+    asOf: z.string().datetime({ offset: true }),
+  }),
+  /** The consented window plus its uncertainty band, or null before promotion data exists. */
+  pickupWindow: z
+    .object({
+      earliestSec: z.number().int().nonnegative(),
+      latestSec: z.number().int().nonnegative(),
+      etaVersion: z.number().int().min(1),
+      uncertaintySec: z.number().int().nonnegative(),
+    })
+    .nullable(),
+  /** Server-decided permitted actions; the client never infers these. */
+  actions: z.object({
+    canCancel: z.boolean(),
+    /** True when the estimate broke the accepted window: cancellation is fee-free. */
+    feeFreeExit: z.boolean(),
+  }),
+  /** The delay/cancellation notice, or null when the pickup is on track. */
+  delayed: z
+    .object({
+      noticeTitle: z.string().min(1),
+      noticeBody: z.string().min(1),
+      keepLabel: z.string().min(1),
+      reversal: z
+        .object({
+          riderHold: z.enum(["releasing", "released"]),
+          driverFee: z.enum(["pending", "reversed"]),
+        })
+        .nullable(),
+    })
+    .nullable(),
+});
+export type MpQueueView = z.infer<typeof MpQueueViewSchema>;
+
+/**
+ * `GET /v1/mp/requests/:id/pin` (secure pickup-PIN retrieval, G07 companion).
+ * The PIN is delivered ONLY over this authenticated REST channel; it never
+ * appears in a push payload, an event, analytics or a log. Owner-only, and only
+ * while the execution ride is in a PIN-relevant lifecycle state.
+ */
+export const MpPickupPinSchema = z.object({
+  rideId: z.string().min(1),
+  pin: z.string().min(1),
+  /** The lifecycle state that still makes the PIN retrievable. */
+  state: z.string().min(1),
+  /** When retrieval stops working (the PIN vault entry's backstop expiry). */
+  expiresAt: z.string().datetime({ offset: true }),
+});
+export type MpPickupPin = z.infer<typeof MpPickupPinSchema>;
 
 // ── Commission arithmetic (server-side; exported for service reuse) ───────
 

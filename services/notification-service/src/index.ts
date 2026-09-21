@@ -17,6 +17,7 @@ import {
   onEvent,
   subscribeToChannel,
 } from "./lib/redis";
+import { startMarketplacePush } from "./marketplace/consumer.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler";
 import { emailRoutes } from "./routes/email";
 import { healthRoutes } from "./routes/health";
@@ -112,6 +113,21 @@ async function subscribeToEvents() {
 
 void subscribeToEvents();
 
+// Durable marketplace push (G10): subscribe to the mp.* outbox stream and
+// deliver hint pushes to FCM with dedupe, retry/backoff, DLQ, token rotation
+// and per-user preferences. Also recognizes the dedicated settlement event
+// (mp.settlement.posted, G15). This is separate from the legacy channel
+// subscriptions above.
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+let marketplacePush: { stop: () => Promise<void> } | null = null;
+startMarketplacePush(redisUrl)
+  .then((handle) => {
+    marketplacePush = handle;
+  })
+  .catch((error) => {
+    logger.error({ err: error }, "Failed to start marketplace push consumer");
+  });
+
 // Graceful shutdown
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
@@ -119,7 +135,11 @@ process.on("SIGTERM", shutdown);
 async function shutdown() {
   logger.info("Shutting down...");
 
-  await Promise.all([closeRedis(), disconnectPrisma()]);
+  await Promise.all([
+    marketplacePush?.stop() ?? Promise.resolve(),
+    closeRedis(),
+    disconnectPrisma(),
+  ]);
 
   server.close(() => {
     logger.info("Server closed");

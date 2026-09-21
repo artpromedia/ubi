@@ -340,6 +340,14 @@ export const EVENT_NAMES = [
   "mp.queue.eta_updated",
   "mp.queue.window_missed",
   "mp.rate_profile.saved",
+  // Dedicated marketplace settlement event (G15). payment-service settles a
+  // completed marketplace ride and, once migrated, emits THIS name alongside
+  // the generic `transfer.posted` / `payment.cash_acknowledged` it emits today
+  // (disambiguated only by aggregateType). Consumers (notification-service,
+  // realtime-gateway) recognize it now so the eventual producer switch is
+  // backward compatible: the old names keep working until every consumer reads
+  // the dedicated one.
+  "mp.settlement.posted",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

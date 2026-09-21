@@ -225,6 +225,14 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	// A07: a driver may only driver-view requests in their own city. The feed
+	// is already city-scoped; without this a driver could probe (and bid on) an
+	// out-of-city request by id. A mismatch answers 404 so existence — and the
+	// request's coarse pickup label/distance in the feed item — is not leaked
+	// cross-city. (Eligibility still further gates whether they can bid.)
+	if actor.CityID != "" && request.CityID != actor.CityID {
+		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
+	}
 	if err := s.requireServiceFlag(ctx, request.Service, actor, request.CityID); err != nil {
 		return nil, err
 	}

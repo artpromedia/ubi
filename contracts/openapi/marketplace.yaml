@@ -238,28 +238,7 @@ components:
             requestRevision: { type: integer },
             amountMinor: { $ref: "#/components/schemas/Money" },
             kind: { type: string, enum: [immediate, finishing_trip] },
-            driver:
-              {
-                type: object,
-                required:
-                  [
-                    displayName,
-                    initials,
-                    rating,
-                    completedTrips,
-                    vehicle,
-                    plateMasked,
-                  ],
-                properties:
-                  {
-                    displayName: { type: string },
-                    initials: { type: string },
-                    rating: { type: string },
-                    completedTrips: { type: integer },
-                    vehicle: { type: string },
-                    plateMasked: { type: string },
-                  },
-              },
+            driver: { $ref: "#/components/schemas/OfferDriver" },
             pickupLabel: { type: string },
             pickupWindow:
               {
@@ -294,6 +273,166 @@ components:
                 type: string,
                 description: 'Server-phrased comparison to the requested amount (e.g. "+₦200").',
               },
+          },
+      }
+    OfferDriver:
+      {
+        type: object,
+        description: "Rider-facing driver display (G09). ride-service owns no verified driver identity/rating/vehicle registry — those live in user-service. When profileStatus is 'unavailable' the identity/rating fields are pseudonymous placeholders a client must not present as verified; 'vehicle' is always the server-verified eligible class. See docs/marketplace/DRIVER_IDENTITY.md.",
+        required:
+          [
+            displayName,
+            initials,
+            rating,
+            completedTrips,
+            vehicle,
+            plateMasked,
+            profileStatus,
+          ],
+        properties:
+          {
+            displayName: { type: string },
+            initials: { type: string },
+            rating: { type: string },
+            completedTrips: { type: integer },
+            vehicle: { type: string },
+            plateMasked: { type: string },
+            profileStatus: { type: string, enum: [verified, unavailable] },
+          },
+      }
+    QueueStep:
+      {
+        type: object,
+        required: [label, state],
+        properties:
+          {
+            label: { type: string },
+            detail: { type: string },
+            state: { type: string, enum: [done, active, pending, skipped] },
+          },
+      }
+    QueueView:
+      {
+        type: object,
+        description: "Rider-facing, owner-only, versioned queue projection (G07). Composed server-side from the real award/claim/promotion/execution state; carries an asOf freshness stamp for stale-ETA detection. Foreign rider → 404.",
+        required:
+          [
+            requestId,
+            version,
+            asOf,
+            status,
+            promotion,
+            driver,
+            driverFirstName,
+            steps,
+            fareMinor,
+            windowLabel,
+            eta,
+            actions,
+          ],
+        properties:
+          {
+            requestId: { type: string },
+            version: { type: integer },
+            asOf: { type: string, format: date-time },
+            status:
+              {
+                type: string,
+                enum:
+                  [
+                    queued,
+                    promoting,
+                    assigned,
+                    arrived,
+                    in_progress,
+                    settled,
+                    cancelled,
+                  ],
+              },
+            promotion:
+              { type: string, enum: [none, pending, failed_revalidating] },
+            driver: { $ref: "#/components/schemas/OfferDriver" },
+            driverFirstName: { type: string },
+            steps:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/QueueStep" },
+              },
+            fareMinor: { $ref: "#/components/schemas/Money" },
+            windowLabel: { type: string },
+            eta:
+              {
+                type: object,
+                required: [label, inWindow, etaSeconds, asOf],
+                properties:
+                  {
+                    label: { type: string },
+                    inWindow: { type: boolean },
+                    etaSeconds: { type: integer, nullable: true },
+                    asOf: { type: string, format: date-time },
+                  },
+              },
+            pickupWindow:
+              {
+                type: object,
+                nullable: true,
+                required: [earliestSec, latestSec, etaVersion, uncertaintySec],
+                properties:
+                  {
+                    earliestSec: { type: integer },
+                    latestSec: { type: integer },
+                    etaVersion: { type: integer },
+                    uncertaintySec: { type: integer },
+                  },
+              },
+            actions:
+              {
+                type: object,
+                required: [canCancel, feeFreeExit],
+                properties:
+                  {
+                    canCancel: { type: boolean },
+                    feeFreeExit: { type: boolean },
+                  },
+              },
+            delayed:
+              {
+                type: object,
+                nullable: true,
+                required: [noticeTitle, noticeBody, keepLabel],
+                properties:
+                  {
+                    noticeTitle: { type: string },
+                    noticeBody: { type: string },
+                    keepLabel: { type: string },
+                    reversal:
+                      {
+                        type: object,
+                        nullable: true,
+                        required: [riderHold, driverFee],
+                        properties:
+                          {
+                            riderHold:
+                              { type: string, enum: [releasing, released] },
+                            driverFee:
+                              { type: string, enum: [pending, reversed] },
+                          },
+                      },
+                  },
+              },
+          },
+      }
+    PickupPin:
+      {
+        type: object,
+        description: "Secure pickup-PIN retrieval (G07 companion). Delivered ONLY over this authenticated REST channel — never in a push payload, event, analytics or log. Owner-only, rate-limited, and only while the execution ride is in a PIN-relevant state.",
+        required: [rideId, pin, state, expiresAt],
+        properties:
+          {
+            rideId: { type: string },
+            pin: { type: string },
+            state: { type: string },
+            expiresAt: { type: string, format: date-time },
           },
       }
     Bid:
@@ -759,6 +898,64 @@ paths:
                       seq: { type: integer },
                     },
                 }
+  /v1/mp/requests/{requestId}/queue:
+    get:
+      summary: Rider queue projection (R10 / G07) — owner-only, versioned, asOf-stamped
+      description: >-
+        Composed queue tracker for the requester of an awarded finishing-trip
+        job: current claim/job status, promotion state, ETA vs the consented
+        window with an asOf freshness stamp, the pickup window and its
+        uncertainty, and the rider's permitted actions (cancel, fee-free
+        missed-window exit). A foreign rider gets 404 — existence is not leaked.
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QueueView" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/pin:
+    get:
+      summary: Secure pickup-PIN retrieval (G07 companion) — owner-only, lifecycle-restricted, rate-limited
+      description: >-
+        Returns the pickup PIN for a marketplace execution ride (including one a
+        promotion created) over this authenticated channel only. The PIN is
+        never in a push payload, event, analytics or log. Owner-only (foreign
+        rider → 404); refused with 409 when the ride is not in a PIN-relevant
+        state; rate-limited (429).
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PickupPin" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/mp/requests/{requestId}/revise:
     post:
       summary: Price-affecting edit — new revision, bids invalidated, holds released

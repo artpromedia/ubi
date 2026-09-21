@@ -407,24 +407,55 @@ export async function marketplaceFixtures(i: FixtureInput) {
       requestBody("req_mp_1", "open", b.requestedFareMinor, { version: 2 }),
     );
   }
-  // PROPOSED endpoint (R10) — queue projection; see src/api/marketplace.ts.
+  // Rider queue projection (R10 / G07) — mirrors ride-service's real MpQueueView
+  // shape (see src/api/marketplace.ts and @ubi/contracts MpQueueViewSchema).
   if (
     i.method === "GET" &&
     /^\/v1\/mp\/requests\/req_mp_1\/queue$/.test(i.path)
   ) {
     s.queuePolls += 1;
+    const nowIso = new Date().toISOString();
+    // Verified-driver display is honestly "unavailable" server-side (G09); the
+    // dev fixture keeps a friendly first name for the tracker header only.
+    const driver = {
+      displayName: "Driver 3F2A",
+      initials: "3F",
+      rating: "–",
+      completedTrips: 0,
+      vehicle: "go",
+      plateMasked: "•••",
+      profileStatus: "unavailable" as const,
+    };
     const base = {
+      requestId: "req_mp_1",
+      version: 1,
+      asOf: nowIso,
+      driver,
       driverFirstName: "Chidi",
       fareMinor: NGN(2800),
       windowLabel: "12–18 min",
+      pickupWindow: {
+        earliestSec: 720,
+        latestSec: 1080,
+        etaVersion: 1,
+        uncertaintySec: 360,
+      },
     };
     if (s.queueCancelled) {
       s.queueCancelPolls += 1;
       const settled = s.queueCancelPolls >= 2;
       return ok({
         ...base,
+        status: "cancelled" as const,
+        promotion: "none" as const,
         steps: [],
-        eta: { label: "Cancelled", inWindow: false },
+        eta: {
+          label: "Cancelled",
+          inWindow: false,
+          etaSeconds: null,
+          asOf: nowIso,
+        },
+        actions: { canCancel: false, feeFreeExit: false },
         delayed: {
           noticeTitle: "Cancelled — free of charge",
           noticeBody:
@@ -440,6 +471,8 @@ export async function marketplaceFixtures(i: FixtureInput) {
     if (s.queuePolls >= 3) {
       return ok({
         ...base,
+        status: "queued" as const,
+        promotion: "pending" as const,
         steps: [
           {
             label: "You chose Chidi",
@@ -453,7 +486,13 @@ export async function marketplaceFixtures(i: FixtureInput) {
           },
           { label: "Heading to you", state: "pending" },
         ],
-        eta: { label: "About 24 min", inWindow: false },
+        eta: {
+          label: "About 24 min",
+          inWindow: false,
+          etaSeconds: 1440,
+          asOf: nowIso,
+        },
+        actions: { canCancel: true, feeFreeExit: true },
         delayed: {
           noticeTitle: "Now estimated 24 min",
           noticeBody:
@@ -465,6 +504,8 @@ export async function marketplaceFixtures(i: FixtureInput) {
     }
     return ok({
       ...base,
+      status: "queued" as const,
+      promotion: "pending" as const,
       steps: [
         {
           label: "You chose Chidi",
@@ -478,7 +519,13 @@ export async function marketplaceFixtures(i: FixtureInput) {
         },
         { label: "Heading to you", state: "pending" },
       ],
-      eta: { label: "About 14 min", inWindow: true },
+      eta: {
+        label: "About 14 min",
+        inWindow: true,
+        etaSeconds: 840,
+        asOf: nowIso,
+      },
+      actions: { canCancel: true, feeFreeExit: false },
       delayed: null,
     });
   }

@@ -70,6 +70,8 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 			r.Post("/{requestId}/cancel", h.CancelRequest)
 			r.Post("/{requestId}/select", h.SelectWinner)
 			r.Get("/{requestId}/award", h.GetAward)
+			r.Get("/{requestId}/queue", h.RequestQueue)
+			r.Get("/{requestId}/pin", h.RetrievePin)
 			r.Get("/{requestId}/driver-view", h.DriverView)
 		})
 
@@ -275,6 +277,49 @@ func (h *MarketplaceHandler) GetAward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, award)
+}
+
+// RequestQueue handles GET /v1/mp/requests/{requestId}/queue (G07): the
+// requester's authorized, versioned queue projection.
+func (h *MarketplaceHandler) RequestQueue(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, err := uuidParam(r, "requestId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.QueueProjection(r.Context(), actor, requestID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", etagFor(view.Version))
+	writeJSON(w, http.StatusOK, view)
+}
+
+// RetrievePin handles GET /v1/mp/requests/{requestId}/pin (G07 companion): the
+// secure pickup-PIN retrieval. The PIN is returned only in the response body
+// over this authenticated channel; it is never logged, so h.fail (which logs
+// only the code and path) is safe on every error path here.
+func (h *MarketplaceHandler) RetrievePin(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, err := uuidParam(r, "requestId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.RetrievePin(r.Context(), actor, requestID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 // Feed handles GET /v1/mp/feed.

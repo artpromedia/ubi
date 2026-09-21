@@ -1270,6 +1270,14 @@ func (s *Service) createExecutionRide(ctx context.Context, tx pgx.Tx, request *R
 		return nil, "", fmt.Errorf("failed to mark the execution ride as marketplace-managed: %w", err)
 	}
 
+	// Capture the encrypted PIN so the requester can retrieve it over the
+	// authenticated REST channel — the ONLY path for a promotion-created ride,
+	// where no /select response carries it. Same transaction as the ride, so
+	// the vault never disagrees with the ride that exists.
+	if err := s.storeExecutionPin(ctx, tx, request, ride.ID, pin, now); err != nil {
+		return nil, "", err
+	}
+
 	if err := writeEvent(ctx, tx, Event{
 		Name:           "ride.requested",
 		AggregateType:  "ride",

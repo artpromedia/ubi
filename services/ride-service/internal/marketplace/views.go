@@ -179,6 +179,14 @@ func bidViewOf(bid *Bid, currency string) *BidView {
 
 // OfferDriverView is what a requester may know about a bidding driver:
 // display fields only, never rival prices, never another bidder's identity.
+//
+// ProfileStatus is the G09 honesty gate. Verified driver identity (real name,
+// plate, photo, rating and completed-trip history) is owned by user-service;
+// ride-service holds no projection of it and makes no cross-service call for it
+// (see docs/marketplace/DRIVER_IDENTITY.md). Until that join exists,
+// ProfileStatus is "unavailable" and Rating/CompletedTrips are placeholders a
+// client must not present as real. Vehicle is always server-verified: it is the
+// class the driver is eligible for and bidding on.
 type OfferDriverView struct {
 	DisplayName    string `json:"displayName"`
 	Initials       string `json:"initials"`
@@ -186,7 +194,14 @@ type OfferDriverView struct {
 	CompletedTrips int    `json:"completedTrips"`
 	Vehicle        string `json:"vehicle"`
 	PlateMasked    string `json:"plateMasked"`
+	ProfileStatus  string `json:"profileStatus"`
 }
+
+// Driver profile availability (contract OfferDriver.profileStatus).
+const (
+	ProfileStatusVerified    = "verified"
+	ProfileStatusUnavailable = "unavailable"
+)
 
 // OfferView is the rider-facing view of one bid (MpOfferSchema).
 type OfferView struct {
@@ -455,9 +470,19 @@ func formatMinor(minor int64, currency string, fractionDigits int) string {
 	return fmt.Sprintf("%s%s %d.%0*d", sign, currency, minor/divisor, fractionDigits, minor%divisor)
 }
 
-// maskedDriverView derives display fields server-side without restating PII
-// this service does not own: a stable pseudonymous name from the driver id.
-func maskedDriverView(driverID string, vehicleClass string) OfferDriverView {
+// verifiedDriverView derives the rider-facing driver display server-side.
+//
+// G09: ride-service owns no verified driver profile, so there is nothing to
+// join here today. The one server-VERIFIED fact is the vehicle class (the
+// driver is eligible for it and bidding on it); everything identity- or
+// rating-shaped is marked ProfileStatusUnavailable so a client cannot render a
+// pseudonym, an em-dash rating or a placeholder trip count as if they were a
+// real, verified figure. The offer, winner (post-selection) and queue
+// projections all call THIS function, so the same driver never renders two
+// different ways. When a user-service profile join lands the branch that fills
+// verified name/rating/plate/trips replaces the unavailable placeholders and
+// flips ProfileStatus to ProfileStatusVerified.
+func verifiedDriverView(driverID string, vehicleClass string) OfferDriverView {
 	tag := strings.ToUpper(digest("mp.driver.display:" + driverID)[:4])
 	return OfferDriverView{
 		DisplayName:    "Driver " + tag,
@@ -466,5 +491,6 @@ func maskedDriverView(driverID string, vehicleClass string) OfferDriverView {
 		CompletedTrips: 0,
 		Vehicle:        vehicleClass,
 		PlateMasked:    "•••",
+		ProfileStatus:  ProfileStatusUnavailable,
 	}
 }
