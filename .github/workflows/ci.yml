@@ -195,7 +195,8 @@ jobs:
         run: >-
           pnpm exec turbo run test --concurrency=4
           --filter='./packages/*' --filter='./apps/*'
-          --filter='!@ubi/outbox' --filter='!@ubi/contract-testing'
+          --filter='!@ubi/outbox' --filter='!@ubi/config-client'
+          --filter='!@ubi/contract-testing'
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4

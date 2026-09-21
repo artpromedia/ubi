@@ -140,8 +140,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build dependencies
-        run: pnpm build --filter="@ubi/${{ matrix.package }}^..."
+      - name: Build the package and its dependencies
+        # The package itself is included (not just ^...) so generated inputs
+        # like @ubi/contracts' machines.generated.ts exist before the tests.
+        run: pnpm build --filter="@ubi/${{ matrix.package }}"
 
       - name: Run database migrations
         if: matrix.package == 'outbox'
