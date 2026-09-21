@@ -201,7 +201,18 @@ components:
             expiresAt: { type: string, format: date-time },
             createdAt: { type: string, format: date-time },
             closeReason:
-              { type: string, enum: [awarded, cancelled, expired, no_offers] },
+              {
+                type: string,
+                enum:
+                  [
+                    awarded,
+                    cancelled,
+                    expired,
+                    no_offers,
+                    driver_cancelled,
+                    award_failed,
+                  ],
+              },
           },
       }
     Offer:

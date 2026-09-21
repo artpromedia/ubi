@@ -518,10 +518,15 @@ func (s *Service) waitFee(config *cityconfig.CityConfig, ride *domain.Ride) doma
 
 // Cancel ends a ride before it completes.
 //
-// A driver must give a reason code — the ride is going back out to matching and
-// the rider is owed an explanation, so an empty reason is refused. A rider
-// cancelling ends the ride; a driver cancelling frees the driver and puts the
-// ride back into `rematching` so the rider is not stranded.
+// A driver must give a reason code — the ride is either going back out to
+// matching or ending outright, and the rider is owed an explanation, so an
+// empty reason is refused. A rider cancelling ends the ride. A driver
+// cancelling frees the driver, and what happens to the ride depends on who
+// manages it: a legacy ride goes back into `rematching` so ring dispatch can
+// find another driver, while a marketplace-managed ride ends in the terminal
+// `cancelled_by_driver` state — legacy dispatch never re-offers a marketplace
+// ride, so `rematching` would strand it, and only the requester may consent to
+// a new search (by publishing a new request).
 func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, reasonCode string) (*RideView, error) {
 	if actor.Role != RoleRider && actor.Role != RoleDriver {
 		return nil, domain.Errorf(domain.CodeForbidden, "only a rider or the assigned driver can cancel a ride")
@@ -537,6 +542,12 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 	}
 
 	_, config, err := s.prepare(ctx, actor, rideID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+	// Read outside the transaction (pool-deadlock rule): whether this ride is
+	// marketplace-managed decides which way a driver cancellation goes.
+	marketplaceAwardID, err := s.deps.Store.MarketplaceAwardID(ctx, s.deps.Store.Pool(), rideID)
 	if err != nil {
 		return nil, asDomainError(err)
 	}
@@ -598,10 +609,18 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 			return nil
 		}
 
-		// Driver cancellation: the ride is not over, it is looking again.
-		moved, err := s.deps.Store.Transition(ctx, tx, ride, machine.RiderRematching, RideUpdate{
-			ClearDriver: true, CancelledByRole: &role, CancelReasonCode: &reasonCode,
-		})
+		// Driver cancellation. A legacy ride is not over, it is looking
+		// again; a marketplace-managed ride ends here, terminally — nothing
+		// re-offers it (dispatch skips marketplace rides), so `rematching`
+		// would only strand it. The requester decides whether to search again.
+		terminal := marketplaceAwardID != nil
+		to := machine.RiderRematching
+		update := RideUpdate{ClearDriver: true, CancelledByRole: &role, CancelReasonCode: &reasonCode}
+		if terminal {
+			to = machine.RiderCancelledByDriver
+			update = RideUpdate{CancelledAt: &now, CancelledByRole: &role, CancelReasonCode: &reasonCode}
+		}
+		moved, err := s.deps.Store.Transition(ctx, tx, ride, to, update)
 		if err != nil {
 			return err
 		}
@@ -625,6 +644,9 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 				"reasonCode": reasonCode,
 				"feeMinor":   fee.AmountMinor,
 				"currency":   fee.Currency,
+				// terminal says whether this cancellation ENDED the ride
+				// (marketplace-managed) or sent it back to matching (legacy).
+				"terminal": terminal,
 			},
 		}); err != nil {
 			return err
@@ -645,10 +667,11 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 		return nil, asDomainError(err)
 	}
 	if view != nil && !machine.IsRiderActive(view.State) {
-		// A rider cancellation is terminal; the marketplace may have a claim
-		// to release and a queued job to revalidate from the driver's ACTUAL
-		// position. (A driver cancellation goes to rematching, which is not
-		// terminal.)
+		// A rider cancellation is terminal, and so is a driver cancellation
+		// of a marketplace-managed ride; the marketplace may have a claim to
+		// release, an award to unwind and a queued job to revalidate from the
+		// driver's ACTUAL position. (A legacy driver cancellation goes to
+		// rematching, which is not terminal, so nothing fires here.)
 		s.notifyExecutionTerminal(ctx, rideID)
 	}
 	return view, nil

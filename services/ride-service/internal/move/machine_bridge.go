@@ -43,7 +43,7 @@ func WireStatus(state string) string {
 		return "RATED"
 	case machine.RiderNoShow:
 		return "NO_SHOW"
-	case machine.RiderCancelledByRider, machine.RiderCancelledByOps:
+	case machine.RiderCancelledByRider, machine.RiderCancelledByDriver, machine.RiderCancelledByOps:
 		return "CANCELLED"
 	default:
 		return "UNKNOWN"

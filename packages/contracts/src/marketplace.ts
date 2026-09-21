@@ -71,6 +71,14 @@ export const MP_REQUEST_CLOSE_REASONS = [
   "cancelled",
   "expired",
   "no_offers",
+  // The assigned driver cancelled the execution: the request stays in its
+  // terminal state and only an explicit new request starts a new search.
+  "driver_cancelled",
+  // The award saga abandoned the selection after the winner was chosen
+  // (e.g. rider funding refused, execution creation blocked): the request is
+  // closed by compensateAward. Present in the registry because the server
+  // already emits it and request views serialize closeReason through it.
+  "award_failed",
 ] as const;
 export type MpRequestCloseReason = (typeof MP_REQUEST_CLOSE_REASONS)[number];
 

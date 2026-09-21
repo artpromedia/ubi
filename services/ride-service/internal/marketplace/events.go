@@ -42,9 +42,12 @@ var eventNames = map[string]struct{}{
 
 	// Execution-ride names reused from the move surface: the award saga and
 	// the promotion create the execution ride inside THEIR transaction, so the
-	// same downstream consumers see the same ride lifecycle events.
-	"ride.requested": {},
-	"ride.assigned":  {},
+	// same downstream consumers see the same ride lifecycle events. The
+	// stranded-ride repair moves a ride across the driver-cancel terminal
+	// edge inside ITS transaction for the same reason.
+	"ride.requested":           {},
+	"ride.assigned":            {},
+	"ride.cancelled_by_driver": {},
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,

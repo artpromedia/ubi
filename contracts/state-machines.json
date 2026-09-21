@@ -14,13 +14,20 @@
         "driver_arrived",
         "rematching",
         "cancelled_by_rider",
+        "cancelled_by_driver",
         "safety_hold"
       ],
-      "rematching": ["driver_assigned", "no_driver", "cancelled_by_rider"],
+      "rematching": [
+        "driver_assigned",
+        "no_driver",
+        "cancelled_by_rider",
+        "cancelled_by_driver"
+      ],
       "driver_arrived": [
         "pin_verification",
         "rematching",
         "cancelled_by_rider",
+        "cancelled_by_driver",
         "no_show"
       ],
       "pin_verification": ["in_progress", "driver_arrived"],

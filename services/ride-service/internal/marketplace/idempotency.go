@@ -26,6 +26,7 @@ const (
 	scopeBidRevise       = "mp.bid.revise"
 	scopeBidWithdraw     = "mp.bid.withdraw"
 	scopeRateProfileSave = "mp.rate_profile.save"
+	scopeAdminRepair     = "mp.admin.repair"
 )
 
 // ValidateIdempotencyKey mirrors IdempotencyKeySchema, via the move package so

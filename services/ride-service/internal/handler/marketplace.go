@@ -90,6 +90,7 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 	r.Route("/admin/mp", func(r chi.Router) {
 		r.Get("/requests", h.AdminRequests)
 		r.Get("/requests/{requestId}/timeline", h.AdminRequestTimeline)
+		r.Post("/repairs/stranded-rides", h.RepairStrandedRides)
 	})
 }
 
@@ -478,6 +479,27 @@ func (h *MarketplaceHandler) AdminRequests(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// RepairStrandedRides handles POST /v1/admin/mp/repairs/stranded-rides: the
+// G04 repair for marketplace rides stranded in `rematching` by a driver
+// cancellation that predates the terminal `cancelled_by_driver` state.
+func (h *MarketplaceHandler) RepairStrandedRides(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	var req marketplace.RepairStrandedRidesRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	response, status, err := h.service.AdminRepairStrandedRides(r.Context(), actor, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, response)
 }
 
 // AdminRequestTimeline handles GET /v1/admin/mp/requests/{requestId}/timeline.

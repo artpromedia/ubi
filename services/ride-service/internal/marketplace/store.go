@@ -482,6 +482,20 @@ func (s *Store) TransitionRequest(ctx context.Context, tx pgx.Tx, request *Reque
 	return updated, err
 }
 
+// SetRequestCloseReason records why a request ended WITHOUT a state change:
+// a request already in the terminal `execution` state has no edge left in the
+// mpRequest machine, but when its execution is driver-cancelled the requester
+// is still owed an honest closeReason. Only the first reason sticks.
+func (s *Store) SetRequestCloseReason(ctx context.Context, db DB, requestID uuid.UUID, reason string) error {
+	_, err := db.Exec(ctx, `
+		UPDATE mp.requests SET close_reason = $2, updated_at = now()
+		WHERE id = $1 AND close_reason IS NULL`, requestID, reason)
+	if err != nil {
+		return fmt.Errorf("failed to record the request close reason: %w", err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Bids
 // ---------------------------------------------------------------------------

@@ -102,10 +102,27 @@ Marked unsupported/unresolved rather than papered over:
    hidden from marketplace payment-method selection until a real
    provider authorize/capture flow exists
    (`src/ledger/mp-funding.ts`, payment-service QUARANTINE.md).
-7. **Driver cancel of a marketplace execution ride** lands in `rematching`
-   (contract machine has no driver-cancel terminal edge); Dispatch skips
-   marketplace rides so nothing re-offers, but ops must resolve such rides
-   until a contract state-machine change lands.
+7. **Driver cancel of a marketplace execution ride is now terminal (C04,
+   closes G04).** The rider machine gained the `cancelled_by_driver`
+   terminal state (reachable from `driver_assigned`, `driver_arrived` and —
+   for the repair path — `rematching`); a driver cancelling a
+   marketplace-managed ride ends it there instead of `rematching`, and the
+   terminal funnel releases the capacity claim, cancels the award, reverses
+   the captured commission and releases the rider's funding reservation
+   exactly once through the existing `reverseCapturedHold`-backed path
+   (idempotent under the award's reverse/release keys, sweep-backstopped),
+   then promotes or releases a queued next job through the normal promotion
+   logic from the driver's actual position. The originating request keeps
+   its terminal state with `closeReason: driver_cancelled`, so the rider
+   app can render "driver cancelled — search again?"; a new search starts
+   only when the requester explicitly publishes a new request. Legacy
+   (non-marketplace) rides keep today's `rematching` re-dispatch behavior
+   unchanged. Rides stranded in `rematching` by cancellations that predate
+   this change converge through the admin repair
+   `POST /v1/admin/mp/repairs/stranded-rides` (`{dryRun, rideIds?, limit?}`,
+   Idempotency-Key honored, hard cap 50 rides per call, audited per ride),
+   which drives the same terminal funnel and never touches money rows
+   directly (see RUNBOOK.md).
 8. **Motion telemetry (RN-02).** `useMotionGate` is driven by the explicit
    parked attestation + dev signals; production GPS/motion wiring does not
    exist in driver-mobile (there is no location plumbing in the app at
