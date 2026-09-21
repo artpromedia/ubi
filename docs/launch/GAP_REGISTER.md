@@ -73,10 +73,30 @@ One city, rides only, foregrounded apps, wallet + cash:
 6. **Operations:** admin monitor + policies pages, RUNBOOK procedures for stuck sagas and reservation recovery, a named on-call owner.
 7. **Known pilot limitations, stated to participants:** no push notifications (WS + refresh only), single-host deployment (documented failure domain), delivery/queued jobs/AI unavailable and unadvertised.
 
+## Addenda surfaced during remediation (new gaps, not in the original audit)
+
+These were found while implementing the C-series prompts and are recorded
+here so they are not lost. Each is a real gap with a testable closure; none
+is closed yet.
+
+| ID  | Sev | Finding                                                                                                                                                                                                                                                                                               | Evidence                                                                          | Workstream                                     |
+| --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------- |
+| A01 | P1  | `@ubi/mobile-core` `session.ts` token-refresh path parses a bare-token shape against a hardcoded host, not the apps' real `{success,data:{tokens}}` envelope/base URL. Both RN apps work around it by refreshing well ahead of mobile-core's internal 30s trigger (C05), but the shared lib is wrong. | `packages/mobile-core/.../session.ts`; mitigated in both apps' `useSessionKeeper` | C05 follow-up (mobile-core is a separate tree) |
+| A02 | P1  | Growth-service's reward pipeline (`qualifyReferral`/`postRebate`/`postWindowWaiver`/`postMilestone`) has no live trigger from ride completion — reachable only via admin override; no other service references growth-service. Promotions cannot actually pay out in production.                      | `services/growth-service/src/ops/*` (C09 trace)                                   | C09 follow-up (crosses a service boundary)     |
+| A03 | P2  | Referral monthly-cap check is not atomic (race under concurrency). Proposed design in ECONOMICS.md.                                                                                                                                                                                                   | `services/growth-service` (C09)                                                   | C09 follow-up                                  |
+| A04 | P2  | `effectiveBps` on a promo rule is an author-time snapshot, never cross-checked against the live commission rate; a rule can silently drift from the real 10%.                                                                                                                                         | growth-service rule model (C09)                                                   | C09 follow-up                                  |
+| A05 | P2  | web-app duplicates marketing-site's homepage as a second, independently-drifting public surface; and fleet/restaurant portals carry ~2,000 lines of non-CI e2e specs testing pages that never existed.                                                                                                | `apps/web-app`, `apps/{fleet,restaurant}-portal/e2e` (C09)                        | C09 follow-up                                  |
+| A06 | P2  | Repeated-cancellation abuse has only a per-incident fee — no pattern/streak detection anywhere; tied to the missing appeals board (G11).                                                                                                                                                              | ride-service cancellation (C09 abuse model)                                       | C08 / abuse follow-up                          |
+| A07 | P1  | Marketplace `DriverView` lets any driver-role identity driver-view any OPEN request by id with no actor/city scoping beyond the per-city flag (exposes feed item: pickup label/distance, no exact coords). Flagged by the C03 review; marketplace files were off-limits to that agent.                | `services/ride-service/internal/marketplace/feed.go` DriverView                   | C06 (owns marketplace read models)             |
+
 ## Method note
 
-Findings here were re-verified against HEAD file-by-file; three audit rows
+Findings here were re-verified against HEAD file-by-file; four audit rows
 were corrected rather than copied (G04 no re-dispatch, G09 wrong file, G11
-shipped pages are live, V01 Hetzner-without-K3s). Nothing in this register is
-closed without the named closure test passing; no placeholder is classified
-as production-ready.
+shipped pages are live, V01 Hetzner-without-K3s). Confirmed defects G02,
+G03, G04 and latent G14 are now FIXED (C02/C03/C04 + the payment-identity
+follow-through), each with the named closure test passing; missing-feature
+rows G01/G05/G12 are addressed for the ride pilot by C05, and G12's web half
+plus the growth/abuse work by C09. Nothing in this register is closed
+without its closure test passing; no placeholder is classified as
+production-ready.
