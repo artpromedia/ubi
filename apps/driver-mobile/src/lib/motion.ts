@@ -40,6 +40,24 @@ function set(next: MotionState) {
 export function setMotionForDev(next: MotionState) {
   if (__DEV__) set(next);
 }
+
+/**
+ * Real location telemetry (C05 / G05, lib/location.ts — input 3). This is
+ * deliberately asymmetric with the parked attestation: telemetry may only
+ * ever PAUSE bidding (moving or stale), never grant it. Only the explicit
+ * server-acknowledged parked attestation (confirmParked() above) may set
+ * parked_confirmed — a client that is merely stationary and fresh stays in
+ * whatever state it already was (typically stale_location, prompting the
+ * driver to re-attest) rather than being auto-promoted. This is what keeps
+ * "parked attestation alone cannot defeat telemetry" true: telemetry can
+ * revoke trust the attestation granted, but never manufacture it.
+ */
+export function reportMovementDetected() {
+  set("moving");
+}
+export function reportLocationStale() {
+  set("stale_location");
+}
 /** Test/dev reset so suites start from the honest default. */
 export function resetMotionForDev() {
   if (__DEV__) set("stale_location");

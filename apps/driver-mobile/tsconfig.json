@@ -2,7 +2,12 @@
   "extends": "@react-native/typescript-config/tsconfig.json",
   "compilerOptions": {
     "strict": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    // The base config's own "types" allowlist is ["react-native", "jest"];
+    // "node" is added so App.tsx's process.env reads resolve, now that
+    // @types/node is an actual devDependency (C05: @types/jest was added the
+    // same way, replacing the ad hoc src/types/jest-globals.d.ts shim).
+    "types": ["react-native", "jest", "node"]
   },
   "include": ["src", "App.tsx", "index.js"]
 }

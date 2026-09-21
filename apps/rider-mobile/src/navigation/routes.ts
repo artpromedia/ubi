@@ -3,7 +3,10 @@ import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type AuthStackParamList = {
   Login: undefined;
-  Otp: { verificationId: string };
+  // The wire contract is phone + 6-digit code (services/user-service/src/routes/auth.ts
+  // POST /v1/auth/login/otp and /v1/auth/verify-otp) — there is no separate
+  // verification-id concept to carry between the two steps.
+  Otp: { phone: string };
   Register: undefined;
 };
 export type RideStackParamList = {

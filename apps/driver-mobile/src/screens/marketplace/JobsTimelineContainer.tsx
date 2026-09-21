@@ -71,12 +71,15 @@ export function JobsTimelineContainer() {
         <Skeleton height={120} />
       </Screen>
     );
-  const toTrip = (
-    tripId: string | null | undefined,
-    screen: "Navigate" | "InTrip",
-  ) => {
+  const toTrip = (tripId: string | null | undefined) => {
     if (!tripId) return;
-    nav.navigate("Trip", { screen, params: { tripId } });
+    // Offer (C05 / G01) is the Trip stack's one entry point from this jobs
+    // surface, win or resume — it is always safe to land here because every
+    // downstream Trip screen re-checks the real ride state itself
+    // (useTripView's tripScreenFor) and redirects forward on its own; this
+    // container never has to guess which lifecycle step the ride is actually
+    // in before navigating.
+    nav.navigate("Trip", { screen: "Offer", params: { tripId } });
   };
   return (
     <JobsTimelineScreen
@@ -86,9 +89,7 @@ export function JobsTimelineContainer() {
       current={view.current ? jobCard(view.current) : null}
       next={view.next ? jobCard(view.next) : null}
       promotion={view.promotion === "none" ? null : view.promotion}
-      onContinueCurrent={() =>
-        toTrip(view.current?.executionRef?.id ?? null, "InTrip")
-      }
+      onContinueCurrent={() => toTrip(view.current?.executionRef?.id ?? null)}
       onBack={nav.goBack}
     />
   );

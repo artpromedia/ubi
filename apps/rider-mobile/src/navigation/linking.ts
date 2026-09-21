@@ -30,22 +30,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
           Details: "home/ride/:rideId/details",
         },
       },
-      Bites: {
-        screens: {
-          Restaurants: "home/food/restaurants",
-          Restaurant: "home/food/restaurant/:restaurantId",
-          Cart: "home/food/cart",
-          OrderTracking: "home/food/order/:orderId/tracking",
-          OrderDetails: "home/food/order/:orderId/details",
-        },
-      },
-      Send: {
-        screens: {
-          New: "home/delivery/new",
-          Tracking: "home/delivery/:deliveryId/tracking",
-          Details: "home/delivery/:deliveryId/details",
-        },
-      },
+      // Bites and Send are FeatureUnavailableScreen leaves, not navigators
+      // (G01/G12: nothing is built behind either yet) — a single honest path
+      // each, rather than a nested `screens` map whose sub-screens don't
+      // exist in the actual tree (that mismatch was the bug: a deep link to
+      // e.g. "home/food/order/:orderId/tracking" would try to resolve a
+      // screen this app has never had).
+      Bites: "home/food",
+      Send: "home/delivery",
       Ask: {
         screens: { Thread: "ask", Execution: "ask/executions/:executionId" },
       },
