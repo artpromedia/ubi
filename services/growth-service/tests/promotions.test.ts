@@ -228,6 +228,50 @@ describe("promotion budget", () => {
     expect(Number(budget?.consumedMinor)).toBe(1_500);
   });
 
+  it("does not pay a qualifying event twice when consume() races itself", async () => {
+    // Simulates the same qualifying event reaching this service twice at once
+    // (e.g. a redelivered webhook) rather than a simple sequential retry.
+    const seeded = await seedCampaign(db, { budgetLimitMinor: 10_000 });
+    const res = await reserve(deps, {
+      actor: ACTOR,
+      cityId: null,
+      campaignVersionId: seeded.versionId,
+      userId: uid("rider"),
+      subjectKind: "quote",
+      subjectId: uid("q"),
+      adjustmentType: "fare_discount",
+      amount: money(1_000, "NGN"),
+      expiresAt: null,
+      idempotencyKey: idemKey("res"),
+      correlationId: null,
+    });
+    if (!res.reserved) throw new Error("expected reservation");
+
+    const [a, b] = await Promise.all([
+      consume(deps, {
+        actor: ACTOR,
+        cityId: null,
+        reservationId: res.reservation.id,
+        correlationId: null,
+      }),
+      consume(deps, {
+        actor: ACTOR,
+        cityId: null,
+        reservationId: res.reservation.id,
+        correlationId: null,
+      }),
+    ]);
+    expect(a.state).toBe("consumed");
+    expect(b.state).toBe("consumed");
+
+    // The budget must reflect exactly one consumption of ₦1,000 — not two.
+    const budget = await db.campaignBudget.findUnique({
+      where: { campaignVersionId: seeded.versionId },
+    });
+    expect(Number(budget?.reservedMinor)).toBe(0);
+    expect(Number(budget?.consumedMinor)).toBe(1_000);
+  });
+
   it("refuses an illegal transition (consume after release)", async () => {
     const seeded = await seedCampaign(db, { budgetLimitMinor: 10_000 });
     const res = await reserve(deps, {

@@ -69,6 +69,8 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 	err := s.pool.QueryRow(ctx,
 		`SELECT to_regclass('mp.reservation_recovery') IS NOT NULL
 			AND to_regclass('mp.idempotency_keys') IS NOT NULL
+			AND to_regclass('mp.execution_pins') IS NOT NULL
+			AND to_regclass('mp.driver_standing_actions') IS NOT NULL
 			AND EXISTS (
 				SELECT 1 FROM information_schema.columns
 				WHERE table_schema = 'mp' AND table_name = 'reservation_recovery' AND column_name = 'payload')
@@ -480,6 +482,20 @@ func (s *Store) TransitionRequest(ctx context.Context, tx pgx.Tx, request *Reque
 			WithDetails(map[string]any{"requestId": request.ID.String(), "expectedVersion": request.Version})
 	}
 	return updated, err
+}
+
+// SetRequestCloseReason records why a request ended WITHOUT a state change:
+// a request already in the terminal `execution` state has no edge left in the
+// mpRequest machine, but when its execution is driver-cancelled the requester
+// is still owed an honest closeReason. Only the first reason sticks.
+func (s *Store) SetRequestCloseReason(ctx context.Context, db DB, requestID uuid.UUID, reason string) error {
+	_, err := db.Exec(ctx, `
+		UPDATE mp.requests SET close_reason = $2, updated_at = now()
+		WHERE id = $1 AND close_reason IS NULL`, requestID, reason)
+	if err != nil {
+		return fmt.Errorf("failed to record the request close reason: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

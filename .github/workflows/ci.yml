@@ -357,6 +357,16 @@ jobs:
       - name: Provision an empty database from the migration chain
         run: pnpm --filter @ubi/database exec prisma migrate deploy
 
+      - name: Confirm migrations are idempotent (deploy.sh runs this on every deploy)
+        # infrastructure/hetzner/scripts/deploy.sh invokes `prisma migrate
+        # deploy` on every `deploy`/`migrate` call, whether or not there are
+        # new migrations to apply that day. Re-running it here against the
+        # database `migrate deploy` just provisioned proves that a second,
+        # no-op invocation exits 0 instead of erroring (stale checksum,
+        # broken migration-history bookkeeping, etc.) — the exact operation
+        # the Hetzner pilot's deploy runbook depends on being safe to repeat.
+        run: pnpm --filter @ubi/database exec prisma migrate deploy
+
       - name: Create the shadow database
         # migrate diff replays the chain into an EXISTING shadow database; the
         # service container only provisions ubi_ci.
@@ -539,12 +549,18 @@ jobs:
     if: always()
     steps:
       - name: Check all jobs passed
+        # rn-mobile was already listed above in `needs` (so this job waited
+        # for it) but was never checked here — a failing rn-mobile could not
+        # fail ci-success. Fixed this pass; rn-mobile currently always
+        # succeeds (37/37 + 71/71 jest, tsc 0), so this changes no behaviour
+        # today and only starts mattering if it ever regresses.
         run: |
           if [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.go-build.result }}" != "success" ] || \
              [ "${{ needs.db-check.result }}" != "success" ] || \
              [ "${{ needs.contracts.result }}" != "success" ] || \
+             [ "${{ needs.rn-mobile.result }}" != "success" ] || \
              [ "${{ needs.marketing-e2e.result }}" != "success" ]; then
             echo "One or more jobs failed"
             exit 1

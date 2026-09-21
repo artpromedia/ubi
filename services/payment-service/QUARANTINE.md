@@ -75,3 +75,17 @@ tsconfig.json with the reason.
 Before any of these features launches, its service must be rebuilt against real
 schema models (add the models, generate the client, remove the exclude) and its
 route re-mounted in `src/index.ts` behind its feature flag.
+
+## Structural guard (G14)
+
+`src/index.ts` mounts every router through ONE explicit registry and exports
+`MOUNTED_ROUTE_PREFIXES`; `tests/routes-inventory.test.ts` pins that allowlist
+against the live Hono route table and asserts the quarantined prefixes above
+(`/wallets`, `/payments`, `/payouts`, `/mobile-money`, `/webhooks`, `/b2b`,
+`/loyalty`, `/drivers`) answer 404. Several of the unmounted routes carry the
+old fail-OPEN key check (`serviceKey !== process.env.INTERNAL_SERVICE_KEY`
+passes when the env var is unset), so re-mounting one must fail that test
+first and be a reviewed decision: add the new prefix to the registry AND to
+the test's allowlist, and replace the route's own key check with the
+fail-closed `internalServiceAuth` from `src/middleware/auth.ts` before it goes
+live.

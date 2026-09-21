@@ -168,6 +168,19 @@ export const EVENT_NAMES = [
   "shipment.delivered",
   "claim.opened",
   "claim.decided",
+  // Custody/returns (G08, C07) — additive extension of the shipment machine.
+  "shipment.custody_proof_recorded",
+  "shipment.delivery_attempted",
+  "shipment.recipient_unreachable",
+  "shipment.return_proposed",
+  "shipment.return_consented",
+  "shipment.return_rejected",
+  "shipment.return_expired",
+  "shipment.returning",
+  "shipment.held_at_point",
+  "shipment.collected",
+  "shipment.delivery_retry",
+  "shipment.cancelled",
   "business.webhook_delivered",
   // travel (slices 07-09)
   "booking.confirmed",
@@ -340,6 +353,14 @@ export const EVENT_NAMES = [
   "mp.queue.eta_updated",
   "mp.queue.window_missed",
   "mp.rate_profile.saved",
+  // Dedicated marketplace settlement event (G15). payment-service settles a
+  // completed marketplace ride and, once migrated, emits THIS name alongside
+  // the generic `transfer.posted` / `payment.cash_acknowledged` it emits today
+  // (disambiguated only by aggregateType). Consumers (notification-service,
+  // realtime-gateway) recognize it now so the eventual producer switch is
+  // backward compatible: the old names keep working until every consumer reads
+  // the dedicated one.
+  "mp.settlement.posted",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

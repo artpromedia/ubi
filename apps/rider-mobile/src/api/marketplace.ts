@@ -6,13 +6,14 @@ import type {
   MpAward,
   MpOffer,
   MpPublishRequest,
+  MpQueueView,
   MpQuoteEnvelope,
   MpRequest,
   MpSelectBid,
   MpService,
 } from "@ubi/contracts";
 
-export type { MpAward, MpOffer, MpQuoteEnvelope, MpRequest };
+export type { MpAward, MpOffer, MpQueueView, MpQuoteEnvelope, MpRequest };
 
 /**
  * POST /select 202 body per contracts/openapi/marketplace.yaml: the award is WRAPPED
@@ -55,32 +56,36 @@ export type MpRequestSnapshot = {
 };
 
 /**
- * R10 queued-job tracker view. PROPOSED endpoint — the rider needs a server-composed
- * projection of queue.eta_updated / award.cancelled / commission.reversed (MATRIX R10);
- * contracts/openapi/marketplace.yaml does not carry it yet. Fixture-only until then.
+ * R10 queued-job tracker view. NOW REAL (G07): served by ride-service at
+ * GET /v1/mp/requests/:id/queue and defined by @ubi/contracts MpQueueViewSchema
+ * (re-exported above). The container reads a subset (driverFirstName, steps,
+ * fareMinor, windowLabel, eta, delayed); the projection also carries the
+ * authorized/versioned fields (version, asOf, status, promotion, driver,
+ * pickupWindow, actions) for optimistic refresh and stale-ETA detection.
  */
-export type MpQueueView = {
-  driverFirstName: string;
-  steps: {
-    label: string;
-    detail?: string;
-    state: "done" | "active" | "pending" | "skipped";
-  }[];
-  fareMinor: Money;
-  windowLabel: string;
-  eta: { label: string; inWindow: boolean };
-  delayed: {
-    noticeTitle: string;
-    noticeBody: string;
-    keepLabel: string;
-    reversal: {
-      riderHold: "releasing" | "released";
-      driverFee: "pending" | "reversed";
-    } | null;
-  } | null;
-};
 
-/** R11b recipient-unreachable resolution view. PROPOSED endpoint pair (MATRIX R11). */
+/**
+ * R11b recipient-unreachable resolution view.
+ *
+ * REAL as of C07 for the `GET` and the `approve_return`/`hold_at_point`
+ * actions: delivery-service's custody timeline
+ * (`GET /v1/delivery/deliveries/:id/custody`,
+ * `POST .../custody/return/consent`, contracts/openapi/marketplace.yaml) is
+ * a real, DB-backed, tested endpoint — see
+ * docs/marketplace/DELIVERY_CUSTODY.md. This screen's own DTO shape
+ * (`state`/`situation`/`returnFeeMinor`/`custody` ladder) predates that
+ * endpoint and does not match its response 1:1, so `mapCustodyToReturnView`
+ * below translates one into the other; the screen/container are unchanged.
+ *
+ * `retry_recipient` STAYS GATED: delivery-service has no standalone
+ * "mark retrying" transition — a retry only exists as part of posting an
+ * actual delivery proof (`POST .../custody/delivery-proof`), which this
+ * screen does not capture (no camera/proof-capture UI here — out of scope
+ * per this feature's "do not rebuild RN screens" boundary). Calling it hits
+ * the real server, which refuses cleanly with a validation error; the
+ * container's existing `onError` path renders that as the recoverable error
+ * banner it already has, never a crash.
+ */
 export type MpDeliveryReturnState = {
   state: "unreachable" | "retrying" | "return_approved" | "held_at_point";
   situation: string;
@@ -95,6 +100,80 @@ export type MpDeliveryReturnAction =
   | "approve_return"
   | "retry_recipient"
   | "hold_at_point";
+
+/** delivery-service's real custody timeline shape (GetCustodyTimeline). */
+type CustodyTimeline = {
+  deliveryId: string;
+  state: string;
+  version: number;
+  openReturn: {
+    returnId: string;
+    chargeStatus: "not_required" | "unsupported";
+    consentState: "pending" | "consented" | "rejected" | "expired";
+    consentExpiresAt: string;
+    feeMinor: number;
+    currency: string;
+  } | null;
+  events: {
+    fromState?: string;
+    toState: string;
+    actorType: string;
+    reason?: string;
+    createdAt: string;
+  }[];
+};
+
+const CUSTODY_LADDER_LABEL: Record<string, string> = {
+  courier_assigned: "Courier assigned",
+  picked_up: "Picked up",
+  in_transit: "On the way",
+  delivery_attempted: "Delivery attempted",
+  recipient_unreachable: "Recipient unreachable",
+  return_proposed: "Return proposed",
+  return_consented: "Return approved",
+  returning: "Returning to you",
+  return_to_sender: "Returned to you",
+  held_at_point: "Held at pickup point",
+  collected: "Collected",
+  delivery_retry: "Retrying delivery",
+  delivered: "Delivered",
+};
+
+/**
+ * Translates the real custody timeline into this screen's pre-existing DTO.
+ * Exported for testing; not itself a network call.
+ */
+export function mapCustodyToReturnView(
+  t: CustodyTimeline,
+): MpDeliveryReturnState {
+  const coarse: MpDeliveryReturnState["state"] =
+    t.state === "delivery_retry"
+      ? "retrying"
+      : t.state === "return_consented" ||
+          t.state === "returning" ||
+          t.state === "return_to_sender"
+        ? "return_approved"
+        : t.state === "held_at_point" || t.state === "collected"
+          ? "held_at_point"
+          : "unreachable";
+  const situation =
+    t.openReturn?.chargeStatus === "unsupported"
+      ? "This return proposes a fee we cannot yet collect. It will be held at a pickup point instead."
+      : "We could not reach the recipient. Choose how to resolve this delivery.";
+  return {
+    state: coarse,
+    situation,
+    returnFeeMinor: {
+      amountMinor: t.openReturn?.feeMinor ?? 0,
+      currency: t.openReturn?.currency || "NGN",
+    },
+    custody: t.events.map((e) => ({
+      label: CUSTODY_LADDER_LABEL[e.toState] ?? e.toState,
+      detail: e.reason,
+      state: e.toState === t.state ? "active" : "done",
+    })),
+  };
+}
 
 // RN's URLSearchParams is only partially implemented; build the query by hand.
 const quoteQs = (p: MpQuoteQuery) => {
@@ -135,18 +214,39 @@ export const marketplaceApi = {
     ),
   award: (requestId: string) =>
     api<MpAward>("GET", "/v1/mp/requests/" + requestId + "/award"),
-  // PROPOSED endpoints (see type docs above) — fixture-backed until the OpenAPI contract adds them.
+  // Rider queue projection (R10 / G07) — real ride-service endpoint.
   queue: (requestId: string) =>
     api<MpQueueView>("GET", "/v1/mp/requests/" + requestId + "/queue"),
+  // Delivery custody/returns (C07, G08). REAL delivery-service endpoints —
+  // see contracts/openapi/marketplace.yaml and
+  // docs/marketplace/DELIVERY_CUSTODY.md. The gateway proxies `/v1/delivery/*`
+  // to delivery-service, which mounts these at `/api/v1/deliveries/:id/
+  // custody/*`; see the C07 report for a separate, pre-existing gateway
+  // path-stripping mismatch this inherits (unrelated to this feature, out of
+  // its writable scope to fix — every other delivery-service route has the
+  // same gap).
   deliveryReturnState: (deliveryId: string) =>
-    api<MpDeliveryReturnState>(
+    api<CustodyTimeline>(
       "GET",
-      "/v1/mp/delivery/" + deliveryId + "/return-state",
-    ),
+      "/v1/delivery/deliveries/" + deliveryId + "/custody",
+    ).then(mapCustodyToReturnView),
+  // "retry_recipient" is NOT implemented server-side (see the type doc
+  // above): delivery-service has no standalone "mark retrying" transition,
+  // only a retry bundled with an actual delivery-proof capture this screen
+  // does not perform. The call still reaches the real server, which refuses
+  // it with a validation error the container's existing onError path
+  // displays — never faked as a success.
   deliveryReturnConsent: (deliveryId: string, action: MpDeliveryReturnAction) =>
-    api<MpDeliveryReturnState>(
+    api<CustodyTimeline>(
       "POST",
-      "/v1/mp/delivery/" + deliveryId + "/return-consent",
-      { action },
-    ),
+      "/v1/delivery/deliveries/" + deliveryId + "/custody/return/consent",
+      {
+        action:
+          action === "approve_return"
+            ? "consent"
+            : action === "hold_at_point"
+              ? "reject"
+              : action,
+      },
+    ).then(mapCustodyToReturnView),
 };

@@ -271,3 +271,75 @@ CREATE TABLE IF NOT EXISTS mp.idempotency_keys (
 ALTER TABLE mp.reservation_recovery ADD COLUMN IF NOT EXISTS payload jsonb;
 ALTER TABLE mp.bids ADD COLUMN IF NOT EXISTS hold_released_at timestamptz;
 ALTER TABLE mp.award_attempts ADD COLUMN IF NOT EXISTS captured boolean NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------------
+-- Secure pickup-PIN vault (G07 companion).
+--
+-- A marketplace execution ride's PIN is bcrypt-hashed in ride.rides (move owns
+-- that; the plaintext cannot be re-derived). The current-slot award reveals it
+-- once in the /select response, but a PROMOTION-created ride happens with no
+-- rider call in flight, so the rider must be able to fetch it afterwards over
+-- the authenticated REST channel. This table captures the plaintext at ride
+-- creation, ENCRYPTED at rest (AES-256-GCM; the key is derived from the service
+-- secret, never stored here), so a database reader still cannot read a usable
+-- PIN — the same posture bcrypt gives the hash. Retrieval is owner-only,
+-- lifecycle-restricted (checked live against ride state) and rate-limited via
+-- the window columns. The PIN never enters an event, a push payload or a log.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.execution_pins (
+    execution_id    uuid PRIMARY KEY,
+    request_id      uuid NOT NULL,
+    requester_id    uuid NOT NULL,
+    ciphertext      bytea NOT NULL,
+    nonce           bytea NOT NULL,
+    expires_at      timestamptz NOT NULL,
+    retrieval_count integer NOT NULL DEFAULT 0,
+    window_start    timestamptz NOT NULL DEFAULT now(),
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS mp_execution_pins_request_idx
+    ON mp.execution_pins (request_id);
+
+-- ---------------------------------------------------------------------------
+-- Driver standing & appeals (C08).
+--
+-- An admin-workflow aggregate, not part of any negotiated-fare machine: it
+-- never adjusts money and is never written by anything but the standing
+-- commands in standing.go. `warning` is informational and commits on the
+-- one admin's say-so; `suspension` and `reinstatement` are PROTECTED — they
+-- change a driver's marketplace eligibility (see EvaluateEligibility) and
+-- require a second, distinct operator's approval before they take effect
+-- (maker-checker, mirroring config-service's change-request pattern). An
+-- active suspension can be appealed; the appeal decision is ALSO
+-- maker-checker (the operator who logged the appeal cannot decide it).
+-- Every proposal, approval, rejection and appeal decision writes one
+-- public.audit_log row in the same transaction — there is no unaudited path.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.driver_standing_actions (
+    id                 uuid PRIMARY KEY,
+    driver_id          uuid NOT NULL,
+    city_id            text NOT NULL,
+    action_type        text NOT NULL, -- warning | suspension | reinstatement
+    reason_code        text NOT NULL,
+    reason_note        text NOT NULL DEFAULT '',
+    status             text NOT NULL, -- pending_approval | active | rejected | appealed | appeal_upheld | appeal_denied
+    proposed_by        uuid NOT NULL,
+    proposed_at        timestamptz NOT NULL DEFAULT now(),
+    decided_by         uuid,
+    decided_at         timestamptz,
+    decision_reason    text,
+    appealed_by        uuid,
+    appealed_at        timestamptz,
+    appeal_note        text,
+    appeal_decided_by  uuid,
+    appeal_decided_at  timestamptz,
+    appeal_reason      text,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS mp_standing_driver_idx
+    ON mp.driver_standing_actions (driver_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS mp_standing_status_idx
+    ON mp.driver_standing_actions (status, created_at ASC);

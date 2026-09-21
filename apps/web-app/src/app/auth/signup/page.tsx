@@ -69,7 +69,7 @@ export default function SignUpPage() {
         Create your account
       </h1>
       <p className="text-gray-600 dark:text-gray-400 mb-6">
-        Join millions of riders across Africa
+        Sign up to request a ride with UBI
       </p>
 
       {error && (

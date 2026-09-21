@@ -68,8 +68,28 @@ export async function activeHoldsMinor(
 }
 
 /**
- * The one spendable calculation (M04/D04): cleared journal balance minus
- * active holds. Every debit path checks this figure, not the raw balance.
+ * The sum of ACTIVE rider funding reservations encumbering the wallet (C02).
+ * Mirrors `activeHoldsMinor`: a reservation is a table row, never a journal
+ * movement — the cleared balance stays untouched from selection to
+ * completion, and only spendable drops. A consumed or released reservation
+ * encumbers nothing.
+ */
+export async function activeRiderReservationsMinor(
+  tx: LedgerTx,
+  walletId: string,
+  currency: string,
+): Promise<Money> {
+  const result = await tx.mpRiderReservation.aggregate({
+    _sum: { amountMinor: true },
+    where: { walletId, currency, status: "active" },
+  });
+  return money(fromNullableDbMinor(result._sum.amountMinor), currency);
+}
+
+/**
+ * The one spendable calculation (M04/D04/C02): cleared journal balance minus
+ * active commission holds minus active rider funding reservations. Every
+ * debit path checks this figure, not the raw balance.
  */
 export async function spendableOf(
   tx: LedgerTx,
@@ -78,7 +98,11 @@ export async function spendableOf(
 ): Promise<Money> {
   const balance = await balanceOf(tx, walletId, currency);
   const held = await activeHoldsMinor(tx, walletId, currency);
-  return money(balance.amountMinor - held.amountMinor, currency);
+  const reserved = await activeRiderReservationsMinor(tx, walletId, currency);
+  return money(
+    balance.amountMinor - held.amountMinor - reserved.amountMinor,
+    currency,
+  );
 }
 
 /**

@@ -17,6 +17,8 @@
  */
 import { PrismaClient } from "@prisma/client";
 
+import { ContractError } from "@ubi/contracts";
+
 import { createHashEmbeddingProvider } from "../src/ai/embedding-provider";
 import { createRetriever, type Retriever } from "../src/ai/rag";
 import { createFlagProvider } from "../src/ops/flags";
@@ -59,6 +61,21 @@ import type {
   GrantPort,
   MintedGrant,
 } from "../src/ports/grant-port";
+import {
+  presentOffersForReview,
+  MarketplaceTimeoutError,
+  type MarketplacePort,
+  type MpAward,
+  type MpOffer,
+  type MpQuote,
+  type MpQuoteInput,
+  type MpPrepareInput,
+  type MpRequest,
+  type MpSelectInput,
+  type MpSelectResult,
+  type MpSnapshot,
+  type SanitizedOffer,
+} from "../src/ports/marketplace-port";
 import type {
   OpenCaseInput,
   OpenedCase,
@@ -106,6 +123,7 @@ export function idemKey(label = "k"): string {
 export interface SeedCityOptions {
   readonly aiAssistant?: boolean;
   readonly aiTransactions?: boolean;
+  readonly aiMarketplace?: boolean;
 }
 
 export async function seedCity(
@@ -125,6 +143,7 @@ export async function seedCity(
   const flags: Record<string, boolean> = {
     ai_assistant: options.aiAssistant ?? true,
     ai_transactions: options.aiTransactions ?? true,
+    ai_marketplace: options.aiMarketplace ?? false,
   };
   for (const [key, enabled] of Object.entries(flags)) {
     await db.featureFlag.upsert({
@@ -500,6 +519,210 @@ export class FakeSupportPort implements SupportPort {
   }
 }
 
+/**
+ * A faithful in-memory marketplace. It models the properties the C10 tests turn
+ * on: publish awards nothing; select is idempotent on its key and one request
+ * yields exactly one award; a timed-out select still records the award so the
+ * caller converges by querying; and there is deliberately NO method to bypass a
+ * stationary gate or to auto-bid. It never charges twice.
+ */
+export class FakeMarketplacePort implements MarketplacePort {
+  readonly selectCalls: MpSelectInput[] = [];
+  readonly prepareCalls: MpPrepareInput[] = [];
+  /** Number of DISTINCT awards actually created — the "charge count". */
+  awardsCreated = 0;
+  /** When set, the next select() records the award then throws a timeout. */
+  timeoutNextSelect = false;
+  /** When set, the next select() throws award_unresolved (races a pending award). */
+  unresolvedNextSelect = false;
+
+  private readonly quotes = new Map<string, MpQuote>();
+  private readonly requests = new Map<string, MpRequest>();
+  private readonly offersByRequest = new Map<string, MpOffer[]>();
+  private readonly awardByRequest = new Map<string, MpAward>();
+  private readonly awardByKey = new Map<string, MpAward>();
+  private readonly requestByPrepareKey = new Map<string, MpRequest>();
+
+  setQuote(quote: MpQuote): void {
+    this.quotes.set(quote.quoteId, quote);
+  }
+
+  seedRequest(request: MpRequest): void {
+    this.requests.set(request.requestId, request);
+  }
+
+  seedAward(award: MpAward): void {
+    this.awardByRequest.set(award.requestId, award);
+  }
+
+  setOffers(requestId: string, offers: MpOffer[]): void {
+    this.offersByRequest.set(requestId, offers);
+  }
+
+  async quote(_actor: Actor, input: MpQuoteInput): Promise<MpQuote> {
+    const existing = [...this.quotes.values()].find(
+      (q) =>
+        q.service === input.service && q.vehicleClass === input.vehicleClass,
+    );
+    if (existing !== undefined) {
+      return existing;
+    }
+    const quote: MpQuote = {
+      quoteId: uid("mpq"),
+      service: input.service,
+      vehicleClass: input.vehicleClass,
+      cityId: "city_default",
+      currency: "NGN",
+      suggestedFareMinor: 200_000,
+      minimumFareMinor: 150_000,
+      maximumFareMinor: 400_000,
+      expiresAt: new Date(Date.now() + 120_000).toISOString(),
+      pricingVersion: "pv1",
+      policyVersion: 1,
+    };
+    this.quotes.set(quote.quoteId, quote);
+    return quote;
+  }
+
+  async prepareRequest(
+    actor: Actor,
+    input: MpPrepareInput,
+  ): Promise<MpRequest> {
+    this.prepareCalls.push(input);
+    const replay = this.requestByPrepareKey.get(input.idempotencyKey);
+    if (replay !== undefined) {
+      return replay;
+    }
+    const quote = this.quotes.get(input.quoteId);
+    const request: MpRequest = {
+      requestId: uid("mpr"),
+      state: "open",
+      revision: 0,
+      version: 1,
+      service: quote?.service ?? "ride",
+      vehicleClass: quote?.vehicleClass ?? "go",
+      cityId: quote?.cityId ?? "city_default",
+      currency: quote?.currency ?? input.currency,
+      requesterId: actor.id,
+      quoteId: input.quoteId,
+      requestedFareMinor: input.requestedFareMinor,
+      expiresAt: new Date(Date.now() + 120_000).toISOString(),
+    };
+    this.requests.set(request.requestId, request);
+    this.requestByPrepareKey.set(input.idempotencyKey, request);
+    return request;
+  }
+
+  async viewOffers(
+    actor: Actor,
+    requestId: string,
+  ): Promise<MpSnapshot | null> {
+    const request = this.requests.get(requestId);
+    if (request === undefined || request.requesterId !== actor.id) {
+      return null;
+    }
+    return {
+      request,
+      offers: this.offersByRequest.get(requestId) ?? [],
+      award: this.awardByRequest.get(requestId) ?? null,
+      seq: 1,
+    };
+  }
+
+  reviewOffer(offers: readonly MpOffer[]): readonly SanitizedOffer[] {
+    return presentOffersForReview(offers);
+  }
+
+  async getAward(actor: Actor, requestId: string): Promise<MpAward | null> {
+    const request = this.requests.get(requestId);
+    if (request === undefined || request.requesterId !== actor.id) {
+      return null;
+    }
+    return this.awardByRequest.get(requestId) ?? null;
+  }
+
+  async select(actor: Actor, input: MpSelectInput): Promise<MpSelectResult> {
+    this.selectCalls.push(input);
+    // An ambiguous, racing outcome: the award may or may not exist yet. The
+    // caller must converge by querying, never resubmit.
+    if (this.unresolvedNextSelect) {
+      this.unresolvedNextSelect = false;
+      throw new ContractError(
+        "award_unresolved",
+        "a selection is already pending for this request",
+      );
+    }
+    // Idempotent on the key: an exact replay returns the same award.
+    const byKey = this.awardByKey.get(input.idempotencyKey);
+    if (byKey !== undefined) {
+      return { award: byKey };
+    }
+    const existing = this.awardByRequest.get(input.requestId);
+    if (existing !== undefined) {
+      if (existing.bidId === input.bidId) {
+        return { award: existing };
+      }
+      // A different selection racing the resolved award.
+      throw new ContractError(
+        "award_unresolved",
+        "an award already exists for this request",
+      );
+    }
+
+    const request = this.requests.get(input.requestId);
+    const offer = (this.offersByRequest.get(input.requestId) ?? []).find(
+      (o) => o.bidId === input.bidId,
+    );
+    const award: MpAward = {
+      awardId: uid("mpaw"),
+      requestId: input.requestId,
+      bidId: input.bidId,
+      state: "confirmed",
+      requestVersion: input.requestVersion,
+      bidVersion: input.bidVersion,
+      driverId: uid("drv"),
+      requesterId: actor.id,
+      fareMinor: offer?.totalMinor ?? offer?.amountMinor ?? 0,
+      commissionMinor: Math.round((offer?.amountMinor ?? 0) * 0.1),
+      slot: "current",
+      createdAt: new Date().toISOString(),
+      resolvedAt: new Date().toISOString(),
+    };
+    // Record BEFORE the possible timeout so the caller can converge by querying.
+    this.awardsCreated += 1;
+    this.awardByRequest.set(input.requestId, award);
+    this.awardByKey.set(input.idempotencyKey, award);
+    if (request !== undefined) {
+      this.requests.set(input.requestId, { ...request, state: "awarded" });
+    }
+    if (this.timeoutNextSelect) {
+      this.timeoutNextSelect = false;
+      throw new MarketplaceTimeoutError(
+        "the selection did not confirm in time",
+      );
+    }
+    return { award, pickupPin: "482913" };
+  }
+
+  async cancel(
+    actor: Actor,
+    requestId: string,
+    _idempotencyKey: string,
+  ): Promise<MpRequest> {
+    const request = this.requests.get(requestId);
+    if (request === undefined || request.requesterId !== actor.id) {
+      throw new ContractError("not_found", "no such request");
+    }
+    const cancelled: MpRequest = {
+      ...request,
+      state: "cancelled",
+      closeReason: "cancelled",
+    };
+    this.requests.set(requestId, cancelled);
+    return cancelled;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Deps
 // ---------------------------------------------------------------------------
@@ -508,6 +731,7 @@ export interface DepsOverrides {
   readonly model?: ModelProvider;
   readonly ride?: RidePort;
   readonly travel?: TravelPort;
+  readonly marketplace?: MarketplacePort;
   readonly promotions?: PromotionsPort;
   readonly grants?: GrantPort;
   readonly support?: SupportPort;
@@ -520,6 +744,7 @@ export interface TestDeps extends AskDeps {
   readonly model: ModelProvider;
   readonly ride: FakeRidePort;
   readonly travel: FakeTravelPort;
+  readonly marketplace: FakeMarketplacePort;
   readonly promotions: FakePromotionsPort;
   readonly grants: FakeGrantPort;
   readonly support: FakeSupportPort;
@@ -530,6 +755,8 @@ export function makeDeps(db: AskDb, overrides: DepsOverrides = {}): TestDeps {
   const model = overrides.model ?? new DeterministicModelProvider();
   const ride = (overrides.ride ?? new FakeRidePort()) as FakeRidePort;
   const travel = (overrides.travel ?? new FakeTravelPort()) as FakeTravelPort;
+  const marketplace = (overrides.marketplace ??
+    new FakeMarketplacePort()) as FakeMarketplacePort;
   const promotions = (overrides.promotions ??
     new FakePromotionsPort()) as FakePromotionsPort;
   const grants = (overrides.grants ?? new FakeGrantPort(db)) as FakeGrantPort;
@@ -543,6 +770,7 @@ export function makeDeps(db: AskDb, overrides: DepsOverrides = {}): TestDeps {
     retriever: overrides.retriever ?? createRetriever(embedder),
     ride,
     travel,
+    marketplace,
     promotions,
     grants,
     support,
@@ -563,5 +791,76 @@ export function offer(
     currency: overrides.currency ?? "NGN",
     termsVersion: overrides.termsVersion ?? "v1",
     terms: overrides.terms ?? [{ text: "Non-refundable", tone: "warning" }],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace builders (C10)
+// ---------------------------------------------------------------------------
+
+export function mpQuote(overrides: Partial<MpQuote> = {}): MpQuote {
+  return {
+    quoteId: overrides.quoteId ?? uid("mpq"),
+    service: overrides.service ?? "ride",
+    vehicleClass: overrides.vehicleClass ?? "go",
+    cityId: overrides.cityId ?? "city_mp",
+    currency: overrides.currency ?? "NGN",
+    suggestedFareMinor: overrides.suggestedFareMinor ?? 200_000,
+    minimumFareMinor: overrides.minimumFareMinor ?? 150_000,
+    maximumFareMinor: overrides.maximumFareMinor ?? 400_000,
+    expiresAt:
+      overrides.expiresAt ?? new Date(Date.now() + 120_000).toISOString(),
+    pricingVersion: overrides.pricingVersion ?? "pv1",
+    policyVersion: overrides.policyVersion ?? 1,
+  };
+}
+
+export function mpRequest(
+  overrides: Partial<MpRequest> & { requesterId: string },
+): MpRequest {
+  return {
+    requestId: overrides.requestId ?? uid("mpr"),
+    state: overrides.state ?? "open",
+    revision: overrides.revision ?? 0,
+    version: overrides.version ?? 1,
+    service: overrides.service ?? "ride",
+    vehicleClass: overrides.vehicleClass ?? "go",
+    cityId: overrides.cityId ?? "city_mp",
+    currency: overrides.currency ?? "NGN",
+    requesterId: overrides.requesterId,
+    quoteId: overrides.quoteId ?? uid("mpq"),
+    requestedFareMinor: overrides.requestedFareMinor ?? 200_000,
+    expiresAt:
+      overrides.expiresAt ?? new Date(Date.now() + 120_000).toISOString(),
+    closeReason: overrides.closeReason,
+  };
+}
+
+export function mpOffer(
+  overrides: Partial<MpOffer> & { bidId: string },
+): MpOffer {
+  const amountMinor = overrides.amountMinor ?? 200_000;
+  return {
+    bidId: overrides.bidId,
+    bidVersion: overrides.bidVersion ?? 1,
+    requestRevision: overrides.requestRevision ?? 0,
+    amountMinor,
+    currency: overrides.currency ?? "NGN",
+    kind: overrides.kind ?? "immediate",
+    driver: overrides.driver ?? {
+      displayName: "Driver A",
+      initials: "DA",
+      rating: "4.9",
+      completedTrips: 320,
+      vehicle: "go",
+      plateMasked: "•••12",
+      profileStatus: "verified",
+    },
+    pickupLabel: overrides.pickupLabel ?? "Near Ikeja",
+    expiresAt:
+      overrides.expiresAt ?? new Date(Date.now() + 60_000).toISOString(),
+    withdrawn: overrides.withdrawn ?? false,
+    whyRecommended: overrides.whyRecommended,
+    totalMinor: overrides.totalMinor ?? amountMinor,
   };
 }

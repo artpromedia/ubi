@@ -14,6 +14,17 @@ jest.mock("react-native-keychain", () => ({
   },
 }));
 
+// Foreground geolocation (react-native-geolocation-service) — src/lib/location.ts
+// imports it at module load. Tests that exercise location behavior override
+// watchPosition/requestAuthorization per-test with jest.spyOn / mockImplementation.
+jest.mock("react-native-geolocation-service", () => ({
+  requestAuthorization: jest.fn().mockResolvedValue("granted"),
+  getCurrentPosition: jest.fn(),
+  watchPosition: jest.fn().mockReturnValue(1),
+  clearWatch: jest.fn(),
+  stopObserving: jest.fn(),
+}));
+
 // Safe-area context — @ubi/mobile-ui Screen/Sheet import it. Pass children
 // through and report zero insets.
 jest.mock("react-native-safe-area-context", () => {

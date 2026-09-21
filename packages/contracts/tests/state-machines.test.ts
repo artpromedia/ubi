@@ -79,6 +79,7 @@ describe("canonical state machines", () => {
     // These are terminal leaves in the source contract; the generator keeps them
     // in the state union instead of dropping them.
     expect(TERMINAL_ONLY_STATES.rider).toEqual([
+      "cancelled_by_driver",
       "cancelled_by_ops",
       "cancelled_by_rider",
       "no_show",

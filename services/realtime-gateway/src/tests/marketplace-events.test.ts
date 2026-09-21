@@ -263,6 +263,36 @@ describe("handleMarketplaceEnvelope", () => {
     expect(ctx.manager.broadcastToUser).not.toHaveBeenCalled();
   });
 
+  it("recognizes the dedicated settlement event (G15) and fans it out to the parties", async () => {
+    // The gateway subscribes by the event:mp.* pattern, so the dedicated
+    // mp.settlement.posted name is fanned out automatically — no per-name
+    // wiring — to the driver (paid) and requester (charged). The legacy
+    // transfer.posted / payment.cash_acknowledged names are off the mp.*
+    // channel and remain the payment/notification surfaces' concern; nothing
+    // here changes for them (backward compatible).
+    await handleMarketplaceEnvelope(
+      ctx.manager,
+      makeEnvelope({
+        name: "mp.settlement.posted",
+        subject: { type: "mp_award", id: "awd_1" },
+        payload: {
+          requestId: "req_1",
+          requesterId: "usr_requester",
+          driverId: "drv_winner",
+          settlementId: "stl_1",
+          method: "wallet",
+        },
+      }),
+    );
+    const recipients = ctx.broadcasts.map((b) => b.userId).sort();
+    expect(recipients).toEqual(["drv_winner", "usr_requester"]);
+    for (const b of ctx.broadcasts) {
+      expect(b.message.type).toBe("marketplace_event");
+      if (b.message.type !== "marketplace_event") continue;
+      expect(b.message.payload.name).toBe("mp.settlement.posted");
+    }
+  });
+
   it("ignores non-mp events defensively", async () => {
     await handleMarketplaceEnvelope(
       ctx.manager,

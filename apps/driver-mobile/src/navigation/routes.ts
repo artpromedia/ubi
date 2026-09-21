@@ -4,8 +4,13 @@ export type AuthStackParamList = {
   Register: undefined;
   Otp: { phone: string };
 };
+// Every screen carries the ride id (`tripId` — the marketplace award's
+// executionRef.id, per the jobs surface). "Offer" is the one-time "you won
+// this job" landing screen from JobsTimelineContainer; nothing server-side
+// distinguishes it from Navigate — both read the same ride view — so it is a
+// purely local first stop before the driver taps through to navigation.
 export type TripStackParamList = {
-  Offer: { requestId: string };
+  Offer: { tripId: string };
   Navigate: { tripId: string };
   Waiting: { tripId: string };
   Pin: { tripId: string };

@@ -60,6 +60,7 @@ const (
 	RiderPaymentFailed       = "payment_failed"
 	RiderRated               = "rated"
 	RiderCancelledByRider    = "cancelled_by_rider"
+	RiderCancelledByDriver   = "cancelled_by_driver"
 	RiderCancelledByOps      = "cancelled_by_ops"
 )
 
@@ -151,9 +152,9 @@ var machines = map[Name]struct {
 			RiderRequesting:          {RiderMatching},
 			RiderMatching:            {RiderDriverAssigned, RiderNoDriver, RiderCancelledByRider},
 			RiderNoDriver:            {RiderMatching, RiderCancelledByRider},
-			RiderDriverAssigned:      {RiderDriverArrived, RiderRematching, RiderCancelledByRider, RiderSafetyHold},
-			RiderRematching:          {RiderDriverAssigned, RiderNoDriver, RiderCancelledByRider},
-			RiderDriverArrived:       {RiderPinVerification, RiderRematching, RiderCancelledByRider, RiderNoShow},
+			RiderDriverAssigned:      {RiderDriverArrived, RiderRematching, RiderCancelledByRider, RiderCancelledByDriver, RiderSafetyHold},
+			RiderRematching:          {RiderDriverAssigned, RiderNoDriver, RiderCancelledByRider, RiderCancelledByDriver},
+			RiderDriverArrived:       {RiderPinVerification, RiderRematching, RiderCancelledByRider, RiderCancelledByDriver, RiderNoShow},
 			RiderPinVerification:     {RiderInProgress, RiderDriverArrived},
 			RiderInProgress:          {RiderCompleted, RiderSafetyHold},
 			RiderSafetyHold:          {RiderInProgress, RiderCompleted, RiderCancelledByOps},
@@ -162,9 +163,10 @@ var machines = map[Name]struct {
 			RiderPaymentFailed:       {RiderPaymentPending, RiderCompleted},
 			RiderRated:               {},
 			// Terminal states the contract lists only as destinations.
-			RiderNoShow:           {},
-			RiderCancelledByRider: {},
-			RiderCancelledByOps:   {},
+			RiderNoShow:            {},
+			RiderCancelledByRider:  {},
+			RiderCancelledByDriver: {},
+			RiderCancelledByOps:    {},
 		},
 	},
 	Driver: {

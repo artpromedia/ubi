@@ -15,6 +15,7 @@ import { PrismaClient } from "@prisma/client";
 import { ContractError, money } from "@ubi/contracts";
 
 import { createFlagProvider } from "../src/ops/config";
+import { isUniqueViolation } from "../src/ops/errors";
 
 import type { GrowthDeps } from "../src/ops/context";
 import type {
@@ -285,39 +286,58 @@ export class FakeLedger implements LedgerPort {
     }
     const entryId = uid("je");
     const driverLineId = uid("jl");
-    await this.db.$transaction(async (tx) => {
-      await tx.journalEntry.create({
-        data: {
-          id: entryId,
-          kind,
-          reference,
-          idempotencyKey,
-          occurredAt: new Date(),
-        },
-      });
-      await tx.journalLine.createMany({
-        data: [
-          {
-            id: driverLineId,
-            entryId,
-            account: driverAccount,
-            walletId: null,
-            amountMinor: BigInt(driverAmountMinor),
-            currency,
-            counterpartRef: reference,
+    try {
+      await this.db.$transaction(async (tx) => {
+        await tx.journalEntry.create({
+          data: {
+            id: entryId,
+            kind,
+            reference,
+            idempotencyKey,
+            occurredAt: new Date(),
           },
-          {
-            id: uid("jl"),
-            entryId,
-            account: counterAccount,
-            walletId: null,
-            amountMinor: BigInt(-driverAmountMinor),
-            currency,
-            counterpartRef: reference,
-          },
-        ],
+        });
+        await tx.journalLine.createMany({
+          data: [
+            {
+              id: driverLineId,
+              entryId,
+              account: driverAccount,
+              walletId: null,
+              amountMinor: BigInt(driverAmountMinor),
+              currency,
+              counterpartRef: reference,
+            },
+            {
+              id: uid("jl"),
+              entryId,
+              account: counterAccount,
+              walletId: null,
+              amountMinor: BigInt(-driverAmountMinor),
+              currency,
+              counterpartRef: reference,
+            },
+          ],
+        });
       });
-    });
+    } catch (error) {
+      // A real ledger is idempotent on this key under concurrency too: two
+      // callers racing to post the same key must both get the one entry, not
+      // have the loser crash. Mirror that here rather than only on retry.
+      if (isUniqueViolation(error, "idempotency_key")) {
+        const replay = await this.db.journalEntry.findUniqueOrThrow({
+          where: { idempotencyKey },
+          include: { lines: true },
+        });
+        const line = replay.lines.find((l) => l.account === driverAccount);
+        return {
+          entryId: replay.id,
+          ledgerLineId: line?.id ?? replay.lines[0]?.id ?? replay.id,
+          replayed: true,
+        };
+      }
+      throw error;
+    }
     return { entryId, ledgerLineId: driverLineId, replayed: false };
   }
 

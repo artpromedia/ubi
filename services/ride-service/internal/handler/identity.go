@@ -45,36 +45,58 @@ const actorContextKey contextKey = "ubi.actor"
 // cannot simply assert a user id in a header.
 //
 // When no secret is configured the service trusts the gateway's headers on a
-// private network. That is a deployment decision, and it is logged at start-up
-// rather than left implicit.
+// private network. That is a development-only posture: cmd/server refuses to
+// start in production without a secret (see docs/security/INTERNAL_IDENTITY.md),
+// and in development the gap is logged at start-up rather than left implicit.
 type InternalContextVerifier struct {
-	secret []byte
-	maxAge time.Duration
+	// secrets are every key a signature may verify against. The FIRST one is
+	// the signing key; the rest are previous keys kept during a rotation, so
+	// the gateway and this service can roll keys without a flag day.
+	secrets [][]byte
+	maxAge  time.Duration
 }
 
-// NewInternalContextVerifier builds a verifier. An empty secret disables
-// signature checking.
+// NewInternalContextVerifier builds a verifier. The secret is a comma-separated
+// key list — `new-key,previous-key` during a rotation, one key otherwise. Every
+// listed key verifies; the first key signs. An empty list disables signature
+// checking (development only; production refuses to boot that way).
 func NewInternalContextVerifier(secret string, maxAge time.Duration) *InternalContextVerifier {
 	if maxAge <= 0 {
 		maxAge = 5 * time.Minute
 	}
-	return &InternalContextVerifier{secret: []byte(secret), maxAge: maxAge}
+	var secrets [][]byte
+	for _, part := range strings.Split(secret, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			secrets = append(secrets, []byte(trimmed))
+		}
+	}
+	return &InternalContextVerifier{secrets: secrets, maxAge: maxAge}
 }
 
 // Enabled reports whether signatures are being checked.
-func (v *InternalContextVerifier) Enabled() bool { return v != nil && len(v.secret) > 0 }
+func (v *InternalContextVerifier) Enabled() bool { return v != nil && len(v.secrets) > 0 }
 
 // signingPayload is the canonical string the gateway signs.
 func signingPayload(userID, role, cityID, issuedAt string) string {
 	return strings.Join([]string{"ubi.internal.v1", userID, role, cityID, issuedAt}, "|")
 }
 
-// Sign produces the signature a gateway would send. It exists so the gateway
-// and this service can be tested against one definition rather than two.
-func (v *InternalContextVerifier) Sign(userID, role, cityID string, issuedAt time.Time) string {
-	mac := hmac.New(sha256.New, v.secret)
-	mac.Write([]byte(signingPayload(userID, role, cityID, strconv.FormatInt(issuedAt.UTC().Unix(), 10))))
+// computeSignature is the one place a signature is derived from a payload.
+func computeSignature(secret []byte, payload string) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(payload))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// Sign produces the signature a gateway would send, using the current (first)
+// key. It exists so the gateway and this service can be tested against one
+// definition rather than two.
+func (v *InternalContextVerifier) Sign(userID, role, cityID string, issuedAt time.Time) string {
+	if !v.Enabled() {
+		return ""
+	}
+	payload := signingPayload(userID, role, cityID, strconv.FormatInt(issuedAt.UTC().Unix(), 10))
+	return computeSignature(v.secrets[0], payload)
 }
 
 func (v *InternalContextVerifier) verify(r *http.Request, userID, role, cityID string) error {
@@ -94,13 +116,15 @@ func (v *InternalContextVerifier) verify(r *http.Request, userID, role, cityID s
 	if age < -v.maxAge || age > v.maxAge {
 		return domain.Errorf(domain.CodeUnauthorized, "this request's caller identity has expired")
 	}
-	mac := hmac.New(sha256.New, v.secret)
-	mac.Write([]byte(signingPayload(userID, role, cityID, issuedAt)))
-	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(expected), []byte(signature)) {
-		return domain.Errorf(domain.CodeUnauthorized, "this request's caller identity is not signed by the gateway")
+	payload := signingPayload(userID, role, cityID, issuedAt)
+	for _, secret := range v.secrets {
+		// hmac.Equal is a constant-time compare, and comparing computed MACs
+		// (not raw secrets) keeps the timing independent of the input.
+		if hmac.Equal([]byte(computeSignature(secret, payload)), []byte(signature)) {
+			return nil
+		}
 	}
-	return nil
+	return domain.Errorf(domain.CodeUnauthorized, "this request's caller identity is not signed by the gateway")
 }
 
 // knownRoles are the roles the gateway issues that this service acts on. An

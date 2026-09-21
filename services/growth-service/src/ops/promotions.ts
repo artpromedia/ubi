@@ -539,11 +539,41 @@ export async function consume(
   }
 
   return auditedTransaction(deps.db, async (tx) => {
+    // Compare-and-swap on `state`: two concurrent `consume()` calls for the
+    // same reservation (e.g. a redelivered qualifying event) both pass the
+    // pre-transaction checks above with a stale "reserved" read. Postgres
+    // re-evaluates this WHERE after taking the row lock, so only the first
+    // writer's update matches; the second sees `count: 0` here and must not
+    // touch the budget or grant a second credit for the same event (CLAUDE.md
+    // #4 — no qualifying event pays twice).
+    const claim = await tx.promotionReservation.updateMany({
+      where: { id: reservation.id, state: "reserved" },
+      data: { state: "consumed" },
+    });
+    if (claim.count === 0) {
+      const current = await tx.promotionReservation.findUniqueOrThrow({
+        where: { id: reservation.id },
+      });
+      return {
+        result: reservationView(current),
+        audit: {
+          actor: input.actor,
+          action: "growth.promotion.consume_replay",
+          subjectType: "promotion_reservation",
+          subjectId: reservation.id,
+          reason:
+            "already consumed by a concurrent request; budget left untouched",
+          before: { state: current.state },
+          after: { state: current.state, ledgerLineId },
+          correlationId: input.correlationId,
+        },
+        events: [],
+      };
+    }
     const budget = await lockBudget(tx, reservation.campaignVersionId);
     const amountMinor = reservation.amountMinor;
-    const updated = await tx.promotionReservation.update({
+    const updated = await tx.promotionReservation.findUniqueOrThrow({
       where: { id: reservation.id },
-      data: { state: "consumed" },
     });
     await tx.campaignBudget.update({
       where: { campaignVersionId: reservation.campaignVersionId },

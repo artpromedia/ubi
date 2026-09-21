@@ -13,6 +13,7 @@ import type { EmbeddingProvider } from "../ai/embedding-provider";
 import type { ModelProvider } from "../ai/model-provider";
 import type { Retriever } from "../ai/rag";
 import type { GrantPort } from "../ports/grant-port";
+import type { MarketplacePort } from "../ports/marketplace-port";
 import type { PromotionsPort } from "../ports/promotions-port";
 import type { RidePort } from "../ports/ride-port";
 import type { SupportPort } from "../ports/support-port";
@@ -47,6 +48,8 @@ export interface AskDeps {
   readonly retriever: Retriever;
   readonly ride: RidePort;
   readonly travel: TravelPort;
+  /** The negotiated-fare marketplace client (C10) — gated by `ai_marketplace`. */
+  readonly marketplace: MarketplacePort;
   readonly promotions: PromotionsPort;
   readonly grants: GrantPort;
   readonly support: SupportPort;

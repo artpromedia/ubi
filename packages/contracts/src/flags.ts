@@ -41,6 +41,13 @@ export const FLAG_KEYS = [
   "marketplace_rides",
   "marketplace_delivery",
   "marketplace_queued_jobs",
+  // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
+  // assistant quoting, publishing a bounded request, and (the only binding step)
+  // selecting a winning offer within a user's grant/mandate. Deny-by-default and
+  // independent of `marketplace_rides`: the human marketplace can be live in a
+  // city while the AI is not authorised to act in it. Nothing enables this; it
+  // stays off until the C10 deterministic suite gates it on per city.
+  "ai_marketplace",
 ] as const;
 
 export type FlagKey = (typeof FLAG_KEYS)[number];

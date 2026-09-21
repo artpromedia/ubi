@@ -15,6 +15,12 @@
  *     is computed server-side by the marketplace engine — the gateway must
  *     not guess) and otherwise only to the requester.
  *   - Events with no resolvable audience are dropped, never broadcast.
+ *   - The dedicated settlement event `mp.settlement.posted` (G15) needs no
+ *     per-name wiring: it matches the `event:mp.*` pattern and its
+ *     requester/driver payload resolves through the default audience branch, so
+ *     the gateway recognizes it the moment payment-service emits it. The legacy
+ *     `transfer.posted` / `payment.cash_acknowledged` names are off the mp.*
+ *     channel and remain the payment/notification surfaces' concern.
  *
  * Cross-instance note: subscribeOutbox dedupes on envelope.id via a shared
  * Redis SET NX, so exactly one gateway instance handles each event;

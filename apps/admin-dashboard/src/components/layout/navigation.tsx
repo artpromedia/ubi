@@ -99,6 +99,10 @@ const navigation = [
     children: [
       { name: "Live Requests", href: "/marketplace" },
       { name: "Policies", href: "/marketplace/policies" },
+      { name: "Operations", href: "/marketplace/operations" },
+      { name: "Cases", href: "/marketplace/cases" },
+      { name: "Standing & Appeals", href: "/marketplace/standing" },
+      { name: "Notifications", href: "/marketplace/notifications" },
     ],
   },
   {

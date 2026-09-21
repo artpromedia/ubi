@@ -2,10 +2,12 @@ package marketplace_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/testutil"
 )
@@ -62,6 +64,85 @@ func TestExpirySweepReleasesOnce(t *testing.T) {
 	}
 	if request.CloseReason != "no_offers" {
 		t.Fatalf("close reason: got %q, want no_offers", request.CloseReason)
+	}
+}
+
+// TestFundingReleaseFailureIsRecoveredBySweep: an award abandoned into its
+// terminal compensated state still owes the rider's funding release when the
+// wallet went dark at compensation time — the debt is on the recovery books
+// and the sweep re-drives it, under the award's ONE release key, until the
+// wallet confirms exactly one release (C02).
+func TestFundingReleaseFailureIsRecoveredBySweep(t *testing.T) {
+	h := newHarness(t)
+	rider := h.Rider()
+	driver := h.Driver()
+
+	view, _ := publishAt(t, h, rider, 0)
+	requestID := view["requestId"].(string)
+	amount := moneyMinor(t, view, "minimumFareMinor")
+
+	parkDriver(t, h, driver, testutil.PickupFixture())
+	h.Wallet.SetSpendable(driver.UserID, 1_000_000)
+	created := submitBid(t, h, driver, requestID, amount, "")
+	requireStatus(t, created, http.StatusCreated)
+	bidView := decode(t, created)
+
+	// Funding secures the fare, the capture refuses definitively, and the
+	// funding endpoint goes dark exactly when compensation wants the release.
+	h.Wallet.FailCapture = domain.Errorf(domain.CodeConflict, "capture refused")
+	h.Funding.FailRelease = errors.New("funding endpoint down")
+	recorder := doSelect(t, h, rider, requestID, map[string]any{
+		"bidId": bidView["bidId"], "requestVersion": 1, "bidVersion": 1,
+	}, "")
+	requireStatus(t, recorder, http.StatusAccepted)
+
+	award := awardRow(t, h, requestID)
+	if award.State != machine.MpAwardCompensated {
+		t.Fatalf("award state: %s, want compensated", award.State)
+	}
+	if h.Funding.EffectiveReleases != 0 {
+		t.Fatalf("the dark endpoint cannot have released anything: %d", h.Funding.EffectiveReleases)
+	}
+
+	// The debt is on the books under the award's one release key.
+	ctx := context.Background()
+	releaseKey := "mp.fund.release:" + award.ID.String()
+	var unresolved int
+	if err := h.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM mp.reservation_recovery
+		 WHERE reservation_id = $1 AND action = 'funding_release' AND resolved_at IS NULL`,
+		releaseKey).Scan(&unresolved); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved != 1 {
+		t.Fatalf("funding release recovery rows: got %d, want 1", unresolved)
+	}
+
+	// A healthy endpoint later: the sweep settles the debt exactly once,
+	// however many sweeps run.
+	h.Funding.FailRelease = nil
+	h.Clock.Advance(2 * time.Second)
+	if err := h.Marketplace.Sweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Marketplace.Sweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if h.Funding.EffectiveReleases != 1 {
+		t.Fatalf("effective funding releases after recovery sweeps: got %d, want exactly 1",
+			h.Funding.EffectiveReleases)
+	}
+	if reason := h.Funding.ReleasedAwards[award.ID]; reason != "capture_refused" {
+		t.Fatalf("release reason: got %q, want capture_refused", reason)
+	}
+	if err := h.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM mp.reservation_recovery
+		 WHERE reservation_id = $1 AND resolved_at IS NULL`,
+		releaseKey).Scan(&unresolved); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved != 0 {
+		t.Fatalf("recovery rows left unresolved: %d", unresolved)
 	}
 }
 

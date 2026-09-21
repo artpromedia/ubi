@@ -24,7 +24,9 @@ const sweepBatch = 100
 //  3. expand search envelopes per policy — preserving valid bids and never
 //     bumping the revision;
 //  4. retry wallet operations the engine still owes (orphan reservations,
-//     failed releases, adjusts and reversals);
+//     failed releases, adjusts, reversals — and rider funding releases for
+//     awards abandoned into their terminal non-settled states, cancelled and
+//     compensated, whose release the wallet could not confirm);
 //  5. resume stalled award sagas — re-polling an unknown capture by award id
 //     until the outcome is definite, NEVER timeout-reopening while a debit
 //     may still commit;
@@ -464,6 +466,29 @@ func (s *Service) runRecovery(ctx context.Context, row *RecoveryRow, now time.Ti
 		}
 		s.markRowHoldReleased(ctx, row, now)
 		return true, nil
+
+	case RecoveryFundingRelease:
+		// A rider funding release an abandoned award still owes (C02),
+		// idempotent under the award's ONE release key — however many sweeps
+		// run, the reservation frees at most once. A CONSUMED reservation is
+		// a DEFINITE answer: the award settled with this money, so the row
+		// resolves (retrying cannot change it) and the disagreement is
+		// alarmed instead of looped on.
+		var payload FundingReleaseRecoveryPayload
+		if err := json.Unmarshal(row.Payload, &payload); err != nil || payload.AwardID == uuid.Nil {
+			return false, fmt.Errorf("funding release row has an unreadable payload: %v", err)
+		}
+		opErr := s.deps.Funding.Release(ctx, payload.AwardID, payload.Reason,
+			fundingReleaseKeyFor(payload.AwardID))
+		if opErr == nil {
+			return true, nil
+		}
+		if errors.Is(opErr, ErrFundingReservationConsumed) {
+			s.deps.Logger.Error().Str("award_id", payload.AwardID.String()).
+				Msg("rider funding reservation already CONSUMED for an abandoned award — settlement and compensation disagree; investigate")
+			return true, opErr
+		}
+		return false, opErr
 
 	case RecoverySettle:
 		// Completion settlement, idempotent on the award id. NEVER resolved

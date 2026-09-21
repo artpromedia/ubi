@@ -39,12 +39,21 @@ var eventNames = map[string]struct{}{
 	"mp.queue.eta_updated":   {},
 	"mp.queue.window_missed": {},
 	"mp.rate_profile.saved":  {},
+	// G15: dedicated settlement event. Registered for parity with the contract's
+	// closed EVENT_NAMES set; the PRODUCER is payment-service (out of scope), not
+	// ride-service — ride-service does not emit it. Consumers (notification,
+	// realtime) recognize it alongside the legacy transfer.posted /
+	// payment.cash_acknowledged names.
+	"mp.settlement.posted": {},
 
 	// Execution-ride names reused from the move surface: the award saga and
 	// the promotion create the execution ride inside THEIR transaction, so the
-	// same downstream consumers see the same ride lifecycle events.
-	"ride.requested": {},
-	"ride.assigned":  {},
+	// same downstream consumers see the same ride lifecycle events. The
+	// stranded-ride repair moves a ride across the driver-cancel terminal
+	// edge inside ITS transaction for the same reason.
+	"ride.requested":           {},
+	"ride.assigned":            {},
+	"ride.cancelled_by_driver": {},
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,

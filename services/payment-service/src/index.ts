@@ -86,9 +86,6 @@ app.use(
 // Error handler
 app.use("*", errorHandler);
 
-// Health check routes (no auth required)
-app.route("/health", healthRoutes);
-
 // Service auth and rate limiting for internal routes
 app.use("/fraud/*", paymentRateLimit);
 app.use("/fraud/*", serviceAuth);
@@ -96,30 +93,56 @@ app.use("/safety/*", paymentRateLimit);
 app.use("/safety/*", serviceAuth);
 app.use("/admin/*", paymentRateLimit);
 app.use("/admin/*", serviceAuth);
-
-// API routes
-app.route("/fraud", fraudRoutes);
-app.route("/safety", safetyRoutes);
-app.route("/admin", adminRoutes);
-
-// Canonical wallet ledger (slice 04) and finance reconciliation (slice 11).
-// These mount beside the older /wallets routes while those are retired; the
-// route modules apply their own auth, so they are safe under any mount order.
-const ledgerDeps = walletDeps();
 app.use("/v1/wallet/*", paymentRateLimit);
-// Marketplace commission holds (M04). Mounted BEFORE the general wallet
-// routes: the wallet router guards everything under it with user session
-// auth, and the hold mutations are service-key calls from the award engine.
-app.route("/v1/wallet/mp", createMpHoldRoutes(ledgerDeps));
-app.route("/v1/wallet", createWalletV1Routes(ledgerDeps));
 app.use("/v1/finance/*", paymentRateLimit);
-app.route("/v1/finance", createFinanceRoutes(ledgerDeps));
-// support-service posts typed remedies here; it decides whether a case
-// deserves one, the ledger decides which accounts move.
-app.route("/v1/finance/remedies", createRemedyRoutes(ledgerDeps));
+
+// ===========================================
+// ROUTER REGISTRY — the single place a router is mounted (G14).
+//
+// Every router this service serves is listed HERE, in mount order, and
+// MOUNTED_ROUTE_PREFIXES below is exported as the allowlist that
+// tests/routes-inventory.test.ts checks the live Hono route table against.
+// A quarantined legacy router (the OLD /wallets, /payments, /payouts,
+// /mobile-money, /webhooks, and the deferred /b2b, /loyalty, /drivers — see
+// QUARANTINE.md) that is remounted, here or anywhere else, turns that test
+// red: the inventory is the tripwire, so remounting is a reviewed decision,
+// never an accident.
+//
+// Order notes: /v1/wallet/mp (marketplace commission holds, M04) mounts
+// BEFORE the general wallet routes, because the wallet router guards
+// everything under it with user session auth while the hold mutations are
+// service-key calls from the award engine. The route modules apply their own
+// auth; the health routes are deliberately unauthenticated probes.
+// ===========================================
+const ledgerDeps = walletDeps();
+
+const ROUTER_REGISTRY: ReadonlyArray<{
+  readonly prefix: string;
+  readonly router: Hono;
+}> = [
+  { prefix: "/health", router: healthRoutes },
+  { prefix: "/fraud", router: fraudRoutes },
+  { prefix: "/safety", router: safetyRoutes },
+  { prefix: "/admin", router: adminRoutes },
+  { prefix: "/v1/wallet/mp", router: createMpHoldRoutes(ledgerDeps) },
+  { prefix: "/v1/wallet", router: createWalletV1Routes(ledgerDeps) },
+  { prefix: "/v1/finance", router: createFinanceRoutes(ledgerDeps) },
+  { prefix: "/v1/finance/remedies", router: createRemedyRoutes(ledgerDeps) },
+];
+
+for (const { prefix, router } of ROUTER_REGISTRY) {
+  app.route(prefix, router);
+}
+
+/** The supported surface, exported for the route-inventory tripwire test. */
+export const MOUNTED_ROUTE_PREFIXES: readonly string[] = ROUTER_REGISTRY.map(
+  (entry) => entry.prefix,
+);
 
 // DEFERRED: /b2b and /drivers routes and the driver-experience services are
-// quarantined until those features launch (see QUARANTINE.md). Not mounted.
+// quarantined until those features launch (see QUARANTINE.md). Not mounted,
+// not imported — and the registry above plus tests/routes-inventory.test.ts
+// keep it that way structurally.
 
 // 404 handler
 app.notFound((c) => {
@@ -135,45 +158,48 @@ app.notFound((c) => {
   );
 });
 
-// Start server
-const port = Number.parseInt(process.env.PORT || "4003", 10);
+// Start server — not under test, where the app (and its route inventory) is
+// imported for assertions without binding a port.
+if (process.env.NODE_ENV !== "test") {
+  const port = Number.parseInt(process.env.PORT || "4003", 10);
 
-logger.info({ port }, "UBI Payment Service starting");
+  logger.info({ port }, "UBI Payment Service starting");
 
-const server = serve({
-  fetch: app.fetch,
-  port,
-});
-
-// Graceful shutdown
-const shutdown = (signal: string): void => {
-  logger.info({ signal }, "Shutdown signal received, closing gracefully...");
-
-  server.close(async () => {
-    logger.info("HTTP server closed");
-
-    await Promise.all([
-      disconnectPrisma(),
-      disconnectRedis(),
-      analyticsService.shutdown(),
-    ]);
-
-    logger.info("All connections closed");
-    process.exit(0);
+  const server = serve({
+    fetch: app.fetch,
+    port,
   });
 
-  // Force shutdown after 30s
-  setTimeout(() => {
-    logger.error("Forced shutdown after timeout");
-    process.exit(1);
-  }, 30000);
-};
+  // Graceful shutdown
+  const shutdown = (signal: string): void => {
+    logger.info({ signal }, "Shutdown signal received, closing gracefully...");
 
-process.on("SIGTERM", () => {
-  shutdown("SIGTERM");
-});
-process.on("SIGINT", () => {
-  shutdown("SIGINT");
-});
+    server.close(async () => {
+      logger.info("HTTP server closed");
+
+      await Promise.all([
+        disconnectPrisma(),
+        disconnectRedis(),
+        analyticsService.shutdown(),
+      ]);
+
+      logger.info("All connections closed");
+      process.exit(0);
+    });
+
+    // Force shutdown after 30s
+    setTimeout(() => {
+      logger.error("Forced shutdown after timeout");
+      process.exit(1);
+    }, 30000);
+  };
+
+  process.on("SIGTERM", () => {
+    shutdown("SIGTERM");
+  });
+  process.on("SIGINT", () => {
+    shutdown("SIGINT");
+  });
+}
 
 export default app;

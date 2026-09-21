@@ -55,6 +55,26 @@ once past tolerance; the rider gets the fee-free exit which reverses the
 captured fee exactly once. Ops must not hand-edit balances — remedies go
 through `/v1/finance/remedies` or the award cancel path.
 
+**Driver cancelled a marketplace ride.** Nothing to do: the ride ends in the
+terminal `cancelled_by_driver` state and the terminal funnel (observer, with
+the sweep as the durable backstop) releases the claim, cancels the award,
+reverses the captured commission and releases the rider's funding
+reservation exactly once, then promotes or releases any queued next job. The
+request keeps `closeReason: driver_cancelled`; the requester decides whether
+to publish a new request.
+
+**Marketplace ride stuck in `rematching` (stranded, pre-C04).** Rides driver-
+cancelled before the terminal state existed sat in `rematching` with a live
+award, claim and rider funding (dispatch never re-offers marketplace rides).
+Converge them with the admin repair:
+`POST /v1/admin/mp/repairs/stranded-rides` with `{"dryRun": true}` to list
+(id, cityId, stranded-since, awardId), then `{"dryRun": false}` (optionally
+`rideIds`, `limit`; Idempotency-Key required, hard cap 50 rides per call) to
+apply. Each ride moves `rematching → cancelled_by_driver` in its own audited
+transaction and then runs the same terminal funnel; a repaired or since-moved
+ride is reported per ride and skipped, replays converge, and money moves only
+through the award's idempotent reverse/release keys — never by hand.
+
 **Kill switch.** `Stop new awards` in the admin console (or
 `PUT /v1/flags/marketplace_rides` / `marketplace_delivery` per city,
 enabled=false). Deny-by-default means NEW quotes/publications/bids stop

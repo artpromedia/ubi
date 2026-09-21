@@ -28,6 +28,7 @@ import {
   type AuditedTx,
   type AuditRecord,
 } from "./audit";
+import { isUniqueViolation } from "./errors";
 import { assertPermission } from "./roles";
 import { deterministicId } from "../lib/ids";
 
@@ -245,6 +246,47 @@ async function postIncentiveLine(
 
   return auditedTransaction(deps.db, async (tx) => {
     await lockRule(tx, rule.id);
+
+    // Re-check for the posting under the rule lock: two concurrent calls for
+    // the same trip+kind (e.g. a redelivered "trip completed" event) both pass
+    // the pre-transaction existence check above with a stale "not posted"
+    // read, then serialise on this lock. The first writer commits the
+    // posting; the second must replay it rather than post — and pay — a
+    // second line for the same trip (CLAUDE.md #4, #20 — one rebate per trip).
+    const already = await tx.driverIncentivePosting.findUnique({
+      where: { tripId_kind: { tripId: input.tripId, kind } },
+    });
+    if (already !== null) {
+      return {
+        result: {
+          posted: true,
+          posting: {
+            id: already.id,
+            kind: already.kind,
+            amount: money(Number(already.amountMinor), already.currency),
+            ledgerLineId: already.ledgerLineId,
+            effectiveBps: computed.effectiveBps,
+          },
+          replayed: true,
+        },
+        audit: {
+          actor: input.actor,
+          action: `growth.incentive.${kind}_replay`,
+          subjectType: "driver_incentive_posting",
+          subjectId: already.id,
+          reason: "already posted by a concurrent request; not posted twice",
+          before: { tripId: input.tripId, kind },
+          after: {
+            tripId: input.tripId,
+            amountMinor: Number(already.amountMinor),
+            settlement: settlementFor(rule, input.trip),
+            ledgerLineId: already.ledgerLineId,
+          },
+          correlationId: input.correlationId,
+        },
+        events: [],
+      };
+    }
 
     // Caps, recomputed under the lock.
     if (rule.eligibleTripCap !== null) {
@@ -563,63 +605,96 @@ export async function postMilestone(
     idempotencyKey: `incentive:${input.tripId}:milestone`,
     actor: input.actor,
   });
-  return auditedTransaction(deps.db, async (tx) => {
-    const created = await tx.driverIncentivePosting.create({
-      data: {
-        id: postingId,
-        ruleId: input.ruleId,
-        driverId: input.driverId,
-        tripId: input.tripId,
-        ledgerLineId: posted.ledgerLineId,
-        kind: "milestone",
-        amountMinor: BigInt(input.amount.amountMinor),
-        currency: input.amount.currency,
-      },
-    });
-    return {
-      result: {
-        posted: true,
-        posting: {
-          id: created.id,
-          kind: "milestone",
-          amount: input.amount,
+  try {
+    return await auditedTransaction(deps.db, async (tx) => {
+      const created = await tx.driverIncentivePosting.create({
+        data: {
+          id: postingId,
+          ruleId: input.ruleId,
+          driverId: input.driverId,
+          tripId: input.tripId,
           ledgerLineId: posted.ledgerLineId,
-          effectiveBps: 0,
+          kind: "milestone",
+          amountMinor: BigInt(input.amount.amountMinor),
+          currency: input.amount.currency,
         },
-        replayed: false,
-      },
-      audit: {
-        actor: input.actor,
-        action: "growth.incentive.milestone",
-        subjectType: "driver_incentive_posting",
-        subjectId: created.id,
-        reason: `milestone ${input.milestone}`,
-        before: null,
-        after: { tripId: input.tripId, amountMinor: input.amount.amountMinor },
-        correlationId: input.correlationId,
-      },
-      events: [
-        {
-          name: "driver_referral.milestone_reached",
-          aggregateType: "driver",
-          aggregateId: input.driverId,
-          fromVersion: null,
-          toVersion: 0,
+      });
+      return {
+        result: {
+          posted: true,
+          posting: {
+            id: created.id,
+            kind: "milestone",
+            amount: input.amount,
+            ledgerLineId: posted.ledgerLineId,
+            effectiveBps: 0,
+          },
+          replayed: false,
+        },
+        audit: {
           actor: input.actor,
-          actorType: "system",
-          cityId: input.cityId,
-          idempotencyKey: `driver_referral.milestone_reached:${input.tripId}`,
-          correlationId: input.correlationId,
-          occurredAt: deps.now(),
-          payload: {
-            driverId: input.driverId,
-            milestone: input.milestone,
+          action: "growth.incentive.milestone",
+          subjectType: "driver_incentive_posting",
+          subjectId: created.id,
+          reason: `milestone ${input.milestone}`,
+          before: null,
+          after: {
+            tripId: input.tripId,
             amountMinor: input.amount.amountMinor,
           },
+          correlationId: input.correlationId,
         },
-      ],
-    };
-  });
+        events: [
+          {
+            name: "driver_referral.milestone_reached",
+            aggregateType: "driver",
+            aggregateId: input.driverId,
+            fromVersion: null,
+            toVersion: 0,
+            actor: input.actor,
+            actorType: "system",
+            cityId: input.cityId,
+            idempotencyKey: `driver_referral.milestone_reached:${input.tripId}`,
+            correlationId: input.correlationId,
+            occurredAt: deps.now(),
+            payload: {
+              driverId: input.driverId,
+              milestone: input.milestone,
+              amountMinor: input.amount.amountMinor,
+            },
+          },
+        ],
+      };
+    });
+  } catch (error) {
+    // Two concurrent calls for the same trip's milestone (e.g. a redelivered
+    // event) both pass the pre-transaction existence check with a stale
+    // "not posted" read; the ledger call is idempotent either way, but the
+    // second writer must replay the existing posting rather than error or
+    // post a second one for the same milestone (CLAUDE.md #4).
+    if (isUniqueViolation(error)) {
+      const existingRow = await deps.db.driverIncentivePosting.findUnique({
+        where: { tripId_kind: { tripId: input.tripId, kind: "milestone" } },
+      });
+      if (existingRow !== null) {
+        return {
+          posted: true,
+          posting: {
+            id: existingRow.id,
+            kind: existingRow.kind,
+            amount: money(
+              Number(existingRow.amountMinor),
+              existingRow.currency,
+            ),
+            ledgerLineId: existingRow.ledgerLineId,
+            effectiveBps: 0,
+          },
+          replayed: true,
+        };
+      }
+    }
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------

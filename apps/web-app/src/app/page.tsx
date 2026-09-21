@@ -16,27 +16,17 @@ import { Logo } from "../../../../packages/ui/src/components/logo";
 // ===========================================
 
 export const metadata: Metadata = {
-  title: "UBI - Your Ride, Your Way | Africa's Super App",
+  title: "UBI - Your Ride, Your Way",
   description:
-    "Book rides, order food, and send packages across Africa with UBI. Fast, reliable, and affordable mobility solutions designed for Africa.",
-  keywords: [
-    "ride-hailing",
-    "food delivery",
-    "package delivery",
-    "mobility",
-    "Africa",
-    "Nigeria",
-    "Kenya",
-    "South Africa",
-    "Ghana",
-  ],
+    "Request a ride with UBI. The fare is set when a driver is assigned and shown before you confirm. Other services roll out city by city.",
+  keywords: ["ride-hailing", "mobility", "Africa", "Nigeria"],
   openGraph: {
     title: "UBI - Your Ride, Your Way",
     description:
-      "Book rides, order food, and send packages across Africa with UBI.",
+      "Request a ride with UBI. The fare is set when a driver is assigned and shown before you confirm.",
     type: "website",
     locale: "en_US",
-    siteName: "UBI Africa",
+    siteName: "UBI",
   },
 };
 
@@ -177,35 +167,10 @@ export default async function LandingPage() {
                 </Link>
               </div>
 
-              {/* Trust Indicators */}
-              <div className="mt-12 flex items-center gap-8">
-                <div className="text-center">
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                    10M+
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Happy Riders
-                  </p>
-                </div>
-                <div className="h-12 w-px bg-gray-200 dark:bg-gray-700" />
-                <div className="text-center">
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                    6
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Countries
-                  </p>
-                </div>
-                <div className="h-12 w-px bg-gray-200 dark:bg-gray-700" />
-                <div className="text-center">
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                    4.8★
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    App Rating
-                  </p>
-                </div>
-              </div>
+              <p className="mt-12 text-sm text-gray-500 dark:text-gray-400">
+                Availability varies by city. Check the app for what&apos;s live
+                near you.
+              </p>
             </div>
 
             {/* Right Column - App Preview */}
@@ -226,24 +191,26 @@ export default async function LandingPage() {
                 {/* Floating elements */}
                 <div className="absolute -left-8 top-12 rounded-2xl bg-white p-4 shadow-xl dark:bg-gray-800">
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">🍔</span>
+                    <span className="text-2xl">📍</span>
                     <div>
                       <p className="font-semibold text-gray-900 dark:text-white">
-                        Food Delivered
+                        Fare shown upfront
                       </p>
-                      <p className="text-sm text-gray-500">In 25 min</p>
+                      <p className="text-sm text-gray-500">
+                        Before you confirm
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 <div className="absolute -right-8 bottom-24 rounded-2xl bg-white p-4 shadow-xl dark:bg-gray-800">
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">📦</span>
+                    <span className="text-2xl">🔒</span>
                     <div>
                       <p className="font-semibold text-gray-900 dark:text-white">
-                        Package Sent
+                        PIN-verified pickup
                       </p>
-                      <p className="text-sm text-gray-500">Same day delivery</p>
+                      <p className="text-sm text-gray-500">Every ride</p>
                     </div>
                   </div>
                 </div>
@@ -258,10 +225,11 @@ export default async function LandingPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-4xl">
-              One App, Three Services
+              One App, Growing Services
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600 dark:text-gray-400">
-              Everything you need to move, eat, and send – all in one place.
+              UBI Move is live today. Bites and Send are being introduced city
+              by city — the app tells you what&apos;s on where you are.
             </p>
           </div>
 
@@ -275,8 +243,8 @@ export default async function LandingPage() {
                 UBI Move
               </h3>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Book safe, affordable rides anytime. From daily commutes to
-                special trips.
+                Request a ride. The fare is set when a driver is assigned and
+                shown before you confirm.
               </p>
               <Link
                 href="/auth/signup"
@@ -308,14 +276,14 @@ export default async function LandingPage() {
                 UBI Bites
               </h3>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Order from your favorite restaurants. Delicious food delivered
-                to your door.
+                Food delivery, rolling out city by city. Not yet on in every
+                market — the app shows where it&apos;s live.
               </p>
               <Link
                 href="/auth/signup"
                 className="mt-4 inline-flex items-center text-orange-600 hover:text-orange-700 dark:text-orange-400"
               >
-                Order Now
+                Check availability
                 <svg
                   className="ml-1 h-4 w-4"
                   fill="none"
@@ -341,14 +309,14 @@ export default async function LandingPage() {
                 UBI Send
               </h3>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Send packages across the city or across the country. Fast and
-                reliable.
+                Package delivery, being introduced by market. Not yet on
+                everywhere — the app shows where it&apos;s live.
               </p>
               <Link
                 href="/auth/signup"
                 className="mt-4 inline-flex items-center text-cyan-600 hover:text-cyan-700 dark:text-cyan-400"
               >
-                Send Package
+                Check availability
                 <svg
                   className="ml-1 h-4 w-4"
                   fill="none"
@@ -368,48 +336,16 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* Countries Section */}
+      {/* Availability Section */}
       <section id="countries" className="bg-gray-50 py-24 dark:bg-gray-800">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-4xl">
-              Available Across Africa
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600 dark:text-gray-400">
-              We&apos;re growing fast. UBI is now live in 6 countries with more
-              coming soon.
-            </p>
-          </div>
-
-          <div className="mt-12 flex flex-wrap justify-center gap-8">
-            {[
-              { flag: "🇳🇬", name: "Nigeria", cities: "Lagos, Abuja, Ibadan" },
-              { flag: "🇰🇪", name: "Kenya", cities: "Nairobi, Mombasa" },
-              {
-                flag: "🇿🇦",
-                name: "South Africa",
-                cities: "Johannesburg, Cape Town",
-              },
-              { flag: "🇬🇭", name: "Ghana", cities: "Accra, Kumasi" },
-              { flag: "🇷🇼", name: "Rwanda", cities: "Kigali" },
-              { flag: "🇪🇹", name: "Ethiopia", cities: "Addis Ababa" },
-            ].map((country) => (
-              <div
-                key={country.name}
-                className="flex items-center gap-4 rounded-xl bg-white p-6 shadow-md dark:bg-gray-900"
-              >
-                <span className="text-4xl">{country.flag}</span>
-                <div>
-                  <p className="font-semibold text-gray-900 dark:text-white">
-                    {country.name}
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {country.cities}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-4xl">
+            UBI launches city by city
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600 dark:text-gray-400">
+            We don&apos;t publish launch dates or counts. Sign in to see exactly
+            what&apos;s live where you are.
+          </p>
         </div>
       </section>
 
@@ -436,8 +372,8 @@ export default async function LandingPage() {
                 Rider App
               </h3>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Book rides, order food, and send packages. Your all-in-one
-                mobility app.
+                Request a ride from your browser. Native apps are not yet
+                published.
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
                 <Link
@@ -446,22 +382,9 @@ export default async function LandingPage() {
                 >
                   Web App
                 </Link>
-                <a
-                  href="https://apps.apple.com/app/ubi"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                >
-                  App Store
-                </a>
-                <a
-                  href="https://play.google.com/store/apps/details?id=africa.ubi.rider"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                >
-                  Play Store
-                </a>
+                <span className="inline-flex items-center rounded-lg border border-dashed border-gray-300 px-4 py-2 text-sm font-medium text-gray-400 dark:border-gray-600 dark:text-gray-500">
+                  App Store &amp; Google Play — not yet published
+                </span>
               </div>
             </div>
 
@@ -474,34 +397,13 @@ export default async function LandingPage() {
                 Driver App
               </h3>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Earn money on your schedule. Accept rides, deliveries, and track
-                your earnings.
+                Set your own hours. Your fare share is shown on every trip and
+                on your weekly statement.
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
-                <a
-                  href="http://localhost:3002"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                >
-                  Web App
-                </a>
-                <a
-                  href="https://apps.apple.com/app/ubi-driver"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                >
-                  App Store
-                </a>
-                <a
-                  href="https://play.google.com/store/apps/details?id=africa.ubi.driver"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                >
-                  Play Store
-                </a>
+                <span className="inline-flex items-center rounded-lg border border-dashed border-gray-300 px-4 py-2 text-sm font-medium text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                  Driver sign-up opens with the launch in your city
+                </span>
               </div>
             </div>
 
@@ -514,32 +416,12 @@ export default async function LandingPage() {
                 Restaurant Portal
               </h3>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Manage your restaurant on UBI Bites. Handle orders, menus, and
-                analytics.
+                For managing orders and menus once UBI Bites is live in your
+                city.
               </p>
-              <div className="mt-6">
-                <a
-                  href="http://localhost:3003"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600"
-                >
-                  Open Portal
-                  <svg
-                    className="ml-2 h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                    />
-                  </svg>
-                </a>
-              </div>
+              <p className="mt-6 text-sm font-medium text-gray-400 dark:text-gray-500">
+                Not yet available — arranged directly with UBI.
+              </p>
             </div>
 
             {/* Fleet Portal */}
@@ -551,32 +433,11 @@ export default async function LandingPage() {
                 Fleet Portal
               </h3>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Manage your driver fleet. Track vehicles, performance, and
-                payouts.
+                For fleet owners managing several drivers and vehicles.
               </p>
-              <div className="mt-6">
-                <a
-                  href="http://localhost:3004"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
-                >
-                  Open Portal
-                  <svg
-                    className="ml-2 h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                    />
-                  </svg>
-                </a>
-              </div>
+              <p className="mt-6 text-sm font-medium text-gray-400 dark:text-gray-500">
+                Not yet available — arranged directly with UBI.
+              </p>
             </div>
 
             {/* Merchant Portal */}
@@ -588,68 +449,12 @@ export default async function LandingPage() {
                 Merchant Portal
               </h3>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Partner with UBI Send. Manage pickups, deliveries, and business
-                integrations.
+                For businesses sending packages through UBI Send once it&apos;s
+                live in your city.
               </p>
-              <div className="mt-6">
-                <a
-                  href="http://localhost:3005"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
-                >
-                  Open Portal
-                  <svg
-                    className="ml-2 h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                    />
-                  </svg>
-                </a>
-              </div>
-            </div>
-
-            {/* Admin Dashboard */}
-            <div className="group relative rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-all hover:shadow-lg hover:border-gray-400 dark:border-gray-700 dark:bg-gray-800">
-              <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-gray-800 text-2xl text-white dark:bg-gray-600">
-                ⚙️
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                Admin Dashboard
-              </h3>
-              <p className="mt-2 text-gray-600 dark:text-gray-400">
-                Internal operations dashboard for UBI team members only.
+              <p className="mt-6 text-sm font-medium text-gray-400 dark:text-gray-500">
+                Not yet available — arranged directly with UBI.
               </p>
-              <div className="mt-6">
-                <a
-                  href="http://localhost:3001"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 dark:bg-gray-600 dark:hover:bg-gray-500"
-                >
-                  Staff Only
-                  <svg
-                    className="ml-2 h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                    />
-                  </svg>
-                </a>
-              </div>
             </div>
           </div>
 
@@ -659,29 +464,13 @@ export default async function LandingPage() {
               Want to Partner with UBI?
             </h3>
             <p className="mt-2 text-ubi-green-100">
-              Whether you&apos;re a driver, restaurant, or business - join
-              Africa&apos;s fastest growing mobility platform.
+              Driver, restaurant and business partnerships are being introduced
+              market by market.
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-4">
-              <Link
-                href="/become-driver"
-                className="inline-flex items-center rounded-lg bg-white px-6 py-3 font-semibold text-ubi-green-600 hover:bg-gray-100"
-              >
-                Become a Driver
-              </Link>
-              <Link
-                href="/restaurant-signup"
-                className="inline-flex items-center rounded-lg border-2 border-white px-6 py-3 font-semibold text-white hover:bg-white/10"
-              >
-                List Your Restaurant
-              </Link>
-              <Link
-                href="/business"
-                className="inline-flex items-center rounded-lg border-2 border-white px-6 py-3 font-semibold text-white hover:bg-white/10"
-              >
-                Business Solutions
-              </Link>
-            </div>
+            <p className="mt-6 text-sm text-ubi-green-100">
+              Sign-up for these isn&apos;t open here yet — check back as UBI
+              launches in your city.
+            </p>
           </div>
         </div>
       </section>
@@ -693,7 +482,7 @@ export default async function LandingPage() {
             Ready to Get Started?
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-lg text-primary-100">
-            Join millions of users across Africa. Download UBI today.
+            Create an account and request a ride when UBI is live in your city.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
             <Link
@@ -720,7 +509,8 @@ export default async function LandingPage() {
             <div>
               <Logo size="md" />
               <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                Africa&apos;s super app for rides, food, and deliveries.
+                Ubiquiti Mobility Inc. Rides today; more services rolling out
+                city by city.
               </p>
             </div>
 
@@ -738,21 +528,8 @@ export default async function LandingPage() {
                     Rider App
                   </Link>
                 </li>
-                <li>
-                  <a
-                    href="https://apps.apple.com/app/ubi"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Download iOS
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://play.google.com/store/apps/details?id=africa.ubi.rider"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Download Android
-                  </a>
+                <li className="text-sm text-gray-500 dark:text-gray-400">
+                  iOS &amp; Android apps: not yet published
                 </li>
               </ul>
             </div>
@@ -762,38 +539,11 @@ export default async function LandingPage() {
               <h4 className="font-semibold text-gray-900 dark:text-white">
                 For Partners
               </h4>
-              <ul className="mt-4 space-y-2">
+              <ul className="mt-4 space-y-2 text-sm text-gray-500 dark:text-gray-400">
+                <li>Driver sign-up opens with the launch in your city.</li>
                 <li>
-                  <Link
-                    href="/become-driver"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Become a Driver
-                  </Link>
-                </li>
-                <li>
-                  <a
-                    href="http://localhost:3003"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Restaurant Portal
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="http://localhost:3004"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Fleet Portal
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="http://localhost:3005"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Merchant Portal
-                  </a>
+                  Restaurant, fleet and merchant portals are arranged directly
+                  with UBI — not yet self-serve here.
                 </li>
               </ul>
             </div>
@@ -803,46 +553,17 @@ export default async function LandingPage() {
               <h4 className="font-semibold text-gray-900 dark:text-white">
                 Company
               </h4>
-              <ul className="mt-4 space-y-2">
-                <li>
-                  <Link
-                    href="/about"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    About
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/safety"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Safety
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/privacy"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Privacy
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/terms"
-                    className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-                  >
-                    Terms
-                  </Link>
-                </li>
+              <ul className="mt-4 space-y-2 text-sm text-gray-500 dark:text-gray-400">
+                <li>Ubiquiti Mobility Inc.</li>
+                <li>Safety and legal pages are published before launch.</li>
               </ul>
             </div>
           </div>
 
           <div className="mt-12 border-t border-gray-200 pt-8 dark:border-gray-700">
             <p className="text-center text-sm text-gray-500 dark:text-gray-400">
-              © {new Date().getFullYear()} UBI Africa. All rights reserved.
+              © {new Date().getFullYear()} Ubiquiti Mobility Inc. All rights
+              reserved.
             </p>
           </div>
         </div>

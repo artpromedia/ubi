@@ -1018,10 +1018,25 @@ model Merchant {
 }
 
 model Delivery {
-  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  senderId   String         @map("sender_id") @db.Uuid
-  merchantId String?        @map("merchant_id") @db.Uuid
-  status     DeliveryStatus @default(PENDING)
+  id                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  senderId            String         @map("sender_id") @db.Uuid
+  merchantId          String?        @map("merchant_id") @db.Uuid
+  /// The assigned driver, once one exists. Nullable: an open-market delivery
+  /// has none until AcceptDelivery; a marketplace-managed one is assigned at
+  /// creation (the award saga already picked the winner). Added alongside
+  /// the custody/returns migration (C07/G08) — delivery-service's Go code
+  /// assumed this column since M03, but no migration had ever created it, so
+  /// MarketplaceAssign could not actually insert a row against this schema
+  /// (see the C07 report for the full pre-existing mismatch this closes the
+  /// minimum viable slice of).
+  driverId            String?        @map("driver_id") @db.Uuid
+  /// The marketplace award linkage (award id, agreed fare in minor units,
+  /// fencing token, request id) — the hand-off's own metadata, not
+  /// authoritative money (that stays in the marketplace/ledger). Replaces
+  /// the previously-assumed `package` jsonb column, which this table never
+  /// actually had.
+  marketplaceMetadata Json?          @map("marketplace_metadata")
+  status              DeliveryStatus @default(PENDING)
 
   // Pickup
   pickupAddress   String @map("pickup_address")
@@ -1070,9 +1085,137 @@ model Delivery {
   sender   Rider     @relation("DeliverySender", fields: [senderId], references: [id])
   merchant Merchant? @relation(fields: [merchantId], references: [id])
 
+  custody       DeliveryCustody?
+  custodyEvents CustodyEvent[]
+  proofs        DeliveryProof[]
+  returns       DeliveryReturn[]
+
   @@index([senderId, status])
   @@index([trackingNumber])
+  @@index([driverId])
   @@map("deliveries")
+}
+
+/// Custody/returns (G08, C07). delivery-service owns NO DDL — the deliveries
+/// table it reads via pgx is Prisma-owned, so these are too: one migration
+/// chain, real FKs, CI drift coverage. delivery-service accesses them via pgx
+/// exactly as it accesses `deliveries` (raw SQL, no ORM in Go).
+///
+/// One row per delivery. `state`/`version` back the custody state machine
+/// (contracts/state-machines.json `shipment`, extended additively for the
+/// custody/return exception arc — see docs/marketplace/DELIVERY_CUSTODY.md).
+/// `version` is the optimistic-concurrency token: a state transition is a
+/// single `UPDATE ... WHERE version = $n`, so a return-consent racing a
+/// delivery-completion can only ever have one winner.
+model DeliveryCustody {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId String  @unique @map("delivery_id") @db.Uuid
+  state      String  @default("created")
+  version    Int     @default(1)
+  senderId   String  @map("sender_id") @db.Uuid
+  driverId   String? @map("driver_id") @db.Uuid
+
+  recipientUnreachableAt DateTime? @map("recipient_unreachable_at")
+  pickedUpAt             DateTime? @map("picked_up_at")
+  deliveredAt            DateTime? @map("delivered_at")
+  cancelledAt            DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  delivery Delivery         @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  events   CustodyEvent[]
+  proofs   DeliveryProof[]
+  returns  DeliveryReturn[]
+
+  @@index([state])
+  @@map("delivery_custody")
+}
+
+/// Append-only transition log. Never updated or deleted by the application —
+/// the custody timeline endpoint reads this table in order.
+model CustodyEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  custodyId  String   @map("custody_id") @db.Uuid
+  deliveryId String   @map("delivery_id") @db.Uuid
+  fromState  String?  @map("from_state")
+  toState    String   @map("to_state")
+  /// sender | driver | recipient | system | ops
+  actorType  String   @map("actor_type")
+  actorId    String?  @map("actor_id") @db.Uuid
+  reason     String?
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  custody  DeliveryCustody @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+  delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([custodyId, createdAt])
+  @@index([deliveryId])
+  @@map("custody_events")
+}
+
+/// A proof REFERENCE, never the bytes (see docs/marketplace/DELIVERY_CUSTODY.md
+/// "object storage" section — no S3/MinIO client is wired into delivery-service
+/// today, so this table stores a client-supplied, validated object key +
+/// checksum only). The uniqueness constraint makes a duplicate proof
+/// submission (retry, double-tap) idempotent: no second row.
+model DeliveryProof {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId   String   @map("delivery_id") @db.Uuid
+  custodyId    String   @map("custody_id") @db.Uuid
+  /// pickup | delivery
+  type         String
+  objectKey    String   @map("object_key")
+  contentType  String   @map("content_type")
+  sizeBytes    BigInt   @map("size_bytes")
+  sha256       String
+  uploadedBy   String   @map("uploaded_by") @db.Uuid
+  uploadedRole String   @map("uploaded_role")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  custody  DeliveryCustody @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+
+  @@unique([deliveryId, type, sha256])
+  @@index([custodyId])
+  @@map("delivery_proofs")
+}
+
+/// A return proposal. `feeMinor` is a REFERENCE amount only — delivery-service
+/// never moves money (see docs/marketplace/DELIVERY_CUSTODY.md "return-leg
+/// charge"). `chargeStatus` records whether a charged return can actually be
+/// authorized: `not_required` (fee-free / hold-point return), or
+/// `unsupported` (a fee was proposed but no payment-service delivery-return
+/// funding endpoint exists yet — this return cannot complete the charged leg
+/// until one does; it may still complete as hold-at-point).
+model DeliveryReturn {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId     String  @map("delivery_id") @db.Uuid
+  custodyId      String  @map("custody_id") @db.Uuid
+  reason         String
+  feeMinor       BigInt  @default(0) @map("fee_minor")
+  currency       String?
+  chargeStatus   String  @default("not_required") @map("charge_status")
+  proposedBy     String  @map("proposed_by") @db.Uuid
+  proposedByRole String  @map("proposed_by_role")
+
+  proposedAt       DateTime  @default(now()) @map("proposed_at")
+  /// pending | consented | rejected | expired
+  consentState     String    @default("pending") @map("consent_state")
+  consentExpiresAt DateTime  @map("consent_expires_at")
+  resolvedAt       DateTime? @map("resolved_at")
+  resolvedBy       String?   @map("resolved_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  custody  DeliveryCustody @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId])
+  @@index([consentState, consentExpiresAt])
+  @@map("delivery_returns")
 }
 
 // ===========================================
@@ -1493,14 +1636,14 @@ model DeviceToken {
 // -------------------------------------------
 
 model City {
-  id       String  @id
-  name     String
-  country  String  @db.Char(2)
+  id          String   @id
+  name        String
+  country     String   @db.Char(2)
   /// State or federal territory the city sits in, for display (e.g. "Lagos State", "FCT").
-  region   String?
-  timezone String
+  region      String?
+  timezone    String
   /// planned | launching | active | paused — CITY_STATUSES in @ubi/contracts.
-  status   String  @default("planned")
+  status      String   @default("planned")
   /// Cities in the same group must go live together (launch_pair_incomplete guard).
   launchGroup String?  @map("launch_group")
   /// Derived: status == "active". Kept for readers that predate `status`.
@@ -1664,13 +1807,14 @@ model Wallet {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  lines        JournalLine[]
-  transfersOut Transfer[]         @relation("TransferFrom")
-  transfersIn  Transfer[]         @relation("TransferTo")
-  nipTransfers NipTransfer[]
-  topups       Topup[]
-  statements   WalletStatement[]
-  mpHolds      MpCommissionHold[]
+  lines               JournalLine[]
+  transfersOut        Transfer[]           @relation("TransferFrom")
+  transfersIn         Transfer[]           @relation("TransferTo")
+  nipTransfers        NipTransfer[]
+  topups              Topup[]
+  statements          WalletStatement[]
+  mpHolds             MpCommissionHold[]
+  mpRiderReservations MpRiderReservation[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -1856,6 +2000,37 @@ model MpCommissionHold {
 
   @@index([walletId, state], map: "mp_commission_holds_spendable")
   @@map("mp_commission_holds")
+}
+
+/// Rider-side funding reservation (C02): the durable encumbrance the award
+/// saga takes on the rider's wallet at selection. Like a commission hold it is
+/// a table row, never a journal movement — the cleared balance is untouched
+/// and only spendable drops while the reservation is `active`. It is consumed
+/// exactly once inside the settlement transaction, or released with a linked
+/// reason when the award is abandoned. One reservation per award, ever.
+model MpRiderReservation {
+  id              String    @id
+  /// The award is the idempotency authority: one reservation per award.
+  awardId         String    @unique @map("award_id")
+  requestId       String    @map("request_id")
+  requesterId     String    @map("requester_id")
+  walletId        String    @map("wallet_id")
+  amountMinor     BigInt    @map("amount_minor")
+  currency        String
+  cityId          String    @map("city_id")
+  paymentMethodId String    @map("payment_method_id")
+  /// active | consumed | released
+  status          String
+  /// Why the reservation was released; null while active and for consumption.
+  reason          String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  resolvedAt      DateTime? @map("resolved_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, status], map: "mp_rider_reservations_spendable")
+  @@map("mp_rider_reservations")
 }
 
 model WalletStatement {

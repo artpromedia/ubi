@@ -14,13 +14,20 @@
         "driver_arrived",
         "rematching",
         "cancelled_by_rider",
+        "cancelled_by_driver",
         "safety_hold"
       ],
-      "rematching": ["driver_assigned", "no_driver", "cancelled_by_rider"],
+      "rematching": [
+        "driver_assigned",
+        "no_driver",
+        "cancelled_by_rider",
+        "cancelled_by_driver"
+      ],
       "driver_arrived": [
         "pin_verification",
         "rematching",
         "cancelled_by_rider",
+        "cancelled_by_driver",
         "no_show"
       ],
       "pin_verification": ["in_progress", "driver_arrived"],
@@ -84,10 +91,10 @@
   "shipment": {
     "initial": "created",
     "transitions": {
-      "created": ["courier_assigned"],
-      "courier_assigned": ["picked_up"],
+      "created": ["courier_assigned", "cancelled"],
+      "courier_assigned": ["picked_up", "cancelled"],
       "picked_up": ["in_transit"],
-      "in_transit": ["delivered", "exception"],
+      "in_transit": ["delivered", "exception", "delivery_attempted"],
       "exception": [
         "retry_scheduled",
         "neighbour_delivery",
@@ -101,8 +108,20 @@
       "claim_approved": ["closed"],
       "claim_partial": ["closed"],
       "claim_declined": ["appealed", "closed"],
-      "appealed": ["closed"]
-    }
+      "appealed": ["closed"],
+      "delivery_attempted": ["delivered", "recipient_unreachable"],
+      "recipient_unreachable": [
+        "return_proposed",
+        "held_at_point",
+        "delivery_retry"
+      ],
+      "return_proposed": ["return_consented", "held_at_point"],
+      "return_consented": ["returning"],
+      "returning": ["return_to_sender"],
+      "held_at_point": ["collected"],
+      "delivery_retry": ["delivered"]
+    },
+    "rule": "C07/G08 additive custody/return extension: delivery_attempted is a driver attempt against an in-transit parcel (distinct from the legacy generic `exception` fan-out) and forks on whether the recipient could be reached. `return_proposed -> held_at_point` is the safe default for BOTH an explicit sender rejection and an unanswered consent window expiring — a return never auto-charges and never completes without consent, so the parcel defaults to a hold point rather than a state limbo. delivery-service's Go custody machine (services/delivery-service/internal/custody) is an exact port of this fan-out. `created` and `return_to_sender` do double duty as awaiting_pickup/returned_to_sender rather than adding near-duplicate states; delivered/collected/cancelled are the other shared terminals. See docs/marketplace/DELIVERY_CUSTODY.md."
   },
   "flightBooking": {
     "initial": "offer_held",
