@@ -11,7 +11,7 @@
 
 terraform {
   required_version = ">= 1.6.0"
-  
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -30,15 +30,15 @@ locals {
   public_subnets = [
     for i, az in var.availability_zones : cidrsubnet(var.vpc_cidr, 4, i)
   ]
-  
+
   private_app_subnets = [
     for i, az in var.availability_zones : cidrsubnet(var.vpc_cidr, 4, i + 4)
   ]
-  
+
   private_data_subnets = [
     for i, az in var.availability_zones : cidrsubnet(var.vpc_cidr, 4, i + 8)
   ]
-  
+
   # Common tags for all resources
   common_tags = merge(var.tags, {
     Module      = "vpc"
@@ -55,7 +55,7 @@ resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-vpc"
   })
@@ -67,7 +67,7 @@ resource "aws_vpc" "main" {
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-igw"
   })
@@ -79,12 +79,12 @@ resource "aws_internet_gateway" "main" {
 
 resource "aws_subnet" "public" {
   count = length(var.availability_zones)
-  
+
   vpc_id                  = aws_vpc.main.id
   cidr_block              = local.public_subnets[count.index]
   availability_zone       = var.availability_zones[count.index]
   map_public_ip_on_launch = true
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-public-${var.availability_zones[count.index]}"
     Tier = "public"
@@ -100,11 +100,11 @@ resource "aws_subnet" "public" {
 
 resource "aws_subnet" "private_app" {
   count = length(var.availability_zones)
-  
+
   vpc_id            = aws_vpc.main.id
   cidr_block        = local.private_app_subnets[count.index]
   availability_zone = var.availability_zones[count.index]
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-private-app-${var.availability_zones[count.index]}"
     Tier = "private-app"
@@ -122,11 +122,11 @@ resource "aws_subnet" "private_app" {
 
 resource "aws_subnet" "private_data" {
   count = length(var.availability_zones)
-  
+
   vpc_id            = aws_vpc.main.id
   cidr_block        = local.private_data_subnets[count.index]
   availability_zone = var.availability_zones[count.index]
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-private-data-${var.availability_zones[count.index]}"
     Tier = "private-data"
@@ -140,11 +140,11 @@ resource "aws_subnet" "private_data" {
 resource "aws_eip" "nat" {
   count  = var.single_nat_gateway ? 1 : length(var.availability_zones)
   domain = "vpc"
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-nat-eip-${count.index + 1}"
   })
-  
+
   depends_on = [aws_internet_gateway.main]
 }
 
@@ -154,14 +154,14 @@ resource "aws_eip" "nat" {
 
 resource "aws_nat_gateway" "main" {
   count = var.single_nat_gateway ? 1 : length(var.availability_zones)
-  
+
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-nat-${count.index + 1}"
   })
-  
+
   depends_on = [aws_internet_gateway.main]
 }
 
@@ -171,7 +171,7 @@ resource "aws_nat_gateway" "main" {
 
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-public-rt"
     Tier = "public"
@@ -186,7 +186,7 @@ resource "aws_route" "public_internet" {
 
 resource "aws_route_table_association" "public" {
   count = length(var.availability_zones)
-  
+
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
@@ -197,9 +197,9 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_route_table" "private_app" {
   count = var.single_nat_gateway ? 1 : length(var.availability_zones)
-  
+
   vpc_id = aws_vpc.main.id
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-private-app-rt-${count.index + 1}"
     Tier = "private-app"
@@ -208,7 +208,7 @@ resource "aws_route_table" "private_app" {
 
 resource "aws_route" "private_app_nat" {
   count = var.single_nat_gateway ? 1 : length(var.availability_zones)
-  
+
   route_table_id         = aws_route_table.private_app[count.index].id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.main[var.single_nat_gateway ? 0 : count.index].id
@@ -216,7 +216,7 @@ resource "aws_route" "private_app_nat" {
 
 resource "aws_route_table_association" "private_app" {
   count = length(var.availability_zones)
-  
+
   subnet_id      = aws_subnet.private_app[count.index].id
   route_table_id = aws_route_table.private_app[var.single_nat_gateway ? 0 : count.index].id
 }
@@ -227,9 +227,9 @@ resource "aws_route_table_association" "private_app" {
 
 resource "aws_route_table" "private_data" {
   count = var.single_nat_gateway ? 1 : length(var.availability_zones)
-  
+
   vpc_id = aws_vpc.main.id
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-private-data-rt-${count.index + 1}"
     Tier = "private-data"
@@ -238,7 +238,7 @@ resource "aws_route_table" "private_data" {
 
 resource "aws_route" "private_data_nat" {
   count = var.single_nat_gateway ? 1 : length(var.availability_zones)
-  
+
   route_table_id         = aws_route_table.private_data[count.index].id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.main[var.single_nat_gateway ? 0 : count.index].id
@@ -246,7 +246,7 @@ resource "aws_route" "private_data_nat" {
 
 resource "aws_route_table_association" "private_data" {
   count = length(var.availability_zones)
-  
+
   subnet_id      = aws_subnet.private_data[count.index].id
   route_table_id = aws_route_table.private_data[var.single_nat_gateway ? 0 : count.index].id
 }
@@ -257,12 +257,12 @@ resource "aws_route_table_association" "private_data" {
 
 resource "aws_flow_log" "main" {
   count = var.enable_flow_logs ? 1 : 0
-  
+
   iam_role_arn    = aws_iam_role.flow_logs[0].arn
   log_destination = aws_cloudwatch_log_group.flow_logs[0].arn
   traffic_type    = "ALL"
   vpc_id          = aws_vpc.main.id
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-flow-logs"
   })
@@ -270,18 +270,18 @@ resource "aws_flow_log" "main" {
 
 resource "aws_cloudwatch_log_group" "flow_logs" {
   count = var.enable_flow_logs ? 1 : 0
-  
+
   name              = "/aws/vpc/${var.name}/flow-logs"
   retention_in_days = var.flow_logs_retention_days
-  
+
   tags = local.common_tags
 }
 
 resource "aws_iam_role" "flow_logs" {
   count = var.enable_flow_logs ? 1 : 0
-  
+
   name = "${var.name}-vpc-flow-logs-role"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -294,16 +294,16 @@ resource "aws_iam_role" "flow_logs" {
       }
     ]
   })
-  
+
   tags = local.common_tags
 }
 
 resource "aws_iam_role_policy" "flow_logs" {
   count = var.enable_flow_logs ? 1 : 0
-  
+
   name = "${var.name}-vpc-flow-logs-policy"
   role = aws_iam_role.flow_logs[0].id
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -330,12 +330,12 @@ resource "aws_iam_role_policy" "flow_logs" {
 resource "aws_vpc_endpoint" "s3" {
   vpc_id       = aws_vpc.main.id
   service_name = "com.amazonaws.${var.region}.s3"
-  
+
   route_table_ids = concat(
     aws_route_table.private_app[*].id,
     aws_route_table.private_data[*].id
   )
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-s3-endpoint"
   })
@@ -345,12 +345,12 @@ resource "aws_vpc_endpoint" "s3" {
 resource "aws_vpc_endpoint" "dynamodb" {
   vpc_id       = aws_vpc.main.id
   service_name = "com.amazonaws.${var.region}.dynamodb"
-  
+
   route_table_ids = concat(
     aws_route_table.private_app[*].id,
     aws_route_table.private_data[*].id
   )
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-dynamodb-endpoint"
   })
@@ -368,16 +368,16 @@ resource "aws_vpc_endpoint" "interface" {
     "logs",
     "secretsmanager"
   ]) : toset([])
-  
+
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.region}.${each.value}"
   vpc_endpoint_type   = "Interface"
   private_dns_enabled = true
-  
+
   subnet_ids = aws_subnet.private_app[*].id
-  
+
   security_group_ids = [aws_security_group.vpc_endpoints.id]
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-${each.value}-endpoint"
   })
@@ -388,7 +388,7 @@ resource "aws_security_group" "vpc_endpoints" {
   name_prefix = "${var.name}-vpc-endpoints-"
   description = "Security group for VPC endpoints"
   vpc_id      = aws_vpc.main.id
-  
+
   ingress {
     from_port   = 443
     to_port     = 443
@@ -396,11 +396,11 @@ resource "aws_security_group" "vpc_endpoints" {
     cidr_blocks = [var.vpc_cidr]
     description = "Allow HTTPS from VPC"
   }
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.name}-vpc-endpoints-sg"
   })
-  
+
   lifecycle {
     create_before_destroy = true
   }

@@ -11,7 +11,7 @@
 
 terraform {
   required_version = ">= 1.6.0"
-  
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -38,7 +38,7 @@ locals {
     ManagedBy   = "terraform"
     Environment = var.environment
   })
-  
+
   # Karpenter discovery tag
   karpenter_tags = {
     "karpenter.sh/discovery" = var.cluster_name
@@ -51,7 +51,7 @@ locals {
 
 resource "aws_iam_role" "cluster" {
   name = "${var.cluster_name}-cluster-role"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -64,7 +64,7 @@ resource "aws_iam_role" "cluster" {
       }
     ]
   })
-  
+
   tags = local.common_tags
 }
 
@@ -73,7 +73,7 @@ resource "aws_iam_role_policy_attachment" "cluster_policies" {
     "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
     "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
   ])
-  
+
   policy_arn = each.value
   role       = aws_iam_role.cluster.name
 }
@@ -86,11 +86,11 @@ resource "aws_security_group" "cluster" {
   name_prefix = "${var.cluster_name}-cluster-"
   description = "Security group for EKS cluster control plane"
   vpc_id      = var.vpc_id
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.cluster_name}-cluster-sg"
   })
-  
+
   lifecycle {
     create_before_destroy = true
   }
@@ -114,7 +114,7 @@ resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
   version  = var.cluster_version
   role_arn = aws_iam_role.cluster.arn
-  
+
   vpc_config {
     subnet_ids              = var.private_subnet_ids
     endpoint_private_access = true
@@ -122,20 +122,20 @@ resource "aws_eks_cluster" "main" {
     public_access_cidrs     = var.enable_public_access ? var.public_access_cidrs : []
     security_group_ids      = [aws_security_group.cluster.id]
   }
-  
+
   enabled_cluster_log_types = var.enabled_log_types
-  
+
   encryption_config {
     provider {
       key_arn = var.kms_key_arn != null ? var.kms_key_arn : aws_kms_key.eks[0].arn
     }
     resources = ["secrets"]
   }
-  
+
   tags = merge(local.common_tags, {
     Name = var.cluster_name
   })
-  
+
   depends_on = [
     aws_iam_role_policy_attachment.cluster_policies,
     aws_cloudwatch_log_group.eks
@@ -145,11 +145,11 @@ resource "aws_eks_cluster" "main" {
 # KMS key for secrets encryption
 resource "aws_kms_key" "eks" {
   count = var.kms_key_arn == null ? 1 : 0
-  
+
   description             = "EKS Secret Encryption Key for ${var.cluster_name}"
   deletion_window_in_days = 7
   enable_key_rotation     = true
-  
+
   tags = merge(local.common_tags, {
     Name = "${var.cluster_name}-eks-kms"
   })
@@ -157,7 +157,7 @@ resource "aws_kms_key" "eks" {
 
 resource "aws_kms_alias" "eks" {
   count = var.kms_key_arn == null ? 1 : 0
-  
+
   name          = "alias/${var.cluster_name}-eks"
   target_key_id = aws_kms_key.eks[0].key_id
 }
@@ -166,7 +166,7 @@ resource "aws_kms_alias" "eks" {
 resource "aws_cloudwatch_log_group" "eks" {
   name              = "/aws/eks/${var.cluster_name}/cluster"
   retention_in_days = var.log_retention_days
-  
+
   tags = local.common_tags
 }
 
@@ -180,7 +180,7 @@ resource "aws_eks_addon" "coredns" {
   addon_version               = var.addon_versions.coredns
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
-  
+
   depends_on = [aws_eks_node_group.main]
 }
 
@@ -199,7 +199,7 @@ resource "aws_eks_addon" "vpc_cni" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
   service_account_role_arn    = aws_iam_role.vpc_cni.arn
-  
+
   configuration_values = jsonencode({
     env = {
       ENABLE_PREFIX_DELEGATION = "true"
@@ -215,7 +215,7 @@ resource "aws_eks_addon" "ebs_csi" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
   service_account_role_arn    = aws_iam_role.ebs_csi.arn
-  
+
   depends_on = [aws_eks_node_group.main]
 }
 
@@ -225,7 +225,7 @@ resource "aws_eks_addon" "ebs_csi" {
 
 resource "aws_iam_role" "node" {
   name = "${var.cluster_name}-node-role"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -238,7 +238,7 @@ resource "aws_iam_role" "node" {
       }
     ]
   })
-  
+
   tags = local.common_tags
 }
 
@@ -249,7 +249,7 @@ resource "aws_iam_role_policy_attachment" "node_policies" {
     "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
     "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
   ])
-  
+
   policy_arn = each.value
   role       = aws_iam_role.node.name
 }
@@ -262,24 +262,24 @@ resource "aws_security_group" "node" {
   name_prefix = "${var.cluster_name}-node-"
   description = "Security group for EKS worker nodes"
   vpc_id      = var.vpc_id
-  
+
   tags = merge(local.common_tags, local.karpenter_tags, {
     Name = "${var.cluster_name}-node-sg"
   })
-  
+
   lifecycle {
     create_before_destroy = true
   }
 }
 
 resource "aws_security_group_rule" "node_ingress_self" {
-  type                     = "ingress"
-  from_port                = 0
-  to_port                  = 65535
-  protocol                 = "-1"
-  self                     = true
-  security_group_id        = aws_security_group.node.id
-  description              = "Allow node to node communication"
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 65535
+  protocol          = "-1"
+  self              = true
+  security_group_id = aws_security_group.node.id
+  description       = "Allow node to node communication"
 }
 
 resource "aws_security_group_rule" "node_ingress_cluster" {
@@ -328,29 +328,29 @@ resource "aws_security_group_rule" "cluster_ingress_node" {
 
 resource "aws_eks_node_group" "main" {
   for_each = var.node_groups
-  
+
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = each.key
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = var.private_subnet_ids
-  
+
   instance_types = each.value.instance_types
   capacity_type  = each.value.capacity_type
-  
+
   scaling_config {
     desired_size = each.value.desired_size
     max_size     = each.value.max_size
     min_size     = each.value.min_size
   }
-  
+
   update_config {
     max_unavailable_percentage = 25
   }
-  
+
   labels = merge(each.value.labels, {
     "node-group" = each.key
   })
-  
+
   dynamic "taint" {
     for_each = each.value.taints
     content {
@@ -359,15 +359,15 @@ resource "aws_eks_node_group" "main" {
       effect = taint.value.effect
     }
   }
-  
+
   tags = merge(local.common_tags, local.karpenter_tags, {
     Name = "${var.cluster_name}-${each.key}"
   })
-  
+
   depends_on = [
     aws_iam_role_policy_attachment.node_policies
   ]
-  
+
   lifecycle {
     ignore_changes = [scaling_config[0].desired_size]
   }
@@ -385,7 +385,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
   url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
-  
+
   tags = local.common_tags
 }
 
@@ -396,7 +396,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
 # VPC CNI IRSA
 resource "aws_iam_role" "vpc_cni" {
   name = "${var.cluster_name}-vpc-cni-role"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -415,7 +415,7 @@ resource "aws_iam_role" "vpc_cni" {
       }
     ]
   })
-  
+
   tags = local.common_tags
 }
 
@@ -427,7 +427,7 @@ resource "aws_iam_role_policy_attachment" "vpc_cni" {
 # EBS CSI IRSA
 resource "aws_iam_role" "ebs_csi" {
   name = "${var.cluster_name}-ebs-csi-role"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -446,7 +446,7 @@ resource "aws_iam_role" "ebs_csi" {
       }
     ]
   })
-  
+
   tags = local.common_tags
 }
 
@@ -461,12 +461,12 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
 
 resource "kubernetes_config_map_v1_data" "aws_auth" {
   count = var.manage_aws_auth ? 1 : 0
-  
+
   metadata {
     name      = "aws-auth"
     namespace = "kube-system"
   }
-  
+
   data = {
     mapRoles = yamlencode(concat(
       [
@@ -478,11 +478,11 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
       ],
       var.aws_auth_roles
     ))
-    
+
     mapUsers = yamlencode(var.aws_auth_users)
   }
-  
+
   force = true
-  
+
   depends_on = [aws_eks_cluster.main]
 }

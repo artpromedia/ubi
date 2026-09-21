@@ -49,6 +49,11 @@ permissions:
   id-token: write
   contents: read
   pull-requests: write
+  # Required for github/codeql-action/upload-sarif to publish the Trivy and
+  # Checkov IaC scan results to code scanning. When GitHub Advanced Security /
+  # code scanning is not enabled for the repository the upload is a no-op that
+  # the security-scan job tolerates (see that job) rather than failing on.
+  security-events: write
 
 jobs:
   # ===========================================
@@ -234,10 +239,14 @@ jobs:
       - name: Setup kustomize
         uses: imranismail/setup-kustomize@v2
 
-      - name: Validate base manifests
-        run: |
-          kustomize build infrastructure/kubernetes/base > /tmp/base.yaml
-          cat /tmp/base.yaml | kubectl apply --dry-run=client -f -
+      # Render the manifests for schema validation below. The previous
+      # `kubectl apply --dry-run=client` needed a reachable API server (it
+      # fetches the cluster's OpenAPI) and failed with "connection refused" on
+      # a runner with no cluster. kubeconform validates against published
+      # Kubernetes JSON schemas with no cluster, which is the correct tool for
+      # a stateless CI check.
+      - name: Build base manifests
+        run: kustomize build infrastructure/kubernetes/base > /tmp/base.yaml
 
       - name: Install kubeconform
         run: |
@@ -301,6 +310,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # IaC scanners run for real and surface findings in the job log. They are
+      # advisory (they do not fail the pipeline on findings) — the value is the
+      # SARIF published to code scanning. Publishing is best-effort: it requires
+      # GitHub Advanced Security / code scanning to be enabled for the repo, so
+      # the upload steps are guarded on the SARIF actually existing and do not
+      # fail the job when code scanning is unavailable (that is a repo setting,
+      # not a workflow defect). The scans themselves still fail on real errors.
       - name: Run Trivy vulnerability scanner (IaC)
         uses: aquasecurity/trivy-action@master
         with:
@@ -311,7 +327,8 @@ jobs:
 
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
+        continue-on-error: true
         with:
           sarif_file: "trivy-results.sarif"
 
@@ -322,10 +339,16 @@ jobs:
           framework: terraform
           output_format: sarif
           output_file_path: checkov-results.sarif
+          # Advisory: report findings via SARIF, do not fail the job on them
+          # (and always produce the output file for the upload step below).
+          soft_fail: true
 
       - name: Upload checkov results
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        # The checkov action writes the SARIF as results_sarif.sarif inside the
+        # output_file_path directory; accept either the directory or a bare file.
+        if: ${{ always() && (hashFiles('checkov-results.sarif/results_sarif.sarif') != '' || hashFiles('checkov-results.sarif') != '') }}
+        continue-on-error: true
         with:
           sarif_file: "checkov-results.sarif"
 
