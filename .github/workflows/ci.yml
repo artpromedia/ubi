@@ -152,6 +152,13 @@ jobs:
             packages/*/dist
             services/*/dist
           retention-days: 1
+          # `turbo run build --affected` builds nothing on a push that touches
+          # only non-JS files (terraform, docs, workflows), so no dist/.next is
+          # produced and there is nothing to upload. Without this, v4 both warns
+          # AND — because no files matched — the `test` job's download below
+          # fails with "Artifact not found". `ignore` makes an empty upload a
+          # clean no-op; the download step tolerates the missing artifact.
+          if-no-files-found: ignore
 
   # ===========================================
   # TEST
@@ -179,7 +186,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download build artifacts
+        # Priming dist/.next from the build job is only an optimization: the
+        # `test` turbo task `dependsOn: ["^build"]`, so `turbo run test` builds
+        # any missing upstream package itself. When the build job produced no
+        # artifact (an --affected build with no JS changes — see its upload
+        # step), download-artifact@v4 errors with "Artifact not found"; tolerate
+        # that so a terraform/docs/workflow-only push does not fail Unit Tests.
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: build-artifacts
 
