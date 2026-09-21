@@ -1,14 +1,15 @@
 /**
- * Rider funding authorization for a marketplace selection (M05 step 3).
+ * Rider funding authorization for a marketplace selection (M05 step 3,
+ * hardened by C02).
  *
- * Nothing is debited: the check answers whether the SELECTED amount — not
- * the initially requested price — is payable right now, and it deliberately
- * re-evaluates on every call rather than caching a stale "yes".
+ * Nothing is debited, but a WALLET authorization is no longer a check that
+ * evaporates: it creates a durable reservation that encumbers the SELECTED
+ * amount until settlement consumes it or a release frees it. Cash stays
+ * explicitly unsecured, and config-listed PSP methods fail closed.
  */
-import { ContractError } from "@ubi/contracts";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { balanceOf } from "../../src/ledger/balances";
+import { balanceOf, spendableOf } from "../../src/ledger/balances";
 import { createCityConfigProvider } from "../../src/ledger/city-config";
 import { authorizeMarketplaceFunding } from "../../src/ledger/mp-funding";
 import { reserveHold } from "../../src/ledger/mp-holds";
@@ -29,6 +30,9 @@ const createdWalletIds: string[] = [];
 
 afterAll(async () => {
   await db.mpCommissionHold.deleteMany({
+    where: { walletId: { in: createdWalletIds } },
+  });
+  await db.mpRiderReservation.deleteMany({
     where: { walletId: { in: createdWalletIds } },
   });
   await closeTestDb();
@@ -75,7 +79,7 @@ function input(
 }
 
 describe("marketplace funding authorization", () => {
-  it("authorizes a wallet rider whose spendable covers the selected fare, without debiting", async () => {
+  it("authorizes a wallet rider by reserving the fare — no debit, spendable drops", async () => {
     const rider = await riderWith(500_000);
     const deps = makeDeps(db);
 
@@ -84,10 +88,21 @@ describe("marketplace funding authorization", () => {
       input(rider, 500_000),
     );
     expect(result.authorized).toBe(true);
+    expect(result.secured).toBe(true);
+    expect(result.reservationId).not.toBeNull();
 
-    // Nothing moved: the balance is untouched by an authorization.
+    // Nothing moved: the balance is untouched by an authorization — but the
+    // reservation encumbers the full fare, so spendable is now zero.
     const balance = await balanceOf(db, rider.walletId, rider.currency);
     expect(balance.amountMinor).toBe(500_000);
+    const spendable = await spendableOf(db, rider.walletId, rider.currency);
+    expect(spendable.amountMinor).toBe(0);
+
+    const row = await db.mpRiderReservation.findUniqueOrThrow({
+      where: { id: result.reservationId ?? "" },
+    });
+    expect(row.status).toBe("active");
+    expect(Number(row.amountMinor)).toBe(500_000);
   });
 
   it("refuses with the exact shortfall when spendable falls short by one minor unit", async () => {
@@ -130,45 +145,88 @@ describe("marketplace funding authorization", () => {
     });
   });
 
-  it("re-evaluates rather than caching: the same award authorizes only while funds last", async () => {
+  it("holds the reservation durably: the reserved fare cannot be pledged elsewhere, and a replay converges", async () => {
     const rider = await riderWith(500_000);
     const deps = makeDeps(db);
     const body = input(rider, 400_000);
 
-    await expect(
-      authorizeMarketplaceFunding(deps, body),
-    ).resolves.toMatchObject({ authorized: true });
+    const first = await authorizeMarketplaceFunding(deps, body);
+    expect(first).toMatchObject({ authorized: true, secured: true });
 
-    // The rider's money leaves (hold from their own bid) before a retry.
-    await reserveHold(
-      deps,
-      {
-        driverId: rider.userId,
-        bidRef: uid("bid"),
-        requestRef: uid("mpr"),
-        amountMinor: 200_000,
-        baseMinor: 2_000_000,
-        currency: rider.currency,
-        policyVersion: 1,
-        cityId: rider.cityId,
-      },
-      uid("idem"),
-    );
-    await expect(authorizeMarketplaceFunding(deps, body)).rejects.toThrow(
-      ContractError,
-    );
+    // The reservation ENCUMBERS the fare: the rider's own bid can no longer
+    // pledge money the selection already spoke for (the exact G02 leak).
+    await expect(
+      reserveHold(
+        deps,
+        {
+          driverId: rider.userId,
+          bidRef: uid("bid"),
+          requestRef: uid("mpr"),
+          amountMinor: 200_000,
+          baseMinor: 2_000_000,
+          currency: rider.currency,
+          policyVersion: 1,
+          cityId: rider.cityId,
+        },
+        uid("idem"),
+      ),
+    ).rejects.toMatchObject({
+      code: "insufficient_spendable",
+      details: { shortfallMinor: 100_000 },
+    });
+
+    // The saga's retry replays the same terms and converges on the SAME
+    // reservation instead of re-answering a question money already answered.
+    const replay = await authorizeMarketplaceFunding(deps, body);
+    expect(replay.reservationId).toBe(first.reservationId);
   });
 
-  it("passes cash through on availability alone — no wallet is consulted", async () => {
+  it("passes cash through as explicitly unsecured — no wallet consulted, no reservation row", async () => {
     const rider = await riderWith(0);
     const deps = makeDeps(db);
+    const body = input(rider, 750_000, "cash");
 
     await expect(
-      authorizeMarketplaceFunding(deps, input(rider, 750_000, "cash")),
-    ).resolves.toMatchObject({ authorized: true, paymentMethodId: "cash" });
+      authorizeMarketplaceFunding(deps, body),
+    ).resolves.toMatchObject({
+      authorized: true,
+      paymentMethodId: "cash",
+      secured: false,
+      reservationId: null,
+    });
+    expect(
+      await db.mpRiderReservation.count({ where: { awardId: body.awardId } }),
+    ).toBe(0);
+    // The audit record states the authorization is unsecured.
+    const audit = await db.auditLog.findFirst({
+      where: {
+        action: "wallet.mp_funding.authorized",
+        subjectId: body.awardId,
+      },
+    });
+    expect(audit?.after).toMatchObject({ secured: false });
   });
 
-  it("refuses an unavailable payment method and a mismatched currency", async () => {
+  it("fails closed for config-listed PSP methods: availability is not provider authorization", async () => {
+    const rider = await riderWith(500_000);
+    const deps = makeDeps(db);
+
+    // "card" IS listed available in the city config fixture — and still must
+    // not authorize, because no provider authorization exists yet.
+    await expect(
+      authorizeMarketplaceFunding(deps, input(rider, 100_000, "card")),
+    ).rejects.toMatchObject({
+      code: "payment_method_unavailable",
+      message: expect.stringContaining("provider authorization"),
+    });
+    expect(
+      await db.mpRiderReservation.count({
+        where: { walletId: rider.walletId },
+      }),
+    ).toBe(0);
+  });
+
+  it("refuses an unavailable payment method, a mismatched currency and non-integer amounts", async () => {
     const rider = await riderWith(500_000);
     const deps = makeDeps(db);
 
@@ -185,6 +243,17 @@ describe("marketplace funding authorization", () => {
         currency: "USD",
       }),
     ).rejects.toMatchObject({ code: "validation_failed" });
+
+    for (const bad of [100.5, -100_000, 0]) {
+      await expect(
+        authorizeMarketplaceFunding(deps, input(rider, bad)),
+      ).rejects.toMatchObject({ code: "validation_failed" });
+    }
+    expect(
+      await db.mpRiderReservation.count({
+        where: { walletId: rider.walletId },
+      }),
+    ).toBe(0);
   });
 
   it("refuses a locked wallet", async () => {

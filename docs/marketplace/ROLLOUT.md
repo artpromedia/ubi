@@ -31,9 +31,9 @@ Deployment prerequisites:
 
 - [ ] `INTERNAL_SERVICE_KEY` + `PAYMENT_SERVICE_URL` set for ride-service;
       `SERVICE_SECRET` set for realtime-gateway (broadcast auth)
-- [ ] Prisma migration `20260920000000_mp_commission_holds` deployed;
-      ride-service boot migration applied the `mp` schema (advisory-locked,
-      idempotent)
+- [ ] Prisma migrations `20260920000000_mp_commission_holds` and
+      `20260921000000_mp_rider_reservations` deployed; ride-service boot
+      migration applied the `mp` schema (advisory-locked, idempotent)
 - [ ] Alert thresholds configured for the RUNBOOK health signals (explicit
       deployment configuration, not code defaults)
 
@@ -86,10 +86,22 @@ Marked unsupported/unresolved rather than papered over:
 5. **Driver display data.** Rider-facing offer cards use server-derived
    pseudonymous name/initials and masked plate; a user-directory join for
    real display name/rating/vehicle is not wired.
-6. **Rider funding is a check, not an authorization hold.** Wallet rides
-   settle at completion exactly like legacy rides; a true rider-side
-   encumbrance from selection to completion is a follow-up
-   (`src/ledger/mp-funding.ts` documents the semantics).
+6. **Rider funding: wallet is now a durable reservation; PSP provider
+   authorization remains deferred.** Wallet funding at selection creates a
+   durable `mp_rider_reservations` row (idempotent on the award id) that
+   encumbers spendable from selection until the settlement transaction
+   consumes it exactly once, or a release (saga compensation, award
+   reversal, or the ride-service sweep via
+   `POST /v1/wallet/mp/funding/release`) frees it with a linked reason.
+   Cash is authorized as explicitly UNSECURED (`secured: false`, audit
+   states it). What remains: PSP provider authorization (card,
+   mobile-money) is still not built on the canonical ledger — those
+   config-listed methods now FAIL CLOSED at
+   `/v1/wallet/mp/funding/authorize` (`payment_method_unavailable`:
+   config availability is not provider authorization), so they must stay
+   hidden from marketplace payment-method selection until a real
+   provider authorize/capture flow exists
+   (`src/ledger/mp-funding.ts`, payment-service QUARANTINE.md).
 7. **Driver cancel of a marketplace execution ride** lands in `rematching`
    (contract machine has no driver-cancel terminal edge); Dispatch skips
    marketplace rides so nothing re-offers, but ops must resolve such rides

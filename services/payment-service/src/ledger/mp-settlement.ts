@@ -31,6 +31,7 @@ import {
 
 import { publishEvent, writeAudit } from "./audit";
 import { isIdempotencyRace } from "./idempotency";
+import { consumeReservationForSettlement } from "./mp-funding";
 import {
   postMarketplaceCompletion,
   type RidePaymentMethod,
@@ -168,6 +169,21 @@ export async function settleMarketplaceCompletion(
           ? await ensureWallet(tx, "user", input.requesterId, config.city)
           : undefined;
 
+      // The award's rider funding reservation (C02) is CONSUMED here, in the
+      // same transaction as the fare postings: the conditional update ends
+      // the encumbrance exactly once, so the spendable guard below no longer
+      // counts it against this very fare — and a settlement replay never
+      // reaches this line (the outbox record answers it first). A wallet
+      // settlement with no active reservation still settles (legacy awards
+      // have none) but writes an explicit audit anomaly.
+      const consumption = await consumeReservationForSettlement(tx, {
+        awardId: input.awardId,
+        method: input.method,
+        fareMinor: input.fareMinor.amountMinor,
+        currency,
+        occurredAt: now,
+      });
+
       // postMarketplaceCompletion takes the rider wallet's row lock and runs
       // the spendable guard (balance minus active bid holds) before any line
       // is written; a short rider rolls the whole settlement back, and
@@ -201,6 +217,8 @@ export async function settleMarketplaceCompletion(
           journalEntryId,
           driverWalletId: driverWallet.id,
           riderWalletId: riderWallet?.id ?? null,
+          reservationId: consumption.reservationId,
+          reservationConsumed: consumption.consumed,
         },
       });
       // No dedicated settlement event exists in the closed catalog yet, so

@@ -30,10 +30,16 @@ import {
 } from "@ubi/contracts";
 
 import { publishEvent, writeAudit } from "./audit";
-import { activeHoldsMinor, balanceOf, spendableOf } from "./balances";
+import {
+  activeHoldsMinor,
+  activeRiderReservationsMinor,
+  balanceOf,
+  spendableOf,
+} from "./balances";
 import { lockWallet, type WalletDeps } from "./context";
 import { isIdempotencyRace } from "./idempotency";
 import { fromDbMinor, toDbMinor } from "./minor-units";
+import { releaseReservationInTx } from "./mp-funding";
 import { movement, postEntry } from "./post-entry";
 import { assertNotLocked, ensureWallet, findWallet } from "./wallets";
 import { generateId } from "../lib/utils";
@@ -333,12 +339,20 @@ export async function reserveHold(
 
       const balance = await balanceOf(tx, wallet.id, wallet.currency);
       const held = await activeHoldsMinor(tx, wallet.id, wallet.currency);
-      const spendableMinor = balance.amountMinor - held.amountMinor;
+      // Rider funding reservations (C02) encumber this same wallet: a driver
+      // who is also a rider cannot pledge reserved fare money as commission.
+      const reserved = await activeRiderReservationsMinor(
+        tx,
+        wallet.id,
+        wallet.currency,
+      );
+      const encumberedMinor = held.amountMinor + reserved.amountMinor;
+      const spendableMinor = balance.amountMinor - encumberedMinor;
       if (spendableMinor < input.amountMinor) {
         throw insufficientSpendable(
           input.amountMinor,
           spendableMinor,
-          held.amountMinor,
+          encumberedMinor,
           balance.amountMinor,
         );
       }
@@ -492,11 +506,17 @@ export async function adjustHold(
         const spendable = await spendableOf(tx, hold.walletId, hold.currency);
         if (spendable.amountMinor < deltaMinor) {
           const held = await activeHoldsMinor(tx, hold.walletId, hold.currency);
+          const reserved = await activeRiderReservationsMinor(
+            tx,
+            hold.walletId,
+            hold.currency,
+          );
+          const encumberedMinor = held.amountMinor + reserved.amountMinor;
           throw insufficientSpendable(
             deltaMinor,
             spendable.amountMinor,
-            held.amountMinor,
-            spendable.amountMinor + held.amountMinor,
+            encumberedMinor,
+            spendable.amountMinor + encumberedMinor,
           );
         }
       }
@@ -977,6 +997,18 @@ export async function reverseCapturedHold(
         where: { id: hold.id },
         data: { state: "reversed", reversalEntryId: entry.id },
       });
+
+      // A reversed award is an abandoned award: the rider's funding
+      // reservation (C02) is released in this same transaction, with the
+      // reversal's reason linked, so the commission hand-back and the fare
+      // un-encumbrance commit or roll back as one unit. No-op when the award
+      // never had a reservation (cash, legacy).
+      await releaseReservationInTx(
+        tx,
+        input.awardId,
+        `award_reversed: ${input.reason}`,
+        now,
+      );
 
       await writeAudit(tx, {
         actor: MP_SERVICE_ACTOR,

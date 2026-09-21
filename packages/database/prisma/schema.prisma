@@ -1664,13 +1664,14 @@ model Wallet {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  lines        JournalLine[]
-  transfersOut Transfer[]         @relation("TransferFrom")
-  transfersIn  Transfer[]         @relation("TransferTo")
-  nipTransfers NipTransfer[]
-  topups       Topup[]
-  statements   WalletStatement[]
-  mpHolds      MpCommissionHold[]
+  lines               JournalLine[]
+  transfersOut        Transfer[]           @relation("TransferFrom")
+  transfersIn         Transfer[]           @relation("TransferTo")
+  nipTransfers        NipTransfer[]
+  topups              Topup[]
+  statements          WalletStatement[]
+  mpHolds             MpCommissionHold[]
+  mpRiderReservations MpRiderReservation[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -1856,6 +1857,37 @@ model MpCommissionHold {
 
   @@index([walletId, state], map: "mp_commission_holds_spendable")
   @@map("mp_commission_holds")
+}
+
+/// Rider-side funding reservation (C02): the durable encumbrance the award
+/// saga takes on the rider's wallet at selection. Like a commission hold it is
+/// a table row, never a journal movement — the cleared balance is untouched
+/// and only spendable drops while the reservation is `active`. It is consumed
+/// exactly once inside the settlement transaction, or released with a linked
+/// reason when the award is abandoned. One reservation per award, ever.
+model MpRiderReservation {
+  id              String    @id
+  /// The award is the idempotency authority: one reservation per award.
+  awardId         String    @unique @map("award_id")
+  requestId       String    @map("request_id")
+  requesterId     String    @map("requester_id")
+  walletId        String    @map("wallet_id")
+  amountMinor     BigInt    @map("amount_minor")
+  currency        String
+  cityId          String    @map("city_id")
+  paymentMethodId String    @map("payment_method_id")
+  /// active | consumed | released
+  status          String
+  /// Why the reservation was released; null while active and for consumption.
+  reason          String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  resolvedAt      DateTime? @map("resolved_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, status], map: "mp_rider_reservations_spendable")
+  @@map("mp_rider_reservations")
 }
 
 model WalletStatement {

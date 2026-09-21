@@ -3,6 +3,7 @@ package marketplace
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -494,7 +495,7 @@ func (s *Service) runFundingStep(ctx context.Context, award *Award, attempt *Awa
 				WithDetails(map[string]any{"reason": reason})
 		}
 	} else {
-		fundErr = s.deps.Funding.Authorize(ctx, FundingRequest{
+		auth, authErr := s.deps.Funding.Authorize(ctx, FundingRequest{
 			RequesterID:     award.RequesterID,
 			RequestID:       award.RequestID,
 			AwardID:         award.ID,
@@ -503,6 +504,23 @@ func (s *Service) runFundingStep(ctx context.Context, award *Award, attempt *Awa
 			Currency:        request.Currency,
 			CityID:          request.CityID,
 		}, "mp.fund:"+award.ID.String())
+		fundErr = authErr
+		if authErr == nil && auth != nil {
+			// The award row has no natural column for the funding security,
+			// so the fact is logged (C02): `secured=true` means a durable
+			// reservation now encumbers the fare until settlement consumes it
+			// or compensation releases it; `secured=false` is explicitly
+			// unsecured collection (cash never reaches this branch today).
+			reservationID := ""
+			if auth.ReservationID != nil {
+				reservationID = *auth.ReservationID
+			}
+			s.deps.Logger.Info().
+				Str("award_id", award.ID.String()).
+				Bool("secured", auth.Secured).
+				Str("reservation_id", reservationID).
+				Msg("rider funding authorized")
+		}
 	}
 
 	if fundErr != nil {
@@ -948,6 +966,14 @@ func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason
 		}
 	}
 
+	// An abandoned award frees the rider's funding reservation (C02) with the
+	// compensation's reason, under the award's one release key. The endpoint
+	// is forgiving (cash and funding-refused awards have no reservation), so
+	// every compensation converges here; a failure never wedges compensation —
+	// it is written down for the sweep. Runs AFTER the durable compensation
+	// decision above, so a crash resumes into this same path.
+	s.releaseRiderFunding(ctx, award, reason)
+
 	now := s.now()
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		locked, err := s.deps.Store.AwardForUpdate(ctx, tx, awardID)
@@ -1118,6 +1144,40 @@ func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason
 	if err != nil {
 		s.deps.Logger.Error().Err(err).Str("award_id", awardID.String()).
 			Msg("award compensation failed; the sweep will resume the compensation")
+	}
+}
+
+// releaseRiderFunding frees an abandoned award's rider funding reservation
+// (C02), exactly once under the award's release key. A reservation the
+// settlement already CONSUMED is a definite disagreement between settlement
+// and compensation: it is alarmed loudly and never retried (retrying cannot
+// change a consumed reservation). Any other failure is recorded for the
+// sweep, which re-drives the same key until payment-service answers.
+func (s *Service) releaseRiderFunding(ctx context.Context, award *Award, reason string) {
+	err := s.deps.Funding.Release(ctx, award.ID, reason, fundingReleaseKeyFor(award.ID))
+	if err == nil {
+		return
+	}
+	if errors.Is(err, ErrFundingReservationConsumed) {
+		s.deps.Logger.Error().Str("award_id", award.ID.String()).Str("reason", reason).
+			Msg("rider funding reservation already CONSUMED while abandoning the award — settlement and compensation disagree; investigate")
+		return
+	}
+	s.deps.Logger.Warn().Err(err).Str("award_id", award.ID.String()).
+		Msg("rider funding release unconfirmed; recorded for the sweep")
+	payload, marshalErr := json.Marshal(FundingReleaseRecoveryPayload{AwardID: award.ID, Reason: reason})
+	if marshalErr != nil {
+		s.deps.Logger.Error().Err(marshalErr).Msg("could not encode the funding release for recovery")
+		return
+	}
+	if recErr := s.deps.Store.InsertRecovery(ctx, s.deps.Store.Pool(), RecoveryRow{
+		ReservationID: fundingReleaseKeyFor(award.ID),
+		DriverID:      award.RequesterID,
+		Action:        RecoveryFundingRelease,
+		Payload:       payload,
+		LastError:     err.Error(),
+	}); recErr != nil {
+		s.deps.Logger.Error().Err(recErr).Msg("could not record the funding release for recovery")
 	}
 }
 

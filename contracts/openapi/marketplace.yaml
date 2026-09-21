@@ -1443,8 +1443,8 @@ paths:
                 }
   /v1/wallet/mp/funding/authorize:
     post:
-      summary: Rider funding authorization for a selection (internal, M05 step 3)
-      description: "Service-authenticated. Verifies the SELECTED amount is payable with the request's stored payment method: wallet methods require spendable (balance minus active holds) to cover the fare on a non-locked, non-safe-mode wallet; other configured methods pass on availability. Nothing is debited — settlement stays at completion — and the check is deliberately re-evaluated per call rather than cached. 2xx = authorized; 4xx carries a canonical error code (insufficient_funds with the exact shortfall, payment_method_unavailable, wallet_locked); 5xx is an unknown outcome the award saga keeps pending."
+      summary: Rider funding authorization for a selection (internal, M05 step 3, C02)
+      description: "Service-authenticated. Secures the SELECTED amount with the request's stored payment method. `wallet` creates a DURABLE reservation (a table row, never a journal movement) that encumbers spendable from selection until settlement consumes it or a release frees it — idempotent on the award id: an identical replay answers the existing reservation (`secured: true`, its `reservationId`), a replay with different terms is a 409 conflict. `cash` is explicitly unsecured (`secured: false`, `reservationId: null`) — availability-checked only, with the audit record stating unsecured collection. Any OTHER config-listed method (card/PSP) FAILS CLOSED with payment_method_unavailable: config availability is not provider authorization, and PSP authorization is not built yet. Nothing is debited — settlement stays at completion. 2xx = authorized; 4xx carries a canonical error code (insufficient_funds with the exact shortfall, payment_method_unavailable, wallet_locked, conflict); 5xx is an unknown outcome the award saga keeps pending."
       security: [{ serviceKey: [] }]
       parameters: [{ $ref: "#/components/parameters/IdemKey" }]
       requestBody:
@@ -1485,18 +1485,77 @@ paths:
               schema:
                 {
                   type: object,
-                  required: [authorized, awardId, paymentMethodId],
+                  required:
+                    [
+                      authorized,
+                      awardId,
+                      paymentMethodId,
+                      secured,
+                      reservationId,
+                    ],
                   properties:
                     {
                       authorized: { type: boolean, const: true },
                       awardId: { type: string },
                       paymentMethodId: { type: string },
+                      secured:
+                        {
+                          type: boolean,
+                          description: "True when a durable reservation encumbers the amount; false for explicitly unsecured cash collection.",
+                        },
+                      reservationId:
+                        {
+                          type: string,
+                          nullable: true,
+                          description: "The reservation backing a secured authorization; null for cash.",
+                        },
                     },
                 }
         "422":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /v1/wallet/mp/funding/release:
+    post:
+      summary: Release an award's rider funding reservation (internal, C02)
+      description: "Service-authenticated. Releases the award's ACTIVE funding reservation exactly once (status released, resolvedAt stamped, reason linked; audit in the same transaction). Idempotent and deliberately forgiving so compensation and the sweep converge instead of error-looping: already-released and never-created both answer 200 with the current state (`released: false` and `status`). A CONSUMED reservation answers `status: consumed` distinctly — the award already settled with this money, and the caller must alarm rather than retry."
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, reason],
+                properties:
+                  { awardId: { type: string }, reason: { type: string } },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [released, status, awardId, reservationId],
+                  properties:
+                    {
+                      released:
+                        {
+                          type: boolean,
+                          description: "True only for the call that actually moved active to released.",
+                        },
+                      status:
+                        {
+                          type: string,
+                          enum: [released, consumed, missing],
+                          description: "The reservation's state after this call. `consumed` means the award already settled — alarm, do not retry.",
+                        },
+                      awardId: { type: string },
+                      reservationId: { type: string, nullable: true },
+                    },
+                }
   /api/v1/webhooks/marketplace-assign:
     post:
       summary: Delivery execution hand-off (internal, marketplace engine → delivery-service)

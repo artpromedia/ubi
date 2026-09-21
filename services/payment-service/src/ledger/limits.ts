@@ -13,7 +13,12 @@ import {
   subtractMoney,
 } from "@ubi/contracts";
 
-import { activeHoldsMinor, balanceOf, outboundToday } from "./balances";
+import {
+  activeHoldsMinor,
+  activeRiderReservationsMinor,
+  balanceOf,
+  outboundToday,
+} from "./balances";
 import { dayWindow } from "./day-window";
 
 import type { LedgerTx } from "./types";
@@ -114,10 +119,11 @@ export async function assertWithinBalanceCap(
 
 /**
  * Every debit path spends against *spendable* funds: the cleared journal
- * balance minus active marketplace holds (M04). A genuinely short balance is
- * still `insufficient_funds`; a balance that covers the amount but is
- * encumbered by holds is the distinct `insufficient_spendable`, carrying the
- * exact shortfall so the caller can phrase it.
+ * balance minus active marketplace holds (M04) minus active rider funding
+ * reservations (C02). A genuinely short balance is still
+ * `insufficient_funds`; a balance that covers the amount but is encumbered by
+ * holds or reservations is the distinct `insufficient_spendable`, carrying
+ * the exact shortfall so the caller can phrase it.
  */
 export async function assertSufficientFunds(
   tx: LedgerTx,
@@ -135,15 +141,21 @@ export async function assertSufficientFunds(
       },
     );
   }
-  const held = await activeHoldsMinor(tx, wallet.id, wallet.currency);
-  const spendableMinor = balance.amountMinor - held.amountMinor;
+  const holds = await activeHoldsMinor(tx, wallet.id, wallet.currency);
+  const reserved = await activeRiderReservationsMinor(
+    tx,
+    wallet.id,
+    wallet.currency,
+  );
+  const heldMinor = holds.amountMinor + reserved.amountMinor;
+  const spendableMinor = balance.amountMinor - heldMinor;
   if (spendableMinor < amount.amountMinor) {
     throw new ContractError(
       "insufficient_spendable",
-      "the balance covers that amount, but active bid holds encumber it",
+      "the balance covers that amount, but active holds or reservations encumber it",
       {
         balanceMinor: balance.amountMinor,
-        heldMinor: held.amountMinor,
+        heldMinor,
         spendableMinor,
         requiredMinor: amount.amountMinor,
         shortfallMinor: amount.amountMinor - spendableMinor,

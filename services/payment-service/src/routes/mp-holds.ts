@@ -22,6 +22,7 @@ import {
   captureHold,
   getMpWalletOverview,
   releaseHold,
+  releaseMarketplaceFunding,
   reserveHold,
   settleMarketplaceCompletion,
   type WalletDeps,
@@ -90,6 +91,11 @@ const FundingBody = z.object({
   amountMinor: z.number().int().positive(),
   currency: z.string().min(3).max(3),
   cityId: z.string().min(1),
+});
+
+const FundingReleaseBody = z.object({
+  awardId: z.string().min(1),
+  reason: z.string().min(1).max(280),
 });
 
 /** Two Money bodies on one request must agree on their denomination. */
@@ -203,15 +209,31 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
     }
   });
 
-  // Award saga step 3 (M05): rider funding must cover the SELECTED amount.
-  // Nothing is debited; see src/ledger/mp-funding.ts for the semantics. The
-  // Idempotency-Key (the award id) is required for parity with every other
-  // mutation here, though the check is re-evaluated on purpose.
+  // Award saga step 3 (M05, hardened by C02): rider funding for the SELECTED
+  // amount. A wallet method creates a durable reservation (idempotent on the
+  // award id); cash answers explicitly unsecured; every other method fails
+  // closed. See src/ledger/mp-funding.ts. The Idempotency-Key header is
+  // required for parity with every other money mutation here, though the
+  // award id is the idempotency authority.
   routes.post("/funding/authorize", async (c) => {
     try {
       idempotencyKeyOf(c);
       const body = await parse(c, FundingBody);
       return c.json(await authorizeMarketplaceFunding(deps, body), 200);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  // Releases an award's active funding reservation (saga compensation and the
+  // ride-service sweep both converge here). Idempotent and forgiving:
+  // missing/already-released answer 200 with the current state; a CONSUMED
+  // reservation is reported distinctly so callers can alarm.
+  routes.post("/funding/release", async (c) => {
+    try {
+      idempotencyKeyOf(c);
+      const body = await parse(c, FundingReleaseBody);
+      return c.json(await releaseMarketplaceFunding(deps, body), 200);
     } catch (error) {
       return fail(c, error);
     }

@@ -508,6 +508,60 @@ func TestFundingDefiniteFailureCompensates(t *testing.T) {
 	}
 }
 
+// TestCaptureRefusedReleasesRiderFunding: a saga that fails AFTER the rider's
+// funding reservation was taken (the capture answers a definite refusal) must
+// free the rider's money — the reservation is released exactly once, with the
+// compensation's reason linked (C02).
+func TestCaptureRefusedReleasesRiderFunding(t *testing.T) {
+	h := newHarness(t)
+	rider := h.Rider()
+	driver := h.Driver()
+
+	view, _ := publishAt(t, h, rider, 0)
+	requestID := view["requestId"].(string)
+	amount := moneyMinor(t, view, "minimumFareMinor")
+
+	parkDriver(t, h, driver, testutil.PickupFixture())
+	bidView := fundedCurrentBid(t, h, driver, requestID, amount)
+
+	// Funding succeeds (a durable reservation now encumbers the fare); the
+	// commission capture then refuses definitively.
+	h.Wallet.FailCapture = domain.Errorf(domain.CodeConflict,
+		"the hold's current amount is not the award's pinned commission")
+	recorder := doSelect(t, h, rider, requestID, map[string]any{
+		"bidId": bidView["bidId"], "requestVersion": 1, "bidVersion": 1,
+	}, "")
+	requireStatus(t, recorder, http.StatusAccepted)
+
+	award := awardRow(t, h, requestID)
+	if award.State != machine.MpAwardCompensated {
+		t.Fatalf("award state: %s, want compensated", award.State)
+	}
+	if h.Funding.EffectiveCalls != 1 {
+		t.Fatalf("funding authorizations: got %d, want 1", h.Funding.EffectiveCalls)
+	}
+	// The rider reservation was released exactly once, with the reason.
+	if h.Funding.EffectiveReleases != 1 {
+		t.Fatalf("effective funding releases: got %d, want exactly 1", h.Funding.EffectiveReleases)
+	}
+	reason, released := h.Funding.ReleasedAwards[award.ID]
+	if !released || reason != "capture_refused" {
+		t.Fatalf("released awards: %v, want award %s released with reason capture_refused",
+			h.Funding.ReleasedAwards, award.ID)
+	}
+	// Nothing left on the recovery books for this award's funding.
+	var unresolved int
+	if err := h.Pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM mp.reservation_recovery
+		 WHERE reservation_id = $1 AND resolved_at IS NULL`,
+		"mp.fund.release:"+award.ID.String()).Scan(&unresolved); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved != 0 {
+		t.Fatalf("funding release recovery rows left unresolved: %d", unresolved)
+	}
+}
+
 // TestCaptureUnknownOutcomeStaysPending: an ambiguous capture parks the award
 // in pending — the request is NEVER timeout-reopened while the debit may still
 // commit — and the reconciliation sweep resolves it: to confirmed when the
