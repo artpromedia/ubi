@@ -108,6 +108,49 @@ services:
           memory: 128M
 
   # =============================================================================
+  # ONE-OFF: DATABASE MIGRATIONS
+  # =============================================================================
+  # NOT part of the default `docker compose up -d` bring-up (profile "tools"
+  # only) — run explicitly, before starting/updating the backend services.
+  #
+  # This does NOT reuse the api-gateway image the way scripts/deploy.sh's
+  # cmd_migrate/cmd_deploy currently do (`docker compose run --rm api-gateway
+  # sh -c "cd /app && npx prisma migrate deploy"`). That invocation is
+  # unreliable: api-gateway's production image stage installs with
+  # `pnpm install --prod` (the `prisma` CLI is a devDependency of
+  # @ubi/database, so it is excluded) and its Dockerfile never COPYs
+  # packages/database/prisma/** (schema + migrations) into the image, so
+  # there is neither a `prisma` binary nor a schema for it to run against.
+  # See docs/deploy/HETZNER_PILOT.md "Migrations" for the verified command
+  # and how it differs from deploy.sh today.
+  #
+  # This service instead mounts the full repository checkout (the same one
+  # `docker compose build` already reads via `context: ../..`) and runs
+  # migrations from source, the same way CI's db-check/unit-services/unit-go
+  # jobs do it.
+  migrate:
+    image: node:20-alpine
+    container_name: ubi-migrate
+    profiles: ["tools"]
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace
+      - migrate_node_modules:/workspace/node_modules
+      - migrate_pnpm_store:/root/.local/share/pnpm-store
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
+    command: >
+      sh -c "corepack enable && corepack prepare pnpm@9 --activate &&
+             pnpm config set store-dir /root/.local/share/pnpm-store &&
+             pnpm install --frozen-lockfile &&
+             pnpm --filter @ubi/database exec prisma migrate deploy"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ubi-network
+
+  # =============================================================================
   # BACKEND SERVICES
   # =============================================================================
 
@@ -537,6 +580,12 @@ volumes:
   grafana_data:
     driver: local
   loki_data:
+    driver: local
+  # Scratch volumes for the one-off `migrate` service only, so it never
+  # installs into (or is slowed by re-installing over) the host checkout.
+  migrate_node_modules:
+    driver: local
+  migrate_pnpm_store:
     driver: local
 
 # =============================================================================

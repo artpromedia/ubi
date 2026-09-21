@@ -27,6 +27,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Shared inputs fan out explicitly below: a change to packages/database
+      # (Prisma schema/migrations), packages/contracts (built into every Node
+      # service + the RN apps) or packages/config-client (imported by several
+      # services), or to the top-level contracts/ source (state-machines.json
+      # / openapi — services/ride-service/internal/machine is a
+      # hand-maintained Go port of contracts/state-machines.json, so it can
+      # silently drift) must re-run the consumers' unit jobs on a
+      # pull_request, not just on push. Without this, a schema or contract
+      # change that only touches these shared paths sets services/go to
+      # 'false' and the dependent unit-services/unit-go jobs are skipped on
+      # the PR that introduced it (push events already run everything via the
+      # `|| github.event_name == 'push'` clauses below, so this only changes
+      # pull_request behaviour).
       - uses: dorny/paths-filter@v2
         id: filter
         with:
@@ -37,11 +50,17 @@ jobs:
               - 'services/**'
               - '!services/ride-service/**'
               - '!services/delivery-service/**'
+              - 'packages/database/**'
+              - 'packages/config-client/**'
+              - 'packages/contracts/**'
+              - 'contracts/**'
             apps:
               - 'apps/**'
             go:
               - 'services/ride-service/**'
               - 'services/delivery-service/**'
+              - 'packages/database/**'
+              - 'contracts/**'
 
   # Lint all code
   lint:

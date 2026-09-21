@@ -100,3 +100,118 @@ rows G01/G05/G12 are addressed for the ride pilot by C05, and G12's web half
 plus the growth/abuse work by C09. Nothing in this register is closed
 without its closure test passing; no placeholder is classified as
 production-ready.
+
+## C11 update (G06 native lane + V01 Hetzner pilot)
+
+Verified at HEAD on `claude/cool-pascal-gvw628`. Does not rewrite the G06 or
+V01 rows above; this section records what C11 made real, what it left as a
+named external dependency, and one addendum neither row anticipated.
+
+**G06 — made real:** `.github/workflows/rn-native.yml` no longer generates
+native projects with `npx expo prebuild` (wrong — neither RN app is an Expo
+project; there is no `app.config.*` / `expo` dependency in either). It now
+runs a real, unconditional `rn-verify` job (install, `@ubi/contracts` build,
+typecheck of the shared mobile packages + both apps, jest for both apps,
+lint for both apps — every command reproduced locally before landing: rider
+37/37 jest, driver 71/71 jest, lint 0 errors on both, tsc 0 on all five
+targets). `rn-android`/`rn-ios`/`rn-e2e` now run too, but every real build
+step inside them is gated on the native project directory _and_ the
+relevant signing/device-farm secret existing; when either is missing the
+job prints exactly what's missing and succeeds — never a fabricated device
+build. `docs/ops/NATIVE_RELEASE.md` is the exact checklist of what closes
+this gap for real: the pinned scaffold command, the store identities to
+preserve, the CI secrets required, and the macOS/device-runner dependency.
+**Not made real** (named, not faked): the actual native builds, since no
+native project, signing credentials, macOS runner or device farm exist in
+this environment. **Addendum found while doing this work, not in the
+original G06 finding**: neither RN app's `package.json` lists
+`@react-native-community/cli` as a dependency — verified locally that
+`react-native bundle`/`start`/`run-android`/`run-ios` all exit 1 with
+"react-native depends on `@react-native-community/cli` for cli commands"
+today. This blocks even a native-project-free Metro bundle dry-run and is
+an application `package.json`/lockfile change, outside C11's writable scope
+(`.github/workflows/**`, `infrastructure/**`, `k8s/**`, `docs/**`) — see
+`docs/ops/NATIVE_RELEASE.md` §1.
+
+**Affected-trigger fix (test.yml):** the `changes` job's `dorny/paths-filter`
+groups classified by service directory only, so a change to a shared input
+(`packages/database` schema/migrations, `packages/contracts`,
+`packages/config-client`, or the top-level `contracts/` source that
+`services/ride-service/internal/machine` hand-ports) did not set
+`services`/`go` to `true` on a `pull_request` event, meaning the dependent
+`unit-services`/`unit-go` jobs were skipped for a PR that only touched one
+of those shared paths (push events were unaffected — they already run
+everything via the `|| github.event_name == 'push'` clauses). Fixed by
+adding those four paths to the `services` and `go` filter groups as
+appropriate (`packages/database/**` and `contracts/**` affect both;
+`packages/contracts/**` and `packages/config-client/**` affect `services`
+only, since the Go services don't consume the built TS package). This adds
+trigger conditions; it cannot turn a currently-passing run red, and this
+specific change (touching only workflow/docs files) does not itself
+exercise the new paths.
+
+**`ci-success` bug found and fixed:** `rn-mobile` was listed in `ci.yml`'s
+`ci-success` job's `needs` (so `ci-success` waited for it) but its result
+was never checked in the pass/fail condition — a failing `rn-mobile` could
+not have failed `ci-success`. Fixed; `rn-mobile` currently always succeeds,
+so this changes no behaviour today.
+
+**Genuinely-passing job added:** `ci.yml`'s `db-check` job now also proves
+`prisma migrate deploy` is safe to invoke a second time against an
+already-migrated database (verified locally: 8 migrations apply cleanly,
+second invocation reports "No pending migrations to apply", exit 0) — the
+exact property `infrastructure/hetzner/scripts/deploy.sh` depends on since
+it runs `migrate deploy` on every deploy. See `docs/ops/CI_EVIDENCE.md` for
+what this does and does not prove (it is not populated-schema upgrade
+coverage — that gap is named, not closed).
+
+**Newly-surfaced CI coverage gap** (found while enumerating current
+coverage for `docs/ops/CI_EVIDENCE.md`, not previously recorded anywhere):
+`ask-service`, `growth-service`, `travel-service`, `config-service`,
+`support-service` and `realtime-gateway` each define a real `vitest run`
+script (several need `DATABASE_URL`), but none is invoked by either CI
+workflow — absent from `test.yml`'s `unit-services` matrix and excluded by
+`ci.yml`'s `test` job's `./packages/*`+`./apps/*` scope. Not wired into CI
+this pass (verifying six services' environment requirements without
+risking currently-green CI was judged out of scope for C11); recorded as a
+named follow-up in `docs/ops/CI_EVIDENCE.md`.
+
+**V01 — made real:** `docs/deploy/HETZNER_PILOT.md` picks the Compose stack
+as the pilot model (explicitly, not K3s — none exists), inventories what
+`infrastructure/hetzner/` already provides, and adds a concrete runbook:
+server prep, `.env` secret injection, bring-up order, a new `migrate`
+one-off Compose service (profile-gated, validated with `docker compose
+config`) that replaces the existing `deploy.sh` migration step — which was
+found to be unreliable (the `api-gateway` production image excludes the
+`prisma` CLI and never ships `packages/database/prisma/**`, so
+`deploy.sh`'s own migration call already silently warns-and-continues on
+failure) — plus concrete health/readiness checks (including that
+`api-gateway`'s own Docker `HEALTHCHECK` targets the wrong port, 4000
+vs. the configured 3000, and should not be trusted over Caddy's health
+check), a plainly-stated single-host failure-domain section with a named
+operator action per incident (provider outage, Redis failure, worker
+crash, host loss, delayed events), a backup/restore procedure covering
+Postgres + Redis + MinIO with RPO/RTO explicitly left as measure-and-fill
+pending a real drill, and a reconciliation section stating the AWS/EKS
+Terraform + ArgoCD tree is a separate, later track (its `terraform/environments/`
+has only `dev`, never `staging`/`prod`; `infrastructure.yml` targets `main`,
+which the repo has never pushed to, per that workflow's own header note).
+**Not made real**: measured capacity (no load test run) and the restore
+drill (no server available in this environment) — both explicitly left as
+external dependencies in the runbook, not invented numbers.
+
+**Release evidence:** `docs/ops/RELEASE_CHECKLIST.md` lists the pack's
+named SLO metrics (publish→first-offer, award latency, funding-failure
+rate, hold-release lag, pending-saga age, location freshness, queue-window
+miss, notification-failure, cancellation rate) with every threshold marked
+OWNER TO SET, and a final-evidence checklist with each item marked DONE or
+PENDING-DEPENDENCY against an exact named dependency (device runners,
+signing, load infra, a restore drill, organizational on-call ownership).
+
+**External dependencies blocking full C11 closure, named exactly once
+more here for one-stop reference:** native iOS/Android build runners +
+signing credentials + a device farm (G06); load-test infrastructure and
+scripts (performance gap, `docs/ops/CI_EVIDENCE.md`); a provisioned Hetzner
+host, an off-host encrypted backup target, and the restore drill itself
+(V01); and organizational on-call ownership (release checklist). Nothing in
+this update claims launch-ready or device-verified status.
