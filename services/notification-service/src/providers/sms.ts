@@ -5,6 +5,7 @@
 import Twilio from "twilio";
 
 import { smsLogger } from "../lib/logger.js";
+import { safeErrorText } from "../lib/redact.js";
 
 // ============================================
 // Types
@@ -112,8 +113,12 @@ class AfricasTalkingClient {
         error: data.SMSMessageData?.Recipients?.[0]?.status || "Unknown error",
       };
     } catch (error) {
+      // Message only, destination scrubbed: provider errors can echo it.
       smsLogger.error(
-        { err: error, provider: "africas_talking" },
+        {
+          error: safeErrorText(error, [payload.to]),
+          provider: "africas_talking",
+        },
         "SMS send error",
       );
       return {
@@ -216,7 +221,12 @@ class TwilioClient {
         provider: "twilio",
       };
     } catch (error) {
-      smsLogger.error({ err: error, provider: "twilio" }, "SMS send error");
+      // Message only, destination scrubbed: Twilio's invalid-number error
+      // quotes the number back.
+      smsLogger.error(
+        { error: safeErrorText(error, [payload.to]), provider: "twilio" },
+        "SMS send error",
+      );
       return {
         success: false,
         provider: "twilio",
@@ -413,3 +423,48 @@ class SMSService {
 }
 
 export const smsService = new SMSService();
+
+// ============================================
+// Port for durable consumers
+// ============================================
+
+export interface SmsSendResult {
+  readonly success: boolean;
+  readonly messageId?: string;
+  readonly provider?: string;
+  readonly error?: string;
+  /** True when retrying cannot help (invalid number, no provider, blocked). */
+  readonly permanent?: boolean;
+}
+
+/** What the outbox consumers send through (faked in their tests). */
+export interface SmsSender {
+  send(to: string, message: string): Promise<SmsSendResult>;
+}
+
+/**
+ * Provider error text that means "retrying will not help": no provider is
+ * configured, the number is invalid, or the recipient is blocked/opted out.
+ * Everything else (timeouts, 5xx, throttling, balance) is transient: retried,
+ * then dead-lettered.
+ */
+const PERMANENT_SMS_FAILURE =
+  /not configured|invalid|not a valid|unsupported|blacklist|blocked|unsubscribed|opt(ed)?[- ]?out|rejected/i;
+
+export function isPermanentSmsFailure(error: string | undefined): boolean {
+  return PERMANENT_SMS_FAILURE.test(error ?? "");
+}
+
+/** The real SMS service (Africa's Talking for African numbers, Twilio fallback). */
+export const smsSender: SmsSender = {
+  async send(to, message) {
+    const result = await smsService.send({ to, message });
+    return {
+      success: result.success,
+      messageId: result.messageId,
+      provider: result.provider,
+      error: result.error,
+      permanent: !result.success && isPermanentSmsFailure(result.error),
+    };
+  },
+};

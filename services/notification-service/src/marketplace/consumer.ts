@@ -1,38 +1,48 @@
 /**
- * Production wiring for durable marketplace push (G10).
+ * Production wiring for durable outbox push (G10; round 2-6 events).
  *
- * Subscribes to the canonical `event:mp.*` outbox channel (the same stream
- * realtime-gateway consumes) and drives MarketplacePushDeliverer with real
- * ports: Prisma for device tokens and preferences, the Firebase provider for
- * delivery, and Redis for dedupe, per-subject ordering, the dead-letter queue
- * and the offline-retry pending list. No new datastore is introduced — Redis
- * is already the notification service's cache/pubsub/rate-limit store.
+ * Subscribes to the canonical outbox channels the notification table covers
+ * (NOTIFICATION_PATTERNS: `event:mp.*` — the same stream realtime-gateway
+ * consumes — plus `event:trip_access.declined`, `event:reservation.*` and
+ * `event:shipment.return_proposed`) and drives MarketplacePushDeliverer with
+ * real ports: Prisma for device tokens, preferences, the party directory and
+ * verified phones; the Firebase provider for push; the SMS service for the
+ * time-critical fallback; Redis for dedupe, per-subject ordering, the
+ * dead-letter queue and the offline-retry pending list. No new datastore is
+ * introduced — Redis is already the service's cache/pubsub/rate-limit store.
+ *
+ * One subscriber connection PER PATTERN: the outbox helper's pmessage
+ * listener does not filter by pattern, so two patterns on one connection
+ * would hand every message to every handler.
  */
 import { Redis } from "ioredis";
 
 import { subscribeOutbox, type OutboxSubscription } from "@ubi/outbox";
 
+import { SqlPartyDirectory, type PartyDirectory } from "./parties.js";
 import {
   MarketplacePushDeliverer,
   type DeadLetterEntry,
   type MarketplacePushPorts,
   type PendingEntry,
+  type PushLogger,
   type PushNotification,
   type PushSendResult,
 } from "./push.js";
+import { NOTIFICATION_PATTERNS } from "./specs.js";
 import { pushLogger } from "../lib/logger.js";
 import { prisma } from "../lib/prisma.js";
 import { firebaseService } from "../providers/firebase.js";
+import { smsSender } from "../providers/sms.js";
 
 import type { PushPrefCategory } from "./audience.js";
 
 /** Redis glob pattern for marketplace event-type channels. */
 export const MARKETPLACE_PUSH_PATTERN = "event:mp.*";
 
-const SEEN_PREFIX = "notif:mp:seen:";
-const SEQ_PREFIX = "notif:mp:seq:";
-const DLQ_KEY = "notif:mp:dlq";
-const PENDING_KEY = "notif:mp:pending";
+export { NOTIFICATION_PATTERNS };
+
+const DEFAULT_KEY_PREFIX = "notif:mp:";
 const SEEN_TTL_SECONDS = 86_400; // 24h dedupe window
 const SEQ_TTL_SECONDS = 86_400;
 const DLQ_MAX = 10_000;
@@ -49,11 +59,37 @@ if seq > cur then
 end
 return 0`;
 
+/** Test seams: replace a production port (FCM, Prisma, SMS) with a fake. */
+export interface PushPortOverrides {
+  readonly devices?: MarketplacePushPorts["devices"];
+  readonly prefs?: MarketplacePushPorts["prefs"];
+  readonly sender?: MarketplacePushPorts["sender"];
+  /** null disables the directory (payload ids only). */
+  readonly parties?: PartyDirectory | null;
+  /** null disables the SMS fallback. */
+  readonly sms?: MarketplacePushPorts["sms"] | null;
+  readonly logger?: PushLogger;
+  /** Redis key namespace (default `notif:mp:`). */
+  readonly keyPrefix?: string;
+  readonly maxAttempts?: number;
+  readonly delay?: (ms: number) => Promise<void>;
+}
+
+async function preferenceRow(userId: string) {
+  const row = await prisma.notificationPreference.findUnique({
+    where: { userId },
+  });
+  return row;
+}
+
 export function buildMarketplacePushPorts(
   commands: Redis,
+  overrides: PushPortOverrides = {},
 ): MarketplacePushPorts {
+  const prefix = overrides.keyPrefix ?? DEFAULT_KEY_PREFIX;
+  const directory = new SqlPartyDirectory(prisma);
   return {
-    devices: {
+    devices: overrides.devices ?? {
       async activeTokens(userId: string): Promise<string[]> {
         const rows = await prisma.deviceToken.findMany({
           where: { userId, isActive: true },
@@ -71,14 +107,12 @@ export function buildMarketplacePushPorts(
         });
       },
     },
-    prefs: {
+    prefs: overrides.prefs ?? {
       async allows(
         userId: string,
         category: PushPrefCategory,
       ): Promise<boolean> {
-        const pref = await prisma.notificationPreference.findUnique({
-          where: { userId },
-        });
+        const pref = await preferenceRow(userId);
         // Documented default: with no preference row, marketplace push is
         // allowed (the rider/driver opted into the marketplace by using it).
         if (!pref) {
@@ -87,12 +121,16 @@ export function buildMarketplacePushPorts(
         if (!pref.pushEnabled) {
           return false;
         }
-        return category === "payment"
-          ? pref.pushPaymentUpdates
-          : pref.pushRideUpdates;
+        if (category === "payment") {
+          return pref.pushPaymentUpdates;
+        }
+        if (category === "delivery") {
+          return pref.pushDeliveryUpdates;
+        }
+        return pref.pushRideUpdates;
       },
     },
-    sender: {
+    sender: overrides.sender ?? {
       async send(
         _userId: string,
         tokens: string[],
@@ -119,7 +157,7 @@ export function buildMarketplacePushPorts(
     state: {
       async firstSightOfEvent(eventId: string): Promise<boolean> {
         const set = await commands.set(
-          `${SEEN_PREFIX}${eventId}`,
+          `${prefix}seen:${eventId}`,
           "1",
           "EX",
           SEEN_TTL_SECONDS,
@@ -134,7 +172,7 @@ export function buildMarketplacePushPorts(
         const result = (await commands.eval(
           ADVANCE_SEQ_LUA,
           1,
-          `${SEQ_PREFIX}${subjectKey}`,
+          `${prefix}seq:${subjectKey}`,
           String(sequence),
           String(SEQ_TTL_SECONDS),
         )) as number;
@@ -146,10 +184,10 @@ export function buildMarketplacePushPorts(
         await commands
           .multi()
           .rpush(
-            DLQ_KEY,
+            `${prefix}dlq`,
             JSON.stringify({ ...entry, at: new Date().toISOString() }),
           )
-          .ltrim(DLQ_KEY, -DLQ_MAX, -1)
+          .ltrim(`${prefix}dlq`, -DLQ_MAX, -1)
           .exec();
       },
     },
@@ -158,86 +196,148 @@ export function buildMarketplacePushPorts(
         await commands
           .multi()
           .rpush(
-            PENDING_KEY,
+            `${prefix}pending`,
             JSON.stringify({ ...entry, at: new Date().toISOString() }),
           )
-          .ltrim(PENDING_KEY, -PENDING_MAX, -1)
+          .ltrim(`${prefix}pending`, -PENDING_MAX, -1)
           .exec();
       },
     },
-    logger: pushLogger,
+    logger: overrides.logger ?? pushLogger,
+    ...(overrides.parties === null
+      ? {}
+      : { parties: overrides.parties ?? directory }),
+    ...(overrides.sms === null
+      ? {}
+      : {
+          sms: overrides.sms ?? {
+            phones: directory,
+            sender: smsSender,
+            async allows(userId: string): Promise<boolean> {
+              const pref = await preferenceRow(userId);
+              // Same documented default as push: no row → allowed.
+              return !pref || (pref.smsEnabled && pref.smsCriticalAlerts);
+            },
+          },
+        }),
+    ...(overrides.maxAttempts !== undefined
+      ? { maxAttempts: overrides.maxAttempts }
+      : {}),
+    ...(overrides.delay !== undefined ? { delay: overrides.delay } : {}),
   };
 }
 
 /**
- * Wire the notification service to the marketplace outbox stream. `subscriber`
- * is a dedicated ioredis connection (subscribeOutbox puts it in subscriber
- * mode and duplicates it for its own dedupe SET); `commands` is an ordinary
- * connection used by the ports.
+ * Wire the notification service to the outbox streams. `openSubscriber`
+ * returns a NEW dedicated connection each call (one per pattern; subscribeOutbox
+ * puts it in subscriber mode and duplicates it for its own dedupe SET);
+ * `commands` is an ordinary connection used by the ports. stop() unsubscribes
+ * every pattern and closes the connections this function opened.
  */
 export async function subscribeMarketplacePush(
-  subscriber: Redis,
+  openSubscriber: () => Redis,
   commands: Redis,
+  options: {
+    readonly overrides?: PushPortOverrides;
+    readonly patterns?: readonly string[];
+  } = {},
 ): Promise<OutboxSubscription> {
-  const deliverer = new MarketplacePushDeliverer(
-    buildMarketplacePushPorts(commands),
-  );
+  const ports = buildMarketplacePushPorts(commands, options.overrides);
+  const deliverer = new MarketplacePushDeliverer(ports);
+  const prefix = options.overrides?.keyPrefix ?? DEFAULT_KEY_PREFIX;
+  const patterns = options.patterns ?? NOTIFICATION_PATTERNS;
 
-  const subscription = await subscribeOutbox(
-    subscriber,
-    MARKETPLACE_PUSH_PATTERN,
-    async (envelope) => {
-      const result = await deliverer.handle(envelope);
-      if (result.outcome === "processed" && result.perUser.length > 0) {
-        pushLogger.debug(
-          {
-            eventName: result.eventName,
-            eventId: result.eventId,
-            outcomes: result.perUser.map((u) => u.outcome),
+  const opened: Redis[] = [];
+  const subscriptions: OutboxSubscription[] = [];
+  const stopAll = async (): Promise<void> => {
+    await Promise.allSettled(
+      subscriptions.map(async (s) => {
+        await s.stop();
+      }),
+    );
+    await Promise.allSettled(
+      opened.map(async (c) => {
+        await c.quit();
+      }),
+    );
+  };
+
+  try {
+    for (const pattern of patterns) {
+      const subscriber = openSubscriber();
+      opened.push(subscriber);
+      subscriptions.push(
+        await subscribeOutbox(
+          subscriber,
+          pattern,
+          async (envelope) => {
+            const result = await deliverer.handle(envelope);
+            if (result.outcome === "processed") {
+              ports.logger.debug(
+                {
+                  eventName: result.eventName,
+                  eventId: result.eventId,
+                  outcomes: result.perUser.map((u) => `${u.role}:${u.outcome}`),
+                  unresolved: result.unresolved.map((u) => u.role),
+                },
+                "outbox notification processed",
+              );
+            }
           },
-          "marketplace push processed",
-        );
-      }
-    },
-    {
-      // The outbox helper also dedupes on id; the deliverer's own dedupe covers
-      // direct calls and a wider window. Both are cheap Redis SET NX.
-      dedupeKeyPrefix: "notif:mp:outbox:",
-      onError: (err, channel) => {
-        // Raw message is not logged: it may carry payload data.
-        pushLogger.error(
-          { err, channel },
-          "marketplace outbox message dropped (invalid envelope or handler error)",
-        );
-      },
-    },
-  );
+          {
+            // The outbox helper also dedupes on id; the deliverer's own dedupe
+            // covers direct calls and a wider window. Both are cheap SET NX.
+            dedupeKeyPrefix: `${prefix}outbox:`,
+            onError: (err, channel) => {
+              // Raw message is not logged: it may carry payload data.
+              ports.logger.error(
+                {
+                  channel,
+                  err: err instanceof Error ? err.message : "handler error",
+                },
+                "outbox notification message dropped (invalid envelope or handler error)",
+              );
+            },
+          },
+        ),
+      );
+    }
+  } catch (err) {
+    await stopAll();
+    throw err;
+  }
 
-  pushLogger.info(
-    { pattern: MARKETPLACE_PUSH_PATTERN },
-    "Subscribed to marketplace outbox push events",
+  ports.logger.info(
+    { patterns },
+    "Subscribed to outbox notification events (push + SMS fallback)",
   );
-  return subscription;
+  return { stop: stopAll };
 }
 
 /**
- * Convenience for the composition root: open a dedicated subscriber connection
- * and a commands connection from REDIS_URL and start the subscription. Returns
- * a stop() that tears both down.
+ * Convenience for the composition root: open the connections from REDIS_URL
+ * and start the subscriptions. Returns a stop() that tears them all down.
  */
 export async function startMarketplacePush(
   redisUrl: string,
 ): Promise<{ stop: () => Promise<void> }> {
-  const subscriber = new Redis(redisUrl);
   const commands = new Redis(redisUrl);
-  const subscription = await subscribeMarketplacePush(subscriber, commands);
-  return {
-    async stop(): Promise<void> {
-      try {
-        await subscription.stop();
-      } finally {
-        await Promise.allSettled([subscriber.quit(), commands.quit()]);
-      }
-    },
-  };
+  try {
+    const subscription = await subscribeMarketplacePush(
+      () => new Redis(redisUrl),
+      commands,
+    );
+    return {
+      async stop(): Promise<void> {
+        try {
+          await subscription.stop();
+        } finally {
+          await commands.quit().catch(() => undefined);
+        }
+      },
+    };
+  } catch (err) {
+    await commands.quit().catch(() => undefined);
+    throw err;
+  }
 }

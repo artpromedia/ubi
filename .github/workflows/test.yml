@@ -265,6 +265,10 @@ jobs:
         env:
           CI: true
           WALLET_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_wallet_test
+          # notification-service's party directory reads Prisma-owned tables in
+          # a migrated database; point it at this job's migrated one (its own
+          # default, ubi_notify_test, is never created in CI).
+          NOTIFY_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_wallet_test
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
