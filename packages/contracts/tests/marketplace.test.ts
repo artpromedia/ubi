@@ -2,12 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   MP_ELIGIBILITY_REASONS,
+  MP_MULTI_STOP_PILOT_DEFAULTS,
+  MP_STOP_PURPOSES,
+  MpFeedItemSchema,
+  MpMultiStopPolicySchema,
   MpQuoteEnvelopeSchema,
+  MpRequestSchema,
   MpSelectBidSchema,
+  MpStopInputSchema,
   MpSubmitBidSchema,
   commissionMinorFor,
+  mpQuoteStopsParam,
 } from "../src/marketplace";
-import { DENY_ALL, isEnabled } from "../src/flags";
+import { DENY_ALL, FLAG_KEYS, isEnabled } from "../src/flags";
 import {
   MarketplacePolicySchema,
   marketplaceBoundsFor,
@@ -42,7 +49,9 @@ describe("marketplace flags", () => {
       "marketplace_rides",
       "marketplace_delivery",
       "marketplace_queued_jobs",
+      "marketplace_multi_stop",
     ] as const) {
+      expect(FLAG_KEYS).toContain(key);
       expect(isEnabled(undefined, key)).toBe(false);
       expect(isEnabled({}, key)).toBe(false);
       expect(isEnabled(DENY_ALL, key)).toBe(false);
@@ -212,5 +221,150 @@ describe("marketplace wire schemas", () => {
     ]) {
       expect(MP_ELIGIBILITY_REASONS).toContain(code);
     }
+  });
+});
+
+describe("marketplace multiple stops (A02)", () => {
+  const envelope = {
+    quoteId: "q1",
+    service: "ride",
+    vehicleClass: "go",
+    cityId: "lagos",
+    currency: "NGN",
+    suggestedFareMinor: { amountMinor: 280_000, currency: "NGN" },
+    minimumFareMinor: { amountMinor: 200_000, currency: "NGN" },
+    maximumFareMinor: { amountMinor: 560_000, currency: "NGN" },
+    expiresAt: new Date(0).toISOString(),
+    pricingVersion: "engine.v1/cfg.1",
+    policyVersion: 1,
+    breakdown: [],
+    routedDistanceMeters: 12_400,
+    routedDurationSec: 1_680,
+  };
+  const stop = {
+    stopId: "5b0e6d7e-0000-4000-8000-000000000001",
+    order: 1,
+    label: "School gate",
+    lat: 6.53,
+    lng: 3.38,
+    purpose: "drop_passenger",
+    dwellSec: 120,
+  };
+
+  it("keeps a plain quote/request valid with no route fields at all", () => {
+    expect(MpQuoteEnvelopeSchema.safeParse(envelope).success).toBe(true);
+  });
+
+  it("documents stops, dwell and the route fingerprint on a multi-stop quote", () => {
+    const parsed = MpQuoteEnvelopeSchema.parse({
+      ...envelope,
+      stops: [stop],
+      stopsDwellSec: 120,
+      routeFingerprint: "rt_abc",
+    });
+    expect(parsed.stops?.[0]?.stopId).toBe(stop.stopId);
+    expect(
+      MpQuoteEnvelopeSchema.safeParse({
+        ...envelope,
+        stops: [{ ...stop, purpose: "joyride" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("carries the route revision on the owner's request view", () => {
+    const request = MpRequestSchema.shape;
+    expect(request.stops).toBeDefined();
+    expect(request.routeRevision).toBeDefined();
+    expect(request.routeFingerprint).toBeDefined();
+  });
+
+  it("never lets a stop input name an id, an order or a price", () => {
+    expect(
+      MpStopInputSchema.safeParse({ lat: 6.5, lng: 3.3, stopId: "x" }).success,
+    ).toBe(false);
+    expect(
+      MpStopInputSchema.safeParse({ lat: 6.5, lng: 3.3, order: 1 }).success,
+    ).toBe(false);
+    expect(
+      MpStopInputSchema.safeParse({ lat: 6.5, lng: 3.3, fareMinor: 1 }).success,
+    ).toBe(false);
+    expect(MpStopInputSchema.safeParse({ lat: 91, lng: 3.3 }).success).toBe(
+      false,
+    );
+    expect(
+      MpStopInputSchema.safeParse({ lat: 6.5, lng: 3.3, dwellSec: -1 }).success,
+    ).toBe(false);
+  });
+
+  it("encodes the quote's stops parameter from validated input only", () => {
+    const encoded = mpQuoteStopsParam([
+      { lat: 6.53, lng: 3.38, purpose: "errand", dwellSec: 60 },
+    ]);
+    expect(JSON.parse(encoded)).toEqual([
+      { lat: 6.53, lng: 3.38, purpose: "errand", dwellSec: 60 },
+    ]);
+    expect(() =>
+      mpQuoteStopsParam([
+        { lat: 6.53, lng: 3.38, stopId: "x" } as unknown as {
+          lat: number;
+          lng: number;
+        },
+      ]),
+    ).toThrow();
+  });
+
+  it("shows drivers only coarse stop areas on the feed card", () => {
+    const item = {
+      requestId: "req_1",
+      revision: 2,
+      service: "ride",
+      title: "Ride request · go",
+      meta: "Area 6.52, 3.37 → Area 6.56, 3.37 · 1 stop",
+      askedMinor: { amountMinor: 280_000, currency: "NGN" },
+      askedByLabel: "Requester asks",
+      capabilityBadge: null,
+      expiresAt: new Date(0).toISOString(),
+      route: {
+        stopCount: 1,
+        stops: [
+          {
+            order: 1,
+            areaLabel: "Area 6.53, 3.38",
+            purpose: "drop_passenger",
+            dwellSec: 120,
+          },
+        ],
+        routedDistanceMeters: 7_100,
+        routedDurationSec: 900,
+        stopsDwellSec: 120,
+      },
+    };
+    const parsed = MpFeedItemSchema.parse(item);
+    expect(Object.keys(parsed.route?.stops[0] ?? {}).sort()).toEqual([
+      "areaLabel",
+      "dwellSec",
+      "order",
+      "purpose",
+    ]);
+  });
+
+  it("pins the pilot limits and refuses an incoherent market policy", () => {
+    expect(MP_MULTI_STOP_PILOT_DEFAULTS.maxIntermediateStops).toBe(3);
+    expect(
+      MpMultiStopPolicySchema.safeParse(MP_MULTI_STOP_PILOT_DEFAULTS).success,
+    ).toBe(true);
+    expect(
+      MpMultiStopPolicySchema.safeParse({
+        maxIntermediateStops: 3,
+        defaultDwellSec: 900,
+        maxDwellSec: 600,
+      }).success,
+    ).toBe(false);
+    expect(MP_STOP_PURPOSES).toEqual([
+      "pickup_passenger",
+      "drop_passenger",
+      "errand",
+      "other",
+    ]);
   });
 });

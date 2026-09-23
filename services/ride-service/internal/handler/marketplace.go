@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -155,12 +157,18 @@ func (h *MarketplaceHandler) Quote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	stops, err := parseStopsParam(query)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 
 	envelope, err := h.service.Quote(r.Context(), actor, marketplace.QuoteParams{
 		Service:      query.Get("service"),
 		VehicleClass: query.Get("vehicleClass"),
 		Pickup:       domain.Place{Lat: pickupLat, Lng: pickupLng},
 		Dropoff:      domain.Place{Lat: dropoffLat, Lng: dropoffLng},
+		Stops:        stops,
 		WeightKg:     weightKg,
 	})
 	if err != nil {
@@ -168,6 +176,75 @@ func (h *MarketplaceHandler) Quote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, envelope)
+}
+
+// maxStopsParamBytes bounds the encoded `stops` query parameter. Plumbing,
+// not policy: the market's stop limit is enforced by the service; this only
+// keeps a query string from being a request body in disguise.
+const maxStopsParamBytes = 4096
+
+// stopInputWire is one element of the `stops` parameter as it arrives. The
+// coordinates are pointers so a missing (or null) lat/lng is refused: decoded
+// straight into a float it would read as 0 — a real point on the equator or
+// the prime meridian that Place.Valid accepts and the route would price.
+type stopInputWire struct {
+	Lat      *float64 `json:"lat"`
+	Lng      *float64 `json:"lng"`
+	Label    string   `json:"label,omitempty"`
+	Purpose  string   `json:"purpose,omitempty"`
+	DwellSec *int     `json:"dwellSec,omitempty"`
+}
+
+// parseStopsParam reads the optional `stops` query parameter of GET
+// /v1/mp/quote: ONE JSON array of {lat, lng, label?, purpose?, dwellSec?} in
+// pickup → dropoff order (MpStopInputSchema). Unknown keys are refused — a
+// client cannot name a stop id or a price — and lat and lng are required on
+// every stop. Absent, `null` and `[]` all mean the plain pickup → dropoff
+// route.
+func parseStopsParam(query url.Values) ([]marketplace.StopInput, error) {
+	values, present := query["stops"]
+	if !present {
+		return nil, nil
+	}
+	if len(values) != 1 {
+		return nil, domain.Errorf(domain.CodeValidationFailed, "stops must be given once, as one JSON array").
+			WithDetails(map[string]any{"field": "stops"})
+	}
+	raw := strings.TrimSpace(values[0])
+	if raw == "" {
+		return nil, nil
+	}
+	if len(raw) > maxStopsParamBytes {
+		return nil, domain.Errorf(domain.CodeValidationFailed, "stops is too long").
+			WithDetails(map[string]any{"field": "stops", "maximumBytes": maxStopsParamBytes})
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var wire []stopInputWire
+	if err := decoder.Decode(&wire); err != nil || decoder.More() {
+		return nil, domain.Errorf(domain.CodeValidationFailed,
+			"stops must be a JSON array of {lat, lng, label?, purpose?, dwellSec?}").
+			WithDetails(map[string]any{"field": "stops"})
+	}
+	if len(wire) == 0 {
+		return nil, nil
+	}
+	stops := make([]marketplace.StopInput, 0, len(wire))
+	for i, stop := range wire {
+		if stop.Lat == nil || stop.Lng == nil {
+			return nil, domain.Errorf(domain.CodeValidationFailed,
+				"stop %d needs both lat and lng", i+1).
+				WithDetails(map[string]any{"field": "stops[" + strconv.Itoa(i) + "]"})
+		}
+		stops = append(stops, marketplace.StopInput{
+			Lat:      *stop.Lat,
+			Lng:      *stop.Lng,
+			Label:    stop.Label,
+			Purpose:  stop.Purpose,
+			DwellSec: stop.DwellSec,
+		})
+	}
+	return stops, nil
 }
 
 // PublishRequest handles POST /v1/mp/requests.

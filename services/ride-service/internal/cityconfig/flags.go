@@ -19,6 +19,10 @@ const (
 	FlagMarketplaceRides      = "marketplace_rides"
 	FlagMarketplaceDelivery   = "marketplace_delivery"
 	FlagMarketplaceQueuedJobs = "marketplace_queued_jobs"
+	// Ordered intermediate stops on marketplace RIDE requests (A02). Deny by
+	// default: while off, a quote, publish or route revision that carries
+	// stops is refused, and the no-stop path is untouched either way.
+	FlagMarketplaceMultiStop = "marketplace_multi_stop"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

@@ -60,6 +60,104 @@ components:
             lng: { type: number },
           },
       }
+    StopPurpose:
+      {
+        type: string,
+        enum: [pickup_passenger, drop_passenger, errand, other],
+        description: "What an intermediate stop is for. Informs the awarded driver; never changes the price (expected dwell does).",
+      }
+    StopInput:
+      {
+        type: object,
+        additionalProperties: false,
+        required: [lat, lng],
+        description: "One intermediate stop as the requester asks for it, in pickup → dropoff order. No stop id, no order and no price: the server assigns the stable id, the array position is the order, and the complete ordered route is priced server-side. Unknown keys are refused.",
+        properties:
+          {
+            lat: { type: number, minimum: -90, maximum: 90 },
+            lng: { type: number, minimum: -180, maximum: 180 },
+            label: { type: string, maxLength: 80 },
+            purpose:
+              {
+                $ref: "#/components/schemas/StopPurpose",
+                description: "Defaults to other.",
+              },
+            dwellSec:
+              {
+                type: integer,
+                minimum: 0,
+                description: "Expected wait at the stop, priced as route time. Defaults to the market's defaultDwellSec (pilot 120); refused above its maxDwellSec (pilot 600).",
+              },
+          },
+      }
+    RouteStop:
+      {
+        type: object,
+        required: [stopId, order, label, lat, lng, purpose, dwellSec],
+        description: "One ordered intermediate stop on the requester's OWN quote/request (exact — this is their trip). stopId is server-assigned and stable from the quote through the request (and any pre-award route revision that keeps the stop) to the execution ride.",
+        properties:
+          {
+            stopId: { type: string, format: uuid },
+            order:
+              {
+                type: integer,
+                minimum: 1,
+                description: "1-based position between pickup and dropoff.",
+              },
+            label: { type: string },
+            lat: { type: number },
+            lng: { type: number },
+            purpose: { $ref: "#/components/schemas/StopPurpose" },
+            dwellSec: { type: integer, minimum: 0 },
+          },
+      }
+    FeedStop:
+      {
+        type: object,
+        required: [order, areaLabel, purpose, dwellSec],
+        description: "A stop as a driver sees it BEFORE an award: coarsened exactly like the pickup/dropoff area labels — never a coordinate, never the requester's label.",
+        properties:
+          {
+            order: { type: integer, minimum: 1 },
+            areaLabel: { type: string },
+            purpose: { $ref: "#/components/schemas/StopPurpose" },
+            dwellSec: { type: integer, minimum: 0 },
+          },
+      }
+    FeedRoute:
+      {
+        type: object,
+        required:
+          [
+            stopCount,
+            stops,
+            routedDistanceMeters,
+            routedDurationSec,
+            stopsDwellSec,
+          ],
+        description: "Driver-card summary of a multi-stop request (absent for a plain pickup → dropoff request).",
+        properties:
+          {
+            stopCount: { type: integer, minimum: 1 },
+            stops:
+              { type: array, items: { $ref: "#/components/schemas/FeedStop" } },
+            routedDistanceMeters:
+              {
+                type: integer,
+                description: "The complete ordered route's server-measured distance.",
+              },
+            routedDurationSec:
+              {
+                type: integer,
+                description: "The complete ordered route's server-measured driving time.",
+              },
+            stopsDwellSec:
+              {
+                type: integer,
+                description: "Total expected dwell at the stops (priced as route time).",
+              },
+          },
+      }
     QuoteEnvelope:
       {
         type: object,
@@ -107,8 +205,28 @@ components:
                       },
                   },
               },
-            routedDistanceMeters: { type: integer },
+            routedDistanceMeters:
+              {
+                type: integer,
+                description: "Server-measured metres of the COMPLETE ordered route (every pickup → stops → dropoff leg).",
+              },
             routedDurationSec: { type: integer },
+            stops:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/RouteStop" },
+                description: "Multi-stop envelopes only (absent for a plain quote): the ordered stops the route was measured and priced through. A request published from this quote carries exactly these stops; the publish body cannot restate them.",
+              },
+            stopsDwellSec:
+              {
+                type: integer,
+                description: "Multi-stop only: total expected dwell, priced as route time (the 'Stop waiting' breakdown row).",
+              },
+            routeFingerprint:
+              {
+                type: string,
+                description: "Multi-stop only: names the exact route (endpoints + ordered stop set) these bounds were priced for.",
+              },
           },
       }
     DeliveryDetails:
@@ -340,6 +458,23 @@ components:
                     driver_cancelled,
                     award_failed,
                   ],
+              },
+            stops:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/RouteStop" },
+                description: "Present only for a request that carries (or carried) intermediate stops; a plain request renders exactly as before. Absent ⇒ no stops.",
+              },
+            routeRevision:
+              {
+                type: integer,
+                minimum: 1,
+                description: "Bumps only when a revision changed the stop set. `revision` still bumps on every price- or route-affecting edit and is what bids are pinned to.",
+              },
+            routeFingerprint:
+              {
+                type: string,
+                description: "The route the current bounds were priced for.",
               },
           },
       }
@@ -776,6 +911,11 @@ components:
             askedByLabel: { type: string },
             capabilityBadge: { type: string },
             expiresAt: { type: string, format: date-time },
+            route:
+              {
+                $ref: "#/components/schemas/FeedRoute",
+                description: "Multi-stop requests only: stop count, coarse stop areas and the full route's distance/duration/dwell.",
+              },
           },
       }
     DriverJob:
@@ -914,7 +1054,7 @@ paths:
   /v1/mp/quote:
     get:
       summary: Bounded fare quote envelope (R02)
-      description: "Prices the trip/delivery with the deterministic engine, wraps the signed quote with negotiation bounds (floor = max(absolute, cost-based, bps-of-suggested); ceiling = bps-of-suggested). 503 market_not_configured when the city/service/vehicle has no marketplace policy."
+      description: "Prices the trip/delivery with the deterministic engine, wraps the signed quote with negotiation bounds (floor = max(absolute, cost-based, bps-of-suggested); ceiling = bps-of-suggested). 503 market_not_configured when the city/service/vehicle has no marketplace policy. With `stops` (rides only, behind the deny-by-default marketplace_multi_stop flag) the COMPLETE ordered route pickup → stops → dropoff is routed and priced, expected dwell is priced as route time, and the bounds derive from that full-route price; the market's stop limit (pilot 3), coordinates, dwell bounds and duplicate/adjacent-identical stops are validated (422 validation_failed with details.field). A delivery with stops is 422 validation_failed (deliveries are single-drop); stops while the flag is off are 404 feature_disabled."
       parameters:
         - {
             name: service,
@@ -958,11 +1098,39 @@ paths:
             required: false,
             schema: { type: number },
           }
+        - {
+            name: stops,
+            in: query,
+            required: false,
+            description: 'Ordered intermediate stops as ONE JSON-encoded array (URL-encoded), e.g. [{"lat":6.53,"lng":3.38,"purpose":"errand","dwellSec":120}]. Absent, null or [] is the plain pickup → dropoff route, priced exactly as before.',
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: array,
+                        maxItems: 10,
+                        items: { $ref: "#/components/schemas/StopInput" },
+                      },
+                  },
+              },
+          }
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/QuoteEnvelope" }
+        "404":
+          description: "feature_disabled — stops while marketplace_multi_stop is off here (or the vertical itself is off)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: "validation_failed — a stop over the market limit, off-planet, duplicated, identical to its adjacent pickup/dropoff, with an out-of-bounds dwell or unknown purpose, or any stop on a delivery."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "503":
           content:
             application/json:
@@ -970,7 +1138,7 @@ paths:
   /v1/mp/requests:
     post:
       summary: Publish a request (R03)
-      description: "Validates the requested amount against the quote's snapshotted bounds server-side (fare_out_of_bounds with a structured field error otherwise). Requires a live, owned, unconsumed quote. One open request per requester per policy cap."
+      description: "Validates the requested amount against the quote's snapshotted bounds server-side (fare_out_of_bounds with a structured field error otherwise). Requires a live, owned, unconsumed quote. One open request per requester per policy cap. A multi-stop quote publishes its own ordered stops (ids, order, dwell and routeFingerprint) — the body cannot carry stops (unknown keys are refused) — and only while marketplace_multi_stop is on."
       parameters: [{ $ref: "#/components/parameters/IdemKey" }]
       requestBody:
         content:
@@ -1086,7 +1254,8 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
   /v1/mp/requests/{requestId}/revise:
     post:
-      summary: Price-affecting edit — new revision, bids invalidated, holds released
+      summary: Price- or route-affecting edit — new revision, bids invalidated, holds released
+      description: "Open requests only (request_closed otherwise). A replacement quote for the SAME endpoints but a different ordered stop set is the pre-award route edit: the request adopts the quote's stops (a surviving stop keeps its stopId), its bounds come from the quote's full-route price, routeRevision bumps together with revision, and every live bid — pinned to the old revision — is invalidated with its commission hold released exactly once. A stale-revision bid can never be selected afterwards."
       parameters:
         - {
             name: requestId,
@@ -1108,7 +1277,7 @@ paths:
                     quoteId:
                       {
                         type: string,
-                        description: "Required when route/service details changed — a fresh quote re-snapshots bounds.",
+                        description: "Required when route/service details changed — a fresh quote re-snapshots bounds. Must price the same service, class, city, currency, active policy and endpoints; it MAY carry a different stop set (the route edit).",
                       },
                     expectedVersion: { type: integer },
                   },
@@ -1141,7 +1310,7 @@ paths:
   /v1/mp/requests/{requestId}/select:
     post:
       summary: Select the winner (R05, M05 award saga)
-      description: "Authenticated request owner only. Pins requestVersion and bidVersion (version_conflict on stale terms). Runs the award saga: claim request + driver capacity atomically, authorize rider funding for the selected amount, capture the winning commission hold exactly once under the award id, commit execution, resolve losers. Answers 202 with the pending award; the client converges on award.confirmed/failed via events or GET. award_unresolved is returned to a second selection racing a pending award."
+      description: "Authenticated request owner only. Pins requestVersion and bidVersion (version_conflict on stale terms). Runs the award saga: claim request + driver capacity atomically, authorize rider funding for the selected amount, capture the winning commission hold exactly once under the award id, commit execution, resolve losers. Answers 202 with the pending award; the client converges on award.confirmed/failed via events or GET. award_unresolved is returned to a second selection racing a pending award. A bid placed on an earlier request revision (a fare or route edit landed since) answers version_conflict with the refreshed terms (current revision, routeRevision/routeFingerprint for multi-stop requests, and the bid's own requestRevision) and never wins. The execution ride of a multi-stop award carries the request's ordered stops with their stable ids."
       parameters:
         - {
             name: requestId,

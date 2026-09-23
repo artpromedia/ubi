@@ -222,6 +222,14 @@ func (s *Service) evaluateFinishingTrip(
 		return nil, asDomainError(err)
 	}
 
+	// A current trip with intermediate stops has no honest remaining-time
+	// estimate yet: the server has no per-stop arrival events to tell which
+	// stops are done, and routing straight to the dropoff would understate
+	// the queued rider's pickup window. Such a driver finishes first.
+	if ride.StopCount > 0 {
+		return refuse(ReasonNotNearCompletion), nil
+	}
+
 	finishing := policy.FinishingTrip
 
 	// Remaining service time: live position → the current trip's dropoff.

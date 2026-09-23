@@ -75,9 +75,64 @@ type RateProfileBounds struct {
 	MaxMinimumTripFareMinor int64 `json:"maxMinimumTripFareMinor"`
 }
 
+// MarketplaceStopsPolicy bounds ordered intermediate stops on a marketplace
+// ride (A02): how many a request may carry and the expected dwell each may
+// declare (priced as route time). It mirrors MpMultiStopPolicySchema in
+// packages/contracts/src/marketplace.ts.
+type MarketplaceStopsPolicy struct {
+	MaxIntermediateStops int `json:"maxIntermediateStops"`
+	DefaultDwellSec      int `json:"defaultDwellSec"`
+	MaxDwellSec          int `json:"maxDwellSec"`
+}
+
+// The pilot multi-stop limits (addendum A02): up to three intermediate stops,
+// a two-minute expected dwell when the requester names none, ten minutes at
+// most per stop. They apply only when a market's policy carries no `stops`
+// block — a configurable product choice, not a hidden constant — and the
+// capability itself stays behind the deny-by-default marketplace_multi_stop
+// flag, so these numbers never open anything on their own.
+const (
+	PilotMaxIntermediateStops = 3
+	PilotDefaultStopDwellSec  = 120
+	PilotMaxStopDwellSec      = 600
+
+	// maxIntermediateStopsCeiling is structural, not policy: every stop is a
+	// routed leg at quote time, so no market may configure an unbounded list.
+	maxIntermediateStopsCeiling = 10
+)
+
+// StopsPolicy answers the market's multi-stop limits: the configured block,
+// or the pilot defaults when the market has none.
+func (p *MarketplacePolicy) StopsPolicy() MarketplaceStopsPolicy {
+	if p == nil || p.Stops == nil {
+		return MarketplaceStopsPolicy{
+			MaxIntermediateStops: PilotMaxIntermediateStops,
+			DefaultDwellSec:      PilotDefaultStopDwellSec,
+			MaxDwellSec:          PilotMaxStopDwellSec,
+		}
+	}
+	return *p.Stops
+}
+
+// validate refuses a stops block the engine could not honour.
+func (s *MarketplaceStopsPolicy) validate(cityID string) error {
+	switch {
+	case s.MaxIntermediateStops < 0 || s.MaxIntermediateStops > maxIntermediateStopsCeiling:
+		return fmt.Errorf("%w: city %s marketplace stop limit must be between 0 and %d",
+			ErrUnavailable, cityID, maxIntermediateStopsCeiling)
+	case s.MaxDwellSec < 0:
+		return fmt.Errorf("%w: city %s marketplace stop dwell ceiling is negative", ErrUnavailable, cityID)
+	case s.DefaultDwellSec < 0 || s.DefaultDwellSec > s.MaxDwellSec:
+		return fmt.Errorf("%w: city %s marketplace default stop dwell is outside its ceiling", ErrUnavailable, cityID)
+	}
+	return nil
+}
+
 // MarketplacePolicy mirrors MarketplacePolicySchema in
 // packages/contracts/src/city-config.ts. Every number the marketplace engine
-// needs lives here, versioned per city; there is no code default for any of it.
+// needs lives here, versioned per city; there is no code default for any of
+// it — except the optional `stops` block, whose pilot defaults are documented
+// above and only matter once the multi-stop flag is on.
 type MarketplacePolicy struct {
 	PolicyVersion      int                              `json:"policyVersion"`
 	CommissionBps      int                              `json:"commissionBps"`
@@ -89,6 +144,9 @@ type MarketplacePolicy struct {
 	Bids               MarketplaceBidPolicy             `json:"bids"`
 	Queue              QueuePolicy                      `json:"queue"`
 	RateProfileBounds  map[string]RateProfileBounds     `json:"rateProfileBounds"`
+	// Stops is the optional per-market multi-stop block; absent means the
+	// pilot defaults (see StopsPolicy).
+	Stops *MarketplaceStopsPolicy `json:"stops,omitempty"`
 }
 
 // Validate refuses a marketplace policy that would make the engine invent a
@@ -121,6 +179,11 @@ func (p *MarketplacePolicy) Validate(cityID string) error {
 	for pair, bounds := range p.FareBounds {
 		if bounds.AbsoluteFloorMinor <= 0 || bounds.CeilingBpsOfSuggested < 10_000 {
 			return fmt.Errorf("%w: city %s marketplace bounds for %q are unusable", ErrUnavailable, cityID, pair)
+		}
+	}
+	if p.Stops != nil {
+		if err := p.Stops.validate(cityID); err != nil {
+			return err
 		}
 	}
 	return nil

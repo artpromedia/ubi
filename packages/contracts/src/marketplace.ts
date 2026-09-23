@@ -36,6 +36,118 @@ export const MP_SLOTS = ["current", "next"] as const;
 export type MpSlot = (typeof MP_SLOTS)[number];
 export const MpSlotSchema = z.enum(MP_SLOTS);
 
+// ── Multiple stops (A02) ───────────────────────────────────────────────────
+
+/**
+ * What an intermediate stop is for. It tells the awarded driver what to
+ * expect; it never changes the price — expected dwell does.
+ */
+export const MP_STOP_PURPOSES = [
+  "pickup_passenger",
+  "drop_passenger",
+  "errand",
+  "other",
+] as const;
+export type MpStopPurpose = (typeof MP_STOP_PURPOSES)[number];
+export const MpStopPurposeSchema = z.enum(MP_STOP_PURPOSES);
+
+/**
+ * Per-market multi-stop limits. Optional inside a market's marketplace policy
+ * (absent ⇒ `MP_MULTI_STOP_PILOT_DEFAULTS`); the capability itself stays behind
+ * the deny-by-default `marketplace_multi_stop` flag, rides only.
+ */
+export const MpMultiStopPolicySchema = z
+  .object({
+    /** Intermediate stops a request may carry (0 disables them structurally). */
+    maxIntermediateStops: z.number().int().min(0).max(10),
+    /** Expected dwell applied when the requester names none. */
+    defaultDwellSec: z.number().int().nonnegative(),
+    /** The most expected dwell one stop may declare (priced as route time). */
+    maxDwellSec: z.number().int().nonnegative(),
+  })
+  .refine((policy) => policy.defaultDwellSec <= policy.maxDwellSec, {
+    message: "defaultDwellSec must not exceed maxDwellSec",
+    path: ["defaultDwellSec"],
+  });
+export type MpMultiStopPolicy = z.infer<typeof MpMultiStopPolicySchema>;
+
+/** The addendum's pilot product choice: up to three intermediate stops. */
+export const MP_MULTI_STOP_PILOT_DEFAULTS: MpMultiStopPolicy = Object.freeze({
+  maxIntermediateStops: 3,
+  defaultDwellSec: 120,
+  maxDwellSec: 600,
+});
+
+/**
+ * One intermediate stop as a requester asks for it, in pickup → dropoff order.
+ * No id, no order, no price: the server assigns the stable id, the array
+ * position is the order, and the complete ordered route is priced server-side.
+ * Sent to `GET /v1/mp/quote` as the JSON-encoded `stops` query parameter (see
+ * `mpQuoteStopsParam`); unknown keys are refused.
+ */
+export const MpStopInputSchema = z
+  .object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    label: z.string().max(80).optional(),
+    /** Defaults to "other". */
+    purpose: MpStopPurposeSchema.optional(),
+    /** Defaults to the market's defaultDwellSec; bounded by its maxDwellSec. */
+    dwellSec: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+export type MpStopInput = z.infer<typeof MpStopInputSchema>;
+
+/**
+ * One ordered stop as the requester's own quote/request carries it. `stopId`
+ * is server-assigned and stable from the quote through the request (and any
+ * pre-award route revision that keeps the stop) to the execution ride.
+ */
+export const MpRouteStopSchema = z.object({
+  stopId: z.string().min(1),
+  /** 1-based position between pickup and dropoff. */
+  order: z.number().int().min(1),
+  label: z.string().min(1),
+  lat: z.number(),
+  lng: z.number(),
+  purpose: MpStopPurposeSchema,
+  dwellSec: z.number().int().nonnegative(),
+});
+export type MpRouteStop = z.infer<typeof MpRouteStopSchema>;
+
+/**
+ * A stop as a driver may see it BEFORE an award: coarsened exactly like the
+ * pickup/dropoff area labels — never a coordinate, never the requester's words.
+ */
+export const MpFeedStopSchema = z.object({
+  order: z.number().int().min(1),
+  areaLabel: z.string().min(1),
+  purpose: MpStopPurposeSchema,
+  dwellSec: z.number().int().nonnegative(),
+});
+export type MpFeedStop = z.infer<typeof MpFeedStopSchema>;
+
+/** Driver-card route summary for a multi-stop request (absent for plain routes). */
+export const MpFeedRouteSchema = z.object({
+  stopCount: z.number().int().min(1),
+  stops: z.array(MpFeedStopSchema).min(1),
+  /** The complete ordered route's server-measured metres/seconds. */
+  routedDistanceMeters: z.number().int().nonnegative(),
+  routedDurationSec: z.number().int().nonnegative(),
+  /** Total expected dwell at the stops (priced as route time). */
+  stopsDwellSec: z.number().int().nonnegative(),
+});
+export type MpFeedRoute = z.infer<typeof MpFeedRouteSchema>;
+
+/**
+ * Encodes stops for `GET /v1/mp/quote?stops=…` (URL-encode the result). The
+ * input is validated first, so a client can never send a key the server
+ * refuses — and never a stop id or a price.
+ */
+export function mpQuoteStopsParam(stops: readonly MpStopInput[]): string {
+  return JSON.stringify(stops.map((stop) => MpStopInputSchema.parse(stop)));
+}
+
 // ── Quote envelope (R02) ────────────────────────────────────────────────────
 
 /**
@@ -61,6 +173,18 @@ export const MpQuoteEnvelopeSchema = z.object({
   /** Routed service metres/seconds — profile calculations reuse these. */
   routedDistanceMeters: z.number().int().nonnegative(),
   routedDurationSec: z.number().int().nonnegative(),
+  /**
+   * Multi-stop envelopes only (absent for a plain pickup → dropoff quote): the
+   * ordered stops the COMPLETE route was measured and priced through (the
+   * routed metres/seconds above include every leg), their total expected
+   * dwell (priced as route time — see the "Stop waiting" breakdown row), and
+   * the fingerprint of the exact route the bounds belong to. A request
+   * published from this quote carries these very stops; the publish body
+   * cannot restate them.
+   */
+  stops: z.array(MpRouteStopSchema).optional(),
+  stopsDwellSec: z.number().int().nonnegative().optional(),
+  routeFingerprint: z.string().min(1).optional(),
 });
 export type MpQuoteEnvelope = z.infer<typeof MpQuoteEnvelopeSchema>;
 
@@ -114,7 +238,12 @@ export const MpPublishRequestSchema = z.object({
 });
 export type MpPublishRequest = z.infer<typeof MpPublishRequestSchema>;
 
-/** Owner view of a request. `revision` bumps on price-affecting edits. */
+/**
+ * Owner view of a request. `revision` bumps on EVERY price- or route-affecting
+ * edit and is what bids are pinned to; `routeRevision` bumps only when an edit
+ * changed the stop set (a replacement quote with different stops on
+ * `POST /v1/mp/requests/:id/revise`).
+ */
 export const MpRequestSchema = z.object({
   requestId: z.string().min(1),
   state: z.enum(MP_REQUEST_STATES),
@@ -139,6 +268,13 @@ export const MpRequestSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }),
   createdAt: z.string().datetime({ offset: true }),
   closeReason: z.enum(MP_REQUEST_CLOSE_REASONS).nullable(),
+  /**
+   * Present only for a request that carries (or carried) intermediate stops;
+   * a plain request renders exactly as before. `stops` absent ⇒ none.
+   */
+  stops: z.array(MpRouteStopSchema).optional(),
+  routeRevision: z.number().int().min(1).optional(),
+  routeFingerprint: z.string().min(1).optional(),
 });
 export type MpRequest = z.infer<typeof MpRequestSchema>;
 
@@ -475,6 +611,8 @@ export const MpFeedItemSchema = z.object({
   askedByLabel: z.string().min(1),
   capabilityBadge: z.string().nullable(),
   expiresAt: z.string().datetime({ offset: true }),
+  /** Multi-stop summary: stop count, coarse stops, full-route metrics. */
+  route: MpFeedRouteSchema.optional(),
 });
 export type MpFeedItem = z.infer<typeof MpFeedItemSchema>;
 

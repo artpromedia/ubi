@@ -32,6 +32,12 @@ type QuoteEnvelopeView struct {
 	Breakdown            []BreakdownRowView `json:"breakdown"`
 	RoutedDistanceMeters int64              `json:"routedDistanceMeters"`
 	RoutedDurationSec    int64              `json:"routedDurationSec"`
+	// Multi-stop only (omitted for a plain route): the ordered stops priced,
+	// their total expected dwell (priced as time), and the route fingerprint
+	// the bounds belong to.
+	Stops            []RouteStop `json:"stops,omitempty"`
+	StopsDwellSec    int64       `json:"stopsDwellSec,omitempty"`
+	RouteFingerprint string      `json:"routeFingerprint,omitempty"`
 }
 
 // SearchEnvelopeView is the request's current search envelope.
@@ -66,6 +72,13 @@ type RequestView struct {
 	ExpiresAt          time.Time          `json:"expiresAt"`
 	CreatedAt          time.Time          `json:"createdAt"`
 	CloseReason        *string            `json:"closeReason"`
+	// Present only for a request that carries (or carried) intermediate
+	// stops, so a plain request renders exactly as before: the owner's
+	// ordered stops (exact — this is their own trip), the route revision and
+	// the fingerprint of the route the current bounds were priced for.
+	Stops            []RouteStop `json:"stops,omitempty"`
+	RouteRevision    int         `json:"routeRevision,omitempty"`
+	RouteFingerprint string      `json:"routeFingerprint,omitempty"`
 }
 
 func requestViewOf(request *Request) *RequestView {
@@ -74,7 +87,7 @@ func requestViewOf(request *Request) *RequestView {
 		reason := request.CloseReason
 		closeReason = &reason
 	}
-	return &RequestView{
+	view := &RequestView{
 		RequestID:          request.ID.String(),
 		State:              request.State,
 		Revision:           request.Revision,
@@ -103,6 +116,12 @@ func requestViewOf(request *Request) *RequestView {
 		CreatedAt:      request.CreatedAt,
 		CloseReason:    closeReason,
 	}
+	if request.hasRoute() {
+		view.Stops = request.Stops
+		view.RouteRevision = request.RouteRevision
+		view.RouteFingerprint = request.RouteFingerprint
+	}
+	return view
 }
 
 // The client-facing hold-state vocabulary (MpBidDto.holdState). This is the
@@ -310,6 +329,9 @@ type FeedItemView struct {
 	AskedByLabel    string    `json:"askedByLabel"`
 	CapabilityBadge *string   `json:"capabilityBadge"`
 	ExpiresAt       time.Time `json:"expiresAt"`
+	// Route is the multi-stop summary (omitted for a plain route): stop
+	// count, coarse stop areas and the full route's distance/duration/dwell.
+	Route *FeedRouteView `json:"route,omitempty"`
 }
 
 // FeedPageView answers GET /v1/mp/feed.

@@ -343,3 +343,31 @@ CREATE INDEX IF NOT EXISTS mp_standing_driver_idx
     ON mp.driver_standing_actions (driver_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS mp_standing_status_idx
     ON mp.driver_standing_actions (status, created_at ASC);
+
+-- ---------------------------------------------------------------------------
+-- Multiple stops (A02), additive and idempotent.
+--
+--   * quotes.stops / requests.stops hold the ORDERED intermediate stops, each
+--     with a stable server-assigned stopId, its 1-based order, lat/lng, label,
+--     purpose and expected dwell. '[]' is the plain pickup → dropoff route, so
+--     every existing row reads exactly as before.
+--   * stops_dwell_sec is the total expected dwell the quote priced as route
+--     time; route_fingerprint names the exact stop set (and endpoints) the
+--     bounds were priced for. A request inherits both from the quote it was
+--     published or revised against — never from anything a client restates.
+--   * requests.route_revision bumps only when a revision changes the stop set.
+--     The request `revision` still bumps on EVERY price- or route-affecting
+--     edit and remains the one counter bids are pinned to, so a bid placed on
+--     an obsolete route is invalidated and can never be selected.
+--   * requests.routed_distance_m / routed_duration_sec carry the priced
+--     route's metrics so the driver card can state them without a quote read.
+-- ---------------------------------------------------------------------------
+ALTER TABLE mp.quotes ADD COLUMN IF NOT EXISTS stops jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE mp.quotes ADD COLUMN IF NOT EXISTS stops_dwell_sec bigint NOT NULL DEFAULT 0;
+ALTER TABLE mp.quotes ADD COLUMN IF NOT EXISTS route_fingerprint text NOT NULL DEFAULT '';
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS stops jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS route_revision integer NOT NULL DEFAULT 1;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS route_fingerprint text NOT NULL DEFAULT '';
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS routed_distance_m bigint NOT NULL DEFAULT 0;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS routed_duration_sec bigint NOT NULL DEFAULT 0;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS stops_dwell_sec bigint NOT NULL DEFAULT 0;

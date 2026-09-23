@@ -77,6 +77,12 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		return &result, replay.StatusCode, nil
 	}
 
+	// The bid is read BEFORE the request: the later request snapshot is then
+	// at least as new as the bid's, so a bid a revision invalidated always
+	// meets the revision that invalidated it and answers the refreshed terms
+	// below — never a bare bid_not_live that hides the route/fare change.
+	bid, bidErr := s.deps.Store.BidByID(ctx, s.deps.Store.Pool(), req.BidID)
+
 	request, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), requestID)
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil, 0, domain.Errorf(domain.CodeNotFound, "that request does not exist")
@@ -93,12 +99,11 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		return nil, 0, err
 	}
 
-	bid, err := s.deps.Store.BidByID(ctx, s.deps.Store.Pool(), req.BidID)
-	if errors.Is(err, domain.ErrNotFound) || (err == nil && bid.RequestID != request.ID) {
+	if errors.Is(bidErr, domain.ErrNotFound) || (bidErr == nil && bid.RequestID != request.ID) {
 		return nil, 0, domain.Errorf(domain.CodeNotFound, "that offer does not exist on this request")
 	}
-	if err != nil {
-		return nil, 0, asDomainError(err)
+	if bidErr != nil {
+		return nil, 0, asDomainError(bidErr)
 	}
 
 	now := s.now()
@@ -108,6 +113,15 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 	case request.State != machine.MpRequestOpen || !now.Before(request.ExpiresAt):
 		return nil, 0, domain.Errorf(domain.CodeRequestClosed, "this request is no longer open for selection").
 			WithDetails(map[string]any{"state": request.State})
+	}
+	// Revision pinning: a bid is of the terms — fare AND route — of the
+	// revision it was placed on. One placed before a fare or route edit can
+	// never win, whatever state the invalidation left it in: the refreshed
+	// terms (including the current route) come back for re-confirmation.
+	if bid.RequestRevision != request.Revision {
+		return nil, 0, domain.Errorf(domain.CodeVersionConflict,
+			"this offer was made on an earlier version of the request; review the refreshed terms").
+			WithDetails(refreshedTerms(request, bid))
 	}
 	if !machine.IsMpBidLive(bid.State) {
 		return nil, 0, domain.Errorf(domain.CodeBidNotLive, "this offer is no longer live").
@@ -215,7 +229,8 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		if err != nil {
 			return err
 		}
-		if !machine.IsMpBidLive(lockedBid.State) || lockedBid.BidVersion != req.BidVersion {
+		if !machine.IsMpBidLive(lockedBid.State) || lockedBid.BidVersion != req.BidVersion ||
+			lockedBid.RequestRevision != locked.Revision {
 			return domain.Errorf(domain.CodeVersionConflict,
 				"the offer changed after you reviewed it; confirm the refreshed terms").
 				WithDetails(refreshedTerms(locked, lockedBid))
@@ -359,19 +374,32 @@ func (s *Service) awardUnresolvedError(ctx context.Context, request *Request) *d
 // refreshedTerms is the version_conflict payload: the CURRENT terms, so the
 // client can re-render and re-confirm instead of guessing.
 func refreshedTerms(request *Request, bid *Bid) map[string]any {
-	return map[string]any{
+	bidTerms := map[string]any{
+		"bidId":       bid.ID.String(),
+		"bidVersion":  bid.BidVersion,
+		"amountMinor": bid.AmountMinor,
+		"slot":        bid.Slot,
+		"state":       bid.State,
+	}
+	if bid.RequestRevision != request.Revision || request.hasRoute() {
+		// Which revision (fare + route) the offer was made on.
+		bidTerms["requestRevision"] = bid.RequestRevision
+	}
+	terms := map[string]any{
 		"requestVersion":     request.Version,
 		"requestRevision":    request.Revision,
 		"requestedFareMinor": request.RequestedMinor,
 		"requestState":       request.State,
-		"bid": map[string]any{
-			"bidId":       bid.ID.String(),
-			"bidVersion":  bid.BidVersion,
-			"amountMinor": bid.AmountMinor,
-			"slot":        bid.Slot,
-			"state":       bid.State,
-		},
+		"bid":                bidTerms,
 	}
+	if request.hasRoute() {
+		// The route the request stands on NOW, so the requester re-confirms
+		// against the current stops rather than the ones the offer saw.
+		terms["routeRevision"] = request.RouteRevision
+		terms["routeFingerprint"] = request.RouteFingerprint
+		terms["stopCount"] = len(request.Stops)
+	}
+	return terms
 }
 
 // AwardForRequest answers GET /v1/mp/requests/{id}/award for convergence
@@ -1222,13 +1250,17 @@ func (s *Service) createExecutionRide(ctx context.Context, tx pgx.Tx, request *R
 	// negotiated fare and the request's routed endpoints, so ride.rides keeps
 	// its NOT NULL quote provenance and the fare stays tamper-evident.
 	rideQuote := &domain.Quote{
-		ID:              uuid.New(),
-		CityID:          request.CityID,
-		ConfigVersion:   config.Version,
-		RiderID:         request.RequesterID,
-		VehicleClass:    request.VehicleClass,
-		Pickup:          domain.Place{Lat: request.Pickup.Lat, Lng: request.Pickup.Lng, Address: request.Pickup.Label},
-		Dropoff:         domain.Place{Lat: request.Dropoff.Lat, Lng: request.Dropoff.Lng, Address: request.Dropoff.Label},
+		ID:            uuid.New(),
+		CityID:        request.CityID,
+		ConfigVersion: config.Version,
+		RiderID:       request.RequesterID,
+		VehicleClass:  request.VehicleClass,
+		Pickup:        domain.Place{Lat: request.Pickup.Lat, Lng: request.Pickup.Lng, Address: request.Pickup.Label},
+		Dropoff:       domain.Place{Lat: request.Dropoff.Lat, Lng: request.Dropoff.Lng, Address: request.Dropoff.Label},
+		// The awarded route's ordered stops, with the stable ids, order,
+		// purpose and dwell the award was made against: the execution (and
+		// every move/* reader of this quote) sees exactly the stops quoted.
+		Stops:           executionStops(request.Stops),
 		DistanceMeters:  mpQuote.RoutedDistanceM,
 		DurationSeconds: mpQuote.RoutedDurationSec,
 		FareMinor:       award.FareMinor,
@@ -1401,6 +1433,12 @@ func (s *Service) computeQueueWindow(ctx context.Context, driverID uuid.UUID, pi
 	if claim, err := s.deps.Store.CurrentClaim(ctx, s.deps.Store.Pool(), driverID); err == nil && claim.ExecutionID != nil {
 		ride, rideErr := s.deps.Store.ExecutionRideRow(ctx, s.deps.Store.Pool(), *claim.ExecutionID)
 		if rideErr == nil && machine.IsRiderActive(ride.State) {
+			if ride.StopCount > 0 {
+				// Never promise a window behind a multi-stop trip whose
+				// remaining stops the server cannot see (eligibility already
+				// refuses such queued bids; this is the backstop).
+				return nil, errors.New("the current trip has intermediate stops; no honest window exists")
+			}
 			remaining, err := s.routeSeconds(ctx, *session.LastLat, *session.LastLng, ride.DropoffLat, ride.DropoffLng)
 			if err != nil {
 				return nil, fmt.Errorf("routing unavailable: %w", err)

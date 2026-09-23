@@ -42,7 +42,8 @@ func (s *Store) DriverSessionRow(ctx context.Context, db DB, driverID uuid.UUID)
 }
 
 // ExecutionRide is the slice of a ride the finishing-trip branch needs: where
-// the current trip is heading and whether it is still under way.
+// the current trip is heading, whether it is still under way, and how many
+// intermediate stops its quoted route carries.
 type ExecutionRide struct {
 	ID         uuid.UUID
 	State      string
@@ -50,16 +51,22 @@ type ExecutionRide struct {
 	PickupLng  float64
 	DropoffLat float64
 	DropoffLng float64
+	StopCount  int
 }
 
-// ExecutionRideRow reads one ride's route endpoints from ride.rides.
+// ExecutionRideRow reads one ride's route endpoints from ride.rides, and the
+// stop count from the quote the ride consumed (a classic quote without stops
+// stores JSON null there, which counts as none).
 func (s *Store) ExecutionRideRow(ctx context.Context, db DB, rideID uuid.UUID) (*ExecutionRide, error) {
 	var ride ExecutionRide
 	err := db.QueryRow(ctx, `
-		SELECT id, state, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng
-		FROM ride.rides
-		WHERE id = $1`, rideID).Scan(
+		SELECT r.id, r.state, r.pickup_lat, r.pickup_lng, r.dropoff_lat, r.dropoff_lng,
+			CASE WHEN jsonb_typeof(q.stops) = 'array' THEN jsonb_array_length(q.stops) ELSE 0 END
+		FROM ride.rides r
+		LEFT JOIN ride.quotes q ON q.id = r.quote_id
+		WHERE r.id = $1`, rideID).Scan(
 		&ride.ID, &ride.State, &ride.PickupLat, &ride.PickupLng, &ride.DropoffLat, &ride.DropoffLng,
+		&ride.StopCount,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

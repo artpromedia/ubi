@@ -162,7 +162,7 @@ func (s *Service) CreateQuote(ctx context.Context, actor Actor, req QuoteRequest
 		VehicleClass:    req.VehicleClass,
 		Pickup:          req.Pickup,
 		Dropoff:         req.Dropoff,
-		Stops:           req.Stops,
+		Stops:           domain.StopsFromPlaces(req.Stops),
 		DistanceMeters:  route.DistanceMeters,
 		DurationSeconds: route.DurationSeconds,
 		FareMinor:       fare.AmountMinor,

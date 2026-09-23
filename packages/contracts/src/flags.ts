@@ -41,6 +41,12 @@ export const FLAG_KEYS = [
   "marketplace_rides",
   "marketplace_delivery",
   "marketplace_queued_jobs",
+  // Ordered intermediate stops on marketplace RIDE requests (A02). Scoped by
+  // city like the verticals above. While off, a quote, publish or pre-award
+  // route revision that carries stops is refused and the no-stop path is
+  // untouched; deliveries stay single-drop whatever this says (multi-drop
+  // needs per-package custody). Nothing enables this by default.
+  "marketplace_multi_stop",
   // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
   // assistant quoting, publishing a bounded request, and (the only binding step)
   // selecting a winning offer within a user's grant/mandate. Deny-by-default and

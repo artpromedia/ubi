@@ -83,6 +83,9 @@ func feedItemOf(request *Request, distanceMeters float64) *FeedItemView {
 		title = "Delivery request · " + request.VehicleClass
 	}
 	meta := request.Pickup.Label + " → " + request.Dropoff.Label
+	if len(request.Stops) > 0 {
+		meta += " · " + stopCountLabel(len(request.Stops))
+	}
 	if distanceMeters >= 0 {
 		meta += " · " + formatKm(distanceMeters) + " from you"
 	}
@@ -103,6 +106,7 @@ func feedItemOf(request *Request, distanceMeters float64) *FeedItemView {
 		AskedByLabel:    "Requester asks",
 		CapabilityBadge: badge,
 		ExpiresAt:       request.ExpiresAt,
+		Route:           feedRouteOf(request),
 	}
 }
 

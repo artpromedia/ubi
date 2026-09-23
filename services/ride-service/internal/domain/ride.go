@@ -34,6 +34,36 @@ func (p Place) Valid() bool {
 	return p.Lat != 0 || p.Lng != 0
 }
 
+// Stop is one ordered intermediate stop on a quoted route. The classic quote
+// path stores only the coordinate (and an optional address); a marketplace
+// execution ride also carries the stop's stable server-assigned id, its
+// 1-based position between pickup and dropoff, its purpose and the expected
+// dwell it was priced with, so the execution sees exactly the stops the
+// requester was quoted and awarded. Every extra field is omitempty, so a
+// classic stop serialises exactly as a Place does.
+type Stop struct {
+	Lat      float64 `json:"lat"`
+	Lng      float64 `json:"lng"`
+	Address  string  `json:"address,omitempty"`
+	StopID   string  `json:"stopId,omitempty"`
+	Order    int     `json:"order,omitempty"`
+	Purpose  string  `json:"purpose,omitempty"`
+	DwellSec int     `json:"dwellSec,omitempty"`
+}
+
+// StopsFromPlaces lifts plain waypoints into stops, preserving their order.
+// A nil input stays nil so an absent list serialises exactly as before.
+func StopsFromPlaces(places []Place) []Stop {
+	if places == nil {
+		return nil
+	}
+	stops := make([]Stop, 0, len(places))
+	for _, place := range places {
+		stops = append(stops, Stop{Lat: place.Lat, Lng: place.Lng, Address: place.Address})
+	}
+	return stops
+}
+
 // FareBreakdown is what a fare is made of. It is stored with the quote so a
 // completed ride can be explained line by line without recomputing anything.
 type FareBreakdown struct {
@@ -55,7 +85,7 @@ type Quote struct {
 	VehicleClass    string        `json:"vehicleClass"`
 	Pickup          Place         `json:"pickup"`
 	Dropoff         Place         `json:"dropoff"`
-	Stops           []Place       `json:"stops"`
+	Stops           []Stop        `json:"stops"`
 	DistanceMeters  int64         `json:"distanceMeters"`
 	DurationSeconds int64         `json:"durationSeconds"`
 	FareMinor       int64         `json:"fareMinor"`

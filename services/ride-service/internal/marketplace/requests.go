@@ -94,6 +94,15 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 	if err := s.requireServiceFlag(ctx, quote.Service, actor, quote.CityID); err != nil {
 		return nil, 0, err
 	}
+	// A multi-stop quote publishes only while multiple stops are allowed
+	// here. The stops themselves come from the quote row — the body cannot
+	// carry any — so a request is always published against the exact stop
+	// set (and fingerprint) that was priced.
+	if len(quote.Stops) > 0 {
+		if err := s.requireStopsAllowed(ctx, quote.Service, actor, quote.CityID); err != nil {
+			return nil, 0, err
+		}
+	}
 
 	now := s.now()
 	if !now.Before(quote.ExpiresAt) {
@@ -143,30 +152,40 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 	}
 
 	request := &Request{
-		ID:              uuid.New(),
-		QuoteID:         quote.ID,
-		RequesterID:     actor.UserID,
-		CityID:          quote.CityID,
-		Service:         quote.Service,
-		VehicleClass:    quote.VehicleClass,
-		Currency:        quote.Currency,
-		State:           machine.MpRequestOpen,
-		Revision:        1,
-		Version:         1,
-		RequestedMinor:  req.RequestedFareMinor.AmountMinor,
-		SuggestedMinor:  quote.SuggestedMinor,
-		MinMinor:        quote.MinMinor,
-		MaxMinor:        quote.MaxMinor,
-		Pickup:          quote.Pickup,
-		Dropoff:         quote.Dropoff,
-		Delivery:        req.Delivery,
-		PaymentMethodID: req.PaymentMethodID,
-		EnvelopeStep:    0,
-		EnvelopeRadiusM: policy.SearchEnvelope.InitialRadiusMeters,
-		EnvelopeEtaSec:  policy.SearchEnvelope.InitialPickupEtaSec,
-		PolicyVersion:   policy.PolicyVersion,
-		PricingVersion:  quote.PricingVersion,
-		ExpiresAt:       now.Add(time.Duration(policy.Bids.RequestExpirySec) * time.Second),
+		ID:                uuid.New(),
+		QuoteID:           quote.ID,
+		RequesterID:       actor.UserID,
+		CityID:            quote.CityID,
+		Service:           quote.Service,
+		VehicleClass:      quote.VehicleClass,
+		Currency:          quote.Currency,
+		State:             machine.MpRequestOpen,
+		Revision:          1,
+		Version:           1,
+		RequestedMinor:    req.RequestedFareMinor.AmountMinor,
+		SuggestedMinor:    quote.SuggestedMinor,
+		MinMinor:          quote.MinMinor,
+		MaxMinor:          quote.MaxMinor,
+		Pickup:            quote.Pickup,
+		Dropoff:           quote.Dropoff,
+		Stops:             quote.Stops,
+		RouteRevision:     1,
+		RouteFingerprint:  quote.RouteFingerprint,
+		RoutedDistanceM:   quote.RoutedDistanceM,
+		RoutedDurationSec: quote.RoutedDurationSec,
+		StopsDwellSec:     quote.StopsDwellSec,
+		Delivery:          req.Delivery,
+		PaymentMethodID:   req.PaymentMethodID,
+		EnvelopeStep:      0,
+		EnvelopeRadiusM:   policy.SearchEnvelope.InitialRadiusMeters,
+		EnvelopeEtaSec:    policy.SearchEnvelope.InitialPickupEtaSec,
+		PolicyVersion:     policy.PolicyVersion,
+		PricingVersion:    quote.PricingVersion,
+		ExpiresAt:         now.Add(time.Duration(policy.Bids.RequestExpirySec) * time.Second),
+	}
+	if request.RouteFingerprint == "" {
+		// A quote priced before fingerprints existed: name its route now.
+		request.RouteFingerprint = routeFingerprint(request.Pickup, request.Stops, request.Dropoff)
 	}
 
 	var view *RequestView
@@ -192,13 +211,42 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 		if err := s.deps.Store.ConsumeQuote(ctx, tx, quote.ID, request.ID); err != nil {
 			return err
 		}
-		if err := s.deps.Store.InsertRequestRevision(ctx, tx, request.ID, 1, request.RequestedMinor, quote.ID, map[string]any{
+		snapshot := map[string]any{
 			"requestedMinor": request.RequestedMinor,
 			"minMinor":       request.MinMinor,
 			"maxMinor":       request.MaxMinor,
 			"envelope":       map[string]any{"radiusMeters": request.EnvelopeRadiusM, "pickupEtaSec": request.EnvelopeEtaSec},
-		}); err != nil {
+		}
+		if route := routeSnapshot(request); route != nil {
+			snapshot["route"] = route
+		}
+		if err := s.deps.Store.InsertRequestRevision(ctx, tx, request.ID, 1, request.RequestedMinor, quote.ID, snapshot); err != nil {
 			return err
+		}
+		publishedPayload := map[string]any{
+			"requestId":      request.ID.String(),
+			"quoteId":        quote.ID.String(),
+			"service":        request.Service,
+			"vehicleClass":   request.VehicleClass,
+			"requestedMinor": request.RequestedMinor,
+			"currency":       request.Currency,
+			"revision":       request.Revision,
+			"expiresAt":      request.ExpiresAt.Format(time.RFC3339),
+		}
+		publishedAudit := map[string]any{
+			"state":          request.State,
+			"requestedMinor": request.RequestedMinor,
+			"minMinor":       request.MinMinor,
+			"maxMinor":       request.MaxMinor,
+			"currency":       request.Currency,
+			"policyVersion":  request.PolicyVersion,
+		}
+		if request.hasRoute() {
+			publishedPayload["stopCount"] = len(request.Stops)
+			publishedPayload["routeRevision"] = request.RouteRevision
+			publishedPayload["routeFingerprint"] = request.RouteFingerprint
+			publishedAudit["stopCount"] = len(request.Stops)
+			publishedAudit["routeFingerprint"] = request.RouteFingerprint
 		}
 		if err := writeEvent(ctx, tx, Event{
 			Name:           "mp.request.published",
@@ -210,16 +258,7 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 			ActorID:        actor.UserID.String(),
 			IdempotencyKey: "mp.request.published:" + request.ID.String(),
 			OccurredAt:     now,
-			Payload: map[string]any{
-				"requestId":      request.ID.String(),
-				"quoteId":        quote.ID.String(),
-				"service":        request.Service,
-				"vehicleClass":   request.VehicleClass,
-				"requestedMinor": request.RequestedMinor,
-				"currency":       request.Currency,
-				"revision":       request.Revision,
-				"expiresAt":      request.ExpiresAt.Format(time.RFC3339),
-			},
+			Payload:        publishedPayload,
 		}); err != nil {
 			return err
 		}
@@ -229,15 +268,8 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 			Action:      "mp.request.published",
 			SubjectType: subjectRequest,
 			SubjectID:   request.ID.String(),
-			After: map[string]any{
-				"state":          request.State,
-				"requestedMinor": request.RequestedMinor,
-				"minMinor":       request.MinMinor,
-				"maxMinor":       request.MaxMinor,
-				"currency":       request.Currency,
-				"policyVersion":  request.PolicyVersion,
-			},
-			Reason: "requester published a marketplace request",
+			After:       publishedAudit,
+			Reason:      "requester published a marketplace request",
 		}); err != nil {
 			return err
 		}
@@ -348,6 +380,13 @@ func sameRoutePoint(a, b Area) bool {
 // ReviseRequest is a price-affecting edit: new revision, live bids
 // invalidated, every bid's hold released. Envelope-only expansion is NOT this
 // — the sweep does that without touching revision or bids.
+//
+// It is also the pre-award ROUTE edit (A02): a replacement quote for the same
+// endpoints but a different ordered stop set re-prices the complete route,
+// replaces the request's stops (surviving stops keep their ids), bumps
+// route_revision alongside revision and — through the very same invalidation
+// and hold-release machinery as a fare edit — kills every bid placed on the
+// obsolete route.
 func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid.UUID, req ReviseRequest, idempotencyKey string) (*RequestView, int, error) {
 	if !actor.IsRider() {
 		return nil, 0, domain.Errorf(domain.CodeForbidden, "only the requester can revise a request")
@@ -435,6 +474,15 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 				"the replacement quote was priced under a policy that is no longer active; ask for a new one").
 				WithDetails(map[string]any{"quotedPolicyVersion": freshQuote.PolicyVersion, "activePolicyVersion": policy.PolicyVersion})
 		}
+		// A replacement quote may carry a DIFFERENT stop set: that is the
+		// pre-award route edit. It passes the same gate as any other stop
+		// route (ride only, multi-stop flag on) and its bounds were priced
+		// for its own complete route, so they govern the revised request.
+		if len(freshQuote.Stops) > 0 {
+			if err := s.requireStopsAllowed(ctx, freshQuote.Service, actor, freshQuote.CityID); err != nil {
+				return nil, 0, err
+			}
+		}
 		minMinor, maxMinor = freshQuote.MinMinor, freshQuote.MaxMinor
 		quoteID = freshQuote.ID
 	}
@@ -460,6 +508,17 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 				WithDetails(map[string]any{"expectedVersion": req.ExpectedVersion, "currentVersion": request.Version})
 		}
 
+		// Without a replacement quote the bounds are the LOCKED row's: the
+		// pool read above may predate a revision that landed in between, and
+		// the version guard alone does not make its numbers current.
+		if freshQuote == nil {
+			minMinor, maxMinor, quoteID = request.MinMinor, request.MaxMinor, request.QuoteID
+			if requestedMinor < minMinor || requestedMinor > maxMinor {
+				return fareOutOfBounds(requestedMinor, minMinor, maxMinor,
+					request.Currency, config.CurrencyFractionDigits)
+			}
+		}
+
 		now := s.now()
 		if freshQuote != nil {
 			if err := s.deps.Store.ConsumeQuote(ctx, tx, freshQuote.ID, request.ID); err != nil {
@@ -469,30 +528,83 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 
 		fromVersion := request.Version
 		revision := request.Revision + 1
-		moved, err := s.deps.Store.TransitionRequest(ctx, tx, request, machine.MpRequestOpen, RequestUpdate{
+		update := RequestUpdate{
 			Revision:       &revision,
 			RequestedMinor: &requestedMinor,
 			MinMinor:       &minMinor,
 			MaxMinor:       &maxMinor,
 			QuoteID:        &quoteID,
-		})
+		}
+		// ONE revision counter covers fare and route: bids are pinned to it
+		// and every existing guard (bid submit/revise, selection) checks it,
+		// so a stop change invalidates exactly like a fare change and reuses
+		// the same bid-invalidation and hold-release path below. The route
+		// columns move only when the adopted quote's stop set differs
+		// MATERIALLY from the locked row's; route_revision then bumps, the
+		// route is re-fingerprinted, and every surviving stop keeps its id.
+		routeChanged := false
+		if freshQuote != nil {
+			update.RoutedDistanceM = &freshQuote.RoutedDistanceM
+			update.RoutedDurationSec = &freshQuote.RoutedDurationSec
+			if !sameStopSet(request.Stops, freshQuote.Stops) {
+				routeChanged = true
+				stops := carryStopIDs(request.Stops, freshQuote.Stops)
+				routeRevision := request.RouteRevision + 1
+				fingerprint := routeFingerprint(request.Pickup, stops, request.Dropoff)
+				dwell := totalDwellSec(stops)
+				update.Stops = &stops
+				update.RouteRevision = &routeRevision
+				update.RouteFingerprint = &fingerprint
+				update.StopsDwellSec = &dwell
+			}
+		}
+		moved, err := s.deps.Store.TransitionRequest(ctx, tx, request, machine.MpRequestOpen, update)
 		if err != nil {
 			return err
 		}
-		if err := s.deps.Store.InsertRequestRevision(ctx, tx, request.ID, revision, requestedMinor, quoteID, map[string]any{
+		snapshot := map[string]any{
 			"requestedMinor": requestedMinor,
 			"minMinor":       minMinor,
 			"maxMinor":       maxMinor,
-		}); err != nil {
+		}
+		if route := routeSnapshot(moved); route != nil {
+			snapshot["route"] = route
+			snapshot["routeChanged"] = routeChanged
+		}
+		if err := s.deps.Store.InsertRequestRevision(ctx, tx, request.ID, revision, requestedMinor, quoteID, snapshot); err != nil {
 			return err
 		}
 
-		invalidated, err := s.invalidateLiveBids(ctx, tx, moved, "request_revised", now)
+		reason := "request_revised"
+		if routeChanged {
+			reason = "route_revised"
+		}
+		invalidated, err := s.invalidateLiveBids(ctx, tx, moved, reason, now)
 		if err != nil {
 			return err
 		}
 		releases = invalidated
 
+		payload := map[string]any{
+			"requestId":       request.ID.String(),
+			"revision":        revision,
+			"requestedMinor":  requestedMinor,
+			"invalidatedBids": len(invalidated),
+		}
+		before := map[string]any{"requestedMinor": request.RequestedMinor, "revision": request.Revision}
+		after := map[string]any{"requestedMinor": requestedMinor, "revision": revision}
+		auditReason := "requester revised the asked fare"
+		if request.hasRoute() || moved.hasRoute() {
+			payload["routeChanged"] = routeChanged
+			payload["routeRevision"] = moved.RouteRevision
+			payload["routeFingerprint"] = moved.RouteFingerprint
+			payload["stopCount"] = len(moved.Stops)
+			before["routeRevision"], before["routeFingerprint"] = request.RouteRevision, request.RouteFingerprint
+			after["routeRevision"], after["routeFingerprint"] = moved.RouteRevision, moved.RouteFingerprint
+		}
+		if routeChanged {
+			auditReason = "requester revised the route (intermediate stops) and the asked fare"
+		}
 		if err := writeEvent(ctx, tx, Event{
 			Name:           "mp.request.revised",
 			AggregateType:  subjectRequest,
@@ -504,12 +616,7 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 			ActorID:        actor.UserID.String(),
 			IdempotencyKey: "mp.request.revised:" + request.ID.String() + ":" + itoa(revision),
 			OccurredAt:     now,
-			Payload: map[string]any{
-				"requestId":       request.ID.String(),
-				"revision":        revision,
-				"requestedMinor":  requestedMinor,
-				"invalidatedBids": len(invalidated),
-			},
+			Payload:        payload,
 		}); err != nil {
 			return err
 		}
@@ -519,9 +626,9 @@ func (s *Service) ReviseRequest(ctx context.Context, actor Actor, requestID uuid
 			Action:      "mp.request.revised",
 			SubjectType: subjectRequest,
 			SubjectID:   request.ID.String(),
-			Before:      map[string]any{"requestedMinor": request.RequestedMinor, "revision": request.Revision},
-			After:       map[string]any{"requestedMinor": requestedMinor, "revision": revision},
-			Reason:      "requester revised the asked fare",
+			Before:      before,
+			After:       after,
+			Reason:      auditReason,
 		}); err != nil {
 			return err
 		}
