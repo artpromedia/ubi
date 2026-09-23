@@ -779,7 +779,17 @@ components:
             shortfallLabel: { type: string },
             emphasized: { type: boolean },
             source:
-              { type: string, enum: [requested, lower, higher, rate_profile] },
+              {
+                type: string,
+                enum:
+                  [requested, lower, higher, rate_profile, preference_minimum],
+                description: "preference_minimum (A04.2): the driver's minimum trip amount, suggested when the request asks less but its maximum can pay it. A suggestion only — nothing is bid automatically.",
+              },
+            earnings:
+              {
+                $ref: "#/components/schemas/EarningsBreakdown",
+                description: "A04.1: the breakdown at this preset's amount.",
+              },
           },
       }
     EligibilityReason:
@@ -830,6 +840,18 @@ components:
             policyVersion: { type: integer },
             availabilityEpoch: { type: integer },
             evaluatedAt: { type: string, format: date-time },
+            predictedPickupSec:
+              {
+                type: [integer, "null"],
+                minimum: 0,
+                description: "A04.1: the time-until-pickup ESTIMATE for an eligible driver, rounded up to the whole minute; null when not eligible.",
+              },
+            predictedPickupBasis:
+              {
+                type: [string, "null"],
+                enum: [routed_leg, finishing_trip_prediction, null],
+                description: "routed_leg: the routed leg to the pickup. finishing_trip_prediction: remaining service + completion buffer + post-dropoff leg + uncertainty buffer.",
+              },
           },
       }
     Award:
@@ -916,6 +938,305 @@ components:
                 $ref: "#/components/schemas/FeedRoute",
                 description: "Multi-stop requests only: stop count, coarse stop areas and the full route's distance/duration/dwell.",
               },
+            earnings:
+              {
+                $ref: "#/components/schemas/EarningsBreakdown",
+                description: "A04.1: the server-composed breakdown at the requester's fare, on every card.",
+              },
+            preferenceTags:
+              {
+                type: array,
+                items: { type: string, enum: [homeward] },
+                description: "A04.2: the driver's own preference matches; absent when none.",
+              },
+          },
+      }
+    FleetRemittance:
+      {
+        type: object,
+        required: [status, amountMinor, reason],
+        description: "The disclosed fleet share of a fare. No fleet arrangement applies to marketplace jobs, so status is none and the amount is null — never a fabricated number.",
+        properties:
+          {
+            status: { type: string, enum: [none] },
+            amountMinor: { type: "null" },
+            reason: { type: string },
+          },
+      }
+    PickupEstimate:
+      {
+        type: object,
+        required:
+          [
+            distanceMeters,
+            distanceBasis,
+            durationSec,
+            durationBasis,
+            estimate,
+            paid,
+            label,
+          ],
+        description: "The UNPAID drive to the pickup. Always an estimate; pre-award the distance is coarsened to 100 m and the time rounded up to the minute. Null with basis unavailable when the server has no location.",
+        properties:
+          {
+            distanceMeters: { type: [integer, "null"], minimum: 0 },
+            distanceBasis:
+              { type: string, enum: [routed, straight_line, unavailable] },
+            durationSec: { type: [integer, "null"], minimum: 0 },
+            durationBasis:
+              {
+                type: string,
+                enum: [routed_leg, straight_line_estimate, unavailable],
+              },
+            estimate: { type: boolean, enum: [true] },
+            paid: { type: boolean, enum: [false] },
+            label: { type: string },
+          },
+      }
+    PaidRoute:
+      {
+        type: object,
+        required:
+          [
+            distanceMeters,
+            durationSec,
+            stopCount,
+            stopsWaitingSec,
+            estimate,
+            label,
+            waitingLabel,
+          ],
+        description: "The trip the fare pays for: the complete ordered route the request was priced on (every leg through every stop) and the expected stop waiting.",
+        properties:
+          {
+            distanceMeters: { type: integer, minimum: 1 },
+            durationSec: { type: integer, minimum: 0 },
+            stopCount: { type: integer, minimum: 0 },
+            stopsWaitingSec: { type: integer, minimum: 0 },
+            estimate: { type: boolean, enum: [true] },
+            label: { type: string },
+            waitingLabel: { type: string },
+          },
+      }
+    EarningsBreakdown:
+      {
+        type: object,
+        required:
+          [
+            grossMinor,
+            grossBasis,
+            commissionMinor,
+            commissionBps,
+            fleetRemittance,
+            estimatedNetMinor,
+            pickup,
+            route,
+            estimatedNetPerHour,
+            runningCosts,
+            disclaimer,
+          ],
+        description: "A04.1 server-composed driver earnings: commissionMinor = commissionMinorFor(grossMinor) (10%, half-up); estimatedNetMinor = gross − commission − fleet remittance. Clients render; they never derive a fee, net or rate. No fuel/energy estimate exists because no such input is disclosed.",
+        properties:
+          {
+            grossMinor: { $ref: "#/components/schemas/Money" },
+            grossBasis: { type: string, enum: [requested_fare, preset_amount] },
+            commissionMinor: { $ref: "#/components/schemas/Money" },
+            commissionBps: { type: integer, enum: [1000] },
+            fleetRemittance: { $ref: "#/components/schemas/FleetRemittance" },
+            estimatedNetMinor: { $ref: "#/components/schemas/Money" },
+            pickup: { $ref: "#/components/schemas/PickupEstimate" },
+            route:
+              {
+                oneOf:
+                  [
+                    { $ref: "#/components/schemas/PaidRoute" },
+                    { type: "null" },
+                  ],
+                description: "Null only for a request stored before route metrics existed.",
+              },
+            estimatedNetPerHour:
+              {
+                description: "Estimate over pickup + paid route + stop waiting (the figures shown); null whenever any time input is unknown.",
+                oneOf:
+                  [
+                    {
+                      type: object,
+                      required: [amountMinor, estimate, basisSec, basis],
+                      properties:
+                        {
+                          amountMinor: { $ref: "#/components/schemas/Money" },
+                          estimate: { type: boolean, enum: [true] },
+                          basisSec: { type: integer, minimum: 1 },
+                          basis: { type: string },
+                        },
+                    },
+                    { type: "null" },
+                  ],
+              },
+            runningCosts:
+              {
+                type: object,
+                required: [status, reason],
+                properties:
+                  {
+                    status: { type: string, enum: [not_estimated] },
+                    reason: { type: string },
+                  },
+              },
+            disclaimer: { type: string },
+          },
+      }
+    FeedPreferences:
+      {
+        type: object,
+        required: [version, applied, hiddenCount, note],
+        description: "A04.2: whether the driver's saved preferences shaped this page and how many requests they hid (never which). Absent when the driver saved none.",
+        properties:
+          {
+            version: { type: integer, minimum: 1 },
+            applied: { type: boolean },
+            hiddenCount: { type: integer, minimum: 0 },
+            note: { type: string },
+          },
+      }
+    AvailabilityWindow:
+      {
+        type: object,
+        required: [day, startMinute, endMinute],
+        description: "One weekly window in the city's local time (minutes from midnight, end exclusive). Stored only: the scheduled marketplace is a later slice.",
+        properties:
+          {
+            day: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] },
+            startMinute: { type: integer, minimum: 0, maximum: 1439 },
+            endMinute: { type: integer, minimum: 1, maximum: 1440 },
+          },
+      }
+    Homeward:
+      {
+        type: object,
+        required: [lat, lng, radiusMeters, label],
+        description: "The driver's OWN return area. Never shown to a requester, never in an event payload; matching uses the dropoff's coarse area cell.",
+        properties:
+          {
+            lat: { type: number },
+            lng: { type: number },
+            radiusMeters: { type: integer },
+            label: { type: string },
+          },
+      }
+    DriverPreferences:
+      {
+        type: object,
+        description: "A04.2 driver preferences in one city, versioned and append-only (version 0 = unsaved defaults). They FILTER and RANK the feed and PRE-FILL a suggested preset; they are never eligibility and never bid. The per-km rate and minimum trip fare stay in rate profiles.",
+        required:
+          [
+            driverId,
+            cityId,
+            version,
+            currency,
+            timezone,
+            minimumTripAmountMinor,
+            maxPickupDistanceMeters,
+            acceptsDeliveries,
+            acceptsStops,
+            maxStops,
+            homeward,
+            homewardOnly,
+            availabilityWindows,
+            availabilityNote,
+            bounds,
+            disclosure,
+            updatedAt,
+          ],
+        properties:
+          {
+            driverId: { type: string },
+            cityId: { type: string },
+            version: { type: integer, minimum: 0 },
+            currency: { type: string },
+            timezone: { type: string },
+            minimumTripAmountMinor:
+              {
+                oneOf:
+                  [{ $ref: "#/components/schemas/Money" }, { type: "null" }],
+                description: "Hide requests whose MAXIMUM fare cannot reach this; null = none.",
+              },
+            maxPickupDistanceMeters:
+              {
+                type: [integer, "null"],
+                description: "Hide pickups farther than this; null = the request's envelope decides (a preference never widens it).",
+              },
+            acceptsDeliveries: { type: boolean },
+            acceptsStops: { type: boolean },
+            maxStops:
+              {
+                type: [integer, "null"],
+                description: "Null = up to the market's stop limit; cleared when stops are declined.",
+              },
+            homeward:
+              {
+                oneOf:
+                  [{ $ref: "#/components/schemas/Homeward" }, { type: "null" }],
+              },
+            homewardOnly: { type: boolean },
+            availabilityWindows:
+              {
+                type: array,
+                items:
+                  {
+                    allOf:
+                      [
+                        { $ref: "#/components/schemas/AvailabilityWindow" },
+                        {
+                          type: object,
+                          required: [label],
+                          properties: { label: { type: string } },
+                        },
+                      ],
+                  },
+              },
+            availabilityNote: { type: string },
+            bounds:
+              {
+                type: object,
+                required:
+                  [
+                    minimumTripAmountMaxMinor,
+                    maxPickupDistanceMeters,
+                    maxStopsCeiling,
+                    homewardRadiusMeters,
+                    maxAvailabilityWindows,
+                  ],
+                properties:
+                  {
+                    minimumTripAmountMaxMinor:
+                      {
+                        oneOf:
+                          [
+                            { $ref: "#/components/schemas/Money" },
+                            { type: "null" },
+                          ],
+                      },
+                    maxPickupDistanceMeters:
+                      {
+                        type: object,
+                        required: [min, max],
+                        properties:
+                          { min: { type: integer }, max: { type: integer } },
+                      },
+                    maxStopsCeiling: { type: integer },
+                    homewardRadiusMeters:
+                      {
+                        type: object,
+                        required: [min, max],
+                        properties:
+                          { min: { type: integer }, max: { type: integer } },
+                      },
+                    maxAvailabilityWindows: { type: integer },
+                  },
+              },
+            disclosure: { type: string },
+            updatedAt: { type: [string, "null"], format: date-time },
           },
       }
     DriverJob:
@@ -1381,9 +1702,16 @@ paths:
   /v1/mp/feed:
     get:
       summary: Paginated eligible open-request feed (D01)
-      description: "All requests the driver is eligible to discover in their current envelope. Receiving the feed never reserves the driver or removes availability."
+      description: "All requests the driver is eligible to discover in their current envelope. Receiving the feed never reserves the driver or removes availability. Every card carries the A04.1 earnings breakdown; the driver's saved preferences (A04.2) hide what they do not want and rank homeward requests first within the page — a filter on discovery, never on eligibility."
       parameters:
         - { $ref: "#/components/parameters/Cursor" }
+        - {
+            name: preferences,
+            in: query,
+            required: false,
+            description: "apply (default) or ignore — ignore shows the whole envelope, unfiltered and unranked by preferences.",
+            schema: { type: string, enum: [apply, ignore] },
+          }
       responses:
         "200":
           content:
@@ -1401,6 +1729,8 @@ paths:
                         },
                       nextCursor: { type: string },
                       availabilityEpoch: { type: integer },
+                      preferences:
+                        { $ref: "#/components/schemas/FeedPreferences" },
                     },
                 }
   /v1/mp/requests/{requestId}/driver-view:
@@ -1432,6 +1762,11 @@ paths:
                         },
                       profileLine: { type: string },
                       ceilingNotice: { type: string },
+                      preferenceNotice:
+                        {
+                          type: string,
+                          description: "A04.2: a preference this request cannot meet (e.g. the minimum trip amount is above its maximum).",
+                        },
                       myBid: { $ref: "#/components/schemas/Bid" },
                       currentClaimId:
                         {
@@ -1494,6 +1829,84 @@ paths:
                         },
                     },
                 }
+  /v1/mp/driver/preferences:
+    get:
+      summary: Driver preferences in the caller's city (A04.2)
+      description: "Version 0 with permissive defaults when the driver never saved any. bounds are derived from the market's policy (widest envelope, stop limit, rate-profile ceilings)."
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DriverPreferences" }
+    patch:
+      summary: Save a new preferences version (idempotent, versioned)
+      description: "Appends version expectedVersion + 1 (a stale expectedVersion or a concurrent writer answers 409 version_conflict with details.currentVersion). Absent fields are unchanged; null clears a nullable field; unknown keys are refused. A PATCH that changes nothing writes nothing. Writes one outbox event (mp.driver_preferences.saved, no homeward coordinates) and one audit row in the same transaction. Saving never touches a bid, hold, award or eligibility, and preferences never place a bid."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                additionalProperties: false,
+                required: [expectedVersion],
+                properties:
+                  {
+                    expectedVersion: { type: integer, minimum: 0 },
+                    minimumTripAmountMinor:
+                      {
+                        oneOf:
+                          [
+                            { $ref: "#/components/schemas/Money" },
+                            { type: "null" },
+                          ],
+                      },
+                    maxPickupDistanceMeters: { type: [integer, "null"] },
+                    acceptsDeliveries: { type: boolean },
+                    acceptsStops: { type: boolean },
+                    maxStops: { type: [integer, "null"] },
+                    homeward:
+                      {
+                        oneOf:
+                          [
+                            {
+                              type: object,
+                              additionalProperties: false,
+                              required: [lat, lng, radiusMeters],
+                              properties:
+                                {
+                                  lat: { type: number },
+                                  lng: { type: number },
+                                  radiusMeters: { type: integer },
+                                  label: { type: string, maxLength: 40 },
+                                },
+                            },
+                            { type: "null" },
+                          ],
+                      },
+                    homewardOnly: { type: boolean },
+                    availabilityWindows:
+                      {
+                        type: array,
+                        maxItems: 28,
+                        items:
+                          { $ref: "#/components/schemas/AvailabilityWindow" },
+                      },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DriverPreferences" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/mp/bids:
     post:
       summary: Submit a funded bid (D02 → D03)

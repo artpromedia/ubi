@@ -371,8 +371,10 @@ func TestNoStopPathUnchanged(t *testing.T) {
 		"requestId", "requestedFareMinor", "requesterId", "revision", "searchEnvelope", "service", "state",
 		"suggestedFareMinor", "vehicleClass", "version",
 	}
+	// A04.1 added the earnings breakdown to EVERY card, stops or not; the
+	// multi-stop route key must still be absent from a plain card.
 	legacyFeedItem := []string{
-		"askedByLabel", "askedMinor", "capabilityBadge", "expiresAt", "meta", "requestId", "revision",
+		"askedByLabel", "askedMinor", "capabilityBadge", "earnings", "expiresAt", "meta", "requestId", "revision",
 		"service", "title",
 	}
 	for _, flagOn := range []bool{false, true} {

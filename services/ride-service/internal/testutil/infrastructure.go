@@ -268,6 +268,7 @@ func (h *Harness) cleanup(ctx context.Context) {
 		`DELETE FROM mp.requests WHERE city_id = $1`,
 		`DELETE FROM mp.quotes WHERE city_id = $1`,
 		`DELETE FROM mp.rate_profiles WHERE city_id = $1`,
+		`DELETE FROM mp.driver_preferences WHERE city_id = $1`,
 		`DELETE FROM ride.offers WHERE ride_id IN (SELECT id FROM ride.rides WHERE city_id = $1)`,
 		`DELETE FROM ride.rides WHERE city_id = $1`,
 		`DELETE FROM ride.quotes WHERE city_id = $1`,

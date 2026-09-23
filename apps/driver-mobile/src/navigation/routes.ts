@@ -71,6 +71,8 @@ export type RootStackParamList = {
   Trip: NavigatorScreenParams<TripStackParamList>;
   WalletHolds: WalletHoldsParams;
   Rates: undefined;
+  // A04.2 driver preferences (filters/suggestions only — never bidding).
+  Preferences: undefined;
   Jobs: undefined;
   Sos: { tripId?: string } | undefined;
   FlagOff: { feature: string };

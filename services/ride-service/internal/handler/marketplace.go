@@ -65,6 +65,8 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 		r.Get("/feed", h.Feed)
 		r.Post("/driver/parked", h.ConfirmParked)
 		r.Get("/driver/jobs", h.DriverJobs)
+		r.Get("/driver/preferences", h.DriverPreferences)
+		r.Patch("/driver/preferences", h.PatchDriverPreferences)
 
 		r.Route("/requests", func(r chi.Router) {
 			r.Post("/", h.PublishRequest)
@@ -423,12 +425,57 @@ func (h *MarketplaceHandler) Feed(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	page, err := h.service.Feed(r.Context(), actor, r.URL.Query().Get("cursor"))
+	query := marketplace.FeedQuery{Cursor: r.URL.Query().Get("cursor")}
+	// `preferences=ignore` shows the whole envelope, unfiltered by the
+	// driver's preferences; `apply` (or nothing) applies them.
+	switch mode := r.URL.Query().Get("preferences"); mode {
+	case "", "apply":
+	case "ignore":
+		query.IgnorePreferences = true
+	default:
+		h.fail(w, r, domain.Errorf(domain.CodeValidationFailed, "preferences must be apply or ignore, not %q", mode))
+		return
+	}
+	page, err := h.service.Feed(r.Context(), actor, query)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// DriverPreferences handles GET /v1/mp/driver/preferences.
+func (h *MarketplaceHandler) DriverPreferences(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	view, err := h.service.DriverPreferences(r.Context(), actor)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// PatchDriverPreferences handles PATCH /v1/mp/driver/preferences: versioned
+// (expectedVersion) and idempotent (Idempotency-Key).
+func (h *MarketplaceHandler) PatchDriverPreferences(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	var req marketplace.PatchDriverPreferencesRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.PatchDriverPreferences(r.Context(), actor, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
 }
 
 // DriverView handles GET /v1/mp/requests/{requestId}/driver-view.

@@ -73,9 +73,12 @@ export function RequestFeedContainer() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void }>();
   const gate = useMotionGate();
   const [tab, setTab] = useState<"feed" | "myBids">("feed");
+  // A04.2: "show all" re-asks the SERVER with preferences=ignore; the client never
+  // filters or re-ranks the feed itself.
+  const [ignorePreferences, setIgnorePreferences] = useState(false);
   const feedQ = useQuery({
-    queryKey: ["mp", "feed"],
-    queryFn: () => marketplaceApi.feed(),
+    queryKey: ["mp", "feed", ignorePreferences ? "all" : "preferred"],
+    queryFn: () => marketplaceApi.feed({ ignorePreferences }),
     refetchInterval: 10_000,
   });
   const bidsQ = useQuery({
@@ -107,7 +110,10 @@ export function RequestFeedContainer() {
     askedByLabel: r.askedByLabel,
     capabilityBadge: r.capabilityBadge,
     expiresLabel: mmss(r.expiresAt),
+    earnings: r.earnings ?? null,
+    homeward: (r.preferenceTags ?? []).includes("homeward"),
   }));
+  const prefs = feedQ.data?.preferences;
   const myBids: MyBid[] = (bidsQ.data?.bids ?? [])
     .map(bidRow)
     .filter((b): b is MyBid => b !== null);
@@ -158,7 +164,27 @@ export function RequestFeedContainer() {
           label: "My rates",
           onPress: () => nav.navigate("Rates"),
         },
+        {
+          key: "preferences",
+          label: "Preferences",
+          onPress: () => nav.navigate("Preferences"),
+        },
       ]}
+      preferences={
+        prefs
+          ? {
+              note: prefs.note,
+              hiddenLabel:
+                prefs.applied && prefs.hiddenCount > 0
+                  ? prefs.hiddenCount +
+                    (prefs.hiddenCount === 1 ? " request" : " requests") +
+                    " hidden by your preferences"
+                  : null,
+              toggleLabel: prefs.applied ? "Show all" : "Apply preferences",
+              onToggle: () => setIgnorePreferences(prefs.applied),
+            }
+          : null
+      }
     />
   );
 }

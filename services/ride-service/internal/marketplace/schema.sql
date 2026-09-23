@@ -371,3 +371,50 @@ ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS route_fingerprint text NOT NULL
 ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS routed_distance_m bigint NOT NULL DEFAULT 0;
 ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS routed_duration_sec bigint NOT NULL DEFAULT 0;
 ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS stops_dwell_sec bigint NOT NULL DEFAULT 0;
+
+-- ---------------------------------------------------------------------------
+-- Driver preferences (A04.2), additive and idempotent.
+--
+-- A driver's marketplace preferences in one city, versioned and append-only
+-- exactly like mp.rate_profiles (the per-km rate and the minimum trip FARE
+-- stay there, per service/vehicle class). A PATCH writes the next version;
+-- the UNIQUE (driver_id, city_id, version) key is the optimistic-concurrency
+-- authority, so two PATCHes against the same version cannot both land.
+--
+-- Preferences FILTER and RANK the driver's feed and pre-fill suggested offers.
+-- They are never eligibility (EvaluateEligibility does not read this table)
+-- and nothing reads them to place a bid: manual stationary bidding stays the
+-- only way an offer exists.
+--
+--   * min_trip_amount_minor: hide requests whose MAXIMUM fare cannot reach it
+--     (NULL = no minimum). Integer minor units in `currency` (the city's).
+--   * max_pickup_distance_m: hide requests whose pickup is farther (NULL = the
+--     request's own search envelope decides; a preference never widens it).
+--   * accepts_deliveries / accepts_stops / max_stops: multi-stop and delivery
+--     willingness (max_stops NULL = the market's limit).
+--   * homeward: {lat, lng, radiusMeters, label} — the driver's OWN return
+--     area (NULL = none); homeward_only hides everything not ending there.
+--     Matching uses the dropoff's coarse area cell, never its coordinate.
+--   * availability: [{day, startMinute, endMinute}] in the city's local
+--     time. Stored only — the scheduled marketplace is a later slice.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.driver_preferences (
+    id                     uuid PRIMARY KEY,
+    driver_id              uuid NOT NULL,
+    city_id                text NOT NULL,
+    version                integer NOT NULL,
+    currency               text NOT NULL,
+    min_trip_amount_minor  bigint,
+    max_pickup_distance_m  integer,
+    accepts_deliveries     boolean NOT NULL DEFAULT true,
+    accepts_stops          boolean NOT NULL DEFAULT true,
+    max_stops              integer,
+    homeward               jsonb,
+    homeward_only          boolean NOT NULL DEFAULT false,
+    availability           jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_at             timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT driver_preferences_version_key UNIQUE (driver_id, city_id, version),
+    CONSTRAINT driver_preferences_min_trip_positive CHECK (min_trip_amount_minor IS NULL OR min_trip_amount_minor > 0),
+    CONSTRAINT driver_preferences_pickup_positive CHECK (max_pickup_distance_m IS NULL OR max_pickup_distance_m > 0),
+    CONSTRAINT driver_preferences_stops_nonnegative CHECK (max_stops IS NULL OR max_stops >= 0)
+);

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -110,10 +111,26 @@ func feedItemOf(request *Request, distanceMeters float64) *FeedItemView {
 	}
 }
 
+// FeedQuery is what a driver may ask of the feed.
+type FeedQuery struct {
+	Cursor string
+	// IgnorePreferences shows every request the envelope admits, neither
+	// filtered nor ranked by the driver's preferences (A04.2). Preferences
+	// never touch eligibility either way.
+	IgnorePreferences bool
+}
+
+// feedPreferencesNote is the one line a feed states about preferences.
+const feedPreferencesNote = "Filtered and sorted by your preferences. They never bid for you."
+
 // Feed answers GET /v1/mp/feed (D01): the paginated, privacy-limited list of
 // open requests this driver could discover. Reading the feed never reserves
-// the driver or removes availability.
-func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPageView, error) {
+// the driver or removes availability. Every card carries the server-composed
+// earnings breakdown at the requester's fare (A04.1); the driver's saved
+// preferences hide what they do not want and rank homeward requests first
+// within the page (A04.2) — a filter on DISCOVERY, never on eligibility.
+func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*FeedPageView, error) {
+	cursor := query.Cursor
 	if !actor.IsDriver() {
 		return nil, domain.Errorf(domain.CodeForbidden, "only a driver has a marketplace feed")
 	}
@@ -159,6 +176,24 @@ func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPa
 	}
 
 	page := &FeedPageView{Items: []*FeedItemView{}, AvailabilityEpoch: epoch}
+
+	prefs, err := s.deps.Store.LatestDriverPreferences(ctx, s.deps.Store.Pool(), actor.UserID, actor.CityID)
+	if errors.Is(err, domain.ErrNotFound) {
+		prefs = nil
+	} else if err != nil {
+		return nil, asDomainError(err)
+	}
+	if prefs != nil {
+		page.Preferences = &FeedPreferencesView{
+			Version: prefs.Version,
+			Applied: !query.IgnorePreferences,
+			Note:    feedPreferencesNote,
+		}
+		if query.IgnorePreferences {
+			page.Preferences.Note = "Showing every request in your area; your preferences are not applied."
+			prefs = nil
+		}
+	}
 	// Scan forward until a page is filled or the market runs out. The batch
 	// is larger than the page because capability and envelope filters drop
 	// rows after the query.
@@ -194,7 +229,18 @@ func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPa
 			if distance > float64(request.EnvelopeRadiusM) {
 				continue
 			}
-			page.Items = append(page.Items, feedItemOf(request, distance))
+			if reason := prefs.hiddenReason(request, coarsePickupMeters(distance)); reason != "" {
+				page.Preferences.HiddenCount++
+				continue
+			}
+			item := feedItemOf(request, distance)
+			pickup := s.straightLinePickup(ctx, *session.LastLat, *session.LastLng, request)
+			pickup.distanceM = distance
+			item.Earnings = earningsBreakdown(request, request.RequestedMinor, GrossBasisRequested, pickup)
+			if prefs != nil {
+				item.PreferenceTags = prefs.preferenceTags(request)
+			}
+			page.Items = append(page.Items, item)
 			if len(page.Items) == feedPageSize {
 				break
 			}
@@ -207,6 +253,12 @@ func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPa
 		next := encodeCursor(*scanFrom, *scanFromID)
 		page.NextCursor = &next
 	}
+	// Rank within the page: homeward matches first, otherwise newest first.
+	// The cursor is the SCAN position, so re-ordering a page never skips or
+	// repeats a request across pages.
+	sort.SliceStable(page.Items, func(i, j int) bool {
+		return len(page.Items[i].PreferenceTags) > 0 && len(page.Items[j].PreferenceTags) == 0
+	})
 	return page, nil
 }
 
@@ -256,12 +308,32 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 	}
 
 	distance := float64(-1)
+	pickup := unknownPickup()
 	if session, sessionErr := s.deps.Store.DriverSessionRow(ctx, s.deps.Store.Pool(), actor.UserID); sessionErr == nil && session.HasLocation() {
 		distance = geo.HaversineDistance(*session.LastLat, *session.LastLng, request.Pickup.Lat, request.Pickup.Lng)
+		pickup = s.straightLinePickup(ctx, *session.LastLat, *session.LastLng, request)
+		pickup.distanceM = distance
+	}
+	// An eligible driver's pickup was routed by the eligibility evaluation
+	// itself; that measured leg replaces the straight-line estimate.
+	if eligibility.pickup != nil {
+		pickup = *eligibility.pickup
 	}
 
+	prefs, err := s.deps.Store.LatestDriverPreferences(ctx, s.deps.Store.Pool(), actor.UserID, request.CityID)
+	if errors.Is(err, domain.ErrNotFound) {
+		prefs = nil
+	} else if err != nil {
+		return nil, asDomainError(err)
+	}
+
+	item := feedItemOf(request, distance)
+	item.Earnings = earningsBreakdown(request, request.RequestedMinor, GrossBasisRequested, pickup)
+	if prefs != nil {
+		item.PreferenceTags = prefs.preferenceTags(request)
+	}
 	result := &DriverViewResult{
-		Item:        feedItemOf(request, distance),
+		Item:        item,
 		Eligibility: eligibility,
 		Presets:     []*PresetView{},
 	}
@@ -281,7 +353,15 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 		return nil, asDomainError(profileErr)
 	}
 
-	result.Presets, result.ProfileLine, result.CeilingNotice = s.buildPresets(ctx, request, config.CurrencyFractionDigits, overview.SpendableMinor.AmountMinor, profile)
+	result.Presets, result.ProfileLine, result.CeilingNotice = s.buildPresets(ctx, request, config.CurrencyFractionDigits, overview.SpendableMinor.AmountMinor, profile, prefs, pickup)
+	// A request the driver's feed would hide stays fully biddable here
+	// (preferences are not eligibility); the view just says which preference
+	// it does not meet.
+	if prefs != nil {
+		if words := prefs.hiddenWords(request, coarsePickupMeters(distance), config.CurrencyFractionDigits); words != "" {
+			result.PreferenceNotice = &words
+		}
+	}
 
 	if myBid, bidErr := s.deps.Store.LiveBidForDriverOnRequest(ctx, s.deps.Store.Pool(), request.ID, actor.UserID); bidErr == nil {
 		result.MyBid = bidViewOf(myBid, request.Currency)
@@ -302,12 +382,14 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 }
 
 // buildPresets generates the quick offers: the requested amount, one lower,
-// one higher (policy-derived steps inside the stored bounds) and the rate
-// profile's calculation when one exists. Every preset carries gross, the 10%
-// half-up commission and net, plus affordability against the one spendable.
-// Nothing outside the bounds is ever emitted, and nothing unaffordable is
-// emitted without its exact shortfall.
-func (s *Service) buildPresets(ctx context.Context, request *Request, digits int, spendableMinor int64, profile *RateProfile) ([]*PresetView, *string, *string) {
+// one higher (policy-derived steps inside the stored bounds), the rate
+// profile's calculation when one exists and the driver's minimum trip amount
+// when the request can pay it but asks less. Every preset carries gross, the
+// 10% half-up commission and net, the full earnings breakdown at its amount,
+// plus affordability against the one spendable. Nothing outside the bounds is
+// ever emitted, and nothing unaffordable is emitted without its exact
+// shortfall. Presets are suggestions: nothing here places a bid.
+func (s *Service) buildPresets(ctx context.Context, request *Request, digits int, spendableMinor int64, profile *RateProfile, prefs *DriverPreferences, pickup pickupEstimate) ([]*PresetView, *string, *string) {
 	currency := request.Currency
 
 	// The step is derived from the request's own envelope: a tenth of the
@@ -356,6 +438,16 @@ func (s *Service) buildPresets(ctx context.Context, request *Request, digits int
 		}
 	}
 
+	// The driver's minimum trip amount pre-fills an offer when the request
+	// asks less but its maximum can pay it (above the maximum the driver
+	// view's preference notice explains it instead; it is never clamped).
+	if prefs != nil && prefs.MinTripAmountMinor != nil && prefs.Currency == currency {
+		minimum := *prefs.MinTripAmountMinor
+		if minimum > request.RequestedMinor && minimum >= request.MinMinor && minimum <= request.MaxMinor {
+			candidates = append(candidates, candidate{minimum, "Your minimum trip", "preference_minimum", false})
+		}
+	}
+
 	seen := map[int64]bool{}
 	presets := make([]*PresetView, 0, len(candidates))
 	for _, c := range candidates {
@@ -375,6 +467,7 @@ func (s *Service) buildPresets(ctx context.Context, request *Request, digits int
 			Affordable:      spendableMinor >= commission,
 			Emphasized:      c.emphasized,
 			Source:          c.source,
+			Earnings:        earningsBreakdown(request, c.amount, GrossBasisPreset, pickup),
 		}
 		if !preset.Affordable {
 			shortfall := money(commission-spendableMinor, currency)

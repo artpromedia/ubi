@@ -421,6 +421,16 @@ export const MpEligibilityReasonSchema = z.object({
   detail: z.string().min(1),
 });
 
+/**
+ * What an eligible driver's predicted pickup was measured with: the routed
+ * leg (immediate branch), or remaining service + completion buffer + the
+ * post-dropoff leg + uncertainty buffer (finishing-trip branch).
+ */
+export const MP_PREDICTED_PICKUP_BASES = [
+  "routed_leg",
+  "finishing_trip_prediction",
+] as const;
+
 export const MpEligibilitySchema = z.object({
   eligible: z.boolean(),
   slot: MpSlotSchema.nullable(),
@@ -428,8 +438,105 @@ export const MpEligibilitySchema = z.object({
   policyVersion: z.number().int().positive(),
   availabilityEpoch: z.number().int().min(0),
   evaluatedAt: z.string().datetime({ offset: true }),
+  /**
+   * A04.1: the server's time-until-pickup ESTIMATE for an eligible driver,
+   * rounded up to the whole minute (so repeated reads cannot triangulate the
+   * pickup); null when not eligible. Absent from servers predating A04.
+   */
+  predictedPickupSec: z.number().int().nonnegative().nullable().optional(),
+  predictedPickupBasis: z.enum(MP_PREDICTED_PICKUP_BASES).nullable().optional(),
 });
 export type MpEligibility = z.infer<typeof MpEligibilitySchema>;
+
+// ── Earnings breakdown (A04.1) ─────────────────────────────────────────────
+
+/**
+ * The disclosed fleet share of a fare. No fleet arrangement applies to
+ * marketplace jobs today, so the only status is an explicit `none` with a
+ * NULL amount and the reason — never a fabricated number (a fleet split, when
+ * it lands, extends this union).
+ */
+export const MpFleetRemittanceSchema = z.object({
+  status: z.literal("none"),
+  amountMinor: z.null(),
+  reason: z.string().min(1),
+});
+export type MpFleetRemittance = z.infer<typeof MpFleetRemittanceSchema>;
+
+/**
+ * The UNPAID drive to the pickup. Always an estimate; distance coarsened to
+ * 100 m and time rounded up to the minute pre-award. Null (with basis
+ * `unavailable`) when the server has no location to measure from.
+ */
+export const MpPickupEstimateSchema = z.object({
+  distanceMeters: z.number().int().nonnegative().nullable(),
+  distanceBasis: z.enum(["routed", "straight_line", "unavailable"]),
+  durationSec: z.number().int().nonnegative().nullable(),
+  durationBasis: z.enum([
+    "routed_leg",
+    "straight_line_estimate",
+    "unavailable",
+  ]),
+  estimate: z.literal(true),
+  paid: z.literal(false),
+  /** Server-phrased, e.g. "Unpaid pickup · 1.2 km · ~3 min (estimate)". */
+  label: z.string().min(1),
+});
+export type MpPickupEstimate = z.infer<typeof MpPickupEstimateSchema>;
+
+/**
+ * The trip the fare pays for: the complete ordered route the request was
+ * priced on (every leg through every stop) and the expected stop waiting.
+ */
+export const MpPaidRouteSchema = z.object({
+  distanceMeters: z.number().int().positive(),
+  durationSec: z.number().int().nonnegative(),
+  stopCount: z.number().int().nonnegative(),
+  stopsWaitingSec: z.number().int().nonnegative(),
+  /** The durations are router estimates; the fare itself is fixed. */
+  estimate: z.literal(true),
+  label: z.string().min(1),
+  waitingLabel: z.string().min(1),
+});
+export type MpPaidRoute = z.infer<typeof MpPaidRouteSchema>;
+
+/** Estimated net per hour of the job's own time, with its inputs. */
+export const MpNetPerHourSchema = z.object({
+  amountMinor: MoneySchema,
+  estimate: z.literal(true),
+  /** pickup + paid route + expected stop waiting, in the figures shown. */
+  basisSec: z.number().int().positive(),
+  basis: z.string().min(1),
+});
+export type MpNetPerHour = z.infer<typeof MpNetPerHourSchema>;
+
+/**
+ * Server-composed earnings breakdown on every driver feed card (at the
+ * requester's fare) and every preset (at the preset's amount). commission is
+ * the server's `commissionMinorFor(gross)`; estimatedNet = gross − commission
+ * − fleet remittance. The client renders these fields and labels; it never
+ * derives a fee, a net or a rate. No fuel/energy figure exists because no
+ * such input is disclosed (`runningCosts.status: "not_estimated"`).
+ */
+export const MpEarningsBreakdownSchema = z.object({
+  grossMinor: MoneySchema,
+  grossBasis: z.enum(["requested_fare", "preset_amount"]),
+  commissionMinor: MoneySchema,
+  commissionBps: z.literal(1_000),
+  fleetRemittance: MpFleetRemittanceSchema,
+  estimatedNetMinor: MoneySchema,
+  pickup: MpPickupEstimateSchema,
+  /** Null only for a request stored before route metrics existed. */
+  route: MpPaidRouteSchema.nullable(),
+  /** Null whenever any time input (e.g. the pickup) is unknown. */
+  estimatedNetPerHour: MpNetPerHourSchema.nullable(),
+  runningCosts: z.object({
+    status: z.literal("not_estimated"),
+    reason: z.string().min(1),
+  }),
+  disclaimer: z.string().min(1),
+});
+export type MpEarningsBreakdown = z.infer<typeof MpEarningsBreakdownSchema>;
 
 // ── Presets (D02) ──────────────────────────────────────────────────────────
 
@@ -449,7 +556,20 @@ export const MpPresetSchema = z.object({
   shortfallMinor: MoneySchema.nullable(),
   shortfallLabel: z.string().nullable(),
   emphasized: z.boolean(),
-  source: z.enum(["requested", "lower", "higher", "rate_profile"]),
+  /**
+   * `preference_minimum` (A04.2): the driver's minimum trip amount, suggested
+   * when the request asks less but its maximum can pay it. A suggestion —
+   * nothing is ever bid automatically.
+   */
+  source: z.enum([
+    "requested",
+    "lower",
+    "higher",
+    "rate_profile",
+    "preference_minimum",
+  ]),
+  /** A04.1: the breakdown at this preset's amount. */
+  earnings: MpEarningsBreakdownSchema.optional(),
 });
 export type MpPreset = z.infer<typeof MpPresetSchema>;
 
@@ -613,15 +733,153 @@ export const MpFeedItemSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }),
   /** Multi-stop summary: stop count, coarse stops, full-route metrics. */
   route: MpFeedRouteSchema.optional(),
+  /**
+   * A04.1: the earnings breakdown at the requester's fare. Absent only from
+   * servers predating A04 — a client then shows no breakdown, never one of
+   * its own.
+   */
+  earnings: MpEarningsBreakdownSchema.optional(),
+  /** A04.2: the driver's own preference matches (absent when none). */
+  preferenceTags: z.array(z.enum(["homeward"])).optional(),
 });
 export type MpFeedItem = z.infer<typeof MpFeedItemSchema>;
+
+/**
+ * Whether the driver's saved preferences shaped a feed page, and how many
+ * requests they hid (never which). Absent when the driver saved none.
+ */
+export const MpFeedPreferencesSchema = z.object({
+  version: z.number().int().positive(),
+  applied: z.boolean(),
+  hiddenCount: z.number().int().nonnegative(),
+  note: z.string().min(1),
+});
+export type MpFeedPreferences = z.infer<typeof MpFeedPreferencesSchema>;
 
 export const MpFeedPageSchema = z.object({
   items: z.array(MpFeedItemSchema),
   nextCursor: z.string().nullable(),
   availabilityEpoch: z.number().int().min(0),
+  preferences: MpFeedPreferencesSchema.optional(),
 });
 export type MpFeedPage = z.infer<typeof MpFeedPageSchema>;
+
+// ── Driver preferences (A04.2) ─────────────────────────────────────────────
+
+export const MP_WEEKDAYS = [
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+  "sun",
+] as const;
+export type MpWeekday = (typeof MP_WEEKDAYS)[number];
+
+const MpAvailabilityWindowShape = z.object({
+  day: z.enum(MP_WEEKDAYS),
+  /** Minutes from local midnight (city timezone); end exclusive, ≤ 1440. */
+  startMinute: z.number().int().min(0).max(1_439),
+  endMinute: z.number().int().min(1).max(1_440),
+});
+
+/** One weekly availability window. Stored only: scheduling comes later. */
+export const MpAvailabilityWindowSchema = MpAvailabilityWindowShape.refine(
+  (window) => window.startMinute < window.endMinute,
+  {
+    message: "a window must start before it ends (split overnight windows)",
+    path: ["endMinute"],
+  },
+);
+export type MpAvailabilityWindow = z.infer<typeof MpAvailabilityWindowSchema>;
+
+/** The driver's OWN return area. Never shown to a requester. */
+export const MpHomewardSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().positive(),
+  label: z.string().min(1),
+});
+export type MpHomeward = z.infer<typeof MpHomewardSchema>;
+
+const MpIntRangeSchema = z.object({
+  min: z.number().int().nonnegative(),
+  max: z.number().int().nonnegative(),
+});
+
+/**
+ * `GET|PATCH /v1/mp/driver/preferences`. Version 0 is the unsaved default
+ * (nothing filtered). Preferences FILTER and RANK the feed and PRE-FILL a
+ * suggested preset; they are never eligibility and never bid. The per-km
+ * rate and minimum trip fare the "Your rate" preset uses stay in rate
+ * profiles (`MpRateProfileSchema`).
+ */
+export const MpDriverPreferencesSchema = z.object({
+  driverId: z.string().min(1),
+  cityId: z.string().min(1),
+  version: z.number().int().min(0),
+  currency: CurrencySchema,
+  timezone: z.string().min(1),
+  /** Hide requests whose MAXIMUM fare cannot reach this. Null = none. */
+  minimumTripAmountMinor: MoneySchema.nullable(),
+  /** Hide pickups farther than this. Null = the request envelope decides. */
+  maxPickupDistanceMeters: z.number().int().positive().nullable(),
+  acceptsDeliveries: z.boolean(),
+  acceptsStops: z.boolean(),
+  /** Null = up to the market's stop limit. */
+  maxStops: z.number().int().nonnegative().nullable(),
+  homeward: MpHomewardSchema.nullable(),
+  /** Hide everything that does not end in the homeward area. */
+  homewardOnly: z.boolean(),
+  availabilityWindows: z.array(
+    MpAvailabilityWindowShape.extend({ label: z.string().min(1) }),
+  ),
+  availabilityNote: z.string().min(1),
+  /** What the server accepts, derived from the market's policy. */
+  bounds: z.object({
+    minimumTripAmountMaxMinor: MoneySchema.nullable(),
+    maxPickupDistanceMeters: MpIntRangeSchema,
+    maxStopsCeiling: z.number().int().nonnegative(),
+    homewardRadiusMeters: MpIntRangeSchema,
+    maxAvailabilityWindows: z.number().int().positive(),
+  }),
+  disclosure: z.string().min(1),
+  updatedAt: z.string().datetime({ offset: true }).nullable(),
+});
+export type MpDriverPreferences = z.infer<typeof MpDriverPreferencesSchema>;
+
+/**
+ * `PATCH /v1/mp/driver/preferences` body (Idempotency-Key required).
+ * `expectedVersion` is the version last read (0 if never saved) — a stale one
+ * answers version_conflict. Absent fields are unchanged; null clears a
+ * nullable field. Unknown keys are refused (there is no auto-bid switch).
+ */
+export const MpDriverPreferencesPatchSchema = z
+  .object({
+    expectedVersion: z.number().int().min(0),
+    minimumTripAmountMinor: MoneySchema.nullable().optional(),
+    maxPickupDistanceMeters: z.number().int().positive().nullable().optional(),
+    acceptsDeliveries: z.boolean().optional(),
+    acceptsStops: z.boolean().optional(),
+    maxStops: z.number().int().nonnegative().nullable().optional(),
+    homeward: z
+      .object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+        radiusMeters: z.number().int().positive(),
+        label: z.string().max(40).optional(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    homewardOnly: z.boolean().optional(),
+    availabilityWindows: z.array(MpAvailabilityWindowSchema).max(28).optional(),
+  })
+  .strict();
+export type MpDriverPreferencesPatch = z.infer<
+  typeof MpDriverPreferencesPatchSchema
+>;
 
 // ── Rider queue projection (R10 / G07) ──────────────────────────────────────
 

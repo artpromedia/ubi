@@ -85,7 +85,8 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 				WHERE table_schema = 'mp' AND table_name = 'quotes' AND column_name = 'route_fingerprint')
 			AND EXISTS (
 				SELECT 1 FROM information_schema.columns
-				WHERE table_schema = 'mp' AND table_name = 'requests' AND column_name = 'stops_dwell_sec')`).Scan(&current)
+				WHERE table_schema = 'mp' AND table_name = 'requests' AND column_name = 'stops_dwell_sec')
+			AND to_regclass('mp.driver_preferences') IS NOT NULL`).Scan(&current)
 	return err == nil && current
 }
 

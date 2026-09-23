@@ -39,6 +39,11 @@ var eventNames = map[string]struct{}{
 	"mp.queue.eta_updated":   {},
 	"mp.queue.window_missed": {},
 	"mp.rate_profile.saved":  {},
+	// A04.2: a driver saved a preferences version. PENDING registration in
+	// the contract's EVENT_NAMES (packages/contracts/src/events.ts is owned
+	// outside this slice); its subject is the already-registered "driver", so
+	// the outbox relay's envelope validation accepts it today.
+	"mp.driver_preferences.saved": {},
 	// G15: dedicated settlement event. Registered for parity with the contract's
 	// closed EVENT_NAMES set; the PRODUCER is payment-service (out of scope), not
 	// ride-service — ride-service does not emit it. Consumers (notification,
@@ -57,7 +62,7 @@ var eventNames = map[string]struct{}{
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,
-// mp_award, mp_claim, mp_hold, rate_profile.
+// mp_award, mp_claim, mp_hold, rate_profile, driver.
 const (
 	subjectRequest     = "mp_request"
 	subjectBid         = "mp_bid"
@@ -65,6 +70,7 @@ const (
 	subjectClaim       = "mp_claim"
 	subjectHold        = "mp_hold"
 	subjectRateProfile = "rate_profile"
+	subjectDriver      = "driver"
 )
 
 // Event is one row of the transactional outbox, always written in the same

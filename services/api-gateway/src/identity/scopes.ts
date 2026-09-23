@@ -276,6 +276,11 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: ["GET"], prefix: "/v1/mp/feed", anyOf: ["mp:bid"] },
   { methods: "*", prefix: "/v1/mp/bids", anyOf: ["mp:bid"] },
   { methods: "*", prefix: "/v1/mp/rate-profiles", anyOf: ["mp:bid"] },
+  // Driver-only marketplace surfaces (parked confirmation, job list,
+  // preferences). Without this family rule they were undeclared, so any
+  // authenticated role reached them and only the downstream role check
+  // stood in the way.
+  { methods: "*", prefix: "/v1/mp/driver", anyOf: ["mp:bid"] },
   { methods: ["GET"], prefix: "/v1/admin/mp", anyOf: ["mp:admin:read"] },
   // Commission-hold ledger endpoints are service-to-service (payment-service
   // verifies the service key); at the gateway only admin/service tokens may

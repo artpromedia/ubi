@@ -6,6 +6,9 @@
 import { api, type Money } from "@ubi/mobile-core";
 import type {
   MpBid,
+  MpDriverPreferences,
+  MpDriverPreferencesPatch,
+  MpEarningsBreakdown,
   MpEligibility,
   MpFeedItem,
   MpFeedPage,
@@ -20,6 +23,9 @@ import type {
 
 export type {
   MpBid,
+  MpDriverPreferences,
+  MpDriverPreferencesPatch,
+  MpEarningsBreakdown,
   MpEligibility,
   MpFeedItem,
   MpPreset,
@@ -56,6 +62,8 @@ export type MpDriverView = {
   myBid?: MpBidDto | null;
   /** The driver's current work claim id — the mandatory dependsOnClaimId for a next-slot bid. Absent/null unless a current claim exists. */
   currentClaimId?: string | null;
+  /** A04.2: a saved preference this request cannot meet, server-phrased. */
+  preferenceNotice?: string | null;
 };
 
 /** `deferredPrompt` (D07 single deferred banner, server-phrased) is a PROPOSED MpFeedPage addition; fixture-only until contracts carry it. */
@@ -131,11 +139,20 @@ export type MpParkedAck = {
   ttlSeconds: number;
 };
 
+/** Feed query: `ignorePreferences` asks for the whole envelope (A04.2 `preferences=ignore`). */
+export type MpFeedQuery = { cursor?: string; ignorePreferences?: boolean };
+const feedPath = (query: MpFeedQuery = {}) => {
+  const params: string[] = [];
+  if (query.cursor) params.push("cursor=" + encodeURIComponent(query.cursor));
+  if (query.ignorePreferences) params.push("preferences=ignore");
+  return "/v1/mp/feed" + (params.length ? "?" + params.join("&") : "");
+};
+
 export const marketplaceApi = {
-  feed: (cursor?: string) =>
+  feed: (query?: MpFeedQuery | string) =>
     api<MpFeedPageDto>(
       "GET",
-      "/v1/mp/feed" + (cursor ? "?cursor=" + encodeURIComponent(cursor) : ""),
+      feedPath(typeof query === "string" ? { cursor: query } : query),
     ),
   driverView: (requestId: string) =>
     api<MpDriverView>("GET", "/v1/mp/requests/" + requestId + "/driver-view"),
@@ -165,6 +182,16 @@ export const marketplaceApi = {
     ),
   parked: () => api<MpParkedAck>("POST", "/v1/mp/driver/parked"),
   jobs: () => api<MpJobsView>("GET", "/v1/mp/driver/jobs"),
+  // A04.2 driver preferences. The PATCH is versioned (expectedVersion) and carries a
+  // caller-held Idempotency-Key so a retry after a dropped response replays, never
+  // double-writes. Preferences filter the feed and suggest offers; they never bid.
+  preferences: () =>
+    api<MpDriverPreferences>("GET", "/v1/mp/driver/preferences"),
+  patchPreferences: (body: MpDriverPreferencesPatch, idempotencyKey: string) =>
+    api<MpDriverPreferences>("PATCH", "/v1/mp/driver/preferences", body, {
+      idempotent: true,
+      idempotencyKey,
+    }),
   // Top-up initiation returns the pending projection; it clears only on the wallet.topup.settled event (never an instant success).
   topup: (presetLabel: string) =>
     api<{ topups: MpTopupRow[] }>("POST", "/v1/wallet/mp/topups", {

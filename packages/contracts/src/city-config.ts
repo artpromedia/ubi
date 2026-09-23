@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 
+import { MpMultiStopPolicySchema } from "./marketplace";
 import { CurrencySchema } from "./money";
 
 export const VEHICLE_CLASSES = ["go", "comfort", "xl", "moto"] as const;
@@ -155,6 +156,12 @@ export const MarketplacePolicySchema = z.object({
   bids: MarketplaceBidPolicySchema,
   queue: QueuePolicySchema,
   rateProfileBounds: z.record(RateProfileBoundsSchema),
+  /**
+   * Per-market multi-stop limits (A02). Absent ⇒ the pilot defaults
+   * (`MP_MULTI_STOP_PILOT_DEFAULTS`). Declared here so a market's stop limits
+   * survive schema parsing instead of being stripped as an unknown key.
+   */
+  stops: MpMultiStopPolicySchema.optional(),
 });
 export type MarketplacePolicy = z.infer<typeof MarketplacePolicySchema>;
 

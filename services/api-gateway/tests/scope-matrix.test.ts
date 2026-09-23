@@ -331,6 +331,39 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       ).toBe("limited_mode");
     });
 
+    it("keeps the driver marketplace surfaces to drivers", async () => {
+      expect(
+        (await call("full", "GET", "/v1/mp/driver/preferences", "driver"))
+          .status,
+      ).toBe(200);
+      expect(
+        (await call("full", "PATCH", "/v1/mp/driver/preferences", "driver"))
+          .status,
+      ).toBe(200);
+      expect(
+        (await call("full", "GET", "/v1/mp/driver/jobs", "driver")).status,
+      ).toBe(200);
+      const riderPrefs = await call(
+        "full",
+        "GET",
+        "/v1/mp/driver/preferences",
+        "rider",
+      );
+      expect(riderPrefs.status).toBe(403);
+      expect(riderPrefs.code).toBe("forbidden");
+      const riderParked = await call(
+        "full",
+        "POST",
+        "/v1/mp/driver/parked",
+        "rider",
+      );
+      expect(riderParked.status).toBe(403);
+      expect(
+        (await call("limited", "PATCH", "/v1/mp/driver/preferences", "driver"))
+          .code,
+      ).toBe("limited_mode");
+    });
+
     it("lets a driver open the driver-view under the request family", async () => {
       expect(
         (

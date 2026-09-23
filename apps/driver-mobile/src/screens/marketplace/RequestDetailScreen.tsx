@@ -17,6 +17,9 @@ import {
 } from "@ubi/mobile-ui";
 import type { Money } from "@ubi/mobile-core";
 import { TEST_IDS, dynamicTestId } from "@ubi/contracts";
+import type { MpEarningsBreakdown } from "../../api/marketplace";
+import { EarningsBreakdownCard } from "./EarningsBreakdownCard";
+import { MP_DRIVER_TID } from "./testIds";
 
 /** D02 + D03 + D10. Presets are SERVER-generated (deduplicated, in-bounds, affordability-checked).
  * Client never computes fee/net — labels arrive phrased from the server. */
@@ -27,6 +30,8 @@ export type Preset = {
   affordable: boolean;
   shortfallLabel: string | null; // "Needs ₦260 spendable — you have ₦190"
   emphasized: boolean;
+  // A04.1: the server's breakdown at THIS preset's amount (null from an older server).
+  earnings: MpEarningsBreakdown | null;
 };
 export type EligibilityReason = { code: string; title: string; detail: string }; // from server evaluator
 export type RequestDetailProps = {
@@ -37,6 +42,10 @@ export type RequestDetailProps = {
   askedMinor: Money;
   profileLine: string | null; // "Your rate profile · ₦300/km → calculates ₦3,000"
   ceilingNotice: string | null; // D09b: "Your calculated offer exceeds this request's limit…"
+  // A04.1: the full breakdown at the requester's fare, verbatim from the server.
+  earnings: MpEarningsBreakdown | null;
+  // A04.2: a saved preference this request cannot meet, server-phrased.
+  preferenceNotice: string | null;
   presets: Preset[];
   onBid: (key: string) => void;
   stationary: boolean;
@@ -126,6 +135,22 @@ export function RequestDetailScreen(p: RequestDetailProps) {
           <Row label="Your rate profile" value={p.profileLine} last />
         ) : null}
       </Card>
+      {p.earnings ? (
+        <Card>
+          <Text variant="label" tone="text2">
+            Your earnings at the requester’s price
+          </Text>
+          <EarningsBreakdownCard earnings={p.earnings} variant="full" />
+        </Card>
+      ) : null}
+      {p.preferenceNotice ? (
+        <Banner
+          testID={MP_DRIVER_TID.detail.preferenceNotice}
+          tone="neutral"
+          title="Outside your preferences"
+          body={p.preferenceNotice}
+        />
+      ) : null}
       {p.bidError ? (
         <Banner
           tone="error"
@@ -264,7 +289,29 @@ export function RequestDetailScreen(p: RequestDetailProps) {
                     <Text variant="caption" tone="text2" tabular>
                       {c.feeNetLabel}
                     </Text>
-                  ) : (
+                  ) : null}
+                  {c.affordable && c.earnings?.estimatedNetPerHour ? (
+                    <View
+                      style={{ flexDirection: "row", alignItems: "baseline" }}
+                    >
+                      <Text variant="caption" tone="text3">
+                        ≈{" "}
+                      </Text>
+                      <MoneyText
+                        testID={dynamicTestId(
+                          MP_DRIVER_TID.detail.presetPerHour,
+                          i,
+                        )}
+                        money={c.earnings.estimatedNetPerHour.amountMinor}
+                        variant="caption"
+                        tone="text3"
+                      />
+                      <Text variant="caption" tone="text3">
+                        /h estimate
+                      </Text>
+                    </View>
+                  ) : null}
+                  {c.affordable ? null : (
                     <Text variant="caption" tone="errorInk">
                       {c.shortfallLabel}
                     </Text>

@@ -332,6 +332,13 @@ type FeedItemView struct {
 	// Route is the multi-stop summary (omitted for a plain route): stop
 	// count, coarse stop areas and the full route's distance/duration/dwell.
 	Route *FeedRouteView `json:"route,omitempty"`
+	// Earnings is the server-composed breakdown at the requester's published
+	// fare (A04.1): gross, 10% commission, fleet remittance (none), net, the
+	// unpaid pickup (coarsened, estimated), the paid route and stop waiting.
+	Earnings *EarningsBreakdownView `json:"earnings"`
+	// PreferenceTags are the driver's own preference matches (e.g.
+	// "homeward"); omitted when there are none.
+	PreferenceTags []string `json:"preferenceTags,omitempty"`
 }
 
 // FeedPageView answers GET /v1/mp/feed.
@@ -339,6 +346,9 @@ type FeedPageView struct {
 	Items             []*FeedItemView `json:"items"`
 	NextCursor        *string         `json:"nextCursor"`
 	AvailabilityEpoch int64           `json:"availabilityEpoch"`
+	// Preferences says whether the driver's preferences shaped this page and
+	// how many requests they hid (A04.2).
+	Preferences *FeedPreferencesView `json:"preferences,omitempty"`
 }
 
 // EligibilityReasonView is one machine-readable reason with its human words.
@@ -359,9 +369,19 @@ type EligibilityView struct {
 	AvailabilityEpoch int64                   `json:"availabilityEpoch"`
 	EvaluatedAt       time.Time               `json:"evaluatedAt"`
 
-	// predictedPickupSec is server-internal: the finishing-trip pickup
-	// prediction the driver-view phrases into a label.
-	predictedPickupSec int
+	// PredictedPickupSec is the server's time-until-pickup ESTIMATE for an
+	// eligible driver (null otherwise), rounded up to the whole minute so it
+	// cannot triangulate the pickup: the routed leg on the immediate branch
+	// (basis routed_leg); on the finishing-trip branch the remaining service
+	// time + completion buffer + the post-dropoff leg + uncertainty buffer
+	// (basis finishing_trip_prediction).
+	PredictedPickupSec   *int    `json:"predictedPickupSec"`
+	PredictedPickupBasis *string `json:"predictedPickupBasis"`
+
+	// pickup is the measured UNPAID pickup leg behind that prediction (the
+	// whole leg on the immediate branch, only the post-dropoff hop on the
+	// finishing-trip branch): the driver view's earnings breakdown input.
+	pickup *pickupEstimate
 }
 
 // PresetView is one server-generated quick offer (MpPresetSchema).
@@ -377,19 +397,25 @@ type PresetView struct {
 	ShortfallLabel  *string `json:"shortfallLabel"`
 	Emphasized      bool    `json:"emphasized"`
 	Source          string  `json:"source"`
+	// Earnings is the same server-composed breakdown as the card's, at THIS
+	// preset's amount (A04.1).
+	Earnings *EarningsBreakdownView `json:"earnings"`
 }
 
 // DriverViewResult answers GET /v1/mp/requests/{id}/driver-view.
 // currentClaimId is the driver's current work claim — the mandatory
 // dependsOnClaimId for a next-slot bid — or null when none exists.
 type DriverViewResult struct {
-	Item           *FeedItemView    `json:"item"`
-	Eligibility    *EligibilityView `json:"eligibility"`
-	Presets        []*PresetView    `json:"presets"`
-	ProfileLine    *string          `json:"profileLine,omitempty"`
-	CeilingNotice  *string          `json:"ceilingNotice,omitempty"`
-	MyBid          *BidView         `json:"myBid,omitempty"`
-	CurrentClaimID *string          `json:"currentClaimId"`
+	Item          *FeedItemView    `json:"item"`
+	Eligibility   *EligibilityView `json:"eligibility"`
+	Presets       []*PresetView    `json:"presets"`
+	ProfileLine   *string          `json:"profileLine,omitempty"`
+	CeilingNotice *string          `json:"ceilingNotice,omitempty"`
+	// PreferenceNotice explains a preference this request cannot meet (the
+	// driver opened it directly although their feed would hide it).
+	PreferenceNotice *string  `json:"preferenceNotice,omitempty"`
+	MyBid            *BidView `json:"myBid,omitempty"`
+	CurrentClaimID   *string  `json:"currentClaimId"`
 }
 
 // ParkedAckView answers POST /v1/mp/driver/parked: the state the SERVER

@@ -25,6 +25,7 @@ import { RequestFeedContainer } from "../screens/marketplace/RequestFeedContaine
 import { RequestDetailContainer } from "../screens/marketplace/RequestDetailContainer";
 import { WalletHoldsContainer } from "../screens/marketplace/WalletHoldsContainer";
 import { RateProfileContainer } from "../screens/marketplace/RateProfileContainer";
+import { DriverPreferencesContainer } from "../screens/marketplace/DriverPreferencesContainer";
 import { JobsTimelineContainer } from "../screens/marketplace/JobsTimelineContainer";
 import { useSessionKeeper } from "../api/auth";
 import { SplashScreen } from "../screens/boot/SplashScreen";
@@ -234,6 +235,20 @@ function GatedRates({
     </MarketplaceGate>
   );
 }
+function GatedPreferences({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Preferences"
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <DriverPreferencesContainer />
+    </MarketplaceGate>
+  );
+}
 function GatedJobs({
   navigation,
 }: {
@@ -297,6 +312,7 @@ export function RootNavigator() {
         <Root.Screen name="Trip" component={TripNavigator as never} />
         <Root.Screen name="WalletHolds" component={GatedWalletHolds as never} />
         <Root.Screen name="Rates" component={GatedRates as never} />
+        <Root.Screen name="Preferences" component={GatedPreferences as never} />
         <Root.Screen name="Jobs" component={GatedJobs as never} />
         <Root.Screen name="FlagOff" component={FeatureUnavailableScreen} />
         <Root.Group screenOptions={{ presentation: "modal" }}>

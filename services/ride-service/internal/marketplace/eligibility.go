@@ -12,6 +12,7 @@ import (
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/geo"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
 )
 
 // Eligibility reason codes — the Go port of MP_ELIGIBILITY_REASONS in
@@ -78,6 +79,8 @@ func reason(code string) EligibilityReasonView {
 func (s *Service) EvaluateEligibility(ctx context.Context, actor Actor, request *Request, config *cityconfig.CityConfig, policy *cityconfig.MarketplacePolicy) (*EligibilityView, error) {
 	now := s.now()
 	result := &EligibilityView{
+		// An empty list, never null: the contract's reasons is an array.
+		Reasons:       []EligibilityReasonView{},
 		PolicyVersion: policy.PolicyVersion,
 		EvaluatedAt:   now,
 	}
@@ -171,10 +174,11 @@ func (s *Service) evaluateImmediate(
 		return refuse(ReasonOutsideRadius), nil
 	}
 
-	eta, err := s.routeSeconds(ctx, *session.LastLat, *session.LastLng, request.Pickup.Lat, request.Pickup.Lng)
+	leg, err := s.routeLeg(ctx, *session.LastLat, *session.LastLng, request.Pickup.Lat, request.Pickup.Lng)
 	if err != nil {
 		return refuse(ReasonRoutingUnavailable), nil
 	}
+	eta := leg.DurationSeconds
 	if eta > int64(request.EnvelopeEtaSec) {
 		return refuse(ReasonPickupEtaTooLong), nil
 	}
@@ -182,7 +186,14 @@ func (s *Service) evaluateImmediate(
 	slot := SlotCurrent
 	result.Eligible = true
 	result.Slot = &slot
-	result.predictedPickupSec = int(eta)
+	// The routed leg IS the pickup: the time until pickup and the unpaid
+	// drive coincide on the immediate branch.
+	result.setPredictedPickup(eta, PickupBasisRoutedLeg, pickupEstimate{
+		distanceM:     float64(leg.DistanceMeters),
+		distanceBasis: PickupBasisRouted,
+		durationSec:   eta,
+		durationBasis: PickupBasisRoutedLeg,
+	})
 	return result, nil
 }
 
@@ -247,10 +258,11 @@ func (s *Service) evaluateFinishingTrip(
 	if hop > float64(request.EnvelopeRadiusM) {
 		return refuse(ReasonOutsideRadius), nil
 	}
-	travel, err := s.routeSeconds(ctx, ride.DropoffLat, ride.DropoffLng, request.Pickup.Lat, request.Pickup.Lng)
+	hopLeg, err := s.routeLeg(ctx, ride.DropoffLat, ride.DropoffLng, request.Pickup.Lat, request.Pickup.Lng)
 	if err != nil {
 		return refuse(ReasonRoutingUnavailable), nil
 	}
+	travel := hopLeg.DurationSeconds
 	if travel > int64(request.EnvelopeEtaSec) {
 		return refuse(ReasonPickupEtaTooLong), nil
 	}
@@ -271,7 +283,15 @@ func (s *Service) evaluateFinishingTrip(
 	slot := SlotNext
 	result.Eligible = true
 	result.Slot = &slot
-	result.predictedPickupSec = int(predicted)
+	// The time until pickup includes the rest of the current (paid) trip;
+	// the UNPAID pickup is only the post-dropoff hop, which is what the
+	// earnings breakdown counts.
+	result.setPredictedPickup(predicted, PickupBasisFinishingTrip, pickupEstimate{
+		distanceM:     float64(hopLeg.DistanceMeters),
+		distanceBasis: PickupBasisRouted,
+		durationSec:   travel,
+		durationBasis: PickupBasisRoutedLeg,
+	})
 	return result, nil
 }
 
@@ -353,13 +373,29 @@ func (s *Service) stationaryVerdict(ctx context.Context, driverID uuid.UUID, pol
 // routeSeconds asks the router for a leg's duration. There is no fallback
 // estimate here: the caller answers ROUTING_UNAVAILABLE instead of guessing.
 func (s *Service) routeSeconds(ctx context.Context, fromLat, fromLng, toLat, toLng float64) (int64, error) {
-	route, err := s.deps.Router.Route(ctx,
-		domain.Place{Lat: fromLat, Lng: fromLng}, nil,
-		domain.Place{Lat: toLat, Lng: toLng})
+	route, err := s.routeLeg(ctx, fromLat, fromLng, toLat, toLng)
 	if err != nil {
 		return 0, err
 	}
 	return route.DurationSeconds, nil
+}
+
+// routeLeg asks the router for one leg's distance and duration, with the same
+// no-fallback rule as routeSeconds.
+func (s *Service) routeLeg(ctx context.Context, fromLat, fromLng, toLat, toLng float64) (move.Route, error) {
+	return s.deps.Router.Route(ctx,
+		domain.Place{Lat: fromLat, Lng: fromLng}, nil,
+		domain.Place{Lat: toLat, Lng: toLng})
+}
+
+// setPredictedPickup records an eligible driver's pickup prediction: the
+// exported, minute-coarsened time until pickup with its basis, and the
+// measured unpaid leg the driver view's earnings breakdown is built from.
+func (v *EligibilityView) setPredictedPickup(predictedSec int64, basis string, unpaid pickupEstimate) {
+	coarse := int(coarsePickupSeconds(predictedSec))
+	v.PredictedPickupSec = &coarse
+	v.PredictedPickupBasis = &basis
+	v.pickup = &unpaid
 }
 
 // bearingDelta is the smallest angle between two bearings, in degrees.

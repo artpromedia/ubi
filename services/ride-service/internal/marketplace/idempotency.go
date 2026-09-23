@@ -28,6 +28,9 @@ const (
 	scopeRateProfileSave = "mp.rate_profile.save"
 	scopeAdminRepair     = "mp.admin.repair"
 
+	// A04.2: PATCH /v1/mp/driver/preferences.
+	scopePreferencesPatch = "mp.driver_preferences.patch"
+
 	// C08 admin resolution/standing scopes.
 	scopeAdminRecoveryRetry   = "mp.admin.recovery_retry"
 	scopeAdminAwardReconcile  = "mp.admin.award_reconcile"

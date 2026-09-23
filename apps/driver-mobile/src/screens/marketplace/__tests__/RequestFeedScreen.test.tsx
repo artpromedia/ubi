@@ -24,6 +24,8 @@ const baseProps: RequestFeedProps = {
       askedByLabel: "rider asks",
       capabilityBadge: null,
       expiresLabel: "2:05",
+      earnings: null,
+      homeward: false,
     },
   ],
   onOpen: () => {},
@@ -32,6 +34,7 @@ const baseProps: RequestFeedProps = {
   myBids: [],
   parkedConfirm: null,
   quickLinks: [],
+  preferences: null,
 };
 const renderFeed = (over: Partial<RequestFeedProps>) =>
   render(
