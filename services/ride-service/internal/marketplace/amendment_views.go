@@ -109,9 +109,9 @@ func riderFundingState(amendment *Amendment, secured bool) string {
 
 // amendmentViewFor renders one amendment for a party.
 func (s *Service) amendmentViewFor(ctx context.Context, amendment *Amendment, role string) *AmendmentView {
-	secured := true
+	secured, business := true, false
 	if route, err := s.deps.Store.ExecutionRouteByAward(ctx, s.deps.Store.Pool(), amendment.AwardID); err == nil {
-		secured = route.securedFunding()
+		secured, business = route.securedFunding(), route.businessFunded()
 	}
 	currency := amendment.Currency
 	stops := amendment.Stops
@@ -146,6 +146,12 @@ func (s *Service) amendmentViewFor(ctx context.Context, amendment *Amendment, ro
 		Reason:     amendment.Reason,
 		CreatedAt:  amendment.CreatedAt,
 		ResolvedAt: amendment.ResolvedAt,
+	}
+	if business {
+		// A business trip has no rider funding at all: the organization's
+		// budget reservation covers the agreed fare (an increase is refused)
+		// and completion commits the actual.
+		view.RiderFunding = "not_required"
 	}
 	if role == partyDriver {
 		commission := money(amendment.commissionDelta(), currency)

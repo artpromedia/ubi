@@ -1017,9 +1017,30 @@ export type ReservationStatusView = {
     readonly entryId: string | null;
     readonly createdAt: string;
   }>;
+  /**
+   * The paying organization's billing identity and the booking's cost
+   * centre, as ride-service's BUSINESS RECEIPT names them (cost centre,
+   * organization tax id). Internal read only (service key): the gateway
+   * never proxies /v1/finance, and the receipt shows them to the booking's
+   * own booker/traveller — never to the driver.
+   */
+  readonly organization: {
+    readonly id: string;
+    readonly name: string;
+    readonly legalName: string | null;
+    readonly taxId: string | null;
+  } | null;
+  readonly costCentre: {
+    readonly id: string;
+    readonly code: string;
+    readonly name: string;
+  } | null;
 };
 
-/** For a caller whose request timed out and does not know what happened. */
+/**
+ * For a caller whose request timed out and does not know what happened —
+ * and for ride-service's business receipt (the billing block).
+ */
 export async function reservationStatus(
   deps: WalletDeps,
   bookingRef: string,
@@ -1029,8 +1050,25 @@ export async function reservationStatus(
     where: { reservationId: row.id },
     orderBy: { createdAt: "asc" },
   });
+  const org = await loadOrganization(deps.db, row.organizationId);
+  const centre = await deps.db.organizationCostCentre.findUnique({
+    where: { id: row.costCentreId },
+  });
   return {
     reservation: reservationView(row),
+    organization:
+      org === null
+        ? null
+        : {
+            id: org.id,
+            name: org.name,
+            legalName: org.legalName,
+            taxId: org.taxId,
+          },
+    costCentre:
+      centre === null
+        ? null
+        : { id: centre.id, code: centre.code, name: centre.name },
     ops: ops.map((op) => ({
       ref: op.id,
       op: op.op,

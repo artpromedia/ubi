@@ -139,14 +139,26 @@ var eventNames = map[string]struct{}{
 
 	// Book for another adult (A06 part B) — registered in the contract's
 	// EVENT_NAMES too, subject trip_access. Deliberately NOT mp.*: the issued
-	// event carries the passenger's phone and the one-time link token for
-	// notification-service's SMS, and must never ride the mp.* channel the
-	// realtime gateway and the push consumer fan out to riders and drivers.
+	// event is notification-service's SMS hand-off and must never ride the
+	// mp.* channel the realtime gateway and the push consumer fan out to
+	// riders and drivers — and it carries the passenger's phone, first name
+	// and link token only inside its sealed envelope (trip_access_seal.go).
 	// `revoked` records a withdrawn or replaced link; `declined` is the
 	// passenger's free decline before pickup (audience: the requester).
 	"trip_access.issued":   {},
 	"trip_access.revoked":  {},
 	"trip_access.declined": {},
+
+	// Business travel (A06 part C) — registered in the contract's
+	// EVENT_NAMES too, subject business_booking (one award's organization-
+	// budget funding, machine mpBusinessBooking). Deliberately NOT mp.*:
+	// nothing about the organization, its budget or its policy reaches the
+	// driver, and the realtime gateway fans mp.* out to drivers. Payloads
+	// carry ids and integer minor amounts only.
+	"business_booking.reserved":  {},
+	"business_booking.refused":   {},
+	"business_booking.committed": {},
+	"business_booking.released":  {},
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,
@@ -170,7 +182,8 @@ const (
 	subjectFavourite = "mp_favourite_driver"
 
 	// subjectTripAccess (guest.go) is a guest passenger's trip link (A06
-	// part B).
+	// part B); subjectBusinessBooking (business_trips.go) one award's
+	// organization-budget funding (A06 part C).
 )
 
 // Event is one row of the transactional outbox, always written in the same

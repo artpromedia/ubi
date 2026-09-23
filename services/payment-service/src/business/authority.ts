@@ -9,7 +9,7 @@
  * the reservation to commit or roll back — the authorization and the money
  * move linearize, instead of a removed booker slipping one last booking in.
  */
-import { ContractError, type FlagSet } from "@ubi/contracts";
+import { ContractError, type FlagSet, isEnabled } from "@ubi/contracts";
 
 import {
   BUSINESS_TRAVEL_FLAG,
@@ -118,15 +118,11 @@ export async function requireOrgRole(
 }
 
 /**
- * The raw per-city flag. `business_travel` is not a declared FlagKey yet, so
- * it is read from the resolved flag record by name; an absent key is OFF.
+ * The per-city `business_travel` flag, read through the registered FlagKey
+ * (the contract's `isEnabled`); an absent or unreadable flag is OFF.
  */
 export function businessTravelOn(flags: FlagSet): boolean {
-  return (
-    (flags as Readonly<Record<string, boolean | undefined>>)[
-      BUSINESS_TRAVEL_FLAG
-    ] === true
-  );
+  return isEnabled(flags, BUSINESS_TRAVEL_FLAG);
 }
 
 export function assertBusinessTravelOn(flags: FlagSet, cityId: string): void {

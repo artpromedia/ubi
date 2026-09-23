@@ -64,6 +64,17 @@ type Deps struct {
 	// (delivery_handoff.go). Optional: nil fails closed — every hand-off
 	// answers misconfigured, nothing is sent and the award stays pending.
 	Delivery DeliveryAssignPort
+	// TripAccessSealer seals a guest passenger's trip-link delivery for
+	// notification-service (trip_access_seal.go). Optional: nil fails closed
+	// — no trip link is issued, so a publish naming a passenger and a link
+	// reissue are refused (service_unavailable, reason
+	// trip_link_delivery_unavailable) and nothing is ever written in clear.
+	TripAccessSealer *TripAccessSealer
+	// Business reserves, commits and releases an organization's budget for
+	// a business marketplace ride (business.go; payment-service's
+	// /v1/finance/business). Optional: nil fails closed — every business
+	// check answers service_unavailable, so no business trip is booked.
+	Business BusinessPort
 }
 
 // Service is the marketplace engine core.

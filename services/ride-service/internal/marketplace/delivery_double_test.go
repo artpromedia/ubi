@@ -50,6 +50,75 @@ type deliveryDouble struct {
 	// dropAfterCommit creates (or replays) the delivery, then drops the
 	// connection without an answer for this many calls: the lost response.
 	dropAfterCommit int
+
+	// Queued-delivery cancellation (ride-service's producer contract for
+	// POST /api/v1/webhooks/marketplace-cancel, delivery_cancel.go).
+	// delivery-service does not serve it yet: until cancelDeployed, the route
+	// answers chi's plain-text 404 exactly like the real router would.
+	cancelDeployed bool
+	cancelCalls    int
+	cancelBodies   []map[string]any
+	// cancelled counts deliveries actually moved to CANCELLED.
+	cancelled int
+}
+
+// deployCancel makes the double serve marketplace-cancel.
+func (d *deliveryDouble) deployCancel() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.cancelDeployed = true
+}
+
+func (d *deliveryDouble) cancelSnapshot() (calls, cancelled int, bodies []map[string]any) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.cancelCalls, d.cancelled, append([]map[string]any(nil), d.cancelBodies...)
+}
+
+// cancel answers the marketplace-cancel contract: idempotent on the award
+// (a replay of an already-cancelled delivery is 200), 404
+// DELIVERY_NOT_FOUND for an award with no delivery, 409
+// AWARD_REPLAY_MISMATCH for another delivery id, 409
+// DELIVERY_NOT_CANCELLABLE once custody moved past assignment.
+func (d *deliveryDouble) cancel(w http.ResponseWriter, r *http.Request) {
+	d.cancelCalls++
+	if !d.cancelDeployed {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("404 page not found\n"))
+		return
+	}
+	if d.key == "" || r.Header.Get("X-Service-Key") != d.key {
+		d.respondError(w, http.StatusForbidden, "FORBIDDEN", "Invalid service key")
+		return
+	}
+	var body map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		d.respondError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		return
+	}
+	d.cancelBodies = append(d.cancelBodies, body)
+	awardID, _ := body["awardId"].(string)
+	deliveryID, _ := body["deliveryId"].(string)
+	existing, ok := d.deliveries[awardID]
+	if !ok {
+		d.respondError(w, http.StatusNotFound, "DELIVERY_NOT_FOUND", "No delivery for this award")
+		return
+	}
+	if existing["id"] != deliveryID {
+		d.respondError(w, http.StatusConflict, "AWARD_REPLAY_MISMATCH", "This award's delivery is another one")
+		return
+	}
+	switch existing["status"] {
+	case "CANCELLED":
+	case "DRIVER_ASSIGNED":
+		existing["status"] = "CANCELLED"
+		d.cancelled++
+	default:
+		d.respondError(w, http.StatusConflict, "DELIVERY_NOT_CANCELLABLE", "Custody has moved; the delivery cannot be cancelled")
+		return
+	}
+	d.respond(w, http.StatusOK, map[string]any{"id": existing["id"], "status": existing["status"], "marketplaceAwardId": awardID})
 }
 
 // newDeliveryDouble starts a double configured with `key` as its
@@ -87,6 +156,10 @@ func (d *deliveryDouble) respondError(w http.ResponseWriter, status int, code, m
 func (d *deliveryDouble) serve(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if r.Method == http.MethodPost && r.URL.Path == "/api/v1/webhooks/marketplace-cancel" {
+		d.cancel(w, r)
+		return
+	}
 	if r.Method != http.MethodPost || r.URL.Path != "/api/v1/webhooks/marketplace-assign" {
 		d.respondError(w, http.StatusNotFound, "NOT_FOUND", "no such route")
 		return

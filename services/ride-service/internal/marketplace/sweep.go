@@ -64,6 +64,8 @@ func (s *Service) Sweep(ctx context.Context) error {
 	s.sweepEnvelopes(ctx, now)
 	s.sweepRecoveries(ctx, now)
 	s.sweepStalledAwards(ctx, now)
+	s.sweepBusinessBookings(ctx, now)
+	s.sweepDeliveryCancellations(ctx, now)
 	s.sweepPromotions(ctx)
 	s.sweepQueuedWindows(ctx, now)
 	s.sweepQueuedDriverFailures(ctx)

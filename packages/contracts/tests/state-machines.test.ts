@@ -57,6 +57,9 @@ describe("canonical state machines", () => {
         // Rider confidence (A04 item 3): a preferred-driver request's
         // bounded exclusive window.
         "mpPreferredWindow",
+        // Business travel (A06 part C): one award's organization-budget
+        // funding (reserve → commit | release).
+        "mpBusinessBooking",
       ].sort(),
     );
   });

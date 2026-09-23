@@ -58,6 +58,11 @@ export const SUBJECT_TYPES = [
   "mp_favourite_driver",
   // Book for another adult (A06 part B): a guest passenger's scoped trip link.
   "trip_access",
+  // Business travel (A06 part C): ride-service's record of one award's
+  // organization-budget funding (reserve at award, commit at settlement,
+  // release on cancel). Organization events use the `user` subject and
+  // payment-service's budget movements `booking` / `wallet`.
+  "business_booking",
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
@@ -471,17 +476,49 @@ export const EVENT_NAMES = [
   "mp.favourite_driver.saved",
   "mp.favourite_driver.removed",
   // ── Book for another adult (A06 part B) — subject trip_access ──
-  // Deliberately NOT mp.*: `issued` carries the guest passenger's phone and
-  // the one-time link token (stored by ride-service only as its SHA-256) for
-  // notification-service to send ONE SMS with the trip link, and must never
-  // ride the mp.* channel the realtime gateway and push consumer fan out to
-  // riders and drivers. No driver is promised in the copy — none is committed
+  // Deliberately NOT mp.*: `issued` is notification-service's hand-off to
+  // send ONE SMS with the trip link, and must never ride the mp.* channel the
+  // realtime gateway and push consumer fan out to riders and drivers. Even so
+  // it carries the passenger's phone, first name and the one-time link token
+  // (stored by ride-service only as its SHA-256) ONLY inside its AES-256-GCM
+  // `sealed` envelope — never in clear (MpTripAccessIssuedPayloadSchema). No driver is promised in the copy — none is committed
   // at publish. `revoked` records a link the requester withdrew or replaced;
   // `declined` is the passenger's free decline before pickup (audience: the
   // requester, payload.requesterId; feeMinor is always 0).
   "trip_access.issued",
   "trip_access.revoked",
   "trip_access.declined",
+  // ── Business travel (A06 part C) ──
+  // Organizations (user-service, BUSINESS_TRAVEL_EVENT_NAMES in
+  // business-travel.ts). Subject: the `user` the change is about — the
+  // invitee or member, or the acting admin for an organization-level change;
+  // payload: ids only (never a phone, email or personal trip).
+  "organization.created",
+  "organization.policy_updated",
+  "organization.billing_updated",
+  "organization.cost_centre_created",
+  "organization.cost_centre_archived",
+  "organization.member_invited",
+  "organization.invitation_accepted",
+  "organization.invitation_declined",
+  "organization.invitation_revoked",
+  "organization.member_updated",
+  "organization.member_removed",
+  // A business marketplace ride's budget funding (ride-service) — subject
+  // business_booking, keyed by the award (the booking ref payment-service
+  // reserves under). Deliberately NOT mp.*: the organization, its budget and
+  // its policy are never shown to the driver (BUSINESS_VISIBILITY), and the
+  // realtime gateway fans mp.* out to drivers. Payload: ids and integer minor
+  // amounts only. `reserved` — the budget took the awarded fare INSTEAD of
+  // the rider's personal funding; `refused` — no transport was promised, the
+  // award was compensated with the reason; `committed` — the actual total
+  // (agreed fare + committed adjustments, never above the reservation) left
+  // the budget; `released` — the reservation was freed (cancel, compensation
+  // or a trip that ended without service), naming who cancelled.
+  "business_booking.reserved",
+  "business_booking.refused",
+  "business_booking.committed",
+  "business_booking.released",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

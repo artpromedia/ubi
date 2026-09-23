@@ -1,6 +1,7 @@
 package marketplace
 
 import (
+	"context"
 	"time"
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
@@ -304,8 +305,16 @@ type AdvanceBookingView struct {
 	ActivatedSlot    *string                   `json:"activatedSlot"`
 	Failure          *BookingFailureView       `json:"failure"`
 	RematchRequestID *string                   `json:"rematchRequestId"`
-	CreatedAt        time.Time                 `json:"createdAt"`
-	UpdatedAt        time.Time                 `json:"updatedAt"`
+	// ReminderOffsetsSec are the market's reminder offsets, seconds before
+	// the pickup window opens (empty when none are configured or the policy
+	// could not be read).
+	ReminderOffsetsSec []int `json:"reminderOffsetsSec"`
+	// FreeCancellationDeadline is, on the rider's view, until when the
+	// booking may be cancelled free of charge (activation); nil once it can
+	// no longer be, and always nil on the driver's view.
+	FreeCancellationDeadline *time.Time `json:"freeCancellationDeadline"`
+	CreatedAt                time.Time  `json:"createdAt"`
+	UpdatedAt                time.Time  `json:"updatedAt"`
 }
 
 // Booking viewers.
@@ -345,8 +354,15 @@ func bookingViewOf(b *AdvanceBooking, request *Request, vehicleClass string, vie
 			Deadline:      b.ReconfirmDeadline,
 			ReconfirmedAt: b.ReconfirmedAt,
 		},
-		CreatedAt: b.CreatedAt,
-		UpdatedAt: b.UpdatedAt,
+		ReminderOffsetsSec: []int{},
+		CreatedAt:          b.CreatedAt,
+		UpdatedAt:          b.UpdatedAt,
+	}
+	if viewer == viewerRider && riderMayCancelFree(b.State) {
+		// No cancellation fee is charged before activation (CancelBooking);
+		// after it the booking is an ordinary queued or current job.
+		deadline := b.ActivationAt
+		view.FreeCancellationDeadline = &deadline
 	}
 	if viewer == viewerDriver {
 		commission := money(b.CommissionMinor, b.Currency)
@@ -452,6 +468,38 @@ func bookingViewOf(b *AdvanceBooking, request *Request, vehicleClass string, vie
 			RematchAvailable: viewer == viewerRider && b.Failure.RematchAvailable && b.RematchRequestID == nil,
 		}
 	}
+	return view
+}
+
+// riderMayCancelFree reports whether the rider may still cancel a booking in
+// this state through CancelBooking, which charges no fee (held answers
+// "try again shortly" while the selection confirms, and is still free).
+func riderMayCancelFree(state string) bool {
+	switch state {
+	case machine.MpBookingHeld, machine.MpBookingPaymentPending, machine.MpBookingConfirmed, machine.MpBookingReconfirmed:
+		return true
+	default:
+		return false
+	}
+}
+
+// withBookingReminders fills the market's reminder offsets onto a booking
+// view read outside a transaction; an unreadable policy leaves them empty.
+func (s *Service) withBookingReminders(ctx context.Context, view *AdvanceBookingView, cityID string) *AdvanceBookingView {
+	if view == nil {
+		return view
+	}
+	_, policy, err := s.policy(ctx, cityID)
+	if err != nil {
+		return view
+	}
+	advance, err := policy.AdvanceReservationPolicyFor(cityID)
+	if err != nil {
+		return view
+	}
+	offsets := make([]int, 0, len(advance.ReminderOffsetsSec))
+	offsets = append(offsets, advance.ReminderOffsetsSec...)
+	view.ReminderOffsetsSec = offsets
 	return view
 }
 

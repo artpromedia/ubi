@@ -41,12 +41,12 @@
  *    never strands money: commit, release, return-to-wallet and statements
  *    keep working.
  *
- * This module is not re-exported from `index.ts` yet (the same staging as
- * `driver-profile.ts`): the services mirror its constants and their tests
- * parse real responses against these schemas by relative import. Re-export it
- * — and register `BUSINESS_TRAVEL_FLAG` in FLAG_KEYS and
- * `BUSINESS_TRAVEL_EVENT_NAMES` in EVENT_NAMES — when a consumer outside
- * those two services needs it.
+ * Re-exported from `index.ts` since ride-service started booking business
+ * marketplace rides (A06-C integration): `BUSINESS_TRAVEL_FLAG` is a declared
+ * FlagKey (flags.ts) and `BUSINESS_TRAVEL_EVENT_NAMES` are registered in
+ * EVENT_NAMES (events.ts; ride-service's events contract test reads both
+ * files). The services still mirror the vocabularies they enforce and their
+ * tests parse real responses against these schemas.
  */
 import { z } from "zod";
 
@@ -54,16 +54,20 @@ import { VEHICLE_CLASSES } from "./city-config";
 import { MP_SERVICES } from "./marketplace";
 import { CurrencySchema, MoneySchema } from "./money";
 
+import type { FlagKey } from "./flags";
+
 const Timestamp = z.string().datetime({ offset: true });
 
 // ── Flag ──────────────────────────────────────────────────────────────────
 
 /**
- * The per-city switch for business travel. Not yet a declared `FlagKey`:
- * until it is, both services read the raw flag rule and an absent rule is
- * OFF — deny-by-default exactly like a declared flag. Nothing enables it.
+ * The per-city switch for business travel — a declared `FlagKey`
+ * (flags.ts), read through the registered key by every service that gates on
+ * it (user-service, payment-service, ride-service). An absent rule is OFF,
+ * deny-by-default. Nothing enables it.
  */
-export const BUSINESS_TRAVEL_FLAG = "business_travel" as const;
+export const BUSINESS_TRAVEL_FLAG =
+  "business_travel" as const satisfies FlagKey;
 
 // ── Organizations (user-service) ──────────────────────────────────────────
 
@@ -254,8 +258,10 @@ export const BusinessPeriodSchema = z
  *  - commit:     budget wallet → business_clearing      (`business_trip_commit`)
  *  - release:    no journal movement — the row stops encumbering
  * `business_clearing` holds committed business spend until the trip's
- * settlement pays the driver out of it (ride-service integration, next
- * round), so recon can prove it nets to zero per booking.
+ * settlement pays the driver out of it (payment-service's settlement for
+ * business-funded awards — not built yet; ride-service commits the budget
+ * and never calls the personal settlement for a business award), so recon
+ * can prove it nets to zero per booking.
  */
 export const BUSINESS_LEDGER = {
   organizationWalletOwnerType: "organization",
@@ -346,26 +352,43 @@ export const BudgetAllocationInputSchema = z.object({
  * `/policy-check` and `/reserve` an `X-City-ID` — the TRIP's city, whose
  * `business_travel` flag, timezone (budget month) and tax rates apply.
  *
- * THE SEQUENCE ride-service implements (next round — nothing calls it yet):
- *  1. QUOTE — `POST /policy-check` with the server-computed total. An option
- *     that is out of policy or unfunded is shown as unavailable with its
- *     `reasons`, never as bookable. Advisory only: reserve re-decides all of it.
+ * THE SEQUENCE ride-service implements (services/ride-service/internal/
+ * marketplace/business_trips.go, machine `mpBusinessBooking`, behind
+ * `business_travel` AND `marketplace_rides`; immediate RIDES only):
+ *  1. QUOTE — `POST /policy-check` at the suggested fare (bookingRef
+ *     `quote:<quoteId>`). An option that is out of policy or unfunded is shown
+ *     as unavailable with its `reasons`, never as bookable. Advisory only:
+ *     reserve re-decides all of it.
  *  2. PUBLISH — a business request names `organizationId` (and optionally
- *     `costCentreId`, `expenseCategory`); the authenticated requester is the
- *     booker, the named passenger the traveller. No money moves.
- *  3. SELECT / AWARD — `POST /reserve` with `bookingRef` = the award id and
- *     key `business:<awardId>:reserve`, INSTEAD OF the rider-wallet funding
- *     reservation. A refusal fails the selection before any transport is
- *     promised. The driver's 10% commission hold and its one capture at
- *     selection are unchanged.
- *  4. COMPLETION — `POST /commit` with the actual total (never above the
- *     reservation), key `business:<awardId>:commit`. The driver is then paid
- *     out of `business_clearing` for that booking ref by the trip's settlement
- *     (payment-service settlement for business-funded awards — next round).
- *     An amendment that would raise the total above the reservation needs a
- *     reserve top-up op first (next round); until then it must be refused.
+ *     `costCentreId`, `expenseCategory`, `travellerId`); the authenticated
+ *     requester is the booker, the traveller the passenger (a colleague is
+ *     also named as the request's guest passenger). `/policy-check` at the
+ *     requested fare: a refusal refuses the publish. No money moves.
+ *  3. SELECT / AWARD — `/policy-check` at the offer's amount before any award
+ *     starts, then `POST /reserve` with `bookingRef` = the award id and key
+ *     `business:<awardId>:reserve` in the award saga's funding step, INSTEAD
+ *     OF the rider-wallet funding reservation (never both). A refusal fails
+ *     the selection before any transport is promised. The driver's 10%
+ *     commission hold and its one capture at selection are unchanged, and
+ *     the amount reserved is the agreed fare — never the commission.
+ *  4. COMPLETION — `POST /commit` with the actual total (agreed fare +
+ *     committed adjustments, never above the reservation), key
+ *     `business:<awardId>:commit`, owed durably in the claim-completion
+ *     transaction. The rider's personal settlement is never called for a
+ *     business award. The driver is then paid out of `business_clearing` for
+ *     that booking ref by payment-service's settlement for business-funded
+ *     awards — NOT BUILT YET (payment-service). An amendment that would raise
+ *     the total above the reservation needs a reserve top-up op first (not
+ *     built); until then ride-service refuses it
+ *     (`business_budget_topup_unavailable`).
  *  5. CANCEL / NO AWARD — `POST /release` naming who cancelled
- *     (`BUSINESS_CANCEL_RIGHTS`), key `business:<awardId>:release`.
+ *     (`BUSINESS_CANCEL_RIGHTS`), key `business:<awardId>:release`: the
+ *     system for compensation / driver / ops cancellation / no-show, the
+ *     traveller for their trip-link decline, the booker (or the traveller who
+ *     booked for themselves) for the requester's cancel before pickup. A
+ *     party payment-service refuses (`cancel_not_permitted`) is re-sent as the
+ *     system under `business:<awardId>:release:system` — the trip ended
+ *     without service, so the budget is never stranded.
  *  6. TIMEOUT — `GET /reservations/:bookingRef` to learn what happened, then
  *     retry with the SAME key; a replay answers the original result (200).
  *
@@ -494,6 +517,44 @@ export const BusinessReservationViewSchema = z.object({
 });
 export type BusinessReservationView = z.infer<
   typeof BusinessReservationViewSchema
+>;
+
+/**
+ * `GET /reservations/:bookingRef` — for a caller whose request timed out, and
+ * for ride-service's business receipt: the reservation, its ops, and the
+ * paying organization's billing identity and the booking's cost centre (the
+ * receipt's "cost centre" and "organization tax id"). Internal read only.
+ */
+export const BusinessReservationStatusSchema = z.object({
+  reservation: BusinessReservationViewSchema,
+  ops: z.array(
+    z.object({
+      ref: z.string().min(1),
+      op: z.enum(BUDGET_OPS),
+      clientKey: z.string().min(1),
+      amount: MoneySchema,
+      entryId: z.string().nullable(),
+      createdAt: Timestamp,
+    }),
+  ),
+  organization: z
+    .object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      legalName: z.string().nullable(),
+      taxId: z.string().nullable(),
+    })
+    .nullable(),
+  costCentre: z
+    .object({
+      id: z.string().min(1),
+      code: z.string().min(1),
+      name: z.string().min(1),
+    })
+    .nullable(),
+});
+export type BusinessReservationStatus = z.infer<
+  typeof BusinessReservationStatusSchema
 >;
 
 /** What reserve / commit / release answer (201 recorded, 200 replayed). */

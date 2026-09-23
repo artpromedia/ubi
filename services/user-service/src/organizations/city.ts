@@ -1,7 +1,7 @@
 /**
  * The two city facts an organization needs: that the city is live with a
  * valid active config (its wallet currency denominates every budget), and
- * whether `business_travel` is switched on there.
+ * whether `business_travel` (the registered FlagKey) is switched on there.
  *
  * Fail closed on both: no active valid config is `config_unavailable`, and a
  * flag that is absent, unreadable or has no rule for the city (with no global

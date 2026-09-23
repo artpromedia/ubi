@@ -32,6 +32,10 @@ type PublishRequest struct {
 	// marketplace_guest_bookings): the requester stays the payer and the
 	// only authenticated party, and attests the passenger's age and consent.
 	Passenger *PassengerInput `json:"passenger,omitempty"`
+	// Business books the ride on an organization (A06 part C;
+	// business_travel): the organization's budget pays instead of the
+	// rider, the requester is the booker and the traveller the passenger.
+	Business *BusinessInput `json:"business,omitempty"`
 }
 
 // requireCurrency refuses a Money body whose currency does not name the
@@ -132,10 +136,15 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 			"the marketplace policy changed after this quote was issued; ask for a new one").
 			WithDetails(map[string]any{"quotedPolicyVersion": quote.PolicyVersion, "activePolicyVersion": policy.PolicyVersion})
 	}
-	if available, reason := config.PaymentMethodAvailable(req.PaymentMethodID); !available {
-		return nil, 0, domain.Errorf(domain.CodePaymentMethodUnavailable,
-			"%s cannot be used in this city", req.PaymentMethodID).
-			WithDetails(map[string]any{"paymentMethodId": req.PaymentMethodID, "reason": reason})
+	// A business trip is paid from the organization's budget (validated with
+	// the rest of the business terms below); a personal trip names one of the
+	// city's payment methods.
+	if req.Business == nil {
+		if available, reason := config.PaymentMethodAvailable(req.PaymentMethodID); !available && req.PaymentMethodID != PaymentMethodBusiness {
+			return nil, 0, domain.Errorf(domain.CodePaymentMethodUnavailable,
+				"%s cannot be used in this city", req.PaymentMethodID).
+				WithDetails(map[string]any{"paymentMethodId": req.PaymentMethodID, "reason": reason})
+		}
 	}
 
 	// The requested amount is validated against the STORED bounds, never
@@ -169,6 +178,20 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 	if err != nil {
 		return nil, 0, err
 	}
+	// A06 part C: a request booked on an organization — the flag, the
+	// traveller/passenger separation and the organization's policy and
+	// budget at the requested fare (the documented policy check) — is
+	// validated before anything is written. The request id is minted first
+	// so the check names the booking it is for.
+	requestID := uuid.New()
+	business, err := s.validateBusiness(ctx, actor, quote, requestID, req)
+	if err != nil {
+		return nil, 0, err
+	}
+	paymentMethodID := req.PaymentMethodID
+	if business != nil {
+		paymentMethodID = PaymentMethodBusiness
+	}
 
 	// The open-request cap is ENFORCED inside the insert transaction (see
 	// below): a pool-side count here would be check-then-act under
@@ -184,7 +207,7 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 	}
 
 	request := &Request{
-		ID:                uuid.New(),
+		ID:                requestID,
 		QuoteID:           quote.ID,
 		RequesterID:       actor.UserID,
 		CityID:            quote.CityID,
@@ -207,7 +230,7 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 		RoutedDurationSec: quote.RoutedDurationSec,
 		StopsDwellSec:     quote.StopsDwellSec,
 		Delivery:          req.Delivery,
-		PaymentMethodID:   req.PaymentMethodID,
+		PaymentMethodID:   paymentMethodID,
 		EnvelopeStep:      0,
 		EnvelopeRadiusM:   policy.SearchEnvelope.InitialRadiusMeters,
 		EnvelopeEtaSec:    policy.SearchEnvelope.InitialPickupEtaSec,
@@ -265,6 +288,15 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 				return err
 			}
 			view.Passenger = passengerView
+		}
+		if business != nil {
+			if err := s.writeRequestBusiness(ctx, tx, request, actor, business); err != nil {
+				return err
+			}
+			view.Business = requestBusinessViewOf(business, nil)
+			if view.Passenger != nil {
+				view.Passenger.PayerRole = "organization"
+			}
 		}
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeRequestCreate, actor.UserID, idempotencyKey, req, 201, view)
 	})
@@ -432,6 +464,7 @@ func (s *Service) SnapshotWithOptions(ctx context.Context, actor Actor, requestI
 	view := requestViewOf(request)
 	s.attachRequestConfidence(ctx, view, request, comparison.needs)
 	s.attachPassenger(ctx, view, request)
+	s.attachBusiness(ctx, view, request)
 	return &RequestSnapshotView{
 		Request:       view,
 		Offers:        offers,

@@ -196,6 +196,10 @@ export const booking = (
     activatedSlot: null,
     failure: null,
     rematchRequestId: null,
+    // The market's reminder offsets (12 h and 1 h before the window opens).
+    reminderOffsetsSec: [43_200, 3_600],
+    // Always null on the driver view (a rider-only free-cancel deadline).
+    freeCancellationDeadline: null,
     createdAt: isoIn(-86_400_000),
     updatedAt: isoIn(-3_600_000),
     ...over,

@@ -47,6 +47,10 @@ const (
 	// refusal keeps its canonical 422 instead of degrading to a 500.
 	CodeInsufficientFunds Code = "insufficient_funds"
 
+	// A business trip above the organization's per-trip cap (A06 part C;
+	// payment-service answers its policy refusal trip_cap_exceeded with it).
+	CodeLimitExceeded Code = "limit_exceeded"
+
 	// Marketplace codes (packages/contracts/src/errors.ts, M-slices).
 	CodeMarketNotConfigured    Code = "market_not_configured"
 	CodeFareOutOfBounds        Code = "fare_out_of_bounds"
@@ -90,6 +94,7 @@ var statusByCode = map[Code]int{
 	CodeReasonCodeRequired:       http.StatusUnprocessableEntity,
 	CodeNoActiveRide:             http.StatusNotFound,
 	CodeInsufficientFunds:        http.StatusUnprocessableEntity,
+	CodeLimitExceeded:            http.StatusUnprocessableEntity,
 
 	CodeMarketNotConfigured:    http.StatusServiceUnavailable,
 	CodeFareOutOfBounds:        http.StatusUnprocessableEntity,

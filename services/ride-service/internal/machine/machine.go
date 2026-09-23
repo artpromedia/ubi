@@ -49,6 +49,9 @@ const (
 	// window (A04 item 3): exclusive → market_open (the rider consented to
 	// fallback) or closed (the request expired free).
 	MpPreferredWindow Name = "mpPreferredWindow"
+	// MpBusinessBooking is one award's organization-budget funding (A06 part
+	// C): reserving → reserved | refused, reserved → committed | released.
+	MpBusinessBooking Name = "mpBusinessBooking"
 )
 
 // ErrIllegalTransition is returned for any move the contract does not allow.
@@ -206,6 +209,15 @@ const (
 	MpPreferredExclusive  = "exclusive"
 	MpPreferredMarketOpen = "market_open"
 	MpPreferredClosed     = "closed"
+)
+
+// Business booking states (contracts/state-machines.json → mpBusinessBooking).
+const (
+	MpBusinessReserving = "reserving"
+	MpBusinessReserved  = "reserved"
+	MpBusinessRefused   = "refused"
+	MpBusinessCommitted = "committed"
+	MpBusinessReleased  = "released"
 )
 
 // machines is the contract, transcribed. Order inside a slice is irrelevant;
@@ -384,6 +396,17 @@ var machines = map[Name]struct {
 			// Terminal states the contract lists only as destinations.
 			MpPreferredMarketOpen: {},
 			MpPreferredClosed:     {},
+		},
+	},
+	MpBusinessBooking: {
+		initial: MpBusinessReserving,
+		transitions: map[string][]string{
+			MpBusinessReserving: {MpBusinessReserved, MpBusinessRefused},
+			MpBusinessReserved:  {MpBusinessCommitted, MpBusinessReleased},
+			// Terminal states the contract lists only as destinations.
+			MpBusinessRefused:   {},
+			MpBusinessCommitted: {},
+			MpBusinessReleased:  {},
 		},
 	},
 }

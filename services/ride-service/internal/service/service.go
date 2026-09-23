@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	goredis "github.com/go-redis/redis/v8"
@@ -56,6 +57,17 @@ type Config struct {
 	// hand-off sends nothing and stays pending, alarmed, until configured.
 	DeliveryServiceURL string
 	DeliveryServiceKey string
+	// TripAccessDeliveryKey (TRIP_ACCESS_DELIVERY_KEY, standard base64 of 32
+	// random bytes) and TripAccessDeliveryKid (TRIP_ACCESS_DELIVERY_KID) seal
+	// a guest passenger's trip-link delivery to notification-service. Either
+	// missing or unusable fails closed: no trip link is issued (a guest
+	// booking is refused; booking for yourself is unaffected) and the phone
+	// and token are never written to the outbox in clear.
+	TripAccessDeliveryKey string
+	TripAccessDeliveryKid string
+	// Environment names the deployment (UBI_ENV); in production an unusable
+	// trip-access key is logged as an alert rather than a warning.
+	Environment string
 }
 
 // Runtime is a wired service and the resources it owns.
@@ -158,6 +170,7 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	if !deliveryAssign.Configured() {
 		config.Logger.Warn().Msg("DELIVERY_SERVICE_URL or a non-default delivery service key is not set: marketplace delivery awards cannot be handed off")
 	}
+	tripAccessSealer := buildTripAccessSealer(config)
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
 		Store:      marketplace.NewStore(pool),
 		Config:     cityconfig.NewStore(pool, runtime.Redis, config.ConfigCacheTTL),
@@ -171,7 +184,12 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		Logger:     config.Logger,
 		DriverProfiles: marketplace.NewHTTPDriverProfiles(config.UserServiceURL, config.DriverProfileServiceKey,
 			marketplace.DriverProfilesOptions{}),
-		Delivery: deliveryAssign,
+		Delivery:         deliveryAssign,
+		TripAccessSealer: tripAccessSealer,
+		// Business travel (A06 part C): payment-service's internal
+		// /v1/finance/business, on the same URL and service key as the
+		// wallet. Unwired, every business check fails closed.
+		Business: marketplace.NewHTTPBusiness(config.PaymentServiceURL, config.InternalServiceKey, nil),
 	})
 	if err != nil {
 		runtime.Close()
@@ -186,6 +204,34 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	moveService.SetExecutionObserver(marketplaceService)
 
 	return runtime, nil
+}
+
+// buildTripAccessSealer turns TRIP_ACCESS_DELIVERY_KEY/KID into the sealer,
+// or nil (fail closed) when either is missing or unusable. A missing key in
+// production is an alert: guest bookings are refused until it is set.
+func buildTripAccessSealer(config Config) *marketplace.TripAccessSealer {
+	sealer, err := marketplace.NewTripAccessSealer(config.TripAccessDeliveryKey, config.TripAccessDeliveryKid)
+	if err == nil {
+		config.Logger.Info().Str("kid", sealer.Kid()).Msg("guest trip-link deliveries are sealed")
+		return sealer
+	}
+	event := config.Logger.Warn()
+	if isProduction(config.Environment) {
+		event = config.Logger.Error().Bool("alert", true)
+	}
+	event.Err(err).Msg("TRIP_ACCESS_DELIVERY_KEY/KID unusable: guest passenger trip links are refused (fail closed); nothing is sent in clear")
+	return nil
+}
+
+// isProduction mirrors main's production check for the two spellings
+// deployments use.
+func isProduction(environment string) bool {
+	switch strings.ToLower(strings.TrimSpace(environment)) {
+	case "production", "prod":
+		return true
+	default:
+		return false
+	}
 }
 
 // Migrate applies the ride and mp schemas. It is called from an explicit boot

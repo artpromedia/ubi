@@ -141,6 +141,33 @@ type DriverReceiptEarningsView struct {
 	Note            string            `json:"note"`
 }
 
+// ReceiptCostCentreView is the cost centre a business trip was charged to.
+type ReceiptCostCentreView struct {
+	ID   string  `json:"id"`
+	Code *string `json:"code"`
+	Name *string `json:"name"`
+}
+
+// ReceiptBusinessView is a business receipt's organization block (A06 part
+// C; rider view only — nothing about the organization reaches the driver):
+// who paid (the organization's billing identity and tax id), the cost centre
+// and expense category, and the budget funding as the ledger recorded it.
+type ReceiptBusinessView struct {
+	OrganizationID   string                 `json:"organizationId"`
+	OrganizationName *string                `json:"organizationName"`
+	LegalName        *string                `json:"legalName"`
+	TaxID            *string                `json:"taxId"`
+	CostCentre       *ReceiptCostCentreView `json:"costCentre"`
+	ExpenseCategory  *string                `json:"expenseCategory"`
+	BookingRef       string                 `json:"bookingRef"`
+	BookerID         string                 `json:"bookerId"`
+	TravellerID      string                 `json:"travellerId"`
+	FundingState     string                 `json:"fundingState"`
+	CommittedMinor   *Money                 `json:"committedMinor"`
+	LedgerTaxes      []BusinessTaxLine      `json:"ledgerTaxes"`
+	Note             string                 `json:"note"`
+}
+
 // ReceiptView answers GET /v1/mp/requests/{id}/receipt (MpReceiptSchema).
 type ReceiptView struct {
 	ReceiptID      string                     `json:"receiptId"`
@@ -157,6 +184,7 @@ type ReceiptView struct {
 	Settlement     ReceiptSettlementView      `json:"settlement"`
 	Reconciliation ReceiptReconciliationView  `json:"reconciliation"`
 	Driver         *DriverReceiptEarningsView `json:"driver,omitempty"`
+	Business       *ReceiptBusinessView       `json:"business,omitempty"`
 	Format         string                     `json:"format"`
 	IssuedAt       time.Time                  `json:"issuedAt"`
 }
@@ -169,6 +197,10 @@ const (
 	receiptDriverNote     = "The 10% UBI commission was captured once when the rider selected your offer; committed changes moved it only by linked adjustments. Net is before your own fuel, energy and vehicle costs."
 	settlementPostedNote  = "Payment posted."
 	settlementPendingNote = "The amount is final; the payment posting is still being confirmed."
+	businessPostedNote    = "Charged to the organization's budget."
+	businessPendingNote   = "The amount is final; the charge to the organization's budget is still being confirmed."
+	businessReceiptNote   = "Paid from the organization's prefunded budget; nothing was charged to you personally. Taxes are the share of the total at this market's configured rates."
+	businessBillingNote   = "Paid from the organization's prefunded budget; nothing was charged to you personally. The organization's billing details could not be read right now."
 )
 
 // receiptLineFor labels one committed amendment.
@@ -390,8 +422,21 @@ func (s *Service) Receipt(ctx context.Context, actor Actor, requestID uuid.UUID)
 			Wrap(fmt.Errorf("award %s: lines add to %d, settlement %d", award.ID, total, settled.FareMinor.AmountMinor))
 	}
 
+	// A06 part C: a business trip was paid from an organization's budget.
+	booking, err := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), award.ID)
+	if errors.Is(err, domain.ErrNotFound) {
+		booking = nil
+	} else if err != nil {
+		return nil, asDomainError(err)
+	}
 	method, methodLabel := "wallet", "UBI Wallet"
-	if request.PaymentMethodID == "cash" {
+	switch {
+	case booking != nil && viewer == receiptViewerRider:
+		method, methodLabel = PaymentMethodBusiness, "Organization budget"
+	case booking != nil:
+		// The driver learns nothing about the organization (BUSINESS_VISIBILITY).
+		method, methodLabel = PaymentMethodBusiness, "Paid in-app; nothing is collected at the trip"
+	case request.PaymentMethodID == "cash":
 		method, methodLabel = "cash", "Cash, paid to the driver"
 	}
 	trip := ReceiptTripView{
@@ -428,7 +473,13 @@ func (s *Service) Receipt(ctx context.Context, actor Actor, requestID uuid.UUID)
 	}
 
 	settlement := ReceiptSettlementView{Status: ReceiptSettlementPending, Note: settlementPendingNote}
-	if settledAt, found, err := s.deps.Store.settlementStateOf(ctx, s.deps.Store.Pool(), award.ID); err != nil {
+	if booking != nil {
+		// The organization's commit IS this trip's payment posting.
+		settlement.Note = businessPendingNote
+		if booking.State == machine.MpBusinessCommitted {
+			settlement = ReceiptSettlementView{Status: ReceiptSettlementPosted, SettledAt: booking.ResolvedAt, Note: businessPostedNote}
+		}
+	} else if settledAt, found, err := s.deps.Store.settlementStateOf(ctx, s.deps.Store.Pool(), award.ID); err != nil {
 		return nil, asDomainError(err)
 	} else if found && settledAt != nil {
 		settlement = ReceiptSettlementView{Status: ReceiptSettlementPosted, SettledAt: settledAt, Note: settlementPostedNote}
@@ -458,6 +509,9 @@ func (s *Service) Receipt(ctx context.Context, actor Actor, requestID uuid.UUID)
 	}
 	if viewer == receiptViewerRider {
 		view.Taxes = s.receiptTaxes(ctx, request, total)
+		if booking != nil {
+			view.Business = s.receiptBusiness(ctx, booking)
+		}
 		return view, nil
 	}
 	if route != nil && route.CapturedCommissionMinor != commissionTotal {
@@ -478,6 +532,56 @@ func (s *Service) Receipt(ctx context.Context, actor Actor, requestID uuid.UUID)
 		Note:            receiptDriverNote,
 	}
 	return view, nil
+}
+
+// receiptBusiness renders a business receipt's organization block. The
+// organization's billing identity and the cost centre come from
+// payment-service's reservation status (the internal read ride-service is
+// entitled to), snapshotted on the booking once read; a status that cannot
+// be read leaves them null and says so — the receipt is never invented.
+func (s *Service) receiptBusiness(ctx context.Context, booking *BusinessBooking) *ReceiptBusinessView {
+	view := &ReceiptBusinessView{
+		OrganizationID:  booking.OrganizationID,
+		ExpenseCategory: optionalString(booking.ExpenseCategory),
+		BookingRef:      booking.BookingRef,
+		BookerID:        booking.BookerID.String(),
+		TravellerID:     booking.TravellerID.String(),
+		FundingState:    booking.State,
+		LedgerTaxes:     booking.Taxes,
+		Note:            businessReceiptNote,
+	}
+	if view.LedgerTaxes == nil {
+		view.LedgerTaxes = []BusinessTaxLine{}
+	}
+	if booking.CommittedMinor != nil {
+		committed := money(*booking.CommittedMinor, booking.Currency)
+		view.CommittedMinor = &committed
+	}
+	if booking.CostCentreID != "" {
+		view.CostCentre = &ReceiptCostCentreView{ID: booking.CostCentreID}
+	}
+	billing := booking.Billing
+	if billing == nil {
+		status, err := s.business().ReservationStatus(ctx, booking.BookingRef)
+		if err == nil && status.Organization != nil {
+			billing = status
+			if err := s.deps.Store.SetBusinessBilling(ctx, s.deps.Store.Pool(), booking.AwardID, status); err != nil {
+				s.deps.Logger.Warn().Err(err).Str("award_id", booking.AwardID.String()).Msg("could not snapshot the business billing")
+			}
+		}
+	}
+	if billing == nil || billing.Organization == nil {
+		view.Note = businessBillingNote
+		return view
+	}
+	name := billing.Organization.Name
+	view.OrganizationName = optionalString(name)
+	view.LegalName, view.TaxID = billing.Organization.LegalName, billing.Organization.TaxID
+	if centre := billing.CostCentre; centre != nil {
+		code, label := centre.Code, centre.Name
+		view.CostCentre = &ReceiptCostCentreView{ID: centre.ID, Code: optionalString(code), Name: optionalString(label)}
+	}
+	return view
 }
 
 // receiptTaxes itemises taxes at the rates of the configuration version the

@@ -493,6 +493,13 @@ func (s *Service) decorate(ctx context.Context, ride *domain.Ride) (*RideView, e
 		pinRequired = config.PinRequired
 	}
 	view := viewOf(ride, pinRequired)
+	// A marketplace execution names the request it was awarded from. A read
+	// failure omits the field (logged) rather than failing the ride read.
+	if requestID, err := s.deps.Store.MarketplaceRequestID(ctx, s.deps.Store.Pool(), ride.ID); err != nil {
+		s.deps.Logger.Warn().Err(err).Str("ride_id", ride.ID.String()).Msg("could not read the ride's marketplace request")
+	} else {
+		view.MarketplaceRequestID = requestID
+	}
 
 	if ride.State == machine.RiderNoDriver {
 		view.Options = []string{"switch_class", "keep_waiting", "cancel_free"}

@@ -3,6 +3,8 @@ package testutil
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -63,6 +65,13 @@ type Harness struct {
 	Funding     *marketplace.FakeFunding
 	Settlement  *marketplace.FakeSettlement
 
+	// TripAccessKey / TripAccessKid are the sealed-delivery key the harness
+	// built the marketplace with (a fresh random key per harness), so a test
+	// can open trip_access.issued exactly as notification-service does. Nil
+	// when built WithoutTripAccessSealer.
+	TripAccessKey []byte
+	TripAccessKid string
+
 	// CityID is unique per harness, so tests running side by side never share
 	// a city's config, flags, drivers or rides.
 	CityID        string
@@ -86,6 +95,12 @@ type harnessOptions struct {
 	// delivery is the award saga's delivery hand-off port (nil: the
 	// production default for an unwired deployment — fail closed).
 	delivery marketplace.DeliveryAssignPort
+	// withoutTripAccessSealer builds the marketplace with no sealed-delivery
+	// key: the production fail-closed posture for guest trip links.
+	withoutTripAccessSealer bool
+	// business is the business-travel port (nil: the production default for
+	// an unwired deployment — every business call fails closed).
+	business marketplace.BusinessPort
 }
 
 // WithCityConfig replaces the seeded city configuration.
@@ -131,6 +146,19 @@ func WithCapabilities(source marketplace.CapabilitySource) HarnessOption {
 // delivery-service's documented marketplace-assign contract.
 func WithDeliveryAssign(port marketplace.DeliveryAssignPort) HarnessOption {
 	return func(o *harnessOptions) { o.delivery = port }
+}
+
+// WithoutTripAccessSealer builds the marketplace with no
+// TRIP_ACCESS_DELIVERY_KEY: guest trip links must be refused, fail closed.
+func WithoutTripAccessSealer() HarnessOption {
+	return func(o *harnessOptions) { o.withoutTripAccessSealer = true }
+}
+
+// WithBusiness builds the marketplace with a business-travel port — in
+// tests, the real HTTP client pointed at an httptest server that answers
+// payment-service's documented /v1/finance/business contract.
+func WithBusiness(port marketplace.BusinessPort) HarnessOption {
+	return func(o *harnessOptions) { o.business = port }
 }
 
 // WithMarketplace attaches the marketplace policy fixture to the city config
@@ -244,6 +272,19 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	// pins the hour gets the same ETA multiplier every run.
 	mpRouter := move.NewStraightLineRouter()
 	mpRouter.Now = clock.Now
+	var tripAccessKey []byte
+	var tripAccessKid string
+	var tripAccessSealer *marketplace.TripAccessSealer
+	if !options.withoutTripAccessSealer {
+		tripAccessKey = make([]byte, 32)
+		if _, err := rand.Read(tripAccessKey); err != nil {
+			t.Fatalf("no randomness for the trip access key: %v", err)
+		}
+		tripAccessKid = "test-" + cityID
+		if tripAccessSealer, err = marketplace.NewTripAccessSealer(base64.StdEncoding.EncodeToString(tripAccessKey), tripAccessKid); err != nil {
+			t.Fatalf("failed to build the trip access sealer: %v", err)
+		}
+	}
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
 		Store:      mpStore,
 		Config:     cityconfig.NewStore(pool, nil, time.Second),
@@ -260,6 +301,9 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 		DriverProfiles: options.driverProfiles,
 		Capabilities:   options.capabilities,
 		Delivery:       options.delivery,
+
+		TripAccessSealer: tripAccessSealer,
+		Business:         options.business,
 	})
 	if err != nil {
 		pool.Close()
@@ -277,6 +321,7 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 		T: t, Pool: pool, Redis: redisClient, Service: service,
 		Router: router, Signer: signer, Clock: clock,
 		Marketplace: marketplaceService, Wallet: fakeWallet, Funding: fakeFunding, Settlement: fakeSettlement,
+		TripAccessKey: tripAccessKey, TripAccessKid: tripAccessKid,
 		CityID: cityID, ConfigVersion: version,
 	}
 

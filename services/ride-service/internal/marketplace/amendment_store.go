@@ -80,9 +80,17 @@ type ExecutionRoute struct {
 }
 
 // securedFunding reports whether the rider's funding is a payment-service
-// reservation (wallet) rather than unsecured cash.
+// reservation (wallet) rather than unsecured cash. A business trip has no
+// rider funding at all (A06 part C): its organization budget is reserved,
+// committed and released on the business booking, never through the rider
+// funding legs.
 func (r *ExecutionRoute) securedFunding() bool {
-	return r.PaymentMethodID != "cash"
+	return r.PaymentMethodID != "cash" && r.PaymentMethodID != PaymentMethodBusiness
+}
+
+// businessFunded reports whether an organization's budget pays this trip.
+func (r *ExecutionRoute) businessFunded() bool {
+	return r.PaymentMethodID == PaymentMethodBusiness
 }
 
 const executionRouteColumns = `

@@ -51,6 +51,7 @@ import {
   MP_AMENDMENT_STATES,
   MP_AWARD_STATES,
   MP_BID_STATES,
+  MP_BUSINESS_BOOKING_STATES,
   MP_CLAIM_STATES,
   MP_HOLD_STATES,
   MP_RECURRING_TEMPLATE_STATES,
@@ -324,6 +325,27 @@ export function mpQuoteStopsParam(stops: readonly MpStopInput[]): string {
 // ── Quote envelope (R02) ────────────────────────────────────────────────────
 
 /**
+ * The organization's ADVISORY verdict at the quote's suggested fare
+ * (payment-service `/policy-check`). `refused` names every reason; an
+ * unanswered check is `unavailable`, never `allowed`. The budget is reserved
+ * only at selection, when everything is decided again atomically. Members
+ * only: a caller who may not book on the organization gets 403 forbidden
+ * `booker_not_authorized` instead — the very answer for no organization at
+ * all, so an outsider learns nothing of its status, policy or budget.
+ */
+export const MpBusinessQuoteCheckSchema = z.object({
+  organizationId: z.string().min(1),
+  status: z.enum(["allowed", "refused", "unavailable"]),
+  reasons: z.array(z.string().min(1)),
+  checkedAmountMinor: MoneySchema,
+  available: MoneySchema.nullable(),
+  costCentreId: z.string().min(1).nullable(),
+  policyVersion: z.number().int().min(1).nullable(),
+  note: z.string().min(1),
+});
+export type MpBusinessQuoteCheck = z.infer<typeof MpBusinessQuoteCheckSchema>;
+
+/**
  * Returned by `GET /v1/mp/quote`. Wraps the signed platform quote with the
  * negotiation bounds. The signed payload itself is never editable; the
  * requester's amount is validated separately against these bounds.
@@ -358,8 +380,69 @@ export const MpQuoteEnvelopeSchema = z.object({
   stops: z.array(MpRouteStopSchema).optional(),
   stopsDwellSec: z.number().int().nonnegative().optional(),
   routeFingerprint: z.string().min(1).optional(),
+  /**
+   * A06 part C (`business_travel`): present only when the quote named an
+   * `organizationId` (query; with optional `costCentreId`, `travellerId`).
+   */
+  business: MpBusinessQuoteCheckSchema.optional(),
 });
 export type MpQuoteEnvelope = z.infer<typeof MpQuoteEnvelopeSchema>;
+
+// ── Business bookings (A06 part C, `business_travel`) ──────────────────────
+
+/**
+ * `business` on `POST /v1/mp/requests` (rides only): book the ride on an
+ * organization. The organization's budget pays INSTEAD OF the rider (the
+ * publish names `paymentMethodId: "business"`; no rider funding exists for
+ * the trip — never both). The requester is the BOOKER; `travellerId`
+ * (default: the requester) is the passenger, an active member — a colleague
+ * is ALSO named as the request's guest `passenger` (trip link, first-name
+ * driver card). The organization's policy and budget are checked at the
+ * requested fare; a refusal answers its `details.reason`
+ * (BUSINESS_REFUSAL_REASONS) and nothing is written.
+ */
+export const MpBusinessBookingInputSchema = z
+  .object({
+    organizationId: z.string().min(1).max(64),
+    costCentreId: z.string().min(1).max(64).optional(),
+    expenseCategory: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9 ._-]+$/)
+      .optional(),
+    travellerId: z.string().uuid().optional(),
+  })
+  .strict();
+export type MpBusinessBookingInput = z.infer<
+  typeof MpBusinessBookingInputSchema
+>;
+
+/** Where an award's organization-budget funding stands (mpBusinessBooking). */
+export const MpBusinessFundingSchema = z.object({
+  state: z.enum(MP_BUSINESS_BOOKING_STATES),
+  reservedMinor: MoneySchema,
+  committedMinor: MoneySchema.nullable(),
+  refusalReason: z.string().min(1).nullable(),
+  releasedBy: z.string().min(1).nullable(),
+});
+
+/**
+ * The requester's `business` block on their own request view. Never on any
+ * driver surface: the driver learns nothing about the organization.
+ */
+export const MpRequestBusinessSchema = z.object({
+  organizationId: z.string().min(1),
+  costCentreId: z.string().min(1).nullable(),
+  expenseCategory: z.string().min(1).nullable(),
+  bookerId: z.string().min(1),
+  travellerId: z.string().min(1),
+  payerRole: z.literal("organization"),
+  /** Null until an offer is selected (the budget is reserved at award). */
+  funding: MpBusinessFundingSchema.nullable(),
+});
+export type MpRequestBusiness = z.infer<typeof MpRequestBusinessSchema>;
 
 // ── Request ────────────────────────────────────────────────────────────────
 
@@ -436,6 +519,11 @@ export const MpPublishRequestSchema = z.object({
    * requester stays the payer. Rides only.
    */
   passenger: MpPassengerInputSchema.optional(),
+  /**
+   * A06 part C (business_travel): book the ride on an organization — its
+   * budget pays (`paymentMethodId: "business"`), never the rider. Rides only.
+   */
+  business: MpBusinessBookingInputSchema.optional(),
 });
 export type MpPublishRequest = z.infer<typeof MpPublishRequestSchema>;
 
@@ -487,6 +575,11 @@ export const MpRequestSchema = z.object({
    * another adult — the passenger on this request, never on any other.
    */
   passenger: MpRequestPassengerSchema.optional(),
+  /**
+   * A06 part C: present only on the REQUESTER's view of a request booked on
+   * an organization.
+   */
+  business: MpRequestBusinessSchema.optional(),
 });
 export type MpRequest = z.infer<typeof MpRequestSchema>;
 
@@ -1869,6 +1962,18 @@ export const MpAdvanceBookingSchema = z.object({
   activatedSlot: MpSlotSchema.nullable(),
   failure: MpBookingFailureSchema.nullable(),
   rematchRequestId: z.string().min(1).nullable(),
+  /**
+   * The market's reminder offsets for this booking, in seconds before the
+   * pickup window opens (the rider is reminded at each; empty when the
+   * market configures none).
+   */
+  reminderOffsetsSec: z.array(z.number().int().positive()),
+  /**
+   * Rider view: until when the rider may cancel this booking free of charge
+   * (activation — no cancellation fee is charged before it); null once it
+   * can no longer be cancelled that way, and always null on the driver view.
+   */
+  freeCancellationDeadline: z.string().datetime({ offset: true }).nullable(),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
 });
@@ -2013,7 +2118,8 @@ export const MpReceiptSchema = z
     totalMinor: MoneySchema,
     taxes: MpReceiptTaxesSchema.optional(),
     payment: z.object({
-      method: z.enum(["wallet", "cash"]),
+      /** `business`: an organization's budget paid (A06 part C). */
+      method: z.enum(["wallet", "cash", "business"]),
       label: z.string().min(1),
     }),
     trip: z.object({
@@ -2043,10 +2149,54 @@ export const MpReceiptSchema = z
       rule: z.string().min(1),
     }),
     driver: MpDriverReceiptEarningsSchema.optional(),
+    /**
+     * A06 part C — a BUSINESS receipt (rider view only; the driver learns
+     * nothing about the organization): the paying organization's billing
+     * identity and tax id, the cost centre and expense category, and the
+     * budget funding as the ledger recorded it. VAT is `taxes` above, at the
+     * market's configured rates. Billing fields are null (and `note` says
+     * so) while payment-service cannot be read — never invented.
+     */
+    business: z
+      .object({
+        organizationId: z.string().min(1),
+        organizationName: z.string().min(1).nullable(),
+        legalName: z.string().nullable(),
+        taxId: z.string().nullable(),
+        costCentre: z
+          .object({
+            id: z.string().min(1),
+            code: z.string().min(1).nullable(),
+            name: z.string().min(1).nullable(),
+          })
+          .nullable(),
+        expenseCategory: z.string().min(1).nullable(),
+        bookingRef: z.string().min(1),
+        bookerId: z.string().min(1),
+        travellerId: z.string().min(1),
+        fundingState: z.enum(MP_BUSINESS_BOOKING_STATES),
+        committedMinor: MoneySchema.nullable(),
+        ledgerTaxes: z.array(
+          z.object({
+            code: z.string().min(1),
+            rateBps: z.number().int().positive(),
+            amountMinor: z.number().int().nonnegative(),
+          }),
+        ),
+        note: z.string().min(1),
+      })
+      .optional(),
     format: z.literal("json"),
     issuedAt: z.string().datetime({ offset: true }),
   })
   .superRefine((receipt, ctx) => {
+    if (receipt.viewer === "driver" && receipt.business) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["business"],
+        message: "a driver's receipt never names the paying organization",
+      });
+    }
     const sum = receipt.lines
       .filter((line) => !line.code.startsWith("commission"))
       .reduce((total, line) => total + line.amountMinor.amountMinor, 0);

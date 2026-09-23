@@ -29,10 +29,10 @@ import (
 //
 //   - the REQUESTER is the authenticated user who publishes, selects the
 //     winning offer and may cancel — the only party the gateway identifies;
-//   - the PAYER is who funds the fare. In this slice it is always the
-//     requester (business payers come later), so rider funding stays exactly
-//     where it was: authorized against the requester, independent of the
-//     driver's 10% commission;
+//   - the PAYER is who funds the fare: the requester (rider funding
+//     authorized against them, independent of the driver's 10% commission) —
+//     or, on a request booked on an organization (business_trips.go), the
+//     organization's budget, never both;
 //   - the PASSENGER is a named adult who travels. They are not a UBI user and
 //     are never looked up: the requester states their first name and phone
 //     and ATTESTS that they are an adult who agreed to be booked for.
@@ -41,7 +41,8 @@ import (
 //
 // The passenger reaches their trip through a TRIP ACCESS TOKEN: 32 random
 // bytes, handed to notification-service once through the outbox (the SMS
-// with the link) and stored here only as its SHA-256. A token is bound to ONE
+// with the link) — SEALED, never in clear (trip_access_seal.go) — and stored
+// here only as its SHA-256. A token is bound to ONE
 // request, expires, is revocable by the requester, and grants exactly: the
 // verified driver card once a driver is committed, live status and ETA, the
 // pickup PIN while it is relevant, the support contact, and a free decline
@@ -93,8 +94,10 @@ const (
 // subjectTripAccess is the outbox subject of the token events. The events
 // are named trip_access.* — deliberately OFF the mp.* channel the realtime
 // gateway and the push consumer fan out to riders and drivers — because the
-// issued event carries the passenger's phone and the one-time link token for
-// notification-service's SMS and nothing else.
+// issued event is the SMS hand-off to notification-service. Even so its
+// payload carries the passenger's phone, first name and the one-time link
+// token only inside the sealed envelope only notification-service can open:
+// the shared relay broadcasts every event and the outbox row persists.
 const subjectTripAccess = "trip_access"
 
 // e164 is the phone format the passenger's number must be in.
@@ -204,6 +207,13 @@ func (s *Service) validatePassenger(ctx context.Context, actor Actor, quote *Quo
 	if err := s.requireFlag(ctx, cityconfig.FlagMarketplaceGuestBookings, actor, quote.CityID); err != nil {
 		return nil, err
 	}
+	if s.deps.TripAccessSealer == nil {
+		// Fail closed: a guest booking needs the passenger's trip link, and
+		// without the sealed-delivery key it cannot be sent without putting
+		// the phone and token in clear. Refused before anything is written;
+		// booking the ride for yourself is unaffected.
+		return nil, tripLinkDeliveryUnavailable()
+	}
 	if quote.Service != ServiceRide {
 		return nil, domain.Errorf(domain.CodeValidationFailed, "booking for another person is available for rides only").
 			WithDetails(map[string]any{"field": "passenger"})
@@ -301,18 +311,17 @@ func wellFormedTripAccessToken(raw string) bool {
 	return err == nil
 }
 
-// guestSMSCopy is the passenger's SMS, with {link} for notification-service
-// to fill from its configured trip-link base and the token. It never promises
-// a driver: at publish time none is committed.
-func guestSMSCopy(firstName string) string {
-	return firstName + ", a UBI rider has requested a ride for you. No driver is confirmed yet. " +
-		"Follow the trip, see your driver and pickup PIN once one is confirmed, or decline for free before pickup: {link}"
-}
+// guestSMSTemplate is the passenger's SMS as a TEMPLATE: notification-service
+// fills {firstName} from the opened sealed envelope and {link} from its
+// configured trip-link base and the token, so neither is ever in clear on the
+// event. It never promises a driver: at publish time none is committed.
+const guestSMSTemplate = "{firstName}, a UBI rider has requested a ride for you. No driver is confirmed yet. " +
+	"Follow the trip, see your driver and pickup PIN once one is confirmed, or decline for free before pickup: {link}"
 
 // writePassenger records the passenger and issues their first trip access
 // token inside the publishing transaction, with the SMS hand-off event and
-// the audit row. The raw token leaves ride-service exactly once: in the
-// outbox payload notification-service turns into the SMS.
+// the audit row. The raw token leaves ride-service exactly once: sealed in
+// the outbox payload notification-service opens and turns into the SMS.
 func (s *Service) writePassenger(ctx context.Context, tx pgx.Tx, request *Request, actor Actor, passenger *guestPassenger, now time.Time) (*RequestPassengerView, error) {
 	row := &Passenger{
 		RequestID:       request.ID,
@@ -341,7 +350,7 @@ func (s *Service) writePassenger(ctx context.Context, tx pgx.Tx, request *Reques
 		SubjectType: subjectRequest,
 		SubjectID:   request.ID.String(),
 		After: map[string]any{
-			"payer":            "requester",
+			"payer":            passengerPayerRole(request),
 			"attestedAdult":    true,
 			"attestedConsent":  true,
 			"tripAccessId":     token.ID.String(),
@@ -351,12 +360,22 @@ func (s *Service) writePassenger(ctx context.Context, tx pgx.Tx, request *Reques
 	}); err != nil {
 		return nil, err
 	}
-	return passengerViewOf(row, token, now), nil
+	return passengerViewOf(row, passengerPayerRole(request), token, now), nil
 }
 
 // issueTripAccess mints and stores one token for a passenger and writes the
-// trip_access.issued event carrying it for the SMS.
+// trip_access.issued event — the TRIP-LINK SEALED DELIVERY CONTRACT
+// (trip_access_seal.go): the payload keeps only non-sensitive fields (token
+// id, request, scope, expiry, the channel and the SMS template) and carries
+// the phone, the raw token and the first name ONLY inside `sealed`,
+// AES-256-GCM under TRIP_ACCESS_DELIVERY_KEY with AAD
+// "ubi.trip_access.v1|<tokenId>" and a fresh random IV. Without a sealer it
+// refuses, so the transaction rolls back and nothing is written in clear.
 func (s *Service) issueTripAccess(ctx context.Context, tx pgx.Tx, passenger *Passenger, actorType, actorID string, now time.Time) (*TripAccessToken, error) {
+	sealer := s.deps.TripAccessSealer
+	if sealer == nil {
+		return nil, tripLinkDeliveryUnavailable()
+	}
 	raw, hash, err := newTripAccessToken()
 	if err != nil {
 		return nil, err
@@ -367,6 +386,14 @@ func (s *Service) issueTripAccess(ctx context.Context, tx pgx.Tx, passenger *Pas
 		Scope:     TripAccessScopeGuestPassenger,
 		ExpiresAt: now.Add(tripAccessTTL),
 		CreatedAt: now,
+	}
+	sealed, err := sealer.seal(token.ID.String(), tripAccessPlaintext{
+		Phone:     passenger.Phone,
+		Token:     raw,
+		FirstName: passenger.FirstName,
+	})
+	if err != nil {
+		return nil, err
 	}
 	if err := s.deps.Store.InsertTripAccessToken(ctx, tx, token, hash); err != nil {
 		return nil, err
@@ -382,17 +409,13 @@ func (s *Service) issueTripAccess(ctx context.Context, tx pgx.Tx, passenger *Pas
 		IdempotencyKey: "trip_access.issued:" + token.ID.String(),
 		OccurredAt:     now,
 		Payload: map[string]any{
-			"tokenId":     token.ID.String(),
-			"requestId":   passenger.RequestID.String(),
-			"scope":       token.Scope,
-			"expiresAt":   token.ExpiresAt.Format(time.RFC3339),
-			"accessToken": raw,
-			"recipient": map[string]any{
-				"channel":   "sms",
-				"phone":     passenger.Phone,
-				"firstName": passenger.FirstName,
-			},
-			"smsCopy": guestSMSCopy(passenger.FirstName),
+			"tokenId":   token.ID.String(),
+			"requestId": passenger.RequestID.String(),
+			"scope":     token.Scope,
+			"expiresAt": token.ExpiresAt.Format(time.RFC3339),
+			"recipient": map[string]any{"channel": "sms"},
+			"smsCopy":   guestSMSTemplate,
+			"sealed":    sealed,
 		},
 	}); err != nil {
 		return nil, err
@@ -400,12 +423,22 @@ func (s *Service) issueTripAccess(ctx context.Context, tx pgx.Tx, passenger *Pas
 	return token, nil
 }
 
+// passengerPayerRole is who funds a passenger's fare: the requester, or the
+// organization on a request booked on one (A06 part C; its payment method
+// is `business`) — stated identically on every view of the passenger.
+func passengerPayerRole(request *Request) string {
+	if request.PaymentMethodID == PaymentMethodBusiness {
+		return "organization"
+	}
+	return "requester"
+}
+
 // passengerViewOf renders the requester's passenger block.
-func passengerViewOf(p *Passenger, token *TripAccessToken, now time.Time) *RequestPassengerView {
+func passengerViewOf(p *Passenger, payerRole string, token *TripAccessToken, now time.Time) *RequestPassengerView {
 	view := &RequestPassengerView{
 		FirstName:    p.FirstName,
 		Phone:        p.Phone,
-		PayerRole:    "requester",
+		PayerRole:    payerRole,
 		Attestation:  passengerAttestation,
 		AttestedAt:   p.AttestedAt,
 		AccessStatus: AccessStatusRevoked,
@@ -448,7 +481,7 @@ func (s *Service) attachPassenger(ctx context.Context, view *RequestView, reques
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		s.deps.Logger.Warn().Err(err).Str("request_id", request.ID.String()).Msg("could not read the passenger's trip access")
 	}
-	view.Passenger = passengerViewOf(passenger, token, s.now())
+	view.Passenger = passengerViewOf(passenger, passengerPayerRole(request), token, s.now())
 }
 
 // driverPassengerFor is the driver job card's passenger block: first name and
@@ -546,7 +579,7 @@ func (s *Service) RevokePassengerAccess(ctx context.Context, actor Actor, reques
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
 			return err
 		}
-		view = passengerViewOf(passenger, latest, now)
+		view = passengerViewOf(passenger, passengerPayerRole(request), latest, now)
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopePassengerRevoke, actor.UserID, idempotencyKey, body, 200, view)
 	})
 	if err != nil {
@@ -569,6 +602,11 @@ func (s *Service) ReissuePassengerAccess(ctx context.Context, actor Actor, reque
 	}
 	if err := s.requireFlag(ctx, cityconfig.FlagMarketplaceGuestBookings, actor, request.CityID); err != nil {
 		return nil, 0, err
+	}
+	if s.deps.TripAccessSealer == nil {
+		// Fail closed, before any replay or write: a new link cannot be sent
+		// without the sealed-delivery key. Revoking stays available.
+		return nil, 0, tripLinkDeliveryUnavailable()
 	}
 	body := map[string]any{"requestId": requestID.String(), "op": "reissue"}
 	replay, err := s.deps.Store.LookupIdempotent(ctx, s.deps.Store.Pool(), scopePassengerReissue, actor.UserID, idempotencyKey, body)
@@ -627,7 +665,7 @@ func (s *Service) ReissuePassengerAccess(ctx context.Context, actor Actor, reque
 		}); err != nil {
 			return err
 		}
-		view = passengerViewOf(passenger, token, now)
+		view = passengerViewOf(passenger, passengerPayerRole(request), token, now)
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopePassengerReissue, actor.UserID, idempotencyKey, body, 200, view)
 	})
 	if err != nil {
@@ -1015,15 +1053,29 @@ func (s *Service) passengerEta(ctx context.Context, driverID uuid.UUID, request 
 	return eta
 }
 
+// TripAccessPinView is the guest passenger's pickup PIN
+// (MpTripAccessPinSchema): the PIN, the state that makes it retrievable and
+// its expiry — deliberately WITHOUT the execution ride id the requester's
+// PinView carries. A trip link identifies nothing internal.
+type TripAccessPinView struct {
+	Pin       string    `json:"pin"`
+	State     string    `json:"state"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
 // TripAccessPin answers GET /v1/mp/trip-access/pin: the pickup PIN, only
 // while it is relevant, under the vault's own retrieval rate limit (shared
 // with the requester's retrieval of the same PIN).
-func (s *Service) TripAccessPin(ctx context.Context, session *TripAccessSession) (*PinView, error) {
+func (s *Service) TripAccessPin(ctx context.Context, session *TripAccessSession) (*TripAccessPinView, error) {
 	if session.passenger.DeclinedAt != nil {
 		return nil, domain.Errorf(domain.CodeConflict, "you declined this trip").
 			WithDetails(map[string]any{"reason": passengerDeclinedReason})
 	}
-	return s.retrieveVaultPin(ctx, session.request.ID)
+	pin, err := s.retrieveVaultPin(ctx, session.request.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &TripAccessPinView{Pin: pin.Pin, State: pin.State, ExpiresAt: pin.ExpiresAt}, nil
 }
 
 // DeclineTrip answers POST /v1/mp/trip-access/decline: the passenger declines

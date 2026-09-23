@@ -58,6 +58,12 @@ const (
 	// passenger's trip link, the requester's revoke and the passenger's free
 	// decline keep working for trips already booked.
 	FlagMarketplaceGuestBookings = "marketplace_guest_bookings"
+	// Business travel (A06 part C) — the declared FlagKey business_travel,
+	// shared with user-service (organizations) and payment-service (budgets).
+	// Deny by default and ALSO needing the ride vertical: while off, a quote
+	// or publish naming an organization is refused. Off stops NEW business
+	// bookings only — an award already reserved still commits or releases.
+	FlagBusinessTravel = "business_travel"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

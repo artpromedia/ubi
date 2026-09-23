@@ -6,9 +6,10 @@
  *
  * Non-negotiables encoded here rather than in prose:
  *  - three roles, kept apart: the REQUESTER (the only authenticated party:
- *    publishes, selects, cancels), the PAYER (the requester in this slice —
- *    rider funding stays independent of the driver's 10% commission) and the
- *    PASSENGER (a named adult, not a UBI user, never looked up);
+ *    publishes, selects, cancels), the PAYER (the requester — or, on a request
+ *    booked on an organization (A06 part C), the organization's budget; rider
+ *    funding stays independent of the driver's 10% commission either way) and
+ *    the PASSENGER (a named adult, never looked up);
  *  - the requester ATTESTS the passenger is an adult who agreed to be booked
  *    for; an unaccompanied minor is refused outright
  *    (`unaccompanied_minor_not_supported`) — that needs a separately designed
@@ -85,8 +86,11 @@ export const MpRequestPassengerSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1).nullable(),
   phone: z.string().min(1),
-  /** Who funds the fare: the requester, in this slice. */
-  payerRole: z.literal("requester"),
+  /**
+   * Who funds the fare: the requester — or, on a request booked on an
+   * organization (A06 part C, `business`), the organization's budget.
+   */
+  payerRole: z.enum(["requester", "organization"]),
   /** The attestation the requester made, stated back. */
   attestation: z.string().min(1),
   attestedAt: Timestamp,
@@ -164,28 +168,124 @@ export const MpGuestTripActionsSchema = z.object({
   declineNote: z.string().min(1),
 });
 
+// ── TRIP-LINK SEALED DELIVERY CONTRACT (ride-service → notification-service)
+
+/**
+ * The `trip_access.issued` event rides the shared outbox relay, which
+ * broadcasts every event to every `event:*` subscriber and keeps the row in
+ * `public.outbox_events` — so the payload carries NOTHING sensitive in
+ * clear. The passenger's phone, first name and the one-time link token travel
+ * only inside `sealed`, an AES-256-GCM envelope only notification-service can
+ * open:
+ *
+ *  - plaintext = the compact JSON object `{"phone","token","firstName"}`
+ *    (consumers parse JSON; key order is not part of the contract);
+ *  - AAD = the UTF-8 string `ubi.trip_access.v1|` + tokenId (the payload's
+ *    `tokenId`, which is also the event's aggregate id) — an envelope cannot
+ *    be replayed onto another token's event;
+ *  - key = `TRIP_ACCESS_DELIVERY_KEY`, base64 (standard) of 32 random bytes,
+ *    named by `TRIP_ACCESS_DELIVERY_KID`; the consumer also accepts
+ *    `TRIP_ACCESS_DELIVERY_KEY_PREVIOUS` / `…_KID_PREVIOUS` for rotation and
+ *    selects by `kid`;
+ *  - iv = 12 fresh random bytes per message, never reused; `iv`, `ct` and
+ *    the 16-byte `tag` are base64url without padding.
+ *
+ * Fail closed on both sides: without a usable key the producer refuses to
+ * issue a trip link (the guest booking, and a link reissue, is refused 503
+ * `service_unavailable` with `details.reason` `trip_link_delivery_unavailable`
+ * — the canonical errors have no feature_unavailable code — and it never
+ * emits clear values) and the consumer does not start its
+ * trip_access consumer (and never sends). Both sides pin the interop vector
+ * `TRIP_ACCESS_SEALED_TEST_VECTOR` in a test.
+ */
+export const TRIP_ACCESS_SEALED_VERSION = 1 as const;
+export const TRIP_ACCESS_SEALED_ALG = "A256GCM" as const;
+export const TRIP_ACCESS_SEALED_AAD_PREFIX = "ubi.trip_access.v1|" as const;
+export const TRIP_ACCESS_DELIVERY_ENV = {
+  key: "TRIP_ACCESS_DELIVERY_KEY",
+  kid: "TRIP_ACCESS_DELIVERY_KID",
+  previousKey: "TRIP_ACCESS_DELIVERY_KEY_PREVIOUS",
+  previousKid: "TRIP_ACCESS_DELIVERY_KID_PREVIOUS",
+} as const;
+
+const Base64Url = /^[A-Za-z0-9_-]+$/;
+
+export const MpTripAccessSealedSchema = z
+  .object({
+    v: z.literal(TRIP_ACCESS_SEALED_VERSION),
+    alg: z.literal(TRIP_ACCESS_SEALED_ALG),
+    kid: z.string().min(1).max(64),
+    /** 12 bytes → 16 base64url characters. */
+    iv: z.string().regex(Base64Url).length(16),
+    ct: z.string().regex(Base64Url).min(1),
+    /** 16 bytes → 22 base64url characters. */
+    tag: z.string().regex(Base64Url).length(22),
+  })
+  .strict();
+export type MpTripAccessSealed = z.infer<typeof MpTripAccessSealedSchema>;
+
+/** What `sealed` opens to. */
+export const MpTripAccessSealedPlaintextSchema = z.object({
+  phone: z.string().regex(/^\+[1-9][0-9]{7,14}$/),
+  token: z.string().min(1),
+  firstName: z.string().min(1),
+});
+export type MpTripAccessSealedPlaintext = z.infer<
+  typeof MpTripAccessSealedPlaintextSchema
+>;
+
+/**
+ * The fixed interop vector (AES-256-GCM): sealing `plaintext` under `key` and
+ * `iv` with `aad` must reproduce `ct` and `tag` exactly, and opening them must
+ * yield the plaintext; a one-bit change to ct, tag or aad must fail to open.
+ */
+export const TRIP_ACCESS_SEALED_TEST_VECTOR = {
+  keyBase64: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  ivBase64Url: "oKGio6Slpqeoqaqr",
+  aad: "ubi.trip_access.v1|tac_0123456789abcdef",
+  plaintext:
+    '{"phone":"+2348000000000","token":"tat_test_TOKEN_value_0001","firstName":"Ada"}',
+  ctBase64Url:
+    "nToMRSqlZ51YR6zhNE747kCcaSCih3JcviIE8hDAEG_wTGWLzlYMSTrvcJddNci8CUQwKQ6lfyFxbjtvhlyn1t3O9ht-xImF1tjdWeuv7sc",
+  tagBase64Url: "F8NgMLVA0GJzT4obDPRkEA",
+} as const;
+
 /**
  * `trip_access.issued` payload — for notification-service ONLY (one SMS with
- * the link; `smsCopy` carries `{link}` to fill from its trip-link base and
- * `accessToken`). Never fanned out to riders or drivers: the event is not on
- * the mp.* channel.
+ * the link). `.strict()`: no access token, phone or first name may appear in
+ * clear. `smsCopy` is a TEMPLATE: the consumer fills `{firstName}` from the
+ * opened envelope and `{link}` from its trip-link base plus the token. Never
+ * fanned out to riders or drivers: the event is not on the mp.* channel.
  */
-export const MpTripAccessIssuedPayloadSchema = z.object({
-  tokenId: z.string().min(1),
-  requestId: z.string().min(1),
-  scope: z.literal("guest_passenger"),
-  expiresAt: Timestamp,
-  accessToken: z.string().min(1),
-  recipient: z.object({
-    channel: z.literal("sms"),
-    phone: z.string().min(1),
-    firstName: z.string().min(1),
-  }),
-  smsCopy: z.string().includes("{link}"),
-});
+export const MpTripAccessIssuedPayloadSchema = z
+  .object({
+    tokenId: z.string().min(1),
+    requestId: z.string().min(1),
+    scope: z.literal("guest_passenger"),
+    expiresAt: Timestamp,
+    recipient: z.object({ channel: z.literal("sms") }).strict(),
+    smsCopy: z.string().includes("{link}").includes("{firstName}"),
+    sealed: MpTripAccessSealedSchema,
+  })
+  .strict();
 export type MpTripAccessIssuedPayload = z.infer<
   typeof MpTripAccessIssuedPayloadSchema
 >;
+
+/**
+ * `GET /v1/mp/trip-access/pin` — the guest passenger's pickup PIN. `.strict()`:
+ * unlike the requester's `MpPickupPin` it carries no execution ride id — the
+ * trip link identifies nothing internal.
+ */
+export const MpTripAccessPinSchema = z
+  .object({
+    pin: z.string().min(1),
+    /** The lifecycle state that still makes the PIN retrievable. */
+    state: z.string().min(1),
+    expiresAt: Timestamp,
+  })
+  .strict();
+export type MpTripAccessPin = z.infer<typeof MpTripAccessPinSchema>;
 
 /** `trip_access.declined` payload — audience: the requester. */
 export const MpTripAccessDeclinedPayloadSchema = z.object({

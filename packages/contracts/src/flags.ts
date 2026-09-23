@@ -96,6 +96,16 @@ export const FLAG_KEYS = [
   // bookings and new links only — existing trips' links, the requester's
   // revoke and the passenger's decline keep working. Nothing enables it.
   "marketplace_guest_bookings",
+  // Business travel (A06 part C). Per city, deny-by-default: gates NEW
+  // organizations, invitations, top-ups, budget allocations and reservations
+  // (user-service src/organizations, payment-service src/business) and, in
+  // ride-service, booking a marketplace ride on an organization — which ALSO
+  // needs the vertical (`marketplace_rides`). The organization's prefunded
+  // budget replaces the rider's personal funding for that trip (never both);
+  // the driver's 10% commission is untouched. Switching it off never strands
+  // money: commit, release, statements and existing trips keep working.
+  // Nothing enables it (see BUSINESS_TRAVEL_FLAG in business-travel.ts).
+  "business_travel",
   // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
   // assistant quoting, publishing a bounded request, and (the only binding step)
   // selecting a winning offer within a user's grant/mandate. Deny-by-default and

@@ -3,6 +3,8 @@ package marketplace_test
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -93,7 +95,9 @@ func bookGuest(t *testing.T, h *testutil.Harness, rider testutil.Actor) *guestTr
 }
 
 // latestToken reads the request's newest link: its id from the store and the
-// raw token from the trip_access.issued event notification-service reads.
+// raw token from the trip_access.issued event notification-service reads —
+// by OPENING its sealed envelope with the harness's delivery key, exactly as
+// the consumer does (the payload carries no token in clear).
 func latestToken(t *testing.T, h *testutil.Harness, requestID string) (string, string) {
 	t.Helper()
 	var id uuid.UUID
@@ -103,11 +107,61 @@ func latestToken(t *testing.T, h *testutil.Harness, requestID string) (string, s
 		t.Fatalf("no trip link for %s: %v", requestID, err)
 	}
 	payload := outboxPayload(t, h, "trip_access.issued", id.String())
-	token, _ := payload["accessToken"].(string)
-	if token == "" {
-		t.Fatalf("the issued event carries the link token: %v", payload)
+	opened := openSealedDelivery(t, h, payload, id.String())
+	if opened.Token == "" {
+		t.Fatalf("the sealed delivery carries the link token: %v", payload)
 	}
-	return id.String(), token
+	return id.String(), opened.Token
+}
+
+// sealedDelivery is what a trip_access.issued envelope opens to.
+type sealedDelivery struct {
+	Phone     string `json:"phone"`
+	Token     string `json:"token"`
+	FirstName string `json:"firstName"`
+}
+
+// openSealedDelivery opens a trip_access.issued payload's `sealed` envelope
+// the way notification-service does — an independent AES-256-GCM opener
+// (crypto/aes + cipher.GCM), keyed by kid, AAD "ubi.trip_access.v1|"+tokenId
+// — never through ride-service's own sealer.
+func openSealedDelivery(t *testing.T, h *testutil.Harness, payload map[string]any, tokenID string) sealedDelivery {
+	t.Helper()
+	sealed, ok := payload["sealed"].(map[string]any)
+	if !ok {
+		t.Fatalf("the issued event carries a sealed envelope: %v", payload)
+	}
+	if sealed["v"] != float64(1) || sealed["alg"] != "A256GCM" || sealed["kid"] != h.TripAccessKid {
+		t.Fatalf("the envelope names version, algorithm and the harness key: %v", sealed)
+	}
+	decode := func(field string) []byte {
+		raw, err := base64.RawURLEncoding.DecodeString(sealed[field].(string))
+		if err != nil {
+			t.Fatalf("%s is not base64url without padding: %v", field, err)
+		}
+		return raw
+	}
+	iv, ct, tag := decode("iv"), decode("ct"), decode("tag")
+	if len(iv) != 12 || len(tag) != 16 {
+		t.Fatalf("a 12-byte IV and a 16-byte tag: %d / %d", len(iv), len(tag))
+	}
+	block, err := aes.NewCipher(h.TripAccessKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := gcm.Open(nil, iv, append(append([]byte{}, ct...), tag...), []byte("ubi.trip_access.v1|"+tokenID))
+	if err != nil {
+		t.Fatalf("the envelope opens under its token's AAD: %v", err)
+	}
+	var opened sealedDelivery
+	if err := json.Unmarshal(plain, &opened); err != nil {
+		t.Fatalf("the plaintext is a JSON object: %v", err)
+	}
+	return opened
 }
 
 // tripAccess calls a trip-link route with a token from a client address,
@@ -239,9 +293,14 @@ func TestGuestBookingSeparatesPayerRequesterAndPassenger(t *testing.T) {
 	}
 	issued := outboxPayload(t, h, "trip_access.issued", tokenID)
 	recipient := issued["recipient"].(map[string]any)
-	if recipient["channel"] != "sms" || recipient["phone"] != guestPhone || recipient["firstName"] != "Ada" ||
-		!strings.Contains(issued["smsCopy"].(string), "{link}") || !strings.Contains(issued["smsCopy"].(string), "No driver is confirmed yet") {
-		t.Fatalf("the SMS hand-off names the passenger and never promises a driver: %v", issued)
+	sms := issued["smsCopy"].(string)
+	if recipient["channel"] != "sms" || len(recipient) != 1 ||
+		!strings.Contains(sms, "{link}") || !strings.HasPrefix(sms, "{firstName}") || !strings.Contains(sms, "No driver is confirmed yet") {
+		t.Fatalf("the SMS hand-off is a template that never promises a driver: %v", issued)
+	}
+	opened := openSealedDelivery(t, h, issued, tokenID)
+	if opened.Phone != guestPhone || opened.FirstName != "Ada" || opened.Token != token {
+		t.Fatalf("the sealed envelope carries the phone, first name and token: %+v", opened)
 	}
 	if _, leaks := issued["requesterId"]; leaks {
 		t.Fatalf("the passenger's SMS event carries no requester identity: %v", issued)
@@ -511,8 +570,12 @@ func TestPassengerDeclinesBeforePickupForFree(t *testing.T) {
 	}
 	pinView := tripAccess(t, h, http.MethodGet, "/mp/trip-access/pin", g.token, client)
 	requireStatus(t, pinView, http.StatusOK)
-	if decode(t, pinView)["pin"] != pin {
+	pinBody := decode(t, pinView)
+	if pinBody["pin"] != pin {
 		t.Fatalf("the passenger gets the pickup PIN: %s", pinView.Body.String())
+	}
+	if _, leaks := pinBody["rideId"]; leaks || strings.Contains(pinView.Body.String(), award.ExecutionID.String()) {
+		t.Fatalf("the passenger's PIN view never exposes the internal execution ride id: %s", pinView.Body.String())
 	}
 
 	declined := tripAccess(t, h, http.MethodPost, "/mp/trip-access/decline", g.token, client, move.IdempotencyHeader, idemKey())

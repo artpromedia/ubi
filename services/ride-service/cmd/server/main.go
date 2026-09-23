@@ -80,6 +80,12 @@ type Config struct {
 	// nothing is sent, the award stays pending and an alarm is logged.
 	DeliveryServiceURL string
 	DeliveryServiceKey string
+
+	// TripAccessDeliveryKey / TripAccessDeliveryKid seal a guest passenger's
+	// trip-link delivery (TRIP_ACCESS_DELIVERY_KEY / _KID). Either missing:
+	// guest bookings are refused, fail closed — nothing is sent in clear.
+	TripAccessDeliveryKey string
+	TripAccessDeliveryKid string
 }
 
 func main() {
@@ -121,6 +127,10 @@ func main() {
 
 		DeliveryServiceURL: config.DeliveryServiceURL,
 		DeliveryServiceKey: config.DeliveryServiceKey,
+
+		TripAccessDeliveryKey: config.TripAccessDeliveryKey,
+		TripAccessDeliveryKid: config.TripAccessDeliveryKid,
+		Environment:           config.Environment,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to start the ride service")
@@ -253,6 +263,9 @@ func loadConfig() *Config {
 		// INTERNAL_SERVICE_KEY; DELIVERY_SERVICE_KEY names it when it differs
 		// from the key payment-service shares.
 		DeliveryServiceKey: getEnv("DELIVERY_SERVICE_KEY", getEnv("INTERNAL_SERVICE_KEY", "")),
+
+		TripAccessDeliveryKey: getEnv("TRIP_ACCESS_DELIVERY_KEY", ""),
+		TripAccessDeliveryKid: getEnv("TRIP_ACCESS_DELIVERY_KID", ""),
 	}
 }
 

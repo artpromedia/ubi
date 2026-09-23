@@ -23,6 +23,9 @@ type QuoteParams struct {
 	// Empty is the plain route, priced exactly as before.
 	Stops    []StopInput
 	WeightKg float64
+	// Business asks for the organization's advisory policy verdict (A06
+	// part C; organizationId / costCentreId / travellerId query params).
+	Business *BusinessQuoteInput
 }
 
 // pricingVersionFor names the deterministic engine and the config version a
@@ -100,7 +103,15 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 		return nil, asDomainError(err)
 	}
 
-	return quoteEnvelopeViewOf(quote), nil
+	envelope := quoteEnvelopeViewOf(quote)
+	if params.Business != nil {
+		// Read after the quote is stored and outside any transaction: the
+		// verdict is advisory (the reservation re-decides everything).
+		if envelope.Business, err = s.quoteBusinessCheck(ctx, actor, quote, params.Business); err != nil {
+			return nil, err
+		}
+	}
+	return envelope, nil
 }
 
 // priceQuote routes and prices a trip server-side under the city's policy and

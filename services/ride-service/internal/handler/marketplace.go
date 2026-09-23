@@ -193,6 +193,11 @@ func (h *MarketplaceHandler) Quote(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	business, err := parseBusinessQuoteParams(query)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 
 	envelope, err := h.service.Quote(r.Context(), actor, marketplace.QuoteParams{
 		Service:      query.Get("service"),
@@ -201,12 +206,39 @@ func (h *MarketplaceHandler) Quote(w http.ResponseWriter, r *http.Request) {
 		Dropoff:      domain.Place{Lat: dropoffLat, Lng: dropoffLng},
 		Stops:        stops,
 		WeightKg:     weightKg,
+		Business:     business,
 	})
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, envelope)
+}
+
+// parseBusinessQuoteParams reads the optional business quote parameters
+// (A06 part C): organizationId, and with it costCentreId and travellerId.
+// Absent organizationId means a personal quote; the others alone are refused.
+func parseBusinessQuoteParams(query url.Values) (*marketplace.BusinessQuoteInput, error) {
+	organizationID := strings.TrimSpace(query.Get("organizationId"))
+	costCentreID := strings.TrimSpace(query.Get("costCentreId"))
+	rawTraveller := strings.TrimSpace(query.Get("travellerId"))
+	if organizationID == "" {
+		if costCentreID != "" || rawTraveller != "" {
+			return nil, domain.Errorf(domain.CodeValidationFailed, "costCentreId and travellerId need an organizationId").
+				WithDetails(map[string]any{"field": "organizationId"})
+		}
+		return nil, nil
+	}
+	input := &marketplace.BusinessQuoteInput{OrganizationID: organizationID, CostCentreID: costCentreID}
+	if rawTraveller != "" {
+		traveller, err := uuid.Parse(rawTraveller)
+		if err != nil {
+			return nil, domain.Errorf(domain.CodeValidationFailed, "travellerId must be a user id").
+				WithDetails(map[string]any{"field": "travellerId"})
+		}
+		input.TravellerID = &traveller
+	}
+	return input, nil
 }
 
 // maxStopsParamBytes bounds the encoded `stops` query parameter. Plumbing,

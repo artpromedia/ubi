@@ -24,7 +24,9 @@
  *   POST /reserve                   (Idempotency-Key, X-City-ID)
  *   POST /commit                    (Idempotency-Key)
  *   POST /release                   (Idempotency-Key)
- *   GET  /reservations/:bookingRef  status, for reconciliation
+ *   GET  /reservations/:bookingRef  status, for reconciliation — and the
+ *                                   organization's billing identity and the
+ *                                   cost centre for ride-service's receipt
  *
  * Both routers are mounted from src/index.ts's ROUTER_REGISTRY; the finance
  * one BEFORE `/v1/finance`, whose admin-session guards would otherwise run

@@ -961,3 +961,111 @@ CREATE UNIQUE INDEX IF NOT EXISTS trip_access_tokens_hash_uniq
     ON mp.trip_access_tokens (token_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS trip_access_tokens_one_live_per_request
     ON mp.trip_access_tokens (request_id) WHERE revoked_at IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- A06 part C — business marketplace rides (business_travel, deny-by-default).
+--
+--   * request_business records the business terms a request was published
+--     under: the ORGANIZATION pays (its prefunded budget in payment-service),
+--     the authenticated requester is the BOOKER, the traveller is the
+--     passenger (an active member; when not the booker, also the request's
+--     guest passenger). No rider funding is ever authorized for such a
+--     request (its payment method is `business`).
+--   * business_bookings is one AWARD's budget funding, machine
+--     mpBusinessBooking (reserving → reserved | refused; reserved →
+--     committed | released), keyed by booking_ref = the award id. The row is
+--     written in the selection's transaction; the award saga's funding step
+--     reserves the AGREED FARE (never the driver's commission). owed_op is
+--     the durable intent of the one terminal op (commit at completion,
+--     release on cancel/compensation), written in the same transaction as
+--     the trip event that decides it and driven until payment-service
+--     answers. The CHECKs make an owed op on a terminal booking, and a
+--     commit above the reservation, impossible.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.request_business (
+    request_id              uuid PRIMARY KEY REFERENCES mp.requests (id) ON DELETE CASCADE,
+    organization_id         text NOT NULL,
+    cost_centre_id          text,
+    expense_category        text,
+    booker_id               uuid NOT NULL,
+    traveller_id            uuid NOT NULL,
+    city_id                 text NOT NULL,
+    policy_version          integer,
+    checked_cost_centre_id  text,
+    created_at              timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mp.business_bookings (
+    award_id          uuid PRIMARY KEY REFERENCES mp.awards (id) ON DELETE CASCADE,
+    request_id        uuid NOT NULL REFERENCES mp.requests (id) ON DELETE CASCADE,
+    booking_ref       text NOT NULL,
+    organization_id   text NOT NULL,
+    cost_centre_id    text,
+    expense_category  text,
+    booker_id         uuid NOT NULL,
+    traveller_id      uuid NOT NULL,
+    city_id           text NOT NULL,
+    service           text NOT NULL,
+    vehicle_class     text NOT NULL,
+    currency          text NOT NULL,
+    reserved_minor    bigint NOT NULL,
+    state             text NOT NULL,
+    version           integer NOT NULL DEFAULT 1,
+    reservation_id    text,
+    budget_id         text,
+    policy_version    integer,
+    refusal_reason    text,
+    owed_op           text,
+    release_party     text,
+    release_user_id   uuid,
+    release_reason    text,
+    committed_minor   bigint,
+    commit_entry_id   text,
+    taxes             jsonb,
+    billing           jsonb,
+    attempts          integer NOT NULL DEFAULT 0,
+    next_attempt_at   timestamptz,
+    last_error        text,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    updated_at        timestamptz NOT NULL DEFAULT now(),
+    resolved_at       timestamptz,
+    CONSTRAINT business_bookings_state CHECK (state IN ('reserving', 'reserved', 'refused', 'committed', 'released')),
+    CONSTRAINT business_bookings_owed_op CHECK (owed_op IS NULL OR owed_op IN ('commit', 'release')),
+    CONSTRAINT business_bookings_owed_only_while_open CHECK (owed_op IS NULL OR state IN ('reserving', 'reserved')),
+    CONSTRAINT business_bookings_reserved_positive CHECK (reserved_minor > 0),
+    CONSTRAINT business_bookings_committed_has_amount CHECK (state <> 'committed' OR committed_minor IS NOT NULL),
+    CONSTRAINT business_bookings_commit_within_reservation CHECK (committed_minor IS NULL OR (committed_minor > 0 AND committed_minor <= reserved_minor))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS business_bookings_ref_uniq ON mp.business_bookings (booking_ref);
+CREATE INDEX IF NOT EXISTS mp_business_bookings_owed_idx
+    ON mp.business_bookings (next_attempt_at) WHERE owed_op IS NOT NULL;
+CREATE INDEX IF NOT EXISTS mp_business_bookings_request_idx ON mp.business_bookings (request_id);
+
+-- ---------------------------------------------------------------------------
+-- Queued delivery cancellation compensation: a queued service=delivery award
+-- already handed off to delivery-service owes delivery-service a cancellation
+-- when the award is later cancelled (missed window, driver failure, a
+-- decline). The intent is written in the award-cancelling transaction and
+-- driven until delivery-service answers definitely — never an orphan
+-- delivery, never silently dropped.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.delivery_cancellations (
+    award_id         uuid PRIMARY KEY REFERENCES mp.awards (id) ON DELETE CASCADE,
+    delivery_id      uuid NOT NULL,
+    fencing_token    bigint NOT NULL,
+    reason           text NOT NULL,
+    state            text NOT NULL,
+    attempts         integer NOT NULL DEFAULT 0,
+    last_status      integer,
+    last_code        text,
+    last_error       text,
+    next_attempt_at  timestamptz,
+    resolved_at      timestamptz,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT delivery_cancellations_state CHECK (state IN ('pending', 'cancelled', 'refused'))
+);
+
+CREATE INDEX IF NOT EXISTS mp_delivery_cancellations_due_idx
+    ON mp.delivery_cancellations (next_attempt_at) WHERE state = 'pending';

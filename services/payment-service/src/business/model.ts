@@ -2,16 +2,22 @@
  * Business travel budgets (A06 part C) — the closed vocabularies and the
  * refusal mapping.
  *
- * Every constant here mirrors packages/contracts/src/business-travel.ts (not
- * re-exported from @ubi/contracts yet); tests/business parses real responses
- * against that contract, so the two cannot drift silently.
+ * Every constant here mirrors packages/contracts/src/business-travel.ts;
+ * tests/business parses real responses against that contract, so the two
+ * cannot drift silently. The flag key is the contract's own registered
+ * FlagKey.
  */
-import { ContractError, type ErrorCode } from "@ubi/contracts";
+import {
+  BUSINESS_TRAVEL_FLAG as CONTRACT_BUSINESS_TRAVEL_FLAG,
+  ContractError,
+  type ErrorCode,
+  type FlagKey,
+} from "@ubi/contracts";
 
 import type { Actor } from "../ledger/types";
 
-/** Mirrors `BUSINESS_TRAVEL_FLAG` (not yet a declared FlagKey). */
-export const BUSINESS_TRAVEL_FLAG = "business_travel";
+/** The registered FlagKey `business_travel` (the contract's constant). */
+export const BUSINESS_TRAVEL_FLAG: FlagKey = CONTRACT_BUSINESS_TRAVEL_FLAG;
 
 /** Mirrors `ORG_ROLES`. user-service owns memberships; this module reads them. */
 export const ORG_ROLES = ["owner", "admin", "booker", "traveller"] as const;

@@ -1,10 +1,16 @@
 /**
  * Business travel organizations (A06 part C) — the closed vocabularies.
  *
- * Every constant here mirrors packages/contracts/src/business-travel.ts
- * (not re-exported from @ubi/contracts yet); tests/organizations parses real
- * responses against that contract, so the two cannot drift silently.
+ * Every constant here mirrors packages/contracts/src/business-travel.ts;
+ * tests/organizations parses real responses against that contract, so the
+ * two cannot drift silently. The flag key is the contract's own registered
+ * FlagKey.
  */
+import {
+  BUSINESS_TRAVEL_FLAG as CONTRACT_BUSINESS_TRAVEL_FLAG,
+  type FlagKey,
+} from "@ubi/contracts";
+
 import type { PrismaClient } from "@prisma/client";
 
 /** Mirrors `ORG_ROLES`. */
@@ -30,14 +36,14 @@ export const ADMIN_MANAGEABLE_ROLES: readonly OrgRole[] = [
 /** Mirrors `ORG_INVITATION_TTL_DAYS`. */
 export const ORG_INVITATION_TTL_DAYS = 14;
 
-/** Mirrors `BUSINESS_TRAVEL_FLAG` (not yet a declared FlagKey). */
-export const BUSINESS_TRAVEL_FLAG = "business_travel";
+/** The registered FlagKey `business_travel` (the contract's constant). */
+export const BUSINESS_TRAVEL_FLAG: FlagKey = CONTRACT_BUSINESS_TRAVEL_FLAG;
 
 /**
  * Mirrors `BUSINESS_TRAVEL_EVENT_NAMES` — the closed set this module may
- * publish. They are proposed EVENT_NAMES additions; until they are registered
- * the organization outbox writer (./outbox.ts) enforces THIS list, so no call
- * site can invent a name.
+ * publish, now registered in the contract's EVENT_NAMES. The organization
+ * outbox writer (./outbox.ts) enforces THIS list, so no call site can invent
+ * a name (or publish another module's).
  */
 export const ORG_EVENT_NAMES = [
   "organization.created",

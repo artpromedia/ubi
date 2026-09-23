@@ -38,6 +38,10 @@ type QuoteEnvelopeView struct {
 	Stops            []RouteStop `json:"stops,omitempty"`
 	StopsDwellSec    int64       `json:"stopsDwellSec,omitempty"`
 	RouteFingerprint string      `json:"routeFingerprint,omitempty"`
+	// Business is present only when the quote asked about an organization
+	// (A06 part C): the organization's advisory verdict at the suggested
+	// fare — an out-of-policy or unfunded option is never shown bookable.
+	Business *BusinessQuoteView `json:"business,omitempty"`
 }
 
 // SearchEnvelopeView is the request's current search envelope.
@@ -90,6 +94,10 @@ type RequestView struct {
 	// Passenger is present only when the requester booked for another adult
 	// (A06 part B), and only on the requester's own view of this request.
 	Passenger *RequestPassengerView `json:"passenger,omitempty"`
+	// Business is present only on a request booked on an organization (A06
+	// part C), and only on the requester's own view: the payer, the booking
+	// terms and where the organization's funding stands.
+	Business *RequestBusinessView `json:"business,omitempty"`
 }
 
 func requestViewOf(request *Request) *RequestView {

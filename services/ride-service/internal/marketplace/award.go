@@ -143,6 +143,21 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		return nil, 0, err
 	}
 
+	// A06 part C: a request booked on an organization is funded by its
+	// budget. The organization's verdict at the offer's amount is read
+	// BEFORE any award starts, so a refusal (policy, membership, no budget)
+	// answers now with its reason and nothing is promised; the reservation
+	// in the saga's funding step re-decides atomically.
+	biz, err := s.requestBusiness(ctx, s.deps.Store.Pool(), request.ID)
+	if err != nil {
+		return nil, 0, asDomainError(err)
+	}
+	if biz != nil {
+		if err := s.preCheckBusinessSelection(ctx, request, biz, bid); err != nil {
+			return nil, 0, err
+		}
+	}
+
 	// Finishing-trip winners require explicit consent to the CURRENT window,
 	// recomputed here from the driver's actual position — never the window the
 	// offer card showed an unknown time ago. All routing happens before any
@@ -297,6 +312,14 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 			}
 			return err
 		}
+		if biz != nil {
+			// The budget reservation is owed from this commit on, keyed by
+			// the award: the saga's funding step reserves it INSTEAD OF the
+			// rider's funding, and a crash resumes it from this row.
+			if err := s.deps.Store.InsertBusinessBooking(ctx, tx, newBusinessBooking(award, locked, biz)); err != nil {
+				return err
+			}
+		}
 		if booking != nil {
 			if err := s.lockCalendar(ctx, tx, bid.DriverID, plan); err != nil {
 				return err
@@ -422,7 +445,9 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		// rider's funding is secured yet.
 		if current, err := s.deps.Store.BookingByID(ctx, s.deps.Store.Pool(), booking.ID); err == nil {
 			withBooking := *result
-			withBooking.Booking = s.withVerifiedDriver(ctx, bookingViewOf(current, request, request.VehicleClass, viewerRider), current, request.VehicleClass)
+			withBooking.Booking = s.withBookingReminders(ctx,
+				s.withVerifiedDriver(ctx, bookingViewOf(current, request, request.VehicleClass, viewerRider), current, request.VehicleClass),
+				current.CityID)
 			result = &withBooking
 		}
 	}
@@ -584,6 +609,13 @@ func stepBackoff(attempts int) time.Duration {
 func (s *Service) runFundingStep(ctx context.Context, award *Award, attempt *AwardAttempt) (bool, error) {
 	request, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), award.RequestID)
 	if err != nil {
+		return false, asDomainError(err)
+	}
+	// A06 part C: a business award reserves the organization's budget
+	// INSTEAD OF authorizing the rider's funding — never both.
+	if business, err := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), award.ID); err == nil {
+		return s.runBusinessFundingStep(ctx, award, attempt, business)
+	} else if !errors.Is(err, domain.ErrNotFound) {
 		return false, asDomainError(err)
 	}
 	now := s.now()
@@ -1272,6 +1304,10 @@ func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason
 	// it is written down for the sweep. Runs AFTER the durable compensation
 	// decision above, so a crash resumes into this same path.
 	s.releaseRiderFunding(ctx, award, reason)
+	// A business award's budget reservation (if the funding step reserved
+	// one) is released the same way — owed durably, driven, swept — as the
+	// system: no award resulted.
+	s.releaseBusinessFunding(ctx, award.ID, systemRelease(reason))
 
 	now := s.now()
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
@@ -1478,6 +1514,11 @@ func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason
 // change a consumed reservation). Any other failure is recorded for the
 // sweep, which re-drives the same key until payment-service answers.
 func (s *Service) releaseRiderFunding(ctx context.Context, award *Award, reason string) {
+	if _, err := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), award.ID); err == nil {
+		// A business award has no rider funding: its organization budget
+		// is released by releaseBusinessFunding instead (never both).
+		return
+	}
 	err := s.deps.Funding.Release(ctx, award.ID, reason, fundingReleaseKeyFor(award.ID))
 	if err == nil {
 		return

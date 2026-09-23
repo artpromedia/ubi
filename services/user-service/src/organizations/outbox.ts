@@ -4,11 +4,9 @@
  * Identical to identity/outbox.ts — the row is written in the caller's
  * transaction and the envelope is validated against `EventEnvelopeSchema`
  * before insert, so the relay can always publish it — except for the name
- * check. The organization events are proposed additions to the closed
- * `EVENT_NAMES` set that are not registered yet (contracts/events.ts belongs
- * to another change), so this writer enforces the equally closed
- * `ORG_EVENT_NAMES` list instead: no call site can invent a name. When the
- * names are registered, this collapses into `writeOutboxEvent`.
+ * check: this writer enforces the closed `ORG_EVENT_NAMES` list (registered
+ * in the contract's `EVENT_NAMES` as `BUSINESS_TRAVEL_EVENT_NAMES`), so no
+ * call site can invent a name or publish another module's event.
  *
  * Subject: the user the change is about (the invitee or member, or the acting
  * admin for an organization-level change) — the same `user` subject the

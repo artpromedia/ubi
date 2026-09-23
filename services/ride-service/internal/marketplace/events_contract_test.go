@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
 )
 
 // eventsContractPath is the contract this package's event allowlist ports.
@@ -28,6 +30,7 @@ func TestEventAllowlistMatchesContract(t *testing.T) {
 	for _, subject := range []string{
 		subjectRequest, subjectBid, subjectAward, subjectClaim, subjectHold, subjectRateProfile, subjectDriver,
 		subjectAmendment, subjectScheduled, subjectBooking, subjectTemplate, subjectFavourite, subjectTripAccess,
+		subjectBusinessBooking,
 	} {
 		if !strings.Contains(contract, `"`+subject+`"`) {
 			t.Errorf("subject %q is not registered in the contract's SUBJECT_TYPES", subject)
@@ -47,5 +50,52 @@ func TestEventKeysFitTheEnvelope(t *testing.T) {
 		if key := eventKey(name, "00000000-0000-0000-0000-000000000000", "2026-11-01", "43200"); len(key) > 64 {
 			t.Errorf("event %q builds a %d-character key", name, len(key))
 		}
+	}
+}
+
+// flagsContractPath is the contract the cityconfig flag keys port.
+const flagsContractPath = "../../../../packages/contracts/src/flags.ts"
+
+// TestBusinessTravelIsRegistered: business_travel is a declared FlagKey the
+// Go flag constant names exactly, and every organization.* event user-service
+// publishes (BUSINESS_TRAVEL_EVENT_NAMES) is in the closed EVENT_NAMES — so
+// the outbox relay never quarantines an organization or business booking
+// event.
+func TestBusinessTravelIsRegistered(t *testing.T) {
+	flags, err := os.ReadFile(filepath.Clean(flagsContractPath))
+	if err != nil {
+		t.Fatalf("read %s: %v", flagsContractPath, err)
+	}
+	keys := string(flags)[strings.Index(string(flags), "FLAG_KEYS"):]
+	keys = keys[:strings.Index(keys, "] as const")]
+	if !strings.Contains(keys, `"`+cityconfig.FlagBusinessTravel+`"`) {
+		t.Fatalf("%q is not a declared FlagKey", cityconfig.FlagBusinessTravel)
+	}
+	events, err := os.ReadFile(filepath.Clean(eventsContractPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(events)
+	names := contract[strings.Index(contract, "export const EVENT_NAMES"):]
+	names = names[:strings.Index(names, "] as const")]
+	business, err := os.ReadFile(filepath.Clean("../../../../packages/contracts/src/business-travel.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := string(business)[strings.Index(string(business), "export const BUSINESS_TRAVEL_EVENT_NAMES"):]
+	list = list[:strings.Index(list, "] as const")]
+	found := 0
+	for _, line := range strings.Split(list, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, `"organization.`) {
+			continue
+		}
+		found++
+		if !strings.Contains(names, strings.TrimSuffix(line, ",")) {
+			t.Errorf("%s is not registered in EVENT_NAMES", line)
+		}
+	}
+	if found != 11 {
+		t.Fatalf("expected the 11 organization events, found %d", found)
 	}
 }

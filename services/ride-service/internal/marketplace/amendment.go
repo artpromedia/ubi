@@ -1221,6 +1221,9 @@ func refusalReason(err error) string {
 	if !ok {
 		return "refused"
 	}
+	if reason, _ := mapped.Details["reason"].(string); reason == ReasonBusinessTopUpUnavailable {
+		return ReasonBusinessTopUpUnavailable
+	}
 	switch mapped.Code {
 	case domain.CodeInsufficientSpendable:
 		return amendReasonDriverSpendable
@@ -1272,7 +1275,16 @@ func (s *Service) runAmendmentReserve(ctx context.Context, amendment *Amendment,
 	}
 	commissionReserved := false
 	var refusal error
-	if amendment.commissionDelta() > 0 {
+	if amendment.fundingDelta() > 0 && route.businessFunded() {
+		// A06 part C: the organization's budget reserved the agreed fare and
+		// the contract has no reserve top-up yet, so a business trip's fare
+		// can never rise past its reservation — refused before any money
+		// moves (the driver's commission delta is not even reserved).
+		refusal = domain.Errorf(domain.CodeConflict,
+			"this trip is paid from an organization's budget, which cannot fund a higher fare; the change is refused").
+			WithDetails(map[string]any{"reason": ReasonBusinessTopUpUnavailable})
+	}
+	if refusal == nil && amendment.commissionDelta() > 0 {
 		_, err := s.deps.Wallet.ReserveCommissionDelta(ctx, route.ReservationID, amendment.ID.String(),
 			deltaTermsFor(amendment, amendment.PriorCommissionMinor, amendment.RevisedCommissionMinor, amendment.RevisedFareMinor),
 			amendmentKey("res", amendment.ID))

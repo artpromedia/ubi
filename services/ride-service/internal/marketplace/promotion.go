@@ -11,6 +11,7 @@ import (
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
 )
 
 // ExecutionTerminal implements move.ExecutionObserver: the move core calls it
@@ -56,7 +57,30 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 	// the pool mid-flight is read first (pool-deadlock rule).
 	var settlement *SettlementRequest
 	var settlementRowID uuid.UUID
-	if completed && claim.AwardID != nil {
+	// A06 part C: a business award never reaches the rider's personal
+	// settlement. A completed trip owes the organization's budget its COMMIT
+	// of the actual total instead; one that ended without service (the
+	// requester's cancel before pickup, ops, a no-show) owes the RELEASE —
+	// both written durably in the claim transaction below. A driver
+	// cancellation releases through the unwind's own intents.
+	var businessBooking *BusinessBooking
+	if claim.AwardID != nil {
+		booking, bizErr := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), *claim.AwardID)
+		switch {
+		case bizErr == nil:
+			businessBooking = booking
+		case !errors.Is(bizErr, domain.ErrNotFound):
+			return bizErr
+		}
+	}
+	if completed && claim.AwardID != nil && businessBooking != nil {
+		// Close any open trip changes first, exactly as a settlement does;
+		// the commit re-derives the committed fare when it is driven and
+		// defers while money is still open.
+		if _, adjErr := s.settleTripAdjustments(ctx, rideID, true); adjErr != nil && !errors.Is(adjErr, errTripUnsettled) {
+			return adjErr
+		}
+	} else if completed && claim.AwardID != nil {
 		award, awardErr := s.deps.Store.AwardByID(ctx, s.deps.Store.Pool(), *claim.AwardID)
 		if awardErr != nil {
 			return awardErr
@@ -148,6 +172,7 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 	now := s.now()
 	settlementRecorded := false
 	unwound := false
+	businessOwed := false
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		locked, err := s.deps.Store.ClaimForUpdate(ctx, tx, claim.ID)
 		if err != nil {
@@ -165,6 +190,24 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 		}
 		if _, err := s.deps.Store.TransitionClaim(ctx, tx, locked, to, ClaimUpdate{}); err != nil {
 			return err
+		}
+		if businessBooking != nil && !driverCancelled {
+			op, release := businessOpCommit, businessRelease{}
+			if !completed {
+				op = businessOpRelease
+				release = systemRelease("trip_" + ride.State)
+				if ride.State == machine.RiderCancelledByRider {
+					// The requester's own cancel before pickup (the rider
+					// machine allows no later one): the booker's right, or
+					// the traveller's when they booked for themselves.
+					release = requesterRelease(businessBooking, "cancelled_by_requester")
+				}
+			}
+			owed, err := s.oweBusinessOp(ctx, tx, businessBooking.AwardID, op, release, now)
+			if err != nil {
+				return err
+			}
+			businessOwed = owed
 		}
 		if unwind != nil {
 			applied, err := s.unwindDriverCancelledAward(ctx, tx, unwind, now)
@@ -231,6 +274,9 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 				Msg("could not resolve the settlement recovery row")
 		}
 	}
+	if businessOwed {
+		s.driveBusinessOp(ctx, businessBooking.AwardID)
+	}
 	if unwound {
 		s.driveDriverCancelReversal(ctx, unwind, now)
 	}
@@ -259,6 +305,10 @@ type driverCancelUnwind struct {
 	// system for a driver cancellation, the guest passenger for a decline).
 	actorType string
 	actorID   string
+	// business is set by insertUnwindIntents when the award was funded by an
+	// organization's budget (A06 part C): its release is owed on the
+	// booking row instead of a rider funding release.
+	business bool
 }
 
 // unwindReason is the unwind's linked reason.
@@ -401,6 +451,22 @@ func (s *Service) insertUnwindIntents(ctx context.Context, tx pgx.Tx, unwind *dr
 	}); err != nil {
 		return err
 	}
+	// A business award has no rider funding to release: its organization
+	// budget reservation is released instead — by the traveller when they
+	// declined through their trip link, otherwise by the system.
+	booking, err := s.deps.Store.BusinessBookingForUpdate(ctx, tx, unwind.award.ID)
+	switch {
+	case err == nil:
+		unwind.business = true
+		release := systemRelease(unwind.unwindReason())
+		if unwind.unwindReason() == passengerDeclinedReason {
+			release = travellerRelease(booking, passengerDeclinedReason)
+		}
+		_, err := s.oweBusinessOp(ctx, tx, unwind.award.ID, businessOpRelease, release, s.now())
+		return err
+	case !errors.Is(err, domain.ErrNotFound):
+		return err
+	}
 	fundingPayload, err := json.Marshal(FundingReleaseRecoveryPayload{
 		AwardID: unwind.award.ID,
 		Reason:  unwind.unwindReason(),
@@ -432,6 +498,12 @@ func (s *Service) driveDriverCancelReversal(ctx context.Context, unwind *driverC
 			Msg("could not resolve the reversal recovery row")
 	}
 
+	if unwind.business {
+		// The organization's reservation, owed on the booking row in the
+		// unwind's transaction; no rider funding exists for this award.
+		s.driveBusinessOp(ctx, unwind.award.ID)
+		return
+	}
 	relErr := s.deps.Funding.Release(ctx, unwind.award.ID, reason, fundingReleaseKeyFor(unwind.award.ID))
 	switch {
 	case relErr == nil:
@@ -768,6 +840,7 @@ func (s *Service) cancelQueuedAward(
 
 	now := s.now()
 	var closedRequest *Request
+	businessOwed := false
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		lockedAward, err := s.deps.Store.AwardForUpdate(ctx, tx, award.ID)
 		if err != nil {
@@ -890,6 +963,32 @@ func (s *Service) cancelQueuedAward(
 		}); err != nil {
 			return err
 		}
+		// A queued DELIVERY was handed off at award time: its cancellation in
+		// delivery-service is owed in this same transaction, so the orphan
+		// is recorded before the award's cancellation can commit.
+		if err := s.oweDeliveryCancel(ctx, tx, lockedAward, claim, reason, actorID, actorRole, now); err != nil {
+			return err
+		}
+		// A06 part C: a business award's budget reservation is released in
+		// this same transaction — as the traveller for their decline, the
+		// requester (booker, or traveller booking for themselves) for their
+		// own cancel, the system for a driver failure.
+		if booking, bizErr := s.deps.Store.BusinessBookingForUpdate(ctx, tx, award.ID); bizErr == nil {
+			release := systemRelease(reason)
+			switch {
+			case reason == passengerDeclinedReason:
+				release = travellerRelease(booking, reason)
+			case actorRole == move.RoleRider && actorID == award.RequesterID.String():
+				release = requesterRelease(booking, reason)
+			}
+			owed, owedErr := s.oweBusinessOp(ctx, tx, award.ID, businessOpRelease, release, now)
+			if owedErr != nil {
+				return owedErr
+			}
+			businessOwed = owed
+		} else if !errors.Is(bizErr, domain.ErrNotFound) {
+			return bizErr
+		}
 		if saveIdem != nil {
 			return saveIdem(tx, closedRequest)
 		}
@@ -898,15 +997,14 @@ func (s *Service) cancelQueuedAward(
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	if businessOwed {
+		s.driveBusinessOp(ctx, award.ID)
+	}
 
 	if award.ExecutionService == ServiceDelivery && award.ExecutionID != nil {
-		// A queued DELIVERY was already handed off at award time: delivery-
-		// service holds it assigned to this driver, and its marketplace
-		// contract has no cancellation yet. Never silent — ops must cancel it
-		// there until that contract exists.
-		s.deps.Logger.Error().Str("award_id", award.ID.String()).Str("delivery_id", award.ExecutionID.String()).
-			Str("reason", reason).
-			Msg("ALARM: a handed-off queued delivery award was cancelled; delivery-service still holds the delivery assigned — cancel it there")
+		// The delivery-service cancellation owed above: driven now, swept
+		// until delivery-service answers (delivery_cancel.go).
+		s.driveDeliveryCancel(ctx, award.ID)
 	}
 
 	// The rows are committed: the captured fee is reversed with a linked

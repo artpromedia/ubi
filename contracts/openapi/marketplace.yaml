@@ -228,6 +228,11 @@ components:
                 type: string,
                 description: "Multi-stop only: names the exact route (endpoints + ordered stop set) these bounds were priced for.",
               },
+            business:
+              {
+                $ref: "#/components/schemas/BusinessQuoteCheck",
+                description: "A06 part C (business_travel): present only when the quote named an organizationId — the organization's ADVISORY verdict at the suggested fare.",
+              },
           },
       }
     DeliveryDetails:
@@ -500,6 +505,11 @@ components:
               {
                 $ref: "#/components/schemas/RequestPassenger",
                 description: "A06 part B: present only on the REQUESTER's view of a request booked for another adult — the passenger on this request, never on any other.",
+              },
+            business:
+              {
+                $ref: "#/components/schemas/RequestBusiness",
+                description: "A06 part C: present only on the REQUESTER's view of a request booked on an organization. Never on any driver surface.",
               },
           },
       }
@@ -2186,6 +2196,8 @@ components:
           funding,
           reconfirmation,
           activationAt,
+          reminderOffsetsSec,
+          freeCancellationDeadline,
         ]
       properties:
         bookingId: { type: string }
@@ -2251,6 +2263,18 @@ components:
             - { $ref: "#/components/schemas/BookingFailure" }
             - { type: "null" }
         rematchRequestId: { type: [string, "null"] }
+        reminderOffsetsSec:
+          {
+            type: array,
+            items: { type: integer, minimum: 1 },
+            description: "The market's reminder offsets for this booking, seconds before the pickup window opens (empty when none are configured).",
+          }
+        freeCancellationDeadline:
+          {
+            type: [string, "null"],
+            format: date-time,
+            description: "Rider view: until when the booking may be cancelled free of charge (activation — no cancellation fee is charged before it). Null once it can no longer be cancelled that way, and always null on the driver view.",
+          }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     RecurringTemplate:
@@ -2677,7 +2701,12 @@ components:
           type: object
           required: [method, label]
           properties:
-            method: { type: string, enum: [wallet, cash] }
+            method:
+              {
+                type: string,
+                enum: [wallet, cash, business],
+                description: "business: an organization's budget paid (A06 part C); the driver's view says only that it was paid in-app.",
+              }
             label: { type: string }
         trip:
           type: object
@@ -2752,8 +2781,196 @@ components:
             commissionMinor: { $ref: "#/components/schemas/Money" }
             netMinor: { $ref: "#/components/schemas/Money" }
             note: { type: string }
+        business: { $ref: "#/components/schemas/ReceiptBusiness" }
         format: { type: string, enum: [json] }
         issuedAt: { type: string, format: date-time }
+    ReceiptBusiness:
+      description: "A06 part C — a BUSINESS receipt's organization block (rider view only; the driver learns nothing about the organization): the paying organization's billing identity and tax id, the cost centre and expense category, and the budget funding as the ledger recorded it (ledgerTaxes: the taxes INCLUDED in the committed amount). VAT itself is the receipt's taxes block at the market's configured rates. Billing fields are null — and note says so — while payment-service cannot be read; never invented."
+      type: object
+      required:
+        [
+          organizationId,
+          organizationName,
+          legalName,
+          taxId,
+          costCentre,
+          expenseCategory,
+          bookingRef,
+          bookerId,
+          travellerId,
+          fundingState,
+          committedMinor,
+          ledgerTaxes,
+          note,
+        ]
+      properties:
+        organizationId: { type: string }
+        organizationName: { type: [string, "null"] }
+        legalName: { type: [string, "null"] }
+        taxId: { type: [string, "null"] }
+        costCentre:
+          oneOf:
+            - type: object
+              required: [id, code, name]
+              properties:
+                id: { type: string }
+                code: { type: [string, "null"] }
+                name: { type: [string, "null"] }
+            - { type: "null" }
+        expenseCategory: { type: [string, "null"] }
+        bookingRef: { type: string }
+        bookerId: { type: string }
+        travellerId: { type: string }
+        fundingState:
+          {
+            type: string,
+            enum: [reserving, reserved, refused, committed, released],
+          }
+        committedMinor:
+          oneOf:
+            - { $ref: "#/components/schemas/Money" }
+            - { type: "null" }
+        ledgerTaxes:
+          type: array
+          items:
+            type: object
+            required: [code, rateBps, amountMinor]
+            properties:
+              code: { type: string }
+              rateBps: { type: integer }
+              amountMinor: { type: integer }
+        note: { type: string }
+    BusinessQuoteCheck:
+      description: "A06 part C (business_travel): the organization's ADVISORY verdict at the quote's suggested fare (payment-service /v1/finance/business/policy-check). refused names every reason (BUSINESS_REFUSAL_REASONS); an unanswered check is unavailable, never allowed. The budget is reserved only when an offer is selected, and everything is decided again then."
+      type: object
+      required:
+        [
+          organizationId,
+          status,
+          reasons,
+          checkedAmountMinor,
+          available,
+          costCentreId,
+          policyVersion,
+          note,
+        ]
+      properties:
+        organizationId: { type: string }
+        status: { type: string, enum: [allowed, refused, unavailable] }
+        reasons: { type: array, items: { type: string } }
+        checkedAmountMinor: { $ref: "#/components/schemas/Money" }
+        available:
+          oneOf:
+            - { $ref: "#/components/schemas/Money" }
+            - { type: "null" }
+        costCentreId: { type: [string, "null"] }
+        policyVersion: { type: [integer, "null"] }
+        note: { type: string }
+    BusinessBookingInput:
+      description: "A06 part C (business_travel, deny by default; rides only): book the ride on an organization. Its prefunded budget pays INSTEAD OF the rider (the publish names paymentMethodId business — never both); the requester is the BOOKER and travellerId (default: the requester) the passenger, an active member — a colleague is ALSO named as the guest passenger. The organization's policy (service, class, per-trip cap, cost centre, membership) and budget are checked at the requested fare; a refusal answers its canonical code with details.reason and nothing is written. The budget is reserved when an offer is selected (bookingRef = the award id), committed at completion at the actual total and released on cancel. The driver's 10% commission is untouched and never charged to the organization."
+      type: object
+      additionalProperties: false
+      required: [organizationId]
+      properties:
+        organizationId: { type: string, minLength: 1, maxLength: 64 }
+        costCentreId: { type: string, minLength: 1, maxLength: 64 }
+        expenseCategory:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 64,
+            pattern: "^[A-Za-z0-9 ._-]+$",
+          }
+        travellerId: { type: string, format: uuid }
+    RequestBusiness:
+      description: "The requester's business block on their own request view (A06 part C). funding is null until an offer is selected."
+      type: object
+      required:
+        [
+          organizationId,
+          costCentreId,
+          expenseCategory,
+          bookerId,
+          travellerId,
+          payerRole,
+          funding,
+        ]
+      properties:
+        organizationId: { type: string }
+        costCentreId: { type: [string, "null"] }
+        expenseCategory: { type: [string, "null"] }
+        bookerId: { type: string }
+        travellerId: { type: string }
+        payerRole: { type: string, const: organization }
+        funding:
+          oneOf:
+            - type: object
+              required:
+                [
+                  state,
+                  reservedMinor,
+                  committedMinor,
+                  refusalReason,
+                  releasedBy,
+                ]
+              properties:
+                state:
+                  {
+                    type: string,
+                    enum: [reserving, reserved, refused, committed, released],
+                  }
+                reservedMinor: { $ref: "#/components/schemas/Money" }
+                committedMinor:
+                  oneOf:
+                    - { $ref: "#/components/schemas/Money" }
+                    - { type: "null" }
+                refusalReason: { type: [string, "null"] }
+                releasedBy: { type: [string, "null"] }
+            - { type: "null" }
+    TripAccessPin:
+      description: "The guest passenger's pickup PIN (GET /v1/mp/trip-access/pin). Unlike the requester's PickupPin it carries NO execution ride id — a trip link identifies nothing internal."
+      type: object
+      additionalProperties: false
+      required: [pin, state, expiresAt]
+      properties:
+        pin: { type: string }
+        state: { type: string }
+        expiresAt: { type: string, format: date-time }
+    TripAccessSealed:
+      description: "TRIP-LINK SEALED DELIVERY CONTRACT: AES-256-GCM under TRIP_ACCESS_DELIVERY_KEY (standard base64 of 32 bytes) named by kid (the consumer also accepts TRIP_ACCESS_DELIVERY_KEY_PREVIOUS / _KID_PREVIOUS, selecting by kid). Plaintext = the compact JSON object {phone, token, firstName}; AAD = the UTF-8 string 'ubi.trip_access.v1|' + tokenId; iv = 12 fresh random bytes per message. iv, ct and the 16-byte tag are base64url without padding. Without a usable key the producer issues no trip link (the guest booking is refused 503 service_unavailable, details.reason trip_link_delivery_unavailable) and the consumer does not start."
+      type: object
+      additionalProperties: false
+      required: [v, alg, kid, iv, ct, tag]
+      properties:
+        v: { type: integer, const: 1 }
+        alg: { type: string, const: A256GCM }
+        kid: { type: string, minLength: 1, maxLength: 64 }
+        iv: { type: string, pattern: "^[A-Za-z0-9_-]{16}$" }
+        ct: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+        tag: { type: string, pattern: "^[A-Za-z0-9_-]{22}$" }
+    TripAccessIssuedEventPayload:
+      description: "The trip_access.issued OUTBOX EVENT payload (not an HTTP body) — notification-service's SMS hand-off. The shared relay broadcasts every event and the outbox row persists, so it carries NOTHING sensitive in clear: no access token, phone or first name (additionalProperties false). smsCopy is a TEMPLATE with {firstName} and {link}, filled by the consumer from the opened envelope and its trip-link base."
+      type: object
+      additionalProperties: false
+      required:
+        [tokenId, requestId, scope, expiresAt, recipient, smsCopy, sealed]
+      properties:
+        tokenId:
+          {
+            type: string,
+            description: "The event's aggregate id; the AAD names it.",
+          }
+        requestId: { type: string }
+        scope: { type: string, const: guest_passenger }
+        expiresAt: { type: string, format: date-time }
+        recipient:
+          type: object
+          additionalProperties: false
+          required: [channel]
+          properties:
+            channel: { type: string, const: sms }
+        smsCopy: { type: string }
+        sealed: { $ref: "#/components/schemas/TripAccessSealed" }
     PassengerInput:
       description: "A06 part B (marketplace_guest_bookings, deny by default; rides only): book the ride for another named ADULT. Both attestations are required: isAdult false is refused 422 with details.reason unaccompanied_minor_not_supported (unaccompanied minors need a separately designed service), consentConfirmed false with passenger_consent_required, either missing with passenger_attestation_required. Names are letters (any script), combining marks, spaces, hyphens and apostrophes (lastName may also carry full stops) — the first name opens a UBI-sent SMS to a number the requester chose, so it can never carry a link, a number or a call to action (422 validation_failed otherwise). The requester stays the payer and the only authenticated party."
       type: object
@@ -2785,7 +3002,12 @@ components:
         firstName: { type: string }
         lastName: { type: [string, "null"] }
         phone: { type: string }
-        payerRole: { type: string, const: requester }
+        payerRole:
+          {
+            type: string,
+            enum: [requester, organization],
+            description: "organization on a request booked on an organization (A06 part C).",
+          }
         attestation: { type: string }
         attestedAt: { type: string, format: date-time }
         accessStatus:
@@ -2951,13 +3173,39 @@ paths:
                   },
               },
           }
+        - {
+            name: organizationId,
+            in: query,
+            required: false,
+            description: "A06 part C (business_travel, rides only): ask for the organization's advisory policy/budget verdict at the suggested fare (the envelope's business block). 404 feature_disabled while business_travel is off; a caller who may not book on it — and no such organization — answers the same 403 forbidden, booker_not_authorized, with none of the verdict.",
+            schema: { type: string, minLength: 1, maxLength: 64 },
+          }
+        - {
+            name: costCentreId,
+            in: query,
+            required: false,
+            description: "With organizationId: the cost centre to check (default: the traveller's).",
+            schema: { type: string, minLength: 1, maxLength: 64 },
+          }
+        - {
+            name: travellerId,
+            in: query,
+            required: false,
+            description: "With organizationId: the member who travels (default: the requester).",
+            schema: { type: string, format: uuid },
+          }
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/QuoteEnvelope" }
+        "403":
+          description: "forbidden, details.reason booker_not_authorized — the quote named an organizationId the caller may not book on. A real organization and no organization at all answer this SAME body: an outsider never learns whether it exists, nor its status, policy, cost centres or budget. Members get the advisory business block instead."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "404":
-          description: "feature_disabled — stops while marketplace_multi_stop is off here (or the vertical itself is off)."
+          description: "feature_disabled — stops while marketplace_multi_stop is off here, an organizationId while business_travel is off (or the vertical itself is off)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2993,23 +3241,31 @@ paths:
                     serviceNeeds:
                       { $ref: "#/components/schemas/ServiceNeedsInput" },
                     passenger: { $ref: "#/components/schemas/PassengerInput" },
+                    business:
+                      { $ref: "#/components/schemas/BusinessBookingInput" },
                   },
               }
       responses:
         "201":
-          description: "With a passenger: the passenger is recorded with the attestation, ONE trip link is issued (stored only as its SHA-256; handed to notification-service once in the trip_access.issued event for the SMS — never in this response) and the view carries `passenger`."
+          description: "With a passenger: the passenger is recorded with the attestation, ONE trip link is issued (stored only as its SHA-256; handed to notification-service once in the trip_access.issued event for the SMS — SEALED, never in clear, see TripAccessIssuedEventPayload — never in this response) and the view carries `passenger`. With business: the organization is recorded as payer and the view carries `business`."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Request" }
         "404":
           {
-            description: "feature_disabled — preferredDriver needs marketplace_preferred_drivers; serviceNeeds needs marketplace_accessibility_requirements; passenger needs marketplace_guest_bookings (all deny by default).",
+            description: "feature_disabled — preferredDriver needs marketplace_preferred_drivers; serviceNeeds needs marketplace_accessibility_requirements; passenger needs marketplace_guest_bookings; business needs business_travel (all deny by default). (A business publish naming no such organization answers exactly like a non-member: 403 forbidden, details.reason booker_not_authorized — a non-member never learns whether an organization exists.)",
           }
         "409":
           {
             description: "conflict with details.reason: service_need_unavailable (a stated requirement has no VERIFIED supply in this market — details.requirements lists each with its reason, details.fallback the options; nothing is published and the quote is not spent) or preferred_driver_unavailable (the saved driver is not taking preferred requests right now; why is not disclosed).",
           }
         "422":
+          description: "Business refusals travel as their canonical codes with details.reason (BUSINESS_REFUSAL_REASONS): limit_exceeded (trip_cap_exceeded), insufficient_spendable (no_budget_for_period, budget_insufficient — refused, never deferred or put on credit), validation_failed (cost_centre_invalid, business_payment_method, business_passenger_required); forbidden (403) for booker_not_authorized, traveller_not_member, service_not_allowed, class_not_allowed."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "service_unavailable — details.reason trip_link_delivery_unavailable (a passenger's trip link cannot be sealed: no TRIP_ACCESS_DELIVERY_KEY; booking for yourself is unaffected) or business_check_unavailable (the organization's policy could not be checked; nothing was booked)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3164,7 +3420,7 @@ paths:
         "200":
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PickupPin" }
+              schema: { $ref: "#/components/schemas/TripAccessPin" }
         "401":
           content:
             application/json:
