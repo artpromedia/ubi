@@ -17,6 +17,13 @@
  *   5. scopeEnforcementMiddleware   applies the limited-mode / safe-mode
  *                                   matrix, deny-by-default.
  *   6. proxyRoutes                  forwards to the downstream service.
+ *
+ * ONE family sits outside steps 2-6: the passenger trip link
+ * (routes/trip-access.ts — GET /v1/mp/trip-access, GET /v1/mp/trip-access/pin,
+ * POST /v1/mp/trip-access/decline, matched exactly). A guest passenger is not
+ * a UBI user and has no bearer token; ride-service authenticates those calls
+ * by the trip access token alone. They still pass step 1, carry their own
+ * per-client rate limit, and forward only the token — never an identity.
  */
 import { Hono } from "hono";
 import { compress } from "hono/compress";
@@ -36,6 +43,7 @@ import {
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { healthRoutes } from "./routes/health";
 import { proxyRoutes } from "./routes/proxy";
+import { tripAccessRoutes } from "./routes/trip-access";
 
 export function createApp(
   nodeEnv: string = process.env.NODE_ENV || "development",
@@ -96,6 +104,9 @@ export function createApp(
         // for).
         "Idempotency-Key",
         "X-City-ID",
+        // A guest passenger's trip link (routes/trip-access.ts) sends its
+        // token here, never in the URL.
+        "X-Trip-Access-Token",
       ],
       exposeHeaders: [
         "X-Request-ID",
@@ -114,6 +125,15 @@ export function createApp(
   // Health Check Routes (no auth required)
   // ===========================================
   app.route("/health", healthRoutes);
+
+  // ===========================================
+  // Passenger trip link (no user token; its own rate limit and token)
+  //
+  // Registered BEFORE the authenticated /v1 group so exactly these three
+  // method + path pairs answer without a bearer token. Every other path —
+  // /v1/mp/trip-access/anything-else included — falls through to the group.
+  // ===========================================
+  app.route("/", tripAccessRoutes);
 
   // ===========================================
   // API Routes (with auth, identity and rate limiting)

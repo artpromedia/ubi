@@ -14,8 +14,9 @@
  *  1. The REAL mapping (src/routes/proxy-map.ts `downstreamPath`) is checked
  *     against the route manifest the target service generates by walking its
  *     own production router (ride-service and delivery-service: chi.Walk;
- *     payment-service and travel-service: Hono's route table). Path
- *     parameters are normalised (`{id}` / `:id` match any one segment).
+ *     payment-service, travel-service and user-service: Hono's route
+ *     table). Path parameters are normalised (`{id}` / `:id` match any one
+ *     segment).
  *  2. The request goes through the REAL app (createApp: auth, identity, scope,
  *     proxy) with one recording upstream per service, and must arrive at the
  *     right service at exactly that path, query string intact.
@@ -27,14 +28,22 @@
  * reachability therefore fails here (after the service's own manifest test has
  * forced its manifest to be regenerated).
  *
- * Services without a manifest yet (user-service, ask-service, food-service,
+ * Services without a manifest yet (ask-service, food-service,
  * notification-service) are held to the exact downstream path only; their
  * expected paths were checked by hand against the services' route modules.
  *
  * Routes a service serves for suppliers or other services — never for a
- * client token (travel-service's supplier webhooks) — are pinned the other
- * way round: present in the service's manifest, and answered by the gateway's
- * own 404 without reaching any service (SERVICE_ONLY_ROUTES).
+ * client token (travel-service's supplier webhooks, payment-service's
+ * internal business-budget API, user-service's grant and mandate-run
+ * surface) — are pinned the other way round: present in the service's
+ * manifest, and answered by the gateway's own 404 without reaching any
+ * service (SERVICE_ONLY_ROUTES).
+ *
+ * The passenger trip link (src/routes/trip-access.ts) is the one family that
+ * forwards WITHOUT a user token; its paths are pinned against ride-service's
+ * manifest and through the real app with no Authorization at all
+ * (PUBLIC_TRIP_ACCESS below; header hygiene and the rate limit are
+ * tests/trip-access.test.ts).
  */
 import "./env";
 
@@ -52,6 +61,10 @@ import {
   type ProxyRule,
   type ServiceName,
 } from "../src/routes/proxy-map";
+import {
+  TRIP_ACCESS_ROUTES,
+  resetTripAccessLimiter,
+} from "../src/routes/trip-access";
 import {
   clientToken,
   openRiskStore,
@@ -98,6 +111,12 @@ const MANIFEST_SOURCES: Partial<Record<ServiceName, ManifestSource>> = {
     style: "hono",
     regenerate:
       "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/travel-service exec vitest run tests/routes-manifest.test.ts",
+  },
+  "user-service": {
+    file: "services/user-service/tests/routes.manifest",
+    style: "hono",
+    regenerate:
+      "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/user-service exec vitest run tests/routes-manifest.test.ts",
   },
 };
 
@@ -209,6 +228,7 @@ const DRIVER = "apps/driver-mobile";
 const WEB_TRAVEL = "apps/web-app src/components/travel/api.ts";
 const ADMIN_OPS = "apps/admin-dashboard src/lib/growth-api.ts";
 const TRAVEL_API = "contracts/openapi/travel-v2.yaml";
+const BUSINESS = "packages/contracts/src/business-travel.ts (A06 part C)";
 
 const REACHABLE: readonly ReachableCase[] = [
   // --- user-service: unversioned (/auth, /users, /devices, root routes) ---
@@ -295,6 +315,112 @@ const REACHABLE: readonly ReachableCase[] = [
     path: "/v1/mandates/mnd_1/executions",
     downstream: "/mandates/mnd_1/executions",
     source: `${RIDER} src/api/mandates.ts`,
+  },
+  // Business travel organizations (user-service src/routes/organizations.ts).
+  {
+    rule: "/organizations",
+    method: "GET",
+    path: "/v1/organizations",
+    downstream: "/organizations",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations",
+    method: "POST",
+    path: "/v1/organizations",
+    downstream: "/organizations",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "GET",
+    path: "/v1/organizations/org_1",
+    downstream: "/organizations/org_1",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "PUT",
+    path: "/v1/organizations/org_1/policy",
+    downstream: "/organizations/org_1/policy",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "PUT",
+    path: "/v1/organizations/org_1/billing",
+    downstream: "/organizations/org_1/billing",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "GET",
+    path: "/v1/organizations/org_1/members",
+    downstream: "/organizations/org_1/members",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "PATCH",
+    path: "/v1/organizations/org_1/members/mem_1",
+    downstream: "/organizations/org_1/members/mem_1",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "POST",
+    path: "/v1/organizations/org_1/members/mem_1/remove",
+    downstream: "/organizations/org_1/members/mem_1/remove",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "POST",
+    path: "/v1/organizations/org_1/invitations",
+    downstream: "/organizations/org_1/invitations",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "POST",
+    path: "/v1/organizations/org_1/invitations/inv_1/revoke",
+    downstream: "/organizations/org_1/invitations/inv_1/revoke",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "GET",
+    path: "/v1/organizations/invitations",
+    downstream: "/organizations/invitations",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "POST",
+    path: "/v1/organizations/invitations/inv_1/accept",
+    downstream: "/organizations/invitations/inv_1/accept",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "POST",
+    path: "/v1/organizations/invitations/inv_1/decline",
+    downstream: "/organizations/invitations/inv_1/decline",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "GET",
+    path: "/v1/organizations/org_1/cost-centres",
+    downstream: "/organizations/org_1/cost-centres",
+    source: BUSINESS,
+  },
+  {
+    rule: "/organizations/*",
+    method: "POST",
+    path: "/v1/organizations/org_1/cost-centres/cc_1/archive",
+    downstream: "/organizations/org_1/cost-centres/cc_1/archive",
+    source: BUSINESS,
   },
 
   // --- ride-service: mounts /v1 itself ---
@@ -704,6 +830,64 @@ const REACHABLE: readonly ReachableCase[] = [
     path: "/v1/wallet/topups",
     downstream: "/v1/wallet/topups",
     source: "payment-service src/routes/wallet-v1.ts",
+  },
+  // Business travel money (payment-service src/business/routes.ts, the
+  // signed-context client router — never /v1/finance/business).
+  {
+    rule: "/business/*",
+    method: "GET",
+    path: "/v1/business/organizations/org_1/funding",
+    downstream: "/v1/business/organizations/org_1/funding",
+    source: BUSINESS,
+  },
+  {
+    rule: "/business/*",
+    method: "POST",
+    path: "/v1/business/organizations/org_1/topups",
+    downstream: "/v1/business/organizations/org_1/topups",
+    source: BUSINESS,
+  },
+  {
+    rule: "/business/*",
+    method: "GET",
+    path: "/v1/business/organizations/org_1/budgets?period=2026-09",
+    downstream: "/v1/business/organizations/org_1/budgets",
+    source: BUSINESS,
+  },
+  {
+    rule: "/business/*",
+    method: "POST",
+    path: "/v1/business/organizations/org_1/budgets/allocations",
+    downstream: "/v1/business/organizations/org_1/budgets/allocations",
+    source: BUSINESS,
+  },
+  {
+    rule: "/business/*",
+    method: "POST",
+    path: "/v1/business/organizations/org_1/budgets/returns",
+    downstream: "/v1/business/organizations/org_1/budgets/returns",
+    source: BUSINESS,
+  },
+  {
+    rule: "/business/*",
+    method: "GET",
+    path: "/v1/business/organizations/org_1/bookings?period=2026-09",
+    downstream: "/v1/business/organizations/org_1/bookings",
+    source: BUSINESS,
+  },
+  {
+    rule: "/business/*",
+    method: "GET",
+    path: "/v1/business/bookings/mine",
+    downstream: "/v1/business/bookings/mine",
+    source: BUSINESS,
+  },
+  {
+    rule: "/business/*",
+    method: "GET",
+    path: "/v1/business/organizations/org_1/statements/2026-09?format=csv",
+    downstream: "/v1/business/organizations/org_1/statements/2026-09",
+    source: BUSINESS,
   },
 
   // --- notification-service: /api/v1/notifications ---
@@ -1145,8 +1329,10 @@ const UNPROXIED_CLIENT_CALLS: readonly {
 const SERVICE_ONLY_ROUTES: readonly {
   readonly service: ServiceName;
   readonly method: string;
-  /** The gateway path a client would try (the service's own path too). */
+  /** The gateway path a client would try. */
   readonly path: string;
+  /** The service's own path, when it is not `path` (an unversioned service). */
+  readonly servicePath?: string;
   readonly reason: string;
 }[] = [
   {
@@ -1162,7 +1348,65 @@ const SERVICE_ONLY_ROUTES: readonly {
     path: "/v1/travel/webhooks/sup_liteapi",
     reason: "as above (LiteAPI's authorization token)",
   },
+  {
+    service: "payment-service",
+    method: "POST",
+    path: "/v1/finance/business/reserve",
+    reason:
+      "the internal business-budget API ride-service calls by service key (internalServiceAuth); a client may never reserve, commit or release organization budget directly",
+  },
+  {
+    service: "payment-service",
+    method: "POST",
+    path: "/v1/finance/business/commit",
+    reason: "as above",
+  },
+  {
+    service: "payment-service",
+    method: "POST",
+    path: "/v1/finance/business/release",
+    reason: "as above",
+  },
+  {
+    service: "payment-service",
+    method: "POST",
+    path: "/v1/finance/business/policy-check",
+    reason: "as above",
+  },
+  {
+    service: "payment-service",
+    method: "GET",
+    path: "/v1/finance/business/reservations/bkr_1",
+    reason: "as above (reconciliation status)",
+  },
+  {
+    service: "user-service",
+    method: "POST",
+    path: "/v1/internal/grants",
+    servicePath: "/internal/grants",
+    reason:
+      "ask-service mints single-use action grants here by service key (AI_GRANTS_SERVICE_KEY); a client token must never mint its own authority",
+  },
+  {
+    service: "user-service",
+    method: "POST",
+    path: "/v1/internal/mandates/mnd_1/run",
+    servicePath: "/internal/mandates/mnd_1/run",
+    reason: "as above (a mandate run is service-initiated)",
+  },
 ];
+
+/**
+ * The passenger trip link (src/routes/trip-access.ts): public — no bearer
+ * token — and forwarded to ride-service at the same path. Each must be in
+ * ride-service's manifest and arrive there through the real app.
+ */
+const PUBLIC_TRIP_ACCESS = TRIP_ACCESS_ROUTES.map((route) => ({
+  method: route.method,
+  path: route.path,
+  downstream: route.path,
+  source: "ride-service internal/handler/marketplace_guest.go (A06 part B)",
+}));
 
 // ---------------------------------------------------------------------------
 // Harness: one recording upstream per service, through the real app
@@ -1190,6 +1434,7 @@ afterAll(async () => {
 beforeEach(() => {
   for (const upstream of upstreams.values()) upstream.received.length = 0;
   setIdentityStateStore(openRiskStore);
+  resetTripAccessLimiter();
 });
 
 function ruleFor(pattern: string): ProxyRule {
@@ -1218,25 +1463,30 @@ function queryOf(clientPath: string): string {
 async function sendThroughGateway(
   method: string,
   clientPath: string,
+  options: { readonly anonymous?: boolean } = {},
 ): Promise<{
   status: number;
   code: string | undefined;
   arrivals: { service: ServiceName; url: string; method: string }[];
 }> {
-  const token = await clientToken({
-    sub: "usr_route_contract",
-    role: "admin",
-    cityId: "LOS",
-  });
   ipCounter += 1;
-  const init: RequestInit = {
-    method,
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-      "x-forwarded-for": `10.77.${Math.floor(ipCounter / 250)}.${ipCounter % 250}`,
-    },
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-forwarded-for": `10.77.${Math.floor(ipCounter / 250)}.${ipCounter % 250}`,
   };
+  if (options.anonymous === true) {
+    // The passenger trip link: no bearer token, only the link's own.
+    headers["x-trip-access-token"] = "uta_route_contract_token";
+    headers["idempotency-key"] = "idem-route-contract-01";
+  } else {
+    const token = await clientToken({
+      sub: "usr_route_contract",
+      role: "admin",
+      cityId: "LOS",
+    });
+    headers.authorization = `Bearer ${token}`;
+  }
+  const init: RequestInit = { method, headers };
   if (method !== "GET" && method !== "HEAD") {
     (init as { body?: string }).body = "{}";
   }
@@ -1283,9 +1533,10 @@ describe("the proxy inventory covers every rule", () => {
       const manifest = loadManifest(entry.service);
       expect(manifest, `${entry.service} publishes a manifest`).toBeDefined();
       if (manifest === undefined) continue;
+      const servicePath = entry.servicePath ?? entry.path;
       expect(
-        manifestServes(manifest, entry.method, entry.path),
-        `${entry.service} no longer serves ${entry.method} ${entry.path}: update SERVICE_ONLY_ROUTES`,
+        manifestServes(manifest, entry.method, servicePath),
+        `${entry.service} no longer serves ${entry.method} ${servicePath}: update SERVICE_ONLY_ROUTES`,
       ).toBe(true);
     }
   });
@@ -1313,9 +1564,13 @@ describe("the proxy inventory covers every rule", () => {
     // The regression this file exists for, in executable form: the old
     // mapping (`path.replace(/^\/v1/, "")` for every service) lands on no
     // route at all for any client path of ride-, delivery- or payment-service.
+    // user-service mounts unversioned routes, where that strip IS the right
+    // mapping, so it is not part of this check.
     const checked: string[] = [];
     for (const testCase of REACHABLE) {
-      const manifest = loadManifest(ruleFor(testCase.rule).service);
+      const service = ruleFor(testCase.rule).service;
+      if (SERVICES[service].basePath === "") continue;
+      const manifest = loadManifest(service);
       if (manifest === undefined) continue;
       const legacy = pathOnly(testCase.path).replace(/^\/v1/, "");
       expect(
@@ -1357,6 +1612,54 @@ describe("every client path reaches a route its service serves", () => {
         method: testCase.method,
       },
     ]);
+  });
+});
+
+describe("the passenger trip link reaches ride-service without a user token", () => {
+  it.each(
+    PUBLIC_TRIP_ACCESS.map((testCase) => [
+      testCase.method,
+      testCase.path,
+      testCase,
+    ]),
+  )("%s %s", async (_method, _path, testCase) => {
+    const manifest = loadManifest("ride-service");
+    expect(manifest).toBeDefined();
+    if (manifest === undefined) return;
+    expect(
+      manifestServes(manifest, testCase.method, testCase.downstream),
+      `${testCase.method} ${testCase.path} (${testCase.source}) is not in ${manifest.source.file}: regenerate it (${manifest.source.regenerate}) or fix src/routes/trip-access.ts`,
+    ).toBe(true);
+
+    const result = await sendThroughGateway(testCase.method, testCase.path, {
+      anonymous: true,
+    });
+    expect(result.status).toBe(200);
+    expect(result.arrivals).toEqual([
+      {
+        service: "ride-service",
+        url: testCase.downstream,
+        method: testCase.method,
+      },
+    ]);
+  });
+
+  it("keeps every other /v1/mp path behind a bearer token", async () => {
+    for (const [method, clientPath] of [
+      ["GET", "/v1/mp/trip-access/"],
+      ["PUT", "/v1/mp/trip-access"],
+      ["POST", "/v1/mp/trip-access"],
+      ["GET", "/v1/mp/trip-access/decline"],
+      ["GET", "/v1/mp/trip-access/pin/x"],
+      ["GET", "/v1/mp/trip-accessx"],
+      ["GET", "/v1/mp/requests/mpr_1"],
+    ] as const) {
+      const result = await sendThroughGateway(method, clientPath, {
+        anonymous: true,
+      });
+      expect(result.status, `${method} ${clientPath}`).toBe(401);
+      expect(result.arrivals, `${method} ${clientPath}`).toEqual([]);
+    }
   });
 });
 

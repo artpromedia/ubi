@@ -26,6 +26,13 @@
  * gateway left after limited mode and wallet safe mode — so the marketplace
  * surfaces can refuse a session the gateway would have refused on `/v1/mp`
  * (`marketplaceAllowed`), even when the assistant reaches ride-service itself.
+ *
+ * RELAYED IDENTITY. `gatewayAuth` runs the rest of the request inside an
+ * identity relay scope (lib/identity-relay.ts) built from the verified
+ * context and the exact header it came in: the travel port presents that
+ * same gateway-signed context to travel-service, which verifies it again. It
+ * is established here and nowhere else — never from a body, a tool argument
+ * or model output — and never persisted.
  */
 import {
   ContractError,
@@ -39,6 +46,10 @@ import {
   verifyIdentityContext,
   type VerifiedIdentity,
 } from "../lib/identity-context";
+import {
+  runWithIdentityRelay,
+  type IdentityRelay,
+} from "../lib/identity-relay";
 import { logger } from "../lib/logger";
 import { isProductionEnvironment } from "../lib/ride-context";
 import { isAskRole, type Actor } from "../ops/types";
@@ -61,6 +72,8 @@ type Resolved =
       readonly kind: "ok";
       readonly actor: Actor;
       readonly identity?: VerifiedIdentity;
+      /** The `x-ubi-identity` value the identity was verified from. */
+      readonly token?: string;
     }
   | { readonly kind: "refused"; readonly response: Response };
 
@@ -103,6 +116,7 @@ function resolveCaller(c: Context): Resolved {
         kind: "ok",
         actor: { id: identity.userId, role: identity.role },
         identity,
+        token: signed,
       };
     } catch {
       return { kind: "refused", response: unauthorized(c) };
@@ -144,7 +158,43 @@ export async function gatewayAuth(
   }
   c.set("actor", caller.actor);
   c.set("identity", caller.identity);
-  await next();
+  await runWithIdentityRelay(relayFor(c, caller), next);
+}
+
+/**
+ * The identity this request relays to travel-service. A verified context is
+ * relayed as the exact token the gateway signed, with its own city claim and
+ * request id (the city mirrors the gateway wrote carry that same claim, so
+ * they are re-derived from it rather than copied from a header). Outside
+ * production, a request on the documented unsigned path relays its plain
+ * caller and declared city instead; production never gets here without a
+ * verified context (`resolveCaller`).
+ */
+function relayFor(
+  c: Context,
+  caller: Extract<Resolved, { kind: "ok" }>,
+): IdentityRelay {
+  if (caller.identity !== undefined && caller.token !== undefined) {
+    return {
+      kind: "signed",
+      token: caller.token,
+      userId: caller.identity.userId,
+      role: caller.identity.role,
+      cityId: caller.identity.cityId,
+      requestId: caller.identity.requestId,
+    };
+  }
+  return {
+    kind: "unsigned",
+    userId: caller.actor.id,
+    role: caller.actor.role,
+    cityId:
+      presentHeader(c, "x-auth-city-id") ??
+      presentHeader(c, "x-ubi-city-id") ??
+      presentHeader(c, "X-City-ID") ??
+      null,
+    requestId: presentHeader(c, "X-Request-ID") ?? null,
+  };
 }
 
 /** Ops endpoints (`/v1/ops/ai/*`) are admin-only; end-user roles never reach them. */

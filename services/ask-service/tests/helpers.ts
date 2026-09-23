@@ -44,6 +44,7 @@ import type {
   BookInput,
   BookedItem,
   BookingStatusResult,
+  ExecutionOrderRef,
   FlightSearchInput,
   ResolvedOffer,
   StaySearchInput,
@@ -415,6 +416,15 @@ export class FakeTravelPort implements TravelPort {
       return null;
     }
     return { orderId, state: order.state, supplierRef: null };
+  }
+  async executionOrderStatus(
+    ref: ExecutionOrderRef,
+  ): Promise<BookingStatusResult | null> {
+    const order = this.orders.get(ref.orderId);
+    if (order === undefined || order.ownerId !== ref.actorId) {
+      return null;
+    }
+    return { orderId: ref.orderId, state: order.state, supplierRef: null };
   }
   async book(_actor: Actor, input: BookInput): Promise<BookedItem> {
     this.booked.push(input);

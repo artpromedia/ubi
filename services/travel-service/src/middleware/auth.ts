@@ -34,7 +34,17 @@
  *
  * Ops console routes (`/v1/ops/travel/*`) check the ops role on the actor this
  * middleware sets — so in production the role that opens the console is the
- * signed one, never a mirror (routes/ops.ts, ops/roles.ts).
+ * signed one, never a mirror (routes/ops.ts, ops/roles.ts). An operator whose
+ * signed context is bound to no city may declare the console action's city,
+ * but only a SUPPORTED one, and the request then records it as
+ * operator-declared with the operator's id (./operator-city.ts,
+ * `cityProvenanceOf`).
+ *
+ * THE SCOPES the gateway signed are re-checked here too, not only at the
+ * edge: every money-moving write under `/v1/travel` (carts, passengers,
+ * checkout, cancel, switch) needs `travel:book` on the verified context and
+ * is refused in limited mode (./scopes.ts) — a caller that reaches this
+ * service without passing the gateway's scope table gains nothing.
  *
  * Service-to-service routes do NOT use this middleware: supplier webhooks
  * (`/v1/travel/webhooks/:supplierId`) are authenticated by each supplier's own
@@ -48,6 +58,11 @@ import {
 } from "@ubi/contracts";
 
 import {
+  checkOperatorDeclaredCity,
+  type CityWithProvenance,
+} from "./operator-city";
+import { assertTravelBookAllowed } from "./scopes";
+import {
   IDENTITY_HEADER,
   identityVerificationKeys,
   verifyIdentityContext,
@@ -55,7 +70,6 @@ import {
 } from "../lib/identity-context";
 import { logger } from "../lib/logger";
 import { isProductionEnvironment } from "../lib/ride-context";
-import { isOpsRole } from "../ops/roles";
 
 import type { Actor } from "../ops/types";
 import type { Context, Next } from "hono";
@@ -139,8 +153,10 @@ function resolveCaller(c: Context): Resolved {
 }
 
 /**
- * Sets the actor (and the verified identity) for the request, and refuses a
- * request whose cities disagree before any handler runs.
+ * Sets the actor (and the verified identity) for the request, and — before
+ * any handler runs — refuses a request whose cities disagree, an unbound
+ * operator's declared city that UBI does not operate in, and a money-moving
+ * travel write the signed scopes do not allow.
  */
 export async function gatewayAuth(
   c: Context,
@@ -154,6 +170,8 @@ export async function gatewayAuth(
   c.set("identity", caller.identity);
   try {
     verifiedCity(c);
+    await checkOperatorDeclaredCity(c);
+    assertTravelBookAllowed(c);
   } catch (error) {
     if (error instanceof ContractError) {
       return c.json(error.toBody(), error.status as ContentfulStatusCode);
@@ -226,25 +244,43 @@ function cityUnsupported(): ContractError {
  *     gateway in front).
  *   - In production it is accepted only from a verified OPS operator whose
  *     signed context is bound to no city — the operating city of a console
- *     action, as payment-service's finance console reads it. An operator
- *     already holds every city; a traveller never names a city the gateway
- *     did not vouch for.
+ *     action, as payment-service's finance console reads it — and only once
+ *     `gatewayAuth` has checked that it is a supported city
+ *     (./operator-city.ts). An operator already holds every city; a
+ *     traveller never names a city the gateway did not vouch for.
  */
 export function cityOf(c: Context): string {
+  return cityProvenanceOf(c).cityId;
+}
+
+/**
+ * The request's city together with whose word it rests on — what a console
+ * write records so an operator-declared city is never presented as
+ * gateway-verified. Same acceptance rules as `cityOf`.
+ */
+export function cityProvenanceOf(c: Context): CityWithProvenance {
   const verified = verifiedCity(c);
   if (verified !== undefined) {
-    return verified;
+    return { cityId: verified, provenance: "verified", declaredBy: null };
   }
   const declared = presentHeader(c, "X-City-ID");
   if (declared === undefined) {
     throw cityUnsupported();
   }
-  if (!isProductionEnvironment(process.env.NODE_ENV)) {
-    return declared;
+  const operator = c.get("operatorCity");
+  if (operator !== undefined && operator.cityId === declared) {
+    return {
+      cityId: declared,
+      provenance: "operator_declared",
+      declaredBy: operator.operatorId,
+    };
   }
-  const identity = c.get("identity");
-  if (identity !== undefined && isOpsRole(identity.role)) {
-    return declared;
+  if (!isProductionEnvironment(process.env.NODE_ENV)) {
+    return {
+      cityId: declared,
+      provenance: "declared_unverified",
+      declaredBy: null,
+    };
   }
   throw cityUnsupported();
 }

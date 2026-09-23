@@ -414,6 +414,72 @@ const MATRIX: readonly MatrixCase[] = [
     limited: "deny",
     safe: "allow",
   },
+  // Business travel: organizations (user-service) and their money
+  // (payment-service /v1/business). Reads and administration survive safe
+  // mode; funding an organization does not; none of it survives limited mode.
+  {
+    method: "GET",
+    path: "/v1/organizations",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/organizations",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/organizations/invitations/inv_1/accept",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "PUT",
+    path: "/v1/organizations/org_1/policy",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/business/organizations/org_1/budgets",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/business/bookings/mine",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/business/organizations/org_1/topups",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
+  {
+    method: "POST",
+    path: "/v1/business/organizations/org_1/budgets/allocations",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
+  {
+    method: "POST",
+    path: "/v1/business/organizations/org_1/budgets/returns",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
 ];
 
 describe("limited mode and wallet safe mode scope matrix", () => {
@@ -683,6 +749,50 @@ describe("limited mode and wallet safe mode scope matrix", () => {
           expect(refused.code).toBe("forbidden");
         }
       }
+    });
+  });
+
+  describe("business scopes", () => {
+    it("keeps organizations and their money to rider and driver accounts", async () => {
+      for (const role of ["rider", "driver"]) {
+        expect(
+          (await call("full", "GET", "/v1/organizations", role)).status,
+          role,
+        ).toBe(200);
+        expect(
+          (
+            await call(
+              "full",
+              "POST",
+              "/v1/business/organizations/org_1/topups",
+              role,
+            )
+          ).status,
+          role,
+        ).toBe(200);
+      }
+      for (const [method, path] of [
+        ["GET", "/v1/organizations"],
+        ["POST", "/v1/organizations/org_1/invitations"],
+        ["GET", "/v1/business/organizations/org_1/funding"],
+        ["POST", "/v1/business/organizations/org_1/topups"],
+      ] as const) {
+        const merchant = await call("full", method, path, "merchant");
+        expect(merchant.status, `${method} ${path}`).toBe(403);
+        expect(merchant.code).toBe("forbidden");
+      }
+    });
+
+    it("never reaches payment-service when a safe-mode organization top-up is denied", async () => {
+      upstream.received.length = 0;
+      const result = await call(
+        "safe",
+        "POST",
+        "/v1/business/organizations/org_1/topups",
+      );
+      expect(result.status).toBe(403);
+      expect(result.code).toBe("safe_mode_active");
+      expect(upstream.received).toHaveLength(0);
     });
   });
 

@@ -36,6 +36,7 @@ import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis } from "./lib/redis";
 import { healthRoutes } from "./routes/health";
+import { createAskInternalRoutes } from "./routes/internal-ask";
 import { createOpsRoutes } from "./routes/ops";
 import { createReservationRoutes } from "./routes/reservations";
 import { createTravelRoutes } from "./routes/travel";
@@ -89,6 +90,11 @@ export function createApp(deps: TravelDeps): Hono {
   // flag for the request's city (checked per request in the router).
   app.route("/v1/reservations", createReservationRoutes(deps));
   app.route("/v1/ops/travel", createOpsRoutes(deps));
+  // ask-service background reads (reconcile/status sweeps with no inbound
+  // user identity): X-Service-Key only (TRAVEL_ASK_SERVICE_KEY), read-only,
+  // one order booked under the named grant, owner taken from the order.
+  // Not proxied by the gateway; fails closed when the key is unset.
+  app.route("/internal/ask", createAskInternalRoutes(deps));
 
   return app;
 }

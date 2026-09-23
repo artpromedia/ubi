@@ -5,6 +5,7 @@
 # Read by services/api-gateway/tests/route-contract.test.ts.
 GET /health
 GET /health/ready
+GET /internal/ask/grants/:grantId/orders/:orderId
 GET /v1/ops/travel/commercial-rates
 GET /v1/ops/travel/exceptions
 GET /v1/ops/travel/providers/health

@@ -23,6 +23,21 @@ const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 /**
  * Book with cash, view history, read your own profile and balance, and finish
  * the step-up that lifts the limitation. Nothing that moves money.
+ *
+ * The token's `scopes` claim NARROWS the gateway's own limited-mode list, so a
+ * scope missing here is lost to every limited session even when the gateway
+ * allows it. This list therefore mirrors the gateway's LIMITED_MODE_SCOPES
+ * (services/api-gateway/src/identity/scopes.ts) exactly:
+ *
+ *   ask:converse  the assistant's chat and read-only answers (its confirm,
+ *                 ask:transact, stays off);
+ *   travel:read   searching travel inventory and reading your own trips
+ *                 (carts, checkout, cancel and switch — travel:book — stay
+ *                 off).
+ *
+ * services/api-gateway/tests/limited-token.test.ts sends tokens minted by
+ * `issueAccessToken` through the gateway scope matrix, so a drift between the
+ * two lists fails there.
  */
 export const LIMITED_MODE_SCOPES: readonly string[] = [
   "profile:read",
@@ -33,6 +48,8 @@ export const LIMITED_MODE_SCOPES: readonly string[] = [
   "device:enroll",
   "auth:step_up",
   "support:write",
+  "ask:converse",
+  "travel:read",
 ];
 
 function secret(): Uint8Array {

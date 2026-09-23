@@ -14,6 +14,11 @@
  * defaults to the offline lexical embedder so RAG still functions without a GPU;
  * a configured endpoint replaces it.
  *
+ * The travel port reaches travel-service directly too, but presents the
+ * USER'S OWN gateway-signed context, relayed from the request that caused the
+ * call (lib/identity-relay.ts, ports/travel-port.ts); only its background
+ * status read uses a service key (TRAVEL_ASK_SERVICE_KEY).
+ *
  * The marketplace port reaches ride-service directly, so it must present the
  * same HMAC-signed internal identity the gateway would (lib/ride-context.ts).
  * `createDeps` therefore REFUSES to build in production without
@@ -68,8 +73,9 @@ const USER_SERVICE_URL =
   process.env.USER_SERVICE_URL ?? "http://user-service:4001";
 const RIDE_SERVICE_URL =
   process.env.RIDE_SERVICE_URL ?? "http://ride-service:4002";
+// travel-service listens on 4012 (services/travel-service/src/index.ts).
 const TRAVEL_SERVICE_URL =
-  process.env.TRAVEL_SERVICE_URL ?? "http://travel-service:4008";
+  process.env.TRAVEL_SERVICE_URL ?? "http://travel-service:4012";
 const PROMOTIONS_SERVICE_URL =
   process.env.PROMOTIONS_SERVICE_URL ?? "http://promotions-service:4009";
 const SUPPORT_SERVICE_URL =
@@ -124,7 +130,14 @@ export function createDeps(): AskDeps {
       baseUrl: RIDE_SERVICE_URL,
       signingKeys: rideContextKeys,
     }),
-    travel: createHttpTravelPort({ baseUrl: TRAVEL_SERVICE_URL, serviceKey }),
+    // Request-scoped travel calls relay the user's own gateway-signed
+    // context (lib/identity-relay.ts) — never the service key, never a plain
+    // user header in production. The key below opens ONLY travel-service's
+    // background-read surface (/internal/ask, TRAVEL_ASK_SERVICE_KEY there).
+    travel: createHttpTravelPort({
+      baseUrl: TRAVEL_SERVICE_URL,
+      internalServiceKey: process.env.TRAVEL_ASK_SERVICE_KEY,
+    }),
     promotions: createHttpPromotionsPort({
       baseUrl: PROMOTIONS_SERVICE_URL,
       serviceKey,

@@ -72,6 +72,17 @@ export const SCOPES = [
   "travel:read",
   "travel:book",
   "travel:ops",
+  // Business travel (user-service /organizations, payment-service
+  // /v1/business): read = your organizations, members, invitations, policy,
+  // budgets, funding, bookings and statements; manage = create and administer
+  // an organization (members, invitations, cost centres, policy, billing) and
+  // accept or decline an invitation; fund = top an organization up from a
+  // payment method and move its budget between cost centres. Authority INSIDE
+  // an organization (owner / admin / booker) is the service's own membership
+  // check; these scopes only decide whether the session may ask.
+  "business:read",
+  "business:manage",
+  "business:fund",
   "admin:all",
 ] as const;
 
@@ -126,6 +137,11 @@ const RIDER_SCOPES: readonly Scope[] = [
   // commission: travel money moves on its own ledger accounts).
   "travel:read",
   "travel:book",
+  // Business travel organizations: a traveller, booker, admin or owner is an
+  // ordinary rider account (drivers inherit the same).
+  "business:read",
+  "business:manage",
+  "business:fund",
 ];
 
 const DRIVER_SCOPES: readonly Scope[] = [
@@ -187,6 +203,14 @@ export const LIMITED_MODE_SCOPES: readonly Scope[] = [
   // ride:read; carts, checkout, cancel and switch (travel:book) and airport
   // transfers (mp:request) move money and stay off this list.
   "travel:read",
+  // The business scopes are DELIBERATELY absent, reads included: an
+  // organization's statements and bookings are other people's travel, not
+  // the holder's own history, so an unverified device sees none of it
+  // (deny-by-default for the new capability).
+  //
+  // user-service's limited token claim (src/identity/tokens.ts) states this
+  // same list; services/api-gateway/tests/limited-token.test.ts pins them
+  // together with tokens minted there.
 ];
 
 /** What wallet safe mode takes away, whatever the role. */
@@ -199,6 +223,11 @@ export const SAFE_MODE_DENIED_SCOPES: readonly Scope[] = [
   // Creating or editing a standing authorisation to spend is a security
   // change: not while a SIM-swap signal holds the wallet.
   "mandate:manage",
+  // Funding an organization moves money from the holder's payment method to
+  // an account other members can spend, the same shape as a P2P transfer:
+  // not while a SIM-swap signal holds the wallet. Reading and administering
+  // the organization are left alone.
+  "business:fund",
 ];
 
 export interface RouteRule {
@@ -398,6 +427,26 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   // The travel-ops console: admin and service tokens only. travel-service
   // re-checks an ops role on the signed context.
   { methods: "*", prefix: "/v1/ops/travel", anyOf: ["travel:ops"] },
+  // Business travel. user-service /organizations: reading is business:read,
+  // every write (create, members, invitations incl. accept/decline, cost
+  // centres, policy, billing) is business:manage. payment-service
+  // /v1/business: reading funding, budgets, bookings and statements is
+  // business:read; every write there (top-ups, budget allocations and
+  // returns) moves organization money and needs business:fund. None of them
+  // survives limited mode. payment-service's internal /v1/finance/business
+  // (ride-service, by service key) is not proxied at all.
+  { methods: ["GET"], prefix: "/v1/organizations", anyOf: ["business:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/organizations",
+    anyOf: ["business:manage"],
+  },
+  { methods: ["GET"], prefix: "/v1/business", anyOf: ["business:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/business",
+    anyOf: ["business:fund"],
+  },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
   { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },
   { methods: ["POST"], prefix: "/v1/packages", anyOf: ["shipment:create"] },

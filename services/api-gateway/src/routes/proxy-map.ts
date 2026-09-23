@@ -7,10 +7,13 @@
  * carries a routing namespace the service does not, per rule):
  *
  *   service              mounts                          /v1/<x> arrives as
- *   user-service         /auth, /users, /devices, …      /<x>
+ *   user-service         /auth, /users, /devices,        /<x>
+ *                        /organizations, …
  *   ride-service         /v1/rides, /v1/mp, …            /v1/<x>
  *   ask-service          /v1/ask                         /v1/<x>
- *   payment-service      /v1/wallet, /v1/finance/*       /v1/<x>
+ *   payment-service      /v1/wallet, /v1/business,       /v1/<x>
+ *                        /v1/finance/* (internal, never
+ *                        proxied)
  *   delivery-service     /api/v1/deliveries, …           /api/v1/<x>, with the
  *                                                        edge's /delivery
  *                                                        namespace removed
@@ -25,12 +28,15 @@
  * fake upstream accepted any path. tests/route-contract.test.ts now maps
  * representative client paths through THIS table and the real app, and checks
  * the result against the route manifests the services generate from their own
- * routers (ride-service, delivery-service, payment-service and travel-service
- * today), so a rule or a service route that stops lining up fails CI.
+ * routers (ride-service, delivery-service, payment-service, travel-service
+ * and user-service today), so a rule or a service route that stops lining up
+ * fails CI.
  *
  * Only paths are decided here. Which headers cross, and the identity they
  * carry, are decided by middleware/identity.ts and routes/proxy.ts and are the
- * same for every rule.
+ * same for every rule — with ONE exception outside this table: the public
+ * passenger trip link (routes/trip-access.ts), which carries no user identity
+ * at all and forwards only its own token.
  */
 
 /** The version prefix the gateway mounts (app.ts). */
@@ -174,6 +180,18 @@ export const PROXY_RULES: readonly ProxyRule[] = [
   // `/mandates` and verifies the same signed context.
   { pattern: "/mandates", service: "user-service" },
   { pattern: "/mandates/*", service: "user-service" },
+
+  // Business travel (A06 part C). Organizations, members, invitations, cost
+  // centres and the travel policy are user-service's unversioned
+  // `/organizations…` (signed context only, no service-key door). The money
+  // side — funding, budgets, business bookings, statements — is
+  // payment-service's client router `/v1/business` (signed context only).
+  // payment-service's `/v1/finance/business` is the INTERNAL budget API
+  // ride-service calls by service key: no rule forwards `/v1/finance`, and
+  // tests/route-contract.test.ts pins that it answers the gateway's own 404.
+  { pattern: "/organizations", service: "user-service" },
+  { pattern: "/organizations/*", service: "user-service" },
+  { pattern: "/business/*", service: "payment-service" },
 
   // Travel (travel-service) — mounts /v1/travel, /v1/reservations and
   // /v1/ops/travel itself. travel-service reads the caller, role and city
