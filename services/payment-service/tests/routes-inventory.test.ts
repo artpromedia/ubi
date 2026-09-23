@@ -31,8 +31,16 @@ const ALLOWED_ROUTE_PREFIXES = [
   // Delivery return-leg fees (P17) — service-key, canonical ledger; mounted
   // ahead of /v1/finance for the same reason as travel.
   "/v1/finance/delivery-returns",
+  // Business travel budgets (A06 part C) — ride-service's service-key
+  // reserve / commit / release API on the canonical ledger; mounted ahead of
+  // /v1/finance for the same reason as travel.
+  "/v1/finance/business",
   "/v1/finance",
   "/v1/finance/remedies",
+  // Business travel money for the organization's people (A06 part C) —
+  // signed identity only. A REBUILD on the canonical ledger, not the
+  // quarantined /b2b surface, which stays in the list below.
+  "/v1/business",
 ] as const;
 
 /**
@@ -149,6 +157,47 @@ describe("payment-service route inventory", () => {
       ),
     );
     expect(response.status).toBe(403);
+  });
+
+  it("mounts the business travel budget routes behind their guards (A06 part C)", () => {
+    const paths = app.routes.map((route) => `${route.method} ${route.path}`);
+    for (const route of [
+      "POST /v1/finance/business/policy-check",
+      "POST /v1/finance/business/reserve",
+      "POST /v1/finance/business/commit",
+      "POST /v1/finance/business/release",
+      "GET /v1/finance/business/reservations/:bookingRef",
+      "GET /v1/business/organizations/:orgId/funding",
+      "POST /v1/business/organizations/:orgId/topups",
+      "POST /v1/business/organizations/:orgId/budgets/allocations",
+      "GET /v1/business/organizations/:orgId/statements/:period",
+      "GET /v1/business/bookings/mine",
+    ]) {
+      expect(paths).toContain(route);
+    }
+    const guards = app.routes
+      .filter((route) => route.method === "ALL")
+      .map((route) => route.path);
+    expect(guards).toContain("/v1/finance/business/*");
+    expect(guards).toContain("/v1/business/*");
+  });
+
+  it("refuses a business reserve without the service key, and a business read without a signed identity, in the real app", async () => {
+    const reserve = await app.fetch(
+      new Request("http://payment-service.test/v1/finance/business/reserve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(reserve.status).toBe(403);
+    // Plain X-User-* mirrors are never enough to reach an organization's money.
+    const read = await app.fetch(
+      new Request("http://payment-service.test/v1/business/bookings/mine", {
+        headers: { "x-user-id": "usr_forged", "x-user-role": "admin" },
+      }),
+    );
+    expect(read.status).toBe(401);
   });
 
   it.each([

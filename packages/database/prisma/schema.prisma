@@ -1892,6 +1892,9 @@ model Wallet {
   mpRiderReservations MpRiderReservation[]
   travelPaymentItems  TravelPaymentItem[]
   deliveryReturnFees  DeliveryReturnCharge[]
+  /// Set only on a business budget wallet (owner_type `org_budget`, A06 part C).
+  orgBudgetAccount    OrgBudgetAccount?
+  orgBudgetHolds      OrgBudgetReservation[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -1915,6 +1918,8 @@ model JournalEntry {
   travelPaymentOps       TravelPaymentOp[]
   deliveryReturnCaptures DeliveryReturnCharge[]
   deliveryReturnOps      DeliveryReturnChargeOp[]
+  orgBudgetCommit        OrgBudgetReservation?
+  orgBudgetOps           OrgBudgetOp[]
 
   @@index([kind, occurredAt])
   @@index([reference])
@@ -4002,4 +4007,254 @@ model AiActionAccessLog {
   at      DateTime @default(now())
 
   @@map("ai_action_access_log")
+}
+
+// -------------------------------------------
+// Business travel (A06 part C) — organizations (user-service) and prefunded
+// budgets on the canonical ledger (payment-service)
+// -------------------------------------------
+// Contract: packages/contracts/src/business-travel.ts. user-service owns the
+// organization, its members, invitations, cost centres and travel policy
+// (src/organizations). payment-service owns the budget accounts, the booking
+// reservations and their idempotency ops (src/business); it READS the
+// organization rows — never writes them — to authorize a reservation inside
+// the same transaction that takes it. The quarantined B2B models in
+// schema-b2b.prisma (float money, in-memory budgets) are NOT these and are not
+// migrated.
+
+/// An organization that books trips for its people from PREFUNDED budgets.
+/// The travel policy (per-trip cap, allowed services and vehicle classes)
+/// lives on the row and is deny-by-default: a new organization allows nothing
+/// until an admin sets it. There is no credit line anywhere in this model.
+model Organization {
+  id              String   @id
+  name            String
+  /// The city whose config (currency, timezone, taxes) and `business_travel`
+  /// flag govern the organization.
+  cityId          String   @map("city_id")
+  /// The city's wallet currency at creation; every budget amount is in it.
+  currency        String
+  // status CHECK: active | suspended
+  status          String
+  /// Billing profile printed on the consolidated statement. Admin-only.
+  legalName       String?  @map("legal_name")
+  taxId           String?  @map("tax_id")
+  /// Per-trip cap in integer minor units; 0 (nothing bookable) until set.
+  /// CHECK (trip_cap_minor >= 0).
+  tripCapMinor    BigInt   @default(0) @map("trip_cap_minor")
+  /// A subset of MP_SERVICES; empty ⇒ nothing is bookable.
+  allowedServices String[] @default([]) @map("allowed_services")
+  /// A subset of VEHICLE_CLASSES; empty ⇒ nothing is bookable.
+  allowedClasses  String[] @default([]) @map("allowed_classes")
+  /// Bumped on every policy change; snapshotted on each reservation.
+  policyVersion   Int      @default(1) @map("policy_version")
+  createdBy       String   @map("created_by")
+  version         Int      @default(1)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  members        OrganizationMember[]
+  invitations    OrganizationInvitation[]
+  costCentres    OrganizationCostCentre[]
+  budgetAccounts OrgBudgetAccount[]
+
+  @@index([cityId])
+  @@map("organizations")
+}
+
+/// One user's membership of one organization. A removed member keeps the row
+/// (status `removed`) so the audit trail and past bookings still resolve, and
+/// re-adding them reactivates it — one row per (organization, user), ever.
+model OrganizationMember {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  userId         String    @map("user_id")
+  // role CHECK: owner | admin | booker | traveller
+  role           String
+  // status CHECK: active | removed
+  status         String
+  /// The cost centre a booking for this member defaults to.
+  costCentreId   String?   @map("cost_centre_id")
+  addedBy        String    @map("added_by")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  removedAt      DateTime? @map("removed_at")
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  costCentre   OrganizationCostCentre? @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@index([userId, status])
+  @@map("organization_members")
+}
+
+/// An invitation to join an organization, bound to ONE existing user: only
+/// that user can accept or decline it, so nobody is made a traveller (and
+/// exposed to the organization's business-trip view) without consenting.
+model OrganizationInvitation {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  inviteeUserId  String    @map("invitee_user_id")
+  // role CHECK: owner | admin | booker | traveller
+  role           String
+  costCentreId   String?   @map("cost_centre_id")
+  // status CHECK: pending | accepted | declined | revoked | expired
+  status         String
+  invitedBy      String    @map("invited_by")
+  /// The scoped Idempotency-Key of the invite POST: a replay lands here.
+  idempotencyKey String    @unique @map("idempotency_key")
+  expiresAt      DateTime  @map("expires_at")
+  respondedAt    DateTime? @map("responded_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  costCentre   OrganizationCostCentre? @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+
+  @@index([inviteeUserId, status])
+  @@index([organizationId, status])
+  @@map("organization_invitations")
+}
+
+/// A cost centre business spend is charged to. Archived, never deleted: past
+/// bookings and statements keep resolving it.
+model OrganizationCostCentre {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  code           String
+  name           String
+  // status CHECK: active | archived
+  status         String
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  members        OrganizationMember[]
+  invitations    OrganizationInvitation[]
+  budgetAccounts OrgBudgetAccount[]
+
+  @@unique([organizationId, code])
+  @@map("organization_cost_centres")
+}
+
+/// A cost centre's budget for one city-local calendar month (payment-service,
+/// src/business). The budget IS a ledger wallet (owner_type `org_budget`): an
+/// admin allocates into it from the organization's prefunded wallet (owner_type
+/// `organization`, topped up through the wallet top-up rail) with a journal
+/// entry, so its balance is derived from journal lines like every other
+/// balance and nothing here stores one. Available = balance − the booking
+/// reservations still `reserved` against the wallet.
+model OrgBudgetAccount {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  costCentreId   String   @map("cost_centre_id")
+  /// The city-local calendar month, `YYYY-MM` (CHECK).
+  period         String
+  walletId       String   @unique @map("wallet_id")
+  currency       String
+  version        Int      @default(1)
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  costCentre   OrganizationCostCentre @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+  wallet       Wallet                 @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  reservations OrgBudgetReservation[]
+  ops          OrgBudgetOp[]
+
+  @@unique([costCentreId, period])
+  @@index([organizationId, period])
+  @@map("org_budget_accounts")
+}
+
+/// One business booking's budget reservation — one per booking reference,
+/// ever. Like a rider funding reservation it is a table row, never a journal
+/// movement: the budget wallet's balance is untouched while it is `reserved`
+/// and only availability drops. Commit posts ONE journal entry (budget wallet
+/// → `business_clearing`, kind `business_trip_commit`) for the actual amount
+/// (never more than reserved) and frees the rest; release frees it all. The
+/// bounds are CHECK constraints in the migration as well.
+model OrgBudgetReservation {
+  id              String    @id
+  bookingRef      String    @unique @map("booking_ref")
+  budgetAccountId String    @map("budget_account_id")
+  organizationId  String    @map("organization_id")
+  costCentreId    String    @map("cost_centre_id")
+  walletId        String    @map("wallet_id")
+  /// Who booked (the payer's authorized booker) and who travels (the
+  /// passenger). They may be the same member.
+  bookerId        String    @map("booker_id")
+  travellerId     String    @map("traveller_id")
+  service         String
+  vehicleClass    String    @map("vehicle_class")
+  expenseCategory String?   @map("expense_category")
+  cityId          String    @map("city_id")
+  currency        String
+  reservedMinor   BigInt    @map("reserved_minor")
+  committedMinor  BigInt?   @map("committed_minor")
+  // state CHECK: reserved | committed | released
+  state           String
+  /// Hash of the reservation's terms: a second reserve for the same booking
+  /// with other terms is a conflict, with the same terms a replay.
+  termsHash       String    @map("terms_hash")
+  policyVersion   Int       @map("policy_version")
+  commitEntryId   String?   @unique @map("commit_entry_id")
+  /// Taxes INCLUDED in the committed amount at the city's configured rates,
+  /// snapshotted at commit so a statement never re-prices history.
+  taxLines        Json?     @map("tax_lines")
+  releaseReason   String?   @map("release_reason")
+  releasedByRole  String?   @map("released_by_role")
+  releasedById    String?   @map("released_by_id")
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  committedAt     DateTime? @map("committed_at")
+  releasedAt      DateTime? @map("released_at")
+
+  budgetAccount OrgBudgetAccount @relation(fields: [budgetAccountId], references: [id], onDelete: Restrict)
+  wallet        Wallet           @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  commitEntry   JournalEntry?    @relation(fields: [commitEntryId], references: [id])
+  ops           OrgBudgetOp[]
+
+  @@index([walletId, state], map: "org_budget_reservations_available")
+  @@index([organizationId, createdAt])
+  @@index([travellerId, createdAt])
+  @@index([bookerId, createdAt])
+  @@map("org_budget_reservations")
+}
+
+/// One accepted business-budget POST — its idempotency record. The scoped
+/// Idempotency-Key is unique (a replay answers `result` verbatim; a replay
+/// carrying other money terms is refused), and a reservation carries at most
+/// ONE reserve, ONE commit and ONE release op — the database, not only the
+/// code, makes each exactly-once.
+model OrgBudgetOp {
+  id              String   @id
+  // op CHECK: topup | allocate | return | reserve | commit | release
+  op              String
+  organizationId  String   @map("organization_id")
+  budgetAccountId String?  @map("budget_account_id")
+  reservationId   String?  @map("reservation_id")
+  idempotencyKey  String   @unique @map("idempotency_key")
+  clientKey       String   @map("client_key")
+  payloadHash     String   @map("payload_hash")
+  amountMinor     BigInt   @map("amount_minor")
+  currency        String
+  /// The journal entry the op posted; null for reserve and release.
+  entryId         String?  @map("entry_id")
+  actorId         String   @map("actor_id")
+  actorRole       String   @map("actor_role")
+  result          Json
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  budgetAccount OrgBudgetAccount?     @relation(fields: [budgetAccountId], references: [id], onDelete: Restrict)
+  reservation   OrgBudgetReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  entry         JournalEntry?         @relation(fields: [entryId], references: [id])
+
+  @@unique([reservationId, op])
+  @@index([organizationId, createdAt])
+  @@map("org_budget_ops")
 }

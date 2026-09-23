@@ -17,6 +17,10 @@ import { logger as honoLogger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import {
+  createBusinessFinanceRoutes,
+  createBusinessRoutes,
+} from "./business/routes";
 import { createDeliveryReturnRoutes } from "./finance/delivery-return-routes";
 import { createRemedyRoutes } from "./finance/remedies";
 import { createFinanceRoutes } from "./finance/routes";
@@ -97,6 +101,7 @@ app.use("/admin/*", paymentRateLimit);
 app.use("/admin/*", serviceAuth);
 app.use("/v1/wallet/*", paymentRateLimit);
 app.use("/v1/finance/*", paymentRateLimit);
+app.use("/v1/business/*", paymentRateLimit);
 
 // ===========================================
 // ROUTER REGISTRY — the single place a router is mounted (G14).
@@ -142,8 +147,20 @@ const ROUTER_REGISTRY: ReadonlyArray<{
     prefix: "/v1/finance/delivery-returns",
     router: createDeliveryReturnRoutes(ledgerDeps),
   },
+  // Business travel budgets (A06 part C): ride-service's service-key
+  // reserve / commit / release API, mounted ahead of /v1/finance for the
+  // same reason as travel.
+  {
+    prefix: "/v1/finance/business",
+    router: createBusinessFinanceRoutes(ledgerDeps),
+  },
   { prefix: "/v1/finance", router: createFinanceRoutes(ledgerDeps) },
   { prefix: "/v1/finance/remedies", router: createRemedyRoutes(ledgerDeps) },
+  // Business travel money for the organization's people (A06 part C):
+  // funding, cost-centre budgets, business bookings, statements — signed
+  // identity context only. Rebuilt on the canonical ledger; the quarantined
+  // /b2b float-money surface stays unmounted.
+  { prefix: "/v1/business", router: createBusinessRoutes(ledgerDeps) },
 ];
 
 for (const { prefix, router } of ROUTER_REGISTRY) {

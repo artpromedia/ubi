@@ -33,6 +33,12 @@ GET /safety/sos/:sosId
 GET /safety/trip/:tripId/status
 GET /safety/verification/status/:userId
 GET /safety/women/preferences/:userId
+GET /v1/business/bookings/mine
+GET /v1/business/organizations/:orgId/bookings
+GET /v1/business/organizations/:orgId/budgets
+GET /v1/business/organizations/:orgId/funding
+GET /v1/business/organizations/:orgId/statements/:period
+GET /v1/finance/business/reservations/:bookingRef
 GET /v1/finance/delivery-returns/returns/:returnId
 GET /v1/finance/recon/:date
 GET /v1/finance/travel/orders/:orderId
@@ -89,6 +95,13 @@ POST /safety/women/register-driver
 POST /safety/women/safe-words
 POST /safety/women/trip-pin
 POST /safety/women/verify-pin
+POST /v1/business/organizations/:orgId/budgets/allocations
+POST /v1/business/organizations/:orgId/budgets/returns
+POST /v1/business/organizations/:orgId/topups
+POST /v1/finance/business/commit
+POST /v1/finance/business/policy-check
+POST /v1/finance/business/release
+POST /v1/finance/business/reserve
 POST /v1/finance/delivery-returns/capture
 POST /v1/finance/delivery-returns/release
 POST /v1/finance/delivery-returns/reserve

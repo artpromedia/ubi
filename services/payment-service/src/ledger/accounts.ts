@@ -54,6 +54,14 @@ export const LEDGER_ACCOUNTS = [
    * commission hold or a ride account (finance/travel.ts).
    */
   "travel_clearing",
+  /**
+   * An organization's committed business-trip spend (A06 part C): value a
+   * budget wallet has paid for a completed booking and that the trip's
+   * settlement has not yet paid onward to the driver. Keyed by booking
+   * reference in `counterpartRef`, so recon can prove it nets to zero per
+   * booking (src/business).
+   */
+  "business_clearing",
 ] as const;
 
 export type LedgerAccount = (typeof LEDGER_ACCOUNTS)[number];
@@ -118,6 +126,19 @@ export const ENTRY_KINDS = [
    * never the award's 10% commission, which is captured once at selection.
    */
   "delivery_return_fee",
+  /**
+   * Business travel (A06 part C, src/business): an admin moves prefunded
+   * organization money into a cost centre's monthly budget wallet, and back.
+   * Neither is a spend; both are wallet-to-wallet inside one organization.
+   */
+  "business_budget_allocation",
+  "business_budget_return",
+  /**
+   * The one commit of a business booking's ACTUAL amount at completion:
+   * budget wallet → `business_clearing`. Never more than was reserved, never
+   * posted twice for a booking (its idempotency key names the reservation).
+   */
+  "business_trip_commit",
 ] as const;
 
 export type EntryKind = (typeof ENTRY_KINDS)[number];
