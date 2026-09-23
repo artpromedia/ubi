@@ -27,7 +27,7 @@ func TestEventAllowlistMatchesContract(t *testing.T) {
 	}
 	for _, subject := range []string{
 		subjectRequest, subjectBid, subjectAward, subjectClaim, subjectHold, subjectRateProfile, subjectDriver,
-		subjectAmendment, subjectScheduled, subjectBooking, subjectTemplate,
+		subjectAmendment, subjectScheduled, subjectBooking, subjectTemplate, subjectFavourite,
 	} {
 		if !strings.Contains(contract, `"`+subject+`"`) {
 			t.Errorf("subject %q is not registered in the contract's SUBJECT_TYPES", subject)

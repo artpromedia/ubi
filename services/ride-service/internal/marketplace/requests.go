@@ -21,6 +21,13 @@ type PublishRequest struct {
 	RequestedFareMinor Money          `json:"requestedFareMinor"`
 	PaymentMethodID    string         `json:"paymentMethodId"`
 	Delivery           map[string]any `json:"delivery,omitempty"`
+	// PreferredDriver names a saved driver who gets a bounded exclusive
+	// window to offer first (A04 item 3; marketplace_preferred_drivers).
+	PreferredDriver *PreferredDriverInput `json:"preferredDriver,omitempty"`
+	// ServiceNeeds states concrete requirements (matched to verified
+	// capability only) and soft preferences (ranking only) (A06 part D;
+	// marketplace_accessibility_requirements).
+	ServiceNeeds *ServiceNeedsInput `json:"serviceNeeds,omitempty"`
 }
 
 // requireCurrency refuses a Money body whose currency does not name the
@@ -138,6 +145,20 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 			quote.Currency, config.CurrencyFractionDigits)
 	}
 
+	// A06 part D: stated needs are validated (and a requirement nobody can
+	// verify refuses the publish honestly) BEFORE anything is written.
+	needs, err := s.validateServiceNeeds(ctx, actor, quote, req.ServiceNeeds)
+	if err != nil {
+		return nil, 0, err
+	}
+	// A04 item 3: a named driver must be one the rider saved after a
+	// completed trip and who opted in; the rider's fallback consent is
+	// explicit. The window is the market's, never the client's.
+	preferred, err := s.validatePreferredDriver(ctx, actor, quote, policy, req.PreferredDriver)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	// The open-request cap is ENFORCED inside the insert transaction (see
 	// below): a pool-side count here would be check-then-act under
 	// concurrency. This early read only phrases the friendly refusal fast.
@@ -214,6 +235,19 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 			return err
 		}
 		view = requestViewOf(request)
+		if needs != nil {
+			if err := s.writeServiceNeeds(ctx, tx, request, actor, needs); err != nil {
+				return err
+			}
+			view.ServiceNeeds = needs
+		}
+		if preferred != nil {
+			window, err := s.writePreferredWindow(ctx, tx, request, actor, preferred, now)
+			if err != nil {
+				return err
+			}
+			view.PreferredDriver = preferredDriverViewOf(window)
+		}
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeRequestCreate, actor.UserID, idempotencyKey, req, 201, view)
 	})
 	if err != nil {
@@ -319,8 +353,21 @@ func (s *Service) writePublishedRequest(ctx context.Context, tx pgx.Tx, request 
 }
 
 // Snapshot answers GET /v1/mp/requests/{id}: the owner's request, the private
-// offers, and the award once one exists. Only the owner may read it.
+// offers, and the award once one exists. Only the owner may read it. Offers
+// come in the neutral order drivers offered them.
 func (s *Service) Snapshot(ctx context.Context, actor Actor, requestID uuid.UUID) (*RequestSnapshotView, error) {
+	return s.SnapshotWithOptions(ctx, actor, requestID, SnapshotOptions{})
+}
+
+// SnapshotWithOptions is Snapshot with the requester's chosen offer order
+// (A06 part A): every offer carries its server-computed comparison, and the
+// order is the one asked for — price, pickup estimate or service fit — with
+// its tie-breaks stated.
+func (s *Service) SnapshotWithOptions(ctx context.Context, actor Actor, requestID uuid.UUID, options SnapshotOptions) (*RequestSnapshotView, error) {
+	sortKey, err := ParseOfferSort(options.Sort)
+	if err != nil {
+		return nil, err
+	}
 	request, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), requestID)
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
@@ -338,10 +385,18 @@ func (s *Service) Snapshot(ctx context.Context, actor Actor, requestID uuid.UUID
 	}
 
 	now := s.now()
+	comparison := s.loadOfferContext(ctx, request, bids, now)
+	// -1: the currency's fraction digits are unknown (config unreadable), so
+	// the phrased total is left off rather than printing minor units as if
+	// they were major ones. The structured totalMinor is always served.
+	digits := -1
+	if config, cfgErr := s.config(ctx, request.CityID); cfgErr == nil {
+		digits = config.CurrencyFractionDigits
+	}
 	offers := make([]*OfferView, 0, len(bids))
 	var advanceOffers []*OfferView
 	for _, bid := range bids {
-		view := s.offerViewOf(ctx, request, bid, now)
+		view := s.offerViewOf(ctx, request, bid, now, comparison, digits)
 		if view.Kind == OfferKindAdvanceBooking {
 			advanceOffers = append(advanceOffers, view)
 			continue
@@ -351,12 +406,19 @@ func (s *Service) Snapshot(ctx context.Context, actor Actor, requestID uuid.UUID
 	if request.isAdvance() && advanceOffers == nil {
 		advanceOffers = []*OfferView{}
 	}
+	applyBadges(offers)
+	applyBadges(advanceOffers)
+	sortOffers(offers, sortKey)
+	sortOffers(advanceOffers, sortKey)
 
+	view := requestViewOf(request)
+	s.attachRequestConfidence(ctx, view, request, comparison.needs)
 	return &RequestSnapshotView{
-		Request:       requestViewOf(request),
+		Request:       view,
 		Offers:        offers,
 		AdvanceOffers: advanceOffers,
 		Seq:           request.Version,
+		OfferOrder:    offerOrderViewOf(sortKey),
 	}, nil
 }
 
@@ -367,13 +429,17 @@ const OfferKindAdvanceBooking = "advance_booking"
 
 // offerViewOf renders the rider-facing view of one bid. The amount is the
 // rider's to see; everything about the driver is a display field derived
-// server-side, and nothing about other bidders leaks through it.
-func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, now time.Time) *OfferView {
+// server-side, and nothing about other bidders leaks through it. The
+// comparison fields (A06 part A) come from the snapshot's batch-loaded
+// offer context.
+func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, now time.Time, comparison *offerContext, digits int) *OfferView {
 	kind := "immediate"
 	var window *PickupWindow
 	if bid.Slot == SlotNext {
 		kind = "finishing_trip"
 	}
+	stored := comparison.estimates[bid.ID]
+	var liveSec *int
 
 	pickupLabel := "Pickup estimate unavailable"
 	if bid.Slot == SlotAdvance && request.Schedule != nil {
@@ -397,22 +463,54 @@ func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, n
 			pickupLabel = "Pickup window " + itoa(minutes) + "–" + itoa(minutes*3) + " min (finishing a trip)"
 		} else {
 			pickupLabel = "Pickup in ~" + itoa(minutes) + " min · " + formatKm(distance) + " away"
+			seconds := int(eta)
+			liveSec = &seconds
 		}
 	}
+	if kind == "immediate" && stored != nil {
+		// The routed estimate the bid's eligibility evaluation made is the
+		// better figure: the label says the same number the comparison does.
+		pickupLabel = "Pickup in ~" + itoa(ceilMinutes(stored.PredictedSec)) + " min"
+		if stored.DistanceM != nil {
+			pickupLabel += " · " + formatKm(float64(*stored.DistanceM)) + " away"
+		}
+		pickupLabel += " (estimate)"
+	}
 
-	return &OfferView{
+	profile := comparison.profiles[bid.DriverID]
+	saved := comparison.favourites[bid.DriverID]
+	reliability := comparison.reliability[bid.DriverID]
+	if reliability == nil {
+		reliability = unavailableReliability(comparison.now)
+	}
+	fee := money(0, request.Currency)
+	total := money(bid.AmountMinor, request.Currency)
+	view := &OfferView{
 		BidID:           bid.ID.String(),
 		BidVersion:      bid.BidVersion,
 		RequestRevision: bid.RequestRevision,
 		AmountMinor:     money(bid.AmountMinor, request.Currency),
 		Kind:            kind,
-		Driver:          verifiedDriverView(bid.DriverID.String(), request.VehicleClass),
+		Driver:          verifiedDriverView(bid.DriverID.String(), request.VehicleClass, profile),
 		PickupLabel:     pickupLabel,
 		PickupWindow:    window,
 		ExpiresAt:       bid.ExpiresAt,
 		Withdrawn:       bid.State == machine.MpBidWithdrawn,
 		WhyRecommended:  nil,
+		BookingFeeMinor: &fee,
+		TotalMinor:      &total,
+		TotalLabel:      totalLabelFor(total.AmountMinor, request.Currency, digits),
+		TotalNote:       totalNoteFor(request),
+		PickupEstimate:  pickupEstimateOf(kind, stored, liveSec, pickupLabel),
+		Vehicle:         offerVehicleViewOf(request.VehicleClass, profile),
+		DriverProfile:   offerDriverProfileViewOf(profile),
+		Reliability:     reliability,
+		ServiceFit:      serviceFitOf(profile, saved, comparison.needs),
 	}
+	if saved {
+		view.Badges = append(view.Badges, CriterionView{Code: "saved_driver", Label: "A driver you saved"})
+	}
+	return view
 }
 
 // ReviseRequest is the body of POST /v1/mp/requests/{id}/revise.

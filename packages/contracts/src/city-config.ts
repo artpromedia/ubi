@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import {
   MpMultiStopPolicySchema,
+  MpPreferredDriverPolicySchema,
   MpSchedulingPolicySchema,
 } from "./marketplace";
 import { CurrencySchema } from "./money";
@@ -169,6 +170,8 @@ export const MarketplacePolicySchema = z.object({
   // recurring journeys. Without it config-service strips the block and all
   // three products fail closed for the market.
   scheduling: MpSchedulingPolicySchema.optional(),
+  // Preferred-driver exclusive window (A04 item 3); absent = pilot window.
+  preferredDriver: MpPreferredDriverPolicySchema.optional(),
 });
 export type MarketplacePolicy = z.infer<typeof MarketplacePolicySchema>;
 

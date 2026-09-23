@@ -40,6 +40,18 @@ const (
 	FlagScheduledRides                 = "scheduled_rides"
 	FlagMarketplaceAdvanceReservations = "marketplace_advance_reservations"
 	FlagMarketplaceRecurringJourneys   = "marketplace_recurring_journeys"
+	// Rider confidence (A04 item 3, A06 part D): two different capabilities,
+	// each deny by default and each ALSO needing the ride vertical.
+	// FlagMarketplacePreferredDrivers gates saving a driver after a completed
+	// trip, a driver's opt-in to preferred requests and naming a saved driver
+	// on a request (a bounded exclusive window, then the open market ONLY
+	// with the rider's explicit fallback consent). FlagMarketplaceAccessibility
+	// gates stating concrete service requirements and soft preferences;
+	// requirements match verified capability only, so without a verified
+	// source they are refused as honestly unavailable. Offer comparison and
+	// receipts only add read data and are not gated.
+	FlagMarketplacePreferredDrivers = "marketplace_preferred_drivers"
+	FlagMarketplaceAccessibility    = "marketplace_accessibility_requirements"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

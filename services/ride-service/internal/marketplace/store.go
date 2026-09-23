@@ -96,7 +96,14 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 			AND to_regclass('mp.advance_bookings') IS NOT NULL
 			AND EXISTS (
 				SELECT 1 FROM information_schema.columns
-				WHERE table_schema = 'mp' AND table_name = 'requests' AND column_name = 'scheduled_request_id')`).Scan(&current)
+				WHERE table_schema = 'mp' AND table_name = 'requests' AND column_name = 'scheduled_request_id')
+			AND to_regclass('mp.bid_pickup_estimates') IS NOT NULL
+			AND to_regclass('mp.favourite_drivers') IS NOT NULL
+			AND to_regclass('mp.preferred_requests') IS NOT NULL
+			AND to_regclass('mp.request_service_needs') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'driver_preferences' AND column_name = 'accepts_preferred_requests')`).Scan(&current)
 	return err == nil && current
 }
 

@@ -78,6 +78,11 @@ type harnessOptions struct {
 	flags        map[string]bool
 	withoutRedis bool
 	marketplace  bool
+	// A06: the verified driver-profile port and the capability source the
+	// marketplace is built with (nil: the production defaults — no profile
+	// service, nothing verified).
+	driverProfiles marketplace.DriverProfilePort
+	capabilities   marketplace.CapabilitySource
 }
 
 // WithCityConfig replaces the seeded city configuration.
@@ -103,6 +108,19 @@ func WithoutRedisGuards() HarnessOption {
 // WithFlag sets a feature flag for the harness city.
 func WithFlag(key string, enabled bool) HarnessOption {
 	return func(o *harnessOptions) { o.flags[key] = enabled }
+}
+
+// WithDriverProfiles builds the marketplace with a driver-profile port — in
+// tests, the real HTTP client pointed at an httptest server that answers
+// user-service's documented contract.
+func WithDriverProfiles(port marketplace.DriverProfilePort) HarnessOption {
+	return func(o *harnessOptions) { o.driverProfiles = port }
+}
+
+// WithCapabilities builds the marketplace with a capability source: the seam
+// a verified vehicle-capability registry plugs into.
+func WithCapabilities(source marketplace.CapabilitySource) HarnessOption {
+	return func(o *harnessOptions) { o.capabilities = source }
 }
 
 // WithMarketplace attaches the marketplace policy fixture to the city config
@@ -228,6 +246,9 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 		Redis:      guards,
 		Logger:     zerolog.Nop(),
 		Now:        clock.Now,
+
+		DriverProfiles: options.driverProfiles,
+		Capabilities:   options.capabilities,
 	})
 	if err != nil {
 		pool.Close()
@@ -271,6 +292,10 @@ func (h *Harness) cleanup(ctx context.Context) {
 		// the award, no bid): a later test's sweep must not drive them.
 		`DELETE FROM mp.reservation_recovery WHERE bid_id IS NULL AND reservation_id IN (SELECT 'mp.fund.release:' || id::text FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
 		`DELETE FROM mp.amendments WHERE city_id = $1`,
+		// A06/A04.3 rider confidence. Pickup estimates, preferred windows and
+		// service needs cascade with their bids/requests; saved drivers are
+		// keyed by the city of the trip they were saved from.
+		`DELETE FROM mp.favourite_drivers WHERE city_id = $1`,
 		`DELETE FROM mp.execution_routes WHERE city_id = $1`,
 		// A03 Book for Later: the booking calendar references awards and
 		// requests; occurrences reference their templates.

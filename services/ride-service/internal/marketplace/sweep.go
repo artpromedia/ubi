@@ -20,6 +20,9 @@ const sweepBatch = 100
 // Sweep is one pass of the marketplace's durable background work:
 //
 //  1. expire overdue live bids and release their holds once;
+//     1a. end preferred-driver windows whose time is up and whose named
+//     driver holds no live offer: open to the market with the rider's
+//     consent, otherwise close free (A04 item 3);
 //  2. close open requests past expiry with zero live bids as no_offers;
 //  3. expand search envelopes per policy — preserving valid bids and never
 //     bumping the revision;
@@ -56,6 +59,7 @@ const sweepBatch = 100
 func (s *Service) Sweep(ctx context.Context) error {
 	now := s.now()
 	s.sweepExpiredBids(ctx, now)
+	s.sweepPreferredWindows(ctx, now)
 	s.sweepExpiredRequests(ctx, now)
 	s.sweepEnvelopes(ctx, now)
 	s.sweepRecoveries(ctx, now)

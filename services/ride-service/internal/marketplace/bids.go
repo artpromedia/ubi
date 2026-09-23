@@ -94,6 +94,13 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 	if request.RequesterID == actor.UserID {
 		return nil, 0, domain.Errorf(domain.CodeNotFound, "that request does not exist")
 	}
+	// A04 item 3: while a preferred window is exclusive only the named
+	// driver may offer — through this very path, nothing waived.
+	if excluded, _, err := s.marketExcludes(ctx, s.deps.Store.Pool(), request, actor.UserID); err != nil {
+		return nil, 0, asDomainError(err)
+	} else if excluded {
+		return nil, 0, domain.Errorf(domain.CodeNotFound, "that request does not exist")
+	}
 
 	config, policy, err := s.policy(ctx, request.CityID)
 	if err != nil {
@@ -255,6 +262,13 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 			return domain.Errorf(domain.CodeVersionConflict,
 				"the request changed while this bid was in flight; review the new terms")
 		}
+		// The window is re-read under the request lock every resolver
+		// takes first: a window that closed to this driver meanwhile wins.
+		if excluded, _, err := s.marketExcludes(ctx, tx, locked, actor.UserID); err != nil {
+			return err
+		} else if excluded {
+			return domain.Errorf(domain.CodeNotFound, "that request does not exist")
+		}
 		// The per-driver cap is enforced HERE, atomically with the insert:
 		// this driver's inserts serialise on the advisory lock and the
 		// recount inside the transaction is the authority, so N concurrent
@@ -279,6 +293,11 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 			return err
 		}
 		if err := s.deps.Store.InsertBidRevision(ctx, tx, bid.ID, 1, bid.AmountMinor, bid.CommissionMinor, "submitted"); err != nil {
+			return err
+		}
+		// A06 part A: the pickup estimate this bid's eligibility made, kept
+		// for the rider's comparison (labelled an estimate, with its age).
+		if err := s.deps.Store.InsertBidPickupEstimate(ctx, tx, bid.ID, eligibility, now); err != nil {
 			return err
 		}
 		if err := writeEvent(ctx, tx, Event{

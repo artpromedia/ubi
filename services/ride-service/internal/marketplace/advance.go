@@ -487,7 +487,7 @@ func (s *Service) bookingView(ctx context.Context, b *AdvanceBooking, viewer str
 	} else {
 		request = nil
 	}
-	return bookingViewOf(b, request, vehicleClass, viewer)
+	return s.withVerifiedDriver(ctx, bookingViewOf(b, request, vehicleClass, viewer), b, vehicleClass)
 }
 
 // GetBooking answers GET /v1/mp/advance-bookings/{id}.

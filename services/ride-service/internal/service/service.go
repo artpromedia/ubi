@@ -44,6 +44,12 @@ type Config struct {
 	PaymentServiceURL  string
 	InternalServiceKey string
 	Logger             zerolog.Logger
+	// UserServiceURL and DriverProfileServiceKey (DRIVER_PROFILE_RIDE_SERVICE_KEY)
+	// wire the verified driver-profile port for the rider's offer comparison
+	// (A06 part A). Leaving either empty is legal: every driver renders
+	// "details unavailable" and no offer is ever blocked by it.
+	UserServiceURL          string
+	DriverProfileServiceKey string
 }
 
 // Runtime is a wired service and the resources it owns.
@@ -139,6 +145,9 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		config.Logger.Warn().Msg("PAYMENT_SERVICE_URL is not set: marketplace bids will fail closed at the wallet")
 	}
 	httpWallet := marketplace.NewHTTPWallet(config.PaymentServiceURL, config.InternalServiceKey, nil)
+	if config.UserServiceURL == "" || config.DriverProfileServiceKey == "" {
+		config.Logger.Warn().Msg("USER_SERVICE_URL or DRIVER_PROFILE_RIDE_SERVICE_KEY is not set: offers show driver details as unavailable")
+	}
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
 		Store:      marketplace.NewStore(pool),
 		Config:     cityconfig.NewStore(pool, runtime.Redis, config.ConfigCacheTTL),
@@ -150,6 +159,8 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		Settlement: httpWallet,
 		Redis:      ridisc.New(runtime.Redis),
 		Logger:     config.Logger,
+		DriverProfiles: marketplace.NewHTTPDriverProfiles(config.UserServiceURL, config.DriverProfileServiceKey,
+			marketplace.DriverProfilesOptions{}),
 	})
 	if err != nil {
 		runtime.Close()

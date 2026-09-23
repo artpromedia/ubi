@@ -92,6 +92,10 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 			r.Post("/{requestId}/stops/{stopId}/depart", h.DepartStop)
 			r.Post("/{requestId}/stops/{stopId}/skip", h.SkipStop)
 			r.Post("/{requestId}/stops/{stopId}/waiting-approval", h.ApproveWaiting)
+
+			// A06/A04.3 rider confidence: receipts and the preferred-driver
+			// decline.
+			h.mountRequestConfidence(r)
 		})
 
 		r.Route("/bids", func(r chi.Router) {
@@ -110,6 +114,9 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 		// A03 Book for Later: scheduled requests, advance driver
 		// reservations and recurring journeys.
 		h.mountScheduling(r)
+
+		// A06/A04.3 rider confidence: saved drivers and service needs.
+		h.mountConfidence(r)
 	})
 
 	r.Route("/admin/mp", func(r chi.Router) {
@@ -298,7 +305,10 @@ func (h *MarketplaceHandler) GetRequest(w http.ResponseWriter, r *http.Request) 
 		h.fail(w, r, err)
 		return
 	}
-	snapshot, err := h.service.Snapshot(r.Context(), actor, requestID)
+	// A06 part A: the requester's chosen offer order (price, pickup,
+	// service_fit); absent is the neutral offered order.
+	snapshot, err := h.service.SnapshotWithOptions(r.Context(), actor, requestID,
+		marketplace.SnapshotOptions{Sort: r.URL.Query().Get("sort")})
 	if err != nil {
 		h.fail(w, r, err)
 		return

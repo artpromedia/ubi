@@ -196,6 +196,9 @@ type MarketplacePolicy struct {
 	// it has NO defaults: absent (or a product's sub-block absent) means that
 	// product fails closed with market_not_configured (see scheduling.go).
 	Scheduling *MarketplaceSchedulingPolicy `json:"scheduling,omitempty"`
+	// PreferredDriver is the optional preferred-driver request block (A04
+	// item 3); absent means the pilot window (see PreferredDriverPolicy).
+	PreferredDriver *MarketplacePreferredDriverPolicy `json:"preferredDriver,omitempty"`
 }
 
 // Validate refuses a marketplace policy that would make the engine invent a
@@ -237,6 +240,11 @@ func (p *MarketplacePolicy) Validate(cityID string) error {
 	}
 	if p.Scheduling != nil {
 		if err := p.Scheduling.validate(cityID); err != nil {
+			return err
+		}
+	}
+	if p.PreferredDriver != nil {
+		if err := p.PreferredDriver.validate(cityID, p.Bids.RequestExpirySec); err != nil {
 			return err
 		}
 	}

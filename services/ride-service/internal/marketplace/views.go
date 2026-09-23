@@ -82,6 +82,11 @@ type RequestView struct {
 	// Booking is present only on a scheduled or advance-booking request
 	// (A03): its future pickup window and whether a driver is secured.
 	Booking *RequestBookingView `json:"booking,omitempty"`
+	// PreferredDriver is present only on a request that named a saved driver
+	// (A04 item 3): the exclusive window and what happens when it ends.
+	PreferredDriver *PreferredDriverView `json:"preferredDriver,omitempty"`
+	// ServiceNeeds is present only when the requester stated needs (A06 D).
+	ServiceNeeds *ServiceNeeds `json:"serviceNeeds,omitempty"`
 }
 
 func requestViewOf(request *Request) *RequestView {
@@ -208,12 +213,13 @@ func bidViewOf(bid *Bid, currency string) *BidView {
 // display fields only, never rival prices, never another bidder's identity.
 //
 // ProfileStatus is the G09 honesty gate. Verified driver identity (real name,
-// plate, photo, rating and completed-trip history) is owned by user-service;
-// ride-service holds no projection of it and makes no cross-service call for it
-// (see docs/marketplace/DRIVER_IDENTITY.md). Until that join exists,
-// ProfileStatus is "unavailable" and Rating/CompletedTrips are placeholders a
-// client must not present as real. Vehicle is always server-verified: it is the
-// class the driver is eligible for and bidding on.
+// plate, photo, rating and completed-trip history) is owned by user-service
+// and resolved through the driver-profile port (driverprofiles.go; see
+// docs/marketplace/DRIVER_IDENTITY.md). ProfileStatus is "verified" only when
+// user-service returned a card whose verification status is "verified";
+// otherwise it is "unavailable" and Rating/CompletedTrips are placeholders a
+// client must not present as real. Vehicle is always server-verified: it is
+// the class the driver is eligible for and bidding on.
 type OfferDriverView struct {
 	DisplayName    string `json:"displayName"`
 	Initials       string `json:"initials"`
@@ -243,6 +249,21 @@ type OfferView struct {
 	ExpiresAt       time.Time       `json:"expiresAt"`
 	Withdrawn       bool            `json:"withdrawn"`
 	WhyRecommended  *string         `json:"whyRecommended"`
+
+	// Offer comparison (A06 part A), all server-computed: what the rider
+	// pays (the offered fare; the marketplace adds no booking fee on top),
+	// the pickup ESTIMATE, the vehicle, the verified driver card, the
+	// defined reliability figure, the service fit and reasoned badges.
+	BookingFeeMinor *Money                   `json:"bookingFeeMinor,omitempty"`
+	TotalMinor      *Money                   `json:"totalMinor,omitempty"`
+	TotalLabel      string                   `json:"totalLabel,omitempty"`
+	TotalNote       string                   `json:"totalNote,omitempty"`
+	PickupEstimate  *OfferPickupEstimateView `json:"pickupEstimate,omitempty"`
+	Vehicle         *OfferVehicleView        `json:"vehicle,omitempty"`
+	DriverProfile   *OfferDriverProfileView  `json:"driverProfile,omitempty"`
+	Reliability     *ReliabilityView         `json:"reliability,omitempty"`
+	ServiceFit      *ServiceFitView          `json:"serviceFit,omitempty"`
+	Badges          []CriterionView          `json:"badges,omitempty"`
 }
 
 // PickupWindow is a finishing-trip offer's predicted pickup window.
@@ -262,6 +283,9 @@ type RequestSnapshotView struct {
 	AdvanceOffers []*OfferView `json:"advanceOffers,omitempty"`
 	Award         *AwardView   `json:"award,omitempty"`
 	Seq           int          `json:"seq"`
+	// OfferOrder says which order the offers are in (A06 part A): the
+	// neutral offered order unless the requester asked for another.
+	OfferOrder *OfferOrderView `json:"offerOrder,omitempty"`
 }
 
 // ExecutionRefView names the execution an award handed off to, exactly as the
@@ -354,6 +378,10 @@ type FeedItemView struct {
 	// Booking marks an advance-booking card (A03): a FUTURE pickup window,
 	// not an immediate job. Omitted for immediate requests.
 	Booking *RequestBookingView `json:"booking,omitempty"`
+	// PreferredRequest marks a request a rider asked THIS driver first on
+	// (A04 item 3), with the window and the free-decline note. Omitted
+	// otherwise; no other driver ever sees such a card while it is exclusive.
+	PreferredRequest *PreferredInvitationView `json:"preferredRequest,omitempty"`
 }
 
 // FeedPageView answers GET /v1/mp/feed.
@@ -434,6 +462,9 @@ type DriverViewResult struct {
 	// AdvanceCommitment explains, BEFORE an advance bid (A03), what bidding
 	// commits the driver's wallet to at the requester's asked fare.
 	AdvanceCommitment *AdvanceCommitmentView `json:"advanceCommitment,omitempty"`
+	// PreferredRequest is present when a rider asked this driver first
+	// (A04 item 3): offer through the ordinary presets, or decline for free.
+	PreferredRequest *PreferredInvitationView `json:"preferredRequest,omitempty"`
 }
 
 // ParkedAckView answers POST /v1/mp/driver/parked: the state the SERVER
@@ -538,19 +569,21 @@ func formatMinor(minor int64, currency string, fractionDigits int) string {
 
 // verifiedDriverView derives the rider-facing driver display server-side.
 //
-// G09: ride-service owns no verified driver profile, so there is nothing to
-// join here today. The one server-VERIFIED fact is the vehicle class (the
-// driver is eligible for it and bidding on it); everything identity- or
-// rating-shaped is marked ProfileStatusUnavailable so a client cannot render a
-// pseudonym, an em-dash rating or a placeholder trip count as if they were a
-// real, verified figure. The offer, winner (post-selection) and queue
-// projections all call THIS function, so the same driver never renders two
-// different ways. When a user-service profile join lands the branch that fills
-// verified name/rating/plate/trips replaces the unavailable placeholders and
-// flips ProfileStatus to ProfileStatusVerified.
-func verifiedDriverView(driverID string, vehicleClass string) OfferDriverView {
+// The one fact ride-service itself verifies is the vehicle class (the driver
+// is eligible for it and bidding on it). Identity and reputation come from
+// user-service's verified card (A06 part A): only a card whose verification
+// status is "verified" fills the name, initials, rating, completed trips and
+// masked plate and flips ProfileStatus to ProfileStatusVerified. A missing,
+// non-disclosing or not-yet-verified card keeps the G09 placeholders under
+// ProfileStatusUnavailable, so a client cannot render a pseudonym, an em-dash
+// rating or a placeholder trip count as if they were real. The legacy fields
+// stay non-nullable for the apps that read them; the structured card with
+// nullable fields is OfferView.DriverProfile. The offer, winner
+// (post-selection), queue and booking projections all call THIS function, so
+// the same driver never renders two different ways.
+func verifiedDriverView(driverID string, vehicleClass string, profile *DriverProfile) OfferDriverView {
 	tag := strings.ToUpper(digest("mp.driver.display:" + driverID)[:4])
-	return OfferDriverView{
+	view := OfferDriverView{
 		DisplayName:    "Driver " + tag,
 		Initials:       tag[:2],
 		Rating:         "–",
@@ -559,4 +592,22 @@ func verifiedDriverView(driverID string, vehicleClass string) OfferDriverView {
 		PlateMasked:    "•••",
 		ProfileStatus:  ProfileStatusUnavailable,
 	}
+	if !profile.Verified() {
+		return view
+	}
+	view.ProfileStatus = ProfileStatusVerified
+	if profile.DisplayName != nil {
+		view.DisplayName = *profile.DisplayName
+	}
+	if profile.Initials != nil {
+		view.Initials = *profile.Initials
+	}
+	if profile.Rating != nil {
+		view.Rating = formatRating(profile.Rating.Average)
+	}
+	view.CompletedTrips = profile.CompletedTrips
+	if profile.Vehicle != nil {
+		view.PlateMasked = profile.Vehicle.PlateMasked
+	}
+	return view
 }

@@ -458,7 +458,9 @@ components:
                     driver_cancelled,
                     award_failed,
                     booking_failed,
+                    preferred_driver_unavailable,
                   ],
+                description: "preferred_driver_unavailable (A04 item 3): a preferred-driver request whose named driver did not offer in the exclusive window, and whose rider did not consent to open-market fallback — expired free of charge.",
               },
             stops:
               {
@@ -481,6 +483,16 @@ components:
               {
                 $ref: "#/components/schemas/RequestBooking",
                 description: "A03: present only on a scheduled or advance-booking request.",
+              },
+            preferredDriver:
+              {
+                $ref: "#/components/schemas/PreferredDriver",
+                description: "A04 item 3: present only on a request that named a saved driver.",
+              },
+            serviceNeeds:
+              {
+                $ref: "#/components/schemas/ServiceNeeds",
+                description: "A06 part D: present only when the requester stated needs.",
               },
           },
       }
@@ -542,12 +554,34 @@ components:
                 type: string,
                 description: 'Server-phrased comparison to the requested amount (e.g. "+₦200").',
               },
+            totalLabel:
+              {
+                type: string,
+                description: "A06 part A: the total the rider pays, phrased by the server.",
+              },
+            totalNote:
+              {
+                type: string,
+                description: "What the total includes: the offered fare; no booking or service fee is added on top (bookingFeeMinor is stated as zero); paid stop waiting only ever with the rider's approval.",
+              },
+            pickupEstimate:
+              { $ref: "#/components/schemas/OfferPickupEstimate" },
+            vehicle: { $ref: "#/components/schemas/OfferVehicle" },
+            driverProfile: { $ref: "#/components/schemas/OfferDriverProfile" },
+            reliability: { $ref: "#/components/schemas/Reliability" },
+            serviceFit: { $ref: "#/components/schemas/ServiceFit" },
+            badges:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/Criterion" },
+                description: "Reasoned badges (lowest total, earliest pickup estimate, a driver you saved). Never 'recommended', never sponsored.",
+              },
           },
       }
     OfferDriver:
       {
         type: object,
-        description: "Rider-facing driver display (G09). ride-service owns no verified driver identity/rating/vehicle registry — those live in user-service. When profileStatus is 'unavailable' the identity/rating fields are pseudonymous placeholders a client must not present as verified; 'vehicle' is always the server-verified eligible class. See docs/marketplace/DRIVER_IDENTITY.md.",
+        description: "Rider-facing driver display (G09). Verified driver identity/rating/vehicle live in user-service and are resolved through ride-service's driver-profile port (A06 part A). profileStatus is 'verified' only when user-service returned a card whose verification status is 'verified' — then the fields carry that card's values. When 'unavailable' the identity/rating fields are pseudonymous placeholders a client must not present as verified; 'vehicle' is always the server-verified eligible class. The structured, nullable card (with the rating count) is Offer.driverProfile. See docs/marketplace/DRIVER_IDENTITY.md.",
         required:
           [
             displayName,
@@ -830,6 +864,7 @@ components:
                     ROUTING_UNAVAILABLE,
                     CALENDAR_CONFLICT,
                     ADVANCE_DISABLED,
+                    SERVICE_NEED_UNVERIFIED,
                   ],
               },
             title: { type: string },
@@ -1437,6 +1472,11 @@ components:
                 $ref: "#/components/schemas/RequestBooking",
                 description: "A03: an advance-booking card — a FUTURE pickup window, not an immediate job. Absent for immediate requests.",
               },
+            preferredRequest:
+              {
+                $ref: "#/components/schemas/PreferredInvitation",
+                description: "A04 item 3: a rider asked THIS driver first. Absent otherwise; no other driver sees the card while the window is exclusive.",
+              },
           },
       }
     FleetRemittance:
@@ -1684,6 +1724,12 @@ components:
                   },
               },
             availabilityNote: { type: string },
+            acceptsPreferredRequests:
+              {
+                type: boolean,
+                description: "A04 item 3: the opt-in to riders naming this driver on a preferred request. Off unless the driver turns it on.",
+              },
+            preferredRequestsNote: { type: string },
             bounds:
               {
                 type: object,
@@ -2239,6 +2285,457 @@ components:
           items: { $ref: "#/components/schemas/ScheduledRequest" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    OfferPickupEstimate:
+      type: object
+      description: "A06 part A: an offer's pickup ESTIMATE — the eligibility prediction the bid passed (minute-coarsened) and when it was made, else a live straight-line estimate, else unavailable. Never a promise."
+      required: [seconds, basis, label, estimatedAt, estimate]
+      properties:
+        seconds: { type: [integer, "null"], minimum: 0 }
+        basis:
+          type: string
+          enum:
+            [
+              routed_leg,
+              finishing_trip_prediction,
+              straight_line_estimate,
+              advance_booking,
+              unavailable,
+            ]
+        label: { type: string }
+        estimatedAt: { type: [string, "null"], format: date-time }
+        estimate: { type: boolean, const: true }
+    OfferVehicle:
+      type: object
+      description: "The class ride-service verified the driver eligible for; the registered vehicle only from a VERIFIED user-service card. Seat capacity is null where the market publishes none."
+      required:
+        [
+          class,
+          capacitySeats,
+          capacityNote,
+          bodyType,
+          make,
+          model,
+          colour,
+          plateMasked,
+          verified,
+        ]
+      properties:
+        class: { type: string }
+        capacitySeats: { type: [integer, "null"] }
+        capacityNote: { type: string }
+        bodyType:
+          type: [string, "null"]
+          enum: [sedan, suv, van, motorcycle, electric, null]
+        make: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        colour: { type: [string, "null"] }
+        plateMasked: { type: [string, "null"] }
+        verified: { type: boolean }
+    OfferDriverProfile:
+      type: object
+      description: "The driver card from user-service's privacy-limited read model. status verified / not_verified (checks not complete) / unavailable (no card could be resolved — unconfigured, down, slow, malformed or non-disclosing; every field null, the offer is still served). rating is exactly user-service's {average, count} or null — never invented."
+      required:
+        [
+          status,
+          label,
+          displayName,
+          initials,
+          photoRef,
+          photoVerified,
+          verifiedAt,
+          rating,
+          ratingLabel,
+          completedTrips,
+          memberSince,
+          accessibility,
+        ]
+      properties:
+        status: { type: string, enum: [verified, not_verified, unavailable] }
+        label: { type: string }
+        displayName: { type: [string, "null"] }
+        initials: { type: [string, "null"] }
+        photoRef: { type: [string, "null"] }
+        photoVerified: { type: [boolean, "null"] }
+        verifiedAt: { type: [string, "null"], format: date }
+        rating:
+          oneOf:
+            - type: object
+              required: [average, count]
+              properties:
+                average: { type: number, minimum: 1, maximum: 5 }
+                count: { type: integer, minimum: 1 }
+            - { type: "null" }
+        ratingLabel: { type: string }
+        completedTrips: { type: [integer, "null"], minimum: 0 }
+        memberSince: { type: [string, "null"] }
+        accessibility: { type: string, enum: [unavailable] }
+    Reliability:
+      type: object
+      description: "Reliability, DEFINED: of the marketplace rides the driver was awarded in the trailing windowDays that ended, the share completed and the share the driver cancelled (rider cancellations, rider no-shows, declined or lapsed preferred invitations and trips under way are not counted). Below minimumSample the status is insufficient_history and both rates are null. Rates are basis points summing to 10,000."
+      required:
+        [
+          status,
+          definition,
+          windowDays,
+          minimumSample,
+          sampleSize,
+          completedJobs,
+          driverCancellations,
+          completionRateBps,
+          driverCancellationRateBps,
+          label,
+          computedAt,
+        ]
+      properties:
+        status:
+          { type: string, enum: [available, insufficient_history, unavailable] }
+        definition: { type: string }
+        windowDays: { type: integer }
+        minimumSample: { type: integer }
+        sampleSize: { type: integer }
+        completedJobs: { type: integer }
+        driverCancellations: { type: integer }
+        completionRateBps:
+          { type: [integer, "null"], minimum: 0, maximum: 10000 }
+        driverCancellationRateBps:
+          { type: [integer, "null"], minimum: 0, maximum: 10000 }
+        label: { type: string }
+        computedAt: { type: string, format: date-time }
+    Criterion:
+      type: object
+      description: "One named fact behind a service-fit point or a badge."
+      required: [code, label]
+      properties:
+        code: { type: string }
+        label: { type: string }
+    ServiceFit:
+      type: object
+      description: "One point per criterion — driver details verified, a driver the rider saved, each stated preference the driver's VERIFIED vehicle meets — every matched and unmet criterion named."
+      required: [score, maxScore, matched, unmet, definition]
+      properties:
+        score: { type: integer }
+        maxScore: { type: integer }
+        matched:
+          { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+        unmet:
+          { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+        definition: { type: string }
+    OfferOrder:
+      type: object
+      description: "Which order a snapshot's offers are in (and the other orders), with the tie-breaks each applies."
+      required: [sort, label, tieBreak, options, note]
+      properties:
+        sort: { type: string, enum: [offered, price, pickup, service_fit] }
+        label: { type: string }
+        tieBreak: { type: string }
+        options:
+          type: array
+          items:
+            type: object
+            required: [key, label, tieBreak]
+            properties:
+              key: { type: string, enum: [offered, price, pickup, service_fit] }
+              label: { type: string }
+              tieBreak: { type: string }
+        note: { type: string }
+    ServiceNeedsInput:
+      type: object
+      additionalProperties: false
+      description: "A06 part D (marketplace_accessibility_requirements; rides only). Requirements match VERIFIED capability only; preferences only affect the service-fit order."
+      properties:
+        requirements:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+            enum:
+              [
+                wheelchair_accessible_vehicle,
+                assistance_animal,
+                extra_luggage_capacity,
+              ]
+        preferences:
+          type: array
+          maxItems: 2
+          items: { type: string, enum: [larger_vehicle, electric_vehicle] }
+    ServiceNeeds:
+      type: object
+      required: [requirements, preferences]
+      properties:
+        requirements:
+          type: array
+          items:
+            type: string
+            enum:
+              [
+                wheelchair_accessible_vehicle,
+                assistance_animal,
+                extra_luggage_capacity,
+              ]
+        preferences:
+          type: array
+          items: { type: string, enum: [larger_vehicle, electric_vehicle] }
+    ServiceNeedsCatalog:
+      type: object
+      description: "The requirements a rider may state, each with its honest availability in the rider's market (unavailable wherever no verified capability source reports supply), and the soft preferences (ranking only)."
+      required:
+        [
+          cityId,
+          service,
+          vehicleClass,
+          requirements,
+          preferences,
+          fallback,
+          disclosure,
+        ]
+      properties:
+        cityId: { type: string }
+        service: { type: string, enum: [ride] }
+        vehicleClass: { type: string }
+        requirements:
+          type: array
+          items:
+            type: object
+            required: [code, title, availability, detail]
+            properties:
+              code: { type: string }
+              title: { type: string }
+              availability: { type: string, enum: [verified, unavailable] }
+              detail: { type: string }
+        preferences:
+          type: array
+          items:
+            type: object
+            required: [code, title, effect, detail]
+            properties:
+              code: { type: string }
+              title: { type: string }
+              effect: { type: string, enum: [ranking_only] }
+              detail: { type: string }
+        fallback: { type: string }
+        disclosure: { type: string }
+    PreferredDriverPolicy:
+      type: object
+      description: "Per-market preferred-driver window (MarketplacePolicy.preferredDriver). Absent: the pilot 120 s (half the request lifetime where requests live shorter). Always strictly shorter than the request lifetime."
+      required: [exclusiveWindowSec]
+      properties:
+        exclusiveWindowSec: { type: integer, minimum: 30, maximum: 900 }
+    PreferredDriverInput:
+      type: object
+      additionalProperties: false
+      description: "A04 item 3 (marketplace_preferred_drivers; rides only): ask a driver the rider saved after a completed trip, who opted in. fallbackToMarket is REQUIRED — the rider's explicit consent (or refusal) to open the request to every driver if the named one does not offer in the window."
+      required: [driverId, fallbackToMarket]
+      properties:
+        driverId: { type: string, format: uuid }
+        fallbackToMarket: { type: boolean }
+    PreferredDriver:
+      type: object
+      description: "The requester's view of the window (mpPreferredWindow): exclusive (only the named driver may discover and offer — through the ordinary funded-bid path, nothing waived) → market_open (window over, no live offer from them, fallback consented) or closed (no consent: the request expired free, closeReason preferred_driver_unavailable)."
+      required:
+        [driverId, state, windowSec, windowEndsAt, fallbackToMarket, label]
+      properties:
+        driverId: { type: string }
+        state: { type: string, enum: [exclusive, market_open, closed] }
+        windowSec: { type: integer }
+        windowEndsAt: { type: string, format: date-time }
+        fallbackToMarket: { type: boolean }
+        label: { type: string }
+    PreferredInvitation:
+      type: object
+      description: "The named driver's invitation (feed card / driver view). Never identifies the rider; declining is free."
+      required: [windowEndsAt, label, note, canDecline]
+      properties:
+        windowEndsAt: { type: string, format: date-time }
+        label: { type: string }
+        note: { type: string }
+        canDecline: { type: boolean }
+    PreferredDecline:
+      type: object
+      required: [requestId, declined, declinedAt, note]
+      properties:
+        requestId: { type: string }
+        declined: { type: boolean, const: true }
+        declinedAt: { type: string, format: date-time }
+        note: { type: string }
+    FavouriteDriver:
+      type: object
+      description: "A saved driver. canRequest says whether the rider may ask them first right now; why not (opted out, or not taking marketplace work) is deliberately not distinguished."
+      required:
+        [
+          driverId,
+          cityId,
+          state,
+          savedAt,
+          driver,
+          driverProfile,
+          canRequest,
+          canRequestLabel,
+        ]
+      properties:
+        driverId: { type: string }
+        cityId: { type: string }
+        state: { type: string, enum: [active, removed] }
+        savedAt: { type: string, format: date-time }
+        driver: { $ref: "#/components/schemas/OfferDriver" }
+        driverProfile: { $ref: "#/components/schemas/OfferDriverProfile" }
+        canRequest: { type: boolean }
+        canRequestLabel: { type: string }
+    FavouriteDrivers:
+      type: object
+      required: [items, note]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FavouriteDriver" }
+        note: { type: string }
+    ReceiptLine:
+      type: object
+      required: [code, label, amountMinor]
+      properties:
+        code:
+          type: string
+          enum:
+            [
+              agreed_fare,
+              route_change,
+              stop_waiting,
+              early_termination,
+              commission,
+              commission_adjustment,
+            ]
+        label: { type: string }
+        amountMinor: { $ref: "#/components/schemas/Money" }
+        amendmentId: { type: string }
+        committedAt: { type: string, format: date-time }
+    Receipt:
+      type: object
+      description: "A COMPLETED marketplace ride's receipt, to its two parties only. lines (agreed fare + committed adjustments) sum to totalMinor, which equals reconciliation.settledFareMinor. The rider's view carries taxes (the INCLUDED share at the market's configured rates for the trip's pricing snapshot — nothing is added) and never a commission line; the driver's view carries driver (gross, the 10% captured once plus linked adjustments, net). JSON only; a PDF rendering is a documented follow-up."
+      required:
+        [
+          receiptId,
+          viewer,
+          requestId,
+          awardId,
+          executionId,
+          currency,
+          lines,
+          totalMinor,
+          payment,
+          trip,
+          settlement,
+          reconciliation,
+          format,
+          issuedAt,
+        ]
+      properties:
+        receiptId: { type: string }
+        viewer: { type: string, enum: [rider, driver] }
+        requestId: { type: string }
+        awardId: { type: string }
+        executionId: { type: string }
+        currency: { type: string }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/ReceiptLine" }
+        totalMinor: { $ref: "#/components/schemas/Money" }
+        taxes:
+          type: object
+          required: [basis, lines, note]
+          properties:
+            basis:
+              { type: string, enum: [included, not_configured, unavailable] }
+            lines:
+              type: array
+              items:
+                type: object
+                required: [code, rateBps, label, amountMinor]
+                properties:
+                  code: { type: string }
+                  rateBps: { type: integer }
+                  label: { type: string }
+                  amountMinor: { $ref: "#/components/schemas/Money" }
+            note: { type: string }
+        payment:
+          type: object
+          required: [method, label]
+          properties:
+            method: { type: string, enum: [wallet, cash] }
+            label: { type: string }
+        trip:
+          type: object
+          required:
+            [
+              service,
+              vehicleClass,
+              pickup,
+              dropoff,
+              stopCount,
+              stopsVisited,
+              stopsSkipped,
+              routedDistanceMeters,
+              startedAt,
+              completedAt,
+              terminatedEarly,
+              driver,
+            ]
+          properties:
+            service: { type: string, enum: [ride] }
+            vehicleClass: { type: string }
+            pickup: { type: string }
+            dropoff: { type: string }
+            stopCount: { type: integer }
+            stopsVisited: { type: integer }
+            stopsSkipped: { type: integer }
+            routedDistanceMeters: { type: integer }
+            startedAt: { type: [string, "null"], format: date-time }
+            completedAt: { type: string, format: date-time }
+            terminatedEarly: { type: boolean }
+            driver: { $ref: "#/components/schemas/OfferDriver" }
+        settlement:
+          type: object
+          required: [status, settledAt, note]
+          properties:
+            status: { type: string, enum: [posted, pending] }
+            settledAt: { type: [string, "null"], format: date-time }
+            note: { type: string }
+        reconciliation:
+          type: object
+          required:
+            [
+              originalFareMinor,
+              adjustmentsMinor,
+              totalMinor,
+              settledFareMinor,
+              rule,
+            ]
+          properties:
+            originalFareMinor: { $ref: "#/components/schemas/Money" }
+            adjustmentsMinor: { $ref: "#/components/schemas/Money" }
+            totalMinor: { $ref: "#/components/schemas/Money" }
+            settledFareMinor: { $ref: "#/components/schemas/Money" }
+            rule: { type: string }
+        driver:
+          type: object
+          required:
+            [
+              grossMinor,
+              commissionBps,
+              commissionLines,
+              commissionMinor,
+              netMinor,
+              note,
+            ]
+          properties:
+            grossMinor: { $ref: "#/components/schemas/Money" }
+            commissionBps: { type: integer, const: 1000 }
+            commissionLines:
+              type: array
+              items: { $ref: "#/components/schemas/ReceiptLine" }
+            commissionMinor: { $ref: "#/components/schemas/Money" }
+            netMinor: { $ref: "#/components/schemas/Money" }
+            note: { type: string }
+        format: { type: string, enum: [json] }
+        issuedAt: { type: string, format: date-time }
 security: [{ bearer: [] }]
 paths:
   /v1/mp/quote:
@@ -2343,6 +2840,10 @@ paths:
                     requestedFareMinor: { $ref: "#/components/schemas/Money" },
                     paymentMethodId: { type: string },
                     delivery: { $ref: "#/components/schemas/DeliveryDetails" },
+                    preferredDriver:
+                      { $ref: "#/components/schemas/PreferredDriverInput" },
+                    serviceNeeds:
+                      { $ref: "#/components/schemas/ServiceNeedsInput" },
                   },
               }
       responses:
@@ -2350,6 +2851,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Request" }
+        "404":
+          {
+            description: "feature_disabled — preferredDriver needs marketplace_preferred_drivers; serviceNeeds needs marketplace_accessibility_requirements (both deny by default).",
+          }
+        "409":
+          {
+            description: "conflict with details.reason: service_need_unavailable (a stated requirement has no VERIFIED supply in this market — details.requirements lists each with its reason, details.fallback the options; nothing is published and the quote is not spent) or preferred_driver_unavailable (the saved driver is not taking preferred requests right now; why is not disclosed).",
+          }
         "422":
           content:
             application/json:
@@ -2357,12 +2866,24 @@ paths:
   /v1/mp/requests/{requestId}:
     get:
       summary: Owner snapshot (R04) — request plus private offers
+      description: "A06 part A: every offer carries its server-computed comparison (total, pickup estimate, vehicle, verified driver card, defined reliability, service fit, reasoned badges). `sort` orders the offers server-side; absent (or `offered`) is the neutral order drivers offered — there is no default winner. An unknown sort is 422 validation_failed."
       parameters:
         - {
             name: requestId,
             in: path,
             required: true,
             schema: { type: string },
+          }
+        - {
+            name: sort,
+            in: query,
+            required: false,
+            schema:
+              {
+                type: string,
+                enum: [offered, price, pickup, service_fit],
+                default: offered,
+              },
           }
       responses:
         "200":
@@ -2388,6 +2909,7 @@ paths:
                         },
                       award: { $ref: "#/components/schemas/Award" },
                       seq: { type: integer },
+                      offerOrder: { $ref: "#/components/schemas/OfferOrder" },
                     },
                 }
   /v1/mp/requests/{requestId}/queue:
@@ -2979,6 +3501,11 @@ paths:
                           $ref: "#/components/schemas/AdvanceCommitment",
                           description: "A03: on an advance-booking request, what bidding commits the driver's wallet to — explained BEFORE the bid.",
                         },
+                      preferredRequest:
+                        {
+                          $ref: "#/components/schemas/PreferredInvitation",
+                          description: "A04 item 3: a rider asked this driver first — offer through the ordinary presets, or decline for free. While the window is exclusive every other driver gets 404 here.",
+                        },
                     },
                 }
   /v1/mp/driver/parked:
@@ -3097,6 +3624,11 @@ paths:
                         maxItems: 28,
                         items:
                           { $ref: "#/components/schemas/AvailabilityWindow" },
+                      },
+                    acceptsPreferredRequests:
+                      {
+                        type: boolean,
+                        description: "A04 item 3: opt in to (or out of) preferred requests. Turning it on needs marketplace_preferred_drivers (404 feature_disabled otherwise); turning it off never does.",
                       },
                   },
               }
@@ -5014,3 +5546,132 @@ paths:
           {
             description: "conflict (already sent to drivers — cancel its request or booking instead).",
           }
+  /v1/mp/requests/{requestId}/receipt:
+    get:
+      summary: Trip receipt (JSON) — the requester's view or the awarded driver's view
+      description: "A COMPLETED marketplace ride only. The requester gets the rider view (itemised agreed fare and committed adjustments, included taxes, total, payment method, trip facts — never the commission); the awarded driver gets the driver view (same lines and total as gross, the 10% captured once plus linked adjustments, net). Anyone else gets 404. The total reconciles exactly with the settlement (agreed fare + committed adjustments); while an adjustment still holds open money the route answers 409 conflict (details.reason settling); before completion 409 conflict (details.reason trip_not_completed). Read-only and not flag-gated: a receipt records a trip that already happened."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Receipt" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/preferred/decline:
+    post:
+      summary: The named driver declines a preferred request — free, idempotent, never recorded against them
+      description: "Only the invited driver, only while the window is exclusive and the request open (409 conflict otherwise; 409 with details.reason live_offer while they hold a live offer — withdraw it first). Anyone else gets 404 (403 for a non-driver). The window ends at once: open market if the rider consented to fallback, otherwise the request expires free (closeReason preferred_driver_unavailable). The rider is not told whether the driver declined or simply did not answer. Emits mp.request.preferred_driver_declined (audience: that driver) and an audit row; nothing touches standing or reliability. Not flag-gated: a driver can always decline an invitation they received."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PreferredDecline" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/favourite-drivers:
+    get:
+      summary: The rider's saved drivers, with whether each can be asked first right now
+      description: "Always readable (whatever the flag says), so a rider can always see what is stored about their choices."
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FavouriteDrivers" }
+    post:
+      summary: Save the driver of a completed trip (marketplace_preferred_drivers)
+      description: "Body {requestId}: a request of the caller's whose marketplace RIDE was completed (409 conflict details.reason trip_not_completed otherwise; 404 for someone else's request). Idempotent; saving an already-saved driver answers 200 and changes nothing. Emits mp.favourite_driver.saved (audience: the rider only) and an audit row."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestId]
+              properties:
+                requestId: { type: string, format: uuid }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FavouriteDriver" }
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FavouriteDriver" }
+        "404":
+          {
+            description: "feature_disabled, or not_found (not the caller's request).",
+          }
+        "409": { description: "conflict (details.reason trip_not_completed)." }
+  /v1/mp/favourite-drivers/{driverId}/remove:
+    post:
+      summary: Remove a saved driver (always allowed)
+      parameters:
+        - {
+            name: driverId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FavouriteDriver" }
+        "404":
+          { description: "not_found — not one of the rider's saved drivers." }
+  /v1/mp/service-needs:
+    get:
+      summary: Service requirements and preferences, with honest availability in the rider's market (marketplace_accessibility_requirements)
+      parameters:
+        - {
+            name: service,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [ride], default: ride },
+          }
+        - {
+            name: vehicleClass,
+            in: query,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceNeedsCatalog" }
+        "404": { description: "feature_disabled." }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }

@@ -121,6 +121,18 @@ var eventNames = map[string]struct{}{
 	"mp.recurring_template.resumed":   {},
 	"mp.recurring_template.cancelled": {},
 	"mp.recurring_template.ended":     {},
+
+	// Rider confidence (A04 item 3) — registered in the contract's
+	// EVENT_NAMES too. Preferred-driver requests (subject mp_request): the
+	// invitation reaches the named driver only, a decline only the driver who
+	// declined, the market opening only the rider; a no-consent lapse closes
+	// the request through mp.request.closed. Saved drivers (subject
+	// mp_favourite_driver) are rider-private.
+	"mp.request.preferred_driver_invited":  {},
+	"mp.request.preferred_driver_declined": {},
+	"mp.request.opened_to_market":          {},
+	"mp.favourite_driver.saved":            {},
+	"mp.favourite_driver.removed":          {},
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,
@@ -139,6 +151,9 @@ const (
 	subjectScheduled = "mp_scheduled_request"
 	subjectBooking   = "mp_advance_booking"
 	subjectTemplate  = "mp_recurring_template"
+
+	// Rider confidence (A04 item 3): a rider's saved driver.
+	subjectFavourite = "mp_favourite_driver"
 )
 
 // Event is one row of the transactional outbox, always written in the same

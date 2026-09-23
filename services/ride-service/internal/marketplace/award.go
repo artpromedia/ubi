@@ -422,7 +422,7 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		// rider's funding is secured yet.
 		if current, err := s.deps.Store.BookingByID(ctx, s.deps.Store.Pool(), booking.ID); err == nil {
 			withBooking := *result
-			withBooking.Booking = bookingViewOf(current, request, request.VehicleClass, viewerRider)
+			withBooking.Booking = s.withVerifiedDriver(ctx, bookingViewOf(current, request, request.VehicleClass, viewerRider), current, request.VehicleClass)
 			result = &withBooking
 		}
 	}

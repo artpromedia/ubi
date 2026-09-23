@@ -83,6 +83,9 @@ const (
 // preferencesDisclosure is stated on every preferences view.
 const preferencesDisclosure = "Preferences filter and sort the requests you see and suggest offers. They never bid for you and never change what you are eligible for."
 
+// preferredRequestsNote says what opting in to preferred requests means.
+const preferredRequestsNote = "Riders you completed a trip with may ask you first. You get a short private window to offer at your own price — or decline. Declining or letting it pass is free and never affects your standing."
+
 // Optional is one PATCH field: absent (leave it as it is), null (clear it) or
 // a value. Absent and null are different requests, so they hash differently
 // for idempotency and replay differently.
@@ -139,6 +142,10 @@ type PatchDriverPreferencesRequest struct {
 	Homeward                Optional[HomewardInput]        `json:"homeward,omitzero"`
 	HomewardOnly            Optional[bool]                 `json:"homewardOnly,omitzero"`
 	AvailabilityWindows     Optional[[]AvailabilityWindow] `json:"availabilityWindows,omitzero"`
+	// AcceptsPreferredRequests opts in to (or out of) riders naming this
+	// driver on a preferred-driver request (A04 item 3). Turning it ON needs
+	// marketplace_preferred_drivers; turning it off is always allowed.
+	AcceptsPreferredRequests Optional[bool] `json:"acceptsPreferredRequests,omitzero"`
 }
 
 // IntRangeView is an inclusive server-side bound.
@@ -182,9 +189,13 @@ type DriverPreferencesView struct {
 	HomewardOnly            bool                     `json:"homewardOnly"`
 	AvailabilityWindows     []AvailabilityWindowView `json:"availabilityWindows"`
 	AvailabilityNote        string                   `json:"availabilityNote"`
-	Bounds                  PreferenceBoundsView     `json:"bounds"`
-	Disclosure              string                   `json:"disclosure"`
-	UpdatedAt               *time.Time               `json:"updatedAt"`
+	// AcceptsPreferredRequests is the opt-in to preferred-driver requests,
+	// with the one line that says what it does and does not mean.
+	AcceptsPreferredRequests bool                 `json:"acceptsPreferredRequests"`
+	PreferredRequestsNote    string               `json:"preferredRequestsNote"`
+	Bounds                   PreferenceBoundsView `json:"bounds"`
+	Disclosure               string               `json:"disclosure"`
+	UpdatedAt                *time.Time           `json:"updatedAt"`
 }
 
 // FeedPreferencesView tells the driver whether their preferences shaped this
@@ -238,21 +249,23 @@ func availabilityLabel(window AvailabilityWindow) string {
 
 func driverPreferencesViewOf(prefs *DriverPreferences, config *cityconfig.CityConfig, policy *cityconfig.MarketplacePolicy) *DriverPreferencesView {
 	view := &DriverPreferencesView{
-		DriverID:                prefs.DriverID.String(),
-		CityID:                  prefs.CityID,
-		Version:                 prefs.Version,
-		Currency:                prefs.Currency,
-		Timezone:                config.Timezone,
-		MaxPickupDistanceMeters: prefs.MaxPickupDistanceM,
-		AcceptsDeliveries:       prefs.AcceptsDeliveries,
-		AcceptsStops:            prefs.AcceptsStops,
-		MaxStops:                prefs.MaxStops,
-		Homeward:                prefs.Homeward,
-		HomewardOnly:            prefs.HomewardOnly,
-		AvailabilityWindows:     make([]AvailabilityWindowView, 0, len(prefs.Availability)),
-		AvailabilityNote:        "Used only to filter advance-booking requests in your feed — never your eligibility, never an automatic bid. Windows are in " + config.Timezone + " local time.",
-		Bounds:                  preferenceBoundsFor(config, policy),
-		Disclosure:              preferencesDisclosure,
+		DriverID:                 prefs.DriverID.String(),
+		CityID:                   prefs.CityID,
+		Version:                  prefs.Version,
+		Currency:                 prefs.Currency,
+		Timezone:                 config.Timezone,
+		MaxPickupDistanceMeters:  prefs.MaxPickupDistanceM,
+		AcceptsDeliveries:        prefs.AcceptsDeliveries,
+		AcceptsStops:             prefs.AcceptsStops,
+		MaxStops:                 prefs.MaxStops,
+		Homeward:                 prefs.Homeward,
+		HomewardOnly:             prefs.HomewardOnly,
+		AvailabilityWindows:      make([]AvailabilityWindowView, 0, len(prefs.Availability)),
+		AvailabilityNote:         "Used only to filter advance-booking requests in your feed — never your eligibility, never an automatic bid. Windows are in " + config.Timezone + " local time.",
+		AcceptsPreferredRequests: prefs.AcceptsPreferredRequests,
+		PreferredRequestsNote:    preferredRequestsNote,
+		Bounds:                   preferenceBoundsFor(config, policy),
+		Disclosure:               preferencesDisclosure,
 	}
 	if prefs.MinTripAmountMinor != nil {
 		amount := money(*prefs.MinTripAmountMinor, prefs.Currency)
@@ -361,6 +374,7 @@ func mergePreferences(current *DriverPreferences, req PatchDriverPreferencesRequ
 		{"acceptsStops", req.AcceptsStops.Set, req.AcceptsStops.Null},
 		{"homewardOnly", req.HomewardOnly.Set, req.HomewardOnly.Null},
 		{"availabilityWindows", req.AvailabilityWindows.Set, req.AvailabilityWindows.Null},
+		{"acceptsPreferredRequests", req.AcceptsPreferredRequests.Set, req.AcceptsPreferredRequests.Null},
 	} {
 		if err := notNull(check.field, check.sent, check.null); err != nil {
 			return nil, err
@@ -496,6 +510,9 @@ func mergePreferences(current *DriverPreferences, req PatchDriverPreferencesRequ
 		}
 		next.Availability = windows
 	}
+	if req.AcceptsPreferredRequests.Set {
+		next.AcceptsPreferredRequests = req.AcceptsPreferredRequests.Value
+	}
 	return &next, nil
 }
 
@@ -516,6 +533,7 @@ func preferenceSettings(prefs *DriverPreferences) map[string]any {
 		"homeward":           prefs.Homeward,
 		"homewardOnly":       prefs.HomewardOnly,
 		"availability":       windows,
+		"acceptsPreferred":   prefs.AcceptsPreferredRequests,
 	}
 }
 
@@ -532,7 +550,7 @@ func changedPreferenceFields(before, after *DriverPreferences) []string {
 	changed := []string{}
 	for _, key := range []string{
 		"minTripAmountMinor", "maxPickupDistanceM", "acceptsDeliveries", "acceptsStops",
-		"maxStops", "homeward", "homewardOnly", "availability",
+		"maxStops", "homeward", "homewardOnly", "availability", "acceptsPreferred",
 	} {
 		l, _ := json.Marshal(left[key])
 		r, _ := json.Marshal(right[key])
@@ -645,6 +663,13 @@ func (s *Service) PatchDriverPreferences(ctx context.Context, actor Actor, req P
 	next, err := mergePreferences(current, req, config, policy)
 	if err != nil {
 		return nil, 0, err
+	}
+	// Opting IN to preferred requests is part of a deny-by-default
+	// capability; opting out (or leaving it off) never needs the flag.
+	if next.AcceptsPreferredRequests && !current.AcceptsPreferredRequests {
+		if err := s.requireFlag(ctx, cityconfig.FlagMarketplacePreferredDrivers, actor, actor.CityID); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	if samePreferences(current, next) {

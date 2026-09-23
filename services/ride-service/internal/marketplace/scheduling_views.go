@@ -357,7 +357,10 @@ func bookingViewOf(b *AdvanceBooking, request *Request, vehicleClass string, vie
 		view.Pickup = Area{Label: b.Pickup.Label, Lat: coarse(b.Pickup.Lat), Lng: coarse(b.Pickup.Lng)}
 		view.Dropoff = Area{Label: b.Dropoff.Label, Lat: coarse(b.Dropoff.Lat), Lng: coarse(b.Dropoff.Lng)}
 	} else {
-		driver := verifiedDriverView(b.DriverID.String(), vehicleClass)
+		// Placeholders here (this renderer also runs inside transactions and
+		// replays); the read paths swap in the verified card through
+		// withVerifiedDriver, the one profile-backed display.
+		driver := verifiedDriverView(b.DriverID.String(), vehicleClass, nil)
 		view.Driver = &driver
 	}
 	if b.ActivatedSlot != "" {

@@ -217,10 +217,37 @@ func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*Feed
 		if len(batch) == 0 {
 			break
 		}
+		// A04 item 3 / A06 part D: the batch's preferred-driver windows and
+		// stated needs, read once. An unreadable answer fails the page
+		// closed rather than showing a request to the wrong driver.
+		batchIDs := make([]uuid.UUID, 0, len(batch))
+		for _, request := range batch {
+			batchIDs = append(batchIDs, request.ID)
+		}
+		windows, err := s.deps.Store.PreferredForRequests(ctx, s.deps.Store.Pool(), batchIDs)
+		if err != nil {
+			return nil, asDomainError(err)
+		}
+		needs, err := s.deps.Store.ServiceNeedsForRequests(ctx, s.deps.Store.Pool(), batchIDs)
+		if err != nil {
+			return nil, asDomainError(err)
+		}
 		for _, request := range batch {
 			last := request
 			scanFrom, scanFromID = &last.CreatedAt, &last.ID
 			if request.RequesterID == actor.UserID {
+				continue
+			}
+			// While a preferred window is exclusive, only the named driver
+			// may discover the request.
+			window := windows[request.ID]
+			if window.excludes(actor.UserID) {
+				continue
+			}
+			invited := window.invites(actor.UserID)
+			// A stated requirement is matched only to drivers verified to
+			// meet it: never shown to anyone else.
+			if len(s.unmetRequirements(ctx, actor.UserID, needs[request.ID])) > 0 {
 				continue
 			}
 			if request.Service == ServiceRide && !ridesOn {
@@ -256,7 +283,10 @@ func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*Feed
 			} else if distance > float64(request.EnvelopeRadiusM) {
 				continue
 			}
-			if reason := prefs.hiddenReason(request, pickupForPrefs); reason != "" {
+			// A request a rider asked this driver for first is never hidden
+			// by the driver's own feed preferences: they asked for THIS
+			// driver, who may still decline.
+			if reason := prefs.hiddenReason(request, pickupForPrefs); reason != "" && !invited {
 				page.Preferences.HiddenCount++
 				continue
 			}
@@ -272,6 +302,9 @@ func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*Feed
 			if prefs != nil {
 				item.PreferenceTags = prefs.preferenceTags(request)
 			}
+			if invited {
+				item.PreferredRequest = preferredInvitationOf(window)
+			}
 			page.Items = append(page.Items, item)
 			if len(page.Items) == feedPageSize {
 				break
@@ -285,11 +318,21 @@ func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*Feed
 		next := encodeCursor(*scanFrom, *scanFromID)
 		page.NextCursor = &next
 	}
-	// Rank within the page: homeward matches first, otherwise newest first.
-	// The cursor is the SCAN position, so re-ordering a page never skips or
-	// repeats a request across pages.
+	// Rank within the page: requests a rider asked this driver for first,
+	// then homeward matches, otherwise newest first. The cursor is the SCAN
+	// position, so re-ordering a page never skips or repeats a request
+	// across pages.
+	rank := func(item *FeedItemView) int {
+		switch {
+		case item.PreferredRequest != nil:
+			return 2
+		case len(item.PreferenceTags) > 0:
+			return 1
+		}
+		return 0
+	}
 	sort.SliceStable(page.Items, func(i, j int) bool {
-		return len(page.Items[i].PreferenceTags) > 0 && len(page.Items[j].PreferenceTags) == 0
+		return rank(page.Items[i]) > rank(page.Items[j])
 	})
 	return page, nil
 }
@@ -333,6 +376,15 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 	// request's coarse pickup label/distance in the feed item — is not leaked
 	// cross-city. (Eligibility still further gates whether they can bid.)
 	if actor.CityID != "" && request.CityID != actor.CityID {
+		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
+	}
+	// A04 item 3: while a preferred window is exclusive, the request does
+	// not exist for any driver but the named one.
+	excluded, window, err := s.marketExcludes(ctx, s.deps.Store.Pool(), request, actor.UserID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+	if excluded {
 		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
 	}
 	if err := s.requireServiceFlag(ctx, request.Service, actor, request.CityID); err != nil {
@@ -387,6 +439,10 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 		Item:        item,
 		Eligibility: eligibility,
 		Presets:     []*PresetView{},
+	}
+	if window.invites(actor.UserID) {
+		result.PreferredRequest = preferredInvitationOf(window)
+		item.PreferredRequest = result.PreferredRequest
 	}
 	// A03: before an advance bid, the wallet commitment it would take on.
 	result.AdvanceCommitment = advanceCommitmentOf(request, request.RequestedMinor, nil, config.CurrencyFractionDigits)

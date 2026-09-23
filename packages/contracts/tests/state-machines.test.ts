@@ -54,6 +54,9 @@ describe("canonical state machines", () => {
         "mpScheduledRequest",
         "mpAdvanceBooking",
         "mpRecurringTemplate",
+        // Rider confidence (A04 item 3): a preferred-driver request's
+        // bounded exclusive window.
+        "mpPreferredWindow",
       ].sort(),
     );
   });

@@ -74,6 +74,8 @@ func reason(code string) EligibilityReasonView {
 		return EligibilityReasonView{code, "Clashes with your bookings", "This pickup window, the trip and the travel to or from your other advance bookings would overlap."}
 	case ReasonAdvanceDisabled:
 		return EligibilityReasonView{code, "Advance bookings unavailable", "Bidding on future pickups is not enabled here."}
+	case ReasonServiceNeedUnverified:
+		return EligibilityReasonView{code, "Needs a verified capability", "This request needs a capability, such as a wheelchair-accessible vehicle, that is not verified for you."}
 	default:
 		return EligibilityReasonView{code, code, code}
 	}
@@ -132,6 +134,14 @@ func (s *Service) EvaluateEligibility(ctx context.Context, actor Actor, request 
 	}
 	if !session.Offers(request.VehicleClass) {
 		return refuse(ReasonUnsupportedCapability), nil
+	}
+	// A06 part D: a stated requirement matches VERIFIED capability only.
+	needs, err := s.requestServiceNeeds(ctx, request.ID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+	if len(s.unmetRequirements(ctx, actor.UserID, needs)) > 0 {
+		return refuse(ReasonServiceNeedUnverified), nil
 	}
 
 	// Location freshness and accuracy gate every branch. A clock that claims

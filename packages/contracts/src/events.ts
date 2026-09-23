@@ -54,6 +54,8 @@ export const SUBJECT_TYPES = [
   "mp_scheduled_request",
   "mp_advance_booking",
   "mp_recurring_template",
+  // Rider confidence (A04 item 3): a rider's saved driver.
+  "mp_favourite_driver",
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
@@ -451,6 +453,21 @@ export const EVENT_NAMES = [
   "mp.recurring_template.resumed",
   "mp.recurring_template.cancelled",
   "mp.recurring_template.ended",
+  // ── Rider confidence (A04 item 3) ──
+  // PREFERRED-DRIVER REQUEST — subject mp_request. The named driver is
+  // invited to a bounded exclusive window (audience: that driver only; the
+  // rider is never identified to them). A decline is free and is announced to
+  // the declining driver alone. When the window ends with no live offer from
+  // that driver the request either opens to the market (only with the rider's
+  // explicit fallback consent at request time; audience: the rider) or closes
+  // through mp.request.closed with reason preferred_driver_unavailable.
+  "mp.request.preferred_driver_invited",
+  "mp.request.preferred_driver_declined",
+  "mp.request.opened_to_market",
+  // SAVED DRIVER — subject mp_favourite_driver. A rider saves (or removes) a
+  // driver they completed a marketplace trip with; rider-private.
+  "mp.favourite_driver.saved",
+  "mp.favourite_driver.removed",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

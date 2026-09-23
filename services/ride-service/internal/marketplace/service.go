@@ -51,6 +51,15 @@ type Deps struct {
 	Logger     zerolog.Logger
 	// Now is injectable so expiry, cooldown and dwell tests do not sleep.
 	Now func() time.Time
+	// DriverProfiles resolves verified driver cards from user-service for
+	// the rider's offer comparison (A06 part A). Optional: nil resolves
+	// nothing and every driver renders "details unavailable" — an offer is
+	// never blocked by a missing profile.
+	DriverProfiles DriverProfilePort
+	// Capabilities answers what is VERIFIED about accessibility and service
+	// needs (A06 part D). Optional: nil is the profile-backed source, which
+	// today verifies nothing — so hard requirements are honestly unavailable.
+	Capabilities CapabilitySource
 }
 
 // Service is the marketplace engine core.

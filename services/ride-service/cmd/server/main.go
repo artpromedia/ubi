@@ -67,6 +67,12 @@ type Config struct {
 	PaymentServiceURL        string
 	InternalServiceKey       string
 	MarketplaceSweepInterval time.Duration
+
+	// UserServiceURL and DriverProfileServiceKey wire the verified
+	// driver-profile port (A06 part A). Either empty: offers are served with
+	// "details unavailable", never blocked.
+	UserServiceURL          string
+	DriverProfileServiceKey string
 }
 
 func main() {
@@ -102,6 +108,9 @@ func main() {
 		PaymentServiceURL:  config.PaymentServiceURL,
 		InternalServiceKey: config.InternalServiceKey,
 		Logger:             log.Logger,
+
+		UserServiceURL:          config.UserServiceURL,
+		DriverProfileServiceKey: config.DriverProfileServiceKey,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to start the ride service")
@@ -220,6 +229,9 @@ func loadConfig() *Config {
 		PaymentServiceURL:        getEnv("PAYMENT_SERVICE_URL", ""),
 		InternalServiceKey:       getEnv("INTERNAL_SERVICE_KEY", ""),
 		MarketplaceSweepInterval: getDuration("RIDE_MP_SWEEP_INTERVAL_MS", time.Second),
+
+		UserServiceURL:          getEnv("USER_SERVICE_URL", ""),
+		DriverProfileServiceKey: getEnv("DRIVER_PROFILE_RIDE_SERVICE_KEY", ""),
 	}
 }
 

@@ -51,7 +51,11 @@ type DriverPreferences struct {
 	Homeward           *HomewardPreference
 	HomewardOnly       bool
 	Availability       []AvailabilityWindow
-	CreatedAt          time.Time
+	// AcceptsPreferredRequests is the driver's opt-in to being named on a
+	// rider's preferred-driver request (A04 item 3). Off by default: nobody
+	// can ask for a driver who did not agree to be asked.
+	AcceptsPreferredRequests bool
+	CreatedAt                time.Time
 }
 
 // defaultDriverPreferences is what a driver who never saved anything has:
@@ -71,7 +75,8 @@ const driverPreferencesColumns = `
 	id, driver_id, city_id, version, currency,
 	min_trip_amount_minor, max_pickup_distance_m,
 	accepts_deliveries, accepts_stops, max_stops,
-	homeward, homeward_only, availability, created_at`
+	homeward, homeward_only, availability, created_at,
+	accepts_preferred_requests`
 
 func scanDriverPreferences(row pgx.Row) (*DriverPreferences, error) {
 	var prefs DriverPreferences
@@ -81,6 +86,7 @@ func scanDriverPreferences(row pgx.Row) (*DriverPreferences, error) {
 		&prefs.MinTripAmountMinor, &prefs.MaxPickupDistanceM,
 		&prefs.AcceptsDeliveries, &prefs.AcceptsStops, &prefs.MaxStops,
 		&homeward, &prefs.HomewardOnly, &availability, &prefs.CreatedAt,
+		&prefs.AcceptsPreferredRequests,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -133,12 +139,14 @@ func (s *Store) InsertDriverPreferences(ctx context.Context, db DB, prefs *Drive
 			id, driver_id, city_id, version, currency,
 			min_trip_amount_minor, max_pickup_distance_m,
 			accepts_deliveries, accepts_stops, max_stops,
-			homeward, homeward_only, availability, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+			homeward, homeward_only, availability, created_at,
+			accepts_preferred_requests
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
 		prefs.ID, prefs.DriverID, prefs.CityID, prefs.Version, prefs.Currency,
 		prefs.MinTripAmountMinor, prefs.MaxPickupDistanceM,
 		prefs.AcceptsDeliveries, prefs.AcceptsStops, prefs.MaxStops,
 		homeward, prefs.HomewardOnly, availability, prefs.CreatedAt,
+		prefs.AcceptsPreferredRequests,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert driver preferences: %w", err)

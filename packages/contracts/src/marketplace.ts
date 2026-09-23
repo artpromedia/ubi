@@ -18,6 +18,23 @@
  */
 import { z } from "zod";
 
+import {
+  MpCriterionSchema,
+  MpDriverReceiptEarningsSchema,
+  MpOfferDriverProfileSchema,
+  MpOfferPickupEstimateSchema,
+  MpOfferVehicleSchema,
+  MpOfferOrderSchema,
+  MpPreferredDriverInputSchema,
+  MpPreferredDriverSchema,
+  MpPreferredInvitationSchema,
+  MpReceiptLineSchema,
+  MpReceiptTaxesSchema,
+  MpReliabilitySchema,
+  MpServiceFitSchema,
+  MpServiceNeedsInputSchema,
+  MpServiceNeedsSchema,
+} from "./marketplace-confidence";
 import { CurrencySchema, MoneySchema } from "./money";
 import {
   MP_ADVANCE_BOOKING_STATES,
@@ -195,6 +212,20 @@ export type MpStopPaidWaitingPolicy = z.infer<
   typeof MpStopPaidWaitingPolicySchema
 >;
 
+/**
+ * Preferred-driver request policy (A04 item 3), optional in the marketplace
+ * policy. How long a named driver has the request to themselves before it
+ * opens to the market — only with the rider's explicit fallback consent — or
+ * closes free. Mirrors cityconfig.MarketplacePreferredDriverPolicy (30–900 s,
+ * and shorter than the request lifetime, which ride-service also checks).
+ */
+export const MpPreferredDriverPolicySchema = z.object({
+  exclusiveWindowSec: z.number().int().min(30).max(900),
+});
+export type MpPreferredDriverPolicy = z.infer<
+  typeof MpPreferredDriverPolicySchema
+>;
+
 export const MpMultiStopPolicySchema = z
   .object({
     /** Intermediate stops a request may carry (0 disables them structurally). */
@@ -353,6 +384,11 @@ export const MP_REQUEST_CLOSE_REASONS = [
   // or lost eligibility, reconfirmation or rider funding missed its deadline.
   // The booking view explains the financial outcome and the rematch option.
   "booking_failed",
+  // A preferred-driver request (A04 item 3) whose named driver did not offer
+  // in the exclusive window, and whose rider did not consent to open-market
+  // fallback: expired free of charge. (Whether the driver declined or simply
+  // did not answer is deliberately not said.)
+  "preferred_driver_unavailable",
 ] as const;
 export type MpRequestCloseReason = (typeof MP_REQUEST_CLOSE_REASONS)[number];
 
@@ -385,6 +421,16 @@ export const MpPublishRequestSchema = z.object({
   requestedFareMinor: MoneySchema,
   paymentMethodId: z.string().min(1),
   delivery: MpDeliveryDetailsSchema.optional(),
+  /**
+   * A04 item 3 (marketplace_preferred_drivers): ask a saved driver first,
+   * with the rider's explicit open-market fallback consent. Rides only.
+   */
+  preferredDriver: MpPreferredDriverInputSchema.optional(),
+  /**
+   * A06 part D (marketplace_accessibility_requirements): concrete
+   * requirements (verified capability only) and soft preferences. Rides only.
+   */
+  serviceNeeds: MpServiceNeedsInputSchema.optional(),
 });
 export type MpPublishRequest = z.infer<typeof MpPublishRequestSchema>;
 
@@ -427,6 +473,10 @@ export const MpRequestSchema = z.object({
   routeFingerprint: z.string().min(1).optional(),
   /** A03: present only on a scheduled or advance-booking request. */
   booking: MpRequestBookingSchema.optional(),
+  /** A04 item 3: present only on a request that named a saved driver. */
+  preferredDriver: MpPreferredDriverSchema.optional(),
+  /** A06 part D: present only when the requester stated needs. */
+  serviceNeeds: MpServiceNeedsSchema.optional(),
 });
 export type MpRequest = z.infer<typeof MpRequestSchema>;
 
@@ -475,19 +525,21 @@ export const MpBidSchema = z.object({
 export type MpBid = z.infer<typeof MpBidSchema>;
 
 /**
- * Rider-facing driver display (G09). ride-service does NOT own verified driver
- * identity — names, plates, photos and the rating/trip history all live in
- * user-service, and this service holds no projection of them and makes no
- * cross-service call for them (see docs/marketplace/DRIVER_IDENTITY.md).
+ * Rider-facing driver display (G09). Verified driver identity — names, plates,
+ * photos and the rating/trip history — lives in user-service; ride-service
+ * resolves it through its driver-profile port (A06 part A; see
+ * docs/marketplace/DRIVER_IDENTITY.md).
  *
- * `profileStatus` is the honesty gate. When it is "unavailable" the server has
- * NOT joined a verified profile, so `displayName` is a stable pseudonym (never
- * a claimed real name), `rating` is the "–" no-value marker and `completedTrips`
- * is a placeholder 0 — none of which a client may present as a real, verified
- * figure. `vehicle` IS server-verified: it is the class the driver is eligible
- * for and bidding on. When a verified join lands, `profileStatus` becomes
- * "verified" and the fields carry real values (and can then be widened to
- * nullable across the contract + apps in one change).
+ * `profileStatus` is the honesty gate. It is "verified" only when user-service
+ * returned a card whose verification status is "verified", and then the fields
+ * carry that card's values (`rating` is its average; `completedTrips` its real
+ * count). Otherwise it is "unavailable": `displayName` is a stable pseudonym
+ * (never a claimed real name), `rating` is the "–" no-value marker and
+ * `completedTrips` a placeholder 0 — none of which a client may present as a
+ * real, verified figure. `vehicle` IS server-verified: it is the class the
+ * driver is eligible for and bidding on. These legacy fields stay
+ * non-nullable for the apps that read them; the nullable, structured card
+ * (with the rating COUNT) is `MpOffer.driverProfile`.
  *
  * The offer, winner (post-selection) and queue projections all derive this from
  * the SAME server function, so a driver never renders inconsistently.
@@ -528,12 +580,29 @@ export const MpOfferSchema = z.object({
   withdrawn: z.boolean(),
   /** Disclosed criteria when the server recommends this offer; never sponsored. */
   whyRecommended: z.string().nullable(),
-  /** Server-computed rider-side booking fee, when the market charges one. */
+  /**
+   * Server-computed rider-side booking fee, when the market charges one. The
+   * marketplace adds none on top of the offered fare, so ride-service states
+   * an explicit zero.
+   */
   bookingFeeMinor: MoneySchema.nullable().optional(),
   /** Server-computed total the rider pays for this offer. */
   totalMinor: MoneySchema.nullable().optional(),
   /** Server-phrased comparison to the requested amount (e.g. "+₦200"). */
   deltaLabel: z.string().nullable().optional(),
+  // ── Offer comparison (A06 part A). Absent only from servers predating it;
+  // a client then shows none of it, never a figure of its own.
+  /** "You pay ₦…" — the total, phrased by the server. */
+  totalLabel: z.string().min(1).optional(),
+  /** What the total includes (no fee on top; paid waiting only if approved). */
+  totalNote: z.string().min(1).optional(),
+  pickupEstimate: MpOfferPickupEstimateSchema.optional(),
+  vehicle: MpOfferVehicleSchema.optional(),
+  driverProfile: MpOfferDriverProfileSchema.optional(),
+  reliability: MpReliabilitySchema.optional(),
+  serviceFit: MpServiceFitSchema.optional(),
+  /** Reasoned badges ("Lowest total of 3 offers"); never "recommended". */
+  badges: z.array(MpCriterionSchema).optional(),
 });
 export type MpOffer = z.infer<typeof MpOfferSchema>;
 
@@ -588,6 +657,9 @@ export const MP_ELIGIBILITY_REASONS = [
   // collides with the driver's booking calendar; or advance bidding is off.
   "CALENDAR_CONFLICT",
   "ADVANCE_DISABLED",
+  // A06 part D: the request states a service requirement (e.g. a
+  // wheelchair-accessible vehicle) this driver is not VERIFIED to meet.
+  "SERVICE_NEED_UNVERIFIED",
 ] as const;
 export type MpEligibilityReason = (typeof MP_ELIGIBILITY_REASONS)[number];
 
@@ -922,6 +994,12 @@ export const MpFeedItemSchema = z.object({
    * future booking, not an immediate job) — absent for immediate requests.
    */
   booking: MpRequestBookingSchema.optional(),
+  /**
+   * A04 item 3: a rider asked THIS driver first — the exclusive window and
+   * the free-decline note. Absent otherwise; no other driver sees the card
+   * while the window is exclusive.
+   */
+  preferredRequest: MpPreferredInvitationSchema.optional(),
 });
 export type MpFeedItem = z.infer<typeof MpFeedItemSchema>;
 
@@ -1017,6 +1095,12 @@ export const MpDriverPreferencesSchema = z.object({
     MpAvailabilityWindowShape.extend({ label: z.string().min(1) }),
   ),
   availabilityNote: z.string().min(1),
+  /**
+   * A04 item 3: the opt-in to riders naming this driver on a preferred
+   * request (off unless the driver turns it on), and what it means.
+   */
+  acceptsPreferredRequests: z.boolean().optional(),
+  preferredRequestsNote: z.string().min(1).optional(),
   /** What the server accepts, derived from the market's policy. */
   bounds: z.object({
     minimumTripAmountMaxMinor: MoneySchema.nullable(),
@@ -1056,6 +1140,11 @@ export const MpDriverPreferencesPatchSchema = z
       .optional(),
     homewardOnly: z.boolean().optional(),
     availabilityWindows: z.array(MpAvailabilityWindowSchema).max(28).optional(),
+    /**
+     * A04 item 3: opt in to (or out of) preferred requests. Turning it on
+     * needs marketplace_preferred_drivers; turning it off never does.
+     */
+    acceptsPreferredRequests: z.boolean().optional(),
   })
   .strict();
 export type MpDriverPreferencesPatch = z.infer<
@@ -1784,6 +1873,143 @@ export type MpRecurringTemplate = z.infer<typeof MpRecurringTemplateSchema>;
 export const MpRecurringTemplateCommandSchema = z
   .object({ expectedVersion: z.number().int().min(1) })
   .strict();
+
+// ── Rider confidence: snapshot order, saved drivers, receipts (A06/A04.3) ──
+
+export * from "./marketplace-confidence";
+
+/**
+ * `GET /v1/mp/requests/:id[?sort=offered|price|pickup|service_fit]` — the
+ * owner snapshot. Offers carry their server-computed comparison; `offerOrder`
+ * states the order they are in (the neutral offered order by default).
+ */
+export const MpRequestSnapshotSchema = z.object({
+  request: MpRequestSchema,
+  offers: z.array(MpOfferSchema),
+  advanceOffers: z.array(MpAdvanceOfferSchema).optional(),
+  award: MpAwardSchema.optional(),
+  seq: z.number().int().min(0),
+  offerOrder: MpOfferOrderSchema.optional(),
+});
+export type MpRequestSnapshot = z.infer<typeof MpRequestSnapshotSchema>;
+
+/**
+ * One saved driver (`GET|POST /v1/mp/favourite-drivers`). `canRequest` says
+ * whether the rider may ask them first right now; why not (opted out, or not
+ * taking marketplace work) is deliberately not distinguished.
+ */
+export const MpFavouriteDriverSchema = z.object({
+  driverId: z.string().min(1),
+  cityId: z.string().min(1),
+  state: z.enum(["active", "removed"]),
+  savedAt: z.string().datetime({ offset: true }),
+  driver: MpOfferDriverSchema,
+  driverProfile: MpOfferDriverProfileSchema,
+  canRequest: z.boolean(),
+  canRequestLabel: z.string().min(1),
+});
+export type MpFavouriteDriver = z.infer<typeof MpFavouriteDriverSchema>;
+
+export const MpFavouriteDriversSchema = z.object({
+  items: z.array(MpFavouriteDriverSchema),
+  note: z.string().min(1),
+});
+export type MpFavouriteDrivers = z.infer<typeof MpFavouriteDriversSchema>;
+
+/**
+ * `GET /v1/mp/requests/:id/receipt` — a COMPLETED marketplace ride's receipt,
+ * to its two parties only. `viewer: "rider"` carries taxes and never a
+ * commission line; `viewer: "driver"` carries `driver` (gross, the 10%
+ * captured once plus linked adjustments, net). `lines` sum to `totalMinor`,
+ * which equals `reconciliation.settledFareMinor` (agreed fare + committed
+ * adjustments). While money is still settling the route answers 409
+ * `conflict` (`details.reason: "settling"`).
+ */
+export const MpReceiptSchema = z
+  .object({
+    receiptId: z.string().min(1),
+    viewer: z.enum(["rider", "driver"]),
+    requestId: z.string().min(1),
+    awardId: z.string().min(1),
+    executionId: z.string().min(1),
+    currency: CurrencySchema,
+    lines: z.array(MpReceiptLineSchema).min(1),
+    totalMinor: MoneySchema,
+    taxes: MpReceiptTaxesSchema.optional(),
+    payment: z.object({
+      method: z.enum(["wallet", "cash"]),
+      label: z.string().min(1),
+    }),
+    trip: z.object({
+      service: z.literal("ride"),
+      vehicleClass: z.string().min(1),
+      pickup: z.string().min(1),
+      dropoff: z.string().min(1),
+      stopCount: z.number().int().nonnegative(),
+      stopsVisited: z.number().int().nonnegative(),
+      stopsSkipped: z.number().int().nonnegative(),
+      routedDistanceMeters: z.number().int().nonnegative(),
+      startedAt: z.string().datetime({ offset: true }).nullable(),
+      completedAt: z.string().datetime({ offset: true }),
+      terminatedEarly: z.boolean(),
+      driver: MpOfferDriverSchema,
+    }),
+    settlement: z.object({
+      status: z.enum(["posted", "pending"]),
+      settledAt: z.string().datetime({ offset: true }).nullable(),
+      note: z.string().min(1),
+    }),
+    reconciliation: z.object({
+      originalFareMinor: MoneySchema,
+      adjustmentsMinor: MoneySchema,
+      totalMinor: MoneySchema,
+      settledFareMinor: MoneySchema,
+      rule: z.string().min(1),
+    }),
+    driver: MpDriverReceiptEarningsSchema.optional(),
+    format: z.literal("json"),
+    issuedAt: z.string().datetime({ offset: true }),
+  })
+  .superRefine((receipt, ctx) => {
+    const sum = receipt.lines
+      .filter((line) => !line.code.startsWith("commission"))
+      .reduce((total, line) => total + line.amountMinor.amountMinor, 0);
+    if (sum !== receipt.totalMinor.amountMinor) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["lines"],
+        message: "receipt lines must add up to the total",
+      });
+    }
+    if (
+      receipt.totalMinor.amountMinor !==
+      receipt.reconciliation.settledFareMinor.amountMinor
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reconciliation"],
+        message: "the receipt total must equal the settled fare",
+      });
+    }
+    const commissionLine = receipt.lines.some((line) =>
+      line.code.startsWith("commission"),
+    );
+    if (receipt.viewer === "rider" && (receipt.driver || commissionLine)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["driver"],
+        message: "a rider's receipt never carries the driver's commission",
+      });
+    }
+    if (receipt.viewer === "driver" && !receipt.driver) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["driver"],
+        message: "a driver's receipt states gross, commission and net",
+      });
+    }
+  });
+export type MpReceipt = z.infer<typeof MpReceiptSchema>;
 
 // ── Commission arithmetic (server-side; exported for service reuse) ───────
 

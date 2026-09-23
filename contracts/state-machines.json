@@ -457,5 +457,12 @@
       "paused": ["active", "cancelled", "ended"]
     },
     "rule": "recurring journey template (A03), stored separately from its occurrences: while active a durable worker generates occurrences (mpScheduledRequest rows) idempotently — one per template and local date, replay-safe; each occurrence has its own fare approval, funding, driver commitment, cancellation and receipt; a series is never labelled confirmed because one occurrence was awarded; paused generates and publishes nothing new; cancelled/ended stop generation for good"
+  },
+  "mpPreferredWindow": {
+    "initial": "exclusive",
+    "transitions": {
+      "exclusive": ["market_open", "closed"]
+    },
+    "rule": "PREFERRED-DRIVER REQUEST (A04 item 3): a rider names a driver they saved after a completed trip, who opted in to preferred requests. While exclusive, ONLY that driver may discover the request and offer on it — through the ordinary bid path, so the fare floors, stationary bidding, eligibility, the wallet-held 10% commission reservation and its single capture at selection all apply unchanged; nothing is waived and nothing is assigned. The window is bounded by the market's policy and never outlives the request. When it ends (or the driver declines, which is free) and that driver holds no live offer: market_open if and only if the rider explicitly consented to open-market fallback at request time (the request then gets the market's full request lifetime), otherwise closed — the request expires free of charge with reason preferred_driver_unavailable. A live preferred offer keeps the window where it is: that offer is the rider's answer, not a reason to shop the request around. Declining or letting the window lapse never counts against a driver's standing or reliability. A request that leaves the market any other way (award, cancel, expiry) leaves its window where it was — the window only governs an open request"
   }
 }

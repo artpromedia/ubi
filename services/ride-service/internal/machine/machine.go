@@ -45,6 +45,10 @@ const (
 	// MpRecurringTemplate is the recurring journey template (A03):
 	// active ⇄ paused → cancelled/ended.
 	MpRecurringTemplate Name = "mpRecurringTemplate"
+	// MpPreferredWindow is a preferred-driver request's bounded exclusive
+	// window (A04 item 3): exclusive → market_open (the rider consented to
+	// fallback) or closed (the request expired free).
+	MpPreferredWindow Name = "mpPreferredWindow"
 )
 
 // ErrIllegalTransition is returned for any move the contract does not allow.
@@ -194,6 +198,14 @@ const (
 	MpTemplatePaused    = "paused"
 	MpTemplateCancelled = "cancelled"
 	MpTemplateEnded     = "ended"
+)
+
+// Preferred-driver window states (contracts/state-machines.json →
+// mpPreferredWindow). Only an OPEN request is governed by its window.
+const (
+	MpPreferredExclusive  = "exclusive"
+	MpPreferredMarketOpen = "market_open"
+	MpPreferredClosed     = "closed"
 )
 
 // machines is the contract, transcribed. Order inside a slice is irrelevant;
@@ -363,6 +375,15 @@ var machines = map[Name]struct {
 			// Terminal states the contract lists only as destinations.
 			MpTemplateCancelled: {},
 			MpTemplateEnded:     {},
+		},
+	},
+	MpPreferredWindow: {
+		initial: MpPreferredExclusive,
+		transitions: map[string][]string{
+			MpPreferredExclusive: {MpPreferredMarketOpen, MpPreferredClosed},
+			// Terminal states the contract lists only as destinations.
+			MpPreferredMarketOpen: {},
+			MpPreferredClosed:     {},
 		},
 	},
 }

@@ -783,3 +783,88 @@ CREATE INDEX IF NOT EXISTS mp_advance_bookings_requester_idx
     ON mp.advance_bookings (requester_id, window_start);
 CREATE INDEX IF NOT EXISTS mp_advance_bookings_due_idx
     ON mp.advance_bookings (state, window_start);
+
+-- ---------------------------------------------------------------------------
+-- Rider confidence (A04 item 3, A06 parts A and D), additive and idempotent.
+--
+--   * bid_pickup_estimates is the server's pickup ESTIMATE behind one bid,
+--     copied from the authoritative eligibility evaluation the bid passed
+--     (routed leg, or the finishing-trip prediction) and stamped with when it
+--     was made — the rider's offer comparison shows it labelled as an
+--     estimate, with its age, never as a promise.
+--   * favourite_drivers is a rider's saved drivers: one row per rider and
+--     driver, saved only from a completed marketplace trip the rider took
+--     with that driver (source_award_id), removable at any time.
+--   * preferred_requests is the mpPreferredWindow aggregate of a request
+--     that names a saved driver: the bounded exclusive window, the rider's
+--     explicit fallback consent captured at request time, a free decline and
+--     the resolution (market_open / closed). Only an OPEN request is governed
+--     by it; bidding still goes through the ordinary funded-bid path.
+--   * request_service_needs holds a request's concrete service requirements
+--     (matched against VERIFIED capability only) apart from its soft
+--     preferences (ranking only). Codes only — never free text about a
+--     rider's health.
+--   * driver_preferences.accepts_preferred_requests is the driver's opt-in to
+--     being named on a preferred request; off unless the driver turns it on.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.bid_pickup_estimates (
+    bid_id         uuid PRIMARY KEY REFERENCES mp.bids (id) ON DELETE CASCADE,
+    predicted_sec  integer NOT NULL,
+    basis          text NOT NULL,
+    distance_m     integer,
+    estimated_at   timestamptz NOT NULL,
+    CONSTRAINT bid_pickup_estimates_nonnegative CHECK (predicted_sec >= 0 AND (distance_m IS NULL OR distance_m >= 0))
+);
+
+CREATE TABLE IF NOT EXISTS mp.favourite_drivers (
+    id               uuid PRIMARY KEY,
+    rider_id         uuid NOT NULL,
+    driver_id        uuid NOT NULL,
+    city_id          text NOT NULL,
+    source_award_id  uuid NOT NULL,
+    state            text NOT NULL,
+    version          integer NOT NULL DEFAULT 1,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    removed_at       timestamptz,
+    CONSTRAINT favourite_drivers_pair_key UNIQUE (rider_id, driver_id),
+    CONSTRAINT favourite_drivers_not_self CHECK (rider_id <> driver_id),
+    CONSTRAINT favourite_drivers_state_check CHECK (state IN ('active', 'removed'))
+);
+
+CREATE INDEX IF NOT EXISTS mp_favourite_drivers_rider_idx
+    ON mp.favourite_drivers (rider_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS mp.preferred_requests (
+    request_id          uuid PRIMARY KEY REFERENCES mp.requests (id) ON DELETE CASCADE,
+    driver_id           uuid NOT NULL,
+    requester_id        uuid NOT NULL,
+    city_id             text NOT NULL,
+    state               text NOT NULL,
+    fallback_to_market  boolean NOT NULL,
+    window_sec          integer NOT NULL,
+    window_ends_at      timestamptz NOT NULL,
+    declined_at         timestamptz,
+    resolved_at         timestamptz,
+    resolution          text,
+    version             integer NOT NULL DEFAULT 1,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT preferred_requests_state_check CHECK (state IN ('exclusive', 'market_open', 'closed')),
+    CONSTRAINT preferred_requests_window_positive CHECK (window_sec > 0),
+    CONSTRAINT preferred_requests_not_self CHECK (driver_id <> requester_id)
+);
+
+CREATE INDEX IF NOT EXISTS mp_preferred_requests_due_idx
+    ON mp.preferred_requests (window_ends_at) WHERE state = 'exclusive';
+CREATE INDEX IF NOT EXISTS mp_preferred_requests_driver_idx
+    ON mp.preferred_requests (driver_id) WHERE state = 'exclusive';
+
+CREATE TABLE IF NOT EXISTS mp.request_service_needs (
+    request_id    uuid PRIMARY KEY REFERENCES mp.requests (id) ON DELETE CASCADE,
+    requirements  jsonb NOT NULL DEFAULT '[]'::jsonb,
+    preferences   jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE mp.driver_preferences ADD COLUMN IF NOT EXISTS accepts_preferred_requests boolean NOT NULL DEFAULT false;

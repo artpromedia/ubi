@@ -93,6 +93,11 @@ type CityConfig struct {
 	MaxPinAttempts         int                  `json:"maxPinAttempts"`
 	PaymentMethods         []PaymentMethod      `json:"paymentMethods"`
 	ServiceFeePct          float64              `json:"serviceFeePct"`
+	// Taxes are the market's configured tax rates in percent, keyed by tax
+	// code (CityConfigSchema.taxes, e.g. {"vat": 7.5}). Read only to itemise
+	// a receipt's tax share of an amount the rider already pays — never to
+	// add a charge. Absent or empty: the receipt itemises no tax.
+	Taxes map[string]float64 `json:"taxes,omitempty"`
 	// Marketplace is the optional negotiated-fare marketplace policy. Absent
 	// means the marketplace is not configured here and every marketplace read
 	// fails closed with ErrMarketNotConfigured (see marketplace.go).

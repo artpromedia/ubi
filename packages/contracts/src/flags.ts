@@ -68,6 +68,25 @@ export const FLAG_KEYS = [
   // workers and every financial recovery keep running.
   "marketplace_advance_reservations",
   "marketplace_recurring_journeys",
+  // Rider confidence on the marketplace (A04 item 3, A06 part D). Two
+  // DIFFERENT capabilities, each deny-by-default and each also needing the
+  // ride vertical (`marketplace_rides`):
+  //  - `marketplace_preferred_drivers` gates saving a driver you completed a
+  //    trip with, a driver's opt-in to preferred requests, and naming a saved
+  //    driver on a request: that driver gets a bounded exclusive window to
+  //    offer (same floors, stationary bidding, wallet hold and 10% — nothing
+  //    waived), after which the request opens to the market ONLY with the
+  //    rider's explicit fallback consent, otherwise it closes free;
+  //  - `marketplace_accessibility_requirements` gates stating concrete service
+  //    requirements (wheelchair-accessible vehicle, assistance animal, extra
+  //    luggage capacity) and soft preferences. Requirements match only
+  //    VERIFIED capability; with no verified source they surface honestly as
+  //    unavailable, never as silent matching to unverified drivers.
+  // Offer comparison (total payable, pickup estimate, verified driver details,
+  // reliability, sorting) and trip receipts only add read data and ship
+  // ungated. Nothing enables either flag by default.
+  "marketplace_preferred_drivers",
+  "marketplace_accessibility_requirements",
   // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
   // assistant quoting, publishing a bounded request, and (the only binding step)
   // selecting a winning offer within a user's grant/mandate. Deny-by-default and
