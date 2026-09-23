@@ -1434,17 +1434,24 @@ func (s *Service) computeQueueWindow(ctx context.Context, driverID uuid.UUID, pi
 		ride, rideErr := s.deps.Store.ExecutionRideRow(ctx, s.deps.Store.Pool(), *claim.ExecutionID)
 		if rideErr == nil && machine.IsRiderActive(ride.State) {
 			if ride.StopCount > 0 {
-				// Never promise a window behind a multi-stop trip whose
-				// remaining stops the server cannot see (eligibility already
-				// refuses such queued bids; this is the backstop).
-				return nil, errors.New("the current trip has intermediate stops; no honest window exists")
+				// A multi-stop trip's remaining time is stop-aware: the
+				// stops the server has NOT seen the driver finish (every
+				// stop, until stop events say otherwise), their dwell, and
+				// the committed dropoff (A02).
+				remaining, end, err := s.remainingTripSeconds(ctx, ride, *session.LastLat, *session.LastLng)
+				if err != nil {
+					return nil, fmt.Errorf("routing unavailable: %w", err)
+				}
+				predicted += remaining + int64(finishing.CompletionBufferSec)
+				origin = domain.Place{Lat: end.Lat, Lng: end.Lng}
+			} else {
+				remaining, err := s.routeSeconds(ctx, *session.LastLat, *session.LastLng, ride.DropoffLat, ride.DropoffLng)
+				if err != nil {
+					return nil, fmt.Errorf("routing unavailable: %w", err)
+				}
+				predicted += remaining + int64(finishing.CompletionBufferSec)
+				origin = domain.Place{Lat: ride.DropoffLat, Lng: ride.DropoffLng}
 			}
-			remaining, err := s.routeSeconds(ctx, *session.LastLat, *session.LastLng, ride.DropoffLat, ride.DropoffLng)
-			if err != nil {
-				return nil, fmt.Errorf("routing unavailable: %w", err)
-			}
-			predicted += remaining + int64(finishing.CompletionBufferSec)
-			origin = domain.Place{Lat: ride.DropoffLat, Lng: ride.DropoffLng}
 		}
 	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return nil, err

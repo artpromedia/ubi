@@ -263,6 +263,12 @@ func (h *Harness) cleanup(ctx context.Context) {
 		`DELETE FROM mp.reservation_recovery WHERE bid_id IN (SELECT id FROM mp.bids WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
 		`DELETE FROM mp.driver_claims WHERE driver_id IN (SELECT driver_id FROM ride.driver_sessions WHERE city_id = $1)`,
 		`DELETE FROM mp.driver_claims WHERE award_id IN (SELECT id FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
+		// Completion settlement rows carry no bid: keyed by the award, they can
+		// stay deferred while an amendment still holds open money (A02), and
+		// must not be driven by a later test's sweep.
+		`DELETE FROM mp.reservation_recovery WHERE bid_id IS NULL AND reservation_id IN (SELECT 'mp.settle:' || id::text FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
+		`DELETE FROM mp.amendments WHERE city_id = $1`,
+		`DELETE FROM mp.execution_routes WHERE city_id = $1`,
 		`DELETE FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1)`,
 		`DELETE FROM mp.bids WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1)`,
 		`DELETE FROM mp.requests WHERE city_id = $1`,

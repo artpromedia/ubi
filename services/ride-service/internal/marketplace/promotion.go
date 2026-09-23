@@ -73,12 +73,34 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 		if service == "" {
 			service = ServiceRide
 		}
+		// An amended trip settles its COMMITTED fare: the original agreed
+		// fare plus only the adjustments that committed (amendments, paid
+		// stop waiting) minus committed decreases. Anything still in flight
+		// is resolved first, or the SETTLEMENT waits for the sweep — a fare
+		// must never be settled while a delta to it can still land. The
+		// claim is released and the queued next job promoted regardless: an
+		// adjustment still converging (or parked for ops) never holds the
+		// driver's capacity or the queued rider hostage. The durable
+		// settlement row re-derives the committed fare when it is driven
+		// (committedSettlement) and defers while money is open.
+		fare := award.FareMinor
+		committed, adjErr := s.settleTripAdjustments(ctx, rideID, true)
+		switch {
+		case errors.Is(adjErr, errTripUnsettled):
+			s.deps.Logger.Warn().Str("ride_id", rideID.String()).Str("award_id", award.ID.String()).
+				Msg("a trip adjustment is still unresolved; the settlement is deferred to the sweep")
+		case adjErr != nil:
+			return adjErr
+		}
+		if committed != nil {
+			fare = committed.AgreedFareMinor
+		}
 		settlement = &SettlementRequest{
 			AwardID:      award.ID,
 			ExecutionRef: ExecutionRef{Service: service, ID: rideID.String()},
 			RequesterID:  award.RequesterID,
 			DriverID:     award.DriverID,
-			FareMinor:    money(award.FareMinor, request.Currency),
+			FareMinor:    money(fare, request.Currency),
 			Method:       method,
 			CityID:       request.CityID,
 		}
@@ -92,6 +114,15 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 	// reverse/release keys). The intents are written durably INSIDE the
 	// claim-release transaction, driven after commit and swept until confirmed
 	// — so a crash anywhere loses nothing and a replay moves no money twice.
+	if !completed && claim.AwardID != nil {
+		// A trip that ended without completing expires its open change
+		// proposals and releases what they reserved (a driver-cancelled
+		// award's reversal below also hands back everything with it).
+		if _, adjErr := s.settleTripAdjustments(ctx, rideID, false); adjErr != nil {
+			s.deps.Logger.Warn().Err(adjErr).Str("ride_id", rideID.String()).
+				Msg("closing open trip changes on a cancelled trip is unresolved")
+		}
+	}
 	var unwind *driverCancelUnwind
 	if driverCancelled && claim.AwardID != nil {
 		award, awardErr := s.deps.Store.AwardByID(ctx, s.deps.Store.Pool(), *claim.AwardID)
@@ -185,9 +216,14 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 
 	if settlementRecorded {
 		// The rows are committed: settle now, under the award's ONE
-		// settlement key. Any failure — definite or unknown — leaves the
+		// settlement key, at the committed fare. Any failure — definite or
+		// unknown, or an adjustment still holding open money — leaves the
 		// durable row for the sweep, which converges on the same key.
-		if settleErr := s.deps.Settlement.Settle(ctx, *settlement, settlementKeyFor(settlement.AwardID)); settleErr != nil {
+		final, settleErr := s.committedSettlement(ctx, *settlement)
+		if settleErr == nil {
+			settleErr = s.deps.Settlement.Settle(ctx, final, settlementKeyFor(settlement.AwardID))
+		}
+		if settleErr != nil {
 			s.deps.Logger.Warn().Err(settleErr).Str("award_id", settlement.AwardID.String()).
 				Msg("completion settlement unconfirmed; the sweep will retry it")
 		} else if resolveErr := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), settlementRowID, now); resolveErr != nil {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,6 +109,47 @@ type WalletPort interface {
 	Capture(ctx context.Context, reservationID, awardID string, expectedAmountMinor Money, idempotencyKey string) (*CaptureResult, error)
 	Reverse(ctx context.Context, reservationID, awardID, reason string, idempotencyKey string) (*Hold, error)
 	Overview(ctx context.Context, driverID uuid.UUID, cityID string) (*Overview, error)
+
+	// Post-award commission deltas (A02; payment-service
+	// docs/MARKETPLACE-MONEY.md "Post-award amendments"). `reservationID` is
+	// the award's CAPTURED hold; the amendment id is the idempotency
+	// authority. Only the difference ever moves: a fare increase reserves
+	// then captures the increment once, a decrease refunds prior − new as a
+	// linked partial reversal — the 10% is never charged twice.
+	ReserveCommissionDelta(ctx context.Context, reservationID, amendmentID string, terms DeltaTerms, idempotencyKey string) (*CommissionDelta, error)
+	CaptureCommissionDelta(ctx context.Context, reservationID, amendmentID, awardID string, newTotalMinor Money, idempotencyKey string) (*CommissionDelta, error)
+	ReleaseCommissionDelta(ctx context.Context, reservationID, amendmentID, awardID, reason string, idempotencyKey string) (*CommissionDelta, error)
+	RefundCommissionDelta(ctx context.Context, reservationID, amendmentID string, terms DeltaTerms, idempotencyKey string) (*CommissionDelta, error)
+}
+
+// DeltaTerms is the body of the commission-delta reserve and refund calls:
+// the award's captured total as ride-service knows it, the new total (the
+// ONE commission function applied to the new fare) and the amended
+// commissionable fare. payment-service checks the prior against its ledger
+// (a stale prior is version_conflict with refreshedTerms) and derives the
+// delta itself.
+type DeltaTerms struct {
+	AwardID         string `json:"awardId"`
+	PriorTotalMinor Money  `json:"priorTotalMinor"`
+	NewTotalMinor   Money  `json:"newTotalMinor"`
+	NewBaseMinor    Money  `json:"newBaseMinor"`
+}
+
+// CommissionDelta is payment-service's MpCommissionDelta answer.
+type CommissionDelta struct {
+	ReservationID      string  `json:"reservationId"`
+	AmendmentID        string  `json:"amendmentId"`
+	AwardID            string  `json:"awardId"`
+	Direction          string  `json:"direction"`
+	State              string  `json:"state"`
+	DeltaReservationID *string `json:"deltaReservationId"`
+	DeltaMinor         Money   `json:"deltaMinor"`
+	PriorTotalMinor    *Money  `json:"priorTotalMinor"`
+	NewTotalMinor      *Money  `json:"newTotalMinor"`
+	NewBaseMinor       *Money  `json:"newBaseMinor"`
+	ReceiptID          *string `json:"receiptId"`
+	JournalEntryID     *string `json:"journalEntryId"`
+	OriginalReceiptID  *string `json:"originalReceiptId"`
 }
 
 // SettlementPort is the completion-settlement port (M06), idempotent on the
@@ -261,6 +303,54 @@ func (w *HTTPWallet) Overview(ctx context.Context, driverID uuid.UUID, cityID st
 		return nil, err
 	}
 	return &overview, nil
+}
+
+// amendmentPath is the commission-delta route for one amendment operation.
+func amendmentPath(reservationID, amendmentID, op string) string {
+	return "/v1/wallet/mp/holds/" + url.PathEscape(reservationID) +
+		"/amendments/" + url.PathEscape(amendmentID) + "/" + op
+}
+
+// ReserveCommissionDelta implements WalletPort (201 created, 200 replay).
+func (w *HTTPWallet) ReserveCommissionDelta(ctx context.Context, reservationID, amendmentID string, terms DeltaTerms, idempotencyKey string) (*CommissionDelta, error) {
+	var delta CommissionDelta
+	if err := w.call(ctx, http.MethodPost, amendmentPath(reservationID, amendmentID, "reserve"), terms, idempotencyKey, &delta); err != nil {
+		return nil, err
+	}
+	return &delta, nil
+}
+
+// CaptureCommissionDelta implements WalletPort: the committed increment,
+// debited once; newTotalMinor must be the total it was reserved for.
+func (w *HTTPWallet) CaptureCommissionDelta(ctx context.Context, reservationID, amendmentID, awardID string, newTotalMinor Money, idempotencyKey string) (*CommissionDelta, error) {
+	var delta CommissionDelta
+	body := map[string]any{"awardId": awardID, "newTotalMinor": newTotalMinor}
+	if err := w.call(ctx, http.MethodPost, amendmentPath(reservationID, amendmentID, "capture"), body, idempotencyKey, &delta); err != nil {
+		return nil, err
+	}
+	return &delta, nil
+}
+
+// ReleaseCommissionDelta implements WalletPort: safe to call for an amendment
+// whose reserve never landed (payment-service closes it, so a late reserve is
+// refused).
+func (w *HTTPWallet) ReleaseCommissionDelta(ctx context.Context, reservationID, amendmentID, awardID, reason string, idempotencyKey string) (*CommissionDelta, error) {
+	var delta CommissionDelta
+	body := map[string]any{"awardId": awardID, "reason": reason}
+	if err := w.call(ctx, http.MethodPost, amendmentPath(reservationID, amendmentID, "release"), body, idempotencyKey, &delta); err != nil {
+		return nil, err
+	}
+	return &delta, nil
+}
+
+// RefundCommissionDelta implements WalletPort: a committed decrease's linked
+// partial reversal (201 created, 200 replay).
+func (w *HTTPWallet) RefundCommissionDelta(ctx context.Context, reservationID, amendmentID string, terms DeltaTerms, idempotencyKey string) (*CommissionDelta, error) {
+	var delta CommissionDelta
+	if err := w.call(ctx, http.MethodPost, amendmentPath(reservationID, amendmentID, "refund"), terms, idempotencyKey, &delta); err != nil {
+		return nil, err
+	}
+	return &delta, nil
 }
 
 // Settle implements SettlementPort against POST /v1/wallet/mp/settlements.

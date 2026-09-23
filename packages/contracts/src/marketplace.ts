@@ -20,6 +20,7 @@ import { z } from "zod";
 
 import { CurrencySchema, MoneySchema } from "./money";
 import {
+  MP_AMENDMENT_STATES,
   MP_AWARD_STATES,
   MP_BID_STATES,
   MP_CLAIM_STATES,
@@ -56,6 +57,24 @@ export const MpStopPurposeSchema = z.enum(MP_STOP_PURPOSES);
  * (absent ⇒ `MP_MULTI_STOP_PILOT_DEFAULTS`); the capability itself stays behind
  * the deny-by-default `marketplace_multi_stop` flag, rides only.
  */
+/**
+ * Paid waiting at a stop (A02 item 7), optional inside the stops block. The
+ * included allowance at each stop is the expected dwell the fare already
+ * priced; past it each started minute costs `perMinMinor`, up to the waiting
+ * cost the rider authorizes up front per trip (`maxAuthorizedMinor`; each
+ * explicit rider approval extends the cap by one more increment). A stop
+ * whose total wait reaches `excessiveAfterSec` is excessive and the driver
+ * may leave it. Absent: waiting past the allowance is never charged.
+ */
+export const MpStopPaidWaitingPolicySchema = z.object({
+  perMinMinor: z.number().int().nonnegative(),
+  maxAuthorizedMinor: z.number().int().nonnegative(),
+  excessiveAfterSec: z.number().int().positive(),
+});
+export type MpStopPaidWaitingPolicy = z.infer<
+  typeof MpStopPaidWaitingPolicySchema
+>;
+
 export const MpMultiStopPolicySchema = z
   .object({
     /** Intermediate stops a request may carry (0 disables them structurally). */
@@ -64,6 +83,13 @@ export const MpMultiStopPolicySchema = z
     defaultDwellSec: z.number().int().nonnegative(),
     /** The most expected dwell one stop may declare (priced as route time). */
     maxDwellSec: z.number().int().nonnegative(),
+    /** Paid stop waiting (absent: none). */
+    paidWaiting: MpStopPaidWaitingPolicySchema.optional(),
+    /**
+     * How long a post-award amendment waits for both approvals before it
+     * expires and releases what it reserved (absent: the pilot default).
+     */
+    amendmentApprovalSec: z.number().int().positive().optional(),
   })
   .refine((policy) => policy.defaultDwellSec <= policy.maxDwellSec, {
     message: "defaultDwellSec must not exceed maxDwellSec",
@@ -995,6 +1021,265 @@ export const MpPickupPinSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }),
 });
 export type MpPickupPin = z.infer<typeof MpPickupPinSchema>;
+
+// ── Post-award trip amendments (A02 items 4-6) ─────────────────────────────
+
+/**
+ * What an amendment changes. `route` is proposed by either party and needs
+ * both approvals; `stop_waiting` (paid waiting the rider authorized up front)
+ * and `early_termination` (a safe partial journey) are server-proposed and
+ * settle through the same linked-adjustment money path.
+ */
+export const MP_AMENDMENT_KINDS = [
+  "route",
+  "stop_waiting",
+  "early_termination",
+] as const;
+export type MpAmendmentKind = (typeof MP_AMENDMENT_KINDS)[number];
+export const MpAmendmentKindSchema = z.enum(MP_AMENDMENT_KINDS);
+
+export const MpAmendmentStateSchema = z.enum(MP_AMENDMENT_STATES);
+
+/** The rider-side money of an amendment, stated honestly. */
+export const MP_AMENDMENT_RIDER_FUNDING = [
+  "pending",
+  "reserved",
+  "committed",
+  "released",
+  "release_on_commit",
+  "partially_released",
+  "not_required",
+  "unsecured_cash",
+] as const;
+
+/**
+ * `POST /v1/mp/requests/:id/amendments`. `stops` are the REMAINING
+ * intermediate stops after the change, in order (stops already reached are
+ * history and stay as they are); a surviving stop keeps its stopId. The
+ * expected revisions name the committed terms being edited — stale ones
+ * answer version_conflict with the refreshed terms. No price: the delta is
+ * priced server-side under the award's own pricing snapshot.
+ */
+export const MpProposeAmendmentSchema = z
+  .object({
+    stops: z.array(MpStopInputSchema).max(10),
+    dropoff: z
+      .object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+        label: z.string().max(80).optional(),
+      })
+      .strict()
+      .optional(),
+    expectedRouteRevision: z.number().int().min(1),
+    expectedFareRevision: z.number().int().min(1),
+  })
+  .strict();
+export type MpProposeAmendment = z.infer<typeof MpProposeAmendmentSchema>;
+
+/**
+ * `POST .../amendments/:amendmentId/{approve,reject}`: a decision binds to the
+ * exact (amendment id, route revision, fare revision). A driver's decision
+ * (approve or reject — and a driver's proposal) is accepted only while the
+ * server confirms them parked; a rejection carries no standing penalty.
+ */
+export const MpAmendmentDecisionSchema = z
+  .object({
+    routeRevision: z.number().int().min(1),
+    fareRevision: z.number().int().min(1),
+    reason: z.string().max(120).optional(),
+  })
+  .strict();
+export type MpAmendmentDecision = z.infer<typeof MpAmendmentDecisionSchema>;
+
+const MpTripPlaceSchema = z.object({
+  label: z.string(),
+  lat: z.number(),
+  lng: z.number(),
+});
+
+const MpApprovalSchema = z.object({
+  approved: z.boolean(),
+  approvedAt: z.string().datetime({ offset: true }).optional(),
+});
+
+/**
+ * One amendment as a party sees it. Every amount is server-computed. The
+ * driver also sees `commissionDeltaMinor` (the incremental 10% — captured
+ * once on an increase, refunded as a linked partial reversal on a decrease)
+ * and `driverNetDeltaMinor`; the rider never sees the driver's commission.
+ */
+export const MpAmendmentSchema = z.object({
+  amendmentId: z.string().min(1),
+  requestId: z.string().min(1),
+  awardId: z.string().min(1),
+  kind: MpAmendmentKindSchema,
+  state: MpAmendmentStateSchema,
+  proposedByRole: z.enum(["rider", "driver", "system"]),
+  baseRouteRevision: z.number().int().min(1),
+  baseFareRevision: z.number().int().min(1),
+  routeRevision: z.number().int().min(1),
+  fareRevision: z.number().int().min(1),
+  stops: z.array(MpRouteStopSchema),
+  dropoff: MpTripPlaceSchema,
+  priorFareMinor: MoneySchema,
+  revisedFareMinor: MoneySchema,
+  /** Signed: revised − prior. */
+  fareDeltaMinor: MoneySchema,
+  /** Signed: what the rider's funding adds (or gets back). */
+  riderFundingDeltaMinor: MoneySchema,
+  riderFunding: z.enum(MP_AMENDMENT_RIDER_FUNDING),
+  commissionDeltaMinor: MoneySchema.optional(),
+  driverNetDeltaMinor: MoneySchema.optional(),
+  addedDistanceMeters: z.number().int(),
+  addedDurationSec: z.number().int(),
+  approvals: z.object({ rider: MpApprovalSchema, driver: MpApprovalSchema }),
+  expiresAt: z.string().datetime({ offset: true }),
+  /** e.g. next_job_conflict, insufficient_driver_spendable, driver_rejected. */
+  reason: z.string().optional(),
+  pricing: z.record(z.unknown()).optional(),
+  createdAt: z.string().datetime({ offset: true }),
+  resolvedAt: z.string().datetime({ offset: true }).optional(),
+});
+export type MpAmendment = z.infer<typeof MpAmendmentSchema>;
+
+/** `GET /v1/mp/requests/:id/amendments`. */
+export const MpAmendmentListSchema = z.object({
+  requestId: z.string().min(1),
+  routeRevision: z.number().int().min(1),
+  fareRevision: z.number().int().min(1),
+  agreedFareMinor: MoneySchema,
+  amendments: z.array(MpAmendmentSchema),
+});
+export type MpAmendmentList = z.infer<typeof MpAmendmentListSchema>;
+
+// ── Server-authoritative stop events (A02 item 7) ─────────────────────────
+
+export const MP_STOP_STATES = [
+  "pending",
+  "arrived",
+  "departed",
+  "skipped",
+] as const;
+export type MpStopState = (typeof MP_STOP_STATES)[number];
+
+/** Reasons a DRIVER may end a trip early with (a rider may use any). */
+export const MP_TERMINATION_REASONS = [
+  "excessive_waiting",
+  "rider_request",
+  "safety_concern",
+  "vehicle_issue",
+] as const;
+
+/** `POST .../stops/:stopId/arrive` (driver). */
+export const MpStopArriveSchema = z
+  .object({
+    /**
+     * Record the arrival although the server cannot confirm the driver in
+     * the geofence. A disputed arrival never starts paid waiting.
+     */
+    disputed: z.boolean().optional(),
+  })
+  .strict();
+
+/** `POST .../stops/:stopId/skip` (rider any time; driver after excessive waiting). */
+export const MpStopSkipSchema = z
+  .object({ reason: z.string().max(80).optional() })
+  .strict();
+
+/** `POST .../stops/:stopId/waiting-approval` (rider), bound to the cap revision. */
+export const MpWaitingApprovalSchema = z
+  .object({ capRevision: z.number().int().min(1) })
+  .strict();
+
+/** `POST /v1/mp/requests/:id/terminate`: a safe early end of the journey. */
+export const MpTerminateTripSchema = z
+  .object({
+    reason: z.string().max(80).optional(),
+    expectedFareRevision: z.number().int().min(1),
+  })
+  .strict();
+
+export const MpStopWaitingSchema = z.object({
+  waitedSec: z.number().int().nonnegative(),
+  includedSec: z.number().int().nonnegative(),
+  allowanceRemainingSec: z.number().int().nonnegative(),
+  paidSec: z.number().int().nonnegative(),
+  /** Accrued (capped) while waiting; the finalised fee after departure. */
+  feeMinor: MoneySchema,
+  accruing: z.boolean(),
+  /** The authorized cap is reached: nothing more accrues without the rider. */
+  approvalRequired: z.boolean(),
+  excessive: z.boolean(),
+  settlement: z.enum(["none", "pending", "committed", "failed"]),
+});
+
+export const MpTripStopSchema = z.object({
+  stopId: z.string().min(1),
+  order: z.number().int().min(1),
+  state: z.enum(MP_STOP_STATES),
+  label: z.string(),
+  purpose: MpStopPurposeSchema,
+  lat: z.number(),
+  lng: z.number(),
+  dwellSec: z.number().int().nonnegative(),
+  arrivedAt: z.string().datetime({ offset: true }).optional(),
+  arrivalDisputed: z.boolean(),
+  arrivalDistanceMeters: z.number().int().optional(),
+  departedAt: z.string().datetime({ offset: true }).optional(),
+  skippedAt: z.string().datetime({ offset: true }).optional(),
+  skipReason: z.string().optional(),
+  waiting: MpStopWaitingSchema.optional(),
+});
+export type MpTripStop = z.infer<typeof MpTripStopSchema>;
+
+/** The published paid-waiting terms of an executing trip. */
+export const MpWaitingTermsSchema = z.object({
+  includedBasis: z.literal("stop_dwell"),
+  perMinMinor: MoneySchema,
+  maxAuthorizedMinor: MoneySchema,
+  authorizedCapMinor: MoneySchema,
+  capRevision: z.number().int().min(1),
+  committedMinor: MoneySchema,
+  excessiveAfterSec: z.number().int().nonnegative(),
+  geofenceMeters: z.number().int().nonnegative(),
+});
+
+/** One committed line of the trip's receipt. */
+export const MpTripAdjustmentSchema = z.object({
+  amendmentId: z.string().min(1),
+  kind: MpAmendmentKindSchema,
+  fareDeltaMinor: MoneySchema,
+  fareRevision: z.number().int().min(1),
+  committedAt: z.string().datetime({ offset: true }),
+});
+
+/**
+ * `GET /v1/mp/requests/:id/trip` — and the answer of every stop POST. The
+ * receipt reconciles: originalFareMinor + Σ committedAdjustments =
+ * agreedFareMinor, which is what completion settles; nothing uncommitted
+ * ever appears in it.
+ */
+export const MpTripSchema = z.object({
+  requestId: z.string().min(1),
+  awardId: z.string().min(1),
+  executionId: z.string().min(1),
+  routeRevision: z.number().int().min(1),
+  fareRevision: z.number().int().min(1),
+  originalFareMinor: MoneySchema,
+  agreedFareMinor: MoneySchema,
+  committedAdjustments: z.array(MpTripAdjustmentSchema),
+  /** Driver only: commission captured so far (= commission(agreed fare)). */
+  capturedCommissionMinor: MoneySchema.optional(),
+  pickup: MpTripPlaceSchema,
+  dropoff: MpTripPlaceSchema,
+  stops: z.array(MpTripStopSchema),
+  waitingTerms: MpWaitingTermsSchema,
+  openAmendmentId: z.string().min(1).optional(),
+  terminatedAt: z.string().datetime({ offset: true }).optional(),
+  version: z.number().int().min(1),
+});
+export type MpTrip = z.infer<typeof MpTripSchema>;
 
 // ── Commission arithmetic (server-side; exported for service reuse) ───────
 

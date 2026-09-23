@@ -47,6 +47,8 @@ describe("canonical state machines", () => {
         "mpHold",
         "mpAward",
         "mpClaim",
+        // Post-award trip amendments (A02 items 4-7).
+        "mpAmendment",
       ].sort(),
     );
   });

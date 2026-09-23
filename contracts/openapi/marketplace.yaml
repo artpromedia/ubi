@@ -908,6 +908,476 @@ components:
               },
           },
       }
+    TripPlace:
+      {
+        type: object,
+        required: [label, lat, lng],
+        description: "A trip endpoint as the two parties to an AWARD see it (exact coordinates are disclosed after award).",
+        properties:
+          {
+            label: { type: string },
+            lat: { type: number },
+            lng: { type: number },
+          },
+      }
+    Amendment:
+      {
+        type: object,
+        description: "A post-award trip amendment (A02, mpAmendment machine). Priced server-side as a DELTA under the award's own pricing snapshot (its quote's city-config version — never today's policy). The original agreement stays in force until `committed`. Every amount is server-computed. The driver additionally sees commissionDeltaMinor (the incremental 10% — captured ONCE on an increase, refunded as a linked partial reversal on a decrease; the award's original capture is never re-charged) and driverNetDeltaMinor; the rider never sees the driver's commission.",
+        required:
+          [
+            amendmentId,
+            requestId,
+            awardId,
+            kind,
+            state,
+            proposedByRole,
+            baseRouteRevision,
+            baseFareRevision,
+            routeRevision,
+            fareRevision,
+            stops,
+            dropoff,
+            priorFareMinor,
+            revisedFareMinor,
+            fareDeltaMinor,
+            riderFundingDeltaMinor,
+            riderFunding,
+            addedDistanceMeters,
+            addedDurationSec,
+            approvals,
+            expiresAt,
+            createdAt,
+          ],
+        properties:
+          {
+            amendmentId: { type: string },
+            requestId: { type: string },
+            awardId: { type: string },
+            kind:
+              {
+                type: string,
+                enum: [route, stop_waiting, early_termination],
+                description: "`route` needs both parties' approvals; `stop_waiting` (paid waiting the rider authorized up front under the cap) and `early_termination` (a safe partial journey) are server-proposed and settle through the same linked-adjustment path.",
+              },
+            state:
+              {
+                type: string,
+                enum:
+                  [
+                    proposed,
+                    awaiting_approvals_and_funding,
+                    committed,
+                    rejected,
+                    expired,
+                    failed,
+                    compensated,
+                  ],
+              },
+            proposedByRole: { type: string, enum: [rider, driver, system] },
+            baseRouteRevision: { type: integer },
+            baseFareRevision: { type: integer },
+            routeRevision: { type: integer },
+            fareRevision: { type: integer },
+            stops:
+              {
+                type: array,
+                description: "The COMPLETE ordered stop list the amendment commits: stops already reached first, unchanged; surviving stops keep their stopId.",
+                items: { $ref: "#/components/schemas/RouteStop" },
+              },
+            dropoff: { $ref: "#/components/schemas/TripPlace" },
+            priorFareMinor: { $ref: "#/components/schemas/Money" },
+            revisedFareMinor: { $ref: "#/components/schemas/Money" },
+            fareDeltaMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Signed: revised − prior.",
+              },
+            riderFundingDeltaMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Signed: what the rider's funding adds (reserved as a top-up BEFORE approvals) or gets back (a partial release at commit).",
+              },
+            riderFunding:
+              {
+                type: string,
+                enum:
+                  [
+                    pending,
+                    reserved,
+                    committed,
+                    released,
+                    release_on_commit,
+                    partially_released,
+                    not_required,
+                    unsecured_cash,
+                  ],
+              },
+            commissionDeltaMinor: { $ref: "#/components/schemas/Money" },
+            driverNetDeltaMinor: { $ref: "#/components/schemas/Money" },
+            addedDistanceMeters: { type: integer },
+            addedDurationSec:
+              {
+                type: integer,
+                description: "Driving time plus expected dwell added (negative when shorter).",
+              },
+            approvals:
+              {
+                type: object,
+                required: [rider, driver],
+                properties:
+                  {
+                    rider:
+                      {
+                        type: object,
+                        required: [approved],
+                        properties:
+                          {
+                            approved: { type: boolean },
+                            approvedAt: { type: string, format: date-time },
+                          },
+                      },
+                    driver:
+                      {
+                        type: object,
+                        required: [approved],
+                        properties:
+                          {
+                            approved: { type: boolean },
+                            approvedAt: { type: string, format: date-time },
+                          },
+                      },
+                  },
+              },
+            expiresAt:
+              {
+                type: string,
+                format: date-time,
+                description: "Unapproved amendments expire here (market-configured window) and release everything reserved.",
+              },
+            reason:
+              {
+                type: string,
+                description: "e.g. next_job_conflict, insufficient_driver_spendable, insufficient_rider_funds, wallet_terms_refreshed, driver_rejected, rider_rejected, approval_window_elapsed, execution_ended, route_changed.",
+              },
+            pricing:
+              {
+                type: object,
+                additionalProperties: true,
+                description: "Driver only: the snapshot pricing (configVersion, policyVersion, per-km/per-minute rates, route delta, server bounds, boundedBy).",
+              },
+            createdAt: { type: string, format: date-time },
+            resolvedAt: { type: string, format: date-time },
+          },
+      }
+    AmendmentList:
+      {
+        type: object,
+        required:
+          [requestId, routeRevision, fareRevision, agreedFareMinor, amendments],
+        properties:
+          {
+            requestId: { type: string },
+            routeRevision: { type: integer },
+            fareRevision: { type: integer },
+            agreedFareMinor: { $ref: "#/components/schemas/Money" },
+            amendments:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/Amendment" },
+              },
+          },
+      }
+    AmendmentDecision:
+      {
+        type: object,
+        required: [routeRevision, fareRevision],
+        description: "Binds a decision to the exact (amendment id, route revision, fare revision); anything else answers version_conflict with the refreshed terms.",
+        properties:
+          {
+            routeRevision: { type: integer },
+            fareRevision: { type: integer },
+            reason: { type: string, maxLength: 120 },
+          },
+      }
+    StopWaiting:
+      {
+        type: object,
+        required:
+          [
+            waitedSec,
+            includedSec,
+            allowanceRemainingSec,
+            paidSec,
+            feeMinor,
+            accruing,
+            approvalRequired,
+            excessive,
+            settlement,
+          ],
+        description: "One stop's waiting, measured from the server's own timestamps (a confirmed arrival to the departure) — a replay after reconnect or restart recomputes the same figures and cannot double-accrue.",
+        properties:
+          {
+            waitedSec: { type: integer },
+            includedSec: { type: integer },
+            allowanceRemainingSec: { type: integer },
+            paidSec: { type: integer },
+            feeMinor: { $ref: "#/components/schemas/Money" },
+            accruing: { type: boolean },
+            approvalRequired: { type: boolean },
+            excessive: { type: boolean },
+            settlement:
+              { type: string, enum: [none, pending, committed, failed] },
+          },
+      }
+    TripStop:
+      {
+        type: object,
+        required:
+          [
+            stopId,
+            order,
+            state,
+            label,
+            purpose,
+            lat,
+            lng,
+            dwellSec,
+            arrivalDisputed,
+          ],
+        properties:
+          {
+            stopId: { type: string },
+            order: { type: integer, minimum: 1 },
+            state:
+              { type: string, enum: [pending, arrived, departed, skipped] },
+            label: { type: string },
+            purpose: { $ref: "#/components/schemas/StopPurpose" },
+            lat: { type: number },
+            lng: { type: number },
+            dwellSec:
+              {
+                type: integer,
+                description: "The included allowance: the expected dwell the fare priced.",
+              },
+            arrivedAt: { type: string, format: date-time },
+            arrivalDisputed: { type: boolean },
+            arrivalDistanceMeters: { type: integer },
+            departedAt: { type: string, format: date-time },
+            skippedAt: { type: string, format: date-time },
+            skipReason: { type: string },
+            waiting: { $ref: "#/components/schemas/StopWaiting" },
+          },
+      }
+    Trip:
+      {
+        type: object,
+        description: "An executing awarded trip's COMMITTED terms and server-authoritative stop states. The receipt reconciles: originalFareMinor + Σ committedAdjustments.fareDeltaMinor = agreedFareMinor, which is exactly what completion settles; nothing uncommitted ever appears in it. Commission captured == commission(agreedFareMinor). Paid STOP waiting is charged only through committed stop_waiting adjustments (the same linked path, commission moved by the delta once); the move core's PICKUP wait fee is written on the ride row but is not part of a marketplace settlement.",
+        required:
+          [
+            requestId,
+            awardId,
+            executionId,
+            routeRevision,
+            fareRevision,
+            originalFareMinor,
+            agreedFareMinor,
+            committedAdjustments,
+            pickup,
+            dropoff,
+            stops,
+            waitingTerms,
+            version,
+          ],
+        properties:
+          {
+            requestId: { type: string },
+            awardId: { type: string },
+            executionId: { type: string },
+            routeRevision: { type: integer },
+            fareRevision: { type: integer },
+            originalFareMinor: { $ref: "#/components/schemas/Money" },
+            agreedFareMinor: { $ref: "#/components/schemas/Money" },
+            committedAdjustments:
+              {
+                type: array,
+                items:
+                  {
+                    type: object,
+                    required:
+                      [
+                        amendmentId,
+                        kind,
+                        fareDeltaMinor,
+                        fareRevision,
+                        committedAt,
+                      ],
+                    properties:
+                      {
+                        amendmentId: { type: string },
+                        kind:
+                          {
+                            type: string,
+                            enum: [route, stop_waiting, early_termination],
+                          },
+                        fareDeltaMinor: { $ref: "#/components/schemas/Money" },
+                        fareRevision: { type: integer },
+                        committedAt: { type: string, format: date-time },
+                      },
+                  },
+              },
+            capturedCommissionMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Driver only.",
+              },
+            pickup: { $ref: "#/components/schemas/TripPlace" },
+            dropoff: { $ref: "#/components/schemas/TripPlace" },
+            stops:
+              { type: array, items: { $ref: "#/components/schemas/TripStop" } },
+            waitingTerms:
+              {
+                type: object,
+                required:
+                  [
+                    includedBasis,
+                    perMinMinor,
+                    maxAuthorizedMinor,
+                    authorizedCapMinor,
+                    capRevision,
+                    committedMinor,
+                    excessiveAfterSec,
+                    geofenceMeters,
+                  ],
+                description: "The published paid-waiting terms (from the award's pricing snapshot): included allowance (stop dwell), per-minute rate, the maximum authorized waiting cost (and the cap after rider approvals), the excessive-waiting threshold and the arrival geofence.",
+                properties:
+                  {
+                    includedBasis: { type: string, const: stop_dwell },
+                    perMinMinor: { $ref: "#/components/schemas/Money" },
+                    maxAuthorizedMinor: { $ref: "#/components/schemas/Money" },
+                    authorizedCapMinor: { $ref: "#/components/schemas/Money" },
+                    capRevision: { type: integer },
+                    committedMinor: { $ref: "#/components/schemas/Money" },
+                    excessiveAfterSec: { type: integer },
+                    geofenceMeters: { type: integer },
+                  },
+              },
+            openAmendmentId: { type: string },
+            terminatedAt: { type: string, format: date-time },
+            version: { type: integer },
+          },
+      }
+    CommissionDelta:
+      {
+        type: object,
+        description: "payment-service's post-award commission delta (docs/MARKETPLACE-MONEY.md). Linked to the award's captured hold; only the difference moves.",
+        required:
+          [reservationId, amendmentId, awardId, direction, state, deltaMinor],
+        properties:
+          {
+            reservationId: { type: string },
+            amendmentId: { type: string },
+            awardId: { type: string },
+            direction: { type: string, enum: [increase, decrease, none] },
+            state:
+              {
+                type: string,
+                enum:
+                  [
+                    active,
+                    capture_pending,
+                    captured,
+                    released,
+                    refunded,
+                    reversed,
+                  ],
+              },
+            deltaReservationId: { type: string, nullable: true },
+            deltaMinor: { $ref: "#/components/schemas/Money" },
+            priorTotalMinor: { $ref: "#/components/schemas/Money" },
+            newTotalMinor: { $ref: "#/components/schemas/Money" },
+            newBaseMinor: { $ref: "#/components/schemas/Money" },
+            receiptId: { type: string, nullable: true },
+            journalEntryId: { type: string, nullable: true },
+            originalReceiptId: { type: string, nullable: true },
+          },
+      }
+    DeltaTerms:
+      {
+        type: object,
+        required: [awardId, priorTotalMinor, newTotalMinor, newBaseMinor],
+        properties:
+          {
+            awardId: { type: string },
+            priorTotalMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "The award's captured commission as the caller knows it; a stale prior is version_conflict with refreshedTerms.capturedTotalMinor.",
+              },
+            newTotalMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "commission(newBaseMinor): 10%, half-up.",
+              },
+            newBaseMinor: { $ref: "#/components/schemas/Money" },
+          },
+      }
+    FundingAmendment:
+      {
+        type: object,
+        required:
+          [
+            requesterId,
+            awardId,
+            amendmentId,
+            paymentMethodId,
+            priorAmountMinor,
+            newAmountMinor,
+            currency,
+            cityId,
+          ],
+        properties:
+          {
+            requesterId: { type: string },
+            awardId: { type: string },
+            amendmentId: { type: string },
+            paymentMethodId: { type: string },
+            priorAmountMinor:
+              {
+                type: integer,
+                description: "Bare integer: what the award is funded to as the caller knows it; stale is version_conflict with refreshedTerms.fundedAmountMinor.",
+              },
+            newAmountMinor: { type: integer },
+            currency: { type: string },
+            cityId: { type: string },
+          },
+      }
+    FundingAdjustment:
+      {
+        type: object,
+        required:
+          [awardId, amendmentId, kind, secured, status, deltaMinor, replayed],
+        properties:
+          {
+            awardId: { type: string },
+            amendmentId: { type: string },
+            kind: { type: string, enum: [top_up, partial_release, none] },
+            secured: { type: boolean },
+            status:
+              {
+                type: string,
+                enum:
+                  [reserved, committed, consumed, released, unsecured, missing],
+              },
+            adjustmentId: { type: string, nullable: true },
+            reservationId: { type: string, nullable: true },
+            deltaMinor: { type: integer },
+            priorAmountMinor: { type: integer, nullable: true },
+            newAmountMinor: { type: integer, nullable: true },
+            currency: { type: string, nullable: true },
+            replayed: { type: boolean },
+          },
+      }
     FeedItem:
       {
         type: object,
@@ -1699,6 +2169,327 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Award" }
+  /v1/mp/requests/{requestId}/trip:
+    get:
+      summary: The executing trip's committed terms, stops and waiting (A02)
+      description: "Requester or awarded driver only (anyone else: not_found). Behind marketplace_rides and marketplace_multi_stop (or marketplace_trip_amendments for a trip without stops). Reads only: waiting figures are computed from the server's timestamps at read time."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/amendments:
+    get:
+      summary: Every change proposed on the executing trip, with the committed terms
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AmendmentList" }
+    post:
+      summary: Propose a post-award route change (A02 item 4)
+      description: "Requester or awarded driver (a driver only while the server confirms them parked — 403 driver_ineligible otherwise; never an in-motion fare interaction), behind the deny-by-default marketplace_trip_amendments flag (stops also need marketplace_multi_stop); rides only. Priced server-side as a DELTA under the award's pricing snapshot — only distance and time move, base/booking/minimum top-up are never re-charged; the route part is held inside the new route's server bounds. The driver's queued next job is revalidated FIRST (stop-aware remaining time): a change that would break the consented pickup window is refused with 409 conflict details.reason=next_job_conflict and nothing is reserved. For an increase the incremental commission (payment-service /holds/{id}/amendments/{amendmentId}/reserve) and the rider's top-up (/funding/top-up) are reserved BEFORE approvals. One amendment with open money per trip (409 conflict details.reason=amendment_open). The original agreement stays in force until the amendment commits. Replays with the same Idempotency-Key answer the SAME amendment's current view."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [stops, expectedRouteRevision, expectedFareRevision],
+                additionalProperties: false,
+                properties:
+                  {
+                    stops:
+                      {
+                        type: array,
+                        description: "The REMAINING intermediate stops after the change, in order; stops already reached are history and stay as they are. A surviving stop keeps its stopId. Bounded by the market's stop limit.",
+                        items: { $ref: "#/components/schemas/StopInput" },
+                      },
+                    dropoff:
+                      {
+                        type: object,
+                        required: [lat, lng],
+                        properties:
+                          {
+                            lat: { type: number },
+                            lng: { type: number },
+                            label: { type: string, maxLength: 80 },
+                          },
+                      },
+                    expectedRouteRevision: { type: integer },
+                    expectedFareRevision: { type: integer },
+                  },
+              }
+      responses:
+        "201":
+          description: "Priced and funded: awaiting both approvals."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+        "202":
+          description: "Recorded; the reservation's outcome is unknown and the sweep converges it (poll the amendment)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+        "403":
+          description: "driver_ineligible: the proposing driver is not confirmed parked (details.reason, e.g. NOT_STATIONARY)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "version_conflict (stale expected revisions, refreshedTerms), conflict (next_job_conflict, amendment_open)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: "insufficient_spendable (driver cannot cover the incremental commission) or insufficient_funds (rider cannot cover the top-up): the proposal is rejected with nothing held; validation_failed for a proposal that changes nothing or breaks the stop limits."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/amendments/{amendmentId}:
+    get:
+      summary: One amendment (poll/converge)
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+  /v1/mp/requests/{requestId}/amendments/{amendmentId}/approve:
+    post:
+      summary: Approve the exact terms (A02 item 4)
+      description: "Binds to (amendment id, route revision, fare revision). The driver's approval is accepted only while the server confirms them stationary and parked (403 driver_ineligible details.reason=NOT_STATIONARY) — never an in-motion control. The second approval runs the commit saga: revalidate (trip running, reached stops unchanged, next job still honoured — else rejected with next_job_conflict and everything released), then rider top-up commit + commission increment capture (an increase) or commission refund + rider partial release (a decrease), each idempotent on the amendment id and recorded durably, then the committed terms, stops and execution ride are rewritten in one transaction (ride.terms_amended). A refusal part-way fails the amendment and compensates with linked adjustments; an unknown outcome parks it for the sweep."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AmendmentDecision" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+        "403":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/amendments/{amendmentId}/reject:
+    post:
+      summary: Reject a proposed change (no standing penalty)
+      description: "Either party, until both approved; a driver only while the server confirms them parked (403 driver_ineligible otherwise — an unanswered proposal simply expires). Releases the commission increment and the rider's top-up (idempotent; the sweep retries an unconfirmed release). A driver's rejection carries NO standing or acceptance penalty."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AmendmentDecision" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+  /v1/mp/requests/{requestId}/terminate:
+    post:
+      summary: Safe early end of the journey (partial trip)
+      description: "Behind marketplace_trip_amendments. Rider (any reason) or driver (parked, reason one of excessive_waiting, rider_request, safety_concern, vehicle_issue). Ends the trip at the vehicle's current position: stops never reached are skipped, the stop being waited at closes with its earned waiting, and the fare drops by the unvisited remainder priced under the award's snapshot (never below the travelled route's server floor) — ONE early_termination adjustment through the same linked path (partial commission refund, partial funding release). The driver then completes the ride; completion settles exactly the committed fare."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [expectedFareRevision],
+                properties:
+                  {
+                    reason: { type: string, maxLength: 80 },
+                    expectedFareRevision: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "202":
+          description: "The adjustment's money outcome is unknown; the sweep converges it."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+  /v1/mp/requests/{requestId}/stops/{stopId}/arrive:
+    post:
+      summary: Driver arrival at a stop (server-authoritative)
+      description: "Awarded driver only, passenger aboard, stops in order (one at a time). Geofenced against the driver's last ACCEPTED position with the fix's GPS accuracy as tolerance (up to the market's accuracy ceiling) and a freshness bound; outside it answers 422 not_at_pickup details.reason=not_at_stop|position_stale|position_inaccurate with the server's evidence. `disputed: true` records the arrival anyway as DISPUTED (mp.stop.arrival_disputed) — it never starts paid waiting; a later arrival from inside the fence confirms it and starts the clock then. Emits mp.stop.arrived and mp.stop.waiting_started."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              { type: object, properties: { disputed: { type: boolean } } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/stops/{stopId}/depart:
+    post:
+      summary: Driver departure from a stop — finalises its waiting
+      description: "Awarded driver only. The waiting fee is computed once from server timestamps (confirmed arrival → departure), capped at the rider's authorized cap, and settled as ONE stop_waiting adjustment through the amendment money path (commission increment captured once, rider top-up committed, agreed fare raised). Waiting milestones up to departure (allowance consumed, paid waiting accruing, approval required, excessive) are published once each, stamped when they happened."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+  /v1/mp/requests/{requestId}/stops/{stopId}/skip:
+    post:
+      summary: Skip a stop
+      description: "The rider may drop any stop not yet left; the driver may leave a stop only once its waiting is excessive (409 conflict details.reason=waiting_not_excessive otherwise). Skipping never lowers the agreed fare; waiting already earned settles."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties: { reason: { type: string, maxLength: 80 } },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+  /v1/mp/requests/{requestId}/stops/{stopId}/waiting-approval:
+    post:
+      summary: Rider approval to keep paying for waiting beyond the agreed cap
+      description: "Rider only, while the driver waits at the stop. Extends the authorized cap by one more increment of the published maximum, bound to the cap revision the rider saw (stale: version_conflict with the refreshed cap). Without it nothing accrues past the cap."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [capRevision],
+                properties: { capRevision: { type: integer } },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
   /v1/mp/feed:
     get:
       summary: Paginated eligible open-request feed (D01)
@@ -2474,6 +3265,212 @@ paths:
                       reservationId: { type: string, nullable: true },
                     },
                 }
+  /v1/wallet/mp/holds/{reservationId}/amendments/{amendmentId}/reserve:
+    post:
+      summary: Reserve a post-award commission increment (internal, A02)
+      description: "Service-authenticated. `reservationId` is the award's CAPTURED hold; the amendment id is the idempotency authority (same terms replay 200; different terms 409 idempotency_key_reuse). Encumbers commission(new fare) − captured on the driver's spendable, BEFORE approvals. 422 insufficient_spendable writes nothing; 409 version_conflict (stale prior, refreshedTerms.capturedTotalMinor); 409 conflict (another open amendment on the award, not captured, reversed)."
+      security: [{ serviceKey: [] }]
+      parameters:
+        - {
+            name: reservationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeltaTerms" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+        "200":
+          description: "Replay."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+  /v1/wallet/mp/holds/{reservationId}/amendments/{amendmentId}/capture:
+    post:
+      summary: Capture the committed increment exactly once (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters:
+        - {
+            name: reservationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, newTotalMinor],
+                properties:
+                  {
+                    awardId: { type: string },
+                    newTotalMinor: { $ref: "#/components/schemas/Money" },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+  /v1/wallet/mp/holds/{reservationId}/amendments/{amendmentId}/release:
+    post:
+      summary: Release a reserved increment (reject/expiry; safe before any reserve)
+      security: [{ serviceKey: [] }]
+      parameters:
+        - {
+            name: reservationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, reason],
+                properties:
+                  { awardId: { type: string }, reason: { type: string } },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+  /v1/wallet/mp/holds/{reservationId}/amendments/{amendmentId}/refund:
+    post:
+      summary: Refund a committed decrease as a linked partial reversal (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters:
+        - {
+            name: reservationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeltaTerms" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+  /v1/wallet/mp/funding/top-up:
+    post:
+      summary: Reserve the rider's funding top-up for a fare increase (internal, A02)
+      description: "Service-authenticated; bare-integer amounts. The original reservation is never edited. Cash answers secured:false (no row). 422 insufficient_funds writes nothing; 409 version_conflict (refreshedTerms.fundedAmountMinor); 409 conflict (another open top-up, reservation not active)."
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundingAmendment" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FundingAdjustment" }
+  /v1/wallet/mp/funding/top-up/commit:
+    post:
+      summary: Commit a reserved top-up when its amendment commits (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, amendmentId, newAmountMinor],
+                properties:
+                  {
+                    awardId: { type: string },
+                    amendmentId: { type: string },
+                    newAmountMinor: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FundingAdjustment" }
+  /v1/wallet/mp/funding/top-up/release:
+    post:
+      summary: Release a top-up whose amendment was rejected or expired (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, amendmentId, reason],
+                properties:
+                  {
+                    awardId: { type: string },
+                    amendmentId: { type: string },
+                    reason: { type: string },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FundingAdjustment" }
+  /v1/wallet/mp/funding/partial-release:
+    post:
+      summary: Partially release the rider's funding for a committed decrease (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundingAmendment" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FundingAdjustment" }
   /api/v1/webhooks/marketplace-assign:
     post:
       summary: Delivery execution hand-off (internal, marketplace engine → delivery-service)

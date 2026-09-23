@@ -418,3 +418,181 @@ CREATE TABLE IF NOT EXISTS mp.driver_preferences (
     CONSTRAINT driver_preferences_pickup_positive CHECK (max_pickup_distance_m IS NULL OR max_pickup_distance_m > 0),
     CONSTRAINT driver_preferences_stops_nonnegative CHECK (max_stops IS NULL OR max_stops >= 0)
 );
+
+-- ---------------------------------------------------------------------------
+-- Post-award trip amendments + server-authoritative stop events (A02 items
+-- 4-7), additive and idempotent.
+--
+--   * execution_routes is the COMMITTED terms of one awarded execution: the
+--     route (pickup, ordered stops, dropoff) and route revision, the agreed
+--     fare and fare revision, the commission captured so far, what the
+--     rider's funding covers, and the award's pricing snapshot (the city
+--     config version its quote was priced under — deltas are priced under it,
+--     never under today's policy) and paid-waiting terms. Created lazily from
+--     the award on first use, so an award that never amends or reports a stop
+--     reads exactly as before. The original agreement stays in force until an
+--     amendment COMMITS; only committed adjustments ever change this row.
+--   * execution_stops is each stop's server-authoritative state: arrival
+--     (geofenced, disputed when outside the fence), the paid-waiting clock
+--     (started only by a confirmed arrival), departure/skip, and the waiting
+--     fee finalised at departure and settled through the amendment path.
+--   * amendments is the mpAmendment aggregate; `money_open` is true while
+--     payment-service may hold anything for it (a reserved increment or
+--     top-up, a commit in flight, a compensation or release owed), and the
+--     partial unique index is the database refusing a second amendment with
+--     open money per award — payment-service's own one-open rule, mirrored.
+--   * amendment_history is append-only (an UPDATE is refused by trigger):
+--     every transition and approval, with the revisions it was bound to.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.execution_routes (
+    award_id                  uuid PRIMARY KEY REFERENCES mp.awards (id),
+    request_id                uuid NOT NULL,
+    execution_id              uuid NOT NULL,
+    requester_id              uuid NOT NULL,
+    driver_id                 uuid NOT NULL,
+    city_id                   text NOT NULL,
+    service                   text NOT NULL,
+    vehicle_class             text NOT NULL,
+    currency                  text NOT NULL,
+    payment_method_id         text NOT NULL,
+    reservation_id            text NOT NULL,
+    config_version            integer NOT NULL,
+    policy_version            integer NOT NULL,
+    route_revision            integer NOT NULL DEFAULT 1,
+    fare_revision             integer NOT NULL DEFAULT 1,
+    original_fare_minor       bigint NOT NULL,
+    agreed_fare_minor         bigint NOT NULL,
+    captured_commission_minor bigint NOT NULL,
+    funded_minor              bigint NOT NULL,
+    pickup                    jsonb NOT NULL,
+    dropoff                   jsonb NOT NULL,
+    stops                     jsonb NOT NULL DEFAULT '[]'::jsonb,
+    waiting_terms             jsonb NOT NULL,
+    waiting_cap_minor         bigint NOT NULL DEFAULT 0,
+    cap_revision              integer NOT NULL DEFAULT 1,
+    waiting_committed_minor   bigint NOT NULL DEFAULT 0,
+    terminated_at             timestamptz,
+    version                   integer NOT NULL DEFAULT 1,
+    created_at                timestamptz NOT NULL DEFAULT now(),
+    updated_at                timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT execution_routes_money_nonnegative CHECK (
+        agreed_fare_minor > 0 AND captured_commission_minor >= 0 AND funded_minor >= 0
+        AND waiting_cap_minor >= 0 AND waiting_committed_minor >= 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS execution_routes_execution_uniq
+    ON mp.execution_routes (execution_id);
+
+CREATE TABLE IF NOT EXISTS mp.execution_stops (
+    award_id              uuid NOT NULL REFERENCES mp.execution_routes (award_id) ON DELETE CASCADE,
+    stop_id               uuid NOT NULL,
+    execution_id          uuid NOT NULL,
+    stop_order            integer NOT NULL,
+    state                 text NOT NULL, -- pending | arrived | departed | skipped | removed
+    lat                   double precision NOT NULL,
+    lng                   double precision NOT NULL,
+    label                 text NOT NULL DEFAULT '',
+    purpose               text NOT NULL,
+    dwell_sec             integer NOT NULL,
+    arrived_at            timestamptz,
+    arrival_distance_m    integer,
+    arrival_accuracy_m    double precision,
+    arrival_disputed      boolean NOT NULL DEFAULT false,
+    wait_started_at       timestamptz,
+    departed_at           timestamptz,
+    skipped_at            timestamptz,
+    skip_reason           text,
+    waiting_fee_minor     bigint NOT NULL DEFAULT 0,
+    waiting_settlement    text NOT NULL DEFAULT 'none', -- none | pending | committed | failed
+    waiting_amendment_id  uuid,
+    version               integer NOT NULL DEFAULT 1,
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    updated_at            timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (award_id, stop_id),
+    CONSTRAINT execution_stops_fee_nonnegative CHECK (waiting_fee_minor >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS mp_execution_stops_waiting_idx
+    ON mp.execution_stops (state, waiting_settlement);
+
+CREATE TABLE IF NOT EXISTS mp.amendments (
+    id                       uuid PRIMARY KEY,
+    award_id                 uuid NOT NULL REFERENCES mp.execution_routes (award_id),
+    request_id               uuid NOT NULL,
+    execution_id             uuid NOT NULL,
+    city_id                  text NOT NULL,
+    kind                     text NOT NULL, -- route | stop_waiting | early_termination
+    state                    text NOT NULL,
+    proposed_by              text NOT NULL,
+    proposed_by_role         text NOT NULL,
+    base_route_revision      integer NOT NULL,
+    base_fare_revision       integer NOT NULL,
+    route_revision           integer NOT NULL,
+    fare_revision            integer NOT NULL,
+    stops                    jsonb NOT NULL DEFAULT '[]'::jsonb,
+    dropoff                  jsonb NOT NULL,
+    currency                 text NOT NULL,
+    prior_fare_minor         bigint NOT NULL,
+    revised_fare_minor       bigint NOT NULL,
+    prior_commission_minor   bigint NOT NULL,
+    revised_commission_minor bigint NOT NULL,
+    prior_funded_minor       bigint NOT NULL,
+    revised_funded_minor     bigint NOT NULL,
+    added_distance_m         bigint NOT NULL DEFAULT 0,
+    added_duration_sec       bigint NOT NULL DEFAULT 0,
+    pricing                  jsonb NOT NULL DEFAULT '{}'::jsonb,
+    reference_stop_id        uuid,
+    rider_approved_at        timestamptz,
+    driver_approved_at       timestamptz,
+    expires_at               timestamptz NOT NULL,
+    step                     text NOT NULL,
+    step_state               text NOT NULL,
+    attempts                 integer NOT NULL DEFAULT 0,
+    last_error               text,
+    next_retry_at            timestamptz,
+    funding_done             boolean NOT NULL DEFAULT false,
+    commission_done          boolean NOT NULL DEFAULT false,
+    money_open               boolean NOT NULL DEFAULT true,
+    reason                   text,
+    version                  integer NOT NULL DEFAULT 1,
+    created_at               timestamptz NOT NULL DEFAULT now(),
+    updated_at               timestamptz NOT NULL DEFAULT now(),
+    resolved_at              timestamptz,
+    CONSTRAINT amendments_money_positive CHECK (revised_fare_minor > 0 AND prior_fare_minor > 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS amendments_one_open_per_award
+    ON mp.amendments (award_id) WHERE money_open;
+CREATE INDEX IF NOT EXISTS mp_amendments_award_idx
+    ON mp.amendments (award_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS mp_amendments_due_idx
+    ON mp.amendments (next_retry_at) WHERE money_open;
+
+CREATE TABLE IF NOT EXISTS mp.amendment_history (
+    id              bigserial PRIMARY KEY,
+    amendment_id    uuid NOT NULL REFERENCES mp.amendments (id) ON DELETE CASCADE,
+    award_id        uuid NOT NULL,
+    event           text NOT NULL,
+    from_state      text,
+    to_state        text NOT NULL,
+    actor_role      text NOT NULL,
+    actor_id        text NOT NULL,
+    route_revision  integer NOT NULL,
+    fare_revision   integer NOT NULL,
+    detail          jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS mp_amendment_history_amendment_idx
+    ON mp.amendment_history (amendment_id, id);
+
+CREATE OR REPLACE FUNCTION mp.refuse_history_update() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'mp.amendment_history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS amendment_history_append_only ON mp.amendment_history;
+CREATE TRIGGER amendment_history_append_only
+    BEFORE UPDATE ON mp.amendment_history
+    FOR EACH ROW EXECUTE FUNCTION mp.refuse_history_update();

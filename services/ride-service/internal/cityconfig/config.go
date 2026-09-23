@@ -251,6 +251,47 @@ func (s *Store) Config(ctx context.Context, cityID string) (*CityConfig, error) 
 	return &config, nil
 }
 
+// VersionedProvider reads one specific configuration version of a city, for
+// readers that must price under the snapshot an earlier decision was made
+// with rather than under whatever is activated today.
+type VersionedProvider interface {
+	ConfigVersion(ctx context.Context, cityID string, version int) (*CityConfig, error)
+}
+
+// ConfigVersion loads one version of a city's configuration — activated
+// then, possibly superseded since. A post-award amendment prices its delta
+// under the award's own snapshot with this, so a historical charge is never
+// recalculated under today's policy. Versions are immutable once activated,
+// so the read needs no cache invalidation; like Config it fails closed.
+func (s *Store) ConfigVersion(ctx context.Context, cityID string, version int) (*CityConfig, error) {
+	if cityID == "" || version <= 0 {
+		return nil, fmt.Errorf("%w: no city or version supplied", ErrUnavailable)
+	}
+	if s.pool == nil {
+		return nil, fmt.Errorf("%w: no configuration source is wired", ErrUnavailable)
+	}
+	var raw []byte
+	err := s.pool.QueryRow(ctx, `
+		SELECT config
+		FROM public.city_config_versions
+		WHERE city_id = $1 AND version = $2 AND activated_at IS NOT NULL
+		LIMIT 1`, cityID, version).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: city %s has no activated version %d", ErrUnavailable, cityID, version)
+		}
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	var config CityConfig
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return nil, fmt.Errorf("%w: city %s v%d stores an unreadable config: %v", ErrUnavailable, cityID, version, err)
+	}
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
 // Invalidate drops the cached configuration for a city, for use when a
 // config.version_activated event arrives.
 func (s *Store) Invalidate(ctx context.Context, cityID string) error {

@@ -51,6 +51,29 @@ var eventNames = map[string]struct{}{
 	// payment.cash_acknowledged names.
 	"mp.settlement.posted": {},
 
+	// A02: post-award trip amendments (subject mp_amendment) and the
+	// server-authoritative per-stop events of a multi-stop execution
+	// (subject mp_award). Registered in the contract's EVENT_NAMES too.
+	"mp.amendment.proposed":             {},
+	"mp.amendment.awaiting_approvals":   {},
+	"mp.amendment.approved":             {},
+	"mp.amendment.committed":            {},
+	"mp.amendment.rejected":             {},
+	"mp.amendment.expired":              {},
+	"mp.amendment.failed":               {},
+	"mp.amendment.compensated":          {},
+	"mp.stop.arrived":                   {},
+	"mp.stop.arrival_disputed":          {},
+	"mp.stop.waiting_started":           {},
+	"mp.stop.allowance_consumed":        {},
+	"mp.stop.paid_waiting_accruing":     {},
+	"mp.stop.waiting_approval_required": {},
+	"mp.stop.waiting_approved":          {},
+	"mp.stop.excessive_waiting":         {},
+	"mp.stop.departed":                  {},
+	"mp.stop.skipped":                   {},
+	"mp.trip.terminated_early":          {},
+
 	// Execution-ride names reused from the move surface: the award saga and
 	// the promotion create the execution ride inside THEIR transaction, so the
 	// same downstream consumers see the same ride lifecycle events. The
@@ -59,10 +82,14 @@ var eventNames = map[string]struct{}{
 	"ride.requested":           {},
 	"ride.assigned":            {},
 	"ride.cancelled_by_driver": {},
+	// A committed amendment rewrites the execution ride's quote, fare and
+	// dropoff inside the amendment's transaction, bumping the ride version.
+	"ride.terms_amended": {},
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,
-// mp_award, mp_claim, mp_hold, rate_profile, driver.
+// mp_award, mp_claim, mp_hold, rate_profile, driver — and mp_amendment
+// (subjectAmendment, amendment_views.go) for post-award trip amendments.
 const (
 	subjectRequest     = "mp_request"
 	subjectBid         = "mp_bid"

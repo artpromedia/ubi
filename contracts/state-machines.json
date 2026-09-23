@@ -403,5 +403,19 @@
       "next": ["current", "released"]
     },
     "rule": "one current + at most one dependent next claim per driver across rides AND deliveries, DB-enforced; next→current promotion happens exactly once, after real completion and revalidated eligibility, never collecting the fee again (M05A)"
+  },
+  "mpAmendment": {
+    "initial": "proposed",
+    "transitions": {
+      "proposed": ["awaiting_approvals_and_funding", "rejected", "expired"],
+      "awaiting_approvals_and_funding": [
+        "committed",
+        "rejected",
+        "expired",
+        "failed"
+      ],
+      "failed": ["compensated"]
+    },
+    "rule": "post-award trip amendment on an AWARDED marketplace execution (A02): priced server-side as a delta under the award's pricing snapshot; the incremental commission and rider top-up are reserved before approvals; both parties approve the same (amendment id, route revision, fare revision); the original agreement stays in force until committed; commit captures only the delta (a decrease is a linked partial refund), never re-charging the 10%; one amendment with open money per award, DB-enforced; a commit step that fails part-way is failed and compensated, reconciled by the sweep"
   }
 }

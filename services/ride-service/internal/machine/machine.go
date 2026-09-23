@@ -31,6 +31,9 @@ const (
 	MpAward Name = "mpAward"
 	// MpClaim is the driver capacity claim machine: award_pending → … → released.
 	MpClaim Name = "mpClaim"
+	// MpAmendment is the post-award trip amendment machine: proposed →
+	// awaiting_approvals_and_funding → committed/rejected/expired (A02).
+	MpAmendment Name = "mpAmendment"
 )
 
 // ErrIllegalTransition is returned for any move the contract does not allow.
@@ -134,6 +137,18 @@ const (
 	MpClaimNext         = "next"
 	MpClaimCompleted    = "completed"
 	MpClaimReleased     = "released"
+)
+
+// Marketplace amendment machine states (contracts/state-machines.json →
+// mpAmendment).
+const (
+	MpAmendmentProposed    = "proposed"
+	MpAmendmentAwaiting    = "awaiting_approvals_and_funding"
+	MpAmendmentCommitted   = "committed"
+	MpAmendmentRejected    = "rejected"
+	MpAmendmentExpired     = "expired"
+	MpAmendmentFailed      = "failed"
+	MpAmendmentCompensated = "compensated"
 )
 
 // machines is the contract, transcribed. Order inside a slice is irrelevant;
@@ -251,6 +266,19 @@ var machines = map[Name]struct {
 			// Terminal states the contract lists only as destinations.
 			MpClaimCompleted: {},
 			MpClaimReleased:  {},
+		},
+	},
+	MpAmendment: {
+		initial: MpAmendmentProposed,
+		transitions: map[string][]string{
+			MpAmendmentProposed: {MpAmendmentAwaiting, MpAmendmentRejected, MpAmendmentExpired},
+			MpAmendmentAwaiting: {MpAmendmentCommitted, MpAmendmentRejected, MpAmendmentExpired, MpAmendmentFailed},
+			MpAmendmentFailed:   {MpAmendmentCompensated},
+			// Terminal states the contract lists only as destinations.
+			MpAmendmentCommitted:   {},
+			MpAmendmentRejected:    {},
+			MpAmendmentExpired:     {},
+			MpAmendmentCompensated: {},
 		},
 	},
 }

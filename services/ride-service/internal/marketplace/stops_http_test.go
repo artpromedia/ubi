@@ -844,34 +844,3 @@ func TestConcurrentRouteReviseVsSelect(t *testing.T) {
 	}
 	t.Logf("race outcomes: %v", outcomes)
 }
-
-// TestFinishingTripRefusedBehindMultiStopTrip: a driver whose CURRENT trip
-// has intermediate stops cannot bid for a queued next job — the server cannot
-// yet see which stops remain, so it will not promise a pickup window behind
-// them. (The same geometry without stops qualifies: setupQueuedAward.)
-func TestFinishingTripRefusedBehindMultiStopTrip(t *testing.T) {
-	h := newHarness(t,
-		testutil.WithFlag(cityconfig.FlagMarketplaceMultiStop, true),
-		testutil.WithFlag(cityconfig.FlagMarketplaceQueuedJobs, true))
-	h.Clock.Set(fixedOffPeakHour)
-	origin := testutil.PickupFixture()
-	riderA, riderB, driver := h.Rider(), h.Rider(), h.Driver()
-
-	recorder := quoteStops(t, h, riderA, origin, testutil.PlaceAt(origin, 3_000), []map[string]any{
-		stopAt(testutil.PlaceEast(testutil.PlaceAt(origin, 1_500), 300), "errand", intPtr(60), ""),
-	})
-	requireStatus(t, recorder, http.StatusOK)
-	viewA := publishQuote(t, h, riderA, decode(t, recorder))
-	parkDriver(t, h, driver, origin)
-	bidA := fundedCurrentBid(t, h, driver, viewA["requestId"].(string), moneyMinor(t, viewA, "minimumFareMinor"))
-	selected := doSelect(t, h, riderA, viewA["requestId"].(string), map[string]any{
-		"bidId": bidA["bidId"], "requestVersion": 1, "bidVersion": 1,
-	}, "")
-	requireStatus(t, selected, http.StatusAccepted)
-
-	viewB, _ := publishRoute(t, h, riderB, testutil.PlaceAt(origin, 4_000), testutil.PlaceAt(origin, 9_000), 0)
-	result := evaluate(t, h, driver, viewB["requestId"].(string))
-	if result.Eligible || !hasReason(result, "NOT_NEAR_COMPLETION") {
-		t.Fatalf("a multi-stop current trip must refuse queued bids with NOT_NEAR_COMPLETION: %+v", result)
-	}
-}

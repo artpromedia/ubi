@@ -33,7 +33,12 @@ const sweepBatch = 100
 //  6. settle finished current claims and promote queued next claims exactly
 //     once (the durable backstop for a lost completion callback);
 //  7. recompute queued pickup windows (eta_updated / window_missed once);
-//  8. cancel queued awards whose driver went offline, with the fee reversed.
+//  8. cancel queued awards whose driver went offline, with the fee reversed;
+//  9. resume post-award amendments whose money is still open — re-driving a
+//     stalled reservation or commit under the same amendment id, expiring
+//     and releasing unapproved ones, compensating failed ones (A02);
+//  10. publish due stop-waiting milestones and settle finalised stop
+//     waiting still owed to the amendment path.
 //
 // It is a plain function over rows, so a restart resumes rather than forgets,
 // a test can drive it a tick at a time, and an operator can run it as a job.
@@ -47,6 +52,8 @@ func (s *Service) Sweep(ctx context.Context) error {
 	s.sweepPromotions(ctx)
 	s.sweepQueuedWindows(ctx, now)
 	s.sweepQueuedDriverFailures(ctx)
+	s.sweepAmendments(ctx, now)
+	s.sweepStopWaiting(ctx, now)
 	return nil
 }
 
@@ -497,6 +504,12 @@ func (s *Service) runRecovery(ctx context.Context, row *RecoveryRow, now time.Ti
 		var settle SettlementRequest
 		if err := json.Unmarshal(row.Payload, &settle); err != nil {
 			return false, fmt.Errorf("settlement row has an unreadable payload: %v", err)
+		}
+		// An amended trip settles its COMMITTED fare as it stands now, and
+		// only once no adjustment to it holds open money (A02).
+		settle, adjErr := s.committedSettlement(ctx, settle)
+		if adjErr != nil {
+			return false, adjErr
 		}
 		if opErr := s.deps.Settlement.Settle(ctx, settle, settlementKeyFor(settle.AwardID)); opErr != nil {
 			return false, opErr

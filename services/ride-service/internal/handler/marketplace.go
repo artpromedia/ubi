@@ -78,6 +78,20 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 			r.Get("/{requestId}/queue", h.RequestQueue)
 			r.Get("/{requestId}/pin", h.RetrievePin)
 			r.Get("/{requestId}/driver-view", h.DriverView)
+
+			// A02: the executing trip's committed terms, post-award
+			// amendments and server-authoritative stop events.
+			r.Get("/{requestId}/trip", h.TripView)
+			r.Post("/{requestId}/terminate", h.TerminateTrip)
+			r.Get("/{requestId}/amendments", h.ListAmendments)
+			r.Post("/{requestId}/amendments", h.ProposeAmendment)
+			r.Get("/{requestId}/amendments/{amendmentId}", h.GetAmendment)
+			r.Post("/{requestId}/amendments/{amendmentId}/approve", h.ApproveAmendment)
+			r.Post("/{requestId}/amendments/{amendmentId}/reject", h.RejectAmendment)
+			r.Post("/{requestId}/stops/{stopId}/arrive", h.ArriveAtStop)
+			r.Post("/{requestId}/stops/{stopId}/depart", h.DepartStop)
+			r.Post("/{requestId}/stops/{stopId}/skip", h.SkipStop)
+			r.Post("/{requestId}/stops/{stopId}/waiting-approval", h.ApproveWaiting)
 		})
 
 		r.Route("/bids", func(r chi.Router) {
@@ -977,4 +991,271 @@ func intQuery(query url.Values, name string) int {
 		return 0
 	}
 	return value
+}
+
+// decodeOptionalBody decodes a JSON body when one was sent; an absent body
+// leaves the target at its zero value.
+func decodeOptionalBody(r *http.Request, target any) error {
+	if err := decodeBody(r, target); err != nil {
+		if mapped, ok := domain.AsError(err); ok && mapped.Message == emptyBodyMessage {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// tripIDs parses the request id and, when named, one more path id.
+func tripIDs(r *http.Request, second string) (uuid.UUID, uuid.UUID, error) {
+	requestID, err := uuidParam(r, "requestId")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	if second == "" {
+		return requestID, uuid.Nil, nil
+	}
+	id, err := uuidParam(r, second)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	return requestID, id, nil
+}
+
+// TripView handles GET /v1/mp/requests/{requestId}/trip.
+func (h *MarketplaceHandler) TripView(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, _, err := tripIDs(r, "")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.TripView(r.Context(), actor, requestID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", etagFor(view.Version))
+	writeJSON(w, http.StatusOK, view)
+}
+
+// TerminateTrip handles POST /v1/mp/requests/{requestId}/terminate.
+func (h *MarketplaceHandler) TerminateTrip(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, _, err := tripIDs(r, "")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.TerminateTripRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.TerminateTrip(r.Context(), actor, requestID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// ListAmendments handles GET /v1/mp/requests/{requestId}/amendments.
+func (h *MarketplaceHandler) ListAmendments(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, _, err := tripIDs(r, "")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.ListAmendments(r.Context(), actor, requestID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// ProposeAmendment handles POST /v1/mp/requests/{requestId}/amendments.
+func (h *MarketplaceHandler) ProposeAmendment(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, _, err := tripIDs(r, "")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.ProposeAmendmentRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.ProposeAmendment(r.Context(), actor, requestID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// GetAmendment handles GET /v1/mp/requests/{requestId}/amendments/{amendmentId}.
+func (h *MarketplaceHandler) GetAmendment(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, amendmentID, err := tripIDs(r, "amendmentId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.GetAmendment(r.Context(), actor, requestID, amendmentID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// ApproveAmendment handles POST .../amendments/{amendmentId}/approve.
+func (h *MarketplaceHandler) ApproveAmendment(w http.ResponseWriter, r *http.Request) {
+	h.decideAmendment(w, r, true)
+}
+
+// RejectAmendment handles POST .../amendments/{amendmentId}/reject.
+func (h *MarketplaceHandler) RejectAmendment(w http.ResponseWriter, r *http.Request) {
+	h.decideAmendment(w, r, false)
+}
+
+func (h *MarketplaceHandler) decideAmendment(w http.ResponseWriter, r *http.Request, approve bool) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, amendmentID, err := tripIDs(r, "amendmentId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.AmendmentDecisionRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	decide := h.service.RejectAmendment
+	if approve {
+		decide = h.service.ApproveAmendment
+	}
+	view, status, err := decide(r.Context(), actor, requestID, amendmentID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// ArriveAtStop handles POST .../stops/{stopId}/arrive.
+func (h *MarketplaceHandler) ArriveAtStop(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, stopID, err := tripIDs(r, "stopId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.StopArriveRequest
+	if err := decodeOptionalBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.ArriveAtStop(r.Context(), actor, requestID, stopID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// DepartStop handles POST .../stops/{stopId}/depart.
+func (h *MarketplaceHandler) DepartStop(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, stopID, err := tripIDs(r, "stopId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var ignored struct{}
+	if err := decodeOptionalBody(r, &ignored); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.DepartStop(r.Context(), actor, requestID, stopID, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// SkipStop handles POST .../stops/{stopId}/skip.
+func (h *MarketplaceHandler) SkipStop(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, stopID, err := tripIDs(r, "stopId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.StopSkipRequest
+	if err := decodeOptionalBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.SkipStop(r.Context(), actor, requestID, stopID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// ApproveWaiting handles POST .../stops/{stopId}/waiting-approval.
+func (h *MarketplaceHandler) ApproveWaiting(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, stopID, err := tripIDs(r, "stopId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.WaitingApprovalRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.ApproveWaiting(r.Context(), actor, requestID, stopID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }

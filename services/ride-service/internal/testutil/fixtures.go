@@ -130,6 +130,20 @@ func MarketplacePolicyFixture() map[string]any {
 		"queue": map[string]any{
 			"pickupWindowToleranceSec": 300,
 		},
+		// The pilot stop limits, stated, plus paid stop waiting (A02): 10.00
+		// a started minute past a stop's included allowance, 50.00 authorized
+		// up front per trip (and per rider approval), excessive after 15 min.
+		"stops": map[string]any{
+			"maxIntermediateStops": 3,
+			"defaultDwellSec":      120,
+			"maxDwellSec":          600,
+			"paidWaiting": map[string]any{
+				"perMinMinor":        1_000,
+				"maxAuthorizedMinor": 5_000,
+				"excessiveAfterSec":  900,
+			},
+			"amendmentApprovalSec": 180,
+		},
 		"rateProfileBounds": map[string]any{
 			"ride:go":      rateBounds,
 			"ride:comfort": rateBounds,

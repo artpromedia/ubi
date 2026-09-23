@@ -83,6 +83,26 @@ type MarketplaceStopsPolicy struct {
 	MaxIntermediateStops int `json:"maxIntermediateStops"`
 	DefaultDwellSec      int `json:"defaultDwellSec"`
 	MaxDwellSec          int `json:"maxDwellSec"`
+	// PaidWaiting prices waiting at a stop beyond its included allowance
+	// (the expected dwell the fare already priced). Absent: waiting beyond the
+	// allowance is never charged — the cap is zero, so any paid waiting needs
+	// the rider's explicit approval first.
+	PaidWaiting *StopPaidWaitingPolicy `json:"paidWaiting,omitempty"`
+	// AmendmentApprovalSec is how long a post-award amendment waits for both
+	// parties' approvals before it expires and releases everything it
+	// reserved. Zero means the pilot default below.
+	AmendmentApprovalSec int `json:"amendmentApprovalSec,omitempty"`
+}
+
+// StopPaidWaitingPolicy mirrors MpStopPaidWaitingPolicySchema: the per-minute
+// rate for waiting past a stop's included allowance, the maximum waiting cost
+// a rider authorizes up front per trip (each explicit rider approval extends
+// the cap by one more such increment), and the total wait at one stop after
+// which it counts as excessive and the driver may leave it.
+type StopPaidWaitingPolicy struct {
+	PerMinMinor        int64 `json:"perMinMinor"`
+	MaxAuthorizedMinor int64 `json:"maxAuthorizedMinor"`
+	ExcessiveAfterSec  int   `json:"excessiveAfterSec"`
 }
 
 // The pilot multi-stop limits (addendum A02): up to three intermediate stops,
@@ -95,6 +115,11 @@ const (
 	PilotMaxIntermediateStops = 3
 	PilotDefaultStopDwellSec  = 120
 	PilotMaxStopDwellSec      = 600
+	// PilotAmendmentApprovalSec is the approval window an unapproved
+	// post-award amendment gets when the market configures none: long enough
+	// for a parked driver to review, short enough that reserved money never
+	// lingers. The capability stays behind marketplace_trip_amendments.
+	PilotAmendmentApprovalSec = 180
 
 	// maxIntermediateStopsCeiling is structural, not policy: every stop is a
 	// routed leg at quote time, so no market may configure an unbounded list.
@@ -114,9 +139,29 @@ func (p *MarketplacePolicy) StopsPolicy() MarketplaceStopsPolicy {
 	return *p.Stops
 }
 
+// ApprovalWindowSec answers the amendment approval window: the configured
+// one, or the pilot default.
+func (s MarketplaceStopsPolicy) ApprovalWindowSec() int {
+	if s.AmendmentApprovalSec > 0 {
+		return s.AmendmentApprovalSec
+	}
+	return PilotAmendmentApprovalSec
+}
+
 // validate refuses a stops block the engine could not honour.
 func (s *MarketplaceStopsPolicy) validate(cityID string) error {
+	if s.PaidWaiting != nil {
+		waiting := s.PaidWaiting
+		switch {
+		case waiting.PerMinMinor < 0 || waiting.MaxAuthorizedMinor < 0:
+			return fmt.Errorf("%w: city %s marketplace paid stop waiting carries a negative amount", ErrUnavailable, cityID)
+		case waiting.ExcessiveAfterSec <= 0:
+			return fmt.Errorf("%w: city %s marketplace paid stop waiting has no excessive-waiting threshold", ErrUnavailable, cityID)
+		}
+	}
 	switch {
+	case s.AmendmentApprovalSec < 0:
+		return fmt.Errorf("%w: city %s marketplace amendment approval window is negative", ErrUnavailable, cityID)
 	case s.MaxIntermediateStops < 0 || s.MaxIntermediateStops > maxIntermediateStopsCeiling:
 		return fmt.Errorf("%w: city %s marketplace stop limit must be between 0 and %d",
 			ErrUnavailable, cityID, maxIntermediateStopsCeiling)

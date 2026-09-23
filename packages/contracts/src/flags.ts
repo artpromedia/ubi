@@ -47,6 +47,12 @@ export const FLAG_KEYS = [
   // untouched; deliveries stay single-drop whatever this says (multi-drop
   // needs per-package custody). Nothing enables this by default.
   "marketplace_multi_stop",
+  // Post-award trip amendments and safe early termination on marketplace
+  // RIDES (A02 items 4-7). While off, propose/approve/reject/list and
+  // terminate are refused; per-stop arrival/waiting events stay under
+  // marketplace_multi_stop. Money moves only through linked adjustments (the
+  // 10% is never re-charged). Nothing enables this by default.
+  "marketplace_trip_amendments",
   // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
   // assistant quoting, publishing a bounded request, and (the only binding step)
   // selecting a winning offer within a user's grant/mandate. Deny-by-default and

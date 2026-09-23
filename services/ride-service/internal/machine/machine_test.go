@@ -29,7 +29,7 @@ func loadContract(t *testing.T) map[string]contractMachine {
 		t.Fatalf("failed to parse the state machine contract: %v", err)
 	}
 	machines := map[string]contractMachine{}
-	for _, name := range []string{"rider", "driver", "mpRequest", "mpBid", "mpHold", "mpAward", "mpClaim"} {
+	for _, name := range []string{"rider", "driver", "mpRequest", "mpBid", "mpHold", "mpAward", "mpClaim", "mpAmendment"} {
 		section, ok := document[name]
 		if !ok {
 			t.Fatalf("the contract has no %q machine", name)
@@ -149,6 +149,10 @@ func TestAssertRefusesIllegalTransitions(t *testing.T) {
 		{"a hold cannot be captured before capture_pending", machine.MpHold, machine.MpHoldActive, machine.MpHoldCaptured},
 		{"a confirmed award cannot fail", machine.MpAward, machine.MpAwardConfirmed, machine.MpAwardFailed},
 		{"a current claim cannot demote to next", machine.MpClaim, machine.MpClaimCurrent, machine.MpClaimNext},
+		{"an amendment cannot commit before its funding is secured", machine.MpAmendment, machine.MpAmendmentProposed, machine.MpAmendmentCommitted},
+		{"a committed amendment cannot be rejected", machine.MpAmendment, machine.MpAmendmentCommitted, machine.MpAmendmentRejected},
+		{"a rejected amendment cannot be revived", machine.MpAmendment, machine.MpAmendmentRejected, machine.MpAmendmentAwaiting},
+		{"a proposal cannot fail part-way (nothing was captured)", machine.MpAmendment, machine.MpAmendmentProposed, machine.MpAmendmentFailed},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -180,6 +184,8 @@ func TestAssertAllowsContractTransitions(t *testing.T) {
 		{machine.MpHold, machine.MpHoldCapturePending, machine.MpHoldActive},
 		{machine.MpAward, machine.MpAwardFailed, machine.MpAwardCompensated},
 		{machine.MpClaim, machine.MpClaimNext, machine.MpClaimCurrent},
+		{machine.MpAmendment, machine.MpAmendmentAwaiting, machine.MpAmendmentCommitted},
+		{machine.MpAmendment, machine.MpAmendmentFailed, machine.MpAmendmentCompensated},
 	}
 	for _, transition := range legal {
 		if err := machine.Assert(transition.machine, transition.from, transition.to); err != nil {

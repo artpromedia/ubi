@@ -23,6 +23,12 @@ const (
 	// default: while off, a quote, publish or route revision that carries
 	// stops is refused, and the no-stop path is untouched either way.
 	FlagMarketplaceMultiStop = "marketplace_multi_stop"
+	// Post-award trip amendments on marketplace RIDE executions (A02 items
+	// 4-6): proposing, approving and committing a route/fare change after the
+	// award, and the safe early termination that settles through the same
+	// linked-adjustment path. Deny by default: while off, every amendment
+	// route answers feature_disabled and an award's agreed terms cannot move.
+	FlagMarketplaceTripAmendments = "marketplace_trip_amendments"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

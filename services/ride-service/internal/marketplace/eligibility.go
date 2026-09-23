@@ -233,19 +233,22 @@ func (s *Service) evaluateFinishingTrip(
 		return nil, asDomainError(err)
 	}
 
-	// A current trip with intermediate stops has no honest remaining-time
-	// estimate yet: the server has no per-stop arrival events to tell which
-	// stops are done, and routing straight to the dropoff would understate
-	// the queued rider's pickup window. Such a driver finishes first.
-	if ride.StopCount > 0 {
-		return refuse(ReasonNotNearCompletion), nil
-	}
-
 	finishing := policy.FinishingTrip
 
 	// Remaining service time: live position → the current trip's dropoff.
-	remaining, err := s.routeSeconds(ctx, *session.LastLat, *session.LastLng, ride.DropoffLat, ride.DropoffLng)
-	if err != nil {
+	// A multi-stop trip counts every stop the server has not seen finished
+	// (server-authoritative stop events; an unreported stop is still ahead)
+	// with its expected dwell, so the queued rider's window is never
+	// understated.
+	var remaining int64
+	if ride.StopCount > 0 {
+		var end Area
+		remaining, end, err = s.remainingTripSeconds(ctx, ride, *session.LastLat, *session.LastLng)
+		if err != nil {
+			return refuse(ReasonRoutingUnavailable), nil
+		}
+		ride.DropoffLat, ride.DropoffLng = end.Lat, end.Lng
+	} else if remaining, err = s.routeSeconds(ctx, *session.LastLat, *session.LastLng, ride.DropoffLat, ride.DropoffLng); err != nil {
 		return refuse(ReasonRoutingUnavailable), nil
 	}
 	if remaining > int64(finishing.MaxRemainingSec) {

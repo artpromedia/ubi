@@ -70,3 +70,41 @@ func TestStopsPolicyValidation(t *testing.T) {
 		t.Fatalf("a market may switch stops off structurally: %v", err)
 	}
 }
+
+// TestPaidStopWaitingPolicy: the optional paid-waiting block and the
+// amendment approval window decode, default and validate like every other
+// marketplace block — a broken block refuses the whole policy.
+func TestPaidStopWaitingPolicy(t *testing.T) {
+	var decoded MarketplacePolicy
+	raw := `{"stops": {"maxIntermediateStops": 2, "defaultDwellSec": 60, "maxDwellSec": 300,
+		"paidWaiting": {"perMinMinor": 2500, "maxAuthorizedMinor": 30000, "excessiveAfterSec": 900},
+		"amendmentApprovalSec": 90}}`
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	stops := decoded.StopsPolicy()
+	if stops.PaidWaiting == nil || stops.PaidWaiting.PerMinMinor != 2500 ||
+		stops.PaidWaiting.MaxAuthorizedMinor != 30000 || stops.PaidWaiting.ExcessiveAfterSec != 900 {
+		t.Fatalf("paid waiting block: %+v", stops.PaidWaiting)
+	}
+	if stops.ApprovalWindowSec() != 90 {
+		t.Fatalf("approval window: %d", stops.ApprovalWindowSec())
+	}
+	if pilot := minimalPolicy().StopsPolicy(); pilot.PaidWaiting != nil || pilot.ApprovalWindowSec() != PilotAmendmentApprovalSec {
+		t.Fatalf("a market without the block gets no paid waiting and the pilot window: %+v", pilot)
+	}
+
+	for name, block := range map[string]MarketplaceStopsPolicy{
+		"negative rate":          {MaxIntermediateStops: 2, MaxDwellSec: 60, PaidWaiting: &StopPaidWaitingPolicy{PerMinMinor: -1, ExcessiveAfterSec: 60}},
+		"negative cap":           {MaxIntermediateStops: 2, MaxDwellSec: 60, PaidWaiting: &StopPaidWaitingPolicy{MaxAuthorizedMinor: -1, ExcessiveAfterSec: 60}},
+		"no excessive threshold": {MaxIntermediateStops: 2, MaxDwellSec: 60, PaidWaiting: &StopPaidWaitingPolicy{PerMinMinor: 1}},
+		"negative approval":      {MaxIntermediateStops: 2, MaxDwellSec: 60, AmendmentApprovalSec: -1},
+	} {
+		policy := minimalPolicy()
+		stopsBlock := block
+		policy.Stops = &stopsBlock
+		if err := policy.Validate("c"); !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("%s: want ErrUnavailable, got %v", name, err)
+		}
+	}
+}

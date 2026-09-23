@@ -46,6 +46,8 @@ export const SUBJECT_TYPES = [
   "mp_claim",
   "mp_hold",
   "rate_profile",
+  // post-award trip amendments (A02)
+  "mp_amendment",
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
@@ -364,6 +366,41 @@ export const EVENT_NAMES = [
   // backward compatible: the old names keep working until every consumer reads
   // the dedicated one.
   "mp.settlement.posted",
+  // ── Post-award trip amendments (A02 items 4-6) — subject mp_amendment ──
+  // proposed → awaiting_approvals (incremental commission + rider top-up
+  // reserved) → approved (each party, bound to route + fare revision) →
+  // committed | rejected | expired, or failed → compensated when a commit
+  // step is refused part-way. Only differences move; the 10% is never
+  // re-charged (payment-service emits mp.commission.* with kind
+  // amendment_delta alongside).
+  "mp.amendment.proposed",
+  "mp.amendment.awaiting_approvals",
+  "mp.amendment.approved",
+  "mp.amendment.committed",
+  "mp.amendment.rejected",
+  "mp.amendment.expired",
+  "mp.amendment.failed",
+  "mp.amendment.compensated",
+  // ── Server-authoritative stop events on a multi-stop execution (A02 item
+  // 7) — subject mp_award. Arrival is geofenced (disputed when the fence
+  // cannot confirm it, which never starts paid waiting); waiting milestones
+  // are stamped when they happened and published once each.
+  "mp.stop.arrived",
+  "mp.stop.arrival_disputed",
+  "mp.stop.waiting_started",
+  "mp.stop.allowance_consumed",
+  "mp.stop.paid_waiting_accruing",
+  "mp.stop.waiting_approval_required",
+  "mp.stop.waiting_approved",
+  "mp.stop.excessive_waiting",
+  "mp.stop.departed",
+  "mp.stop.skipped",
+  // A safe early end of the journey (partial trip), settled as one linked
+  // decrease through the amendment money path.
+  "mp.trip.terminated_early",
+  // The execution ride's quote/fare/dropoff rewritten by a committed
+  // amendment (subject ride; version bumps with it).
+  "ride.terms_amended",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
