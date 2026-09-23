@@ -86,14 +86,26 @@ func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler 
 		// permission checks compare the gateway-verified actor against the
 		// delivery's own sender_id/driver_id — see internal/custody and this
 		// file's handlers for the exact matrix.
+		//
+		// Proofs (P17) are verified objects in the private proof bucket:
+		// proof-uploads issues a short-lived presigned PUT for a server-made
+		// key; the proof endpoints attach an upload only after verifying the
+		// stored bytes; proofs/{proofId}/url mints a seconds-long presigned
+		// GET for an entitled party. Charged returns (P17, deny-by-default)
+		// add return/complete (the driver's verified hand-back, which
+		// captures a reserved fee) and return/cancel-charge (ops).
 		r.Route("/deliveries/{id}/custody", func(r chi.Router) {
 			r.Use(custodyIdentity)
 			r.Get("/", h.GetCustodyTimeline)
+			r.Post("/proof-uploads", h.PostProofUpload)
+			r.Get("/proofs/{proofId}/url", h.GetProofURL)
 			r.Post("/pickup-proof", h.PostPickupProof)
 			r.Post("/delivery-proof", h.PostDeliveryProof)
 			r.Post("/recipient-unreachable", h.PostRecipientUnreachable)
 			r.Post("/return/propose", h.PostProposeReturn)
 			r.Post("/return/consent", h.PostReturnConsent)
+			r.Post("/return/complete", h.PostReturnComplete)
+			r.Post("/return/cancel-charge", h.PostReturnCancelCharge)
 			r.Post("/collected", h.PostCollectedAtPoint)
 		})
 

@@ -1,19 +1,23 @@
 /*
- * Delivery custody and returns (C07, G08).
+ * Delivery custody and returns (C07, G08; completed by P17).
  *
  * The tables this file reads/writes (delivery_custody, custody_events,
- * delivery_proofs, delivery_returns) are Prisma-owned, exactly like
- * `deliveries` itself (packages/database/prisma, migration
- * 20260921031850_delivery_custody) — this service contains zero CREATE TABLE.
- * It reaches them through the same pgx pool and raw SQL it already uses for
- * `deliveries`.
+ * delivery_proofs, delivery_proof_uploads, delivery_returns) are
+ * Prisma-owned, exactly like `deliveries` itself (packages/database/prisma)
+ * — this service contains zero CREATE TABLE. It reaches them through the
+ * same pgx pool and raw SQL it already uses for `deliveries`.
  *
  * Only marketplace-managed deliveries have a delivery_custody row (seeded by
- * MarketplaceAssign — see custodyForMarketplaceAssign in marketplace.go). A
- * legacy open-market delivery, an unknown delivery id, or an actor who is
- * neither the delivery's sender nor its assigned driver all answer 404,
- * matching the marketplace 404 convention: existence is not revealed to a
- * foreign caller.
+ * MarketplaceAssign — see seedMarketplaceCustody). A legacy open-market
+ * delivery, an unknown delivery id, or an actor who is neither the
+ * delivery's sender nor its assigned driver all answer 404, matching the
+ * marketplace 404 convention: existence is not revealed to a foreign caller.
+ *
+ * Proofs (proofs.go) are verified objects in the private proof bucket, never
+ * client-asserted strings. Returns may carry a fee only while charged returns
+ * are enabled; the fee is reserved, captured and released by payment-service
+ * (return_funding.go) — this service never moves money and never touches the
+ * award's commission.
  */
 
 package handlers
@@ -21,6 +25,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -28,6 +33,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/rs/zerolog/log"
 
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/custody"
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/identity"
@@ -77,13 +83,34 @@ func errConflict(message string) *custodyError {
 func errChargeUnsupported() *custodyError {
 	return &custodyError{
 		http.StatusConflict, "RETURN_CHARGE_UNSUPPORTED",
-		"This return proposes a fee, and delivery-service has no authorized funding path to collect it. " +
+		"This return was proposed with a fee before charged returns existed, and that fee was never authorized. " +
 			"It cannot complete the charged leg — resolve it as a fee-free return, or let it default to a hold point.",
 	}
 }
 
+// errChargedReturnsNotOffered is the explicit refusal while the
+// charged-returns switch is off (or payment-service says the city has it
+// off): the fee is never silently dropped or recorded as payable.
+func errChargedReturnsNotOffered() *custodyError {
+	return &custodyError{
+		http.StatusConflict, "CHARGED_RETURNS_NOT_OFFERED",
+		"Charged returns are not offered here: propose the return fee-free (feeMinor 0), or divert the parcel to a hold point.",
+	}
+}
+
+// errFeePending: the return-fee outcome at payment-service is not yet
+// known (or a held fee could not be released yet). Nothing was resolved;
+// retrying is safe — every fee call is idempotent on the return id.
+func errFeePending() *custodyError {
+	return &custodyError{
+		http.StatusServiceUnavailable, "RETURN_FEE_PENDING",
+		"The return fee could not be confirmed with payment-service yet; nothing was resolved. Retry shortly.",
+	}
+}
+
 func writeCustodyError(w http.ResponseWriter, err error) {
-	if custErr, ok := err.(*custodyError); ok {
+	var custErr *custodyError
+	if errors.As(err, &custErr) {
 		respondError(w, custErr.status, custErr.code, custErr.message)
 		return
 	}
@@ -202,129 +229,6 @@ func (h *Handler) applyChain(
 }
 
 // ============================================
-// Proofs
-// ============================================
-
-type proofRequest struct {
-	ObjectKey   string `json:"objectKey"`
-	ContentType string `json:"contentType"`
-	SizeBytes   int64  `json:"sizeBytes"`
-	SHA256      string `json:"sha256"`
-}
-
-// postProof is the shared body for pickup-proof and delivery-proof: validate
-// the reference, short-circuit on an exact idempotent replay (no second row,
-// whatever the current state is), otherwise insert the proof row and apply
-// the state chain in one transaction.
-func (h *Handler) postProof(w http.ResponseWriter, r *http.Request, proofType string, chainFor func(current string) []string) {
-	deliveryID := chi.URLParam(r, "id")
-	actor, ok := identity.ActorFrom(r.Context())
-	if !ok {
-		writeCustodyError(w, errNotFound())
-		return
-	}
-	if actor.Role != identity.RoleDriver {
-		writeCustodyError(w, errForbidden("only the assigned driver may post a "+proofType+" proof"))
-		return
-	}
-	cst, cerr := h.loadCustodyForActor(r.Context(), deliveryID, actor)
-	if cerr != nil {
-		writeCustodyError(w, cerr)
-		return
-	}
-	if !cst.isAssignedDriver(actor) {
-		writeCustodyError(w, errNotFound())
-		return
-	}
-
-	var req proofRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeCustodyError(w, errValidation("invalid request body"))
-		return
-	}
-	sha := strings.ToLower(strings.TrimSpace(req.SHA256))
-	problems := custody.ValidateProof(custody.ProofInput{
-		ObjectKey: req.ObjectKey, ContentType: req.ContentType, SizeBytes: req.SizeBytes, SHA256: sha,
-	})
-	if len(problems) > 0 {
-		respondError(w, http.StatusBadRequest, "VALIDATION_ERROR", strings.Join(problems, "; "))
-		return
-	}
-
-	// Idempotent replay: an identical proof (same delivery, type, checksum)
-	// already recorded means this exact submission was seen before —
-	// answer with the existing row, touch nothing else, whatever the current
-	// custody state is now.
-	var existingID string
-	err := h.db.Pool.QueryRow(r.Context(), `
-		SELECT id FROM delivery_proofs WHERE delivery_id = $1 AND type = $2 AND sha256 = $3
-	`, deliveryID, proofType, sha).Scan(&existingID)
-	if err == nil {
-		respond(w, http.StatusOK, map[string]interface{}{
-			"proofId": existingID, "deliveryId": deliveryID, "type": proofType,
-			"replay": true, "custodyState": cst.State,
-		})
-		return
-	}
-
-	chain := chainFor(cst.State)
-	if chain == nil {
-		writeCustodyError(w, errConflict("a "+proofType+" proof cannot be posted from custody state "+cst.State))
-		return
-	}
-
-	var proofID string
-	err = h.applyChain(r.Context(), cst, chain, custody.ActorDriver, &actor.UserID, proofType+"_proof_recorded",
-		func(ctx context.Context, tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `
-				INSERT INTO delivery_proofs (delivery_id, custody_id, type, object_key, content_type, size_bytes, sha256, uploaded_by, uploaded_role, created_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
-				ON CONFLICT (delivery_id, type, sha256) DO UPDATE SET delivery_id = EXCLUDED.delivery_id
-				RETURNING id
-			`, deliveryID, cst.ID, proofType, req.ObjectKey, req.ContentType, req.SizeBytes, sha, actor.UserID.String(), actor.Role).Scan(&proofID)
-		})
-	if err != nil {
-		writeCustodyError(w, err)
-		return
-	}
-
-	respond(w, http.StatusCreated, map[string]interface{}{
-		"proofId": proofID, "deliveryId": deliveryID, "type": proofType,
-		"replay": false, "custodyState": cst.State,
-	})
-}
-
-// PostPickupProof handles POST /api/v1/deliveries/{id}/custody/pickup-proof.
-// Driver only. courier_assigned -> picked_up -> in_transit (a pickup starts
-// transit immediately; there is no separate "start transit" action).
-func (h *Handler) PostPickupProof(w http.ResponseWriter, r *http.Request) {
-	h.postProof(w, r, custody.ProofPickup, func(current string) []string {
-		if current == custody.CourierAssigned {
-			return []string{custody.CourierAssigned, custody.PickedUp, custody.InTransit}
-		}
-		return nil
-	})
-}
-
-// PostDeliveryProof handles POST /api/v1/deliveries/{id}/custody/delivery-proof.
-// Driver only. Reaches `delivered` from in_transit, delivery_attempted,
-// delivery_retry directly, or from recipient_unreachable by chaining through
-// delivery_retry (a successful retry IS a delivery proof; there is no
-// separate "start retry" action).
-func (h *Handler) PostDeliveryProof(w http.ResponseWriter, r *http.Request) {
-	h.postProof(w, r, custody.ProofDelivery, func(current string) []string {
-		switch current {
-		case custody.InTransit, custody.DeliveryAttempted, custody.DeliveryRetry:
-			return []string{current, custody.Delivered}
-		case custody.RecipientUnreachable:
-			return []string{custody.RecipientUnreachable, custody.DeliveryRetry, custody.Delivered}
-		default:
-			return nil
-		}
-	})
-}
-
-// ============================================
 // Recipient unreachable
 // ============================================
 
@@ -391,9 +295,15 @@ type proposeReturnRequest struct {
 }
 
 // PostProposeReturn handles POST /api/v1/deliveries/{id}/custody/return/propose.
-// Sender or assigned driver. recipient_unreachable -> return_proposed. A
-// proposed fee is recorded honestly (custody.ResolveChargeStatus) but never
-// authorizes a charge — see internal/custody/rules.go.
+// Sender or assigned driver. recipient_unreachable -> return_proposed.
+//
+// A fee is only OFFERED while charged returns are enabled
+// (custody.ResolveChargeStatus): with the switch off a fee-bearing proposal
+// is refused with CHARGED_RETURNS_NOT_OFFERED and nothing is written — only
+// fee-free returns exist then, explicitly. With the switch on the fee must
+// sit inside the server's bounds (custody.ValidateReturnFee: the delivery's
+// currency, never above its agreed fare) and is recorded as
+// `authorization_required`; nothing is held until the sender approves.
 func (h *Handler) PostProposeReturn(w http.ResponseWriter, r *http.Request) {
 	deliveryID := chi.URLParam(r, "id")
 	actor, ok := identity.ActorFrom(r.Context())
@@ -430,12 +340,24 @@ func (h *Handler) PostProposeReturn(w http.ResponseWriter, r *http.Request) {
 		writeCustodyError(w, errValidation("feeMinor must not be negative"))
 		return
 	}
-	if req.FeeMinor > 0 && len(req.Currency) != 3 {
-		writeCustodyError(w, errValidation("currency is required when feeMinor is positive"))
+
+	chargeStatus, offered := custody.ResolveChargeStatus(req.FeeMinor, h.chargedReturnsOffered())
+	if !offered {
+		writeCustodyError(w, errChargedReturnsNotOffered())
 		return
 	}
+	if req.FeeMinor > 0 {
+		money, err := h.deliveryMoneyContext(r.Context(), deliveryID)
+		if err != nil {
+			writeCustodyError(w, err)
+			return
+		}
+		if problems := custody.ValidateReturnFee(req.FeeMinor, req.Currency, money.Currency, money.AgreedFareMinor); len(problems) > 0 {
+			respondError(w, http.StatusBadRequest, "RETURN_FEE_OUT_OF_BOUNDS", strings.Join(problems, "; "))
+			return
+		}
+	}
 
-	chargeStatus := custody.ResolveChargeStatus(req.FeeMinor)
 	proposedAt := time.Now().UTC()
 	expiresAt := custody.ConsentExpiresAt(proposedAt)
 	actorType := custody.ActorDriver
@@ -449,7 +371,7 @@ func (h *Handler) PostProposeReturn(w http.ResponseWriter, r *http.Request) {
 		actorType, &actor.UserID, req.Reason,
 		func(ctx context.Context, tx pgx.Tx) error {
 			var currency *string
-			if req.Currency != "" {
+			if req.FeeMinor > 0 {
 				currency = &req.Currency
 			}
 			return tx.QueryRow(ctx, `
@@ -473,7 +395,7 @@ func (h *Handler) PostProposeReturn(w http.ResponseWriter, r *http.Request) {
 }
 
 // openReturn is the current (or just-expired) delivery_returns row for a
-// custody in return_proposed.
+// custody in return_proposed or later.
 type openReturn struct {
 	ID               string
 	ChargeStatus     string
@@ -481,18 +403,22 @@ type openReturn struct {
 	ConsentExpiresAt time.Time
 	FeeMinor         int64
 	Currency         *string
+	ChargeCityID     string
+	ChargeRef        string
 }
 
 func (h *Handler) loadOpenReturn(ctx context.Context, custodyID string) (*openReturn, error) {
 	var ret openReturn
 	row := h.db.Pool.QueryRow(ctx, `
-		SELECT id, charge_status, consent_state, consent_expires_at, fee_minor, currency
+		SELECT id, charge_status, consent_state, consent_expires_at, fee_minor, currency,
+			COALESCE(charge_city_id, ''), COALESCE(charge_ref, '')
 		FROM delivery_returns
 		WHERE custody_id = $1
 		ORDER BY proposed_at DESC
 		LIMIT 1
 	`, custodyID)
-	if scanErr := row.Scan(&ret.ID, &ret.ChargeStatus, &ret.ConsentState, &ret.ConsentExpiresAt, &ret.FeeMinor, &ret.Currency); scanErr != nil {
+	if scanErr := row.Scan(&ret.ID, &ret.ChargeStatus, &ret.ConsentState, &ret.ConsentExpiresAt, &ret.FeeMinor, &ret.Currency,
+		&ret.ChargeCityID, &ret.ChargeRef); scanErr != nil {
 		return nil, scanErr
 	}
 	return &ret, nil
@@ -502,7 +428,10 @@ func (h *Handler) loadOpenReturn(ctx context.Context, custodyID string) (*openRe
 // return_proposed custody's consent window has passed with no sender
 // response. Called at the top of return/consent, collected-at-point and the
 // timeline read, so an unanswered proposal converges the next time anyone
-// looks rather than staying in limbo forever. Never charges anything.
+// looks rather than staying in limbo forever. Never charges anything: a fee
+// whose reservation outcome was left unknown by an interrupted approval is
+// released first, and if that release cannot be confirmed yet the default is
+// not applied this time (errFeePending) rather than stranding a hold.
 func (h *Handler) resolveExpiredReturn(ctx context.Context, cst *custodyRecord) error {
 	if cst.State != custody.ReturnProposed {
 		return nil
@@ -514,16 +443,37 @@ func (h *Handler) resolveExpiredReturn(ctx context.Context, cst *custodyRecord) 
 	if !custody.ConsentWindowExpired(time.Now().UTC(), ret.ConsentExpiresAt) {
 		return nil
 	}
+	if err := h.releaseHeldFee(ctx, cst, ret, "return_consent_window_expired"); err != nil {
+		return err
+	}
 	return h.applyChain(ctx, cst,
 		[]string{custody.ReturnProposed, custody.HeldAtPoint},
 		custody.ActorSystem, nil, "return_consent_window_expired_defaulted_to_hold_point",
 		func(ctx context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `
-				UPDATE delivery_returns SET consent_state = $1, resolved_at = now(), updated_at = now()
-				WHERE id = $2
-			`, custody.ConsentExpired, ret.ID)
-			return err
+			return resolveReturnRow(ctx, tx, ret.ID, custody.ConsentExpired, nil)
 		})
+}
+
+// resolveReturnRow records a return proposal's resolution without the fee
+// (rejected, or expired to the hold point) inside the custody transition's
+// transaction — refusing, and so rolling that transition back, when the row
+// says a fee is (or may be) held right now. The caller released any such fee
+// first; seeing one here means an approval started reserving after that
+// check (a reject racing an approve), and resolving the return underneath it
+// could strand the hold. The caller answers a conflict and a retry releases
+// first.
+func resolveReturnRow(ctx context.Context, tx pgx.Tx, returnID, consentState string, resolvedBy *string) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE delivery_returns SET consent_state = $1, resolved_at = now(), resolved_by = COALESCE($2, resolved_by), updated_at = now()
+		WHERE id = $3 AND charge_status NOT IN ($4, $5)
+	`, consentState, resolvedBy, returnID, custody.ChargeReserving, custody.ChargeReserved)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return errConflict("this return's fee is being reserved right now; re-fetch the timeline and retry")
+	}
+	return nil
 }
 
 type returnConsentRequest struct {
@@ -532,9 +482,16 @@ type returnConsentRequest struct {
 
 // PostReturnConsent handles POST /api/v1/deliveries/{id}/custody/return/consent.
 // Sender ONLY — a driver may propose a return but never authorize or refuse
-// one. Accepting a fee-bearing return still cannot complete the charged leg
-// (errChargeUnsupported); rejecting always succeeds and defaults to a hold
-// point, same as an unanswered expiry.
+// one.
+//
+//   - reject: always allowed; defaults to a hold point, same as an unanswered
+//     expiry (a fee whose reservation outcome is unknown is released first).
+//   - consent, fee-free: return_proposed -> ... -> return_to_sender, as before.
+//   - consent, fee-bearing (charged returns on): the fee is reserved from the
+//     sender's wallet FIRST (consentChargedReturn); only a confirmed
+//     reservation moves custody to `returning`. Insufficient funds answers
+//     402 and changes nothing.
+//   - consent on a legacy `unsupported` fee: refused (RETURN_CHARGE_UNSUPPORTED).
 func (h *Handler) PostReturnConsent(w http.ResponseWriter, r *http.Request) {
 	deliveryID := chi.URLParam(r, "id")
 	actor, ok := identity.ActorFrom(r.Context())
@@ -579,13 +536,16 @@ func (h *Handler) PostReturnConsent(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Action {
 	case "reject":
+		if err := h.releaseHeldFee(r.Context(), cst, ret, "return_rejected_by_sender"); err != nil {
+			writeCustodyError(w, err)
+			return
+		}
 		err = h.applyChain(r.Context(), cst,
 			[]string{custody.ReturnProposed, custody.HeldAtPoint},
 			custody.ActorSender, &actor.UserID, "return_rejected_by_sender",
 			func(ctx context.Context, tx pgx.Tx) error {
-				_, e := tx.Exec(ctx, `UPDATE delivery_returns SET consent_state = $1, resolved_at = now(), resolved_by = $2, updated_at = now() WHERE id = $3`,
-					custody.ConsentRejected, actor.UserID.String(), ret.ID)
-				return e
+				resolvedBy := actor.UserID.String()
+				return resolveReturnRow(ctx, tx, ret.ID, custody.ConsentRejected, &resolvedBy)
 			})
 		if err != nil {
 			writeCustodyError(w, err)
@@ -595,8 +555,17 @@ func (h *Handler) PostReturnConsent(w http.ResponseWriter, r *http.Request) {
 		return
 
 	case "consent":
-		if !custody.CanCompleteReturn(ret.ChargeStatus) {
+		switch {
+		case custody.CanCompleteReturn(ret.ChargeStatus):
+			// Fee-free: nothing to reserve.
+		case ret.ChargeStatus == custody.ChargeUnsupported:
 			writeCustodyError(w, errChargeUnsupported())
+			return
+		case custody.NeedsReservation(ret.ChargeStatus):
+			h.consentChargedReturn(w, r, cst, ret, actor)
+			return
+		default:
+			writeCustodyError(w, errConflict("this return's fee is already "+ret.ChargeStatus))
 			return
 		}
 		err = h.applyChain(r.Context(), cst,
@@ -611,7 +580,7 @@ func (h *Handler) PostReturnConsent(w http.ResponseWriter, r *http.Request) {
 			writeCustodyError(w, err)
 			return
 		}
-		respond(w, http.StatusOK, map[string]interface{}{"deliveryId": deliveryID, "custodyState": cst.State, "consentState": custody.ConsentConsented})
+		respond(w, http.StatusOK, map[string]interface{}{"deliveryId": deliveryID, "custodyState": cst.State, "consentState": custody.ConsentConsented, "chargeStatus": ret.ChargeStatus})
 		return
 
 	default:
@@ -628,7 +597,8 @@ func (h *Handler) PostReturnConsent(w http.ResponseWriter, r *http.Request) {
 // direct hand-off from recipient_unreachable or return_proposed (chained
 // through held_at_point) so a driver taking the parcel straight to a hold
 // point, or a hold point reached by rejection/expiry, converge on the same
-// single endpoint.
+// single endpoint. A return proposal abandoned this way releases any fee
+// whose reservation outcome was left unknown first.
 func (h *Handler) PostCollectedAtPoint(w http.ResponseWriter, r *http.Request) {
 	deliveryID := chi.URLParam(r, "id")
 	actor, ok := identity.ActorFrom(r.Context())
@@ -667,6 +637,12 @@ func (h *Handler) PostCollectedAtPoint(w http.ResponseWriter, r *http.Request) {
 	case custody.RecipientUnreachable:
 		chain = []string{custody.RecipientUnreachable, custody.HeldAtPoint, custody.Collected}
 	case custody.ReturnProposed:
+		if ret, err := h.loadOpenReturn(r.Context(), cst.ID); err == nil {
+			if err := h.releaseHeldFee(r.Context(), cst, ret, "return_abandoned_for_hold_point"); err != nil {
+				writeCustodyError(w, err)
+				return
+			}
+		}
 		chain = []string{custody.ReturnProposed, custody.HeldAtPoint, custody.Collected}
 	default:
 		writeCustodyError(w, errConflict("collected-at-point is not valid from custody state "+cst.State))
@@ -693,9 +669,25 @@ type custodyEventView struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type proofView struct {
+	ProofID     string    `json:"proofId"`
+	Type        string    `json:"type"`
+	ContentType string    `json:"contentType"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	SHA256      string    `json:"sha256"`
+	Verified    bool      `json:"verified"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 // GetCustodyTimeline handles GET /api/v1/deliveries/{id}/custody. Sender or
 // assigned driver only; anyone else (including a genuine but unrelated
 // account) sees 404, same as every other handler in this file.
+//
+// The response also carries the return policy in force (`returnPolicy`: are
+// charged returns offered at all?) and the delivery's proofs — metadata
+// only; a proof's bytes are reachable solely through a short-lived presigned
+// URL from GET .../custody/proofs/{proofId}/url. Reading the timeline also
+// retries a fee capture a completed return still owes (never a new charge).
 func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 	deliveryID := chi.URLParam(r, "id")
 	actor, ok := identity.ActorFrom(r.Context())
@@ -714,8 +706,19 @@ func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.resolveExpiredReturn(r.Context(), cst); err != nil {
-		writeCustodyError(w, err)
-		return
+		var custErr *custodyError
+		if !errors.As(err, &custErr) || custErr.code != "RETURN_FEE_PENDING" {
+			writeCustodyError(w, err)
+			return
+		}
+		// A pending fee release only delays the safe default; the read
+		// itself still answers.
+		log.Warn().Str("deliveryId", deliveryID).Msg("expired return left pending: its fee release is not confirmed yet")
+	}
+	if ret, err := h.loadOpenReturn(r.Context(), cst.ID); err == nil && ret.ChargeStatus == custody.ChargeCapturePending {
+		if err := h.settlePendingCapture(r.Context(), cst, ret); err != nil {
+			log.Warn().Err(err).Str("deliveryId", deliveryID).Msg("a completed return's fee capture is still pending")
+		}
 	}
 
 	rows, err := h.db.Pool.Query(r.Context(), `
@@ -726,17 +729,37 @@ func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 		writeCustodyError(w, err)
 		return
 	}
-	defer rows.Close()
-
 	events := make([]custodyEventView, 0)
 	for rows.Next() {
 		var ev custodyEventView
 		if err := rows.Scan(&ev.FromState, &ev.ToState, &ev.ActorType, &ev.Reason, &ev.CreatedAt); err != nil {
+			rows.Close()
 			writeCustodyError(w, err)
 			return
 		}
 		events = append(events, ev)
 	}
+	rows.Close()
+
+	proofRows, err := h.db.Pool.Query(r.Context(), `
+		SELECT id::text, type, content_type, size_bytes, sha256, verified_at IS NOT NULL, created_at
+		FROM delivery_proofs WHERE custody_id = $1 ORDER BY created_at ASC
+	`, cst.ID)
+	if err != nil {
+		writeCustodyError(w, err)
+		return
+	}
+	proofs := make([]proofView, 0)
+	for proofRows.Next() {
+		var pv proofView
+		if err := proofRows.Scan(&pv.ProofID, &pv.Type, &pv.ContentType, &pv.SizeBytes, &pv.SHA256, &pv.Verified, &pv.CreatedAt); err != nil {
+			proofRows.Close()
+			writeCustodyError(w, err)
+			return
+		}
+		proofs = append(proofs, pv)
+	}
+	proofRows.Close()
 
 	// The latest return proposal, if any — lets a client (rider-mobile's
 	// custody screen) render the fee/reason/expiry without a second call.
@@ -762,31 +785,33 @@ func (h *Handler) GetCustodyTimeline(w http.ResponseWriter, r *http.Request) {
 		"state":      cst.State,
 		"version":    cst.Version,
 		"openReturn": openReturnView,
-		"events":     events,
+		"returnPolicy": map[string]interface{}{
+			"chargedReturnsOffered": h.chargedReturnsOffered(),
+			"feeFreeOnly":           !h.chargedReturnsOffered(),
+		},
+		"proofs": proofs,
+		"events": events,
 	})
 }
 
-// custodyForMarketplaceAssign seeds the delivery_custody row for a freshly
-// assigned marketplace delivery. Called by MarketplaceAssign (marketplace.go)
-// in the SAME transaction-adjacent flow as the delivery insert (best-effort:
-// see the call site for why this is not itself inside that INSERT's
-// transaction). The driver is already known at award time, so custody starts
-// at CourierAssigned rather than modelling a separate "awaiting driver"
-// state — see internal/custody's package doc.
-func (h *Handler) custodyForMarketplaceAssign(ctx context.Context, deliveryID, senderID, driverID string) error {
-	_, err := h.db.Pool.Exec(ctx, `
+// seedMarketplaceCustody seeds the delivery_custody row (and its first
+// custody event) for a freshly assigned marketplace delivery, inside
+// MarketplaceAssign's transaction so the delivery and its custody commit
+// together (P17). The driver is already known at award time, so custody
+// starts at CourierAssigned rather than modelling a separate "awaiting
+// driver" state — see internal/custody's package doc. senderUserID is the
+// requester's USER id (the gateway identity the access matrix compares), not
+// the rider profile deliveries.sender_id references.
+func seedMarketplaceCustody(ctx context.Context, tx pgx.Tx, deliveryID, senderUserID, driverID string) error {
+	var custodyID string
+	if err := tx.QueryRow(ctx, `
 		INSERT INTO delivery_custody (delivery_id, state, version, sender_id, driver_id, created_at, updated_at)
 		VALUES ($1, $2, 1, $3, $4, now(), now())
-		ON CONFLICT (delivery_id) DO NOTHING
-	`, deliveryID, custody.CourierAssigned, senderID, driverID)
-	if err != nil {
+		RETURNING id
+	`, deliveryID, custody.CourierAssigned, senderUserID, driverID).Scan(&custodyID); err != nil {
 		return err
 	}
-	var custodyID string
-	if err := h.db.Pool.QueryRow(ctx, `SELECT id FROM delivery_custody WHERE delivery_id = $1`, deliveryID).Scan(&custodyID); err != nil {
-		return err
-	}
-	_, err = h.db.Pool.Exec(ctx, `
+	_, err := tx.Exec(ctx, `
 		INSERT INTO custody_events (custody_id, delivery_id, from_state, to_state, actor_type, reason, created_at)
 		VALUES ($1, $2, NULL, $3, $4, 'marketplace_award_assigned', now())
 	`, custodyID, deliveryID, custody.CourierAssigned, custody.ActorSystem)

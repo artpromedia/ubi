@@ -1088,6 +1088,7 @@ model Delivery {
   custody       DeliveryCustody?
   custodyEvents CustodyEvent[]
   proofs        DeliveryProof[]
+  proofUploads  DeliveryProofUpload[]
   returns       DeliveryReturn[]
 
   @@index([senderId, status])
@@ -1123,10 +1124,11 @@ model DeliveryCustody {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  delivery Delivery         @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
-  events   CustodyEvent[]
-  proofs   DeliveryProof[]
-  returns  DeliveryReturn[]
+  delivery     Delivery              @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  events       CustodyEvent[]
+  proofs       DeliveryProof[]
+  proofUploads DeliveryProofUpload[]
+  returns      DeliveryReturn[]
 
   @@index([state])
   @@map("delivery_custody")
@@ -1155,40 +1157,104 @@ model CustodyEvent {
   @@map("custody_events")
 }
 
-/// A proof REFERENCE, never the bytes (see docs/marketplace/DELIVERY_CUSTODY.md
-/// "object storage" section — no S3/MinIO client is wired into delivery-service
-/// today, so this table stores a client-supplied, validated object key +
-/// checksum only). The uniqueness constraint makes a duplicate proof
-/// submission (retry, double-tap) idempotent: no second row.
+/// A custody proof: a REFERENCE to an object in the private proof bucket,
+/// never the bytes. Since P17 every new row points at an object
+/// delivery-service itself issued an upload for (DeliveryProofUpload) and
+/// verified before attaching — present in the bucket, size within bounds,
+/// SHA-256 of the stored bytes equal to `sha256`, content sniffed as the
+/// declared image type — so `verifiedAt` is set and `uploadId` names the
+/// issuance. Rows written before P17 carry neither (client-asserted
+/// references, never verified). The uniqueness constraint makes a duplicate
+/// proof submission (retry, double-tap) idempotent: no second row.
 model DeliveryProof {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  deliveryId   String   @map("delivery_id") @db.Uuid
-  custodyId    String   @map("custody_id") @db.Uuid
-  /// pickup | delivery
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId   String    @map("delivery_id") @db.Uuid
+  custodyId    String    @map("custody_id") @db.Uuid
+  /// pickup | delivery | return
   type         String
-  objectKey    String   @map("object_key")
-  contentType  String   @map("content_type")
-  sizeBytes    BigInt   @map("size_bytes")
+  objectKey    String    @map("object_key")
+  contentType  String    @map("content_type")
+  sizeBytes    BigInt    @map("size_bytes")
   sha256       String
-  uploadedBy   String   @map("uploaded_by") @db.Uuid
-  uploadedRole String   @map("uploaded_role")
-  createdAt    DateTime @default(now()) @map("created_at")
+  uploadedBy   String    @map("uploaded_by") @db.Uuid
+  uploadedRole String    @map("uploaded_role")
+  /// The server-issued upload this proof was attached from (null only on
+  /// pre-P17 rows).
+  uploadId     String?   @unique @map("upload_id") @db.Uuid
+  /// When delivery-service verified the stored object's bytes (null only on
+  /// pre-P17 rows).
+  verifiedAt   DateTime? @map("verified_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
-  custody  DeliveryCustody @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+  delivery Delivery             @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  custody  DeliveryCustody      @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+  upload   DeliveryProofUpload? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
 
   @@unique([deliveryId, type, sha256])
   @@index([custodyId])
   @@map("delivery_proofs")
 }
 
-/// A return proposal. `feeMinor` is a REFERENCE amount only — delivery-service
-/// never moves money (see docs/marketplace/DELIVERY_CUSTODY.md "return-leg
-/// charge"). `chargeStatus` records whether a charged return can actually be
-/// authorized: `not_required` (fee-free / hold-point return), or
-/// `unsupported` (a fee was proposed but no payment-service delivery-return
-/// funding endpoint exists yet — this return cannot complete the charged leg
-/// until one does; it may still complete as hold-at-point).
+/// A server-issued, short-lived, scope-bound proof upload (P17). The driver
+/// asks delivery-service for an upload slot, declaring the image's type, size
+/// and SHA-256; delivery-service generates the object key itself —
+/// `proofs/<deliveryId>/<type>/<issuedTo>/<uploadId>` — and answers a
+/// presigned PUT for exactly that key that expires in minutes. Attaching the
+/// proof later (DeliveryProof) is refused unless the caller is `issuedTo`,
+/// the upload belongs to the same delivery and proof type, and the stored
+/// object verifies against the declared size, type and checksum. A rejected
+/// upload's object is deleted and the row keeps the reason.
+model DeliveryProofUpload {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId   String    @map("delivery_id") @db.Uuid
+  custodyId    String    @map("custody_id") @db.Uuid
+  /// pickup | delivery | return
+  type         String
+  objectKey    String    @unique @map("object_key")
+  contentType  String    @map("content_type")
+  sizeBytes    BigInt    @map("size_bytes")
+  sha256       String
+  /// The custody actor (driver user id) the upload was issued to — the only
+  /// caller who may attach it.
+  issuedTo     String    @map("issued_to") @db.Uuid
+  issuedRole   String    @map("issued_role")
+  /// issued | attached | rejected
+  status       String    @default("issued")
+  rejectReason String?   @map("reject_reason")
+  /// When the presigned PUT stops working.
+  expiresAt    DateTime  @map("expires_at")
+  attachedAt   DateTime? @map("attached_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  custody  DeliveryCustody @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+  proof    DeliveryProof?
+
+  @@index([deliveryId, status])
+  @@map("delivery_proof_uploads")
+}
+
+/// A return proposal. delivery-service never moves money itself: a fee is
+/// held and taken by payment-service's delivery-return funding module
+/// (/v1/finance/delivery-returns, P17) and this row mirrors where that stands.
+/// `chargeStatus`:
+///   - `not_required` — a fee-free return (or one resolved to a hold point);
+///   - `unsupported` — legacy (pre-P17) fee-bearing proposal recorded when no
+///     funding path existed; it can never complete the charged leg;
+///   - `authorization_required` — a fee-bearing proposal made while charged
+///     returns are enabled; the sender's approval reserves it;
+///   - `reserving` — the reserve call was sent and its outcome is not yet
+///     recorded (a write-ahead marker: any path that resolves this return
+///     without completing it releases the reservation first);
+///   - `reserved` — the fee is held on the sender's wallet (`chargeRef` names
+///     payment-service's charge); the parcel is on its way back;
+///   - `capture_pending` — the driver proved the return; the capture is owed
+///     and retried until payment-service confirms it;
+///   - `captured` — taken exactly once (`chargeEntryId` is the journal entry);
+///   - `released` — the hold was released (charge cancelled, or the approval
+///     never committed). The original award's 10% commission is never touched
+///     by any of these.
 model DeliveryReturn {
   id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   deliveryId     String  @map("delivery_id") @db.Uuid
@@ -1207,6 +1273,14 @@ model DeliveryReturn {
   resolvedAt       DateTime? @map("resolved_at")
   resolvedBy       String?   @map("resolved_by") @db.Uuid
 
+  /// The city the charge is scoped to (the approving sender's signed city).
+  chargeCityId    String?   @map("charge_city_id")
+  /// payment-service's delivery return charge id, once reserved.
+  chargeRef       String?   @map("charge_ref")
+  /// The capture journal entry id, once captured.
+  chargeEntryId   String?   @map("charge_entry_id")
+  chargeUpdatedAt DateTime? @map("charge_updated_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1215,6 +1289,7 @@ model DeliveryReturn {
 
   @@index([deliveryId])
   @@index([consentState, consentExpiresAt])
+  @@index([chargeStatus])
   @@map("delivery_returns")
 }
 
@@ -1808,14 +1883,15 @@ model Wallet {
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
   lines               JournalLine[]
-  transfersOut        Transfer[]           @relation("TransferFrom")
-  transfersIn         Transfer[]           @relation("TransferTo")
+  transfersOut        Transfer[]             @relation("TransferFrom")
+  transfersIn         Transfer[]             @relation("TransferTo")
   nipTransfers        NipTransfer[]
   topups              Topup[]
   statements          WalletStatement[]
   mpHolds             MpCommissionHold[]
   mpRiderReservations MpRiderReservation[]
   travelPaymentItems  TravelPaymentItem[]
+  deliveryReturnFees  DeliveryReturnCharge[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -1832,11 +1908,13 @@ model JournalEntry {
   caseRef        String?  @map("case_ref")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  lines                 JournalLine[]
-  transfers             Transfer[]
-  remittances           Remittance[]
-  travelPaymentCaptures TravelPaymentItem[]
-  travelPaymentOps      TravelPaymentOp[]
+  lines                  JournalLine[]
+  transfers              Transfer[]
+  remittances            Remittance[]
+  travelPaymentCaptures  TravelPaymentItem[]
+  travelPaymentOps       TravelPaymentOp[]
+  deliveryReturnCaptures DeliveryReturnCharge[]
+  deliveryReturnOps      DeliveryReturnChargeOp[]
 
   @@index([kind, occurredAt])
   @@index([reference])
@@ -2030,7 +2108,10 @@ model MpRiderReservation {
   updatedAt       DateTime  @updatedAt @map("updated_at")
   resolvedAt      DateTime? @map("resolved_at")
 
-  wallet Wallet @relation(fields: [walletId], references: [id])
+  wallet               Wallet                @relation(fields: [walletId], references: [id])
+  /// Set only on a delivery return-fee encumbrance (award key
+  /// `delivery_return:<returnId>`, see DeliveryReturnCharge).
+  deliveryReturnCharge DeliveryReturnCharge?
 
   @@index([walletId, status], map: "mp_rider_reservations_spendable")
   @@map("mp_rider_reservations")
@@ -2109,6 +2190,90 @@ model TravelPaymentOp {
 
   @@index([itemId, createdAt])
   @@map("travel_payment_ops")
+}
+
+/// Delivery return-leg fee (P17): payment-service's side of ONE charged
+/// return, served at /v1/finance/delivery-returns (src/finance/
+/// delivery-returns.ts). delivery-service reserves the fee from the SENDER's
+/// wallet when the sender approves the return, captures it when the driver
+/// proves the parcel is back, and releases it when the charge is cancelled or
+/// the approval never committed.
+///
+/// The encumbrance itself is a rider funding reservation row
+/// (mp_rider_reservations, award key `delivery_return:<returnId>` — the same
+/// linked-key convention funding amendments use), so the one spendable
+/// calculation already subtracts it. Capture posts ONE journal entry (sender
+/// wallet → driver wallet, kind `delivery_return_fee`): the return leg is a
+/// new charge, never the original award's 10% commission — nothing here
+/// adjusts or re-captures an mp_commission_holds row (reserve only READS the
+/// award's captured hold, to bind the payee to the award's driver). One
+/// charge per return, ever: a release that arrives before any reservation
+/// records a `released` row with no wallet or reservation (a tombstone), so a
+/// late reserve for that return is refused instead of stranding a hold.
+model DeliveryReturnCharge {
+  id             String    @id
+  /// delivery-service's delivery_returns.id — one charge per return, ever.
+  returnId       String    @unique @map("return_id")
+  deliveryId     String    @map("delivery_id")
+  /// The original marketplace award, recorded as context only: its
+  /// commission hold and funding reservation are never touched.
+  awardId        String    @map("award_id")
+  /// The payer (sender user id) and the payee (the driver's user id).
+  senderId       String    @map("sender_id")
+  driverId       String    @map("driver_id")
+  /// The payer's wallet; null only on a tombstone.
+  walletId       String?   @map("wallet_id")
+  cityId         String    @map("city_id")
+  currency       String
+  feeMinor       BigInt    @map("fee_minor")
+  /// reserved | captured | released
+  state          String
+  /// The companion mp_rider_reservations row that encumbers the fee; null
+  /// only on a tombstone.
+  reservationId  String?   @unique @map("reservation_id")
+  /// The one capture entry (sender wallet → driver wallet).
+  captureEntryId String?   @map("capture_entry_id")
+  releaseReason  String?   @map("release_reason")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  capturedAt     DateTime? @map("captured_at")
+  releasedAt     DateTime? @map("released_at")
+
+  wallet       Wallet?                  @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  reservation  MpRiderReservation?      @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  captureEntry JournalEntry?            @relation(fields: [captureEntryId], references: [id])
+  ops          DeliveryReturnChargeOp[]
+
+  @@index([deliveryId])
+  @@map("delivery_return_charges")
+}
+
+/// One accepted POST against a delivery return charge — its idempotency
+/// record. The scoped Idempotency-Key is unique: a replay answers `result`
+/// verbatim, and a replay carrying different money terms is refused.
+model DeliveryReturnChargeOp {
+  id             String   @id
+  chargeId       String   @map("charge_id")
+  /// reserve | capture | release
+  op             String
+  idempotencyKey String   @unique @map("idempotency_key")
+  clientKey      String   @map("client_key")
+  payloadHash    String   @map("payload_hash")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  /// The journal entry this op posted; null for reserve and release.
+  entryId        String?  @map("entry_id")
+  reason         String?
+  /// The response body the op answered with — replayed verbatim.
+  result         Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  charge DeliveryReturnCharge @relation(fields: [chargeId], references: [id])
+  entry  JournalEntry?        @relation(fields: [entryId], references: [id])
+
+  @@index([chargeId, createdAt])
+  @@map("delivery_return_charge_ops")
 }
 
 model WalletStatement {

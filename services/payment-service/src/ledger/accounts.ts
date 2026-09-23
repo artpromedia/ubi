@@ -112,6 +112,12 @@ export const ENTRY_KINDS = [
   "travel_capture",
   /** A full or partial travel refund, linked to its capture entry — never an edit. */
   "travel_refund",
+  /**
+   * The one capture of a delivery return-leg fee: sender wallet → the driver's
+   * wallet, whole (finance/delivery-returns.ts). A new charge for a new leg —
+   * never the award's 10% commission, which is captured once at selection.
+   */
+  "delivery_return_fee",
 ] as const;
 
 export type EntryKind = (typeof ENTRY_KINDS)[number];

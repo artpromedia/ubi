@@ -64,6 +64,24 @@ func main() {
 	// Initialize handlers
 	h := handlers.New(db, rdb, cfg)
 
+	// Custody proofs live only in the private proof bucket (P17). Without it
+	// the process still serves its other routes, but every proof upload,
+	// attachment and view is refused and — in production — readiness stays
+	// 503, so no traffic is routed to a delivery-service that cannot verify
+	// proof of pickup or delivery.
+	if err := cfg.ValidateProofStorage(); err != nil {
+		if cfg.IsProduction() {
+			log.Error().Err(err).Msg("proof object storage is not configured: custody proofs are refused and readiness will fail")
+		} else {
+			log.Warn().Err(err).Msg("proof object storage is not configured: custody proof routes are refused (development)")
+		}
+	}
+	if cfg.ChargedReturnsEnabled {
+		log.Info().Msg("charged returns are ENABLED: return fees are reserved and captured through payment-service")
+	} else {
+		log.Info().Msg("charged returns are disabled (deny-by-default): only fee-free returns are offered")
+	}
+
 	// Router: every route this service serves, including custody/returns,
 	// whose gateway-identity verifier reads the same
 	// RIDE_INTERNAL_CONTEXT_SECRET the gateway signs with, in the posture the

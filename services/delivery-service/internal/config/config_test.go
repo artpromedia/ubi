@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/identity"
 )
@@ -143,5 +144,112 @@ func TestIsProduction(t *testing.T) {
 		if got := (&Config{Env: env}).IsProduction(); got != want {
 			t.Fatalf("IsProduction(%q): got %v, want %v", env, got, want)
 		}
+	}
+}
+
+func strongProduction() *Config {
+	return &Config{
+		Env:                   "production",
+		InternalServiceKey:    "a-strong-internal-key",
+		JWTSecret:             "a-strong-jwt-secret",
+		InternalContextSecret: strongContextSecret,
+		PaymentServiceURL:     "http://payment-service:4003",
+	}
+}
+
+func goodStorage() ProofStorageConfig {
+	return ProofStorageConfig{
+		Endpoint: "http://minio:9000", PublicEndpoint: "https://proofs.ubi.africa", Region: "us-east-1",
+		Bucket: "ubi-proofs", AccessKey: "access", SecretKey: "secret",
+		UploadTTL: DefaultProofUploadTTL, DownloadTTL: DefaultProofDownloadTTL,
+	}
+}
+
+// TestProofStorageConfiguration: "configured" means every value is present,
+// a configured store must be well-formed (a malformed one refuses boot in
+// production), and URL lifetimes stay short.
+func TestProofStorageConfiguration(t *testing.T) {
+	if (ProofStorageConfig{}).Configured() {
+		t.Fatal("an empty store is not configured")
+	}
+	partial := goodStorage()
+	partial.SecretKey = ""
+	if partial.Configured() {
+		t.Fatal("a store missing its secret is not configured — never half-used")
+	}
+	if !goodStorage().Configured() || goodStorage().Validate() != nil {
+		t.Fatalf("a complete store must be configured and valid: %v", goodStorage().Validate())
+	}
+
+	for name, mutate := range map[string]func(*ProofStorageConfig){
+		"endpoint without a scheme":      func(p *ProofStorageConfig) { p.Endpoint = "minio:9000" },
+		"endpoint with a path":           func(p *ProofStorageConfig) { p.Endpoint = "http://minio:9000/bucket" },
+		"public endpoint not http(s)":    func(p *ProofStorageConfig) { p.PublicEndpoint = "ftp://proofs" },
+		"upload URL lifetime too long":   func(p *ProofStorageConfig) { p.UploadTTL = time.Hour },
+		"download URL lifetime too long": func(p *ProofStorageConfig) { p.DownloadTTL = MaxProofDownloadTTL + time.Second },
+		"zero download lifetime":         func(p *ProofStorageConfig) { p.DownloadTTL = 0 },
+	} {
+		storage := goodStorage()
+		mutate(&storage)
+		if storage.Validate() == nil {
+			t.Fatalf("%s must be refused", name)
+		}
+		cfg := strongProduction()
+		cfg.ProofStorage = storage
+		if cfg.ValidateProduction() == nil {
+			t.Fatalf("%s must refuse to boot in production", name)
+		}
+	}
+
+	cfg := strongProduction()
+	if err := cfg.ValidateProofStorage(); err == nil || !strings.Contains(err.Error(), "PROOF_STORAGE_ENDPOINT") {
+		t.Fatalf("an unconfigured store must be named: %v", err)
+	}
+	// Unconfigured storage does not stop the process booting (readiness and
+	// the proof routes fail closed instead).
+	if err := cfg.ValidateProduction(); err != nil {
+		t.Fatalf("production boots without proof storage (and is never ready): %v", err)
+	}
+	cfg.ProofStorage = goodStorage()
+	if err := cfg.ValidateProofStorage(); err != nil {
+		t.Fatalf("a configured store validates: %v", err)
+	}
+}
+
+// TestChargedReturnsAreDenyByDefault: only the literal "true" turns charged
+// returns on, and turning them on without a payment-service refuses to boot.
+func TestChargedReturnsAreDenyByDefault(t *testing.T) {
+	for value, want := range map[string]bool{"": false, "false": false, "1": false, "TRUE": false, "yes": false, "true": true} {
+		t.Setenv(EnvChargedReturnsEnabled, value)
+		if got := Load().ChargedReturnsEnabled; got != want {
+			t.Fatalf("%s=%q: enabled = %v, want %v", EnvChargedReturnsEnabled, value, got, want)
+		}
+	}
+
+	cfg := strongProduction()
+	cfg.ChargedReturnsEnabled = true
+	cfg.PaymentServiceURL = ""
+	if err := cfg.ValidateProduction(); err == nil || !strings.Contains(err.Error(), EnvChargedReturnsEnabled) {
+		t.Fatalf("charged returns with nowhere to reserve the fee must refuse to boot: %v", err)
+	}
+	cfg.PaymentServiceURL = "http://payment-service:4003"
+	if err := cfg.ValidateProduction(); err != nil {
+		t.Fatalf("charged returns with a payment-service boot: %v", err)
+	}
+}
+
+func TestLoadReadsProofStorageVariables(t *testing.T) {
+	t.Setenv("PROOF_STORAGE_ENDPOINT", "http://minio:9000")
+	t.Setenv("PROOF_STORAGE_PUBLIC_ENDPOINT", "https://proofs.ubi.africa")
+	t.Setenv("PROOF_STORAGE_BUCKET", "ubi-proofs")
+	t.Setenv("PROOF_STORAGE_ACCESS_KEY", "access")
+	t.Setenv("PROOF_STORAGE_SECRET_KEY", "secret")
+	t.Setenv("PROOF_DOWNLOAD_URL_TTL", "not-a-duration")
+	cfg := Load()
+	if !cfg.ProofStorage.Configured() || cfg.ProofStorage.PublicEndpoint != "https://proofs.ubi.africa" || cfg.ProofStorage.Region != "us-east-1" {
+		t.Fatalf("proof storage = %+v", cfg.ProofStorage)
+	}
+	if cfg.ProofStorage.DownloadTTL != DefaultProofDownloadTTL || cfg.ProofStorage.UploadTTL != DefaultProofUploadTTL {
+		t.Fatalf("an unparsable lifetime must fall back to the default, got %s / %s", cfg.ProofStorage.UploadTTL, cfg.ProofStorage.DownloadTTL)
 	}
 }

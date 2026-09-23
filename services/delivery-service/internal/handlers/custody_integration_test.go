@@ -3,14 +3,14 @@ package handlers_test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/testutil"
 )
@@ -38,15 +38,13 @@ func decode(t *testing.T, rec *httptest.ResponseRecorder, target interface{}) {
 	}
 }
 
-func proofPayload(seed string) map[string]interface{} {
-	sum := sha256.Sum256([]byte(seed))
-	return map[string]interface{}{
-		"objectKey":   "deliveries/test/" + seed + ".jpg",
-		"contentType": "image/jpeg",
-		"sizeBytes":   204800,
-		"sha256":      hex.EncodeToString(sum[:]),
-	}
+// attachBody is the proof-attach body for an upload id. Tests that are
+// refused before any handler runs (identity middleware) send a random one.
+func attachBody(uploadID string) map[string]string {
+	return map[string]string{"uploadId": uploadID}
 }
+
+func anyAttachBody() map[string]string { return attachBody(uuid.New().String()) }
 
 type apiEnvelope struct {
 	Success bool `json:"success"`
@@ -67,12 +65,14 @@ func TestCustodyHappyPath(t *testing.T) {
 	ctx := context.Background()
 	deliveryID, actors := h.SeedDelivery(ctx, testutil.Actor{}, testutil.Actor{}, "")
 
-	rec := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), proofPayload("pickup-1")), actors.Driver)
+	rec := h.AttachProof(deliveryID, "/pickup-proof", actors.Driver,
+		h.UploadProof(deliveryID, actors.Driver, "pickup", testutil.TestImage("image/png", 1)))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("pickup-proof: status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 
-	rec = h.Do(req(http.MethodPost, custodyPath(deliveryID, "/delivery-proof"), proofPayload("delivery-1")), actors.Driver)
+	rec = h.AttachProof(deliveryID, "/delivery-proof", actors.Driver,
+		h.UploadProof(deliveryID, actors.Driver, "delivery", testutil.TestImage("image/jpeg", 2)))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("delivery-proof: status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -98,19 +98,21 @@ func TestCustodyHappyPath(t *testing.T) {
 	}
 }
 
-// TestDuplicateProofIsIdempotent: the same proof posted twice creates no
-// second delivery_proofs row.
+// TestDuplicateProofIsIdempotent: the same upload attached twice creates no
+// second delivery_proofs row, and neither does a second upload of the very
+// same image.
 func TestDuplicateProofIsIdempotent(t *testing.T) {
 	h := testutil.NewHarness(t)
 	ctx := context.Background()
 	deliveryID, actors := h.SeedDelivery(ctx, testutil.Actor{}, testutil.Actor{}, "")
 
-	payload := proofPayload("dup-1")
-	rec1 := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), payload), actors.Driver)
+	image := testutil.TestImage("image/png", 11)
+	uploadID := h.UploadProof(deliveryID, actors.Driver, "pickup", image)
+	rec1 := h.AttachProof(deliveryID, "/pickup-proof", actors.Driver, uploadID)
 	if rec1.Code != http.StatusCreated {
 		t.Fatalf("first post: status = %d, body = %s", rec1.Code, rec1.Body.String())
 	}
-	rec2 := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), payload), actors.Driver)
+	rec2 := h.AttachProof(deliveryID, "/pickup-proof", actors.Driver, uploadID)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("replay: status = %d, want 200 (idempotent), body = %s", rec2.Code, rec2.Body.String())
 	}
@@ -131,6 +133,16 @@ func TestDuplicateProofIsIdempotent(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("expected exactly one pickup proof row, got %d", count)
 	}
+
+	// Custody has moved past courier_assigned, so no further pickup upload
+	// can even be issued — there is no way to record a second pickup proof.
+	dupRec := h.RequestUpload(deliveryID, actors.Driver, testutil.DeclarationFor("pickup", "image/png", image))
+	if dupRec.Code != http.StatusConflict {
+		t.Fatalf("a pickup upload after pickup must be refused: status = %d, body = %s", dupRec.Code, dupRec.Body.String())
+	}
+	if err := h.Pool.QueryRow(ctx, `SELECT count(*) FROM delivery_proofs WHERE delivery_id = $1`, deliveryID).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("proof rows = %d (%v), want 1", count, err)
+	}
 }
 
 // TestMaliciousObjectOwnershipRefused: an actor who is neither this
@@ -139,12 +151,17 @@ func TestDuplicateProofIsIdempotent(t *testing.T) {
 func TestMaliciousObjectOwnershipRefused(t *testing.T) {
 	h := testutil.NewHarness(t)
 	ctx := context.Background()
-	deliveryID, _ := h.SeedDelivery(ctx, testutil.Actor{}, testutil.Actor{}, "")
+	deliveryID, actors := h.SeedDelivery(ctx, testutil.Actor{}, testutil.Actor{}, "")
+	realUpload := h.UploadProof(deliveryID, actors.Driver, "pickup", testutil.TestImage("image/png", 21))
 
 	foreignDriver := testutil.Driver()
-	rec := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), proofPayload("attack-1")), foreignDriver)
+	rec := h.AttachProof(deliveryID, "/pickup-proof", foreignDriver, realUpload)
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("foreign driver posting a proof: status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+		t.Fatalf("foreign driver attaching the real driver's upload: status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+	rec = h.RequestUpload(deliveryID, foreignDriver, testutil.DeclarationFor("pickup", "image/png", testutil.TestImage("image/png", 22)))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("foreign driver requesting an upload: status = %d, want 404, body = %s", rec.Code, rec.Body.String())
 	}
 
 	foreignSender := testutil.Sender()
@@ -276,38 +293,33 @@ func TestSenderNoResponseExpiryDefaultsToHoldPoint(t *testing.T) {
 	}
 }
 
-// TestChargedReturnCannotCompleteWithoutAuthorization: a return proposed with
-// a fee is recorded, but delivery-service has no payment-service endpoint to
-// authorize the charge, so even sender consent cannot complete the charged
-// leg — it must resolve fee-free or default to a hold point instead.
-func TestChargedReturnCannotCompleteWithoutAuthorization(t *testing.T) {
-	h := testutil.NewHarness(t)
+// TestLegacyUnsupportedChargeCannotComplete: a return recorded with a fee
+// before charged returns existed (charge_status `unsupported`, never
+// authorized) still cannot complete the charged leg — even sender consent is
+// refused — while the fee-free hold-point path keeps working.
+func TestLegacyUnsupportedChargeCannotComplete(t *testing.T) {
+	h := testutil.NewHarnessWith(t, testutil.Options{ChargedReturns: true})
 	ctx := context.Background()
-	deliveryID, actors := h.SeedDelivery(ctx, testutil.Actor{}, testutil.Actor{}, "recipient_unreachable")
-
-	rec := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/return/propose"),
-		map[string]interface{}{"reason": "special handling return", "feeMinor": 50000, "currency": "NGN"}), actors.Driver)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("return/propose with a fee: status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	var proposeResp struct {
-		Data struct{ ChargeStatus string } `json:"data"`
-	}
-	decode(t, rec, &proposeResp)
-	if proposeResp.Data.ChargeStatus != "unsupported" {
-		t.Fatalf("chargeStatus = %q, want unsupported (no payment-service delivery-return funding endpoint exists)", proposeResp.Data.ChargeStatus)
+	deliveryID, actors := h.SeedDelivery(ctx, testutil.Actor{}, testutil.Actor{}, "return_proposed")
+	if _, err := h.Pool.Exec(ctx, `
+		INSERT INTO delivery_returns (delivery_id, custody_id, reason, fee_minor, currency, charge_status,
+			proposed_by, proposed_by_role, proposed_at, consent_state, consent_expires_at, created_at, updated_at)
+		SELECT $1, id, 'pre-P17 charged return', 50000, 'NGN', 'unsupported', $2, 'driver', now(), 'pending', now() + interval '1 day', now(), now()
+		FROM delivery_custody WHERE delivery_id = $1`, deliveryID, actors.Driver.UserID.String()); err != nil {
+		t.Fatalf("seed a legacy return: %v", err)
 	}
 
-	// The sender consents anyway — still refused, because consent is
-	// necessary but not sufficient for a charged return.
-	rec = h.Do(req(http.MethodPost, custodyPath(deliveryID, "/return/consent"), map[string]string{"action": "consent"}), actors.Sender)
+	rec := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/return/consent"), map[string]string{"action": "consent"}), actors.Sender)
 	if rec.Code != http.StatusConflict {
-		t.Fatalf("consenting to a charged return: status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+		t.Fatalf("consenting to a legacy unsupported charge: status = %d, want 409, body = %s", rec.Code, rec.Body.String())
 	}
 	var errBody apiEnvelope
 	decode(t, rec, &errBody)
 	if errBody.Error == nil || errBody.Error.Code != "RETURN_CHARGE_UNSUPPORTED" {
 		t.Fatalf("expected RETURN_CHARGE_UNSUPPORTED, got %+v", errBody.Error)
+	}
+	if got := len(h.Payment.Requests()); got != 0 {
+		t.Fatalf("a legacy unsupported fee must never reach payment-service, got %d calls", got)
 	}
 
 	var state string
@@ -318,21 +330,19 @@ func TestChargedReturnCannotCompleteWithoutAuthorization(t *testing.T) {
 		t.Fatalf("custody state moved to %q despite the charge being unsupported; a charged return must never silently complete", state)
 	}
 
-	// The sender can still reject it — the fee-free hold-point path always
-	// works, exactly as documented.
 	rec = h.Do(req(http.MethodPost, custodyPath(deliveryID, "/return/consent"), map[string]string{"action": "reject"}), actors.Sender)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("rejecting a charged return: status = %d, body = %s", rec.Code, rec.Body.String())
+		t.Fatalf("rejecting a legacy charged return: status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	if err := h.Pool.QueryRow(ctx, `SELECT state FROM delivery_custody WHERE delivery_id = $1`, deliveryID).Scan(&state); err != nil {
 		t.Fatalf("state query: %v", err)
 	}
 	if state != "held_at_point" {
-		t.Fatalf("state after rejecting a charged return = %q, want held_at_point", state)
+		t.Fatalf("state after rejecting a legacy charged return = %q, want held_at_point", state)
 	}
 }
 
-// TestConcurrentReturnProposeVsRetryRaceHasExactlyOneWinner: two requests
+// TestConcurrentReturnProposeVsRetryRaceHasExactlyOneWinner: requests
 // racing to move the SAME custody row out of recipient_unreachable — one
 // proposing a (potentially fee-bearing) return, the other completing the
 // delivery via a retry — must resolve to exactly one outcome. The optimistic
@@ -345,7 +355,14 @@ func TestConcurrentReturnProposeVsRetryRaceHasExactlyOneWinner(t *testing.T) {
 	ctx := context.Background()
 	deliveryID, actors := h.SeedDelivery(ctx, testutil.Actor{}, testutil.Actor{}, "recipient_unreachable")
 
-	const attempts = 8
+	// Every retry attempt carries its own verified upload (six: the per-
+	// delivery cap on open uploads), issued and PUT before the race starts.
+	const attempts = 6
+	uploads := make([]string, attempts)
+	for i := range uploads {
+		uploads[i] = h.UploadProof(deliveryID, actors.Driver, "delivery", testutil.TestImage("image/png", 100+i))
+	}
+
 	var wg sync.WaitGroup
 	codes := make([]int, attempts*2)
 
@@ -358,7 +375,7 @@ func TestConcurrentReturnProposeVsRetryRaceHasExactlyOneWinner(t *testing.T) {
 	for i := 0; i < attempts; i++ {
 		wg.Add(2)
 		go fire(i*2, "/return/propose", map[string]interface{}{"reason": fmt.Sprintf("attempt-%d", i)}, actors.Driver)
-		go fire(i*2+1, "/delivery-proof", proofPayload(fmt.Sprintf("retry-%d", i)), actors.Driver)
+		go fire(i*2+1, "/delivery-proof", attachBody(uploads[i]), actors.Driver)
 	}
 	wg.Wait()
 

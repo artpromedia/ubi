@@ -6,8 +6,10 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 // Config holds all configuration values
@@ -46,6 +48,82 @@ type Config struct {
 	PaymentServiceURL string
 	UserServiceURL    string
 	NotificationURL   string
+
+	// ProofStorage is the private S3-compatible bucket custody proofs live in
+	// (MinIO in the Hetzner stack). Unconfigured means proof uploads and
+	// proof attachment are refused, and in production readiness reports it
+	// (ProofStorage.Configured / handlers.Readiness) — a custody proof is
+	// never again a client-asserted string.
+	ProofStorage ProofStorageConfig
+
+	// ChargedReturnsEnabled is DELIVERY_CHARGED_RETURNS_ENABLED, the
+	// deny-by-default switch for fee-bearing returns (P17). Only the literal
+	// value "true" turns it on. Off: a return may only be proposed fee-free —
+	// a fee is refused with CHARGED_RETURNS_NOT_OFFERED, never silently
+	// dropped or recorded as payable. On: a fee is reserved from the sender's
+	// wallet through payment-service's /v1/finance/delivery-returns at the
+	// sender's approval and captured when the driver proves the parcel is
+	// back. Turning it off stops NEW charged returns only: an already
+	// reserved fee is still captured or released, never stranded.
+	ChargedReturnsEnabled bool
+}
+
+// ProofStorageConfig is the proof bucket's connection. Endpoint is what this
+// service talks to; PublicEndpoint (default: Endpoint) is the host a driver's
+// or sender's app reaches, and the one presigned URLs are signed for — a
+// SigV4 signature covers the Host header, so a URL signed for an internal
+// host would not verify from outside.
+type ProofStorageConfig struct {
+	Endpoint       string
+	PublicEndpoint string
+	Region         string
+	Bucket         string
+	AccessKey      string
+	SecretKey      string
+	// UploadTTL bounds a presigned PUT; DownloadTTL a presigned GET.
+	UploadTTL   time.Duration
+	DownloadTTL time.Duration
+}
+
+// Proof URL lifetimes. Short by design: an upload URL is for one PUT right
+// after it is issued, a download URL for one view by an entitled party.
+const (
+	DefaultProofUploadTTL   = 5 * time.Minute
+	DefaultProofDownloadTTL = 60 * time.Second
+	// MaxProofDownloadTTL caps a configured download lifetime: a proof URL is
+	// a bearer credential, so it may never live long enough to be shared on.
+	MaxProofDownloadTTL = 5 * time.Minute
+)
+
+// Configured reports whether every value a working proof store needs is
+// present. Anything less is treated as not configured at all.
+func (p ProofStorageConfig) Configured() bool {
+	return strings.TrimSpace(p.Endpoint) != "" &&
+		strings.TrimSpace(p.Bucket) != "" &&
+		strings.TrimSpace(p.AccessKey) != "" &&
+		strings.TrimSpace(p.SecretKey) != ""
+}
+
+// Validate checks the shape of a configured store (endpoints must be
+// absolute http(s) URLs; TTLs within bounds). It says nothing about an
+// unconfigured one — that is Configured's job.
+func (p ProofStorageConfig) Validate() error {
+	for name, raw := range map[string]string{"PROOF_STORAGE_ENDPOINT": p.Endpoint, "PROOF_STORAGE_PUBLIC_ENDPOINT": p.PublicEndpoint} {
+		if raw == "" {
+			continue
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || (parsed.Path != "" && parsed.Path != "/") {
+			return fmt.Errorf("%s must be an absolute http(s) URL with no path, got %q", name, raw)
+		}
+	}
+	if p.UploadTTL <= 0 || p.UploadTTL > 15*time.Minute {
+		return fmt.Errorf("the proof upload URL lifetime must be between 1s and 15m, got %s", p.UploadTTL)
+	}
+	if p.DownloadTTL <= 0 || p.DownloadTTL > MaxProofDownloadTTL {
+		return fmt.Errorf("the proof download URL lifetime must be between 1s and %s, got %s", MaxProofDownloadTTL, p.DownloadTTL)
+	}
+	return nil
 }
 
 // Committed defaults. They live in this repository, so they are public
@@ -90,7 +168,35 @@ func Load() *Config {
 		PaymentServiceURL: getEnv("PAYMENT_SERVICE_URL", "http://localhost:4003"),
 		UserServiceURL:    getEnv("USER_SERVICE_URL", "http://localhost:4001"),
 		NotificationURL:   getEnv("NOTIFICATION_SERVICE_URL", "http://localhost:4006"),
+
+		ProofStorage: ProofStorageConfig{
+			Endpoint:       getEnv("PROOF_STORAGE_ENDPOINT", ""),
+			PublicEndpoint: getEnv("PROOF_STORAGE_PUBLIC_ENDPOINT", ""),
+			Region:         getEnv("PROOF_STORAGE_REGION", "us-east-1"),
+			Bucket:         getEnv("PROOF_STORAGE_BUCKET", ""),
+			AccessKey:      getEnv("PROOF_STORAGE_ACCESS_KEY", ""),
+			SecretKey:      getEnv("PROOF_STORAGE_SECRET_KEY", ""),
+			UploadTTL:      getDuration("PROOF_UPLOAD_URL_TTL", DefaultProofUploadTTL),
+			DownloadTTL:    getDuration("PROOF_DOWNLOAD_URL_TTL", DefaultProofDownloadTTL),
+		},
+		ChargedReturnsEnabled: os.Getenv(EnvChargedReturnsEnabled) == "true",
 	}
+}
+
+// EnvChargedReturnsEnabled names the charged-returns switch (see
+// Config.ChargedReturnsEnabled).
+const EnvChargedReturnsEnabled = "DELIVERY_CHARGED_RETURNS_ENABLED"
+
+// getDuration reads a Go duration ("90s", "5m"); an unparsable value falls
+// back to the default rather than to zero, so a typo can never mint a URL that
+// lives forever or never.
+func getDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
 }
 
 func getEnv(key, defaultValue string) string {
@@ -131,7 +237,27 @@ func (c *Config) ValidateProduction() error {
 	if strings.TrimSpace(c.JWTSecret) == "" || c.JWTSecret == defaultJWTSecret {
 		return fmt.Errorf("JWT_SECRET must be set to a non-default value in production: with the committed default anyone can mint valid sessions")
 	}
+	if c.ProofStorage.Configured() {
+		if err := c.ProofStorage.Validate(); err != nil {
+			return err
+		}
+	}
+	if c.ChargedReturnsEnabled && strings.TrimSpace(c.PaymentServiceURL) == "" {
+		return fmt.Errorf("%s is on but PAYMENT_SERVICE_URL is empty: a charged return could be approved with nowhere to reserve its fee", EnvChargedReturnsEnabled)
+	}
 	return c.ValidateIdentity()
+}
+
+// ValidateProofStorage is the fail-closed rule for custody proofs in
+// production: without a configured, well-formed proof store the process
+// stays up (the legacy routes and probes keep answering) but is never ready,
+// and every proof upload/attachment is refused. Outside production an
+// unconfigured store only refuses the proof routes.
+func (c *Config) ValidateProofStorage() error {
+	if !c.ProofStorage.Configured() {
+		return fmt.Errorf("proof object storage is not configured (PROOF_STORAGE_ENDPOINT, PROOF_STORAGE_BUCKET, PROOF_STORAGE_ACCESS_KEY, PROOF_STORAGE_SECRET_KEY): custody proofs cannot be uploaded or verified")
+	}
+	return c.ProofStorage.Validate()
 }
 
 // ValidateIdentity is the fail-closed rule for the gateway trust boundary the

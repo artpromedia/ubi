@@ -17,6 +17,7 @@ import { logger as honoLogger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import { createDeliveryReturnRoutes } from "./finance/delivery-return-routes";
 import { createRemedyRoutes } from "./finance/remedies";
 import { createFinanceRoutes } from "./finance/routes";
 import { createTravelPaymentRoutes } from "./finance/travel-routes";
@@ -134,6 +135,12 @@ const ROUTER_REGISTRY: ReadonlyArray<{
   {
     prefix: "/v1/finance/travel",
     router: createTravelPaymentRoutes(ledgerDeps),
+  },
+  // Delivery return-leg fees (P17): service-key, mounted ahead of /v1/finance
+  // for the same reason as /v1/finance/travel.
+  {
+    prefix: "/v1/finance/delivery-returns",
+    router: createDeliveryReturnRoutes(ledgerDeps),
   },
   { prefix: "/v1/finance", router: createFinanceRoutes(ledgerDeps) },
   { prefix: "/v1/finance/remedies", router: createRemedyRoutes(ledgerDeps) },

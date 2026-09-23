@@ -17,8 +17,10 @@ import (
 
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/config"
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/database"
+	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/funding"
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/middleware"
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/models"
+	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/proofstore"
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/redis"
 )
 
@@ -27,14 +29,39 @@ type Handler struct {
 	db  *database.DB
 	rdb *redis.Client
 	cfg *config.Config
+
+	// proofs is the private proof bucket; the fail-closed
+	// proofstore.Unconfigured when no storage is configured (P17).
+	proofs proofstore.Store
+	// funding is payment-service's delivery return-fee port;
+	// funding.Disabled when no payment-service is reachable with a usable
+	// internal key (P17).
+	funding funding.Client
 }
 
-// New creates a new Handler
+// New creates a new Handler. The proof store and the return-fee client are
+// built from configuration here — the same construction production and the
+// test harness go through — and each degrades to its fail-closed stand-in
+// when unconfigured, so no handler ever holds a nil dependency.
 func New(db *database.DB, rdb *redis.Client, cfg *config.Config) *Handler {
+	store, err := proofstore.NewFromConfig(cfg.ProofStorage)
+	if err != nil {
+		// A malformed store configuration is refused at boot in production
+		// (config.ValidateProduction); anywhere else it is logged and
+		// treated as unconfigured, never half-used.
+		log.Error().Err(err).Msg("proof object storage configuration is invalid; proof uploads are refused")
+		store = proofstore.Unconfigured{}
+	}
+	var fundingClient funding.Client = funding.Disabled{}
+	if cfg.PaymentServiceURL != "" && marketplaceAssignKeyUsable(cfg.InternalServiceKey) {
+		fundingClient = funding.NewHTTPClient(cfg.PaymentServiceURL, cfg.InternalServiceKey)
+	}
 	return &Handler{
-		db:  db,
-		rdb: rdb,
-		cfg: cfg,
+		db:      db,
+		rdb:     rdb,
+		cfg:     cfg,
+		proofs:  store,
+		funding: fundingClient,
 	}
 }
 
@@ -88,6 +115,10 @@ func (h *Handler) Liveness(w http.ResponseWriter, r *http.Request) {
 // (config.ValidateIdentity) — a state cmd/server refuses to boot into, but one
 // readiness must also never bless, so a refactored boot path still receives no
 // traffic. Mirrors ride-service's identityReady probe.
+//
+// Proof storage (P17) is part of readiness too: in production an
+// unconfigured proof store is not ready (custody proofs would be refused),
+// and anywhere a configured store must be reachable, existing and private.
 func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 	if err := h.cfg.ValidateIdentity(); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -141,6 +172,28 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 		checks["redis"] = map[string]interface{}{
 			"status": "unhealthy",
 			"error":  redisErr.Error(),
+		}
+	}
+
+	switch {
+	case h.proofs.Configured():
+		if err := h.proofs.Check(ctx); err != nil {
+			status = "not_ready"
+			statusCode = http.StatusServiceUnavailable
+			checks["proofStorage"] = map[string]interface{}{"status": "unhealthy", "error": err.Error()}
+		} else {
+			checks["proofStorage"] = map[string]interface{}{"status": "healthy"}
+		}
+	case h.cfg.IsProduction():
+		// Fail closed: production never reports ready while custody proofs
+		// cannot be stored and verified.
+		status = "not_ready"
+		statusCode = http.StatusServiceUnavailable
+		checks["proofStorage"] = map[string]interface{}{"status": "unhealthy", "error": h.cfg.ValidateProofStorage().Error()}
+	default:
+		checks["proofStorage"] = map[string]interface{}{
+			"status": "not_configured",
+			"note":   "custody proof uploads and attachments are refused until proof object storage is configured",
 		}
 	}
 

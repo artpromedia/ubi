@@ -102,7 +102,7 @@ func TestProductionCustodyRefusesUnsignedIdentity(t *testing.T) {
 	}
 	deliveryID, actors := h.SeedDelivery(context.Background(), testutil.Actor{}, testutil.Actor{}, "")
 
-	rec := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), proofPayload("unsigned-1")), actors.Driver)
+	rec := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), anyAttachBody()), actors.Driver)
 	requireErrorCode(t, rec, http.StatusUnauthorized, "UNAUTHORIZED")
 
 	rec = h.Do(req(http.MethodGet, custodyPath(deliveryID, "/"), nil), actors.Sender)
@@ -159,7 +159,7 @@ func TestProductionCustodyRefusesTamperedIdentity(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			r := testCase.build(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), proofPayload("tamper-1")))
+			r := testCase.build(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), anyAttachBody()))
 			requireErrorCode(t, serve(h, r), http.StatusUnauthorized, "UNAUTHORIZED")
 			requireUntouched(t, h, deliveryID)
 		})
@@ -173,8 +173,25 @@ func TestProductionCustodyAcceptsGatewaySignedIdentity(t *testing.T) {
 	h := testutil.NewProductionHarness(t, productionContextSecret+",previous-gateway-context-key")
 	deliveryID, actors := h.SeedDelivery(context.Background(), testutil.Actor{}, testutil.Actor{}, "")
 
+	// The upload slot is requested with a gateway signature (current key),
+	// the bytes go to the presigned PUT, and the attachment is signed with
+	// the previous key.
+	image := testutil.TestImage("image/png", 31)
+	uploadRec := h.DoSigned(req(http.MethodPost, custodyPath(deliveryID, "/proof-uploads"),
+		testutil.DeclarationFor("pickup", "image/png", image)), actors.Driver)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("signed proof-uploads: status = %d, body = %s", uploadRec.Code, uploadRec.Body.String())
+	}
+	var grant struct {
+		Data testutil.UploadGrant `json:"data"`
+	}
+	decode(t, uploadRec, &grant)
+	if status, body := h.PutToUpload(grant.Data, image); status != http.StatusOK {
+		t.Fatalf("presigned PUT: status = %d, body = %s", status, body)
+	}
+
 	previousKey := identity.NewVerifier("previous-gateway-context-key", 0)
-	r := signedFor(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), proofPayload("signed-1")), actors.Driver, previousKey, actors.Driver, time.Now())
+	r := signedFor(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), attachBody(grant.Data.UploadID)), actors.Driver, previousKey, actors.Driver, time.Now())
 	if rec := serve(h, r); rec.Code != http.StatusCreated {
 		t.Fatalf("pickup-proof signed with the previous key: status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -205,7 +222,7 @@ func TestProductionWithoutContextSecretFailsClosed(t *testing.T) {
 	}
 	deliveryID, actors := h.SeedDelivery(context.Background(), testutil.Actor{}, testutil.Actor{}, "")
 
-	rec := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), proofPayload("nokey-1")), actors.Driver)
+	rec := h.Do(req(http.MethodPost, custodyPath(deliveryID, "/pickup-proof"), anyAttachBody()), actors.Driver)
 	requireErrorCode(t, rec, http.StatusServiceUnavailable, "IDENTITY_NOT_CONFIGURED")
 	rec = h.Do(req(http.MethodPost, custodyPath(deliveryID, "/return/consent"), map[string]interface{}{"decision": "approve"}), actors.Sender)
 	requireErrorCode(t, rec, http.StatusServiceUnavailable, "IDENTITY_NOT_CONFIGURED")
@@ -275,8 +292,8 @@ func TestProductionEveryIdentityRouteRefusesUnsignedHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walk the router: %v", err)
 	}
-	if custodyRoutes != 7 {
-		t.Fatalf("expected the 7 mounted custody/return routes to be walked, got %d", custodyRoutes)
+	if custodyRoutes != 11 {
+		t.Fatalf("expected the 11 mounted custody/return/proof routes to be walked, got %d", custodyRoutes)
 	}
 	if walked == custodyRoutes {
 		t.Fatal("expected legacy and webhook routes to be walked too")

@@ -28,6 +28,9 @@ const ALLOWED_ROUTE_PREFIXES = [
   // Supplier travel payments (P7/T02) — service-key, canonical ledger;
   // mounted ahead of /v1/finance so the recon admin guards do not shadow it.
   "/v1/finance/travel",
+  // Delivery return-leg fees (P17) — service-key, canonical ledger; mounted
+  // ahead of /v1/finance for the same reason as travel.
+  "/v1/finance/delivery-returns",
   "/v1/finance",
   "/v1/finance/remedies",
 ] as const;
@@ -116,6 +119,36 @@ describe("payment-service route inventory", () => {
       .map((route) => route.path);
     expect(guards).toContain("/v1/wallet/mp/holds/*");
     expect(guards).toContain("/v1/wallet/mp/funding/*");
+  });
+
+  it("mounts the delivery return-fee routes behind the service-key guard (P17)", () => {
+    const paths = app.routes.map((route) => `${route.method} ${route.path}`);
+    for (const route of [
+      "POST /v1/finance/delivery-returns/reserve",
+      "POST /v1/finance/delivery-returns/capture",
+      "POST /v1/finance/delivery-returns/release",
+      "GET /v1/finance/delivery-returns/returns/:returnId",
+    ]) {
+      expect(paths).toContain(route);
+    }
+    const guards = app.routes
+      .filter((route) => route.method === "ALL")
+      .map((route) => route.path);
+    expect(guards).toContain("/v1/finance/delivery-returns/*");
+  });
+
+  it("refuses a delivery return-fee call without the service key in the real app", async () => {
+    const response = await app.fetch(
+      new Request(
+        "http://payment-service.test/v1/finance/delivery-returns/reserve",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      ),
+    );
+    expect(response.status).toBe(403);
   });
 
   it.each([
