@@ -7,7 +7,7 @@ import React from "react";
 import { Pressable, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Card, Screen, Text } from "@ubi/mobile-ui";
+import { Banner, Button, Card, Screen, Text } from "@ubi/mobile-ui";
 import { useFlag } from "@ubi/mobile-core";
 import { TEST_IDS, dynamicTestId } from "@ubi/contracts";
 import {
@@ -43,16 +43,47 @@ export type LaterRow = {
   onOpen: () => void;
 };
 
+export type LaterSectionError = {
+  key: "bookings" | "scheduled" | "series";
+  title: string;
+  offline: boolean;
+  onRetry: () => void;
+};
+
 export type LaterHubProps = {
   loading: boolean;
   failure: { offline: boolean; body: string; onRetry: () => void } | null;
   stale: Staleness;
+  /** Lists that never loaded — an error each, never "the last update". */
+  sectionErrors: LaterSectionError[];
   scheduled: LaterRow[];
   bookings: LaterRow[];
   series: LaterRow[];
   onBook: (() => void) | null;
   onBack: () => void;
 };
+
+function SectionError({ e }: { e: LaterSectionError }) {
+  return (
+    <View testID={dynamicTestId(TID.sectionError, e.key)} style={{ gap: 8 }}>
+      <Banner
+        tone={e.offline ? "warn" : "error"}
+        title={e.title}
+        body={
+          e.offline
+            ? "You’re offline, so this list hasn’t loaded. Reconnect and try again."
+            : "This list couldn’t load. What you booked is unchanged — try again."
+        }
+      />
+      <Button
+        label="Try again"
+        kind="secondary"
+        size="md"
+        onPress={e.onRetry}
+      />
+    </View>
+  );
+}
 
 function Section({
   title,
@@ -91,7 +122,13 @@ function Section({
 }
 
 export function LaterHubView(p: LaterHubProps) {
-  const empty = !p.scheduled.length && !p.bookings.length && !p.series.length;
+  const empty =
+    !p.scheduled.length &&
+    !p.bookings.length &&
+    !p.series.length &&
+    !p.sectionErrors.length;
+  const errorFor = (key: LaterSectionError["key"]) =>
+    p.sectionErrors.find((e) => e.key === key);
   return (
     <Screen
       title="Booked for later"
@@ -121,16 +158,25 @@ export function LaterHubView(p: LaterHubProps) {
                 </Text>
               </Card>
             ) : null}
+            {errorFor("bookings") ? (
+              <SectionError e={errorFor("bookings")!} />
+            ) : null}
             <Section
               title="Reserved drivers"
               rows={p.bookings}
               testID={TID.booking}
             />
+            {errorFor("scheduled") ? (
+              <SectionError e={errorFor("scheduled")!} />
+            ) : null}
             <Section
               title="Scheduled requests"
               rows={p.scheduled}
               testID={TID.scheduled}
             />
+            {errorFor("series") ? (
+              <SectionError e={errorFor("series")!} />
+            ) : null}
             <Section
               title="Recurring journeys"
               rows={p.series}
@@ -192,8 +238,26 @@ export function LaterHubContainer() {
     retry: false,
   });
   const queries = [scheduledQ, bookingsQ, seriesQ];
+  const sections = [
+    {
+      key: "bookings" as const,
+      title: "Couldn’t load your reserved drivers",
+      q: bookingsQ,
+    },
+    {
+      key: "scheduled" as const,
+      title: "Couldn’t load your scheduled requests",
+      q: scheduledQ,
+    },
+    {
+      key: "series" as const,
+      title: "Couldn’t load your recurring journeys",
+      q: seriesQ,
+    },
+  ];
   const loading = queries.some((q) => q.isPending);
-  const allFailed = queries.every((q) => q.isError);
+  // Nothing to show at all: every list failed without ever loading.
+  const allFailed = queries.every((q) => q.isError && !q.data);
   const firstError = queries.find((q) => q.isError)?.error;
   const retry = () => queries.forEach((q) => void q.refetch());
 
@@ -247,7 +311,23 @@ export function LaterHubContainer() {
             }
           : null
       }
-      stale={stalenessOf(...queries.map((q) => (q.isError ? q.error : null)))}
+      // Stale = a refresh failed on a list that HAD loaded; a list that never loaded is its
+      // own section error below, never "showing the last update".
+      stale={stalenessOf(
+        ...queries.map((q) => (q.isError && q.data ? q.error : null)),
+      )}
+      sectionErrors={
+        allFailed
+          ? []
+          : sections
+              .filter((s) => s.q.isError && !s.q.data)
+              .map((s) => ({
+                key: s.key,
+                title: s.title,
+                offline: isOffline(s.q.error),
+                onRetry: () => void s.q.refetch(),
+              }))
+      }
       scheduled={scheduled}
       bookings={bookings}
       series={series}

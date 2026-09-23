@@ -51,9 +51,14 @@ export function ItineraryScreen() {
       ) : (
         t.items.map((it) => (
           <ItemCard
-            key={it.title + it.dateLabel}
+            key={it.transferId ?? it.orderId ?? it.title + it.dateLabel}
             item={it}
             onAction={(k) => act(it, k)}
+            onOpen={
+              it.kind === "airport_transfer" && it.transferId
+                ? () => nav.navigate("Transfer", { transferId: it.transferId })
+                : undefined
+            }
           />
         ))
       )}

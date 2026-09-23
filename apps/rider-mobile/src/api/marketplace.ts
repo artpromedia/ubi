@@ -13,16 +13,23 @@ import {
   type MpCreateAdvanceRequest,
   type MpCreateRecurringTemplate,
   type MpCreateScheduledRequest,
+  type MpFavouriteDriver,
+  type MpFavouriteDrivers,
   type MpOffer,
+  type MpOfferSort,
   type MpProposeAmendment,
   type MpPublishRequest,
   type MpQueueView,
   type MpQuoteEnvelope,
+  type MpReceipt,
   type MpRecurringTemplate,
   type MpRequest,
+  type MpRequestPassenger,
+  type MpRequestSnapshot as ContractSnapshot,
   type MpScheduledRequest,
   type MpSelectBid,
   type MpService,
+  type MpServiceNeedsCatalog,
   type MpStopInput,
   type MpTrip,
 } from "@ubi/contracts";
@@ -33,12 +40,18 @@ export type {
   MpAmendment,
   MpAmendmentList,
   MpAward,
+  MpFavouriteDriver,
+  MpFavouriteDrivers,
   MpOffer,
+  MpOfferSort,
   MpQueueView,
   MpQuoteEnvelope,
+  MpReceipt,
   MpRecurringTemplate,
   MpRequest,
+  MpRequestPassenger,
   MpScheduledRequest,
+  MpServiceNeedsCatalog,
   MpStopInput,
   MpTrip,
 };
@@ -72,6 +85,14 @@ export type MpQuoteQuery = {
    * validates every stop first — a client can never send a stop id or a price.
    */
   stops?: MpStopInput[];
+  /**
+   * A06 part C (business_travel, rides only): ask for the organization's
+   * ADVISORY policy/budget verdict at the suggested fare — the envelope then
+   * carries `business`. Nothing is reserved by a quote.
+   */
+  organizationId?: string;
+  costCentreId?: string;
+  travellerId?: string;
 };
 
 /** Series commands (POST /v1/mp/recurring-templates/{id}/{command}). */
@@ -86,23 +107,19 @@ export type MpApproveScheduled = {
 };
 
 /**
- * Rider offer view. `bookingFeeMinor`, `totalMinor` and `deltaLabel` are PROPOSED
- * contract additions the R05 board requires (total-you-pay and the "+₦200" delta are
- * server-computed/phrased — clients never do money arithmetic). Until
- * packages/contracts MpOfferSchema + contracts/openapi/marketplace.yaml carry them,
- * only fixtures serve them; see followups.
+ * Rider offer view — the contract's MpOffer. `bookingFeeMinor`, `totalMinor`, `deltaLabel` and
+ * the A06 comparison (totalLabel/totalNote, pickupEstimate, vehicle, driverProfile, reliability,
+ * serviceFit, badges) are server-computed/phrased and may be null or absent from older servers:
+ * clients render them, never derive them.
  */
-export type MpOfferDto = MpOffer & {
-  bookingFeeMinor?: Money;
-  totalMinor?: Money;
-  deltaLabel?: string | null;
-};
+export type MpOfferDto = MpOffer;
 
 /**
  * GET /v1/mp/requests/:id owner snapshot (request + private offers + award when selection
  * ran). `advanceOffers` (A03) lists offers on a FUTURE pickup window — present only on an
  * advance-booking request and never mixed into `offers`, so no advance offer can ever be
- * rendered as a live pickup.
+ * rendered as a live pickup. `offerOrder` (A06 part A) states which SERVER order the
+ * offers are in (`?sort=`), with every sort the rider may pick and its tie-breaks.
  */
 export type MpRequestSnapshot = {
   request: MpRequest;
@@ -110,6 +127,7 @@ export type MpRequestSnapshot = {
   advanceOffers?: MpAdvanceOffer[];
   award?: MpAward;
   seq: number;
+  offerOrder?: ContractSnapshot["offerOrder"];
 };
 
 /**
@@ -246,6 +264,11 @@ const quoteQs = (p: MpQuoteQuery) => {
   // An empty list is the plain route: the parameter is simply omitted.
   if (p.stops && p.stops.length > 0)
     pairs.push(["stops", mpQuoteStopsParam(p.stops)]);
+  if (p.organizationId) {
+    pairs.push(["organizationId", p.organizationId]);
+    if (p.costCentreId) pairs.push(["costCentreId", p.costCentreId]);
+    if (p.travellerId) pairs.push(["travellerId", p.travellerId]);
+  }
   return pairs.map(([k, v]) => k + "=" + encodeURIComponent(v)).join("&");
 };
 
@@ -272,10 +295,18 @@ const keyed = (idempotencyKey?: string) =>
 export const marketplaceApi = {
   quote: (p: MpQuoteQuery) =>
     api<MpQuoteEnvelope>("GET", "/v1/mp/quote?" + quoteQs(p)),
-  publish: (body: MpPublishRequest) =>
-    api<MpRequest>("POST", "/v1/mp/requests", body),
-  request: (requestId: string) =>
-    api<MpRequestSnapshot>("GET", "/v1/mp/requests/" + requestId),
+  // A caller-held key (the fare editor keeps one per publish attempt) makes a retry after
+  // a dropped response replay the first answer instead of publishing twice.
+  publish: (body: MpPublishRequest, idempotencyKey?: string) =>
+    api<MpRequest>("POST", "/v1/mp/requests", body, keyed(idempotencyKey)),
+  // A06 part A: `sort` asks the SERVER to order the offers (price / pickup estimate /
+  // service fit); absent is the neutral order drivers offered. The client never ranks.
+  request: (requestId: string, sort?: MpOfferSort) =>
+    api<MpRequestSnapshot>(
+      "GET",
+      requestPath(requestId) +
+        (sort && sort !== "offered" ? "?sort=" + encodeURIComponent(sort) : ""),
+    ),
   // Price- or ROUTE-affecting edit of an open request: a replacement quote for the same
   // endpoints with a different stop set is the pre-award route edit (every live offer is
   // invalidated and its hold released server-side). Pinned to expectedVersion.
@@ -458,6 +489,55 @@ export const marketplaceApi = {
     ),
   award: (requestId: string) =>
     api<MpAward>("GET", "/v1/mp/requests/" + requestId + "/award"),
+
+  // ── A06 / A04.3: rider confidence — saved drivers, service needs, receipts ──
+  // Saved drivers are ALWAYS readable (whatever the flag says); saving needs
+  // marketplace_preferred_drivers and a completed ride of the caller's; removing is
+  // always allowed. Every POST carries a caller-held Idempotency-Key.
+  favourites: () => api<MpFavouriteDrivers>("GET", "/v1/mp/favourite-drivers"),
+  saveFavourite: (requestId: string, idempotencyKey: string) =>
+    api<MpFavouriteDriver>(
+      "POST",
+      "/v1/mp/favourite-drivers",
+      { requestId },
+      { idempotencyKey },
+    ),
+  removeFavourite: (driverId: string, idempotencyKey: string) =>
+    api<MpFavouriteDriver>(
+      "POST",
+      "/v1/mp/favourite-drivers/" + encodeURIComponent(driverId) + "/remove",
+      undefined,
+      { idempotencyKey },
+    ),
+  // Honest availability of each requirement in the rider's market, for one class.
+  serviceNeeds: (vehicleClass: string) =>
+    api<MpServiceNeedsCatalog>(
+      "GET",
+      "/v1/mp/service-needs?service=ride&vehicleClass=" +
+        encodeURIComponent(vehicleClass),
+    ),
+  // A COMPLETED ride's receipt (rider view: never the driver's commission). 409
+  // conflict with details.reason settling / trip_not_completed while it cannot exist yet.
+  receipt: (requestId: string) =>
+    api<MpReceipt>("GET", requestPath(requestId) + "/receipt"),
+
+  // ── A06 part B: the requester's controls over a guest passenger's trip link ──
+  // Revoking is always allowed (a safety control); a reissue sends a fresh SMS link to
+  // the same passenger and is bounded server-side (429 trip_link_limit).
+  revokePassengerAccess: (requestId: string, idempotencyKey: string) =>
+    api<MpRequestPassenger>(
+      "POST",
+      requestPath(requestId) + "/passenger/access/revoke",
+      undefined,
+      { idempotencyKey },
+    ),
+  reissuePassengerAccess: (requestId: string, idempotencyKey: string) =>
+    api<MpRequestPassenger>(
+      "POST",
+      requestPath(requestId) + "/passenger/access/reissue",
+      undefined,
+      { idempotencyKey },
+    ),
   // Rider queue projection (R10 / G07) — real ride-service endpoint.
   queue: (requestId: string) =>
     api<MpQueueView>("GET", "/v1/mp/requests/" + requestId + "/queue"),

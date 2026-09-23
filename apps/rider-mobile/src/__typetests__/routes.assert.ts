@@ -144,6 +144,17 @@ type _MpBooking = Expect<
 type _MpSeries = Expect<
   Equal<MarketplaceStackParamList["Series"], { templateId: string }>
 >;
+// A04.3 / A06 rider confidence (UI-rider-2).
+type _MpFavourites = Expect<
+  Equal<MarketplaceStackParamList["Favourites"], undefined>
+>;
+type _MpReceipt = Expect<
+  Equal<MarketplaceStackParamList["Receipt"], { requestId: string }>
+>;
+// Airport transfer status (round-5/6 transfer contract).
+type _TravelTransfer = Expect<
+  Equal<TravelStackParamList["Transfer"], { transferId: string }>
+>;
 // Stops ride in the quote params exactly as the contract's stop input (no id, no price).
 type _MpQuoteStops = Expect<
   Equal<MarketplaceQuoteParams["stops"], MpStopInput[] | undefined>

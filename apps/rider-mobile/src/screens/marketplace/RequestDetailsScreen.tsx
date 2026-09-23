@@ -165,6 +165,15 @@ export function RequestDetailsScreen() {
           }}
         />
       ) : null}
+      {/* A04.3: saved drivers are always readable (asking one first is flag-gated). */}
+      {service === "ride" ? (
+        <Button
+          testID={TEST_IDS.mp.rider.details.favourites}
+          label="Saved drivers"
+          kind="ghost"
+          onPress={() => nav.navigate("Favourites")}
+        />
+      ) : null}
       {service === "ride" && laterOn ? (
         <Button
           testID={TEST_IDS.mp.rider.details.later}

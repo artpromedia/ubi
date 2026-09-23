@@ -222,6 +222,45 @@ export const TEST_IDS = {
       alternative: "travel.disruption.alternative",
     },
     linked: { flight: "travel.linked.flight", ride: "travel.linked.ride" },
+    /**
+     * Airport transfer (round-5/6 contract): the intent form (flight leg,
+     * airport point, place, class, approved spend limit) and the transfer's
+     * own status screen — pending with no driver, requested, driver secured,
+     * the traveller's labelled choices and the honest outcome. Choice ids
+     * append the server's choice key (`dynamicTestId(choice, "cancel")`).
+     */
+    transfer: {
+      form: "travel.transfer.form",
+      direction: "travel.transfer.direction",
+      airportPoint: "travel.transfer.airportPoint",
+      place: "travel.transfer.place",
+      vehicleClass: "travel.transfer.vehicleClass",
+      limit: "travel.transfer.limit",
+      limitHint: "travel.transfer.limitHint",
+      publishNote: "travel.transfer.publishNote",
+      submit: "travel.transfer.submit",
+      fieldError: "travel.transfer.fieldError",
+      refusal: "travel.transfer.refusal",
+      unavailable: "travel.transfer.unavailable",
+      screen: "travel.transfer.screen",
+      status: "travel.transfer.status",
+      notice: "travel.transfer.notice",
+      noDriver: "travel.transfer.noDriver",
+      driverSecured: "travel.transfer.driverSecured",
+      window: "travel.transfer.window",
+      limitApproved: "travel.transfer.limitApproved",
+      action: "travel.transfer.action",
+      choice: "travel.transfer.choice",
+      outcome: "travel.transfer.outcome",
+      openRide: "travel.transfer.openRide",
+      terms: "travel.transfer.terms",
+      linkedItem: "travel.transfer.linkedItem",
+      error: "travel.transfer.error",
+      offline: "travel.transfer.offline",
+      retry: "travel.transfer.retry",
+    },
+    /** Checkout of a cart the app never received (travel-service serves no cart GET). */
+    cart: { missing: "travel.cart.missing" },
   },
   reservations: {
     airport: {
@@ -254,6 +293,36 @@ export const TEST_IDS = {
   web: {
     ask: { panel: "web.ask.panel" },
     handoff: { banner: "web.handoff.banner", fallback: "web.handoff.fallback" },
+    /**
+     * The guest passenger's trip link (A06 part B): token read from the URL
+     * fragment only, the trip view, the pickup PIN, support and the free
+     * decline before pickup, and every refusal (expired / revoked / invalid).
+     */
+    tripLink: {
+      screen: "web.tripLink.screen",
+      loading: "web.tripLink.loading",
+      status: "web.tripLink.status",
+      eta: "web.tripLink.eta",
+      route: "web.tripLink.route",
+      driver: "web.tripLink.driver",
+      noDriver: "web.tripLink.noDriver",
+      pin: "web.tripLink.pin",
+      pinReveal: "web.tripLink.pinReveal",
+      pinUnavailable: "web.tripLink.pinUnavailable",
+      verification: "web.tripLink.verification",
+      support: "web.tripLink.support",
+      decline: "web.tripLink.decline",
+      declineConfirm: "web.tripLink.declineConfirm",
+      declineCancel: "web.tripLink.declineCancel",
+      declined: "web.tripLink.declined",
+      refusal: "web.tripLink.refusal",
+      expired: "web.tripLink.expired",
+      revoked: "web.tripLink.revoked",
+      invalid: "web.tripLink.invalid",
+      missing: "web.tripLink.missing",
+      error: "web.tripLink.error",
+      retry: "web.tripLink.retry",
+    },
   },
   fleet: { assign: { send: "fleet.assign.send" } },
   desk: { scan: { qr: "desk.scan.qr" } },
@@ -287,6 +356,116 @@ export const TEST_IDS = {
         sortEta: "mp.rider.offers.sortEta",
         cancelRequest: "mp.rider.offers.cancel",
         repost: "mp.rider.offers.repost",
+        /** A06 part A: the SERVER sort chips (append the sort key) and the order the list is in. */
+        sort: "mp.rider.offers.sort",
+        order: "mp.rider.offers.order",
+        /** The preferred-driver window on this request and its honest outcome. */
+        preferred: "mp.rider.offers.preferred",
+        preferredOutcome: "mp.rider.offers.preferredOutcome",
+      },
+      /**
+       * One offer's server-computed comparison (A06 part A): the total you
+       * pay, the verified driver card (or "details unavailable"), the rating
+       * with its count as served, defined reliability, service fit, reasoned
+       * badges, the vehicle and the pickup ESTIMATE. Ids append the bidId.
+       */
+      offerCard: {
+        total: "mp.rider.offerCard.total",
+        driverStatus: "mp.rider.offerCard.driverStatus",
+        rating: "mp.rider.offerCard.rating",
+        trips: "mp.rider.offerCard.trips",
+        reliability: "mp.rider.offerCard.reliability",
+        fit: "mp.rider.offerCard.fit",
+        badge: "mp.rider.offerCard.badge",
+        vehicle: "mp.rider.offerCard.vehicle",
+        pickup: "mp.rider.offerCard.pickup",
+      },
+      /** Saved drivers (A04 item 3): list, remove, whether each can be asked first. */
+      favourites: {
+        entry: "mp.rider.favourites.entry",
+        screen: "mp.rider.favourites.screen",
+        item: "mp.rider.favourites.item",
+        canRequest: "mp.rider.favourites.canRequest",
+        remove: "mp.rider.favourites.remove",
+        book: "mp.rider.favourites.book",
+        empty: "mp.rider.favourites.empty",
+        note: "mp.rider.favourites.note",
+        refusal: "mp.rider.favourites.refusal",
+        error: "mp.rider.favourites.error",
+        offline: "mp.rider.favourites.offline",
+        retry: "mp.rider.favourites.retry",
+      },
+      /** Ask a saved driver first, with the rider's explicit open-market fallback choice. */
+      preferred: {
+        section: "mp.rider.preferred.section",
+        driver: "mp.rider.preferred.driver",
+        none: "mp.rider.preferred.none",
+        fallbackOpen: "mp.rider.preferred.fallbackOpen",
+        fallbackExpire: "mp.rider.preferred.fallbackExpire",
+        note: "mp.rider.preferred.note",
+        unavailable: "mp.rider.preferred.unavailable",
+      },
+      /** A06 part D: hard requirements (verified capability only) vs soft preferences. */
+      needs: {
+        section: "mp.rider.needs.section",
+        requirement: "mp.rider.needs.requirement",
+        preference: "mp.rider.needs.preference",
+        unavailable: "mp.rider.needs.unavailable",
+        fallback: "mp.rider.needs.fallback",
+        disclosure: "mp.rider.needs.disclosure",
+        refusal: "mp.rider.needs.refusal",
+        error: "mp.rider.needs.error",
+      },
+      /** A06 part B: book for another ADULT — details, attestations, the trip link. */
+      guest: {
+        section: "mp.rider.guest.section",
+        forMe: "mp.rider.guest.forMe",
+        forOther: "mp.rider.guest.forOther",
+        firstName: "mp.rider.guest.firstName",
+        lastName: "mp.rider.guest.lastName",
+        phone: "mp.rider.guest.phone",
+        adult: "mp.rider.guest.adult",
+        consent: "mp.rider.guest.consent",
+        minors: "mp.rider.guest.minors",
+        fieldError: "mp.rider.guest.fieldError",
+        link: "mp.rider.guest.link",
+        linkStatus: "mp.rider.guest.linkStatus",
+        reissue: "mp.rider.guest.reissue",
+        revoke: "mp.rider.guest.revoke",
+        refusal: "mp.rider.guest.refusal",
+      },
+      /** A06 part C: bill an organization's budget, under its policy. */
+      business: {
+        section: "mp.rider.business.section",
+        personal: "mp.rider.business.personal",
+        organization: "mp.rider.business.organization",
+        costCentre: "mp.rider.business.costCentre",
+        category: "mp.rider.business.category",
+        traveller: "mp.rider.business.traveller",
+        roleNote: "mp.rider.business.roleNote",
+        verdict: "mp.rider.business.verdict",
+        refusal: "mp.rider.business.refusal",
+        error: "mp.rider.business.error",
+      },
+      /** A completed ride's receipt: itemised committed lines, taxes, business fields. */
+      receipt: {
+        screen: "mp.rider.receipt.screen",
+        line: "mp.rider.receipt.line",
+        total: "mp.rider.receipt.total",
+        taxes: "mp.rider.receipt.taxes",
+        payment: "mp.rider.receipt.payment",
+        trip: "mp.rider.receipt.trip",
+        business: "mp.rider.receipt.business",
+        settlement: "mp.rider.receipt.settlement",
+        reconciliation: "mp.rider.receipt.reconciliation",
+        saveDriver: "mp.rider.receipt.saveDriver",
+        saved: "mp.rider.receipt.saved",
+        settling: "mp.rider.receipt.settling",
+        notCompleted: "mp.rider.receipt.notCompleted",
+        refusal: "mp.rider.receipt.refusal",
+        error: "mp.rider.receipt.error",
+        offline: "mp.rider.receipt.offline",
+        retry: "mp.rider.receipt.retry",
       },
       bid: {
         choose: "mp.rider.bid.choose",
@@ -308,6 +487,7 @@ export const TEST_IDS = {
       details: {
         addStops: "mp.rider.details.addStops",
         later: "mp.rider.details.later",
+        favourites: "mp.rider.details.favourites",
       },
       /** Offer inbox additions: the route the offers are for, and the pre-award edit. */
       offersRoute: {
@@ -363,6 +543,10 @@ export const TEST_IDS = {
         label: "mp.rider.place.label",
         confirm: "mp.rider.place.confirm",
         cancel: "mp.rider.place.cancel",
+        /** Place search (GET /v1/locations/*) when Maps is configured; the pin is the fallback. */
+        search: "mp.rider.place.search",
+        result: "mp.rider.place.result",
+        searchUnavailable: "mp.rider.place.searchUnavailable",
       },
       /**
        * A02 rider trip: committed terms and receipt lines, stops with waiting,
@@ -407,6 +591,7 @@ export const TEST_IDS = {
         error: "mp.rider.trip.error",
         offline: "mp.rider.trip.offline",
         retry: "mp.rider.trip.retry",
+        receipt: "mp.rider.trip.receipt",
       },
       /** A02 rider route-change proposal composer (remaining stops + destination). */
       change: {
@@ -463,6 +648,8 @@ export const TEST_IDS = {
         error: "mp.rider.later.error",
         offline: "mp.rider.later.offline",
         retry: "mp.rider.later.retry",
+        /** One list that never loaded (append the section key) — an error, never "last update". */
+        sectionError: "mp.rider.later.sectionError",
       },
       /** A03 one scheduled request, incl. needs_rider_approval with refreshed terms. */
       scheduled: {

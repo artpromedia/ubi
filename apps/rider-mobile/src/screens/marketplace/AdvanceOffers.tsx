@@ -38,6 +38,7 @@ import {
   StaleBanner,
   StateTag,
 } from "./riderParts";
+import { driverCardOf, vehicleLineOf } from "./offerView";
 
 const TID = TEST_IDS.mp.rider.advance;
 const CLOSED = new Set(["cancelled", "expired", "no_offers"]);
@@ -135,6 +136,9 @@ export function AdvanceOffersView(p: AdvanceOffersProps) {
         ) : null}
         {offers.map((o) => {
           const expires = inLabel(o.expiresAt, p.now);
+          // The same honest card as the live inbox: no placeholder rating or trip count.
+          const d = driverCardOf(o);
+          const who = d.status === "unavailable" ? "this driver" : d.name;
           const disabled =
             o.withdrawn || !expires || p.phase !== "offers" || !!p.choosing;
           return (
@@ -155,10 +159,14 @@ export function AdvanceOffersView(p: AdvanceOffersProps) {
                         : null
                     }
                   >
-                    {o.driver.displayName + " · ★ " + o.driver.rating}
+                    {d.name}
                   </Text>
                   <Text variant="caption" tone="text2">
-                    {o.driver.vehicle + " · " + o.driver.plateMasked}
+                    {d.statusLabel + " · " + d.ratingLabel}
+                  </Text>
+                  <Text variant="caption" tone="text2">
+                    {vehicleLineOf(o) +
+                      (d.plateMasked ? " · " + d.plateMasked : "")}
                   </Text>
                 </View>
                 <MoneyText
@@ -188,9 +196,7 @@ export function AdvanceOffersView(p: AdvanceOffersProps) {
                 testID={dynamicTestId(TID.choose, o.bidId)}
                 accessibilityRole="button"
                 accessibilityState={{ disabled }}
-                accessibilityLabel={
-                  "Reserve " + o.driver.displayName + " for this window"
-                }
+                accessibilityLabel={"Reserve " + who + " for this window"}
                 disabled={disabled}
                 onPress={() => p.onChoose(o)}
               >
@@ -201,7 +207,9 @@ export function AdvanceOffersView(p: AdvanceOffersProps) {
                   <Text variant="bodyStrong">
                     {p.choosing === o.bidId
                       ? "Reserving…"
-                      : "Reserve " + o.driver.displayName.split(" ")[0]}
+                      : d.status === "unavailable"
+                        ? "Reserve this driver"
+                        : "Reserve " + d.name.split(" ")[0]}
                   </Text>
                 </Card>
               </Pressable>
@@ -225,6 +233,7 @@ export function AdvanceOffersView(p: AdvanceOffersProps) {
 export function AdvanceOffersContainer() {
   const nav = useNavigation<{
     navigate: (n: string, p?: unknown) => void;
+    replace?: (n: string, p?: unknown) => void;
     goBack: () => void;
   }>();
   const { params } =
@@ -266,9 +275,10 @@ export function AdvanceOffersContainer() {
 
   useEffect(() => {
     if (!snap) return;
-    // A live (non-advance) request belongs in the ordinary inbox.
+    // A live (non-advance) request belongs in the ordinary inbox — it REPLACES this screen,
+    // so Back never bounces between the two inboxes.
     if (snap.request.booking?.kind !== "advance") {
-      nav.navigate("Offers", { requestId });
+      (nav.replace ?? nav.navigate)("Offers", { requestId });
       return;
     }
     // Activated booking: the award now names the execution ride.

@@ -1,6 +1,6 @@
 // Design handoff R02 + R03 (handoff-marketplace/rn/rider/FareEditorScreen.tsx), adapted only for repo imports,
 // contracts TEST_IDS, a controlled amount input (amountRaw) and a typed preset callback (the handoff stringified Money).
-import React, { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { View, TextInput, type TextStyle } from "react-native";
 import {
   Screen,
@@ -41,12 +41,18 @@ export type FareEditorProps = {
   onRefreshQuote: () => void;
   onReview: () => void;
   onBack: () => void;
+  /** Ride booking options (saved driver, service needs, passenger, organization). */
+  options?: ReactNode;
   review: {
     visible: boolean;
     payment: string;
     cancellation: string;
     publishing: boolean;
-    publishError: string | null;
+    publishError: string | { title: string; body: string } | null;
+    /** Chosen options, stated back before sending. */
+    lines?: { label: string; value: string }[];
+    /** What still blocks sending (client input checks) — Send stays disabled. */
+    problems?: string[];
     onSend: () => void;
     onEdit: () => void;
     onDismiss: () => void;
@@ -191,6 +197,7 @@ export function FareEditorScreen(p: FareEditorProps) {
           Quote refreshes {p.quote.expiresAt} · pricing {p.quote.pricingVersion}
         </Text>
       ) : null}
+      {p.options}
       {expired ? (
         <Button
           testID={TEST_IDS.mp.rider.fare.refreshQuote}
@@ -225,14 +232,32 @@ export function FareEditorScreen(p: FareEditorProps) {
             }
           />
           <Row label="Payment" value={p.review.payment} />
+          {(p.review.lines ?? []).map((l) => (
+            <Row key={l.label} label={l.label} value={l.value} />
+          ))}
           <Row label="Cancellation" value={p.review.cancellation} last />
         </Card>
+        {p.review.problems && p.review.problems.length ? (
+          <Banner
+            tone="warn"
+            title="Before you send"
+            body={p.review.problems.join(" ")}
+          />
+        ) : null}
         <Banner
           tone="ok"
           body="Drivers can offer your price, lower, or higher. Nothing is booked until you choose an offer."
         />
         {p.review.publishError ? (
-          <Banner tone="error" body={p.review.publishError} />
+          typeof p.review.publishError === "string" ? (
+            <Banner tone="error" body={p.review.publishError} />
+          ) : (
+            <Banner
+              tone="error"
+              title={p.review.publishError.title}
+              body={p.review.publishError.body}
+            />
+          )
         ) : null}
         <Button
           testID={TEST_IDS.mp.rider.review.edit}
@@ -244,6 +269,7 @@ export function FareEditorScreen(p: FareEditorProps) {
           testID={TEST_IDS.mp.rider.review.send}
           label="Send request"
           loading={p.review.publishing}
+          disabled={!!p.review.problems?.length}
           onPress={p.review.onSend}
         />
       </Sheet>

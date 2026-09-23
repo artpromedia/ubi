@@ -14,6 +14,15 @@ import { ApiError, track } from "@ubi/mobile-core";
 import type { MarketplaceStackParamList } from "../../navigation/routes";
 import { marketplaceApi, type MpAward } from "../../api/marketplace";
 import { BidDetailScreen } from "./BidDetailScreen";
+import {
+  badgesOf,
+  driverCardOf,
+  fitLineOf,
+  pickupLineOf,
+  reliabilityLineOf,
+  vehicleLineOf,
+} from "./offerView";
+import { WALLET_PAYMENT_LABEL } from "../../lib/payment";
 
 const winLabel = (sec: number) => Math.round(sec / 60) + " min";
 
@@ -192,14 +201,18 @@ export function BidDetailContainer() {
   ];
   return (
     <BidDetailScreen
-      driver={{
-        name: offer.driver.displayName,
-        rating: offer.driver.rating,
-        trips: offer.driver.completedTrips,
-        vehicle: offer.driver.vehicle,
-        plateMasked: offer.driver.plateMasked,
-        initials: offer.driver.initials,
-      }}
+      driver={{ ...driverCardOf(offer), vehicle: vehicleLineOf(offer) }}
+      comparison={
+        offer.driverProfile || offer.reliability || offer.pickupEstimate
+          ? {
+              pickupLabel: pickupLineOf(offer),
+              totalNote: offer.totalNote ?? null,
+              reliability: reliabilityLineOf(offer.reliability),
+              fit: fitLineOf(offer.serviceFit),
+              badges: badgesOf(offer),
+            }
+          : undefined
+      }
       bid={{
         bidId: offer.bidId,
         bidVersion: offer.bidVersion,
@@ -207,7 +220,8 @@ export function BidDetailContainer() {
         amountMinor: offer.amountMinor,
         bookingFeeMinor: offer.bookingFeeMinor ?? null,
         totalMinor: offer.totalMinor ?? null,
-        paymentLabel: "UBI Wallet",
+        // A06 part C: a business request is paid from the organization's budget, never the wallet.
+        paymentLabel: r.business ? "Organization budget" : WALLET_PAYMENT_LABEL,
       }}
       slot={slot}
       window={

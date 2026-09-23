@@ -45,6 +45,7 @@ import {
   StaleBanner,
   StateTag,
 } from "./riderParts";
+import { legacyDriverLine } from "./offerView";
 
 const TID = TEST_IDS.mp.rider.booking;
 const ENDED = new Set(["completed", "failed", "cancelled", "released"]);
@@ -122,11 +123,10 @@ export function BookingDetailView(p: BookingDetailProps) {
                 ? "Your reserved driver"
                 : "The driver you chose"}
             </Text>
-            <Text variant="bodyStrong">
-              {b.driver.displayName + " · ★ " + b.driver.rating}
-            </Text>
+            {/* Named, rated and plated only from a verified profile — never placeholders. */}
+            <Text variant="bodyStrong">{legacyDriverLine(b.driver).name}</Text>
             <Text variant="caption" tone="text2">
-              {b.driver.vehicle + " · " + b.driver.plateMasked}
+              {legacyDriverLine(b.driver).detail}
             </Text>
           </Card>
         ) : null}

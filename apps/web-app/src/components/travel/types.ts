@@ -38,6 +38,32 @@ export const WEB_TEST_IDS = {
     fallback: "web.handoff.fallback",
     open: "web.handoff.open",
   },
+  /** The guest passenger's trip link page (/trip-link). */
+  tripLink: {
+    screen: "web.tripLink.screen",
+    loading: "web.tripLink.loading",
+    status: "web.tripLink.status",
+    eta: "web.tripLink.eta",
+    route: "web.tripLink.route",
+    driver: "web.tripLink.driver",
+    noDriver: "web.tripLink.noDriver",
+    pin: "web.tripLink.pin",
+    pinReveal: "web.tripLink.pinReveal",
+    pinUnavailable: "web.tripLink.pinUnavailable",
+    verification: "web.tripLink.verification",
+    support: "web.tripLink.support",
+    decline: "web.tripLink.decline",
+    declineConfirm: "web.tripLink.declineConfirm",
+    declineCancel: "web.tripLink.declineCancel",
+    declined: "web.tripLink.declined",
+    refusal: "web.tripLink.refusal",
+    expired: "web.tripLink.expired",
+    revoked: "web.tripLink.revoked",
+    invalid: "web.tripLink.invalid",
+    missing: "web.tripLink.missing",
+    error: "web.tripLink.error",
+    retry: "web.tripLink.retry",
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -103,11 +129,20 @@ export type FlightSearchInput = {
   cabin?: "economy" | "business";
 };
 
+/**
+ * travel-v2.yaml LinkedItem.status. An airport transfer is `pending_unassigned` (no driver
+ * yet) → `requested` (sent to drivers, no driver yet) → `awarded` (the traveller's own
+ * selected award: the ONLY driver-confirmed state), or `failed` / `cancelled`.
+ */
 export type TripItemStatus =
   | "ticketed"
   | "confirmed"
   | "supplier_pending"
   | "not_reserved"
+  | "pending_unassigned"
+  | "requested"
+  | "awarded"
+  | "failed"
   | "reserved"
   | "assigned"
   | "completed"
@@ -115,9 +150,21 @@ export type TripItemStatus =
   | "refunded"
   | "not_booked";
 
+/**
+ * travel-v2.yaml LinkedItem. `airport_transfer` items carry `transferId` and `driverSecured`
+ * (true ONLY when awarded); `ride_reservation` is the legacy link (never a marketplace
+ * request; status not_reserved).
+ */
 export type TripItem = {
-  kind: "flight" | "stay" | "ride_reservation" | "return_flight_placeholder";
+  kind:
+    | "flight"
+    | "stay"
+    | "airport_transfer"
+    | "ride_reservation"
+    | "return_flight_placeholder";
   orderId?: string;
+  transferId?: string;
+  driverSecured?: boolean;
   reservationId?: string;
   title: string;
   subtitle?: string;
@@ -129,6 +176,9 @@ export type TripItem = {
   refs?: string;
   actions?: { key: string; label: string; primary?: boolean }[];
 };
+
+/** The contract's name for one item of a trip. */
+export type LinkedItem = TripItem;
 
 export type Trip = {
   id: string;

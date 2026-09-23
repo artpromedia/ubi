@@ -45,9 +45,10 @@ import {
   type Refusal,
 } from "./riderCopy";
 import type { RoutePoint } from "./riderParts";
+import { WALLET_PAYMENT_METHOD_ID } from "../../lib/payment";
 
-/** The payment method the marketplace publishes with (same as the fare editor). */
-const PAYMENT_METHOD_ID = "pm_wallet";
+/** The payment method the marketplace publishes with (same as the fare editor): a city-config id. */
+const PAYMENT_METHOD_ID = WALLET_PAYMENT_METHOD_ID;
 
 const WINDOW_CHOICES: { label: string; minutes: number | undefined }[] = [
   { label: "Standard window", minutes: undefined },

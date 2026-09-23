@@ -31,6 +31,11 @@ export function LinkedOrdersScreen() {
       orderId: item.orderId,
       direction: "to_airport",
     });
+  // An airport transfer opens its own status (pending / sent / driver confirmed / choices).
+  const open = (item: LinkedItem) =>
+    item.kind === "airport_transfer" && item.transferId
+      ? () => nav.navigate("Transfer", { transferId: item.transferId })
+      : undefined;
   return (
     <Screen
       onBack={nav.goBack}
@@ -61,7 +66,12 @@ export function LinkedOrdersScreen() {
             costs you.
           </Text>
           {t.items.map((it) => (
-            <ItemCard key={it.title} item={it} onAction={(k) => act(it, k)} />
+            <ItemCard
+              key={it.transferId ?? it.orderId ?? it.title}
+              item={it}
+              onAction={(k) => act(it, k)}
+              onOpen={open(it)}
+            />
           ))}
           <Card style={{ gap: 4 }}>
             <Text variant="label" tone="text2">
@@ -69,7 +79,7 @@ export function LinkedOrdersScreen() {
             </Text>
             <Text variant="caption">
               {t.items.find((i) => i.kind === "flight")?.disruption ??
-                "Protection depends on the fare you bought. A reserved ride is moved once, free, to match a new flight time."}
+                "Protection depends on the fare you bought. An airport ride without a secured driver is retimed to a new flight time within the limit you approved; once a driver is secured, you choose what happens."}
             </Text>
           </Card>
         </>

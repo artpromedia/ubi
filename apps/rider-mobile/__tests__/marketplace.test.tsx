@@ -13,10 +13,8 @@ import {
 } from "../src/screens/marketplace/OfferInboxScreen";
 import {
   mergeArrivalOrder,
-  sortOfferIds,
   displayOrder,
 } from "../src/screens/marketplace/offerOrder";
-import type { MpOfferDto } from "../src/api/marketplace";
 
 const NGN = (major: number) => ({ amountMinor: major * 100, currency: "NGN" });
 const noop = () => {};
@@ -87,15 +85,26 @@ describe("OfferInboxScreen stable order + withdrawn rendering", () => {
   ): Offer => ({
     bidId,
     bidVersion: 1,
-    driverName: name,
-    rating: "4.8",
-    trips: 1200,
-    vehicle: "Toyota Corolla",
-    initials: name.slice(0, 2).toUpperCase(),
-    amountMinor: NGN(major),
+    payableMinor: NGN(major),
+    totalLabel: null,
+    totalNote: null,
     deltaLabel: null,
     kind: "immediate",
-    pickupLabel: "Pickup in 4 min",
+    driver: {
+      status: "verified",
+      statusLabel: "Verified by UBI",
+      name,
+      initials: name.slice(0, 2).toUpperCase(),
+      ratingLabel: "4.80 from 212 ratings",
+      tripsLabel: "1,200 completed trips",
+      plateMasked: null,
+    },
+    vehicleLine: "Toyota Corolla · standard",
+    pickupLabel: "Estimated pickup in ~4 min",
+    reliability: null,
+    fitLabel: null,
+    savedLabel: null,
+    badges: [],
     expiresLabel: "2 min",
     withdrawn,
   });
@@ -107,7 +116,20 @@ describe("OfferInboxScreen stable order + withdrawn rendering", () => {
     expiresLabel: "in 2 min",
     envelopeLabel: "Eligible drivers within 3 km can see your request",
     widenedBanner: null,
-    sort: "price",
+    order: {
+      sort: "offered",
+      options: [
+        {
+          key: "offered",
+          chip: "As offered",
+          label: "In the order drivers offered",
+        },
+      ],
+      label: "In the order drivers offered",
+      tieBreak: null,
+      note: null,
+      pending: false,
+    },
     onSort: noop,
     offers,
     onOpenOffer: noop,
@@ -159,9 +181,7 @@ describe("OfferInboxScreen stable order + withdrawn rendering", () => {
     );
     expect(withdrawnCard.props.accessibilityState?.disabled).toBe(true);
     expect(screen.getByText("Cancelled · withdrawn")).toBeTruthy();
-    const flatStyle = [screen.getByText("Tunde · ★ 4.8").props.style].flat(
-      Infinity,
-    );
+    const flatStyle = [screen.getByText("Tunde").props.style].flat(Infinity);
     expect(flatStyle).toContainEqual(
       expect.objectContaining({ textDecorationLine: "line-through" }),
     );
@@ -169,54 +189,14 @@ describe("OfferInboxScreen stable order + withdrawn rendering", () => {
 });
 
 // Pure ordering helpers used by the container: arrival order is append-only; an explicit sort
-// snapshots the order; later arrivals append AFTER the snapshot instead of reshuffling it.
+// snapshots the SERVER's order; later arrivals append AFTER the snapshot instead of reshuffling it.
 describe("offerOrder helpers", () => {
-  const dto = (
-    bidId: string,
-    major: number,
-    kind: "immediate" | "finishing_trip" = "immediate",
-    earliestSec = 0,
-  ): MpOfferDto => ({
-    bidId,
-    bidVersion: 1,
-    requestRevision: 1,
-    amountMinor: NGN(major),
-    kind,
-    driver: {
-      displayName: "D",
-      initials: "D",
-      rating: "4.8",
-      completedTrips: 10,
-      vehicle: "V",
-      plateMasked: "P",
-    },
-    pickupLabel: "Pickup",
-    pickupWindow:
-      kind === "finishing_trip"
-        ? { earliestSec, latestSec: earliestSec + 300, etaVersion: 1 }
-        : null,
-    expiresAt: new Date().toISOString(),
-    withdrawn: false,
-    whyRecommended: null,
-  });
   it("mergeArrivalOrder appends new ids and never reorders or drops", () => {
-    const a = mergeArrivalOrder([], [dto("a", 3000), dto("b", 2800)]);
+    const o = (bidId: string) => ({ bidId });
+    const a = mergeArrivalOrder([], [o("a"), o("b")]);
     expect(a).toEqual(["a", "b"]);
-    expect(mergeArrivalOrder(a, [dto("b", 2800), dto("c", 2900)])).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
-    expect(mergeArrivalOrder(a, [dto("b", 2800)])).toEqual(["a", "b"]); // dropped upstream, kept here
-  });
-  it("sortOfferIds orders by server amount for price, immediate-first for eta", () => {
-    const offers = [
-      dto("a", 3000),
-      dto("b", 2800, "finishing_trip", 720),
-      dto("c", 2800),
-    ];
-    expect(sortOfferIds(offers, "price")).toEqual(["b", "c", "a"]);
-    expect(sortOfferIds(offers, "eta")).toEqual(["a", "c", "b"]);
+    expect(mergeArrivalOrder(a, [o("b"), o("c")])).toEqual(["a", "b", "c"]);
+    expect(mergeArrivalOrder(a, [o("b")])).toEqual(["a", "b"]); // dropped upstream, kept here
   });
   it("displayOrder appends post-sort arrivals after the explicit snapshot", () => {
     expect(displayOrder(["a", "b", "c", "d"], ["c", "a", "b"])).toEqual([

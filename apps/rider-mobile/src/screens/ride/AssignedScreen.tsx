@@ -32,6 +32,7 @@ import {
 import { useRideView, rideScreenFor } from "./useRideView";
 import type { RideStackParamList } from "../../navigation/routes";
 import { LoadingState, ErrorState } from "../../components/states";
+import { RequestPassengerPanel } from "../marketplace/PassengerLinkCard";
 
 const etaLabel = (etaSeconds?: number) =>
   etaSeconds === undefined
@@ -174,6 +175,10 @@ export function AssignedScreen() {
           last
         />
       </Card>
+      {/* A06 part B: booked for another adult — the passenger's trip link, on this ride. */}
+      {params.requestId ? (
+        <RequestPassengerPanel requestId={params.requestId} />
+      ) : null}
       {!cancelled ? (
         <Button
           testID={TEST_IDS.rider.assigned.cancel}

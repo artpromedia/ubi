@@ -49,6 +49,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
           OrderStatus: "travel/orders/:orderId",
           Disruption: "travel/orders/:orderId/disruption",
           RefundStatus: "travel/refunds/:refundId",
+          Transfer: "travel/transfers/:transferId",
         },
       },
       Marketplace: {
@@ -68,6 +69,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
           AdvanceOffers: "home/marketplace/:requestId/advance",
           Booking: "home/marketplace/later/bookings/:bookingId",
           Series: "home/marketplace/later/series/:templateId",
+          // A04.3 / A06 rider confidence.
+          Favourites: "home/marketplace/favourites",
+          Receipt: "home/marketplace/:requestId/receipt",
         },
       }, // Fare and Schedule carry an object param (quoteParams) and are reached in-app only.
       FlagOff: "unavailable/:feature",

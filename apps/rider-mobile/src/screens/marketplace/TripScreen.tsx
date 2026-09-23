@@ -113,6 +113,8 @@ export type TripProps = {
     onConfirm: () => void;
   } | null;
   stale: Staleness;
+  /** The completed ride's receipt (the server answers "not yet" until it exists). */
+  onReceipt?: (() => void) | null;
   onBack: () => void;
 };
 
@@ -503,6 +505,14 @@ export function TripScreen(p: TripProps) {
               </View>
             ))}
           </Card>
+        ) : null}
+        {p.onReceipt ? (
+          <Button
+            testID={TID.receipt}
+            label="Receipt"
+            kind="ghost"
+            onPress={p.onReceipt}
+          />
         ) : null}
       </View>
       {p.terminate ? (

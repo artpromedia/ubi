@@ -50,6 +50,19 @@ describe("typed deep-link routes", () => {
     expect(mp.Fare).toBeUndefined();
   });
 
+  it("maps the rider-confidence and airport transfer paths", () => {
+    const screens = linking.config!.screens as Record<string, any>;
+    expect(screens.Marketplace.screens.Favourites).toBe(
+      "home/marketplace/favourites",
+    );
+    expect(screens.Marketplace.screens.Receipt).toBe(
+      "home/marketplace/:requestId/receipt",
+    );
+    expect(screens.Travel.screens.Transfer).toBe(
+      "travel/transfers/:transferId",
+    );
+  });
+
   it("includes the compile-time route/param assertions in the build", () => {
     expect(routeAssertions).toBe(true);
   });

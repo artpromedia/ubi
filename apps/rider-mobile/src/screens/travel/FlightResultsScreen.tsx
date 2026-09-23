@@ -6,10 +6,10 @@ import {
   type RouteProp,
 } from "@react-navigation/native";
 import type { TravelStackParamList } from "../../navigation/routes";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Screen, Text, Chip, Button, Skeleton, Banner } from "@ubi/mobile-ui";
 import { TID, track, formatMinor } from "@ubi/mobile-core";
-import { travelApi, type FlightOffer } from "../../api/travel";
+import { cartKey, travelApi, type FlightOffer } from "../../api/travel";
 import { OfferCard } from "../../components/travel/OfferCard";
 
 /** Board 21a — compare fare families before picking. Sort/filter chips are server-side params in RN-01 (client-side here for fixtures). */
@@ -31,6 +31,7 @@ export function FlightResultsScreen() {
   const [sel, setSel] = useState<
     { offerRef: string; familyId: string } | undefined
   >();
+  const queryClient = useQueryClient();
   const cart = useMutation({
     mutationFn: () =>
       travelApi.createCart([
@@ -40,8 +41,11 @@ export function FlightResultsScreen() {
           fareFamilyId: sel!.familyId,
         },
       ]),
-    onSuccess: (c) =>
-      nav.navigate("PassengerDetails", { cartId: c.id, index: 0 }),
+    // The cart view comes back on the create itself (there is no cart GET): hold it for checkout.
+    onSuccess: (c) => {
+      queryClient.setQueryData(cartKey(c.id), c);
+      nav.navigate("PassengerDetails", { cartId: c.id, index: 0 });
+    },
   });
   const s = q.data;
   React.useEffect(() => {

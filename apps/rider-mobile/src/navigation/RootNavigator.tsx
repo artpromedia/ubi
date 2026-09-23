@@ -39,6 +39,7 @@ import { RefundStatusScreen } from "../screens/travel/RefundStatusScreen";
 import { DisruptionScreen } from "../screens/travel/DisruptionScreen";
 import { AttachAirportRideScreen } from "../screens/travel/AttachAirportRideScreen";
 import { LinkedOrdersScreen } from "../screens/travel/LinkedOrdersScreen";
+import { TransferStatusContainer } from "../screens/travel/TransferStatusScreen";
 import { RequestDetailsScreen } from "../screens/marketplace/RequestDetailsScreen";
 import { FareEditorContainer } from "../screens/marketplace/FareEditorContainer";
 import { OfferInboxContainer } from "../screens/marketplace/OfferInboxContainer";
@@ -54,6 +55,8 @@ import { ScheduledDetailContainer } from "../screens/marketplace/ScheduledDetail
 import { AdvanceOffersContainer } from "../screens/marketplace/AdvanceOffers";
 import { BookingDetailContainer } from "../screens/marketplace/BookingDetail";
 import { RecurringSeriesContainer } from "../screens/marketplace/RecurringSeries";
+import { FavouriteDriversContainer } from "../screens/marketplace/FavouriteDrivers";
+import { ReceiptContainer } from "../screens/marketplace/ReceiptScreen";
 import { SplashScreen } from "../screens/boot/SplashScreen";
 import { OnboardingScreen } from "../screens/boot/OnboardingScreen";
 import { useSessionKeeper } from "../api/auth";
@@ -274,6 +277,12 @@ function TravelNavigator({
           name="AttachAirportRide"
           component={AttachAirportRideScreen}
         />
+        {/* Airport transfers gate on the deny-by-default `reservations` flag inside
+            each screen, with an honest fallback when it is off. */}
+        <TravelStack.Screen
+          name="Transfer"
+          component={TransferStatusContainer}
+        />
         <TravelStack.Screen
           name="LinkedOrders"
           component={LinkedOrdersScreen}
@@ -350,6 +359,13 @@ function MarketplaceNavigator({
           name="Series"
           component={RecurringSeriesContainer}
         />
+        {/* A04.3 / A06: saved drivers are always readable; a receipt records a trip that
+            already happened, so neither is flag-gated server-side (saving/asking first is). */}
+        <MarketplaceStack.Screen
+          name="Favourites"
+          component={FavouriteDriversContainer}
+        />
+        <MarketplaceStack.Screen name="Receipt" component={ReceiptContainer} />
       </MarketplaceStack.Navigator>
     </FlagGate>
   );

@@ -75,10 +75,13 @@ export type TravelStackParamList = {
   Servicing: { orderId: string };
   RefundStatus: { refundId: string };
   Disruption: { orderId: string };
+  // Airport transfer INTENT for a leg of the traveller's flight order (strict
+  // CreateAirportTransfer; the pickup window is the server's), and the transfer's status.
   AttachAirportRide: {
     orderId: string;
     direction: "to_airport" | "from_airport";
   };
+  Transfer: { transferId: string };
   LinkedOrders: { tripId: string };
 };
 /** Inputs the fare editor needs to price a marketplace request (GET /v1/mp/quote). Areas are coarse label+centroid, never a house number. */
@@ -112,6 +115,9 @@ export type MarketplaceStackParamList = {
   AdvanceOffers: { requestId: string };
   Booking: { bookingId: string };
   Series: { templateId: string };
+  // A04.3 / A06: saved drivers and a completed ride's receipt.
+  Favourites: undefined;
+  Receipt: { requestId: string };
 };
 export type AccountStackParamList = {
   Profile: undefined;

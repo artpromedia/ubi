@@ -3,6 +3,14 @@ import { Card, Badge } from "@ubi/ui";
 import { useTrip } from "@/components/travel/api";
 import type { TripItemStatus } from "@/components/travel/types";
 
+/** Distinct words for the airport transfer statuses (the rest print their own name). */
+const WORD: Partial<Record<TripItemStatus, string>> = {
+  pending_unassigned: "pending · no driver yet",
+  requested: "sent to drivers · no driver yet",
+  awarded: "driver confirmed",
+  failed: "not booked · no driver",
+};
+
 const PILL: Record<TripItemStatus, string> = {
   ticketed: "bg-[#E8F8EE] text-[#148F3D]",
   confirmed: "bg-[#E8F8EE] text-[#148F3D]",
@@ -10,6 +18,11 @@ const PILL: Record<TripItemStatus, string> = {
   assigned: "bg-[#E8F8EE] text-[#148F3D]",
   reserved: "bg-[#E8F8EE] text-[#148F3D]",
   supplier_pending: "bg-[#FEF6E8] text-[#B8860B]",
+  // Airport transfer: pending / sent to drivers are NOT confirmed; awarded is.
+  pending_unassigned: "bg-[#EEF1FA] text-[#26408B]",
+  requested: "bg-[#EEF1FA] text-[#26408B]",
+  awarded: "bg-[#E8F8EE] text-[#148F3D]",
+  failed: "bg-[#FDE8E8] text-[#C53030]",
   not_reserved: "bg-[#FDE8E8] text-[#C53030]",
   cancelled: "bg-[#FDE8E8] text-[#C53030]",
   refunded: "bg-[#FDE8E8] text-[#C53030]",
@@ -42,7 +55,7 @@ export function TripItems({ tripId }: { tripId: string }) {
       </p>
       {trip.items.map((it, i) => (
         <Card
-          key={it.orderId ?? it.reservationId ?? it.title + i}
+          key={it.transferId ?? it.orderId ?? it.reservationId ?? it.title + i}
           className="space-y-1.5 rounded-2xl p-4"
         >
           <div className="flex items-center justify-between">
@@ -54,7 +67,7 @@ export function TripItems({ tripId }: { tripId: string }) {
               <span />
             )}
             <Badge className={"text-[10px] uppercase " + PILL[it.status]}>
-              {it.status.replace(/_/g, " ")}
+              {WORD[it.status] ?? it.status.replace(/_/g, " ")}
             </Badge>
           </div>
           <div className="text-[15px] font-semibold text-[#191414]">
@@ -66,7 +79,19 @@ export function TripItems({ tripId }: { tripId: string }) {
           {it.refs ? (
             <div className="text-xs text-[#666]">{it.refs}</div>
           ) : null}
-          {it.kind === "ride_reservation" ? (
+          {it.kind === "airport_transfer" ? (
+            <p className="text-xs text-[#666]">
+              {it.driverSecured
+                ? "A driver is confirmed for the offer you chose. Follow the ride in the app."
+                : "No driver is secured yet — you choose a driver's offer in the app near pickup. Nothing is charged for the ride until then."}{" "}
+              <a
+                className="font-semibold text-[#18A349]"
+                href={"https://links.ubi.africa/trips/" + tripId}
+              >
+                Open the app
+              </a>
+            </p>
+          ) : it.kind === "ride_reservation" ? (
             <p className="text-xs text-[#666]">
               Rides are booked in the app (live driver tracking needs it).
               We&apos;ll remind you on landing.{" "}

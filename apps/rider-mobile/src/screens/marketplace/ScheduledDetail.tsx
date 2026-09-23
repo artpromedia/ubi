@@ -46,9 +46,10 @@ import {
   StateTag,
   type RoutePoint,
 } from "./riderParts";
+import { WALLET_PAYMENT_METHOD_ID } from "../../lib/payment";
 
 const TID = TEST_IDS.mp.rider.scheduled;
-const PAYMENT_METHOD_ID = "pm_wallet";
+const PAYMENT_METHOD_ID = WALLET_PAYMENT_METHOD_ID;
 const TERMINAL = new Set(["cancelled", "expired", "skipped", "unfulfilled"]);
 const UNPUBLISHED = new Set(["scheduled_unassigned", "needs_rider_approval"]);
 

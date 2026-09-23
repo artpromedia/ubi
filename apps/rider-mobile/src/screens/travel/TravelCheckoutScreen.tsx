@@ -15,21 +15,33 @@ import {
   MoneyText,
   Button,
   Banner,
-  Skeleton,
 } from "@ubi/mobile-ui";
 import { ApiError, TID, track, formatMinor } from "@ubi/mobile-core";
-import { travelApi, type Cart } from "../../api/travel";
+import { TEST_IDS } from "@ubi/contracts";
+import { cartKey, travelApi, type Cart } from "../../api/travel";
+import {
+  WALLET_PAYMENT_LABEL,
+  WALLET_PAYMENT_METHOD_ID,
+} from "../../lib/payment";
 
-/** Board 21b — full price and every term before pay. 409 repriced ⇒ show the diff, never charge. */
+/**
+ * Board 21b — full price and every term before pay. 409 repriced ⇒ show the diff, never charge.
+ * travel-service serves no cart GET: the cart view comes back from POST /v1/travel/carts and
+ * PUT …/passengers, which the previous screens hold under `cartKey`. Without it (a cold start),
+ * the screen says so and sends the traveller back to search — it never invents a cart.
+ */
 export function TravelCheckoutScreen() {
   const nav = useNavigation<{
     navigate: (n: string, p?: unknown) => void;
     goBack: () => void;
   }>();
   const { params } = useRoute<RouteProp<TravelStackParamList, "Checkout">>();
-  const q = useQuery({
-    queryKey: ["cart", params.cartId],
-    queryFn: () => travelApi.cart(params.cartId),
+  // Read-only view of the held answer: `enabled: false` never calls an unserved route.
+  const q = useQuery<Cart>({
+    queryKey: cartKey(params.cartId),
+    queryFn: () => Promise.reject(new Error("no cart GET")),
+    enabled: false,
+    staleTime: Infinity,
   });
   const [cart, setCart] = useState<Cart | undefined>();
   const [repriced, setRepriced] = useState(false);
@@ -54,7 +66,7 @@ export function TravelCheckoutScreen() {
         try {
           const r = await travelApi.checkout(
             c.id,
-            c.paymentMethod.id,
+            c.paymentMethod?.id ?? WALLET_PAYMENT_METHOD_ID,
             proof,
             c.total,
           );
@@ -70,7 +82,9 @@ export function TravelCheckoutScreen() {
             setRepriced(true);
             track("travel_checkout_repriced", {
               cartId: c.id,
-              diffMinor: fresh.total.amountMinor - c.total.amountMinor,
+              // Both server totals, never a client-computed difference.
+              previousTotalMinor: c.total.amountMinor,
+              totalMinor: fresh.total.amountMinor,
             });
           } else setErr("Payment could not start. Nothing was charged.");
         } finally {
@@ -101,7 +115,18 @@ export function TravelCheckoutScreen() {
       }
     >
       {!c ? (
-        <Skeleton height={260} />
+        <Card testID={TEST_IDS.travel.cart.missing} style={{ gap: 8 }}>
+          <Text variant="bodyStrong">Your cart isn’t on this device</Text>
+          <Text variant="bodySm" tone="text2">
+            Carts aren’t kept after the app closes. Nothing was charged — search
+            again to see current prices.
+          </Text>
+          <Button
+            label="Back to search"
+            kind="secondary"
+            onPress={() => nav.navigate("FlightSearch")}
+          />
+        </Card>
       ) : (
         <>
           {repriced ? (
@@ -187,14 +212,16 @@ export function TravelCheckoutScreen() {
             <Text variant="label" tone="text2">
               Terms you&apos;re agreeing to
             </Text>
-            {c.termsSummary.map((s) => (
+            {(c.termsSummary ?? c.items.flatMap((it) => it.terms)).map((s) => (
               <Text key={s} variant="caption">
                 {s}
               </Text>
             ))}
-            <Text variant="caption" tone="link">
-              {c.termsLinks.join(" · ")}
-            </Text>
+            {c.termsLinks?.length ? (
+              <Text variant="caption" tone="link">
+                {c.termsLinks.join(" · ")}
+              </Text>
+            ) : null}
           </Card>
           <Card>
             <Row
@@ -204,10 +231,14 @@ export function TravelCheckoutScreen() {
               }
             >
               <View style={{ flex: 1 }}>
-                <Text variant="bodySmStrong">{c.paymentMethod.label}</Text>
-                <Text variant="caption" tone="text2">
-                  {c.paymentMethod.detail}
+                <Text variant="bodySmStrong">
+                  {c.paymentMethod?.label ?? WALLET_PAYMENT_LABEL}
                 </Text>
+                {c.paymentMethod?.detail ? (
+                  <Text variant="caption" tone="text2">
+                    {c.paymentMethod.detail}
+                  </Text>
+                ) : null}
               </View>
               <Text variant="bodySmStrong" tone="link">
                 Change

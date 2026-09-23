@@ -436,24 +436,44 @@ const cart = {
   ],
   termsLinks: ["Full fare rules", "Hotel policy", "UBI Travel terms v4"],
 };
-const suggestion = {
-  flightLabel: "Fri 12 Sep · 04:40",
-  advice:
-    "For P4 7120 at 06:45 from MMA2. Air Peace asks you to be there 90 min before for domestic — we suggest a 04:40 pickup (38 min drive, buffer 22 min).",
-  suggestedPickupAt: "2026-09-12T04:40:00+01:00",
-  options: [
-    "2026-09-12T04:20:00+01:00",
-    "2026-09-12T04:40:00+01:00",
-    "2026-09-12T05:00:00+01:00",
+// Airport transfer (travel-v2.yaml AirportTransfer): an INTENT, pending with no driver until
+// the traveller chooses a driver's offer. The pickup window is the server's, derived from the leg.
+const pendingTransfer = {
+  transferId: "atr_dev_1",
+  linkedOrderId: "trv_ord_7K2",
+  direction: "departure_dropoff",
+  legIndex: 0,
+  flightNumber: "P4 7120",
+  airportCode: "LOS",
+  status: "pending_unassigned",
+  driverSecured: false,
+  statusLabel: "Pending — no driver yet",
+  notice:
+    "No driver yet. We ask UBI rides to schedule this ride as your trip gets close, and drivers see it near the pickup time. No driver is secured and nothing is charged for the ride until you choose a driver's offer in the ride app.",
+  pickup: { lat: 6.4281, lng: 3.4216, label: "Home" },
+  dropoff: { lat: 6.5774, lng: 3.3211, label: "MMA2" },
+  pickupWindow: null,
+  arriveBy: {
+    at: "2026-09-12T05:15:00+01:00",
+    timeZone: "Africa/Lagos",
+    label: "Fri 12 Sep, 05:15",
+  },
+  flight: {
+    departAt: "2026-09-12T06:45:00+01:00",
+    arriveAt: "2026-09-12T07:55:00+01:00",
+    status: "scheduled",
+  },
+  vehicleClass: "comfort",
+  approvedMaxFareMinor: NGN(9000),
+  paymentMethodId: "wallet",
+  policyVersion: "airport-transfer.v1",
+  ride: null,
+  retimedCount: 0,
+  actionRequired: null,
+  outcome: null,
+  terms: [
+    "This airport ride is a separate booking from your flight, with its own status, payment and receipt.",
   ],
-  from: "Home · 14 Adeola Odeku St",
-  classes: [
-    { id: "comfort", label: "Comfort · reserved", price: NGN(6800) },
-    { id: "go", label: "UBI Go", price: NGN(5900) },
-  ],
-  terms:
-    "Reserved-ride fee ₦500 included · free cancellation until Thu 22:40 · then ₦1,500 · driver waits 10 min free. If your flight changes, we offer a new time — this ride does not change on its own unless an automation says so.",
-  mapLabel: "Map: 14 Adeola Odeku St to MMA2, 38 minutes at 04:40",
 };
 export async function travelFixtures(i: FixtureInput) {
   if (i.path === "/v1/travel/flights/searches" && i.method === "POST")
@@ -464,8 +484,8 @@ export async function travelFixtures(i: FixtureInput) {
     return ok(rates);
   if (i.path === "/v1/travel/carts" && i.method === "POST")
     return { status: 201, json: cart };
-  if (/^\/v1\/travel\/carts\/[^/]+$/.test(i.path)) return ok(cart);
-  if (/\/passengers$/.test(i.path)) return ok({});
+  // No cart GET exists server-side: the create and passengers answers carry the cart.
+  if (/\/passengers$/.test(i.path)) return ok(cart);
   if (/\/checkout$/.test(i.path))
     return globalThis.__ubiRepriceOnce === undefined
       ? ((globalThis.__ubiRepriceOnce = true),
@@ -505,7 +525,8 @@ export async function travelFixtures(i: FixtureInput) {
         body: "Seat confirmed with Ibom Air. Ticket numbers follow shortly.",
       },
     };
-  if (/\/cancel$/.test(i.path)) return { status: 202, json: refund };
+  if (/^\/v1\/travel\/orders\/[^/]+\/cancel$/.test(i.path))
+    return { status: 202, json: refund };
   if (i.path.startsWith("/v1/travel/refunds/")) return ok(refund);
   if (/^\/v1\/travel\/trips\/[^/]+$/.test(i.path)) return ok(trip);
   if (/\/linked$/.test(i.path))
@@ -528,14 +549,20 @@ export async function travelFixtures(i: FixtureInput) {
         },
       ],
     });
-  if (i.path.startsWith("/v1/reservations/suggest")) return ok(suggestion);
   if (i.path === "/v1/reservations" && i.method === "POST")
+    return { status: 202, json: pendingTransfer };
+  if (/^\/v1\/reservations\/[^/]+\/(cancel|decision)$/.test(i.path))
     return ok({
-      reservationId: "res_x",
-      status: "reservation_failed",
-      reason:
-        "No reserved Comfort drivers accepted a 04:40 in Victoria Island.",
+      ...pendingTransfer,
+      status: "cancelled",
+      statusLabel: "Cancelled",
+      outcome: {
+        reason: "cancelled_by_traveller",
+        message:
+          "You cancelled this airport ride before any driver was secured. Nothing was charged for the ride.",
+      },
     });
+  if (/^\/v1\/reservations\/[^/]+$/.test(i.path)) return ok(pendingTransfer);
   return undefined;
 }
 declare global {

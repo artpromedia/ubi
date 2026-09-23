@@ -183,7 +183,12 @@ export function LoadFailure({
   );
 }
 
-/** Shown above last-known data when a background refresh failed. */
+/**
+ * Shown above last-known data when a background refresh failed — ONLY when there is data from
+ * an earlier answer (a list that never loaded shows an error instead, never "last update").
+ * Actions stay available on these screens and every one is re-checked by the server against
+ * the current state (versions / idempotency), so the copy says exactly that.
+ */
 export function StaleBanner({
   stale,
   testIDs,
@@ -197,7 +202,11 @@ export function StaleBanner({
       testID={stale === "offline" ? testIDs.offline : testIDs.error}
       tone="neutral"
       title={stale === "offline" ? "Reconnecting…" : "Couldn’t refresh"}
-      body="Showing the last update from the server. Actions resume when it answers again."
+      body={
+        stale === "offline"
+          ? "Showing the last update from the server. Anything you do needs a connection and is checked against the latest state first."
+          : "Showing the last update from the server. Anything you do is checked against the latest state first."
+      }
     />
   );
 }

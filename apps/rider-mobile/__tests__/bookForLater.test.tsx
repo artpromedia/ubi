@@ -35,11 +35,16 @@ import {
 } from "./helpers/mpFixtures";
 
 const mockNavigate = jest.fn();
+const mockReplace = jest.fn();
 const mockGoBack = jest.fn();
 let mockRouteParams: unknown = {};
 jest.mock("@react-navigation/native", () => ({
   __esModule: true,
-  useNavigation: () => ({ navigate: mockNavigate, goBack: mockGoBack }),
+  useNavigation: () => ({
+    navigate: mockNavigate,
+    replace: mockReplace,
+    goBack: mockGoBack,
+  }),
   useRoute: () => ({ params: mockRouteParams }),
 }));
 jest.mock("@ubi/mobile-core", () => ({
@@ -64,6 +69,7 @@ const quoteRoute = (c: { method: string; path: string }) =>
 
 beforeEach(() => {
   mockNavigate.mockReset();
+  mockReplace.mockReset();
   mockGoBack.mockReset();
 });
 afterEach(clearClients);
@@ -131,7 +137,7 @@ describe("ScheduleRide", () => {
       quoteId: "q_route_1",
       requestedFareMinor: NGN(6_000_00),
       maxFareMinor: NGN(9_000_00),
-      paymentMethodId: "pm_wallet",
+      paymentMethodId: "wallet",
       schedule: {
         localDate: "2026-09-25",
         localTime: "07:30",
@@ -332,7 +338,7 @@ describe("ScheduleRide", () => {
     expect(wire.writes()[0].body).toEqual({
       quoteId: "q_route_1",
       requestedFareMinor: NGN(5_200_00),
-      paymentMethodId: "pm_wallet",
+      paymentMethodId: "wallet",
       schedule: { localDate: "2026-09-26", localTime: "06:15" },
     });
   });
@@ -381,7 +387,7 @@ describe("ScheduleRide", () => {
       startsOn: "2026-09-28",
       requestedFareMinor: NGN(6_000_00),
       maxFareMinor: NGN(9_000_00),
-      paymentMethodId: "pm_wallet",
+      paymentMethodId: "wallet",
     });
   });
 
@@ -532,7 +538,7 @@ describe("Scheduled request detail", () => {
     expect(wire.writes()[0].body).toEqual({
       expectedVersion: 3,
       maxFareMinor: NGN(9_000_00),
-      paymentMethodId: "pm_wallet",
+      paymentMethodId: "wallet",
     });
   });
 
@@ -706,10 +712,15 @@ describe("Advance vs live inboxes never mix", () => {
       { marketplace_rides: true },
     );
     renderApp(<OfferInboxContainer />);
+    // It REPLACES the live inbox, so Back never lands on an inbox that bounces straight back.
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("AdvanceOffers", {
+      expect(mockReplace).toHaveBeenCalledWith("AdvanceOffers", {
         requestId: "req_adv_1",
       }),
+    );
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "AdvanceOffers",
+      expect.anything(),
     );
     expect(mockNavigate).not.toHaveBeenCalledWith("Ride", expect.anything());
   });

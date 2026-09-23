@@ -6,10 +6,10 @@ import {
   type RouteProp,
 } from "@react-navigation/native";
 import type { TravelStackParamList } from "../../navigation/routes";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Screen, Text, Button, Toggle, Card, useTheme } from "@ubi/mobile-ui";
 import { TID } from "@ubi/mobile-core";
-import { travelApi } from "../../api/travel";
+import { cartKey, travelApi } from "../../api/travel";
 
 /** Board 21b — as on the ID shown at the airport. Identity prefill comes from KYC as an opaque reference; documents are never forwarded. */
 export function PassengerDetailsScreen() {
@@ -31,9 +31,14 @@ export function PassengerDetailsScreen() {
     useVerified: true,
   });
   const [err, setErr] = useState<Record<string, string>>({});
+  const queryClient = useQueryClient();
   const save = useMutation({
     mutationFn: () => travelApi.putPassengers(params.cartId, [p]),
-    onSuccess: () => nav.navigate("Checkout", { cartId: params.cartId }),
+    // PUT answers the updated cart view — the one checkout reads (there is no cart GET).
+    onSuccess: (cart) => {
+      queryClient.setQueryData(cartKey(params.cartId), cart);
+      nav.navigate("Checkout", { cartId: params.cartId });
+    },
   });
   const submit = () => {
     const e: Record<string, string> = {};

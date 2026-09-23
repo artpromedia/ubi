@@ -591,6 +591,7 @@ export function TripContainer() {
         tripQ.isError ? tripQ.error : null,
         listQ.isError ? listQ.error : null,
       )}
+      onReceipt={() => nav.navigate("Receipt", { requestId })}
       onBack={nav.goBack}
     />
   );
