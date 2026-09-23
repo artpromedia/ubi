@@ -1,0 +1,19 @@
+{
+  "extends": "@ubi/typescript-config/node-service.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "outDir": "dist",
+    // The fleet contract (packages/contracts/src/fleet.ts) is imported by
+    // path until it is registered in @ubi/contracts' index (src/contract.ts),
+    // so the program's root spans the repository. tsup bundles it; `tsc` only
+    // type-checks (--noEmit), so the emit layout this would imply is unused.
+    "rootDir": "../..",
+    "declaration": false,
+    "declarationMap": false,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}

@@ -26,6 +26,7 @@ beforeAll(async () => {
   process.env.NOTIFICATION_SERVICE_URL = upstream.url;
   process.env.ASK_SERVICE_URL = upstream.url;
   process.env.TRAVEL_SERVICE_URL = upstream.url;
+  process.env.FLEET_SERVICE_URL = upstream.url;
 });
 
 afterAll(async () => {
@@ -480,6 +481,29 @@ const MATRIX: readonly MatrixCase[] = [
     limited: "deny",
     safe: "deny",
   },
+  // Fleet staff routes (fleet-service): reads and writes survive safe mode
+  // (no P2P, NIP or security change is involved); none survives limited mode.
+  {
+    method: "GET",
+    path: "/v1/fleets/flt_1/calendar",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/fleets/flt_1/maintenance",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/fleets",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
 ];
 
 describe("limited mode and wallet safe mode scope matrix", () => {
@@ -793,6 +817,72 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       expect(result.status).toBe(403);
       expect(result.code).toBe("safe_mode_active");
       expect(upstream.received).toHaveLength(0);
+    });
+  });
+
+  describe("fleet scopes", () => {
+    it("lets rider and driver accounts act as fleet staff, but not a merchant", async () => {
+      for (const role of ["rider", "driver"]) {
+        expect(
+          (await call("full", "GET", "/v1/fleets", role)).status,
+          role,
+        ).toBe(200);
+        expect(
+          (await call("full", "POST", "/v1/fleets/flt_1/off-road", role))
+            .status,
+          role,
+        ).toBe(200);
+      }
+      for (const [method, path] of [
+        ["GET", "/v1/fleets/flt_1/calendar"],
+        ["POST", "/v1/fleets/flt_1/assignments/propose"],
+      ] as const) {
+        const merchant = await call("full", method, path, "merchant");
+        expect(merchant.status, `${method} ${path}`).toBe(403);
+        expect(merchant.code).toBe("forbidden");
+      }
+    });
+
+    it("keeps the driver's fleet routes to drivers", async () => {
+      for (const [method, path] of [
+        ["GET", "/v1/drivers/me/fleet-offers"],
+        ["POST", "/v1/fleet-offers/fap_1/sign"],
+        ["POST", "/v1/fleet-offers/fap_1/decline"],
+        ["GET", "/v1/drivers/me/fleet"],
+        ["POST", "/v1/drivers/me/fleet/terminate"],
+        ["GET", "/v1/drivers/me/schedule"],
+        ["POST", "/v1/drivers/me/availability:preview"],
+        ["PUT", "/v1/drivers/me/availability"],
+        ["GET", "/v1/drivers/me/conflicts/fcf_1"],
+      ] as const) {
+        expect(
+          (await call("full", method, path, "driver")).status,
+          `driver ${method} ${path}`,
+        ).toBe(200);
+        const rider = await call("full", method, path, "rider");
+        expect(rider.status, `rider ${method} ${path}`).toBe(403);
+        expect(rider.code).toBe("forbidden");
+      }
+    });
+
+    it("refuses a limited-mode PIN signature as a mode restriction, never reaching fleet-service", async () => {
+      upstream.received.length = 0;
+      const result = await call(
+        "limited",
+        "POST",
+        "/v1/fleet-offers/fap_1/sign",
+        "driver",
+      );
+      expect(result.status).toBe(403);
+      expect(result.code).toBe("limited_mode");
+      expect(upstream.received).toHaveLength(0);
+    });
+
+    it("leaves the driver's other /drivers/me routes on their owners", async () => {
+      expect(
+        (await call("full", "GET", "/v1/drivers/me/status", "driver")).status,
+      ).toBe(200);
+      expect(upstream.received.at(-1)?.url).toContain("/v1/drivers/me/status");
     });
   });
 

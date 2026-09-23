@@ -118,6 +118,12 @@ const MANIFEST_SOURCES: Partial<Record<ServiceName, ManifestSource>> = {
     regenerate:
       "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/user-service exec vitest run tests/routes-manifest.test.ts",
   },
+  "fleet-service": {
+    file: "services/fleet-service/tests/routes.manifest",
+    style: "hono",
+    regenerate:
+      "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/fleet-service exec vitest run tests/routes-manifest.test.ts",
+  },
 };
 
 interface ManifestRoute {
@@ -229,6 +235,8 @@ const WEB_TRAVEL = "apps/web-app src/components/travel/api.ts";
 const ADMIN_OPS = "apps/admin-dashboard src/lib/growth-api.ts";
 const TRAVEL_API = "contracts/openapi/travel-v2.yaml";
 const BUSINESS = "packages/contracts/src/business-travel.ts (A06 part C)";
+const FLEET =
+  "packages/contracts/src/fleet.ts (A05) + contracts/openapi/fleet.yaml";
 
 const REACHABLE: readonly ReachableCase[] = [
   // --- user-service: unversioned (/auth, /users, /devices, root routes) ---
@@ -421,6 +429,176 @@ const REACHABLE: readonly ReachableCase[] = [
     path: "/v1/organizations/org_1/cost-centres/cc_1/archive",
     downstream: "/organizations/org_1/cost-centres/cc_1/archive",
     source: BUSINESS,
+  },
+
+  // --- fleet-service: mounts /v1/fleets, /v1/fleet-offers, /v1/drivers/me/* itself ---
+  {
+    rule: "/drivers/me/fleet-offers",
+    method: "GET",
+    path: "/v1/drivers/me/fleet-offers",
+    downstream: "/v1/drivers/me/fleet-offers",
+    source: FLEET,
+  },
+  {
+    rule: "/drivers/me/fleet",
+    method: "GET",
+    path: "/v1/drivers/me/fleet",
+    downstream: "/v1/drivers/me/fleet",
+    source: FLEET,
+  },
+  {
+    rule: "/drivers/me/fleet/*",
+    method: "POST",
+    path: "/v1/drivers/me/fleet/terminate",
+    downstream: "/v1/drivers/me/fleet/terminate",
+    source: FLEET,
+  },
+  {
+    rule: "/drivers/me/schedule",
+    method: "GET",
+    path: "/v1/drivers/me/schedule?from=2026-10-01T00:00:00Z&to=2026-10-08T00:00:00Z",
+    downstream: "/v1/drivers/me/schedule",
+    source: FLEET,
+  },
+  {
+    rule: "/drivers/me/availability",
+    method: "PUT",
+    path: "/v1/drivers/me/availability",
+    downstream: "/v1/drivers/me/availability",
+    source: FLEET,
+  },
+  {
+    rule: "/drivers/me/availability:preview",
+    method: "POST",
+    path: "/v1/drivers/me/availability:preview",
+    downstream: "/v1/drivers/me/availability:preview",
+    source: FLEET,
+  },
+  {
+    rule: "/drivers/me/conflicts/*",
+    method: "GET",
+    path: "/v1/drivers/me/conflicts/fcf_1",
+    downstream: "/v1/drivers/me/conflicts/fcf_1",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets",
+    method: "GET",
+    path: "/v1/fleets",
+    downstream: "/v1/fleets",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets",
+    method: "POST",
+    path: "/v1/fleets",
+    downstream: "/v1/fleets",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "GET",
+    path: "/v1/fleets/flt_1/calendar?zoom=week&rows=vehicles&layers=bookings",
+    downstream: "/v1/fleets/flt_1/calendar",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "GET",
+    path: "/v1/fleets/flt_1/vehicles/veh_1/availability",
+    downstream: "/v1/fleets/flt_1/vehicles/veh_1/availability",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "POST",
+    path: "/v1/fleets/flt_1/maintenance:preview",
+    downstream: "/v1/fleets/flt_1/maintenance:preview",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "POST",
+    path: "/v1/fleets/flt_1/maintenance",
+    downstream: "/v1/fleets/flt_1/maintenance",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "PATCH",
+    path: "/v1/fleets/flt_1/maintenance/mnt_1",
+    downstream: "/v1/fleets/flt_1/maintenance/mnt_1",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "POST",
+    path: "/v1/fleets/flt_1/maintenance/mnt_1/cancel",
+    downstream: "/v1/fleets/flt_1/maintenance/mnt_1/cancel",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "POST",
+    path: "/v1/fleets/flt_1/off-road",
+    downstream: "/v1/fleets/flt_1/off-road",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "GET",
+    path: "/v1/fleets/flt_1/conflicts?status=open",
+    downstream: "/v1/fleets/flt_1/conflicts",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "POST",
+    path: "/v1/fleets/flt_1/conflicts/fcf_1/remind",
+    downstream: "/v1/fleets/flt_1/conflicts/fcf_1/remind",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "POST",
+    path: "/v1/fleets/flt_1/assignments/propose",
+    downstream: "/v1/fleets/flt_1/assignments/propose",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "POST",
+    path: "/v1/fleets/flt_1/bookings/blk_1/vehicle-swaps",
+    downstream: "/v1/fleets/flt_1/bookings/blk_1/vehicle-swaps",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "GET",
+    path: "/v1/fleets/flt_1/utilisation",
+    downstream: "/v1/fleets/flt_1/utilisation",
+    source: FLEET,
+  },
+  {
+    rule: "/fleets/*",
+    method: "PUT",
+    path: "/v1/fleets/flt_1/staff",
+    downstream: "/v1/fleets/flt_1/staff",
+    source: FLEET,
+  },
+  {
+    rule: "/fleet-offers/*",
+    method: "POST",
+    path: "/v1/fleet-offers/fap_1/sign",
+    downstream: "/v1/fleet-offers/fap_1/sign",
+    source: FLEET,
+  },
+  {
+    rule: "/fleet-offers/*",
+    method: "POST",
+    path: "/v1/fleet-offers/fap_1/decline",
+    downstream: "/v1/fleet-offers/fap_1/decline",
+    source: FLEET,
   },
 
   // --- ride-service: mounts /v1 itself ---
@@ -1393,6 +1571,29 @@ const SERVICE_ONLY_ROUTES: readonly {
     path: "/v1/internal/mandates/mnd_1/run",
     servicePath: "/internal/mandates/mnd_1/run",
     reason: "as above (a mandate run is service-initiated)",
+  },
+  {
+    service: "fleet-service",
+    method: "GET",
+    path: "/v1/internal/fleet/drivers/drv_1/vehicle-at",
+    servicePath: "/internal/fleet/drivers/drv_1/vehicle-at",
+    reason:
+      "internal contract A route 8: ride-service reads a fleet driver's signed vehicle by service key (FLEET_SERVICE_KEY); a client token must never read another driver's assignment",
+  },
+  {
+    service: "fleet-service",
+    method: "GET",
+    path: "/v1/internal/fleet/vehicles/veh_1",
+    servicePath: "/internal/fleet/vehicles/veh_1",
+    reason: "internal contract A route 9 (swap revalidation), as above",
+  },
+  {
+    service: "fleet-service",
+    method: "GET",
+    path: "/v1/internal/fleet/settlement-inputs",
+    servicePath: "/internal/fleet/settlement-inputs",
+    reason:
+      "internal contract B: payment-service reads signed remittance terms and hours by service key (FLEET_PAYMENT_SERVICE_KEY); never a client route",
   },
 ];
 

@@ -21,6 +21,10 @@
  *   food-service         /restaurants, /menus, …         /<x>
  *   travel-service       /v1/travel, /v1/reservations,   /v1/<x>
  *                        /v1/ops/travel
+ *   fleet-service        /v1/fleets, /v1/fleet-offers,   /v1/<x>
+ *                        /v1/drivers/me/{fleet…,
+ *                        schedule, availability…,
+ *                        conflicts}
  *
  * Before this table the gateway stripped `/v1` for every service, so
  * `/v1/mp/quote` reached ride-service as `/mp/quote` and `/v1/delivery/…` as
@@ -28,9 +32,9 @@
  * fake upstream accepted any path. tests/route-contract.test.ts now maps
  * representative client paths through THIS table and the real app, and checks
  * the result against the route manifests the services generate from their own
- * routers (ride-service, delivery-service, payment-service, travel-service
- * and user-service today), so a rule or a service route that stops lining up
- * fails CI.
+ * routers (ride-service, delivery-service, payment-service, travel-service,
+ * user-service and fleet-service today), so a rule or a service route that
+ * stops lining up fails CI.
  *
  * Only paths are decided here. Which headers cross, and the identity they
  * carry, are decided by middleware/identity.ts and routes/proxy.ts and are the
@@ -112,6 +116,11 @@ export const SERVICES = {
     fallback: "http://localhost:4012",
     basePath: "/v1",
   },
+  "fleet-service": {
+    env: "FLEET_SERVICE_URL",
+    fallback: "http://localhost:4015",
+    basePath: "/v1",
+  },
 } as const satisfies Record<string, ServiceTarget>;
 
 export type ServiceName = keyof typeof SERVICES;
@@ -154,6 +163,26 @@ export const PROXY_RULES: readonly ProxyRule[] = [
   { pattern: "/drivers/me/documents", service: "user-service" },
   { pattern: "/drivers/me/documents/*", service: "user-service" },
   { pattern: "/drivers/me/eligibility", service: "user-service" },
+
+  // Fleet (fleet-service, A05) — mounts /v1/fleets, /v1/fleet-offers and the
+  // driver's fleet routes under /v1/drivers/me itself. The driver routes are
+  // registered BEFORE the generic /drivers/* → ride-service rule, one family
+  // at a time, so nothing else under /v1/drivers/me changes owner. Every
+  // route reads the signed x-ubi-identity context and is gated by the
+  // deny-by-default `fleet` flag inside fleet-service. fleet-service's
+  // service-to-service routes (/internal/fleet/*: ride-service's vehicle-at
+  // and vehicle reads, payment-service's settlement inputs) are never
+  // proxied — tests/route-contract.test.ts pins them as the gateway's own 404.
+  { pattern: "/drivers/me/fleet-offers", service: "fleet-service" },
+  { pattern: "/drivers/me/fleet", service: "fleet-service" },
+  { pattern: "/drivers/me/fleet/*", service: "fleet-service" },
+  { pattern: "/drivers/me/schedule", service: "fleet-service" },
+  { pattern: "/drivers/me/availability", service: "fleet-service" },
+  { pattern: "/drivers/me/availability:preview", service: "fleet-service" },
+  { pattern: "/drivers/me/conflicts/*", service: "fleet-service" },
+  { pattern: "/fleets", service: "fleet-service" },
+  { pattern: "/fleets/*", service: "fleet-service" },
+  { pattern: "/fleet-offers/*", service: "fleet-service" },
 
   // Ride Service — mounts everything under /v1 itself.
   { pattern: "/rides/*", service: "ride-service" },

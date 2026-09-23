@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 
+import { FleetPolicySchema } from "./fleet";
 import {
   MpMultiStopPolicySchema,
   MpPreferredDriverPolicySchema,
@@ -204,6 +205,9 @@ export const CityConfigSchema = z.object({
   taxes: z.record(z.number()),
   /** Absent ⇒ the negotiated-fare marketplace is not configured here: fail closed. */
   marketplace: MarketplacePolicySchema.optional(),
+  // Fleet availability calendar policy (A05); without it config-service
+  // strips the block and fleet-service falls back to its defaults.
+  fleet: FleetPolicySchema.optional(),
 });
 
 export type CityConfig = z.infer<typeof CityConfigSchema>;

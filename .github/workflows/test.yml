@@ -345,6 +345,66 @@ jobs:
           TRAVEL_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_travel_test
           PAYMENT_TEST_REDIS_URL: redis://localhost:6379/15
 
+  unit-fleet:
+    name: Unit Tests - fleet-service
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.services == 'true' || github.event_name == 'push'
+    # The suite is DB-backed: the EXCLUDE constraints that refuse overlapping
+    # signed shifts and maintenance, the terms CHECKs, the idempotency keys and
+    # the transactional outbox are Postgres's own. ride-service (contract A)
+    # and user-service's /auth/pin/verify are faithful in-process HTTP doubles
+    # (tests/doubles/), and identity contexts are minted by the api-gateway's
+    # own signer, so the job builds fleet-service's workspace deps only.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_dev_password
+          POSTGRES_DB: ubi_fleet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_fleet_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dependencies
+        run: pnpm build --filter="@ubi/fleet-service^..."
+
+      - name: Run database migrations
+        run: DATABASE_URL=postgresql://ubi:ubi_dev_password@localhost:5432/ubi_fleet_test pnpm --filter @ubi/database exec prisma migrate deploy
+
+      - name: Run unit tests
+        run: pnpm --filter="@ubi/fleet-service" test
+        env:
+          CI: true
+          FLEET_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_fleet_test
+          FLEET_TEST_REDIS_URL: redis://localhost:6379/3
+
   unit-ask:
     name: Unit Tests - ask-service
     runs-on: ubuntu-latest
@@ -729,6 +789,7 @@ jobs:
         unit-packages,
         unit-services,
         unit-travel,
+        unit-fleet,
         unit-ask,
         unit-growth,
         unit-config,
@@ -749,6 +810,7 @@ jobs:
              [[ "${{ needs.unit-packages.result }}" == "failure" || "${{ needs.unit-packages.result }}" == "cancelled" ]] || \
              [[ "${{ needs.unit-services.result }}" == "failure" || "${{ needs.unit-services.result }}" == "cancelled" ]] || \
              [[ "${{ needs.unit-travel.result }}" == "failure" || "${{ needs.unit-travel.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.unit-fleet.result }}" == "failure" || "${{ needs.unit-fleet.result }}" == "cancelled" ]] || \
              [[ "${{ needs.unit-ask.result }}" == "failure" || "${{ needs.unit-ask.result }}" == "cancelled" ]] || \
              [[ "${{ needs.unit-growth.result }}" == "failure" || "${{ needs.unit-growth.result }}" == "cancelled" ]] || \
              [[ "${{ needs.unit-config.result }}" == "failure" || "${{ needs.unit-config.result }}" == "cancelled" ]] || \

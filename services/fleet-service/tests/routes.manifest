@@ -1,0 +1,46 @@
+# fleet-service route manifest: every METHOD + Hono path the production
+# app (src/index.ts createApp) serves; middleware is left out.
+# GENERATED — do not edit by hand.
+# Regenerate: UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/fleet-service exec vitest run tests/routes-manifest.test.ts
+# Read by services/api-gateway/tests/route-contract.test.ts.
+GET /health
+GET /health/ready
+GET /internal/fleet/drivers/:driverId/vehicle-at
+GET /internal/fleet/settlement-inputs
+GET /internal/fleet/vehicles/:vehicleId
+GET /v1/drivers/me/conflicts/:conflictId
+GET /v1/drivers/me/fleet
+GET /v1/drivers/me/fleet-offers
+GET /v1/drivers/me/schedule
+GET /v1/fleets
+GET /v1/fleets/:id
+GET /v1/fleets/:id/assignments
+GET /v1/fleets/:id/calendar
+GET /v1/fleets/:id/conflicts
+GET /v1/fleets/:id/maintenance
+GET /v1/fleets/:id/overview
+GET /v1/fleets/:id/staff
+GET /v1/fleets/:id/utilisation
+GET /v1/fleets/:id/vehicles
+GET /v1/fleets/:id/vehicles/:vehicleId
+GET /v1/fleets/:id/vehicles/:vehicleId/availability
+PATCH /v1/fleets/:id/maintenance/:blockId
+POST /v1/drivers/me/availability:preview
+POST /v1/drivers/me/fleet/terminate
+POST /v1/fleet-offers/:offerId/decline
+POST /v1/fleet-offers/:offerId/sign
+POST /v1/fleets
+POST /v1/fleets/:id/assignments/:assignmentId/terminate
+POST /v1/fleets/:id/assignments/proposals/:proposalId/withdraw
+POST /v1/fleets/:id/assignments/propose
+POST /v1/fleets/:id/bookings/:blockId/vehicle-swaps
+POST /v1/fleets/:id/conflicts/:conflictId/remind
+POST /v1/fleets/:id/maintenance
+POST /v1/fleets/:id/maintenance/:blockId/cancel
+POST /v1/fleets/:id/maintenance/:blockId/complete
+POST /v1/fleets/:id/maintenance/:blockId/confirm
+POST /v1/fleets/:id/maintenance:preview
+POST /v1/fleets/:id/off-road
+POST /v1/fleets/:id/vehicles
+PUT /v1/drivers/me/availability
+PUT /v1/fleets/:id/staff

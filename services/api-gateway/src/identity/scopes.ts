@@ -83,6 +83,17 @@ export const SCOPES = [
   "business:read",
   "business:manage",
   "business:fund",
+  // Fleet (fleet-service, A05): read = a fleet's calendar, vehicles,
+  // conflicts, utilisation and staff; manage = every fleet write (create a
+  // fleet, vehicles, staff, maintenance, off-road reports, proposals,
+  // swaps, reminders, terminations); driver = the driver's side (fleet
+  // offers and PIN signing, the arrangement, the schedule, availability and
+  // time off, the driver's own conflicts). Authority INSIDE a fleet (owner /
+  // manager / read-only) is fleet-service's own staff check; these scopes
+  // only decide whether the session may ask.
+  "fleet:read",
+  "fleet:manage",
+  "fleet:driver",
   "admin:all",
 ] as const;
 
@@ -142,6 +153,10 @@ const RIDER_SCOPES: readonly Scope[] = [
   "business:read",
   "business:manage",
   "business:fund",
+  // Fleet staff (owner / manager / read-only) are ordinary accounts too; a
+  // fleet's own staff table decides what each may do inside it.
+  "fleet:read",
+  "fleet:manage",
 ];
 
 const DRIVER_SCOPES: readonly Scope[] = [
@@ -151,6 +166,9 @@ const DRIVER_SCOPES: readonly Scope[] = [
   // Bid on marketplace requests and manage rate profiles. Every live bid
   // carries a wallet-held commission reservation.
   "mp:bid",
+  // The driver's side of a fleet arrangement: offers, PIN signing, the
+  // schedule, availability and time off, the driver's own conflicts.
+  "fleet:driver",
 ];
 
 const MERCHANT_SCOPES: readonly Scope[] = [
@@ -207,6 +225,10 @@ export const LIMITED_MODE_SCOPES: readonly Scope[] = [
   // organization's statements and bookings are other people's travel, not
   // the holder's own history, so an unverified device sees none of it
   // (deny-by-default for the new capability).
+  //
+  // The fleet scopes are DELIBERATELY absent too: a fleet's calendar is other
+  // people's work, and every driver-side fleet action commits the driver's
+  // time or signs remittance terms (deny-by-default for the new capability).
   //
   // user-service's limited token claim (src/identity/tokens.ts) states this
   // same list; services/api-gateway/tests/limited-token.test.ts pins them
@@ -446,6 +468,47 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     methods: ["POST", "PUT", "PATCH", "DELETE"],
     prefix: "/v1/business",
     anyOf: ["business:fund"],
+  },
+  // Fleet (fleet-service, A05). Reading a fleet is fleet:read; every write
+  // under /v1/fleets (create, vehicles, staff, maintenance and its preview,
+  // off-road, proposals, swaps, reminders, terminations) is fleet:manage.
+  // The driver's side — offers and PIN signing, the arrangement and its
+  // notice, the schedule, availability (and its preview) and the driver's
+  // own conflicts — is fleet:driver, a DRIVER scope. None survives limited
+  // mode. fleet-service re-checks each on the signed context, and its own
+  // staff table decides owner / manager / read-only inside a fleet.
+  { methods: ["GET"], prefix: "/v1/fleets", anyOf: ["fleet:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/fleets",
+    anyOf: ["fleet:manage"],
+  },
+  { methods: "*", prefix: "/v1/fleet-offers", anyOf: ["fleet:driver"] },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/fleet-offers",
+    anyOf: ["fleet:driver"],
+  },
+  { methods: "*", prefix: "/v1/drivers/me/fleet", anyOf: ["fleet:driver"] },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/schedule",
+    anyOf: ["fleet:driver"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/availability",
+    anyOf: ["fleet:driver"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/availability:preview",
+    anyOf: ["fleet:driver"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/conflicts",
+    anyOf: ["fleet:driver"],
   },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
   { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },

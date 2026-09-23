@@ -349,6 +349,7 @@ model Vehicle {
 
   drivers        Driver[]
   ceerionVehicle CeerionVehicle?
+  fleetVehicles  FleetVehicle[]
 
   @@map("vehicles")
 }
@@ -4257,4 +4258,372 @@ model OrgBudgetOp {
   @@unique([reservationId, op])
   @@index([organizationId, createdAt])
   @@map("org_budget_ops")
+}
+
+// -------------------------------------------
+// Fleet availability, maintenance and assignments (A05) — fleet-service
+// -------------------------------------------
+// Contract: packages/contracts/src/fleet.ts. Build decisions:
+// docs/design/FLEET_CALENDAR_DECISIONS.md (wins over the design handoff in
+// docs/launch-readiness/handoff-fleet-calendar/).
+//
+// fleet-service is the only writer. Bookings and the single vehicle
+// OCCUPANCY ledger (maintenance + bookings under one exclusion constraint)
+// live in ride-service's `mp` schema and are reached through internal
+// contract A; remittance settlement lives in payment-service's ledger and
+// reads its inputs through internal contract B — there are no settlement
+// tables here. Status vocabularies, money bounds and the overlap rules are
+// CHECK / EXCLUDE constraints in the migration (Prisma models neither), so
+// the database refuses what the code must never write.
+//
+// `driver_id` everywhere is the driver's USER id (the gateway identity
+// subject) — the id ride-service's marketplace records as `driver_id`.
+
+/// A business that owns several vehicles and places UBI drivers in them.
+/// KYB is out of scope (A05 brief §6); the deny-by-default `fleet` city flag
+/// gates every client route.
+model Fleet {
+  id        String   @id
+  name      String
+  /// The city whose config (currency, zone, remittance cap) and `fleet` flag govern the fleet.
+  cityId    String   @map("city_id")
+  currency  String
+  /// The city's IANA zone at creation: shifts and days split in it.
+  zone      String
+  // status CHECK: active | suspended
+  status    String
+  createdBy String   @map("created_by")
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  staff             FleetStaff[]
+  vehicles          FleetVehicle[]
+  proposals         FleetAssignmentProposal[]
+  assignments       FleetAssignment[]
+  maintenanceBlocks FleetMaintenanceBlock[]
+
+  @@index([cityId])
+  @@map("fleets")
+}
+
+/// One user's role in one fleet. Removal keeps the row (status `removed`);
+/// one row per (fleet, user), ever.
+model FleetStaff {
+  id        String    @id
+  fleetId   String    @map("fleet_id")
+  userId    String    @map("user_id")
+  // role CHECK: owner | manager | read_only
+  role      String
+  // status CHECK: active | removed
+  status    String
+  addedBy   String    @map("added_by")
+  version   Int       @default(1)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  removedAt DateTime? @map("removed_at")
+
+  fleet Fleet @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+
+  @@unique([fleetId, userId])
+  @@index([userId, status])
+  @@map("fleet_staff")
+}
+
+/// A vehicle (the shared `vehicles` row) placed in a fleet. A vehicle is in
+/// at most ONE fleet at a time (EXCLUDE ... WHERE status = 'active').
+model FleetVehicle {
+  id        String    @id
+  fleetId   String    @map("fleet_id")
+  vehicleId String    @map("vehicle_id") @db.Uuid
+  /// A subset of the city's vehicle classes; the first is the primary class.
+  classes   String[]
+  /// CHECK (capacity BETWEEN 1 AND 20).
+  capacity  Int
+  // status CHECK: active | removed
+  status    String
+  addedBy   String    @map("added_by")
+  version   Int       @default(1)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  removedAt DateTime? @map("removed_at")
+
+  fleet   Fleet   @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  @@index([fleetId, status])
+  @@index([vehicleId])
+  @@map("fleet_vehicles")
+}
+
+/// A fleet's proposal to a driver: vehicle, shift and remittance terms. It
+/// NEVER counts as availability. Sent → pending_signature → signed (driver
+/// PIN, verified by user-service) | declined (no reason, no penalty) |
+/// expired (48 h) | withdrawn | superseded. The terms columns are a snapshot
+/// with the same CHECKs as fleet_assignments.
+model FleetAssignmentProposal {
+  id                     String    @id
+  fleetId                String    @map("fleet_id")
+  vehicleId              String    @map("vehicle_id") @db.Uuid
+  driverId               String    @map("driver_id")
+  proposedBy             String    @map("proposed_by")
+  // proposed_by_role CHECK: owner | manager
+  proposedByRole         String    @map("proposed_by_role")
+  /// The signed arrangement a signature would supersede (a material change).
+  supersedesAssignmentId String?   @map("supersedes_assignment_id")
+  // shift_kind CHECK: full | day | night | custom
+  shiftKind              String    @map("shift_kind")
+  /// Local wall-clock `HH:mm`; end < start crosses midnight; full = 00:00-00:00.
+  shiftStart             String    @map("shift_start")
+  shiftEnd               String    @map("shift_end")
+  zone                   String
+  /// Local dates: instances start on [valid_from, valid_to).
+  validFrom              DateTime  @map("valid_from") @db.Date
+  validTo                DateTime? @map("valid_to") @db.Date
+  termsVersion           Int       @map("terms_version")
+  // terms_type CHECK: weekly_fixed | percent_of_net (with the matching amount/percent)
+  termsType              String    @map("terms_type")
+  amountMinor            BigInt?   @map("amount_minor")
+  currency               String
+  percent                Decimal?  @db.Decimal(5, 2)
+  // shortfall_policy CHECK: carry_forward
+  shortfallPolicy        String    @map("shortfall_policy")
+  shortfallMaxWeeks      Int       @map("shortfall_max_weeks")
+  fuelBy                 String    @map("fuel_by")
+  servicingBy            String    @map("servicing_by")
+  termsHash              String    @map("terms_hash")
+  /// TermDiff[]: which parts change, and whether each is material.
+  diff                   Json
+  /// The server check that let it be sent (overlap, city cap).
+  checkResult            Json      @map("check_result")
+  // status CHECK: PROPOSAL_STATUSES
+  status                 String
+  sentAt                 DateTime? @map("sent_at")
+  expiresAt              DateTime? @map("expires_at")
+  respondedAt            DateTime? @map("responded_at")
+  /// The scoped Idempotency-Key of the propose POST.
+  idempotencyKey         String    @unique @map("idempotency_key")
+  version                Int       @default(1)
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  fleet      Fleet            @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  assignment FleetAssignment?
+
+  @@index([driverId, status])
+  @@index([fleetId, status])
+  @@index([status, expiresAt])
+  @@map("fleet_assignment_proposals")
+}
+
+/// The assignment HISTORY (replaces reliance on the single Driver.vehicleId):
+/// one row per signed terms version. Immutable terms; only status and the
+/// validity end move (notice, supersession). Signed shifts on one vehicle —
+/// and of one driver — never overlap: fleet_assignment_shift_segments carries
+/// the EXCLUDE constraints.
+model FleetAssignment {
+  id                 String    @id
+  fleetId            String    @map("fleet_id")
+  vehicleId          String    @map("vehicle_id") @db.Uuid
+  driverId           String    @map("driver_id")
+  proposalId         String    @unique @map("proposal_id")
+  shiftKind          String    @map("shift_kind")
+  shiftStart         String    @map("shift_start")
+  shiftEnd           String    @map("shift_end")
+  zone               String
+  validFrom          DateTime  @map("valid_from") @db.Date
+  validTo            DateTime? @map("valid_to") @db.Date
+  termsVersion       Int       @map("terms_version")
+  termsType          String    @map("terms_type")
+  amountMinor        BigInt?   @map("amount_minor")
+  currency           String
+  percent            Decimal?  @db.Decimal(5, 2)
+  shortfallPolicy    String    @map("shortfall_policy")
+  shortfallMaxWeeks  Int       @map("shortfall_max_weeks")
+  fuelBy             String    @map("fuel_by")
+  servicingBy        String    @map("servicing_by")
+  termsHash          String    @map("terms_hash")
+  /// Signature evidence: when, and user-service's verification reference.
+  /// The PIN itself is never stored anywhere.
+  signedAt           DateTime  @map("signed_at")
+  pinVerificationRef String    @map("pin_verification_ref")
+  // status CHECK: active | notice | ended | superseded
+  status             String
+  noticeStartedAt    DateTime? @map("notice_started_at")
+  noticeStartedBy    String?   @map("notice_started_by")
+  endedAt            DateTime? @map("ended_at")
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  fleet    Fleet                         @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  proposal FleetAssignmentProposal       @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+  segments FleetAssignmentShiftSegment[]
+
+  @@index([vehicleId, status])
+  @@index([driverId, status])
+  @@index([fleetId, status])
+  @@map("fleet_assignments")
+}
+
+/// A signed shift as local-day segments: a night shift 18:00-06:00 is two
+/// (day D minutes [1080,1440) and day D+1 minutes [0,360)). Two ACTIVE
+/// segments of one vehicle, or of one driver, whose day ranges and minute
+/// ranges both overlap are refused by EXCLUDE constraints (btree_gist).
+model FleetAssignmentShiftSegment {
+  id           String    @id
+  assignmentId String    @map("assignment_id")
+  vehicleId    String    @map("vehicle_id") @db.Uuid
+  driverId     String    @map("driver_id")
+  /// Local dates [days_from, days_to); days_to null = open-ended.
+  daysFrom     DateTime  @map("days_from") @db.Date
+  daysTo       DateTime? @map("days_to") @db.Date
+  /// Local minutes of the day [minute_from, minute_to) within 0..1440.
+  minuteFrom   Int       @map("minute_from")
+  minuteTo     Int       @map("minute_to")
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  assignment FleetAssignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+
+  @@index([assignmentId])
+  @@map("fleet_assignment_shift_segments")
+}
+
+/// A maintenance block on a fleet vehicle. Planned kinds occupy the vehicle
+/// through ride-service's occupancy ledger (contract A routes 1-3) and are
+/// never confirmed over a booking; `unplanned_off_road` (contract A route 4)
+/// takes effect immediately and only sets overlapping bookings at_risk.
+model FleetMaintenanceBlock {
+  id                String    @id
+  fleetId           String    @map("fleet_id")
+  vehicleId         String    @map("vehicle_id") @db.Uuid
+  // kind CHECK: planned_service | inspection | repair | unplanned_off_road
+  kind              String
+  startsAt          DateTime  @map("starts_at")
+  /// Null only for an off-road report with no expected end.
+  endsAt            DateTime? @map("ends_at")
+  zone              String
+  note              String?
+  // status CHECK: MAINTENANCE_STATUSES
+  status            String
+  /// ride-service's occupancy id once the block occupies the vehicle.
+  occupancyId       String?   @map("occupancy_id")
+  createdBy         String    @map("created_by")
+  createdByRole     String    @map("created_by_role")
+  /// Off-road abuse control: set when the vehicle was seen online or on a
+  /// trip during the claimed breakdown (visible to UBI ops).
+  offRoadFlaggedAt  DateTime? @map("off_road_flagged_at")
+  offRoadFlagReason String?   @map("off_road_flag_reason")
+  idempotencyKey    String    @unique @map("idempotency_key")
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  cancelledAt       DateTime? @map("cancelled_at")
+  completedAt       DateTime? @map("completed_at")
+
+  fleet Fleet @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+
+  @@index([vehicleId, startsAt])
+  @@index([fleetId, status])
+  @@index([status, startsAt])
+  @@map("fleet_maintenance_blocks")
+}
+
+/// Driver-authored availability and time off. Only the driver writes it; a
+/// fleet sees time off as an unexplained "unavailable" block.
+model DriverAvailability {
+  id         String    @id
+  driverId   String    @map("driver_id")
+  // kind CHECK: available | time_off
+  kind       String
+  startsAt   DateTime  @map("starts_at")
+  endsAt     DateTime  @map("ends_at")
+  /// FREQ=DAILY|WEEKLY[;BYDAY=..][;COUNT=n|;UNTIL=YYYYMMDD], local wall clock.
+  rrule      String?
+  zone       String
+  // status CHECK: saved | saved_with_withdrawals | removed
+  status     String
+  /// The driver's availability set this window belongs to (bumped per PUT).
+  setVersion Int       @map("set_version")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  removedAt  DateTime? @map("removed_at")
+
+  @@index([driverId, status])
+  @@map("driver_availability")
+}
+
+/// The conflict centre. `allowed actions` are computed per caller role at
+/// read time, never stored. `dedupe_key` makes each (type, subject) one row.
+model FleetConflict {
+  id                 String    @id
+  fleetId            String?   @map("fleet_id")
+  // type CHECK: CONFLICT_TYPES
+  type               String
+  // severity CHECK: critical | high | medium | blocked | status
+  severity           String
+  vehicleId          String?   @map("vehicle_id")
+  driverId           String?   @map("driver_id")
+  bookingBlockId     String?   @map("booking_block_id")
+  maintenanceBlockId String?   @map("maintenance_block_id")
+  assignmentId       String?   @map("assignment_id")
+  resolverRoles      String[]  @map("resolver_roles")
+  deadlineAt         DateTime? @map("deadline_at")
+  // status CHECK: open | resolving | resolved | lapsed
+  status             String
+  dedupeKey          String    @unique @map("dedupe_key")
+  /// Server facts only (a document kind and its expiry, …) — never evidence.
+  detail             Json?
+  resolution         String?
+  lastRemindedAt     DateTime? @map("last_reminded_at")
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  resolvedAt         DateTime? @map("resolved_at")
+
+  @@index([fleetId, status])
+  @@index([driverId, status])
+  @@index([status, deadlineAt])
+  @@index([maintenanceBlockId])
+  @@map("fleet_conflicts")
+}
+
+/// A fleet's request to put an advance booking on another of its vehicles
+/// (contract A route 7). The swap itself — driver acceptance, revalidation,
+/// the rider's explicit consent — is ride-service's.
+model FleetVehicleSwapRequest {
+  id             String   @id
+  fleetId        String   @map("fleet_id")
+  bookingBlockId String   @map("booking_block_id")
+  fromVehicleId  String   @map("from_vehicle_id")
+  toVehicleId    String   @map("to_vehicle_id")
+  requestedBy    String   @map("requested_by")
+  swapId         String?  @map("swap_id")
+  // status CHECK: proposed | ineligible
+  status         String
+  reasons        String[] @default([])
+  idempotencyKey String   @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([fleetId, createdAt])
+  @@map("fleet_vehicle_swap_requests")
+}
+
+/// One accepted fleet-service POST/PUT/PATCH — its idempotency record. A
+/// replay with the same scoped key and body answers `response_body`
+/// verbatim; the same key with another body is refused (409).
+model FleetIdempotencyRecord {
+  id             String   @id
+  scopedKey      String   @unique @map("scoped_key")
+  operation      String
+  actorId        String   @map("actor_id")
+  payloadHash    String   @map("payload_hash")
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([actorId, createdAt])
+  @@map("fleet_idempotency_records")
 }

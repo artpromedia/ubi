@@ -1,22 +1,42 @@
-# Vendored from the design handoff, with one repair.
+# Vendored from the design handoff, with one repair, then extended for A05.
 #
 # The handoff copy of this document declared `components:` TWICE at the top
 # level. YAML has no merge semantics for duplicate keys -- the later mapping
 # simply replaces the earlier one -- so the first block was silently discarded,
 # taking `securitySchemes`, the required `Idempotency-Key` parameter and the
 # shared `Money`/`Error` schemas with it. Every `$ref` to them dangled, and the
-# API declared no authentication at all.
+# API declared no authentication at all. The two blocks were merged into one.
 #
-# The two blocks are merged here into one. No content was changed, added or
-# removed; the file is re-emitted in block style, so it no longer matches the
-# handoff byte for byte.
+# Round 8 (A05, fleet availability calendar) extends it to what
+# services/fleet-service serves: the fleet calendar, maintenance with a
+# server impact preview, off-road reports, the conflict centre, proposals with
+# shifts, PIN signing, the driver's schedule and availability, utilisation and
+# staff roles -- adjusted by docs/design/FLEET_CALENDAR_DECISIONS.md. The
+# typed source of every body is packages/contracts/src/fleet.ts; this file
+# names the routes, codes and the privacy-relevant shapes.
+#
+# Every route is behind the deny-by-default `fleet` city flag (404
+# feature_disabled when off) and the gateway-signed identity. Fleet staff
+# routes need gateway scope fleet:read (GET) / fleet:manage (writes); the
+# driver routes need fleet:driver. Role inside a fleet (owner / manager /
+# read_only) is fleet-service's own check; a non-member gets 404.
+#
+# NOT in this public API (service-to-service, never proxied by the gateway):
+# internal contract A (ride-service <-> fleet-service, /internal/fleet/...)
+# and internal contract B (GET /internal/fleet/settlement-inputs for
+# payment-service). Both are specified in packages/contracts/src/fleet.ts.
 openapi: 3.1.0
 info:
   title: UBI Fleet
-  version: 0.1.0
+  version: 0.2.0
   description:
-    "Multi-vehicle owners: vehicles, drivers, consented remittance splits. Money is integer
-    minor units (kobo) with explicit currency from city config. All mutating POSTs accept Idempotency-Key."
+    "Multi-vehicle owners: vehicles, drivers, consented remittance terms, and the
+    fleet availability and maintenance calendar. Money is integer minor units
+    with explicit currency from city config; fleet-service never computes
+    money. Every state-changing POST/PUT/PATCH takes Idempotency-Key. Bookings
+    reach a fleet only as opaque OccupiedBlocks: no rider, location, route,
+    fare or safety field, not even as null; a driver's net earnings and the
+    reason for their time off are never shown to a fleet."
 servers:
   - url: https://api.ubi.africa
 components:
@@ -32,6 +52,12 @@ components:
       schema:
         type: string
         maxLength: 64
+    FleetId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
     Money:
       type: object
@@ -46,13 +72,95 @@ components:
           example: NGN
     Error:
       type: object
+      required:
+        - code
+        - message
       properties:
         code:
           type: string
+          description:
+            "Canonical codes, plus the fleet codes: shift_overlap (422),
+            above_city_cap (422), needs_resolution (409), terms_owner_only
+            (403), swap_ineligible (422), preview_stale (409),
+            maintenance_overlap (409), unresolved_booking_overlap (409)."
         message:
           type: string
         details:
           type: object
+    Shift:
+      type: object
+      description: Local wall-clock window; an end at or before the start crosses midnight.
+      properties:
+        kind:
+          type: string
+          enum:
+            - full
+            - day
+            - night
+            - custom
+        start:
+          type: string
+          example: "06:00"
+        end:
+          type: string
+          example: "18:00"
+    ShiftInput:
+      oneOf:
+        - type: string
+          enum:
+            - full
+            - day
+            - night
+        - type: object
+          required:
+            - start
+            - end
+          properties:
+            start:
+              type: string
+            end:
+              type: string
+    OccupiedBlock:
+      type: object
+      additionalProperties: false
+      description:
+        The ONLY booking shape a fleet receives. startsAt/endsAt include the
+        booking buffers.
+      required:
+        - blockId
+        - driverId
+        - vehicleId
+        - startsAt
+        - endsAt
+        - kind
+        - risk
+        - decisionDeadline
+      properties:
+        blockId:
+          type: string
+        driverId:
+          type: string
+        vehicleId:
+          type: [string, "null"]
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          enum:
+            - booked
+            - on_trip
+        risk:
+          type: string
+          enum:
+            - ok
+            - at_risk
+        decisionDeadline:
+          type: [string, "null"]
+          format: date-time
     FleetVehicle:
       type: object
       properties:
@@ -66,6 +174,8 @@ components:
           type: array
           items:
             type: string
+        capacity:
+          type: integer
         drivers:
           type: array
           items:
@@ -76,61 +186,57 @@ components:
               displayName:
                 type: string
               shift:
-                type: string
-                enum:
-                  - full
-                  - day
-                  - night
+                $ref: "#/components/schemas/Shift"
+              termsVersion:
+                type: integer
         statusNow:
           type: string
           enum:
-            - on_trip
-            - online
-            - offline
-            - idle
+            - in_service
+            - maintenance
+            - doc_expired
             - held_by_ubi
             - unassigned
-        weekGross:
-          $ref: "#/components/schemas/Money"
-        remittance:
-          type: object
-          properties:
-            due:
-              $ref: "#/components/schemas/Money"
-            covered:
-              $ref: "#/components/schemas/Money"
-            status:
-              type: string
-              enum:
-                - covered
-                - short
-                - pending
+            - documents_pending
         documents:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum:
+                  - insurance
+                  - inspection
+              status:
+                type: string
+                enum:
+                  - valid
+                  - expiring
+                  - expired
+                  - missing
+              expiresAt:
+                type: [string, "null"]
+                format: date-time
+        money:
           type: object
-          properties:
-            status:
-              type: string
-              enum:
-                - valid
-                - expiring
-                - expired
-            nextExpiry:
-              type: string
-              format: date
+          description:
+            Gross, UBI commission and remittance are settled by payment-service
+            and are never computed here; fleet-service answers available=false
+            with the source rather than an estimate.
     AssignmentTerms:
       type: object
+      description:
+        Remittance terms as an OWNER proposes them. The currency is the fleet's
+        city currency, never taken from a client. Absent on a proposal = reuse
+        the driver's currently signed terms version (the only form a manager
+        may send).
       required:
-        - vehicleId
-        - driverId
         - type
-        - amountMinor
         - shortfall
-        - shift
+        - fuelBy
+        - servicingBy
       properties:
-        vehicleId:
-          type: string
-        driverId:
-          type: string
         type:
           type: string
           enum:
@@ -138,25 +244,24 @@ components:
             - percent_of_net
         amountMinor:
           type: integer
-          description: must be ≤ cap from city config
+          description: weekly_fixed only; must be <= the city's remittanceCapMinor
         percent:
           type: number
+          description: percent_of_net only; 0 < percent <= 100
         shortfall:
           type: object
+          required:
+            - policy
+            - maxWeeks
           properties:
             policy:
               type: string
               enum:
                 - carry_forward
-                - forgive
             maxWeeks:
               type: integer
-        shift:
-          type: string
-          enum:
-            - full
-            - day
-            - night
+              minimum: 1
+              maximum: 52
         fuelBy:
           type: string
           enum:
@@ -167,56 +272,164 @@ components:
           enum:
             - driver
             - fleet
-        hirePurchase:
-          type: object
-          properties:
-            totalWeeks:
-              type: integer
-            weeksPaid:
-              type: integer
+    ProposeAssignment:
+      type: object
+      required:
+        - vehicleId
+        - driverId
+        - shift
+        - validFrom
+      properties:
+        vehicleId:
+          type: string
+        driverId:
+          type: string
+        shift:
+          $ref: "#/components/schemas/ShiftInput"
+        validFrom:
+          type: string
+          format: date
+        validTo:
+          type: string
+          format: date
+        terms:
+          $ref: "#/components/schemas/AssignmentTerms"
+    MaintenanceWindow:
+      type: object
+      required:
+        - vehicleId
+        - kind
+        - startsAt
+        - endsAt
+      properties:
+        vehicleId:
+          type: string
+        kind:
+          type: string
+          enum:
+            - planned_service
+            - inspection
+            - repair
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+    AvailabilityWindow:
+      type: object
+      required:
+        - kind
+        - startsAt
+        - endsAt
+      properties:
+        kind:
+          type: string
+          enum:
+            - available
+            - time_off
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        rrule:
+          type: string
+          description: FREQ=DAILY|WEEKLY[;BYDAY=..][;COUNT=n|;UNTIL=YYYYMMDD]
 security:
   - bearer: []
 paths:
   /v1/fleets:
+    get:
+      responses:
+        "200":
+          description: the caller's fleets in the verified city, with their role
     post:
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
       responses:
         "201":
-          description: KYB application (mirrors merchant)
+          description: fleet created in the caller's verified city; the caller is its owner (KYB out of scope)
+  /v1/fleets/{id}:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+      responses:
+        "200":
+          description: the fleet and the caller's role
   /v1/fleets/{id}/overview:
     get:
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/FleetId"
       responses:
         "200":
-          description: gross, remittances due/covered, utilisation, idle, alerts
+          description: vehicle, arrangement and open-conflict counts; money is payment-service's (available=false)
+  /v1/fleets/{id}/staff:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+      responses:
+        "200":
+          description: active staff and roles
+    put:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - staff
+              properties:
+                staff:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                      role:
+                        type: string
+                        enum:
+                          - owner
+                          - manager
+                          - read_only
+      responses:
+        "200":
+          description: owner only; at least one owner must remain
   /v1/fleets/{id}/vehicles:
     get:
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/FleetId"
       responses:
         "200":
           description: vehicles
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/FleetVehicle"
+                type: object
+                properties:
+                  vehicles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FleetVehicle"
     post:
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
       requestBody:
         content:
           application/json:
@@ -227,6 +440,10 @@ paths:
                 - make
                 - model
                 - year
+                - color
+                - type
+                - capacity
+                - classes
               properties:
                 plate:
                   type: string
@@ -237,14 +454,357 @@ paths:
                   type: string
                 year:
                   type: integer
+                color:
+                  type: string
+                type:
+                  type: string
+                  enum:
+                    - SEDAN
+                    - SUV
+                    - VAN
+                    - MOTORCYCLE
+                    - ELECTRIC
+                capacity:
+                  type: integer
                 classes:
                   type: array
                   items:
                     type: string
       responses:
         "201":
-          description: vehicle added; documents pending
+          description: vehicle added; documents pending until UBI verifies them (owner/manager)
+        "409":
+          description: the plate is already registered with UBI
+  /v1/fleets/{id}/vehicles/{vehicleId}/availability:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - name: vehicleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the vehicle's calendar row (FleetCalendar shape, one row)
+  /v1/fleets/{id}/calendar:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: zoom
+          in: query
+          schema:
+            type: string
+            enum:
+              - day
+              - week
+        - name: rows
+          in: query
+          schema:
+            type: string
+            enum:
+              - vehicles
+              - drivers
+        - name: layers
+          in: query
+          schema:
+            type: string
+            example: assignments,maintenance,bookings,documents
+        - name: class
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: conflictsOnly
+          in: query
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 200
+      responses:
+        "200":
+          description:
+            "{zone, asOf, rows[{assignments (expanded shift intervals),
+            maintenance, occupied: OccupiedBlock[], documents, ubiStatus,
+            availability (driver rows only; time off shown as `unavailable`),
+            hours}], daySummaries (week), nextCursor, totalRows}"
+        "503":
+          description: the booking layer is unavailable (never an empty lane a fleet could read as free)
+  /v1/fleets/{id}/maintenance:preview:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintenanceWindow"
+      responses:
+        "200":
+          description:
+            "{feasible, affectedAssignments, affectedBlocks: OccupiedBlock[],
+            suggestions: move | swap(candidates, reasons) | ask_driver,
+            previewToken, checkedAt} (owner/manager)"
+  /v1/fleets/{id}/maintenance:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+      responses:
+        "200":
+          description: maintenance blocks and off-road reports
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/MaintenanceWindow"
+                - type: object
+                  required:
+                    - previewToken
+                  properties:
+                    note:
+                      type: string
+                    previewToken:
+                      type: string
+      responses:
+        "201":
+          description: scheduled (recorded on ride-service's occupancy ledger)
+        "409":
+          description:
+            needs_resolution -- overlaps a confirmed booking; the block is kept
+            in needs_resolution with one critical conflict per booking.
+            preview_stale / maintenance_overlap also answer 409.
+  /v1/fleets/{id}/maintenance/{blockId}:
+    patch:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+        - name: blockId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: moved (draft / needs_resolution only; re-preview required) and re-checked
+  /v1/fleets/{id}/maintenance/{blockId}/confirm:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+        - name: blockId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: re-checked at the same window once every overlap is resolved
+  /v1/fleets/{id}/maintenance/{blockId}/cancel:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+        - name: blockId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: cancelled before it became active; the occupancy is released
+  /v1/fleets/{id}/maintenance/{blockId}/complete:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+        - name: blockId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the vehicle is back (an active block or off-road report ends now)
+  /v1/fleets/{id}/off-road:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - vehicleId
+              properties:
+                vehicleId:
+                  type: string
+                startsAt:
+                  type: string
+                  format: date-time
+                expectedEndsAt:
+                  type: string
+                  format: date-time
+                note:
+                  type: string
+      responses:
+        "201":
+          description:
+            "{block (active), atRiskBookings[{blockId, decisionDeadline}],
+            conflictIds} -- bookings are set at_risk, never cancelled; every
+            report is audited and flagged if the vehicle is seen in use (owner/manager)"
+  /v1/fleets/{id}/conflicts:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - open
+              - resolving
+              - resolved
+              - lapsed
+      responses:
+        "200":
+          description: conflicts with allowedActions for the caller's role; a driver's own conflict shows only as driver_resolving
+  /v1/fleets/{id}/conflicts/{conflictId}/remind:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+        - name: conflictId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: a reminder to the driver (at most hourly)
+  /v1/fleets/{id}/assignments:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+      responses:
+        "200":
+          description: signed arrangements (history) and proposals; a decline shows only as `declined`
   /v1/fleets/{id}/assignments/propose:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProposeAssignment"
+      responses:
+        "201":
+          description: offer sent to the driver; expires 48 h; never counts as availability; nothing deducted until signed
+        "403":
+          description: terms_owner_only -- a manager sent terms, or the driver has no signed terms yet
+        "422":
+          description: shift_overlap (names the signed shift) or above_city_cap
+  /v1/fleets/{id}/assignments/proposals/{proposalId}/withdraw:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+        - name: proposalId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: withdrawn
+  /v1/fleets/{id}/assignments/{assignmentId}/terminate:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: owner only; 2-week notice; bookings past the notice end open conflicts
+  /v1/fleets/{id}/bookings/{blockId}/vehicle-swaps:
+    post:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+        - $ref: "#/components/parameters/IdemKey"
+        - name: blockId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - toVehicleId
+              properties:
+                toVehicleId:
+                  type: string
+      responses:
+        "201":
+          description: proposed to ride-service; the driver accepts and the rider ALWAYS confirms (fare unchanged)
+        "422":
+          description: swap_ineligible with reasons
+  /v1/fleets/{id}/utilisation:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/FleetId"
+      responses:
+        "200":
+          description:
+            per vehicle hours with definitions and asOf; "not_enough_data" under
+            7 days; a metric with no real source is null with its reason and
+            dependency -- never an estimate, no benchmarks
+  /v1/drivers/me/fleet-offers:
+    get:
+      responses:
+        "200":
+          description:
+            pending offers with the terms diff and UBI's check; historic
+            earnings are null (no real per-vehicle source yet)
+  /v1/fleet-offers/{id}/sign:
     post:
       parameters:
         - name: id
@@ -257,27 +817,6 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AssignmentTerms"
-      responses:
-        "201":
-          description: offer sent to driver; expires 48h; nothing deducted until signed
-  /v1/drivers/me/fleet-offers:
-    get:
-      responses:
-        "200":
-          description: pending offers with real historic earnings for that vehicle
-  /v1/fleet-offers/{id}/sign:
-    post:
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
               type: object
               required:
                 - pin
@@ -286,7 +825,16 @@ paths:
                   type: string
       responses:
         "200":
-          description: split_rule active; terms hashed and stored
+          description:
+            signed; the PIN is checked by user-service's wallet-PIN check with
+            the driver's own relayed context and is never stored; evidence =
+            signedAt, termsVersion, termsHash, verification reference
+        "403":
+          description: pin_locked (user-service's lockout)
+        "409":
+          description: offer_expired
+        "422":
+          description: wrong_pin (attemptsRemaining) or shift_overlap
   /v1/fleet-offers/{id}/decline:
     post:
       parameters:
@@ -295,16 +843,100 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/IdemKey"
       responses:
         "200":
-          description: declined
+          description: declined -- no reason, no penalty; the fleet sees only `declined`
   /v1/drivers/me/fleet:
     get:
       responses:
         "200":
-          description: "my arrangement: terms, hire-purchase progress, this week split"
+          description: "my arrangements: terms, shift, notice; this week's split is payment-service's"
   /v1/drivers/me/fleet/terminate:
     post:
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - assignmentId
+              properties:
+                assignmentId:
+                  type: string
       responses:
         "200":
-          description: 2-week notice (from terms)
+          description: 2-week notice (from terms); lists the driver's own bookings after the notice end
+  /v1/drivers/me/schedule:
+    get:
+      responses:
+        "200":
+          description:
+            server-composed agenda -- own availability and time off, signed
+            shifts, maintenance on those vehicles and own bookings (from
+            ride-service's driver-entitled calendar) -- plus decision alerts
+  /v1/drivers/me/availability:preview:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - windows
+              properties:
+                windows:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AvailabilityWindow"
+      responses:
+        "200":
+          description:
+            "{previewToken, affects: shift (hours_reduced) | booking (conflicts,
+            outcome: commissionReturned, fundingReleased, rematch
+            decided_by_marketplace, penalty none)}"
+  /v1/drivers/me/availability:
+    put:
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - windows
+                - withdrawals
+                - previewToken
+              properties:
+                windows:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AvailabilityWindow"
+                withdrawals:
+                  type: array
+                  description: bookings the driver EXPLICITLY chose to withdraw from
+                  items:
+                    type: string
+                previewToken:
+                  type: string
+      responses:
+        "200":
+          description:
+            saved | saved_with_withdrawals; each chosen withdrawal is completed
+            by the driver on POST /v1/mp/advance-bookings/{id}/withdraw
+        "409":
+          description: unresolved_booking_overlap (a booking not chosen for) or a stale preview
+  /v1/drivers/me/conflicts/{conflictId}:
+    get:
+      parameters:
+        - name: conflictId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the driver's own conflict with its options and server-explained outcomes

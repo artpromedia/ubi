@@ -1,0 +1,210 @@
+{
+  "title": "INTERNAL CONTRACT A — ride-service <-> fleet-service",
+  "source": "Transcribed verbatim from the round-8 FLEET-SVC / FLEET-RIDE slice brief. FLEET-RIDE implements the ride-service side, FLEET-SVC the fleet-service side; each tests against this text with a faithful double and the lead integrates them.",
+  "auth": {
+    "header": "X-Service-Key",
+    "rideServiceAccepts": "FLEET_RIDE_SERVICE_KEY",
+    "fleetServiceAccepts": "FLEET_SERVICE_KEY",
+    "minLength": 32,
+    "compare": "constant-time",
+    "whenUnset": "fail closed",
+    "gateway": "not proxied by the gateway"
+  },
+  "conventions": {
+    "money": "{amountMinor, currency}",
+    "times": "ISO-8601 UTC"
+  },
+  "occupiedBlock": {
+    "fields": [
+      "blockId",
+      "driverId",
+      "vehicleId",
+      "startsAt",
+      "endsAt",
+      "kind",
+      "risk",
+      "decisionDeadline"
+    ],
+    "notes": "startsAt/endsAt INCLUDE the booking buffers; NO other fields (no rider, location, fare, request or booking internals).",
+    "example": {
+      "blockId": "blk_1",
+      "driverId": "drv_1",
+      "vehicleId": "veh_1",
+      "startsAt": "2026-10-02T09:45:00Z",
+      "endsAt": "2026-10-02T11:30:00Z",
+      "kind": "booked",
+      "risk": "ok",
+      "decisionDeadline": null
+    }
+  },
+  "routes": [
+    {
+      "n": 1,
+      "key": "maintenancePreview",
+      "server": "ride-service",
+      "method": "POST",
+      "path": "/internal/fleet/occupancy/maintenance:preview",
+      "idempotencyKey": false,
+      "request": {
+        "vehicleId": "veh_1",
+        "kind": "planned_service",
+        "startsAt": "2026-10-02T09:00:00Z",
+        "endsAt": "2026-10-02T13:00:00Z"
+      },
+      "responses": {
+        "200": {
+          "feasible": false,
+          "affectedBlocks": [
+            {
+              "blockId": "blk_1",
+              "driverId": "drv_1",
+              "vehicleId": "veh_1",
+              "startsAt": "2026-10-02T09:45:00Z",
+              "endsAt": "2026-10-02T11:30:00Z",
+              "kind": "booked",
+              "risk": "ok",
+              "decisionDeadline": null
+            }
+          ],
+          "nextFeasibleWindow": {
+            "startsAt": "2026-10-02T11:30:00Z",
+            "endsAt": "2026-10-02T15:30:00Z"
+          }
+        }
+      }
+    },
+    {
+      "n": 2,
+      "key": "maintenanceCreate",
+      "server": "ride-service",
+      "method": "POST",
+      "path": "/internal/fleet/occupancy/maintenance",
+      "idempotencyKey": true,
+      "request": {
+        "blockId": "mnt_1",
+        "vehicleId": "veh_1",
+        "kind": "planned_service",
+        "startsAt": "2026-10-02T11:30:00Z",
+        "endsAt": "2026-10-02T15:30:00Z"
+      },
+      "responses": {
+        "201": { "occupancyId": "occ_1" },
+        "409": {
+          "code": "occupancy_conflict",
+          "message": "the block overlaps a booking",
+          "details": { "affectedBlocks": [] }
+        }
+      },
+      "semantics": "atomic under the vehicle exclusion constraint; replay with same key+body -> same answer; different body -> 409 idempotency_conflict"
+    },
+    {
+      "n": 3,
+      "key": "maintenanceRelease",
+      "server": "ride-service",
+      "method": "POST",
+      "path": "/internal/fleet/occupancy/maintenance/{blockId}/release",
+      "idempotencyKey": true,
+      "responses": { "200": { "released": true } },
+      "semantics": "idempotent"
+    },
+    {
+      "n": 4,
+      "key": "offRoad",
+      "server": "ride-service",
+      "method": "POST",
+      "path": "/internal/fleet/occupancy/off-road",
+      "idempotencyKey": true,
+      "request": {
+        "blockId": "mnt_2",
+        "vehicleId": "veh_1",
+        "startsAt": "2026-09-28T08:00:00Z",
+        "expectedEndsAt": null
+      },
+      "responses": {
+        "201": {
+          "occupancyId": "occ_2",
+          "atRiskBookings": [
+            { "blockId": "blk_1", "decisionDeadline": "2026-10-02T09:15:00Z" }
+          ]
+        }
+      },
+      "semantics": "NOT refused by bookings: overlapping confirmed bookings on that vehicle move to risk at_risk with a deadline"
+    },
+    {
+      "n": 5,
+      "key": "occupiedBlocks",
+      "server": "ride-service",
+      "method": "GET",
+      "path": "/internal/fleet/occupancy/blocks",
+      "query": ["vehicleIds", "driverIds", "from", "to"],
+      "idempotencyKey": false,
+      "responses": { "200": { "blocks": [] } },
+      "semantics": "the fleet-safe projection"
+    },
+    {
+      "n": 6,
+      "key": "driverCalendar",
+      "server": "ride-service",
+      "method": "GET",
+      "path": "/internal/fleet/drivers/{driverId}/calendar",
+      "query": ["from", "to"],
+      "idempotencyKey": false,
+      "responses": { "200": { "bookings": [] } },
+      "semantics": "the driver-entitled calendar entries (same shape as MpDriverCalendar bookings) for composing the driver's own schedule"
+    },
+    {
+      "n": 7,
+      "key": "vehicleSwap",
+      "server": "ride-service",
+      "method": "POST",
+      "path": "/internal/fleet/bookings/{blockId}/vehicle-swaps",
+      "idempotencyKey": true,
+      "request": { "toVehicleId": "veh_2", "requestedByStaffId": "usr_owner" },
+      "responses": {
+        "201": { "swapId": "swp_1", "status": "proposed" },
+        "422": {
+          "code": "swap_ineligible",
+          "message": "not eligible",
+          "details": { "reasons": ["capacity_too_small"] }
+        }
+      }
+    },
+    {
+      "n": 8,
+      "key": "vehicleAt",
+      "server": "fleet-service",
+      "method": "GET",
+      "path": "/internal/fleet/drivers/{driverId}/vehicle-at",
+      "query": ["from", "to"],
+      "responses": {
+        "200": {
+          "vehicleId": "veh_1",
+          "assignmentId": "asg_1",
+          "vehicleClass": "comfort",
+          "capacity": 4
+        }
+      },
+      "semantics": "the vehicle a fleet driver is assigned to for that whole interval under a signed assignment (null for a driver with no fleet assignment covering it)"
+    },
+    {
+      "n": 9,
+      "key": "vehicle",
+      "server": "fleet-service",
+      "method": "GET",
+      "path": "/internal/fleet/vehicles/{vehicleId}",
+      "responses": {
+        "200": {
+          "vehicleId": "veh_1",
+          "fleetId": "flt_1",
+          "classes": ["go", "comfort"],
+          "capacity": 4,
+          "documents": {
+            "insuranceExpiry": "2027-06-30T00:00:00Z",
+            "inspectionExpiry": null
+          }
+        }
+      },
+      "semantics": "swap revalidation"
+    }
+  ]
+}

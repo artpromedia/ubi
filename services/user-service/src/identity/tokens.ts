@@ -35,6 +35,14 @@ const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
  *                 (carts, checkout, cancel and switch — travel:book — stay
  *                 off).
  *
+ * The fleet scopes (fleet:read, fleet:manage for fleet staff; fleet:driver
+ * for a driver's offers, PIN signing, schedule and availability) are NOT on
+ * this list, deliberately: a full-mode token carries no `scopes` claim, so
+ * they come from the gateway's role ceiling (riders and drivers may be fleet
+ * staff; only drivers hold fleet:driver), and a limited session holds none of
+ * them — deny-by-default for the new capability. fleet-service's own staff
+ * table decides owner / manager / read-only inside a fleet.
+ *
  * services/api-gateway/tests/limited-token.test.ts sends tokens minted by
  * `issueAccessToken` through the gateway scope matrix, so a drift between the
  * two lists fails there.
