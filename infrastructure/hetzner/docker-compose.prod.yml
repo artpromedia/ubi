@@ -170,6 +170,10 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      # Internal trust boundary (docs/security/INTERNAL_IDENTITY.md): the gateway
+      # signs x-ubi-identity and the ride-service HMAC context. Required.
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
+      RIDE_INTERNAL_CONTEXT_SECRET: ${RIDE_INTERNAL_CONTEXT_SECRET:?RIDE_INTERNAL_CONTEXT_SECRET is required}
       CORS_ORIGINS: https://${DOMAIN:-ubi.africa},https://${ADMIN_DOMAIN:-admin.ubi.africa}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Service Discovery
@@ -208,6 +212,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET}
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       postgres:
@@ -234,6 +239,11 @@ services:
       - "3002"
     environment:
       ENVIRONMENT: production
+      # UBI_ENV is what the Go services actually read to enter production mode
+      # (ENVIRONMENT alone left their fail-closed identity guards inert).
+      UBI_ENV: production
+      RIDE_INTERNAL_CONTEXT_SECRET: ${RIDE_INTERNAL_CONTEXT_SECRET:?RIDE_INTERNAL_CONTEXT_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
       PORT: "3002"
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?sslmode=disable
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
@@ -292,6 +302,12 @@ services:
       - "3004"
     environment:
       ENVIRONMENT: production
+      # UBI_ENV is what the Go services actually read to enter production mode
+      # (ENVIRONMENT alone left their fail-closed identity guards inert).
+      UBI_ENV: production
+      RIDE_INTERNAL_CONTEXT_SECRET: ${RIDE_INTERNAL_CONTEXT_SECRET:?RIDE_INTERNAL_CONTEXT_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PORT: "3004"
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?sslmode=disable
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
@@ -325,6 +341,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Internal trust boundary: verifies x-ubi-identity on /v1/finance and
+      # /v1/wallet, and X-Service-Key on service-to-service routes. Required.
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
       # Payment Provider Keys (Stripe, Paystack, M-Pesa, etc.)
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
