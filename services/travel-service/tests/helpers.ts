@@ -9,13 +9,20 @@
  * The supply "provider" is the deterministic fixture adapter, driven entirely by
  * the `travel_suppliers.config` seeded here — the README cast (Air Peace P4 7120,
  * Ibom Air QI 0312/0316, Transcorp Hilton, Fraser Suites). The one fake in these
- * tests is the payment port, which lives here and nowhere near `src/`.
+ * tests is the payment port, which lives here and nowhere near `src/`. The
+ * airport-transfer suites reach ride-service through the REAL HTTP ride port
+ * over a socket, against tests/ride-stub.ts (which verifies the signed identity
+ * with ride-service's algorithm); every other suite gets UNWIRED_RIDES, which
+ * answers nothing.
  */
+import { randomUUID } from "node:crypto";
+
 import { PrismaClient } from "@prisma/client";
 
 import { ContractError, money } from "@ubi/contracts";
 
 import { createCityConfigProvider } from "../src/ops/config";
+import { RideUnavailableError } from "../src/ports/ride-port";
 
 import type { TravelDeps } from "../src/ops/context";
 import type {
@@ -25,6 +32,7 @@ import type {
   PaymentStatus,
 } from "../src/ports/payment-port";
 import type { JsonRecord, TravelDb } from "../src/ops/types";
+import type { RidePort } from "../src/ports/ride-port";
 
 export const TEST_DATABASE_URL =
   process.env.TRAVEL_TEST_DATABASE_URL ??
@@ -66,6 +74,10 @@ export function idemKey(label = "k"): string {
  * into another's `pickSupplier`.
  */
 export async function resetTravel(db: TravelDb): Promise<void> {
+  await db.airportTransferAction.deleteMany({});
+  await db.airportTransfer.deleteMany({});
+  await db.travelFlightStatusEvent.deleteMany({});
+  await db.auditLog.deleteMany({ where: { subjectType: "airport_transfer" } });
   await db.rideReservationLink.deleteMany({});
   await db.travelDocument.deleteMany({});
   await db.travelOrderEvent.deleteMany({});
@@ -89,7 +101,72 @@ export async function resetTravel(db: TravelDb): Promise<void> {
 
 export interface SeedCityOptions {
   readonly flags?: Record<string, boolean>;
+  /**
+   * Include a marketplace policy with a Book for Later block (the values
+   * ride-service's own fixtures use) — what an airport transfer needs.
+   */
+  readonly marketplace?: boolean;
 }
+
+const FARE_BOUNDS = {
+  absoluteFloorMinor: 80_000,
+  costFloorMinor: 60_000,
+  floorBpsOfSuggested: 7_000,
+  ceilingBpsOfSuggested: 20_000,
+};
+
+const RATE_BOUNDS = { maxPerKmMinor: 50_000, maxMinimumTripFareMinor: 400_000 };
+
+/** A MarketplacePolicySchema-valid policy; test data, never a production default. */
+export const MARKETPLACE_POLICY = {
+  policyVersion: 3,
+  commissionBps: 1_000,
+  commissionRounding: "half_up",
+  fareBounds: { "ride:go": FARE_BOUNDS, "ride:comfort": FARE_BOUNDS },
+  searchEnvelope: {
+    initialRadiusMeters: 3_000,
+    maxRadiusMeters: 9_000,
+    initialPickupEtaSec: 600,
+    maxPickupEtaSec: 1_500,
+    expandAfterSec: 30,
+    minOffersBeforeExpand: 2,
+    expansionSteps: 3,
+  },
+  stationary: {
+    minDwellSec: 60,
+    maxSpeedMps: 1.5,
+    maxLocationAgeSec: 120,
+    maxAccuracyMeters: 50,
+    motionCloseSec: 20,
+  },
+  finishingTrip: {
+    maxRemainingSec: 600,
+    completionBufferSec: 120,
+    uncertaintyBufferSec: 60,
+    corridorMaxBearingDeltaDeg: 90,
+  },
+  bids: {
+    bidExpirySec: 120,
+    requestExpirySec: 600,
+    revisionCooldownSec: 15,
+    maxLiveBidsPerDriver: 3,
+    maxOpenRequestsPerRequester: 2,
+  },
+  queue: { pickupWindowToleranceSec: 300 },
+  rateProfileBounds: { "ride:go": RATE_BOUNDS, "ride:comfort": RATE_BOUNDS },
+  scheduling: {
+    scheduledRequests: {
+      publishLeadSec: 1_800,
+      minLeadSec: 3_600,
+      maxHorizonSec: 1_209_600,
+      defaultWindowSec: 600,
+      minWindowSec: 300,
+      maxWindowSec: 1_800,
+      reminderOffsetsSec: [43_200, 3_600],
+      maxPendingPerRequester: 10,
+    },
+  },
+};
 
 export async function seedCity(
   db: TravelDb,
@@ -146,6 +223,9 @@ export async function seedCity(
       doors: { LOS: "D" },
     },
     taxes: { vat: 7.5 },
+    ...(options.marketplace === true
+      ? { marketplace: MARKETPLACE_POLICY }
+      : {}),
   };
 
   await db.city.create({
@@ -647,7 +727,31 @@ function hash(value: string): number {
 
 export interface DepsOptions {
   readonly payment?: PaymentPort;
+  readonly rides?: RidePort;
   readonly now?: () => Date;
+}
+
+/**
+ * The ride port suites that never reach ride-service get: every call is an
+ * honest "unavailable" (the outcome-unknown error the HTTP port raises), so a
+ * stray call can never look like a ride-service answer.
+ */
+export const UNWIRED_RIDES: RidePort = {
+  quote: unwired,
+  createScheduledRequest: unwired,
+  getScheduledRequest: unwired,
+  cancelScheduledRequest: unwired,
+  approveScheduledRequest: unwired,
+  cancelRequest: unwired,
+};
+
+function unwired(): Promise<never> {
+  return Promise.reject(
+    new RideUnavailableError(
+      "ride-service is not wired in this test",
+      "ride_unreachable",
+    ),
+  );
 }
 
 export function makeDeps(
@@ -662,6 +766,7 @@ export function makeDeps(
     db,
     config: createCityConfigProvider(db),
     payment,
+    rides: options.rides ?? UNWIRED_RIDES,
     now: options.now ?? (() => new Date()),
   };
   return { deps, payment: payment as FakePayment };
@@ -669,6 +774,11 @@ export function makeDeps(
 
 export function rider(): { id: string; role: string } {
   return { id: uid("rider"), role: "rider" };
+}
+
+/** A rider whose id is a UUID — the only user id ride-service accepts. */
+export function uuidRider(): { id: string; role: string } {
+  return { id: randomUUID(), role: "rider" };
 }
 
 export function opsActor(): { id: string; role: string } {

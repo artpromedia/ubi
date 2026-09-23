@@ -584,6 +584,9 @@ describe("the fixture adapter can never be selected in production configuration"
         PORT: "0",
         DATABASE_URL: TEST_DATABASE_URL,
         LOG_LEVEL: "fatal",
+        // Present, so the supplier guard (not the ride-context guard) is
+        // what refuses here; tests/ride-context.test.ts covers the other.
+        RIDE_INTERNAL_CONTEXT_SECRET: "boot-test-ride-context-key",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

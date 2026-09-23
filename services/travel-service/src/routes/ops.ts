@@ -15,10 +15,12 @@ import {
   gatewayAuth,
 } from "../middleware";
 import { parseBody } from "./parse";
+import { verifiedGatewayAuth } from "../middleware/transfer-auth";
 import {
   listCommercialRates,
   upsertCommercialRate,
 } from "../ops/commercial-rates";
+import { FLIGHT_STATUSES, recordFlightStatus } from "../ops/flight-status";
 import {
   applyExceptionAction,
   EXCEPTION_ACTIONS,
@@ -27,6 +29,7 @@ import {
 } from "../ops/ops-travel";
 import { recordSettlement } from "../ops/reconcile";
 import { isOpsRole } from "../ops/roles";
+import { advanceTransfer } from "../ops/transfer-orchestrator";
 
 import type { TravelDeps } from "../ops/context";
 import type { JsonRecord } from "../ops/types";
@@ -59,6 +62,25 @@ const RateBody = z.object({
 const SettlementBody = z.object({
   invoicedMinor: z.number().int().nonnegative(),
 });
+
+const Instant = z.string().datetime({ offset: true });
+
+/**
+ * A verified flight status observation for one leg (e.g. from the airline's
+ * notice). The event id is the dedupe key: a repeat changes nothing.
+ */
+const FlightStatusBody = z
+  .object({
+    eventId: z.string().min(1).max(200),
+    orderId: z.string().min(1),
+    legIndex: z.number().int().min(0).max(8),
+    status: z.enum(FLIGHT_STATUSES),
+    departAt: Instant.optional(),
+    arriveAt: Instant.optional(),
+    observedAt: Instant,
+    source: z.string().min(1).max(100).optional(),
+  })
+  .strict();
 
 export function createOpsRoutes(deps: TravelDeps): Hono {
   const routes = new Hono();
@@ -135,6 +157,36 @@ export function createOpsRoutes(deps: TravelDeps): Hono {
         correlationId: correlationIdOf(c),
       });
       return c.json(result, 201);
+    } catch (error) {
+      return failure(c, error);
+    }
+  });
+
+  // A flight status event drives ride-service calls signed as the affected
+  // travellers (withdrawals, retimes), so who sent it must be what the gateway
+  // proved: the signed identity context, required in production, and an ops
+  // role re-checked on it.
+  routes.post("/flight-status", verifiedGatewayAuth, opsOnly, async (c) => {
+    try {
+      const body = await parseBody(c, FlightStatusBody);
+      const result = await recordFlightStatus(deps, {
+        actor: actorOf(c),
+        source: `ops:${body.source ?? "verified"}`,
+        eventId: body.eventId,
+        orderId: body.orderId,
+        legIndex: body.legIndex,
+        status: body.status,
+        departAt: body.departAt === undefined ? null : new Date(body.departAt),
+        arriveAt: body.arriveAt === undefined ? null : new Date(body.arriveAt),
+        observedAt: new Date(body.observedAt),
+        correlationId: correlationIdOf(c),
+      });
+      // Carry retimes / withdrawals to ride-service promptly; the worker
+      // retries whatever does not complete here.
+      for (const { transferId } of result.applied) {
+        await advanceTransfer(deps, transferId).catch(() => undefined);
+      }
+      return c.json(result, result.duplicate ? 200 : 201);
     } catch (error) {
       return failure(c, error);
     }

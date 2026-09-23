@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: UBI Travel v2 — supplier-adapter flights and stays, carts, orders, servicing, linked rides
+  title: UBI Travel v2 — supplier-adapter flights and stays, carts, orders, servicing, airport transfers
   version: 2.0.0
   description: >
     Supersedes One-Ticket flights.yaml/stays.yaml for the launch. Every promise on screen is an adapter capability on the specific offer.
@@ -522,6 +522,178 @@ paths:
               },
           },
       }
+  /v1/reservations:
+    post:
+      summary: Ask for an airport transfer (an intent — never secured transport)
+      description: >
+        Links a ride to a leg of the caller's own FLIGHT order (confirmed or ticketed, same city). The pickup window is
+        derived server-side from the leg under the city's airport policy (arrival — scheduled landing + the arrival buffer;
+        departure — ending in time to reach the airport before check-in closes, on the routed drive time). Nothing is
+        requested, reserved or charged by this call: travel-service makes a Book for Later scheduled request on
+        ride-service, signed as the traveller, once the pickup is inside the market horizon, and the transfer becomes
+        `awarded` only when ride-service reports the traveller's own selected award. Idempotent: a replay answers the
+        stored result; a replay with a different body is 409 idempotency_key_reuse. Behind the deny-by-default
+        `reservations` flag (404 feature_disabled while off). Every /v1/reservations route reads the caller and the city
+        from the gateway's signed `x-ubi-identity` context (required in production — the plain mirrors alone are 401; a
+        declared X-City-ID that differs from the verified city is 403), because travel-service re-signs that identity
+        for ride-service; every POST also needs the gateway's `mp:request` scope (limited mode is 403 limited_mode).
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAirportTransfer" }
+      responses:
+        "202":
+          description: the intent as accepted (pending — no driver yet)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AirportTransfer" }
+        "404":
+          {
+            description: feature_disabled / not_found (no such flight order of yours),
+          }
+        "409":
+          { description: idempotency_key_reuse / conflict (flight not booked) }
+        "422":
+          description: "validation_failed (not a flight order; leg or airport unknown; too soon; currency) / payment_method_unavailable"
+    get:
+      summary: The caller's airport transfers
+      parameters:
+        - {
+            name: linkedOrderId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          description: transfers, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    {
+                      type: array,
+                      items: { $ref: "#/components/schemas/AirportTransfer" },
+                    }
+        "404": { description: feature_disabled }
+  /v1/reservations/{transferId}:
+    get:
+      parameters:
+        - {
+            name: transferId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          description: the transfer's current state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AirportTransfer" }
+        "404": { description: feature_disabled / not_found }
+  /v1/reservations/{transferId}/decision:
+    post:
+      summary: The traveller's choice on their transfer
+      description: >
+        `keep`, `cancel`, `rerequest` and `approve_limit` — only the choices `actionRequired` offers (cancel is always
+        allowed while live). Cancelling before an award is free; an awarded ride is cancelled under the ride's OWN rules,
+        which ride-service applies (a refusal changes nothing). `rerequest` cancels the current ride under its rules and
+        makes a new scheduled request for the new flight time with the same approved limit — a driver is not guaranteed.
+        Idempotent under the Idempotency-Key.
+      parameters:
+        - {
+            name: transferId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [choice]
+              properties:
+                choice:
+                  {
+                    type: string,
+                    enum: [keep, cancel, rerequest, approve_limit],
+                  }
+                maxFareMinor: { $ref: "#/components/schemas/Money" }
+      responses:
+        "200":
+          description: the transfer after the choice
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AirportTransfer" }
+        "409":
+          description: "conflict (choice not offered; driver secured meanwhile; busy) / ride-service's own refusal code / idempotency_key_reuse"
+        "503": { description: ride-service did not answer; nothing changed }
+  /v1/reservations/{transferId}/cancel:
+    post:
+      summary: Shorthand for decision `cancel`
+      parameters:
+        - {
+            name: transferId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200":
+          description: the transfer after the cancellation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AirportTransfer" }
+        "409": { description: see /decision }
+  /v1/ops/travel/flight-status:
+    post:
+      summary: Record a verified flight status observation (travel-ops only)
+      description: >
+        Deduped by (source, eventId) and applied monotonically by observedAt (a cancellation is final) to the leg's live
+        transfers in one transaction. Before a scheduled request exists the window moves; before publication the request
+        is withdrawn and re-made with the same approved limit; once drivers were asked or a driver is secured the
+        traveller is offered choices and nothing moves. A cancelled flight withdraws a not-yet-secured ride for free and
+        never cancels a secured one. The flight's own refund follows its order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [eventId, orderId, legIndex, status, observedAt]
+              properties:
+                eventId: { type: string }
+                orderId: { type: string }
+                legIndex: { type: integer, minimum: 0 }
+                status: { type: string, enum: [delayed, cancelled] }
+                departAt: { type: string, format: date-time }
+                arriveAt: { type: string, format: date-time }
+                observedAt: { type: string, format: date-time }
+                source: { type: string }
+      responses:
+        "201":
+          description: recorded and applied
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlightStatusResult" }
+        "200":
+          description: a duplicate — nothing changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlightStatusResult" }
+        "403": { description: not a travel-ops principal }
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer }
@@ -532,6 +704,169 @@ components:
       required: true
       schema: { type: string, maxLength: 128 }
   schemas:
+    AirportTransferPlace:
+      type: object
+      additionalProperties: false
+      required: [lat, lng]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        label: { type: string, maxLength: 120 }
+    CreateAirportTransfer:
+      type: object
+      additionalProperties: false
+      description: >
+        Never a pickup time, a user, a role, a city or a fare bound — those come from the gateway context and the
+        server's policy.
+      required:
+        [
+          linkedOrderId,
+          direction,
+          airportPoint,
+          place,
+          vehicleClass,
+          maxFareMinor,
+          paymentMethodId,
+        ]
+      properties:
+        linkedOrderId:
+          { type: string, description: a FLIGHT order of the caller's }
+        legIndex: { type: integer, minimum: 0, default: 0 }
+        direction: { type: string, enum: [arrival_pickup, departure_dropoff] }
+        airportPoint: { $ref: "#/components/schemas/AirportTransferPlace" }
+        place: { $ref: "#/components/schemas/AirportTransferPlace" }
+        vehicleClass: { type: string }
+        maxFareMinor:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: the traveller's approved spend limit — every retime of this transfer stays within it
+        requestedFareMinor: { $ref: "#/components/schemas/Money" }
+        paymentMethodId: { type: string }
+    AirportTransfer:
+      type: object
+      required:
+        [
+          transferId,
+          linkedOrderId,
+          direction,
+          status,
+          driverSecured,
+          statusLabel,
+          notice,
+          terms,
+        ]
+      properties:
+        transferId: { type: string }
+        linkedOrderId: { type: string }
+        direction: { type: string, enum: [arrival_pickup, departure_dropoff] }
+        legIndex: { type: integer }
+        flightNumber: { type: string, nullable: true }
+        airportCode: { type: string }
+        status:
+          {
+            type: string,
+            enum: [pending_unassigned, requested, awarded, failed, cancelled],
+          }
+        driverSecured:
+          { type: boolean, description: true ONLY when status is awarded }
+        statusLabel: { type: string }
+        notice: { type: string }
+        pickup: { $ref: "#/components/schemas/AirportTransferPlace" }
+        dropoff: { $ref: "#/components/schemas/AirportTransferPlace" }
+        pickupWindow:
+          type: object
+          nullable: true
+          properties:
+            start: { type: string, format: date-time }
+            end: { type: string, format: date-time }
+            timeZone: { type: string }
+            label: { type: string }
+        arriveBy:
+          type: object
+          nullable: true
+          properties:
+            at: { type: string, format: date-time }
+            timeZone: { type: string }
+            label: { type: string }
+        flight:
+          type: object
+          properties:
+            departAt: { type: string, format: date-time }
+            arriveAt: { type: string, format: date-time }
+            status: { type: string, enum: [scheduled, delayed, cancelled] }
+        vehicleClass: { type: string }
+        approvedMaxFareMinor: { $ref: "#/components/schemas/Money" }
+        paymentMethodId: { type: string }
+        policyVersion: { type: string }
+        ride:
+          type: object
+          nullable: true
+          properties:
+            scheduledRequestId: { type: string, nullable: true }
+            requestId: { type: string, nullable: true }
+            state: { type: string, nullable: true }
+            requestState: { type: string, nullable: true }
+        retimedCount: { type: integer }
+        actionRequired:
+          type: object
+          nullable: true
+          properties:
+            reason:
+              type: string
+              enum:
+                [
+                  flight_changed_after_award,
+                  flight_changed_after_publication,
+                  flight_cancelled,
+                  fare_above_approval,
+                  ride_needs_approval,
+                ]
+            message: { type: string }
+            choices:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    {
+                      type: string,
+                      enum: [keep, cancel, rerequest, approve_limit],
+                    }
+                  label: { type: string }
+            minimumFareMinor: { $ref: "#/components/schemas/Money" }
+            proposal: { type: object, additionalProperties: true }
+        outcome:
+          type: object
+          nullable: true
+          properties:
+            reason: { type: string }
+            message: { type: string }
+        terms: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    FlightStatusResult:
+      type: object
+      required: [duplicate, applied]
+      properties:
+        duplicate: { type: boolean }
+        applied:
+          type: array
+          items:
+            type: object
+            properties:
+              transferId: { type: string }
+              outcome:
+                type: string
+                enum:
+                  [
+                    retimed,
+                    retime_pending,
+                    choices_offered,
+                    cancelled,
+                    cancel_pending,
+                    unchanged,
+                    ignored_stale,
+                    ignored_flight_already_cancelled,
+                  ]
     Money:
       type: object
       required: [amountMinor, currency]
@@ -968,10 +1303,23 @@ components:
         kind:
           {
             type: string,
-            enum: [flight, stay, ride_reservation, return_flight_placeholder],
+            enum:
+              [
+                flight,
+                stay,
+                airport_transfer,
+                ride_reservation,
+                return_flight_placeholder,
+              ],
           }
         orderId: { type: string }
-        reservationId: { type: string }
+        transferId: { type: string }
+        reservationId:
+          {
+            type: string,
+            description: legacy link only (never a marketplace request; status not_reserved),
+          }
+        driverSecured: { type: boolean }
         title: { type: string }
         subtitle: { type: string }
         status:
@@ -983,6 +1331,10 @@ components:
                 confirmed,
                 supplier_pending,
                 not_reserved,
+                pending_unassigned,
+                requested,
+                awarded,
+                failed,
                 reserved,
                 assigned,
                 completed,

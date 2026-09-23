@@ -3641,6 +3641,8 @@ model TravelOrder {
   disruptions      TravelDisruption[]
   settlements      TravelSettlement[]
   reservationLinks RideReservationLink[]
+  airportTransfers AirportTransfer[]
+  flightStatus     TravelFlightStatusEvent[]
 
   @@index([userId, state])
   @@index([supplierId, supplierOfferRef])
@@ -3777,6 +3779,11 @@ model TravelCommercialRate {
   @@map("travel_commercial_rates")
 }
 
+// LEGACY — never written any more. A row here was only ever a link and an
+// event: no marketplace request was created and no driver was awarded, so no
+// row represents secured transport. Kept (not dropped) so what a traveller was
+// once shown stays auditable; the itinerary renders these rows as "not
+// reserved". Airport transport is AirportTransfer below.
 model RideReservationLink {
   reservationId String @id @map("reservation_id")
   orderId       String @map("order_id")
@@ -3787,6 +3794,155 @@ model RideReservationLink {
   order TravelOrder @relation(fields: [orderId], references: [id])
 
   @@map("ride_reservation_links")
+}
+
+// An airport transfer INTENT (travel-service, P16): a ride to or from the
+// airport linked to a FLIGHT order the traveller owns in the same city. It is
+// never secured transport by itself. travel-service turns it into a Book for
+// Later SCHEDULED REQUEST on ride-service (POST /v1/mp/scheduled-requests,
+// signed as the traveller) when the pickup enters the market's scheduling
+// horizon; ride-service publishes that near the pickup window, drivers bid
+// privately and the traveller selects an offer. Only a requester-approved
+// award reported by ride-service makes the transfer `awarded`.
+//
+// The flight and the ride stay separate orders: no column here carries flight
+// money, and the ride's fare, commission, refunds and receipt live in
+// ride-service. `max_fare_minor` is the traveller's approved spend limit —
+// the most any scheduled request made for this transfer may approve, retimes
+// included.
+model AirportTransfer {
+  // Deterministic from the scoped Idempotency-Key: a replay lands here.
+  id                 String    @id
+  orderId            String    @map("order_id")
+  userId             String    @map("user_id")
+  // The trusted request context's city at creation; every ride call is
+  // signed for this city and no other.
+  cityId             String    @map("city_id")
+  // direction CHECK: arrival_pickup | departure_dropoff
+  direction          String
+  legIndex           Int       @map("leg_index")
+  flightNumber       String?   @map("flight_number")
+  airportCode        String    @map("airport_code")
+  // The leg's CURRENT schedule (UTC); a verified flight status event moves it.
+  flightDepartAt     DateTime  @map("flight_depart_at")
+  flightArriveAt     DateTime  @map("flight_arrive_at")
+  // flight_status CHECK: scheduled | delayed | cancelled
+  flightStatus       String    @default("scheduled") @map("flight_status")
+  // observed_at of the last applied flight status event (monotonic guard).
+  flightStatusAt     DateTime? @map("flight_status_at")
+  // { label, lat, lng } — the airport end is the traveller's terminal point.
+  pickup             Json
+  dropoff            Json
+  // IANA zone the pickup is phrased in (the city's; the airport is in it).
+  timeZone           String    @map("time_zone")
+  // The pickup window [pickup_at, window_end). An arrival pickup's is known
+  // at creation (landing + the city's arrival buffer); a departure drop-off's
+  // is derived from the routed drive time when the ride is requested, so it
+  // ends in time to reach the airport by arrive_by.
+  pickupAt           DateTime? @map("pickup_at")
+  windowEnd          DateTime? @map("window_end")
+  arriveBy           DateTime? @map("arrive_by")
+  windowSec          Int       @map("window_sec")
+  vehicleClass       String    @map("vehicle_class")
+  currency           String
+  maxFareMinor       BigInt    @map("max_fare_minor")
+  requestedFareMinor BigInt?   @map("requested_fare_minor")
+  paymentMethodId    String    @map("payment_method_id")
+  policyVersion      String    @map("policy_version")
+  // state CHECK: pending_unassigned | requested | awarded | failed | cancelled
+  state              String
+  version            Int       @default(1)
+  // When the scheduled request may be created (inside the market horizon).
+  submitAfter        DateTime  @map("submit_after")
+  // When the orchestrator should look at this transfer next (null: terminal).
+  nextActionAt       DateTime? @map("next_action_at")
+  // One orchestrator (worker pass or traveller action) at a time.
+  leaseUntil         DateTime? @map("lease_until")
+  // How many scheduled requests were made for this transfer (retimes and
+  // re-requests each make one). Keys every ride-service call.
+  generation         Int       @default(0)
+  // The exact create body + key of the scheduled request being made, stored
+  // BEFORE the call so a retry after a lost answer replays it byte-for-byte.
+  pendingCreate      Json?     @map("pending_create")
+  // The window a flight change moved this transfer to while a scheduled
+  // request for the OLD window is live on ride-service ({ pickupAt,
+  // windowEnd, arriveBy }). The orchestrator withdraws the old one before
+  // publication and re-makes it here; once drivers were asked it becomes a
+  // choice for the traveller instead. The live window stays in pickup_at /
+  // window_end until then.
+  retimeTarget       Json?     @map("retime_target")
+  retimedCount       Int       @default(0) @map("retimed_count")
+  // A cancel the orchestrator still has to carry to ride-service (reason).
+  pendingCancel      String?   @map("pending_cancel")
+  scheduledRequestId String?   @map("scheduled_request_id")
+  rideRequestId      String?   @map("ride_request_id")
+  rideState          String?   @map("ride_state")
+  rideRequestState   String?   @map("ride_request_state")
+  // ride-service's own status label / notice / approval, as last reported.
+  rideNotice         Json?     @map("ride_notice")
+  // Choices the traveller must make (after-award flight change, a fare above
+  // the approved limit); nothing changes until they choose.
+  actionRequired     Json?     @map("action_required")
+  // The honest per-state outcome (why it failed / was cancelled, what money did).
+  outcome            Json?
+  attempts           Int       @default(0)
+  lastError          String?   @map("last_error")
+  // Idempotent create: the normalized request's hash and the stored answer.
+  requestHash        String    @map("request_hash")
+  createResult       Json      @map("create_result")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  order   TravelOrder             @relation(fields: [orderId], references: [id])
+  actions AirportTransferAction[]
+
+  @@index([orderId, legIndex])
+  @@index([userId, createdAt])
+  @@index([state, nextActionAt])
+  @@map("airport_transfers")
+}
+
+// One accepted traveller action on a transfer (cancel, keep, re-request,
+// approve a new limit), keyed by the scoped Idempotency-Key: a replay answers
+// the stored result, a replay with a different body is refused.
+model AirportTransferAction {
+  id          String   @id
+  transferId  String   @map("transfer_id")
+  action      String
+  requestHash String   @map("request_hash")
+  statusCode  Int      @map("status_code")
+  result      Json
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  transfer AirportTransfer @relation(fields: [transferId], references: [id])
+
+  @@index([transferId, createdAt])
+  @@map("airport_transfer_actions")
+}
+
+// A verified flight status observation for one leg of a flight order (delay,
+// cancellation). Deduped by (source, event_id); applied monotonically by
+// observed_at, and a cancellation is final.
+model TravelFlightStatusEvent {
+  id         String    @id
+  source     String
+  eventId    String    @map("event_id")
+  orderId    String    @map("order_id")
+  legIndex   Int       @map("leg_index")
+  // status CHECK: delayed | cancelled
+  status     String
+  departAt   DateTime? @map("depart_at")
+  arriveAt   DateTime? @map("arrive_at")
+  observedAt DateTime  @map("observed_at")
+  receivedAt DateTime  @default(now()) @map("received_at")
+  // What applying it did to each linked transfer.
+  outcome    Json?
+
+  order TravelOrder @relation(fields: [orderId], references: [id])
+
+  @@unique([source, eventId])
+  @@index([orderId, legIndex, observedAt])
+  @@map("travel_flight_status_events")
 }
 
 // -------------------------------------------

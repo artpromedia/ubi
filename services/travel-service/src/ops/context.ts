@@ -10,11 +10,17 @@
 import type { CityConfigProvider } from "./config";
 import type { TravelDb } from "./types";
 import type { PaymentPort } from "../ports/payment-port";
+import type { RidePort } from "../ports/ride-port";
 
 export interface TravelDeps {
   readonly db: TravelDb;
   readonly config: CityConfigProvider;
   readonly payment: PaymentPort;
+  /**
+   * ride-service's Book for Later marketplace, called as the traveller with a
+   * signed identity: airport transfers become scheduled ride requests there.
+   */
+  readonly rides: RidePort;
   /** Injected so cache/hold/expiry arithmetic is testable without waiting. */
   readonly now: () => Date;
 }

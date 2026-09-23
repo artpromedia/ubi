@@ -10,8 +10,10 @@
  *    → confirmed → ticketed | failed_released | unknown_reconciling), resolved
  *    from unknown ONLY by a lookup on UBI's own reference;
  *  - refunds, disruptions and ₦0 switching (only under a funded rule), verified
- *    and deduped supplier webhooks, settlement differences, commercial rates and
- *    linked airport ride reservations.
+ *    and deduped supplier webhooks, settlement differences, commercial rates;
+ *  - airport transfers: intents linked to a flight order, made into Book for
+ *    Later scheduled ride requests on ride-service (signed as the traveller)
+ *    and `awarded` only once ride-service reports a requester-approved award.
  *
  * The double-entry ledger is NOT here: travel money moves through a typed
  * PaymentPort HTTP call to payment-service.
@@ -31,6 +33,7 @@ import { createOpsRoutes } from "./routes/ops";
 import { createReservationRoutes } from "./routes/reservations";
 import { createTravelRoutes } from "./routes/travel";
 import { createWebhookRoutes } from "./routes/webhooks";
+import { startTransferWorker } from "./transfer-worker";
 import { createDeps } from "./wiring";
 
 import type { TravelDeps } from "./ops/context";
@@ -75,6 +78,8 @@ export function createApp(deps: TravelDeps): Hono {
   app.route("/health", healthRoutes);
   app.route("/v1/travel/webhooks", createWebhookRoutes(deps));
   app.route("/v1/travel", createTravelRoutes(deps));
+  // Airport transfers: every route behind the deny-by-default `reservations`
+  // flag for the request's city (checked per request in the router).
   app.route("/v1/reservations", createReservationRoutes(deps));
   app.route("/v1/ops/travel", createOpsRoutes(deps));
 
@@ -82,15 +87,18 @@ export function createApp(deps: TravelDeps): Hono {
 }
 
 async function main(): Promise<void> {
-  const deps = createDeps();
-  // Production configuration never serves a test-only supply adapter: refuse
-  // to boot rather than let a fixture catalog take a real booking.
+  let deps: TravelDeps;
+  // Production configuration never serves a test-only supply adapter, and
+  // never calls ride-service without a signing key: refuse to boot rather
+  // than let a fixture catalog take a real booking or a traveller's airport
+  // ride go out unsigned.
   try {
+    deps = createDeps();
     await assertProductionSupplyConfig(deps.db);
   } catch (error) {
     logger.fatal(
       { err: error },
-      "refusing to start: unsafe supplier configuration",
+      "refusing to start: unsafe supplier or ride-context configuration",
     );
     process.stderr.write(
       `travel-service refusing to start: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -101,9 +109,11 @@ async function main(): Promise<void> {
   const app = createApp(deps);
   const server = serve({ fetch: app.fetch, port: PORT });
   logger.info({ port: PORT }, "travel-service listening");
+  const transferWorker = startTransferWorker(deps);
 
   const shutdown = (signal: string): void => {
     logger.info({ signal }, "shutting down");
+    transferWorker.stop();
     server.close();
     void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).then(
       () => {

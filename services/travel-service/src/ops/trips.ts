@@ -1,14 +1,18 @@
 /**
  * Trip itinerary and linked orders (contracts/openapi/travel-v2.yaml).
  *
- * A trip is a view over the per-item orders and the ride reservations linked to
+ * A trip is a view over the per-item orders and the airport transfers linked to
  * them. Each linked item shows its OWN status and its OWN charge (CLAUDE.md #25):
  * the itinerary never rolls the flight, the hotel and the ride up into a single
- * outcome, because they can and do diverge.
+ * outcome, because they can and do diverge. An airport ride shows as secured
+ * only when its transfer is `awarded` (a requester-approved award ride-service
+ * reported); a legacy reservation link — which never created a marketplace
+ * request — shows as not reserved.
  */
 import { ContractError } from "@ubi/contracts";
 
 import { isOpsRole } from "./roles";
+import { transferView } from "./transfer-view";
 
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
@@ -99,18 +103,51 @@ export async function getLinked(
       where: { orderId: order.id, resolvedAt: null },
     });
     items.push(linkedFromOrder(order, disruption !== null));
-    const reservations = await deps.db.rideReservationLink.findMany({
+    const transfers = await deps.db.airportTransfer.findMany({
       where: { orderId: order.id },
+      orderBy: { createdAt: "asc" },
     });
-    for (const reservation of reservations) {
+    for (const transfer of transfers) {
+      const view = transferView(transfer);
+      const actionRequired = view.actionRequired as JsonRecord | null;
       items.push({
-        kind: "ride_reservation",
-        reservationId: reservation.reservationId,
+        kind: "airport_transfer",
+        transferId: transfer.id,
         title:
-          reservation.direction === "to_airport"
+          transfer.direction === "departure_dropoff"
             ? "Ride to airport"
             : "Ride from airport",
-        status: "reserved",
+        subtitle: String(view.statusLabel),
+        status: transfer.state,
+        driverSecured: transfer.state === "awarded",
+        // The ride's money is ride-service's: nothing is charged here.
+        policy: String(view.notice),
+        disruption:
+          actionRequired === null ? null : String(actionRequired.message),
+        actions: Array.isArray(actionRequired?.choices)
+          ? (actionRequired.choices as JsonRecord[]).map((choice) => ({
+              key: choice.key ?? null,
+              label: choice.label ?? null,
+              primary: false,
+            }))
+          : [],
+      });
+    }
+    // Legacy links: never a marketplace request, never a driver.
+    const legacy = await deps.db.rideReservationLink.findMany({
+      where: { orderId: order.id },
+    });
+    for (const link of legacy) {
+      items.push({
+        kind: "ride_reservation",
+        reservationId: link.reservationId,
+        title:
+          link.direction === "to_airport"
+            ? "Ride to airport"
+            : "Ride from airport",
+        subtitle:
+          "This older airport ride request was never sent to drivers. No driver is secured; arrange an airport transfer instead.",
+        status: "not_reserved",
         actions: [],
       });
     }

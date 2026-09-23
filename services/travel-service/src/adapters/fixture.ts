@@ -247,6 +247,10 @@ function flightOfferView(flight: FixtureFlight): JsonRecord {
     carrier: flight.carrier,
     flightNumber: flight.flightNumber,
     aircraft: flight.aircraft ?? null,
+    // The airports the leg flies between: an airport transfer checks the
+    // arrival / departure airport against the city's airports.
+    from: flight.from ?? null,
+    to: flight.to ?? null,
     departAt: flight.departAt,
     arriveAt: flight.arriveAt,
     departTerminal: flight.departTerminal ?? null,
