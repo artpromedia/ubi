@@ -212,20 +212,6 @@ export type MpStopPaidWaitingPolicy = z.infer<
   typeof MpStopPaidWaitingPolicySchema
 >;
 
-/**
- * Preferred-driver request policy (A04 item 3), optional in the marketplace
- * policy. How long a named driver has the request to themselves before it
- * opens to the market — only with the rider's explicit fallback consent — or
- * closes free. Mirrors cityconfig.MarketplacePreferredDriverPolicy (30–900 s,
- * and shorter than the request lifetime, which ride-service also checks).
- */
-export const MpPreferredDriverPolicySchema = z.object({
-  exclusiveWindowSec: z.number().int().min(30).max(900),
-});
-export type MpPreferredDriverPolicy = z.infer<
-  typeof MpPreferredDriverPolicySchema
->;
-
 export const MpMultiStopPolicySchema = z
   .object({
     /** Intermediate stops a request may carry (0 disables them structurally). */
