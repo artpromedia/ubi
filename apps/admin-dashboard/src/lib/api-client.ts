@@ -54,16 +54,48 @@ function authToken(): string | null {
   }
 }
 
+/**
+ * A non-2xx answer, carrying the HTTP status and the canonical error code
+ * (`forbidden`, `limited_mode`, `feature_disabled`, …) so a screen can tell
+ * "your role cannot see this" from "this device is not verified yet" without
+ * reading message text. The message keeps the `"<status> <detail>"` shape the
+ * consoles already display.
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string | null,
+    detail: string,
+  ) {
+    super(`${status} ${detail}`);
+    this.name = "ApiError";
+  }
+}
+
+type ErrorShape = { message?: unknown; code?: unknown };
+
 async function decode<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
+    let code: string | null = null;
     try {
-      const body = (await res.json()) as { message?: string; code?: string };
-      detail = body.message ?? body.code ?? detail;
+      // Services answer {code, message}; the gateway wraps it as
+      // {success: false, error: {code, message}}.
+      const raw = (await res.json()) as ErrorShape & { error?: ErrorShape };
+      const body: ErrorShape =
+        raw.error !== null && typeof raw.error === "object" ? raw.error : raw;
+      if (typeof body.code === "string") {
+        code = body.code;
+      }
+      if (typeof body.message === "string") {
+        detail = body.message;
+      } else if (code !== null) {
+        detail = code;
+      }
     } catch {
       /* non-JSON error body */
     }
-    throw new Error(`${res.status} ${detail}`);
+    throw new ApiError(res.status, code, detail);
   }
   // 204 / empty body (e.g. void actions) — nothing to decode.
   if (res.status === 204 || res.headers.get("content-length") === "0") {

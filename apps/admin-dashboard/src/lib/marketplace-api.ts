@@ -1,6 +1,9 @@
 import { apiClient, newIdempotencyKey } from "./api-client";
-import { fmt, type Money } from "./growth-api";
+import { formatMinor, formatServerMoney } from "./money";
+import { renderTimelineEvents, type RenderContext } from "./mp-events";
+import { redactDeep } from "./redact";
 
+import type { Money } from "./growth-api";
 import type {
   MonitorRow,
   MonitorStat,
@@ -357,14 +360,19 @@ export const marketplaceApi = {
     apiClient.get<PendingSagasPage>(
       "/v1/admin/mp/pending-sagas" + toQuery({ cityId, cursor }),
     ),
+  /** An apply sends the key minted when its preview was shown, so a
+   * double-click or a retried confirm replays ONE reconcile server-side. */
   reconcileAward: (
     awardId: string,
     body: { dryRun: boolean; expectedUpdatedAt?: string },
+    idempotencyKey?: string,
   ) =>
     apiClient.post<ReconcileAwardResult>(
       "/v1/admin/mp/awards/" + awardId + "/reconcile",
       body,
-      body.dryRun ? undefined : { idempotencyKey: newIdempotencyKey() },
+      body.dryRun
+        ? undefined
+        : { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
     ),
 
   recoveries: (action?: string, cursor?: string) =>
@@ -374,11 +382,14 @@ export const marketplaceApi = {
   retryRecovery: (
     id: string,
     body: { dryRun: boolean; expectedAttempts?: number },
+    idempotencyKey?: string,
   ) =>
     apiClient.post<RetryRecoveryResult>(
       "/v1/admin/mp/recoveries/" + id + "/retry",
       body,
-      body.dryRun ? undefined : { idempotencyKey: newIdempotencyKey() },
+      body.dryRun
+        ? undefined
+        : { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
     ),
 
   cancellations: (cityId?: string, driverId?: string, cursor?: string) =>
@@ -506,7 +517,9 @@ export const toMonitorRow = (r: MpRequestRow): MonitorRow | null => {
     requestId: r.requestId,
     route: r.cityId,
     service: r.service,
-    asked: fmt(r.askedMinor),
+    // The server's amount in ITS currency, decimal placed by string — never
+    // growth-api's fmt (which divides, rounds and always prints ₦).
+    asked: formatServerMoney(r.askedMinor),
     bids: r.bids ?? 0,
     reach: r.reach === undefined ? "—" : String(r.reach),
     envelope: envelopeLine(r.envelope),
@@ -553,16 +566,25 @@ export const eventTone = (type: string): TimelineEvent["tone"] => {
   return EVENT_OK.test(type) ? "ok" : "info";
 };
 
-export const toTimelineEvents = (t: MpTimeline): TimelineEvent[] =>
-  t.events.map((e) => ({
-    at: e.at.length >= 19 ? e.at.slice(11, 19) : e.at,
-    type: e.type,
-    tone: eventTone(e.type),
-    detail: e.detail,
-  }));
+/** Monitor rows: the raw payload is replaced by the PII-minimised operator
+ * copy from lib/mp-events.ts (never shown as JSON). `ctx.currency` is the
+ * request's own server currency, for amounts an event carries without one. */
+export const toTimelineEvents = (
+  t: MpTimeline,
+  ctx: RenderContext = {},
+): TimelineEvent[] =>
+  renderTimelineEvents(t.events, ctx).map((e, i) => {
+    const at = t.events[i]?.at ?? "";
+    return {
+      at: at.length >= 19 ? at.slice(11, 19) : at,
+      type: e.type,
+      tone: e.known ? e.tone : eventTone(e.type),
+      detail: e.label + " — " + e.summary,
+    };
+  });
 
 const money = (amountMinor: number, currency: string): string =>
-  fmt({ amountMinor, currency });
+  formatMinor(amountMinor, currency);
 const pct = (bps: number): string => (bps / 100).toLocaleString("en-NG") + "%";
 const secs = (s: number): string =>
   s % 60 === 0 && s >= 60 ? s / 60 + " min" : s + " s";
@@ -759,17 +781,27 @@ export const pctRate = (rate: number): string =>
   (rate * 100).toLocaleString("en-NG", { maximumFractionDigits: 1 }) + "%";
 
 /** Redacts a resolution/standing view to a plain-text export with no PII
- * beyond opaque ids (no coordinates, no PIN vault fields, no raw tokens —
- * none of those are on these views to begin with, but this is the one seam
- * every export from these boards goes through, so a future field addition
- * cannot leak silently). */
+ * beyond opaque ids (no coordinates, no PIN vault fields, no raw tokens, no
+ * phone numbers). This is the one seam every export from these boards goes
+ * through: blocked keys are replaced at any depth, and a string that is
+ * itself JSON (the timeline's raw outbox payload) is parsed and redacted
+ * too, so a sealed trip-link envelope can never ride out inside a string. */
 export const redactedExport = (data: unknown): string =>
-  JSON.stringify(
-    data,
-    (key, value) => {
-      const blocked = /pin|token|secret|password|ciphertext|nonce/i;
-      if (blocked.test(key)) return "[redacted]";
-      return value;
-    },
-    2,
-  );
+  JSON.stringify(redactDeep(data), null, 2);
+
+/** The Cases export: the resolution view with its events replaced by their
+ * rendered operator copy (no raw payloads at all), then redacted. */
+export const redactedCaseExport = (
+  view: ResolutionView,
+  ctx: RenderContext = {},
+): string =>
+  redactedExport({
+    ...view,
+    events: renderTimelineEvents(view.events, ctx).map((e) => ({
+      at: e.atIso,
+      type: e.type,
+      label: e.label,
+      summary: e.summary,
+      facts: e.facts,
+    })),
+  });

@@ -1,6 +1,12 @@
 "use client";
 import React from "react";
 
+import { AccessNotice } from "../ops/AccessNotice";
+import { TimelineEventList } from "./TimelineEventList";
+
+import type { AccessState } from "../../lib/access";
+import type { RenderedTimelineEvent } from "../../lib/mp-events";
+
 /**
  * C08 — the unified resolution timeline: request → award → funding →
  * commission → execution → settlement/reversal → notification, stitched
@@ -9,6 +15,8 @@ import React from "react";
  * flight), committed (green), failed (red), unavailable (amber — a named
  * gap, never a fabricated row). Read-only: no mutation control lives here —
  * those live on the stuck-saga and standing boards this view links out to.
+ * Events arrive pre-rendered by lib/mp-events.ts (PII-minimised operator
+ * copy for every round 2–7 event family); the raw payload is never shown.
  */
 export type StageStatus =
   | "view"
@@ -22,17 +30,17 @@ export type ResolutionStageRow = {
   detail: string;
   at?: string;
 };
-export type ResolutionEventRow = { at: string; type: string; detail: string };
 export type ResolutionTimelineProps = {
   loading: boolean;
-  error: string | null;
+  /** A classified failure (signed out, wrong role, unverified device, offline…). */
+  error: AccessState | null;
   requestId: string;
   requestState: string | null;
   awardLine: string | null;
   executionLine: string | null;
   driverBlocked: boolean | null;
   stages: ResolutionStageRow[];
-  events: ResolutionEventRow[];
+  events: RenderedTimelineEvent[];
   gaps: string[];
   onExport: () => void;
 };
@@ -65,11 +73,8 @@ export function ResolutionTimelinePage(p: ResolutionTimelineProps) {
   }
   if (p.error) {
     return (
-      <div
-        className="p-6 text-sm text-red-700"
-        data-testid="mp.admin.resolution.error"
-      >
-        Could not load this resolution case: {p.error}
+      <div className="p-6" data-testid="mp.admin.resolution.error">
+        <AccessNotice state={p.error} context="this resolution case" />
       </div>
     );
   }
@@ -159,25 +164,10 @@ export function ResolutionTimelinePage(p: ResolutionTimelineProps) {
           No events recorded yet.
         </p>
       ) : (
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="mb-2 text-sm font-semibold text-neutral-900">
-            Events
-          </h3>
-          {p.events.map((e, i) => (
-            <div
-              key={i}
-              className="flex gap-3 border-b border-neutral-100 py-2 text-sm last:border-0"
-            >
-              <span className="w-40 font-mono text-xs text-neutral-400">
-                {e.at}
-              </span>
-              <span className="w-52 font-mono text-xs text-neutral-700">
-                {e.type}
-              </span>
-              <span className="flex-1 text-neutral-900">{e.detail}</span>
-            </div>
-          ))}
-        </div>
+        <TimelineEventList
+          events={p.events}
+          testId="mp.admin.resolution.events"
+        />
       )}
     </div>
   );
