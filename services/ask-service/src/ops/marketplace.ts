@@ -73,6 +73,7 @@ import {
   type MandateRow,
   type MandateStage,
 } from "./mandate-scope";
+import { auditModelIdentity } from "./model-identity";
 import {
   claimRetryLease,
   classifySelectFailure,
@@ -82,6 +83,7 @@ import {
   type MpExecution,
 } from "./mp-executions";
 import { generateId } from "../lib/ids";
+import { grantTermsVersion } from "../ports/grant-port";
 
 import type { AskDeps } from "./context";
 import type { Actor, AskTx, JsonRecord } from "./types";
@@ -133,19 +135,26 @@ export interface MarketplaceGrantScope {
  * A stable fingerprint of exactly what the user authorised. Recomputed from the
  * authoritative request at selection time; a mismatch (city/currency/vehicle/cap/
  * action-set/quote drift) is refused deterministically, never trusted.
+ *
+ * It is the grant's terms version, so it is a digest that fits user-service's
+ * 60-character column (`grantTermsVersion`) whatever the ids' lengths.
  */
 export function fingerprintScope(scope: MarketplaceGrantScope): string {
   const actions = [...scope.actions].sort().join(",");
-  return [
-    "mp.scope.v1",
-    scope.service,
-    scope.cityId,
-    scope.currency,
-    scope.maxSpendMinor,
-    scope.vehicleClass ?? "*",
-    actions,
-    scope.quoteId,
-  ].join("|");
+  return grantTermsVersion(
+    "mp.scope.v2",
+    [
+      "mp.scope.v2",
+      scope.principalId,
+      scope.service,
+      scope.cityId,
+      scope.currency,
+      scope.maxSpendMinor,
+      scope.vehicleClass ?? "*",
+      actions,
+      scope.quoteId,
+    ].join("|"),
+  );
 }
 
 function assertActionPermitted(
@@ -685,6 +694,11 @@ export interface SelectInput {
   /** The fare the offer was reviewed at; a re-price is a material change. */
   readonly expectedFareMinor: number;
   /**
+   * The bid version the offer was reviewed at, when the caller holds one (a
+   * persisted Ask review does); a bid edit is then a material change too.
+   */
+  readonly expectedBidVersion?: number;
+  /**
    * Optional restatement of the grant's mandate. Authority is read from the
    * STORED grant: omitting this changes nothing, and a different id is refused.
    */
@@ -776,6 +790,28 @@ export async function selectOffer(
     });
   }
 
+  // The single-use grant is spent at the commit boundary below. A request the
+  // marketplace can no longer award from (closed, expired, already resolving
+  // an award) would spend it on a selection that can only fail — so refuse
+  // HERE, while the grant is still whole and nothing is reserved.
+  const notSelectable = requestNotSelectable(snapshot, now);
+  if (notSelectable !== null) {
+    await recordAction(deps, {
+      actor: input.actor,
+      action: "mp.select",
+      authKind: authKindOf(authority),
+      authRef: input.grantId,
+      outcome: "refused",
+      reasonCode: notSelectable.details?.reason as string,
+      redactedInputs: {
+        requestId: input.requestId,
+        bidId: input.bidId,
+        state: snapshot.request.state,
+      },
+    });
+    throw notSelectable;
+  }
+
   const offer = findSelectableOffer(snapshot, input.bidId, now);
   const selectedFareMinor = offer.totalMinor ?? offer.amountMinor;
 
@@ -820,6 +856,16 @@ export async function selectOffer(
       "version_conflict",
       "the offer re-priced since you reviewed it; re-review before selecting",
       { reason: "price_changed", fareMinor: selectedFareMinor },
+    );
+  }
+  if (
+    input.expectedBidVersion !== undefined &&
+    offer.bidVersion !== input.expectedBidVersion
+  ) {
+    throw new ContractError(
+      "version_conflict",
+      "the offer changed since you reviewed it; re-review before selecting",
+      { reason: "offer_revised", bidVersion: offer.bidVersion },
     );
   }
 
@@ -979,8 +1025,7 @@ async function persistExecutionIntent(
           actorRef: input.actor.id,
           threadId: null,
           action: "mp.select.intent",
-          model: deps.model.model,
-          modelRevision: deps.model.revision,
+          ...auditModelIdentity(deps.model),
           authKind: authKindOf(authority),
           authRef: grant.id,
           outcome: "done" as const,
@@ -1517,8 +1562,7 @@ async function closeExecutionFailed(
           actorRef: input.actor.id,
           threadId: null,
           action: "mp.select",
-          model: deps.model.model,
-          modelRevision: deps.model.revision,
+          ...auditModelIdentity(deps.model),
           authKind: authKindOf(authority),
           authRef: execution.grantId,
           outcome: "refused" as const,
@@ -1582,8 +1626,7 @@ function selectionDone(
     actorRef: input.actor.id,
     threadId: null,
     action: "mp.select",
-    model: deps.model.model,
-    modelRevision: deps.model.revision,
+    ...auditModelIdentity(deps.model),
     authKind: authKindOf(authority),
     authRef: input.grantId,
     outcome: "done" as const,
@@ -1787,6 +1830,39 @@ function assertRequestInScope(
   }
 }
 
+/**
+ * Null while the request can still be awarded by a selection made now: it is
+ * `open`, unexpired and carries no award. Otherwise the refusal to raise —
+ * before any grant is spent. `award_pending` is a selection already resolving
+ * (the marketplace answers `award_unresolved` to a second one); every other
+ * state is closed to selection (`request_closed`, as ride-service says).
+ */
+export function requestNotSelectable(
+  snapshot: MpSnapshot,
+  now: Date,
+): ContractError | null {
+  const { request } = snapshot;
+  if (request.state === "award_pending") {
+    return new ContractError(
+      "award_unresolved",
+      "a selection is already resolving for this request",
+      { reason: "award_pending", state: request.state },
+    );
+  }
+  if (
+    request.state !== "open" ||
+    Date.parse(request.expiresAt) <= now.getTime() ||
+    snapshot.award !== null
+  ) {
+    return new ContractError(
+      "request_closed",
+      "this request is no longer open for selection",
+      { reason: "request_not_selectable", state: request.state },
+    );
+  }
+  return null;
+}
+
 function findSelectableOffer(
   snapshot: MpSnapshot,
   bidId: string,
@@ -1808,6 +1884,15 @@ function findSelectableOffer(
     throw new ContractError("conflict", "that offer has expired", {
       reason: "offer_expired",
     });
+  }
+  // A bid is of the terms of the revision it was placed on: one made before a
+  // fare or route edit can never win (ride-service pins it the same way).
+  if (offer.requestRevision !== snapshot.request.revision) {
+    throw new ContractError(
+      "version_conflict",
+      "that offer was made on an earlier version of the request; re-review before selecting",
+      { reason: "offer_revision_stale", revision: snapshot.request.revision },
+    );
   }
   return offer;
 }
@@ -1844,8 +1929,7 @@ async function recordAction(
         actorRef: input.actor.id,
         threadId: null,
         action: input.action,
-        model: deps.model.model,
-        modelRevision: deps.model.revision,
+        ...auditModelIdentity(deps.model),
         authKind: input.authKind,
         authRef: input.authRef ?? null,
         outcome: input.outcome,

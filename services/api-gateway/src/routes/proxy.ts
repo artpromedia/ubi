@@ -49,6 +49,8 @@ const SERVICE_REGISTRY: Record<
   },
   ceerion: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
   vehicles: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
+  ask: { env: "ASK_SERVICE_URL", fallback: "http://localhost:4013" },
+  mandates: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
 };
 
 function serviceUrl(serviceName: string): string | undefined {
@@ -229,6 +231,18 @@ const forward =
     return response;
   };
 
+/**
+ * For a service that mounts its routes UNDER the version prefix itself
+ * (ask-service serves `/v1/ask/*`): the path crosses unchanged, so the
+ * gateway's `/v1/ask/threads` is the service's `/v1/ask/threads`.
+ */
+const forwardVersioned =
+  (serviceName: string) =>
+  async (c: Context): Promise<Response> => {
+    const response = await proxyToService(serviceName, c.req.path, c);
+    return response;
+  };
+
 // ===========================================
 // Route Definitions
 // ===========================================
@@ -260,6 +274,19 @@ proxyRoutes.all("/locations/*", forward("rides"));
 // payment-service and already flow through the /wallet/* mount below.
 proxyRoutes.all("/mp/*", forward("rides"));
 proxyRoutes.all("/admin/mp/*", forward("rides"));
+
+// Ask UBI (ask-service) — threads, the streamed turn, reviews, confirmations,
+// executions and the AI marketplace stages. Identity reaches it as for every
+// proxy: the signed x-ubi-identity context plus the x-auth-city-id /
+// x-ubi-city-id city claims, all written by the identity middleware after the
+// strip, never copied from the client. ask-service verifies the context and,
+// in production, refuses a request without it.
+proxyRoutes.all("/ask/*", forwardVersioned("ask"));
+
+// Mandates (standing authorisations) live in user-service, which mounts
+// `/mandates` and verifies the same signed context.
+proxyRoutes.all("/mandates", forward("mandates"));
+proxyRoutes.all("/mandates/*", forward("mandates"));
 
 // Food Service routes
 proxyRoutes.all("/food/*", forward("food"));

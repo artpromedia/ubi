@@ -19,6 +19,7 @@ import { TID, track, useCityConfig, formatMinor } from "@ubi/mobile-core";
 import type { AccountStackParamList } from "../../navigation/routes";
 import {
   mandatesApi,
+  type Constraint,
   type MandateInput,
   type AllowedAction,
 } from "../../api/mandates";
@@ -39,8 +40,61 @@ const ACTIONS: { id: AllowedAction; label: string; hint: string }[] = [
     label: "Book a recurring scheduled ride",
     hint: "weekdays only",
   },
+  {
+    id: "marketplace.ride.select",
+    label: "Pick a driver's offer on my ride request",
+    hint: "within my limits · I still set the fare",
+  },
 ];
+const MARKETPLACE_ACTION: AllowedAction = "marketplace.ride.select";
 const CLASSES = ["UBI Go", "Comfort", "XL"];
+/**
+ * Marketplace classes are the ids the marketplace reports on a request (the
+ * rider app publishes "standard" rides); the server checks the mandate's
+ * categories and its vehicle_class values against exactly these.
+ */
+const MARKETPLACE_CLASSES: { id: string; label: string }[] = [
+  { id: "standard", label: "Standard" },
+  { id: "comfort", label: "Comfort" },
+];
+const TIME_WINDOW = /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/;
+const CONSTRAINT_LABEL: Record<string, string> = {
+  vehicle_class: "Only these vehicle classes",
+  time_window: "Only between (city time)",
+  city: "Only in my city",
+  price_above_cap: "Price is above my per-ride limit",
+  lands_after_23_00: "Flight lands after 23:00",
+  pickup_not_airport: "Pickup is not the arrival airport",
+};
+const labelOf = (c: Constraint) => c.label ?? CONSTRAINT_LABEL[c.key] ?? c.key;
+
+/** A marketplace mandate's checkable limits, as typed constraint values. */
+function marketplaceConstraints(cityId: string | undefined): Constraint[] {
+  return [
+    {
+      key: "vehicle_class",
+      label: CONSTRAINT_LABEL.vehicle_class,
+      mode: "allow",
+      values: ["standard"],
+    },
+    {
+      key: "time_window",
+      label: CONSTRAINT_LABEL.time_window,
+      mode: "allow",
+      values: ["07:00-10:00"],
+    },
+    ...(cityId
+      ? [
+          {
+            key: "city",
+            label: CONSTRAINT_LABEL.city,
+            mode: "allow" as const,
+            values: [cityId],
+          },
+        ]
+      : []),
+  ];
+}
 const DEFAULT: MandateInput = {
   action: "airport_pickup.reserve",
   title: "Airport ride when my flight lands",
@@ -72,7 +126,7 @@ const DEFAULT: MandateInput = {
   ],
 };
 
-/** Board 20d — editor. Allowed action, who, class, caps, expiry (≤ 12 months), stop-and-ask constraints. Save/revoke need PIN. */
+/** Board 20d / D01 MandateApprove — editor. Allowed action (incl. the marketplace selection), who, class, caps, expiry (≤ 12 months), stop-and-ask constraints and the typed limit VALUES the server checks (vehicle class, time window, city). Save/revoke need PIN. */
 export function MandateEditorScreen() {
   const t = useTheme();
   const qc = useQueryClient();
@@ -92,6 +146,42 @@ export function MandateEditorScreen() {
     if (existing.data) setM(existing.data);
   }, [existing.data]);
   const { config } = useCityConfig();
+  const isMarketplace = m.action === MARKETPLACE_ACTION;
+  const timeWindow = m.constraints.find((c) => c.key === "time_window");
+  const windowInvalid =
+    isMarketplace &&
+    timeWindow !== undefined &&
+    !(timeWindow.values ?? []).every((v) => TIME_WINDOW.test(v));
+  const chooseAction = (action: AllowedAction) => {
+    if (action === m.action) return;
+    if (action === MARKETPLACE_ACTION) {
+      setM({
+        ...m,
+        action,
+        title: "Pick a driver for my ride",
+        categories: ["standard"],
+        constraints: marketplaceConstraints(config?.cityId),
+      });
+    } else if (m.action === MARKETPLACE_ACTION) {
+      setM({
+        ...m,
+        action,
+        categories: DEFAULT.categories,
+        constraints: DEFAULT.constraints,
+      });
+    } else {
+      setM({ ...m, action });
+    }
+  };
+  const setValues = (key: string, values: string[]) =>
+    setM({
+      ...m,
+      // The vehicle_class values and the categories are one limit.
+      ...(key === "vehicle_class" ? { categories: values } : {}),
+      constraints: m.constraints.map((c) =>
+        c.key === key ? { ...c, values } : c,
+      ),
+    });
   const money = (v: string) => ({
     amountMinor: Math.max(
       0,
@@ -101,6 +191,7 @@ export function MandateEditorScreen() {
   });
 
   const save = () =>
+    !windowInvalid &&
     nav.navigate("SecureConfirm", {
       purpose: "Save automation",
       onProof: async (proof: string) => {
@@ -206,11 +297,19 @@ export function MandateEditorScreen() {
           {ACTIONS.map((a) => (
             <Chip
               key={a.id}
+              testID={"mandates.edit.action." + a.id.replace(/\./g, "_")}
               label={a.label}
               selected={m.action === a.id}
-              onPress={() => setM({ ...m, action: a.id })}
+              onPress={() => chooseAction(a.id)}
             />
           ))}
+          {isMarketplace ? (
+            <Text variant="caption" tone="text2">
+              UBI may pick an offer on a ride you requested only inside these
+              limits. You always set the fare; anything outside them waits for
+              you.
+            </Text>
+          ) : null}
         </View>,
       )}
       {field(
@@ -228,26 +327,48 @@ export function MandateEditorScreen() {
           />
         </View>,
       )}
-      {field(
-        "Ride class",
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          {CLASSES.map((c) => (
-            <Chip
-              key={c}
-              label={c}
-              selected={m.categories.includes(c)}
-              onPress={() =>
-                setM({
-                  ...m,
-                  categories: m.categories.includes(c)
-                    ? m.categories.filter((x) => x !== c)
-                    : [...m.categories, c],
-                })
-              }
-            />
-          ))}
-        </View>,
-      )}
+      {isMarketplace
+        ? field(
+            "Vehicle class",
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {MARKETPLACE_CLASSES.map((c) => (
+                <Chip
+                  key={c.id}
+                  testID={"mandates.edit.class." + c.id}
+                  label={c.label}
+                  selected={m.categories.includes(c.id)}
+                  onPress={() =>
+                    setValues(
+                      "vehicle_class",
+                      m.categories.includes(c.id)
+                        ? m.categories.filter((x) => x !== c.id)
+                        : [...m.categories, c.id],
+                    )
+                  }
+                />
+              ))}
+            </View>,
+          )
+        : field(
+            "Ride class",
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {CLASSES.map((c) => (
+                <Chip
+                  key={c}
+                  label={c}
+                  selected={m.categories.includes(c)}
+                  onPress={() =>
+                    setM({
+                      ...m,
+                      categories: m.categories.includes(c)
+                        ? m.categories.filter((x) => x !== c)
+                        : [...m.categories, c],
+                    })
+                  }
+                />
+              ))}
+            </View>,
+          )}
       <View style={{ flexDirection: "row", gap: 10 }}>
         <View style={{ flex: 1 }}>
           {field(
@@ -320,35 +441,96 @@ export function MandateEditorScreen() {
           </Text>
         </View>,
       )}
-      {field(
-        "Stop and ask me if",
-        <View style={[box, { paddingVertical: 2 }]}>
-          {m.constraints.map((c, i) =>
-            c.mode === "always_ask" ? (
-              <Row
-                key={c.key}
-                label={c.label}
-                value="always"
-                last={i === m.constraints.length - 1}
-              />
-            ) : (
-              <Toggle
-                key={c.key}
-                label={c.label}
-                value={c.mode === "ask"}
-                onChange={(v) =>
-                  setM({
-                    ...m,
-                    constraints: m.constraints.map((x) =>
-                      x.key === c.key ? { ...x, mode: v ? "ask" : "allow" } : x,
-                    ),
-                  })
-                }
-              />
-            ),
+      {isMarketplace
+        ? field(
+            "Limits UBI checks before picking",
+            <View style={[box, { paddingVertical: 6, gap: 6 }]}>
+              {m.constraints.map((c) => (
+                <View key={c.key} style={{ gap: 4 }}>
+                  <Text variant="bodySmStrong">{labelOf(c)}</Text>
+                  {c.key === "time_window" ? (
+                    <>
+                      <TextInput
+                        testID="mandates.edit.timeWindow"
+                        accessibilityLabel="Allowed time window, city time"
+                        defaultValue={(c.values ?? []).join(",")}
+                        placeholder="07:00-10:00"
+                        placeholderTextColor={t.colors.text3}
+                        onEndEditing={(e) =>
+                          setValues(
+                            "time_window",
+                            e.nativeEvent.text
+                              .split(",")
+                              .map((v) => v.trim())
+                              .filter((v) => v.length > 0),
+                          )
+                        }
+                        style={{
+                          fontFamily: "Inter-SemiBold",
+                          fontSize: 15,
+                          color: t.colors.text,
+                        }}
+                      />
+                      {windowInvalid ? (
+                        <Text variant="caption" tone="errorInk">
+                          Use HH:MM-HH:MM, e.g. 07:00-10:00
+                        </Text>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Text variant="caption" tone="text2">
+                      {(c.values ?? []).join(", ") || "any"}
+                    </Text>
+                  )}
+                  <Toggle
+                    label="Ask me instead of skipping"
+                    value={c.mode === "ask"}
+                    onChange={(v) =>
+                      setM({
+                        ...m,
+                        constraints: m.constraints.map((x) =>
+                          x.key === c.key
+                            ? { ...x, mode: v ? "ask" : "allow" }
+                            : x,
+                        ),
+                      })
+                    }
+                  />
+                </View>
+              ))}
+            </View>,
+          )
+        : field(
+            "Stop and ask me if",
+            <View style={[box, { paddingVertical: 2 }]}>
+              {m.constraints.map((c, i) =>
+                c.mode === "always_ask" ? (
+                  <Row
+                    key={c.key}
+                    label={labelOf(c)}
+                    value="always"
+                    last={i === m.constraints.length - 1}
+                  />
+                ) : (
+                  <Toggle
+                    key={c.key}
+                    label={labelOf(c)}
+                    value={c.mode === "ask"}
+                    onChange={(v) =>
+                      setM({
+                        ...m,
+                        constraints: m.constraints.map((x) =>
+                          x.key === c.key
+                            ? { ...x, mode: v ? "ask" : "allow" }
+                            : x,
+                        ),
+                      })
+                    }
+                  />
+                ),
+              )}
+            </View>,
           )}
-        </View>,
-      )}
     </Screen>
   );
 }

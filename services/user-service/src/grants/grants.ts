@@ -181,9 +181,93 @@ export interface MintResult {
 }
 
 /**
+ * The mandate binding of a NEW mint (recheck A03 / P02). A grant with
+ * `assurance: "mandate"` is authority that no human confirmed in the moment,
+ * so it may exist only while its originating mandate does:
+ *
+ *   - it must name `mandateId`, and that mandate must exist, belong to the
+ *     grant's actor, be `active` and unexpired — read under a SHARE lock, so a
+ *     concurrent pause / revoke either commits first (and is seen) or waits
+ *     for this mint;
+ *   - the grant's currency must be the mandate's, and its total may not exceed
+ *     the mandate's per-run cap (defence in depth: the calling service checks
+ *     the full scope, but the minting authority never exceeds a hard limit);
+ *   - an attended grant (pin / biometric) may not name a mandate at all — it
+ *     would smuggle standing authority onto a one-off confirmation.
+ *
+ * Every refusal is a 403 `forbidden` with a reason code, and nothing is
+ * written.
+ */
+async function assertMandateBinding(
+  tx: Tx,
+  body: MintGrantBody,
+  now: Date,
+): Promise<void> {
+  if (body.assurance !== "mandate") {
+    if (body.mandateId !== undefined) {
+      throw new ContractError(
+        "forbidden",
+        "Only a mandate grant may carry a mandate",
+        { reason: "mandate_on_attended_grant" },
+      );
+    }
+    return;
+  }
+  if (body.mandateId === undefined) {
+    throw new ContractError(
+      "forbidden",
+      "A mandate grant must name its originating mandate",
+      { reason: "mandate_binding_missing" },
+    );
+  }
+  await tx.$queryRaw`SELECT id FROM mandates WHERE id = ${body.mandateId} FOR SHARE`;
+  const mandate = await tx.mandate.findUnique({
+    where: { id: body.mandateId },
+  });
+  if (mandate === null || mandate.userId !== body.actorId) {
+    // Another user's mandate is indistinguishable from a missing one.
+    throw new ContractError(
+      "forbidden",
+      "The mandate cannot authorise this grant",
+      { reason: "mandate_not_found" },
+    );
+  }
+  if (mandate.status !== "active") {
+    throw new ContractError(
+      "forbidden",
+      "The mandate cannot authorise this grant",
+      { reason: `mandate_${mandate.status}` },
+    );
+  }
+  if (mandate.expiresAt.getTime() <= now.getTime()) {
+    throw new ContractError(
+      "forbidden",
+      "The mandate cannot authorise this grant",
+      { reason: "mandate_expired" },
+    );
+  }
+  if (mandate.currency !== body.total.currency) {
+    throw new ContractError(
+      "forbidden",
+      "The mandate does not cover this currency",
+      { reason: "mandate_currency_mismatch" },
+    );
+  }
+  if (BigInt(body.total.amountMinor) > mandate.perRunCapMinor) {
+    throw new ContractError(
+      "forbidden",
+      "The amount exceeds the mandate's per-run cap",
+      { reason: "mandate_cap_exceeded" },
+    );
+  }
+}
+
+/**
  * Mints a grant for a confirmed review. Idempotent on `idempotencyKey`: a
  * replay returns the original grant unchanged (even once expired or consumed),
- * which is how a retried confirmation never mints a second authorisation.
+ * which is how a retried confirmation never mints a second authorisation. A
+ * NEW mandate grant is minted only against an active mandate of the actor
+ * (`assertMandateBinding`).
  */
 export async function mintGrant(
   deps: AiActionDeps,
@@ -209,6 +293,8 @@ export async function mintGrant(
         "A grant must expire in the future",
       );
     }
+
+    await assertMandateBinding(tx, body, now);
 
     const grant = await insertGrant(
       tx,

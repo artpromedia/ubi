@@ -15,6 +15,7 @@ import { ContractError, isEnabled, money, type Money } from "@ubi/contracts";
 
 import { actorKindFor, auditedTransaction, type OutboxInput } from "./audit";
 import { assertFlagEnabled } from "./flags";
+import { insertMarketplaceReview } from "./mp-lifecycle";
 import { runTurn, type StoredMessage } from "../ai/loop";
 import { redact } from "../ai/redaction";
 import { generateId } from "../lib/ids";
@@ -105,6 +106,12 @@ export interface MessageInput {
   readonly text: string;
   readonly clarifications: Readonly<Record<string, unknown>> | null;
   readonly correlationId: string | null;
+  /**
+   * Whether the gateway granted this session the marketplace scope. The route
+   * always passes it (middleware/auth.ts `marketplaceAllowed`); an internal
+   * caller that omits it is not behind a gateway.
+   */
+  readonly marketplaceAllowed?: boolean;
 }
 
 export interface MessageResult {
@@ -164,6 +171,7 @@ export async function handleMessage(
     threadId: input.threadId,
     history,
     userText,
+    marketplaceAllowed: input.marketplaceAllowed ?? true,
   });
 
   const now = deps.now();
@@ -195,33 +203,47 @@ export async function handleMessage(
 
     const events: OutboxInput[] = [];
     let reviewId: string | null = null;
+    let reviewKind: "travel" | "marketplace" | null = null;
     let total: Money | null = null;
 
     if (proposal !== null) {
       reviewId = generateId("rvw");
+      reviewKind = proposal.kind;
       total = money(proposal.totalMinor, proposal.currency);
-      const expiresAt = new Date(
-        now.getTime() + deps.limits.reviewTtlSeconds * 1000,
-      );
-      await tx.askReview.create({
-        data: {
+      if (proposal.kind === "marketplace") {
+        // The structured marketplace review: persisted scope + revision.
+        await insertMarketplaceReview(tx, {
           id: reviewId,
           threadId: input.threadId,
           userId: input.actor.id,
-          termsVersion: proposal.termsVersion,
-          items: asJson({
-            items: proposal.items,
-            notes: proposal.notes,
-            assuranceRequired: proposal.assuranceRequired,
-          }),
-          totalMinor: BigInt(proposal.totalMinor),
-          currency: proposal.currency,
-          paymentMethodId: proposal.paymentMethodId,
-          status: "awaiting_confirmation",
-          expiresAt,
-          createdAt: now,
-        },
-      });
+          proposal,
+          now,
+          ttlSeconds: deps.limits.reviewTtlSeconds,
+        });
+      } else {
+        const expiresAt = new Date(
+          now.getTime() + deps.limits.reviewTtlSeconds * 1000,
+        );
+        await tx.askReview.create({
+          data: {
+            id: reviewId,
+            threadId: input.threadId,
+            userId: input.actor.id,
+            termsVersion: proposal.termsVersion,
+            items: asJson({
+              items: proposal.items,
+              notes: proposal.notes,
+              assuranceRequired: proposal.assuranceRequired,
+            }),
+            totalMinor: BigInt(proposal.totalMinor),
+            currency: proposal.currency,
+            paymentMethodId: proposal.paymentMethodId,
+            status: "awaiting_confirmation",
+            expiresAt,
+            createdAt: now,
+          },
+        });
+      }
       events.push({
         name: "ask.review.created",
         aggregateType: "askReview",
@@ -236,10 +258,11 @@ export async function handleMessage(
         occurredAt: now,
         payload: {
           reviewId,
+          kind: proposal.kind,
           termsVersion: proposal.termsVersion,
           totalMinor: proposal.totalMinor,
           currency: proposal.currency,
-          items: proposal.items.length,
+          items: proposal.kind === "marketplace" ? 1 : proposal.items.length,
         },
       });
     }
@@ -262,7 +285,7 @@ export async function handleMessage(
     }
 
     return {
-      result: { reviewId, total },
+      result: { reviewId, reviewKind, total },
       events,
       aiActions: turn.aiActions,
     };
@@ -284,12 +307,16 @@ export async function handleMessage(
       type: "review_ready",
       reviewId: persisted.reviewId,
       totals: persisted.total,
+      reviewKind: persisted.reviewKind ?? "travel",
     });
   }
   if (proposalBlocked) {
     stream.push({
       type: "token",
-      text: "Booking through the assistant is not available here. Use the Travel flow to book.",
+      text:
+        turn.proposal?.kind === "marketplace"
+          ? "Selecting through the assistant is not available here. Choose an offer on the request screen."
+          : "Booking through the assistant is not available here. Use the Travel flow to book.",
     });
   }
   if (turn.refused !== null) {

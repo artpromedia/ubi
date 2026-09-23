@@ -122,6 +122,7 @@ async function turn(deps: TestDeps, userText: string) {
     threadId: uid("thr"),
     history: [],
     userText,
+    marketplaceAllowed: true,
   });
 }
 

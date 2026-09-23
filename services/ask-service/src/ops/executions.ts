@@ -16,6 +16,8 @@ import {
 } from "@ubi/contracts";
 
 import { actorKindFor, auditedTransaction, type OutboxInput } from "./audit";
+import { auditModelIdentity } from "./model-identity";
+import { marketplaceExecutionView, type MpExecutionView } from "./mp-lifecycle";
 import { parseStoredReview } from "./review-model";
 import { generateId } from "../lib/ids";
 
@@ -184,8 +186,7 @@ export async function runExecution(
           actorRef: input.actor.id,
           threadId: null,
           action: "execution.run",
-          model: deps.model.model,
-          modelRevision: deps.model.revision,
+          ...auditModelIdentity(deps.model),
           authKind: "grant" as const,
           authRef: input.grantId,
           outcome:
@@ -217,8 +218,21 @@ export interface ExecutionView {
     readonly orderId?: string;
     readonly charged?: Money;
     readonly released?: Money;
+    /** Marketplace: the awarded fare, exactly as the marketplace reports it. */
+    readonly fare?: Money;
+    /** Marketplace: the DRIVER's commission on the award, shown separately. */
+    readonly commission?: Money;
+    readonly reasonCode?: string;
     readonly detail?: string;
   }[];
+  /** A marketplace execution's stage, persisted intent and reconcilability. */
+  readonly marketplace?: MpExecutionView;
+}
+
+interface StoredItemExtras {
+  readonly fareMinor?: number | null;
+  readonly commissionMinor?: number | null;
+  readonly reasonCode?: string | null;
 }
 
 export async function getExecution(
@@ -234,12 +248,14 @@ export async function getExecution(
     throw new ContractError("not_found", "no such execution");
   }
   const rawItems = Array.isArray(exec.items)
-    ? (exec.items as unknown as ExecutionItemState[])
+    ? (exec.items as unknown as (ExecutionItemState & StoredItemExtras)[])
     : [];
+  const marketplace = await marketplaceExecutionView(deps, exec);
   return {
     id: exec.id,
     status: exec.status,
     startedAt: exec.startedAt.toISOString(),
+    ...(marketplace === undefined ? {} : { marketplace }),
     items: rawItems.map((item) => ({
       kind: item.kind,
       title: item.title,
@@ -254,6 +270,15 @@ export async function getExecution(
         item.releasedMinor === null || item.releasedMinor === undefined
           ? undefined
           : money(item.releasedMinor, item.currency),
+      fare:
+        item.fareMinor === null || item.fareMinor === undefined
+          ? undefined
+          : money(item.fareMinor, item.currency),
+      commission:
+        item.commissionMinor === null || item.commissionMinor === undefined
+          ? undefined
+          : money(item.commissionMinor, item.currency),
+      reasonCode: item.reasonCode ?? undefined,
       detail: item.detail ?? undefined,
     })),
   };

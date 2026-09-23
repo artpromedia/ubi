@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
@@ -14,28 +14,40 @@ import {
   useTheme,
 } from "@ubi/mobile-ui";
 import { ApiError, track, TID } from "@ubi/mobile-core";
-import { askApi, type Review, type ReviewItem } from "../../api/ask";
+import {
+  askApi,
+  conventionalMarketplaceTarget,
+  type Review,
+  type ReviewItem,
+} from "../../api/ask";
+import { MarketplaceReviewBody } from "./MarketplaceReviewBody";
 
 function useCountdown(iso?: string) {
   const [left, setLeft] = useState(0);
   useEffect(() => {
     if (!iso) return;
-    const id = setInterval(
-      () =>
-        setLeft(
-          Math.max(
-            0,
-            Math.floor((new Date(iso).getTime() - Date.now()) / 1000),
-          ),
-        ),
-      500,
-    );
+    const tick = () =>
+      setLeft(
+        Math.max(0, Math.floor((new Date(iso).getTime() - Date.now()) / 1000)),
+      );
+    tick();
+    const id = setInterval(tick, 500);
     return () => clearInterval(id);
   }, [iso]);
   return left;
 }
 const mmss = (s: number) =>
   Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+
+/** A fresh key per review; a retry of the SAME approval reuses it. */
+function approvalKey(reviewId: string): string {
+  return (
+    "ask_confirm_" +
+    reviewId.replace(/[^A-Za-z0-9_.:-]/g, "").slice(-24) +
+    "_" +
+    Math.random().toString(36).slice(2, 10)
+  );
+}
 
 function ItemBlock({ item }: { item: ReviewItem }) {
   const t = useTheme();
@@ -81,7 +93,16 @@ function ItemBlock({ item }: { item: ReviewItem }) {
     </View>
   );
 }
-/** Board 20b — AWAITING YOUR CONFIRMATION. Exact terms, terms version, countdown; PIN via SecureConfirm; 409 ⇒ show the new review, never charge. */
+
+/**
+ * Board 20b / D01 AskProposal — AWAITING YOUR CONFIRMATION. Exact server terms,
+ * terms version, countdown; the PIN goes through SecureConfirm; 409 ⇒ show the
+ * new review, never charge. A marketplace review renders its structured
+ * proposal (price, the driver's offer, the commission on its own line) and
+ * its approve echoes the persisted scope/revision. When the assistant cannot
+ * finish — the offer is gone, the marketplace or the assistant is unavailable
+ * — the sheet hands off to the regular request screen: never a dead end.
+ */
 export function TransactionReviewSheet({
   reviewId,
   onDismiss,
@@ -99,41 +120,100 @@ export function TransactionReviewSheet({
   });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | undefined>();
+  const [handoff, setHandoff] = useState<string | undefined>();
+  const keys = useRef<Record<string, string>>({});
   const left = useCountdown(q.data?.expiresAt);
   const expired = q.data
     ? left === 0 || q.data.status !== "awaiting_confirmation"
     : false;
   useEffect(() => {
-    if (left === 60 || left === 10) {
-      /* announce via AccessibilityInfo.announceForAccessibility in RN-01 */
-    }
     if (expired && q.data) track("ask_review_expired", { reviewId: id });
-  }, [left, expired]);
+  }, [expired]);
+
+  const r = q.data;
+  const mp = r?.kind === "marketplace" ? r.marketplace : undefined;
+
+  const handOff = (link: string | undefined, message: string) => {
+    setNotice(message);
+    setHandoff(link ?? mp?.conventionalFlow ?? "ubi://marketplace/compose");
+  };
 
   const confirm = () => {
-    if (!q.data) return;
+    if (!r) return;
+    const review = r;
+    keys.current[review.id] ??= approvalKey(review.id);
     nav.navigate("SecureConfirm", {
-      purpose: "Confirm booking · " + q.data.total.amountMinor,
+      purpose: mp
+        ? mp.stage === "select"
+          ? "Approve this offer"
+          : "Publish this request"
+        : "Confirm booking",
       onProof: async (proof: string) => {
         setBusy(true);
         try {
-          const r = await askApi.confirmReview(id, q.data!.termsVersion, proof);
+          const result = await askApi.confirmReview(
+            review.id,
+            review.termsVersion,
+            proof,
+            {
+              idempotencyKey: keys.current[review.id],
+              expect: mp
+                ? {
+                    scopeFingerprint: mp.scope.fingerprint,
+                    requestRevision: mp.selection?.requestRevision,
+                    bidId: mp.selection?.bidId,
+                  }
+                : undefined,
+            },
+          );
           track("ask_review_confirmed", {
-            reviewId: id,
-            items: q.data!.items.length,
-            totalMinor: q.data!.total.amountMinor,
-            termsVersion: q.data!.termsVersion,
+            reviewId: review.id,
+            kind: review.kind ?? "travel",
+            items: review.items.length,
+            totalMinor: review.total.amountMinor,
+            termsVersion: review.termsVersion,
           });
-          onExecuting(r.executionId);
+          onExecuting(result.executionId);
         } catch (e) {
-          if (e instanceof ApiError && e.status === 409) {
+          if (
+            e instanceof ApiError &&
+            e.status === 409 &&
+            e.code === "http_409"
+          ) {
+            // The body IS the fresh review to confirm.
             const fresh = e.details as Review;
             setId(fresh.id);
             setNotice(
-              "A price or term changed before booking. Nothing was charged — here are the new terms.",
+              mp
+                ? "The offer changed before you approved. Nothing was selected — here are the new terms."
+                : "A price or term changed before booking. Nothing was charged — here are the new terms.",
             );
           } else if (e instanceof ApiError && e.status === 410) {
             setNotice("This review expired. Ask again for fresh prices.");
+          } else if (mp && e instanceof ApiError && e.status === 504) {
+            // The gateway gave up waiting, but the approval may still have
+            // run: say so, never "nothing was selected". The request screen
+            // shows the real outcome, and a selection never runs twice.
+            handOff(
+              undefined,
+              "We couldn't confirm the result yet. Check the request screen — nothing is ever selected or charged twice.",
+            );
+          } else if (mp && e instanceof ApiError) {
+            const details = e.details as
+              | { conventionalFlow?: string }
+              | undefined;
+            handOff(
+              details?.conventionalFlow,
+              e.code === "feature_disabled" || e.status >= 500
+                ? "Ask UBI can't finish this right now. Nothing was selected — continue on the request screen."
+                : "That offer can't be approved any more. Nothing was selected — see the current offers.",
+            );
+          } else if (mp) {
+            // No answer at all: the approval may or may not have arrived.
+            handOff(
+              undefined,
+              "We couldn't confirm the result. Check the request screen — nothing is ever selected or charged twice.",
+            );
           } else {
             setNotice("We could not confirm right now. Nothing was charged.");
           }
@@ -143,7 +223,14 @@ export function TransactionReviewSheet({
       },
     });
   };
-  const r = q.data;
+
+  const openConventional = () => {
+    const target = conventionalMarketplaceTarget(handoff);
+    track("ask_conventional_handoff", { screen: target.screen });
+    onDismiss();
+    nav.navigate("Marketplace", target);
+  };
+
   return (
     <Sheet visible onDismiss={onDismiss} testID={TID.ask.review.sheet}>
       {!r ? (
@@ -151,10 +238,30 @@ export function TransactionReviewSheet({
           <Skeleton height={20} width="50%" />
           <Skeleton height={90} />
           <Skeleton height={90} />
+          {q.isError ? (
+            <>
+              <Banner
+                tone="warn"
+                body="Ask UBI can't load this right now. You can still continue on the regular screens."
+              />
+              <Button
+                testID="ask.review.handoff"
+                label="Use the regular screen"
+                kind="secondary"
+                size="md"
+                onPress={() => {
+                  onDismiss();
+                  nav.navigate("Marketplace", { screen: "Details" });
+                }}
+              />
+            </>
+          ) : null}
         </View>
       ) : (
         <View style={{ gap: 8 }}>
-          {notice ? <Banner tone="warn" body={notice} /> : null}
+          {notice ? (
+            <Banner tone="warn" body={notice} testID="ask.review.notice" />
+          ) : null}
           <View
             style={{
               flexDirection: "row",
@@ -168,40 +275,59 @@ export function TransactionReviewSheet({
             />
             <Text variant="caption" tone="text2">
               Terms v. {r.termsVersion}
-              {!expired ? " · prices held for " + mmss(left) : ""}
+              {!expired ? " · held for " + mmss(left) : ""}
             </Text>
           </View>
-          <Text variant="title">
-            Book {String(r.items.length)}{" "}
-            {r.items.length === 1 ? "item" : "items"} ·{" "}
-            <MoneyText money={r.total} variant="title" />
-          </Text>
-          {r.items.map((it) => (
-            <ItemBlock key={it.title} item={it} />
-          ))}
+          {mp ? (
+            <>
+              <Text variant="title">
+                {mp.stage === "select"
+                  ? "Select this driver's offer"
+                  : "Ask drivers for offers"}
+              </Text>
+              <MarketplaceReviewBody review={mp} secondsLeft={left} />
+            </>
+          ) : (
+            <>
+              <Text variant="title">
+                Book {String(r.items.length)}{" "}
+                {r.items.length === 1 ? "item" : "items"} ·{" "}
+                <MoneyText money={r.total} variant="title" />
+              </Text>
+              {r.items.map((it) => (
+                <ItemBlock key={it.title} item={it} />
+              ))}
+            </>
+          )}
           <View>
-            <Row
-              label="Savings applied"
-              value={
-                r.adjustments?.length ? (
-                  <MoneyText
-                    money={{
-                      amountMinor: -r.adjustments.reduce(
-                        (_, a) => a.amount.amountMinor,
-                        0,
-                      ),
-                      currency: r.total.currency,
-                    }}
-                    variant="bodySmStrong"
-                    tone="primaryInk"
+            {!mp ? (
+              <Row
+                label="Savings applied"
+                value={
+                  r.adjustments?.length ? undefined : (
+                    <Text variant="bodySmStrong" tone="text2">
+                      none eligible
+                    </Text>
+                  )
+                }
+              />
+            ) : null}
+            {/* Each server adjustment on its own line — never summed here. */}
+            {!mp
+              ? r.adjustments?.map((a) => (
+                  <Row
+                    key={a.label}
+                    label={a.label}
+                    value={
+                      <MoneyText
+                        money={a.amount}
+                        variant="bodySmStrong"
+                        tone="primaryInk"
+                      />
+                    }
                   />
-                ) : (
-                  <Text variant="bodySmStrong" tone="text2">
-                    none eligible
-                  </Text>
-                )
-              }
-            />
+                ))
+              : null}
             <Row label="Pay with" value={r.paymentMethod.label} last />
           </View>
           {(
@@ -213,14 +339,28 @@ export function TransactionReviewSheet({
               {n}
             </Text>
           ))}
-          <Button
-            testID={TID.ask.review.confirmPin}
-            label={expired ? "Ask again for fresh prices" : "Confirm with PIN"}
-            trailing={expired ? undefined : undefined}
-            loading={busy}
-            kind={expired ? "inverse" : "primary"}
-            onPress={expired ? onDismiss : confirm}
-          />
+          {handoff ? (
+            <Button
+              testID="ask.review.handoff"
+              label="Open the request screen"
+              kind="inverse"
+              onPress={openConventional}
+            />
+          ) : (
+            <Button
+              testID={mp ? "ask.mpReview.approve" : TID.ask.review.confirmPin}
+              label={
+                expired
+                  ? "Ask again for fresh prices"
+                  : mp
+                    ? "Approve with PIN"
+                    : "Confirm with PIN"
+              }
+              loading={busy}
+              kind={expired ? "inverse" : "primary"}
+              onPress={expired ? onDismiss : confirm}
+            />
+          )}
           <Button
             testID={TID.ask.review.dismiss}
             label="Not now"

@@ -47,7 +47,7 @@ import {
   ERROR_CODES,
   MP_AWARD_STATES,
   MP_SERVICES,
-  MP_SLOTS,
+  MP_BID_SLOTS,
   MoneySchema,
   type ErrorCode,
 } from "@ubi/contracts";
@@ -775,7 +775,8 @@ const AwardObject = z
     requesterId: NonEmpty,
     fareMinor: PositiveMoney,
     commissionMinor: NonNegativeMoney,
-    slot: z.enum(MP_SLOTS),
+    // An advance award (A03) carries slot "advance"; accept every bid slot.
+    slot: z.enum(MP_BID_SLOTS),
     createdAt: Timestamp,
     resolvedAt: Timestamp.nullable().optional(),
     failReason: z.string().nullable().optional(),

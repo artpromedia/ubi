@@ -17,14 +17,16 @@
  */
 import { z } from "zod";
 
-import { money, type Money } from "@ubi/contracts";
+import { ContractError, money, type Money } from "@ubi/contracts";
 
 import { generateId } from "../lib/ids";
 import { reviewOffers } from "../ops/marketplace";
+import { buildSelectionProposal } from "../ops/mp-lifecycle";
 
 import type { Card, ClarifyField, Source } from "./events";
 import type { ToolSchema, ToolSpec } from "./model-provider";
 import type { AskDeps } from "../ops/context";
+import type { MarketplaceReviewProposal } from "../ops/mp-review";
 import type { Actor, AskRole } from "../ops/types";
 
 export interface ReviewProposalItem {
@@ -40,7 +42,8 @@ export interface ReviewProposalItem {
   readonly provider: string | null;
 }
 
-export interface ReviewProposal {
+export interface TravelReviewProposal {
+  readonly kind: "travel";
   readonly items: readonly ReviewProposalItem[];
   readonly totalMinor: number;
   readonly currency: string;
@@ -49,6 +52,14 @@ export interface ReviewProposal {
   readonly assuranceRequired: "pin" | "biometric";
   readonly notes: readonly string[];
 }
+
+/**
+ * What a proposing tool hands the loop: a travel booking review, or a
+ * structured marketplace review (ops/mp-review.ts) carrying the persisted
+ * server-derived scope and revision. Either becomes an `ask_reviews` row the
+ * user must confirm; neither executes anything.
+ */
+export type ReviewProposal = TravelReviewProposal | MarketplaceReviewProposal;
 
 export interface AskToolResult {
   /** Text fed back to the model for the next round. */
@@ -67,6 +78,12 @@ export interface AskToolContext {
   readonly actor: Actor;
   readonly cityId: string;
   readonly threadId: string;
+  /**
+   * Whether the gateway granted this session the marketplace scope (limited
+   * mode strips it, as it denies `/v1/mp` at the edge). Server-derived, never
+   * from the model.
+   */
+  readonly marketplaceAllowed: boolean;
 }
 
 export interface AskTool {
@@ -577,6 +594,7 @@ const proposeTool: AskTool = {
     }
 
     const proposal: ReviewProposal = {
+      kind: "travel",
       items: resolvedItems,
       totalMinor,
       currency,
@@ -602,10 +620,15 @@ const proposeTool: AskTool = {
 //
 // The model may read its own request's private offers and PROPOSE a selection;
 // it can neither award nor move money. Offer free text is UNTRUSTED and is
-// surfaced as data. The binding selection happens only through the grant-scoped
-// `selectOffer` op after an explicit confirm (or a valid mandate) — never here.
-// Every call is gated deny-by-default by the `ai_marketplace` flag inside the op.
+// surfaced as data. A proposal is a STRUCTURED review (ops/mp-lifecycle.ts)
+// the user must confirm; the binding selection happens only through the
+// grant-scoped `selectOffer` op after that explicit confirm (or a valid
+// mandate) — never here. Every call is gated deny-by-default by the
+// `ai_marketplace` flag inside the op, and by the gateway's marketplace scope.
 // ---------------------------------------------------------------------------
+
+const MARKETPLACE_NOT_IN_SESSION =
+  "The marketplace is not available in this session (the device may still need its security check). Use the regular request screen.";
 
 const mpReviewOffersSchema = z
   .object({ requestId: z.string().min(1).max(64) })
@@ -625,6 +648,9 @@ const mpReviewOffersTool: AskTool = {
   roles: ["rider"],
   async run(ctx, args): Promise<AskToolResult> {
     const { requestId } = mpReviewOffersSchema.parse(args);
+    if (!ctx.marketplaceAllowed) {
+      return { content: MARKETPLACE_NOT_IN_SESSION, ownershipDenied: true };
+    }
     const result = await reviewOffers(
       ctx.deps,
       ctx.actor,
@@ -686,26 +712,44 @@ const mpProposeSelectionTool: AskTool = {
   roles: ["rider"],
   async run(ctx, args): Promise<AskToolResult> {
     const input = mpProposeSelectionSchema.parse(args);
-    const result = await reviewOffers(
-      ctx.deps,
-      ctx.actor,
-      ctx.cityId,
-      input.requestId,
-    );
-    const offer = result.offers.find(
-      (candidate) => candidate.bidId === input.bidId && !candidate.withdrawn,
-    );
-    if (offer === undefined) {
-      return {
-        content: `Offer ${input.bidId} is not a live offer on request ${input.requestId}.`,
-      };
+    if (!ctx.marketplaceAllowed) {
+      return { content: MARKETPLACE_NOT_IN_SESSION, ownershipDenied: true };
+    }
+    let proposal: MarketplaceReviewProposal;
+    try {
+      // The server re-reads the owner snapshot and builds the proposal from
+      // it: the model named two ids, nothing else — every amount, version and
+      // the scope come from the marketplace.
+      proposal = await buildSelectionProposal(ctx.deps, {
+        actor: ctx.actor,
+        cityId: ctx.cityId,
+        requestId: input.requestId,
+        bidId: input.bidId,
+      });
+    } catch (error) {
+      if (
+        error instanceof ContractError &&
+        error.code !== "feature_disabled" &&
+        error.code !== "internal_error"
+      ) {
+        // Not selectable right now: say so, and point at the offers screen.
+        return {
+          content: `That offer cannot be proposed right now (${error.code}). The user can review offers on the request screen.`,
+        };
+      }
+      throw error;
+    }
+    const item = proposal.item;
+    if (item.kind !== "mp_selection") {
+      return { content: "No selection could be proposed." };
     }
     return {
       content:
-        `AWAITING YOUR CONFIRMATION: select offer ${offer.bidId} on request ${input.requestId}` +
-        ` at ${offer.totalMinor} ${offer.currency} (revision ${offer.requestRevision}).` +
-        ` You must confirm; I cannot award it, and the server refuses any selection above your cap.`,
-      providerRefs: [offer.bidId],
+        `AWAITING YOUR CONFIRMATION: select offer ${item.bidId} on request ${item.requestId}` +
+        ` at ${item.priceMinor} ${item.currency} (revision ${item.requestRevision}).` +
+        ` The user must confirm the review; I cannot award it or change the price.`,
+      proposal,
+      providerRefs: [item.bidId],
     };
   },
 };

@@ -24,6 +24,7 @@ beforeAll(async () => {
   process.env.RIDE_SERVICE_URL = upstream.url;
   process.env.PAYMENT_SERVICE_URL = upstream.url;
   process.env.NOTIFICATION_SERVICE_URL = upstream.url;
+  process.env.ASK_SERVICE_URL = upstream.url;
 });
 
 afterAll(async () => {
@@ -240,6 +241,96 @@ const MATRIX: readonly MatrixCase[] = [
     limited: "allow",
     safe: "allow",
   },
+  // Ask UBI: the chat and its reads survive limited mode; the confirm that
+  // mints a grant, the reconcile that re-drives an execution and the AI
+  // marketplace stages do not. Safe mode leaves them all (booking survives it).
+  {
+    method: "POST",
+    path: "/v1/ask/threads",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/ask/threads/thr_1/messages",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/ask/reviews/rvw_1",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/ask/executions/exec_1",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/ask/reviews/rvw_1/confirm",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/ask/executions/exec_1/reconcile",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/ask/mp/quotes",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/ask/mp/reviews",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/ask/mp/requests/req_1/cancel",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  // Mandates: reading them is a profile read; creating or changing standing
+  // authority to spend is neither for an unverified device nor during a
+  // SIM-swap hold.
+  {
+    method: "GET",
+    path: "/v1/mandates",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/mandates",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
+  {
+    method: "PATCH",
+    path: "/v1/mandates/mnd_1",
+    full: "allow",
+    limited: "deny",
+    safe: "deny",
+  },
 ];
 
 describe("limited mode and wallet safe mode scope matrix", () => {
@@ -329,6 +420,31 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       expect(
         (await call("limited", "PUT", "/v1/mp/rate-profiles", "driver")).code,
       ).toBe("limited_mode");
+    });
+
+    it("keeps Book for Later requester routes to riders", async () => {
+      for (const path of [
+        "/v1/mp/scheduled-requests",
+        "/v1/mp/advance-requests",
+        "/v1/mp/recurring-templates",
+      ]) {
+        expect((await call("full", "POST", path, "rider")).status).toBe(200);
+      }
+      // Drivers hold mp:request too (DRIVER_SCOPES extends RIDER_SCOPES), so
+      // the requester routes stay open to them; a merchant has neither scope.
+      const merchant = await call(
+        "full",
+        "POST",
+        "/v1/mp/scheduled-requests",
+        "merchant",
+      );
+      expect(merchant.status).toBe(403);
+      expect(
+        (await call("full", "GET", "/v1/mp/advance-bookings", "driver")).status,
+      ).toBe(200);
+      expect(
+        (await call("full", "GET", "/v1/mp/advance-bookings", "rider")).status,
+      ).toBe(200);
     });
 
     it("keeps the driver marketplace surfaces to drivers", async () => {
@@ -432,6 +548,34 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       upstream.received.length = 0;
       const result = await call("limited", "POST", "/v1/mp/bids", "driver");
       expect(result.status).toBe(403);
+      expect(upstream.received).toHaveLength(0);
+    });
+  });
+
+  describe("ask scopes", () => {
+    it("keeps the assistant to riders and drivers", async () => {
+      expect(
+        (await call("full", "POST", "/v1/ask/threads", "driver")).status,
+      ).toBe(200);
+      const merchant = await call(
+        "full",
+        "POST",
+        "/v1/ask/threads",
+        "merchant",
+      );
+      expect(merchant.status).toBe(403);
+      expect(merchant.code).toBe("forbidden");
+    });
+
+    it("never reaches ask-service when a limited-mode confirm is denied", async () => {
+      upstream.received.length = 0;
+      const result = await call(
+        "limited",
+        "POST",
+        "/v1/ask/reviews/rvw_1/confirm",
+      );
+      expect(result.status).toBe(403);
+      expect(result.code).toBe("limited_mode");
       expect(upstream.received).toHaveLength(0);
     });
   });

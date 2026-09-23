@@ -25,7 +25,6 @@ import {
   cancelRequest,
   prepareRequest,
   quoteMarketplace,
-  reviewOffers,
   selectOffer,
   fingerprintScope,
   type MarketplaceGrantScope,
@@ -381,7 +380,9 @@ describe("material change", () => {
       paymentMethodId: "pm_wallet",
     });
     const bidId = uid("bid");
-    // The live offer is on revision 1; the reviewer saw revision 0.
+    // The request was revised to revision 1 and the live offer is on it; the
+    // reviewer saw revision 0.
+    mp.seedRequest({ ...request, revision: 1 });
     mp.setOffers(request.requestId, [
       mpOffer({
         bidId,
@@ -574,21 +575,25 @@ describe("uncertain outcomes", () => {
         totalMinor: 250_000,
       }),
     ]);
-    // A prior selection already resolved into an award for this request.
-    mp.seedAward({
-      awardId: uid("mpaw"),
-      requestId: request.requestId,
-      bidId,
-      state: "confirmed",
-      requestVersion: 1,
-      bidVersion: 1,
-      driverId: uid("drv"),
-      requesterId: actor.id,
-      fareMinor: 250_000,
-      commissionMinor: 25_000,
-      slot: "current",
-      createdAt: new Date().toISOString(),
-    });
+    // A racing selection resolves into an award for this request AFTER our
+    // snapshot was read (so the request still looked open) and just before
+    // our selection arrives, which the marketplace answers as unresolved.
+    mp.onSelect = () => {
+      mp.seedAward({
+        awardId: uid("mpaw"),
+        requestId: request.requestId,
+        bidId,
+        state: "confirmed",
+        requestVersion: 1,
+        bidVersion: 1,
+        driverId: uid("drv"),
+        requesterId: actor.id,
+        fareMinor: 250_000,
+        commissionMinor: 25_000,
+        slot: "current",
+        createdAt: new Date().toISOString(),
+      });
+    };
     mp.unresolvedNextSelect = true;
 
     const result = await selectOffer(deps, {

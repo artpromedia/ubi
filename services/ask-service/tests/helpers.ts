@@ -560,8 +560,17 @@ export class FakeMarketplacePort implements MarketplacePort {
   crashNextSelect = false;
   /** When set, the next select() is definitively refused with this error. */
   refuseNextSelect: ContractError | null = null;
+  /** When set, the next prepareRequest() fails with this error (nothing stored). */
+  failNextPrepare: ContractError | null = null;
   /** Runs inside viewOffers — lets a test race a change against a selection. */
   onViewOffers: (() => Promise<void>) | null = null;
+  /**
+   * Runs at the start of select() — lets a test land a racing award AFTER the
+   * caller read its snapshot but before its selection arrives.
+   */
+  onSelect: (() => void) | null = null;
+  /** The marketplace's clock (request expiry); a test with its own clock sets it. */
+  now: () => Date = () => new Date();
   private readonly delayed = new Map<string, MpAward>();
 
   private readonly quotes = new Map<string, MpQuote>();
@@ -617,6 +626,11 @@ export class FakeMarketplacePort implements MarketplacePort {
     input: MpPrepareInput,
   ): Promise<MpRequest> {
     this.prepareCalls.push(input);
+    if (this.failNextPrepare !== null) {
+      const failure = this.failNextPrepare;
+      this.failNextPrepare = null;
+      throw failure;
+    }
     const replay = this.requestByPrepareKey.get(input.idempotencyKey);
     if (replay !== undefined) {
       return replay;
@@ -634,7 +648,7 @@ export class FakeMarketplacePort implements MarketplacePort {
       requesterId: actor.id,
       quoteId: input.quoteId,
       requestedFareMinor: input.requestedFareMinor,
-      expiresAt: new Date(Date.now() + 120_000).toISOString(),
+      expiresAt: new Date(this.now().getTime() + 120_000).toISOString(),
     };
     this.requests.set(request.requestId, request);
     this.requestByPrepareKey.set(input.idempotencyKey, request);
@@ -684,6 +698,11 @@ export class FakeMarketplacePort implements MarketplacePort {
 
   async select(actor: Actor, input: MpSelectInput): Promise<MpSelectResult> {
     this.selectCalls.push(input);
+    if (this.onSelect !== null) {
+      const hook = this.onSelect;
+      this.onSelect = null;
+      hook();
+    }
     // An ambiguous, racing outcome: the award may or may not exist yet. The
     // caller must converge by querying, never resubmit.
     if (this.unresolvedNextSelect) {

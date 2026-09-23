@@ -9,6 +9,15 @@
  */
 import { money, type Money } from "@ubi/contracts";
 
+import {
+  isMarketplaceReview,
+  MP_AUTHORITY_STATEMENT,
+  MP_REQUEST_PAYMENT_METHOD,
+  mpReviewView,
+  parseStoredMpReview,
+  type MpReviewView,
+} from "./mp-review";
+
 import type { ResolvedOffer } from "../ports/travel-port";
 
 export interface StoredReviewItem {
@@ -84,6 +93,8 @@ export interface ReviewItemView {
 
 export interface ReviewView {
   readonly id: string;
+  /** travel: supplier offers booked as separate orders; marketplace: one stage. */
+  readonly kind: "travel" | "marketplace";
   readonly status: string;
   readonly termsVersion: string;
   readonly expiresAt: string;
@@ -92,6 +103,8 @@ export interface ReviewView {
   readonly paymentMethod: { readonly id: string; readonly label: string };
   readonly assuranceRequired: "pin" | "biometric";
   readonly notes: readonly string[];
+  /** The structured marketplace review — persisted scope, revision, action. */
+  readonly marketplace?: MpReviewView;
 }
 
 export interface ReviewRowShape {
@@ -105,10 +118,60 @@ export interface ReviewRowShape {
   readonly paymentMethodId: string;
 }
 
+function marketplaceReviewView(row: ReviewRowShape): ReviewView {
+  const stored = parseStoredMpReview(row.items);
+  const view = mpReviewView(stored);
+  const [item] = stored.items;
+  const terms =
+    item.kind === "mp_selection"
+      ? [
+          { text: MP_AUTHORITY_STATEMENT, tone: "neutral" },
+          { text: item.commission.note, tone: "neutral" },
+        ]
+      : [
+          { text: MP_AUTHORITY_STATEMENT, tone: "neutral" },
+          {
+            text: "Publishing asks drivers for offers. No driver is booked until you approve an offer.",
+            tone: "neutral",
+          },
+        ];
+  return {
+    id: row.id,
+    kind: "marketplace",
+    status: row.status,
+    termsVersion: row.termsVersion,
+    expiresAt: row.expiresAt.toISOString(),
+    items: [
+      {
+        kind: item.kind,
+        title: item.title,
+        price: money(item.priceMinor, item.currency),
+        terms,
+        offerRef: item.kind === "mp_selection" ? item.bidId : item.quoteId,
+      },
+    ],
+    total: money(Number(row.totalMinor), row.currency),
+    paymentMethod: {
+      id: row.paymentMethodId,
+      label:
+        row.paymentMethodId === MP_REQUEST_PAYMENT_METHOD
+          ? "The payment method on your request"
+          : row.paymentMethodId,
+    },
+    assuranceRequired: stored.assuranceRequired,
+    notes: stored.notes,
+    marketplace: view,
+  };
+}
+
 export function reviewView(row: ReviewRowShape): ReviewView {
+  if (isMarketplaceReview(row.items)) {
+    return marketplaceReviewView(row);
+  }
   const stored = parseStoredReview(row.items);
   return {
     id: row.id,
+    kind: "travel",
     status: row.status,
     termsVersion: row.termsVersion,
     expiresAt: row.expiresAt.toISOString(),

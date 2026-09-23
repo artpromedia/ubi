@@ -113,6 +113,7 @@ interface World {
 
 function world(overrides: Partial<MarketplaceGrantScope> = {}): World {
   const mp = new FakeMarketplacePort();
+  mp.now = () => clock;
   const quote = mpQuote({ cityId, currency: "NGN", vehicleClass: "go" });
   mp.setQuote(quote);
   const deps = makeDeps(testDb(), { marketplace: mp, now: () => clock });
@@ -534,6 +535,7 @@ describe("mandate scope at selection", () => {
     // the server-issued quote — and so the authoritative request — is a
     // delivery. The service must come from the request, not the scope.
     const mp = new FakeMarketplacePort();
+    mp.now = () => clock;
     const quote = mpQuote({
       cityId,
       currency: "NGN",

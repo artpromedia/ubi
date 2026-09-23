@@ -282,9 +282,12 @@ describe("the city comes from the gateway, not the client", () => {
 
     vi.stubEnv("NODE_ENV", "production");
     try {
+      // In production the plain mirrors are not an identity at all: without
+      // the gateway-signed context the request is refused outright (the
+      // signed-context-without-a-city case is in identity-context.test.ts).
       const response = await openThreadOverHttp(declaredOnly);
-      expect(response.status).toBe(404);
-      expect(await response.json()).toMatchObject({ code: "city_unsupported" });
+      expect(response.status).toBe(401);
+      expect(await response.json()).toMatchObject({ code: "unauthorized" });
     } finally {
       vi.unstubAllEnvs();
     }

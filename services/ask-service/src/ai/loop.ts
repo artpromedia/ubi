@@ -70,6 +70,8 @@ export interface TurnInput {
   readonly threadId: string;
   readonly history: readonly StoredMessage[];
   readonly userText: string;
+  /** The gateway granted the marketplace scope (see AskToolContext). */
+  readonly marketplaceAllowed: boolean;
 }
 
 export interface TurnResult {
@@ -186,6 +188,7 @@ export async function runTurn(
     actor: input.actor,
     cityId: input.cityId,
     threadId: input.threadId,
+    marketplaceAllowed: input.marketplaceAllowed,
   };
   const tools = toolSpecsForRole(input.role);
   const events: AskEvent[] = [];

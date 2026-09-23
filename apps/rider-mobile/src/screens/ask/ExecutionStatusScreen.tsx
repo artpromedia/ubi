@@ -21,6 +21,7 @@ import { track, TID } from "@ubi/mobile-core";
 import type { AskStackParamList } from "../../navigation/routes";
 import { askApi, type ExecutionItem } from "../../api/ask";
 import { PlanCard } from "../../components/ask/QuoteCard";
+import { MarketplaceExecutionView } from "./MarketplaceExecutionView";
 
 const pillFor = (s: ExecutionItem["state"]) =>
   s === "confirmed" || s === "authorized" || s === "reserved"
@@ -32,7 +33,7 @@ const pillFor = (s: ExecutionItem["state"]) =>
         : s === "unknown_reconciling"
           ? "processing"
           : "supplier_pending";
-/** Board 20c — PROCESSING / PARTLY BOOKED / CONFIRMED / FAILED. Polls 15 s (realtime in RN-01). Copy never says "pay again". */
+/** Board 20c — PROCESSING / PARTLY BOOKED / CONFIRMED / FAILED. Polls 15 s (realtime in RN-01). Copy never says "pay again". A marketplace execution renders its own per-order view (MarketplaceExecutionView). */
 export function ExecutionStatusScreen() {
   const t = useTheme();
   const nav = useNavigation<{
@@ -91,7 +92,15 @@ export function ExecutionStatusScreen() {
         <View style={{ gap: 10 }}>
           <Skeleton height={24} width="40%" />
           <Skeleton height={140} />
+          {q.isError ? (
+            <Banner
+              tone="warn"
+              body="We can't load this right now. Nothing will be charged twice — check Activity or try again."
+            />
+          ) : null}
         </View>
+      ) : e.marketplace ? (
+        <MarketplaceExecutionView execution={e} />
       ) : (
         <>
           <StatusPill

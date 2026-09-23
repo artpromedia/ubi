@@ -272,10 +272,11 @@ describe("a model can never authorize an action on its own", () => {
         executions: 0,
       });
       // A proposal is at most a review awaiting the user — never confirmed,
-      // never bound to a grant.
-      // (The rider's propose_transaction turn made one; in the all-at-once turn
-      // the clarification ends the turn first.)
-      expect(effects.reviewStates.length).toBe(role === "rider" ? 1 : 0);
+      // never bound to a grant. (The rider's propose_transaction turn made a
+      // travel review and the mp.propose_selection turn a STRUCTURED
+      // marketplace review; in the all-at-once turn the clarification ends the
+      // turn first.)
+      expect(effects.reviewStates.length).toBe(role === "rider" ? 2 : 0);
       for (const [status, grantId] of effects.reviewStates) {
         expect(status).toBe("awaiting_confirmation");
         expect(grantId).toBeNull();

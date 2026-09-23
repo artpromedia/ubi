@@ -277,3 +277,41 @@ describe("partial outcome", () => {
     expect(states).toEqual(["confirmed", "failed_released"]);
   });
 });
+
+describe("one approval books once (verifier)", () => {
+  it("two racing confirms under different keys run exactly one execution", async () => {
+    const db = testDb();
+    const travel = new FakeTravelPort();
+    travel.setOffer(offer({ offerRef: "offR", termsVersion: "v1" }));
+    const deps = makeDeps(db, { travel });
+    const { reviewId } = await propose(deps, ["offR"]);
+
+    const attempt = (key: string) =>
+      confirmReview(deps, {
+        actor,
+        cityId,
+        reviewId,
+        termsVersion: "offR:v1",
+        assurance: { method: "pin", proof: uid("proof") },
+        idempotencyKey: key,
+        correlationId: null,
+      });
+    const results = await Promise.allSettled([
+      attempt(uid("ik-a")),
+      attempt(uid("ik-b")),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const refused = results.find(
+      (r): r is PromiseRejectedResult => r.status === "rejected",
+    );
+    expect(refused?.reason).toMatchObject({ code: "conflict" });
+    expect(await db.askExecution.count({ where: { reviewId } })).toBe(1);
+    expect(travel.booked).toHaveLength(1);
+    // The loser's grant was never consumed: its transaction rolled back.
+    const consumed = await db.actionGrant.count({
+      where: { actorId: actor.id, consumedAt: { not: null } },
+    });
+    expect(consumed).toBe(1);
+  });
+});

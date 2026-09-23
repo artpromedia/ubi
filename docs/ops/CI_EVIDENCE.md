@@ -20,6 +20,7 @@ row **G06** for why they were removed instead of left red or faked.
 | `unit-services` | `services/**` (minus Go) or shared paths (fixed below) changed, or push                     | `api-gateway`, `user-service`, `food-service`, `payment-service`, `notification-service` unit tests against real Postgres+Redis with migrations applied — **this is where payment-service's DB-backed ledger tests run** (deferred double-entry trigger, row locks, idempotency keys: the financial safety net). |
 | `unit-go`       | `services/ride-service\|delivery-service/**` or shared paths (fixed below) changed, or push | `go test -race` for ride-service and delivery-service against real Postgres (PostGIS) + Redis with migrations applied.                                                                                                                                                                                           |
 | `unit-travel`   | `services/**` or shared paths changed, or push                                              | travel-service (29 tests) against real Postgres+Redis with migrations applied; its payment-port integration test boots the real payment-service. Added by the P2 CI pass.                                                                                                                                        |
+| `unit-ask`      | `services/**`, ride-service (`go`) or shared paths changed, or push                         | ask-service (269 tests) against real Postgres+Redis with migrations applied. Boots the REAL user-service (the `/internal/grants` mint contract), payment-service and a ride-service binary built from source (`go build`) for the Ask → ride contract with signing enabled. Added by the P6 AI-execution slice.  |
 | `unit-growth`   | `services/**` or shared paths changed, or push                                              | growth-service (33 tests) against real Postgres with migrations applied (P2).                                                                                                                                                                                                                                    |
 | `unit-config`   | `services/**` or shared paths changed, or push                                              | config-service (100 tests) against real Postgres with migrations applied — includes the deny-by-default flag seed (P2).                                                                                                                                                                                          |
 | `unit-support`  | `services/**` or shared paths changed, or push                                              | support-service (55 tests) against real Postgres with migrations applied (P2).                                                                                                                                                                                                                                   |
@@ -59,10 +60,21 @@ re-verified from a clean clone on Node 20 and Node 22; no production-code
 changes were needed. Each is wired into `test-status`, so a failure fails the
 pipeline.
 
-**Still absent:** `ask-service`. Its suite is real and DB-backed
-(`ASK_TEST_DATABASE_URL`), but it was being changed by concurrent remediation
-slices when the other five were wired, so its job lands with the AI-execution
-slice. Until then, an ask-service regression is caught only by local runs.
+**Updated by the P6 AI-execution slice:** `ask-service` now runs as
+`unit-ask` (table above), wired into `test-status`. It mirrors `unit-travel`:
+its own database (`ubi_ask_test`), the full prisma migration chain applied
+into it, and `ASK_TEST_DATABASE_URL` / `ASK_TEST_REDIS_URL` pointing the
+suite at it. Unlike the other Node suites it also needs Go (`actions/setup-go`),
+because `tests/ride-service-contract.test.ts` builds ride-service from the
+checked-out source and drives quote → publish → select → cancel against the
+real process with `RIDE_INTERNAL_CONTEXT_SECRET` set, its money ports on the
+real payment-service; `tests/grant-port-user-service.test.ts` boots the real
+user-service. The job's steps were reproduced locally before landing, on
+Node 22 against a dedicated database already migrated to HEAD (not a fresh
+container, and not re-run on the job's Node 20): the build step, `prisma
+migrate deploy` (no pending migrations), then the suite with the job's env —
+25 files, 269 tests, all passing (re-run by the independent verifier after
+its fixes).
 
 ## What the removed E2E / consumer-pact / performance jobs needed
 

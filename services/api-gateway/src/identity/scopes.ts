@@ -57,6 +57,14 @@ export const SCOPES = [
   "mp:bid",
   "mp:admin:read",
   "support:write",
+  // Ask UBI (ask-service): converse = threads, messages, reading reviews and
+  // executions; transact = the explicit confirm that mints a grant and the
+  // reconcile that re-drives a confirmed execution.
+  "ask:converse",
+  "ask:transact",
+  // Standing authorisations (user-service /mandates): create, edit, pause,
+  // resume, revoke.
+  "mandate:manage",
   "admin:all",
 ] as const;
 
@@ -104,6 +112,9 @@ const RIDER_SCOPES: readonly Scope[] = [
   // Publish, revise, cancel and award negotiated-fare requests (M-series).
   "mp:request",
   "support:write",
+  "ask:converse",
+  "ask:transact",
+  "mandate:manage",
 ];
 
 const DRIVER_SCOPES: readonly Scope[] = [
@@ -157,6 +168,10 @@ export const LIMITED_MODE_SCOPES: readonly Scope[] = [
   "device:enroll",
   "auth:step_up",
   "support:write",
+  // The assistant's chat and its read-only answers survive limited mode; its
+  // confirm (ask:transact), its marketplace stages (mp:request) and standing
+  // authorisations (mandate:manage) do not.
+  "ask:converse",
 ];
 
 /** What wallet safe mode takes away, whatever the role. */
@@ -166,6 +181,9 @@ export const SAFE_MODE_DENIED_SCOPES: readonly Scope[] = [
   "security:pin:change",
   "security:phone:change",
   "security:contacts:change",
+  // Creating or editing a standing authorisation to spend is a security
+  // change: not while a SIM-swap signal holds the wallet.
+  "mandate:manage",
 ];
 
 export interface RouteRule {
@@ -281,6 +299,18 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   // authenticated role reached them and only the downstream role check
   // stood in the way.
   { methods: "*", prefix: "/v1/mp/driver", anyOf: ["mp:bid"] },
+  // Book for Later (A03). Scheduled requests, advance requests and recurring
+  // templates are requester actions; an advance booking has two parties
+  // (the engine enforces which of rider/driver may cancel, rematch,
+  // reconfirm or withdraw). The driver calendar rides on /v1/mp/driver.
+  { methods: "*", prefix: "/v1/mp/scheduled-requests", anyOf: ["mp:request"] },
+  { methods: "*", prefix: "/v1/mp/advance-requests", anyOf: ["mp:request"] },
+  { methods: "*", prefix: "/v1/mp/recurring-templates", anyOf: ["mp:request"] },
+  {
+    methods: "*",
+    prefix: "/v1/mp/advance-bookings",
+    anyOf: ["mp:request", "mp:bid"],
+  },
   { methods: ["GET"], prefix: "/v1/admin/mp", anyOf: ["mp:admin:read"] },
   // Commission-hold ledger endpoints are service-to-service (payment-service
   // verifies the service key); at the gateway only admin/service tokens may
@@ -290,6 +320,27 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/wallets/mp/holds", anyOf: ["admin:all"] },
   { methods: "*", prefix: "/v1/wallet/mp/funding", anyOf: ["admin:all"] },
   { methods: "*", prefix: "/v1/wallets/mp/funding", anyOf: ["admin:all"] },
+  // Ask UBI (ask-service). The chat, its reads and handoff need only
+  // ask:converse (it survives limited mode). The explicit confirm that mints
+  // a grant and the reconcile that re-drives a confirmed execution need
+  // ask:transact. The AI marketplace stages sit on the same scope as the
+  // human marketplace (/v1/mp): mp:request, off the limited-mode allowlist.
+  { methods: "*", prefix: "/v1/ask", anyOf: ["ask:converse"] },
+  { methods: ["POST"], prefix: "/v1/ask/reviews", anyOf: ["ask:transact"] },
+  {
+    methods: ["POST"],
+    prefix: "/v1/ask/executions",
+    anyOf: ["ask:transact"],
+  },
+  { methods: "*", prefix: "/v1/ask/mp", anyOf: ["mp:request"] },
+  // Mandates (user-service): reading your automations is a profile read;
+  // creating, editing, pausing, resuming or revoking one is mandate:manage.
+  { methods: ["GET"], prefix: "/v1/mandates", anyOf: ["profile:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/mandates",
+    anyOf: ["mandate:manage"],
+  },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
   { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },
   { methods: ["POST"], prefix: "/v1/packages", anyOf: ["shipment:create"] },

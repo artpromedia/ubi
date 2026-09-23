@@ -129,7 +129,13 @@ export function createDeps(): AskDeps {
       baseUrl: PROMOTIONS_SERVICE_URL,
       serviceKey,
     }),
-    grants: createHttpGrantPort({ baseUrl: USER_SERVICE_URL, serviceKey }),
+    // user-service authenticates the internal grant surface with
+    // AI_GRANTS_SERVICE_KEY (src/grants/service-auth.ts); the port refuses to
+    // mint without a key rather than send an unauthenticated request.
+    grants: createHttpGrantPort({
+      baseUrl: USER_SERVICE_URL,
+      serviceKey: process.env.AI_GRANTS_SERVICE_KEY ?? serviceKey,
+    }),
     support: createHttpSupportPort({
       baseUrl: SUPPORT_SERVICE_URL,
       serviceKey,
