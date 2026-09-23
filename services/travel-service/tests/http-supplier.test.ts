@@ -27,6 +27,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from "vitest";
 
 import { ContractError } from "@ubi/contracts";
@@ -44,13 +45,16 @@ import { createApp } from "../src/index";
 
 import {
   closeTestDb,
+  gatewayHeaders,
   headers,
   makeDeps,
   opsActor,
   resetTravel,
   seedCity,
   seedFlightSupplier,
+  stubIdentityKeys,
   TEST_DATABASE_URL,
+  TEST_IDENTITY_SECRET,
   testDb,
   uid,
 } from "./helpers";
@@ -76,6 +80,7 @@ afterAll(async () => {
 afterEach(() => {
   delete process.env[SECRET_ENV];
   process.env.NODE_ENV = savedNodeEnv;
+  vi.unstubAllEnvs();
   stub.reset();
 });
 
@@ -531,12 +536,15 @@ describe("the fixture adapter can never be selected in production configuration"
     ).toThrow(ContractError);
 
     const { deps } = makeDeps(db);
+    // In production the console opens only for the gateway-signed ops role.
+    stubIdentityKeys();
     const res = await createApp(deps).request(
       "/v1/ops/travel/providers/health",
       {
-        headers: headers(opsActor(), cityId),
+        headers: await gatewayHeaders(opsActor(), { declaredCityId: cityId }),
       },
     );
+    expect(res.status).toBe(200);
     const body = (await res.json()) as {
       providers: Array<Record<string, unknown>>;
     };
@@ -584,9 +592,11 @@ describe("the fixture adapter can never be selected in production configuration"
         PORT: "0",
         DATABASE_URL: TEST_DATABASE_URL,
         LOG_LEVEL: "fatal",
-        // Present, so the supplier guard (not the ride-context guard) is
-        // what refuses here; tests/ride-context.test.ts covers the other.
+        // Present, so the supplier guard (not the ride-context or identity
+        // guard) is what refuses here; tests/ride-context.test.ts and
+        // tests/travel-identity.test.ts cover the others.
         RIDE_INTERNAL_CONTEXT_SECRET: "boot-test-ride-context-key",
+        UBI_IDENTITY_SECRET: TEST_IDENTITY_SECRET,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

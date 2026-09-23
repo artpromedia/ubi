@@ -65,6 +65,13 @@ export const SCOPES = [
   // Standing authorisations (user-service /mandates): create, edit, pause,
   // resume, revoke.
   "mandate:manage",
+  // Travel (travel-service): read = search supplier inventory and read your
+  // own trips, orders, refunds and transfers; book = carts, checkout, cancel
+  // and switch (they price, authorize, refund or charge wallet money); ops =
+  // the travel-ops exception console.
+  "travel:read",
+  "travel:book",
+  "travel:ops",
   "admin:all",
 ] as const;
 
@@ -115,6 +122,10 @@ const RIDER_SCOPES: readonly Scope[] = [
   "ask:converse",
   "ask:transact",
   "mandate:manage",
+  // Search and book supplier-priced flights and stays (no driver bidding or
+  // commission: travel money moves on its own ledger accounts).
+  "travel:read",
+  "travel:book",
 ];
 
 const DRIVER_SCOPES: readonly Scope[] = [
@@ -172,6 +183,10 @@ export const LIMITED_MODE_SCOPES: readonly Scope[] = [
   // confirm (ask:transact), its marketplace stages (mp:request) and standing
   // authorisations (mandate:manage) do not.
   "ask:converse",
+  // Searching travel inventory and reading your own trips is a read, like
+  // ride:read; carts, checkout, cancel and switch (travel:book) and airport
+  // transfers (mp:request) move money and stay off this list.
+  "travel:read",
 ];
 
 /** What wallet safe mode takes away, whatever the role. */
@@ -344,6 +359,45 @@ export const ROUTE_RULES: readonly RouteRule[] = [
     prefix: "/v1/mandates",
     anyOf: ["mandate:manage"],
   },
+  // Travel (travel-service). Searching supplier inventory and reading your
+  // own trips, orders, refunds and disruptions are reads (travel:read, kept in
+  // limited mode like ride:read). Every other write under /v1/travel moves or
+  // commits wallet money — a cart prices a purchase, checkout authorizes the
+  // wallet, cancel refunds, switch may charge the difference — so it needs
+  // travel:book, off the limited-mode allowlist like every other money-moving
+  // route (wallet safe mode leaves booking alone, as it does for rides). The
+  // supplier webhooks under /v1/travel/webhooks are not proxied at all
+  // (routes/proxy-map.ts).
+  { methods: ["GET"], prefix: "/v1/travel", anyOf: ["travel:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/travel",
+    anyOf: ["travel:book"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/travel/flights/searches",
+    anyOf: ["travel:read"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/travel/stays/searches",
+    anyOf: ["travel:read"],
+  },
+  // Airport transfers: reading them is travel:read; creating, deciding or
+  // cancelling one makes, changes or cancels a marketplace ride request on
+  // ride-service, so it needs mp:request exactly as /v1/mp does (travel-
+  // service re-checks it on the signed context, since it reaches ride-service
+  // without passing this table).
+  { methods: ["GET"], prefix: "/v1/reservations", anyOf: ["travel:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/reservations",
+    anyOf: ["mp:request"],
+  },
+  // The travel-ops console: admin and service tokens only. travel-service
+  // re-checks an ops role on the signed context.
+  { methods: "*", prefix: "/v1/ops/travel", anyOf: ["travel:ops"] },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
   { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },
   { methods: ["POST"], prefix: "/v1/packages", anyOf: ["shipment:create"] },

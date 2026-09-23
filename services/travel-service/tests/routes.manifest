@@ -1,0 +1,35 @@
+# travel-service route manifest: every METHOD + Hono path the production
+# app (src/index.ts createApp) serves; middleware is left out.
+# GENERATED — do not edit by hand.
+# Regenerate: UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/travel-service exec vitest run tests/routes-manifest.test.ts
+# Read by services/api-gateway/tests/route-contract.test.ts.
+GET /health
+GET /health/ready
+GET /v1/ops/travel/commercial-rates
+GET /v1/ops/travel/exceptions
+GET /v1/ops/travel/providers/health
+GET /v1/reservations
+GET /v1/reservations/:transferId
+GET /v1/travel/flights/searches/:id
+GET /v1/travel/orders/:id
+GET /v1/travel/orders/:id/cancellation-quote
+GET /v1/travel/orders/:id/disruption
+GET /v1/travel/refunds/:id
+GET /v1/travel/stays/:propertyId/rates
+GET /v1/travel/trips/:id
+GET /v1/travel/trips/:id/linked
+POST /v1/ops/travel/commercial-rates
+POST /v1/ops/travel/exceptions/:id/actions
+POST /v1/ops/travel/flight-status
+POST /v1/ops/travel/orders/:id/settlement
+POST /v1/reservations
+POST /v1/reservations/:transferId/cancel
+POST /v1/reservations/:transferId/decision
+POST /v1/travel/carts
+POST /v1/travel/carts/:id/checkout
+POST /v1/travel/flights/searches
+POST /v1/travel/orders/:id/cancel
+POST /v1/travel/orders/:id/switch
+POST /v1/travel/stays/searches
+POST /v1/travel/webhooks/:supplierId
+PUT /v1/travel/carts/:id/passengers

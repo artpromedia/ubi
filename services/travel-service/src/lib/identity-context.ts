@@ -1,14 +1,16 @@
 /**
  * Verifying the API gateway's signed identity context (`x-ubi-identity`).
  *
- * Airport transfers make travel-service a SIGNER of the ride-service identity
- * (./ride-context.ts): what it signs must itself be proven, or anyone who can
- * reach travel-service on the service network could have it mint a signed
- * traveller identity for any user id and any city. So the transfer routes read
- * the caller from the gateway's signed context, exactly as ask-service — the
- * other delegated signer — does (services/ask-service/src/lib/identity-
- * context.ts is the source of this port; payment-service and user-service
- * verify the same claims with the same secret).
+ * EVERY travel-service client and ops route reads its caller from this context
+ * (middleware/auth.ts): who is booking, cancelling or acting on the ops console
+ * must be what the gateway proved — never a plain header that anyone on the
+ * service network could set. Airport transfers raise the stakes further: they
+ * make travel-service a SIGNER of the ride-service identity (./ride-context.ts),
+ * so an unverified caller could otherwise have it mint a signed traveller
+ * identity for any user id and any city. The verification is the same as
+ * ask-service's — the other delegated signer (services/ask-service/src/lib/
+ * identity-context.ts is the source of this port); payment-service and
+ * user-service verify the same claims with the same secret.
  *
  * The gateway validates the client's bearer token and mints a short-lived
  * compact HS256 JWS naming WHO the caller is (sub, role), WHAT this request may
@@ -23,10 +25,16 @@
  * `unauthorized`, so a probe learns nothing. The previous key
  * (UBI_IDENTITY_SECRET_PREVIOUS) also verifies, so the gateway can rotate with
  * no flag day.
+ *
+ * In production the key is a boot requirement (`assertIdentityConfigured`,
+ * called by index.ts before anything else): a service that can verify nothing
+ * must not start and answer traffic.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { ContractError } from "@ubi/contracts";
+
+import { isProductionEnvironment } from "./ride-context";
 
 export const IDENTITY_HEADER = "x-ubi-identity";
 
@@ -74,6 +82,31 @@ export function identityVerificationKeys(
   }
   const previous = keyFrom(env, "UBI_IDENTITY_SECRET_PREVIOUS");
   return previous === undefined ? [current] : [current, previous];
+}
+
+/**
+ * The boot-time check. In PRODUCTION a missing or unusable UBI_IDENTITY_SECRET
+ * throws — index.ts turns that into a refusal to start: every client route
+ * authenticates only via the signed context there, so without the key the
+ * service could answer nothing but 503s. Outside production an absent key is
+ * the documented unsigned development mode (middleware/auth.ts reads the plain
+ * mirrors) and this answers `false`, so the operator is told that a presented
+ * context will be answered 503 rather than trusted.
+ */
+export function assertIdentityConfigured(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  try {
+    identityVerificationKeys(env);
+    return true;
+  } catch (error) {
+    if (isProductionEnvironment(env.NODE_ENV)) {
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: in production travel-service authenticates every client and ops route with the gateway-signed identity context and never falls back to plain headers`,
+      );
+    }
+    return false;
+  }
 }
 
 function untrusted(): ContractError {

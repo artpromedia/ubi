@@ -224,6 +224,9 @@ describe("the RIDE_INTERNAL_CONTEXT_SECRET key list", () => {
       NODE_ENV: "production",
       PORT: "0",
       LOG_LEVEL: "fatal",
+      // Present, so the ride-context guard (not the identity guard, which
+      // runs first — tests/travel-identity.test.ts) is what refuses here.
+      UBI_IDENTITY_SECRET: "boot-test-identity-context-internal-key-0001",
     };
     delete env.RIDE_INTERNAL_CONTEXT_SECRET;
     const child = spawn(

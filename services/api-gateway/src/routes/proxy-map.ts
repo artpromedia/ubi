@@ -16,6 +16,8 @@
  *                                                        namespace removed
  *   notification-service /api/v1/notifications, …        /api/v1/<x>
  *   food-service         /restaurants, /menus, …         /<x>
+ *   travel-service       /v1/travel, /v1/reservations,   /v1/<x>
+ *                        /v1/ops/travel
  *
  * Before this table the gateway stripped `/v1` for every service, so
  * `/v1/mp/quote` reached ride-service as `/mp/quote` and `/v1/delivery/…` as
@@ -23,8 +25,8 @@
  * fake upstream accepted any path. tests/route-contract.test.ts now maps
  * representative client paths through THIS table and the real app, and checks
  * the result against the route manifests the services generate from their own
- * routers (ride-service, delivery-service and payment-service today), so a
- * rule or a service route that stops lining up fails CI.
+ * routers (ride-service, delivery-service, payment-service and travel-service
+ * today), so a rule or a service route that stops lining up fails CI.
  *
  * Only paths are decided here. Which headers cross, and the identity they
  * carry, are decided by middleware/identity.ts and routes/proxy.ts and are the
@@ -99,6 +101,11 @@ export const SERVICES = {
     fallback: "http://localhost:4013",
     basePath: "/v1",
   },
+  "travel-service": {
+    env: "TRAVEL_SERVICE_URL",
+    fallback: "http://localhost:4012",
+    basePath: "/v1",
+  },
 } as const satisfies Record<string, ServiceTarget>;
 
 export type ServiceName = keyof typeof SERVICES;
@@ -167,6 +174,31 @@ export const PROXY_RULES: readonly ProxyRule[] = [
   // `/mandates` and verifies the same signed context.
   { pattern: "/mandates", service: "user-service" },
   { pattern: "/mandates/*", service: "user-service" },
+
+  // Travel (travel-service) — mounts /v1/travel, /v1/reservations and
+  // /v1/ops/travel itself. travel-service reads the caller, role and city
+  // ONLY from the signed x-ubi-identity context in production (a declared
+  // x-city-id that disagrees with the token's city is refused there).
+  //
+  // The /v1/travel client families are listed one by one ON PURPOSE:
+  // travel-service also serves POST /v1/travel/webhooks/:supplierId, which
+  // suppliers (Duffel, LiteAPI) call DIRECTLY on travel-service with their
+  // own signatures over the raw body. It is not a client route, a blanket
+  // /travel/* rule would have exposed it to every token holder, and no rule
+  // here forwards it — tests/route-contract.test.ts pins that it answers the
+  // gateway's own 404.
+  { pattern: "/travel/flights/*", service: "travel-service" },
+  { pattern: "/travel/stays/*", service: "travel-service" },
+  { pattern: "/travel/carts/*", service: "travel-service" },
+  { pattern: "/travel/orders/*", service: "travel-service" },
+  { pattern: "/travel/refunds/*", service: "travel-service" },
+  { pattern: "/travel/trips/*", service: "travel-service" },
+  // Airport transfers: intents linked to a flight order that travel-service
+  // turns into Book for Later scheduled ride requests on ride-service.
+  { pattern: "/reservations/*", service: "travel-service" },
+  // The travel-ops exception console (apps/admin-dashboard). Only this
+  // /v1/ops family is proxied; /v1/ops/ai (ask-service) is not.
+  { pattern: "/ops/travel/*", service: "travel-service" },
 
   // Food Service
   // UNBACKED: food-service mounts no /food (it serves /restaurants, /menus,

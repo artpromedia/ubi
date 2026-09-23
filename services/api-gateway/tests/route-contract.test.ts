@@ -14,8 +14,8 @@
  *  1. The REAL mapping (src/routes/proxy-map.ts `downstreamPath`) is checked
  *     against the route manifest the target service generates by walking its
  *     own production router (ride-service and delivery-service: chi.Walk;
- *     payment-service: Hono's route table). Path parameters are normalised
- *     (`{id}` / `:id` match any one segment).
+ *     payment-service and travel-service: Hono's route table). Path
+ *     parameters are normalised (`{id}` / `:id` match any one segment).
  *  2. The request goes through the REAL app (createApp: auth, identity, scope,
  *     proxy) with one recording upstream per service, and must arrive at the
  *     right service at exactly that path, query string intact.
@@ -30,6 +30,11 @@
  * Services without a manifest yet (user-service, ask-service, food-service,
  * notification-service) are held to the exact downstream path only; their
  * expected paths were checked by hand against the services' route modules.
+ *
+ * Routes a service serves for suppliers or other services — never for a
+ * client token (travel-service's supplier webhooks) — are pinned the other
+ * way round: present in the service's manifest, and answered by the gateway's
+ * own 404 without reaching any service (SERVICE_ONLY_ROUTES).
  */
 import "./env";
 
@@ -87,6 +92,12 @@ const MANIFEST_SOURCES: Partial<Record<ServiceName, ManifestSource>> = {
     style: "hono",
     regenerate:
       "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/payment-service exec vitest run tests/routes-manifest.test.ts",
+  },
+  "travel-service": {
+    file: "services/travel-service/tests/routes.manifest",
+    style: "hono",
+    regenerate:
+      "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/travel-service exec vitest run tests/routes-manifest.test.ts",
   },
 };
 
@@ -154,16 +165,27 @@ function patternServes(
   return wantSegments.length === haveSegments.length;
 }
 
+/** Every manifest pattern that serves this method + concrete path. */
+function servingPatterns(
+  manifest: Manifest,
+  method: string,
+  concrete: string,
+): string[] {
+  return manifest.routes
+    .filter(
+      (route) =>
+        (route.method === method || route.method === "ALL") &&
+        patternServes(route.pattern, concrete, manifest.source.style),
+    )
+    .map((route) => route.pattern);
+}
+
 function manifestServes(
   manifest: Manifest,
   method: string,
   concrete: string,
 ): boolean {
-  return manifest.routes.some(
-    (route) =>
-      (route.method === method || route.method === "ALL") &&
-      patternServes(route.pattern, concrete, manifest.source.style),
-  );
+  return servingPatterns(manifest, method, concrete).length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +206,9 @@ interface ReachableCase {
 
 const RIDER = "apps/rider-mobile";
 const DRIVER = "apps/driver-mobile";
+const WEB_TRAVEL = "apps/web-app src/components/travel/api.ts";
+const ADMIN_OPS = "apps/admin-dashboard src/lib/growth-api.ts";
+const TRAVEL_API = "contracts/openapi/travel-v2.yaml";
 
 const REACHABLE: readonly ReachableCase[] = [
   // --- user-service: unversioned (/auth, /users, /devices, root routes) ---
@@ -689,6 +714,190 @@ const REACHABLE: readonly ReachableCase[] = [
     downstream: "/api/v1/notifications",
     source: "notification-service src/routes/in-app.ts",
   },
+
+  // --- travel-service: mounts /v1/travel, /v1/reservations, /v1/ops/travel ---
+  {
+    rule: "/travel/flights/*",
+    method: "POST",
+    path: "/v1/travel/flights/searches",
+    downstream: "/v1/travel/flights/searches",
+    source: `${RIDER} src/api/travel.ts searchFlights, ${WEB_TRAVEL} useFlightSearch`,
+  },
+  {
+    rule: "/travel/flights/*",
+    method: "GET",
+    path: "/v1/travel/flights/searches/srch_1",
+    downstream: "/v1/travel/flights/searches/srch_1",
+    source: `${RIDER} src/api/travel.ts refreshFlights`,
+  },
+  {
+    rule: "/travel/stays/*",
+    method: "POST",
+    path: "/v1/travel/stays/searches",
+    downstream: "/v1/travel/stays/searches",
+    source: TRAVEL_API,
+  },
+  {
+    rule: "/travel/stays/*",
+    method: "GET",
+    path: "/v1/travel/stays/prop_1/rates?searchId=srch_1",
+    downstream: "/v1/travel/stays/prop_1/rates",
+    source: `${RIDER} src/api/travel.ts rates`,
+  },
+  {
+    rule: "/travel/carts/*",
+    method: "POST",
+    path: "/v1/travel/carts",
+    downstream: "/v1/travel/carts",
+    source: `${RIDER} src/api/travel.ts createCart`,
+  },
+  {
+    rule: "/travel/carts/*",
+    method: "PUT",
+    path: "/v1/travel/carts/cart_1/passengers",
+    downstream: "/v1/travel/carts/cart_1/passengers",
+    source: `${RIDER} src/api/travel.ts putPassengers`,
+  },
+  {
+    rule: "/travel/carts/*",
+    method: "POST",
+    path: "/v1/travel/carts/cart_1/checkout",
+    downstream: "/v1/travel/carts/cart_1/checkout",
+    source: `${RIDER} src/api/travel.ts checkout`,
+  },
+  {
+    rule: "/travel/orders/*",
+    method: "GET",
+    path: "/v1/travel/orders/ord_1",
+    downstream: "/v1/travel/orders/ord_1",
+    source: `${RIDER} src/api/travel.ts order`,
+  },
+  {
+    rule: "/travel/orders/*",
+    method: "GET",
+    path: "/v1/travel/orders/ord_1/cancellation-quote",
+    downstream: "/v1/travel/orders/ord_1/cancellation-quote",
+    source: "travel-service src/routes/travel.ts",
+  },
+  {
+    rule: "/travel/orders/*",
+    method: "POST",
+    path: "/v1/travel/orders/ord_1/cancel",
+    downstream: "/v1/travel/orders/ord_1/cancel",
+    source: `${RIDER} src/api/travel.ts requestRefund`,
+  },
+  {
+    rule: "/travel/orders/*",
+    method: "GET",
+    path: "/v1/travel/orders/ord_1/disruption",
+    downstream: "/v1/travel/orders/ord_1/disruption",
+    source: `${RIDER} src/api/travel.ts disruption`,
+  },
+  {
+    rule: "/travel/orders/*",
+    method: "POST",
+    path: "/v1/travel/orders/ord_1/switch",
+    downstream: "/v1/travel/orders/ord_1/switch",
+    source: `${RIDER} src/api/travel.ts switchTo`,
+  },
+  {
+    rule: "/travel/refunds/*",
+    method: "GET",
+    path: "/v1/travel/refunds/rfd_1",
+    downstream: "/v1/travel/refunds/rfd_1",
+    source: `${RIDER} src/api/travel.ts refund`,
+  },
+  {
+    rule: "/travel/trips/*",
+    method: "GET",
+    path: "/v1/travel/trips/trp_1",
+    downstream: "/v1/travel/trips/trp_1",
+    source: `${RIDER} src/api/travel.ts trip, ${WEB_TRAVEL} useTrip`,
+  },
+  {
+    rule: "/travel/trips/*",
+    method: "GET",
+    path: "/v1/travel/trips/trp_1/linked",
+    downstream: "/v1/travel/trips/trp_1/linked",
+    source: `${RIDER} src/api/travel.ts linked`,
+  },
+  {
+    rule: "/reservations/*",
+    method: "GET",
+    path: "/v1/reservations?linkedOrderId=ord_1",
+    downstream: "/v1/reservations",
+    source: TRAVEL_API,
+  },
+  {
+    rule: "/reservations/*",
+    method: "POST",
+    path: "/v1/reservations",
+    downstream: "/v1/reservations",
+    source: `${RIDER} src/api/travel.ts reserve, ${TRAVEL_API}`,
+  },
+  {
+    rule: "/reservations/*",
+    method: "GET",
+    path: "/v1/reservations/trf_1",
+    downstream: "/v1/reservations/trf_1",
+    source: TRAVEL_API,
+  },
+  {
+    rule: "/reservations/*",
+    method: "POST",
+    path: "/v1/reservations/trf_1/decision",
+    downstream: "/v1/reservations/trf_1/decision",
+    source: TRAVEL_API,
+  },
+  {
+    rule: "/reservations/*",
+    method: "POST",
+    path: "/v1/reservations/trf_1/cancel",
+    downstream: "/v1/reservations/trf_1/cancel",
+    source: TRAVEL_API,
+  },
+  {
+    rule: "/ops/travel/*",
+    method: "GET",
+    path: "/v1/ops/travel/exceptions",
+    downstream: "/v1/ops/travel/exceptions",
+    source: `${ADMIN_OPS} travelExceptions`,
+  },
+  {
+    rule: "/ops/travel/*",
+    method: "POST",
+    path: "/v1/ops/travel/exceptions/ord_1/actions",
+    downstream: "/v1/ops/travel/exceptions/ord_1/actions",
+    source: `${ADMIN_OPS} travelAction`,
+  },
+  {
+    rule: "/ops/travel/*",
+    method: "GET",
+    path: "/v1/ops/travel/providers/health",
+    downstream: "/v1/ops/travel/providers/health",
+    source: `${ADMIN_OPS} providerHealth`,
+  },
+  {
+    rule: "/ops/travel/*",
+    method: "POST",
+    path: "/v1/ops/travel/flight-status",
+    downstream: "/v1/ops/travel/flight-status",
+    source: TRAVEL_API,
+  },
+  {
+    rule: "/ops/travel/*",
+    method: "GET",
+    path: "/v1/ops/travel/commercial-rates?supplierId=sup_1",
+    downstream: "/v1/ops/travel/commercial-rates",
+    source: "contracts/openapi/growth-ops.yaml (commercial rates)",
+  },
+  {
+    rule: "/ops/travel/*",
+    method: "POST",
+    path: "/v1/ops/travel/orders/ord_1/settlement",
+    downstream: "/v1/ops/travel/orders/ord_1/settlement",
+    source: "travel-service src/routes/ops.ts (settlement recon)",
+  },
 ];
 
 interface UnbackedRule {
@@ -810,25 +1019,49 @@ const ABSENT_SERVICE_DIRS: Partial<Record<ServiceName, string>> = {
  * only the mapping is pinned (the gap was checked by hand against the
  * service's route module).
  */
-const KNOWN_CLIENT_GAPS: readonly (ReachableCase & { readonly gap: string })[] =
-  [
-    {
-      rule: "/wallet/*",
-      method: "POST",
-      path: "/v1/wallet/mp/topups",
-      downstream: "/v1/wallet/mp/topups",
-      source: `${DRIVER} src/api/marketplace.ts topup`,
-      gap: "payment-service serves POST /v1/wallet/topups, not /v1/wallet/mp/topups",
-    },
-    {
-      rule: "/mandates/*",
-      method: "GET",
-      path: "/v1/mandates/executions/exe_1",
-      downstream: "/mandates/executions/exe_1",
-      source: `${RIDER} src/api/mandates.ts execution (MandateReceiptScreen)`,
-      gap: "user-service serves GET /mandates/:id/executions (the list), not GET /mandates/executions/:executionId",
-    },
-  ];
+const KNOWN_CLIENT_GAPS: readonly (ReachableCase & {
+  readonly gap: string;
+  /**
+   * A parameter route of the service that ALSO matches the path, and answers
+   * not_found for it (e.g. `/:transferId` capturing `/suggest`). The check
+   * then requires that route to be the ONLY one serving the path.
+   */
+  readonly capturedBy?: string;
+})[] = [
+  {
+    rule: "/wallet/*",
+    method: "POST",
+    path: "/v1/wallet/mp/topups",
+    downstream: "/v1/wallet/mp/topups",
+    source: `${DRIVER} src/api/marketplace.ts topup`,
+    gap: "payment-service serves POST /v1/wallet/topups, not /v1/wallet/mp/topups",
+  },
+  {
+    rule: "/mandates/*",
+    method: "GET",
+    path: "/v1/mandates/executions/exe_1",
+    downstream: "/mandates/executions/exe_1",
+    source: `${RIDER} src/api/mandates.ts execution (MandateReceiptScreen)`,
+    gap: "user-service serves GET /mandates/:id/executions (the list), not GET /mandates/executions/:executionId",
+  },
+  {
+    rule: "/travel/carts/*",
+    method: "GET",
+    path: "/v1/travel/carts/cart_1",
+    downstream: "/v1/travel/carts/cart_1",
+    source: `${RIDER} src/api/travel.ts cart`,
+    gap: "travel-service serves no GET /v1/travel/carts/:id; the cart view comes back from POST /v1/travel/carts and PUT /v1/travel/carts/:id/passengers",
+  },
+  {
+    rule: "/reservations/*",
+    method: "GET",
+    path: "/v1/reservations/suggest?linkedOrderId=ord_1&direction=arrival_pickup",
+    downstream: "/v1/reservations/suggest",
+    source: `${RIDER} src/api/travel.ts reservationSuggestion`,
+    gap: "travel-service serves no pickup suggestion; GET /v1/reservations/:transferId captures the path and answers not_found for transfer id 'suggest'",
+    capturedBy: "/v1/reservations/:transferId",
+  },
+];
 
 /**
  * Families real clients call that NO gateway rule proxies: the gateway itself
@@ -841,18 +1074,6 @@ const UNPROXIED_CLIENT_CALLS: readonly {
   readonly servedBy: string;
   readonly source: string;
 }[] = [
-  {
-    method: "GET",
-    path: "/v1/travel/trips/trp_1",
-    servedBy: "travel-service /v1/travel",
-    source: `${RIDER} src/api/travel.ts, apps/web-app travel`,
-  },
-  {
-    method: "GET",
-    path: "/v1/reservations",
-    servedBy: "travel-service /v1/reservations",
-    source: `${RIDER} src/api/travel.ts`,
-  },
   {
     method: "GET",
     path: "/v1/benefits",
@@ -912,6 +1133,34 @@ const UNPROXIED_CLIENT_CALLS: readonly {
     path: "/v1/ai/marketing/threads/thr_1/messages",
     servedBy: "growth-service /v1/ai/marketing",
     source: "apps/admin-dashboard src/lib/growth-api.ts assistant",
+  },
+];
+
+/**
+ * Routes a service serves for suppliers or other services — NEVER for a
+ * client token — that no gateway rule may forward. Each must exist in the
+ * service's manifest (so the check cannot pass vacuously) and must answer the
+ * gateway's own 404 without reaching any service.
+ */
+const SERVICE_ONLY_ROUTES: readonly {
+  readonly service: ServiceName;
+  readonly method: string;
+  /** The gateway path a client would try (the service's own path too). */
+  readonly path: string;
+  readonly reason: string;
+}[] = [
+  {
+    service: "travel-service",
+    method: "POST",
+    path: "/v1/travel/webhooks/sup_duffel",
+    reason:
+      "supplier callbacks (Duffel, LiteAPI) are verified by each supplier's own signature over the raw body and are delivered to travel-service directly, never through the client gateway",
+  },
+  {
+    service: "travel-service",
+    method: "POST",
+    path: "/v1/travel/webhooks/sup_liteapi",
+    reason: "as above (LiteAPI's authorization token)",
   },
 ];
 
@@ -1029,6 +1278,18 @@ describe("the proxy inventory covers every rule", () => {
     ).toEqual([]);
   });
 
+  it("forwards no service-only route: each exists in its manifest and no rule pattern reaches it", () => {
+    for (const entry of SERVICE_ONLY_ROUTES) {
+      const manifest = loadManifest(entry.service);
+      expect(manifest, `${entry.service} publishes a manifest`).toBeDefined();
+      if (manifest === undefined) continue;
+      expect(
+        manifestServes(manifest, entry.method, entry.path),
+        `${entry.service} no longer serves ${entry.method} ${entry.path}: update SERVICE_ONLY_ROUTES`,
+      ).toBe(true);
+    }
+  });
+
   it("declares no case for a rule that does not exist, and no rule twice", () => {
     for (const entry of [...REACHABLE, ...UNBACKED, ...KNOWN_CLIENT_GAPS]) {
       expect(() => ruleFor(entry.rule)).not.toThrow();
@@ -1142,10 +1403,27 @@ describe("known client/service mismatches stay visible", () => {
       const manifest = loadManifest(rule.service);
       if (manifest !== undefined) {
         expect(
-          manifestServes(manifest, gap.method, mapped),
+          servingPatterns(manifest, gap.method, mapped),
           `${rule.service} now serves ${gap.method} ${mapped} — move ${gap.path} to REACHABLE (was: ${gap.gap})`,
-        ).toBe(false);
+        ).toEqual(gap.capturedBy === undefined ? [] : [gap.capturedBy]);
       }
+    },
+  );
+});
+
+describe("service-only routes are never reachable through the gateway", () => {
+  it.each(
+    SERVICE_ONLY_ROUTES.map((entry) => [entry.method, entry.path, entry]),
+  )(
+    "%s %s answers the gateway's own 404",
+    async (method, clientPath, entry) => {
+      const result = await sendThroughGateway(method, clientPath);
+      expect(
+        result.status,
+        `${clientPath} reached a proxy rule — ${entry.reason}`,
+      ).toBe(404);
+      expect(result.code).toBe("NOT_FOUND");
+      expect(result.arrivals).toEqual([]);
     },
   );
 });
@@ -1195,6 +1473,12 @@ describe("downstreamPath", () => {
     expect(
       downstreamPath(ruleFor("/notifications/*"), "/v1/notifications/n_1/read"),
     ).toBe("/api/v1/notifications/n_1/read");
+    expect(
+      downstreamPath(ruleFor("/travel/trips/*"), "/v1/travel/trips/trp_1"),
+    ).toBe("/v1/travel/trips/trp_1");
+    expect(
+      downstreamPath(ruleFor("/ops/travel/*"), "/v1/ops/travel/exceptions"),
+    ).toBe("/v1/ops/travel/exceptions");
   });
 });
 

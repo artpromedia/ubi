@@ -17,6 +17,12 @@
  *
  * The double-entry ledger is NOT here: travel money moves through a typed
  * PaymentPort HTTP call to payment-service.
+ *
+ * Every client and ops route reads its caller, role and city from the API
+ * gateway's signed `x-ubi-identity` context (middleware/auth.ts); production
+ * refuses to boot without UBI_IDENTITY_SECRET and never falls back to plain
+ * headers. Supplier webhooks keep their own per-supplier signatures and are
+ * never forwarded by the gateway (suppliers call this service directly).
  */
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -25,6 +31,7 @@ import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
 import { assertProductionSupplyConfig } from "./adapters/production-guard";
+import { assertIdentityConfigured } from "./lib/identity-context";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis } from "./lib/redis";
@@ -88,17 +95,23 @@ export function createApp(deps: TravelDeps): Hono {
 
 async function main(): Promise<void> {
   let deps: TravelDeps;
-  // Production configuration never serves a test-only supply adapter, and
-  // never calls ride-service without a signing key: refuse to boot rather
-  // than let a fixture catalog take a real booking or a traveller's airport
-  // ride go out unsigned.
+  // Production configuration never authenticates a caller it cannot verify,
+  // never serves a test-only supply adapter, and never calls ride-service
+  // without a signing key: refuse to boot rather than trust a plain identity
+  // header, let a fixture catalog take a real booking or let a traveller's
+  // airport ride go out unsigned.
   try {
+    if (!assertIdentityConfigured(process.env)) {
+      logger.warn(
+        "UBI_IDENTITY_SECRET is not set: routes read the plain X-User-ID / X-User-Role headers and answer a signed gateway context 503 (development only)",
+      );
+    }
     deps = createDeps();
     await assertProductionSupplyConfig(deps.db);
   } catch (error) {
     logger.fatal(
       { err: error },
-      "refusing to start: unsafe supplier or ride-context configuration",
+      "refusing to start: unsafe identity, supplier or ride-context configuration",
     );
     process.stderr.write(
       `travel-service refusing to start: ${error instanceof Error ? error.message : String(error)}\n`,

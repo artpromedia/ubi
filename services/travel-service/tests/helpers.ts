@@ -18,12 +18,15 @@
 import { randomUUID } from "node:crypto";
 
 import { PrismaClient } from "@prisma/client";
+import { vi } from "vitest";
 
 import { ContractError, money } from "@ubi/contracts";
 
+import { signIdentityContext } from "../../api-gateway/src/identity/context";
 import { createCityConfigProvider } from "../src/ops/config";
 import { RideUnavailableError } from "../src/ports/ride-port";
 
+import type { Scope } from "../../api-gateway/src/identity/scopes";
 import type { TravelDeps } from "../src/ops/context";
 import type {
   PaymentPort,
@@ -797,6 +800,107 @@ export function headers(
     "X-City-ID": cityId,
     ...extra,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The gateway-signed identity context (production shape)
+// ---------------------------------------------------------------------------
+
+/** The internal key the gateway signs with and travel-service verifies with. */
+export const TEST_IDENTITY_SECRET =
+  "travel-identity-context-test-internal-secret-01";
+/** The client-facing key; the gateway refuses to sign if the two are equal. */
+export const TEST_CLIENT_SECRET =
+  "travel-identity-context-test-client-secret-01";
+
+/**
+ * Configures the shared internal identity key for one test. Callers undo it
+ * with `vi.unstubAllEnvs()` in their `afterEach`.
+ */
+export function stubIdentityKeys(): void {
+  vi.stubEnv("UBI_IDENTITY_SECRET", TEST_IDENTITY_SECRET);
+  vi.stubEnv("UBI_IDENTITY_KEY_ID", "test-k1");
+  vi.stubEnv("JWT_SECRET", TEST_CLIENT_SECRET);
+}
+
+/** What the gateway grants a full-mode rider on the travel routes. */
+export const TRAVELLER_SCOPES = [
+  "profile:read",
+  "ride:read",
+  "mp:request",
+  "travel:read",
+  "travel:book",
+] as const;
+
+export interface GatewayIdentityOptions {
+  /** Defaults to the actor's role. */
+  readonly role?: string;
+  /** The token's city; null for a context bound to no city (the default). */
+  readonly cityId?: string | null;
+  readonly scopes?: readonly string[];
+  readonly modes?: readonly string[];
+  /** Seconds until expiry; the gateway uses 120. A negative value is expired. */
+  readonly ttlSeconds?: number;
+}
+
+/**
+ * An `x-ubi-identity` context minted by the REAL gateway signer
+ * (services/api-gateway/src/identity/context.ts), so an issuer/verifier drift
+ * turns the identity tests red. Needs `stubIdentityKeys()` (or equivalent).
+ */
+export async function gatewayContext(
+  actor: { id: string; role: string },
+  options: GatewayIdentityOptions = {},
+): Promise<string> {
+  const token = await signIdentityContext(
+    {
+      userId: actor.id,
+      role: options.role ?? actor.role,
+      scopes: [...(options.scopes ?? TRAVELLER_SCOPES)] as Scope[],
+      modes: [...(options.modes ?? [])] as never[],
+      cityId: options.cityId === undefined ? null : options.cityId,
+      tenantId: null,
+      sessionId: null,
+      deviceId: null,
+      requestId: `req-${randomUUID()}`,
+    },
+    options.ttlSeconds,
+  );
+  return token;
+}
+
+/**
+ * Exactly the identity headers the gateway forwards for a verified caller
+ * (services/api-gateway/src/middleware/identity.ts): the signed context, its
+ * plain mirrors, and — when the token is bound to a city — the two city
+ * mirrors written from that claim. `declaredCityId` is the client's own
+ * `X-City-ID`, which the gateway passes through untouched.
+ */
+export async function gatewayHeaders(
+  actor: { id: string; role: string },
+  options: GatewayIdentityOptions & {
+    readonly declaredCityId?: string;
+    readonly extra?: Record<string, string>;
+  } = {},
+): Promise<Record<string, string>> {
+  const role = options.role ?? actor.role;
+  const cityId = options.cityId === undefined ? null : options.cityId;
+  const out: Record<string, string> = {
+    "content-type": "application/json",
+    "x-ubi-identity": await gatewayContext(actor, options),
+    "x-user-id": actor.id,
+    "x-user-role": role,
+    "x-auth-user-id": actor.id,
+    "x-auth-user-role": role,
+  };
+  if (cityId !== null) {
+    out["x-ubi-city-id"] = cityId;
+    out["x-auth-city-id"] = cityId;
+  }
+  if (options.declaredCityId !== undefined) {
+    out["X-City-ID"] = options.declaredCityId;
+  }
+  return { ...out, ...(options.extra ?? {}) };
 }
 
 export { money };

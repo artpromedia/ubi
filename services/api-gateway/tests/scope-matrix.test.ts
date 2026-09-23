@@ -25,6 +25,7 @@ beforeAll(async () => {
   process.env.PAYMENT_SERVICE_URL = upstream.url;
   process.env.NOTIFICATION_SERVICE_URL = upstream.url;
   process.env.ASK_SERVICE_URL = upstream.url;
+  process.env.TRAVEL_SERVICE_URL = upstream.url;
 });
 
 afterAll(async () => {
@@ -331,6 +332,88 @@ const MATRIX: readonly MatrixCase[] = [
     limited: "deny",
     safe: "deny",
   },
+  // Travel (travel-service): searching and reading your own trips survive
+  // limited mode, like ride:read; carts, checkout, cancel and switch move
+  // wallet money and do not. Airport transfers ride on mp:request, off the
+  // limited-mode allowlist like every /v1/mp route. Safe mode leaves booking
+  // alone, as it does for rides.
+  {
+    method: "GET",
+    path: "/v1/travel/trips/trp_1",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/travel/flights/searches",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/travel/stays/searches",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/travel/carts",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "PUT",
+    path: "/v1/travel/carts/cart_1/passengers",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/travel/carts/cart_1/checkout",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/travel/orders/ord_1/cancel",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/travel/orders/ord_1/switch",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "GET",
+    path: "/v1/reservations",
+    full: "allow",
+    limited: "allow",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/reservations",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
+  {
+    method: "POST",
+    path: "/v1/reservations/trf_1/cancel",
+    full: "allow",
+    limited: "deny",
+    safe: "allow",
+  },
 ];
 
 describe("limited mode and wallet safe mode scope matrix", () => {
@@ -549,6 +632,57 @@ describe("limited mode and wallet safe mode scope matrix", () => {
       const result = await call("limited", "POST", "/v1/mp/bids", "driver");
       expect(result.status).toBe(403);
       expect(upstream.received).toHaveLength(0);
+    });
+  });
+
+  describe("travel scopes", () => {
+    it("lets riders and drivers search and book travel, but not a merchant", async () => {
+      for (const role of ["rider", "driver"]) {
+        expect(
+          (await call("full", "POST", "/v1/travel/carts", role)).status,
+          role,
+        ).toBe(200);
+        expect(
+          (await call("full", "GET", "/v1/travel/orders/ord_1", role)).status,
+          role,
+        ).toBe(200);
+      }
+      for (const path of ["/v1/travel/carts", "/v1/travel/flights/searches"]) {
+        const merchant = await call("full", "POST", path, "merchant");
+        expect(merchant.status, path).toBe(403);
+        expect(merchant.code).toBe("forbidden");
+      }
+    });
+
+    it("refuses a limited-mode checkout as a mode restriction, never reaching travel-service", async () => {
+      upstream.received.length = 0;
+      const result = await call(
+        "limited",
+        "POST",
+        "/v1/travel/carts/cart_1/checkout",
+      );
+      expect(result.status).toBe(403);
+      expect(result.code).toBe("limited_mode");
+      expect(upstream.received).toHaveLength(0);
+    });
+
+    it("reserves the travel-ops console for admin tokens", async () => {
+      for (const [method, path] of [
+        ["GET", "/v1/ops/travel/exceptions"],
+        ["POST", "/v1/ops/travel/exceptions/ord_1/actions"],
+        ["GET", "/v1/ops/travel/providers/health"],
+        ["POST", "/v1/ops/travel/flight-status"],
+      ] as const) {
+        expect(
+          (await call("full", method, path, "admin")).status,
+          `${method} ${path}`,
+        ).toBe(200);
+        for (const role of ["rider", "driver", "merchant"]) {
+          const refused = await call("full", method, path, role);
+          expect(refused.status, `${role} ${method} ${path}`).toBe(403);
+          expect(refused.code).toBe("forbidden");
+        }
+      }
     });
   });
 

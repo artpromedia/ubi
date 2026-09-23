@@ -87,6 +87,15 @@ export function createApp(
         "Authorization",
         "X-Request-ID",
         "X-Idempotency-Key",
+        // The idempotency header every money/state POST carries (travel
+        // carts and checkout among them), and the client's DECLARED city.
+        // Neither is an identity claim: the token's city travels only in the
+        // reserved x-ubi-city-id / x-auth-city-id headers the gateway writes,
+        // and travel-service refuses a declared city that disagrees with it
+        // (an unbound operator's X-City-ID names the city a console action is
+        // for).
+        "Idempotency-Key",
+        "X-City-ID",
       ],
       exposeHeaders: [
         "X-Request-ID",
