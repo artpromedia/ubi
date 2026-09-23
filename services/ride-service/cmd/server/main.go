@@ -22,7 +22,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/go-chi/httprate"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -159,9 +158,15 @@ func main() {
 	rideHandler := handler.NewRideHandler(runtime.Service, log.Logger)
 	locationHandler := handler.NewLocationHandler(runtime.Maps)
 
+	// Who a request is counted as (internal/handler/ratelimit.go): the verified
+	// ride-context actor, else the client address — forwarded headers are
+	// believed only from RIDE_TRUSTED_PROXIES (the gateway), never from anyone.
+	limiter := handler.NewRateLimiter(verifier, getEnv(handler.EnvTrustedProxies, ""),
+		handler.DefaultRateLimit, handler.DefaultRateLimitWindow, log.Logger)
+
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
+	router.Use(limiter.ClientAddress)
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.Timeout(30 * time.Second))
 	router.Use(middleware.Compress(5))
@@ -182,7 +187,7 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
-	router.Use(httprate.LimitByIP(300, time.Minute))
+	router.Use(limiter.Limit)
 
 	// Belt and braces for the fatal above: were the process somehow running in
 	// production without signature checking, readiness would still never say

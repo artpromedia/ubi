@@ -74,11 +74,17 @@ beforeEach(() => {
   resetTripAccessLimiter();
 });
 
+/**
+ * One call arriving from `peer` — the socket address the gateway limits and
+ * forwards (middleware/client-address.ts). Headers can no longer name the
+ * client: no proxy is trusted here.
+ */
 async function send(
   method: string,
   path: string,
   headers: Record<string, string>,
   body?: string,
+  peer: string = nextClient(),
 ): Promise<Response> {
   const response = await app.fetch(
     new Request(`http://gateway.test${path}`, {
@@ -86,6 +92,7 @@ async function send(
       headers,
       ...(body === undefined ? {} : { body }),
     }),
+    { incoming: { socket: { remoteAddress: peer } }, outgoing: {} },
   );
   return response;
 }
@@ -139,10 +146,12 @@ describe("the passenger trip link", () => {
           ...(await forgedHeaders()),
           "x-trip-access-token": TOKEN,
           "idempotency-key": "idem-trip-decline-01",
-          "x-forwarded-for": `${client}, 172.16.0.9`,
+          // A chain the client wrote: ignored, it names nobody.
+          "x-forwarded-for": "198.51.100.9, 172.16.0.9",
           "x-request-id": "req-trip-link-0001",
         },
         method === "POST" ? JSON.stringify({ reason: "not me" }) : undefined,
+        client,
       );
 
       expect(response.status).toBe(200);
@@ -157,7 +166,7 @@ describe("the passenger trip link", () => {
       const headers = arrived?.headers ?? {};
       expect(headers["x-trip-access-token"]).toBe(TOKEN);
       expect(headers["x-request-id"]).toBe("req-trip-link-0001");
-      // The one address the gateway limited on — never the client's chain.
+      // The one address the gateway limited on (the peer) — never the chain.
       expect(headers["x-forwarded-for"]).toBe(client);
       if (method === "POST") {
         expect(headers["idempotency-key"]).toBe("idem-trip-decline-01");
@@ -199,19 +208,29 @@ describe("the passenger trip link", () => {
   it("rate limits each client before forwarding, and leaves other clients alone", async () => {
     const client = nextClient();
     for (let i = 0; i < TRIP_ACCESS_RATE_LIMIT.points; i += 1) {
-      const allowed = await send("GET", "/v1/mp/trip-access", {
-        "x-trip-access-token": TOKEN,
-        "x-forwarded-for": client,
-      });
+      const allowed = await send(
+        "GET",
+        "/v1/mp/trip-access",
+        {
+          "x-trip-access-token": TOKEN,
+          // Rotating the header buys nothing: the peer is the client.
+          "x-forwarded-for": nextClient(),
+        },
+        undefined,
+        client,
+      );
       expect(allowed.status, `call ${i + 1}`).toBe(200);
     }
     expect(ride.received).toHaveLength(TRIP_ACCESS_RATE_LIMIT.points);
 
     // Guessing tokens does not reset the budget: the limit is per client.
-    const limited = await send("GET", "/v1/mp/trip-access/pin", {
-      "x-trip-access-token": "uta_a_different_guess",
-      "x-forwarded-for": client,
-    });
+    const limited = await send(
+      "GET",
+      "/v1/mp/trip-access/pin",
+      { "x-trip-access-token": "uta_a_different_guess" },
+      undefined,
+      client,
+    );
     expect(limited.status).toBe(429);
     expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
     const body = (await limited.json()) as { error: { code: string } };
@@ -220,7 +239,6 @@ describe("the passenger trip link", () => {
 
     const otherClient = await send("GET", "/v1/mp/trip-access", {
       "x-trip-access-token": TOKEN,
-      "x-forwarded-for": nextClient(),
     });
     expect(otherClient.status).toBe(200);
   });

@@ -10,8 +10,14 @@
  *                                   header. Runs before ANYTHING reads a
  *                                   header, so no later stage can observe a
  *                                   forged value.
- *   2. rate limiting
- *   3. authMiddleware               validates the bearer token / API key.
+ *   2. authMiddleware               validates the bearer token / API key.
+ *   3. rateLimitMiddleware          counts the request against the caller
+ *                                   step 2 verified, or — on a public route —
+ *                                   against its client address, resolved from
+ *                                   the socket and GATEWAY_TRUSTED_PROXIES
+ *                                   (middleware/client-address.ts). It runs
+ *                                   AFTER auth so no header a client writes
+ *                                   picks the bucket.
  *   4. identityContextMiddleware    mints and signs the internal identity
  *                                   context and installs it on the request.
  *   5. scopeEnforcementMiddleware   applies the limited-mode / safe-mode
@@ -140,8 +146,8 @@ export function createApp(
   // ===========================================
   const api = new Hono();
 
-  api.use("*", rateLimitMiddleware);
   api.use("*", authMiddleware);
+  api.use("*", rateLimitMiddleware);
   api.use("*", identityContextMiddleware);
   api.use("*", scopeEnforcementMiddleware);
 

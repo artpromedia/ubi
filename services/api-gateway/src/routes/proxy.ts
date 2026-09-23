@@ -26,6 +26,7 @@ import {
   type ProxyRule,
 } from "./proxy-map";
 import { proxyLogger } from "../lib/logger.js";
+import { clientAddressOf } from "../middleware/client-address";
 import { IDENTITY_HEADER, REQUEST_ID_HEADER } from "../middleware/identity";
 
 const proxyRoutes = new Hono();
@@ -57,8 +58,8 @@ const HEADERS_TO_FORWARD: readonly string[] = [
   "content-type",
   "accept",
   "accept-language",
-  "x-forwarded-for",
-  "x-real-ip",
+  // x-forwarded-for / x-real-ip are deliberately absent: the client writes
+  // them. The gateway sets both itself — see forwardClientAddress below.
   "x-idempotency-key",
   "idempotency-key",
   // Signed by the telco over the raw body; user-service verifies it.
@@ -97,6 +98,24 @@ const RESPONSE_HEADERS_TO_FORWARD: readonly string[] = [
 ];
 
 /**
+ * The client address, as the gateway resolved it (middleware/client-address.ts),
+ * never as the client wrote it: X-Forwarded-For is rebuilt as the resolved
+ * client, the trusted hops after it, then the peer the gateway saw — so a
+ * service that trusts the gateway and walks the chain from the right, and one
+ * that reads its leftmost entry, both land on the client the gateway limited.
+ * X-Real-IP is that same client. A request with no peer address (in-process
+ * dispatch) forwards neither.
+ */
+function forwardClientAddress(c: Context, headers: Headers): void {
+  const { client, forwardedFor } = clientAddressOf(c);
+  if (client === undefined || forwardedFor.length === 0) {
+    return;
+  }
+  headers.set("x-forwarded-for", forwardedFor.join(", "));
+  headers.set("x-real-ip", client);
+}
+
+/**
  * Generic proxy handler.
  *
  * Forwards the request to the rule's service at the path the proxy map
@@ -118,6 +137,7 @@ const proxyToService = async (
       forwardHeaders.set(header, value);
     }
   }
+  forwardClientAddress(c, forwardHeaders);
 
   if (!forwardHeaders.has(REQUEST_ID_HEADER)) {
     forwardHeaders.set(REQUEST_ID_HEADER, crypto.randomUUID());

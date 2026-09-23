@@ -24,9 +24,12 @@
  *   idempotency-key      on the decline only — ride-service requires it;
  *   x-request-id         the gateway's own (a proposed one only if it is a
  *                        short, boring id);
- *   x-forwarded-for      the ONE client address the gateway rate-limited on,
- *                        so ride-service's own per-client limit sees the
- *                        passenger rather than the gateway.
+ *   x-forwarded-for      the ONE client address the gateway rate-limited on
+ *                        (middleware/client-address.ts: the socket peer, or
+ *                        what a GATEWAY_TRUSTED_PROXIES hop forwarded — never
+ *                        the client's own header), so ride-service's own
+ *                        per-client limit sees the passenger rather than the
+ *                        gateway.
  *
  * No Authorization, no `x-ubi-identity`, no `x-auth-*` / `x-user-*` mirror, no
  * city, no scopes and no body cross: a passenger is not a UBI user, and a
@@ -36,7 +39,10 @@
  *
  * Every call is rate limited per client address HERE, before anything is
  * forwarded (ride-service limits per client and per token again, before it
- * looks the token up). Answers are never cached: `Cache-Control: no-store`
+ * looks the token up). There is no shared fallback bucket: a call dispatched
+ * in-process (no environment at all, so no remote party) is not counted and
+ * forwards no address, and a call on a connection whose peer cannot be read
+ * is refused. Answers are never cached: `Cache-Control: no-store`
  * and `Referrer-Policy: no-referrer` go back to the client whatever
  * ride-service says.
  */
@@ -50,6 +56,7 @@ import {
 
 import { downstreamPath, serviceBaseUrl, type ProxyRule } from "./proxy-map";
 import { proxyLogger, rateLimitLogger } from "../lib/logger.js";
+import { clientAddressOf, clientBucketOf } from "../middleware/client-address";
 import { REQUEST_ID_HEADER, safeRequestId } from "../middleware/identity";
 
 /** The header ride-service authenticates a trip-link call by. */
@@ -124,14 +131,13 @@ export function resetTripAccessLimiter(): void {
   limiter = undefined;
 }
 
-/** The one client address this request is limited (and forwarded) as. */
-function clientAddress(c: Context): string {
-  const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
-  if (forwarded !== undefined && forwarded.length > 0) {
-    return forwarded;
-  }
-  const real = c.req.header("x-real-ip")?.trim();
-  return real !== undefined && real.length > 0 ? real : "unknown";
+/**
+ * The one client address this request is limited (and forwarded) as: the
+ * address the gateway resolved from the socket and its trusted proxies. It is
+ * undefined only with no peer address — see the file header.
+ */
+function clientAddress(c: Context): string | undefined {
+  return clientAddressOf(c).client;
 }
 
 function noStore(c: Context): void {
@@ -145,11 +151,30 @@ async function forwardTripAccess(
 ): Promise<Response> {
   noStore(c);
   const client = clientAddress(c);
+  if (client === undefined && clientAddressOf(c).connection === "socket") {
+    // A torn-down connection: nobody reads this, and nothing unbudgeted is
+    // forwarded.
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "CLIENT_ADDRESS_UNAVAILABLE",
+          message: "The client address of this connection is unavailable.",
+        },
+      },
+      400,
+    );
+  }
 
   try {
-    const result = await tripAccessLimiter().consume(client, 1);
-    c.header("X-RateLimit-Limit", String(TRIP_ACCESS_RATE_LIMIT.points));
-    c.header("X-RateLimit-Remaining", String(result.remainingPoints));
+    if (client !== undefined) {
+      const result = await tripAccessLimiter().consume(
+        clientBucketOf(client),
+        1,
+      );
+      c.header("X-RateLimit-Limit", String(TRIP_ACCESS_RATE_LIMIT.points));
+      c.header("X-RateLimit-Remaining", String(result.remainingPoints));
+    }
   } catch (rejection) {
     const retryAfter = Math.max(
       1,
@@ -192,7 +217,9 @@ async function forwardTripAccess(
   const headers = new Headers();
   headers.set(TRIP_ACCESS_TOKEN_HEADER, token);
   headers.set(REQUEST_ID_HEADER, requestId);
-  headers.set("x-forwarded-for", client);
+  if (client !== undefined) {
+    headers.set("x-forwarded-for", client);
+  }
   headers.set("accept", "application/json");
   if (method === "POST") {
     const idempotencyKey = c.req.header("idempotency-key");
