@@ -103,7 +103,16 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 			AND to_regclass('mp.request_service_needs') IS NOT NULL
 			AND EXISTS (
 				SELECT 1 FROM information_schema.columns
-				WHERE table_schema = 'mp' AND table_name = 'driver_preferences' AND column_name = 'accepts_preferred_requests')`).Scan(&current)
+				WHERE table_schema = 'mp' AND table_name = 'driver_preferences' AND column_name = 'accepts_preferred_requests')
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'execution_routes' AND column_name = 'routed_distance_m')
+			AND to_regclass('mp.delivery_handoffs') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'delivery_handoffs' AND column_name = 'unresolved_sends')
+			AND to_regclass('mp.request_passengers') IS NOT NULL
+			AND to_regclass('mp.trip_access_tokens') IS NOT NULL`).Scan(&current)
 	return err == nil && current
 }
 

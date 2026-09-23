@@ -441,16 +441,57 @@ func bookingViewOf(b *AdvanceBooking, request *Request, vehicleClass string, vie
 	if b.Failure != nil {
 		view.Failure = &BookingFailureView{
 			Reason:  b.Failure.Reason,
-			Message: b.Failure.Message,
+			Message: bookingFailureMessage(b.Failure, viewer),
 			FinancialOutcome: BookingFinancialOutcome{
 				CommissionReversed:   b.Failure.CommissionReversed,
 				RiderFundingReleased: b.Failure.RiderFundingReleased,
 				RiderCharged:         false,
 			},
-			RematchAvailable: b.Failure.RematchAvailable && b.RematchRequestID == nil,
+			// The consented rematch is the RIDER's option; a driver is never
+			// offered it.
+			RematchAvailable: viewer == viewerRider && b.Failure.RematchAvailable && b.RematchRequestID == nil,
 		}
 	}
 	return view
+}
+
+// bookingFailureMessage phrases a failed or cancelled booking for the party
+// reading it. The stored message is the RIDER's sentence (it is written once,
+// when the booking ends, and may carry the rider-only rematch offer); the
+// driver's sentence is derived from the machine-readable reason and the
+// recorded financial outcome, so a driver never reads "your driver withdrew"
+// about themselves, and never a promise about the rider's money phrased as
+// theirs.
+func bookingFailureMessage(failure *BookingFailure, viewer string) string {
+	if viewer != viewerDriver {
+		return failure.Message
+	}
+	var message string
+	switch failure.Reason {
+	case BookingFailDriverWithdrew:
+		message = "You withdrew from this booking, so it was released."
+	case BookingFailDriverIneligible:
+		message = "Your account can no longer take marketplace trips, so this booking was released."
+	case BookingFailReconfirmMissed:
+		message = "You did not reconfirm before the deadline, so this booking was released."
+	case BookingFailFundingNotSecured:
+		message = "The rider's payment could not be secured in time, so this booking was released."
+	case BookingFailDriverUnavailable:
+		message = "You were not available to start this booking in time, so it was released."
+	case BookingFailDriverOnTrip:
+		message = "Your running trip could not finish in time for this pickup, so the booking was released."
+	case BookingCancelledByRider:
+		message = "The rider cancelled this booking."
+	case BookingFailTripCancelled:
+		message = "The trip from this booking was cancelled."
+	default:
+		// execution_blocked, award_cancelled and anything newer.
+		message = "This booking could not go ahead, so it was released."
+	}
+	if failure.CommissionReversed {
+		message += " Your 10% commission was returned with a linked reversal; nothing more is owed."
+	}
+	return message
 }
 
 // coarse rounds a coordinate to the ~1 km cell its area label names.

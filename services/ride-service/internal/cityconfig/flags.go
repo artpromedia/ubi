@@ -52,6 +52,12 @@ const (
 	// receipts only add read data and are not gated.
 	FlagMarketplacePreferredDrivers = "marketplace_preferred_drivers"
 	FlagMarketplaceAccessibility    = "marketplace_accessibility_requirements"
+	// Book for another adult (A06 part B). Deny by default and ALSO needing
+	// the ride vertical: while off, a publish naming a passenger and a new
+	// trip link are refused. Off stops NEW guest bookings only — an existing
+	// passenger's trip link, the requester's revoke and the passenger's free
+	// decline keep working for trips already booked.
+	FlagMarketplaceGuestBookings = "marketplace_guest_bookings"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

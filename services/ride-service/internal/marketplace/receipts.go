@@ -407,6 +407,11 @@ func (s *Service) Receipt(ctx context.Context, actor Actor, requestID uuid.UUID)
 	if route != nil {
 		trip.Dropoff = route.Dropoff.Label
 		trip.TerminatedEarly = route.TerminatedAt != nil
+		if route.RoutedDistanceM != nil {
+			// The COMMITTED route's distance: an amendment that changed the
+			// route replaced the award's measurement with its own.
+			trip.RoutedDistanceMeters = *route.RoutedDistanceM
+		}
 		for _, stop := range stops {
 			switch stop.State {
 			case StopStateRemoved:

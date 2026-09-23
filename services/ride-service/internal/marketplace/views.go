@@ -87,6 +87,9 @@ type RequestView struct {
 	PreferredDriver *PreferredDriverView `json:"preferredDriver,omitempty"`
 	// ServiceNeeds is present only when the requester stated needs (A06 D).
 	ServiceNeeds *ServiceNeeds `json:"serviceNeeds,omitempty"`
+	// Passenger is present only when the requester booked for another adult
+	// (A06 part B), and only on the requester's own view of this request.
+	Passenger *RequestPassengerView `json:"passenger,omitempty"`
 }
 
 func requestViewOf(request *Request) *RequestView {
@@ -481,7 +484,11 @@ type ParkedAckView struct {
 // DriverJobView is one claims-projection row (contract DriverJob): the
 // driver's current or queued job with its money and execution reference.
 type DriverJobView struct {
-	ClaimID         string            `json:"claimId"`
+	ClaimID string `json:"claimId"`
+	// RequestID is the award's marketplace request: the key of the trip,
+	// stop and amendment routes (/v1/mp/requests/{id}/...) the driver app
+	// opens from this card. Absent only for a claim with no award.
+	RequestID       string            `json:"requestId,omitempty"`
 	Slot            string            `json:"slot"`
 	Service         string            `json:"service"`
 	State           string            `json:"state"`
@@ -490,6 +497,10 @@ type DriverJobView struct {
 	ReceiptID       *string           `json:"receiptId,omitempty"`
 	ExecutionRef    *ExecutionRefView `json:"executionRef,omitempty"`
 	PickupWindow    *PickupWindow     `json:"pickupWindow,omitempty"`
+	// Passenger is set when the requester booked this trip for another
+	// adult (A06 part B): the passenger's FIRST NAME and how pickup is
+	// verified — never the requester's details or the passenger's phone.
+	Passenger *DriverPassengerView `json:"passenger,omitempty"`
 }
 
 // DriverJobsView answers GET /v1/mp/driver/jobs (D05/D11).

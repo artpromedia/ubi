@@ -28,6 +28,10 @@ type PublishRequest struct {
 	// capability only) and soft preferences (ranking only) (A06 part D;
 	// marketplace_accessibility_requirements).
 	ServiceNeeds *ServiceNeedsInput `json:"serviceNeeds,omitempty"`
+	// Passenger books the ride for another named ADULT (A06 part B;
+	// marketplace_guest_bookings): the requester stays the payer and the
+	// only authenticated party, and attests the passenger's age and consent.
+	Passenger *PassengerInput `json:"passenger,omitempty"`
 }
 
 // requireCurrency refuses a Money body whose currency does not name the
@@ -158,6 +162,13 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 	if err != nil {
 		return nil, 0, err
 	}
+	// A06 part B: a passenger other than the requester — flag, attestation
+	// (an unaccompanied minor is refused with its own reason), name and
+	// phone — is validated before anything is written.
+	passenger, err := s.validatePassenger(ctx, actor, quote, req.Passenger)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	// The open-request cap is ENFORCED inside the insert transaction (see
 	// below): a pool-side count here would be check-then-act under
@@ -247,6 +258,13 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 				return err
 			}
 			view.PreferredDriver = preferredDriverViewOf(window)
+		}
+		if passenger != nil {
+			passengerView, err := s.writePassenger(ctx, tx, request, actor, passenger, now)
+			if err != nil {
+				return err
+			}
+			view.Passenger = passengerView
 		}
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeRequestCreate, actor.UserID, idempotencyKey, req, 201, view)
 	})
@@ -413,6 +431,7 @@ func (s *Service) SnapshotWithOptions(ctx context.Context, actor Actor, requestI
 
 	view := requestViewOf(request)
 	s.attachRequestConfidence(ctx, view, request, comparison.needs)
+	s.attachPassenger(ctx, view, request)
 	return &RequestSnapshotView{
 		Request:       view,
 		Offers:        offers,

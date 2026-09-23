@@ -240,7 +240,7 @@ func fundingStage(award *Award, attempt *AwardAttempt) *ResolutionStage {
 			return &ResolutionStage{Name: "funding", Status: StageProposed, Detail: "funding outcome unknown; the sweep is re-polling"}
 		}
 		return &ResolutionStage{Name: "funding", Status: StageProposed, Detail: "funding authorization in flight"}
-	case AttemptStepCapture, AttemptStepFinalize:
+	case AttemptStepCapture, AttemptStepHandoff, AttemptStepFinalize:
 		return &ResolutionStage{Name: "funding", Status: StageCommitted, Detail: "funding step completed before capture"}
 	case AttemptStepCompensate:
 		return &ResolutionStage{Name: "funding", Status: StageFailed, Detail: "compensating: " + attempt.LastError}

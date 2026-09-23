@@ -868,3 +868,96 @@ CREATE TABLE IF NOT EXISTS mp.request_service_needs (
 );
 
 ALTER TABLE mp.driver_preferences ADD COLUMN IF NOT EXISTS accepts_preferred_requests boolean NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------------
+-- Round 6: follow-ups and book-for-another-adult (A06 part B), additive and
+-- idempotent.
+--
+--   * execution_routes.routed_distance_m is the COMMITTED route's routed
+--     distance: the award's when the terms are first written, replaced by the
+--     proposed route's measurement when a committed amendment changes the
+--     route. NULL on rows written before the column existed.
+--   * delivery_handoffs is the durable record of the award saga's
+--     delivery-service hand-off (step `delivery_handoff` in award_attempts):
+--     what was sent, every attempt's answer and — once delivery-service
+--     answered 201/200 — the delivery the award now executes as. One row per
+--     award; the delivery id is unique across awards.
+--   * request_passengers separates the PASSENGER from the requester (who is
+--     also the payer in this slice) on a marketplace ride request: a named
+--     adult, with the requester's attestation that they are an adult and
+--     agreed to be booked for. The CHECK makes an unattested row impossible.
+--   * trip_access_tokens are the passenger's scoped trip links: an opaque
+--     random token stored ONLY as its SHA-256, bound to one request, expiring
+--     and revocable; at most one live (unrevoked) token per request.
+-- ---------------------------------------------------------------------------
+ALTER TABLE mp.execution_routes ADD COLUMN IF NOT EXISTS routed_distance_m bigint;
+
+CREATE TABLE IF NOT EXISTS mp.delivery_handoffs (
+    award_id        uuid PRIMARY KEY REFERENCES mp.awards (id) ON DELETE CASCADE,
+    request_id      uuid NOT NULL,
+    requester_id    uuid NOT NULL,
+    driver_id       uuid NOT NULL,
+    city_id         text NOT NULL,
+    fencing_token   bigint NOT NULL,
+    fare_minor      bigint NOT NULL,
+    currency        text NOT NULL,
+    state           text NOT NULL,
+    delivery_id     uuid,
+    tracking_number text,
+    attempts        integer NOT NULL DEFAULT 0,
+    last_status     integer,
+    last_code       text,
+    last_error      text,
+    delivered_at    timestamptz,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT delivery_handoffs_delivered_has_delivery CHECK (state <> 'delivered' OR delivery_id IS NOT NULL),
+    CONSTRAINT delivery_handoffs_fare_positive CHECK (fare_minor > 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS delivery_handoffs_delivery_uniq
+    ON mp.delivery_handoffs (delivery_id) WHERE delivery_id IS NOT NULL;
+
+-- unresolved_sends counts the hand-off requests put on the wire (written
+-- BEFORE each call, under the row lock) whose outcome is not a definite
+-- "nothing was created" answer. While it is above zero delivery-service may
+-- already hold the award's delivery, so the step only reconciles through the
+-- idempotent re-send — it never compensates on the flag alone.
+ALTER TABLE mp.delivery_handoffs ADD COLUMN IF NOT EXISTS unresolved_sends integer NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS mp.request_passengers (
+    request_id        uuid PRIMARY KEY REFERENCES mp.requests (id) ON DELETE CASCADE,
+    requester_id      uuid NOT NULL,
+    payer_id          uuid NOT NULL,
+    city_id           text NOT NULL,
+    first_name        text NOT NULL,
+    last_name         text,
+    phone_e164        text NOT NULL,
+    attested_adult    boolean NOT NULL,
+    attested_consent  boolean NOT NULL,
+    attested_at       timestamptz NOT NULL,
+    declined_at       timestamptz,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT request_passengers_attested CHECK (attested_adult AND attested_consent)
+);
+
+CREATE INDEX IF NOT EXISTS mp_request_passengers_requester_idx
+    ON mp.request_passengers (requester_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS mp.trip_access_tokens (
+    id             uuid PRIMARY KEY,
+    request_id     uuid NOT NULL REFERENCES mp.request_passengers (request_id) ON DELETE CASCADE,
+    token_hash     text NOT NULL,
+    scope          text NOT NULL,
+    expires_at     timestamptz NOT NULL,
+    revoked_at     timestamptz,
+    revoked_by     text,
+    revoke_reason  text,
+    last_used_at   timestamptz,
+    created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS trip_access_tokens_hash_uniq
+    ON mp.trip_access_tokens (token_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS trip_access_tokens_one_live_per_request
+    ON mp.trip_access_tokens (request_id) WHERE revoked_at IS NULL;

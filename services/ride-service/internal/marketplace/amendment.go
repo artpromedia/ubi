@@ -300,6 +300,13 @@ func (s *Service) ensureExecutionRoute(ctx context.Context, award *Award, reques
 		return nil, err
 	}
 	terms := waitingTermsFor(config, policy)
+	// The award's routed distance: the request's (a pre-award route
+	// revision re-measures it), or the quote's for a request written before
+	// requests carried one.
+	routedDistance := request.RoutedDistanceM
+	if routedDistance <= 0 {
+		routedDistance = quote.RoutedDistanceM
+	}
 	route = &ExecutionRoute{
 		AwardID:                 award.ID,
 		RequestID:               request.ID,
@@ -323,6 +330,7 @@ func (s *Service) ensureExecutionRoute(ctx context.Context, award *Award, reques
 		Stops:                   request.Stops,
 		WaitingTerms:            terms,
 		WaitingCapMinor:         terms.MaxAuthorizedMinor,
+		RoutedDistanceM:         &routedDistance,
 	}
 	stops := make([]*ExecutionStop, 0, len(request.Stops))
 	for _, stop := range request.Stops {

@@ -60,6 +60,10 @@ type Deps struct {
 	// needs (A06 part D). Optional: nil is the profile-backed source, which
 	// today verifies nothing — so hard requirements are honestly unavailable.
 	Capabilities CapabilitySource
+	// Delivery hands an awarded service=delivery request to delivery-service
+	// (delivery_handoff.go). Optional: nil fails closed — every hand-off
+	// answers misconfigured, nothing is sent and the award stays pending.
+	Delivery DeliveryAssignPort
 }
 
 // Service is the marketplace engine core.

@@ -73,6 +73,13 @@ type Config struct {
 	// "details unavailable", never blocked.
 	UserServiceURL          string
 	DriverProfileServiceKey string
+
+	// DeliveryServiceURL and DeliveryServiceKey wire the award saga's
+	// delivery hand-off (marketplace-assign). Either empty — or the key the
+	// committed delivery-service default — and every hand-off fails closed:
+	// nothing is sent, the award stays pending and an alarm is logged.
+	DeliveryServiceURL string
+	DeliveryServiceKey string
 }
 
 func main() {
@@ -111,6 +118,9 @@ func main() {
 
 		UserServiceURL:          config.UserServiceURL,
 		DriverProfileServiceKey: config.DriverProfileServiceKey,
+
+		DeliveryServiceURL: config.DeliveryServiceURL,
+		DeliveryServiceKey: config.DeliveryServiceKey,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to start the ride service")
@@ -142,6 +152,9 @@ func main() {
 			"If-None-Match",
 			handler.HeaderUserID, handler.HeaderUserRole, handler.HeaderCityID,
 			handler.HeaderSignature, handler.HeaderIssuedAt,
+			// A guest passenger's trip link (A06 part B) sends its token
+			// here, never in the URL.
+			handler.HeaderTripAccessToken,
 		},
 		ExposedHeaders:   []string{headerRequestID, "ETag"},
 		AllowCredentials: true,
@@ -158,8 +171,10 @@ func main() {
 	router.Get("/health/ready", health.ready)
 	router.Get("/health", health.detailed)
 
-	// Every /v1 route is behind the identity middleware. There is no route on
-	// this service that serves an anonymous caller.
+	// Every /v1 route is behind the identity middleware except a guest
+	// passenger's trip link (/v1/mp/trip-access*, A06 part B), which is
+	// authenticated by its own scoped, expiring, revocable token and rate
+	// limited per client and token. No route serves an anonymous caller.
 	var marketplaceHandler *handler.MarketplaceHandler
 	if runtime.Marketplace != nil {
 		marketplaceHandler = handler.NewMarketplaceHandler(runtime.Marketplace, log.Logger)
@@ -232,6 +247,12 @@ func loadConfig() *Config {
 
 		UserServiceURL:          getEnv("USER_SERVICE_URL", ""),
 		DriverProfileServiceKey: getEnv("DRIVER_PROFILE_RIDE_SERVICE_KEY", ""),
+
+		DeliveryServiceURL: getEnv("DELIVERY_SERVICE_URL", ""),
+		// delivery-service authenticates the hand-off with ITS
+		// INTERNAL_SERVICE_KEY; DELIVERY_SERVICE_KEY names it when it differs
+		// from the key payment-service shares.
+		DeliveryServiceKey: getEnv("DELIVERY_SERVICE_KEY", getEnv("INTERNAL_SERVICE_KEY", "")),
 	}
 }
 

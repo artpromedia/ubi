@@ -82,6 +82,9 @@ var eventNames = map[string]struct{}{
 	"ride.requested":           {},
 	"ride.assigned":            {},
 	"ride.cancelled_by_driver": {},
+	// A guest passenger's free decline before pickup (A06 part B) ends the
+	// execution ride in cancelled_by_rider inside the decline's transaction.
+	"ride.cancelled_by_rider": {},
 	// A committed amendment rewrites the execution ride's quote, fare and
 	// dropoff inside the amendment's transaction, bumping the ride version.
 	"ride.terms_amended": {},
@@ -133,6 +136,17 @@ var eventNames = map[string]struct{}{
 	"mp.request.opened_to_market":          {},
 	"mp.favourite_driver.saved":            {},
 	"mp.favourite_driver.removed":          {},
+
+	// Book for another adult (A06 part B) — registered in the contract's
+	// EVENT_NAMES too, subject trip_access. Deliberately NOT mp.*: the issued
+	// event carries the passenger's phone and the one-time link token for
+	// notification-service's SMS, and must never ride the mp.* channel the
+	// realtime gateway and the push consumer fan out to riders and drivers.
+	// `revoked` records a withdrawn or replaced link; `declined` is the
+	// passenger's free decline before pickup (audience: the requester).
+	"trip_access.issued":   {},
+	"trip_access.revoked":  {},
+	"trip_access.declined": {},
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,
@@ -154,6 +168,9 @@ const (
 
 	// Rider confidence (A04 item 3): a rider's saved driver.
 	subjectFavourite = "mp_favourite_driver"
+
+	// subjectTripAccess (guest.go) is a guest passenger's trip link (A06
+	// part B).
 )
 
 // Event is one row of the transactional outbox, always written in the same

@@ -96,6 +96,10 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 			// A06/A04.3 rider confidence: receipts and the preferred-driver
 			// decline.
 			h.mountRequestConfidence(r)
+
+			// A06 part B: the requester's controls over a guest
+			// passenger's trip link.
+			h.mountRequestGuest(r)
 		})
 
 		r.Route("/bids", func(r chi.Router) {

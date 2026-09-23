@@ -87,6 +87,15 @@ export const FLAG_KEYS = [
   // ungated. Nothing enables either flag by default.
   "marketplace_preferred_drivers",
   "marketplace_accessibility_requirements",
+  // Book for another adult (A06 part B). Deny-by-default and also needing the
+  // ride vertical (`marketplace_rides`): the requester (who stays the payer)
+  // may name an ADULT passenger with an attestation of their age and consent;
+  // unaccompanied minors are refused outright. The passenger follows the trip
+  // through a scoped, expiring, revocable link (driver card, status/ETA,
+  // pickup PIN, support, free decline before pickup). Off stops NEW guest
+  // bookings and new links only — existing trips' links, the requester's
+  // revoke and the passenger's decline keep working. Nothing enables it.
+  "marketplace_guest_bookings",
   // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
   // assistant quoting, publishing a bounded request, and (the only binding step)
   // selecting a winning offer within a user's grant/mandate. Deny-by-default and

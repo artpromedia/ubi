@@ -68,9 +68,15 @@ type ExecutionRoute struct {
 	CapRevision             int
 	WaitingCommittedMinor   int64
 	TerminatedAt            *time.Time
-	Version                 int
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	// RoutedDistanceM is the committed route's routed distance: the award's
+	// route when the terms were first written, replaced by the proposed
+	// route's measured distance whenever a committed amendment changes the
+	// route. Nil on a row written before the column existed (the request's
+	// routed distance is then the best record there is).
+	RoutedDistanceM *int64
+	Version         int
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // securedFunding reports whether the rider's funding is a payment-service
@@ -85,7 +91,7 @@ const executionRouteColumns = `
 	config_version, policy_version, route_revision, fare_revision,
 	original_fare_minor, agreed_fare_minor, captured_commission_minor, funded_minor,
 	pickup, dropoff, stops, waiting_terms, waiting_cap_minor, cap_revision,
-	waiting_committed_minor, terminated_at, version, created_at, updated_at`
+	waiting_committed_minor, terminated_at, routed_distance_m, version, created_at, updated_at`
 
 func scanExecutionRoute(row pgx.Row) (*ExecutionRoute, error) {
 	var route ExecutionRoute
@@ -96,7 +102,7 @@ func scanExecutionRoute(row pgx.Row) (*ExecutionRoute, error) {
 		&route.ConfigVersion, &route.PolicyVersion, &route.RouteRevision, &route.FareRevision,
 		&route.OriginalFareMinor, &route.AgreedFareMinor, &route.CapturedCommissionMinor, &route.FundedMinor,
 		&pickup, &dropoff, &stops, &terms, &route.WaitingCapMinor, &route.CapRevision,
-		&route.WaitingCommittedMinor, &route.TerminatedAt, &route.Version, &route.CreatedAt, &route.UpdatedAt,
+		&route.WaitingCommittedMinor, &route.TerminatedAt, &route.RoutedDistanceM, &route.Version, &route.CreatedAt, &route.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -145,14 +151,14 @@ func (s *Store) InsertExecutionRoute(ctx context.Context, tx pgx.Tx, route *Exec
 			city_id, service, vehicle_class, currency, payment_method_id, reservation_id,
 			config_version, policy_version, route_revision, fare_revision,
 			original_fare_minor, agreed_fare_minor, captured_commission_minor, funded_minor,
-			pickup, dropoff, stops, waiting_terms, waiting_cap_minor
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,1,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+			pickup, dropoff, stops, waiting_terms, waiting_cap_minor, routed_distance_m
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,1,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
 		ON CONFLICT (award_id) DO NOTHING`,
 		route.AwardID, route.RequestID, route.ExecutionID, route.RequesterID, route.DriverID,
 		route.CityID, route.Service, route.VehicleClass, route.Currency, route.PaymentMethodID, route.ReservationID,
 		route.ConfigVersion, route.PolicyVersion,
 		route.OriginalFareMinor, route.AgreedFareMinor, route.CapturedCommissionMinor, route.FundedMinor,
-		pickup, dropoff, encodedStops, terms, route.WaitingCapMinor,
+		pickup, dropoff, encodedStops, terms, route.WaitingCapMinor, route.RoutedDistanceM,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to insert the execution route: %w", err)
@@ -210,6 +216,7 @@ func (s *Store) SaveExecutionRoute(ctx context.Context, tx pgx.Tx, route *Execut
 			cap_revision = $11,
 			waiting_committed_minor = $12,
 			terminated_at = $13,
+			routed_distance_m = $14,
 			version = version + 1,
 			updated_at = now()
 		WHERE award_id = $1 AND version = $2
@@ -217,7 +224,7 @@ func (s *Store) SaveExecutionRoute(ctx context.Context, tx pgx.Tx, route *Execut
 		route.AwardID, route.Version, route.RouteRevision, route.FareRevision,
 		route.AgreedFareMinor, route.CapturedCommissionMinor, route.FundedMinor,
 		dropoff, encodedStops, route.WaitingCapMinor, route.CapRevision,
-		route.WaitingCommittedMinor, route.TerminatedAt,
+		route.WaitingCommittedMinor, route.TerminatedAt, route.RoutedDistanceM,
 	))
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil, domain.Errorf(domain.CodeVersionConflict, "the trip's terms changed while this request was in flight").

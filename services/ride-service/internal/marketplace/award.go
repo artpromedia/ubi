@@ -528,6 +528,12 @@ func (s *Service) advanceAward(ctx context.Context, awardID uuid.UUID) (*Award, 
 			if done, err := s.runCaptureStep(ctx, award, attempt); err != nil || !done {
 				return s.reloadAward(ctx, awardID, pin, err)
 			}
+		case AttemptStepHandoff:
+			// A delivery award: the captured award is handed to
+			// delivery-service before anything is confirmed.
+			if done, err := s.runHandoffStep(ctx, award, attempt); err != nil || !done {
+				return s.reloadAward(ctx, awardID, pin, err)
+			}
 		case AttemptStepFinalize:
 			createdPin, done, err := s.runFinalizeStep(ctx, award, attempt)
 			if createdPin != "" {
@@ -722,25 +728,66 @@ func (s *Service) runCaptureStep(ctx context.Context, award *Award, attempt *Awa
 		// not fail the saga over a bookkeeping write.
 		s.deps.Logger.Error().Err(err).Msg("could not record the capture receipt")
 	}
+	// A delivery award is handed to delivery-service next; a ride finalizes
+	// into its execution ride. Either way the capture above was the ONE
+	// commission debit — no later step touches the wallet.
+	next := AttemptStepFinalize
+	if handsOffDelivery(request, award) {
+		next = AttemptStepHandoff
+	}
 	retryAt := now.Add(attemptRetryDelay)
 	if err := s.deps.Store.SaveAttempt(ctx, s.deps.Store.Pool(), award.ID,
-		AttemptStepFinalize, AttemptStatePending, "", &retryAt); err != nil {
+		next, AttemptStatePending, "", &retryAt); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// handsOffDelivery reports whether an award executes as a delivery-service
+// delivery: a live-slot (current or next) award on a service=delivery
+// request. Advance bookings are rides only.
+func handsOffDelivery(request *Request, award *Award) bool {
+	return request.Service == ServiceDelivery && award.Slot != SlotAdvance
 }
 
 // runFinalizeStep commits transaction 2. A definite blocker (driver gone, a
 // capacity index refusing the execution) compensates — including reversing the
 // already-captured fee; a transient failure is retried.
 func (s *Service) runFinalizeStep(ctx context.Context, award *Award, attempt *AwardAttempt) (string, bool, error) {
+	// A delivery award finalizes only onto a delivery delivery-service
+	// confirmed. One that reached this step without it (a saga already past
+	// capture when the hand-off step shipped) is rewound to the hand-off —
+	// never finalized into an execution ride.
+	delivery := false
+	if request, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), award.RequestID); err == nil && handsOffDelivery(request, award) {
+		delivery = true
+		handoff, handoffErr := s.deps.Store.HandoffByAward(ctx, s.deps.Store.Pool(), award.ID)
+		if handoffErr != nil && !errors.Is(handoffErr, domain.ErrNotFound) {
+			return "", false, handoffErr
+		}
+		if handoff == nil || handoff.State != HandoffDelivered || handoff.DeliveryID == nil {
+			retryAt := s.now().Add(attemptRetryDelay)
+			if err := s.deps.Store.SaveAttempt(ctx, s.deps.Store.Pool(), award.ID,
+				AttemptStepHandoff, AttemptStatePending, "", &retryAt); err != nil {
+				return "", false, err
+			}
+			return "", true, nil
+		}
+	}
 	pin, err := s.finalizeAward(ctx, award.ID)
 	if err == nil {
 		return pin, true, nil
 	}
-	if errors.Is(err, errExecutionBlocked) {
+	if errors.Is(err, errExecutionBlocked) && !delivery {
 		s.compensateAward(ctx, award.ID, "execution_blocked", true)
 		return "", true, nil
+	}
+	if delivery {
+		// The delivery already exists in delivery-service, assigned to this
+		// driver: compensating here would strand it. A finalize that cannot
+		// commit is an alarm for ops and is retried, never unwound.
+		s.deps.Logger.Error().Err(err).Str("award_id", award.ID.String()).
+			Msg("ALARM: a handed-off delivery award could not be finalized; retrying, never compensating")
 	}
 	retryAt := s.now().Add(stepBackoff(attempt.Attempts))
 	if saveErr := s.deps.Store.SaveAttempt(ctx, s.deps.Store.Pool(), award.ID,
@@ -774,6 +821,19 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 		return "", err
 	}
 	advance := award.Slot == SlotAdvance
+	// A delivery award executes as the delivery delivery-service created for
+	// it (runFinalizeStep guarantees the hand-off answered 201/200).
+	var deliveryID *uuid.UUID
+	if handsOffDelivery(request, award) {
+		handoff, err := s.deps.Store.HandoffByAward(ctx, s.deps.Store.Pool(), award.ID)
+		if err != nil {
+			return "", asDomainError(err)
+		}
+		if handoff.State != HandoffDelivered || handoff.DeliveryID == nil {
+			return "", fmt.Errorf("award %s has no confirmed delivery hand-off", award.ID)
+		}
+		deliveryID = handoff.DeliveryID
+	}
 	var booking *AdvanceBooking
 	var advancePolicy *cityconfig.AdvanceReservationPolicy
 	if advance {
@@ -841,6 +901,36 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 			}
 			if lockedRequest, err = s.deps.Store.TransitionRequest(ctx, tx, lockedRequest, machine.MpRequestAwarded, RequestUpdate{}); err != nil {
 				return err
+			}
+		} else if deliveryID != nil {
+			// The delivery exists in delivery-service (assigned to this
+			// driver, custody seeded); ride-service records it as the
+			// award's execution — no execution ride, no pickup PIN. A
+			// queued delivery keeps its claim in the next slot until the
+			// promotion couples it.
+			service := ServiceDelivery
+			update.ExecutionService = &service
+			update.ExecutionID = deliveryID
+			if award.Slot == SlotCurrent {
+				if _, err = s.deps.Store.TransitionClaim(ctx, tx, claim, machine.MpClaimCurrent, ClaimUpdate{
+					ExecutionService: &service,
+					ExecutionID:      deliveryID,
+				}); err != nil {
+					return err
+				}
+				if lockedRequest, err = s.deps.Store.TransitionRequest(ctx, tx, lockedRequest, machine.MpRequestAwarded, RequestUpdate{}); err != nil {
+					return err
+				}
+				if lockedRequest, err = s.deps.Store.TransitionRequest(ctx, tx, lockedRequest, machine.MpRequestExecution, RequestUpdate{}); err != nil {
+					return err
+				}
+			} else {
+				if _, err = s.deps.Store.TransitionClaim(ctx, tx, claim, machine.MpClaimNext, ClaimUpdate{}); err != nil {
+					return err
+				}
+				if lockedRequest, err = s.deps.Store.TransitionRequest(ctx, tx, lockedRequest, machine.MpRequestAwarded, RequestUpdate{}); err != nil {
+					return err
+				}
 			}
 		} else if award.Slot == SlotCurrent {
 			ride, ridePin, err := s.createExecutionRide(ctx, tx, lockedRequest, locked, config, now)
@@ -992,16 +1082,17 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 			IdempotencyKey: "mp.award.confirmed:" + award.ID.String(),
 			OccurredAt:     now,
 			Payload: map[string]any{
-				"awardId":         award.ID.String(),
-				"requestId":       request.ID.String(),
-				"bidId":           award.BidID.String(),
-				"driverId":        award.DriverID.String(),
-				"fareMinor":       award.FareMinor,
-				"commissionMinor": award.CommissionMinor,
-				"slot":            award.Slot,
-				"requestState":    lockedRequest.State,
-				"executionId":     executionIDString(confirmed),
-				"captureReceipt":  confirmed.CaptureReceiptID,
+				"awardId":          award.ID.String(),
+				"requestId":        request.ID.String(),
+				"bidId":            award.BidID.String(),
+				"driverId":         award.DriverID.String(),
+				"fareMinor":        award.FareMinor,
+				"commissionMinor":  award.CommissionMinor,
+				"slot":             award.Slot,
+				"requestState":     lockedRequest.State,
+				"executionId":      executionIDString(confirmed),
+				"executionService": executionServiceOf(confirmed),
+				"captureReceipt":   confirmed.CaptureReceiptID,
 			},
 		}); err != nil {
 			return err
@@ -1055,12 +1146,13 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 			SubjectID:   award.ID.String(),
 			Before:      map[string]any{"state": machine.MpAwardPending},
 			After: map[string]any{
-				"state":           machine.MpAwardConfirmed,
-				"fareMinor":       award.FareMinor,
-				"commissionMinor": award.CommissionMinor,
-				"currency":        request.Currency,
-				"captureReceipt":  confirmed.CaptureReceiptID,
-				"executionId":     executionIDString(confirmed),
+				"state":            machine.MpAwardConfirmed,
+				"fareMinor":        award.FareMinor,
+				"commissionMinor":  award.CommissionMinor,
+				"currency":         request.Currency,
+				"captureReceipt":   confirmed.CaptureReceiptID,
+				"executionId":      executionIDString(confirmed),
+				"executionService": executionServiceOf(confirmed),
 			},
 			Reason: "the award saga captured the commission and committed the execution",
 		}); err != nil {
@@ -1107,6 +1199,18 @@ func executionIDString(award *Award) string {
 		return ""
 	}
 	return award.ExecutionID.String()
+}
+
+// executionServiceOf names the service an award's execution lives in ("" when
+// there is none yet).
+func executionServiceOf(award *Award) string {
+	if award.ExecutionID == nil {
+		return ""
+	}
+	if award.ExecutionService == "" {
+		return ServiceRide
+	}
+	return award.ExecutionService
 }
 
 // compensateAward unwinds a failed award: any captured fee is reversed with a

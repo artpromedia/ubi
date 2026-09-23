@@ -107,6 +107,23 @@ func (c *Client) AllowPinAttempt(ctx context.Context, rideID uuid.UUID, limit in
 	return count <= int64(limit)
 }
 
+// AllowRate is a fixed-window burst limiter: at most `limit` calls per
+// `window` for one key. Like every limiter here it is a second line of
+// defence and fails open when Redis is absent or unreachable.
+func (c *Client) AllowRate(ctx context.Context, key string, limit int, window time.Duration) bool {
+	if c == nil || c.client == nil {
+		return true
+	}
+	count, err := c.client.Incr(ctx, key).Result()
+	if err != nil {
+		return true
+	}
+	if count == 1 {
+		_ = c.client.Expire(ctx, key, window).Err()
+	}
+	return count <= int64(limit)
+}
+
 // ClearPinAttempts drops the rate-limit counter once a PIN is verified.
 func (c *Client) ClearPinAttempts(ctx context.Context, rideID uuid.UUID) {
 	if c == nil || c.client == nil {

@@ -83,6 +83,9 @@ type harnessOptions struct {
 	// service, nothing verified).
 	driverProfiles marketplace.DriverProfilePort
 	capabilities   marketplace.CapabilitySource
+	// delivery is the award saga's delivery hand-off port (nil: the
+	// production default for an unwired deployment — fail closed).
+	delivery marketplace.DeliveryAssignPort
 }
 
 // WithCityConfig replaces the seeded city configuration.
@@ -121,6 +124,13 @@ func WithDriverProfiles(port marketplace.DriverProfilePort) HarnessOption {
 // a verified vehicle-capability registry plugs into.
 func WithCapabilities(source marketplace.CapabilitySource) HarnessOption {
 	return func(o *harnessOptions) { o.capabilities = source }
+}
+
+// WithDeliveryAssign builds the marketplace with a delivery hand-off port —
+// in tests, the real HTTP client pointed at an httptest server that answers
+// delivery-service's documented marketplace-assign contract.
+func WithDeliveryAssign(port marketplace.DeliveryAssignPort) HarnessOption {
+	return func(o *harnessOptions) { o.delivery = port }
 }
 
 // WithMarketplace attaches the marketplace policy fixture to the city config
@@ -249,6 +259,7 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 
 		DriverProfiles: options.driverProfiles,
 		Capabilities:   options.capabilities,
+		Delivery:       options.delivery,
 	})
 	if err != nil {
 		pool.Close()

@@ -148,9 +148,32 @@ func etagMatches(header, etag string) bool {
 // nil, in which case the /mp surface is simply absent (404), exactly what a
 // deployment without the marketplace engine should answer.
 func (h *RideHandler) Routes(identity func(http.Handler) http.Handler, locations *LocationHandler, marketplace *MarketplaceHandler) chi.Router {
-	r := chi.NewRouter()
-	r.Use(identity)
+	root := chi.NewRouter()
 
+	// A06 part B: a guest passenger's trip link is authenticated by its own
+	// scoped token, not by gateway identity (the passenger is not a UBI
+	// user), so its three routes sit OUTSIDE the identity group — and are
+	// the only routes that do. Everything else below requires identity.
+	if marketplace != nil {
+		marketplace.mountTripAccess(root)
+	}
+
+	root.Group(func(r chi.Router) {
+		r.Use(identity)
+		h.identifiedRoutes(r, locations, marketplace)
+	})
+	// Unknown paths and methods still meet identity first, exactly as when
+	// the whole router sat behind it: an anonymous caller cannot tell a
+	// route that exists from one that does not.
+	root.NotFound(identity(http.NotFoundHandler()).ServeHTTP)
+	root.MethodNotAllowed(identity(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})).ServeHTTP)
+	return root
+}
+
+// identifiedRoutes are every route that requires the gateway's identity.
+func (h *RideHandler) identifiedRoutes(r chi.Router, locations *LocationHandler, marketplace *MarketplaceHandler) {
 	if marketplace != nil {
 		marketplace.mount(r)
 	}
@@ -190,8 +213,6 @@ func (h *RideHandler) Routes(identity func(http.Handler) http.Handler, locations
 			r.Get("/place", locations.GetPlaceDetails)
 		})
 	}
-
-	return r
 }
 
 // ---------------------------------------------------------------------------

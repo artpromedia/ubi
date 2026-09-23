@@ -50,6 +50,12 @@ type Config struct {
 	// "details unavailable" and no offer is ever blocked by it.
 	UserServiceURL          string
 	DriverProfileServiceKey string
+	// DeliveryServiceURL (DELIVERY_SERVICE_URL) and DeliveryServiceKey wire
+	// the award saga's hand-off to delivery-service's marketplace-assign.
+	// Leaving either empty is legal and fails closed: a delivery award's
+	// hand-off sends nothing and stays pending, alarmed, until configured.
+	DeliveryServiceURL string
+	DeliveryServiceKey string
 }
 
 // Runtime is a wired service and the resources it owns.
@@ -148,6 +154,10 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	if config.UserServiceURL == "" || config.DriverProfileServiceKey == "" {
 		config.Logger.Warn().Msg("USER_SERVICE_URL or DRIVER_PROFILE_RIDE_SERVICE_KEY is not set: offers show driver details as unavailable")
 	}
+	deliveryAssign := marketplace.NewHTTPDeliveryAssign(config.DeliveryServiceURL, config.DeliveryServiceKey, nil)
+	if !deliveryAssign.Configured() {
+		config.Logger.Warn().Msg("DELIVERY_SERVICE_URL or a non-default delivery service key is not set: marketplace delivery awards cannot be handed off")
+	}
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
 		Store:      marketplace.NewStore(pool),
 		Config:     cityconfig.NewStore(pool, runtime.Redis, config.ConfigCacheTTL),
@@ -161,6 +171,7 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		Logger:     config.Logger,
 		DriverProfiles: marketplace.NewHTTPDriverProfiles(config.UserServiceURL, config.DriverProfileServiceKey,
 			marketplace.DriverProfilesOptions{}),
+		Delivery: deliveryAssign,
 	})
 	if err != nil {
 		runtime.Close()

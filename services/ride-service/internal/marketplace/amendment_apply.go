@@ -60,6 +60,12 @@ func (s *Service) applyAmendment(ctx context.Context, amendment *Amendment) (boo
 			next.RouteRevision = locked.RouteRevision
 			next.Stops = locked.Stops
 			next.Dropoff = locked.Dropoff
+			// The committed route's distance is the one the amendment was
+			// priced on (measured when it was proposed), so the receipt
+			// states the route the fare was agreed for.
+			if distance := pricingInt(locked.Pricing, "proposedDistanceM"); distance > 0 {
+				next.RoutedDistanceM = &distance
+			}
 		}
 		saved, err := s.deps.Store.SaveExecutionRoute(ctx, tx, &next)
 		if err != nil {

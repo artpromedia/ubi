@@ -11,6 +11,7 @@ components:
     {
       bearer: { type: http, scheme: bearer },
       serviceKey: { type: apiKey, in: header, name: X-Service-Key },
+      tripAccessToken: { type: apiKey, in: header, name: X-Trip-Access-Token },
     }
   parameters:
     IdemKey:
@@ -459,8 +460,9 @@ components:
                     award_failed,
                     booking_failed,
                     preferred_driver_unavailable,
+                    passenger_declined,
                   ],
-                description: "preferred_driver_unavailable (A04 item 3): a preferred-driver request whose named driver did not offer in the exclusive window, and whose rider did not consent to open-market fallback — expired free of charge.",
+                description: "preferred_driver_unavailable (A04 item 3): a preferred-driver request whose named driver did not offer in the exclusive window, and whose rider did not consent to open-market fallback — expired free of charge. passenger_declined (A06 part B): the guest passenger declined through their trip link before pickup — free for the requester, the driver's commission returned.",
               },
             stops:
               {
@@ -493,6 +495,11 @@ components:
               {
                 $ref: "#/components/schemas/ServiceNeeds",
                 description: "A06 part D: present only when the requester stated needs.",
+              },
+            passenger:
+              {
+                $ref: "#/components/schemas/RequestPassenger",
+                description: "A06 part B: present only on the REQUESTER's view of a request booked for another adult — the passenger on this request, never on any other.",
               },
           },
       }
@@ -952,9 +959,10 @@ components:
             failReason:
               {
                 type: string,
-                description: "Human-phrased reason on award.failed; the request reopened if still valid.",
+                description: "Human-phrased reason on award.failed; the request reopened if still valid. A delivery award whose hand-off delivery-service refused permanently reads delivery_handoff_refused: <CODE>; one handed off while marketplace_delivery was off reads delivery_handoff_disabled (the captured fee reversed with a linked entry in both cases).",
               },
           },
+        description: "A delivery award (service=delivery) is confirmed only after delivery-service's marketplace-assign answered 201/200 for it (the award saga's delivery_handoff step, after the ONE commission capture); its executionRef is {service: delivery, id: <the delivery's id>} and no execution ride exists.",
       }
     TripPlace:
       {
@@ -1780,6 +1788,16 @@ components:
         properties:
           {
             claimId: { type: string },
+            requestId:
+              {
+                type: string,
+                description: "The award's marketplace request — the key of the trip, stop and amendment routes (/v1/mp/requests/{requestId}/...). Absent only for a claim with no award.",
+              },
+            passenger:
+              {
+                $ref: "#/components/schemas/DriverPassenger",
+                description: "A06 part B: present only on a trip booked for another adult — the passenger's first name and the pickup verification, never the phone or the requester.",
+              },
             slot: { type: string, enum: [current, next] },
             service: { type: string, enum: [ride, delivery] },
             state: { type: string },
@@ -2736,6 +2754,136 @@ components:
             note: { type: string }
         format: { type: string, enum: [json] }
         issuedAt: { type: string, format: date-time }
+    PassengerInput:
+      description: "A06 part B (marketplace_guest_bookings, deny by default; rides only): book the ride for another named ADULT. Both attestations are required: isAdult false is refused 422 with details.reason unaccompanied_minor_not_supported (unaccompanied minors need a separately designed service), consentConfirmed false with passenger_consent_required, either missing with passenger_attestation_required. Names are letters (any script), combining marks, spaces, hyphens and apostrophes (lastName may also carry full stops) — the first name opens a UBI-sent SMS to a number the requester chose, so it can never carry a link, a number or a call to action (422 validation_failed otherwise). The requester stays the payer and the only authenticated party."
+      type: object
+      additionalProperties: false
+      required: [firstName, phone, isAdult, consentConfirmed]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 40 }
+        lastName: { type: string, maxLength: 60 }
+        phone: { type: string, pattern: "^\\+[1-9][0-9]{7,14}$" }
+        isAdult: { type: boolean }
+        consentConfirmed: { type: boolean }
+    RequestPassenger:
+      description: "The passenger block of the requester's own request view: what they entered, on this request only, and where the passenger's trip link stands. Never the link token."
+      type: object
+      required:
+        [
+          firstName,
+          lastName,
+          phone,
+          payerRole,
+          attestation,
+          attestedAt,
+          accessStatus,
+          accessSentAt,
+          accessExpiresAt,
+          declinedAt,
+        ]
+      properties:
+        firstName: { type: string }
+        lastName: { type: [string, "null"] }
+        phone: { type: string }
+        payerRole: { type: string, const: requester }
+        attestation: { type: string }
+        attestedAt: { type: string, format: date-time }
+        accessStatus:
+          { type: string, enum: [active, revoked, expired, declined] }
+        accessSentAt: { type: [string, "null"], format: date-time }
+        accessExpiresAt: { type: [string, "null"], format: date-time }
+        declinedAt: { type: [string, "null"], format: date-time }
+    DriverPassenger:
+      type: object
+      required: [firstName, bookedForAnother, pickupVerification, note]
+      properties:
+        firstName: { type: string }
+        bookedForAnother: { type: boolean, const: true }
+        pickupVerification: { type: string, enum: [pin, first_name] }
+        note: { type: string }
+    TripAccessView:
+      description: "A guest passenger's trip, authenticated ONLY by the X-Trip-Access-Token header. Nothing about the requester, the money or any other trip. driver is the verified-card projection every rider surface uses, present once a driver is committed."
+      type: object
+      required:
+        [
+          status,
+          statusLabel,
+          passenger,
+          pickup,
+          dropoff,
+          driver,
+          eta,
+          pickupVerification,
+          support,
+          actions,
+          expiresAt,
+          asOf,
+        ]
+      properties:
+        status:
+          type: string
+          enum:
+            [
+              finding_driver,
+              confirming_driver,
+              driver_queued,
+              driver_on_the_way,
+              driver_arrived,
+              in_progress,
+              completed,
+              cancelled,
+              declined,
+            ]
+        statusLabel: { type: string }
+        passenger:
+          type: object
+          required: [firstName]
+          properties: { firstName: { type: string } }
+        pickup:
+          type: object
+          required: [label]
+          properties: { label: { type: string } }
+        dropoff:
+          type: object
+          required: [label]
+          properties: { label: { type: string } }
+        driver:
+          oneOf:
+            - { $ref: "#/components/schemas/OfferDriver" }
+            - { type: "null" }
+        eta:
+          oneOf:
+            - type: object
+              required: [label, etaSeconds, basis, asOf]
+              properties:
+                label: { type: string }
+                etaSeconds: { type: [integer, "null"] }
+                basis: { type: string, enum: [routed_leg, unavailable] }
+                asOf: { type: string, format: date-time }
+            - { type: "null" }
+        pickupVerification:
+          type: object
+          required: [method, pinAvailable, instructions]
+          properties:
+            method: { type: string, enum: [pin, first_name] }
+            pinAvailable: { type: boolean }
+            instructions: { type: string }
+        support:
+          type: object
+          required: [reference, emergencyNumber, note]
+          properties:
+            reference: { type: string }
+            emergencyNumber: { type: [string, "null"] }
+            note: { type: string }
+        actions:
+          type: object
+          required: [canDecline, declineIsFree, declineNote]
+          properties:
+            canDecline: { type: boolean }
+            declineIsFree: { type: boolean, const: true }
+            declineNote: { type: string }
+        expiresAt: { type: string, format: date-time }
+        asOf: { type: string, format: date-time }
 security: [{ bearer: [] }]
 paths:
   /v1/mp/quote:
@@ -2844,16 +2992,18 @@ paths:
                       { $ref: "#/components/schemas/PreferredDriverInput" },
                     serviceNeeds:
                       { $ref: "#/components/schemas/ServiceNeedsInput" },
+                    passenger: { $ref: "#/components/schemas/PassengerInput" },
                   },
               }
       responses:
         "201":
+          description: "With a passenger: the passenger is recorded with the attestation, ONE trip link is issued (stored only as its SHA-256; handed to notification-service once in the trip_access.issued event for the SMS — never in this response) and the view carries `passenger`."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Request" }
         "404":
           {
-            description: "feature_disabled — preferredDriver needs marketplace_preferred_drivers; serviceNeeds needs marketplace_accessibility_requirements (both deny by default).",
+            description: "feature_disabled — preferredDriver needs marketplace_preferred_drivers; serviceNeeds needs marketplace_accessibility_requirements; passenger needs marketplace_guest_bookings (all deny by default).",
           }
         "409":
           {
@@ -2934,6 +3084,119 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/QueueView" }
         "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/passenger/access/revoke:
+    post:
+      summary: Revoke a guest passenger's trip link (A06 part B) — requester only
+      description: "Withdraws the live trip link (trip_access.revoked). Idempotent; always allowed — a safety control is never behind a flag. A foreign requester, or a request with no passenger, is 404."
+      parameters:
+        - { $ref: "#/components/parameters/IdemKey" }
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RequestPassenger" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/passenger/access/reissue:
+    post:
+      summary: Send the guest passenger a fresh trip link (A06 part B) — requester only
+      description: "Revokes the live link and issues a new one to the same passenger (trip_access.revoked + trip_access.issued), while the trip is still ahead and the passenger has not declined. New links are issued only while marketplace_guest_bookings is on (404 feature_disabled otherwise); 409 conflict after a decline, 409 request_closed once the trip ended. Every link is an SMS to the passenger's phone, so one booking sends at most 5 links (the first plus 4 reissues): beyond that 429 rate_limited with details.reason trip_link_limit."
+      parameters:
+        - { $ref: "#/components/parameters/IdemKey" }
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RequestPassenger" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/trip-access:
+    get:
+      summary: A guest passenger's trip (A06 part B) — trip-link token only
+      description: "Authenticated ONLY by the X-Trip-Access-Token header (never a URL parameter; no gateway identity — one, if present, grants nothing). The token is bound to one trip, expires and is revocable. Rate limited per client and per token (429 before the token is looked up). Answers are Cache-Control: no-store and Referrer-Policy: no-referrer. 401 unauthorized with details.reason invalid (malformed, unknown or forged), expired or revoked — never naming a trip."
+      security: [{ tripAccessToken: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripAccessView" }
+        "401":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/trip-access/pin:
+    get:
+      summary: The guest passenger's pickup PIN (A06 part B) — trip-link token only
+      description: "The execution ride's pickup PIN while it is relevant (driver assigned/arrived, PIN not yet verified), under the PIN vault's own retrieval rate limit — shared with the requester's retrieval of the same PIN. 409 when not relevant or after a decline."
+      security: [{ tripAccessToken: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PickupPin" }
+        "401":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/trip-access/decline:
+    post:
+      summary: The guest passenger declines the trip before pickup, free (A06 part B)
+      description: "Free for everyone before pickup: an open request closes (closeReason passenger_declined; every live offer's hold released); a queued award is cancelled with the driver's commission returned (linked reversal) and the requester's funding released; an execution not yet at pickup (driver assigned or arrived) ends cancelled_by_rider with feeMinor 0 through the same unwind a driver cancellation uses — commission reversed, funding released, the driver freed. Refused 409 conflict (details.reason past_pickup) once the PIN is being verified or the trip started; 409 award_unresolved while a selection is being confirmed. Publishes trip_access.declined (audience: the requester). Replays byte for byte under the same key."
+      security: [{ tripAccessToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripAccessView" }
+        "401":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

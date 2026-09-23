@@ -87,6 +87,7 @@ func (s *Service) driverJobOf(ctx context.Context, claim *Claim) (*DriverJobView
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	job.RequestID = award.RequestID.String()
 	job.FareMinor = money(award.FareMinor, request.Currency)
 	job.CommissionMinor = money(award.CommissionMinor, request.Currency)
 	if award.CaptureReceiptID != "" {
@@ -100,6 +101,9 @@ func (s *Service) driverJobOf(ctx context.Context, claim *Claim) (*DriverJobView
 		}
 		job.ExecutionRef = &ExecutionRefView{Service: service, ID: award.ExecutionID.String()}
 	}
+	// A06 part B: a trip booked for another adult names the passenger's
+	// first name and the pickup verification, nothing more.
+	job.Passenger = s.driverPassengerFor(ctx, request)
 	if award.PickupWindow != nil {
 		job.PickupWindow = &PickupWindow{
 			EarliestSec: award.PickupWindow.EarliestSec,

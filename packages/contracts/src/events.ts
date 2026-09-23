@@ -56,6 +56,8 @@ export const SUBJECT_TYPES = [
   "mp_recurring_template",
   // Rider confidence (A04 item 3): a rider's saved driver.
   "mp_favourite_driver",
+  // Book for another adult (A06 part B): a guest passenger's scoped trip link.
+  "trip_access",
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
@@ -468,6 +470,18 @@ export const EVENT_NAMES = [
   // driver they completed a marketplace trip with; rider-private.
   "mp.favourite_driver.saved",
   "mp.favourite_driver.removed",
+  // ── Book for another adult (A06 part B) — subject trip_access ──
+  // Deliberately NOT mp.*: `issued` carries the guest passenger's phone and
+  // the one-time link token (stored by ride-service only as its SHA-256) for
+  // notification-service to send ONE SMS with the trip link, and must never
+  // ride the mp.* channel the realtime gateway and push consumer fan out to
+  // riders and drivers. No driver is promised in the copy — none is committed
+  // at publish. `revoked` records a link the requester withdrew or replaced;
+  // `declined` is the passenger's free decline before pickup (audience: the
+  // requester, payload.requesterId; feeMinor is always 0).
+  "trip_access.issued",
+  "trip_access.revoked",
+  "trip_access.declined",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

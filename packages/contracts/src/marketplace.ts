@@ -35,6 +35,16 @@ import {
   MpServiceNeedsInputSchema,
   MpServiceNeedsSchema,
 } from "./marketplace-confidence";
+import {
+  MP_GUEST_TRIP_STATUSES,
+  MpDriverPassengerSchema,
+  MpGuestTripActionsSchema,
+  MpGuestTripEtaSchema,
+  MpGuestTripSupportSchema,
+  MpGuestTripVerificationSchema,
+  MpPassengerInputSchema,
+  MpRequestPassengerSchema,
+} from "./marketplace-guest";
 import { CurrencySchema, MoneySchema } from "./money";
 import {
   MP_ADVANCE_BOOKING_STATES,
@@ -375,6 +385,9 @@ export const MP_REQUEST_CLOSE_REASONS = [
   // fallback: expired free of charge. (Whether the driver declined or simply
   // did not answer is deliberately not said.)
   "preferred_driver_unavailable",
+  // A guest passenger (A06 part B) declined the trip through their trip link
+  // before pickup: free for the requester, the driver's commission returned.
+  "passenger_declined",
 ] as const;
 export type MpRequestCloseReason = (typeof MP_REQUEST_CLOSE_REASONS)[number];
 
@@ -417,6 +430,12 @@ export const MpPublishRequestSchema = z.object({
    * requirements (verified capability only) and soft preferences. Rides only.
    */
   serviceNeeds: MpServiceNeedsInputSchema.optional(),
+  /**
+   * A06 part B (marketplace_guest_bookings): book the ride for another named
+   * ADULT, with the requester's attestation of their age and consent. The
+   * requester stays the payer. Rides only.
+   */
+  passenger: MpPassengerInputSchema.optional(),
 });
 export type MpPublishRequest = z.infer<typeof MpPublishRequestSchema>;
 
@@ -463,6 +482,11 @@ export const MpRequestSchema = z.object({
   preferredDriver: MpPreferredDriverSchema.optional(),
   /** A06 part D: present only when the requester stated needs. */
   serviceNeeds: MpServiceNeedsSchema.optional(),
+  /**
+   * A06 part B: present only on the REQUESTER's view of a request booked for
+   * another adult — the passenger on this request, never on any other.
+   */
+  passenger: MpRequestPassengerSchema.optional(),
 });
 export type MpRequest = z.infer<typeof MpRequestSchema>;
 
@@ -900,6 +924,45 @@ export const MpDriverClaimSchema = z.object({
 });
 export type MpDriverClaim = z.infer<typeof MpDriverClaimSchema>;
 
+/**
+ * `GET /v1/mp/driver/jobs` → `current` / `next` (contract DriverJob): the
+ * driver's claim with its award's money, receipt, execution reference and —
+ * for the queued job — the pickup window. `requestId` is the award's
+ * marketplace request: the key of the trip, stop and amendment routes the
+ * driver app opens (absent only for a claim with no award). `passenger` is
+ * present only on a trip booked for another adult (A06 part B).
+ */
+export const MpDriverJobSchema = z.object({
+  claimId: z.string().min(1),
+  requestId: z.string().min(1).optional(),
+  slot: MpSlotSchema,
+  service: MpServiceSchema,
+  state: z.string().min(1),
+  fareMinor: MoneySchema,
+  commissionMinor: MoneySchema,
+  receiptId: z.string().min(1).optional(),
+  executionRef: z
+    .object({ service: MpServiceSchema, id: z.string().min(1) })
+    .optional(),
+  pickupWindow: z
+    .object({
+      earliestSec: z.number().int(),
+      latestSec: z.number().int(),
+      etaVersion: z.number().int(),
+    })
+    .optional(),
+  passenger: MpDriverPassengerSchema.optional(),
+});
+export type MpDriverJob = z.infer<typeof MpDriverJobSchema>;
+
+/** `GET /v1/mp/driver/jobs` (D05 winner card + D11 current-plus-next). */
+export const MpDriverJobsSchema = z.object({
+  current: MpDriverJobSchema.optional(),
+  next: MpDriverJobSchema.optional(),
+  promotion: z.enum(["none", "pending", "failed_revalidating"]),
+});
+export type MpDriverJobs = z.infer<typeof MpDriverJobsSchema>;
+
 // ── Rate profiles (M03A / D09) ─────────────────────────────────────────────
 
 export const MpRateProfileSchema = z.object({
@@ -1251,6 +1314,32 @@ export const MpPickupPinSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }),
 });
 export type MpPickupPin = z.infer<typeof MpPickupPinSchema>;
+
+/**
+ * `GET /v1/mp/trip-access` — a guest passenger's trip (A06 part B),
+ * authenticated ONLY by the `X-Trip-Access-Token` header (no gateway
+ * identity). `driver` is the same verified-card projection every rider
+ * surface uses, present once a driver is committed. Nothing about the
+ * requester, the money or any other trip. The PIN is fetched separately
+ * (`GET /v1/mp/trip-access/pin` → `MpPickupPin`) while
+ * `pickupVerification.pinAvailable`; `POST /v1/mp/trip-access/decline`
+ * (Idempotency-Key) declines for free before pickup.
+ */
+export const MpTripAccessViewSchema = z.object({
+  status: z.enum(MP_GUEST_TRIP_STATUSES),
+  statusLabel: z.string().min(1),
+  passenger: z.object({ firstName: z.string().min(1) }),
+  pickup: z.object({ label: z.string() }),
+  dropoff: z.object({ label: z.string() }),
+  driver: MpOfferDriverSchema.nullable(),
+  eta: MpGuestTripEtaSchema.nullable(),
+  pickupVerification: MpGuestTripVerificationSchema,
+  support: MpGuestTripSupportSchema,
+  actions: MpGuestTripActionsSchema,
+  expiresAt: z.string().datetime({ offset: true }),
+  asOf: z.string().datetime({ offset: true }),
+});
+export type MpTripAccessView = z.infer<typeof MpTripAccessViewSchema>;
 
 // ── Post-award trip amendments (A02 items 4-6) ─────────────────────────────
 
@@ -1863,6 +1952,7 @@ export const MpRecurringTemplateCommandSchema = z
 // ── Rider confidence: snapshot order, saved drivers, receipts (A06/A04.3) ──
 
 export * from "./marketplace-confidence";
+export * from "./marketplace-guest";
 
 /**
  * `GET /v1/mp/requests/:id[?sort=offered|price|pickup|service_fit]` — the

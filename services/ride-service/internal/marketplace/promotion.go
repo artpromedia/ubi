@@ -250,11 +250,44 @@ type driverCancelUnwind struct {
 	// calls leaves the sweep a durable record of what is still owed.
 	reverseRowID uuid.UUID
 	fundingRowID uuid.UUID
+	// reason is the linked reason carried into the award, the reversal and
+	// the release: driverCancelReason unless set (a guest passenger's free
+	// decline before pickup uses passengerDeclinedReason through this same
+	// funnel).
+	reason string
+	// actorType/actorID name who ended the execution on the events (the
+	// system for a driver cancellation, the guest passenger for a decline).
+	actorType string
+	actorID   string
+}
+
+// unwindReason is the unwind's linked reason.
+func (u *driverCancelUnwind) unwindReason() string {
+	if u.reason == "" {
+		return driverCancelReason
+	}
+	return u.reason
+}
+
+// unwindActor names who ended the execution on the unwind's events.
+func (u *driverCancelUnwind) unwindActor() (string, string) {
+	if u.actorType == "" {
+		return "system", "ride-service"
+	}
+	return u.actorType, u.actorID
 }
 
 // driverCancelReason is the linked reason the driver-cancel unwind carries
 // into the award row, the commission reversal and the funding release.
 const driverCancelReason = "driver_cancelled"
+
+// unwindAuditReason is the audit row's sentence for an unwind reason.
+func unwindAuditReason(reason string) string {
+	if reason == passengerDeclinedReason {
+		return "the guest passenger declined the trip before pickup (free for the requester; the driver's commission returned)"
+	}
+	return "the assigned driver cancelled the marketplace execution"
+}
 
 // unwindDriverCancelledAward applies the state half of the unwind inside the
 // claim-release transaction: award confirmed → cancelled, the request's
@@ -271,7 +304,8 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 	if lockedAward.State != machine.MpAwardConfirmed {
 		return false, nil
 	}
-	reason := driverCancelReason
+	reason := unwind.unwindReason()
+	actorType, actorID := unwind.unwindActor()
 	if _, err := s.deps.Store.TransitionAward(ctx, tx, lockedAward, machine.MpAwardCancelled, AwardUpdate{
 		FailReason: &reason,
 		ResolvedAt: &now,
@@ -288,7 +322,7 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 	// truth. No new request and no new search are started here: that is the
 	// requester's explicit call.
 	if lockedRequest.CloseReason == "" {
-		if err := s.deps.Store.SetRequestCloseReason(ctx, tx, lockedRequest.ID, driverCancelReason); err != nil {
+		if err := s.deps.Store.SetRequestCloseReason(ctx, tx, lockedRequest.ID, reason); err != nil {
 			return false, err
 		}
 	}
@@ -298,46 +332,19 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 		AggregateID:    lockedRequest.ID.String(),
 		ToVersion:      lockedRequest.Version,
 		CityID:         lockedRequest.CityID,
-		ActorType:      "system",
-		ActorID:        "ride-service",
+		ActorType:      actorType,
+		ActorID:        actorID,
 		IdempotencyKey: "mp.request.closed:" + lockedRequest.ID.String(),
 		OccurredAt:     now,
 		Payload: map[string]any{
 			"requestId": lockedRequest.ID.String(),
-			"reason":    driverCancelReason,
+			"reason":    reason,
 		},
 	}); err != nil {
 		return false, err
 	}
 
-	// The two money intents, durable in this same transaction: the captured
-	// commission's linked reversal and the rider funding release, each under
-	// its award-derived idempotency key so the post-commit drive and the
-	// sweep converge on ONE reversal and ONE release however often they run.
-	bidID := unwind.bid.ID
-	if err := s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
-		ID:            unwind.reverseRowID,
-		ReservationID: unwind.bid.ReservationID,
-		DriverID:      unwind.bid.DriverID,
-		BidID:         &bidID,
-		Action:        RecoveryReverse,
-	}); err != nil {
-		return false, err
-	}
-	fundingPayload, err := json.Marshal(FundingReleaseRecoveryPayload{
-		AwardID: unwind.award.ID,
-		Reason:  driverCancelReason,
-	})
-	if err != nil {
-		return false, err
-	}
-	if err := s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
-		ID:            unwind.fundingRowID,
-		ReservationID: fundingReleaseKeyFor(unwind.award.ID),
-		DriverID:      unwind.award.RequesterID,
-		Action:        RecoveryFundingRelease,
-		Payload:       fundingPayload,
-	}); err != nil {
+	if err := s.insertUnwindIntents(ctx, tx, unwind); err != nil {
 		return false, err
 	}
 
@@ -347,8 +354,8 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 		AggregateID:    unwind.award.ID.String(),
 		ToVersion:      1,
 		CityID:         unwind.request.CityID,
-		ActorType:      "system",
-		ActorID:        "ride-service",
+		ActorType:      actorType,
+		ActorID:        actorID,
 		IdempotencyKey: "mp.award.cancelled:" + unwind.award.ID.String(),
 		OccurredAt:     now,
 		Payload: map[string]any{
@@ -356,7 +363,7 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 			"requestId":       unwind.award.RequestID.String(),
 			"driverId":        unwind.award.DriverID.String(),
 			"commissionMinor": unwind.award.CommissionMinor,
-			"reason":          driverCancelReason,
+			"reason":          reason,
 			"feeReversed":     true,
 		},
 	}); err != nil {
@@ -369,12 +376,45 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 		SubjectType: subjectAward,
 		SubjectID:   unwind.award.ID.String(),
 		Before:      map[string]any{"state": machine.MpAwardConfirmed},
-		After:       map[string]any{"state": machine.MpAwardCancelled, "reason": driverCancelReason},
-		Reason:      "the assigned driver cancelled the marketplace execution",
+		After:       map[string]any{"state": machine.MpAwardCancelled, "reason": reason},
+		Reason:      unwindAuditReason(reason),
 	}); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// insertUnwindIntents writes the unwind's two money intents, durable in the
+// caller's transaction: the captured commission's linked reversal and the
+// rider funding release, each under its award-derived idempotency key so the
+// post-commit drive (driveDriverCancelReversal) and the sweep converge on ONE
+// reversal and ONE release however often they run — and a crash after commit
+// still owes both.
+func (s *Service) insertUnwindIntents(ctx context.Context, tx pgx.Tx, unwind *driverCancelUnwind) error {
+	bidID := unwind.bid.ID
+	if err := s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
+		ID:            unwind.reverseRowID,
+		ReservationID: unwind.bid.ReservationID,
+		DriverID:      unwind.bid.DriverID,
+		BidID:         &bidID,
+		Action:        RecoveryReverse,
+	}); err != nil {
+		return err
+	}
+	fundingPayload, err := json.Marshal(FundingReleaseRecoveryPayload{
+		AwardID: unwind.award.ID,
+		Reason:  unwind.unwindReason(),
+	})
+	if err != nil {
+		return err
+	}
+	return s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
+		ID:            unwind.fundingRowID,
+		ReservationID: fundingReleaseKeyFor(unwind.award.ID),
+		DriverID:      unwind.award.RequesterID,
+		Action:        RecoveryFundingRelease,
+		Payload:       fundingPayload,
+	})
 }
 
 // driveDriverCancelReversal is the post-commit half of the unwind: it drives
@@ -382,8 +422,9 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 // durable intent on a confirmed answer. Anything unconfirmed stays written
 // down for the sweep, which re-drives the same keys — never a second entry.
 func (s *Service) driveDriverCancelReversal(ctx context.Context, unwind *driverCancelUnwind, now time.Time) {
+	reason := unwind.unwindReason()
 	if _, revErr := s.deps.Wallet.Reverse(ctx, unwind.bid.ReservationID, unwind.award.ID.String(),
-		driverCancelReason, "mp.reverse:"+unwind.award.ID.String()); revErr != nil {
+		reason, "mp.reverse:"+unwind.award.ID.String()); revErr != nil {
 		s.deps.Logger.Warn().Err(revErr).Str("award_id", unwind.award.ID.String()).
 			Msg("driver-cancel fee reversal unconfirmed; the sweep owns the durable intent")
 	} else if err := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), unwind.reverseRowID, now); err != nil {
@@ -391,7 +432,7 @@ func (s *Service) driveDriverCancelReversal(ctx context.Context, unwind *driverC
 			Msg("could not resolve the reversal recovery row")
 	}
 
-	relErr := s.deps.Funding.Release(ctx, unwind.award.ID, driverCancelReason, fundingReleaseKeyFor(unwind.award.ID))
+	relErr := s.deps.Funding.Release(ctx, unwind.award.ID, reason, fundingReleaseKeyFor(unwind.award.ID))
 	switch {
 	case relErr == nil:
 		if err := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), unwind.fundingRowID, now); err != nil {
@@ -516,25 +557,36 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 			}
 		}
 
-		// The execution ride is created first: a driver who is not available
-		// blocks the whole transaction and the promotion simply has not
-		// happened.
-		ride, pin, err := s.createExecutionRide(ctx, tx, lockedRequest, lockedAward, config, now)
-		if err != nil {
-			return err
+		service := ServiceRide
+		var executionID uuid.UUID
+		if lockedRequest.Service == ServiceDelivery && lockedAward.ExecutionService == ServiceDelivery && lockedAward.ExecutionID != nil {
+			// A queued DELIVERY already exists in delivery-service (the
+			// award saga handed it off before confirming); promotion only
+			// couples the claim to it — no execution ride, no second
+			// hand-off, no second commission.
+			service, executionID = ServiceDelivery, *lockedAward.ExecutionID
+		} else {
+			// The execution ride is created first: a driver who is not
+			// available blocks the whole transaction and the promotion
+			// simply has not happened.
+			ride, pin, err := s.createExecutionRide(ctx, tx, lockedRequest, lockedAward, config, now)
+			if err != nil {
+				return err
+			}
+			// The plaintext PIN was encrypted into the vault inside
+			// createExecutionRide (same tx). A promotion has no rider call in
+			// flight, so the requester retrieves it over the authenticated
+			// REST channel (GET .../pin); it is deliberately never put on
+			// the promotion event or any push.
+			_ = pin
+			executionID = ride.ID
 		}
-		// The plaintext PIN was encrypted into the vault inside createExecutionRide
-		// (same tx). A promotion has no rider call in flight, so the requester
-		// retrieves it over the authenticated REST channel (GET .../pin); it is
-		// deliberately never put on the promotion event or any push.
-		_ = pin
 
-		service := "ride"
 		slot := SlotCurrent
 		promoted, err := s.deps.Store.TransitionClaim(ctx, tx, locked, machine.MpClaimCurrent, ClaimUpdate{
 			Slot:             &slot,
 			ExecutionService: &service,
-			ExecutionID:      &ride.ID,
+			ExecutionID:      &executionID,
 			// The fencing token bump is what makes a stale execution unable to
 			// couple to the promoted claim, and what settles a race with a
 			// fresh award for the freed slot.
@@ -543,8 +595,10 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 		if err != nil {
 			return err
 		}
-		if err := s.deps.Store.SetAwardExecution(ctx, tx, lockedAward.ID, service, ride.ID); err != nil {
-			return err
+		if service == ServiceRide {
+			if err := s.deps.Store.SetAwardExecution(ctx, tx, lockedAward.ID, service, executionID); err != nil {
+				return err
+			}
 		}
 		if _, err := s.deps.Store.TransitionRequest(ctx, tx, lockedRequest, machine.MpRequestExecution, RequestUpdate{}); err != nil {
 			return err
@@ -561,11 +615,13 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 			IdempotencyKey: "mp.claim.promoted:" + promoted.ID.String(),
 			OccurredAt:     now,
 			Payload: map[string]any{
-				"claimId":      promoted.ID.String(),
-				"awardId":      lockedAward.ID.String(),
-				"driverId":     driverID.String(),
-				"rideId":       ride.ID.String(),
-				"fencingToken": promoted.FencingToken,
+				"claimId":          promoted.ID.String(),
+				"awardId":          lockedAward.ID.String(),
+				"driverId":         driverID.String(),
+				"rideId":           rideIDFor(service, executionID),
+				"executionService": service,
+				"executionId":      executionID.String(),
+				"fencingToken":     promoted.FencingToken,
 				"pickupWindow": map[string]any{
 					"earliestSec": merged.EarliestSec,
 					"latestSec":   merged.LatestSec,
@@ -582,7 +638,7 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 			SubjectType: subjectClaim,
 			SubjectID:   promoted.ID.String(),
 			Before:      map[string]any{"state": machine.MpClaimNext},
-			After:       map[string]any{"state": machine.MpClaimCurrent, "rideId": ride.ID.String()},
+			After:       map[string]any{"state": machine.MpClaimCurrent, "executionService": service, "executionId": executionID.String()},
 			// NO second commission: the fee was captured once, at selection.
 			Reason: "queued claim promoted after the current job finished",
 		})
@@ -677,6 +733,16 @@ func (s *Store) SetAwardExecution(ctx context.Context, db DB, awardID uuid.UUID,
 		return err
 	}
 	return nil
+}
+
+// rideIDFor keeps the promotion event's historical rideId key honest: the
+// execution id for a ride, empty for a delivery (whose id rides in
+// executionId with executionService).
+func rideIDFor(service string, executionID uuid.UUID) string {
+	if service != ServiceRide {
+		return ""
+	}
+	return executionID.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -831,6 +897,16 @@ func (s *Service) cancelQueuedAward(
 	})
 	if err != nil {
 		return nil, asDomainError(err)
+	}
+
+	if award.ExecutionService == ServiceDelivery && award.ExecutionID != nil {
+		// A queued DELIVERY was already handed off at award time: delivery-
+		// service holds it assigned to this driver, and its marketplace
+		// contract has no cancellation yet. Never silent — ops must cancel it
+		// there until that contract exists.
+		s.deps.Logger.Error().Str("award_id", award.ID.String()).Str("delivery_id", award.ExecutionID.String()).
+			Str("reason", reason).
+			Msg("ALARM: a handed-off queued delivery award was cancelled; delivery-service still holds the delivery assigned — cancel it there")
 	}
 
 	// The rows are committed: the captured fee is reversed with a linked
