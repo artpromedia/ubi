@@ -7,7 +7,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/go-chi/httprate"
 
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/identity"
 	appMiddleware "github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/middleware"
@@ -25,9 +24,28 @@ type requireIdentityMiddleware = func(http.Handler) http.Handler
 // test harness builds exactly this, so the identity posture under test is the
 // posture production runs. The verifier is returned for start-up logging and
 // so tests can sign a request the way the gateway does.
+//
+// The rate limiter is built here from the same configuration: valid
+// service-key calls (the marketplace hand-off and its cancellation) are not
+// throttled by the per-client limiter, a verified gateway identity is
+// counted as its user, and everyone else per client address — forwarded
+// headers believed only from DELIVERY_TRUSTED_PROXIES
+// (internal/middleware/ratelimit.go).
 func NewRouter(h *Handler) (http.Handler, *identity.Verifier) {
 	verifier := identity.NewVerifierFor(h.cfg.InternalContextSecret, 0, h.cfg.IsProduction())
-	return Routes(h, identity.RequireIdentity(verifier)), verifier
+	exemptKey := ""
+	if marketplaceAssignKeyUsable(h.cfg.InternalServiceKey) {
+		// Only a usable key exempts anyone: the committed default is public.
+		exemptKey = h.cfg.InternalServiceKey
+	}
+	limiter := appMiddleware.NewRateLimiter(appMiddleware.RateLimitConfig{
+		ServiceKey:     exemptKey,
+		Verifier:       verifier,
+		TrustedProxies: h.cfg.TrustedProxies,
+		Limit:          appMiddleware.DefaultRateLimit,
+		Window:         appMiddleware.DefaultRateLimitWindow,
+	})
+	return Routes(h, identity.RequireIdentity(verifier), limiter), verifier
 }
 
 // Routes builds the complete delivery-service router: every route
@@ -41,11 +59,14 @@ func NewRouter(h *Handler) (http.Handler, *identity.Verifier) {
 // through NewRouter, which picks the verifier's posture from configuration;
 // Routes stays parameterised so a test can mount a verifier in a posture of
 // its own choosing.
-func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler {
+//
+// limiter replaces chi's RealIP (client address, trusted proxies only) and
+// the old LimitByIP (per verified user / per client, service calls exempt).
+func Routes(h *Handler, custodyIdentity requireIdentityMiddleware, limiter *appMiddleware.RateLimiter) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
+	r.Use(limiter.ClientAddress)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.Compress(5))
@@ -60,7 +81,7 @@ func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler 
 		MaxAge:           300,
 	}))
 
-	r.Use(httprate.LimitByIP(100, time.Minute))
+	r.Use(limiter.Limit)
 
 	r.Get("/health", h.Health)
 	r.Get("/health/live", h.Liveness)
@@ -136,8 +157,11 @@ func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler 
 			r.Use(appMiddleware.ServiceAuth(h.cfg.InternalServiceKey))
 			r.Post("/payment", h.PaymentWebhook)
 			r.Post("/order", h.OrderWebhook)
-			// Marketplace award saga hand-off (idempotent on awardId).
+			// Marketplace award saga hand-off (idempotent on awardId), and its
+			// compensation when the queued award is cancelled before pickup
+			// (idempotent on awardId, fenced by the award claim's token).
 			r.Post("/marketplace-assign", h.MarketplaceAssign)
+			r.Post("/marketplace-cancel", h.MarketplaceCancel)
 		})
 	})
 

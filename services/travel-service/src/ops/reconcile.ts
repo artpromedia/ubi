@@ -20,6 +20,14 @@
  */
 import { ContractError } from "@ubi/contracts";
 
+import {
+  cityProvenanceFields,
+  runConsoleWrite,
+  type ConsoleAnswer,
+  type ConsoleCity,
+  type ConsoleRecorder,
+  type ConsoleWrite,
+} from "./console";
 import { convergeOrder, hintFor } from "./converge";
 import { orderView, type OrderRow, type OrderView } from "./ladder";
 import { withOutbox } from "./outbox";
@@ -40,6 +48,13 @@ export async function reconcileOrder(
     readonly cityId: string;
     readonly orderId: string;
     readonly correlationId: string | null;
+    /**
+     * Where `cityId` came from (a console lookup: ./console.ts). The order's
+     * own city is authoritative; only an order recorded without one falls
+     * back to the caller's city, and then every event it writes says whose
+     * word that city rests on.
+     */
+    readonly cityProvenance?: JsonRecord;
   },
 ): Promise<OrderView> {
   const order = await deps.db.travelOrder.findUnique({
@@ -80,27 +95,58 @@ export async function reconcileOrder(
     cityId: order.cityId ?? input.cityId,
     via: "lookup",
     correlationId: input.correlationId,
+    ...(order.cityId === null && input.cityProvenance !== undefined
+      ? { eventPayload: input.cityProvenance }
+      : {}),
   });
   return orderView(outcome.order);
 }
 
 /**
- * Records a settlement difference (charged vs invoiced). Emits the event only
- * when the two disagree; a matching settlement is stored as accepted.
+ * Records a settlement difference (charged vs invoiced) — a travel-ops
+ * console write, exactly once per Idempotency-Key (./console.ts). Emits the
+ * event only when the two disagree; a matching settlement is stored as
+ * accepted. The event and the console's audit record carry the city's
+ * provenance: an operator-declared city says which operator declared it.
  */
 export async function recordSettlement(
   deps: TravelDeps,
   input: {
     readonly actor: Actor;
-    readonly cityId: string;
+    readonly city: ConsoleCity;
+    readonly orderId: string;
+    readonly invoicedMinor: number;
+    readonly idempotencyKey: string;
+    readonly correlationId: string | null;
+  },
+): Promise<ConsoleAnswer> {
+  const write: ConsoleWrite = {
+    operation: "settlement",
+    actor: input.actor,
+    city: input.city,
+    idempotencyKey: input.idempotencyKey,
+    subjectType: "travel_order",
+    subjectId: input.orderId,
+    request: { invoicedMinor: input.invoicedMinor },
+  };
+  const answer = await runConsoleWrite(deps, write, async (record) => {
+    const outcome = await settle(deps, input, record);
+    return outcome;
+  });
+  return answer;
+}
+
+async function settle(
+  deps: TravelDeps,
+  input: {
+    readonly actor: Actor;
+    readonly city: ConsoleCity;
     readonly orderId: string;
     readonly invoicedMinor: number;
     readonly correlationId: string | null;
   },
-): Promise<{
-  readonly settlementId: string;
-  readonly differenceMinor: number;
-}> {
+  record: ConsoleRecorder,
+): Promise<{ readonly status: number; readonly body: JsonRecord }> {
   const order = await deps.db.travelOrder.findUnique({
     where: { id: input.orderId },
   });
@@ -113,6 +159,7 @@ export async function recordSettlement(
   const differenceMinor = chargedMinor - input.invoicedMinor;
   const settlementId = generateId("tset");
   const occurredAt = deps.now();
+  const body: JsonRecord = { settlementId, differenceMinor };
 
   await withOutbox(deps.db, async (tx) => {
     await tx.travelSettlement.create({
@@ -141,7 +188,7 @@ export async function recordSettlement(
               toVersion: 1,
               actor: input.actor,
               actorType: actorTypeFor(input.actor.role),
-              cityId: input.cityId,
+              cityId: input.city.cityId,
               idempotencyKey: `travel.settlement.difference:${settlementId}`,
               correlationId: input.correlationId,
               occurredAt,
@@ -150,11 +197,21 @@ export async function recordSettlement(
                 charged: chargedMinor,
                 invoiced: input.invoicedMinor,
                 difference: differenceMinor,
+                ...cityProvenanceFields(input.city),
               } as JsonRecord,
             },
           ];
+    await record(tx, {
+      action: "travel.ops.settlement_recorded",
+      status: 201,
+      result: body,
+      reason:
+        differenceMinor === 0
+          ? "the supplier invoice matches the charge"
+          : "a settlement difference was recorded for finance recon",
+    });
     return { result: undefined, events };
   });
 
-  return { settlementId, differenceMinor };
+  return { status: 201, body };
 }

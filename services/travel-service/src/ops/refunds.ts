@@ -20,7 +20,7 @@ import { actorTypeFor, isOpsRole } from "./roles";
 import { deterministicId } from "../lib/ids";
 
 import type { TravelDeps } from "./context";
-import type { Actor, JsonRecord } from "./types";
+import type { Actor, JsonRecord, TravelTx } from "./types";
 
 const MACHINE = "travelRefund" as const;
 
@@ -183,6 +183,14 @@ export async function advanceRefund(
     readonly cityId: string;
     readonly correlationId: string | null;
     readonly supplierRef?: string;
+    /** Extra fields merged into the outbox payload (a console action's city provenance). */
+    readonly eventPayload?: JsonRecord;
+    /**
+     * Runs inside the stage change's transaction, after it: a console
+     * action's idempotency record (./console.ts) commits with the move or
+     * not at all.
+     */
+    readonly record?: (tx: TravelTx, view: RefundView) => Promise<void>;
   },
 ): Promise<RefundView> {
   const row = await deps.db.travelRefund.findUnique({
@@ -220,8 +228,12 @@ export async function advanceRefund(
         ledgerEntryId,
       },
     });
+    const view = refundView(updated);
+    if (input.record !== undefined) {
+      await input.record(tx, view);
+    }
     return {
-      result: refundView(updated),
+      result: view,
       events: [
         {
           name: eventName,
@@ -241,6 +253,7 @@ export async function advanceRefund(
             stage: input.to,
             amount: Number(row.amountMinor),
             penalty: Number(row.penaltyMinor),
+            ...(input.eventPayload ?? {}),
           },
         },
       ],

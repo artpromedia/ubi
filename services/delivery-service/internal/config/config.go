@@ -66,6 +66,13 @@ type Config struct {
 	// back. Turning it off stops NEW charged returns only: an already
 	// reserved fee is still captured or released, never stranded.
 	ChargedReturnsEnabled bool
+
+	// TrustedProxies is DELIVERY_TRUSTED_PROXIES: the comma-separated IP
+	// addresses and/or CIDR ranges whose X-Forwarded-For / X-Real-IP the
+	// rate limiter believes (internal/middleware/ratelimit.go). Unset — the
+	// default — trusts no one: the socket peer is the client. List the
+	// api-gateway's addresses (and any ingress in front of it).
+	TrustedProxies string
 }
 
 // ProofStorageConfig is the proof bucket's connection. Endpoint is what this
@@ -180,8 +187,13 @@ func Load() *Config {
 			DownloadTTL:    getDuration("PROOF_DOWNLOAD_URL_TTL", DefaultProofDownloadTTL),
 		},
 		ChargedReturnsEnabled: os.Getenv(EnvChargedReturnsEnabled) == "true",
+		TrustedProxies:        getEnv(EnvTrustedProxies, ""),
 	}
 }
+
+// EnvTrustedProxies names the proxies the rate limiter lets say who the
+// client is (see Config.TrustedProxies).
+const EnvTrustedProxies = "DELIVERY_TRUSTED_PROXIES"
 
 // EnvChargedReturnsEnabled names the charged-returns switch (see
 // Config.ChargedReturnsEnabled).

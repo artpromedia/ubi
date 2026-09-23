@@ -22,6 +22,8 @@ import { ContractError, type EventName } from "@ubi/contracts";
 import { cleanJson } from "./json";
 import { withOutbox, type OutboxInput, type OutboxTx } from "./outbox";
 import {
+  actionRequiredPayload,
+  FLIGHT_ACTION_EVENT,
   flightCancelledAfterAwardAction,
   flightChangedAction,
 } from "./transfer-orchestrator";
@@ -90,6 +92,19 @@ function iso(value: Date | null): string | null {
   return value === null ? null : value.toISOString();
 }
 
+/**
+ * Nothing moves; the traveller chooses. The ACTION REQUIRED is announced
+ * with the flight event's own outbox row (FLIGHT_ACTION_EVENT).
+ */
+function choicesOffered(base: TransferUpdate, action: JsonRecord): Plan {
+  return {
+    outcome: "choices_offered",
+    data: { ...base, actionRequired: cleanJson(action) },
+    event: FLIGHT_ACTION_EVENT,
+    eventPayload: actionRequiredPayload(action),
+  };
+}
+
 function planFor(
   row: TransferRow,
   input: FlightStatusInput,
@@ -115,13 +130,7 @@ function planFor(
 
   if (input.status === "cancelled") {
     if (row.state === "awarded") {
-      return {
-        outcome: "choices_offered",
-        data: {
-          ...base,
-          actionRequired: cleanJson(flightCancelledAfterAwardAction(now)),
-        },
-      };
+      return choicesOffered(base, flightCancelledAfterAwardAction(now));
     }
     if (nothingOnRide) {
       return {
@@ -191,24 +200,13 @@ function planFor(
   }
 
   if (row.state === "awarded") {
-    return {
-      outcome: "choices_offered",
-      data: {
-        ...base,
-        actionRequired: cleanJson(flightChangedAction("award", proposal, now)),
-      },
-    };
+    return choicesOffered(base, flightChangedAction("award", proposal, now));
   }
   if (row.state === "requested" && row.rideState === "published") {
-    return {
-      outcome: "choices_offered",
-      data: {
-        ...base,
-        actionRequired: cleanJson(
-          flightChangedAction("publication", proposal, now),
-        ),
-      },
-    };
+    return choicesOffered(
+      base,
+      flightChangedAction("publication", proposal, now),
+    );
   }
   const retimed: TransferUpdate = { ...base, retimedCount: { increment: 1 } };
   if (nothingOnRide) {

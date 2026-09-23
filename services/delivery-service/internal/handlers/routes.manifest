@@ -33,5 +33,6 @@ POST /api/v1/driver/deliveries/{id}/pickup
 POST /api/v1/driver/location
 POST /api/v1/quotes/
 POST /api/v1/webhooks/marketplace-assign
+POST /api/v1/webhooks/marketplace-cancel
 POST /api/v1/webhooks/order
 POST /api/v1/webhooks/payment

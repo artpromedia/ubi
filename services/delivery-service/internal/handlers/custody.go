@@ -366,6 +366,7 @@ func (h *Handler) PostProposeReturn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var returnID string
+	fromVersion := cst.Version
 	err := h.applyChain(r.Context(), cst,
 		[]string{custody.RecipientUnreachable, custody.ReturnProposed},
 		actorType, &actor.UserID, req.Reason,
@@ -374,14 +375,21 @@ func (h *Handler) PostProposeReturn(w http.ResponseWriter, r *http.Request) {
 			if req.FeeMinor > 0 {
 				currency = &req.Currency
 			}
-			return tx.QueryRow(ctx, `
+			if err := tx.QueryRow(ctx, `
 				INSERT INTO delivery_returns (
 					delivery_id, custody_id, reason, fee_minor, currency, charge_status,
 					proposed_by, proposed_by_role, proposed_at, consent_state, consent_expires_at, created_at, updated_at
 				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
 				RETURNING id
 			`, deliveryID, cst.ID, req.Reason, req.FeeMinor, currency, chargeStatus,
-				actor.UserID.String(), actor.Role, proposedAt, custody.ConsentPending, expiresAt).Scan(&returnID)
+				actor.UserID.String(), actor.Role, proposedAt, custody.ConsentPending, expiresAt).Scan(&returnID); err != nil {
+				return err
+			}
+			// The sender must answer before the deadline: announced through
+			// the outbox in this same transaction (notification-service
+			// pushes the sender, with an SMS fallback). The free-text reason
+			// stays on the custody timeline, never in the event.
+			return writeOutboxEvent(ctx, tx, returnProposedEvent(cst, returnID, actor, req.FeeMinor, currency, chargeStatus, expiresAt, fromVersion, proposedAt))
 		})
 	if err != nil {
 		writeCustodyError(w, err)

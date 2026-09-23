@@ -40,6 +40,12 @@ export interface ConvergeInput {
   readonly cityId: string | null;
   readonly via: "lookup" | "webhook";
   readonly correlationId: string | null;
+  /**
+   * Extra fields merged into every order event this convergence writes — a
+   * console lookup's city provenance when the order had no city of its own
+   * and the operator's declared city stood in for it (./reconcile.ts).
+   */
+  readonly eventPayload?: JsonRecord;
 }
 
 export interface ConvergeOutcome {
@@ -280,6 +286,7 @@ export async function convergeOrder(
         detail: { ...detailBase, captureRef: capture.ref },
         occurredAt,
         correlationId: input.correlationId,
+        eventPayload: input.eventPayload,
         supplierRefs: refs,
         chargedMinor: capture.amount.amountMinor,
       });
@@ -302,6 +309,7 @@ export async function convergeOrder(
         detail: detailBase,
         occurredAt,
         correlationId: input.correlationId,
+        eventPayload: input.eventPayload,
         supplierRefs: refs,
       });
       order = advanced.order;
@@ -355,6 +363,7 @@ export async function convergeOrder(
         },
         occurredAt,
         correlationId: input.correlationId,
+        eventPayload: input.eventPayload,
         releasedMinor: release.amount.amountMinor,
       });
       return {

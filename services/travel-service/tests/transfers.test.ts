@@ -211,6 +211,28 @@ async function events(transferId: string): Promise<string[]> {
   return rows.map((event) => event.name);
 }
 
+/** The outbox rows of one event name for a transfer, oldest first. */
+async function eventRows(transferId: string, name: string) {
+  return db.outboxEvent.findMany({
+    where: { aggregateId: transferId, name },
+    orderBy: [{ occurredAt: "asc" }, { toVersion: "asc" }],
+  });
+}
+
+/**
+ * The flight ACTION REQUIRED announcement (reservation.pickup_moved): the
+ * reason code and the choice keys, never the copy.
+ */
+async function actionEvents(transferId: string) {
+  return (await eventRows(transferId, "reservation.pickup_moved")).map(
+    (event) => ({
+      actorType: event.actorType,
+      actorId: event.actorId,
+      payload: event.payload as JsonRecord,
+    }),
+  );
+}
+
 const CREATE = "POST /v1/mp/scheduled-requests";
 const CANCEL_SCHEDULED = /^POST \/v1\/mp\/scheduled-requests\/[^/]+\/cancel$/;
 const CANCEL_REQUEST = /^POST \/v1\/mp\/requests\/[^/]+\/cancel$/;
@@ -731,6 +753,77 @@ describe("flight disruptions", () => {
     // Nothing was retimed, so nothing is counted or announced as retimed.
     expect(current.retimedCount).toBe(0);
     expect(await events(transferId)).not.toContain("reservation.retimed");
+    // The choice IS announced — once, by the orchestrator, with no driver
+    // secured and no copy in the event.
+    const announced = await actionEvents(transferId);
+    expect(announced).toHaveLength(1);
+    expect(announced[0]).toMatchObject({
+      actorType: "system",
+      actorId: "travel-service",
+      payload: {
+        transferId,
+        state: "requested",
+        driverSecured: false,
+        actionRequired: "flight_changed_after_publication",
+        choices: ["rerequest", "cancel", "keep"],
+        proposal: { pickupAt: "2026-09-12T08:45:00.000Z" },
+      },
+    });
+    expect(announced[0]?.payload).not.toHaveProperty("message");
+    expect(
+      await db.auditLog.count({
+        where: {
+          subjectId: transferId,
+          action: "airport_transfer.choices_offered",
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it("announces the choice when drivers were asked before the retime could withdraw the old request — and restates it on the award", async () => {
+    const s = await setup();
+    const { transferId, srId } = await requested(s);
+    // travel still believes nothing was published: the delay is a retime...
+    const changed = await delay(
+      s,
+      "evt-retime-race",
+      new Date(LANDING.getTime() + 2 * 3_600_000),
+    );
+    expect(changed.applied).toEqual([
+      { transferId, outcome: "retime_pending" },
+    ]);
+    // ...but the traveller's selection won the race on ride-service.
+    stub.publish(srId);
+    stub.award(srId);
+    await runTransferSweep(s.deps);
+
+    const current = await row(transferId);
+    expect(current.state).toBe("awarded");
+    expect((current.actionRequired as JsonRecord).reason).toBe(
+      "flight_changed_after_award",
+    );
+    expect(stub.scheduled.get(srId)?.requestState).toBe("awarded");
+    // The choice was announced when it was offered (drivers were asked)...
+    const announced = await actionEvents(transferId);
+    expect(announced).toHaveLength(1);
+    expect(announced[0]).toMatchObject({
+      actorType: "system",
+      payload: {
+        state: "requested",
+        driverSecured: false,
+        actionRequired: "flight_changed_after_publication",
+        choices: ["rerequest", "cancel", "keep"],
+      },
+    });
+    // ...and the award that secured the ride restates it, with the choices
+    // a secured ride has.
+    const [assigned] = await eventRows(transferId, "reservation.assigned");
+    expect(assigned?.payload).toMatchObject({
+      state: "awarded",
+      driverSecured: true,
+      actionRequired: "flight_changed_after_award",
+      choices: ["keep", "cancel", "rerequest"],
+    });
   });
 
   it("after an award: never a silent change — the traveller keeps, cancels under the ride's rules, or re-requests", async () => {
@@ -751,6 +844,21 @@ describe("flight disruptions", () => {
     expect(changed.applied).toEqual([
       { transferId, outcome: "choices_offered" },
     ]);
+    // Announced in the flight event's own transaction, as the operator who
+    // recorded the verified status, with the driver still secured.
+    const announced = await actionEvents(transferId);
+    expect(announced).toHaveLength(1);
+    expect(announced[0]).toMatchObject({
+      actorType: "agent",
+      payload: {
+        state: "awarded",
+        driverSecured: true,
+        actionRequired: "flight_changed_after_award",
+        choices: ["keep", "cancel", "rerequest"],
+        flightEventId: "evt-after-award",
+        flightStatus: "delayed",
+      },
+    });
     await runTransferSweep(s.deps);
     let current = await row(transferId);
     expect(current.state).toBe("awarded");
@@ -800,6 +908,7 @@ describe("flight disruptions", () => {
       new Date(LANDING.getTime() + 3 * 3_600_000),
     );
     expect(later.applied).toEqual([{ transferId, outcome: "choices_offered" }]);
+    expect(await actionEvents(transferId)).toHaveLength(2);
     const refused = await decideTransfer(s.deps, {
       actor: s.actor,
       transferId,
@@ -877,6 +986,15 @@ describe("flight disruptions", () => {
     expect(kept.state).toBe("awarded");
     expect((kept.actionRequired as JsonRecord).reason).toBe("flight_cancelled");
     expect(stub.scheduled.get(secured.srId)?.requestState).toBe("awarded");
+    // Only the secured ride asks the traveller anything.
+    const announced = await actionEvents(secured.transferId);
+    expect(announced).toHaveLength(1);
+    expect(announced[0]?.payload).toMatchObject({
+      actionRequired: "flight_cancelled",
+      choices: ["cancel", "keep"],
+      driverSecured: true,
+    });
+    expect(await actionEvents(pending.transferId)).toHaveLength(0);
   });
 });
 

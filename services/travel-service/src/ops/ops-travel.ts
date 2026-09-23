@@ -11,6 +11,14 @@
  */
 import { ContractError } from "@ubi/contracts";
 
+import {
+  cityProvenanceFields,
+  runConsoleWrite,
+  type ConsoleAnswer,
+  type ConsoleCity,
+  type ConsoleRecorder,
+  type ConsoleWrite,
+} from "./console";
 import { toJson } from "./json";
 import { reconcileOrder } from "./reconcile";
 import { advanceRefund } from "./refunds";
@@ -133,30 +141,80 @@ export async function listExceptions(
   return exceptions;
 }
 
+/**
+ * One travel-ops exception action — a console write, exactly once per
+ * Idempotency-Key (./console.ts): a replay answers the stored result and
+ * never advances a refund or resolves a settlement a second time. Every
+ * audit and outbox row it writes records the city's provenance (an
+ * operator-declared city names the operator it rests on).
+ */
 export async function applyExceptionAction(
   deps: TravelDeps,
   input: {
     readonly actor: Actor;
-    readonly cityId: string;
+    readonly city: ConsoleCity;
+    readonly orderId: string;
+    readonly action: ExceptionAction;
+    readonly note: string | null;
+    readonly idempotencyKey: string;
+    readonly correlationId: string | null;
+  },
+): Promise<ConsoleAnswer> {
+  const write: ConsoleWrite = {
+    operation: "exception_action",
+    actor: input.actor,
+    city: input.city,
+    idempotencyKey: input.idempotencyKey,
+    subjectType: "travel_order",
+    subjectId: input.orderId,
+    request: { action: input.action, note: input.note },
+  };
+  const answer = await runConsoleWrite(deps, write, async (record) => {
+    const outcome = await runExceptionAction(deps, input, record);
+    return outcome;
+  });
+  return answer;
+}
+
+async function runExceptionAction(
+  deps: TravelDeps,
+  input: {
+    readonly actor: Actor;
+    readonly city: ConsoleCity;
     readonly orderId: string;
     readonly action: ExceptionAction;
     readonly note: string | null;
     readonly correlationId: string | null;
   },
-): Promise<JsonRecord> {
+  record: ConsoleRecorder,
+): Promise<{ readonly status: number; readonly body: JsonRecord }> {
+  const provenance = cityProvenanceFields(input.city);
+  const auditAction = `travel.ops.${input.action}`;
   switch (input.action) {
     case "lookup_by_our_ref": {
+      // Safe to repeat: the lookup converges and can never re-purchase. Its
+      // record follows it.
       const order = await reconcileOrder(deps, {
         actor: input.actor,
-        cityId: input.cityId,
+        cityId: input.city.cityId,
+        cityProvenance: provenance,
         orderId: input.orderId,
         correlationId: input.correlationId,
       });
-      return {
+      const body: JsonRecord = {
         action: input.action,
         orderId: input.orderId,
         state: order.state,
       };
+      await deps.db.$transaction(async (tx) => {
+        await record(tx, {
+          action: auditAction,
+          status: 200,
+          result: body,
+          reason: "looked the order up on UBI's own reference",
+        });
+      });
+      return { status: 200, body };
     }
     case "escalate": {
       const order = await deps.db.travelOrder.findUnique({
@@ -167,16 +225,34 @@ export async function applyExceptionAction(
           orderId: input.orderId,
         });
       }
-      await deps.db.travelOrderEvent.create({
-        data: {
-          orderId: input.orderId,
-          fromState: order.state,
-          toState: order.state,
-          actor: input.actor.id,
-          detail: toJson({ escalated: true, note: input.note }),
-        },
+      const body: JsonRecord = {
+        action: input.action,
+        orderId: input.orderId,
+        escalated: true,
+      };
+      await deps.db.$transaction(async (tx) => {
+        await tx.travelOrderEvent.create({
+          data: {
+            orderId: input.orderId,
+            fromState: order.state,
+            toState: order.state,
+            actor: input.actor.id,
+            detail: toJson({
+              escalated: true,
+              note: input.note,
+              cityId: input.city.cityId,
+              ...provenance,
+            }),
+          },
+        });
+        await record(tx, {
+          action: auditAction,
+          status: 200,
+          result: body,
+          reason: "escalated to a human",
+        });
       });
-      return { action: input.action, orderId: input.orderId, escalated: true };
+      return { status: 200, body };
     }
     case "accept_difference":
     case "dispute_difference": {
@@ -191,15 +267,35 @@ export async function applyExceptionAction(
       }
       const resolution =
         input.action === "accept_difference" ? "accepted" : "disputed";
-      await deps.db.travelSettlement.update({
-        where: { id: settlement.id },
-        data: {
-          resolution,
-          resolvedBy: input.actor.id,
-          resolvedAt: deps.now(),
-        },
+      const body: JsonRecord = {
+        action: input.action,
+        settlementId: settlement.id,
+        resolution,
+      };
+      await deps.db.$transaction(async (tx) => {
+        const resolved = await tx.travelSettlement.updateMany({
+          where: { id: settlement.id, resolution: null },
+          data: {
+            resolution,
+            resolvedBy: input.actor.id,
+            resolvedAt: deps.now(),
+          },
+        });
+        if (resolved.count !== 1) {
+          throw new ContractError(
+            "conflict",
+            "this settlement difference was resolved meanwhile",
+            { settlementId: settlement.id },
+          );
+        }
+        await record(tx, {
+          action: auditAction,
+          status: 200,
+          result: body,
+          reason: `settlement difference ${resolution}`,
+        });
       });
-      return { action: input.action, settlementId: settlement.id, resolution };
+      return { status: 200, body };
     }
     case "chase_refund": {
       const refund = await deps.db.travelRefund.findFirst({
@@ -220,20 +316,44 @@ export async function applyExceptionAction(
               ? "refunded_to_wallet"
               : null;
       if (next === null) {
-        return {
+        const body: JsonRecord = {
           action: input.action,
           refundId: refund.id,
           stage: refund.stage,
         };
+        await deps.db.$transaction(async (tx) => {
+          await record(tx, {
+            action: auditAction,
+            status: 200,
+            result: body,
+            reason: "the refund has no further stage to chase",
+          });
+        });
+        return { status: 200, body };
       }
-      const view = await advanceRefund(deps, {
+      let body: JsonRecord = {};
+      await advanceRefund(deps, {
         refundId: refund.id,
         to: next,
         actor: input.actor,
-        cityId: input.cityId,
+        cityId: input.city.cityId,
         correlationId: input.correlationId,
+        eventPayload: provenance,
+        record: async (tx, view) => {
+          body = {
+            action: input.action,
+            refundId: refund.id,
+            stage: view.stage,
+          };
+          await record(tx, {
+            action: auditAction,
+            status: 200,
+            result: body,
+            reason: `refund chased to ${view.stage}`,
+          });
+        },
       });
-      return { action: input.action, refundId: refund.id, stage: view.stage };
+      return { status: 200, body };
     }
     default:
       throw new ContractError("validation_failed", "unknown action", {

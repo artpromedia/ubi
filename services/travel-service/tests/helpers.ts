@@ -81,6 +81,10 @@ export async function resetTravel(db: TravelDb): Promise<void> {
   await db.airportTransfer.deleteMany({});
   await db.travelFlightStatusEvent.deleteMany({});
   await db.auditLog.deleteMany({ where: { subjectType: "airport_transfer" } });
+  // The travel-ops console's idempotency records (src/ops/console.ts).
+  await db.auditLog.deleteMany({
+    where: { action: { startsWith: "travel.ops." } },
+  });
   await db.rideReservationLink.deleteMany({});
   await db.travelDocument.deleteMany({});
   await db.travelOrderEvent.deleteMany({});

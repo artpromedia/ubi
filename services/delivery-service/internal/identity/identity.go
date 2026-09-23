@@ -273,6 +273,36 @@ func RequireIdentity(verifier *Verifier) func(http.Handler) http.Handler {
 	}
 }
 
+// VerifiedActor returns the actor a request's gateway identity names — only
+// when signatures are being checked and this request's signature verifies
+// exactly as RequireIdentity would accept it. With signatures disabled
+// (development only) the plain headers are unproven claims, so nothing is
+// returned. It authenticates nothing and writes nothing: the rate limiter
+// (internal/middleware/ratelimit.go) uses it to count a request against the
+// user it acts for, and RequireIdentity still runs on every identified route.
+func (v *Verifier) VerifiedActor(r *http.Request) (Actor, bool) {
+	if !v.Enabled() || v.refusesAll() {
+		return Actor{}, false
+	}
+	rawID := strings.TrimSpace(r.Header.Get(HeaderUserID))
+	role := strings.TrimSpace(r.Header.Get(HeaderUserRole))
+	cityID := strings.TrimSpace(r.Header.Get(HeaderCityID))
+	if rawID == "" || role == "" {
+		return Actor{}, false
+	}
+	if _, ok := knownRoles[role]; !ok {
+		return Actor{}, false
+	}
+	userID, err := uuid.Parse(rawID)
+	if err != nil {
+		return Actor{}, false
+	}
+	if v.verify(r, rawID, role, cityID) != nil {
+		return Actor{}, false
+	}
+	return Actor{UserID: userID, Role: role, CityID: cityID}, true
+}
+
 // ActorFrom reads the actor the middleware established. The second result is
 // false only if a route was mounted without RequireIdentity, which handlers
 // treat as an internal error rather than as an anonymous caller.

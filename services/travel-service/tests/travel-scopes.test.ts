@@ -304,7 +304,7 @@ describe("an unbound operator may name only a supported city", () => {
       `/v1/ops/travel/orders/${orderId}/settlement`,
       {
         method: "POST",
-        headers: requestHeaders,
+        headers: { "Idempotency-Key": idemKey("settle"), ...requestHeaders },
         body: JSON.stringify({ invoicedMinor: 1_000 }),
       },
     );
@@ -346,6 +346,12 @@ describe("an unbound operator may name only a supported city", () => {
       where: { aggregateId: settlementId },
     });
     expect(event.actorId).toBe(admin.id);
+    // The event says whose word the city rests on.
+    expect(event.cityId).toBe(world.cityId);
+    expect(event.payload).toMatchObject({
+      cityProvenance: "operator_declared",
+      cityDeclaredBy: admin.id,
+    });
   });
 
   it("treats a city lookup that fails as an outage, never as a yes", async () => {

@@ -413,7 +413,11 @@ describe("client → real gateway → real travel-service", () => {
       admin,
       {
         // An admin token is bound to no city: the operating city is declared.
-        headers: { "x-city-id": cityId, "x-user-id": "usr_someone_else" },
+        headers: {
+          "x-city-id": cityId,
+          "x-user-id": "usr_someone_else",
+          "idempotency-key": idemKey("settle"),
+        },
         body: { invoicedMinor: charged - 5_000 },
       },
     );
@@ -423,6 +427,10 @@ describe("client → real gateway → real travel-service", () => {
     });
     expect(event.actorId).toBe(adminId);
     expect(event.cityId).toBe(cityId);
+    expect(event.payload).toMatchObject({
+      cityProvenance: "operator_declared",
+      cityDeclaredBy: adminId,
+    });
 
     const rider = await viaGateway(
       "GET",

@@ -33,6 +33,12 @@
  *   - A relayed context past its 120 s lifetime is refused by travel-service
  *     (401), reported here as `unauthorized` — never as an outage, never
  *     retried under another identity.
+ *   - A context travel-service accepts but does not ALLOW (403: its
+ *     `travel:book` re-check — the session lacks the scope, or the device is
+ *     in limited mode — or a city the session is not in) is reported as the
+ *     permission refusal it is (`limited_mode` / `forbidden`, with a reason
+ *     the assistant can explain) — never as `service_unavailable`, never
+ *     retried.
  *
  * BACKGROUND READS. `executionOrderStatus` is the one call made with NO user
  * behind it: the service-key surface travel-service exposes for exactly this
@@ -210,6 +216,69 @@ function identityRefused(): ContractError {
   );
 }
 
+/** travel-service's scope for moving travel money (its middleware/scopes.ts). */
+const TRAVEL_BOOK_SCOPE = "travel:book";
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * travel-service's 403 as a permission refusal the assistant can explain.
+ * travel-service answers `{code, message, details}` (ContractError.toBody):
+ * `limited_mode` for an unverified device, `forbidden` with
+ * `details.required: ["travel:book"]` for a session without the scope, or
+ * `forbidden` with `details.reason: "city_mismatch"`. The message is built
+ * here, from the code and reason only — upstream text never reaches the
+ * model verbatim — and says nothing was booked or charged, which holds: the
+ * refusal happens before any travel handler runs.
+ */
+async function permissionRefused(response: Response): Promise<ContractError> {
+  let upstream: Record<string, unknown> = {};
+  try {
+    upstream = recordOf(await response.json());
+  } catch {
+    // An unreadable body is still a refusal, never an outage.
+  }
+  const details = recordOf(upstream.details);
+  const required = Array.isArray(details.required)
+    ? details.required.filter(
+        (scope): scope is string => typeof scope === "string",
+      )
+    : [];
+  if (upstream.code === "limited_mode") {
+    return new ContractError(
+      "limited_mode",
+      "The travel service refused this because the user's device is not verified yet (limited mode). They can finish the security check in the UBI app, then book, cancel or change travel. Nothing was booked, changed or charged.",
+      {
+        reason: "limited_mode",
+        required: required.length > 0 ? required : [TRAVEL_BOOK_SCOPE],
+      },
+    );
+  }
+  if (details.reason === "city_mismatch") {
+    return new ContractError(
+      "forbidden",
+      "The travel service refused this because the request's city is not the signed-in session's city. Nothing was booked, changed or charged.",
+      { reason: "city_mismatch" },
+    );
+  }
+  if (required.includes(TRAVEL_BOOK_SCOPE)) {
+    return new ContractError(
+      "forbidden",
+      "The travel service refused this because the user's session is not allowed to book travel (it lacks travel:book). Nothing was booked, changed or charged.",
+      { reason: "scope_missing", required },
+    );
+  }
+  return new ContractError(
+    "forbidden",
+    "The travel service refused this action for the signed-in user. Nothing was booked, changed or charged.",
+    { reason: "travel_refused" },
+  );
+}
+
 export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
   const doFetch = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 12_000;
@@ -289,6 +358,10 @@ export function createHttpTravelPort(options: TravelHttpOptions): TravelPort {
       // Expired (past the context's 120 s), or otherwise not accepted: the
       // user asks again; nothing is retried under another identity.
       throw identityRefused();
+    }
+    if (response.status === 403) {
+      // Accepted but not allowed: a permission refusal, not an outage.
+      throw await permissionRefused(response);
     }
     return response;
   }

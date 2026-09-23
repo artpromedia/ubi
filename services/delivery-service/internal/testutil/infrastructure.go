@@ -352,6 +352,11 @@ func (h *Harness) SeedDelivery(ctx context.Context, sender, driver Actor, state 
 		if _, err := h.Pool.Exec(context.Background(), `DELETE FROM deliveries WHERE id = $1`, id); err != nil {
 			h.T.Logf("cleanup of seeded delivery %s failed: %v", id, err)
 		}
+		// The outbox and audit rows its transitions wrote (shared tables, no
+		// foreign key): an unpublished row must not outlive the test for a
+		// relay sharing this database to pick up.
+		_, _ = h.Pool.Exec(context.Background(), `DELETE FROM public.outbox_events WHERE aggregate_type = 'shipment' AND aggregate_id = $1`, id)
+		_, _ = h.Pool.Exec(context.Background(), `DELETE FROM public.audit_log WHERE subject_id = $1`, id)
 	})
 
 	return id, out

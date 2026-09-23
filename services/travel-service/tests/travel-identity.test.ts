@@ -734,7 +734,7 @@ describe("the ops console opens only for a signed ops role", () => {
         `/v1/ops/travel/orders/${orderId}/settlement`,
         {
           method: "POST",
-          headers: requestHeaders,
+          headers: { "Idempotency-Key": idemKey("settle"), ...requestHeaders },
           body: JSON.stringify({ invoicedMinor: charged - 5_000 }),
         },
       );
@@ -756,6 +756,11 @@ describe("the ops console opens only for a signed ops role", () => {
     });
     expect(firstEvent.actorId).toBe(admin.id);
     expect(firstEvent.cityId).toBe(cityId);
+    // Declared, not verified — and by whom.
+    expect(firstEvent.payload).toMatchObject({
+      cityProvenance: "operator_declared",
+      cityDeclaredBy: admin.id,
+    });
 
     // Unbound and silent about the city: nothing to act in.
     const silent = await settle(await gatewayHeaders(admin, { scopes: [] }));
@@ -768,13 +773,14 @@ describe("the ops console opens only for a signed ops role", () => {
     );
     expect(bound.status).toBe(201);
     const second = String((await body(bound)).settlementId);
-    expect(
-      (
-        await db.outboxEvent.findFirstOrThrow({
-          where: { aggregateId: second },
-        })
-      ).cityId,
-    ).toBe(cityId);
+    const secondEvent = await db.outboxEvent.findFirstOrThrow({
+      where: { aggregateId: second },
+    });
+    expect(secondEvent.cityId).toBe(cityId);
+    expect(secondEvent.payload).toMatchObject({
+      cityProvenance: "verified",
+      cityDeclaredBy: null,
+    });
     const mismatch = await settle(
       await gatewayHeaders(admin, {
         scopes: [],

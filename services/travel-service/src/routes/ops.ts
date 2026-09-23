@@ -3,16 +3,26 @@
  * (contracts/openapi/growth-ops.yaml). Admin-only: every route requires an ops
  * role (a traveller role is refused). The commercial-rates and settlement routes
  * are the config/recon surface behind the launch comparison harness.
+ *
+ * Every state POST (exception actions, settlement, commercial rates) takes an
+ * Idempotency-Key and runs exactly once per operator + key (ops/console.ts);
+ * a replay answers the stored result with `Idempotent-Replayed: true`. The
+ * city a console write records is `cityProvenanceOf`: gateway-verified, or
+ * declared by a signed operator bound to no city — and then the outbox and
+ * audit rows say which operator declared it.
  */
 import { Hono, type Context, type Next } from "hono";
 import { z } from "zod";
 
+import { ContractError } from "@ubi/contracts";
+
 import {
   actorOf,
-  cityOf,
+  cityProvenanceOf,
   correlationIdOf,
   failure,
   gatewayAuth,
+  idempotencyKeyOf,
 } from "../middleware";
 import { parseBody } from "./parse";
 import { verifiedGatewayAuth } from "../middleware/transfer-auth";
@@ -31,8 +41,41 @@ import { recordSettlement } from "../ops/reconcile";
 import { isOpsRole } from "../ops/roles";
 import { advanceTransfer } from "../ops/transfer-orchestrator";
 
+import type { ConsoleAnswer, ConsoleCity } from "../ops/console";
 import type { TravelDeps } from "../ops/context";
 import type { JsonRecord } from "../ops/types";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+
+/**
+ * The city a console write records, with its provenance. Supplier-level
+ * writes (commercial rates) may name no city: `optional` answers null then,
+ * instead of refusing. An unsupported declared city never gets here —
+ * `gatewayAuth` refuses it first.
+ */
+function consoleCityOf(c: Context): ConsoleCity;
+function consoleCityOf(c: Context, optional: true): ConsoleCity | null;
+function consoleCityOf(c: Context, optional = false): ConsoleCity | null {
+  try {
+    return cityProvenanceOf(c);
+  } catch (error) {
+    if (
+      optional &&
+      error instanceof ContractError &&
+      error.code === "city_unsupported" &&
+      error.details === undefined
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function answer(c: Context, result: ConsoleAnswer): Response {
+  if (result.replayed) {
+    c.header("Idempotent-Replayed", "true");
+  }
+  return c.json(result.body, result.status as ContentfulStatusCode);
+}
 
 async function opsOnly(c: Context, next: Next): Promise<void | Response> {
   const actor = c.get("actor");
@@ -97,16 +140,18 @@ export function createOpsRoutes(deps: TravelDeps): Hono {
 
   routes.post("/exceptions/:id/actions", async (c) => {
     try {
+      const idempotencyKey = idempotencyKeyOf(c);
       const body = await parseBody(c, ActionBody);
       const result = await applyExceptionAction(deps, {
         actor: actorOf(c),
-        cityId: cityOf(c),
+        city: consoleCityOf(c),
         orderId: c.req.param("id"),
         action: body.action,
         note: body.note ?? null,
+        idempotencyKey,
         correlationId: correlationIdOf(c),
       });
-      return c.json(result, 200);
+      return answer(c, result);
     } catch (error) {
       return failure(c, error);
     }
@@ -131,8 +176,12 @@ export function createOpsRoutes(deps: TravelDeps): Hono {
 
   routes.post("/commercial-rates", async (c) => {
     try {
+      const idempotencyKey = idempotencyKeyOf(c);
       const body = await parseBody(c, RateBody);
       const result = await upsertCommercialRate(deps, {
+        actor: actorOf(c),
+        city: consoleCityOf(c, true),
+        idempotencyKey,
         supplierId: body.supplierId,
         routeOrProperty: body.routeOrProperty,
         feeSchedule: body.feeSchedule as unknown as JsonRecord,
@@ -140,7 +189,7 @@ export function createOpsRoutes(deps: TravelDeps): Hono {
         effectiveDate: body.effectiveDate,
         termsRef: body.termsRef ?? null,
       });
-      return c.json(result, 201);
+      return answer(c, result);
     } catch (error) {
       return failure(c, error);
     }
@@ -148,15 +197,17 @@ export function createOpsRoutes(deps: TravelDeps): Hono {
 
   routes.post("/orders/:id/settlement", async (c) => {
     try {
+      const idempotencyKey = idempotencyKeyOf(c);
       const body = await parseBody(c, SettlementBody);
       const result = await recordSettlement(deps, {
         actor: actorOf(c),
-        cityId: cityOf(c),
+        city: consoleCityOf(c),
         orderId: c.req.param("id"),
         invoicedMinor: body.invoicedMinor,
+        idempotencyKey,
         correlationId: correlationIdOf(c),
       });
-      return c.json(result, 201);
+      return answer(c, result);
     } catch (error) {
       return failure(c, error);
     }

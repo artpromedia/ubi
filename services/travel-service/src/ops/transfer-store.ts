@@ -155,10 +155,23 @@ export async function touchTransfer(
   });
 }
 
+/** The outbox event a guarded write announces, in the same transaction. */
+export interface GuardedEvent {
+  readonly name: EventName;
+  readonly payload?: JsonRecord;
+  readonly occurredAt: Date;
+  readonly correlationId?: string | null;
+}
+
 /**
  * A write that depends on the row as read (a stored create body, a window, a
  * choice offered): guarded by the version, which it bumps. `null` when the
  * row moved underneath — the caller re-reads and decides again.
+ *
+ * A write that changes what the traveller must do (an ACTION REQUIRED set in
+ * place, the lifecycle state unchanged) is announced: `event` is written to
+ * the outbox with the audit row, in the same transaction, as the audit
+ * actor. An announced write is always audited.
  */
 export async function guardedUpdate(
   deps: TravelDeps,
@@ -169,7 +182,13 @@ export async function guardedUpdate(
     readonly action: string;
     readonly reason: string;
   },
+  event?: GuardedEvent,
 ): Promise<TransferRow | null> {
+  if (event !== undefined && audit === undefined) {
+    throw new Error(
+      "an announced airport transfer write must be audited: the audit names its actor",
+    );
+  }
   const result = await withOutbox(deps.db, async (tx) => {
     const updated = await tx.airportTransfer.updateMany({
       where: { id: row.id, version: row.version },
@@ -181,12 +200,25 @@ export async function guardedUpdate(
     const after = await tx.airportTransfer.findUniqueOrThrow({
       where: { id: row.id },
     });
-    if (audit !== undefined) {
-      await tx.auditLog.create({
-        data: auditRow(audit.actor, audit.action, audit.reason, row, after),
-      });
+    if (audit === undefined) {
+      return { result: after };
     }
-    return { result: after };
+    await tx.auditLog.create({
+      data: auditRow(audit.actor, audit.action, audit.reason, row, after),
+    });
+    return {
+      result: after,
+      events:
+        event === undefined
+          ? []
+          : [
+              transferEvent(event.name, after, row.version, audit.actor, {
+                occurredAt: event.occurredAt,
+                correlationId: event.correlationId ?? null,
+                payload: event.payload,
+              }),
+            ],
+    };
   });
   return result;
 }

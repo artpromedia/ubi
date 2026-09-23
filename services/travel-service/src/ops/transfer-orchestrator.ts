@@ -31,6 +31,7 @@
 import {
   ContractError,
   isEnabled,
+  type EventName,
   type MpCreateScheduledRequest,
   type MpScheduledRequest,
 } from "@ubi/contracts";
@@ -54,6 +55,7 @@ import {
   SYSTEM_ACTOR,
   touchTransfer,
   transitionTransfer,
+  type GuardedEvent,
   type TransferRow,
   type TransferUpdate,
 } from "./transfer-store";
@@ -217,6 +219,52 @@ export function flightChangedAction(
     choices: choices("rerequest", "cancel_free", "keep"),
     proposal: cleanJson(proposal) as JsonRecord,
     raisedAt: raisedAt.toISOString(),
+  };
+}
+
+/**
+ * How a flight-driven ACTION REQUIRED is announced: the flight changed (or
+ * was cancelled) after drivers were asked or a driver was secured, nothing
+ * moved, and the traveller must choose. The lifecycle state does not change,
+ * so no transition event covers it; this is the catalog event for exactly
+ * that moment — the `reservation` machine's `pickup_moved` (contracts/
+ * state-machines.json: assigned → pickup_moved → assigned | released: the
+ * flight moved the pickup and the traveller keeps or releases the ride).
+ * The payload carries the reason code and the choice KEYS, never the copy:
+ * `actionRequired` (flight_changed_after_publication |
+ * flight_changed_after_award | flight_cancelled), `choices`, the proposed
+ * window and `driverSecured` (from the transfer event base) — so a consumer
+ * never says "confirmed" for a ride no driver secured.
+ *
+ * notification-service consumes `event:reservation.*`; its copy table has
+ * no entry for this name yet (it pushes reservation.requested /
+ * .assigned / .reservation_failed), so this reaches the traveller's app
+ * timeline now and a push once that copy exists.
+ */
+export const FLIGHT_ACTION_EVENT: EventName = "reservation.pickup_moved";
+
+/** The ids-and-codes payload of a flight ACTION REQUIRED event. */
+export function actionRequiredPayload(action: JsonRecord): JsonRecord {
+  const offered = Array.isArray(action.choices)
+    ? (action.choices as JsonRecord[]).map((choice) => String(choice.key))
+    : [];
+  return {
+    actionRequired: String(action.reason),
+    choices: offered,
+    proposal: (action.proposal ?? null) as JsonRecord | null,
+    actionRaisedAt: (action.raisedAt ?? null) as string | null,
+  };
+}
+
+/** The announcement for a flight ACTION REQUIRED set by a guarded write. */
+export function flightActionEvent(
+  action: JsonRecord,
+  occurredAt: Date,
+): GuardedEvent {
+  return {
+    name: FLIGHT_ACTION_EVENT,
+    payload: actionRequiredPayload(action),
+    occurredAt,
   };
 }
 
@@ -709,20 +757,22 @@ export async function applyRideView(
       return false;
     }
     // A choice offered while drivers were being asked now concerns a
-    // SECURED ride: restate it as such (same proposal, same choices).
+    // SECURED ride: restate it as such (same proposal, same choices) — and
+    // say so on the award's own event, since the choices' terms changed (a
+    // cancellation now follows the ride's own rules).
     let actionRequired: TransferUpdate["actionRequired"] = undefined;
+    let restated: JsonRecord | null = null;
     if (action?.reason === "flight_changed_after_publication") {
-      actionRequired = cleanJson(
-        flightChangedAction(
-          "award",
-          targetOf(action.proposal) ?? {
-            pickupAt: null,
-            windowEnd: null,
-            arriveBy: null,
-          },
-          now,
-        ),
+      restated = flightChangedAction(
+        "award",
+        targetOf(action.proposal) ?? {
+          pickupAt: null,
+          windowEnd: null,
+          arriveBy: null,
+        },
+        now,
       );
+      actionRequired = cleanJson(restated);
     } else if (action?.reason === "ride_needs_approval") {
       actionRequired = JSON_NULL;
     }
@@ -741,7 +791,10 @@ export async function applyRideView(
       action: "airport_transfer.awarded",
       reason: "ride-service reported a requester-approved award",
       event: "reservation.assigned",
-      payload: { requestId: view.requestId },
+      payload: {
+        requestId: view.requestId,
+        ...(restated === null ? {} : actionRequiredPayload(restated)),
+      },
       occurredAt: now,
     });
     return false;
@@ -1055,9 +1108,10 @@ async function retime(
         occurredAt: now,
       });
       return true;
-    case "published":
+    case "published": {
       // Drivers were already asked for the old time: never move a live
-      // request silently. The traveller chooses.
+      // request silently. The traveller chooses — and is told so.
+      const action = flightChangedAction("publication", target, now);
       await guardedUpdate(
         deps,
         row,
@@ -1065,9 +1119,7 @@ async function retime(
           retimeTarget: JSON_NULL,
           rideState: "published",
           rideRequestId: withdrawal.requestId,
-          actionRequired: cleanJson(
-            flightChangedAction("publication", target, now),
-          ),
+          actionRequired: cleanJson(action),
           nextActionAt: now,
         },
         {
@@ -1076,13 +1128,27 @@ async function retime(
           reason:
             "flight changed after publication; offered keep / cancel / re-request",
         },
+        flightActionEvent(action, now),
       );
       return true;
+    }
     case "secured": {
-      const updated = await guardedUpdate(deps, row, {
-        retimeTarget: JSON_NULL,
-        actionRequired: cleanJson(flightChangedAction("award", target, now)),
-      });
+      const action = flightChangedAction("award", target, now);
+      const updated = await guardedUpdate(
+        deps,
+        row,
+        {
+          retimeTarget: JSON_NULL,
+          actionRequired: cleanJson(action),
+        },
+        {
+          actor: SYSTEM_ACTOR,
+          action: "airport_transfer.choices_offered",
+          reason:
+            "flight changed after a driver was secured; offered keep / cancel / re-request",
+        },
+        flightActionEvent(action, now),
+      );
       if (updated !== null) {
         await applyRideView(deps, updated, withdrawal.view, now);
       }
@@ -1231,15 +1297,24 @@ async function stepOnce(deps: TravelDeps, row: TransferRow): Promise<boolean> {
       const reread = await deps.db.airportTransfer.findUnique({
         where: { id: row.id },
       });
-      if (reread !== null && reread.pendingCancel !== null) {
-        await guardedUpdate(deps, reread, {
-          pendingCancel: null,
-          ...(reread.pendingCancel === "flight_cancelled"
-            ? {
-                actionRequired: cleanJson(flightCancelledAfterAwardAction(now)),
-              }
-            : {}),
-        });
+      if (reread !== null && reread.pendingCancel === "flight_cancelled") {
+        // The flight is gone but the ride is secured: the traveller decides
+        // (cancel under the ride's own rules, or keep) — and is told so.
+        const action = flightCancelledAfterAwardAction(now);
+        await guardedUpdate(
+          deps,
+          reread,
+          { pendingCancel: null, actionRequired: cleanJson(action) },
+          {
+            actor: SYSTEM_ACTOR,
+            action: "airport_transfer.choices_offered",
+            reason:
+              "flight cancelled after a driver was secured; offered cancel / keep",
+          },
+          flightActionEvent(action, now),
+        );
+      } else if (reread !== null && reread.pendingCancel !== null) {
+        await guardedUpdate(deps, reread, { pendingCancel: null });
       }
     } else if (result.kind === "unavailable") {
       await backoff(deps, row, result.error);

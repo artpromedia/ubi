@@ -353,6 +353,53 @@ describe("request-scoped calls relay the user's gateway-signed context", () => {
     expect(hops).toHaveLength(0);
   });
 
+  it("reports a context travel-service does not ALLOW as a permission refusal, never an outage", async () => {
+    const world = await bookedWorld();
+    production();
+    const book = (token: string) =>
+      runWithIdentityRelay(relayFrom(token), () =>
+        askPort().book(world.traveller, {
+          grantId: world.grantId,
+          offerRef: "AP-P4-7120",
+          idempotencyKey: idemKey("exec"),
+        }),
+      );
+
+    // A device in limited mode: travel-service's travel:book re-check
+    // refuses it as such, and the assistant can say what to do about it.
+    const limited = await refusal(
+      book(
+        await gatewayContext(world.traveller, {
+          cityId: world.cityId,
+          modes: ["limited"],
+        }),
+      ),
+    );
+    expect(hops.at(-1)?.status).toBe(403);
+    expect(limited.code).toBe("limited_mode");
+    expect(limited.details).toMatchObject({ reason: "limited_mode" });
+    expect(limited.message).toContain("security check");
+
+    // A session without travel:book.
+    const unscoped = await refusal(
+      book(
+        await gatewayContext(world.traveller, {
+          cityId: world.cityId,
+          scopes: ["profile:read", "travel:read"],
+        }),
+      ),
+    );
+    expect(hops.at(-1)?.status).toBe(403);
+    expect(unscoped.code).toBe("forbidden");
+    expect(unscoped.details).toMatchObject({
+      reason: "scope_missing",
+      required: ["travel:book"],
+    });
+    for (const error of [limited, unscoped]) {
+      expect(error.code).not.toBe("service_unavailable");
+    }
+  });
+
   it("the headers the port sent before round 7 are refused by production travel-service", async () => {
     const world = await bookedWorld();
     production();

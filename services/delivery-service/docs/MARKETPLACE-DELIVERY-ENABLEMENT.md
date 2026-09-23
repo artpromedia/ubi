@@ -16,7 +16,10 @@ This page is the precise list of what the flag still waits for, as of P17
 | Verified proof object storage (P17)                    |     yes     | `proof_storage_test.go`, MinIO + in-process S3                         |    no    |   off   |
 | Charged returns, delivery side (P17)                   |     yes     | `charged_returns_test.go` (contract stub)                              |    no    |   off   |
 | Charged returns, payment side (P17)                    |     yes     | `payment-service tests/finance/delivery-returns.test.ts` (real ledger) |    no    |   off   |
-| **Award-saga producer for marketplace-assign**         |   **no**    | —                                                                      |    no    |   off   |
+| Award-saga producer for marketplace-assign (round 7)   |     yes     | ride-service `delivery_handoff_http_test.go` (contract double)         |    no    |   off   |
+| Queued-award cancellation, `marketplace-cancel` (r8)   |     yes     | `marketplace_cancel_test.go` (real schema, pickup race)                |    no    |   off   |
+| `shipment.return_proposed` / `shipment.cancelled` (r8) |     yes     | `return_outbox_test.go`, `marketplace_cancel_test.go`                  |    no    |   off   |
+| Service calls exempt from the client limiter (r8)      |     yes     | `middleware/ratelimit_test.go`, `marketplace_cancel_test.go`           |    no    |   n/a   |
 | **Gateway path + scopes for the custody/proof routes** |   **no**    | —                                                                      |    no    |   off   |
 | OpenAPI / rider-mobile for the new routes              |   **no**    | —                                                                      |    no    |   off   |
 
@@ -122,11 +125,12 @@ adjusted or re-captured.
 
 ## 4. What still blocks enabling `marketplace_delivery`
 
-### 4a. The award-saga producer (ride-service — not in this slice)
+### 4a. The award-saga producer (ride-service)
 
-No code calls `marketplace-assign` today. ride-service must add, behind
+ride-service's award saga calls `marketplace-assign` (round 7,
+`services/ride-service/internal/marketplace/delivery_handoff.go`), behind
 `marketplace_delivery` for the request's city and only for `service =
-delivery` requests:
+delivery` requests. The contract it implements:
 
 ```
 POST {DELIVERY_SERVICE_URL}/api/v1/webhooks/marketplace-assign
@@ -160,6 +164,49 @@ Content-Type: application/json
   misconfiguration, alarm.
 - **Never** promise transport before the `201`/`200`; the delivery exists only
   then.
+
+### 4a′. Queued-award cancellation (round 8 — served)
+
+A queued delivery award is handed off before it is confirmed, so when
+ride-service cancels it (fee-free exit after a missed window, driver-failure
+recovery, a passenger's decline) it owes delivery-service a cancellation,
+written in the award's own transaction and driven until a definite answer
+(`services/ride-service/internal/marketplace/delivery_cancel.go`):
+
+```
+POST {DELIVERY_SERVICE_URL}/api/v1/webhooks/marketplace-cancel
+X-Service-Key: <INTERNAL_SERVICE_KEY; never the committed default>
+
+{ "awardId": "…", "deliveryId": "<UUID>", "fencingToken": 3, "reason": "driver_offline" }
+```
+
+- `200 {id, status:"CANCELLED", marketplaceAwardId, custodyState, cancelledAt}`
+  — custody `courier_assigned → cancelled`, the legacy row `FAILED` (the
+  Prisma enum has no `CANCELLED`; custody is the source of truth and
+  `marketplace_metadata` records `marketplaceCancelledAt`/`…CancelReason`),
+  one `custody_events` row, `shipment.cancelled` in the outbox and an
+  `audit_log` row — all in one transaction under a row lock on the custody
+  row. A replay answers the same 200 and writes nothing.
+- `404 DELIVERY_NOT_FOUND` (no delivery for the award), `409
+AWARD_REPLAY_MISMATCH` (another delivery id, or not the fencing token the
+  delivery was handed off under), `409 DELIVERY_NOT_CANCELLABLE` (custody
+  moved past assignment — `error.details.custodyState` names where; the
+  parcel is never silently taken back), `400 VALIDATION_ERROR` /
+  `INVALID_JSON` → permanent: ride-service records the refusal and alarms
+  ops. `403` / `503 SERVICE_KEY_NOT_CONFIGURED` → misconfiguration, retried.
+- No money moves here: the commission is reversed by ride-service with the
+  award.
+
+### Rate limiting (round 8)
+
+The router no longer runs chi's `RealIP` + `LimitByIP(100/min)` ahead of
+ServiceAuth (which put every ride-service hand-off in one container-address
+bucket and believed any client's `X-Forwarded-For`). A valid, usable
+`X-Service-Key` is not throttled by the per-client limiter; a verified
+gateway identity is counted as its user; everything else per client address
+(IPv4 host / IPv6 /64). `X-Forwarded-For` / `X-Real-IP` are read only from
+peers in `DELIVERY_TRUSTED_PROXIES` (unset: nobody) — set it to the
+api-gateway/ingress addresses. See `internal/middleware/ratelimit.go`.
 
 ### 4b. Gateway (api-gateway — not in this slice)
 
