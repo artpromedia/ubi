@@ -6,6 +6,11 @@
  * (ride-service) calls them with `X-Service-Key`, and the driver never
  * reaches them. The only driver-facing surface here is the wallet overview,
  * which reads the caller's OWN wallet — the one server-computed spendable.
+ *
+ * Post-award amendments (A02 item 5) ride the same two guarded families:
+ * `/holds/:id/amendments/:amendmentId/{reserve,capture,release,refund}` for
+ * the commission delta and `/funding/{top-up,top-up/commit,top-up/release,
+ * partial-release}` for the rider's funding. Shapes: docs/MARKETPLACE-MONEY.md.
  */
 import { Hono, type Context } from "hono";
 import { z } from "zod";
@@ -19,12 +24,20 @@ import {
 import {
   adjustHold,
   authorizeMarketplaceFunding,
+  captureCommissionDelta,
   captureHold,
+  commitFundingTopUp,
   getMpWalletOverview,
+  partialReleaseFunding,
+  refundCommissionDelta,
+  releaseCommissionDelta,
+  releaseFundingTopUp,
   releaseHold,
   releaseMarketplaceFunding,
+  reserveCommissionDelta,
   reserveHold,
   settleMarketplaceCompletion,
+  topUpFunding,
   type WalletDeps,
 } from "../ledger";
 import { reverseCapturedHold } from "../ledger/mp-holds";
@@ -98,6 +111,53 @@ const FundingReleaseBody = z.object({
   reason: z.string().min(1).max(280),
 });
 
+/**
+ * A commission delta's terms: the award's captured total as the caller last
+ * knew it, the new total (10% of the new fare, half-up) and the new fare.
+ * payment-service verifies the prior against the journal and derives the
+ * delta itself.
+ */
+const DeltaTermsBody = z.object({
+  awardId: z.string().min(1),
+  priorTotalMinor: MoneyBody,
+  newTotalMinor: MoneyBody,
+  newBaseMinor: MoneyBody,
+});
+
+const DeltaCaptureBody = z.object({
+  awardId: z.string().min(1),
+  newTotalMinor: MoneyBody,
+});
+
+const DeltaReleaseBody = z.object({
+  awardId: z.string().min(1),
+  reason: z.string().min(1).max(280),
+});
+
+/** Funding amendments keep funding's bare-integer amounts (funding.go). */
+const FundingAmendmentBody = z.object({
+  requesterId: z.string().min(1),
+  awardId: z.string().min(1),
+  amendmentId: z.string().min(1),
+  paymentMethodId: z.string().min(1),
+  priorAmountMinor: z.number().int().positive(),
+  newAmountMinor: z.number().int().positive(),
+  currency: z.string().min(3).max(3),
+  cityId: z.string().min(1),
+});
+
+const FundingTopUpCommitBody = z.object({
+  awardId: z.string().min(1),
+  amendmentId: z.string().min(1),
+  newAmountMinor: z.number().int().positive(),
+});
+
+const FundingTopUpReleaseBody = z.object({
+  awardId: z.string().min(1),
+  amendmentId: z.string().min(1),
+  reason: z.string().min(1).max(280),
+});
+
 /** Two Money bodies on one request must agree on their denomination. */
 function sharedCurrencyOf(
   amount: { currency: string },
@@ -111,6 +171,20 @@ function sharedCurrencyOf(
     );
   }
   return amount.currency;
+}
+
+/** Every Money body on one request must share one denomination. */
+function allSameCurrency(...amounts: readonly { currency: string }[]): string {
+  const [first, ...rest] = amounts;
+  const currency = first?.currency ?? "";
+  if (rest.some((amount) => amount.currency !== currency)) {
+    throw new ContractError(
+      "validation_failed",
+      "every Money body on this request must carry the same currency",
+      { currencies: amounts.map((amount) => amount.currency) },
+    );
+  }
+  return currency;
 }
 
 function idempotencyKeyOf(c: Context): string {
@@ -239,6 +313,52 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
     }
   });
 
+  // Rider funding amendments (A02 item 5): top-up before commit, its commit
+  // or release, and the partial release of a fare decrease at commit. The
+  // amendment id is the idempotency authority; the header is required for
+  // parity. See src/ledger/mp-funding-amendments.ts.
+  routes.post("/funding/top-up", async (c) => {
+    try {
+      idempotencyKeyOf(c);
+      const body = await parse(c, FundingAmendmentBody);
+      const result = await topUpFunding(deps, body);
+      return c.json(result, result.replayed || !result.secured ? 200 : 201);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/funding/top-up/commit", async (c) => {
+    try {
+      idempotencyKeyOf(c);
+      const body = await parse(c, FundingTopUpCommitBody);
+      return c.json(await commitFundingTopUp(deps, body), 200);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/funding/top-up/release", async (c) => {
+    try {
+      idempotencyKeyOf(c);
+      const body = await parse(c, FundingTopUpReleaseBody);
+      return c.json(await releaseFundingTopUp(deps, body), 200);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/funding/partial-release", async (c) => {
+    try {
+      idempotencyKeyOf(c);
+      const body = await parse(c, FundingAmendmentBody);
+      const result = await partialReleaseFunding(deps, body);
+      return c.json(result, result.replayed || !result.secured ? 200 : 201);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
   routes.post("/holds/reserve", async (c) => {
     try {
       const body = await parse(c, ReserveBody);
@@ -345,6 +465,98 @@ export function createMpHoldRoutes(deps: WalletDeps): Hono {
         },
         200,
       );
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  // Post-award commission deltas (A02 item 5), keyed by the award's captured
+  // reservation and the amendment id: reserve/capture/release an increment,
+  // or refund a decrement. The fee is never re-charged — only the difference
+  // moves. See src/ledger/mp-commission-deltas.ts.
+  routes.post("/holds/:id/amendments/:amendmentId/reserve", async (c) => {
+    try {
+      const body = await parse(c, DeltaTermsBody);
+      const result = await reserveCommissionDelta(
+        deps,
+        c.req.param("id"),
+        c.req.param("amendmentId"),
+        {
+          awardId: body.awardId,
+          priorTotalMinor: body.priorTotalMinor.amountMinor,
+          newTotalMinor: body.newTotalMinor.amountMinor,
+          newBaseMinor: body.newBaseMinor.amountMinor,
+          currency: allSameCurrency(
+            body.priorTotalMinor,
+            body.newTotalMinor,
+            body.newBaseMinor,
+          ),
+        },
+        idempotencyKeyOf(c),
+      );
+      return c.json(result.delta, result.replayed ? 200 : 201);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/holds/:id/amendments/:amendmentId/capture", async (c) => {
+    try {
+      const body = await parse(c, DeltaCaptureBody);
+      const result = await captureCommissionDelta(
+        deps,
+        c.req.param("id"),
+        c.req.param("amendmentId"),
+        {
+          awardId: body.awardId,
+          newTotalMinor: body.newTotalMinor.amountMinor,
+          currency: body.newTotalMinor.currency,
+        },
+        idempotencyKeyOf(c),
+      );
+      return c.json(result.delta, 200);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/holds/:id/amendments/:amendmentId/release", async (c) => {
+    try {
+      const body = await parse(c, DeltaReleaseBody);
+      const result = await releaseCommissionDelta(
+        deps,
+        c.req.param("id"),
+        c.req.param("amendmentId"),
+        { awardId: body.awardId, reason: body.reason },
+        idempotencyKeyOf(c),
+      );
+      return c.json(result.delta, 200);
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/holds/:id/amendments/:amendmentId/refund", async (c) => {
+    try {
+      const body = await parse(c, DeltaTermsBody);
+      const result = await refundCommissionDelta(
+        deps,
+        c.req.param("id"),
+        c.req.param("amendmentId"),
+        {
+          awardId: body.awardId,
+          priorTotalMinor: body.priorTotalMinor.amountMinor,
+          newTotalMinor: body.newTotalMinor.amountMinor,
+          newBaseMinor: body.newBaseMinor.amountMinor,
+          currency: allSameCurrency(
+            body.priorTotalMinor,
+            body.newTotalMinor,
+            body.newBaseMinor,
+          ),
+        },
+        idempotencyKeyOf(c),
+      );
+      return c.json(result.delta, result.replayed ? 200 : 201);
     } catch (error) {
       return fail(c, error);
     }

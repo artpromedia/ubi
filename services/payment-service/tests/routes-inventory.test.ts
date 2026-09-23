@@ -92,6 +92,32 @@ describe("payment-service route inventory", () => {
     }
   });
 
+  it("mounts the post-award amendment money routes inside the service-key families", () => {
+    // A02 item 5: commission deltas live under /v1/wallet/mp/holds and rider
+    // funding amendments under /v1/wallet/mp/funding — the two prefixes the
+    // router guards with internalServiceAuth and the gateway restricts to
+    // admin:all. A move out of either family must be a reviewed decision.
+    const paths = app.routes.map((route) => `${route.method} ${route.path}`);
+    const amendmentRoutes = [
+      "POST /v1/wallet/mp/holds/:id/amendments/:amendmentId/reserve",
+      "POST /v1/wallet/mp/holds/:id/amendments/:amendmentId/capture",
+      "POST /v1/wallet/mp/holds/:id/amendments/:amendmentId/release",
+      "POST /v1/wallet/mp/holds/:id/amendments/:amendmentId/refund",
+      "POST /v1/wallet/mp/funding/top-up",
+      "POST /v1/wallet/mp/funding/top-up/commit",
+      "POST /v1/wallet/mp/funding/top-up/release",
+      "POST /v1/wallet/mp/funding/partial-release",
+    ];
+    for (const route of amendmentRoutes) {
+      expect(paths).toContain(route);
+    }
+    const guards = app.routes
+      .filter((route) => route.method === "ALL")
+      .map((route) => route.path);
+    expect(guards).toContain("/v1/wallet/mp/holds/*");
+    expect(guards).toContain("/v1/wallet/mp/funding/*");
+  });
+
   it.each([
     ["GET", "/wallets"],
     ["GET", "/wallets/balance"],

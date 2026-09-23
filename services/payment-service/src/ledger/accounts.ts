@@ -91,6 +91,16 @@ export const ENTRY_KINDS = [
   "mp_commission_capture",
   /** Linked compensation for a captured marketplace commission — never an edit. */
   "mp_commission_reversal",
+  /**
+   * A post-award amendment's commission INCREMENT (fare raised): only the
+   * difference, linked to the award's capture — the fee is never re-charged.
+   */
+  "mp_commission_delta_capture",
+  /**
+   * A post-award amendment's commission DECREMENT (fare lowered): a linked
+   * partial reversal back to the driver, never more than captured to date.
+   */
+  "mp_commission_delta_refund",
   /** Negotiated-fare completion: full fare to the driver, fee already captured (M06). */
   "mp_ride_completion",
   "mp_ride_completion_cash",
