@@ -8,6 +8,13 @@
  * fallback to the conventional flow (rule #18): the assistant is simply
  * unavailable, never faked. The embedder defaults to the offline lexical embedder
  * so RAG still functions without a GPU; a configured endpoint replaces it.
+ *
+ * The marketplace port reaches ride-service directly, so it must present the
+ * same HMAC-signed internal identity the gateway would (lib/ride-context.ts).
+ * `createDeps` therefore REFUSES to build in production without
+ * RIDE_INTERNAL_CONTEXT_SECRET — the process exits at boot (index.ts), exactly
+ * as ride-service itself does — and warns in development, where ride-service
+ * accepts the identity unsigned.
  */
 import {
   createHashEmbeddingProvider,
@@ -16,7 +23,12 @@ import {
 } from "./ai/embedding-provider";
 import { createHttpModelProvider } from "./ai/model-provider";
 import { createRetriever } from "./ai/rag";
+import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
+import {
+  RIDE_CONTEXT_SECRET_ENV,
+  loadRideContextKeys,
+} from "./lib/ride-context";
 import { DEFAULT_LIMITS, type AskDeps } from "./ops/context";
 import { createFlagProvider } from "./ops/flags";
 import { createHttpGrantPort } from "./ports/grant-port";
@@ -50,6 +62,13 @@ const SUPPORT_SERVICE_URL =
 export function createDeps(): AskDeps {
   const db = prisma as unknown as AskDb;
   const serviceKey = process.env.INTERNAL_SERVICE_KEY;
+  // Throws in production when the secret is missing (fail closed at boot).
+  const rideContextKeys = loadRideContextKeys(process.env);
+  if (rideContextKeys.length === 0) {
+    logger.warn(
+      `${RIDE_CONTEXT_SECRET_ENV} is not set: marketplace calls to ride-service carry an UNSIGNED identity (development only)`,
+    );
+  }
 
   const embedder: EmbeddingProvider =
     EMBED_ENDPOINT_URL === undefined
@@ -74,11 +93,12 @@ export function createDeps(): AskDeps {
     embedder,
     retriever: createRetriever(embedder),
     ride: createHttpRidePort({ baseUrl: RIDE_SERVICE_URL, serviceKey }),
-    // Marketplace rider routes are served by ride-service behind the gateway's
-    // /v1/mp/* proxy; the assistant calls them as the user, deny-by-default.
+    // Marketplace rider routes are served by ride-service (the gateway proxies
+    // /v1/mp/* there for human clients). The assistant calls them directly AS
+    // the user, under the signed delegated identity, deny-by-default.
     marketplace: createHttpMarketplacePort({
       baseUrl: RIDE_SERVICE_URL,
-      serviceKey,
+      signingKeys: rideContextKeys,
     }),
     travel: createHttpTravelPort({ baseUrl: TRAVEL_SERVICE_URL, serviceKey }),
     promotions: createHttpPromotionsPort({

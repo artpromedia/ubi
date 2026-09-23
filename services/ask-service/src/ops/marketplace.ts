@@ -38,6 +38,7 @@ import {
   type MarketplacePort,
   type MpAward,
   type MpOffer,
+  type MpPrincipal,
   type MpQuote,
   type MpQuoteInput,
   type MpRequest,
@@ -120,6 +121,31 @@ function port(deps: AskDeps): MarketplacePort {
   return deps.marketplace;
 }
 
+/**
+ * The principal every marketplace call is made AS — and the identity the port
+ * signs for ride-service: the authenticated actor's id and role plus the Ask
+ * session's gateway-verified city. Both inputs reach the ops from the route's
+ * request context (middleware/auth.ts), never from a tool argument or model
+ * output, and only these three fields are copied, so nothing else riding on an
+ * actor object can reach the delegated identity (rule #18).
+ */
+function principalOf(actor: Actor, cityId: string): MpPrincipal {
+  return { id: actor.id, role: actor.role, cityId };
+}
+
+/**
+ * The grant's city is the only city the assistant may act in for it. The
+ * delegated identity carries the SESSION city, so a scope minted for another
+ * city is refused before any call rather than signed for the wrong one.
+ */
+function assertSessionCity(scope: MarketplaceGrantScope, cityId: string): void {
+  if (scope.cityId !== cityId) {
+    throw new ContractError("forbidden", "the grant city is out of scope", {
+      reason: "city_mismatch",
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Read: quote (non-binding) and offers
 // ---------------------------------------------------------------------------
@@ -136,7 +162,10 @@ export async function quoteMarketplace(
   input: QuoteInput,
 ): Promise<MpQuote> {
   await assertFlag(deps, input.cityId);
-  const quote = await port(deps).quote(input.actor, input.input);
+  const quote = await port(deps).quote(
+    principalOf(input.actor, input.cityId),
+    input.input,
+  );
   await recordAction(deps, {
     actor: input.actor,
     action: "mp.quote",
@@ -168,7 +197,10 @@ export async function reviewOffers(
   requestId: string,
 ): Promise<ReviewOffersResult> {
   await assertFlag(deps, cityId);
-  const snapshot = await port(deps).viewOffers(actor, requestId);
+  const snapshot = await port(deps).viewOffers(
+    principalOf(actor, cityId),
+    requestId,
+  );
   if (snapshot === null || snapshot.request.requesterId !== actor.id) {
     // A request that is not the caller's is not discoverable (rule #18).
     throw new ContractError("not_found", "no such request");
@@ -220,11 +252,7 @@ export async function authorizeNegotiation(
       reason: "principal_mismatch",
     });
   }
-  if (scope.cityId !== input.cityId) {
-    throw new ContractError("forbidden", "the grant city is out of scope", {
-      reason: "city_mismatch",
-    });
-  }
+  assertSessionCity(scope, input.cityId);
 
   const unattended = input.mandateId !== undefined;
   if (unattended) {
@@ -318,6 +346,7 @@ export async function prepareRequest(
   await assertFlag(deps, input.cityId);
   const { scope } = input;
   assertActionPermitted(scope, "prepare");
+  assertSessionCity(scope, input.cityId);
 
   const grant = await loadLiveGrant(deps, input.grantId, input.actor, scope);
   if (input.requestedFareMinor > Number(grant.totalMinor)) {
@@ -333,14 +362,17 @@ export async function prepareRequest(
     input.actor.id,
     input.grantId,
   );
-  const request = await port(deps).prepareRequest(input.actor, {
-    quoteId: scope.quoteId,
-    requestedFareMinor: input.requestedFareMinor,
-    currency: scope.currency,
-    paymentMethodId: input.paymentMethodId,
-    weightKg: input.weightKg,
-    idempotencyKey,
-  });
+  const request = await port(deps).prepareRequest(
+    principalOf(input.actor, input.cityId),
+    {
+      quoteId: scope.quoteId,
+      requestedFareMinor: input.requestedFareMinor,
+      currency: scope.currency,
+      paymentMethodId: input.paymentMethodId,
+      weightKg: input.weightKg,
+      idempotencyKey,
+    },
+  );
 
   // The authoritative request must land inside the authorised scope.
   assertRequestInScope(request, scope);
@@ -397,6 +429,8 @@ export async function selectOffer(
   await assertFlag(deps, input.cityId);
   const { scope } = input;
   assertActionPermitted(scope, "select");
+  assertSessionCity(scope, input.cityId);
+  const principal = principalOf(input.actor, input.cityId);
 
   const now = deps.now();
 
@@ -429,7 +463,7 @@ export async function selectOffer(
 
   // Authoritative snapshot — the offer text is untrusted; only its numbers/ids
   // (and the server-signed request) drive the decision.
-  const snapshot = await port(deps).viewOffers(input.actor, input.requestId);
+  const snapshot = await port(deps).viewOffers(principal, input.requestId);
   if (snapshot === null || snapshot.request.requesterId !== input.actor.id) {
     throw new ContractError("not_found", "no such request");
   }
@@ -518,7 +552,7 @@ export async function selectOffer(
   let pickupPin: string | undefined;
   let converged = false;
   try {
-    const result = await port(deps).select(input.actor, {
+    const result = await port(deps).select(principal, {
       requestId: input.requestId,
       bidId: input.bidId,
       requestVersion: snapshot.request.version,
@@ -534,7 +568,7 @@ export async function selectOffer(
       error instanceof MarketplaceTimeoutError ||
       (error instanceof ContractError && error.code === "award_unresolved")
     ) {
-      const queried = await port(deps).getAward(input.actor, input.requestId);
+      const queried = await port(deps).getAward(principal, input.requestId);
       if (queried !== null) {
         award = queried;
         converged = true;
@@ -564,7 +598,10 @@ async function convergeOnAward(
   deps: AskDeps,
   input: SelectInput,
 ): Promise<SelectResult> {
-  const award = await port(deps).getAward(input.actor, input.requestId);
+  const award = await port(deps).getAward(
+    principalOf(input.actor, input.cityId),
+    input.requestId,
+  );
   if (award === null) {
     // The grant was spent but no award exists (e.g. the first attempt failed
     // before reaching the server). This never double-charges; a new grant is
@@ -667,6 +704,7 @@ export async function cancelRequest(
 ): Promise<MpRequest> {
   await assertFlag(deps, input.cityId);
   assertActionPermitted(input.scope, "cancel");
+  assertSessionCity(input.scope, input.cityId);
   const grant = await loadLiveGrant(
     deps,
     input.grantId,
@@ -679,7 +717,7 @@ export async function cancelRequest(
     `${input.grantId}:${input.requestId}`,
   );
   const request = await port(deps).cancel(
-    input.actor,
+    principalOf(input.actor, input.cityId),
     input.requestId,
     idempotencyKey,
   );

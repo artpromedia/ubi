@@ -13,6 +13,7 @@ import {
   IdempotencyKeySchema,
 } from "@ubi/contracts";
 
+import { isProductionEnvironment } from "../lib/ride-context";
 import { isAskRole, type Actor } from "../ops/types";
 
 import type { Context, Next } from "hono";
@@ -80,16 +81,61 @@ export function actorOf(c: Context): Actor {
   return actor;
 }
 
-/** The city the request belongs to, from the gateway header. */
+function presentHeader(c: Context, name: string): string | undefined {
+  const value = c.req.header(name)?.trim();
+  return value === undefined || value.length === 0 ? undefined : value;
+}
+
+/**
+ * The city the request belongs to — the city grants are scoped to, flags are
+ * evaluated in, and the delegated identity to ride-service is signed for.
+ *
+ * The AUTHORITATIVE source is the gateway's own city claim: `x-auth-city-id`
+ * (the value the gateway signs for ride-service) and its mirror
+ * `x-ubi-city-id`. The gateway deletes both from every inbound client request
+ * and writes them from the verified token (services/api-gateway/src/middleware/
+ * identity.ts), exactly like the `X-User-ID` / `X-User-Role` pair read above.
+ * `X-City-ID`, by contrast, is client-declared context the gateway passes
+ * through untouched, so:
+ *   - when the gateway verified a city, a different declared city is refused
+ *     rather than trusted, and the verified one is used;
+ *   - a declared city alone is accepted only outside production (no gateway in
+ *     front, e.g. local development and tests) — in production the assistant
+ *     never acts in a city the gateway did not vouch for.
+ * A tool argument or model output can never name a city at all (rule #18).
+ */
 export function cityOf(c: Context): string {
-  const cityId = c.req.header("X-City-ID");
-  if (cityId === undefined || cityId.length === 0) {
+  const signed = presentHeader(c, "x-auth-city-id");
+  const mirrored = presentHeader(c, "x-ubi-city-id");
+  const declared = presentHeader(c, "X-City-ID");
+  if (signed !== undefined && mirrored !== undefined && signed !== mirrored) {
     throw new ContractError(
-      "city_unsupported",
-      "the request does not say which city it belongs to",
+      "forbidden",
+      "the request carries two different verified cities",
+      { reason: "city_mismatch" },
     );
   }
-  return cityId;
+  const verified = signed ?? mirrored;
+  if (verified !== undefined) {
+    if (declared !== undefined && declared !== verified) {
+      throw new ContractError(
+        "forbidden",
+        "the declared city does not match your verified city",
+        { reason: "city_mismatch" },
+      );
+    }
+    return verified;
+  }
+  if (
+    declared !== undefined &&
+    !isProductionEnvironment(process.env.NODE_ENV)
+  ) {
+    return declared;
+  }
+  throw new ContractError(
+    "city_unsupported",
+    "the request does not say which city it belongs to",
+  );
 }
 
 export function idempotencyKeyOf(c: Context): string {

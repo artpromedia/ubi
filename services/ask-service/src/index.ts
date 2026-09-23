@@ -74,7 +74,19 @@ export function createApp(deps: AskDeps): Hono {
 }
 
 if (process.env.NODE_ENV !== "test") {
-  const app = createApp(createDeps());
+  let deps: AskDeps;
+  try {
+    deps = createDeps();
+  } catch (error) {
+    // A trust-boundary misconfiguration (e.g. no RIDE_INTERNAL_CONTEXT_SECRET in
+    // production) is a refusal to start, never a degraded boot.
+    logger.fatal(
+      { err: error },
+      `refusing to start: ${error instanceof Error ? error.message : "ask-service is misconfigured"}`,
+    );
+    process.exit(1);
+  }
+  const app = createApp(deps);
   const server = serve({ fetch: app.fetch, port: PORT });
   logger.info({ port: PORT }, "ask-service listening");
 

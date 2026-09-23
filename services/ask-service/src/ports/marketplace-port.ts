@@ -1,10 +1,14 @@
 /**
  * The marketplace port — the assistant's client onto the negotiated-fare
- * marketplace (contracts/openapi/marketplace.yaml, served by ride-service behind
- * the gateway). The AI acts AS the user: every call forwards the actor from the
- * gateway context (`X-User-ID` / `X-User-Role`), goes through the SAME endpoints
- * and authz a human client uses, and never carries an elevated privilege or an
- * identity a tool argument supplied (rule #18, CLAUDE.md #1).
+ * marketplace (contracts/openapi/marketplace.yaml, served by ride-service). The
+ * AI acts AS the user: every call carries the SAME signed internal identity the
+ * gateway gives a human client's request — `x-auth-user-id` / `x-auth-user-role`
+ * / `x-auth-city-id` plus the HMAC `x-auth-issued-at` / `x-auth-signature` that
+ * ride-service's identity middleware verifies (lib/ride-context.ts) — goes
+ * through the SAME endpoints and authz a human client uses, and never carries an
+ * elevated privilege or an identity a tool argument supplied (rule #18,
+ * CLAUDE.md #1). The principal is built by the ops layer from the gateway
+ * request context alone.
  *
  * Which calls move money:
  *   - `quote`          READ, non-binding. A bounded fare envelope; commits nothing.
@@ -23,15 +27,33 @@
  *                      grant, under a stable idempotency key.
  *   - `cancel`         ACTION. Cancels an open request; releases bid holds.
  *
+ * Every response is parsed against a STRICT wire schema before anything reads
+ * it. Money is `{ amountMinor: integer, currency: ISO-4217 }` exactly as the
+ * server sent it: a missing, fractional, non-numeric or cross-currency amount is
+ * a refusal (`MarketplaceMalformedResponseError`), never a zero or a default
+ * currency the assistant made up (CLAUDE.md #1 — clients never compute money).
+ *
  * The port deliberately exposes NO way to bypass a driver's stationary gate, to
  * enable automatic driver bidding, or to touch a balance, policy or ride-state
  * directly: those are not endpoints a human client has either, and the assistant
  * is a client exactly like a human (shared brief — "It cannot directly alter
  * balances, policies or ride state").
  */
-import { ContractError } from "@ubi/contracts";
+import { z } from "zod";
+
+import {
+  ContractError,
+  CurrencySchema,
+  ERROR_CODES,
+  MP_AWARD_STATES,
+  MP_SERVICES,
+  MP_SLOTS,
+  MoneySchema,
+  type ErrorCode,
+} from "@ubi/contracts";
 
 import { toolLogger } from "../lib/logger";
+import { delegatedIdentityHeaders } from "../lib/ride-context";
 
 import type { Actor } from "../ops/types";
 
@@ -181,20 +203,38 @@ export interface SanitizedOffer {
   readonly whyRecommended: UntrustedText | null;
 }
 
+/**
+ * Who a marketplace call is made AS: the authenticated Ask user (id and role
+ * from the gateway identity) in the gateway-verified city of the Ask session.
+ * It is exactly what the delegated identity signs, so ride-service sees the
+ * principal a direct client request from the same user would carry. The ops
+ * layer builds it from request context — never from a tool argument or model
+ * output (rule #18).
+ */
+export interface MpPrincipal extends Actor {
+  readonly cityId: string;
+}
+
 export interface MarketplacePort {
-  quote(actor: Actor, input: MpQuoteInput): Promise<MpQuote>;
-  prepareRequest(actor: Actor, input: MpPrepareInput): Promise<MpRequest>;
-  viewOffers(actor: Actor, requestId: string): Promise<MpSnapshot | null>;
+  quote(principal: MpPrincipal, input: MpQuoteInput): Promise<MpQuote>;
+  prepareRequest(
+    principal: MpPrincipal,
+    input: MpPrepareInput,
+  ): Promise<MpRequest>;
+  viewOffers(
+    principal: MpPrincipal,
+    requestId: string,
+  ): Promise<MpSnapshot | null>;
   /**
    * Pure presentation of untrusted offers for the review model. Identical across
    * implementations — it performs no I/O — and clearly marks every free-text
    * field as untrusted so no offer text can pose as an instruction.
    */
   reviewOffer(offers: readonly MpOffer[]): readonly SanitizedOffer[];
-  getAward(actor: Actor, requestId: string): Promise<MpAward | null>;
-  select(actor: Actor, input: MpSelectInput): Promise<MpSelectResult>;
+  getAward(principal: MpPrincipal, requestId: string): Promise<MpAward | null>;
+  select(principal: MpPrincipal, input: MpSelectInput): Promise<MpSelectResult>;
   cancel(
-    actor: Actor,
+    principal: MpPrincipal,
     requestId: string,
     idempotencyKey: string,
   ): Promise<MpRequest>;
@@ -232,32 +272,41 @@ export function presentOffersForReview(
 
 interface MarketplaceHttpOptions {
   readonly baseUrl: string;
-  readonly serviceKey?: string;
+  /**
+   * The RIDE_INTERNAL_CONTEXT_SECRET key list; the FIRST key signs. Required so
+   * a caller decides explicitly: an empty list sends the identity unsigned,
+   * which only development ride-service accepts (the wiring refuses to boot
+   * that way in production — lib/ride-context.ts `loadRideContextKeys`).
+   */
+  readonly signingKeys: readonly string[];
   readonly timeoutMs?: number;
   readonly fetchImpl?: typeof fetch;
+  /** The signing clock; injectable so a test can pin a wire vector. */
+  readonly now?: () => Date;
 }
 
 /** Thrown when a marketplace call did not return a definite outcome in time. */
 export class MarketplaceTimeoutError extends ContractError {
-  constructor(message: string) {
-    super("service_unavailable", message, { reason: "marketplace_timeout" });
+  constructor(message: string, reason = "marketplace_timeout") {
+    super("service_unavailable", message, { reason });
     this.name = "MarketplaceTimeoutError";
   }
 }
 
-function actorHeaders(
-  actor: Actor,
-  serviceKey?: string,
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-    "X-User-ID": actor.id,
-    "X-User-Role": actor.role,
-  };
-  if (serviceKey !== undefined) {
-    headers["X-Service-Key"] = serviceKey;
+/**
+ * Thrown when a marketplace response does not match its wire schema — above all
+ * when money is missing, fractional, non-numeric or in the wrong currency. The
+ * assistant fails closed rather than acting on an amount it had to guess.
+ */
+export class MarketplaceMalformedResponseError extends ContractError {
+  constructor(what: string, issues: readonly string[]) {
+    super(
+      "service_unavailable",
+      `the marketplace returned an unreadable ${what}`,
+      { reason: "malformed_marketplace_response", what, issues: [...issues] },
+    );
+    this.name = "MarketplaceMalformedResponseError";
   }
-  return headers;
 }
 
 export function createHttpMarketplacePort(
@@ -266,14 +315,28 @@ export function createHttpMarketplacePort(
   const doFetch = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 8_000;
   const base = options.baseUrl.replace(/\/+$/, "");
+  const now = options.now ?? (() => new Date());
+  const signingKeys = [...options.signingKeys];
 
   async function call(
     path: string,
     method: "GET" | "POST",
-    actor: Actor,
+    principal: MpPrincipal,
     extraHeaders?: Record<string, string>,
     body?: unknown,
   ): Promise<Response> {
+    // Signed per call, at send time: ride-service bounds the timestamp's age,
+    // so a retry is a fresh signature, never a replayed one. Only the id, role
+    // and city are read off the principal — nothing else can reach the wire.
+    const identity = delegatedIdentityHeaders(
+      signingKeys,
+      {
+        userId: principal.id,
+        role: principal.role,
+        cityId: principal.cityId,
+      },
+      now(),
+    );
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort();
@@ -282,8 +345,10 @@ export function createHttpMarketplacePort(
       return await doFetch(`${base}${path}`, {
         method,
         headers: {
-          ...actorHeaders(actor, options.serviceKey),
+          "content-type": "application/json",
           ...extraHeaders,
+          // Identity last: no extra header can shadow it.
+          ...identity,
         },
         signal: controller.signal,
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -301,15 +366,13 @@ export function createHttpMarketplacePort(
   }
 
   function isAbort(error: unknown): boolean {
-    return (
-      error instanceof DOMException === false &&
-      error instanceof Error &&
-      error.name === "AbortError"
-    );
+    // Node's fetch rejects an aborted call with a DOMException, which is an
+    // Error subclass here.
+    return error instanceof Error && error.name === "AbortError";
   }
 
   return {
-    async quote(actor, input): Promise<MpQuote> {
+    async quote(principal, input): Promise<MpQuote> {
       try {
         const query = new URLSearchParams({
           service: input.service,
@@ -325,12 +388,15 @@ export function createHttpMarketplacePort(
         const response = await call(
           `/v1/mp/quote?${query.toString()}`,
           "GET",
-          actor,
+          principal,
         );
         if (!response.ok) {
-          unavailable();
+          throw await errorFrom(
+            response,
+            "a marketplace quote is not available",
+          );
         }
-        return normalizeQuote(await response.json());
+        return parseWire(QuoteWire, await response.json(), "quote");
       } catch (error) {
         if (error instanceof ContractError) {
           throw error;
@@ -340,12 +406,12 @@ export function createHttpMarketplacePort(
       }
     },
 
-    async prepareRequest(actor, input): Promise<MpRequest> {
+    async prepareRequest(principal, input): Promise<MpRequest> {
       try {
         const response = await call(
           "/v1/mp/requests",
           "POST",
-          actor,
+          principal,
           { "idempotency-key": input.idempotencyKey },
           {
             quoteId: input.quoteId,
@@ -362,7 +428,7 @@ export function createHttpMarketplacePort(
         if (!response.ok) {
           throw await errorFrom(response, "the request could not be published");
         }
-        return normalizeRequest(await response.json());
+        return parseWire(RequestWire, await response.json(), "request");
       } catch (error) {
         if (error instanceof ContractError) {
           throw error;
@@ -372,20 +438,20 @@ export function createHttpMarketplacePort(
       }
     },
 
-    async viewOffers(actor, requestId): Promise<MpSnapshot | null> {
+    async viewOffers(principal, requestId): Promise<MpSnapshot | null> {
       try {
         const response = await call(
           `/v1/mp/requests/${encodeURIComponent(requestId)}`,
           "GET",
-          actor,
+          principal,
         );
         if (response.status === 404) {
           return null;
         }
         if (!response.ok) {
-          unavailable();
+          throw await errorFrom(response, "the request could not be read");
         }
-        return normalizeSnapshot(await response.json());
+        return parseWire(SnapshotWire, await response.json(), "offer snapshot");
       } catch (error) {
         if (error instanceof ContractError) {
           throw error;
@@ -399,20 +465,20 @@ export function createHttpMarketplacePort(
       return presentOffersForReview(offers);
     },
 
-    async getAward(actor, requestId): Promise<MpAward | null> {
+    async getAward(principal, requestId): Promise<MpAward | null> {
       try {
         const response = await call(
           `/v1/mp/requests/${encodeURIComponent(requestId)}/award`,
           "GET",
-          actor,
+          principal,
         );
         if (response.status === 404) {
           return null;
         }
         if (!response.ok) {
-          unavailable();
+          throw await errorFrom(response, "the award could not be read");
         }
-        return normalizeAward(await response.json());
+        return parseWire(AwardWire, await response.json(), "award");
       } catch (error) {
         if (error instanceof ContractError) {
           throw error;
@@ -422,12 +488,13 @@ export function createHttpMarketplacePort(
       }
     },
 
-    async select(actor, input): Promise<MpSelectResult> {
+    async select(principal, input): Promise<MpSelectResult> {
+      let response: Response;
       try {
-        const response = await call(
+        response = await call(
           `/v1/mp/requests/${encodeURIComponent(input.requestId)}/select`,
           "POST",
-          actor,
+          principal,
           { "idempotency-key": input.idempotencyKey },
           {
             bidId: input.bidId,
@@ -435,19 +502,11 @@ export function createHttpMarketplacePort(
             bidVersion: input.bidVersion,
           },
         );
-        if (!response.ok) {
-          throw await errorFrom(response, "the selection could not be awarded");
-        }
-        const body = (await response.json()) as {
-          award?: unknown;
-          pickupPin?: unknown;
-        };
-        return {
-          award: normalizeAward(body.award),
-          pickupPin:
-            typeof body.pickupPin === "string" ? body.pickupPin : undefined,
-        };
       } catch (error) {
+        if (error instanceof ContractError) {
+          // Refused before anything was sent (e.g. an undelegable principal).
+          throw error;
+        }
         // A timed-out select is an UNCERTAIN outcome — the caller must query the
         // authoritative award state, never resubmit the selection blindly.
         if (isAbort(error)) {
@@ -455,28 +514,44 @@ export function createHttpMarketplacePort(
             "the selection did not confirm in time; querying the award",
           );
         }
-        if (error instanceof ContractError) {
-          throw error;
-        }
         toolLogger.error({ err: error }, "marketplace select failed");
         throw new MarketplaceTimeoutError(
           "the selection outcome is unknown; querying the award",
         );
       }
+      if (!response.ok) {
+        throw await errorFrom(response, "the selection could not be awarded");
+      }
+      try {
+        return parseWire(SelectWire, await response.json(), "selection");
+      } catch (error) {
+        // The server ACCEPTED the selection but its answer is unreadable: the
+        // award (and its funding + commission) may well exist. That is an
+        // uncertain outcome to converge on by querying — never a definite
+        // failure, and never a reason to select again.
+        toolLogger.error(
+          { err: error },
+          "marketplace select answered with an unreadable body",
+        );
+        throw new MarketplaceTimeoutError(
+          "the selection answer was unreadable; querying the award",
+          "malformed_select_response",
+        );
+      }
     },
 
-    async cancel(actor, requestId, idempotencyKey): Promise<MpRequest> {
+    async cancel(principal, requestId, idempotencyKey): Promise<MpRequest> {
       try {
         const response = await call(
           `/v1/mp/requests/${encodeURIComponent(requestId)}/cancel`,
           "POST",
-          actor,
+          principal,
           { "idempotency-key": idempotencyKey },
         );
         if (!response.ok) {
           throw await errorFrom(response, "the request could not be cancelled");
         }
-        return normalizeRequest(await response.json());
+        return parseWire(RequestWire, await response.json(), "request");
       } catch (error) {
         if (error instanceof ContractError) {
           throw error;
@@ -489,130 +564,337 @@ export function createHttpMarketplacePort(
 }
 
 // ---------------------------------------------------------------------------
-// Wire normalisers — the Money wrapper flattens to a bare minor integer here.
+// Strict wire schemas — ride-service's JSON (internal/marketplace/views.go,
+// contracts/openapi/marketplace.yaml) to the port's flattened shapes.
+//
+// Every money field must be a real `Money` from the server: an integer
+// `amountMinor` with an ISO-4217 `currency`, and every amount in one response
+// must share the response's currency. Nothing here substitutes a zero, a
+// default currency, a default version or a default `withdrawn: false`; a
+// response that lacks a fact the assistant would decide on is refused. Unknown
+// extra fields are ignored so the server can grow its views compatibly.
 // ---------------------------------------------------------------------------
 
-function minorOf(value: unknown): number {
-  if (typeof value === "number") {
-    return value;
+const NonEmpty = z.string().min(1);
+const Timestamp = z.string().datetime({ offset: true });
+const Version = z.number().int().min(1);
+
+/** A fare or price: strictly positive integer minor units. */
+const PositiveMoney = MoneySchema.extend({
+  amountMinor: z.number().int().positive().safe(),
+});
+/** A fee or floor that may legitimately be zero, never negative. */
+const NonNegativeMoney = MoneySchema.extend({
+  amountMinor: z.number().int().nonnegative().safe(),
+});
+
+type WireMoney = z.infer<typeof MoneySchema>;
+
+function requireCurrency(
+  ctx: z.RefinementCtx,
+  currency: string,
+  fields: Readonly<Record<string, WireMoney | null | undefined>>,
+): void {
+  for (const [field, value] of Object.entries(fields)) {
+    if (value !== null && value !== undefined && value.currency !== currency) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field, "currency"],
+        message: `expected ${currency}, received ${value.currency}`,
+      });
+    }
   }
-  if (value !== null && typeof value === "object" && "amountMinor" in value) {
-    const amount = (value as { amountMinor?: unknown }).amountMinor;
-    return typeof amount === "number" ? amount : 0;
+}
+
+const QuoteWire = z
+  .object({
+    quoteId: NonEmpty,
+    service: z.enum(MP_SERVICES),
+    vehicleClass: NonEmpty,
+    cityId: NonEmpty,
+    currency: CurrencySchema,
+    suggestedFareMinor: PositiveMoney,
+    minimumFareMinor: NonNegativeMoney,
+    maximumFareMinor: PositiveMoney,
+    expiresAt: Timestamp,
+    pricingVersion: NonEmpty,
+    policyVersion: z.number().int().positive(),
+  })
+  .superRefine((quote, ctx) => {
+    requireCurrency(ctx, quote.currency, {
+      suggestedFareMinor: quote.suggestedFareMinor,
+      minimumFareMinor: quote.minimumFareMinor,
+      maximumFareMinor: quote.maximumFareMinor,
+    });
+    // The server-set bounds must be a real envelope; an inverted one is not a
+    // fare the assistant can reason about.
+    if (
+      quote.minimumFareMinor.amountMinor >
+        quote.suggestedFareMinor.amountMinor ||
+      quote.suggestedFareMinor.amountMinor > quote.maximumFareMinor.amountMinor
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["suggestedFareMinor"],
+        message:
+          "the fare bounds are not ordered minimum <= suggested <= maximum",
+      });
+    }
+  })
+  .transform(
+    (quote): MpQuote => ({
+      quoteId: quote.quoteId,
+      service: quote.service,
+      vehicleClass: quote.vehicleClass,
+      cityId: quote.cityId,
+      currency: quote.currency,
+      suggestedFareMinor: quote.suggestedFareMinor.amountMinor,
+      minimumFareMinor: quote.minimumFareMinor.amountMinor,
+      maximumFareMinor: quote.maximumFareMinor.amountMinor,
+      expiresAt: quote.expiresAt,
+      pricingVersion: quote.pricingVersion,
+      policyVersion: quote.policyVersion,
+    }),
+  );
+
+const RequestObject = z
+  .object({
+    requestId: NonEmpty,
+    state: NonEmpty,
+    revision: Version,
+    version: Version,
+    service: z.enum(MP_SERVICES),
+    vehicleClass: NonEmpty,
+    cityId: NonEmpty,
+    currency: CurrencySchema,
+    requesterId: NonEmpty,
+    quoteId: NonEmpty,
+    requestedFareMinor: PositiveMoney,
+    expiresAt: Timestamp,
+    closeReason: NonEmpty.nullable().optional(),
+  })
+  .superRefine((request, ctx) => {
+    requireCurrency(ctx, request.currency, {
+      requestedFareMinor: request.requestedFareMinor,
+    });
+  });
+
+function toRequest(request: z.infer<typeof RequestObject>): MpRequest {
+  return {
+    requestId: request.requestId,
+    state: request.state,
+    revision: request.revision,
+    version: request.version,
+    service: request.service,
+    vehicleClass: request.vehicleClass,
+    cityId: request.cityId,
+    currency: request.currency,
+    requesterId: request.requesterId,
+    quoteId: request.quoteId,
+    requestedFareMinor: request.requestedFareMinor.amountMinor,
+    expiresAt: request.expiresAt,
+    closeReason: request.closeReason ?? undefined,
+  };
+}
+
+const RequestWire = RequestObject.transform(toRequest);
+
+const OfferObject = z
+  .object({
+    bidId: NonEmpty,
+    bidVersion: Version,
+    requestRevision: Version,
+    amountMinor: PositiveMoney,
+    kind: NonEmpty,
+    // Driver display facts are presentation data (and the free text in them is
+    // untrusted); their types are checked, their contents are not decisions.
+    driver: z.object({
+      displayName: z.string(),
+      initials: z.string(),
+      rating: z.string(),
+      completedTrips: z.number().int().nonnegative(),
+      vehicle: z.string(),
+      plateMasked: z.string(),
+      profileStatus: NonEmpty,
+    }),
+    pickupLabel: z.string(),
+    expiresAt: Timestamp,
+    // Decides whether the offer is selectable: never defaulted.
+    withdrawn: z.boolean(),
+    whyRecommended: z.string().nullable().optional(),
+    bookingFeeMinor: NonNegativeMoney.nullable().optional(),
+    totalMinor: PositiveMoney.nullable().optional(),
+  })
+  .superRefine((offer, ctx) => {
+    requireCurrency(ctx, offer.amountMinor.currency, {
+      bookingFeeMinor: offer.bookingFeeMinor,
+      totalMinor: offer.totalMinor,
+    });
+    // A booking fee means the rider's total differs from the bid, and only the
+    // server may say what it is — the assistant never adds money up itself.
+    if (
+      offer.bookingFeeMinor !== null &&
+      offer.bookingFeeMinor !== undefined &&
+      offer.bookingFeeMinor.amountMinor > 0 &&
+      (offer.totalMinor === null || offer.totalMinor === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["totalMinor"],
+        message: "a booking fee is charged but the server total is missing",
+      });
+    }
+  });
+
+function toOffer(offer: z.infer<typeof OfferObject>): MpOffer {
+  return {
+    bidId: offer.bidId,
+    bidVersion: offer.bidVersion,
+    requestRevision: offer.requestRevision,
+    amountMinor: offer.amountMinor.amountMinor,
+    currency: offer.amountMinor.currency,
+    kind: offer.kind,
+    driver: { ...offer.driver },
+    pickupLabel: offer.pickupLabel,
+    expiresAt: offer.expiresAt,
+    withdrawn: offer.withdrawn,
+    whyRecommended: offer.whyRecommended ?? undefined,
+    totalMinor: offer.totalMinor?.amountMinor ?? undefined,
+  };
+}
+
+const AwardObject = z
+  .object({
+    awardId: NonEmpty,
+    requestId: NonEmpty,
+    bidId: NonEmpty,
+    state: z.enum(MP_AWARD_STATES),
+    requestVersion: Version,
+    bidVersion: Version,
+    driverId: NonEmpty,
+    requesterId: NonEmpty,
+    fareMinor: PositiveMoney,
+    commissionMinor: NonNegativeMoney,
+    slot: z.enum(MP_SLOTS),
+    createdAt: Timestamp,
+    resolvedAt: Timestamp.nullable().optional(),
+    failReason: z.string().nullable().optional(),
+  })
+  .superRefine((award, ctx) => {
+    requireCurrency(ctx, award.fareMinor.currency, {
+      commissionMinor: award.commissionMinor,
+    });
+    if (award.commissionMinor.amountMinor > award.fareMinor.amountMinor) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["commissionMinor"],
+        message: "the commission exceeds the fare",
+      });
+    }
+  });
+
+function toAward(award: z.infer<typeof AwardObject>): MpAward {
+  return {
+    awardId: award.awardId,
+    requestId: award.requestId,
+    bidId: award.bidId,
+    state: award.state,
+    requestVersion: award.requestVersion,
+    bidVersion: award.bidVersion,
+    driverId: award.driverId,
+    requesterId: award.requesterId,
+    fareMinor: award.fareMinor.amountMinor,
+    commissionMinor: award.commissionMinor.amountMinor,
+    slot: award.slot,
+    createdAt: award.createdAt,
+    resolvedAt: award.resolvedAt ?? undefined,
+    failReason: award.failReason ?? undefined,
+  };
+}
+
+const AwardWire = AwardObject.transform(toAward);
+
+const SnapshotWire = z
+  .object({
+    request: RequestObject,
+    offers: z.array(OfferObject),
+    award: AwardObject.nullable().optional(),
+    seq: z.number().int().nonnegative(),
+  })
+  .superRefine((snapshot, ctx) => {
+    const currency = snapshot.request.currency;
+    snapshot.offers.forEach((offer, index) => {
+      if (offer.amountMinor.currency !== currency) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["offers", index, "amountMinor", "currency"],
+          message: `expected the request currency ${currency}, received ${offer.amountMinor.currency}`,
+        });
+      }
+    });
+    const award = snapshot.award;
+    if (award !== null && award !== undefined) {
+      if (award.fareMinor.currency !== currency) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["award", "fareMinor", "currency"],
+          message: `expected the request currency ${currency}, received ${award.fareMinor.currency}`,
+        });
+      }
+      if (award.requestId !== snapshot.request.requestId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["award", "requestId"],
+          message: "the award belongs to a different request",
+        });
+      }
+    }
+  })
+  .transform(
+    (snapshot): MpSnapshot => ({
+      request: toRequest(snapshot.request),
+      offers: snapshot.offers.map(toOffer),
+      award:
+        snapshot.award === null || snapshot.award === undefined
+          ? null
+          : toAward(snapshot.award),
+      seq: snapshot.seq,
+    }),
+  );
+
+const SelectWire = z
+  .object({
+    award: AwardObject,
+    pickupPin: NonEmpty.optional(),
+  })
+  .transform(
+    (result): MpSelectResult => ({
+      award: toAward(result.award),
+      pickupPin: result.pickupPin,
+    }),
+  );
+
+function parseWire<T>(
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  raw: unknown,
+  what: string,
+): T {
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    // Paths only: the values may be money or personal display data.
+    const issues = parsed.error.issues.map(
+      (issue) => issue.path.join(".") || "(root)",
+    );
+    toolLogger.error(
+      { what, issues },
+      "marketplace response failed its wire schema",
+    );
+    throw new MarketplaceMalformedResponseError(what, issues);
   }
-  return 0;
+  return parsed.data;
 }
 
-function currencyOf(value: unknown, fallback: string): string {
-  if (value !== null && typeof value === "object" && "currency" in value) {
-    const currency = (value as { currency?: unknown }).currency;
-    return typeof currency === "string" ? currency : fallback;
-  }
-  return fallback;
-}
-
-function normalizeQuote(raw: unknown): MpQuote {
-  const q = (raw ?? {}) as Record<string, unknown>;
-  const currency = typeof q.currency === "string" ? q.currency : "NGN";
-  return {
-    quoteId: String(q.quoteId ?? ""),
-    service: String(q.service ?? "ride"),
-    vehicleClass: String(q.vehicleClass ?? ""),
-    cityId: String(q.cityId ?? ""),
-    currency,
-    suggestedFareMinor: minorOf(q.suggestedFareMinor),
-    minimumFareMinor: minorOf(q.minimumFareMinor),
-    maximumFareMinor: minorOf(q.maximumFareMinor),
-    expiresAt: String(q.expiresAt ?? ""),
-    pricingVersion: String(q.pricingVersion ?? ""),
-    policyVersion: typeof q.policyVersion === "number" ? q.policyVersion : 0,
-  };
-}
-
-function normalizeRequest(raw: unknown): MpRequest {
-  const r = (raw ?? {}) as Record<string, unknown>;
-  const currency = typeof r.currency === "string" ? r.currency : "NGN";
-  return {
-    requestId: String(r.requestId ?? ""),
-    state: String(r.state ?? ""),
-    revision: typeof r.revision === "number" ? r.revision : 0,
-    version: typeof r.version === "number" ? r.version : 0,
-    service: String(r.service ?? "ride"),
-    vehicleClass: String(r.vehicleClass ?? ""),
-    cityId: String(r.cityId ?? ""),
-    currency,
-    requesterId: String(r.requesterId ?? ""),
-    quoteId: String(r.quoteId ?? ""),
-    requestedFareMinor: minorOf(r.requestedFareMinor),
-    expiresAt: String(r.expiresAt ?? ""),
-    closeReason: typeof r.closeReason === "string" ? r.closeReason : undefined,
-  };
-}
-
-function normalizeOffer(raw: unknown): MpOffer {
-  const o = (raw ?? {}) as Record<string, unknown>;
-  const driver = (o.driver ?? {}) as Record<string, unknown>;
-  const currency = currencyOf(o.amountMinor, "NGN");
-  return {
-    bidId: String(o.bidId ?? ""),
-    bidVersion: typeof o.bidVersion === "number" ? o.bidVersion : 0,
-    requestRevision:
-      typeof o.requestRevision === "number" ? o.requestRevision : 0,
-    amountMinor: minorOf(o.amountMinor),
-    currency,
-    kind: String(o.kind ?? ""),
-    driver: {
-      displayName: String(driver.displayName ?? ""),
-      initials: String(driver.initials ?? ""),
-      rating: String(driver.rating ?? ""),
-      completedTrips:
-        typeof driver.completedTrips === "number" ? driver.completedTrips : 0,
-      vehicle: String(driver.vehicle ?? ""),
-      plateMasked: String(driver.plateMasked ?? ""),
-      profileStatus: String(driver.profileStatus ?? "unavailable"),
-    },
-    pickupLabel: String(o.pickupLabel ?? ""),
-    expiresAt: String(o.expiresAt ?? ""),
-    withdrawn: o.withdrawn === true,
-    whyRecommended:
-      typeof o.whyRecommended === "string" ? o.whyRecommended : undefined,
-    totalMinor: o.totalMinor === undefined ? undefined : minorOf(o.totalMinor),
-  };
-}
-
-function normalizeAward(raw: unknown): MpAward {
-  const a = (raw ?? {}) as Record<string, unknown>;
-  return {
-    awardId: String(a.awardId ?? ""),
-    requestId: String(a.requestId ?? ""),
-    bidId: String(a.bidId ?? ""),
-    state: String(a.state ?? ""),
-    requestVersion: typeof a.requestVersion === "number" ? a.requestVersion : 0,
-    bidVersion: typeof a.bidVersion === "number" ? a.bidVersion : 0,
-    driverId: String(a.driverId ?? ""),
-    requesterId: String(a.requesterId ?? ""),
-    fareMinor: minorOf(a.fareMinor),
-    commissionMinor: minorOf(a.commissionMinor),
-    slot: String(a.slot ?? ""),
-    createdAt: String(a.createdAt ?? ""),
-    resolvedAt: typeof a.resolvedAt === "string" ? a.resolvedAt : undefined,
-    failReason: typeof a.failReason === "string" ? a.failReason : undefined,
-  };
-}
-
-function normalizeSnapshot(raw: unknown): MpSnapshot {
-  const s = (raw ?? {}) as Record<string, unknown>;
-  const offers = Array.isArray(s.offers) ? s.offers.map(normalizeOffer) : [];
-  return {
-    request: normalizeRequest(s.request),
-    offers,
-    award:
-      s.award === undefined || s.award === null
-        ? null
-        : normalizeAward(s.award),
-    seq: typeof s.seq === "number" ? s.seq : 0,
-  };
-}
+const CANONICAL_CODES: ReadonlySet<string> = new Set(ERROR_CODES);
 
 async function errorFrom(
   response: Response,
@@ -624,11 +906,25 @@ async function errorFrom(
       message?: unknown;
       details?: unknown;
     };
-    if (typeof body.code === "string") {
+    if (body.code === "unauthorized") {
+      // ride-service refused the DELEGATED identity (unsigned, expired, wrong
+      // key): an ask ↔ ride misconfiguration, not the end user's session. It
+      // must not reach the client as a 401 that reads like "you are signed out".
+      toolLogger.error(
+        { status: response.status },
+        "ride-service refused the assistant's delegated identity",
+      );
+      return new ContractError(
+        "service_unavailable",
+        "the marketplace is not available to the assistant right now",
+        { reason: "delegation_refused", status: response.status },
+      );
+    }
+    if (typeof body.code === "string" && CANONICAL_CODES.has(body.code)) {
       // Preserve the marketplace's canonical code so deterministic refusals
       // (fare_out_of_bounds, version_conflict, award_unresolved …) survive.
       return new ContractError(
-        body.code as ContractError["code"],
+        body.code as ErrorCode,
         typeof body.message === "string" ? body.message : fallbackMessage,
         typeof body.details === "object" && body.details !== null
           ? (body.details as Record<string, unknown>)
