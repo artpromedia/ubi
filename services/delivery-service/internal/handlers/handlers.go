@@ -83,7 +83,31 @@ func (h *Handler) Liveness(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]string{"status": "alive"})
 }
 
+// Readiness answers 503 before it even looks at the database when this is a
+// production process whose gateway identity boundary is unsigned
+// (config.ValidateIdentity) — a state cmd/server refuses to boot into, but one
+// readiness must also never bless, so a refactored boot path still receives no
+// traffic. Mirrors ride-service's identityReady probe.
 func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
+	if err := h.cfg.ValidateIdentity(); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(response{
+			Success: false,
+			Data: map[string]interface{}{
+				"status": "not_ready",
+				"checks": map[string]interface{}{
+					"identity": map[string]interface{}{
+						"status": "unhealthy",
+						"error":  err.Error(),
+					},
+				},
+				"timestamp": time.Now().UTC(),
+			},
+		})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 

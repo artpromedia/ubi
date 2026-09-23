@@ -9,27 +9,38 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
 
+	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/identity"
 	appMiddleware "github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/middleware"
 )
 
-// identityVerifier is the subset of *identity.Verifier this package needs.
-// Routes takes an interface (satisfied by *identity.RequireIdentity's
-// argument type) so this package does not need to import internal/identity
-// directly for its own sake — RequireIdentityMiddleware below is supplied by
-// the caller (cmd/server/main.go and testutil) instead, which already knows
-// the concrete type. This keeps handlers free to be imported by testutil
-// without a second import of identity leaking through here.
+// requireIdentityMiddleware is the shape of identity.RequireIdentity(verifier):
+// the middleware guarding the gateway-identity (custody/return) group.
 type requireIdentityMiddleware = func(http.Handler) http.Handler
+
+// NewRouter is the router the process serves: Routes with the custody/return
+// group behind a gateway-identity verifier in the posture the handler's
+// configuration demands — identity.NewVerifierFor(..., cfg.IsProduction()),
+// so in production a signature is mandatory and the plain identity headers
+// alone authenticate nobody. cmd/server/main.go serves exactly this, and the
+// test harness builds exactly this, so the identity posture under test is the
+// posture production runs. The verifier is returned for start-up logging and
+// so tests can sign a request the way the gateway does.
+func NewRouter(h *Handler) (http.Handler, *identity.Verifier) {
+	verifier := identity.NewVerifierFor(h.cfg.InternalContextSecret, 0, h.cfg.IsProduction())
+	return Routes(h, identity.RequireIdentity(verifier)), verifier
+}
 
 // Routes builds the complete delivery-service router: every route
 // cmd/server/main.go serves, plus the new custody/return routes (C07/G08).
-// main.go and the test harness (internal/testutil) both call this, so the
-// router under test is byte-for-byte the router production serves.
+// main.go and the test harness (internal/testutil) both reach it through
+// NewRouter, so the router under test is byte-for-byte the router production
+// serves.
 //
 // custodyIdentity is the RequireIdentity middleware for the gateway-identity
-// group (internal/identity.RequireIdentity(verifier)) — passed in rather than
-// built here so this package need not import internal/identity just to spell
-// its own routing table.
+// group (internal/identity.RequireIdentity(verifier)). Production wiring goes
+// through NewRouter, which picks the verifier's posture from configuration;
+// Routes stays parameterised so a test can mount a verifier in a posture of
+// its own choosing.
 func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler {
 	r := chi.NewRouter()
 

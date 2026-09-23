@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -60,9 +62,9 @@ type Harness struct {
 	Router http.Handler
 	Cfg    *config.Config
 
-	// Verifier is exposed so a test can sign a request the way the gateway
-	// would when it wants to exercise the signed path instead of the
-	// dev-trust default.
+	// Verifier is the verifier handlers.NewRouter mounted, exposed so a test
+	// can sign a request the way the gateway would (DoSigned) when it wants to
+	// exercise the signed path instead of the dev-trust default.
 	Verifier *identity.Verifier
 }
 
@@ -72,6 +74,35 @@ type Harness struct {
 // callers pass the delivery ids they seed to Cleanup via T.Cleanup, or use
 // SeedDelivery, which registers its own cleanup).
 func NewHarness(t *testing.T) *Harness {
+	t.Helper()
+	// Unsigned dev-trust posture (a non-production environment with no
+	// RIDE_INTERNAL_CONTEXT_SECRET), the posture a development process runs.
+	// NewProductionHarness builds the fail-closed production posture.
+	return newHarness(t, &config.Config{
+		Env:                "test",
+		InternalServiceKey: "test-internal-service-key-not-the-committed-default",
+		JWTSecret:          "test-jwt-secret-not-the-committed-default",
+	})
+}
+
+// NewProductionHarness builds the service exactly as a production process
+// wires it — UBI_ENV=production, non-default service key and JWT secret, and
+// contextSecret as RIDE_INTERNAL_CONTEXT_SECRET — through the same
+// handlers.NewRouter cmd/server serves. It deliberately does NOT run
+// config.ValidateProduction: a test proving the per-request second line of
+// defence must be able to build the router boot would have refused (an empty
+// contextSecret); such a test asserts the boot refusal itself.
+func NewProductionHarness(t *testing.T, contextSecret string) *Harness {
+	t.Helper()
+	return newHarness(t, &config.Config{
+		Env:                   "production",
+		InternalServiceKey:    "test-internal-service-key-not-the-committed-default",
+		JWTSecret:             "test-jwt-secret-not-the-committed-default",
+		InternalContextSecret: contextSecret,
+	})
+}
+
+func newHarness(t *testing.T, cfg *config.Config) *Harness {
 	t.Helper()
 	ctx := context.Background()
 
@@ -93,20 +124,11 @@ func NewHarness(t *testing.T) *Harness {
 		t.Fatalf("failed to reach test Redis at %s: %v", redisURL, err)
 	}
 
-	cfg := &config.Config{
-		Env:                "test",
-		InternalServiceKey: "test-internal-service-key-not-the-committed-default",
-		JWTSecret:          "test-jwt-secret-not-the-committed-default",
-	}
-
 	db := &database.DB{Pool: pool}
 	h := handlers.New(db, rdb, cfg)
-	// Unsigned dev-trust posture in tests, matching production's posture when
-	// RIDE_INTERNAL_CONTEXT_SECRET is unset (see internal/identity's package
-	// doc for why this is not hardened here). SignedHarness below builds one
-	// WITH a configured secret for tests that need to exercise verification.
-	verifier := identity.NewVerifier("", 0)
-	router := handlers.Routes(h, identity.RequireIdentity(verifier))
+	// The production router, not a test-only assembly: the verifier's posture
+	// comes from cfg exactly as it does in cmd/server.
+	router, verifier := handlers.NewRouter(h)
 
 	harness := &Harness{T: t, Pool: pool, Redis: rdb, Router: router, Cfg: cfg, Verifier: verifier}
 	t.Cleanup(func() {
@@ -172,6 +194,22 @@ func (h *Harness) Do(req *http.Request, actor Actor) *httptest.ResponseRecorder 
 	rec := httptest.NewRecorder()
 	h.Router.ServeHTTP(rec, req)
 	return rec
+}
+
+// DoSigned sends a request the way the API gateway does when
+// RIDE_INTERNAL_CONTEXT_SECRET is configured: the identity headers plus a
+// fresh HMAC signature from the harness's verifier (its current key). It
+// fails the test if the harness has no key, rather than silently sending an
+// unsigned request.
+func (h *Harness) DoSigned(req *http.Request, actor Actor) *httptest.ResponseRecorder {
+	h.T.Helper()
+	if !h.Verifier.Enabled() {
+		h.T.Fatal("DoSigned needs a harness built with an internal context secret")
+	}
+	issuedAt := time.Now()
+	req.Header.Set(identity.HeaderSignature, h.Verifier.Sign(actor.UserID.String(), actor.Role, actor.CityID, issuedAt))
+	req.Header.Set(identity.HeaderIssuedAt, strconv.FormatInt(issuedAt.Unix(), 10))
+	return h.Do(req, actor)
 }
 
 // SeedDelivery inserts a `deliveries` row plus its `delivery_custody` row the
