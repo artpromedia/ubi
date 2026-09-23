@@ -45,6 +45,10 @@ type FakeFunding struct {
 	Unknown bool
 	// FailRelease makes the next Release calls answer this error.
 	FailRelease error
+	// BeforeAuthorize, when set, runs at the start of every Authorize,
+	// outside the fake's lock: a test uses it to land a concurrent command
+	// while an authorization is in flight.
+	BeforeAuthorize func(req FundingRequest)
 	// Consumed marks awards whose reservation the settlement already
 	// consumed: Release answers ErrFundingReservationConsumed for them.
 	Consumed map[uuid.UUID]bool
@@ -168,6 +172,9 @@ func (f *FakeFunding) fundedLocked(awardID uuid.UUID) int64 {
 
 // Authorize implements FundingPort.
 func (f *FakeFunding) Authorize(_ context.Context, req FundingRequest, idempotencyKey string) (*FundingAuthorization, error) {
+	if hook := f.BeforeAuthorize; hook != nil {
+		hook(req)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls++
@@ -227,6 +234,10 @@ func (f *FakeFunding) Release(_ context.Context, awardID uuid.UUID, reason strin
 		return fmt.Errorf("%w: award %s", ErrFundingReservationConsumed, awardID)
 	}
 	if f.seen[idempotencyKey] {
+		// payment-service's release is STATE-based (the award's active
+		// reservation, whatever key asks), so a replayed key still frees a
+		// reservation authorized after the first release found none.
+		f.releaseActiveLocked(awardID)
 		return nil
 	}
 	f.seen[idempotencyKey] = true
@@ -236,6 +247,13 @@ func (f *FakeFunding) Release(_ context.Context, awardID uuid.UUID, reason strin
 		}
 		f.ReleasedAwards[awardID] = reason
 	}
+	f.releaseActiveLocked(awardID)
+	return nil
+}
+
+// releaseActiveLocked frees an award's active original reservation and its
+// open amendment adjustments (the caller holds f.mu).
+func (f *FakeFunding) releaseActiveLocked(awardID uuid.UUID) {
 	if original, ok := f.originals[awardID]; ok && original.status == "active" {
 		funded := f.fundedLocked(awardID)
 		original.status = "released"
@@ -251,7 +269,15 @@ func (f *FakeFunding) Release(_ context.Context, awardID uuid.UUID, reason strin
 			f.riderSpendable[original.requesterID] = spendable + funded + open
 		}
 	}
-	return nil
+}
+
+// ReservationActive reports whether an award's original funding reservation
+// is still active (authorized and neither released nor consumed).
+func (f *FakeFunding) ReservationActive(awardID uuid.UUID) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	original, ok := f.originals[awardID]
+	return ok && original.status == "active"
 }
 
 func fundingAdjustmentKey(awardID uuid.UUID, amendmentID string) string {

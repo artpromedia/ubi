@@ -250,7 +250,7 @@ func driverPreferencesViewOf(prefs *DriverPreferences, config *cityconfig.CityCo
 		Homeward:                prefs.Homeward,
 		HomewardOnly:            prefs.HomewardOnly,
 		AvailabilityWindows:     make([]AvailabilityWindowView, 0, len(prefs.Availability)),
-		AvailabilityNote:        "Stored for scheduled requests, which are not available yet. Windows are in " + config.Timezone + " local time.",
+		AvailabilityNote:        "Used only to filter advance-booking requests in your feed — never your eligibility, never an automatic bid. Windows are in " + config.Timezone + " local time.",
 		Bounds:                  preferenceBoundsFor(config, policy),
 		Disclosure:              preferencesDisclosure,
 	}
@@ -813,6 +813,25 @@ func (p *DriverPreferences) hiddenWords(request *Request, pickupMeters int64, di
 		return "This trip does not end in your homeward area."
 	}
 	return ""
+}
+
+// availableAt reports whether an instant falls inside the driver's stored
+// weekly availability windows (city local time). No windows saved means
+// always available: windows only ever narrow what a driver sees (A03 uses
+// them for advance-booking cards; they are never eligibility).
+func (p *DriverPreferences) availableAt(at time.Time, zone *time.Location) bool {
+	if p == nil || len(p.Availability) == 0 {
+		return true
+	}
+	local := at.In(zone)
+	day := availabilityDays[(int(local.Weekday())+6)%7]
+	minute := local.Hour()*60 + local.Minute()
+	for _, window := range p.Availability {
+		if window.Day == day && window.StartMinute <= minute && minute < window.EndMinute {
+			return true
+		}
+	}
+	return false
 }
 
 // preferenceTags are the positive matches a card is labelled (and ranked) by.

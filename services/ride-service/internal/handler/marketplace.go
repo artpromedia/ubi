@@ -106,6 +106,10 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 			r.Put("/", h.SaveRateProfile)
 			r.Post("/preview", h.PreviewRateProfile)
 		})
+
+		// A03 Book for Later: scheduled requests, advance driver
+		// reservations and recurring journeys.
+		h.mountScheduling(r)
 	})
 
 	r.Route("/admin/mp", func(r chi.Router) {

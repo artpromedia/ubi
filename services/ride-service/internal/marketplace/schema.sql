@@ -396,7 +396,8 @@ ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS stops_dwell_sec bigint NOT NULL
 --     area (NULL = none); homeward_only hides everything not ending there.
 --     Matching uses the dropoff's coarse area cell, never its coordinate.
 --   * availability: [{day, startMinute, endMinute}] in the city's local
---     time. Stored only — the scheduled marketplace is a later slice.
+--     time. Filters advance-booking cards in the feed (A03) — never
+--     eligibility.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS mp.driver_preferences (
     id                     uuid PRIMARY KEY,
@@ -596,3 +597,189 @@ DROP TRIGGER IF EXISTS amendment_history_append_only ON mp.amendment_history;
 CREATE TRIGGER amendment_history_append_only
     BEFORE UPDATE ON mp.amendment_history
     FOR EACH ROW EXECUTE FUNCTION mp.refuse_history_update();
+
+-- ---------------------------------------------------------------------------
+-- Book for Later (A03), additive and idempotent. Two explicitly different
+-- products plus recurring templates — and a naming rule: "reservation" in
+-- this schema already means the WALLET funding/commission reservation
+-- (mp.reservation_recovery), so the new concepts are named distinctly.
+--
+--   * scheduled_requests is a STORED INTENT that no driver is committed to:
+--     pickup as a local date + local time + IANA timezone, the resolved UTC
+--     instant and the DST resolution applied, a pickup window, the rider's
+--     approved maximum fare and the route (stops included). A durable worker
+--     publishes it as an ordinary mp.requests row at publish_at (the market's
+--     lead time), refreshing routing, bounds and funding; terms outside the
+--     approval park it in needs_rider_approval instead. It is ALSO the
+--     occurrence row of a recurring template: (template_id, occurrence_date)
+--     is unique, so a replayed generation can never create a duplicate.
+--   * recurring_templates is the series, stored apart from its occurrences.
+--   * advance_bookings is the BOOKING CALENDAR of advance driver
+--     reservations — separate from mp.driver_claims (the live current/next
+--     slots), which a booking only enters at activation near pickup. Each
+--     booking occupies [window_start − pre buffer, window_end + routed trip +
+--     post buffer); btree_gist exclusion constraints refuse two committed
+--     bookings of one driver (and, once the fleet slice supplies vehicle
+--     identity, of one vehicle) whose intervals overlap, whatever the app
+--     races. The travel time between consecutive bookings is checked on top,
+--     under a per-driver transaction lock.
+--   * requests gain the booking kind (immediate | scheduled | advance), the
+--     pickup window and the resolved schedule of a future pickup.
+-- ---------------------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS booking_kind text NOT NULL DEFAULT 'immediate';
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS pickup_window_start timestamptz;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS pickup_window_end timestamptz;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS pickup_schedule jsonb;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS scheduled_request_id uuid;
+
+CREATE INDEX IF NOT EXISTS mp_requests_booking_kind_idx
+    ON mp.requests (booking_kind, state) WHERE booking_kind <> 'immediate';
+
+CREATE TABLE IF NOT EXISTS mp.recurring_templates (
+    id                 uuid PRIMARY KEY,
+    requester_id       uuid NOT NULL,
+    city_id            text NOT NULL,
+    product            text NOT NULL,
+    service            text NOT NULL,
+    vehicle_class      text NOT NULL,
+    currency           text NOT NULL,
+    state              text NOT NULL,
+    version            integer NOT NULL DEFAULT 1,
+    pickup             jsonb NOT NULL,
+    dropoff            jsonb NOT NULL,
+    stops              jsonb NOT NULL DEFAULT '[]'::jsonb,
+    payment_method_id  text NOT NULL,
+    requested_minor    bigint NOT NULL,
+    max_fare_minor     bigint NOT NULL,
+    days_of_week       text[] NOT NULL,
+    local_time         text NOT NULL,
+    time_zone          text NOT NULL,
+    window_sec         integer NOT NULL,
+    dst_disambiguation text NOT NULL,
+    starts_on          date NOT NULL,
+    ends_on            date,
+    generated_through  date,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT recurring_templates_product CHECK (product IN ('scheduled_request', 'advance_reservation')),
+    CONSTRAINT recurring_templates_money CHECK (requested_minor > 0 AND max_fare_minor >= requested_minor),
+    CONSTRAINT recurring_templates_days CHECK (cardinality(days_of_week) BETWEEN 1 AND 7),
+    CONSTRAINT recurring_templates_series CHECK (ends_on IS NULL OR ends_on >= starts_on)
+);
+
+CREATE INDEX IF NOT EXISTS mp_recurring_templates_active_idx
+    ON mp.recurring_templates (state, generated_through) WHERE state = 'active';
+CREATE INDEX IF NOT EXISTS mp_recurring_templates_requester_idx
+    ON mp.recurring_templates (requester_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS mp.scheduled_requests (
+    id                 uuid PRIMARY KEY,
+    product            text NOT NULL,
+    requester_id       uuid NOT NULL,
+    city_id            text NOT NULL,
+    service            text NOT NULL,
+    vehicle_class      text NOT NULL,
+    currency           text NOT NULL,
+    state              text NOT NULL,
+    version            integer NOT NULL DEFAULT 1,
+    pickup             jsonb NOT NULL,
+    dropoff            jsonb NOT NULL,
+    stops              jsonb NOT NULL DEFAULT '[]'::jsonb,
+    payment_method_id  text NOT NULL,
+    requested_minor    bigint NOT NULL,
+    max_fare_minor     bigint NOT NULL,
+    local_date         date NOT NULL,
+    local_time         text NOT NULL,
+    time_zone          text NOT NULL,
+    utc_offset_sec     integer NOT NULL,
+    dst_resolution     text NOT NULL,
+    window_sec         integer NOT NULL,
+    pickup_at          timestamptz NOT NULL,
+    window_end         timestamptz NOT NULL,
+    publish_at         timestamptz NOT NULL,
+    template_id        uuid REFERENCES mp.recurring_templates (id),
+    occurrence_date    date,
+    request_id         uuid,
+    approval           jsonb,
+    reminders_sent     integer[] NOT NULL DEFAULT '{}',
+    attempts           integer NOT NULL DEFAULT 0,
+    next_attempt_at    timestamptz,
+    last_error         text,
+    close_reason       text,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT scheduled_requests_product CHECK (product IN ('scheduled_request', 'advance_reservation')),
+    CONSTRAINT scheduled_requests_money CHECK (requested_minor > 0 AND max_fare_minor >= requested_minor),
+    CONSTRAINT scheduled_requests_window CHECK (window_end > pickup_at),
+    CONSTRAINT scheduled_requests_occurrence CHECK ((template_id IS NULL) = (occurrence_date IS NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS scheduled_requests_one_per_occurrence
+    ON mp.scheduled_requests (template_id, occurrence_date) WHERE template_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS scheduled_requests_one_per_request
+    ON mp.scheduled_requests (request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS mp_scheduled_requests_due_idx
+    ON mp.scheduled_requests (state, publish_at);
+CREATE INDEX IF NOT EXISTS mp_scheduled_requests_requester_idx
+    ON mp.scheduled_requests (requester_id, pickup_at);
+
+CREATE TABLE IF NOT EXISTS mp.advance_bookings (
+    id                     uuid PRIMARY KEY,
+    award_id               uuid NOT NULL REFERENCES mp.awards (id),
+    request_id             uuid NOT NULL REFERENCES mp.requests (id),
+    bid_id                 uuid NOT NULL,
+    driver_id              uuid NOT NULL,
+    requester_id           uuid NOT NULL,
+    -- NULL until the fleet slice (A05) supplies a vehicle identity for the
+    -- driver; the vehicle exclusion constraint applies once it is set.
+    vehicle_id             text,
+    city_id                text NOT NULL,
+    state                  text NOT NULL,
+    version                integer NOT NULL DEFAULT 1,
+    funding_state          text NOT NULL DEFAULT 'pending',
+    payment_method_id      text NOT NULL,
+    currency               text NOT NULL,
+    fare_minor             bigint NOT NULL,
+    commission_minor       bigint NOT NULL,
+    window_start           timestamptz NOT NULL,
+    window_end             timestamptz NOT NULL,
+    trip_duration_sec      bigint NOT NULL,
+    occupied               tstzrange NOT NULL,
+    pickup                 jsonb NOT NULL,
+    dropoff                jsonb NOT NULL,
+    funding_due_at         timestamptz NOT NULL,
+    funding_deadline       timestamptz NOT NULL,
+    reconfirm_opens_at     timestamptz NOT NULL,
+    reconfirm_deadline     timestamptz NOT NULL,
+    activation_at          timestamptz NOT NULL,
+    activation_deadline    timestamptz NOT NULL,
+    reconfirm_requested_at timestamptz,
+    reconfirmed_at         timestamptz,
+    activated_at           timestamptz,
+    activated_slot         text,
+    claim_id               uuid,
+    reminders_sent         integer[] NOT NULL DEFAULT '{}',
+    failure                jsonb,
+    rematch_request_id     uuid,
+    attempts               integer NOT NULL DEFAULT 0,
+    next_attempt_at        timestamptz,
+    last_error             text,
+    created_at             timestamptz NOT NULL DEFAULT now(),
+    updated_at             timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT advance_bookings_award_uniq UNIQUE (award_id),
+    CONSTRAINT advance_bookings_window CHECK (window_end > window_start AND NOT isempty(occupied)),
+    CONSTRAINT advance_bookings_money CHECK (fare_minor > 0 AND commission_minor >= 0),
+    CONSTRAINT advance_bookings_no_overlap EXCLUDE USING gist (driver_id WITH =, occupied WITH &&)
+        WHERE (state IN ('held', 'payment_pending', 'confirmed', 'reconfirmed', 'activated')),
+    CONSTRAINT advance_bookings_vehicle_no_overlap EXCLUDE USING gist (vehicle_id WITH =, occupied WITH &&)
+        WHERE (vehicle_id IS NOT NULL AND state IN ('held', 'payment_pending', 'confirmed', 'reconfirmed', 'activated'))
+);
+
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_driver_idx
+    ON mp.advance_bookings (driver_id, window_start);
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_requester_idx
+    ON mp.advance_bookings (requester_id, window_start);
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_due_idx
+    ON mp.advance_bookings (state, window_start);

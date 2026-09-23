@@ -33,6 +33,9 @@ const (
 	ReasonOffline               = "OFFLINE"
 	ReasonInsufficientSpendable = "INSUFFICIENT_SPENDABLE"
 	ReasonRoutingUnavailable    = "ROUTING_UNAVAILABLE"
+	// Advance reservations (A03).
+	ReasonCalendarConflict = "CALENDAR_CONFLICT"
+	ReasonAdvanceDisabled  = "ADVANCE_DISABLED"
 )
 
 // reasonWords gives every code its human title and detail once, so the same
@@ -67,6 +70,10 @@ func reason(code string) EligibilityReasonView {
 		return EligibilityReasonView{code, "Wallet balance too low", "Your spendable balance does not cover the 10% commission hold."}
 	case ReasonRoutingUnavailable:
 		return EligibilityReasonView{code, "Route check unavailable", "We could not verify your route to this pickup. Try again shortly."}
+	case ReasonCalendarConflict:
+		return EligibilityReasonView{code, "Clashes with your bookings", "This pickup window, the trip and the travel to or from your other advance bookings would overlap."}
+	case ReasonAdvanceDisabled:
+		return EligibilityReasonView{code, "Advance bookings unavailable", "Bidding on future pickups is not enabled here."}
 	default:
 		return EligibilityReasonView{code, code, code}
 	}
@@ -139,6 +146,13 @@ func (s *Service) EvaluateEligibility(ctx context.Context, actor Actor, request 
 	}
 	if session.LastAccuracyM == nil || *session.LastAccuracyM <= 0 || *session.LastAccuracyM > float64(stationary.MaxAccuracyMeters) {
 		return refuse(ReasonLocationInaccurate), nil
+	}
+
+	// A03: an advance-booking request is judged against the driver's
+	// booking calendar, not their live slots — a future booking never
+	// occupies today's current/next queue.
+	if request.isAdvance() {
+		return s.evaluateAdvance(ctx, actor, request, policy, result, refuse, now)
 	}
 
 	currentClaim, err := s.deps.Store.CurrentClaim(ctx, s.deps.Store.Pool(), actor.UserID)

@@ -38,6 +38,19 @@ const (
 	scopeStandingApprove      = "mp.admin.standing.approve"
 	scopeStandingAppeal       = "mp.admin.standing.appeal"
 	scopeStandingAppealDecide = "mp.admin.standing.appeal_decide"
+
+	// A03 Book for Later.
+	scopeScheduledCreate  = "mp.scheduled.create"
+	scopeScheduledCancel  = "mp.scheduled.cancel"
+	scopeScheduledApprove = "mp.scheduled.approve"
+	scopeAdvanceCreate    = "mp.advance.create"
+	scopeBookingCancel    = "mp.booking.cancel"
+	scopeBookingReconfirm = "mp.booking.reconfirm"
+	scopeBookingWithdraw  = "mp.booking.withdraw"
+	scopeBookingRematch   = "mp.booking.rematch"
+	scopeTemplateCreate   = "mp.template.create"
+	scopeTemplateCommand  = "mp.template.command"
+	scopeOccurrenceSkip   = "mp.template.skip"
 )
 
 // ValidateIdempotencyKey mirrors IdempotencyKeySchema, via the move package so

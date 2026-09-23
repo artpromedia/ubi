@@ -38,7 +38,18 @@ const sweepBatch = 100
 //     stalled reservation or commit under the same amendment id, expiring
 //     and releasing unapproved ones, compensating failed ones (A02);
 //  10. publish due stop-waiting milestones and settle finalised stop
-//     waiting still owed to the amendment path.
+//     waiting still owed to the amendment path;
+//  11. generate recurring occurrences inside the generation horizon, once
+//     per template and local date (A03);
+//  12. publish due scheduled intents with refreshed routing, bounds and
+//     funding — or park them for the rider's renewed approval — expire
+//     lapsed ones and record published ones the market left unfulfilled;
+//  13. send due scheduled-request reminders, once per offset;
+//  14. drive the advance-booking calendar: secure rider funding inside the
+//     funding horizon (or release at the deadline), fail bookings whose
+//     driver lost eligibility or missed reconfirmation, request
+//     reconfirmation, activate reconfirmed bookings into the live slots
+//     exactly once, record activated bookings' outcomes, send reminders.
 //
 // It is a plain function over rows, so a restart resumes rather than forgets,
 // a test can drive it a tick at a time, and an operator can run it as a job.
@@ -54,6 +65,10 @@ func (s *Service) Sweep(ctx context.Context) error {
 	s.sweepQueuedDriverFailures(ctx)
 	s.sweepAmendments(ctx, now)
 	s.sweepStopWaiting(ctx, now)
+	s.sweepRecurringGeneration(ctx, now)
+	s.sweepScheduledPublications(ctx, now)
+	s.sweepScheduledReminders(ctx, now)
+	s.sweepAdvanceBookings(ctx, now)
 	return nil
 }
 

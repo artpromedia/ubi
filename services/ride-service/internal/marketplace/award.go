@@ -42,6 +42,9 @@ type SelectWinnerRequest struct {
 type SelectResult struct {
 	Award     *AwardView `json:"award"`
 	PickupPin string     `json:"pickupPin,omitempty"`
+	// Booking is the advance booking an advance selection created (A03):
+	// driver reserved, and whether the rider's funding is secured yet.
+	Booking *AdvanceBookingView `json:"booking,omitempty"`
 }
 
 // attemptRetryDelay is the base reconciliation delay for a stalled saga step.
@@ -174,6 +177,37 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		window.ConsentedLatestSec = window.LatestSec
 	}
 
+	// A03: an ADVANCE selection books the driver's calendar instead of a
+	// live slot. The calendar is checked (overlap of the buffered interval,
+	// routed travel to/from the neighbouring bookings) before any
+	// transaction opens, and re-checked under the driver's calendar lock
+	// inside it, with the exclusion constraints as the final authority.
+	var plan *bookingPlan
+	var advancePolicy *cityconfig.AdvanceReservationPolicy
+	if bid.Slot == SlotAdvance {
+		if !request.isAdvance() {
+			return nil, 0, domain.Errorf(domain.CodeConflict, "this offer is not for an advance booking")
+		}
+		if advancePolicy, err = policy.AdvanceReservationPolicyFor(request.CityID); err != nil {
+			return nil, 0, asDomainError(err)
+		}
+		blocked, blockErr := s.driverBlocked(ctx, bid.DriverID)
+		if blockErr != nil {
+			return nil, 0, asDomainError(blockErr)
+		}
+		if blocked {
+			return nil, 0, domain.Errorf(domain.CodeSlotUnavailable, "this driver can no longer take marketplace work").
+				WithDetails(map[string]any{"reason": ReasonAccountNotEligible})
+		}
+		if plan, err = s.planBooking(ctx, bid.DriverID, request, advancePolicy); err != nil {
+			if mapped, ok := domain.AsError(err); ok {
+				return nil, 0, mapped
+			}
+			return nil, 0, domain.Errorf(domain.CodeSlotUnavailable,
+				"the driver's calendar cannot be verified right now; try again shortly").Wrap(err)
+		}
+	}
+
 	award := &Award{
 		ID:              uuid.New(),
 		RequestID:       request.ID,
@@ -196,6 +230,12 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		Service:          request.Service,
 		AwardID:          &award.ID,
 		DependsOnClaimID: bid.DependsOnClaimID,
+	}
+	var booking *AdvanceBooking
+	if plan != nil {
+		// No live claim: the booking holds the calendar instead.
+		claim = nil
+		booking = newBooking(award, request, plan, advancePolicy, now)
 	}
 
 	// Transaction 1: claim the request and the driver's capacity atomically.
@@ -257,7 +297,17 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 			}
 			return err
 		}
-		if err := s.deps.Store.InsertClaim(ctx, tx, claim); err != nil {
+		if booking != nil {
+			if err := s.lockCalendar(ctx, tx, bid.DriverID, plan); err != nil {
+				return err
+			}
+			if err := s.deps.Store.InsertBooking(ctx, tx, booking); err != nil {
+				if errors.Is(err, errCalendarConflict) {
+					return calendarConflict("the driver's calendar took an overlapping booking while this selection was in flight", nil)
+				}
+				return err
+			}
+		} else if err := s.deps.Store.InsertClaim(ctx, tx, claim); err != nil {
 			if errors.Is(err, errSlotOccupied) {
 				return domain.Errorf(domain.CodeSlotUnavailable,
 					"the driver's capacity was taken while this selection was in flight")
@@ -292,7 +342,17 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		}); err != nil {
 			return err
 		}
-		if err := writeEvent(ctx, tx, Event{
+		if booking != nil {
+			if err := s.writeBookingEvent(ctx, tx, booking, "mp.advance_booking.held", "rider", actor.UserID.String(), now,
+				map[string]any{
+					"fareMinor": award.FareMinor, "commissionMinor": award.CommissionMinor, "currency": request.Currency,
+					"occupiedStart": booking.OccupiedStart.Format(time.RFC3339),
+					"occupiedEnd":   booking.OccupiedEnd.Format(time.RFC3339),
+					"driverSecured": false,
+				}); err != nil {
+				return err
+			}
+		} else if err := writeEvent(ctx, tx, Event{
 			Name:           "mp.claim.created",
 			AggregateType:  subjectClaim,
 			AggregateID:    claim.ID.String(),
@@ -355,6 +415,16 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 	result := pendingView
 	if resolved != nil {
 		result = &SelectResult{Award: awardViewOf(resolved, request.Currency), PickupPin: pin}
+	}
+	if booking != nil {
+		// The advance booking as it stands after the saga's synchronous
+		// push: driver reserved (or still confirming), and whether the
+		// rider's funding is secured yet.
+		if current, err := s.deps.Store.BookingByID(ctx, s.deps.Store.Pool(), booking.ID); err == nil {
+			withBooking := *result
+			withBooking.Booking = bookingViewOf(current, request, request.VehicleClass, viewerRider)
+			result = &withBooking
+		}
 	}
 	return result, 202, nil
 }
@@ -512,8 +582,28 @@ func (s *Service) runFundingStep(ctx context.Context, award *Award, attempt *Awa
 	}
 	now := s.now()
 
+	// A03: an ADVANCE award secures rider funding with the same wallet
+	// authorization, but only once the pickup is within the market's funding
+	// horizon. Beyond it nothing is authorized now: the booking is
+	// payment_pending (driver reserved, rider funding not yet secured) and
+	// the booking worker authorizes under this very award key when the pickup
+	// enters the horizon — so no hold outlives the bounded horizon.
+	var booking *AdvanceBooking
+	deferFunding := false
+	if award.Slot == SlotAdvance {
+		if booking, err = s.deps.Store.BookingByAwardID(ctx, s.deps.Store.Pool(), award.ID); err != nil {
+			return false, asDomainError(err)
+		}
+		deferFunding = request.PaymentMethodID != "cash" && now.Before(booking.FundingDueAt)
+	}
+
 	var fundErr error
-	if request.PaymentMethodID == "cash" {
+	fundingState := BookingFundingSecured
+	switch {
+	case deferFunding:
+		fundingState = BookingFundingPending
+	case request.PaymentMethodID == "cash":
+		fundingState = BookingFundingUnsecuredCash
 		config, cfgErr := s.config(ctx, request.CityID)
 		if cfgErr != nil {
 			fundErr = fmt.Errorf("%w: %v", ErrWalletUnknownOutcome, cfgErr)
@@ -522,7 +612,7 @@ func (s *Service) runFundingStep(ctx context.Context, award *Award, attempt *Awa
 				"cash cannot fund this request any more").
 				WithDetails(map[string]any{"reason": reason})
 		}
-	} else {
+	default:
 		auth, authErr := s.deps.Funding.Authorize(ctx, FundingRequest{
 			RequesterID:     award.RequesterID,
 			RequestID:       award.RequestID,
@@ -533,6 +623,9 @@ func (s *Service) runFundingStep(ctx context.Context, award *Award, attempt *Awa
 			CityID:          request.CityID,
 		}, "mp.fund:"+award.ID.String())
 		fundErr = authErr
+		if authErr == nil && auth != nil && !auth.Secured {
+			fundingState = BookingFundingUnsecuredCash
+		}
 		if authErr == nil && auth != nil {
 			// The award row has no natural column for the funding security,
 			// so the fact is logged (C02): `secured=true` means a durable
@@ -566,6 +659,13 @@ func (s *Service) runFundingStep(ctx context.Context, award *Award, attempt *Awa
 		return false, fundErr
 	}
 
+	if booking != nil {
+		// Recorded before the step advances: finalize reads it to decide
+		// confirmed (secured / cash explicitly unsecured) vs payment_pending.
+		if err := s.deps.Store.SetBookingFundingState(ctx, s.deps.Store.Pool(), booking.ID, fundingState); err != nil {
+			return false, err
+		}
+	}
 	retryAt := now.Add(attemptRetryDelay)
 	if err := s.deps.Store.SaveAttempt(ctx, s.deps.Store.Pool(), award.ID,
 		AttemptStepCapture, AttemptStatePending, "", &retryAt); err != nil {
@@ -673,6 +773,21 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 	if err != nil {
 		return "", err
 	}
+	advance := award.Slot == SlotAdvance
+	var booking *AdvanceBooking
+	var advancePolicy *cityconfig.AdvanceReservationPolicy
+	if advance {
+		if booking, err = s.deps.Store.BookingByAwardID(ctx, s.deps.Store.Pool(), award.ID); err != nil {
+			return "", asDomainError(err)
+		}
+		policy, policyErr := config.MarketplacePolicyFor()
+		if policyErr != nil {
+			return "", asDomainError(policyErr)
+		}
+		if advancePolicy, err = policy.AdvanceReservationPolicyFor(request.CityID); err != nil {
+			return "", asDomainError(err)
+		}
+	}
 
 	pin := ""
 	var releases []*Bid
@@ -692,19 +807,42 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 		if err != nil {
 			return err
 		}
-		claim, err := s.deps.Store.ClaimByAwardID(ctx, tx, awardID)
-		if err != nil {
-			return err
-		}
-		claim, err = s.deps.Store.ClaimForUpdate(ctx, tx, claim.ID)
-		if err != nil {
-			return err
+		var claim *Claim
+		if !advance {
+			if claim, err = s.deps.Store.ClaimByAwardID(ctx, tx, awardID); err != nil {
+				return err
+			}
+			if claim, err = s.deps.Store.ClaimForUpdate(ctx, tx, claim.ID); err != nil {
+				return err
+			}
 		}
 
 		now := s.now()
 		update := AwardUpdate{ResolvedAt: &now}
+		var bookedAs *AdvanceBooking
 
-		if award.Slot == SlotCurrent {
+		if advance {
+			// A03: the calendar booking the selection held becomes the
+			// driver's committed future booking. No claim, no execution: the
+			// live slots are untouched until activation near pickup.
+			lockedBooking, err := s.deps.Store.BookingForUpdate(ctx, tx, booking.ID)
+			if err != nil {
+				return err
+			}
+			if lockedBooking.State != machine.MpBookingHeld {
+				return fmt.Errorf("%w: the booking is %s, not held", errExecutionBlocked, lockedBooking.State)
+			}
+			to := machine.MpBookingPaymentPending
+			if lockedBooking.FundingState == BookingFundingSecured || lockedBooking.FundingState == BookingFundingUnsecuredCash {
+				to = machine.MpBookingConfirmed
+			}
+			if bookedAs, err = s.deps.Store.TransitionBooking(ctx, tx, lockedBooking, to, BookingUpdate{}); err != nil {
+				return err
+			}
+			if lockedRequest, err = s.deps.Store.TransitionRequest(ctx, tx, lockedRequest, machine.MpRequestAwarded, RequestUpdate{}); err != nil {
+				return err
+			}
+		} else if award.Slot == SlotCurrent {
 			ride, ridePin, err := s.createExecutionRide(ctx, tx, lockedRequest, locked, config, now)
 			if err != nil {
 				return err
@@ -795,7 +933,14 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 		// The winner's OTHER live bids for the same capacity slot are now
 		// impossible promises; they are invalidated (which notifies those
 		// requests' owners through the event stream) and their holds released.
-		clashing, err := s.deps.Store.LiveBidsForDriverInSlot(ctx, tx, award.DriverID, award.Slot, request.ID)
+		// For an advance award the clashing offers are the driver's other
+		// advance bids whose calendar interval now overlaps this booking.
+		var clashing []*Bid
+		if advance {
+			clashing, err = s.overlappingAdvanceBids(ctx, tx, bookedAs, request.ID, advancePolicy)
+		} else {
+			clashing, err = s.deps.Store.LiveBidsForDriverInSlot(ctx, tx, award.DriverID, award.Slot, request.ID)
+		}
 		if err != nil {
 			return err
 		}
@@ -879,6 +1024,28 @@ func (s *Service) finalizeAward(ctx context.Context, awardID uuid.UUID) (string,
 			},
 		}); err != nil {
 			return err
+		}
+		if bookedAs != nil {
+			name := "mp.advance_booking.confirmed"
+			if bookedAs.State == machine.MpBookingPaymentPending {
+				name = "mp.advance_booking.payment_pending"
+			}
+			if err := s.writeBookingEvent(ctx, tx, bookedAs, name, "system", "ride-service", now, map[string]any{
+				"fareMinor":          award.FareMinor,
+				"commissionMinor":    award.CommissionMinor,
+				"currency":           request.Currency,
+				"commissionCaptured": true,
+				"captureReceipt":     confirmed.CaptureReceiptID,
+				"driverReserved":     true,
+				"fullySecured":       bookedAs.State == machine.MpBookingConfirmed,
+				"fundingDueAt":       bookedAs.FundingDueAt.Format(time.RFC3339),
+				"fundingDeadline":    bookedAs.FundingDeadline.Format(time.RFC3339),
+				"reconfirmOpensAt":   bookedAs.ReconfirmOpensAt.Format(time.RFC3339),
+				"reconfirmDeadline":  bookedAs.ReconfirmDeadline.Format(time.RFC3339),
+				"activationAt":       bookedAs.ActivationAt.Format(time.RFC3339),
+			}); err != nil {
+				return err
+			}
 		}
 		if err := writeAudit(ctx, tx, AuditRecord{
 			ActorID:     "ride-service",
@@ -1073,6 +1240,31 @@ func (s *Service) compensateAward(ctx context.Context, awardID uuid.UUID, reason
 			}
 		} else if !errors.Is(err, domain.ErrNotFound) {
 			return err
+		}
+
+		// A03: an abandoned advance award frees the calendar interval its
+		// selection held (the exclusion constraints stop counting it).
+		if award.Slot == SlotAdvance {
+			heldBooking, err := s.deps.Store.BookingByAwardID(ctx, tx, awardID)
+			if err != nil && !errors.Is(err, domain.ErrNotFound) {
+				return err
+			}
+			if err == nil {
+				lockedBooking, err := s.deps.Store.BookingForUpdate(ctx, tx, heldBooking.ID)
+				if err != nil {
+					return err
+				}
+				if lockedBooking.State == machine.MpBookingHeld {
+					released, err := s.deps.Store.TransitionBooking(ctx, tx, lockedBooking, machine.MpBookingReleased, BookingUpdate{})
+					if err != nil {
+						return err
+					}
+					if err := s.writeBookingEvent(ctx, tx, released, "mp.advance_booking.released", "system", "ride-service", now,
+						map[string]any{"reason": reason, "driverSecured": false}); err != nil {
+						return err
+					}
+				}
+			}
 		}
 
 		lockedRequest, err := s.deps.Store.RequestForUpdate(ctx, tx, award.RequestID)

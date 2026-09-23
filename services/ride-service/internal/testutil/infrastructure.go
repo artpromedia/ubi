@@ -267,8 +267,16 @@ func (h *Harness) cleanup(ctx context.Context) {
 		// stay deferred while an amendment still holds open money (A02), and
 		// must not be driven by a later test's sweep.
 		`DELETE FROM mp.reservation_recovery WHERE bid_id IS NULL AND reservation_id IN (SELECT 'mp.settle:' || id::text FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
+		// Rider funding releases the award paths wrote durably (keyed by
+		// the award, no bid): a later test's sweep must not drive them.
+		`DELETE FROM mp.reservation_recovery WHERE bid_id IS NULL AND reservation_id IN (SELECT 'mp.fund.release:' || id::text FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
 		`DELETE FROM mp.amendments WHERE city_id = $1`,
 		`DELETE FROM mp.execution_routes WHERE city_id = $1`,
+		// A03 Book for Later: the booking calendar references awards and
+		// requests; occurrences reference their templates.
+		`DELETE FROM mp.advance_bookings WHERE city_id = $1`,
+		`DELETE FROM mp.scheduled_requests WHERE city_id = $1`,
+		`DELETE FROM mp.recurring_templates WHERE city_id = $1`,
 		`DELETE FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1)`,
 		`DELETE FROM mp.bids WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1)`,
 		`DELETE FROM mp.requests WHERE city_id = $1`,

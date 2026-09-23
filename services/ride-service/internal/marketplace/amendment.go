@@ -603,7 +603,7 @@ func (s *Service) ProposeAmendment(ctx context.Context, actor Actor, requestID u
 	if conflict := s.nextJobConflict(ctx, route, stops, proposedStops, proposedDropoff); conflict != nil {
 		return nil, 0, domain.Errorf(domain.CodeConflict,
 			"this change would break the pickup window promised to the driver's next rider").
-			WithDetails(conflict)
+			WithDetails(redactQueuedJobFor(trip.role, conflict))
 	}
 
 	now := s.now()
@@ -651,10 +651,7 @@ func (s *Service) ProposeAmendment(ctx context.Context, actor Actor, requestID u
 	}
 	if advErr != nil {
 		if mapped, ok := domain.AsError(advErr); ok && advanced.State == machine.MpAmendmentRejected {
-			details := map[string]any{}
-			for key, value := range mapped.Details {
-				details[key] = value
-			}
+			details := redactQueuedJobFor(trip.role, mapped.Details)
 			details["amendmentId"] = advanced.ID.String()
 			details["amendmentState"] = advanced.State
 			details["reason"] = advanced.Reason
@@ -668,6 +665,30 @@ func (s *Service) ProposeAmendment(ctx context.Context, actor Actor, requestID u
 		status = 202
 	}
 	return s.amendmentViewFor(ctx, advanced, trip.role), status, nil
+}
+
+// queuedJobIdentifiers are the next_job_conflict details that identify —
+// or time — ANOTHER customer's queued job: its award and request ids, the
+// pickup it was promised and the predicted pickups around it. The queue is
+// the driver's, so the driver sees them; a rider is told only that the
+// change would break a promise to the driver's next rider.
+var queuedJobIdentifiers = []string{
+	"queuedAwardId", "queuedRequestId", "consentedPickupBy", "predictedPickupAt", "currentPredictedPickupAt",
+}
+
+// redactQueuedJobFor copies refusal details for one party, stripping the
+// queued job's identifiers unless the party is the driver.
+func redactQueuedJobFor(role string, details map[string]any) map[string]any {
+	out := make(map[string]any, len(details))
+	for key, value := range details {
+		out[key] = value
+	}
+	if role != partyDriver {
+		for _, key := range queuedJobIdentifiers {
+			delete(out, key)
+		}
+	}
+	return out
 }
 
 // openAmendmentError answers "another amendment is still open".
@@ -899,10 +920,7 @@ func (s *Service) ApproveAmendment(ctx context.Context, actor Actor, requestID, 
 	if advErr != nil {
 		if mapped, ok := domain.AsError(advErr); ok && (advanced.State == machine.MpAmendmentRejected ||
 			advanced.State == machine.MpAmendmentFailed || advanced.State == machine.MpAmendmentCompensated) {
-			details := map[string]any{}
-			for key, value := range mapped.Details {
-				details[key] = value
-			}
+			details := redactQueuedJobFor(trip.role, mapped.Details)
 			details["amendmentId"] = advanced.ID.String()
 			details["amendmentState"] = advanced.State
 			return nil, 0, domain.Errorf(mapped.Code, "%s", mapped.Message).WithDetails(details)

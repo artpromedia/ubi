@@ -20,12 +20,15 @@ import { z } from "zod";
 
 import { CurrencySchema, MoneySchema } from "./money";
 import {
+  MP_ADVANCE_BOOKING_STATES,
   MP_AMENDMENT_STATES,
   MP_AWARD_STATES,
   MP_BID_STATES,
   MP_CLAIM_STATES,
   MP_HOLD_STATES,
+  MP_RECURRING_TEMPLATE_STATES,
   MP_REQUEST_STATES,
+  MP_SCHEDULED_REQUEST_STATES,
 } from "./state-machines";
 
 export const MP_SERVICES = ["ride", "delivery"] as const;
@@ -36,6 +39,123 @@ export const MpServiceSchema = z.enum(MP_SERVICES);
 export const MP_SLOTS = ["current", "next"] as const;
 export type MpSlot = (typeof MP_SLOTS)[number];
 export const MpSlotSchema = z.enum(MP_SLOTS);
+
+/**
+ * What a BID (and the award it becomes) is for: one of the live capacity
+ * slots, or `advance` — a future pickup window on the driver's booking
+ * calendar (A03), which never occupies the live current/next slots until
+ * activation near pickup. Claims stay `MpSlotSchema`.
+ */
+export const MP_BID_SLOTS = [...MP_SLOTS, "advance"] as const;
+export type MpBidSlot = (typeof MP_BID_SLOTS)[number];
+export const MpBidSlotSchema = z.enum(MP_BID_SLOTS);
+
+// ── Book for Later: pickup time shapes (A03) ──────────────────────────────
+
+/** A calendar date in the pickup's local timezone, `YYYY-MM-DD`. */
+export const MpLocalDateSchema = z
+  .string()
+  .regex(
+    /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/,
+    "expected YYYY-MM-DD",
+  );
+
+/** A wall-clock time in the pickup's local timezone, `HH:MM` (24h). */
+export const MpLocalTimeSchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "expected HH:MM (24-hour)");
+
+/**
+ * How a local time that a daylight-saving change makes ambiguous resolves.
+ * `compatible` (the default) moves a time inside a spring-forward GAP forward
+ * by the gap and takes the EARLIER instant of a fall-back OVERLAP; `earlier`
+ * / `later` pick explicitly; `reject` refuses both with validation_failed so
+ * the rider chooses. The resolution applied is always reported back.
+ */
+export const MP_DST_DISAMBIGUATIONS = [
+  "compatible",
+  "earlier",
+  "later",
+  "reject",
+] as const;
+export const MP_DST_RESOLUTIONS = [
+  "exact",
+  "gap_shifted_forward",
+  "gap_shifted_backward",
+  "overlap_earlier",
+  "overlap_later",
+] as const;
+export type MpDstResolution = (typeof MP_DST_RESOLUTIONS)[number];
+
+/**
+ * A requested pickup time: local date + local time + IANA timezone, plus the
+ * pickup window length. The server computes and stores the UTC instant; a
+ * client never sends one.
+ */
+export const MpPickupScheduleInputSchema = z
+  .object({
+    localDate: MpLocalDateSchema,
+    localTime: MpLocalTimeSchema,
+    /** IANA timezone, e.g. "Africa/Lagos"; the city's when omitted. */
+    timeZone: z.string().min(1).optional(),
+    /** Pickup window length; bounded by the market's scheduling policy. */
+    windowMinutes: z.number().int().positive().optional(),
+    dstDisambiguation: z.enum(MP_DST_DISAMBIGUATIONS).optional(),
+  })
+  .strict();
+export type MpPickupScheduleInput = z.infer<typeof MpPickupScheduleInputSchema>;
+
+/** A stored pickup time as the server resolved it. */
+export const MpPickupScheduleSchema = z.object({
+  localDate: MpLocalDateSchema,
+  localTime: MpLocalTimeSchema,
+  timeZone: z.string().min(1),
+  /** The UTC offset in force at the pickup instant, e.g. "+01:00". */
+  utcOffset: z.string().min(1),
+  dstResolution: z.enum(MP_DST_RESOLUTIONS),
+  /** The resolved pickup instant (= windowStart). */
+  pickupAt: z.string().datetime({ offset: true }),
+  windowStart: z.string().datetime({ offset: true }),
+  windowEnd: z.string().datetime({ offset: true }),
+  windowMinutes: z.number().int().positive(),
+  /** Server-phrased local label, e.g. "Sun 8 Mar 2026, 03:30 (UTC-04:00)". */
+  label: z.string().min(1),
+});
+export type MpPickupSchedule = z.infer<typeof MpPickupScheduleSchema>;
+
+/**
+ * The future-booking block on a request, feed card or driver view. `advance`
+ * requests take offers now for the future window; `scheduled` requests are
+ * published scheduled intents (an ordinary immediate market by then). The
+ * notice always says whether a driver is secured — before an award, never.
+ */
+export const MpRequestBookingSchema = z.object({
+  kind: z.enum(["scheduled", "advance"]),
+  schedule: MpPickupScheduleSchema,
+  scheduledRequestId: z.string().min(1).nullable(),
+  driverSecured: z.boolean(),
+  notice: z.string().min(1),
+});
+export type MpRequestBooking = z.infer<typeof MpRequestBookingSchema>;
+
+/**
+ * What an advance bid commits the driver's wallet to (explained BEFORE the
+ * bid on the driver view, and restated on the bid): the 10% commission held
+ * from the cleared balance while the offer stands, captured ONCE at the
+ * requester's advance award, never charged again at activation, and returned
+ * with a linked reversal if the booking fails or is cancelled.
+ */
+export const MpAdvanceCommitmentSchema = z.object({
+  commissionMinor: MoneySchema,
+  heldFrom: z.literal("cleared_balance"),
+  capturedAt: z.literal("advance_award"),
+  chargedAgainAtActivation: z.literal(false),
+  holdExpiresAt: z.string().datetime({ offset: true }).nullable(),
+  pickupWindowStart: z.string().datetime({ offset: true }),
+  pickupWindowEnd: z.string().datetime({ offset: true }),
+  terms: z.array(z.string().min(1)).min(1),
+});
+export type MpAdvanceCommitment = z.infer<typeof MpAdvanceCommitmentSchema>;
 
 // ── Multiple stops (A02) ───────────────────────────────────────────────────
 
@@ -229,6 +349,10 @@ export const MP_REQUEST_CLOSE_REASONS = [
   // closed by compensateAward. Present in the registry because the server
   // already emits it and request views serialize closeReason through it.
   "award_failed",
+  // An advance reservation (A03) failed before activation — driver withdrew
+  // or lost eligibility, reconfirmation or rider funding missed its deadline.
+  // The booking view explains the financial outcome and the rematch option.
+  "booking_failed",
 ] as const;
 export type MpRequestCloseReason = (typeof MP_REQUEST_CLOSE_REASONS)[number];
 
@@ -301,6 +425,8 @@ export const MpRequestSchema = z.object({
   stops: z.array(MpRouteStopSchema).optional(),
   routeRevision: z.number().int().min(1).optional(),
   routeFingerprint: z.string().min(1).optional(),
+  /** A03: present only on a scheduled or advance-booking request. */
+  booking: MpRequestBookingSchema.optional(),
 });
 export type MpRequest = z.infer<typeof MpRequestSchema>;
 
@@ -312,7 +438,8 @@ export const MpSubmitBidSchema = z.object({
   /** The revision the driver saw; a newer revision rejects with version_conflict. */
   requestRevision: z.number().int().min(1),
   amountMinor: MoneySchema,
-  slot: MpSlotSchema,
+  /** `advance` only on an advance-reservation request (A03). */
+  slot: MpBidSlotSchema,
   /** Required when slot === "next": the current job this bid depends on. */
   dependsOnClaimId: z.string().min(1).optional(),
   /** Availability epoch from the eligibility evaluation the driver acted on. */
@@ -333,11 +460,17 @@ export const MpBidSchema = z.object({
   amountMinor: MoneySchema,
   commissionMinor: MoneySchema,
   netMinor: MoneySchema,
-  slot: MpSlotSchema,
+  slot: MpBidSlotSchema,
   dependsOnClaimId: z.string().min(1).nullable(),
   reservationId: z.string().min(1),
   expiresAt: z.string().datetime({ offset: true }),
   createdAt: z.string().datetime({ offset: true }),
+  /**
+   * Advance bids only (A03): the wallet commitment the driver takes on — the
+   * 10% held from the cleared balance now, captured ONCE if the requester
+   * selects this offer, never charged again at activation.
+   */
+  advanceCommitment: MpAdvanceCommitmentSchema.optional(),
 });
 export type MpBid = z.infer<typeof MpBidSchema>;
 
@@ -404,6 +537,18 @@ export const MpOfferSchema = z.object({
 });
 export type MpOffer = z.infer<typeof MpOfferSchema>;
 
+/**
+ * A03: an offer on an advance-booking request — a driver's bid on a FUTURE
+ * pickup window, not transport now. The request snapshot lists these under
+ * `advanceOffers`, never under `offers`, so a client that only knows the live
+ * offer kinds can never render one as a live pickup. `pickupLabel` names the
+ * booked window; there is no live ETA (`pickupWindow` is null).
+ */
+export const MpAdvanceOfferSchema = MpOfferSchema.extend({
+  kind: z.literal("advance_booking"),
+});
+export type MpAdvanceOffer = z.infer<typeof MpAdvanceOfferSchema>;
+
 /** `POST /v1/mp/requests/:id/select` — acceptance pins both versions (M05). */
 export const MpSelectBidSchema = z.object({
   bidId: z.string().min(1),
@@ -438,6 +583,11 @@ export const MP_ELIGIBILITY_REASONS = [
   "OFFLINE",
   "INSUFFICIENT_SPENDABLE",
   "ROUTING_UNAVAILABLE",
+  // Advance reservations (A03): the pickup window (plus the routed trip,
+  // uncertainty buffers and the travel from/to the neighbouring bookings)
+  // collides with the driver's booking calendar; or advance bidding is off.
+  "CALENDAR_CONFLICT",
+  "ADVANCE_DISABLED",
 ] as const;
 export type MpEligibilityReason = (typeof MP_ELIGIBILITY_REASONS)[number];
 
@@ -459,7 +609,7 @@ export const MP_PREDICTED_PICKUP_BASES = [
 
 export const MpEligibilitySchema = z.object({
   eligible: z.boolean(),
-  slot: MpSlotSchema.nullable(),
+  slot: MpBidSlotSchema.nullable(),
   reasons: z.array(MpEligibilityReasonSchema),
   policyVersion: z.number().int().positive(),
   availabilityEpoch: z.number().int().min(0),
@@ -657,7 +807,7 @@ export const MpAwardSchema = z.object({
   requesterId: z.string().min(1),
   fareMinor: MoneySchema,
   commissionMinor: MoneySchema,
-  slot: MpSlotSchema,
+  slot: MpBidSlotSchema,
   executionRef: z
     .object({ service: MpServiceSchema, id: z.string().min(1) })
     .nullable(),
@@ -767,6 +917,11 @@ export const MpFeedItemSchema = z.object({
   earnings: MpEarningsBreakdownSchema.optional(),
   /** A04.2: the driver's own preference matches (absent when none). */
   preferenceTags: z.array(z.enum(["homeward"])).optional(),
+  /**
+   * A03: an advance-booking request's future pickup window (the card is a
+   * future booking, not an immediate job) — absent for immediate requests.
+   */
+  booking: MpRequestBookingSchema.optional(),
 });
 export type MpFeedItem = z.infer<typeof MpFeedItemSchema>;
 
@@ -1280,6 +1435,355 @@ export const MpTripSchema = z.object({
   version: z.number().int().min(1),
 });
 export type MpTrip = z.infer<typeof MpTripSchema>;
+
+// ── Book for Later (A03) ──────────────────────────────────────────────────
+//
+// Two explicitly different products plus recurring templates:
+//  - SCHEDULED REQUEST (`/v1/mp/scheduled-requests`, flag `scheduled_rides`):
+//    a stored intent; NO driver is secured; published as an ordinary request
+//    at the market's lead time with routing, bounds and funding refreshed.
+//  - ADVANCE DRIVER RESERVATION (`/v1/mp/advance-requests` →
+//    `/v1/mp/advance-bookings`, flag `marketplace_advance_reservations`):
+//    drivers bid on a future pickup window, the requester selects one in
+//    advance, the commission is captured once at that award, and the booking
+//    lives on a calendar separate from the live current/next slots.
+//  - RECURRING TEMPLATE (`/v1/mp/recurring-templates`, flag
+//    `marketplace_recurring_journeys`): occurrences of either product, each
+//    with its own fare approval, funding, driver commitment and receipt.
+
+/**
+ * The market's Book for Later policy, optional inside the marketplace policy
+ * (absent ⇒ every Book for Later capability fails closed with
+ * market_not_configured). Every duration is seconds; values in fixtures are
+ * test data, never production defaults.
+ */
+export const MpScheduledRequestPolicySchema = z.object({
+  /** Publish the stored intent this long before the pickup. */
+  publishLeadSec: z.number().int().positive(),
+  /** The earliest a scheduled request may be made before its pickup. */
+  minLeadSec: z.number().int().positive(),
+  /** The furthest ahead a pickup may be scheduled. */
+  maxHorizonSec: z.number().int().positive(),
+  defaultWindowSec: z.number().int().positive(),
+  minWindowSec: z.number().int().positive(),
+  maxWindowSec: z.number().int().positive(),
+  /** Reminder offsets before the pickup (e.g. 12 h and 1 h). */
+  reminderOffsetsSec: z.array(z.number().int().positive()).max(4),
+  maxPendingPerRequester: z.number().int().positive(),
+});
+
+export const MpAdvanceReservationPolicySchema = z.object({
+  /** Bounded booking horizon: no hold is ever longer-lived than this. */
+  bookingHorizonSec: z.number().int().positive(),
+  minLeadSec: z.number().int().positive(),
+  /** How long an advance request takes offers (capped before reconfirmation). */
+  offerWindowSec: z.number().int().positive(),
+  bidExpirySec: z.number().int().positive(),
+  defaultWindowSec: z.number().int().positive(),
+  minWindowSec: z.number().int().positive(),
+  maxWindowSec: z.number().int().positive(),
+  /**
+   * Rider funding is secured with the wallet funding authorization at the
+   * advance award only when the pickup is within this horizon; otherwise the
+   * booking is payment_pending and funding is secured when it enters it.
+   */
+  fundingHorizonSec: z.number().int().positive(),
+  /** Funding still unsecured this long before pickup fails the booking. */
+  fundingDeadlineSec: z.number().int().positive(),
+  reconfirmOpensSec: z.number().int().positive(),
+  reconfirmDeadlineSec: z.number().int().positive(),
+  /** Activation into the live current/next slots this long before pickup. */
+  activationLeadSec: z.number().int().positive(),
+  /** Uncertainty buffers around each booking's calendar interval. */
+  preBufferSec: z.number().int().nonnegative(),
+  postBufferSec: z.number().int().nonnegative(),
+  reminderOffsetsSec: z.array(z.number().int().positive()).max(4),
+  maxOpenPerRequester: z.number().int().positive(),
+});
+
+export const MpRecurringPolicySchema = z.object({
+  /** Occurrences are generated this many local days ahead. */
+  generationHorizonDays: z.number().int().min(1).max(14),
+  maxActiveTemplatesPerRequester: z.number().int().positive(),
+  /** Longest series (startsOn → endsOn) a template may span. */
+  maxSeriesDays: z.number().int().positive(),
+});
+
+export const MpSchedulingPolicySchema = z.object({
+  scheduledRequests: MpScheduledRequestPolicySchema.optional(),
+  advanceReservations: MpAdvanceReservationPolicySchema.optional(),
+  recurring: MpRecurringPolicySchema.optional(),
+});
+export type MpSchedulingPolicy = z.infer<typeof MpSchedulingPolicySchema>;
+
+/** What a Book for Later intent becomes when published. */
+export const MP_BOOKING_PRODUCTS = [
+  "scheduled_request",
+  "advance_reservation",
+] as const;
+export type MpBookingProduct = (typeof MP_BOOKING_PRODUCTS)[number];
+
+/** `POST /v1/mp/scheduled-requests` (Idempotency-Key required). */
+export const MpCreateScheduledRequestSchema = z
+  .object({
+    /** A fresh quote: pins the route, service and class; not consumed. */
+    quoteId: z.string().min(1),
+    /** The asked fare the request publishes with (clamped into fresh bounds). */
+    requestedFareMinor: MoneySchema,
+    /** The most the rider approves; refreshed bounds above it need approval. */
+    maxFareMinor: MoneySchema,
+    paymentMethodId: z.string().min(1),
+    schedule: MpPickupScheduleInputSchema,
+  })
+  .strict();
+export type MpCreateScheduledRequest = z.infer<
+  typeof MpCreateScheduledRequestSchema
+>;
+
+/** Why a stored intent is waiting for the rider instead of publishing. */
+export const MP_SCHEDULED_APPROVAL_REASONS = [
+  "fare_above_approval",
+  "payment_method_unavailable",
+  "funding_unavailable",
+] as const;
+
+export const MpScheduledRequestSchema = z.object({
+  scheduledRequestId: z.string().min(1),
+  product: z.enum(MP_BOOKING_PRODUCTS),
+  state: z.enum(MP_SCHEDULED_REQUEST_STATES),
+  version: z.number().int().min(1),
+  /** False until a published request's offer is selected and confirmed. */
+  driverSecured: z.boolean(),
+  /** e.g. "Scheduled — no driver secured yet". */
+  statusLabel: z.string().min(1),
+  notice: z.string().min(1),
+  service: MpServiceSchema,
+  vehicleClass: z.string().min(1),
+  cityId: z.string().min(1),
+  currency: CurrencySchema,
+  pickup: MpAreaSchema,
+  dropoff: MpAreaSchema,
+  stops: z.array(MpRouteStopSchema).optional(),
+  schedule: MpPickupScheduleSchema,
+  publishAt: z.string().datetime({ offset: true }),
+  requestedFareMinor: MoneySchema,
+  maxFareMinor: MoneySchema,
+  paymentMethodId: z.string().min(1),
+  requestId: z.string().min(1).nullable(),
+  requestState: z.enum(MP_REQUEST_STATES).nullable(),
+  templateId: z.string().min(1).nullable(),
+  occurrenceDate: MpLocalDateSchema.nullable(),
+  approval: z
+    .object({
+      reason: z.enum(MP_SCHEDULED_APPROVAL_REASONS),
+      message: z.string().min(1),
+      refreshedTerms: z
+        .object({
+          minimumFareMinor: MoneySchema,
+          maximumFareMinor: MoneySchema,
+          suggestedFareMinor: MoneySchema,
+        })
+        .nullable(),
+    })
+    .nullable(),
+  closeReason: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type MpScheduledRequest = z.infer<typeof MpScheduledRequestSchema>;
+
+/**
+ * `POST /v1/mp/scheduled-requests/:id/approve` — the rider's renewed
+ * approval of refreshed terms (a new maximum at or above the refreshed
+ * minimum). The intent returns to scheduled_unassigned and publishes on the
+ * next worker pass, re-refreshing once more.
+ */
+export const MpApproveScheduledRequestSchema = z
+  .object({
+    expectedVersion: z.number().int().min(1),
+    maxFareMinor: MoneySchema,
+    requestedFareMinor: MoneySchema.optional(),
+    /**
+     * A replacement payment method (must be available in the city) — how a
+     * rider answers a `payment_method_unavailable` approval.
+     */
+    paymentMethodId: z.string().min(1).optional(),
+  })
+  .strict();
+
+/** `POST /v1/mp/advance-requests` (Idempotency-Key required). */
+export const MpCreateAdvanceRequestSchema = z
+  .object({
+    quoteId: z.string().min(1),
+    requestedFareMinor: MoneySchema,
+    paymentMethodId: z.string().min(1),
+    schedule: MpPickupScheduleInputSchema,
+  })
+  .strict();
+export type MpCreateAdvanceRequest = z.infer<
+  typeof MpCreateAdvanceRequestSchema
+>;
+
+/** Rider funding of an advance booking across the booking horizon. */
+export const MP_BOOKING_FUNDING_STATES = [
+  /** Not yet secured: the pickup is beyond the funding horizon. */
+  "pending",
+  /** A durable wallet funding reservation encumbers the fare. */
+  "secured",
+  /** Cash: explicitly unsecured, collected at the trip. */
+  "unsecured_cash",
+  /** The last attempt was refused; retried until the funding deadline. */
+  "refused",
+  /** Released after a failure or cancellation. */
+  "released",
+] as const;
+
+export const MpBookingFailureSchema = z.object({
+  reason: z.enum([
+    "driver_withdrew",
+    "driver_ineligible",
+    "reconfirmation_missed",
+    "funding_not_secured",
+    "driver_unavailable",
+    "driver_on_running_trip",
+    "execution_blocked",
+    "award_cancelled",
+    // The activated trip was cancelled other than by the driver.
+    "trip_cancelled",
+    // The rider cancelled before activation (no fee in this slice).
+    "rider_cancelled",
+  ]),
+  message: z.string().min(1),
+  financialOutcome: z.object({
+    /** The driver's captured commission returned with a linked reversal. */
+    commissionReversed: z.boolean(),
+    /** Any rider funding reservation released. */
+    riderFundingReleased: z.boolean(),
+    /** Nothing is ever charged to the rider for a failed booking. */
+    riderCharged: z.literal(false),
+  }),
+  /** A consented re-publish is available (never an automatic substitute). */
+  rematchAvailable: z.boolean(),
+});
+
+export const MpAdvanceBookingSchema = z.object({
+  bookingId: z.string().min(1),
+  requestId: z.string().min(1),
+  awardId: z.string().min(1),
+  state: z.enum(MP_ADVANCE_BOOKING_STATES),
+  version: z.number().int().min(1),
+  /** Whose view this is: fields differ (the driver sees their money). */
+  viewer: z.enum(["rider", "driver"]),
+  /** A specific driver is committed (held/payment_pending/confirmed/…). */
+  driverReserved: z.boolean(),
+  /** Driver committed AND rider funding secured (or cash explicitly). */
+  fullySecured: z.boolean(),
+  statusLabel: z.string().min(1),
+  /** Always includes the no-guaranteed-pickup disclosure. */
+  notices: z.array(z.string().min(1)),
+  schedule: MpPickupScheduleSchema,
+  pickup: MpAreaSchema,
+  dropoff: MpAreaSchema,
+  fareMinor: MoneySchema,
+  /** Driver view only: the commission captured once at the advance award. */
+  commissionMinor: MoneySchema.optional(),
+  netMinor: MoneySchema.optional(),
+  /** Rider view only: the selected driver. */
+  driver: MpOfferDriverSchema.optional(),
+  funding: z.object({
+    state: z.enum(MP_BOOKING_FUNDING_STATES),
+    label: z.string().min(1),
+    dueAt: z.string().datetime({ offset: true }).nullable(),
+    deadline: z.string().datetime({ offset: true }).nullable(),
+  }),
+  reconfirmation: z.object({
+    opensAt: z.string().datetime({ offset: true }),
+    deadline: z.string().datetime({ offset: true }),
+    reconfirmedAt: z.string().datetime({ offset: true }).nullable(),
+  }),
+  activationAt: z.string().datetime({ offset: true }),
+  activatedSlot: MpSlotSchema.nullable(),
+  failure: MpBookingFailureSchema.nullable(),
+  rematchRequestId: z.string().min(1).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type MpAdvanceBooking = z.infer<typeof MpAdvanceBookingSchema>;
+
+/** `GET /v1/mp/driver/calendar` — the driver's committed future bookings. */
+export const MpDriverCalendarSchema = z.object({
+  bookings: z.array(MpAdvanceBookingSchema),
+  note: z.string().min(1),
+});
+
+/** `POST /v1/mp/advance-bookings/:id/withdraw` (driver cannot attend). */
+export const MpWithdrawBookingSchema = z
+  .object({ reason: z.string().min(1).max(280) })
+  .strict();
+
+/**
+ * `POST /v1/mp/advance-bookings/:id/rematch` — the rider's explicit consent
+ * to re-publish a failed booking's trip. The fare is the original asked fare
+ * unless the rider names another; bounds are refreshed and never silently
+ * raised. Answers the new advance request (no driver secured).
+ */
+export const MpRematchBookingSchema = z
+  .object({ requestedFareMinor: MoneySchema.optional() })
+  .strict();
+
+/** `POST /v1/mp/recurring-templates` (Idempotency-Key required). */
+export const MpCreateRecurringTemplateSchema = z
+  .object({
+    quoteId: z.string().min(1),
+    product: z.enum(MP_BOOKING_PRODUCTS),
+    daysOfWeek: z.array(z.enum(MP_WEEKDAYS)).min(1).max(7),
+    localTime: MpLocalTimeSchema,
+    timeZone: z.string().min(1).optional(),
+    startsOn: MpLocalDateSchema,
+    endsOn: MpLocalDateSchema.optional(),
+    windowMinutes: z.number().int().positive().optional(),
+    dstDisambiguation: z.enum(MP_DST_DISAMBIGUATIONS).optional(),
+    requestedFareMinor: MoneySchema,
+    maxFareMinor: MoneySchema,
+    paymentMethodId: z.string().min(1),
+  })
+  .strict();
+export type MpCreateRecurringTemplate = z.infer<
+  typeof MpCreateRecurringTemplateSchema
+>;
+
+export const MpRecurringTemplateSchema = z.object({
+  templateId: z.string().min(1),
+  state: z.enum(MP_RECURRING_TEMPLATE_STATES),
+  version: z.number().int().min(1),
+  product: z.enum(MP_BOOKING_PRODUCTS),
+  daysOfWeek: z.array(z.enum(MP_WEEKDAYS)),
+  localTime: MpLocalTimeSchema,
+  timeZone: z.string().min(1),
+  startsOn: MpLocalDateSchema,
+  endsOn: MpLocalDateSchema.nullable(),
+  windowMinutes: z.number().int().positive(),
+  requestedFareMinor: MoneySchema,
+  maxFareMinor: MoneySchema,
+  paymentMethodId: z.string().min(1),
+  service: MpServiceSchema,
+  vehicleClass: z.string().min(1),
+  pickup: MpAreaSchema,
+  dropoff: MpAreaSchema,
+  stops: z.array(MpRouteStopSchema).optional(),
+  generatedThrough: MpLocalDateSchema.nullable(),
+  /** Always states that each occurrence books (and is secured) separately. */
+  seriesNote: z.string().min(1),
+  occurrences: z.array(MpScheduledRequestSchema),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type MpRecurringTemplate = z.infer<typeof MpRecurringTemplateSchema>;
+
+/** Pause / resume / cancel a series (Idempotency-Key required). */
+export const MpRecurringTemplateCommandSchema = z
+  .object({ expectedVersion: z.number().int().min(1) })
+  .strict();
 
 // ── Commission arithmetic (server-side; exported for service reuse) ───────
 

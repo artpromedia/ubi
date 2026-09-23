@@ -7,7 +7,10 @@
  */
 import { z } from "zod";
 
-import { MpMultiStopPolicySchema } from "./marketplace";
+import {
+  MpMultiStopPolicySchema,
+  MpSchedulingPolicySchema,
+} from "./marketplace";
 import { CurrencySchema } from "./money";
 
 export const VEHICLE_CLASSES = ["go", "comfort", "xl", "moto"] as const;
@@ -162,6 +165,10 @@ export const MarketplacePolicySchema = z.object({
    * survive schema parsing instead of being stripped as an unknown key.
    */
   stops: MpMultiStopPolicySchema.optional(),
+  // Book for Later policy (A03): scheduled requests, advance reservations and
+  // recurring journeys. Without it config-service strips the block and all
+  // three products fail closed for the market.
+  scheduling: MpSchedulingPolicySchema.optional(),
 });
 export type MarketplacePolicy = z.infer<typeof MarketplacePolicySchema>;
 

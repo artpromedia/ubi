@@ -29,6 +29,17 @@ const (
 	// linked-adjustment path. Deny by default: while off, every amendment
 	// route answers feature_disabled and an award's agreed terms cannot move.
 	FlagMarketplaceTripAmendments = "marketplace_trip_amendments"
+	// Book for Later (A03): three different products, each deny by default
+	// and each ALSO needing the ride vertical. FlagScheduledRides gates
+	// SCHEDULED REQUESTS (a stored intent no driver is committed to, published
+	// at the market's lead time); FlagMarketplaceAdvanceReservations gates
+	// ADVANCE DRIVER RESERVATIONS (bids on a future window, requester-selected
+	// in advance, a booking calendar separate from the live slots);
+	// FlagMarketplaceRecurringJourneys gates recurring templates. Off stops
+	// new sales only — existing bookings and their workers keep running.
+	FlagScheduledRides                 = "scheduled_rides"
+	FlagMarketplaceAdvanceReservations = "marketplace_advance_reservations"
+	FlagMarketplaceRecurringJourneys   = "marketplace_recurring_journeys"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

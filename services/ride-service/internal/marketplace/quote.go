@@ -88,6 +88,26 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 	if err != nil {
 		return nil, err
 	}
+	quote, err := s.priceQuote(ctx, actor.UserID, config, policy, params)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		return s.deps.Store.InsertQuote(ctx, tx, quote)
+	})
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+
+	return quoteEnvelopeViewOf(quote), nil
+}
+
+// priceQuote routes and prices a trip server-side under the city's policy and
+// returns the bounded quote, unsaved. The HTTP quote and the Book for Later
+// publication worker (A03, which re-prices a stored route at publication)
+// share it, so a refreshed quote is priced exactly like a fresh one.
+func (s *Service) priceQuote(ctx context.Context, requesterID uuid.UUID, config *cityconfig.CityConfig, policy *cityconfig.MarketplacePolicy, params QuoteParams) (*Quote, error) {
 	if !config.SupportsVehicleClass(params.VehicleClass) {
 		return nil, domain.Errorf(domain.CodeValidationFailed,
 			"this city does not offer the %q class", params.VehicleClass).
@@ -144,7 +164,7 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 	now := s.now()
 	quote := &Quote{
 		ID:                uuid.New(),
-		RequesterID:       actor.UserID,
+		RequesterID:       requesterID,
 		CityID:            config.CityID,
 		Service:           params.Service,
 		VehicleClass:      params.VehicleClass,
@@ -165,14 +185,7 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 	}
 	quote.RouteFingerprint = routeFingerprint(quote.Pickup, quote.Stops, quote.Dropoff)
 
-	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
-		return s.deps.Store.InsertQuote(ctx, tx, quote)
-	})
-	if err != nil {
-		return nil, asDomainError(err)
-	}
-
-	return quoteEnvelopeViewOf(quote), nil
+	return quote, nil
 }
 
 // quoteEnvelopeViewOf renders the client-facing envelope: every amount a

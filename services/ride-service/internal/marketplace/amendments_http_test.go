@@ -550,8 +550,24 @@ func TestAmendmentNextJobConflictRefused(t *testing.T) {
 	refused := trip.propose(q.riderA, proposal([]map[string]any{far}, 1, 1), "")
 	requireCode(t, refused, http.StatusConflict, domain.CodeConflict)
 	details := decode(t, refused)["details"].(map[string]any)
-	if details["reason"] != marketplace.ReasonNextJobConflict || details["queuedAwardId"] != q.awardB.ID.String() {
+	if details["reason"] != marketplace.ReasonNextJobConflict {
 		t.Fatalf("the refusal must name the next-job conflict: %v", details)
+	}
+	// The queued job is ANOTHER customer's: a rider proposer never learns
+	// its award, request or promised pickup.
+	for _, key := range []string{"queuedAwardId", "queuedRequestId", "consentedPickupBy", "predictedPickupAt"} {
+		if _, leaked := details[key]; leaked {
+			t.Fatalf("a rider must not see the queued job's %s: %v", key, details)
+		}
+	}
+	// The driver owns the queue and is told exactly which job it protects.
+	trip.park(t, origin, 0)
+	driverRefused := trip.propose(q.driver, proposal([]map[string]any{far}, 1, 1), "")
+	requireCode(t, driverRefused, http.StatusConflict, domain.CodeConflict)
+	driverDetails := decode(t, driverRefused)["details"].(map[string]any)
+	if driverDetails["reason"] != marketplace.ReasonNextJobConflict || driverDetails["queuedAwardId"] != q.awardB.ID.String() ||
+		driverDetails["queuedRequestId"] == nil || driverDetails["consentedPickupBy"] == nil {
+		t.Fatalf("the driver's refusal must name the protected queued job: %v", driverDetails)
 	}
 	if h.Wallet.DeltaReserveCalls != 0 {
 		t.Fatal("a conflicting change must be refused before any money moves")

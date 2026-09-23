@@ -3,8 +3,10 @@ package marketplace
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 
@@ -22,6 +24,11 @@ const (
 
 	SlotCurrent = "current"
 	SlotNext    = "next"
+	// SlotAdvance is what an ADVANCE RESERVATION bid and award are for (A03):
+	// a future pickup window on the driver's booking calendar. It is never a
+	// claim slot — the booking enters the live current/next slots only at
+	// activation near pickup.
+	SlotAdvance = "advance"
 )
 
 // Actor is the caller, built by the handler from the signed gateway headers,
@@ -49,6 +56,13 @@ type Deps struct {
 // Service is the marketplace engine core.
 type Service struct {
 	deps Deps
+	// templateCursor is where the recurring generation pass resumes its
+	// round-robin walk over active series (A03). In memory only: a fairness
+	// hint, never a correctness input.
+	templateCursor struct {
+		mu    sync.Mutex
+		after uuid.UUID
+	}
 }
 
 // NewService validates its dependencies rather than discovering a nil one
@@ -141,6 +155,13 @@ func (s *Service) requireServiceFlag(ctx context.Context, service string, actor 
 		return err
 	}
 	return s.requireFlag(ctx, flag, actor, cityID)
+}
+
+// flagOn evaluates a flag for a user deny-by-default, turning an evaluation
+// failure into "off" rather than an error: the workers' question.
+func (s *Service) flagOn(ctx context.Context, key string, userID string, cityID string) bool {
+	enabled, err := s.deps.Flags.Enabled(ctx, key, cityID, userID)
+	return err == nil && enabled
 }
 
 // queueEnabled reports whether the queued-jobs (next slot) vertical is open,

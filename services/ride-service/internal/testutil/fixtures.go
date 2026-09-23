@@ -149,6 +149,53 @@ func MarketplacePolicyFixture() map[string]any {
 			"ride:comfort": rateBounds,
 			"delivery:go":  rateBounds,
 		},
+		// Book for Later (A03). Test data: every product is still dark until
+		// a test opens its deny-by-default flag.
+		"scheduling": SchedulingPolicyFixture(),
+	}
+}
+
+// SchedulingPolicyFixture is a complete, valid Book for Later block in the
+// shape MpSchedulingPolicySchema defines: publish 30 min before a scheduled
+// pickup; advance bookings up to 7 days ahead (at least 3 h), rider funding
+// secured within 48 h of pickup and by 2 h before, reconfirmation between
+// 2 h and 45 min before, activation 30 min before, 10-min buffers; recurring
+// occurrences generated 7 days ahead.
+func SchedulingPolicyFixture() map[string]any {
+	return map[string]any{
+		"scheduledRequests": map[string]any{
+			"publishLeadSec":         1_800,
+			"minLeadSec":             3_600,
+			"maxHorizonSec":          1_209_600,
+			"defaultWindowSec":       600,
+			"minWindowSec":           300,
+			"maxWindowSec":           1_800,
+			"reminderOffsetsSec":     []int{43_200, 3_600},
+			"maxPendingPerRequester": 10,
+		},
+		"advanceReservations": map[string]any{
+			"bookingHorizonSec":    604_800,
+			"minLeadSec":           10_800,
+			"offerWindowSec":       3_600,
+			"bidExpirySec":         3_600,
+			"defaultWindowSec":     600,
+			"minWindowSec":         300,
+			"maxWindowSec":         1_800,
+			"fundingHorizonSec":    172_800,
+			"fundingDeadlineSec":   7_200,
+			"reconfirmOpensSec":    7_200,
+			"reconfirmDeadlineSec": 2_700,
+			"activationLeadSec":    1_800,
+			"preBufferSec":         600,
+			"postBufferSec":        600,
+			"reminderOffsetsSec":   []int{43_200, 3_600},
+			"maxOpenPerRequester":  5,
+		},
+		"recurring": map[string]any{
+			"generationHorizonDays":          7,
+			"maxActiveTemplatesPerRequester": 5,
+			"maxSeriesDays":                  366,
+		},
 	}
 }
 

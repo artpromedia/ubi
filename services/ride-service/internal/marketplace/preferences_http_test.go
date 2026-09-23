@@ -313,8 +313,8 @@ func TestPreferencesValidation(t *testing.T) {
 		windows[1].(map[string]any)["label"] != "Wed 17:00–24:00" {
 		t.Fatalf("windows must be canonical and labelled: %v", windows)
 	}
-	if note, _ := saved["availabilityNote"].(string); !strings.Contains(note, "not available yet") {
-		t.Fatalf("availability must be disclosed as stored-only: %q", note)
+	if note, _ := saved["availabilityNote"].(string); !strings.Contains(note, "advance-booking") || !strings.Contains(note, "never your eligibility") {
+		t.Fatalf("availability must be disclosed as a feed filter for advance bookings only: %q", note)
 	}
 	declined := savePreferences(t, h, driver, map[string]any{"acceptsStops": false})
 	if declined["maxStops"] != nil || declined["acceptsStops"] != false {

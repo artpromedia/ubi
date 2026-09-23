@@ -85,6 +85,42 @@ var eventNames = map[string]struct{}{
 	// A committed amendment rewrites the execution ride's quote, fare and
 	// dropoff inside the amendment's transaction, bumping the ride version.
 	"ride.terms_amended": {},
+
+	// A03 Book for Later — registered in the contract's EVENT_NAMES too.
+	// Scheduled requests / recurring occurrences (subject
+	// mp_scheduled_request): no driver is secured in any of these.
+	"mp.scheduled_request.created":        {},
+	"mp.scheduled_request.reminder":       {},
+	"mp.scheduled_request.needs_approval": {},
+	"mp.scheduled_request.reapproved":     {},
+	"mp.scheduled_request.published":      {},
+	"mp.scheduled_request.unfulfilled":    {},
+	"mp.scheduled_request.cancelled":      {},
+	"mp.scheduled_request.skipped":        {},
+	"mp.scheduled_request.expired":        {},
+	"mp.recurring_occurrence.generated":   {},
+	// Advance driver reservations on the booking calendar (subject
+	// mp_advance_booking).
+	"mp.advance_booking.held":                {},
+	"mp.advance_booking.confirmed":           {},
+	"mp.advance_booking.payment_pending":     {},
+	"mp.advance_booking.funding_secured":     {},
+	"mp.advance_booking.funding_refused":     {},
+	"mp.advance_booking.reminder":            {},
+	"mp.advance_booking.reconfirm_requested": {},
+	"mp.advance_booking.reconfirmed":         {},
+	"mp.advance_booking.activated":           {},
+	"mp.advance_booking.completed":           {},
+	"mp.advance_booking.failed":              {},
+	"mp.advance_booking.cancelled":           {},
+	"mp.advance_booking.released":            {},
+	"mp.advance_booking.rematch_requested":   {},
+	// Recurring templates (subject mp_recurring_template).
+	"mp.recurring_template.created":   {},
+	"mp.recurring_template.paused":    {},
+	"mp.recurring_template.resumed":   {},
+	"mp.recurring_template.cancelled": {},
+	"mp.recurring_template.ended":     {},
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,
@@ -98,6 +134,11 @@ const (
 	subjectHold        = "mp_hold"
 	subjectRateProfile = "rate_profile"
 	subjectDriver      = "driver"
+
+	// A03 Book for Later subjects.
+	subjectScheduled = "mp_scheduled_request"
+	subjectBooking   = "mp_advance_booking"
+	subjectTemplate  = "mp_recurring_template"
 )
 
 // Event is one row of the transactional outbox, always written in the same

@@ -54,7 +54,7 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 	if err := ValidateIdempotencyKey(idempotencyKey); err != nil {
 		return nil, 0, err
 	}
-	if req.Slot != SlotCurrent && req.Slot != SlotNext {
+	if req.Slot != SlotCurrent && req.Slot != SlotNext && req.Slot != SlotAdvance {
 		return nil, 0, domain.Errorf(domain.CodeValidationFailed, "%q is not a bid slot", req.Slot)
 	}
 
@@ -167,6 +167,21 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 		return nil, 0, asDomainError(err)
 	}
 
+	// A03: an advance bid stands for the market's advance offer window
+	// (bounded by the request's own expiry), not the immediate market's
+	// short bid expiry — and its hold is bounded with it.
+	bidExpiresAt := now.Add(time.Duration(policy.Bids.BidExpirySec) * time.Second)
+	if req.Slot == SlotAdvance {
+		advance, err := policy.AdvanceReservationPolicyFor(request.CityID)
+		if err != nil {
+			return nil, 0, asDomainError(err)
+		}
+		bidExpiresAt = now.Add(time.Duration(advance.BidExpirySec) * time.Second)
+		if bidExpiresAt.After(request.ExpiresAt) {
+			bidExpiresAt = request.ExpiresAt
+		}
+	}
+
 	commission := CommissionMinor(amountMinor)
 	bidID := uuid.New()
 
@@ -225,7 +240,7 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 		AvailabilityEpoch:  eligibility.AvailabilityEpoch,
 		ReservationID:      hold.ReservationID,
 		RateProfileVersion: req.RateProfileVersion,
-		ExpiresAt:          now.Add(time.Duration(policy.Bids.BidExpirySec) * time.Second),
+		ExpiresAt:          bidExpiresAt,
 	}
 
 	var view *BidView
@@ -310,6 +325,10 @@ func (s *Service) CreateBid(ctx context.Context, actor Actor, req SubmitBid, ide
 			return err
 		}
 		view = bidViewOf(bid, request.Currency)
+		if bid.Slot == SlotAdvance {
+			expires := bid.ExpiresAt
+			view.AdvanceCommitment = advanceCommitmentOf(request, bid.AmountMinor, &expires, config.CurrencyFractionDigits)
+		}
 		return s.deps.Store.SaveIdempotent(ctx, tx, scopeBidCreate, actor.UserID, idempotencyKey, req, 201, view)
 	})
 	if err != nil {
@@ -694,7 +713,19 @@ func (s *Service) MyBids(ctx context.Context, actor Actor) ([]*BidView, error) {
 	}
 	views := make([]*BidView, 0, len(bids))
 	for _, bid := range bids {
-		views = append(views, bidViewOf(bid, currencies[bid.RequestID]))
+		view := bidViewOf(bid, currencies[bid.RequestID])
+		if bid.Slot == SlotAdvance {
+			// Restate the advance wallet commitment on the driver's own list.
+			if request, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), bid.RequestID); err == nil {
+				digits := 2
+				if config, err := s.config(ctx, request.CityID); err == nil {
+					digits = config.CurrencyFractionDigits
+				}
+				expires := bid.ExpiresAt
+				view.AdvanceCommitment = advanceCommitmentOf(request, bid.AmountMinor, &expires, digits)
+			}
+		}
+		views = append(views, view)
 	}
 	return views, nil
 }

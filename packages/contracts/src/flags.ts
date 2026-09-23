@@ -53,6 +53,21 @@ export const FLAG_KEYS = [
   // marketplace_multi_stop. Money moves only through linked adjustments (the
   // 10% is never re-charged). Nothing enables this by default.
   "marketplace_trip_amendments",
+  // Book for Later on the marketplace (A03). Three DIFFERENT products, each
+  // deny-by-default and each also needing its vertical (`marketplace_rides`):
+  //  - `scheduled_rides` (declared above, pre-existing) gates SCHEDULED
+  //    REQUESTS: a stored intent that NO driver is committed to, published as
+  //    an ordinary request at the city's lead time;
+  //  - `marketplace_advance_reservations` gates ADVANCE DRIVER RESERVATIONS:
+  //    drivers bid on a future pickup window and the requester selects one in
+  //    advance (commission captured once at that award; a separate booking
+  //    calendar, never the live current/next slots);
+  //  - `marketplace_recurring_journeys` gates recurring templates, whose
+  //    occurrences are each one of the two products above.
+  // Switching a flag off stops NEW sales only: existing bookings, their
+  // workers and every financial recovery keep running.
+  "marketplace_advance_reservations",
+  "marketplace_recurring_journeys",
   // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
   // assistant quoting, publishing a bounded request, and (the only binding step)
   // selecting a winning offer within a user's grant/mandate. Deny-by-default and

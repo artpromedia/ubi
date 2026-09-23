@@ -29,7 +29,8 @@ func loadContract(t *testing.T) map[string]contractMachine {
 		t.Fatalf("failed to parse the state machine contract: %v", err)
 	}
 	machines := map[string]contractMachine{}
-	for _, name := range []string{"rider", "driver", "mpRequest", "mpBid", "mpHold", "mpAward", "mpClaim", "mpAmendment"} {
+	for _, name := range []string{"rider", "driver", "mpRequest", "mpBid", "mpHold", "mpAward", "mpClaim", "mpAmendment",
+		"mpScheduledRequest", "mpAdvanceBooking", "mpRecurringTemplate"} {
 		section, ok := document[name]
 		if !ok {
 			t.Fatalf("the contract has no %q machine", name)

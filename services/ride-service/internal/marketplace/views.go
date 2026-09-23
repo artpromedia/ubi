@@ -79,6 +79,9 @@ type RequestView struct {
 	Stops            []RouteStop `json:"stops,omitempty"`
 	RouteRevision    int         `json:"routeRevision,omitempty"`
 	RouteFingerprint string      `json:"routeFingerprint,omitempty"`
+	// Booking is present only on a scheduled or advance-booking request
+	// (A03): its future pickup window and whether a driver is secured.
+	Booking *RequestBookingView `json:"booking,omitempty"`
 }
 
 func requestViewOf(request *Request) *RequestView {
@@ -121,6 +124,7 @@ func requestViewOf(request *Request) *RequestView {
 		view.RouteRevision = request.RouteRevision
 		view.RouteFingerprint = request.RouteFingerprint
 	}
+	view.Booking = requestBookingViewOf(request)
 	return view
 }
 
@@ -153,6 +157,10 @@ type BidView struct {
 	HoldState        string    `json:"holdState"`
 	ExpiresAt        time.Time `json:"expiresAt"`
 	CreatedAt        time.Time `json:"createdAt"`
+	// AdvanceCommitment restates, on an advance bid (A03), the wallet
+	// commitment the driver took on: held now, captured once at the advance
+	// award, never charged again at activation.
+	AdvanceCommitment *AdvanceCommitmentView `json:"advanceCommitment,omitempty"`
 }
 
 // holdStateFor maps a bid row to the honest client vocabulary. Live and
@@ -244,12 +252,16 @@ type PickupWindow struct {
 	EtaVersion  int `json:"etaVersion"`
 }
 
-// RequestSnapshotView answers GET /v1/mp/requests/{id}.
+// RequestSnapshotView answers GET /v1/mp/requests/{id}. An advance-booking
+// request's offers (A03) are listed under advanceOffers, never under offers:
+// they are bids on a future pickup window, not transport now, so a client
+// that only knows the live offer kinds never renders one as a live pickup.
 type RequestSnapshotView struct {
-	Request *RequestView `json:"request"`
-	Offers  []*OfferView `json:"offers"`
-	Award   *AwardView   `json:"award,omitempty"`
-	Seq     int          `json:"seq"`
+	Request       *RequestView `json:"request"`
+	Offers        []*OfferView `json:"offers"`
+	AdvanceOffers []*OfferView `json:"advanceOffers,omitempty"`
+	Award         *AwardView   `json:"award,omitempty"`
+	Seq           int          `json:"seq"`
 }
 
 // ExecutionRefView names the execution an award handed off to, exactly as the
@@ -339,6 +351,9 @@ type FeedItemView struct {
 	// PreferenceTags are the driver's own preference matches (e.g.
 	// "homeward"); omitted when there are none.
 	PreferenceTags []string `json:"preferenceTags,omitempty"`
+	// Booking marks an advance-booking card (A03): a FUTURE pickup window,
+	// not an immediate job. Omitted for immediate requests.
+	Booking *RequestBookingView `json:"booking,omitempty"`
 }
 
 // FeedPageView answers GET /v1/mp/feed.
@@ -416,6 +431,9 @@ type DriverViewResult struct {
 	PreferenceNotice *string  `json:"preferenceNotice,omitempty"`
 	MyBid            *BidView `json:"myBid,omitempty"`
 	CurrentClaimID   *string  `json:"currentClaimId"`
+	// AdvanceCommitment explains, BEFORE an advance bid (A03), what bidding
+	// commits the driver's wallet to at the requester's asked fare.
+	AdvanceCommitment *AdvanceCommitmentView `json:"advanceCommitment,omitempty"`
 }
 
 // ParkedAckView answers POST /v1/mp/driver/parked: the state the SERVER

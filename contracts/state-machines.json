@@ -417,5 +417,45 @@
       "failed": ["compensated"]
     },
     "rule": "post-award trip amendment on an AWARDED marketplace execution (A02): priced server-side as a delta under the award's pricing snapshot; the incremental commission and rider top-up are reserved before approvals; both parties approve the same (amendment id, route revision, fare revision); the original agreement stays in force until committed; commit captures only the delta (a decrease is a linked partial refund), never re-charging the 10%; one amendment with open money per award, DB-enforced; a commit step that fails part-way is failed and compensated, reconciled by the sweep"
+  },
+  "mpScheduledRequest": {
+    "initial": "scheduled_unassigned",
+    "transitions": {
+      "scheduled_unassigned": [
+        "published",
+        "needs_rider_approval",
+        "cancelled",
+        "skipped",
+        "expired",
+        "unfulfilled"
+      ],
+      "needs_rider_approval": [
+        "scheduled_unassigned",
+        "cancelled",
+        "skipped",
+        "expired"
+      ],
+      "published": ["unfulfilled"]
+    },
+    "rule": "Book for Later (A03) stored intent — a SCHEDULED REQUEST, and also one occurrence of a recurring template (templateId + occurrence local date, unique): NO driver is secured in any of these states; the pickup is a local date/time + IANA timezone with its computed UTC instant and DST resolution; a durable worker publishes it as a normal marketplace request at the city's lead time, refreshing routing, fare bounds and funding; terms outside the rider's approved maximum (or funding that cannot be verified) move it to needs_rider_approval with a notification, never a silent publish; published hands off to the ordinary request/award lifecycle; unfulfilled = the market answered no driver"
+  },
+  "mpAdvanceBooking": {
+    "initial": "held",
+    "transitions": {
+      "held": ["confirmed", "payment_pending", "released"],
+      "payment_pending": ["confirmed", "failed", "cancelled"],
+      "confirmed": ["reconfirmed", "failed", "cancelled"],
+      "reconfirmed": ["activated", "failed", "cancelled"],
+      "activated": ["completed", "failed"]
+    },
+    "rule": "ADVANCE DRIVER RESERVATION (A03): a requester-selected driver's committed future booking on a durable calendar SEPARATE from the live current/next claim slots; held while the award saga runs (the calendar interval is already DB-exclusive per driver and per vehicle); the winning 10% commission is captured ONCE at the advance award and never again at activation; confirmed = rider funding secured within the funding horizon (or cash explicitly unsecured), payment_pending = driver reserved but rider funding not yet secured; the driver reconfirms before pickup; activation moves it into the live slots exactly once (current, or queued behind a trip that can finish in time — a current passenger is never diverted); failed/cancelled explain the financial outcome (captured commission reversed with a linked entry, rider funding released) and offer a consented rematch — a driver is never silently substituted and the fare never raised"
+  },
+  "mpRecurringTemplate": {
+    "initial": "active",
+    "transitions": {
+      "active": ["paused", "cancelled", "ended"],
+      "paused": ["active", "cancelled", "ended"]
+    },
+    "rule": "recurring journey template (A03), stored separately from its occurrences: while active a durable worker generates occurrences (mpScheduledRequest rows) idempotently — one per template and local date, replay-safe; each occurrence has its own fare approval, funding, driver commitment, cancellation and receipt; a series is never labelled confirmed because one occurrence was awarded; paused generates and publishes nothing new; cancelled/ended stop generation for good"
   }
 }

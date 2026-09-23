@@ -192,6 +192,10 @@ type MarketplacePolicy struct {
 	// Stops is the optional per-market multi-stop block; absent means the
 	// pilot defaults (see StopsPolicy).
 	Stops *MarketplaceStopsPolicy `json:"stops,omitempty"`
+	// Scheduling is the optional Book for Later block (A03). Unlike stops
+	// it has NO defaults: absent (or a product's sub-block absent) means that
+	// product fails closed with market_not_configured (see scheduling.go).
+	Scheduling *MarketplaceSchedulingPolicy `json:"scheduling,omitempty"`
 }
 
 // Validate refuses a marketplace policy that would make the engine invent a
@@ -228,6 +232,11 @@ func (p *MarketplacePolicy) Validate(cityID string) error {
 	}
 	if p.Stops != nil {
 		if err := p.Stops.validate(cityID); err != nil {
+			return err
+		}
+	}
+	if p.Scheduling != nil {
+		if err := p.Scheduling.validate(cityID); err != nil {
 			return err
 		}
 	}

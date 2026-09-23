@@ -48,6 +48,12 @@ export const SUBJECT_TYPES = [
   "rate_profile",
   // post-award trip amendments (A02)
   "mp_amendment",
+  // Book for Later (A03): a stored scheduled request (also one recurring
+  // occurrence), an advance driver reservation on the booking calendar, and
+  // a recurring journey template.
+  "mp_scheduled_request",
+  "mp_advance_booking",
+  "mp_recurring_template",
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
@@ -401,6 +407,50 @@ export const EVENT_NAMES = [
   // The execution ride's quote/fare/dropoff rewritten by a committed
   // amendment (subject ride; version bumps with it).
   "ride.terms_amended",
+  // ── Book for Later (A03) ──
+  // SCHEDULED REQUEST — subject mp_scheduled_request. No driver is secured in
+  // any of these; `published` hands the intent to an ordinary request.
+  // `needs_approval` fires (and notifies) whenever refreshed terms leave the
+  // rider's approved maximum or funding cannot be verified — never a silent
+  // publish. A recurring occurrence is one of these rows (generated/skipped).
+  "mp.scheduled_request.created",
+  "mp.scheduled_request.reminder",
+  "mp.scheduled_request.needs_approval",
+  "mp.scheduled_request.reapproved",
+  "mp.scheduled_request.published",
+  "mp.scheduled_request.unfulfilled",
+  "mp.scheduled_request.cancelled",
+  "mp.scheduled_request.skipped",
+  "mp.scheduled_request.expired",
+  "mp.recurring_occurrence.generated",
+  // ADVANCE DRIVER RESERVATION — subject mp_advance_booking. `held` while the
+  // award saga runs (calendar interval already exclusive); `confirmed` =
+  // rider funding secured (or cash explicitly unsecured), `payment_pending` =
+  // driver reserved, funding not yet secured. The commission was captured
+  // once at the advance award; `activated` (into the live slots) never
+  // charges it again. `failed`/`cancelled` carry the financial outcome and
+  // the consented-rematch option; `rematch_requested` is the rider's consent.
+  "mp.advance_booking.held",
+  "mp.advance_booking.confirmed",
+  "mp.advance_booking.payment_pending",
+  "mp.advance_booking.funding_secured",
+  "mp.advance_booking.funding_refused",
+  "mp.advance_booking.reminder",
+  "mp.advance_booking.reconfirm_requested",
+  "mp.advance_booking.reconfirmed",
+  "mp.advance_booking.activated",
+  "mp.advance_booking.completed",
+  "mp.advance_booking.failed",
+  "mp.advance_booking.cancelled",
+  "mp.advance_booking.released",
+  "mp.advance_booking.rematch_requested",
+  // RECURRING TEMPLATE — subject mp_recurring_template. A series is never
+  // "confirmed": each occurrence books independently.
+  "mp.recurring_template.created",
+  "mp.recurring_template.paused",
+  "mp.recurring_template.resumed",
+  "mp.recurring_template.cancelled",
+  "mp.recurring_template.ended",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

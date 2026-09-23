@@ -34,6 +34,17 @@ const (
 	// MpAmendment is the post-award trip amendment machine: proposed →
 	// awaiting_approvals_and_funding → committed/rejected/expired (A02).
 	MpAmendment Name = "mpAmendment"
+	// MpScheduledRequest is the Book for Later stored intent (A03) — a
+	// scheduled request, or one occurrence of a recurring template:
+	// scheduled_unassigned → published (no driver secured in any state).
+	MpScheduledRequest Name = "mpScheduledRequest"
+	// MpAdvanceBooking is the advance driver reservation on the booking
+	// calendar (A03): held → confirmed/payment_pending → reconfirmed →
+	// activated.
+	MpAdvanceBooking Name = "mpAdvanceBooking"
+	// MpRecurringTemplate is the recurring journey template (A03):
+	// active ⇄ paused → cancelled/ended.
+	MpRecurringTemplate Name = "mpRecurringTemplate"
 )
 
 // ErrIllegalTransition is returned for any move the contract does not allow.
@@ -149,6 +160,40 @@ const (
 	MpAmendmentExpired     = "expired"
 	MpAmendmentFailed      = "failed"
 	MpAmendmentCompensated = "compensated"
+)
+
+// Scheduled request / recurring occurrence states (contracts/state-machines.json
+// → mpScheduledRequest). The names say what is true: none of them secures a
+// driver.
+const (
+	MpScheduledUnassigned    = "scheduled_unassigned"
+	MpScheduledNeedsApproval = "needs_rider_approval"
+	MpScheduledPublished     = "published"
+	MpScheduledCancelled     = "cancelled"
+	MpScheduledSkipped       = "skipped"
+	MpScheduledExpired       = "expired"
+	MpScheduledUnfulfilled   = "unfulfilled"
+)
+
+// Advance booking states (contracts/state-machines.json → mpAdvanceBooking).
+const (
+	MpBookingHeld           = "held"
+	MpBookingPaymentPending = "payment_pending"
+	MpBookingConfirmed      = "confirmed"
+	MpBookingReconfirmed    = "reconfirmed"
+	MpBookingActivated      = "activated"
+	MpBookingCompleted      = "completed"
+	MpBookingFailed         = "failed"
+	MpBookingCancelled      = "cancelled"
+	MpBookingReleased       = "released"
+)
+
+// Recurring template states (contracts/state-machines.json → mpRecurringTemplate).
+const (
+	MpTemplateActive    = "active"
+	MpTemplatePaused    = "paused"
+	MpTemplateCancelled = "cancelled"
+	MpTemplateEnded     = "ended"
 )
 
 // machines is the contract, transcribed. Order inside a slice is irrelevant;
@@ -281,6 +326,63 @@ var machines = map[Name]struct {
 			MpAmendmentCompensated: {},
 		},
 	},
+	MpScheduledRequest: {
+		initial: MpScheduledUnassigned,
+		transitions: map[string][]string{
+			MpScheduledUnassigned: {MpScheduledPublished, MpScheduledNeedsApproval, MpScheduledCancelled,
+				MpScheduledSkipped, MpScheduledExpired, MpScheduledUnfulfilled},
+			MpScheduledNeedsApproval: {MpScheduledUnassigned, MpScheduledCancelled, MpScheduledSkipped, MpScheduledExpired},
+			MpScheduledPublished:     {MpScheduledUnfulfilled},
+			// Terminal states the contract lists only as destinations.
+			MpScheduledCancelled:   {},
+			MpScheduledSkipped:     {},
+			MpScheduledExpired:     {},
+			MpScheduledUnfulfilled: {},
+		},
+	},
+	MpAdvanceBooking: {
+		initial: MpBookingHeld,
+		transitions: map[string][]string{
+			MpBookingHeld:           {MpBookingConfirmed, MpBookingPaymentPending, MpBookingReleased},
+			MpBookingPaymentPending: {MpBookingConfirmed, MpBookingFailed, MpBookingCancelled},
+			MpBookingConfirmed:      {MpBookingReconfirmed, MpBookingFailed, MpBookingCancelled},
+			MpBookingReconfirmed:    {MpBookingActivated, MpBookingFailed, MpBookingCancelled},
+			MpBookingActivated:      {MpBookingCompleted, MpBookingFailed},
+			// Terminal states the contract lists only as destinations.
+			MpBookingCompleted: {},
+			MpBookingFailed:    {},
+			MpBookingCancelled: {},
+			MpBookingReleased:  {},
+		},
+	},
+	MpRecurringTemplate: {
+		initial: MpTemplateActive,
+		transitions: map[string][]string{
+			MpTemplateActive: {MpTemplatePaused, MpTemplateCancelled, MpTemplateEnded},
+			MpTemplatePaused: {MpTemplateActive, MpTemplateCancelled, MpTemplateEnded},
+			// Terminal states the contract lists only as destinations.
+			MpTemplateCancelled: {},
+			MpTemplateEnded:     {},
+		},
+	},
+}
+
+// MpBookingOccupyingStates are the advance-booking states whose calendar
+// interval is committed. The exclusion constraints advance_bookings_no_overlap
+// and advance_bookings_vehicle_no_overlap depend on this list being right.
+func MpBookingOccupyingStates() []string {
+	return []string{MpBookingHeld, MpBookingPaymentPending, MpBookingConfirmed, MpBookingReconfirmed, MpBookingActivated}
+}
+
+// IsMpBookingOccupying reports whether a booking in this state still holds
+// its calendar interval.
+func IsMpBookingOccupying(state string) bool {
+	for _, s := range MpBookingOccupyingStates() {
+		if s == state {
+			return true
+		}
+	}
+	return false
 }
 
 // MpBidLiveStates are the bid states in which a bid still competes for the

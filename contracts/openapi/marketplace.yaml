@@ -457,6 +457,7 @@ components:
                     no_offers,
                     driver_cancelled,
                     award_failed,
+                    booking_failed,
                   ],
               },
             stops:
@@ -475,6 +476,11 @@ components:
               {
                 type: string,
                 description: "The route the current bounds were priced for.",
+              },
+            booking:
+              {
+                $ref: "#/components/schemas/RequestBooking",
+                description: "A03: present only on a scheduled or advance-booking request.",
               },
           },
       }
@@ -743,9 +749,14 @@ components:
             amountMinor: { $ref: "#/components/schemas/Money" },
             commissionMinor: { $ref: "#/components/schemas/Money" },
             netMinor: { $ref: "#/components/schemas/Money" },
-            slot: { type: string, enum: [current, next] },
+            slot: { type: string, enum: [current, next, advance] },
             dependsOnClaimId: { type: string },
             reservationId: { type: string },
+            advanceCommitment:
+              {
+                $ref: "#/components/schemas/AdvanceCommitment",
+                description: "Advance bids only (A03): the wallet commitment taken on.",
+              },
             expiresAt: { type: string, format: date-time },
             createdAt: { type: string, format: date-time },
           },
@@ -817,6 +828,8 @@ components:
                     OFFLINE,
                     INSUFFICIENT_SPENDABLE,
                     ROUTING_UNAVAILABLE,
+                    CALENDAR_CONFLICT,
+                    ADVANCE_DISABLED,
                   ],
               },
             title: { type: string },
@@ -831,7 +844,7 @@ components:
         properties:
           {
             eligible: { type: boolean },
-            slot: { type: string, enum: [current, next] },
+            slot: { type: string, enum: [current, next, advance] },
             reasons:
               {
                 type: array,
@@ -888,7 +901,7 @@ components:
             requesterId: { type: string },
             fareMinor: { $ref: "#/components/schemas/Money" },
             commissionMinor: { $ref: "#/components/schemas/Money" },
-            slot: { type: string, enum: [current, next] },
+            slot: { type: string, enum: [current, next, advance] },
             executionRef:
               {
                 type: object,
@@ -1419,6 +1432,11 @@ components:
                 items: { type: string, enum: [homeward] },
                 description: "A04.2: the driver's own preference matches; absent when none.",
               },
+            booking:
+              {
+                $ref: "#/components/schemas/RequestBooking",
+                description: "A03: an advance-booking card — a FUTURE pickup window, not an immediate job. Absent for immediate requests.",
+              },
           },
       }
     FleetRemittance:
@@ -1840,6 +1858,387 @@ components:
               },
           },
       }
+    # ── Book for Later (A03) ──────────────────────────────────────────────
+    # Two explicitly different products: a SCHEDULED REQUEST (a stored
+    # intent; no driver is secured until an offer is selected after it is
+    # published at the market's lead time — flag scheduled_rides) and an
+    # ADVANCE DRIVER RESERVATION (drivers bid on a future window now; the
+    # requester selects one in advance; the commission is captured once at
+    # that award; flag marketplace_advance_reservations) — plus recurring
+    # templates (flag marketplace_recurring_journeys). All deny-by-default.
+    AdvanceOffer:
+      type: object
+      description: "A03: an offer on an advance-booking request — a driver's bid on a FUTURE pickup window, not transport now. Listed under the snapshot's advanceOffers, never under offers. pickupLabel names the booked window; pickupWindow is null (no live ETA). Private per driver like Offer."
+      required:
+        [
+          bidId,
+          bidVersion,
+          requestRevision,
+          amountMinor,
+          kind,
+          driver,
+          pickupLabel,
+          expiresAt,
+          withdrawn,
+        ]
+      properties:
+        bidId: { type: string }
+        bidVersion: { type: integer }
+        requestRevision: { type: integer }
+        amountMinor: { $ref: "#/components/schemas/Money" }
+        kind: { type: string, enum: [advance_booking] }
+        driver: { $ref: "#/components/schemas/OfferDriver" }
+        pickupLabel: { type: string }
+        pickupWindow: { type: "null" }
+        expiresAt: { type: string, format: date-time }
+        withdrawn: { type: boolean }
+        whyRecommended: { type: [string, "null"] }
+        bookingFeeMinor: { $ref: "#/components/schemas/Money" }
+        totalMinor: { $ref: "#/components/schemas/Money" }
+        deltaLabel: { type: [string, "null"] }
+    PickupScheduleInput:
+      type: object
+      additionalProperties: false
+      required: [localDate, localTime]
+      description: "A requested pickup: local date + local wall time + IANA timezone. The server resolves and stores the UTC instant; a client never sends one."
+      properties:
+        localDate: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+        localTime: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+        timeZone:
+          { type: string, description: "IANA zone; the city's when omitted." }
+        windowMinutes:
+          {
+            type: integer,
+            minimum: 1,
+            description: "Bounded by the market's scheduling policy.",
+          }
+        dstDisambiguation:
+          type: string
+          enum: [compatible, earlier, later, reject]
+          description: "compatible (default): a spring-forward gap shifts forward by the gap, a fall-back overlap takes the earlier instant; earlier/later pick explicitly; reject refuses both (validation_failed)."
+    PickupSchedule:
+      type: object
+      required:
+        [
+          localDate,
+          localTime,
+          timeZone,
+          utcOffset,
+          dstResolution,
+          pickupAt,
+          windowStart,
+          windowEnd,
+          windowMinutes,
+          label,
+        ]
+      properties:
+        localDate: { type: string }
+        localTime: { type: string }
+        timeZone: { type: string }
+        utcOffset: { type: string, example: "+01:00" }
+        dstResolution:
+          type: string
+          enum:
+            [
+              exact,
+              gap_shifted_forward,
+              gap_shifted_backward,
+              overlap_earlier,
+              overlap_later,
+            ]
+        pickupAt: { type: string, format: date-time }
+        windowStart: { type: string, format: date-time }
+        windowEnd: { type: string, format: date-time }
+        windowMinutes: { type: integer }
+        label: { type: string }
+    RequestBooking:
+      type: object
+      required: [kind, schedule, scheduledRequestId, driverSecured, notice]
+      properties:
+        kind: { type: string, enum: [scheduled, advance] }
+        schedule: { $ref: "#/components/schemas/PickupSchedule" }
+        scheduledRequestId: { type: [string, "null"] }
+        driverSecured:
+          {
+            type: boolean,
+            description: "False until an offer is selected and confirmed.",
+          }
+        notice: { type: string }
+    AdvanceCommitment:
+      type: object
+      description: "What an advance bid commits the driver's wallet to: the 10% held from the cleared balance while the offer stands, captured ONCE at the advance award, never charged again at activation, returned with a linked reversal if the booking fails or is cancelled."
+      required:
+        [
+          commissionMinor,
+          heldFrom,
+          capturedAt,
+          chargedAgainAtActivation,
+          holdExpiresAt,
+          pickupWindowStart,
+          pickupWindowEnd,
+          terms,
+        ]
+      properties:
+        commissionMinor: { $ref: "#/components/schemas/Money" }
+        heldFrom: { type: string, const: cleared_balance }
+        capturedAt: { type: string, const: advance_award }
+        chargedAgainAtActivation: { type: boolean, const: false }
+        holdExpiresAt: { type: [string, "null"], format: date-time }
+        pickupWindowStart: { type: string, format: date-time }
+        pickupWindowEnd: { type: string, format: date-time }
+        terms: { type: array, items: { type: string } }
+    ScheduledRequest:
+      type: object
+      description: "A stored Book for Later intent — a scheduled request, or one occurrence of a recurring template. NO driver is secured in any state; `published` hands it to an ordinary request (requestId)."
+      required:
+        [
+          scheduledRequestId,
+          product,
+          state,
+          version,
+          driverSecured,
+          statusLabel,
+          notice,
+          schedule,
+          publishAt,
+          requestedFareMinor,
+          maxFareMinor,
+          paymentMethodId,
+        ]
+      properties:
+        scheduledRequestId: { type: string }
+        product:
+          { type: string, enum: [scheduled_request, advance_reservation] }
+        state:
+          type: string
+          enum:
+            [
+              scheduled_unassigned,
+              needs_rider_approval,
+              published,
+              cancelled,
+              skipped,
+              expired,
+              unfulfilled,
+            ]
+        version: { type: integer }
+        driverSecured: { type: boolean }
+        statusLabel:
+          { type: string, example: "Scheduled — no driver secured yet" }
+        notice: { type: string }
+        service: { type: string, enum: [ride] }
+        vehicleClass: { type: string }
+        cityId: { type: string }
+        currency: { type: string }
+        pickup: { $ref: "#/components/schemas/Area" }
+        dropoff: { $ref: "#/components/schemas/Area" }
+        stops:
+          { type: array, items: { $ref: "#/components/schemas/RouteStop" } }
+        schedule: { $ref: "#/components/schemas/PickupSchedule" }
+        publishAt: { type: string, format: date-time }
+        requestedFareMinor: { $ref: "#/components/schemas/Money" }
+        maxFareMinor:
+          {
+            $ref: "#/components/schemas/Money",
+            description: "The most the rider approved; refreshed bounds above it need renewed approval.",
+          }
+        paymentMethodId: { type: string }
+        requestId: { type: [string, "null"] }
+        requestState: { type: [string, "null"] }
+        templateId: { type: [string, "null"] }
+        occurrenceDate: { type: [string, "null"] }
+        approval:
+          type: [object, "null"]
+          properties:
+            reason:
+              type: string
+              enum:
+                [
+                  fare_above_approval,
+                  payment_method_unavailable,
+                  funding_unavailable,
+                ]
+            message: { type: string }
+            refreshedTerms:
+              type: [object, "null"]
+              properties:
+                minimumFareMinor: { $ref: "#/components/schemas/Money" }
+                maximumFareMinor: { $ref: "#/components/schemas/Money" }
+                suggestedFareMinor: { $ref: "#/components/schemas/Money" }
+        closeReason: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BookingFailure:
+      type: object
+      required: [reason, message, financialOutcome, rematchAvailable]
+      properties:
+        reason:
+          type: string
+          enum:
+            [
+              driver_withdrew,
+              driver_ineligible,
+              reconfirmation_missed,
+              funding_not_secured,
+              driver_unavailable,
+              driver_on_running_trip,
+              execution_blocked,
+              award_cancelled,
+              trip_cancelled,
+              rider_cancelled,
+            ]
+        message: { type: string }
+        financialOutcome:
+          type: object
+          required: [commissionReversed, riderFundingReleased, riderCharged]
+          properties:
+            commissionReversed: { type: boolean }
+            riderFundingReleased: { type: boolean }
+            riderCharged: { type: boolean, const: false }
+        rematchAvailable:
+          {
+            type: boolean,
+            description: "A consented re-publish is available — never an automatic substitute.",
+          }
+    AdvanceBooking:
+      type: object
+      description: "An advance driver reservation on the driver's booking calendar (separate from the live current/next slots). held → confirmed (funding secured, or cash explicitly unsecured) | payment_pending (driver reserved, rider funding not yet secured) → reconfirmed → activated (into the live slots, exactly once, no second commission) → completed; failed / cancelled carry the explained financial outcome."
+      required:
+        [
+          bookingId,
+          requestId,
+          awardId,
+          state,
+          version,
+          viewer,
+          driverReserved,
+          fullySecured,
+          statusLabel,
+          notices,
+          schedule,
+          pickup,
+          dropoff,
+          fareMinor,
+          funding,
+          reconfirmation,
+          activationAt,
+        ]
+      properties:
+        bookingId: { type: string }
+        requestId: { type: string }
+        awardId: { type: string }
+        state:
+          type: string
+          enum:
+            [
+              held,
+              payment_pending,
+              confirmed,
+              reconfirmed,
+              activated,
+              completed,
+              failed,
+              cancelled,
+              released,
+            ]
+        version: { type: integer }
+        viewer: { type: string, enum: [rider, driver] }
+        driverReserved: { type: boolean }
+        fullySecured: { type: boolean }
+        statusLabel: { type: string }
+        notices:
+          {
+            type: array,
+            items: { type: string },
+            description: "Always includes the no-guaranteed-pickup disclosure for the rider.",
+          }
+        schedule: { $ref: "#/components/schemas/PickupSchedule" }
+        pickup: { $ref: "#/components/schemas/Area" }
+        dropoff: { $ref: "#/components/schemas/Area" }
+        fareMinor: { $ref: "#/components/schemas/Money" }
+        commissionMinor:
+          {
+            $ref: "#/components/schemas/Money",
+            description: "Driver view only: captured once at the advance award.",
+          }
+        netMinor: { $ref: "#/components/schemas/Money" }
+        driver: { $ref: "#/components/schemas/OfferDriver" }
+        funding:
+          type: object
+          required: [state, label, dueAt, deadline]
+          properties:
+            state:
+              type: string
+              enum: [pending, secured, unsecured_cash, refused, released]
+            label: { type: string }
+            dueAt: { type: [string, "null"], format: date-time }
+            deadline: { type: [string, "null"], format: date-time }
+        reconfirmation:
+          type: object
+          required: [opensAt, deadline, reconfirmedAt]
+          properties:
+            opensAt: { type: string, format: date-time }
+            deadline: { type: string, format: date-time }
+            reconfirmedAt: { type: [string, "null"], format: date-time }
+        activationAt: { type: string, format: date-time }
+        activatedSlot: { type: [string, "null"], enum: [current, next, null] }
+        failure:
+          oneOf:
+            - { $ref: "#/components/schemas/BookingFailure" }
+            - { type: "null" }
+        rematchRequestId: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RecurringTemplate:
+      type: object
+      description: "A recurring journey, stored apart from its occurrences (ScheduledRequest rows with templateId + occurrenceDate). Each occurrence has its own approval, funding, driver commitment, cancellation and receipt; a series is never `confirmed`."
+      required:
+        [
+          templateId,
+          state,
+          version,
+          product,
+          daysOfWeek,
+          localTime,
+          timeZone,
+          startsOn,
+          windowMinutes,
+          requestedFareMinor,
+          maxFareMinor,
+          paymentMethodId,
+          seriesNote,
+          occurrences,
+        ]
+      properties:
+        templateId: { type: string }
+        state: { type: string, enum: [active, paused, cancelled, ended] }
+        version: { type: integer }
+        product:
+          { type: string, enum: [scheduled_request, advance_reservation] }
+        daysOfWeek:
+          type: array
+          items: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] }
+        localTime: { type: string }
+        timeZone: { type: string }
+        startsOn: { type: string }
+        endsOn: { type: [string, "null"] }
+        windowMinutes: { type: integer }
+        requestedFareMinor: { $ref: "#/components/schemas/Money" }
+        maxFareMinor: { $ref: "#/components/schemas/Money" }
+        paymentMethodId: { type: string }
+        service: { type: string }
+        vehicleClass: { type: string }
+        pickup: { $ref: "#/components/schemas/Area" }
+        dropoff: { $ref: "#/components/schemas/Area" }
+        stops:
+          { type: array, items: { $ref: "#/components/schemas/RouteStop" } }
+        generatedThrough: { type: [string, "null"] }
+        seriesNote: { type: string }
+        occurrences:
+          type: array
+          items: { $ref: "#/components/schemas/ScheduledRequest" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 security: [{ bearer: [] }]
 paths:
   /v1/mp/quote:
@@ -1980,6 +2379,12 @@ paths:
                         {
                           type: array,
                           items: { $ref: "#/components/schemas/Offer" },
+                        },
+                      advanceOffers:
+                        {
+                          type: array,
+                          description: "A03: present only on an advance-booking request. Offers on a future pickup window are listed here, never under offers.",
+                          items: { $ref: "#/components/schemas/AdvanceOffer" },
                         },
                       award: { $ref: "#/components/schemas/Award" },
                       seq: { type: integer },
@@ -2148,6 +2553,11 @@ paths:
                     {
                       award: { $ref: "#/components/schemas/Award" },
                       pickupPin: { type: string },
+                      booking:
+                        {
+                          $ref: "#/components/schemas/AdvanceBooking",
+                          description: "A03: the advance booking an advance selection created — driver reserved, and whether the rider's funding is secured yet (payment_pending beyond the funding horizon). No PIN: the execution starts at activation near pickup.",
+                        },
                     },
                 }
         "409":
@@ -2564,6 +2974,11 @@ paths:
                           type: string,
                           description: "The driver's current work claim id — the mandatory dependsOnClaimId for a next-slot bid. Null unless a current claim exists.",
                         },
+                      advanceCommitment:
+                        {
+                          $ref: "#/components/schemas/AdvanceCommitment",
+                          description: "A03: on an advance-booking request, what bidding commits the driver's wallet to — explained BEFORE the bid.",
+                        },
                     },
                 }
   /v1/mp/driver/parked:
@@ -2722,7 +3137,12 @@ paths:
                     requestId: { type: string },
                     requestRevision: { type: integer },
                     amountMinor: { $ref: "#/components/schemas/Money" },
-                    slot: { type: string, enum: [current, next] },
+                    slot:
+                      {
+                        type: string,
+                        enum: [current, next, advance],
+                        description: "`advance` only on an advance-booking request (A03): the offer is for its future pickup window; the 10% is held now and captured once if selected.",
+                      },
                     dependsOnClaimId: { type: string },
                     availabilityEpoch: { type: integer },
                     rateProfileVersion: { type: integer },
@@ -4173,3 +4593,424 @@ paths:
           }
         "409":
           { description: version_conflict — this action has no pending appeal. }
+  # ── Book for Later (A03) — ride-service, gateway identity ────────────────
+  /v1/mp/scheduled-requests:
+    post:
+      summary: Schedule a request (A03 product A — no driver is secured)
+      description: "Rider only; flag scheduled_rides (deny-by-default) plus marketplace_rides. Stores an INTENT from a fresh quote (route, service and class pinned; the quote is not consumed): pickup as local date/time + IANA timezone (resolved and stored as a UTC instant with its DST resolution), a pickup window, the asked fare (inside the quote's bounds) and the rider's approved maximum. Nothing is published, reserved or charged. At publishAt (the market's lead time) a durable worker re-prices the route, re-checks the payment method and the wallet's spendable, and publishes an ordinary request within the approval (the ceiling tightened to the approved maximum) — or parks the intent in needs_rider_approval with the refreshed terms and a notification. Lead/horizon: at least minLeadSec and at most maxHorizonSec ahead (validation_failed)."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  quoteId,
+                  requestedFareMinor,
+                  maxFareMinor,
+                  paymentMethodId,
+                  schedule,
+                ]
+              properties:
+                quoteId: { type: string }
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+                maxFareMinor: { $ref: "#/components/schemas/Money" }
+                paymentMethodId: { type: string }
+                schedule: { $ref: "#/components/schemas/PickupScheduleInput" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+        "404":
+          {
+            description: "feature_disabled (flag off) or the quote is not the rider's.",
+          }
+        "409": { description: "request_cap_reached, idempotency_key_reuse." }
+        "422":
+          {
+            description: "validation_failed (schedule, lead, horizon, window), fare_out_of_bounds, payment_method_unavailable.",
+          }
+    get:
+      summary: The rider's one-off scheduled requests (occurrences are listed under their series)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScheduledRequest" }
+  /v1/mp/scheduled-requests/{scheduledRequestId}:
+    get:
+      summary: One scheduled request (owner only; 404 otherwise)
+      parameters:
+        - {
+            name: scheduledRequestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+  /v1/mp/scheduled-requests/{scheduledRequestId}/cancel:
+    post:
+      summary: Cancel an unpublished scheduled request (a published one is cancelled through its request — request_closed names it)
+      parameters:
+        - {
+            name: scheduledRequestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+        "409": { description: "request_closed (already published / terminal)." }
+  /v1/mp/scheduled-requests/{scheduledRequestId}/approve:
+    post:
+      summary: Renew approval of refreshed terms (needs_rider_approval → scheduled_unassigned)
+      description: "The new maximum must be at or above the refreshed minimum (fare_out_of_bounds otherwise); an optional replacement payment method must be available in the city. The next worker pass re-refreshes and publishes — an approval is never stretched over terms that moved again."
+      parameters:
+        - {
+            name: scheduledRequestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, maxFareMinor]
+              properties:
+                expectedVersion: { type: integer }
+                maxFareMinor: { $ref: "#/components/schemas/Money" }
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+                paymentMethodId: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+        "409":
+          {
+            description: "conflict (not awaiting approval), version_conflict, request_closed.",
+          }
+  /v1/mp/advance-requests:
+    post:
+      summary: Publish an advance-booking request (A03 product B)
+      description: "Rider only; flag marketplace_advance_reservations (deny-by-default) plus marketplace_rides. Publishes a request (booking.kind=advance) that takes offers NOW for the FUTURE pickup window — no driver is secured until the rider selects an offer (POST /v1/mp/requests/{id}/select), which books that driver in advance. Pickup at least minLeadSec and at most bookingHorizonSec ahead; offers run for offerWindowSec (never past the reconfirmation opening). Drivers bid with slot=advance (stationary manual bidding, the 10% held from the cleared balance)."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [quoteId, requestedFareMinor, paymentMethodId, schedule]
+              properties:
+                quoteId: { type: string }
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+                paymentMethodId: { type: string }
+                schedule: { $ref: "#/components/schemas/PickupScheduleInput" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Request" }
+        "404": { description: "feature_disabled." }
+        "422":
+          {
+            description: "validation_failed, fare_out_of_bounds, payment_method_unavailable.",
+          }
+  /v1/mp/advance-bookings:
+    get:
+      summary: My advance bookings (rider — theirs; driver — theirs)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdvanceBooking" }
+  /v1/mp/advance-bookings/{bookingId}:
+    get:
+      summary: One advance booking (its rider or its driver; 404 otherwise)
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+  /v1/mp/advance-bookings/{bookingId}/cancel:
+    post:
+      summary: Rider cancels before activation — award cancelled, the driver's captured commission returned (linked reversal), rider funding released; no fee in this slice
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409":
+          {
+            description: "award_unresolved (still held) or conflict (already ended / activated).",
+          }
+  /v1/mp/advance-bookings/{bookingId}/reconfirm:
+    post:
+      summary: Driver reconfirms between reconfirmation.opensAt and deadline (a missed deadline fails the booking, commission returned)
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "403": { description: "driver_ineligible (suspended)." }
+        "409":
+          { description: "conflict (window not open / closed / wrong state)." }
+  /v1/mp/advance-bookings/{bookingId}/withdraw:
+    post:
+      summary: Driver cannot attend — the booking fails with the reason explained, commission returned, rider funding released, a consented rematch offered; nobody is silently substituted
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties: { reason: { type: string, maxLength: 280 } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+  /v1/mp/advance-bookings/{bookingId}/rematch:
+    post:
+      summary: The rider's consent to re-publish a failed booking for the same window
+      description: "A NEW advance request (no driver secured) priced with refreshed bounds, at the original asked fare unless the rider names another — never silently raised: a refreshed minimum above it answers fare_out_of_bounds for the rider to decide. Once per booking."
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Request" }
+        "409":
+          {
+            description: "conflict (not rematchable / already rematched / too late).",
+          }
+  /v1/mp/driver/calendar:
+    get:
+      summary: The driver's booking calendar — committed future bookings, separate from the live current/next jobs
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bookings, note]
+                properties:
+                  bookings:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdvanceBooking" }
+                  note: { type: string }
+  /v1/mp/recurring-templates:
+    post:
+      summary: Create a recurring journey (flag marketplace_recurring_journeys plus the product's flag)
+      description: "Occurrences are generated idempotently (one per template and local date, replay-safe) generationHorizonDays ahead; each is its own ScheduledRequest (product scheduled_request or advance_reservation) with its own approval, funding, driver commitment, cancellation and receipt. A date whose local time falls in a DST gap/overlap resolves per dstDisambiguation; with reject that date is recorded as skipped (closeReason dst_ambiguous_time)."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  quoteId,
+                  product,
+                  daysOfWeek,
+                  localTime,
+                  startsOn,
+                  requestedFareMinor,
+                  maxFareMinor,
+                  paymentMethodId,
+                ]
+              properties:
+                quoteId: { type: string }
+                product:
+                  {
+                    type: string,
+                    enum: [scheduled_request, advance_reservation],
+                  }
+                daysOfWeek:
+                  type: array
+                  minItems: 1
+                  items:
+                    { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] }
+                localTime: { type: string }
+                timeZone: { type: string }
+                startsOn: { type: string }
+                endsOn: { type: string }
+                windowMinutes: { type: integer }
+                dstDisambiguation:
+                  { type: string, enum: [compatible, earlier, later, reject] }
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+                maxFareMinor: { $ref: "#/components/schemas/Money" }
+                paymentMethodId: { type: string }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTemplate" }
+    get:
+      summary: The rider's recurring journeys
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/RecurringTemplate" }
+  /v1/mp/recurring-templates/{templateId}:
+    get:
+      summary: One recurring journey with its occurrences
+      parameters:
+        - {
+            name: templateId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTemplate" }
+  /v1/mp/recurring-templates/{templateId}/{command}:
+    post:
+      summary: Pause, resume or cancel a series
+      description: "pause: nothing new is generated or published (a waiting occurrence whose pickup passes lapses); resume: generation and publication continue; cancel: generation stops and unpublished occurrences are cancelled — occurrences already sent to drivers (or booked) are separate trips and stand."
+      parameters:
+        - {
+            name: templateId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: command,
+            in: path,
+            required: true,
+            schema: { type: string, enum: [pause, resume, cancel] },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion]
+              properties: { expectedVersion: { type: integer } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTemplate" }
+        "409":
+          { description: "version_conflict, conflict (illegal for the state)." }
+  /v1/mp/recurring-templates/{templateId}/occurrences/{date}/skip:
+    post:
+      summary: Skip one occurrence (generated or not yet generated — generation never resurrects it); the rest of the series is untouched
+      parameters:
+        - {
+            name: templateId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: date,
+            in: path,
+            required: true,
+            schema: { type: string, example: "2026-10-07" },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+        "409":
+          {
+            description: "conflict (already sent to drivers — cancel its request or booking instead).",
+          }

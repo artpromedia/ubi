@@ -49,6 +49,11 @@ describe("canonical state machines", () => {
         "mpClaim",
         // Post-award trip amendments (A02 items 4-7).
         "mpAmendment",
+        // Book for Later (A03): scheduled requests (and recurring
+        // occurrences), advance driver reservations, recurring templates.
+        "mpScheduledRequest",
+        "mpAdvanceBooking",
+        "mpRecurringTemplate",
       ].sort(),
     );
   });

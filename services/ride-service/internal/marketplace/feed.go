@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/geo"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
@@ -84,6 +85,11 @@ func feedItemOf(request *Request, distanceMeters float64) *FeedItemView {
 		title = "Delivery request · " + request.VehicleClass
 	}
 	meta := request.Pickup.Label + " → " + request.Dropoff.Label
+	if request.isAdvance() && request.Schedule != nil {
+		// A future booking, said first: this is not an immediate job.
+		title = "Advance booking · " + request.VehicleClass
+		meta = "Pickup " + scheduleViewOf(request.Schedule).Label + " · " + meta
+	}
 	if len(request.Stops) > 0 {
 		meta += " · " + stopCountLabel(len(request.Stops))
 	}
@@ -108,6 +114,7 @@ func feedItemOf(request *Request, distanceMeters float64) *FeedItemView {
 		CapabilityBadge: badge,
 		ExpiresAt:       request.ExpiresAt,
 		Route:           feedRouteOf(request),
+		Booking:         requestBookingViewOf(request),
 	}
 }
 
@@ -155,6 +162,10 @@ func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*Feed
 	// driver simply does not appear.
 	ridesOn := s.requireFlag(ctx, flagFor(ServiceRide), actor, actor.CityID) == nil
 	deliveryOn := s.requireFlag(ctx, flagFor(ServiceDelivery), actor, actor.CityID) == nil
+	// A03: advance-booking cards appear only while advance bidding is open
+	// for this driver.
+	advanceOn := s.flagOn(ctx, cityconfig.FlagMarketplaceAdvanceReservations, actor.UserID.String(), actor.CityID)
+	var cityZone *time.Location
 	if !ridesOn && !deliveryOn {
 		return nil, domain.Errorf(domain.CodeFeatureDisabled, "this feature is not available here")
 	}
@@ -226,16 +237,37 @@ func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*Feed
 				continue
 			}
 			distance := geo.HaversineDistance(*session.LastLat, *session.LastLng, request.Pickup.Lat, request.Pickup.Lng)
-			if distance > float64(request.EnvelopeRadiusM) {
+			pickupForPrefs := coarsePickupMeters(distance)
+			if request.isAdvance() {
+				// A future pickup is not judged by where the driver is now:
+				// no search envelope, no pickup-distance preference. The
+				// driver's stored availability windows filter it instead.
+				if !advanceOn {
+					continue
+				}
+				pickupForPrefs = 0
+				if cityZone == nil {
+					cityZone = s.cityZone(ctx, actor.CityID)
+				}
+				if prefs != nil && request.PickupWindowStart != nil && !prefs.availableAt(*request.PickupWindowStart, cityZone) {
+					page.Preferences.HiddenCount++
+					continue
+				}
+			} else if distance > float64(request.EnvelopeRadiusM) {
 				continue
 			}
-			if reason := prefs.hiddenReason(request, coarsePickupMeters(distance)); reason != "" {
+			if reason := prefs.hiddenReason(request, pickupForPrefs); reason != "" {
 				page.Preferences.HiddenCount++
 				continue
 			}
 			item := feedItemOf(request, distance)
 			pickup := s.straightLinePickup(ctx, *session.LastLat, *session.LastLng, request)
 			pickup.distanceM = distance
+			if request.isAdvance() {
+				// Where the driver is now says nothing about the unpaid
+				// drive to a pickup hours away: stated as unavailable.
+				pickup = unknownPickup()
+			}
 			item.Earnings = earningsBreakdown(request, request.RequestedMinor, GrossBasisRequested, pickup)
 			if prefs != nil {
 				item.PreferenceTags = prefs.preferenceTags(request)
@@ -260,6 +292,20 @@ func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*Feed
 		return len(page.Items[i].PreferenceTags) > 0 && len(page.Items[j].PreferenceTags) == 0
 	})
 	return page, nil
+}
+
+// cityZone is the city's configured timezone (UTC when it cannot be read —
+// only ever used to phrase or filter by the driver's own stored windows).
+func (s *Service) cityZone(ctx context.Context, cityID string) *time.Location {
+	config, err := s.config(ctx, cityID)
+	if err != nil {
+		return time.UTC
+	}
+	location, err := time.LoadLocation(config.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return location
 }
 
 func flagFor(service string) string {
@@ -319,6 +365,11 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 	if eligibility.pickup != nil {
 		pickup = *eligibility.pickup
 	}
+	if request.isAdvance() {
+		// A future pickup's unpaid leg depends on where the driver will be
+		// then, not now: stated as unavailable rather than guessed.
+		pickup = unknownPickup()
+	}
 
 	prefs, err := s.deps.Store.LatestDriverPreferences(ctx, s.deps.Store.Pool(), actor.UserID, request.CityID)
 	if errors.Is(err, domain.ErrNotFound) {
@@ -337,6 +388,8 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 		Eligibility: eligibility,
 		Presets:     []*PresetView{},
 	}
+	// A03: before an advance bid, the wallet commitment it would take on.
+	result.AdvanceCommitment = advanceCommitmentOf(request, request.RequestedMinor, nil, config.CurrencyFractionDigits)
 
 	// Presets are money: they need the wallet's one spendable number. If the
 	// wallet cannot answer, the view fails honestly rather than promising

@@ -205,72 +205,12 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 				"you already have %d open requests; close one before publishing another", openInTx).
 				WithDetails(map[string]any{"openRequests": openInTx, "maximum": policy.Bids.MaxOpenRequestsPerRequester})
 		}
-		if err := s.deps.Store.InsertRequest(ctx, tx, request); err != nil {
-			return err
-		}
-		if err := s.deps.Store.ConsumeQuote(ctx, tx, quote.ID, request.ID); err != nil {
-			return err
-		}
-		snapshot := map[string]any{
-			"requestedMinor": request.RequestedMinor,
-			"minMinor":       request.MinMinor,
-			"maxMinor":       request.MaxMinor,
-			"envelope":       map[string]any{"radiusMeters": request.EnvelopeRadiusM, "pickupEtaSec": request.EnvelopeEtaSec},
-		}
-		if route := routeSnapshot(request); route != nil {
-			snapshot["route"] = route
-		}
-		if err := s.deps.Store.InsertRequestRevision(ctx, tx, request.ID, 1, request.RequestedMinor, quote.ID, snapshot); err != nil {
-			return err
-		}
-		publishedPayload := map[string]any{
-			"requestId":      request.ID.String(),
-			"quoteId":        quote.ID.String(),
-			"service":        request.Service,
-			"vehicleClass":   request.VehicleClass,
-			"requestedMinor": request.RequestedMinor,
-			"currency":       request.Currency,
-			"revision":       request.Revision,
-			"expiresAt":      request.ExpiresAt.Format(time.RFC3339),
-		}
-		publishedAudit := map[string]any{
-			"state":          request.State,
-			"requestedMinor": request.RequestedMinor,
-			"minMinor":       request.MinMinor,
-			"maxMinor":       request.MaxMinor,
-			"currency":       request.Currency,
-			"policyVersion":  request.PolicyVersion,
-		}
-		if request.hasRoute() {
-			publishedPayload["stopCount"] = len(request.Stops)
-			publishedPayload["routeRevision"] = request.RouteRevision
-			publishedPayload["routeFingerprint"] = request.RouteFingerprint
-			publishedAudit["stopCount"] = len(request.Stops)
-			publishedAudit["routeFingerprint"] = request.RouteFingerprint
-		}
-		if err := writeEvent(ctx, tx, Event{
-			Name:           "mp.request.published",
-			AggregateType:  subjectRequest,
-			AggregateID:    request.ID.String(),
-			ToVersion:      request.Version,
-			CityID:         request.CityID,
-			ActorType:      "rider",
-			ActorID:        actor.UserID.String(),
-			IdempotencyKey: "mp.request.published:" + request.ID.String(),
-			OccurredAt:     now,
-			Payload:        publishedPayload,
-		}); err != nil {
-			return err
-		}
-		if err := writeAudit(ctx, tx, AuditRecord{
-			ActorID:     actor.UserID.String(),
-			ActorRole:   actor.Role,
-			Action:      "mp.request.published",
-			SubjectType: subjectRequest,
-			SubjectID:   request.ID.String(),
-			After:       publishedAudit,
-			Reason:      "requester published a marketplace request",
-		}); err != nil {
+		if err := s.writePublishedRequest(ctx, tx, request, quote, publisher{
+			actorType: "rider",
+			actorID:   actor.UserID.String(),
+			actorRole: actor.Role,
+			reason:    "requester published a marketplace request",
+		}, now); err != nil {
 			return err
 		}
 		view = requestViewOf(request)
@@ -280,6 +220,102 @@ func (s *Service) Publish(ctx context.Context, actor Actor, req PublishRequest, 
 		return nil, 0, asDomainError(err)
 	}
 	return view, 201, nil
+}
+
+// publisher names who published a request: the requester themselves, or the
+// Book for Later worker publishing a stored intent on the requester's behalf.
+type publisher struct {
+	actorType string
+	actorID   string
+	actorRole string
+	reason    string
+}
+
+// writePublishedRequest is the one way a request enters the market, inside
+// the caller's transaction: the request row, its quote consumed, revision 1
+// snapshotted, and mp.request.published with its audit row. Publish, the
+// advance-request create and the scheduled-publication worker all use it.
+func (s *Service) writePublishedRequest(ctx context.Context, tx pgx.Tx, request *Request, quote *Quote, by publisher, now time.Time) error {
+	if err := s.deps.Store.InsertRequest(ctx, tx, request); err != nil {
+		return err
+	}
+	if err := s.deps.Store.ConsumeQuote(ctx, tx, quote.ID, request.ID); err != nil {
+		return err
+	}
+	snapshot := map[string]any{
+		"requestedMinor": request.RequestedMinor,
+		"minMinor":       request.MinMinor,
+		"maxMinor":       request.MaxMinor,
+		"envelope":       map[string]any{"radiusMeters": request.EnvelopeRadiusM, "pickupEtaSec": request.EnvelopeEtaSec},
+	}
+	if route := routeSnapshot(request); route != nil {
+		snapshot["route"] = route
+	}
+	if err := s.deps.Store.InsertRequestRevision(ctx, tx, request.ID, 1, request.RequestedMinor, quote.ID, snapshot); err != nil {
+		return err
+	}
+	publishedPayload := map[string]any{
+		"requestId":      request.ID.String(),
+		"quoteId":        quote.ID.String(),
+		"service":        request.Service,
+		"vehicleClass":   request.VehicleClass,
+		"requestedMinor": request.RequestedMinor,
+		"currency":       request.Currency,
+		"revision":       request.Revision,
+		"expiresAt":      request.ExpiresAt.Format(time.RFC3339),
+	}
+	publishedAudit := map[string]any{
+		"state":          request.State,
+		"requestedMinor": request.RequestedMinor,
+		"minMinor":       request.MinMinor,
+		"maxMinor":       request.MaxMinor,
+		"currency":       request.Currency,
+		"policyVersion":  request.PolicyVersion,
+	}
+	if request.hasRoute() {
+		publishedPayload["stopCount"] = len(request.Stops)
+		publishedPayload["routeRevision"] = request.RouteRevision
+		publishedPayload["routeFingerprint"] = request.RouteFingerprint
+		publishedAudit["stopCount"] = len(request.Stops)
+		publishedAudit["routeFingerprint"] = request.RouteFingerprint
+	}
+	if request.BookingKind != "" && request.BookingKind != BookingKindImmediate {
+		// A03: the card is a future booking (advance) or a published
+		// scheduled intent; either way no driver is secured yet.
+		publishedPayload["bookingKind"] = request.BookingKind
+		publishedAudit["bookingKind"] = request.BookingKind
+		if request.PickupWindowStart != nil && request.PickupWindowEnd != nil {
+			publishedPayload["pickupWindowStart"] = request.PickupWindowStart.Format(time.RFC3339)
+			publishedPayload["pickupWindowEnd"] = request.PickupWindowEnd.Format(time.RFC3339)
+		}
+		if request.ScheduledRequestID != nil {
+			publishedPayload["scheduledRequestId"] = request.ScheduledRequestID.String()
+			publishedAudit["scheduledRequestId"] = request.ScheduledRequestID.String()
+		}
+	}
+	if err := writeEvent(ctx, tx, Event{
+		Name:           "mp.request.published",
+		AggregateType:  subjectRequest,
+		AggregateID:    request.ID.String(),
+		ToVersion:      request.Version,
+		CityID:         request.CityID,
+		ActorType:      by.actorType,
+		ActorID:        by.actorID,
+		IdempotencyKey: "mp.request.published:" + request.ID.String(),
+		OccurredAt:     now,
+		Payload:        publishedPayload,
+	}); err != nil {
+		return err
+	}
+	return writeAudit(ctx, tx, AuditRecord{
+		ActorID:     by.actorID,
+		ActorRole:   by.actorRole,
+		Action:      "mp.request.published",
+		SubjectType: subjectRequest,
+		SubjectID:   request.ID.String(),
+		After:       publishedAudit,
+		Reason:      by.reason,
+	})
 }
 
 // Snapshot answers GET /v1/mp/requests/{id}: the owner's request, the private
@@ -303,16 +339,31 @@ func (s *Service) Snapshot(ctx context.Context, actor Actor, requestID uuid.UUID
 
 	now := s.now()
 	offers := make([]*OfferView, 0, len(bids))
+	var advanceOffers []*OfferView
 	for _, bid := range bids {
-		offers = append(offers, s.offerViewOf(ctx, request, bid, now))
+		view := s.offerViewOf(ctx, request, bid, now)
+		if view.Kind == OfferKindAdvanceBooking {
+			advanceOffers = append(advanceOffers, view)
+			continue
+		}
+		offers = append(offers, view)
+	}
+	if request.isAdvance() && advanceOffers == nil {
+		advanceOffers = []*OfferView{}
 	}
 
 	return &RequestSnapshotView{
-		Request: requestViewOf(request),
-		Offers:  offers,
-		Seq:     request.Version,
+		Request:       requestViewOf(request),
+		Offers:        offers,
+		AdvanceOffers: advanceOffers,
+		Seq:           request.Version,
 	}, nil
 }
+
+// OfferKindAdvanceBooking is the kind of an offer on a future pickup window
+// (A03, contract MpAdvanceOfferSchema); such offers are listed under the
+// snapshot's advanceOffers, never under offers.
+const OfferKindAdvanceBooking = "advance_booking"
 
 // offerViewOf renders the rider-facing view of one bid. The amount is the
 // rider's to see; everything about the driver is a display field derived
@@ -325,7 +376,13 @@ func (s *Service) offerViewOf(ctx context.Context, request *Request, bid *Bid, n
 	}
 
 	pickupLabel := "Pickup estimate unavailable"
-	if session, err := s.deps.Store.DriverSessionRow(ctx, s.deps.Store.Pool(), bid.DriverID); err == nil && session.HasLocation() {
+	if bid.Slot == SlotAdvance && request.Schedule != nil {
+		// A03: an offer for the future pickup window. Selecting it books
+		// this driver in advance; where the driver is now says nothing
+		// about the future pickup, so no live ETA is phrased.
+		kind = OfferKindAdvanceBooking
+		pickupLabel = "Advance booking · pickup " + scheduleViewOf(request.Schedule).Label
+	} else if session, err := s.deps.Store.DriverSessionRow(ctx, s.deps.Store.Pool(), bid.DriverID); err == nil && session.HasLocation() {
 		distance := geo.HaversineDistance(*session.LastLat, *session.LastLng, request.Pickup.Lat, request.Pickup.Lng)
 		eta := geo.EstimateETA(distance, "car")
 		minutes := int((eta + 59) / 60)
@@ -679,6 +736,21 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, requestID uuid.UUID, 
 		return nil, 0, domain.Errorf(domain.CodeNotFound, "that request does not exist")
 	}
 
+	// A03: an awarded ADVANCE request is a booking on the driver's
+	// calendar; it is cancelled through the booking, which explains and
+	// unwinds the money.
+	// Once activated into the driver's queue it is an ordinary queued job
+	// (the missed-window exit below applies).
+	if current.State == machine.MpRequestAwarded && current.isAdvance() {
+		if award, err := s.deps.Store.LatestAwardForRequest(ctx, s.deps.Store.Pool(), current.ID); err == nil {
+			if booking, err := s.deps.Store.BookingByAwardID(ctx, s.deps.Store.Pool(), award.ID); err == nil &&
+				booking.State != machine.MpBookingActivated {
+				return nil, 0, domain.Errorf(domain.CodeRequestClosed,
+					"this request is an advance booking; cancel the booking instead").
+					WithDetails(map[string]any{"state": current.State, "bookingId": booking.ID.String()})
+			}
+		}
+	}
 	// A queued (awarded, unpromoted) request whose pickup window was missed
 	// may exit FEE-FREE: the award cancels and the captured fee is reversed
 	// with a linked entry. Cancelling this next job never touches the
