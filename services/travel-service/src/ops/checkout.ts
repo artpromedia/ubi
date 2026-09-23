@@ -1,6 +1,11 @@
 /**
  * Checkout (contracts/openapi/travel-v2.yaml, POST /v1/travel/carts/:id/checkout).
  *
+ * Per vertical, per city: a flight item needs `flights_booking` and a stay item
+ * `stays_booking` switched on before anything is revalidated or authorized
+ * (deny-by-default; payment-service's own gate accepts either switch, so the
+ * vertical is enforced here).
+ *
  * Two rules from CLAUDE.md shape this whole module:
  *
  *  #23 — the cart's price is NEVER the price charged. Checkout revalidates every
@@ -16,15 +21,39 @@
  * And #24 — a supplier timeout is `unknown_reconciling`, not a failure and not a
  * silent success. The hold is left in place, nothing is released, nothing is
  * re-purchased; the order is resolved later by a lookup on UBI's own reference.
+ * The reverse holds too: when `book()` refuses BEFORE any provider call (an
+ * expired quote, passenger data the supplier would reject, missing
+ * credentials) nothing can exist at the supplier, so the order fails
+ * definitively and the hold is released at once.
+ *
+ * CONSENT. A moved price, a changed term (board, cancellation policy) or a
+ * price surfaced by an earlier 409 is charged only when the traveller sends
+ * back exactly that total as `expectedTotal` — never auto-accepted. An expired
+ * or sold-out offer is surfaced and never booked.
+ *
+ * MONEY. Every posting goes through ./payment-settle.ts: one key per order
+ * (`<orderId>:auth|:cap|:rel`, shared with reconcile and webhooks) and, after
+ * an ambiguous or 409 answer, convergence through payment-service's recorded
+ * state. A hold is authorized BEFORE the order row exists, so an order in
+ * `payment_authorized` always has a real hold behind it.
  */
 import {
+  canTransition,
   ContractError,
   scopedIdempotencyKey,
   type Money,
   type TravelOrderState,
 } from "@ubi/contracts";
 
-import { cartView, type CartView, type PricedItem } from "./carts";
+import {
+  cartView,
+  termsFor,
+  VERTICAL_FLAG,
+  type CartView,
+  type PricedItem,
+} from "./carts";
+import { assertFlagEnabled } from "./config";
+import { escalate, writeDocumentsOnce } from "./converge";
 import { toJson } from "./json";
 import {
   advanceOrder,
@@ -33,8 +62,10 @@ import {
   type OrderView,
 } from "./ladder";
 import { withOutbox } from "./outbox";
+import { settlePayment } from "./payment-settle";
 import { adapterFor, contextFor, loadSupplier } from "./suppliers";
-import { deterministicId, generateId } from "../lib/ids";
+import { isPreCallRefusal } from "../adapters/errors";
+import { deterministicId } from "../lib/ids";
 import { orderLogger } from "../lib/logger";
 
 import type { TravelDeps } from "./context";
@@ -133,6 +164,13 @@ export async function checkout(
   }
   const currency = cart.currency ?? items[0]?.currency ?? "NGN";
 
+  // Each item's vertical must be open in this city before any supplier or
+  // payment call (deny-by-default).
+  const config = await deps.config.load(input.cityId);
+  for (const kind of new Set(items.map((item) => item.kind))) {
+    assertFlagEnabled(config.flags, VERTICAL_FLAG[kind]);
+  }
+
   // Revalidate every item. The cache never gets us here (CLAUDE.md #23).
   const revalidated: RevalidatedItem[] = [];
   for (const priced of items) {
@@ -146,18 +184,34 @@ export async function checkout(
   const cartTotal = Number(cart.totalMinor ?? 0n);
   const anyRepriced = revalidated.some((item) => item.validation.repriced);
   const anySoldOut = revalidated.some((item) => item.validation.soldOut);
+  const anyExpired = revalidated.some(
+    (item) => item.validation.expired === true || !item.validation.available,
+  );
+  const anyTermsChanged = revalidated.some(
+    (item) => item.validation.termsChanged === true,
+  );
   const priceMoved = revalidatedTotal !== cartTotal;
-  const acceptedNewTotal =
+  // A price the last 409 surfaced has not been agreed to until it is echoed.
+  const surfacedUnconfirmed = cart.status === "repriced";
+  const consented =
     input.expectedTotal !== null &&
-    input.expectedTotal.amountMinor === revalidatedTotal &&
-    !anySoldOut;
+    input.expectedTotal.currency === currency &&
+    input.expectedTotal.amountMinor === revalidatedTotal;
+  const needsConsent =
+    anyRepriced || priceMoved || anyTermsChanged || surfacedUnconfirmed;
+  // A changed term must have been SHOWN (a prior 409) before it can be agreed.
+  const consentValid = consented && (!anyTermsChanged || surfacedUnconfirmed);
 
-  if (anySoldOut || ((anyRepriced || priceMoved) && !acceptedNewTotal)) {
-    // Surface the new prices and charge nothing.
+  if (anySoldOut || anyExpired || (needsConsent && !consentValid)) {
+    // Surface the new prices and terms and charge nothing.
     const repricedItems: PricedItem[] = revalidated.map((item) => ({
       ...item.priced,
       previousPriceMinor: item.priced.priceMinor,
       priceMinor: item.validation.offer.price.amountMinor,
+      capabilities: item.validation.offer.capabilities as unknown as JsonRecord,
+      policy: item.validation.offer.policy,
+      offerSnapshot: item.validation.offer.snapshot,
+      terms: termsFor(item.validation.offer),
     }));
     const updated = await withOutbox(deps.db, async (tx) => {
       const row = await tx.travelCart.update({
@@ -189,6 +243,8 @@ export async function checkout(
               previousTotal: cartTotal,
               newTotal: revalidatedTotal,
               soldOut: anySoldOut,
+              expired: anyExpired,
+              termsChanged: anyTermsChanged,
             },
           },
         ],
@@ -202,13 +258,24 @@ export async function checkout(
     ? (cart.passengers as JsonRecord[])
     : [];
 
-  await deps.db.travelTrip.create({
-    data: {
-      id: tripId,
-      userId: input.actor.id,
-      title: tripTitle(revalidated),
-    },
-  });
+  // The trip is created with the first order, after that order's hold is
+  // real: a checkout whose first authorization is refused leaves nothing
+  // behind, so a retry with the same key runs again rather than replaying an
+  // empty trip.
+  const ensureTrip = async (): Promise<void> => {
+    const existing = await deps.db.travelTrip.findUnique({
+      where: { id: tripId },
+    });
+    if (existing === null) {
+      await deps.db.travelTrip.create({
+        data: {
+          id: tripId,
+          userId: input.actor.id,
+          title: tripTitle(revalidated),
+        },
+      });
+    }
+  };
 
   const orders: OrderView[] = [];
   for (let index = 0; index < revalidated.length; index += 1) {
@@ -224,6 +291,7 @@ export async function checkout(
       currency,
       item,
       passengers,
+      ensureTrip,
     });
     orders.push(order);
   }
@@ -252,6 +320,7 @@ interface ExecuteItemInput {
   readonly currency: string;
   readonly item: RevalidatedItem;
   readonly passengers: readonly JsonRecord[];
+  readonly ensureTrip: () => Promise<void>;
 }
 
 async function executeItem(
@@ -272,15 +341,29 @@ async function executeItem(
   const offer = item.validation.offer;
   const priceMinor = offer.price.amountMinor;
   const itemKey = `${scoped}:${index}`;
+  const kind = item.priced.kind;
 
-  // 1. Create the order in payment_authorized (the initial ladder state).
+  // 1. Authorize the hold for exactly the revalidated price (server-computed),
+  //    under the order's canonical key, BEFORE the order row exists. A
+  //    refusal (insufficient funds, a closed vertical) leaves no order behind.
+  const hold = await settlePayment(deps, "authorize", {
+    orderId,
+    userId: input.actor.id,
+    amount: offer.price,
+    cityId: input.cityId,
+    reason: `travel ${kind} hold`,
+    actor: input.actor,
+  });
+
+  // 2. The order, in payment_authorized — now backed by a real hold.
+  await args.ensureTrip();
   await deps.db.travelOrder.create({
     data: {
       id: orderId,
       tripId,
       cartId: input.cartId,
       userId: input.actor.id,
-      kind: item.priced.kind,
+      kind,
       supplierId: item.priced.supplierId,
       state: "payment_authorized",
       supplierRefs: toJson({}),
@@ -302,18 +385,9 @@ async function executeItem(
       protectionRuleId: item.priced.protectionRuleId,
       grantId: input.grantId,
       idempotencyKey: itemKey,
+      cityId: input.cityId,
+      supplierOfferRef: offer.supplierOfferRef ?? null,
     },
-  });
-
-  // 2. Authorize the hold for exactly the revalidated price (server-computed).
-  const hold = await deps.payment.authorize({
-    orderId,
-    userId: input.actor.id,
-    amount: offer.price,
-    cityId: input.cityId,
-    reason: `travel ${item.priced.kind} hold`,
-    idempotencyKey: `${itemKey}:auth`,
-    actor: input.actor,
   });
 
   // 3. submitted (hold recorded).
@@ -338,6 +412,27 @@ async function executeItem(
       idempotencyKey: itemKey,
     });
   } catch (error) {
+    if (isPreCallRefusal(error)) {
+      // Refused before any provider call: nothing can exist at the supplier.
+      // Fail definitively and give the traveller their money back now.
+      orderLogger.warn(
+        {
+          orderId,
+          reason: error.name,
+          code: "reason" in error ? error.reason : error.capability,
+        },
+        "book refused before any provider call; failing the order and releasing the hold",
+      );
+      return releaseAndFail(deps, {
+        orderId,
+        input,
+        kind,
+        amount: offer.price,
+        reason:
+          "reason" in error ? error.reason : `unsupported_${error.capability}`,
+        providerCalled: false,
+      });
+    }
     // We do not know whether the supplier took the booking. Never assume, never
     // re-purchase: go to unknown_reconciling and leave the hold (CLAUDE.md #24).
     orderLogger.error({ err: error, orderId }, "book call failed; reconciling");
@@ -352,26 +447,14 @@ async function executeItem(
 
   // 5. Map the outcome onto the ladder.
   if (book.outcome === "failed") {
-    const release = await deps.payment.release({
+    return releaseAndFail(deps, {
       orderId,
-      userId: input.actor.id,
-      amount: offer.price,
-      cityId: input.cityId,
-      reason: `travel ${item.priced.kind} release`,
-      idempotencyKey: `${itemKey}:rel`,
-      actor: input.actor,
-    });
-    current = await transition(deps, {
-      orderId,
-      to: "failed_released",
       input,
-      detail: {
-        reason: book.reason ?? "supplier_rejected",
-        releaseRef: release.ref,
-      },
-      releasedMinor: release.amount.amountMinor,
+      kind,
+      amount: offer.price,
+      reason: book.reason ?? "supplier_rejected",
+      providerCalled: true,
     });
-    return orderView(current);
   }
 
   if (book.outcome === "unknown") {
@@ -379,7 +462,7 @@ async function executeItem(
       orderId,
       to: "unknown_reconciling",
       input,
-      detail: { reason: "supplier_timeout" },
+      detail: { reason: book.reason ?? "supplier_timeout" },
     });
     return orderView(current);
   }
@@ -396,16 +479,37 @@ async function executeItem(
   }
 
   // confirmed: the supplier accepted and returned a reference (a PNR is not a
-  // ticket). Capture the hold now that the booking is real.
-  const capture = await deps.payment.capture({
-    orderId,
-    userId: input.actor.id,
-    amount: offer.price,
-    cityId: input.cityId,
-    reason: `travel ${item.priced.kind} capture`,
-    idempotencyKey: `${itemKey}:cap`,
-    actor: input.actor,
-  });
+  // ticket). Capture the hold now that the booking is real — under the same
+  // key reconcile and webhooks use, converging on an ambiguous answer.
+  let capture;
+  try {
+    capture = await settlePayment(deps, "capture", {
+      orderId,
+      userId: input.actor.id,
+      amount: offer.price,
+      cityId: input.cityId,
+      reason: `travel ${kind} capture`,
+      actor: input.actor,
+    });
+  } catch (error) {
+    // The booking is real but the capture is unresolved: record the refs and
+    // let reconcile (lookup → converging capture, same key) finish it.
+    orderLogger.error(
+      { err: error, orderId },
+      "capture unresolved after a confirmed booking; reconciling",
+    );
+    current = await transition(deps, {
+      orderId,
+      to: "unknown_reconciling",
+      input,
+      detail: {
+        reason: "capture_unresolved",
+        supplierRefs: book.supplierRefs as unknown as JsonValue,
+      },
+      supplierRefs: book.supplierRefs as unknown as JsonRecord,
+    });
+    return orderView(current);
+  }
   current = await transition(deps, {
     orderId,
     to: "confirmed",
@@ -421,8 +525,8 @@ async function executeItem(
   // Documents already issued at book time → ticketed. For flights this is the
   // e-ticket; for stays we record the confirmation but the order stays confirmed.
   if (book.documentsIssued) {
-    if (item.priced.kind === "flight") {
-      await writeDocuments(deps, orderId, book, item.priced.kind);
+    await writeDocumentsOnce(deps, orderId, kind, book.supplierRefs);
+    if (kind === "flight") {
       current = await transition(deps, {
         orderId,
         to: "ticketed",
@@ -430,50 +534,60 @@ async function executeItem(
         detail: { supplierRefs: book.supplierRefs as unknown as JsonValue },
         supplierRefs: book.supplierRefs as unknown as JsonRecord,
       });
-    } else {
-      await writeDocuments(deps, orderId, book, item.priced.kind);
     }
   }
 
   return orderView(current);
 }
 
-async function writeDocuments(
+async function releaseAndFail(
   deps: TravelDeps,
-  orderId: string,
-  book: BookResult,
-  kind: string,
-): Promise<void> {
-  const now = deps.now();
-  if (kind === "flight") {
-    const tickets = book.supplierRefs.ticketNumbers ?? [];
-    let index = 0;
-    for (const number of tickets) {
-      await deps.db.travelDocument.create({
-        data: {
-          id: generateId("tdoc"),
-          orderId,
-          kind: "eticket",
-          number,
-          passengerIndex: index,
-          issuedAt: now,
-        },
-      });
-      index += 1;
-    }
-    return;
+  args: {
+    readonly orderId: string;
+    readonly input: CheckoutInput;
+    readonly kind: string;
+    readonly amount: Money;
+    readonly reason: string;
+    readonly providerCalled: boolean;
+  },
+): Promise<OrderView> {
+  let release;
+  try {
+    release = await settlePayment(deps, "release", {
+      orderId: args.orderId,
+      userId: args.input.actor.id,
+      amount: args.amount,
+      cityId: args.input.cityId,
+      reason: `travel ${args.kind} release`,
+      actor: args.input.actor,
+    });
+  } catch (error) {
+    // The release itself is unresolved: the booking is definitively not
+    // taken, but the money state is unknown — reconcile finishes it.
+    orderLogger.error(
+      { err: error, orderId: args.orderId },
+      "release unresolved after a definitive booking failure; reconciling",
+    );
+    const current = await transition(deps, {
+      orderId: args.orderId,
+      to: "unknown_reconciling",
+      input: args.input,
+      detail: { reason: "release_unresolved", bookingFailure: args.reason },
+    });
+    return orderView(current);
   }
-  const ref =
-    book.supplierRefs.bookingRef ?? book.supplierRefs.orderRef ?? orderId;
-  await deps.db.travelDocument.create({
-    data: {
-      id: generateId("tdoc"),
-      orderId,
-      kind: "booking_confirmation",
-      number: ref,
-      issuedAt: now,
+  const current = await transition(deps, {
+    orderId: args.orderId,
+    to: "failed_released",
+    input: args.input,
+    detail: {
+      reason: args.reason,
+      providerCalled: args.providerCalled,
+      releaseRef: release.ref,
     },
+    releasedMinor: release.amount.amountMinor,
   });
+  return orderView(current);
 }
 
 interface TransitionArgs {
@@ -487,11 +601,33 @@ interface TransitionArgs {
   readonly releasedMinor?: number;
 }
 
+/** Checkout moving an order towards a booking the supplier holds. */
+const TOWARDS_BOOKING: ReadonlySet<TravelOrderState> = new Set([
+  "supplier_pending",
+  "unknown_reconciling",
+  "confirmed",
+  "ticketed",
+]);
+
+/**
+ * Advances the order under a row lock, re-reading it first. A verified
+ * supplier webhook (or an ops reconcile) can converge the same order while the
+ * booking call is still answering — Duffel `order.created` and LiteAPI
+ * `booking.book` fire as the booking is made. When that path already moved
+ * the order, the step is a no-op and the current row is returned: never a
+ * second (or backwards) step, never a 500 on a booking that succeeded. A move
+ * that CONTRADICTS what the other path did (it failed the order while checkout
+ * holds a booking, or the reverse) is escalated for ops, never "fixed" here.
+ */
 async function transition(
   deps: TravelDeps,
   args: TransitionArgs,
 ): Promise<OrderRow> {
-  const row = await withOutbox(deps.db, async (tx) => {
+  const outcome = await withOutbox<{
+    readonly order: OrderRow;
+    readonly moved: boolean;
+  }>(deps.db, async (tx) => {
+    await tx.$queryRaw`SELECT id FROM travel_orders WHERE id = ${args.orderId} FOR UPDATE`;
     const order = await tx.travelOrder.findUnique({
       where: { id: args.orderId },
     });
@@ -500,8 +636,15 @@ async function transition(
         orderId: args.orderId,
       });
     }
+    const current = order as unknown as OrderRow;
+    if (
+      current.state === args.to ||
+      !canTransition("travelOrder", current.state, args.to)
+    ) {
+      return { result: { order: current, moved: false }, events: [] };
+    }
     const result = await advanceOrder(tx, {
-      order: order as unknown as OrderRow,
+      order: current,
       to: args.to,
       actor: args.input.actor,
       actorType: "rider",
@@ -520,7 +663,30 @@ async function transition(
         ? {}
         : { releasedMinor: args.releasedMinor }),
     });
-    return { result: result.order, events: result.events };
+    return {
+      result: { order: result.order, moved: true },
+      events: result.events,
+    };
   });
-  return row;
+  if (!outcome.moved && outcome.order.state !== args.to) {
+    const state = outcome.order.state as TravelOrderState;
+    const contradicts =
+      (TOWARDS_BOOKING.has(args.to) && state === "failed_released") ||
+      (args.to === "failed_released" &&
+        (state === "confirmed" || state === "ticketed"));
+    orderLogger.warn(
+      { orderId: args.orderId, wanted: args.to, state, contradicts },
+      "order already moved by another path; checkout step skipped",
+    );
+    if (contradicts) {
+      await escalate(
+        deps,
+        outcome.order,
+        args.input.actor,
+        "checkout_contradicts_converged_state",
+        { wanted: args.to, detail: args.detail },
+      );
+    }
+  }
+  return outcome.order;
 }

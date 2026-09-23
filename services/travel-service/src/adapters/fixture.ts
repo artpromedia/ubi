@@ -24,6 +24,7 @@ import type {
   AdapterOffer,
   BookRequest,
   BookResult,
+  CancelQuote,
   CancelRequest,
   CancelResult,
   ChangeRequest,
@@ -387,6 +388,28 @@ function lookupResultFrom(control: Control, currency: string): LookupResult {
   };
 }
 
+/**
+ * The fixture is a local catalog: always "reachable", never credentialed, and
+ * test-only — the registry refuses it in production configuration.
+ */
+function fixtureHealth(
+  ctx: SupplierContext,
+  cfg: FixtureConfig,
+): ProviderHealth {
+  const blocked = cfg.liveCallsBlocked ?? false;
+  return {
+    supplierId: ctx.supplierId,
+    adapter: "fixture",
+    reachable: true,
+    liveCallsBlocked: blocked,
+    implemented: true,
+    operational: !blocked,
+    credentialsPresent: null,
+    reason: blocked ? "live_calls_blocked" : "fixture_test_only",
+    note: "deterministic fixture adapter (DEV/TEST only; refused in production)",
+  };
+}
+
 const servicingMixin = {
   async hold(_ctx: SupplierContext, _offerRef: string): Promise<HoldResult> {
     // The fixture catalog holds no live inventory, so it never claims a hold.
@@ -410,6 +433,21 @@ const servicingMixin = {
       state: result.state,
       supplierRefs: result.supplierRefs,
       documentsIssued: result.documentsIssued,
+    };
+  },
+
+  async quoteCancel(
+    ctx: SupplierContext,
+    request: CancelRequest,
+  ): Promise<CancelQuote> {
+    const cfg = parseConfig(ctx);
+    const control = controlFor(cfg, request.ourRef);
+    return {
+      quoteRef: null,
+      penalty: money(control.cancelPenaltyMinor ?? 0, cfg.currency),
+      refundable: money(0, cfg.currency),
+      expiresAt: null,
+      refundTo: null,
     };
   },
 
@@ -533,13 +571,7 @@ export function createFixtureFlightAdapter(): FlightSupplyAdapter {
 
     async providerHealth(ctx: SupplierContext): Promise<ProviderHealth> {
       const cfg = parseConfig(ctx);
-      return {
-        supplierId: ctx.supplierId,
-        adapter: "fixture",
-        reachable: true,
-        liveCallsBlocked: cfg.liveCallsBlocked ?? false,
-        note: "deterministic fixture adapter",
-      };
+      return fixtureHealth(ctx, cfg);
     },
 
     ...servicingMixin,
@@ -696,13 +728,7 @@ export function createFixtureStayAdapter(): StaySupplyAdapter {
 
     async providerHealth(ctx: SupplierContext): Promise<ProviderHealth> {
       const cfg = parseConfig(ctx);
-      return {
-        supplierId: ctx.supplierId,
-        adapter: "fixture",
-        reachable: true,
-        liveCallsBlocked: cfg.liveCallsBlocked ?? false,
-        note: "deterministic fixture adapter",
-      };
+      return fixtureHealth(ctx, cfg);
     },
 
     ...servicingMixin,

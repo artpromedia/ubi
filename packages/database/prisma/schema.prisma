@@ -3456,6 +3456,14 @@ model TravelOrder {
   // grant_id is a plain text ref in the DDL (no FK) — kept as a scalar.
   grantId            String?   @map("grant_id")
   idempotencyKey     String    @unique @map("idempotency_key")
+  // The city the order was placed in. Payment-service scopes the order's money
+  // item to it, so a capture/release driven later by a webhook or a reconcile
+  // must name the same city — read from here, never from the caller's header.
+  cityId             String?   @map("city_id")
+  // The supplier's own offer / quote id the order was booked from (Duffel
+  // `off_…`, LiteAPI offer/prebook id). A supplier event that only names the
+  // offer (Duffel `order.creation_failed`) resolves the order through it.
+  supplierOfferRef   String?   @map("supplier_offer_ref")
   createdAt          DateTime  @default(now()) @map("created_at")
 
   trip     TravelTrip?    @relation(fields: [tripId], references: [id])
@@ -3470,6 +3478,7 @@ model TravelOrder {
   reservationLinks RideReservationLink[]
 
   @@index([userId, state])
+  @@index([supplierId, supplierOfferRef])
   @@map("travel_orders")
 }
 
@@ -3498,6 +3507,9 @@ model TravelDocument {
 
   order TravelOrder @relation(fields: [orderId], references: [id])
 
+  // A document is written once: a repeated or racing supplier signal (a
+  // webhook and a reconcile at once) cannot duplicate a ticket.
+  @@unique([orderId, kind, number])
   @@map("travel_documents")
 }
 
@@ -3543,15 +3555,28 @@ model TravelDisruption {
 model TravelWebhook {
   id          String    @id
   supplierId  String    @map("supplier_id")
+  // The supplier's event id (Duffel `wev_…`, LiteAPI `event_id`) for a
+  // verified delivery — the dedupe key. A delivery whose signature failed is
+  // recorded under a `rejected:` id of our own, so an unverified body can never
+  // occupy (and so suppress) a real event's slot.
   externalId  String    @map("external_id")
   signatureOk Boolean   @map("signature_ok")
   payload     Json
   receivedAt  DateTime  @default(now()) @map("received_at")
   processedAt DateTime? @map("processed_at")
+  // Verified event metadata: the supplier's event type, the object it is about
+  // (Duffel `idempotency_key`, a booking/order id), when the supplier says it
+  // happened, and what processing did with it (e.g. `confirmed`, `already_resolved`,
+  // `supplier_conflict`) — for ops, and for out-of-order diagnosis.
+  eventType   String?   @map("event_type")
+  objectRef   String?   @map("object_ref")
+  occurredAt  DateTime? @map("occurred_at")
+  outcome     String?
 
   supplier TravelSupplier @relation(fields: [supplierId], references: [id])
 
   @@unique([supplierId, externalId])
+  @@index([supplierId, objectRef])
   @@map("travel_webhooks")
 }
 

@@ -14,6 +14,7 @@
  */
 import { ContractError, money, type Money } from "@ubi/contracts";
 
+import { refsOf } from "./converge";
 import { toJson } from "./json";
 import {
   advanceOrder,
@@ -304,16 +305,22 @@ export async function switchOrder(
 
   const supplier = await loadSupplier(deps.db, order.supplierId);
   const adapter = adapterFor(supplier);
+  // The funded rule covers `coveredMinor`: the supplier may charge at most
+  // that for the change, or nothing is confirmed.
   const change = await adapter.change(contextFor(supplier, deps.now), {
     ourRef: order.id,
     offerSnapshot: (order.offerSnapshot ?? {}) as JsonRecord,
     alternativeRef: input.alternativeId,
     idempotencyKey: `travel.switch:${order.id}:${input.alternativeId}`,
+    supplierRefs: refsOf(order.supplierRefs),
+    acceptedChangeTotal: money(chosen.coveredMinor, order.currency),
   });
   if (change.outcome !== "changed") {
     throw new ContractError("conflict", "the switch could not be completed", {
       orderId: input.orderId,
       outcome: change.outcome,
+      reason: change.reason ?? null,
+      quotedTotal: change.quotedTotal ?? null,
     });
   }
 

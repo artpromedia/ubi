@@ -18,6 +18,7 @@ import { adapterFor, contextFor, loadSupplier } from "./suppliers";
 
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
+import type { ProviderHealth } from "../adapters/types";
 
 export const EXCEPTION_ACTIONS = [
   "lookup_by_our_ref",
@@ -248,8 +249,25 @@ export async function providersHealth(deps: TravelDeps): Promise<JsonRecord> {
   const providers: JsonRecord[] = [];
   for (const supplier of suppliers) {
     const loaded = await loadSupplier(deps.db, supplier.id);
-    const adapter = adapterFor(loaded);
-    const health = await adapter.providerHealth(contextFor(loaded, deps.now));
+    let health: ProviderHealth;
+    try {
+      const adapter = adapterFor(loaded);
+      health = await adapter.providerHealth(contextFor(loaded, deps.now));
+    } catch (error) {
+      // A row whose adapter cannot be resolved here (a test-only adapter in
+      // production, an unknown name) is shown as not live — never skipped.
+      health = {
+        supplierId: supplier.id,
+        adapter: supplier.adapter,
+        reachable: false,
+        liveCallsBlocked: true,
+        implemented: false,
+        operational: false,
+        credentialsPresent: null,
+        reason: "adapter_unavailable",
+        note: error instanceof Error ? error.message : "adapter unavailable",
+      };
+    }
 
     const [confirmed, ticketed, failed, unknown, pending] = await Promise.all([
       deps.db.travelOrder.count({
@@ -278,10 +296,19 @@ export async function providersHealth(deps: TravelDeps): Promise<JsonRecord> {
 
     providers.push({
       supplierId: supplier.id,
+      kind: supplier.kind,
       adapter: health.adapter,
       enabled: supplier.enabled,
+      // Readiness, exactly as the adapter reports it: reachable only after a
+      // real probe; operational only when implemented + credentialed (+ probe).
       reachable: health.reachable,
       liveCallsBlocked: health.liveCallsBlocked,
+      implemented: health.implemented ?? null,
+      operational: health.operational ?? !health.liveCallsBlocked,
+      credentialsPresent: health.credentialsPresent ?? null,
+      reason: health.reason ?? null,
+      capabilities: (health.capabilities ??
+        null) as unknown as JsonRecord | null,
       note: health.note ?? null,
       orders: {
         confirmed,

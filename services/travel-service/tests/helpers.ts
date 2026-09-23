@@ -13,7 +13,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 
-import { money } from "@ubi/contracts";
+import { ContractError, money } from "@ubi/contracts";
 
 import { createCityConfigProvider } from "../src/ops/config";
 
@@ -22,6 +22,7 @@ import type {
   PaymentPort,
   PaymentRequest,
   PaymentResult,
+  PaymentStatus,
 } from "../src/ports/payment-port";
 import type { JsonRecord, TravelDb } from "../src/ops/types";
 
@@ -399,6 +400,16 @@ export async function setControl(
 // ---------------------------------------------------------------------------
 // Fake payment port — tests only
 // ---------------------------------------------------------------------------
+//
+// It mirrors payment-service's /v1/finance/travel item semantics (see
+// services/payment-service/src/finance/travel.ts) closely enough that the
+// travel flows cannot pass here and fail there: one item per order, a replay
+// under the SAME key answers the original posting, a second capture under a
+// DIFFERENT key is a 409 `illegal_transition`, and `status()` reads back what
+// was recorded. `failNext` injects the two ambiguities a network can cause —
+// a response lost AFTER the posting applied, and no answer BEFORE it applied —
+// with the exact error shapes the HTTP port raises. The real payment-service
+// is exercised in payment-port.test.ts.
 
 export interface PaymentCall {
   readonly op: string;
@@ -407,55 +418,218 @@ export interface PaymentCall {
   readonly idempotencyKey: string;
 }
 
+type FakeOp = "authorize" | "capture" | "release" | "refund";
+type FaultMode = "lose_response" | "no_answer";
+
+interface FakeItem {
+  itemId: string;
+  orderId: string;
+  state:
+    | "authorized"
+    | "captured"
+    | "released"
+    | "partially_refunded"
+    | "refunded";
+  currency: string;
+  authorizedMinor: number;
+  capturedMinor: number;
+  refundedMinor: number;
+  captureEntryId: string | null;
+}
+
+interface FakeRecordedOp {
+  ref: string;
+  op: FakeOp;
+  clientKey: string;
+  amountMinor: number;
+  entryId: string | null;
+  createdAt: string;
+}
+
+function unknownOutcome(op: string, orderId: string): ContractError {
+  return new ContractError(
+    "service_unavailable",
+    `payment-service did not answer; whether the ${op} happened is unknown`,
+    { op, orderId, outcome: "unknown" },
+  );
+}
+
+function refused(status: number, code: string, op: string): ContractError {
+  return new ContractError(
+    "service_unavailable",
+    `payment-service could not ${op} this order`,
+    { status, paymentCode: code },
+  );
+}
+
 export class FakePayment implements PaymentPort {
   readonly calls: PaymentCall[] = [];
-  private readonly refs = new Map<string, string>();
+  private readonly byKey = new Map<string, PaymentResult>();
+  private readonly items = new Map<string, FakeItem>();
+  private readonly log = new Map<string, FakeRecordedOp[]>();
+  private readonly faults: { op: FakeOp; mode: FaultMode }[] = [];
+  private sequence = 0;
 
-  private record(
-    op: string,
-    request: PaymentRequest,
-    entry: boolean,
-  ): PaymentResult {
+  /** The next `op` call fails with `mode` (once). */
+  failNext(op: FakeOp, mode: FaultMode): void {
+    this.faults.push({ op, mode });
+  }
+
+  private takeFault(op: FakeOp): FaultMode | null {
+    const index = this.faults.findIndex((fault) => fault.op === op);
+    if (index === -1) return null;
+    const [fault] = this.faults.splice(index, 1);
+    return fault?.mode ?? null;
+  }
+
+  private apply(op: FakeOp, request: PaymentRequest): PaymentResult {
+    const keyed = `${op}:${request.idempotencyKey}`;
+    const seen = this.byKey.get(keyed);
+    if (seen !== undefined) {
+      return { ...seen, replayed: true };
+    }
+    const amount = request.amount.amountMinor;
+    let item = this.items.get(request.orderId);
+    let entryId: string | null = null;
+    if (op === "authorize") {
+      if (item !== undefined) throw refused(409, "conflict", op);
+      item = {
+        itemId: `tpi_${request.orderId}`,
+        orderId: request.orderId,
+        state: "authorized",
+        currency: request.amount.currency,
+        authorizedMinor: amount,
+        capturedMinor: 0,
+        refundedMinor: 0,
+        captureEntryId: null,
+      };
+      this.items.set(request.orderId, item);
+    } else {
+      if (item === undefined) throw refused(404, "not_found", op);
+      if (op === "capture") {
+        if (item.state !== "authorized")
+          throw refused(409, "illegal_transition", op);
+        if (amount > item.authorizedMinor) throw refused(409, "conflict", op);
+        entryId = `je_cap_${request.orderId}`;
+        item.state = "captured";
+        item.capturedMinor = amount;
+        item.captureEntryId = entryId;
+      } else if (op === "release") {
+        if (item.state !== "authorized")
+          throw refused(409, "illegal_transition", op);
+        if (amount !== item.authorizedMinor) throw refused(409, "conflict", op);
+        item.state = "released";
+      } else {
+        if (item.state !== "captured" && item.state !== "partially_refunded") {
+          throw refused(409, "illegal_transition", op);
+        }
+        if (amount > item.capturedMinor - item.refundedMinor) {
+          throw refused(409, "conflict", op);
+        }
+        item.refundedMinor += amount;
+        item.state =
+          item.refundedMinor === item.capturedMinor
+            ? "refunded"
+            : "partially_refunded";
+        entryId = `je_ref_${this.sequence + 1}`;
+      }
+    }
+    this.sequence += 1;
+    const ref = `${op}_${this.sequence}_${Math.abs(hash(request.idempotencyKey))}`;
+    const result: PaymentResult = {
+      ref,
+      entryId,
+      amount: request.amount,
+      replayed: false,
+    };
+    this.byKey.set(keyed, result);
+    const entries = this.log.get(request.orderId) ?? [];
+    entries.push({
+      ref,
+      op,
+      clientKey: request.idempotencyKey,
+      amountMinor: amount,
+      entryId,
+      createdAt: new Date().toISOString(),
+    });
+    this.log.set(request.orderId, entries);
+    return result;
+  }
+
+  private call(op: FakeOp, request: PaymentRequest): PaymentResult {
     this.calls.push({
       op,
       orderId: request.orderId,
       amountMinor: request.amount.amountMinor,
       idempotencyKey: request.idempotencyKey,
     });
-    const seen = this.refs.get(request.idempotencyKey);
-    if (seen !== undefined) {
-      return {
-        ref: seen,
-        entryId: entry ? `je_${seen}` : null,
-        amount: request.amount,
-        replayed: true,
-      };
+    const fault = this.takeFault(op);
+    if (fault === "no_answer") {
+      throw unknownOutcome(op, request.orderId);
     }
-    const ref = `${op}_${this.refs.size + 1}_${Math.abs(hash(request.idempotencyKey))}`;
-    this.refs.set(request.idempotencyKey, ref);
-    return {
-      ref,
-      entryId: entry ? `je_${ref}` : null,
-      amount: request.amount,
-      replayed: false,
-    };
+    const result = this.apply(op, request);
+    if (fault === "lose_response") {
+      throw unknownOutcome(op, request.orderId);
+    }
+    return result;
   }
 
   async authorize(request: PaymentRequest): Promise<PaymentResult> {
-    return this.record("authorize", request, false);
+    return this.call("authorize", request);
   }
   async capture(request: PaymentRequest): Promise<PaymentResult> {
-    return this.record("capture", request, true);
+    return this.call("capture", request);
   }
   async release(request: PaymentRequest): Promise<PaymentResult> {
-    return this.record("release", request, false);
+    return this.call("release", request);
   }
   async refund(request: PaymentRequest): Promise<PaymentResult> {
-    return this.record("refund", request, true);
+    return this.call("refund", request);
   }
 
+  async status(orderId: string): Promise<PaymentStatus | null> {
+    const item = this.items.get(orderId);
+    if (item === undefined) return null;
+    const m = (amountMinor: number) => ({
+      amountMinor,
+      currency: item.currency,
+    });
+    return {
+      item: {
+        itemId: item.itemId,
+        orderId,
+        state: item.state,
+        authorized: m(item.authorizedMinor),
+        captured: m(item.capturedMinor),
+        refunded: m(item.refundedMinor),
+        refundable: m(item.capturedMinor - item.refundedMinor),
+        captureEntryId: item.captureEntryId,
+      },
+      ops: (this.log.get(orderId) ?? []).map((op) => ({
+        ref: op.ref,
+        op: op.op,
+        clientKey: op.clientKey,
+        amount: m(op.amountMinor),
+        entryId: op.entryId,
+        createdAt: op.createdAt,
+      })),
+    };
+  }
+
+  /** Calls made for `op`, replays and failed attempts included. */
   countOp(op: string): number {
     return this.calls.filter((call) => call.op === op).length;
+  }
+
+  /** Postings that actually moved state for `op` (replays excluded). */
+  appliedOps(orderId: string, op: FakeOp): number {
+    return (this.log.get(orderId) ?? []).filter((entry) => entry.op === op)
+      .length;
+  }
+
+  /** The item state payment-service would report. */
+  itemState(orderId: string): string | null {
+    return this.items.get(orderId)?.state ?? null;
   }
 }
 

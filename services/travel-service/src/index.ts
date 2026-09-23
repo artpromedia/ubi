@@ -22,6 +22,7 @@ import { cors } from "hono/cors";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import { assertProductionSupplyConfig } from "./adapters/production-guard";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis } from "./lib/redis";
@@ -80,8 +81,24 @@ export function createApp(deps: TravelDeps): Hono {
   return app;
 }
 
-if (process.env.NODE_ENV !== "test") {
-  const app = createApp(createDeps());
+async function main(): Promise<void> {
+  const deps = createDeps();
+  // Production configuration never serves a test-only supply adapter: refuse
+  // to boot rather than let a fixture catalog take a real booking.
+  try {
+    await assertProductionSupplyConfig(deps.db);
+  } catch (error) {
+    logger.fatal(
+      { err: error },
+      "refusing to start: unsafe supplier configuration",
+    );
+    process.stderr.write(
+      `travel-service refusing to start: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    await disconnectPrisma().catch(() => undefined);
+    process.exit(1);
+  }
+  const app = createApp(deps);
   const server = serve({ fetch: app.fetch, port: PORT });
   logger.info({ port: PORT }, "travel-service listening");
 
@@ -101,4 +118,8 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", () => {
     shutdown("SIGINT");
   });
+}
+
+if (process.env.NODE_ENV !== "test") {
+  void main();
 }

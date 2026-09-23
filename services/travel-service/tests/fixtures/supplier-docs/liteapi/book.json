@@ -1,0 +1,145 @@
+{
+ "source": "https://docs.liteapi.travel/reference/post_rates-book",
+ "retrieved": "2026-09-23",
+ "payload": {
+  "data": {
+   "bookingId": "ABC123",
+   "clientReference": "REF123",
+   "supplierBookingId": "SUP123",
+   "supplierBookingName": "nuitee",
+   "supplier": "nuitee",
+   "supplierId": 2,
+   "status": "CONFIRMED",
+   "hotelConfirmationCode": "HOTEL123",
+   "checkin": "2025-01-01",
+   "checkout": "2025-01-02",
+   "hotel": {
+    "hotelId": "lp1897",
+    "name": "Sample Hotel"
+   },
+   "bookedRooms": [
+    {
+     "roomType": {
+      "roomTypeId": "RT123",
+      "name": "Standard Room"
+     },
+     "boardType": "RO",
+     "boardName": "Room Only",
+     "adults": 2,
+     "children": 0,
+     "rate": {
+      "rateId": "RATE123",
+      "retailRate": {
+       "total": {
+        "amount": 100,
+        "currency": "USD"
+       }
+      },
+      "cancellationPolicies": {
+       "cancelPolicyInfos": [
+        {
+         "cancelTime": "2025-01-01 00:00:00",
+         "amount": 100,
+         "type": "amount",
+         "timezone": "GMT",
+         "currency": "USD"
+        }
+       ],
+       "hotelRemarks": [],
+       "refundableTag": "RFN"
+      },
+      "maxOccupancy": 2,
+      "remarks": "Standard rate"
+     },
+     "firstName": "John",
+     "lastName": "Doe",
+     "childrenAges": [],
+     "board": "Room Only",
+     "boardCode": "RO",
+     "room_id": "RM123",
+     "occupancy_number": 1,
+     "amount": 100,
+     "currency": "USD",
+     "children_count": 0,
+     "remarks": "High floor preferred",
+     "guests": [
+      {
+       "firstName": "John",
+       "lastName": "Doe",
+       "email": "john.doe@example.com",
+       "phone": "+1234567890",
+       "remarks": "High floor preferred",
+       "occupancyNumber": 1
+      }
+     ],
+     "mappedRoomId": 184936
+    }
+   ],
+   "holder": {
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john.doe@example.com",
+    "phone": "+1234567890"
+   },
+   "createdAt": "2025-01-01T00:00:00Z",
+   "updatedAt": "2025-01-01T00:00:00Z",
+   "cancellationPolicies": {
+    "cancelPolicyInfos": [
+     {
+      "cancelTime": "2025-01-01 00:00:00",
+      "amount": 100,
+      "type": "amount",
+      "timezone": "GMT",
+      "currency": "USD"
+     }
+    ],
+    "hotelRemarks": [],
+    "refundableTag": "RFN"
+   },
+   "price": 100,
+   "commission": 10,
+   "currency": "USD",
+   "guestId": 1,
+   "trackingId": "TRACK123",
+   "prebookId": "PRE123",
+   "sellingPrice": "100",
+   "exchangeRate": 1,
+   "exchangeRateUsd": 1,
+   "tag": "RFN",
+   "lastFreeCancellationDate": "2025-01-01T00:00:00Z",
+   "userId": 1,
+   "nationality": "US",
+   "loyaltyGuestId": 1,
+   "cancelledAt": null,
+   "refundedAt": null,
+   "cancelledBy": null,
+   "suggestedSellingPrice": {
+    "amount": 185.7,
+    "currency": "USD",
+    "source": ""
+   },
+   "remarks": "<ul><li>Free breakfast</li><li>Free WiFi</li></ul>",
+   "addonsTotalAmount": 8313.73,
+   "addons": [
+    {
+     "addon": "uber",
+     "value": 50,
+     "currency": "USD",
+     "originalValue": 50,
+     "originalCurrency": "USD",
+     "expiryDate": "2025-11-19",
+     "addonVoucherCode": "https://r.uber.com/rjuwpo5UUau",
+     "addonVoucherId": 1300,
+     "status": "SUCCESS"
+    }
+   ],
+   "goodwillPayment": {
+    "amount": 25.5,
+    "currency": "USD",
+    "description": "Example description"
+   }
+  },
+  "guestLevel": 0,
+  "sandbox": true
+ }
+}

@@ -17,6 +17,7 @@ import {
   type Money,
 } from "@ubi/contracts";
 
+import { assertFlagEnabled } from "./config";
 import { isUniqueViolation } from "./errors";
 import { toJson } from "./json";
 import { adapterFor, contextFor, pickSupplier } from "./suppliers";
@@ -25,6 +26,12 @@ import { deterministicId } from "../lib/ids";
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
 import type { AdapterOffer } from "../adapters/types";
+
+/** The booking switch each vertical sits behind. */
+export const VERTICAL_FLAG = {
+  flight: "flights_booking",
+  stay: "stays_booking",
+} as const;
 
 export interface CartItemInput {
   readonly kind: "flight" | "stay";
@@ -69,7 +76,7 @@ function purchaseRefFor(item: CartItemInput): string {
   return item.rateId ?? item.offerRef;
 }
 
-function termsFor(offer: AdapterOffer): string[] {
+export function termsFor(offer: AdapterOffer): string[] {
   const caps = offer.capabilities;
   const terms: string[] = [];
   terms.push(
@@ -228,6 +235,13 @@ export async function createCart(
   const replay = await deps.db.travelCart.findUnique({ where: { id: cartId } });
   if (replay !== null) {
     return cartView(replay);
+  }
+
+  // Each item's vertical must be open in this city before its supplier is
+  // asked for a price (deny-by-default, per vertical).
+  const config = await deps.config.load(input.cityId);
+  for (const kind of new Set(input.items.map((item) => item.kind))) {
+    assertFlagEnabled(config.flags, VERTICAL_FLAG[kind]);
   }
 
   const priced: PricedItem[] = [];

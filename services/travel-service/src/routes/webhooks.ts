@@ -1,18 +1,19 @@
 /**
  * `/v1/travel/webhooks/:supplierId` — supplier callbacks.
  *
- * These are authenticated by the HMAC signature over the raw body, not by the
- * gateway actor headers, so this router does NOT use `gatewayAuth`. The raw body
- * is read verbatim (`c.req.text()`) before any parsing, because the signature is
- * computed over the exact bytes the supplier sent.
+ * These are authenticated by each supplier's own scheme over the raw body —
+ * Duffel's timestamped `X-Duffel-Signature`, LiteAPI's `authorization`
+ * token, the fixture's `X-Signature` HMAC — not by the gateway actor headers,
+ * so this router does NOT use `gatewayAuth`. The raw body is read verbatim
+ * (`c.req.text()`) before any parsing, because signatures are computed over
+ * the exact bytes the supplier sent. A live supplier's order carries its own
+ * city; only the fixture envelope needs `X-City-ID`.
  */
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { ContractError } from "@ubi/contracts";
-
 import { failure } from "../middleware";
-import { receiveWebhook, type WebhookEnvelope } from "../ops/webhooks";
+import { receiveSupplierWebhook, type WebhookEnvelope } from "../ops/webhooks";
 
 import type { TravelDeps } from "../ops/context";
 
@@ -54,33 +55,13 @@ export function createWebhookRoutes(deps: TravelDeps): Hono {
 
   routes.post("/:supplierId", async (c) => {
     try {
-      const supplierId = c.req.param("supplierId");
-      const cityId = c.req.header("X-City-ID");
-      if (cityId === undefined || cityId.length === 0) {
-        throw new ContractError(
-          "city_unsupported",
-          "the webhook does not name a city",
-        );
-      }
       const rawBody = await c.req.text();
-      let parsedEnvelope: unknown;
-      try {
-        parsedEnvelope = JSON.parse(rawBody);
-      } catch {
-        throw new ContractError(
-          "validation_failed",
-          "the webhook body is not JSON",
-        );
-      }
-      const envelope = EnvelopeSchema.parse(parsedEnvelope) as WebhookEnvelope;
-      const signature = c.req.header("X-Signature") ?? null;
-
-      const outcome = await receiveWebhook(deps, {
-        supplierId,
-        cityId,
+      const outcome = await receiveSupplierWebhook(deps, {
+        supplierId: c.req.param("supplierId"),
         rawBody,
-        signature,
-        envelope,
+        header: (name) => c.req.header(name) ?? null,
+        cityId: c.req.header("X-City-ID") ?? null,
+        parseEnvelope: (raw) => EnvelopeSchema.parse(raw) as WebhookEnvelope,
       });
       const status = outcome.result === "rejected" ? 400 : 200;
       return c.json(outcome, status);

@@ -66,6 +66,10 @@ export interface OrderRow {
   policy: unknown;
   protectionRuleId: string | null;
   grantId: string | null;
+  /** The city the order was placed in (null on orders placed before it was recorded). */
+  cityId?: string | null;
+  /** The supplier's offer / quote id the order was booked from. */
+  supplierOfferRef?: string | null;
   createdAt: Date;
 }
 

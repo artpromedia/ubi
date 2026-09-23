@@ -153,10 +153,29 @@ describe("webhooks", () => {
 
     const order = await db.travelOrder.findUnique({ where: { id: orderId } });
     expect(order?.state).toBe("confirmed"); // unchanged
+    // Recorded as rejected under an id of our own: the unverified body's
+    // claimed event id never takes the dedupe slot.
+    expect(
+      await db.travelWebhook.count({ where: { externalId: "wh-bad-sig" } }),
+    ).toBe(0);
     const row = await db.travelWebhook.findFirst({
-      where: { externalId: "wh-bad-sig" },
+      where: { supplierId, signatureOk: false },
     });
-    expect(row?.signatureOk).toBe(false);
+    expect(row?.externalId).toMatch(/^rejected:/);
+    expect(row?.outcome).toBe("signature_invalid");
     expect(row?.processedAt).toBeNull();
+
+    // The genuine event with that id, correctly signed, still processes.
+    const genuine = signed("flight-secret", envelope);
+    const accepted = await receiveWebhook(deps, {
+      supplierId,
+      cityId,
+      rawBody: genuine.rawBody,
+      signature: genuine.signature,
+      envelope,
+    });
+    expect(accepted.result).toBe("processed");
+    const after = await db.travelOrder.findUnique({ where: { id: orderId } });
+    expect(after?.state).toBe("ticketed");
   });
 });

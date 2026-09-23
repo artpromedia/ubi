@@ -11,9 +11,51 @@ import {
   UnknownStateError,
 } from "@ubi/contracts";
 
+import {
+  SupplierHttpError,
+  SupplierPreflightError,
+  SupplierUnsupportedError,
+} from "../adapters/errors";
+import { SupplierAmountError } from "../adapters/money";
+
 export function toContractError(error: unknown): ContractError {
   if (error instanceof ContractError) {
     return error;
+  }
+  if (error instanceof SupplierPreflightError) {
+    // Refused before any provider call — the reason is the useful part.
+    return new ContractError(error.code, error.message, {
+      ...error.details,
+      reason: error.reason,
+      providerCalled: false,
+    });
+  }
+  if (error instanceof SupplierUnsupportedError) {
+    // Not offered by this supplier: say so, and name what to do instead.
+    return new ContractError("conflict", error.message, {
+      adapter: error.adapter,
+      capability: error.capability,
+      supported: false,
+      alternative: error.alternative,
+      providerCalled: false,
+    });
+  }
+  if (error instanceof SupplierHttpError) {
+    return new ContractError("service_unavailable", error.message, {
+      adapter: error.adapter,
+      operation: error.operation,
+      status: error.status,
+      supplierCode: error.supplierCode,
+      ambiguous: error.ambiguous,
+      providerCalled: true,
+    });
+  }
+  if (error instanceof SupplierAmountError) {
+    return new ContractError(
+      "service_unavailable",
+      "the supplier quoted an amount this service cannot charge exactly",
+      { currency: error.currency },
+    );
   }
   if (error instanceof IllegalTransitionError) {
     return new ContractError("illegal_transition", error.message, {

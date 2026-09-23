@@ -7,17 +7,20 @@
  * and a stay order by a stay adapter — the registry enforces that the row's
  * `kind` and the adapter's `kind` agree, so a hotel adapter can never be asked
  * to book a flight (CLAUDE.md #23).
+ *
+ * The fixture adapter cannot be selected in production configuration: the
+ * service refuses to boot with a fixture row (./production-guard.ts), and —
+ * should a row be flipped after boot — resolution refuses here too.
  */
 import { ContractError } from "@ubi/contracts";
 
+import { createDuffelFlightAdapter } from "./duffel";
 import {
   createFixtureFlightAdapter,
   createFixtureStayAdapter,
 } from "./fixture";
-import {
-  createDuffelFlightAdapter,
-  createNuiteeStayAdapter,
-} from "./http-supplier";
+import { isProductionEnv } from "./http-supplier";
+import { createNuiteeStayAdapter } from "./liteapi";
 
 import type {
   FlightSupplyAdapter,
@@ -33,6 +36,21 @@ export interface SupplierRow {
 }
 
 export type AdapterFactory = () => SupplyAdapter;
+
+/** Adapters that serve DEV/TEST only and may never run in production. */
+export const NON_PRODUCTION_ADAPTERS: ReadonlySet<string> = new Set([
+  "fixture",
+]);
+
+function refuseInProduction(row: SupplierRow): void {
+  if (NON_PRODUCTION_ADAPTERS.has(row.adapter) && isProductionEnv()) {
+    throw new ContractError(
+      "service_unavailable",
+      "this supplier uses a test-only adapter, which production never serves",
+      { supplierId: row.id, adapter: row.adapter },
+    );
+  }
+}
 
 const FLIGHT_ADAPTERS: Readonly<Record<string, () => FlightSupplyAdapter>> = {
   fixture: createFixtureFlightAdapter,
@@ -52,6 +70,7 @@ export function resolveFlightAdapter(row: SupplierRow): FlightSupplyAdapter {
       { supplierId: row.id, kind: row.kind },
     );
   }
+  refuseInProduction(row);
   const factory = FLIGHT_ADAPTERS[row.adapter];
   if (factory === undefined) {
     throw new ContractError(
@@ -71,6 +90,7 @@ export function resolveStayAdapter(row: SupplierRow): StaySupplyAdapter {
       { supplierId: row.id, kind: row.kind },
     );
   }
+  refuseInProduction(row);
   const factory = STAY_ADAPTERS[row.adapter];
   if (factory === undefined) {
     throw new ContractError(

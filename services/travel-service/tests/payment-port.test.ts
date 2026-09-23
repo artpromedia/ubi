@@ -44,6 +44,11 @@ import {
   uid,
 } from "./helpers";
 
+import { computeSignature } from "../src/adapters/signature";
+import { createCart } from "../src/ops/carts";
+import { checkout } from "../src/ops/checkout";
+import { settlePayment } from "../src/ops/payment-settle";
+import { receiveWebhook } from "../src/ops/webhooks";
 import {
   createHttpPayment,
   type HttpPaymentPort,
@@ -465,5 +470,214 @@ describe("travel checkout over the real payment-service", () => {
     expect(status?.item.state).toBe("released");
     expect(status?.ops.map((op) => op.op)).toEqual(["authorize", "release"]);
     expect(await balanceOf(walletId)).toBe(20_000_000);
+  });
+});
+
+describe("one capture key and status convergence on the real ledger", () => {
+  beforeEach(async () => {
+    await resetTravel(db);
+  });
+
+  it("checkout converges through payment-service's status after a capture whose answer was lost", async () => {
+    const cityId = await seedCity(db);
+    await seedFlightSupplier(db, {
+      control: {
+        "AP-P4-7120#saver": { bookOutcome: "confirmed", pnr: "AP7QX2" },
+      },
+    });
+    const actor = rider();
+    const walletId = await fundTraveller(actor.id, 20_000_000);
+    // The real port; the first capture really posts, then its answer is lost
+    // on the way back (what a timeout after the write looks like).
+    let loseNext = true;
+    const lossy: HttpPaymentPort = {
+      ...port,
+      capture: async (request) => {
+        const result = await port.capture(request);
+        if (loseNext) {
+          loseNext = false;
+          throw new ContractError(
+            "service_unavailable",
+            "payment-service did not answer",
+            {
+              op: "capture",
+              orderId: request.orderId,
+              outcome: "unknown",
+            },
+          );
+        }
+        return result;
+      },
+    };
+    const { deps } = makeDeps(db, { payment: lossy });
+    const cart = await createCart(deps, {
+      actor,
+      cityId,
+      items: [
+        { kind: "flight", offerRef: "AP-P4-7120", fareFamilyId: "saver" },
+      ],
+      idempotencyKey: idemKey(),
+      correlationId: null,
+    });
+    const result = await checkout(deps, {
+      actor,
+      cityId,
+      cartId: cart.id,
+      paymentMethodId: "wallet",
+      grantId: "grant_test",
+      assuranceMethod: null,
+      expectedTotal: null,
+      idempotencyKey: idemKey(),
+      correlationId: null,
+    });
+    if (result.kind !== "ok") throw new Error("expected ok");
+    const orderId = result.orders[0]?.id ?? "";
+    expect(result.orders[0]?.state).toBe("confirmed");
+    expect(result.orders[0]?.charged.amountMinor).toBe(14_850_000);
+
+    const status = await port.status(orderId);
+    expect(status?.item.state).toBe("captured");
+    expect(status?.ops.map((op) => [op.op, op.clientKey])).toEqual([
+      ["authorize", `${orderId}:auth`],
+      ["capture", `${orderId}:cap`],
+    ]);
+    expect(await balanceOf(walletId)).toBe(20_000_000 - 14_850_000);
+  });
+
+  it("a webhook capture after an unanswered earlier capture is a replay on the ledger — the old per-item key would be refused", async () => {
+    const cityId = await seedCity(db);
+    const supplierId = await seedFlightSupplier(db, {
+      control: { "AP-P4-7120#saver": { bookOutcome: "supplier_pending" } },
+    });
+    const actor = rider();
+    const walletId = await fundTraveller(actor.id, 20_000_000);
+    const { deps } = makeDeps(db, { payment: port });
+    const cart = await createCart(deps, {
+      actor,
+      cityId,
+      items: [
+        { kind: "flight", offerRef: "AP-P4-7120", fareFamilyId: "saver" },
+      ],
+      idempotencyKey: idemKey(),
+      correlationId: null,
+    });
+    const result = await checkout(deps, {
+      actor,
+      cityId,
+      cartId: cart.id,
+      paymentMethodId: "wallet",
+      grantId: "grant_test",
+      assuranceMethod: null,
+      expectedTotal: null,
+      idempotencyKey: idemKey(),
+      correlationId: null,
+    });
+    if (result.kind !== "ok") throw new Error("expected ok");
+    const orderId = result.orders[0]?.id ?? "";
+    expect(result.orders[0]?.state).toBe("supplier_pending");
+
+    // An earlier capture under the canonical key landed; its caller never
+    // learned so.
+    await port.capture(
+      request(cityId, actor.id, orderId, 14_850_000, `${orderId}:cap`),
+    );
+    // A capture under any OTHER key — the pre-fix checkout scheme — is a
+    // second capture to payment-service, refused as illegal.
+    const otherKey = await port
+      .capture(
+        request(
+          cityId,
+          actor.id,
+          orderId,
+          14_850_000,
+          `travel.checkout:x:0:cap`,
+        ),
+      )
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect((otherKey as ContractError).details).toMatchObject({
+      status: 409,
+      paymentCode: "illegal_transition",
+    });
+
+    // The supplier's confirmation arrives; the webhook captures under the
+    // same key and payment-service answers the original posting.
+    const envelope = {
+      externalId: uid("wh"),
+      type: "booking_confirmed",
+      orderRef: orderId,
+      supplierRefs: { pnr: "AP7QX2" },
+    };
+    const rawBody = JSON.stringify(envelope);
+    const outcome = await receiveWebhook(deps, {
+      supplierId,
+      cityId,
+      rawBody,
+      signature: computeSignature("flight-secret", rawBody),
+      envelope,
+    });
+    expect(outcome).toEqual({ result: "processed", action: "confirmed" });
+    const order = await db.travelOrder.findUnique({ where: { id: orderId } });
+    expect(order?.state).toBe("confirmed");
+    expect(Number(order?.chargedMinor)).toBe(14_850_000);
+
+    const status = await port.status(orderId);
+    expect(status?.ops.filter((op) => op.op === "capture")).toHaveLength(1);
+    expect(await balanceOf(walletId)).toBe(20_000_000 - 14_850_000);
+  });
+
+  it("an authorization under the order's key with DIFFERENT money terms is a conflict, never adopted as this hold", async () => {
+    const cityId = await seedCity(db);
+    const actor = rider();
+    await fundTraveller(actor.id, 20_000_000);
+    const { deps } = makeDeps(db, { payment: port });
+    const orderId = uid("tord");
+    // A first attempt authorized 100,000 under the canonical key and then
+    // lost its order row (a crash between the hold and the insert).
+    await port.authorize(
+      request(cityId, actor.id, orderId, 100_000, `${orderId}:auth`),
+    );
+
+    // A retry after a reprice asks for 120,000 under the same key:
+    // payment-service answers 409 idempotency_key_reuse, and the recorded
+    // hold (100,000) must not read as an authorization for 120,000.
+    const refused = await settlePayment(deps, "authorize", {
+      orderId,
+      userId: actor.id,
+      amount: money(120_000, "NGN"),
+      cityId,
+      reason: "travel flight hold",
+      actor,
+    }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(ContractError);
+    expect((refused as ContractError).code).toBe("conflict");
+    expect((refused as ContractError).details).toMatchObject({
+      op: "authorize",
+      paymentState: "authorized_other_amount",
+      converged: false,
+    });
+
+    // The same terms again are the original posting — one hold, ever.
+    const replay = await settlePayment(deps, "authorize", {
+      orderId,
+      userId: actor.id,
+      amount: money(100_000, "NGN"),
+      cityId,
+      reason: "travel flight hold",
+      actor,
+    });
+    expect(replay.amount.amountMinor).toBe(100_000);
+    expect(replay.replayed).toBe(true);
+    const status = await port.status(orderId);
+    expect(status?.item).toMatchObject({
+      state: "authorized",
+      authorized: { amountMinor: 100_000, currency: "NGN" },
+    });
+    expect(status?.ops.map((op) => op.op)).toEqual(["authorize"]);
   });
 });

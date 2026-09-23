@@ -74,6 +74,36 @@ export interface PaymentPort {
   capture(request: PaymentRequest): Promise<PaymentResult>;
   release(request: PaymentRequest): Promise<PaymentResult>;
   refund(request: PaymentRequest): Promise<PaymentResult>;
+  /**
+   * What payment-service has actually recorded for an order — the only safe
+   * way forward after an ambiguous or refused (409) posting. `null` means no
+   * authorization exists for the order at all.
+   */
+  status(orderId: string): Promise<PaymentStatus | null>;
+}
+
+/**
+ * True when a posting may or may not have happened: no answer (timeout,
+ * dropped connection) or a 5xx from payment-service.
+ */
+export function isAmbiguousPaymentError(error: unknown): boolean {
+  if (!(error instanceof ContractError)) {
+    return false;
+  }
+  const details = (error.details ?? {}) as Record<string, unknown>;
+  if (details.outcome === "unknown") {
+    return true;
+  }
+  return typeof details.status === "number" && details.status >= 500;
+}
+
+/** True when payment-service refused the posting with a 409 (state / key conflict). */
+export function isConflictPaymentError(error: unknown): boolean {
+  if (!(error instanceof ContractError)) {
+    return false;
+  }
+  const details = (error.details ?? {}) as Record<string, unknown>;
+  return details.status === 409;
 }
 
 const MoneySchema = z.object({
@@ -113,15 +143,8 @@ const PaymentStatusSchema = z.object({
 /** What payment-service has recorded for one order item, read back for reconciliation. */
 export type PaymentStatus = z.infer<typeof PaymentStatusSchema>;
 
-/** The HTTP adapter also reads status — the reconciliation path after an ambiguous call. */
-export interface HttpPaymentPort extends PaymentPort {
-  /**
-   * The order item as payment-service holds it, with every op recorded
-   * against it (and the key each arrived under). `null` means payment-service
-   * has no authorization for the order at all.
-   */
-  status(orderId: string): Promise<PaymentStatus | null>;
-}
+/** The HTTP adapter — the real implementation; `status()` reads GET /orders/{orderId}. */
+export type HttpPaymentPort = PaymentPort;
 
 interface PaymentHttpOptions {
   readonly baseUrl: string;
