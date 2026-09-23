@@ -74,6 +74,12 @@ export type RootStackParamList = {
   // A04.2 driver preferences (filters/suggestions only — never bidding).
   Preferences: undefined;
   Jobs: undefined;
+  // A02: the executing marketplace trip (stops, waiting, early termination) and its
+  // post-award route amendments — both keyed by the marketplace request id.
+  MpTrip: { requestId: string };
+  MpAmendments: { requestId: string };
+  // A03: the driver's booking calendar (future bookings, not the live slots).
+  Calendar: undefined;
   Sos: { tripId?: string } | undefined;
   FlagOff: { feature: string };
   SecureConfirm: { purpose: string; onProof: (proof: string) => void };

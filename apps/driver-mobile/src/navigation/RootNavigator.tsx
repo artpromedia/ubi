@@ -27,6 +27,9 @@ import { WalletHoldsContainer } from "../screens/marketplace/WalletHoldsContaine
 import { RateProfileContainer } from "../screens/marketplace/RateProfileContainer";
 import { DriverPreferencesContainer } from "../screens/marketplace/DriverPreferencesContainer";
 import { JobsTimelineContainer } from "../screens/marketplace/JobsTimelineContainer";
+import { TripStopsContainer } from "../screens/marketplace/TripStopsContainer";
+import { RouteAmendmentContainer } from "../screens/marketplace/RouteAmendmentContainer";
+import { DriverCalendarContainer } from "../screens/marketplace/DriverCalendarContainer";
 import { useSessionKeeper } from "../api/auth";
 import { SplashScreen } from "../screens/boot/SplashScreen";
 import { OnboardingScreen } from "../screens/boot/OnboardingScreen";
@@ -263,6 +266,60 @@ function GatedJobs({
     </MarketplaceGate>
   );
 }
+// A02/A03 Root screens. Each gate needs the ride vertical AND its own deny-by-default
+// capability flag, mirroring the server's gating (the trip view answers behind
+// marketplace_multi_stop OR marketplace_trip_amendments; amendments behind the latter;
+// the calendar behind marketplace_advance_reservations).
+function GatedTrip({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Trip stops"
+      requires={{
+        all: ["marketplace_rides"],
+        any: ["marketplace_multi_stop", "marketplace_trip_amendments"],
+      }}
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <TripStopsContainer />
+    </MarketplaceGate>
+  );
+}
+function GatedAmendments({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Route changes"
+      requires={{ all: ["marketplace_rides", "marketplace_trip_amendments"] }}
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <RouteAmendmentContainer />
+    </MarketplaceGate>
+  );
+}
+function GatedCalendar({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Future bookings"
+      requires={{
+        all: ["marketplace_rides", "marketplace_advance_reservations"],
+      }}
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <DriverCalendarContainer />
+    </MarketplaceGate>
+  );
+}
 function MainTabs() {
   const t = useTheme();
   return (
@@ -314,6 +371,9 @@ export function RootNavigator() {
         <Root.Screen name="Rates" component={GatedRates as never} />
         <Root.Screen name="Preferences" component={GatedPreferences as never} />
         <Root.Screen name="Jobs" component={GatedJobs as never} />
+        <Root.Screen name="MpTrip" component={GatedTrip as never} />
+        <Root.Screen name="MpAmendments" component={GatedAmendments as never} />
+        <Root.Screen name="Calendar" component={GatedCalendar as never} />
         <Root.Screen name="FlagOff" component={FeatureUnavailableScreen} />
         <Root.Group screenOptions={{ presentation: "modal" }}>
           <Root.Screen name="Sos" component={SosScreen} />

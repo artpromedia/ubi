@@ -15,7 +15,7 @@ import {
   MoneyText,
   useTheme,
 } from "@ubi/mobile-ui";
-import type { Money } from "@ubi/mobile-core";
+import { accessibleMoney, type Money } from "@ubi/mobile-core";
 import { TEST_IDS, dynamicTestId } from "@ubi/contracts";
 
 /** D04. Spendable = cleared − active holds (server-computed, single source). UI never marks a top-up complete. */
@@ -40,6 +40,13 @@ export type WalletHoldsProps = {
   returnTo: null | { label: string; onPress: () => void }; // "Back to request · still open 3:41" — only if still open
   onTopUp: (preset: string) => void;
   onBack: () => void; // repo addition: WalletHolds is a Root screen (task D), it needs a way back
+  // A03 (DriverWallet): the next committed future booking and what the server says the
+  // driver keeps from it — separate from spendable and held, never added to either.
+  nextBooking: null | {
+    windowLabel: string;
+    netMinor: Money;
+    onOpen: () => void;
+  };
 };
 
 export function WalletHoldsScreen(p: WalletHoldsProps) {
@@ -99,6 +106,34 @@ export function WalletHoldsScreen(p: WalletHoldsProps) {
           </View>
         </View>
       </Card>
+      {p.nextBooking ? (
+        <Card testID={TEST_IDS.mp.driver.wallet.nextBooking}>
+          <Row
+            label={"Next booking · " + p.nextBooking.windowLabel}
+            value={
+              <MoneyText
+                money={p.nextBooking.netMinor}
+                variant="bodySmStrong"
+                tone="ok"
+              />
+            }
+            onPress={p.nextBooking.onOpen}
+            // A pressable row is read by its label alone, so the amount must be in it.
+            accessibilityLabel={
+              "Next booking, " +
+              p.nextBooking.windowLabel +
+              ", you keep " +
+              accessibleMoney(p.nextBooking.netMinor) +
+              ". Open your bookings."
+            }
+            last
+          />
+          <Text variant="caption" tone="text3">
+            What you keep from it. Its commission was captured once at selection
+            and isn’t part of the holds below.
+          </Text>
+        </Card>
+      ) : null}
       <Text variant="label" tone="text2">
         Active holds
       </Text>

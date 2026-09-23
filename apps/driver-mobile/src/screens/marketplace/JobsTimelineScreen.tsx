@@ -44,6 +44,14 @@ export type JobsTimelineProps = {
   promotion: null | "pending" | "failed_revalidating"; // after current completes
   onContinueCurrent: () => void;
   onBack: () => void; // repo addition: Jobs is a Root screen (task D), it needs a way back
+  // A02: entries into the current trip's stops/waiting and its route changes —
+  // present only when the server names the job's request and the market offers them.
+  tripLinks: null | {
+    onStops: () => void;
+    onChanges: (() => void) | null;
+  };
+  // A03: the booking calendar (future bookings never occupy these two slots).
+  onCalendar: (() => void) | null;
 };
 
 export function JobsTimelineScreen(p: JobsTimelineProps) {
@@ -112,6 +120,28 @@ export function JobsTimelineScreen(p: JobsTimelineProps) {
           <Text variant="caption" tone="text2">
             {p.current.feeLine} · finish normally, no rush
           </Text>
+          {p.tripLinks ? (
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+              <Button
+                testID={TEST_IDS.mp.driver.jobs.stops}
+                label="Stops & waiting"
+                kind="secondary"
+                size="md"
+                onPress={p.tripLinks.onStops}
+                style={{ flex: 1 }}
+              />
+              {p.tripLinks.onChanges ? (
+                <Button
+                  testID={TEST_IDS.mp.driver.jobs.changes}
+                  label="Route changes"
+                  kind="secondary"
+                  size="md"
+                  onPress={p.tripLinks.onChanges}
+                  style={{ flex: 1 }}
+                />
+              ) : null}
+            </View>
+          ) : null}
         </Card>
       ) : null}
       {p.current && p.next ? (
@@ -171,6 +201,14 @@ export function JobsTimelineScreen(p: JobsTimelineProps) {
       />
       {p.current ? (
         <Button label="Continue current trip" onPress={p.onContinueCurrent} />
+      ) : null}
+      {p.onCalendar ? (
+        <Button
+          testID={TEST_IDS.mp.driver.jobs.calendar}
+          label="Your future bookings"
+          kind="secondary"
+          onPress={p.onCalendar}
+        />
       ) : null}
     </Screen>
   );

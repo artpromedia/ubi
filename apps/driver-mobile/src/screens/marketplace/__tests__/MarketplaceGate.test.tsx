@@ -56,3 +56,71 @@ describe("MarketplaceGate — deny-by-default across both service flags", () => 
     expect(screen.queryByText("MARKETPLACE CONTENT")).toBeNull();
   });
 });
+
+// A02/A03 surfaces narrow the gate: the ride vertical AND their own capability flag.
+const Required = () => (
+  <ThemeProvider defaultMode="dark">
+    <FlagsProvider cityId="LOS">
+      <MarketplaceGate
+        featureName="Trip stops"
+        onDismiss={() => {}}
+        requires={{
+          all: ["marketplace_rides"],
+          any: ["marketplace_multi_stop", "marketplace_trip_amendments"],
+        }}
+      >
+        <Text>TRIP CONTENT</Text>
+      </MarketplaceGate>
+    </FlagsProvider>
+  </ThemeProvider>
+);
+
+describe("MarketplaceGate `requires` — deny-by-default capability narrowing", () => {
+  it("opens when every `all` flag and one `any` flag are on", async () => {
+    setFlags({ marketplace_rides: true, marketplace_trip_amendments: true });
+    render(<Required />);
+    expect(await screen.findByText("TRIP CONTENT")).toBeTruthy();
+  });
+
+  it("stays closed with the vertical on but no capability flag", async () => {
+    setFlags({ marketplace_rides: true, marketplace_delivery: true });
+    render(<Required />);
+    expect(await screen.findByTestId(TID.common.flagOff.screen)).toBeTruthy();
+    expect(screen.queryByText("TRIP CONTENT")).toBeNull();
+  });
+
+  it("stays closed with a capability flag but the ride vertical off", async () => {
+    setFlags({ marketplace_delivery: true, marketplace_multi_stop: true });
+    render(<Required />);
+    expect(await screen.findByTestId(TID.common.flagOff.screen)).toBeTruthy();
+  });
+
+  it("denies when the flag service is unreachable", async () => {
+    setFlags("unreachable");
+    render(<Required />);
+    expect(await screen.findByTestId(TID.common.flagOff.screen)).toBeTruthy();
+  });
+
+  it("a requirement naming no flag never opens, whatever is on", async () => {
+    setFlags({
+      marketplace_rides: true,
+      marketplace_delivery: true,
+      marketplace_multi_stop: true,
+    });
+    render(
+      <ThemeProvider defaultMode="dark">
+        <FlagsProvider cityId="LOS">
+          <MarketplaceGate
+            featureName="Misconfigured"
+            onDismiss={() => {}}
+            requires={{ all: [] }}
+          >
+            <Text>EMPTY REQUIREMENT CONTENT</Text>
+          </MarketplaceGate>
+        </FlagsProvider>
+      </ThemeProvider>,
+    );
+    expect(await screen.findByTestId(TID.common.flagOff.screen)).toBeTruthy();
+    expect(screen.queryByText("EMPTY REQUIREMENT CONTENT")).toBeNull();
+  });
+});

@@ -19,6 +19,7 @@ import type {
 } from "../../navigation/routes";
 import { marketplaceApi, type MpPreset } from "../../api/marketplace";
 import { useMotionGate } from "../../lib/motion";
+import { inLabel } from "./tripCopy";
 import {
   RequestDetailScreen,
   type EligibilityReason,
@@ -236,6 +237,28 @@ export function RequestDetailContainer() {
       ceilingNotice={view.ceilingNotice ?? null}
       earnings={view.item.earnings ?? null}
       preferenceNotice={view.preferenceNotice ?? null}
+      booking={
+        view.item.booking
+          ? {
+              kind: view.item.booking.kind,
+              windowLabel: view.item.booking.schedule.label,
+              notice: view.item.booking.notice,
+            }
+          : null
+      }
+      advanceCommitment={
+        view.advanceCommitment
+          ? {
+              commissionMinor: view.advanceCommitment.commissionMinor,
+              holdLabel: view.advanceCommitment.holdExpiresAt
+                ? "expires " +
+                  (inLabel(view.advanceCommitment.holdExpiresAt, Date.now()) ??
+                    "now")
+                : "while your offer stands",
+              terms: view.advanceCommitment.terms,
+            }
+          : null
+      }
       presets={view.presets.map((c) => ({
         key: c.key,
         title: c.title,

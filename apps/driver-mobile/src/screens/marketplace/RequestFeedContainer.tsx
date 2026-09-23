@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
-import { track } from "@ubi/mobile-core";
+import { track, useFlag } from "@ubi/mobile-core";
 import { marketplaceApi, type MpBidDto } from "../../api/marketplace";
 import { useMotionGate } from "../../lib/motion";
 import {
@@ -72,6 +72,8 @@ export const bidRow = (b: MpBidDto): MyBid | null => {
 export function RequestFeedContainer() {
   const nav = useNavigation<{ navigate: (n: string, p?: unknown) => void }>();
   const gate = useMotionGate();
+  // A03: the booking calendar entry exists only where advance bookings are on.
+  const advanceOn = useFlag("marketplace_advance_reservations");
   const [tab, setTab] = useState<"feed" | "myBids">("feed");
   // A04.2: "show all" re-asks the SERVER with preferences=ignore; the client never
   // filters or re-ranks the feed itself.
@@ -169,6 +171,15 @@ export function RequestFeedContainer() {
           label: "Preferences",
           onPress: () => nav.navigate("Preferences"),
         },
+        ...(advanceOn
+          ? [
+              {
+                key: "bookings",
+                label: "Future bookings",
+                onPress: () => nav.navigate("Calendar"),
+              },
+            ]
+          : []),
       ]}
       preferences={
         prefs

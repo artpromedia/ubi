@@ -46,6 +46,20 @@ export type RequestDetailProps = {
   earnings: MpEarningsBreakdown | null;
   // A04.2: a saved preference this request cannot meet, server-phrased.
   preferenceNotice: string | null;
+  // A03: a future-booking request — its pickup window and the server's notice
+  // (a driver is never "secured" before the requester's award).
+  booking: null | {
+    kind: "scheduled" | "advance";
+    windowLabel: string;
+    notice: string;
+  };
+  // A03: what an advance bid commits the wallet to, explained BEFORE bidding
+  // (server MpAdvanceCommitment; the commission is the server's figure).
+  advanceCommitment: null | {
+    commissionMinor: Money;
+    holdLabel: string;
+    terms: string[];
+  };
   presets: Preset[];
   onBid: (key: string) => void;
   stationary: boolean;
@@ -135,6 +149,48 @@ export function RequestDetailScreen(p: RequestDetailProps) {
           <Row label="Your rate profile" value={p.profileLine} last />
         ) : null}
       </Card>
+      {p.booking ? (
+        <Card testID={MP_DRIVER_TID.detail.bookingWindow}>
+          <Text variant="label" tone="text2">
+            {p.booking.kind === "advance"
+              ? "Advance booking · future pickup"
+              : "Scheduled pickup"}
+          </Text>
+          <Text variant="bodyStrong">{p.booking.windowLabel}</Text>
+          <Text variant="caption" tone="text2">
+            {p.booking.notice}
+          </Text>
+        </Card>
+      ) : null}
+      {p.advanceCommitment ? (
+        <Card testID={MP_DRIVER_TID.detail.advanceTerms}>
+          <Text variant="label" tone="text2">
+            What an advance offer commits
+          </Text>
+          <Row
+            label="Held from your cleared balance"
+            value={
+              <MoneyText
+                money={p.advanceCommitment.commissionMinor}
+                variant="bodySmStrong"
+              />
+            }
+          />
+          <Row label="Captured" value="once, only if the rider selects you" />
+          <Row label="When the trip starts" value="not charged again" />
+          <Row label="Hold" value={p.advanceCommitment.holdLabel} last />
+          {p.advanceCommitment.terms.map((term, i) => (
+            <Text key={i} variant="caption" tone="text2">
+              {"• " + term}
+            </Text>
+          ))}
+          <Text variant="caption" tone="text3">
+            Shown at the rider’s price; each offer below states its own fee. If
+            the booking fails or is cancelled, the commission comes back as a
+            linked reversal.
+          </Text>
+        </Card>
+      ) : null}
       {p.earnings ? (
         <Card>
           <Text variant="label" tone="text2">

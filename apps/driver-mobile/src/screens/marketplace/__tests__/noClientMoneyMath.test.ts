@@ -27,6 +27,30 @@ const RENDER_FILES = [
   "RequestDetailScreen.tsx",
   "RequestDetailContainer.tsx",
   "DriverPreferencesScreen.tsx",
+  "JobsTimelineScreen.tsx",
+  "JobsTimelineContainer.tsx",
+  "WalletHoldsScreen.tsx",
+  "WalletHoldsContainer.tsx",
+];
+
+// A02/A03 screens (trip stops + waiting, route amendments, booking calendar) and their
+// copy/format helpers. Every amount they show — agreed/original fare, adjustments,
+// waiting fee, cap, revised total, commission delta, net change, rider funding, booking
+// net — is a server Money object passed straight to MoneyText.
+const A02_A03_FILES = [
+  "TripStopsScreen.tsx",
+  "TripStopsContainer.tsx",
+  "RouteAmendmentScreen.tsx",
+  "RouteAmendmentContainer.tsx",
+  "DriverCalendarScreen.tsx",
+  "DriverCalendarContainer.tsx",
+  "TripParts.tsx",
+  "tripCopy.ts",
+];
+const PRESENTATIONAL = [
+  "TripStopsScreen.tsx",
+  "RouteAmendmentScreen.tsx",
+  "DriverCalendarScreen.tsx",
 ];
 
 describe("no client money math", () => {
@@ -36,6 +60,41 @@ describe("no client money math", () => {
       const hit = source.match(pattern);
       expect(hit ? hit[0] : null).toBeNull();
     }
+  });
+
+  it.each(A02_A03_FILES)(
+    "%s does no arithmetic on money fields and never builds a Money value",
+    (file) => {
+      const source = read(file);
+      for (const pattern of MONEY_ARITHMETIC) {
+        const hit = source.match(pattern);
+        expect(hit ? hit[0] : null).toBeNull();
+      }
+      // A client-built Money object (`{ amountMinor: … }`) would be a client amount.
+      expect(source).not.toMatch(/amountMinor\s*:/);
+      // No rounding/scaling of a money field either.
+      expect(source).not.toMatch(
+        /(?:Math\.\w+|Number|parseInt|parseFloat)\([^)]*Minor\b|Minor\b[^;\n]*\.toFixed\(/,
+      );
+    },
+  );
+
+  it.each(PRESENTATIONAL)(
+    "%s renders money only through MoneyText (server Money in, no formatting of its own)",
+    (file) => {
+      const source = read(file);
+      expect(source).not.toMatch(/formatMinor\(/);
+      expect(source).toMatch(/<MoneyText/);
+    },
+  );
+
+  it("the only sign test on money lives in tripCopy.moneySign (it picks words, not figures)", () => {
+    for (const file of A02_A03_FILES.filter((f) => f !== "tripCopy.ts")) {
+      expect(read(file)).not.toMatch(/\.amountMinor\s*[<>]=?/);
+    }
+    expect(read("tripCopy.ts")).toMatch(
+      /export const moneySign = \(m: Money \| null \| undefined\)/,
+    );
   });
 
   it("the preferences container converts typed input only inside its packaging helpers", () => {

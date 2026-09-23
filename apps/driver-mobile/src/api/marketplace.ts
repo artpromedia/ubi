@@ -5,6 +5,14 @@
 // (launch CLAUDE.md #1, M03A rule).
 import { api, type Money } from "@ubi/mobile-core";
 import type {
+  MpAdvanceBooking,
+  MpAdvanceCommitment,
+  MpAmendment,
+  MpAmendmentDecision,
+  MpAmendmentList,
+  MpProposeAmendment,
+  MpTrip,
+  MpTripStop,
   MpBid,
   MpDriverPreferences,
   MpDriverPreferencesPatch,
@@ -22,6 +30,14 @@ import type {
 } from "@ubi/contracts";
 
 export type {
+  MpAdvanceBooking,
+  MpAdvanceCommitment,
+  MpAmendment,
+  MpAmendmentDecision,
+  MpAmendmentList,
+  MpProposeAmendment,
+  MpTrip,
+  MpTripStop,
   MpBid,
   MpDriverPreferences,
   MpDriverPreferencesPatch,
@@ -64,6 +80,11 @@ export type MpDriverView = {
   currentClaimId?: string | null;
   /** A04.2: a saved preference this request cannot meet, server-phrased. */
   preferenceNotice?: string | null;
+  /**
+   * A03: on an advance-booking request, what bidding commits the driver's
+   * wallet to at the requester's asked fare — explained BEFORE the bid.
+   */
+  advanceCommitment?: MpAdvanceCommitment | null;
 };
 
 /** `deferredPrompt` (D07 single deferred banner, server-phrased) is a PROPOSED MpFeedPage addition; fixture-only until contracts carry it. */
@@ -104,6 +125,14 @@ export type MpRatePreviewBody = MpRateProfileSave & {
 export type MpExecutionRef = { service: MpService; id: string };
 export type MpDriverJob = {
   claimId: string;
+  /**
+   * The marketplace request this claim executes — the key of the A02 trip,
+   * stop and amendment routes. PROPOSED DriverJob addition (ride-service
+   * DriverJobView + contracts/openapi DriverJob carry none yet; see
+   * followups): absent ⇒ the Jobs screen offers no trip entry rather than
+   * guessing the request from bids.
+   */
+  requestId?: string | null;
   slot: "current" | "next";
   service: MpService;
   state: string;
@@ -138,6 +167,23 @@ export type MpParkedAck = {
   expiresAt: string;
   ttlSeconds: number;
 };
+
+/** `GET /v1/mp/driver/calendar` (contracts MpDriverCalendarSchema). */
+export type MpDriverCalendar = { bookings: MpAdvanceBooking[]; note: string };
+
+/** Reasons a DRIVER may end a trip early with (contracts MP_TERMINATION_REASONS). */
+export type MpTerminationReason =
+  | "excessive_waiting"
+  | "rider_request"
+  | "safety_concern"
+  | "vehicle_issue";
+
+const tripPath = (requestId: string) =>
+  "/v1/mp/requests/" + encodeURIComponent(requestId);
+const stopPath = (requestId: string, stopId: string, action: string) =>
+  tripPath(requestId) + "/stops/" + encodeURIComponent(stopId) + "/" + action;
+const bookingPath = (bookingId: string, action: string) =>
+  "/v1/mp/advance-bookings/" + encodeURIComponent(bookingId) + "/" + action;
 
 /** Feed query: `ignorePreferences` asks for the whole envelope (A04.2 `preferences=ignore`). */
 export type MpFeedQuery = { cursor?: string; ignorePreferences?: boolean };
@@ -197,4 +243,111 @@ export const marketplaceApi = {
     api<{ topups: MpTopupRow[] }>("POST", "/v1/wallet/mp/topups", {
       presetLabel,
     }),
+
+  // ── A02: the executing trip, its stops and post-award amendments ────────
+  // Every POST below changes trip state or money, so each carries a
+  // CALLER-HELD Idempotency-Key (lib/idempotency.ts): a retry after a dropped
+  // response replays the server's first answer instead of acting twice. No
+  // body ever carries an amount — the server prices every delta itself.
+  trip: (requestId: string) =>
+    api<MpTrip>("GET", tripPath(requestId) + "/trip"),
+  amendments: (requestId: string) =>
+    api<MpAmendmentList>("GET", tripPath(requestId) + "/amendments"),
+  proposeAmendment: (
+    requestId: string,
+    body: MpProposeAmendment,
+    idempotencyKey: string,
+  ) =>
+    api<MpAmendment>("POST", tripPath(requestId) + "/amendments", body, {
+      idempotencyKey,
+    }),
+  approveAmendment: (
+    requestId: string,
+    amendmentId: string,
+    body: MpAmendmentDecision,
+    idempotencyKey: string,
+  ) =>
+    api<MpAmendment>(
+      "POST",
+      tripPath(requestId) +
+        "/amendments/" +
+        encodeURIComponent(amendmentId) +
+        "/approve",
+      body,
+      { idempotencyKey },
+    ),
+  rejectAmendment: (
+    requestId: string,
+    amendmentId: string,
+    body: MpAmendmentDecision,
+    idempotencyKey: string,
+  ) =>
+    api<MpAmendment>(
+      "POST",
+      tripPath(requestId) +
+        "/amendments/" +
+        encodeURIComponent(amendmentId) +
+        "/reject",
+      body,
+      { idempotencyKey },
+    ),
+  // Arrival is geofenced server-side; `disputed: true` records it anyway as
+  // DISPUTED (never starts paid waiting). Without it no body is sent.
+  arriveAtStop: (
+    requestId: string,
+    stopId: string,
+    disputed: boolean,
+    idempotencyKey: string,
+  ) =>
+    api<MpTrip>(
+      "POST",
+      stopPath(requestId, stopId, "arrive"),
+      disputed ? { disputed: true } : undefined,
+      { idempotencyKey },
+    ),
+  departStop: (requestId: string, stopId: string, idempotencyKey: string) =>
+    api<MpTrip>("POST", stopPath(requestId, stopId, "depart"), undefined, {
+      idempotencyKey,
+    }),
+  skipStop: (
+    requestId: string,
+    stopId: string,
+    reason: string,
+    idempotencyKey: string,
+  ) =>
+    api<MpTrip>(
+      "POST",
+      stopPath(requestId, stopId, "skip"),
+      { reason },
+      { idempotencyKey },
+    ),
+  terminateTrip: (
+    requestId: string,
+    body: { reason: MpTerminationReason; expectedFareRevision: number },
+    idempotencyKey: string,
+  ) =>
+    api<MpTrip>("POST", tripPath(requestId) + "/terminate", body, {
+      idempotencyKey,
+    }),
+
+  // ── A03: the driver's booking calendar ──────────────────────────────────
+  calendar: () => api<MpDriverCalendar>("GET", "/v1/mp/driver/calendar"),
+  reconfirmBooking: (bookingId: string, idempotencyKey: string) =>
+    api<MpAdvanceBooking>(
+      "POST",
+      bookingPath(bookingId, "reconfirm"),
+      undefined,
+      { idempotencyKey },
+    ),
+  withdrawBooking: (
+    bookingId: string,
+    reason: string,
+    idempotencyKey: string,
+  ) =>
+    api<MpAdvanceBooking>(
+      "POST",
+      bookingPath(bookingId, "withdraw"),
+      { reason },
+      { idempotencyKey },
+    ),
 };
