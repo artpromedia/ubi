@@ -1,5 +1,6 @@
 // Typed routes = the deep-link surface. Paths mirror the Flutter go_router paths so existing links keep working.
 import type { NavigatorScreenParams } from "@react-navigation/native";
+import type { MpStopInput } from "@ubi/contracts";
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -14,9 +15,11 @@ export type RideStackParamList = {
   Pickup: { placeId: string };
   Quote: { quoteId: string };
   Matching: { rideId: string };
-  Assigned: { rideId: string; pickupPin?: string };
+  // `requestId` names the marketplace request a ride executes (A02 trip, stops and
+  // route changes are keyed by it); the ride view itself does not carry it.
+  Assigned: { rideId: string; pickupPin?: string; requestId?: string };
   Pin: { rideId: string };
-  InTrip: { rideId: string };
+  InTrip: { rideId: string; requestId?: string };
   Pay: { rideId: string };
   Rate: { rideId: string };
   Details: { rideId: string };
@@ -86,6 +89,8 @@ export type MarketplaceQuoteParams = {
   dropoff: { label: string; lat: number; lng: number };
   weightKg?: number;
   handling?: string[];
+  /** A02 ordered intermediate stops (rides only); the server prices the complete route. */
+  stops?: MpStopInput[];
 };
 export type MarketplaceStackParamList = {
   Details: undefined;
@@ -94,6 +99,19 @@ export type MarketplaceStackParamList = {
   BidDetail: { requestId: string; bidId: string };
   Queued: { requestId: string };
   DeliveryReturn: { deliveryId: string };
+  // A02 route builder: `quoteParams` builds a new route; `requestId` edits the stops of
+  // an OPEN request before award (the pre-award route revision).
+  Route: { quoteParams?: MarketplaceQuoteParams; requestId?: string };
+  // A02 executing trip (stops, waiting, route changes, early end) and the proposal composer.
+  Trip: { requestId: string };
+  ProposeChange: { requestId: string };
+  // A03 Book for Later.
+  Schedule: { quoteParams: MarketplaceQuoteParams };
+  Later: undefined;
+  Scheduled: { scheduledRequestId: string };
+  AdvanceOffers: { requestId: string };
+  Booking: { bookingId: string };
+  Series: { templateId: string };
 };
 export type AccountStackParamList = {
   Profile: undefined;

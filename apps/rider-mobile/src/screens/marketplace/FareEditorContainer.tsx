@@ -8,11 +8,12 @@ import {
   useRoute,
   type RouteProp,
 } from "@react-navigation/native";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen, Banner, Button, Skeleton } from "@ubi/mobile-ui";
 import { ApiError, formatMinor, track, type Money } from "@ubi/mobile-core";
 import type { MarketplaceStackParamList } from "../../navigation/routes";
 import { marketplaceApi } from "../../api/marketplace";
+import { forgetQuote } from "../../lib/quoteCache";
 import { FareEditorScreen } from "./FareEditorScreen";
 
 const majorToMoney = (raw: string, currency: string): Money => ({
@@ -35,6 +36,7 @@ export function FareEditorContainer() {
   }>();
   const { params } = useRoute<RouteProp<MarketplaceStackParamList, "Fare">>();
   const qp = params.quoteParams;
+  const queryClient = useQueryClient();
   const q = useQuery({
     queryKey: ["mp", "quote", qp],
     queryFn: () =>
@@ -46,9 +48,21 @@ export function FareEditorContainer() {
         dropoffLat: qp.dropoff.lat,
         dropoffLng: qp.dropoff.lng,
         weightKg: qp.weightKg,
+        // A02: a multi-stop route (from the route builder) is priced as ONE ordered route.
+        stops: qp.stops,
       }),
     retry: false,
-    staleTime: 0,
+    // A quote stays fresh until shortly before its own server expiry, so the envelope the
+    // route builder just showed (seeded into this very key) is the one published.
+    staleTime: (query) => {
+      const expires = Date.parse(
+        (query.state.data as { expiresAt?: string } | undefined)?.expiresAt ??
+          "",
+      );
+      return Number.isFinite(expires)
+        ? Math.max(0, expires - Date.now() - 15_000)
+        : 0;
+    },
   });
   // Treat an envelope whose money fields aren't valid contract Money objects as not yet
   // loaded: the skeleton stays up and nothing NaN can ever be seeded or rendered.
@@ -89,6 +103,8 @@ export function FareEditorContainer() {
           : {}),
       }),
     onSuccess: (r) => {
+      // Publishing CONSUMED the quote: never offer the spent envelope to a later visit.
+      forgetQuote(queryClient, r.quoteId);
       track("mp_request_published", {
         requestId: r.requestId,
         service: r.service,

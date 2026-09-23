@@ -45,6 +45,15 @@ import { OfferInboxContainer } from "../screens/marketplace/OfferInboxContainer"
 import { BidDetailContainer } from "../screens/marketplace/BidDetailContainer";
 import { QueuedTrackerContainer } from "../screens/marketplace/QueuedTrackerContainer";
 import { DeliveryReturnContainer } from "../screens/marketplace/DeliveryReturnContainer";
+import { RouteBuilderContainer } from "../screens/marketplace/RouteBuilderContainer";
+import { TripContainer } from "../screens/marketplace/TripContainer";
+import { ProposeChangeContainer } from "../screens/marketplace/ProposeChangeContainer";
+import { ScheduleRideContainer } from "../screens/marketplace/ScheduleRideContainer";
+import { LaterHubContainer } from "../screens/marketplace/LaterHub";
+import { ScheduledDetailContainer } from "../screens/marketplace/ScheduledDetail";
+import { AdvanceOffersContainer } from "../screens/marketplace/AdvanceOffers";
+import { BookingDetailContainer } from "../screens/marketplace/BookingDetail";
+import { RecurringSeriesContainer } from "../screens/marketplace/RecurringSeries";
 import { SplashScreen } from "../screens/boot/SplashScreen";
 import { OnboardingScreen } from "../screens/boot/OnboardingScreen";
 import { useSessionKeeper } from "../api/auth";
@@ -305,6 +314,41 @@ function MarketplaceNavigator({
         <MarketplaceStack.Screen
           name="DeliveryReturn"
           component={DeliveryReturnContainer}
+        />
+        {/* A02 stops / trip changes and A03 Book for Later. Each screen gates on its
+            own deny-by-default flag (marketplace_multi_stop, marketplace_trip_amendments,
+            scheduled_rides, marketplace_advance_reservations,
+            marketplace_recurring_journeys) and shows an honest fallback when off;
+            Book for Later READS stay on, as the server keeps them on. */}
+        <MarketplaceStack.Screen
+          name="Route"
+          component={RouteBuilderContainer}
+        />
+        <MarketplaceStack.Screen name="Trip" component={TripContainer} />
+        <MarketplaceStack.Screen
+          name="ProposeChange"
+          component={ProposeChangeContainer}
+        />
+        <MarketplaceStack.Screen
+          name="Schedule"
+          component={ScheduleRideContainer}
+        />
+        <MarketplaceStack.Screen name="Later" component={LaterHubContainer} />
+        <MarketplaceStack.Screen
+          name="Scheduled"
+          component={ScheduledDetailContainer}
+        />
+        <MarketplaceStack.Screen
+          name="AdvanceOffers"
+          component={AdvanceOffersContainer}
+        />
+        <MarketplaceStack.Screen
+          name="Booking"
+          component={BookingDetailContainer}
+        />
+        <MarketplaceStack.Screen
+          name="Series"
+          component={RecurringSeriesContainer}
         />
       </MarketplaceStack.Navigator>
     </FlagGate>

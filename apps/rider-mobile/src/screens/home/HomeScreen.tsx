@@ -6,6 +6,21 @@ import { Screen, Text, Card, useTheme } from "@ubi/mobile-ui";
 import { useFlag, track, TID, formatMinor } from "@ubi/mobile-core";
 import { TEST_IDS } from "@ubi/contracts";
 import { benefitsApi } from "../../api/benefits";
+import { marketplaceApi } from "../../api/marketplace";
+
+// Book for Later items that still need the rider (anything not yet over).
+const LIVE_LATER = new Set([
+  "scheduled_unassigned",
+  "needs_rider_approval",
+  "published",
+  "held",
+  "payment_pending",
+  "confirmed",
+  "reconfirmed",
+  "activated",
+  "active",
+  "paused",
+]);
 
 /** Board 20a. Tiles come from flags; Ask UBI is a peer of the conventional entry, never a replacement. */
 export function HomeScreen() {
@@ -21,6 +36,40 @@ export function HomeScreen() {
   const send = useFlag("send");
   const promos = useFlag("rider_promotions");
   const marketplace = useFlag("marketplace_rides");
+  // A03 Book for Later — three deny-by-default products; hooks run unconditionally.
+  const scheduledOn = useFlag("scheduled_rides");
+  const advanceOn = useFlag("marketplace_advance_reservations");
+  const seriesOn = useFlag("marketplace_recurring_journeys");
+  const laterSalesOn = scheduledOn || advanceOn || seriesOn;
+  // Switching the products off stops NEW bookings only; the server keeps every read on.
+  // While all three are off, Home still shows the tile to a rider who already has a live
+  // scheduled trip, reservation or series, so it stays reachable (and cancellable).
+  // Same query keys as the hub, so opening it reuses these reads.
+  const probeLater = marketplace && !laterSalesOn;
+  const probe = { enabled: probeLater, retry: false, staleTime: 60_000 };
+  const scheduledProbe = useQuery({
+    queryKey: ["mp", "later", "scheduled"],
+    queryFn: marketplaceApi.scheduledList,
+    ...probe,
+  });
+  const bookingsProbe = useQuery({
+    queryKey: ["mp", "later", "bookings"],
+    queryFn: marketplaceApi.bookings,
+    ...probe,
+  });
+  const seriesProbe = useQuery({
+    queryKey: ["mp", "later", "series"],
+    queryFn: marketplaceApi.seriesList,
+    ...probe,
+  });
+  const hasLiveLater =
+    probeLater &&
+    [
+      ...(scheduledProbe.data?.items ?? []),
+      ...(bookingsProbe.data?.items ?? []),
+      ...(seriesProbe.data?.items ?? []),
+    ].some((item) => LIVE_LATER.has(item.state));
+  const laterOn = marketplace && (laterSalesOn || hasLiveLater);
   const benefits = useQuery({
     queryKey: ["benefits"],
     queryFn: benefitsApi.get,
@@ -161,6 +210,35 @@ export function HomeScreen() {
               },
             )
           : null}
+        {laterOn ? (
+          <Pressable
+            key="later"
+            testID={TEST_IDS.mp.rider.later.entry}
+            accessibilityRole="button"
+            accessibilityLabel="Booked for later. Scheduled trips, reserved drivers and recurring journeys"
+            onPress={() => {
+              track("mp_later_opened", { source: "home" });
+              nav.navigate("Marketplace", { screen: "Later" });
+            }}
+            style={{ flex: 1, minWidth: "46%" }}
+          >
+            <Card>
+              <View
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  backgroundColor: t.colors.infoTint,
+                  marginBottom: 10,
+                }}
+              />
+              <Text variant="bodyStrong">Booked for later</Text>
+              <Text variant="caption" tone="text2">
+                Scheduled trips and reserved drivers
+              </Text>
+            </Card>
+          </Pressable>
+        ) : null}
         {travel
           ? tile(
               "Flights & stays",

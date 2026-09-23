@@ -5,6 +5,7 @@
 // which the jest routes test asserts so the check also shows up as a green test.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
+import type { MpStopInput } from "@ubi/contracts";
 import type {
   AskStackParamList,
   TravelStackParamList,
@@ -110,6 +111,42 @@ type _MpRoutePropParity = Expect<
     RouteProp<MarketplaceStackParamList, "Fare">["params"],
     NativeStackScreenProps<MarketplaceStackParamList, "Fare">["route"]["params"]
   >
+>;
+
+// A02 stops / trip changes and A03 Book for Later (UI-rider-1).
+type _MpRoute = Expect<
+  Equal<
+    MarketplaceStackParamList["Route"],
+    { quoteParams?: MarketplaceQuoteParams; requestId?: string }
+  >
+>;
+type _MpTrip = Expect<
+  Equal<MarketplaceStackParamList["Trip"], { requestId: string }>
+>;
+type _MpProposeChange = Expect<
+  Equal<MarketplaceStackParamList["ProposeChange"], { requestId: string }>
+>;
+type _MpSchedule = Expect<
+  Equal<
+    MarketplaceStackParamList["Schedule"],
+    { quoteParams: MarketplaceQuoteParams }
+  >
+>;
+type _MpScheduled = Expect<
+  Equal<MarketplaceStackParamList["Scheduled"], { scheduledRequestId: string }>
+>;
+type _MpAdvanceOffers = Expect<
+  Equal<MarketplaceStackParamList["AdvanceOffers"], { requestId: string }>
+>;
+type _MpBooking = Expect<
+  Equal<MarketplaceStackParamList["Booking"], { bookingId: string }>
+>;
+type _MpSeries = Expect<
+  Equal<MarketplaceStackParamList["Series"], { templateId: string }>
+>;
+// Stops ride in the quote params exactly as the contract's stop input (no id, no price).
+type _MpQuoteStops = Expect<
+  Equal<MarketplaceQuoteParams["stops"], MpStopInput[] | undefined>
 >;
 
 // The nested navigators are reachable from the root param list.

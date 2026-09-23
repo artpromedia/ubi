@@ -47,6 +47,10 @@ export type OfferInboxProps = {
   unavailableNotice: string | null; // R07b, includes release confirmation copy
   onCancel: () => void;
   onRepost: (kind: "suggested" | "same_wider") => void;
+  /** A02: the exact multi-stop route these offers are for (absent for a plain route). */
+  routeContext?: { title: string; line: string; detail: string } | null;
+  /** A02 pre-award route edit (open ride requests, marketplace_multi_stop on). */
+  onEditRoute?: (() => void) | null;
 };
 
 export function OfferInboxScreen(p: OfferInboxProps) {
@@ -117,6 +121,37 @@ export function OfferInboxScreen(p: OfferInboxProps) {
             </Text>
           </View>
         </Card>
+        {p.routeContext ? (
+          <Card
+            testID={TEST_IDS.mp.rider.offersRoute.context}
+            accessible
+            accessibilityLabel={
+              p.routeContext.title +
+              ". " +
+              p.routeContext.line +
+              ". " +
+              p.routeContext.detail
+            }
+            style={{ gap: 4 }}
+          >
+            <Text variant="bodySmStrong">{p.routeContext.title}</Text>
+            <Text variant="caption" tone="text2">
+              {p.routeContext.line}
+            </Text>
+            <Text variant="caption" tone="text3">
+              {p.routeContext.detail}
+            </Text>
+          </Card>
+        ) : null}
+        {p.onEditRoute ? (
+          <Button
+            testID={TEST_IDS.mp.rider.offersRoute.editRoute}
+            label="Edit stops · drivers re-offer"
+            kind="secondary"
+            size="md"
+            onPress={p.onEditRoute}
+          />
+        ) : null}
         {p.phase === "offers" ? (
           <View style={{ flexDirection: "row", gap: 8 }}>
             <Chip

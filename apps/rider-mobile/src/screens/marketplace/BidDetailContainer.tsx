@@ -137,6 +137,7 @@ export function BidDetailContainer() {
           screen: "Assigned",
           params: {
             rideId: award.executionRef.id,
+            requestId: params.requestId,
             ...(pickupPin ? { pickupPin } : {}),
           },
         });

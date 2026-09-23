@@ -6,6 +6,7 @@ import { View, TextInput, type TextStyle } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Screen, Text, Card, Chip, Button, useTheme } from "@ubi/mobile-ui";
 import { track, useFlag } from "@ubi/mobile-core";
+import { TEST_IDS } from "@ubi/contracts";
 import type { MarketplaceQuoteParams } from "../../navigation/routes";
 
 // Illustrative dev centroids (area-level only — never a house number). Until the place-search
@@ -21,6 +22,12 @@ export function RequestDetailsScreen() {
   }>();
   const t = useTheme();
   const deliveryOn = useFlag("marketplace_delivery");
+  // A02/A03 entry points — each deny-by-default; hooks run unconditionally.
+  const multiStopOn = useFlag("marketplace_multi_stop");
+  const scheduledOn = useFlag("scheduled_rides");
+  const advanceOn = useFlag("marketplace_advance_reservations");
+  const seriesOn = useFlag("marketplace_recurring_journeys");
+  const laterOn = scheduledOn || advanceOn || seriesOn;
   const [service, setService] = useState<"ride" | "delivery">("ride");
   const [pickup, setPickup] = useState(DEFAULT_PICKUP.label);
   const [dropoff, setDropoff] = useState(DEFAULT_DROPOFF.label);
@@ -53,22 +60,22 @@ export function RequestDetailsScreen() {
       ]}
     />
   );
+  const buildQuoteParams = (): MarketplaceQuoteParams => ({
+    service,
+    vehicleClass: service === "ride" ? "standard" : "bike",
+    pickup: {
+      ...DEFAULT_PICKUP,
+      label: pickup.trim() || DEFAULT_PICKUP.label,
+    },
+    dropoff: {
+      ...DEFAULT_DROPOFF,
+      label: dropoff.trim() || DEFAULT_DROPOFF.label,
+    },
+    ...(service === "delivery" ? { weightKg, handling } : {}),
+  });
   const onContinue = () => {
-    const quoteParams: MarketplaceQuoteParams = {
-      service,
-      vehicleClass: service === "ride" ? "standard" : "bike",
-      pickup: {
-        ...DEFAULT_PICKUP,
-        label: pickup.trim() || DEFAULT_PICKUP.label,
-      },
-      dropoff: {
-        ...DEFAULT_DROPOFF,
-        label: dropoff.trim() || DEFAULT_DROPOFF.label,
-      },
-      ...(service === "delivery" ? { weightKg, handling } : {}),
-    };
     track("mp_details_continue", { service });
-    nav.navigate("Fare", { quoteParams });
+    nav.navigate("Fare", { quoteParams: buildQuoteParams() });
   };
   return (
     <Screen
@@ -146,6 +153,29 @@ export function RequestDetailsScreen() {
         disabled={weightInvalid}
         onPress={onContinue}
       />
+      {/* Stops and Book for Later are ride products (deliveries stay single-drop). */}
+      {service === "ride" && multiStopOn ? (
+        <Button
+          testID={TEST_IDS.mp.rider.details.addStops}
+          label="Add stops on the way"
+          kind="secondary"
+          onPress={() => {
+            track("mp_details_add_stops", {});
+            nav.navigate("Route", { quoteParams: buildQuoteParams() });
+          }}
+        />
+      ) : null}
+      {service === "ride" && laterOn ? (
+        <Button
+          testID={TEST_IDS.mp.rider.details.later}
+          label="Book for later"
+          kind="secondary"
+          onPress={() => {
+            track("mp_details_later", {});
+            nav.navigate("Schedule", { quoteParams: buildQuoteParams() });
+          }}
+        />
+      ) : null}
     </Screen>
   );
 }

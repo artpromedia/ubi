@@ -21,6 +21,7 @@ import {
   MoneyText,
 } from "@ubi/mobile-ui";
 import { TEST_IDS } from "@ubi/contracts";
+import { useFlag } from "@ubi/mobile-core";
 import { rideMoney, isTerminalCancel, isCompleted } from "../../api/rides";
 import { useRideView } from "./useRideView";
 import type { RideStackParamList } from "../../navigation/routes";
@@ -34,6 +35,10 @@ export function InTripScreen() {
   const { params } = useRoute<RouteProp<RideStackParamList, "InTrip">>();
   const q = useRideView(params.rideId);
   const view = q.data;
+  // A02: stops, waiting and route changes live on the marketplace trip, keyed by the
+  // request this ride executes; offered only while either capability is on here.
+  const amendmentsOn = useFlag("marketplace_trip_amendments");
+  const multiStopOn = useFlag("marketplace_multi_stop");
   useEffect(() => {
     if (view && isCompleted(view.state)) {
       nav.navigate("Pay", { rideId: view.rideId });
@@ -104,6 +109,19 @@ export function InTripScreen() {
           last
         />
       </Card>
+      {params.requestId && (amendmentsOn || multiStopOn) ? (
+        <Button
+          testID={TEST_IDS.mp.rider.trip.entry}
+          label="Stops, waiting & route changes"
+          kind="secondary"
+          onPress={() =>
+            nav.navigate("Marketplace", {
+              screen: "Trip",
+              params: { requestId: params.requestId },
+            })
+          }
+        />
+      ) : null}
       <View style={{ gap: 8 }}>
         <Button
           testID={TEST_IDS.rider.trip.safetyHub}

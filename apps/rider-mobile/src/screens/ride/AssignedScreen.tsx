@@ -63,9 +63,13 @@ export function AssignedScreen() {
     const target = rideScreenFor(view);
     if (target === "InTrip" || target === "Pay") {
       void clearPickupPin();
-      nav.navigate(target, { rideId: view.rideId });
+      // Carry the marketplace request forward: the A02 trip screens are keyed by it.
+      nav.navigate(target, {
+        rideId: view.rideId,
+        ...(params.requestId ? { requestId: params.requestId } : {}),
+      });
     }
-  }, [view, nav]);
+  }, [view, nav, params.requestId]);
   const cancel = useMutation({
     mutationFn: () => ridesApi.cancel(params.rideId),
     onSuccess: () => {

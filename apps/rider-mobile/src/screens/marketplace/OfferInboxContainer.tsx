@@ -10,7 +10,7 @@ import {
 } from "@react-navigation/native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Screen, Skeleton } from "@ubi/mobile-ui";
-import { track } from "@ubi/mobile-core";
+import { track, useFlag } from "@ubi/mobile-core";
 import type {
   MarketplaceStackParamList,
   MarketplaceQuoteParams,
@@ -32,6 +32,7 @@ export function OfferInboxContainer() {
     goBack: () => void;
   }>();
   const { params } = useRoute<RouteProp<MarketplaceStackParamList, "Offers">>();
+  const multiStopOn = useFlag("marketplace_multi_stop");
   const q = useQuery({
     queryKey: ["mp", "request", params.requestId],
     queryFn: () => marketplaceApi.request(params.requestId),
@@ -65,10 +66,15 @@ export function OfferInboxContainer() {
       nav.goBack();
     },
   });
+  // A03: an advance-booking request takes offers on a FUTURE window — its own inbox.
+  const advance = snap?.request.booking?.kind === "advance";
+  useEffect(() => {
+    if (advance) nav.navigate("AdvanceOffers", { requestId: params.requestId });
+  }, [advance]);
   // Award convergence: only durable server state moves the rider forward.
   const award = snap?.award;
   useEffect(() => {
-    if (award?.state !== "confirmed") return;
+    if (advance || award?.state !== "confirmed") return;
     if (award.slot === "next")
       nav.navigate("Queued", { requestId: params.requestId });
     else if (award.executionRef?.service === "ride" && award.executionRef.id) {
@@ -77,7 +83,7 @@ export function OfferInboxContainer() {
       // (BidDetailContainer holds it) — snapshot/award replays never carry it by design.
       nav.navigate("Ride", {
         screen: "Assigned",
-        params: { rideId: award.executionRef.id },
+        params: { rideId: award.executionRef.id, requestId: params.requestId },
       });
     }
   }, [award?.state, award?.executionRef?.id]);
@@ -127,6 +133,7 @@ export function OfferInboxContainer() {
     0,
     Math.floor((Date.now() - Date.parse(r.createdAt)) / 1000),
   );
+  const stops = [...(r.stops ?? [])].sort((a, b) => a.order - b.order);
   const onRepost = (kind: "suggested" | "same_wider") => {
     const quoteParams: MarketplaceQuoteParams = {
       service: r.service,
@@ -136,10 +143,39 @@ export function OfferInboxContainer() {
       ...(r.delivery
         ? { weightKg: r.delivery.weightKg, handling: r.delivery.handling }
         : {}),
+      // A02: a repost keeps the same ordered stops — never silently a different route.
+      ...(stops.length
+        ? {
+            stops: stops.map((s) => ({
+              lat: s.lat,
+              lng: s.lng,
+              label: s.label,
+              purpose: s.purpose,
+              dwellSec: s.dwellSec,
+            })),
+          }
+        : {}),
     };
     track("mp_request_repost", { requestId: r.requestId, kind });
     nav.navigate("Fare", { quoteParams });
   };
+  const routeContext = stops.length
+    ? {
+        title:
+          "Offers are for your route with " +
+          stops.length +
+          (stops.length === 1 ? " stop" : " stops"),
+        line: [
+          r.pickup.label,
+          ...stops.map((s) => s.label),
+          r.dropoff.label,
+        ].join(" → "),
+        detail:
+          "Drivers offered on this exact route" +
+          (r.routeRevision ? " (route version " + r.routeRevision + ")" : "") +
+          ". Changing it closes these offers.",
+      }
+    : null;
   return (
     <OfferInboxScreen
       phase={phase}
@@ -176,6 +212,12 @@ export function OfferInboxContainer() {
       unavailableNotice={params.unavailableNotice ?? null}
       onCancel={() => cancel.mutate()}
       onRepost={onRepost}
+      routeContext={routeContext}
+      onEditRoute={
+        multiStopOn && r.service === "ride" && r.state === "open"
+          ? () => nav.navigate("Route", { requestId: r.requestId })
+          : null
+      }
     />
   );
 }
