@@ -25,6 +25,9 @@ const ALLOWED_ROUTE_PREFIXES = [
   "/admin",
   "/v1/wallet/mp",
   "/v1/wallet",
+  // Supplier travel payments (P7/T02) — service-key, canonical ledger;
+  // mounted ahead of /v1/finance so the recon admin guards do not shadow it.
+  "/v1/finance/travel",
   "/v1/finance",
   "/v1/finance/remedies",
 ] as const;

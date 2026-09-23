@@ -33,6 +33,7 @@ import { publishEvent, writeAudit } from "./audit";
 import {
   activeHoldsMinor,
   activeRiderReservationsMinor,
+  activeTravelAuthorizationsMinor,
   balanceOf,
   spendableOf,
 } from "./balances";
@@ -346,7 +347,15 @@ export async function reserveHold(
         wallet.id,
         wallet.currency,
       );
-      const encumberedMinor = held.amountMinor + reserved.amountMinor;
+      // Authorized travel items (P7) encumber it too: money reserved for a
+      // flight or stay is not commission money either.
+      const travel = await activeTravelAuthorizationsMinor(
+        tx,
+        wallet.id,
+        wallet.currency,
+      );
+      const encumberedMinor =
+        held.amountMinor + reserved.amountMinor + travel.amountMinor;
       const spendableMinor = balance.amountMinor - encumberedMinor;
       if (spendableMinor < input.amountMinor) {
         throw insufficientSpendable(
@@ -511,7 +520,13 @@ export async function adjustHold(
             hold.walletId,
             hold.currency,
           );
-          const encumberedMinor = held.amountMinor + reserved.amountMinor;
+          const travel = await activeTravelAuthorizationsMinor(
+            tx,
+            hold.walletId,
+            hold.currency,
+          );
+          const encumberedMinor =
+            held.amountMinor + reserved.amountMinor + travel.amountMinor;
           throw insufficientSpendable(
             deltaMinor,
             spendable.amountMinor,

@@ -16,6 +16,7 @@ import {
 import {
   activeHoldsMinor,
   activeRiderReservationsMinor,
+  activeTravelAuthorizationsMinor,
   balanceOf,
   outboundToday,
 } from "./balances";
@@ -120,10 +121,11 @@ export async function assertWithinBalanceCap(
 /**
  * Every debit path spends against *spendable* funds: the cleared journal
  * balance minus active marketplace holds (M04) minus active rider funding
- * reservations (C02). A genuinely short balance is still
- * `insufficient_funds`; a balance that covers the amount but is encumbered by
- * holds or reservations is the distinct `insufficient_spendable`, carrying
- * the exact shortfall so the caller can phrase it.
+ * reservations (C02) minus authorized travel items (P7). A genuinely short
+ * balance is still `insufficient_funds`; a balance that covers the amount but
+ * is encumbered by holds or reservations is the distinct
+ * `insufficient_spendable`, carrying the exact shortfall so the caller can
+ * phrase it.
  */
 export async function assertSufficientFunds(
   tx: LedgerTx,
@@ -147,7 +149,13 @@ export async function assertSufficientFunds(
     wallet.id,
     wallet.currency,
   );
-  const heldMinor = holds.amountMinor + reserved.amountMinor;
+  const travel = await activeTravelAuthorizationsMinor(
+    tx,
+    wallet.id,
+    wallet.currency,
+  );
+  const heldMinor =
+    holds.amountMinor + reserved.amountMinor + travel.amountMinor;
   const spendableMinor = balance.amountMinor - heldMinor;
   if (spendableMinor < amount.amountMinor) {
     throw new ContractError(

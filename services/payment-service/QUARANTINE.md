@@ -3,7 +3,9 @@
 The launch money path is `src/ledger/**` and `src/finance/**` (the canonical
 wallet double-entry ledger, finance reconciliation and support remedies — ~85
 tests), mounted at `/v1/wallet`, `/v1/finance` and `/v1/finance/remedies`, plus
-the safety/fraud/admin/health routes and their services. That path typechecks
+`/v1/finance/travel` (supplier travel payments on the same ledger, P7 —
+service-key, fail-closed `internalServiceAuth`), plus the
+safety/fraud/admin/health routes and their services. That path typechecks
 against the REAL generated Prisma types (the `declare module "@prisma/client"`
 any-shim was deleted); `npx tsc --noEmit` reports 0 errors.
 

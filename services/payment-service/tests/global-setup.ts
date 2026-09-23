@@ -16,8 +16,11 @@ export async function setup() {
   process.env.DATABASE_URL =
     "postgresql://test:test@localhost:5432/ubi_payment_test?schema=public";
 
-  // Redis test config
-  process.env.REDIS_URL = "redis://localhost:6379/15";
+  // Redis test config. PAYMENT_TEST_REDIS_URL points a run at a dedicated
+  // logical database (suites that go through the real app hit the rate
+  // limiter, which lives in Redis).
+  process.env.REDIS_URL =
+    process.env.PAYMENT_TEST_REDIS_URL ?? "redis://localhost:6379/15";
 
   // Provider test keys
   process.env.MPESA_CONSUMER_KEY = "test-consumer-key";

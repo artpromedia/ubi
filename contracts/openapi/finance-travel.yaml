@@ -1,0 +1,413 @@
+openapi: 3.1.0
+info:
+  title: "UBI Finance — Supplier Travel Payments"
+  version: 0.1.0
+  description: >-
+    payment-service's canonical-ledger endpoint for supplier travel (flights
+    and stays), called by travel-service's payment port
+    (services/travel-service/src/ports/payment-port.ts) at its DEFAULT path —
+    no PAYMENT_TRAVEL_PATH override is needed. One item per travel order
+    (travel-service creates one order per cart item): authorize reserves the
+    traveller's wallet funds for the item (a durable encumbrance, not a
+    journal movement — spendable drops, the cleared balance does not);
+    capture posts ONE double-entry journal entry (traveller wallet →
+    travel_clearing) for at most the authorized amount; release frees an
+    unused authorization; refund posts a linked counter-entry
+    (travel_clearing → wallet) whose counterpart reference is the capture
+    entry, fully or partially, never beyond what was captured. Supplier travel
+    never uses a marketplace commission hold, ubi_commission or a ride
+    account. Money is integer minor units with an explicit ISO currency that
+    must equal the city's wallet currency. Every POST requires an
+    Idempotency-Key and answers a replay with the original result (200,
+    `replayed: true`); a replay with different money terms is
+    idempotency_key_reuse (409). The free-text `reason` is descriptive and does
+    not take part in that comparison. Illegal transitions (capture after
+    release, a second capture, refund of an unsettled item) are
+    illegal_transition (409) and carry the item as it stands; a refund beyond
+    the refundable amount is conflict (409). A NEW authorization needs a travel
+    booking vertical (flights_booking or stays_booking) on in the city
+    (feature_disabled, 404, otherwise); capture, release and refund of an
+    existing item are never blocked by that switch. Every transition writes an
+    audit row and an outbox event (aggregateType travel_payment; names
+    transfer.held / transfer.posted / payment.auth_released / refund.posted)
+    in the same transaction.
+servers:
+  - url: http://payment-service:4003
+    description: >-
+      Service network only. The API gateway does not proxy /v1/finance and
+      strips X-Service-Key from client traffic.
+security:
+  - serviceKey: []
+components:
+  securitySchemes:
+    serviceKey:
+      type: apiKey
+      in: header
+      name: X-Service-Key
+      description: >-
+        Must equal payment-service's INTERNAL_SERVICE_KEY (travel-service sends
+        its own INTERNAL_SERVICE_KEY — the two must hold the same secret).
+        Fails CLOSED: with the variable unset every request is 403. An
+        optional gateway-signed x-ubi-identity, when forwarded, must verify
+        (401 otherwise) and is recorded as the verified on-behalf-of context;
+        X-User-ID / X-User-Role are recorded as unverified context, never as
+        authentication.
+  parameters:
+    IdemKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >-
+        url-safe, 8–255 characters. travel-service sends scoped keys
+        (e.g. `travel.checkout:<cart>:<user>:<key>:<item>:auth`), which is why
+        the bound is wider than the 64-character raw client key limit.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 255
+        pattern: "^[A-Za-z0-9_.:-]+$"
+    CityId:
+      name: X-City-ID
+      in: header
+      required: true
+      description: The city the item belongs to; must match the item's city after authorize.
+      schema:
+        type: string
+    UserId:
+      name: X-User-ID
+      in: header
+      required: false
+      description: Who the calling service acted for (context only).
+      schema:
+        type: string
+    UserRole:
+      name: X-User-Role
+      in: header
+      required: false
+      schema:
+        type: string
+  schemas:
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor:
+          type: integer
+        currency:
+          type: string
+          example: NGN
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: >-
+            Canonical error code from @ubi/contracts (validation_failed,
+            city_unsupported, feature_disabled, payment_method_unavailable,
+            insufficient_funds, insufficient_spendable, wallet_locked,
+            safe_mode_active, not_found, conflict, illegal_transition,
+            idempotency_key_reuse, config_unavailable).
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    TravelPaymentRequest:
+      type: object
+      required: [orderId, userId, amountMinor, currency]
+      properties:
+        orderId:
+          type: string
+          description: travel-service's order id — the item key; one authorization per order, ever.
+        userId:
+          type: string
+          description: The traveller whose wallet funds the item. Must match the authorization on later ops.
+        amountMinor:
+          type: integer
+          minimum: 1
+          description: >-
+            authorize — the amount to reserve; capture — at most the authorized
+            amount (the remainder is freed); release — exactly the authorized
+            amount; refund — at most captured minus already refunded.
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        reason:
+          type: string
+          maxLength: 500
+          description: Descriptive; recorded on the op, the audit row and the journal entry.
+    TravelPaymentItem:
+      type: object
+      required:
+        [
+          itemId,
+          orderId,
+          userId,
+          walletId,
+          cityId,
+          state,
+          authorized,
+          captured,
+          refunded,
+          refundable,
+          encumbered,
+          captureEntryId,
+          version,
+          createdAt,
+        ]
+      properties:
+        itemId:
+          type: string
+        orderId:
+          type: string
+        userId:
+          type: string
+        walletId:
+          type: string
+        cityId:
+          type: string
+        state:
+          type: string
+          enum: [authorized, captured, released, partially_refunded, refunded]
+          description: >-
+            authorized → captured | released; captured → partially_refunded |
+            refunded; partially_refunded → partially_refunded | refunded.
+            released and refunded are terminal.
+        authorized:
+          $ref: "#/components/schemas/Money"
+        captured:
+          $ref: "#/components/schemas/Money"
+        refunded:
+          $ref: "#/components/schemas/Money"
+        refundable:
+          $ref: "#/components/schemas/Money"
+        encumbered:
+          $ref: "#/components/schemas/Money"
+        captureEntryId:
+          type: [string, "null"]
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        capturedAt:
+          type: [string, "null"]
+          format: date-time
+        releasedAt:
+          type: [string, "null"]
+          format: date-time
+    TravelPaymentResult:
+      type: object
+      required:
+        [ref, op, itemId, orderId, entryId, amount, state, item, replayed]
+      properties:
+        ref:
+          type: string
+          description: payment-service's id for this authorization / capture / release / refund.
+        op:
+          type: string
+          enum: [authorize, capture, release, refund]
+        itemId:
+          type: string
+        orderId:
+          type: string
+        entryId:
+          type: [string, "null"]
+          description: The journal entry the op posted; null for authorize and release.
+        amount:
+          $ref: "#/components/schemas/Money"
+        state:
+          type: string
+          description: The item's state right after this op.
+        item:
+          $ref: "#/components/schemas/TravelPaymentItem"
+        replayed:
+          type: boolean
+    TravelPaymentStatus:
+      type: object
+      required: [item, ops]
+      properties:
+        item:
+          $ref: "#/components/schemas/TravelPaymentItem"
+        ops:
+          type: array
+          items:
+            type: object
+            required:
+              [ref, op, clientKey, amount, entryId, onBehalfOf, createdAt]
+            properties:
+              ref:
+                type: string
+              op:
+                type: string
+                enum: [authorize, capture, release, refund]
+              clientKey:
+                type: string
+                description: The Idempotency-Key exactly as the caller sent it.
+              amount:
+                $ref: "#/components/schemas/Money"
+              entryId:
+                type: [string, "null"]
+              onBehalfOf:
+                type: [object, "null"]
+                properties:
+                  id:
+                    type: string
+                  role:
+                    type: string
+              createdAt:
+                type: string
+                format: date-time
+  responses:
+    Posted:
+      description: The op was recorded by this call.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TravelPaymentResult"
+    Replayed:
+      description: A replay of an op this Idempotency-Key already recorded — the original result.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TravelPaymentResult"
+    Refused:
+      description: Refused (see the canonical error code).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+paths:
+  /v1/finance/travel/authorize:
+    post:
+      summary: Reserve the traveller's funds for one travel order item
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+        - $ref: "#/components/parameters/CityId"
+        - $ref: "#/components/parameters/UserId"
+        - $ref: "#/components/parameters/UserRole"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TravelPaymentRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/Posted"
+        "200":
+          $ref: "#/components/responses/Replayed"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/Refused"
+        "409":
+          $ref: "#/components/responses/Refused"
+        "422":
+          $ref: "#/components/responses/Refused"
+  /v1/finance/travel/capture:
+    post:
+      summary: Settle an authorized item to travel_clearing (once)
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+        - $ref: "#/components/parameters/CityId"
+        - $ref: "#/components/parameters/UserId"
+        - $ref: "#/components/parameters/UserRole"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TravelPaymentRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/Posted"
+        "200":
+          $ref: "#/components/responses/Replayed"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/Refused"
+        "409":
+          $ref: "#/components/responses/Refused"
+        "422":
+          $ref: "#/components/responses/Refused"
+  /v1/finance/travel/release:
+    post:
+      summary: Free an unused authorization
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+        - $ref: "#/components/parameters/CityId"
+        - $ref: "#/components/parameters/UserId"
+        - $ref: "#/components/parameters/UserRole"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TravelPaymentRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/Posted"
+        "200":
+          $ref: "#/components/responses/Replayed"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/Refused"
+        "409":
+          $ref: "#/components/responses/Refused"
+        "422":
+          $ref: "#/components/responses/Refused"
+  /v1/finance/travel/refund:
+    post:
+      summary: Refund a captured item, fully or partially, with a linked counter-entry
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+        - $ref: "#/components/parameters/CityId"
+        - $ref: "#/components/parameters/UserId"
+        - $ref: "#/components/parameters/UserRole"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TravelPaymentRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/Posted"
+        "200":
+          $ref: "#/components/responses/Replayed"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/Refused"
+        "409":
+          $ref: "#/components/responses/Refused"
+        "422":
+          $ref: "#/components/responses/Refused"
+  /v1/finance/travel/orders/{orderId}:
+    get:
+      summary: The item as payment-service holds it, with every op recorded against it
+      description: >-
+        For reconciliation after an ambiguous timeout: shows whether an op
+        happened and under which Idempotency-Key. Replaying the same key is the
+        other safe answer — it returns the original result.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The item and its ops.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TravelPaymentStatus"
+        "403":
+          $ref: "#/components/responses/Refused"
+        "404":
+          $ref: "#/components/responses/Refused"

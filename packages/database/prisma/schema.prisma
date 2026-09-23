@@ -1815,6 +1815,7 @@ model Wallet {
   statements          WalletStatement[]
   mpHolds             MpCommissionHold[]
   mpRiderReservations MpRiderReservation[]
+  travelPaymentItems  TravelPaymentItem[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -1831,9 +1832,11 @@ model JournalEntry {
   caseRef        String?  @map("case_ref")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  lines       JournalLine[]
-  transfers   Transfer[]
-  remittances Remittance[]
+  lines                 JournalLine[]
+  transfers             Transfer[]
+  remittances           Remittance[]
+  travelPaymentCaptures TravelPaymentItem[]
+  travelPaymentOps      TravelPaymentOp[]
 
   @@index([kind, occurredAt])
   @@index([reference])
@@ -2031,6 +2034,81 @@ model MpRiderReservation {
 
   @@index([walletId, status], map: "mp_rider_reservations_spendable")
   @@map("mp_rider_reservations")
+}
+
+/// Travel payment item (P7/T02): payment-service's side of ONE travel order
+/// item — travel-service's per-item authorize → capture | release → refund
+/// ladder, served at /v1/finance/travel. An authorization is a durable
+/// encumbrance on the traveller's wallet: a table row, never a journal
+/// movement, so the cleared balance is untouched and only spendable drops
+/// while the item is `authorized`. Money moves only at capture (wallet →
+/// travel_clearing) and refund (travel_clearing → wallet, linked to the
+/// capture entry). Supplier travel NEVER uses a marketplace commission hold
+/// or a ride account. One authorization per order item, ever. The amount
+/// bounds (captured ≤ authorized, refunded ≤ captured) are also CHECK
+/// constraints in the migration, so no code path can over-capture or
+/// over-refund even if the application check were bypassed.
+model TravelPaymentItem {
+  id              String    @id
+  /// travel-service's order id — one order per cart item, one authorization per order.
+  orderId         String    @unique @map("order_id")
+  /// The traveller whose wallet the authorization encumbers.
+  userId          String    @map("user_id")
+  walletId        String    @map("wallet_id")
+  cityId          String    @map("city_id")
+  currency        String
+  /// authorized | captured | released | partially_refunded | refunded
+  state           String
+  authorizedMinor BigInt    @map("authorized_minor")
+  capturedMinor   BigInt    @default(0) @map("captured_minor")
+  refundedMinor   BigInt    @default(0) @map("refunded_minor")
+  /// The one capture journal entry; refunds link to it as their counterpart.
+  captureEntryId  String?   @map("capture_entry_id")
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  capturedAt      DateTime? @map("captured_at")
+  releasedAt      DateTime? @map("released_at")
+
+  wallet       Wallet            @relation(fields: [walletId], references: [id])
+  captureEntry JournalEntry?     @relation(fields: [captureEntryId], references: [id])
+  ops          TravelPaymentOp[]
+
+  @@index([walletId, state], map: "travel_payment_items_spendable")
+  @@map("travel_payment_items")
+}
+
+/// One accepted POST against a travel payment item — its idempotency record.
+/// The scoped Idempotency-Key is unique: a replay answers `result` verbatim,
+/// and a replay carrying different money terms (`payloadHash`) is refused.
+/// Every item carries at most one authorize, one capture and one release op;
+/// refunds may be several (partial), each with its own key.
+model TravelPaymentOp {
+  id             String   @id
+  itemId         String   @map("item_id")
+  /// authorize | capture | release | refund
+  op             String
+  idempotencyKey String   @unique @map("idempotency_key")
+  /// The key exactly as the caller sent it, so a reconciler can match its own request.
+  clientKey      String   @map("client_key")
+  payloadHash    String   @map("payload_hash")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  /// The journal entry this op posted; null for authorize and release.
+  entryId        String?  @map("entry_id")
+  /// Who the calling service said it acted for (context, not authentication).
+  onBehalfOfId   String?  @map("on_behalf_of_id")
+  onBehalfOfRole String?  @map("on_behalf_of_role")
+  reason         String?
+  /// The response body the op answered with — replayed verbatim.
+  result         Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  item  TravelPaymentItem @relation(fields: [itemId], references: [id])
+  entry JournalEntry?     @relation(fields: [entryId], references: [id])
+
+  @@index([itemId, createdAt])
+  @@map("travel_payment_ops")
 }
 
 model WalletStatement {

@@ -47,6 +47,13 @@ export const LEDGER_ACCOUNTS = [
   "bank_settlement",
   /** Value UBI owes a merchant or hotel partner and has not yet paid out. */
   "merchant_payable",
+  /**
+   * Traveller money captured for a supplier travel order item (flight/stay)
+   * and not yet settled onward to the supplier or refunded back. Dedicated to
+   * travel: supplier inventory never touches `ubi_commission`, a marketplace
+   * commission hold or a ride account (finance/travel.ts).
+   */
+  "travel_clearing",
 ] as const;
 
 export type LedgerAccount = (typeof LEDGER_ACCOUNTS)[number];
@@ -91,6 +98,10 @@ export const ENTRY_KINDS = [
   "recon_adjustment",
   /** A typed support remedy: counter-lines that make a case good. */
   "remedy",
+  /** The one capture of a travel order item: traveller wallet → travel_clearing. */
+  "travel_capture",
+  /** A full or partial travel refund, linked to its capture entry — never an edit. */
+  "travel_refund",
 ] as const;
 
 export type EntryKind = (typeof ENTRY_KINDS)[number];

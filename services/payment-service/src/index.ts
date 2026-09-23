@@ -19,6 +19,7 @@ import { secureHeaders } from "hono/secure-headers";
 
 import { createRemedyRoutes } from "./finance/remedies";
 import { createFinanceRoutes } from "./finance/routes";
+import { createTravelPaymentRoutes } from "./finance/travel-routes";
 import { walletDeps } from "./ledger/wiring";
 import { analyticsService } from "./lib/analytics";
 import { logger } from "./lib/logger";
@@ -111,8 +112,12 @@ app.use("/v1/finance/*", paymentRateLimit);
 // Order notes: /v1/wallet/mp (marketplace commission holds, M04) mounts
 // BEFORE the general wallet routes, because the wallet router guards
 // everything under it with user session auth while the hold mutations are
-// service-key calls from the award engine. The route modules apply their own
-// auth; the health routes are deliberately unauthenticated probes.
+// service-key calls from the award engine. /v1/finance/travel (supplier
+// travel payments, P7) mounts BEFORE /v1/finance for the same reason: the
+// recon router's `use("*")` admin-session guards cover every path under
+// /v1/finance, while travel-service calls the travel endpoint with the
+// internal service key. The route modules apply their own auth; the health
+// routes are deliberately unauthenticated probes.
 // ===========================================
 const ledgerDeps = walletDeps();
 
@@ -126,6 +131,10 @@ const ROUTER_REGISTRY: ReadonlyArray<{
   { prefix: "/admin", router: adminRoutes },
   { prefix: "/v1/wallet/mp", router: createMpHoldRoutes(ledgerDeps) },
   { prefix: "/v1/wallet", router: createWalletV1Routes(ledgerDeps) },
+  {
+    prefix: "/v1/finance/travel",
+    router: createTravelPaymentRoutes(ledgerDeps),
+  },
   { prefix: "/v1/finance", router: createFinanceRoutes(ledgerDeps) },
   { prefix: "/v1/finance/remedies", router: createRemedyRoutes(ledgerDeps) },
 ];
