@@ -5,19 +5,33 @@
  * On every round it:
  *   - redacts the outgoing context and ASSERTS nothing sensitive survived, so no
  *     card, PIN, document or precise address can reach the provider (rule #20);
- *   - runs at most `maxToolLoops` provider round-trips;
+ *   - runs at most `maxToolLoops` provider round-trips, and at most
+ *     `MAX_TOOL_CALLS_PER_ROUND` tool calls from any one of them;
  *   - for each tool the model names: refuses forbidden capabilities outright and
- *     logs them; rejects unknown or role-forbidden tools; validates arguments
- *     against the tool's strict schema; and runs the tool with the actor from the
- *     gateway context — never from the arguments;
+ *     logs them; rejects unknown or role-forbidden tools; rejects arguments that
+ *     are not JSON; validates arguments against the tool's strict schema; and
+ *     runs the tool with the actor from the gateway context — never from the
+ *     arguments;
  *   - stops the turn when the model asks for clarification, proposes a
  *     transaction (which is only ever a review, never an execution) or answers.
+ *
+ * The transcript it replays is the tool-calling protocol itself (recheck A04):
+ * the assistant turn that asked for tools goes back as ONE assistant record with
+ * its text and the complete list of calls (ids, names, the exact argument
+ * bytes), followed by one tool result per call, in the same order, answering
+ * that call's id — including the calls that were rejected, malformed or failed,
+ * so the model can recover. Nothing is fabricated in their place.
  *
  * It returns a plain description of what happened. Persisting the assistant
  * message, the review and the ai_actions rows is the caller's single transaction.
  */
 import { PROMPT_VERSION, SYSTEM_PROMPT } from "./prompt";
-import { assertNoSensitive, redact } from "./redaction";
+import {
+  assertNoSensitive,
+  findSensitive,
+  redact,
+  redactValue,
+} from "./redaction";
 import {
   FORBIDDEN_CAPABILITIES,
   toolByName,
@@ -25,12 +39,23 @@ import {
   type AskToolContext,
   type ReviewProposal,
 } from "./tools";
+import { generateId } from "../lib/ids";
 
 import type { AskEvent, Card, ClarifyField, Source } from "./events";
-import type { ModelMessage } from "./model-provider";
+import type { ModelMessage, ModelToolCall } from "./model-provider";
 import type { AiActionInput, ActorKind } from "../ops/audit";
 import type { AskDeps } from "../ops/context";
 import type { Actor, AskRole } from "../ops/types";
+
+/**
+ * At most this many tool calls from one model turn are run. Calls beyond it are
+ * left out of the replayed transcript entirely (so no call is left unanswered)
+ * and logged once; the model may ask for them again on the next round.
+ */
+export const MAX_TOOL_CALLS_PER_ROUND = 8;
+
+/** Call ids replayed to the model: the characters servers actually issue. */
+const SAFE_CALL_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 
 export interface StoredMessage {
   readonly sender: "user" | "assistant" | "system";
@@ -67,10 +92,89 @@ export interface TurnResult {
 function toModelHistory(history: readonly StoredMessage[]): ModelMessage[] {
   return history
     .filter((message) => message.sender !== "system")
-    .map((message) => ({
-      role: message.sender === "assistant" ? "assistant" : "user",
-      content: message.text,
-    }));
+    .map((message) =>
+      message.sender === "assistant"
+        ? { role: "assistant" as const, content: message.text }
+        : { role: "user" as const, content: message.text },
+    );
+}
+
+/**
+ * The call exactly as it will be recorded, replayed and run: a unique, plain id
+ * (a missing, repeated or odd one is replaced), and — only if the model's output
+ * looks like a card, PIN, document or address — a redacted name and redacted
+ * arguments. The tool runs with the same arguments the transcript shows. (No
+ * real tool name looks sensitive, so a redacted name never runs anything; it is
+ * answered as an unavailable tool instead of tripping the backstop.)
+ */
+function recordableCall(
+  call: ModelToolCall,
+  usedIds: Set<string>,
+): ModelToolCall {
+  let id = call.id;
+  if (
+    !SAFE_CALL_ID.test(id) ||
+    usedIds.has(id) ||
+    findSensitive(id).length > 0
+  ) {
+    id = generateId("call");
+  }
+  usedIds.add(id);
+  const name =
+    findSensitive(call.name).length > 0 ? redact(call.name) : call.name;
+  if (findSensitive([call.arguments, call.rawArguments ?? ""]).length === 0) {
+    return id === call.id && name === call.name ? call : { ...call, id, name };
+  }
+  if (call.argumentsError !== undefined) {
+    return {
+      ...call,
+      id,
+      name,
+      rawArguments: redact(call.rawArguments ?? ""),
+    };
+  }
+  const safe = redactValue(call.arguments);
+  return {
+    ...call,
+    id,
+    name,
+    arguments: safe,
+    rawArguments: JSON.stringify(safe ?? {}),
+  };
+}
+
+/**
+ * The forbidden-capability entry for a name, by OWN key only: a hallucinated
+ * name such as `constructor` or `toString` must not resolve to an
+ * Object.prototype member and be mistaken for a (policy-less) refusal.
+ */
+function forbiddenCapability(
+  name: string,
+): { readonly policy: string; readonly deepLink: string } | undefined {
+  return Object.hasOwn(FORBIDDEN_CAPABILITIES, name)
+    ? FORBIDDEN_CAPABILITIES[name]
+    : undefined;
+}
+
+/** Schema issues as paths and codes — never the rejected values themselves. */
+function describeIssues(issues: readonly unknown[]): string {
+  const parts = issues.slice(0, 6).map((raw) => {
+    const issue = raw as {
+      path?: readonly (string | number)[];
+      code?: string;
+      keys?: readonly string[];
+    };
+    const path =
+      issue.path !== undefined && issue.path.length > 0
+        ? issue.path.join(".")
+        : "(arguments)";
+    const keys =
+      issue.code === "unrecognized_keys" && issue.keys !== undefined
+        ? ` ${issue.keys.join(",")}`
+        : "";
+    return `${path}: ${issue.code ?? "invalid"}${keys}`;
+  });
+  return redact(parts.join("; ")).slice(0, 400);
 }
 
 export async function runTurn(
@@ -89,6 +193,7 @@ export async function runTurn(
   const sources: Source[] = [];
   const aiActions: AiActionInput[] = [];
   const providerRefs: string[] = [];
+  const usedCallIds = new Set<string>();
   let usageTokens = 0;
 
   const messages: ModelMessage[] = [
@@ -100,10 +205,15 @@ export async function runTurn(
     actorKind: input.actorKind,
     actorRef: input.actor.id,
     threadId: input.threadId,
-    model: deps.model.model,
-    modelRevision: deps.model.revision,
     promptVersion: PROMPT_VERSION,
   } as const;
+  // Each row records the identity that served the round it came from: the
+  // attested serving identity when the provider attests (A05), otherwise the
+  // configured model and label.
+  let identity = {
+    model: deps.model.model,
+    modelRevision: deps.model.revision,
+  };
 
   const maxLoops = deps.limits.maxToolLoops;
   for (let loop = 0; loop < maxLoops; loop += 1) {
@@ -121,11 +231,18 @@ export async function runTurn(
     const response = await deps.model.complete(request);
     const latencyMs = deps.now().getTime() - startedAt;
     usageTokens += response.usage.tokens;
+    if (response.identity !== undefined) {
+      identity = {
+        model: response.identity.model,
+        modelRevision: response.identity.revision,
+      };
+    }
+    const audit = { ...base, ...identity };
 
     if (response.toolCalls.length === 0) {
       const answerText = response.text;
       aiActions.push({
-        ...base,
+        ...audit,
         action: "assistant.answer",
         authKind: "read_only",
         outcome: "done",
@@ -142,11 +259,43 @@ export async function runTurn(
       });
     }
 
-    for (const call of response.toolCalls) {
-      const forbidden = FORBIDDEN_CAPABILITIES[call.name];
+    const calls = response.toolCalls
+      .slice(0, MAX_TOOL_CALLS_PER_ROUND)
+      .map((call) => recordableCall(call, usedCallIds));
+    if (response.toolCalls.length > MAX_TOOL_CALLS_PER_ROUND) {
+      aiActions.push({
+        ...audit,
+        action: "tool.rejected",
+        authKind: "none",
+        outcome: "blocked",
+        reasonCode: "tool_call_budget",
+        redactedInputs: {
+          requested: response.toolCalls.length,
+          run: MAX_TOOL_CALLS_PER_ROUND,
+        },
+      });
+    }
+    // The assistant turn goes back as the protocol record it was: its text and
+    // every call it made, before any of their results.
+    messages.push({
+      role: "assistant",
+      content: redact(response.text),
+      toolCalls: calls,
+    });
+    const answer = (call: ModelToolCall, content: string): void => {
+      messages.push({
+        role: "tool",
+        toolCallId: call.id,
+        toolName: call.name,
+        content,
+      });
+    };
+
+    for (const call of calls) {
+      const forbidden = forbiddenCapability(call.name);
       if (forbidden !== undefined) {
         aiActions.push({
-          ...base,
+          ...audit,
           action: "tool.refused",
           tool: call.name,
           authKind: "none",
@@ -165,9 +314,35 @@ export async function runTurn(
       }
 
       const tool = toolByName(call.name);
-      if (tool === undefined || !tool.roles.includes(input.role)) {
+      const available = tool !== undefined && tool.roles.includes(input.role);
+      // A call whose arguments did not parse — to a tool the caller may use, or
+      // an unparseable block with no name at all — is answered with an error the
+      // model can recover from. Nothing runs.
+      if (
+        call.argumentsError !== undefined &&
+        (available || call.name.length === 0)
+      ) {
         aiActions.push({
-          ...base,
+          ...audit,
+          action: "tool.call",
+          tool: call.name.length > 0 ? call.name : null,
+          authKind: "read_only",
+          outcome: "blocked",
+          reasonCode: "arguments_malformed",
+          redactedInputs: { tool: call.name },
+        });
+        answer(
+          call,
+          call.name.length > 0
+            ? `The arguments for ${call.name} were not valid JSON, so nothing ran. Call ${call.name} again with one JSON object that matches its schema.`
+            : "That tool call could not be parsed, so nothing ran. Emit the call again with a tool name and one JSON object of arguments.",
+        );
+        continue;
+      }
+
+      if (tool === undefined || !available) {
+        aiActions.push({
+          ...audit,
           action: "tool.rejected",
           tool: call.name,
           authKind: "none",
@@ -175,20 +350,14 @@ export async function runTurn(
           reasonCode: "tool_not_available",
           redactedInputs: { tool: call.name },
         });
-        messages.push({ role: "assistant", content: `(calling ${call.name})` });
-        messages.push({
-          role: "tool",
-          toolName: call.name,
-          toolCallId: call.id,
-          content: `Tool ${call.name} is not available to you.`,
-        });
+        answer(call, `Tool ${call.name} is not available to you.`);
         continue;
       }
 
       const parsed = tool.schema.safeParse(call.arguments);
       if (!parsed.success) {
         aiActions.push({
-          ...base,
+          ...audit,
           action: "tool.call",
           tool: call.name,
           authKind: "read_only",
@@ -196,13 +365,10 @@ export async function runTurn(
           reasonCode: "schema_rejected",
           redactedInputs: { tool: call.name },
         });
-        messages.push({ role: "assistant", content: `(calling ${call.name})` });
-        messages.push({
-          role: "tool",
-          toolName: call.name,
-          toolCallId: call.id,
-          content: `Arguments rejected by the ${call.name} schema. Fix and retry.`,
-        });
+        answer(
+          call,
+          `Arguments rejected by the ${call.name} schema (${describeIssues(parsed.error.issues)}). Nothing ran; fix the arguments and call again.`,
+        );
         continue;
       }
 
@@ -211,7 +377,7 @@ export async function runTurn(
         result = await tool.run(ctx, parsed.data);
       } catch (error) {
         aiActions.push({
-          ...base,
+          ...audit,
           action: "tool.call",
           tool: call.name,
           authKind: "read_only",
@@ -219,16 +385,16 @@ export async function runTurn(
           reasonCode: "tool_failed",
           redactedInputs: { tool: call.name },
         });
-        messages.push({ role: "assistant", content: `(calling ${call.name})` });
-        messages.push({
-          role: "tool",
-          toolName: call.name,
-          toolCallId: call.id,
-          content:
-            error instanceof Error
-              ? `Tool ${call.name} failed: ${error.message}`
-              : `Tool ${call.name} failed.`,
-        });
+        // Upstream error text is not the model's to see verbatim: anything in
+        // it that looks like a card, PIN, document or address is redacted, so a
+        // failure is answered as a recoverable tool result instead of tripping
+        // the backstop and failing the whole turn.
+        answer(
+          call,
+          error instanceof Error
+            ? `Tool ${call.name} failed: ${redact(error.message)}`
+            : `Tool ${call.name} failed.`,
+        );
         continue;
       }
 
@@ -247,7 +413,7 @@ export async function runTurn(
       }
 
       aiActions.push({
-        ...base,
+        ...audit,
         action: "tool.call",
         tool: call.name,
         authKind: "read_only",
@@ -276,18 +442,13 @@ export async function runTurn(
         });
       }
 
-      messages.push({ role: "assistant", content: `(calling ${call.name})` });
-      messages.push({
-        role: "tool",
-        toolName: call.name,
-        toolCallId: call.id,
-        content: result.content,
-      });
+      answer(call, result.content);
     }
   }
 
   aiActions.push({
     ...base,
+    ...identity,
     action: "loop.exhausted",
     authKind: "read_only",
     outcome: "partial",

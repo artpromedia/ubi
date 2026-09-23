@@ -1,13 +1,18 @@
 /**
  * Wires the ask service against the real singletons and endpoints.
  *
- * The model and embedding endpoints are private (vLLM / SGLang) and are pinned by
- * revision through configuration — nothing here depends on a proprietary
- * inference SDK. When a model endpoint is not configured the HTTP provider still
- * exists but every call fails as `service_unavailable`, which is the honest
- * fallback to the conventional flow (rule #18): the assistant is simply
- * unavailable, never faked. The embedder defaults to the offline lexical embedder
- * so RAG still functions without a GPU; a configured endpoint replaces it.
+ * The model and embedding endpoints are private (vLLM / SGLang) — nothing here
+ * depends on a proprietary inference SDK. The model is pinned by SERVING
+ * IDENTITY (served model id, weights and tokenizer revisions, serving image
+ * digest, tool parser — ai/attestation.ts), distinct from the human-readable
+ * MODEL_REVISION label. When the endpoint is absent, unreachable or does not
+ * attest against the pin, the HTTP provider still exists but every model call
+ * fails as `service_unavailable`, which is the honest fallback to the
+ * conventional flow (rule #18): the assistant is simply unavailable, never
+ * faked, and the rest of the app keeps serving. A malformed pin never stops the
+ * boot; it keeps AI execution off and says why (/health/ready). The embedder
+ * defaults to the offline lexical embedder so RAG still functions without a GPU;
+ * a configured endpoint replaces it.
  *
  * The marketplace port reaches ride-service directly, so it must present the
  * same HMAC-signed internal identity the gateway would (lib/ride-context.ts).
@@ -16,6 +21,7 @@
  * as ride-service itself does — and warns in development, where ride-service
  * accepts the identity unsigned.
  */
+import { loadModelServingConfig } from "./ai/attestation";
 import {
   createHashEmbeddingProvider,
   createHttpEmbeddingProvider,
@@ -44,6 +50,16 @@ const MODEL_ENDPOINT_URL =
   process.env.MODEL_ENDPOINT_URL ?? "http://model-serving:8000/v1";
 const MODEL_NAME = process.env.MODEL_NAME ?? "Qwen/Qwen3-30B-A3B-Instruct-2507";
 const MODEL_REVISION = process.env.MODEL_REVISION ?? "2507";
+/**
+ * The pinned serving identity: MODEL_SERVED_ID (default MODEL_NAME),
+ * MODEL_WEIGHTS_REVISION, MODEL_TOKENIZER_REVISION, MODEL_SERVING_IMAGE,
+ * MODEL_TOOL_PARSER, MODEL_ATTESTATION_URL and MODEL_ATTESTATION_MODE (strict by
+ * default). See docs/MODEL-SERVING.md.
+ */
+const MODEL_SERVING = loadModelServingConfig(process.env, {
+  model: MODEL_NAME,
+  revision: MODEL_REVISION,
+});
 const EMBED_ENDPOINT_URL = process.env.EMBED_ENDPOINT_URL;
 const EMBED_NAME = process.env.EMBED_NAME ?? "Qwen/Qwen3-Embedding-0.6B";
 const EMBED_REVISION = process.env.EMBED_REVISION ?? "0.6b";
@@ -70,6 +86,13 @@ export function createDeps(): AskDeps {
     );
   }
 
+  if (MODEL_SERVING.problems.length > 0) {
+    logger.warn(
+      { problems: MODEL_SERVING.problems },
+      "model serving pin is invalid: AI execution stays off until it is fixed",
+    );
+  }
+
   const embedder: EmbeddingProvider =
     EMBED_ENDPOINT_URL === undefined
       ? createHashEmbeddingProvider()
@@ -88,6 +111,7 @@ export function createDeps(): AskDeps {
       baseUrl: MODEL_ENDPOINT_URL,
       model: MODEL_NAME,
       revision: MODEL_REVISION,
+      serving: MODEL_SERVING,
       apiKeyEnv: "MODEL_API_KEY",
     }),
     embedder,

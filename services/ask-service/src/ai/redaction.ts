@@ -76,6 +76,29 @@ export function redact(text: string): string {
   return out;
 }
 
+/**
+ * `redact` applied to every string inside a JSON-shaped value (keys included).
+ * Used on model output — call arguments and ids — before it is replayed to the
+ * model, so text a model hallucinated cannot trip the backstop below.
+ */
+export function redactValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return redact(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactValue);
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [
+        redact(key),
+        redactValue(child),
+      ]),
+    );
+  }
+  return value;
+}
+
 export interface SensitiveHit {
   readonly kind: "card" | "pin" | "document" | "address";
   readonly path: string;

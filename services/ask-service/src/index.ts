@@ -24,7 +24,7 @@ import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis } from "./lib/redis";
 import { createAskRoutes } from "./routes/ask";
-import { healthRoutes } from "./routes/health";
+import { createHealthRoutes } from "./routes/health";
 import { createOpsAiRoutes } from "./routes/ops-ai";
 import { createDeps } from "./wiring";
 
@@ -66,7 +66,7 @@ export function createApp(deps: AskDeps): Hono {
     }),
   );
 
-  app.route("/health", healthRoutes);
+  app.route("/health", createHealthRoutes(deps.model));
   app.route("/v1/ask", createAskRoutes(deps));
   app.route("/v1/ops/ai", createOpsAiRoutes(deps));
 
