@@ -38,7 +38,7 @@
 
     <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: #D8DAD2; border: 1px solid #D8DAD2; border-radius: 16px; overflow: hidden;">
       <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Fleets propose, drivers consent</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">No fleet action commits a driver's time, bids, or earnings. Any change to terms needs a new PIN signature.</div></div>
-      <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Bookings are never silently moved</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">Maintenance cannot cancel a booking. Changing the driver or vehicle needs the rider's consent.</div></div>
+      <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Bookings are never silently moved</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">Maintenance cannot cancel a booking. Changing the driver, class, seats or pickup window needs the rider's consent. A vehicle-only change is notified, with free cancellation.</div></div>
       <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Fleets see opaque blocks</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">"Booked · 07:15–09:40". No rider, address, route or safety evidence — ever.</div></div>
       <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Server decides feasibility</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">Conflicts, travel time and money come from the backend. Screens show "Checking…", never assume success.</div></div>
     </div>
@@ -247,7 +247,7 @@
             <span style="font-family: Poppins; font-weight: 700; font-size: 20px;">Drivers · Tue 30 Sep</span>
             <div style="display: flex; background: #1C1C1C; border: 1px solid #2A2A2A; border-radius: 9px; padding: 3px; font-size: 12.5px;"><span style="padding: 5px 12px; color: #A1A1AA;">Vehicles</span><span style="padding: 5px 12px; border-radius: 7px; background: #2A2A2A; color: #F4F4F5; font-weight: 600;">Drivers</span></div>
             <span style="font-size: 12px; color: #A1A1AA; font-family: 'JetBrains Mono', monospace;">WAT (UTC+1)</span>
-            <span style="margin-left: auto; font-size: 11.5px; color: #A1A1AA;">Availability and time off are set by drivers. You can view them but not edit them.</span>
+            <span style="margin-left: auto; font-size: 11.5px; color: #A1A1AA;">Availability and time off are set by drivers. You see the hours only, never a reason, and you can't edit them.</span>
           </div>
           <div style="border: 1px solid #2A2A2A; border-radius: 12px; overflow: hidden;">
             <div style="display: grid; grid-template-columns: 170px minmax(0, 1fr); background: #181818; border-bottom: 1px solid #2A2A2A;">
@@ -330,19 +330,19 @@
                   <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Week gross</span><b>₦184,500</b></div>
                   <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">UBI commission (10%)</span><span>₦18,450</span></div>
                   <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Fleet remittance · weekly fixed</span><span>₦45,000</span></div>
-                  <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Driver net</span><span>₦121,050</span></div>
+                  
                   <div style="height: 1px; background: #262626;"></div>
                   <div style="display: flex; justify-content: space-between; align-items: center;"><span style="color: #A1A1AA;">Remittance status</span><span style="font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; color: #86EFAC; background: rgba(29,185,84,0.16);">Covered</span></div>
                 </div>
-                <div style="font-size: 10.5px; color: #71717A;">All amounts are computed by the server in integer minor units. The client never calculates money.</div>
+                <div style="font-size: 10.5px; color: #71717A;">All amounts are computed by the server in integer minor units. Fleets don't see a driver's net earnings.</div>
               </div>
             </div>
           </div>
         </div>
       </div>
-      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B4 · Vehicle detail: documents plotted against bookings, maintenance history, drivers, and the week's money split into separate lines.</div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B4 · Vehicle detail: documents plotted against bookings, maintenance history, drivers, and the week's money in separate lines (the driver's net is never shown).</div>
       <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
-        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> VehicleDetail (Next.js) · testID fleet.vehicle.documentsTimeline</div><div>GET /v1/fleets/{id}/vehicles/{vid}/availability <b style="color:#B45309;">proposed</b></div><div>money: GET /v1/fleets/{id}/overview (existing)</div><div>rule 5: commission, fleet share and driver net shown separately</div></div>
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> VehicleDetail (Next.js) · testID fleet.vehicle.documentsTimeline</div><div>GET /v1/fleets/{id}/vehicles/{vid}/availability <b style="color:#B45309;">proposed</b></div><div>money: GET /v1/fleets/{id}/overview (existing)</div><div>rule 5: gross, commission and fleet remittance as separate lines · no driver net (Q7)</div></div>
       </sc-if>
     </div>
 
@@ -375,7 +375,7 @@
             <div style="display: flex; flex-direction: column; gap: 8px;">
               <span style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Affected assignment · 1</span>
               <div style="background: #141414; border: 1px solid #262626; border-radius: 10px; padding: 11px 13px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 10px;"><span>Bola A. · Day shift 06:00–18:00</span><span style="color: #FCD34D;">No vehicle 10:00–15:00</span></div>
-              <div style="font-size: 11px; color: #A1A1AA;">Bola will be notified. This does not change her signed terms. How remittance applies to these hours is <b>open question Q2</b>.</div>
+              <div style="font-size: 11px; color: #A1A1AA;">Bola will be notified. Her signed terms don't change. Her weekly fixed remittance is <b>pro-rated</b> for the 5 lost shift hours: −₦3,125 (computed by UBI).</div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 8px;">
               <span style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Affected booking · 1</span>
@@ -388,7 +388,7 @@
               <div style="border: 1px solid #2A2A2A; border-radius: 10px; padding: 11px 13px; display: flex; gap: 10px;"><span style="width: 16px; height: 16px; border-radius: 50%; border: 2px solid #52525B; flex-shrink: 0; margin-top: 1px;"></span><div><div style="font-size: 13px; font-weight: 600;">Ask Bola to review the booking</div><div style="font-size: 11px; color: #A1A1AA;">Only Bola can withdraw. The block stays in needs_resolution until she decides.</div></div></div>
             </div>
           </div>
-          <div style="padding: 14px 20px; border-top: 1px solid #262626; display: flex; align-items: center; gap: 8px;"><span style="font-size: 11.5px; color: #A1A1AA; flex: 1;">Planned maintenance never cancels a booking. Breakdown? Use "Report off-road".</span><button style="border: 1px solid #2A2A2A; background: transparent; color: #D4D4D8; font-weight: 600; font-size: 13px; padding: 10px 14px; border-radius: 9px;">Back</button><button style="border: none; background: #1DB954; color: #0B0B0B; font-weight: 700; font-size: 13px; padding: 10px 16px; border-radius: 9px;">Move &amp; confirm</button></div>
+          <div style="padding: 14px 20px; border-top: 1px solid #262626; display: flex; align-items: center; gap: 8px;"><span style="font-size: 11.5px; color: #A1A1AA; flex: 1;">Planned maintenance never cancels a booking. Breakdown? Use "Report off-road" (remittance is pro-rated either way).</span><button style="border: 1px solid #2A2A2A; background: transparent; color: #D4D4D8; font-weight: 600; font-size: 13px; padding: 10px 14px; border-radius: 9px;">Back</button><button style="border: none; background: #1DB954; color: #0B0B0B; font-weight: 700; font-size: 13px; padding: 10px 16px; border-radius: 9px;">Move &amp; confirm</button></div>
         </div>
       </div>
       <div style="width: 1180px; font-size: 12px; color: #6B7280;">B5 · Create a maintenance block. Confirm stays disabled until the server's impact check returns. An overlapping booking has to be resolved before the block can be confirmed.</div>
@@ -535,8 +535,8 @@
             <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; overflow: hidden;">
               <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #1A1A1A; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #71717A;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">06:00–18:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Available</div><div style="font-size: 11px; color: #71717A;">Set by you</div></div></div>
               <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #1A1A1A; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #1DB954;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">06:00–18:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Shift · LAG-118-AB</div><div style="font-size: 11px; color: #71717A;">Example Fleet · terms v1 signed</div></div></div>
-              <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #1A1A1A; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #F59E0B;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">10:00–15:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Vehicle in service</div><div style="font-size: 11px; color: #71717A;">Planned by your fleet</div></div></div>
-              <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #2A1A20; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #EF4444;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #FCA5A5;">11:20–13:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Advance booking · at risk</div><div style="font-size: 11px; color: #FCA5A5;">Decide by 09:50 →</div></div></div>
+              <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #1A1A1A; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #F59E0B;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">10:00–15:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Vehicle in service</div><div style="font-size: 11px; color: #71717A;">Planned by your fleet · remittance pro-rated</div></div></div>
+              <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #2A1A20; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #EF4444;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #FCA5A5;">11:20–13:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Advance booking · at risk</div><div style="font-size: 11px; color: #FCA5A5;">Decide by 09:20 →</div></div></div>
             </div>
             <div style="margin-top: auto; display: flex; justify-content: space-around; padding: 12px 0; border-top: 1px solid #1E1E1E; font-size: 11px; color: #71717A;"><span>Home</span><span style="color: #1DB954; font-weight: 600;">Schedule</span><span>Wallet</span><span>Account</span></div>
           </div>
@@ -578,7 +578,7 @@
           <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 28px; text-align: center;">
             <span style="width: 84px; height: 84px; border-radius: 50%; background: #1E1E1E; display: flex; align-items: center; justify-content: center; font-size: 36px; color: #A1A1AA;">{{ icons.car }}</span>
             <div><div style="font-family: Poppins; font-weight: 700; font-size: 19px;">Review when stopped</div><div style="font-size: 13px; color: #A1A1AA; margin-top: 6px; line-height: 1.5;">You have 1 proposal and 1 booking decision. They'll open once you're safely stationary.</div></div>
-            <div style="width: 100%; background: #1A1A1A; border-radius: 12px; padding: 12px; font-size: 12px; color: #A1A1AA; display: flex; justify-content: space-between;"><span>Earliest deadline</span><b style="color: #F4F4F5;">09:50 WAT</b></div>
+            <div style="width: 100%; background: #1A1A1A; border-radius: 12px; padding: 12px; font-size: 12px; color: #A1A1AA; display: flex; justify-content: space-between;"><span>Earliest deadline</span><b style="color: #F4F4F5;">09:20 WAT</b></div>
           </div>
         </div>
         <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C2b · You can't act on decisions while moving</div>
@@ -590,7 +590,7 @@
         <div style="width: 300px; border-radius: 34px; background: #000; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
           <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
             <div style="display: flex; justify-content: space-between; padding: 12px 18px 6px; font-size: 12px; font-weight: 600;"><span>9:41</span><span>WAT</span></div>
-            <div style="padding: 8px 18px 12px;"><div style="font-family: Poppins; font-weight: 700; font-size: 18px;">Booking 11:20–13:00</div><div style="font-size: 11.5px; color: #FCA5A5;">LAG-118-AB is in service 10:00–15:00 · decide by 09:50</div></div>
+            <div style="padding: 8px 18px 12px;"><div style="font-family: Poppins; font-weight: 700; font-size: 18px;">Booking 11:20–13:00</div><div style="font-size: 11.5px; color: #FCA5A5;">LAG-118-AB is in service 10:00–15:00 · decide by 09:20</div></div>
             <div style="padding: 0 14px; display: flex; flex-direction: column; gap: 8px;">
               <div style="border: 1px solid #2A2A2A; border-radius: 12px; padding: 12px; opacity: .55;"><div style="font-size: 13px; font-weight: 600;">Keep it on another vehicle</div><div style="font-size: 11px; color: #A1A1AA; margin-top: 3px;">Not available: no eligible Comfort vehicle is free</div></div>
               <div style="border: 1px solid #2A2A2A; border-radius: 12px; padding: 12px;"><div style="font-size: 13px; font-weight: 600;">Keep it, and ask the fleet to move the service</div><div style="font-size: 11px; color: #A1A1AA; margin-top: 3px;">Your booking stays as it is. The fleet has already been shown the conflict.</div></div>
@@ -601,6 +601,30 @@
         </div>
         <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C3 · Maintenance impact: each choice shows its outcome, including money</div>
         <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> BookingImpact (RN)</div><div>testID driver.fleet.impactWithdraw</div><div>GET /v1/drivers/me/conflicts/{id} → options + outcomes <b style="color:#B45309;">proposed</b></div><div>POST …/withdraw (Idempotency-Key)</div></div></sc-if>
+      </div>
+
+      <!-- C5 Report breakdown -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #000; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; padding: 12px 18px 6px; font-size: 12px; font-weight: 600;"><span>9:41</span><span>WAT</span></div>
+            <div style="padding: 8px 18px 12px;"><div style="font-family: Poppins; font-weight: 700; font-size: 18px;">Report a vehicle problem</div><div style="font-size: 11.5px; color: #A1A1AA;">LAG-118-AB · you're stopped</div></div>
+            <div style="padding: 0 14px; display: flex; flex-direction: column; gap: 8px;">
+              <div style="border: 1.5px solid #F59E0B; background: rgba(245,158,11,0.08); border-radius: 11px; padding: 11px 12px; font-size: 13px; font-weight: 600;">Can't drive: breakdown</div>
+              <div style="border: 1px solid #2A2A2A; border-radius: 11px; padding: 11px 12px; font-size: 13px; font-weight: 600;">Can drive, needs service soon</div>
+              <div style="background: #1A1A1A; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 7px; font-size: 12px;">
+                <div style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">What happens</div>
+                <div style="color: #D4D4D8; line-height: 1.5;">Your fleet is alerted right away, and the vehicle is marked off-road.</div>
+                <div style="color: #D4D4D8; line-height: 1.5;">Your remittance is pro-rated for the lost hours.</div>
+                <div style="color: #D4D4D8; line-height: 1.5;">2 upcoming bookings will ask you to choose: another vehicle, or withdraw with no penalty.</div>
+              </div>
+              <div style="font-size: 11px; color: #A1A1AA; line-height: 1.5;">If you're unsafe, use the SOS button. This form only reports the vehicle.</div>
+            </div>
+            <div style="margin-top: auto; padding: 14px;"><button style="width: 100%; border: none; background: #F59E0B; color: #0B0B0B; font-family: Poppins; font-weight: 700; font-size: 14px; padding: 14px; border-radius: 12px;">Report breakdown</button></div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C5 · The driver reports a breakdown directly, so the fleet and bookings react minutes sooner</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> ReportVehicleIssue (RN)</div><div>testID driver.fleet.reportIssue</div><div>POST /v1/drivers/me/vehicle-issues (Idempotency-Key) <b style="color:#B45309;">proposed</b></div><div>creates an unplanned_off_road block · the fleet is notified</div></div></sc-if>
       </div>
 
       <!-- C4 Time off -->
@@ -643,18 +667,18 @@
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <div style="width: 300px; border-radius: 34px; background: #191414; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
           <div style="border-radius: 26px; background: #fff; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
-            <div style="padding: 16px; background: #FFFBEB; border-bottom: 1px solid #FDE68A;"><div style="display: inline-flex; font-size: 11px; font-weight: 700; color: #92400E; background: #FEF3C7; padding: 4px 10px; border-radius: 999px;">YOUR CONFIRMATION NEEDED</div><div style="font-family: Poppins; font-weight: 700; font-size: 17px; margin-top: 8px;">Different vehicle, same driver</div></div>
+            <div style="padding: 16px; background: #EFF6FF; border-bottom: 1px solid #BFDBFE;"><div style="display: inline-flex; font-size: 11px; font-weight: 700; color: #1E40AF; background: #DBEAFE; padding: 4px 10px; border-radius: 999px;">VEHICLE UPDATED</div><div style="font-family: Poppins; font-weight: 700; font-size: 17px; margin-top: 8px;">Your driver will arrive in a different car</div></div>
             <div style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
               <div style="font-size: 12.5px; color: #6B7280;">Tue 30 Sep · pickup 11:20–11:35 WAT</div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;"><div style="border: 1px solid #E5E7EB; border-radius: 10px; padding: 10px;"><div style="color: #9CA3AF; font-size: 10.5px;">Was</div><div style="font-weight: 600; text-decoration: line-through; color: #9CA3AF;">Camry · Silver</div><div style="color: #9CA3AF;">Comfort · 4 seats</div></div><div style="border: 1.5px solid #1DB954; background: #ECFDF5; border-radius: 10px; padding: 10px;"><div style="color: #047857; font-size: 10.5px;">Now</div><div style="font-weight: 600;">Corolla · White</div><div style="color: #047857;">Comfort · 4 seats</div></div></div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;"><div style="border: 1px solid #E5E7EB; border-radius: 10px; padding: 10px;"><div style="color: #9CA3AF; font-size: 10.5px;">Was</div><div style="font-weight: 600; text-decoration: line-through; color: #9CA3AF;">Camry · Silver</div><div style="color: #9CA3AF;">Comfort · 4 seats</div></div><div style="border: 1.5px solid #1DB954; background: #ECFDF5; border-radius: 10px; padding: 10px;"><div style="color: #047857; font-size: 10.5px;">Now</div><div style="font-weight: 600;">Corolla · White</div><div style="color: #047857;">Comfort · 4 seats</div><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600; margin-top: 3px;">LAG-744-MM</div></div></div>
               <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;"><div style="display: flex; justify-content: space-between;"><span style="color: #6B7280;">Driver</span><b>Unchanged</b></div><div style="display: flex; justify-content: space-between;"><span style="color: #6B7280;">Fare</span><b>₦5,600 · unchanged</b></div></div>
-              <div style="background: #F9FAFB; border-radius: 10px; padding: 10px 12px; font-size: 11.5px; color: #6B7280; line-height: 1.5;">Nothing changes unless you confirm. Cancelling is free.</div>
+              <div style="background: #F9FAFB; border-radius: 10px; padding: 10px 12px; font-size: 11.5px; color: #6B7280; line-height: 1.5;">Your driver, class, seats, pickup time and fare are all unchanged. You can cancel for free until pickup. Check the plate when the car arrives.</div>
             </div>
-            <div style="margin-top: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px;"><button style="width: 100%; border: none; background: #1DB954; color: #fff; font-family: Poppins; font-weight: 700; padding: 14px; border-radius: 12px;">Confirm new vehicle</button><button style="width: 100%; border: 1px solid #E5E7EB; background: #fff; font-weight: 600; padding: 13px; border-radius: 12px;">Cancel for free</button></div>
+            <div style="margin-top: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px;"><button style="width: 100%; border: none; background: #1DB954; color: #fff; font-family: Poppins; font-weight: 700; padding: 14px; border-radius: 12px;">Got it</button><button style="width: 100%; border: 1px solid #E5E7EB; background: #fff; font-weight: 600; padding: 13px; border-radius: 12px;">Cancel for free</button></div>
           </div>
         </div>
-        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">D1 · Vehicle swap needs the rider's consent</div>
-        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> BookingChangeConsent (RN)</div><div>testID rider.booking.vehicleChangeConfirm</div><div>POST /v1/bookings/{id}/changes/{cid}:accept|decline <b style="color:#B45309;">proposed</b></div></div></sc-if>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">D1 · Vehicle-only swap: the rider is notified and can cancel free. A change to driver, class, seats or window uses an explicit Confirm variant.</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> BookingChangeConsent (RN)</div><div>testID rider.booking.vehicleUpdatedAck · vehicleChangeConfirm (consent variant)</div><div>POST /v1/bookings/{id}/changes/{cid}:accept|decline <b style="color:#B45309;">proposed</b></div></div></sc-if>
       </div>
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <div style="width: 300px; border-radius: 34px; background: #191414; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
@@ -725,7 +749,7 @@
           </div>
         </div>
         <div style="background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
-          <div style="font-family: Poppins; font-weight: 700; font-size: 15px;">Open questions for UBI</div>
+          <div style="font-family: Poppins; font-weight: 700; font-size: 15px;">Decisions (all resolved)</div>
           <sc-for list="{{ openQs }}" as="q" hint-placeholder-count="6"><div style="display: flex; gap: 10px; align-items: flex-start; font-size: 12px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #92400E; background: #FEF3C7; padding: 2px 6px; border-radius: 5px;">{{ q.id }}</span><span style="color: #4B5563; line-height: 1.4;">{{ q.t }}</span></div></sc-for>
         </div>
       </div>
@@ -863,25 +887,25 @@ class Component extends DCLogic {
       { name: "MaintenanceBlock", owner: "Fleet owner / manager", steps: chain(["draft", "checking", "needs_resolution", "scheduled", "active", "completed"]), alt: "checking → scheduled when there is no overlap. cancelled is allowed from any state before active. unplanned_off_road skips straight to active and puts overlapped bookings in at_risk (it never cancels them)." },
       { name: "AssignmentProposal", owner: "Fleet proposes · driver signs", steps: chain(["draft", "checking", "sent", "pending_signature", "signed"]), alt: "declined (no penalty, no score) · expired (after 48 h) · withdrawn (by the fleet) · superseded. An overlap with a signed shift fails at checking, so it can never be sent." },
       { name: "DriverAvailability", owner: "Driver only", steps: chain(["draft", "checking", "saved"]), alt: "saved_with_withdrawals: the driver confirmed the explained outcome for each booking they chose to withdraw. Otherwise the conflicting interval is trimmed." },
-      { name: "BookingVehicleSwap", owner: "Fleet → driver → rider", steps: chain(["proposed", "driver_accepted", "revalidating", "rider_consent_pending", "applied"]), alt: "driver_declined, revalidation_failed, rider_declined or expired: the booking keeps its original vehicle. If the blocker is still there, the booking becomes at_risk." },
+      { name: "BookingVehicleSwap", owner: "Fleet → driver → rider", steps: chain(["proposed", "driver_accepted", "revalidating", "rider_notified | rider_consent_pending", "applied"]), alt: "Same driver, class, capacity and window: rider_notified, applied at once, with free cancellation until pickup. Otherwise rider_consent_pending. Declines and failures keep the original vehicle, and the booking becomes at_risk if the blocker remains." },
       { name: "BookingRisk (overlay)", owner: "Backend", steps: chain(["ok", "at_risk", "resolved"]), alt: "If still unresolved at the deadline, the booking moves to failed(reason) with an explained outcome. It is never silently cancelled." },
       { name: "VehicleAvailability (derived)", owner: "Backend", steps: chain(["in_service", "maintenance", "doc_expired", "held_by_ubi", "unassigned"]), alt: "Derived for each interval from the precedence order. Clients never set it." },
     ];
     const conflicts = [
-      { name: "Maintenance overlaps a confirmed booking", sev: "Critical", ...LT.bad, who: "Fleet, then driver, then rider", actions: "Move or shorten the block · propose a vehicle swap · the driver may withdraw", consent: "Swap: driver accepts, then rider consents. Withdrawal: driver only.", money: "On withdrawal: driver commission returned, rider funding released, no penalty." },
+      { name: "Maintenance overlaps a confirmed booking", sev: "Critical", ...LT.bad, who: "Fleet, then driver, then rider", actions: "Move or shorten the block · propose a vehicle swap · the driver may withdraw", consent: "Swap: driver accepts, then rider consents. Withdrawal: driver only.", money: "Weekly fixed remittance pro-rated for lost shift hours. On withdrawal: driver commission returned, rider funding released, no penalty." },
       { name: "Two drivers, one vehicle, overlapping shifts", sev: "Blocked", ...LT.mute, who: "Fleet", actions: "Change the proposed times. The proposal cannot be sent.", consent: "None needed. The server rejects it at propose time.", money: "None" },
-      { name: "Vehicle document expires inside a booking", sev: "High", ...LT.warn, who: "Fleet renews · UBI enforces", actions: "Upload the renewal before expiry. Otherwise swap the vehicle or the driver withdraws.", consent: "Same as a swap", money: "If unresolved: booking fails as eligibility_lost. Commission returned, funding released." },
+      { name: "Vehicle document expires inside a booking", sev: "High", ...LT.warn, who: "Fleet renews · UBI enforces", actions: "Prevented first: the server stops offering bookings that fall after a known expiry. For bookings that already exist: upload the renewal, swap, or the driver withdraws.", consent: "Same as a swap", money: "If unresolved: booking fails as eligibility_lost. Commission returned, funding released." },
       { name: "Driver licence expires inside a booking", sev: "High", ...LT.warn, who: "Driver renews · UBI enforces", actions: "Driver renews. Otherwise the driver withdraws or the rider is offered a rematch.", consent: "Rematch needs rider consent (different driver)", money: "Same as eligibility_lost" },
       { name: "Driver time off overlaps their own booking", sev: "Medium", ...LT.info, who: "Driver", actions: "Keep the booking (time off is trimmed) or withdraw", consent: "Driver only. The rider then chooses a rematch at the same fare or a refund.", money: "Commission returned. Rider funding released, or kept for a rematch at the same fare." },
-      { name: "Vehicle swap for a booking", sev: "Medium", ...LT.info, who: "Fleet proposes · driver accepts · rider consents", actions: "Swap to a vehicle of the same or higher class with at least the same capacity, revalidated", consent: "Driver always. Rider always, because the vehicle is visible to them (see open question Q3).", money: "Fare unchanged. Commission is not charged again." },
+      { name: "Vehicle swap for a booking", sev: "Medium", ...LT.info, who: "Fleet proposes · driver accepts · rider consents", actions: "Swap to a vehicle of the same or higher class with at least the same capacity, revalidated", consent: "Driver always. Rider: notified with a free-cancel option if driver, class, capacity and window are unchanged. Explicit consent if any of them changes (Q3).", money: "Fare unchanged. Commission is not charged again." },
       { name: "Termination with bookings after the notice date", sev: "High", ...LT.warn, who: "Driver · rider", actions: "The driver keeps the booking on another eligible vehicle, or withdraws", consent: "Rider consent if the vehicle changes", money: "Withdrawal as above. Remittance stops at the end of the notice period (not retroactive)." },
       { name: "UBI holds a driver or vehicle", sev: "Status", ...LT.mute, who: "UBI only", actions: "The fleet has no action. The rider is offered a rematch or a refund.", consent: "Rider chooses", money: "Rider funding released on refund. The commission outcome follows UBI's decision." },
-      { name: "Unplanned off-road (breakdown)", sev: "Critical", ...LT.bad, who: "Fleet reports, then driver, then rider", actions: "The block takes effect at once. Bookings become At risk and follow the swap / withdraw path.", consent: "Same as a swap", money: "Same as a withdrawal" },
+      { name: "Unplanned off-road (breakdown)", sev: "Critical", ...LT.bad, who: "Driver or fleet reports, then driver, then rider", actions: "The block takes effect at once. Bookings become At risk and follow the swap / withdraw path.", consent: "Same as a swap", money: "Weekly fixed remittance pro-rated for lost hours (Q8). Bookings: same as a withdrawal." },
     ];
 
     const act = on => on ? { a1bg: "#1DB954", a1c: "#0B0B0B" } : { a1bg: "#27272A", a1c: "#D4D4D8" };
     const ccRows = [
-      Object.assign({ sev: "Critical", title: "Maintenance overlaps a confirmed booking", subject: "LAG-118-AB · Booked 11:20–13:00", owner: "Fleet → driver → rider", due: "30 Sep 09:50", a1: "Resolve", a2: "View block" }, st("", "bad"), act(true), { sc: TONE.bad.sc, sb: TONE.bad.sb }),
+      Object.assign({ sev: "Critical", title: "Maintenance overlaps a confirmed booking", subject: "LAG-118-AB · Booked 11:20–13:00", owner: "Fleet → driver → rider", due: "30 Sep 09:20", a1: "Resolve", a2: "View block" }, st("", "bad"), act(true), { sc: TONE.bad.sc, sb: TONE.bad.sb }),
       Object.assign({ sev: "High", title: "Insurance expires before a booking", subject: "LAG-309-TT · expires 1 Oct 00:00", owner: "Fleet (renew) · UBI enforces", due: "30 Sep 23:59", a1: "Upload renewal", a2: "Details" }, act(true), { sc: TONE.warn.sc, sb: TONE.warn.sb }),
       Object.assign({ sev: "High", title: "Driver licence expires before a booking", subject: "Musa I. · expires 3 Oct", owner: "Driver · UBI enforces", due: "2 Oct 23:59", a1: "Send reminder", a2: "Details" }, act(false), { sc: TONE.warn.sc, sb: TONE.warn.sb }),
       Object.assign({ sev: "Medium", title: "Driver time off overlaps their own booking", subject: "Tunde B. · 1 booking", owner: "Driver (resolving)", due: "1 Oct 12:00", a1: "View only", a2: "—" }, act(false), { sc: TONE.info.sc, sb: TONE.info.sb }),
@@ -920,7 +944,7 @@ class Component extends DCLogic {
       S("Checking…", "all", "Checking with UBI…", "Shown during a slow feasibility check. Confirm stays disabled and success is never shown early.", "#5B73C4"),
       S("Consent pending / expired", "portal", "Waiting for Kemi · expires in 46 h", "Expired: \"No reply. You can send a new proposal.\"", "#5B73C4"),
       S("Document expiring", "portal/driver", "Insurance expires 15 Oct. 1 booking is after that date.", "Warnings at 30, 14, 7 and 1 day, plus whenever a booking falls after expiry.", "#F59E0B"),
-      S("Booking at risk", "all", "At risk · needs a decision by 09:50", "Unresolved at the deadline → failed(reason), with the outcome explained to everyone affected.", "#EF4444"),
+      S("Booking at risk", "all", "At risk · needs a decision by 09:20", "Unresolved at the deadline → failed(reason), with the outcome explained to everyone affected.", "#EF4444"),
       S("DST changeover", "portal/driver", "Sun · 25-hour day · 01:00–02:00 happens twice", "The ruler repeats the hour with its zone offset. Blocks are stored in UTC.", "#F59E0B"),
       S("Month boundary", "portal", "29 Sep – 5 Oct 2026", "Week headers label the new month. Days split at local midnight.", "#52525B"),
       S("Very large fleet", "portal", "Showing 1–40 of 212 vehicles", "Virtualised rows at a fixed height. Filters and search run on the server.", "#52525B"),
@@ -935,12 +959,15 @@ class Component extends DCLogic {
       { id: "FL-7", t: "Utilisation aggregates with an asOf timestamp. There is no odometer feed, so mileage-based maintenance is out." },
     ];
     const openQs = [
-      { id: "Q1", t: "Should fleets see a coarse zone label on booking blocks? The default is no." },
-      { id: "Q2", t: "Does remittance pro-rate for hours lost to maintenance, or is it fixed per the terms?" },
-      { id: "Q3", t: "Does a plate-only change (same model, class and capacity) still need rider consent? The default is yes." },
-      { id: "Q4", t: "How long a pre-pickup deadline should conflict resolution get, per booking horizon?" },
-      { id: "Q5", t: "Can a manager report unplanned off-road, or only the owner? The default is both." },
-      { id: "Q6", t: "Warning cadence for expiring documents (the default is 30/14/7/1 days)." },
+      { id: "Q1 ✓", t: "Decided: booking blocks stay fully opaque, with no zone label." },
+      { id: "Q2 ✓", t: "Decided: weekly fixed remittance is pro-rated for shift hours lost to fleet-scheduled maintenance." },
+      { id: "Q3 ✓", t: "Best practice: if only the vehicle changes (same driver, class, capacity, window and fare), notify the rider with its plate and free cancellation. Explicit consent is kept for any other change." },
+      { id: "Q7 ✓", t: "Decided: fleets never see a driver's net earnings. They see hours, gross, commission and remittance status." },
+      { id: "Q4 ✓", t: "Best practice: the deadline is the earlier of reconfirmation and pickup − 2 h (city-configurable). At the deadline, the rider is offered a rematch at the same fare automatically." },
+      { id: "Q5 ✓", t: "Best practice: the driver can report a breakdown from the app, as well as owners and managers." },
+      { id: "Q6 ✓", t: "Best practice: warnings at 30/14/7/1 days, and the server never offers a booking that falls after a known expiry." },
+      { id: "Q8 ✓", t: "Decided: breakdowns (unplanned off-road) pro-rate weekly fixed remittance too." },
+      { id: "Q9 ✓", t: "Decided: fleets see driver time off as read-only hours, with no reason." },
     ];
     return {
       states, deps, openQs,
