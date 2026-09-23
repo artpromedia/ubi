@@ -92,7 +92,13 @@ app.use(
 // Error handler
 app.use("*", errorHandler);
 
-// Service auth and rate limiting for internal routes
+// Service auth and rate limiting for internal routes.
+//
+// The limiter runs BEFORE the routers authenticate, so it resolves the caller
+// itself with the routers' own checks (src/middleware/rate-limit.ts): a valid
+// service key is not throttled, a verified gateway identity is counted per
+// user, anything else per client address — never one shared bucket. It
+// grants no authentication; every route below still authenticates as before.
 app.use("/fraud/*", paymentRateLimit);
 app.use("/fraud/*", serviceAuth);
 app.use("/safety/*", paymentRateLimit);
