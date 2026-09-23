@@ -77,6 +77,58 @@ be tuned with `RIDE_INTERNAL_CONTEXT_MAX_AGE_MS` on the ride-service.
   setting the header) is refused, and a missing/misconfigured
   `UBI_IDENTITY_SECRET` is a 503, never a fall back to the unsigned header.
 
+## Gateway routing (which path a request arrives at)
+
+Caddy sends all API traffic to the gateway, which mounts `/v1`. The
+downstream path is decided per service by
+`services/api-gateway/src/routes/proxy-map.ts`, never by a blanket strip of
+`/v1` (round 4 found that strip 404-ing every ride-service, payment-service
+and delivery-service call). Identity headers are identical under every
+mapping.
+
+| Service              | Gateway rules                                                                                                    | Arrives as                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| user-service         | `/auth`, `/users`, `/devices`, `/identity`, `/webhooks/telco`, `/drivers/me/documents\|eligibility`, `/mandates` | `/v1` stripped (`/v1/users/me` → `/users/me`)                                                                  |
+| ride-service         | `/rides`, `/drivers`, `/locations`, `/mp`, `/admin/mp`                                                           | unchanged (`/v1/mp/quote`)                                                                                     |
+| ask-service          | `/ask`                                                                                                           | unchanged (`/v1/ask/threads`)                                                                                  |
+| payment-service      | `/wallet` (+ unbacked `/wallets`, `/payments`, `/transactions`)                                                  | unchanged (`/v1/wallet/mp/overview`)                                                                           |
+| delivery-service     | `/delivery` (+ unbacked `/packages`)                                                                             | `/api/v1` base, `/delivery` removed (`/v1/delivery/deliveries/:id/custody` → `/api/v1/deliveries/:id/custody`) |
+| notification-service | `/notifications`                                                                                                 | `/api/v1` base (`/api/v1/notifications`)                                                                       |
+| food-service         | `/restaurants`, `/menus` (+ unbacked `/food`)                                                                    | `/v1` stripped                                                                                                 |
+
+- **Proof, not convention.** ride-service and delivery-service walk their
+  production chi routers into `internal/handler(s)/routes.manifest`
+  (`routes_manifest_test.go`); payment-service reads its Hono route table into
+  `tests/routes.manifest` (`tests/routes-manifest.test.ts`). Each fails when
+  stale and names the `UPDATE_ROUTE_MANIFEST=1` command. The gateway's
+  `tests/route-contract.test.ts` maps representative client paths through the
+  real mapping and the real app and requires each to land on a manifest route;
+  every proxy rule must be covered or declared unbacked with a reason.
+- **Delivery custody through the gateway.** The rider app's custody timeline
+  and return consent (`/v1/delivery/deliveries/:id/custody[...]`) now reach
+  delivery-service's gateway-identity custody group. The legacy delivery CRUD,
+  driver and webhook routes behind the same rule still authenticate with the
+  service's own JWT / service key, which the gateway does not forward.
+- **Not proxied at all (gateway 404):** travel-service (`/v1/travel`,
+  `/v1/reservations`), growth-service (`/v1/benefits`, `/v1/referrals`,
+  `/v1/attribution`, `/v1/driver`, `/v1/growth`, `/v1/ai/marketing`), config-service
+  (`/v1/config`, `/v1/flags`), `/v1/kyc` and `/v1/ops/*`. Clients call them;
+  adding a rule is a scope decision (see `identity/scopes.ts`) and is pinned by
+  the contract test's unproxied list.
+- **Ask streamed turn and `PROXY_TIMEOUT`.** The gateway buffers every
+  downstream body before answering, including ask-service's
+  `text/event-stream` message turn, and `PROXY_TIMEOUT` (default 30 s) covers
+  the whole exchange. A turn is up to `maxToolLoops` (6) model calls, each
+  bounded by the model provider's 20 s default timeout, so a long turn is
+  answered `504 GATEWAY_TIMEOUT` and the client sees no event until the turn
+  ends. Until the proxy streams the body through, raise `PROXY_TIMEOUT` on the
+  gateway toward, but below, Caddy's 120 s `read_timeout`; a turn longer than
+  that cannot complete through the edge.
+- **Every rule needs its service URL.** The gateway falls back to
+  `localhost` defaults when a `*_SERVICE_URL` is unset; the production compose
+  file must set `ASK_SERVICE_URL` (and any other service it proxies) or those
+  rules answer 503.
+
 ## Rotating `RIDE_INTERNAL_CONTEXT_SECRET`
 
 The variable is a comma-separated key list on BOTH the gateway and the

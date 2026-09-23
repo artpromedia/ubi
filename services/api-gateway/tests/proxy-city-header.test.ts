@@ -63,6 +63,9 @@ describe("x-city-id forwarding", () => {
 
     const forwarded = upstream.received[0];
     expect(forwarded).toBeDefined();
+    // payment-service mounts /v1/wallet itself: the path (and the query)
+    // cross unchanged — a stripped /wallet/mp/overview is a 404 there.
+    expect(forwarded?.url).toBe("/v1/wallet/mp/overview?driverId=usr_driver");
     // The city context the driver app declared crosses the wire.
     expect(forwarded?.headers["x-city-id"]).toBe("LOS");
     // The reserved identity headers still forward alongside it.
@@ -83,6 +86,7 @@ describe("x-city-id forwarding", () => {
       }),
     );
 
+    expect(upstream.received[0]?.url).toBe("/users/me");
     expect(upstream.received[0]?.headers["x-city-id"]).toBe("ABJ");
   });
 });

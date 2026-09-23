@@ -77,6 +77,9 @@ describe("ride-service HMAC identity context", () => {
     expect(response.status).toBe(200);
     const forwarded = upstream.received[0];
     expect(forwarded).toBeDefined();
+    // ride-service mounts everything under /v1 itself: the path crosses
+    // unchanged (routes/proxy-map.ts), never stripped to /rides/active.
+    expect(forwarded?.url).toBe("/v1/rides/active");
 
     // The identity that crossed the wire is the gateway's, not the client's.
     expect(forwarded?.headers["x-auth-user-id"]).toBe("usr_real");

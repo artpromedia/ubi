@@ -306,6 +306,9 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/mp/scheduled-requests", anyOf: ["mp:request"] },
   { methods: "*", prefix: "/v1/mp/advance-requests", anyOf: ["mp:request"] },
   { methods: "*", prefix: "/v1/mp/recurring-templates", anyOf: ["mp:request"] },
+  // Rider confidence (A06/A04): saved drivers and the service-needs catalog.
+  { methods: "*", prefix: "/v1/mp/favourite-drivers", anyOf: ["mp:request"] },
+  { methods: ["GET"], prefix: "/v1/mp/service-needs", anyOf: ["mp:request"] },
   {
     methods: "*",
     prefix: "/v1/mp/advance-bookings",

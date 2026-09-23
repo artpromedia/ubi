@@ -5,9 +5,12 @@
  * =====================================================================
  *
  * VERSION PREFIX. The gateway mounts `/v1`. `/api` is not a UBI prefix and is
- * not routed. Downstream services receive the path with `/v1` stripped, so
- * `POST /v1/devices/enroll` at the edge arrives at user-service as
- * `POST /devices/enroll`.
+ * not routed at the edge. The downstream path is decided per service by
+ * routes/proxy-map.ts: user-service's unversioned routes receive the path with
+ * `/v1` stripped (`POST /v1/devices/enroll` arrives as `POST /devices/enroll`),
+ * ride-service, ask-service and payment-service receive it unchanged, and
+ * delivery-service and notification-service receive it under their `/api/v1`
+ * base. Identity headers are identical whichever mapping applies.
  *
  * AUTHORITATIVE (verify this, trust nothing else)
  *

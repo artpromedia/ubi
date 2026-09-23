@@ -10,61 +10,36 @@
  * wire, and it copies them from the request object rather than rebuilding them,
  * so there is exactly one place that can mint an identity.
  *
+ * WHERE a request goes — the service, and the exact downstream path — is
+ * decided by proxy-map.ts (per-service base paths, pinned against the
+ * services' route manifests by tests/route-contract.test.ts). This file only
+ * performs the hop.
+ *
  * See middleware/identity.ts for the canonical header contract.
  */
 import { Hono, type Context } from "hono";
 
+import {
+  PROXY_RULES,
+  downstreamPath,
+  serviceBaseUrl,
+  type ProxyRule,
+} from "./proxy-map";
 import { proxyLogger } from "../lib/logger.js";
 import { IDENTITY_HEADER, REQUEST_ID_HEADER } from "../middleware/identity";
 
 const proxyRoutes = new Hono();
 
 /**
- * Service registry — maps a logical service to the env var that carries its
- * URL and the local default. Resolved per request rather than at import, so a
- * redeploy that changes a service URL does not need the gateway rebuilt.
+ * Request timeout in milliseconds, covering the WHOLE exchange: the timer runs
+ * until the downstream body has been read, because the body is buffered
+ * (`response.text()` below) before it is returned. That includes ask-service's
+ * streamed message turn (text/event-stream): the client receives the turn's
+ * events together once the turn ends, and a turn that outlasts this budget is
+ * answered 504 GATEWAY_TIMEOUT. See docs/security/INTERNAL_IDENTITY.md
+ * ("Gateway routing") for the operating note; streaming the body through is a
+ * separate proxy change.
  */
-const SERVICE_REGISTRY: Record<
-  string,
-  { readonly env: string; readonly fallback: string }
-> = {
-  users: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
-  auth: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
-  identity: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
-  devices: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
-  rides: { env: "RIDE_SERVICE_URL", fallback: "http://localhost:4002" },
-  food: { env: "FOOD_SERVICE_URL", fallback: "http://localhost:4003" },
-  restaurants: { env: "FOOD_SERVICE_URL", fallback: "http://localhost:4003" },
-  delivery: { env: "DELIVERY_SERVICE_URL", fallback: "http://localhost:4004" },
-  packages: { env: "DELIVERY_SERVICE_URL", fallback: "http://localhost:4004" },
-  payments: { env: "PAYMENT_SERVICE_URL", fallback: "http://localhost:4005" },
-  wallets: { env: "PAYMENT_SERVICE_URL", fallback: "http://localhost:4005" },
-  notifications: {
-    env: "NOTIFICATION_SERVICE_URL",
-    fallback: "http://localhost:4006",
-  },
-  analytics: {
-    env: "ANALYTICS_SERVICE_URL",
-    fallback: "http://localhost:4007",
-  },
-  ceerion: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
-  vehicles: { env: "CEERION_SERVICE_URL", fallback: "http://localhost:4008" },
-  ask: { env: "ASK_SERVICE_URL", fallback: "http://localhost:4013" },
-  mandates: { env: "USER_SERVICE_URL", fallback: "http://localhost:4001" },
-};
-
-function serviceUrl(serviceName: string): string | undefined {
-  const entry = SERVICE_REGISTRY[serviceName];
-  if (entry === undefined) {
-    return undefined;
-  }
-  const configured = process.env[entry.env];
-  return configured !== undefined && configured.length > 0
-    ? configured
-    : entry.fallback;
-}
-
-// Request timeout in milliseconds
 const REQUEST_TIMEOUT = Number.parseInt(
   process.env.PROXY_TIMEOUT || "30000",
   10,
@@ -122,31 +97,19 @@ const RESPONSE_HEADERS_TO_FORWARD: readonly string[] = [
 ];
 
 /**
- * Generic proxy handler
- * Forwards requests to the appropriate downstream service
+ * Generic proxy handler.
+ *
+ * Forwards the request to the rule's service at the path the proxy map
+ * decides (proxy-map.ts: the service's base path, never a blanket strip of
+ * `/v1`), with the query string unchanged.
  */
 const proxyToService = async (
-  serviceName: string,
-  originalPath: string,
+  rule: ProxyRule,
   c: Context,
 ): Promise<Response> => {
-  const baseUrl = serviceUrl(serviceName);
-
-  if (baseUrl === undefined) {
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "SERVICE_NOT_FOUND",
-          message: `Service '${serviceName}' is not configured`,
-        },
-      },
-      503,
-    );
-  }
-
+  const serviceName = rule.service;
   const url = new URL(c.req.url);
-  const targetUrl = `${baseUrl}${originalPath}${url.search}`;
+  const targetUrl = `${serviceBaseUrl(serviceName)}${downstreamPath(rule, c.req.path)}${url.search}`;
 
   const forwardHeaders = new Headers();
   for (const header of HEADERS_TO_FORWARD) {
@@ -210,7 +173,7 @@ const proxyToService = async (
         success: false,
         error: {
           code: "SERVICE_UNAVAILABLE",
-          message: `Unable to reach ${serviceName} service`,
+          message: `Unable to reach ${serviceName}`,
         },
       },
       503,
@@ -220,26 +183,11 @@ const proxyToService = async (
   }
 };
 
-/** The gateway mounts /v1; downstream services do not carry the version prefix. */
-const downstreamPath = (c: Context): string => c.req.path.replace(/^\/v1/, "");
-
 /** Builds a route callback: an async handler that awaits the proxy hop. */
 const forward =
-  (serviceName: string) =>
+  (rule: ProxyRule) =>
   async (c: Context): Promise<Response> => {
-    const response = await proxyToService(serviceName, downstreamPath(c), c);
-    return response;
-  };
-
-/**
- * For a service that mounts its routes UNDER the version prefix itself
- * (ask-service serves `/v1/ask/*`): the path crosses unchanged, so the
- * gateway's `/v1/ask/threads` is the service's `/v1/ask/threads`.
- */
-const forwardVersioned =
-  (serviceName: string) =>
-  async (c: Context): Promise<Response> => {
-    const response = await proxyToService(serviceName, c.req.path, c);
+    const response = await proxyToService(rule, c);
     return response;
   };
 
@@ -247,72 +195,11 @@ const forwardVersioned =
 // Route Definitions
 // ===========================================
 
-// User Service routes
-proxyRoutes.all("/auth/*", forward("auth"));
-proxyRoutes.all("/users/*", forward("users"));
-
-// Identity (slice 03) — device enrolment, step-up, documents, review cases.
-// These are registered BEFORE /drivers/* so driver documents reach the
-// user-service rather than the ride-service.
-proxyRoutes.all("/devices", forward("devices"));
-proxyRoutes.all("/devices/*", forward("devices"));
-proxyRoutes.all("/identity/*", forward("identity"));
-proxyRoutes.all("/webhooks/telco/*", forward("identity"));
-proxyRoutes.all("/drivers/me/documents", forward("identity"));
-proxyRoutes.all("/drivers/me/documents/*", forward("identity"));
-proxyRoutes.all("/drivers/me/eligibility", forward("identity"));
-
-// Ride Service routes
-proxyRoutes.all("/rides/*", forward("rides"));
-proxyRoutes.all("/drivers/*", forward("rides"));
-proxyRoutes.all("/pricing/*", forward("rides"));
-proxyRoutes.all("/locations/*", forward("rides"));
-
-// Marketplace (negotiated-fare) routes — the marketplace engine lives in the
-// ride-service, so /mp/* rides on the existing rides registry entry. The
-// wallet-side marketplace endpoints (/wallet/mp/*) are served by
-// payment-service and already flow through the /wallet/* mount below.
-proxyRoutes.all("/mp/*", forward("rides"));
-proxyRoutes.all("/admin/mp/*", forward("rides"));
-
-// Ask UBI (ask-service) — threads, the streamed turn, reviews, confirmations,
-// executions and the AI marketplace stages. Identity reaches it as for every
-// proxy: the signed x-ubi-identity context plus the x-auth-city-id /
-// x-ubi-city-id city claims, all written by the identity middleware after the
-// strip, never copied from the client. ask-service verifies the context and,
-// in production, refuses a request without it.
-proxyRoutes.all("/ask/*", forwardVersioned("ask"));
-
-// Mandates (standing authorisations) live in user-service, which mounts
-// `/mandates` and verifies the same signed context.
-proxyRoutes.all("/mandates", forward("mandates"));
-proxyRoutes.all("/mandates/*", forward("mandates"));
-
-// Food Service routes
-proxyRoutes.all("/food/*", forward("food"));
-proxyRoutes.all("/restaurants/*", forward("restaurants"));
-proxyRoutes.all("/menus/*", forward("food"));
-
-// Delivery Service routes
-proxyRoutes.all("/delivery/*", forward("delivery"));
-proxyRoutes.all("/packages/*", forward("packages"));
-
-// Payment Service routes
-proxyRoutes.all("/payments/*", forward("payments"));
-proxyRoutes.all("/wallets/*", forward("wallets"));
-proxyRoutes.all("/wallet/*", forward("wallets"));
-proxyRoutes.all("/transactions/*", forward("payments"));
-
-// Notification Service routes
-proxyRoutes.all("/notifications/*", forward("notifications"));
-
-// Analytics Service routes
-proxyRoutes.all("/analytics/*", forward("analytics"));
-proxyRoutes.all("/reports/*", forward("analytics"));
-
-// CEERION Service routes (EV financing)
-proxyRoutes.all("/ceerion/*", forward("ceerion"));
-proxyRoutes.all("/vehicles/*", forward("vehicles"));
-proxyRoutes.all("/financing/*", forward("ceerion"));
+// Every rule, in the order proxy-map.ts lists them (Hono matches the first).
+// The table — not this file — is what tests/route-contract.test.ts checks
+// against the services' route manifests.
+for (const rule of PROXY_RULES) {
+  proxyRoutes.all(rule.pattern, forward(rule));
+}
 
 export { proxyRoutes };
