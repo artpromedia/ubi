@@ -58,8 +58,14 @@ import {
 const PAYMENT_SERVICE_DIR = path.resolve(__dirname, "../../payment-service");
 const TSX = path.resolve(__dirname, "../node_modules/.bin/tsx");
 const SERVICE_KEY = "travel-payment-port-integration-key";
+// A Redis database of its own for the spawned payment-service, NOT the one
+// payment-service's own suite uses (PAYMENT_TEST_REDIS_URL, default db 15).
+// Both runs share payment-service's rate-limit bucket keys: when the two
+// suites ran at the same time on db 15, the payment suite's calls filled the
+// shared `ratelimit:payment:unknown` bucket and this suite's spawned service
+// answered 429, which the port reports as service_unavailable.
 const REDIS_URL =
-  process.env.PAYMENT_TEST_REDIS_URL ?? "redis://127.0.0.1:6379/15";
+  process.env.TRAVEL_PAYMENT_TEST_REDIS_URL ?? "redis://127.0.0.1:6379/14";
 
 const db = testDb();
 let child: ChildProcess | undefined;
