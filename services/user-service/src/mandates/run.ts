@@ -9,18 +9,21 @@
  * accepted, because this step only authorises — the booking is a separate
  * order in travel-service that consumes the grant.
  *
- * Allowance reservation is a single guarded UPDATE. Concurrent runs of the same
- * mandate serialise on that one row and re-check the caps against the latest
- * committed values, so the period cap and run count can never be exceeded no
- * matter how many runs fire at once.
+ * Allowance reservation is the canonical `mandate_allowance_reserve` (see
+ * ./allowance.ts): a single guarded UPDATE. Concurrent runs of the same mandate
+ * serialise on that one row and re-check the caps against the latest committed
+ * values, so the period cap and run count can never be exceeded no matter how
+ * many runs fire at once. A run authorises its price outright, so the
+ * reservation is committed in the same transaction that mints the grant.
  */
 import { randomBytes } from "node:crypto";
 
 import { ContractError } from "@ubi/contracts";
 
+import { reserveAllowance, settleAllowance } from "./allowance";
 import { currentPeriodStart } from "./mandates";
-import { isMandateAction, type MandateRunInput } from "./schemas";
-import { isoDate, runResultView, type RunResultView } from "./serialize";
+import { isRunnableMandateAction, type MandateRunInput } from "./schemas";
+import { runResultView, type RunResultView } from "./serialize";
 import { guardTransition } from "./transition";
 import { insertGrant } from "../grants/grants";
 import { writeAudit, type Tx } from "../identity/audit";
@@ -105,7 +108,9 @@ function preReserveBlock(
   if (mandate.status === "expired") {
     return "mandate_expired";
   }
-  if (!isMandateAction(mandate.action)) {
+  // Only the travel actions are runnable by a trigger; a marketplace mandate
+  // acts solely through ask-service's selection against a live offer.
+  if (!isRunnableMandateAction(mandate.action)) {
     return "action_not_allowed";
   }
 
@@ -136,34 +141,22 @@ function preReserveBlock(
 }
 
 /**
- * Atomically reserves one run's worth of allowance for the period. The guarded
- * UPDATE both increments and re-checks the caps under the row lock, so it
- * returns true only if the reservation still fits after any concurrent run.
+ * Maps a refused reservation to the run's block reason. The allowance function
+ * re-checks status / expiry / per-run cap under the mandate row lock, so a
+ * pause or revoke that landed after `preReserveBlock` read the row still blocks
+ * the run with its own reason rather than as "exhausted".
  */
-async function reserveAllowance(
-  tx: Tx,
-  mandateId: string,
-  periodStartStr: string,
-  priceMinor: number,
-  periodRuns: number,
-  periodCapMinor: bigint,
-): Promise<boolean> {
-  await tx.$executeRaw`
-    INSERT INTO mandate_allowances (mandate_id, period_start, amount_used_minor, runs_used)
-    VALUES (${mandateId}, ${periodStartStr}::date, 0, 0)
-    ON CONFLICT (mandate_id, period_start) DO NOTHING`;
-
-  const reserved = await tx.$queryRaw<{ runs_used: number }[]>`
-    UPDATE mandate_allowances
-    SET amount_used_minor = amount_used_minor + ${BigInt(priceMinor)},
-        runs_used = runs_used + 1
-    WHERE mandate_id = ${mandateId}
-      AND period_start = ${periodStartStr}::date
-      AND runs_used + 1 <= ${periodRuns}
-      AND amount_used_minor + ${BigInt(priceMinor)} <= ${periodCapMinor}
-    RETURNING runs_used`;
-
-  return reserved.length > 0;
+function reserveBlock(outcome: string): BlockReason {
+  switch (outcome) {
+    case "mandate_paused":
+    case "mandate_revoked":
+    case "mandate_expired":
+      return outcome;
+    case "price_above_cap":
+      return "price_above_cap";
+    default:
+      return "allowance_exhausted";
+  }
 }
 
 async function recordBlocked(
@@ -279,10 +272,20 @@ async function expireMandate(
 }
 
 function isUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const { code, meta } = error as { code?: unknown; meta?: unknown };
+  if (code === "P2002") {
+    return true;
+  }
+  // A collision inside the allowance function (a concurrent run of the same
+  // trigger reserving first) surfaces as a raw-query error carrying 23505.
   return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: unknown }).code === "P2002"
+    code === "P2010" &&
+    typeof meta === "object" &&
+    meta !== null &&
+    (meta as { code?: unknown }).code === "23505"
   );
 }
 
@@ -293,7 +296,6 @@ export async function runMandate(
 ): Promise<RunResultView> {
   const now = deps.now();
   const triggeredBy = input.triggeredBy ?? "mandate-runner";
-  const periodStartStr = isoDate(currentPeriodStart(now));
 
   const load = await deps.prisma.mandate.findUnique({
     where: { id: mandateId },
@@ -353,25 +355,58 @@ export async function runMandate(
           return runResultView(blocked, null, false);
         }
 
-        const reserved = await reserveAllowance(
-          tx,
+        const reservation = await reserveAllowance(tx, {
+          reservationId: newId("mar"),
+          idempotencyKey: `mandate:${mandate.id}:${input.triggerRef}`,
           mandateId,
-          periodStartStr,
-          input.price.amountMinor,
-          mandate.periodRuns,
-          mandate.periodCapMinor,
-        );
-        if (!reserved) {
+          periodStart: currentPeriodStart(now),
+          amountMinor: input.price.amountMinor,
+          currency: input.price.currency,
+          grantId: null,
+          now,
+        });
+        if (reservation.outcome === "replayed") {
+          // A concurrent run of the same trigger committed first: its
+          // reservation, grant and execution are the answer, never a second.
+          const prior = await tx.mandateExecution.findUnique({
+            where: {
+              mandateId_triggerRef: { mandateId, triggerRef: input.triggerRef },
+            },
+          });
+          if (prior !== null) {
+            const grant =
+              prior.grantId === null
+                ? null
+                : await tx.actionGrant.findUnique({
+                    where: { id: prior.grantId },
+                  });
+            return runResultView(prior, grant, true);
+          }
+        }
+        if (
+          reservation.outcome !== "reserved" ||
+          reservation.reservationId === null
+        ) {
           const blocked = await recordBlocked(
             tx,
             mandate,
             input,
-            "allowance_exhausted",
+            reserveBlock(reservation.outcome),
           );
           return runResultView(blocked, null, false);
         }
 
         const grant = await mintRunGrant(tx, mandate, input, now, triggeredBy);
+        // A run authorises its price outright: the reservation is spent now,
+        // atomically with the grant it paid for.
+        await settleAllowance(tx, {
+          reservationId: reservation.reservationId,
+          action: "commit",
+          actualMinor: input.price.amountMinor,
+          resultRef: grant.id,
+          grantId: grant.id,
+          now,
+        });
         const executed = await recordExecuted(
           tx,
           mandate,

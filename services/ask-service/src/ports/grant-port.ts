@@ -34,6 +34,13 @@ export interface GrantMintRequest {
   readonly assurance: GrantAssurance;
   /** The proof the user supplied (PIN token / biometric assertion). Never logged. */
   readonly assuranceProof: string;
+  /**
+   * The ORIGINATING mandate of an `assurance: "mandate"` grant, persisted on the
+   * grant row at mint (`action_grants.mandate_id`). Every later action under the
+   * grant derives its authority from that stored binding — never from a caller
+   * (recheck A03 / P02). Required with, and only with, `assurance: "mandate"`.
+   */
+  readonly mandateId?: string;
   readonly idempotencyKey: string;
   readonly expiresAt: Date;
   readonly cityId: string;
@@ -43,6 +50,24 @@ export interface MintedGrant {
   readonly grantId: string;
   readonly expiresAt: string;
   readonly assurance: GrantAssurance;
+}
+
+/**
+ * Refuses a mint request whose assurance and mandate binding disagree, before
+ * anything leaves the service: a mandate grant without its mandate would be
+ * authority with no revocable source, and an attended grant naming a mandate
+ * would smuggle one in.
+ */
+export function assertMintBinding(request: GrantMintRequest): void {
+  const mandateBound =
+    request.mandateId !== undefined && request.mandateId.length > 0;
+  if ((request.assurance === "mandate") !== mandateBound) {
+    throw new ContractError(
+      "validation_failed",
+      "a mandate grant must carry exactly its originating mandate",
+      { reason: "mandate_binding_invalid" },
+    );
+  }
 }
 
 export interface GrantPort {
@@ -63,6 +88,7 @@ export function createHttpGrantPort(options: GrantHttpOptions): GrantPort {
   const timeoutMs = options.timeoutMs ?? 8_000;
   return {
     async mint(request: GrantMintRequest): Promise<MintedGrant> {
+      assertMintBinding(request);
       const url = `${options.baseUrl.replace(/\/+$/, "")}${path}`;
       const headers: Record<string, string> = {
         "content-type": "application/json",
@@ -91,6 +117,7 @@ export function createHttpGrantPort(options: GrantHttpOptions): GrantPort {
             currency: request.currency,
             assurance: request.assurance,
             assuranceProof: request.assuranceProof,
+            mandateId: request.mandateId ?? null,
             expiresAt: request.expiresAt.toISOString(),
           }),
         });

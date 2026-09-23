@@ -30,6 +30,13 @@ export interface AskLimits {
   readonly reviewTtlSeconds: number;
   /** How long a minted action grant is valid. */
   readonly grantTtlSeconds: number;
+  /**
+   * How long one marketplace award attempt may still be in flight. Until it
+   * lapses a retry of the same execution only QUERIES the award; after it, the
+   * retry may re-send the selection under the SAME idempotency key. Longer than
+   * the port's call timeout, so a live attempt is never raced.
+   */
+  readonly selectLeaseSeconds: number;
 }
 
 export const DEFAULT_LIMITS: AskLimits = {
@@ -38,6 +45,7 @@ export const DEFAULT_LIMITS: AskLimits = {
   perUserMessagesPerMinute: 20,
   reviewTtlSeconds: 600,
   grantTtlSeconds: 300,
+  selectLeaseSeconds: 30,
 };
 
 export interface AskDeps {

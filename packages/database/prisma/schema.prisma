@@ -3105,7 +3105,9 @@ model ActionGrant {
   idempotencyKey String    @unique @map("idempotency_key")
   // assurance CHECK: pin | biometric | mandate
   assurance      String
-  // mandate_id is a plain text ref in the DDL (no FK) — kept as a scalar.
+  // mandate_id is a plain text ref in the DDL (no FK) — kept as a scalar. It is
+  // the ORIGINATING mandate of an `assurance = 'mandate'` grant, persisted at
+  // mint; every action under the grant re-derives its authority from it.
   mandateId      String?   @map("mandate_id")
   expiresAt      DateTime  @map("expires_at")
   consumedAt     DateTime? @map("consumed_at")
@@ -3113,8 +3115,10 @@ model ActionGrant {
 
   mandateExecutions MandateExecution[]
   askReviews        AskReview[]
+  mpExecution       AskMpExecution?
 
   @@index([actorId, expiresAt])
+  @@index([mandateId])
   @@map("action_grants")
 }
 
@@ -3122,6 +3126,9 @@ model Mandate {
   id                    String   @id
   userId                String   @map("user_id")
   // action CHECK: airport_pickup.reserve | flight.rebook_on_cancel | scheduled_ride.book
+  //             | marketplace.ride.select | marketplace.delivery.select
+  // (the marketplace members are NEW actions — a travel action never implies
+  // marketplace authority, see ask-service ops/mandate-scope.ts)
   action                String
   title                 String
   // passengers CHECK: self_only | saved_passengers
@@ -3141,12 +3148,16 @@ model Mandate {
   updatedAt             DateTime @updatedAt @map("updated_at")
 
   // CHECK (expires_at <= created_at + interval '12 months') — enforced by DB.
-  allowances MandateAllowance[]
-  executions MandateExecution[]
+  allowances   MandateAllowance[]
+  executions   MandateExecution[]
+  reservations MandateAllowanceReservation[]
 
   @@map("mandates")
 }
 
+// Usage counters include PENDING reservations, so a reservation that is still
+// in flight already counts against the period cap and run count.
+// CHECK (amount_used_minor >= 0 AND runs_used >= 0).
 model MandateAllowance {
   mandateId       String   @map("mandate_id")
   periodStart     DateTime @map("period_start") @db.Date
@@ -3157,6 +3168,42 @@ model MandateAllowance {
 
   @@id([mandateId, periodStart])
   @@map("mandate_allowances")
+}
+
+// One reservation of budget + one run against a mandate's period allowance.
+// Written and settled ONLY by the SQL functions mandate_allowance_reserve /
+// mandate_allowance_settle (migration 20260923100000) — the one canonical
+// allowance mechanism both user-service (mandate runs) and ask-service
+// (marketplace selections) call inside their own transactions.
+//   pending   → reserved; counted in mandate_allowances; outcome not yet known
+//   committed → actual spend recorded (committed_minor); never re-charged
+//   released  → budget + run returned after a definitive failure
+model MandateAllowanceReservation {
+  id             String    @id
+  mandateId      String    @map("mandate_id")
+  // The period the reservation counts against — settlement adjusts THIS row
+  // even when it lands after the month has turned.
+  periodStart    DateTime  @map("period_start") @db.Date
+  // Unique: a replayed reservation lands on its own row, never a second hold.
+  idempotencyKey String    @unique @map("idempotency_key")
+  // Plain text ref (no FK): a mandate run reserves before its grant exists.
+  grantId        String?   @map("grant_id")
+  reservedMinor  BigInt    @map("reserved_minor")
+  committedMinor BigInt?   @map("committed_minor")
+  currency       String
+  // status CHECK: pending | committed | released
+  status         String
+  reasonCode     String?   @map("reason_code")
+  resultRef      String?   @map("result_ref")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  resolvedAt     DateTime? @map("resolved_at")
+
+  mandate     Mandate         @relation(fields: [mandateId], references: [id])
+  mpExecution AskMpExecution?
+
+  @@index([mandateId, periodStart, status])
+  @@index([grantId])
+  @@map("mandate_allowance_reservations")
 }
 
 model MandateExecution {
@@ -3245,6 +3292,53 @@ model AskExecution {
   review AskReview @relation(fields: [reviewId], references: [id])
 
   @@map("ask_executions")
+}
+
+// The persisted intent of ONE marketplace selection by the assistant (ask-service
+// ops/marketplace.ts selectOffer). Written in the same transaction that consumes
+// the single-use grant and (for a mandate-backed grant) reserves the period
+// allowance — BEFORE the external award call — so a retry after a crash or an
+// ambiguous timeout reconciles THIS execution under THIS idempotency key instead
+// of consuming a new grant or a second allowance run.
+//   pending → the award call may or may not have landed; reconcile by query
+//   awarded → the award exists; allowance committed at the award fare
+//   failed  → definitively not awarded; allowance released
+model AskMpExecution {
+  id              String    @id
+  // One execution per single-use grant.
+  grantId         String    @unique @map("grant_id")
+  actorId         String    @map("actor_id")
+  cityId          String    @map("city_id")
+  // Copied from the grant's server-side binding, never from a caller.
+  mandateId       String?   @map("mandate_id")
+  reservationId   String?   @unique @map("reservation_id")
+  requestId       String    @map("request_id")
+  bidId           String    @map("bid_id")
+  requestVersion  Int       @map("request_version")
+  bidVersion      Int       @map("bid_version")
+  requestRevision Int       @map("request_revision")
+  fareMinor       BigInt    @map("fare_minor")
+  currency        String
+  // Bound to (grant, request, bid, versions); the ONLY key the award call uses.
+  idempotencyKey  String    @unique @map("idempotency_key")
+  // status CHECK: pending | awarded | failed
+  status          String
+  awardId         String?   @map("award_id")
+  reasonCode      String?   @map("reason_code")
+  attempts        Int       @default(1)
+  // While in the future, an attempt may still be in flight: a retry only
+  // queries the award and never re-sends the selection.
+  leaseUntil      DateTime  @map("lease_until")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  resolvedAt      DateTime? @map("resolved_at")
+
+  grant       ActionGrant                  @relation(fields: [grantId], references: [id])
+  reservation MandateAllowanceReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  @@index([status, leaseUntil])
+  @@index([mandateId])
+  @@map("ask_mp_executions")
 }
 
 // -------------------------------------------

@@ -7,6 +7,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { consumeGrant, GrantConsumeError } from "../src/ops/grants";
 import {
+  createHttpGrantPort,
+  type GrantMintRequest,
+} from "../src/ports/grant-port";
+import {
   closeTestDb,
   makeDeps,
   rider,
@@ -103,5 +107,64 @@ describe("single-use grant consumption", () => {
         });
       }),
     ).rejects.toMatchObject({ code: "conflict" });
+  });
+});
+
+describe("the mint carries the originating mandate (recheck A03 / P02)", () => {
+  function capture(): {
+    bodies: Record<string, unknown>[];
+    fetchImpl: typeof fetch;
+  } {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ grantId: "grn_1" }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    return { bodies, fetchImpl };
+  }
+
+  function mintRequest(
+    overrides: Partial<GrantMintRequest> = {},
+  ): GrantMintRequest {
+    return {
+      actorId: rider().id,
+      action: "mp.negotiate",
+      resourceRef: uid("mpq"),
+      termsVersion: "mp.scope.v1|x",
+      totalMinor: 300_000,
+      currency: "NGN",
+      assurance: "mandate",
+      assuranceProof: "mandate:mnd_1",
+      mandateId: "mnd_1",
+      idempotencyKey: uid("ik"),
+      expiresAt: new Date(Date.now() + 60_000),
+      cityId: uid("city"),
+      ...overrides,
+    };
+  }
+
+  it("sends the mandate binding with a mandate grant", async () => {
+    const { bodies, fetchImpl } = capture();
+    const port = createHttpGrantPort({ baseUrl: "http://user", fetchImpl });
+    await port.mint(mintRequest());
+    expect(bodies[0]).toMatchObject({
+      assurance: "mandate",
+      mandateId: "mnd_1",
+    });
+  });
+
+  it("refuses, before any call, a mandate grant without its mandate", async () => {
+    const { bodies, fetchImpl } = capture();
+    const port = createHttpGrantPort({ baseUrl: "http://user", fetchImpl });
+    await expect(
+      port.mint(mintRequest({ mandateId: undefined })),
+    ).rejects.toMatchObject({ details: { reason: "mandate_binding_invalid" } });
+    await expect(
+      port.mint(mintRequest({ assurance: "pin", assuranceProof: "p" })),
+    ).rejects.toMatchObject({ details: { reason: "mandate_binding_invalid" } });
+    expect(bodies).toHaveLength(0);
   });
 });
