@@ -76,15 +76,12 @@ function ensureDatabase(): void {
     }
   }
 
+  // Always apply pending migrations, not only when the schema is absent: a
+  // database left over from an earlier run already has action_grants, so a
+  // "migrate only if missing" check silently skipped every later migration
+  // (e.g. the mandate_allowance_* functions) and failed the suite with
+  // "function does not exist". `migrate deploy` is a fast no-op when current.
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    let migrated = "";
-    try {
-      migrated = psql(DB, "SELECT to_regclass('public.action_grants')");
-    } catch {
-      migrated = "";
-    }
-    if (migrated !== "") return;
-
     try {
       execFileSync("npx", ["prisma", "migrate", "deploy"], {
         cwd: DATABASE_PACKAGE,
@@ -92,8 +89,18 @@ function ensureDatabase(): void {
         stdio: "ignore",
       });
     } catch {
-      // Another fork holds the migration lock; re-check after a short wait.
+      // Another fork holds the migration lock; retry after a short wait.
+      sleepMs(500);
+      continue;
     }
+
+    let migrated = "";
+    try {
+      migrated = psql(DB, "SELECT to_regclass('public.action_grants')");
+    } catch {
+      migrated = "";
+    }
+    if (migrated !== "") return;
     sleepMs(500);
   }
 
