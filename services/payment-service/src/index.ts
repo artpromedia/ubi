@@ -25,6 +25,7 @@ import { createDeliveryReturnRoutes } from "./finance/delivery-return-routes";
 import { createRemedyRoutes } from "./finance/remedies";
 import { createFinanceRoutes } from "./finance/routes";
 import { createTravelPaymentRoutes } from "./finance/travel-routes";
+import { createFleetFinanceRoutes } from "./fleet/routes";
 import { walletDeps } from "./ledger/wiring";
 import { analyticsService } from "./lib/analytics";
 import { logger } from "./lib/logger";
@@ -37,6 +38,7 @@ import { healthRoutes } from "./routes/health";
 import { createMpHoldRoutes } from "./routes/mp-holds";
 import { safetyRoutes } from "./routes/safety";
 import { createWalletV1Routes } from "./routes/wallet-v1";
+import { startSettlementWorker } from "./settlement-worker";
 
 // NOTE: The B2B (/b2b), loyalty (/loyalty) and driver-experience (/drivers)
 // routes and their services are DEFERRED until Move is green and are
@@ -160,6 +162,13 @@ const ROUTER_REGISTRY: ReadonlyArray<{
     prefix: "/v1/finance/business",
     router: createBusinessFinanceRoutes(ledgerDeps),
   },
+  // Weekly fleet remittance settlement (A05): UBI ops only (signed identity,
+  // role admin), behind the deny-by-default `fleet` flag; mounted ahead of
+  // /v1/finance for the same reason as travel.
+  {
+    prefix: "/v1/finance/fleet",
+    router: createFleetFinanceRoutes(ledgerDeps),
+  },
   { prefix: "/v1/finance", router: createFinanceRoutes(ledgerDeps) },
   { prefix: "/v1/finance/remedies", router: createRemedyRoutes(ledgerDeps) },
   // Business travel money for the organization's people (A06 part C):
@@ -209,9 +218,14 @@ if (process.env.NODE_ENV !== "test") {
     port,
   });
 
+  // Fleet remittance sweep (only when fleet-service is configured) and the
+  // business payout retry — replay-safe background passes.
+  const settlementWorker = startSettlementWorker(ledgerDeps);
+
   // Graceful shutdown
   const shutdown = (signal: string): void => {
     logger.info({ signal }, "Shutdown signal received, closing gracefully...");
+    settlementWorker.stop();
 
     server.close(async () => {
       logger.info("HTTP server closed");

@@ -26,6 +26,17 @@
  *    `business_clearing`), never more than was reserved; the unused remainder
  *    is freed by the same transaction. The taxes INCLUDED in it at the trip
  *    city's configured rates are snapshotted on the row for the statement;
+ *  - COMMIT also PAYS THE DRIVER, in the same transaction, out of
+ *    `business_clearing`: the FULL committed fare to the awarded driver's
+ *    wallet (./payouts.ts). The 10% was captured from that driver at
+ *    selection and is never charged again — so the driver nets the fare less
+ *    that one commission, and the organization is never charged it. With no
+ *    captured award hold yet the commit stands and the payout is pending,
+ *    retried by POST /payouts and the sweep;
+ *  - a RESERVE TOP-UP (`increaseReservation`) raises an ACTIVE reservation
+ *    for an approved fare increase or paid waiting: under the same budget
+ *    row lock as a reserve, refused without available budget (no credit),
+ *    within the per-trip cap, once per `reasonRef`, audited and evented;
  *  - RELEASE frees the reservation without moving money. Who may cancel is
  *    the payer / passenger split in the contract (`BUSINESS_CANCEL_RIGHTS`):
  *    the traveller (their own trip), the booker (their booking, while still a
@@ -38,7 +49,12 @@
  *    reserved at bid and captured once at selection as for any marketplace
  *    trip.
  */
-import { ContractError, money, type Money } from "@ubi/contracts";
+import {
+  ContractError,
+  money,
+  type Money,
+  scopedIdempotencyKey,
+} from "@ubi/contracts";
 
 import {
   activeRole,
@@ -73,6 +89,7 @@ import {
   termsHash,
   writeTrail,
 } from "./ops";
+import { payOutInTx } from "./payouts";
 import { fromDbMinor, toDbMinor } from "../ledger/minor-units";
 import { postEntry } from "../ledger/post-entry";
 import { generateId } from "../lib/utils";
@@ -810,6 +827,10 @@ export async function commitBudget(
           entryId: entry.id,
         },
       });
+      // The driver's side, from business_clearing, in this same transaction
+      // (./payouts.ts). Never a commission line; pending when the award's
+      // captured hold is not there yet.
+      await payOutInTx(tx, updated, now);
       return { result, replayed: false };
     });
   } catch (error) {
@@ -822,6 +843,287 @@ export async function commitBudget(
       const recorded = await replayTerminalOp(deps.db, fresh, "commit", hash);
       if (recorded !== null) {
         return recorded;
+      }
+    }
+    throw error;
+  }
+}
+
+// ── Reserve top-up ────────────────────────────────────────────────────────
+
+/**
+ * Why an ACTIVE reservation may grow: an amendment that raised the fare and
+ * that both parties approved, or paid waiting time — each named by the id
+ * ride-service holds for it (`reasonRef`), so one approval can raise the
+ * reservation once, whatever the retries.
+ */
+export const RESERVE_INCREASE_REASONS = [
+  "fare_increase",
+  "paid_waiting",
+] as const;
+export type ReserveIncreaseReason = (typeof RESERVE_INCREASE_REASONS)[number];
+
+export interface IncreaseInput {
+  readonly bookingRef: string;
+  /** The INCREASE, not the new total — a positive integer in minor units. */
+  readonly amountMinor: number;
+  readonly currency: string;
+  readonly reason: ReserveIncreaseReason;
+  readonly reasonRef: string;
+}
+
+/** The op result, plus what the reservation was and is now. */
+export type IncreaseResult = BudgetOpResult & {
+  readonly increase: {
+    readonly reason: ReserveIncreaseReason;
+    readonly reasonRef: string;
+    readonly previousReserved: MoneyView;
+    readonly reserved: MoneyView;
+  };
+};
+
+function increaseTermsHash(input: IncreaseInput): string {
+  return termsHash({
+    op: "reserve_increase",
+    bookingRef: input.bookingRef,
+    amountMinor: input.amountMinor,
+    currency: input.currency,
+    reason: input.reason,
+    reasonRef: input.reasonRef,
+  });
+}
+
+/**
+ * The top-up ops of one reservation. Each is an `org_budget_ops` row with
+ * op `reserve` and NO reservation column (that column's unique index holds
+ * the reservation's ONE original reserve), found through the reservation id
+ * its recorded result names.
+ */
+function increaseOpsWhere(reservation: {
+  readonly id: string;
+  readonly budgetAccountId: string;
+}): Prisma.OrgBudgetOpWhereInput {
+  return {
+    op: "reserve",
+    reservationId: null,
+    budgetAccountId: reservation.budgetAccountId,
+    result: { path: ["reservation", "reservationId"], equals: reservation.id },
+  };
+}
+
+/**
+ * The reasonRef half of idempotency: this approval already raised the
+ * reservation. Same terms ⇒ the recorded result; other terms ⇒ a conflict.
+ */
+async function replayIncreaseByRef(
+  db: LedgerTx,
+  reservation: { readonly id: string; readonly budgetAccountId: string },
+  reasonRef: string,
+  hash: string,
+): Promise<OpOutcome<IncreaseResult> | null> {
+  const op = await db.orgBudgetOp.findFirst({
+    where: {
+      AND: [
+        increaseOpsWhere(reservation),
+        { result: { path: ["increase", "reasonRef"], equals: reasonRef } },
+      ],
+    },
+  });
+  if (op === null) {
+    return null;
+  }
+  if (op.payloadHash !== hash) {
+    throw new ContractError(
+      "conflict",
+      "this approval already raised the reservation with different terms",
+      { reasonRef, ref: op.id },
+    );
+  }
+  return { result: op.result as unknown as IncreaseResult, replayed: true };
+}
+
+/**
+ * RESERVE TOP-UP — raises an ACTIVE (`reserved`) business reservation by an
+ * approved amount, so ride-service can commit a trip whose total grew (an
+ * approved fare increase, paid waiting) without ever committing more than
+ * the organization reserved. The rules are the reserve's:
+ *  - atomic against the budget: the budget account's row lock, then the
+ *    reservation's; the available amount is re-read under it, so concurrent
+ *    reserves and top-ups serialize per budget and can never overspend it;
+ *  - REFUSED (`insufficient_spendable`, reason `budget_insufficient`) when
+ *    the budget cannot cover it — nothing is deferred or put on credit;
+ *  - the organization must still be active, the new total within its
+ *    per-trip cap and in its currency;
+ *  - exactly once per Idempotency-Key AND per `reasonRef`;
+ *  - `business_travel` gates it like a new reservation (it is new spend);
+ *  - audited and evented (`transfer.held`, `payload.op = "reserve"`,
+ *    `payload.increase = true`).
+ * No journal movement: like the reservation itself, the top-up only lowers
+ * what the budget has available until commit or release.
+ */
+export async function increaseReservation(
+  deps: WalletDeps,
+  input: IncreaseInput,
+  clientKey: string,
+): Promise<OpOutcome<IncreaseResult>> {
+  const now = deps.now();
+  const actor = BUSINESS_SERVICE_ACTOR;
+  const key = scopedIdempotencyKey(
+    "business.reserve_increase",
+    actor.id,
+    clientKey,
+  );
+  const hash = increaseTermsHash(input);
+
+  const prior = await replayOf<IncreaseResult>(deps.db, key, hash);
+  if (prior !== null) {
+    return prior;
+  }
+  const reservation = await requireReservation(deps.db, input.bookingRef);
+  const byRef = await replayIncreaseByRef(
+    deps.db,
+    reservation,
+    input.reasonRef,
+    hash,
+  );
+  if (byRef !== null) {
+    return byRef;
+  }
+  assertPositiveMinor(input.amountMinor, input.currency);
+  const { flags } = await deps.config.load(reservation.cityId);
+  assertBusinessTravelOn(flags, reservation.cityId);
+
+  try {
+    return await deps.db.$transaction(async (tx) => {
+      const locked = await lockBudgetAccount(tx, reservation.budgetAccountId);
+      const row = await lockReservation(tx, reservation.id);
+      const raced =
+        (await replayOf<IncreaseResult>(tx, key, hash)) ??
+        (await replayIncreaseByRef(tx, row, input.reasonRef, hash));
+      if (raced !== null) {
+        return raced;
+      }
+      assertReserved(row);
+      if (input.currency !== row.currency) {
+        throw refusal("currency_mismatch", {
+          reservationCurrency: row.currency,
+          requestCurrency: input.currency,
+        });
+      }
+      const org = await loadOrganization(tx, row.organizationId);
+      if (org === null) {
+        throw new ContractError("not_found", "no such organization");
+      }
+      if (org.status !== "active") {
+        throw refusal("organization_not_active");
+      }
+      const previousMinor = fromDbMinor(row.reservedMinor);
+      const nextMinor = previousMinor + input.amountMinor;
+      if (nextMinor > org.tripCapMinor) {
+        throw refusal("trip_cap_exceeded", {
+          tripCapMinor: org.tripCapMinor,
+          requestedTotalMinor: nextMinor,
+        });
+      }
+      const budget = await budgetView(tx, locked);
+      if (budget.available.amountMinor < input.amountMinor) {
+        throw refusal("budget_insufficient", {
+          budgetId: locked.id,
+          availableMinor: budget.available.amountMinor,
+          requiredMinor: input.amountMinor,
+        });
+      }
+
+      const updated = await tx.orgBudgetReservation.update({
+        where: { id: row.id },
+        data: {
+          reservedMinor: toDbMinor(nextMinor),
+          version: { increment: 1 },
+        },
+        include: WITH_PERIOD,
+      });
+
+      const ref = generateId("obo");
+      const amount = money(input.amountMinor, row.currency);
+      const result: IncreaseResult = {
+        ref,
+        op: "reserve",
+        entryId: null,
+        amount,
+        reservation: reservationView(updated),
+        increase: {
+          reason: input.reason,
+          reasonRef: input.reasonRef,
+          previousReserved: money(previousMinor, row.currency),
+          reserved: money(nextMinor, row.currency),
+        },
+      };
+      await recordOp(tx, {
+        ref,
+        op: "reserve",
+        key,
+        clientKey,
+        hash,
+        organizationId: row.organizationId,
+        budgetAccountId: locked.id,
+        // Deliberately null: see `increaseOpsWhere`.
+        reservationId: null,
+        amount,
+        entryId: null,
+        actor,
+        result: { ...result },
+      });
+      await writeTrail(tx, {
+        op: "reserve",
+        actor,
+        actorType: "system",
+        action: "business.booking.reserve_increased",
+        subjectType: "org_budget_reservation",
+        subjectId: row.id,
+        before: { state: row.state, reservedMinor: previousMinor },
+        after: {
+          state: "reserved",
+          reservedMinor: nextMinor,
+          increaseMinor: input.amountMinor,
+          reason: input.reason,
+          reasonRef: input.reasonRef,
+          budgetId: locked.id,
+          availableBeforeMinor: budget.available.amountMinor,
+        },
+        aggregateType: "booking",
+        aggregateId: row.id,
+        fromVersion: row.version,
+        toVersion: updated.version,
+        cityId: row.cityId,
+        eventKey: eventKeyOf("reserve", ref),
+        occurredAt: now,
+        payload: {
+          organizationId: row.organizationId,
+          reservationId: row.id,
+          bookingRef: row.bookingRef,
+          budgetId: locked.id,
+          state: "reserved",
+          increase: true,
+          reason: input.reason,
+          amountMinor: input.amountMinor,
+          reservedMinor: nextMinor,
+          currency: row.currency,
+        },
+      });
+      return { result, replayed: false };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const winner =
+        (await replayOf<IncreaseResult>(deps.db, key, hash)) ??
+        (await replayIncreaseByRef(
+          deps.db,
+          reservation,
+          input.reasonRef,
+          hash,
+        ));
+      if (winner !== null) {
+        return winner;
       }
     }
     throw error;
@@ -1046,8 +1348,9 @@ export async function reservationStatus(
   bookingRef: string,
 ): Promise<ReservationStatusView> {
   const row = await requireReservation(deps.db, bookingRef);
+  // Its reserve, commit and release — and every reserve top-up.
   const ops = await deps.db.orgBudgetOp.findMany({
-    where: { reservationId: row.id },
+    where: { OR: [{ reservationId: row.id }, increaseOpsWhere(row)] },
     orderBy: { createdAt: "asc" },
   });
   const org = await loadOrganization(deps.db, row.organizationId);

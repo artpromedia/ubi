@@ -22,11 +22,46 @@
  *
  *   POST /policy-check              read-only verdict (X-City-ID)
  *   POST /reserve                   (Idempotency-Key, X-City-ID)
- *   POST /commit                    (Idempotency-Key)
+ *   POST /reserve-top-up            (Idempotency-Key) — see below
+ *   POST /commit                    (Idempotency-Key) — also pays the driver
  *   POST /release                   (Idempotency-Key)
  *   GET  /reservations/:bookingRef  status, for reconciliation — and the
  *                                   organization's billing identity and the
  *                                   cost centre for ride-service's receipt
+ *                                   (its ops now include reserve top-ups)
+ *   GET  /payouts/:bookingRef       the driver's payout: paid | pending
+ *   POST /payouts                   (Idempotency-Key) retry a pending payout
+ *
+ * RESERVE TOP-UP — for ride-service. Before committing a business trip whose
+ * total grew past its reservation (an approved fare-increase amendment, paid
+ * waiting), raise the reservation first:
+ *
+ *   POST /v1/finance/business/reserve-top-up
+ *   X-Service-Key: INTERNAL_SERVICE_KEY
+ *   Idempotency-Key: business:<awardId>:topup:<reasonRef>
+ *   { "bookingRef": "<awardId>", "amountMinor": <the INCREASE>,
+ *     "currency": "NGN", "reason": "fare_increase" | "paid_waiting",
+ *     "reasonRef": "<amendment or waiting-charge id>" }
+ *   → 201 recorded / 200 replayed: the BusinessOpResult shape (op
+ *     "reserve", entryId null, amount = the increase, reservation with the
+ *     NEW `reserved`) plus `increase: { reason, reasonRef, previousReserved,
+ *     reserved }`.
+ *   Refusals (canonical body, `details.reason`): `budget_insufficient`
+ *   (insufficient_spendable, 422 — refused, never on credit: keep the
+ *   amendment refused), `trip_cap_exceeded` (422), `organization_not_active`
+ *   (403), `currency_mismatch` (422), `feature_disabled` (404); a
+ *   reservation no longer `reserved` is `illegal_transition` (409); one
+ *   `reasonRef` raises a reservation once — the same terms under any key
+ *   replay, other terms are `conflict` (409). A timeout: read
+ *   GET /reservations/:bookingRef and re-send under the SAME key.
+ *   ride-service then commits the new total (never above `reserved`).
+ *
+ * THE DRIVER'S PAYOUT happens inside /commit: `business_clearing` → the
+ * awarded driver's wallet for the full committed fare (the 10% was captured
+ * from the driver at selection and is never charged again). ride-service
+ * needs no new call; GET /payouts/:bookingRef reports it, and a payout left
+ * pending (no captured award hold at commit time) is retried by
+ * POST /payouts `{ "bookingRef" }` and by payment-service's own sweep.
  *
  * Both routers are mounted from src/index.ts's ROUTER_REGISTRY; the finance
  * one BEFORE `/v1/finance`, whose admin-session guards would otherwise run
@@ -51,12 +86,15 @@ import {
   topUpOrganization,
 } from "./budgets";
 import { CANCEL_PARTIES } from "./model";
+import { payoutStatus, retryPayout } from "./payouts";
 import {
   checkPolicy,
   commitBudget,
+  increaseReservation,
   listMyBusinessBookings,
   listOrganizationBookings,
   releaseBudget,
+  RESERVE_INCREASE_REASONS,
   reservationStatus,
   reserveBudget,
 } from "./reservations";
@@ -114,6 +152,20 @@ const CommitBody = z.object({
   actualMinor: Minor,
   currency: Currency,
 });
+
+const ReserveTopUpBody = z.object({
+  bookingRef: BookingRef,
+  amountMinor: Minor,
+  currency: Currency,
+  reason: z.enum(RESERVE_INCREASE_REASONS),
+  reasonRef: z
+    .string()
+    .min(1)
+    .max(200)
+    .regex(/^[A-Za-z0-9_.:-]+$/, "a reason ref is an url-safe id"),
+});
+
+const PayoutRetryBody = z.object({ bookingRef: BookingRef });
 
 const ReleaseBody = z.object({
   bookingRef: BookingRef,
@@ -443,6 +495,16 @@ export function createBusinessFinanceRoutes(deps: WalletDeps): Hono {
     }
   });
 
+  routes.post("/reserve-top-up", async (c) => {
+    try {
+      const key = serviceKeyOf(c);
+      const body = await parse(c, ReserveTopUpBody);
+      return opReply(c, await increaseReservation(deps, body, key));
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
   routes.post("/commit", async (c) => {
     try {
       const key = serviceKeyOf(c);
@@ -466,6 +528,26 @@ export function createBusinessFinanceRoutes(deps: WalletDeps): Hono {
   routes.get("/reservations/:bookingRef", async (c) => {
     try {
       return c.json(await reservationStatus(deps, c.req.param("bookingRef")));
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.get("/payouts/:bookingRef", async (c) => {
+    try {
+      return c.json(await payoutStatus(deps, c.req.param("bookingRef")));
+    } catch (error) {
+      return fail(c, error);
+    }
+  });
+
+  routes.post("/payouts", async (c) => {
+    try {
+      // Required like every money POST; the reservation is the payout's
+      // idempotency authority (one payout entry per reservation, ever).
+      serviceKeyOf(c);
+      const body = await parse(c, PayoutRetryBody);
+      return opReply(c, await retryPayout(deps, body.bookingRef));
     } catch (error) {
       return fail(c, error);
     }

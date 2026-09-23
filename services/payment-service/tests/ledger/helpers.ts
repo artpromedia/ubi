@@ -74,6 +74,8 @@ export interface SeedCityOptions {
   readonly dailyOutMinor?: number;
   readonly singleTransferMinor?: number;
   readonly balanceCapMinor?: number | null;
+  /** The city's weekly fleet remittance cap (default 1 000 000). */
+  readonly remittanceCapMinor?: number;
   readonly flags?: Readonly<Record<string, boolean>>;
   readonly policy?: WalletPolicyOverrides;
   readonly omitWalletPolicy?: boolean;
@@ -155,7 +157,7 @@ export async function seedCity(
       },
     ],
     serviceFeePct: options.serviceFeePct ?? 20,
-    remittanceCapMinor: 1_000_000,
+    remittanceCapMinor: options.remittanceCapMinor ?? 1_000_000,
     reservationFreeReleaseSec: 900,
     airport: {
       codes: ["LOS"],

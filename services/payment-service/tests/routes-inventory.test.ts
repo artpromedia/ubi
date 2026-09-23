@@ -35,6 +35,10 @@ const ALLOWED_ROUTE_PREFIXES = [
   // reserve / commit / release API on the canonical ledger; mounted ahead of
   // /v1/finance for the same reason as travel.
   "/v1/finance/business",
+  // Weekly fleet remittance settlement (A05) — UBI ops by signed identity
+  // (role admin), behind the deny-by-default `fleet` flag; mounted ahead of
+  // /v1/finance for the same reason as travel.
+  "/v1/finance/fleet",
   "/v1/finance",
   "/v1/finance/remedies",
   // Business travel money for the organization's people (A06 part C) —

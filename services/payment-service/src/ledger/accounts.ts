@@ -62,6 +62,18 @@ export const LEDGER_ACCOUNTS = [
    * booking (src/business).
    */
   "business_clearing",
+  /**
+   * Fleet remittance carry-forward (A05, src/fleet) — a MEMORANDUM account.
+   * UBI never lends: a fleet is credited only what a driver's wallet actually
+   * paid, and the part of a week's remittance the driver could not cover is
+   * tracked here as a pair of equal and opposite lines per change, keyed per
+   * fleet + driver + origin week in `counterpartRef`
+   * (`fleet_carry:<fleetId>:<driverId>:owed:<week>` is the driver's side,
+   * `…:fleet:<week>` the fleet's). The account as a whole always nets to
+   * zero; the outstanding carry-forward is the DERIVED sum of the `owed`
+   * lines — never a stored balance.
+   */
+  "fleet_remittance_carry",
 ] as const;
 
 export type LedgerAccount = (typeof LEDGER_ACCOUNTS)[number];
@@ -139,6 +151,27 @@ export const ENTRY_KINDS = [
    * posted twice for a booking (its idempotency key names the reservation).
    */
   "business_trip_commit",
+  /**
+   * The driver's side of a committed business trip (round-7 follow-up):
+   * `business_clearing` → the awarded driver's wallet, the FULL committed
+   * fare, once per reservation. The 10% was captured from the driver at
+   * selection and is never charged again (no `ubi_commission` line, ever),
+   * so the driver nets the committed fare less that one commission.
+   */
+  "business_trip_payout",
+  /**
+   * One assignment's weekly fleet remittance (A05, src/fleet): driver wallet
+   * → fleet wallet for what was collected, plus the carry-forward memo
+   * lines. Never touches `ubi_commission`. One per (assignment, week) — its
+   * idempotency key names both.
+   */
+  "fleet_remittance_settlement",
+  /**
+   * A later input change for a CLOSED week: the difference is recorded as a
+   * linked carry-forward adjustment attributed to the assignment's NEXT open
+   * week — never a rewrite of the closed week's entry.
+   */
+  "fleet_remittance_adjustment",
 ] as const;
 
 export type EntryKind = (typeof ENTRY_KINDS)[number];
