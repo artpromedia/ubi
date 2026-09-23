@@ -39,7 +39,10 @@ jobs:
       # 'false' and the dependent unit-services/unit-go jobs are skipped on
       # the PR that introduced it (push events already run everything via the
       # `|| github.event_name == 'push'` clauses below, so this only changes
-      # pull_request behaviour).
+      # pull_request behaviour). packages/outbox is fanned out the same way:
+      # travel, config, support and realtime-gateway (and several unit-services
+      # entries) import @ubi/outbox, and realtime-gateway's suite drives its
+      # consumer directly.
       - uses: dorny/paths-filter@v2
         id: filter
         with:
@@ -53,6 +56,7 @@ jobs:
               - 'packages/database/**'
               - 'packages/config-client/**'
               - 'packages/contracts/**'
+              - 'packages/outbox/**'
               - 'contracts/**'
             apps:
               - 'apps/**'
@@ -269,6 +273,277 @@ jobs:
           flags: service-${{ matrix.service }}
           fail_ci_if_error: false
 
+  # The Node services below each read their OWN test-database variable
+  # (TRAVEL_/GROWTH_/CONFIG_/SUPPORT_TEST_DATABASE_URL) rather than
+  # payment-service's WALLET_TEST_DATABASE_URL, or need no infrastructure at
+  # all (realtime-gateway), so each gets its own job instead of a
+  # unit-services matrix entry. Every DB-backed job provisions a fresh
+  # database named after the suite's own default, applies the full prisma
+  # migration chain into it, and points the suite at it explicitly. No
+  # continue-on-error, no skip-when-missing: each is a required input of
+  # test-status below. There is no coverage upload step: these suites run
+  # without a coverage provider, so there is no lcov file to upload.
+  unit-travel:
+    name: Unit Tests - travel-service
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.services == 'true' || github.event_name == 'push'
+    # tests/payment-port.test.ts starts the REAL payment-service
+    # (`tsx src/index.ts`) against this same database and Redis (its rate
+    # limiter), so the job builds payment-service's workspace deps as well as
+    # travel-service's, and provisions both containers.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_dev_password
+          POSTGRES_DB: ubi_travel_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_travel_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dependencies
+        run: pnpm build --filter="@ubi/travel-service^..." --filter="@ubi/payment-service^..."
+
+      - name: Run database migrations
+        run: DATABASE_URL=postgresql://ubi:ubi_dev_password@localhost:5432/ubi_travel_test pnpm --filter @ubi/database exec prisma migrate deploy
+
+      - name: Run unit tests
+        run: pnpm --filter="@ubi/travel-service" test
+        env:
+          CI: true
+          TRAVEL_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_travel_test
+          PAYMENT_TEST_REDIS_URL: redis://localhost:6379/15
+
+  unit-growth:
+    name: Unit Tests - growth-service
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.services == 'true' || github.event_name == 'push'
+    # The suite runs against real Postgres (unique idempotency keys, journal
+    # rows, racing incentive postings). Redis is idle today — the service's
+    # client is lazy and no test reaches it — but is provisioned so the job
+    # matches the service's runtime dependencies.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_dev_password
+          POSTGRES_DB: ubi_growth_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_growth_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dependencies
+        run: pnpm build --filter="@ubi/growth-service^..."
+
+      - name: Run database migrations
+        run: DATABASE_URL=postgresql://ubi:ubi_dev_password@localhost:5432/ubi_growth_test pnpm --filter @ubi/database exec prisma migrate deploy
+
+      - name: Run unit tests
+        run: pnpm --filter="@ubi/growth-service" test
+        env:
+          CI: true
+          GROWTH_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_growth_test
+          REDIS_URL: redis://localhost:6379
+
+  unit-config:
+    name: Unit Tests - config-service
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.services == 'true' || github.event_name == 'push'
+    # The integration tests truncate the config tables and read/clear the
+    # ETag cache and invalidation channel in Redis. tests/global-setup.ts only
+    # creates/migrates the database when it is missing, so after the explicit
+    # migration step below it is a no-op here.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_dev_password
+          POSTGRES_DB: ubi_config_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_config_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dependencies
+        run: pnpm build --filter="@ubi/config-service^..."
+
+      - name: Run database migrations
+        run: DATABASE_URL=postgresql://ubi:ubi_dev_password@localhost:5432/ubi_config_test pnpm --filter @ubi/database exec prisma migrate deploy
+
+      - name: Run unit tests
+        run: pnpm --filter="@ubi/config-service" test
+        env:
+          CI: true
+          CONFIG_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_config_test
+          REDIS_URL: redis://localhost:6379
+
+  unit-support:
+    name: Unit Tests - support-service
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.services == 'true' || github.event_name == 'push'
+    # The suite runs against real Postgres (case transitions, audit rows,
+    # outbox). Redis is idle today — no test reaches it — but is provisioned
+    # so the job matches the service's runtime dependencies.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: ubi
+          POSTGRES_PASSWORD: ubi_dev_password
+          POSTGRES_DB: ubi_support_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ubi -d ubi_support_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dependencies
+        run: pnpm build --filter="@ubi/support-service^..."
+
+      - name: Run database migrations
+        run: DATABASE_URL=postgresql://ubi:ubi_dev_password@localhost:5432/ubi_support_test pnpm --filter @ubi/database exec prisma migrate deploy
+
+      - name: Run unit tests
+        run: pnpm --filter="@ubi/support-service" test
+        env:
+          CI: true
+          SUPPORT_TEST_DATABASE_URL: postgresql://ubi:ubi_dev_password@localhost:5432/ubi_support_test
+          REDIS_URL: redis://localhost:6379
+
+  unit-realtime:
+    name: Unit Tests - realtime-gateway
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.services == 'true' || github.event_name == 'push'
+    # realtime-gateway's suite is hermetic by design: JWT/service-auth checks
+    # and the marketplace outbox fan-out driven through an in-process fake
+    # ioredis connection. It reads no database and opens no socket, so no
+    # service containers or migrations are provisioned for it.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dependencies
+        run: pnpm build --filter="@ubi/realtime-gateway^..."
+
+      - name: Run unit tests
+        run: pnpm --filter="@ubi/realtime-gateway" test
+        env:
+          CI: true
+
   # Unit tests for Go services
   unit-go:
     name: Unit Tests - Go Services
@@ -372,7 +647,19 @@ jobs:
   test-status:
     name: Test Status
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, unit-packages, unit-services, unit-go]
+    needs:
+      [
+        lint,
+        typecheck,
+        unit-packages,
+        unit-services,
+        unit-travel,
+        unit-growth,
+        unit-config,
+        unit-support,
+        unit-realtime,
+        unit-go,
+      ]
     if: always()
     steps:
       - name: Check test results
@@ -385,6 +672,11 @@ jobs:
              [[ "${{ needs.typecheck.result }}" != "success" ]] || \
              [[ "${{ needs.unit-packages.result }}" == "failure" || "${{ needs.unit-packages.result }}" == "cancelled" ]] || \
              [[ "${{ needs.unit-services.result }}" == "failure" || "${{ needs.unit-services.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.unit-travel.result }}" == "failure" || "${{ needs.unit-travel.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.unit-growth.result }}" == "failure" || "${{ needs.unit-growth.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.unit-config.result }}" == "failure" || "${{ needs.unit-config.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.unit-support.result }}" == "failure" || "${{ needs.unit-support.result }}" == "cancelled" ]] || \
+             [[ "${{ needs.unit-realtime.result }}" == "failure" || "${{ needs.unit-realtime.result }}" == "cancelled" ]] || \
              [[ "${{ needs.unit-go.result }}" == "failure" || "${{ needs.unit-go.result }}" == "cancelled" ]]; then
             echo "Some tests failed"
             exit 1

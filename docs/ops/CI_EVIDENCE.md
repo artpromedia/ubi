@@ -19,6 +19,11 @@ row **G06** for why they were removed instead of left red or faked.
 | `unit-packages` | `packages/**` changed, or push                                                              | `@ubi/ui`, `@ubi/utils`, `@ubi/contracts`, `@ubi/config-client` unit tests; `@ubi/outbox`'s integration suite against real Postgres+Redis (`FOR UPDATE SKIP LOCKED`, pub/sub delivery).                                                                                                                          |
 | `unit-services` | `services/**` (minus Go) or shared paths (fixed below) changed, or push                     | `api-gateway`, `user-service`, `food-service`, `payment-service`, `notification-service` unit tests against real Postgres+Redis with migrations applied — **this is where payment-service's DB-backed ledger tests run** (deferred double-entry trigger, row locks, idempotency keys: the financial safety net). |
 | `unit-go`       | `services/ride-service\|delivery-service/**` or shared paths (fixed below) changed, or push | `go test -race` for ride-service and delivery-service against real Postgres (PostGIS) + Redis with migrations applied.                                                                                                                                                                                           |
+| `unit-travel`   | `services/**` or shared paths changed, or push                                              | travel-service (29 tests) against real Postgres+Redis with migrations applied; its payment-port integration test boots the real payment-service. Added by the P2 CI pass.                                                                                                                                        |
+| `unit-growth`   | `services/**` or shared paths changed, or push                                              | growth-service (33 tests) against real Postgres with migrations applied (P2).                                                                                                                                                                                                                                    |
+| `unit-config`   | `services/**` or shared paths changed, or push                                              | config-service (100 tests) against real Postgres with migrations applied — includes the deny-by-default flag seed (P2).                                                                                                                                                                                          |
+| `unit-support`  | `services/**` or shared paths changed, or push                                              | support-service (55 tests) against real Postgres with migrations applied (P2).                                                                                                                                                                                                                                   |
+| `unit-realtime` | `services/**` or shared paths changed, or push                                              | realtime-gateway (42 tests), hermetic (P2).                                                                                                                                                                                                                                                                      |
 | `coverage`      | always (`if: always()`)                                                                     | Merges coverage artifacts; does not gate pass/fail.                                                                                                                                                                                                                                                              |
 | `test-status`   | always                                                                                      | The actual required rollup: lint/typecheck must succeed; the three unit jobs must not have _failed or been cancelled_ (a legitimate skip is not a failure).                                                                                                                                                      |
 
@@ -45,24 +50,19 @@ is a required check.
 
 ## What coverage does NOT exist in CI today (found while doing this pass)
 
-`ask-service`, `growth-service`, `travel-service`, `config-service`,
-`support-service` and `realtime-gateway` each define a real `vitest run`
-test script (several depend on `DATABASE_URL` — real Postgres — per their
-`tests/helpers.ts`/`global-setup.ts`), but **none of them is invoked by
-either CI workflow**: they are absent from `test.yml`'s `unit-services`
-matrix (`[api-gateway, user-service, food-service, payment-service,
-notification-service]`) and `ci.yml`'s `test` job explicitly scopes to
-`./packages/*` + `./apps/*` only, excluding all `services/*`. Their suites
-are real (`docs/launch-readiness/rn-migration-status.md` records tsc-0 and
-vitest counts for several of them from local runs), but that evidence has
-never been reproduced by CI, so a regression in any of these six services
-would not be caught by either green workflow. **Not fixed in this pass** —
-wiring six services with real DB dependencies into a CI matrix without
-being able to verify each one's environment expectations here would risk
-turning currently-green CI red, which is out of bounds for this change.
-Recorded here as a named, scoped follow-up: add each to `test.yml`'s
-`unit-services` matrix (or a new matrix) with `DATABASE_URL`/`REDIS_URL`
-wired the same way `payment-service` already is, verifying locally first.
+**Updated by the P2 CI pass:** `travel-service`, `growth-service`,
+`config-service`, `support-service` and `realtime-gateway` now run in the
+`Testing Pipeline` as `unit-travel`, `unit-growth`, `unit-config`,
+`unit-support` and `unit-realtime` (table above). Each was reproduced locally
+first — fresh database, migrations applied, the job's exact env — and
+re-verified from a clean clone on Node 20 and Node 22; no production-code
+changes were needed. Each is wired into `test-status`, so a failure fails the
+pipeline.
+
+**Still absent:** `ask-service`. Its suite is real and DB-backed
+(`ASK_TEST_DATABASE_URL`), but it was being changed by concurrent remediation
+slices when the other five were wired, so its job lands with the AI-execution
+slice. Until then, an ask-service regression is caught only by local runs.
 
 ## What the removed E2E / consumer-pact / performance jobs needed
 
