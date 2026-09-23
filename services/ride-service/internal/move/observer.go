@@ -2,6 +2,7 @@ package move
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -30,5 +31,37 @@ func (s *Service) SetExecutionObserver(observer ExecutionObserver) {
 func (s *Service) notifyExecutionTerminal(ctx context.Context, rideID uuid.UUID) {
 	if s.observer != nil {
 		s.observer.ExecutionTerminal(ctx, rideID)
+	}
+}
+
+// DriverActivityObserver is notified AFTER a driver's go-online, and a live
+// trip's start, have committed. The marketplace implements it for the fleet
+// calendar's off-road abuse control (A05, decisions correction 4): a vehicle
+// a fleet reported off the road that goes online or starts a trip during
+// the claimed breakdown is flagged to UBI ops. Like ExecutionObserver it is a
+// post-commit courtesy — the marketplace sweep is the durable backstop for
+// the drivers it knows ride a vehicle — and nil is nobody listening.
+type DriverActivityObserver interface {
+	DriverWentOnline(ctx context.Context, driverID uuid.UUID, cityID string, onlineSince time.Time)
+	TripStarted(ctx context.Context, rideID, driverID uuid.UUID, cityID string)
+}
+
+// SetDriverActivityObserver wires the observer. It is called once from the
+// composition root, after both services exist.
+func (s *Service) SetDriverActivityObserver(observer DriverActivityObserver) {
+	s.activity = observer
+}
+
+// notifyWentOnline invokes the activity observer, if any, after commit.
+func (s *Service) notifyWentOnline(ctx context.Context, driverID uuid.UUID, cityID string, onlineSince time.Time) {
+	if s.activity != nil {
+		s.activity.DriverWentOnline(ctx, driverID, cityID, onlineSince)
+	}
+}
+
+// notifyTripStarted invokes the activity observer, if any, after commit.
+func (s *Service) notifyTripStarted(ctx context.Context, rideID, driverID uuid.UUID, cityID string) {
+	if s.activity != nil {
+		s.activity.TripStarted(ctx, rideID, driverID, cityID)
 	}
 }

@@ -5,7 +5,9 @@
 // disclosure) are the server's words. A failed booking explains what happened and the
 // financial outcome, and offers a CONSENTED rematch only when the server says one is
 // available — never an automatic substitute. Cancel and rematch carry caller-held
-// Idempotency-Keys.
+// Idempotency-Keys. A05 fleet calendar: a vehicle change awaiting the rider's consent
+// shows D1 (BookingChangeConsent), and a booking whose driver can't make it shows D2
+// (BookingDriverLost, no reason given) — both from BookingFleetMoments.tsx.
 import React, { useState } from "react";
 import { View } from "react-native";
 import {
@@ -46,6 +48,11 @@ import {
   StateTag,
 } from "./riderParts";
 import { legacyDriverLine } from "./offerView";
+import {
+  BookingChangeConsent,
+  BookingDriverLost,
+  type PendingChange,
+} from "./BookingFleetMoments";
 
 const TID = TEST_IDS.mp.rider.booking;
 const ENDED = new Set(["completed", "failed", "cancelled", "released"]);
@@ -72,6 +79,21 @@ export type BookingDetailProps = {
   onOpenRematch: (() => void) | null;
   onOpenTrip: (() => void) | null;
   onBack: () => void;
+  /** D1: a revalidated vehicle change the rider must confirm (or cancel free). */
+  changeConsent?: {
+    change: PendingChange;
+    confirming: boolean;
+    onConfirm: () => void;
+  } | null;
+  /** D2: the driver can't make this trip (no reason shown). */
+  driverLost?: {
+    rematchAvailable: boolean;
+    released: boolean;
+    rematching: boolean;
+    releasing: boolean;
+    onRematch: () => void;
+    onRelease: () => void;
+  } | null;
 };
 
 export function BookingDetailView(p: BookingDetailProps) {
@@ -94,6 +116,26 @@ export function BookingDetailView(p: BookingDetailProps) {
             tone={p.banner.tone}
             title={p.banner.title}
             body={p.banner.body}
+          />
+        ) : null}
+        {p.changeConsent ? (
+          <BookingChangeConsent
+            change={p.changeConsent.change}
+            timeZone={tz}
+            confirming={p.changeConsent.confirming}
+            onConfirm={p.changeConsent.onConfirm}
+            onCancelFree={() => p.cancel?.onOpen()}
+          />
+        ) : null}
+        {p.driverLost ? (
+          <BookingDriverLost
+            fare={b.fareMinor}
+            rematchAvailable={p.driverLost.rematchAvailable}
+            released={p.driverLost.released}
+            rematching={p.driverLost.rematching}
+            releasing={p.driverLost.releasing}
+            onRematch={p.driverLost.onRematch}
+            onRelease={p.driverLost.onRelease}
           />
         ) : null}
         <Card style={{ gap: 6 }}>
@@ -193,7 +235,7 @@ export function BookingDetailView(p: BookingDetailProps) {
             ))}
           </Card>
         ) : null}
-        {b.failure ? (
+        {b.failure && !p.driverLost ? (
           <Card testID={TID.failure} tone="error" style={{ gap: 6 }}>
             <Text variant="bodyStrong">What happened</Text>
             <Text variant="bodySm">{b.failure.message}</Text>
@@ -317,6 +359,7 @@ export function BookingDetailContainer() {
   });
   const [cancelOpen, setCancelOpen] = useState(false);
   const [rematchOpen, setRematchOpen] = useState(false);
+  const [released, setReleased] = useState(false);
   const [banner, setBanner] = useState<
     (Refusal & { tone: "ok" | "warn" | "error" }) | null
   >(null);
@@ -362,6 +405,51 @@ export function BookingDetailContainer() {
     },
   });
 
+  // D1: the rider's consent to a revalidated vehicle change — nothing changes without it.
+  const acceptChange = useMutation({
+    mutationFn: (changeId: string) =>
+      marketplaceApi.acceptBookingChange(
+        id,
+        changeId,
+        keys.keyFor("change:" + changeId),
+      ),
+    onSuccess: (b, changeId) => {
+      keys.settle("change:" + changeId);
+      queryClient.setQueryData(key, b);
+      setBanner({
+        tone: "ok",
+        title: "New vehicle confirmed",
+        body: "Same driver, same fare. Check the plate when your driver arrives.",
+      });
+      track("mp_booking_vehicle_change_confirmed", { bookingId: id });
+    },
+    onError: (e, changeId) => {
+      keys.settle("change:" + changeId, e);
+      onRefused(e);
+    },
+  });
+  // D2: "cancel and release" — closes the rematch offer; nothing is charged.
+  const release = useMutation({
+    mutationFn: (version: number) =>
+      marketplaceApi.releaseBooking(id, keys.keyFor("release:" + version)),
+    onSuccess: (b, version) => {
+      keys.settle("release:" + version);
+      setReleased(true);
+      queryClient.setQueryData(key, b);
+      void queryClient.invalidateQueries({ queryKey: ["mp", "later"] });
+      setBanner({
+        tone: "ok",
+        title: "Booking released",
+        body: "You weren’t charged, and any payment hold is returned.",
+      });
+      track("mp_booking_released", { bookingId: id });
+    },
+    onError: (e, version) => {
+      keys.settle("release:" + version, e);
+      onRefused(e);
+    },
+  });
+
   if (!q.data)
     return (
       <Screen title="Your reservation" onBack={nav.goBack}>
@@ -379,6 +467,8 @@ export function BookingDetailContainer() {
       </Screen>
     );
   const b = q.data;
+  const lost = b.failure?.driverLost === true;
+  const change = b.pendingChange;
   return (
     <BookingDetailView
       b={b}
@@ -399,7 +489,7 @@ export function BookingDetailContainer() {
           : null
       }
       rematch={
-        b.failure?.rematchAvailable && !b.rematchRequestId
+        !lost && b.failure?.rematchAvailable && !b.rematchRequestId
           ? {
               open: rematchOpen,
               busy: rematch.isPending,
@@ -424,6 +514,37 @@ export function BookingDetailContainer() {
           : null
       }
       onBack={nav.goBack}
+      changeConsent={
+        change && CANCELLABLE.has(b.state)
+          ? {
+              change,
+              confirming: acceptChange.isPending,
+              onConfirm: () => {
+                setBanner(null);
+                acceptChange.mutate(change.changeId);
+              },
+            }
+          : null
+      }
+      driverLost={
+        lost
+          ? {
+              rematchAvailable:
+                b.failure?.rematchAvailable === true && !b.rematchRequestId,
+              released: released || b.failure?.released === true,
+              rematching: rematch.isPending,
+              releasing: release.isPending,
+              onRematch: () => {
+                setBanner(null);
+                rematch.mutate(b.version);
+              },
+              onRelease: () => {
+                setBanner(null);
+                release.mutate(b.version);
+              },
+            }
+          : null
+      }
     />
   );
 }

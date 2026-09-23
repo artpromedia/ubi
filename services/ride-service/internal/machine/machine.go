@@ -52,6 +52,16 @@ const (
 	// MpBusinessBooking is one award's organization-budget funding (A06 part
 	// C): reserving → reserved | refused, reserved → committed | released.
 	MpBusinessBooking Name = "mpBusinessBooking"
+	// MpVehicleOccupancy is one row of the shared vehicle occupancy ledger
+	// (A05): active → released.
+	MpVehicleOccupancy Name = "mpVehicleOccupancy"
+	// MpBookingRisk is an advance booking's risk overlay (A05): ok ⇄
+	// at_risk, at_risk → lapsed when the deadline fails the booking.
+	MpBookingRisk Name = "mpBookingRisk"
+	// MpVehicleSwap is a vehicle swap on an advance booking (A05 FL-8):
+	// proposed → driver_accepted → revalidating → rider_consent_pending →
+	// applied, or a decline/failure/expiry that keeps the original vehicle.
+	MpVehicleSwap Name = "mpVehicleSwap"
 )
 
 // ErrIllegalTransition is returned for any move the contract does not allow.
@@ -218,6 +228,33 @@ const (
 	MpBusinessRefused   = "refused"
 	MpBusinessCommitted = "committed"
 	MpBusinessReleased  = "released"
+)
+
+// Vehicle occupancy states (contracts/state-machines.json → mpVehicleOccupancy).
+const (
+	MpOccupancyActive   = "active"
+	MpOccupancyReleased = "released"
+)
+
+// Booking risk overlay states (contracts/state-machines.json → mpBookingRisk).
+const (
+	MpRiskOK     = "ok"
+	MpRiskAtRisk = "at_risk"
+	MpRiskLapsed = "lapsed"
+)
+
+// Vehicle swap states (contracts/state-machines.json → mpVehicleSwap).
+const (
+	MpSwapProposed           = "proposed"
+	MpSwapDriverAccepted     = "driver_accepted"
+	MpSwapRevalidating       = "revalidating"
+	MpSwapRiderConsent       = "rider_consent_pending"
+	MpSwapApplied            = "applied"
+	MpSwapDriverDeclined     = "driver_declined"
+	MpSwapRevalidationFailed = "revalidation_failed"
+	MpSwapRiderDeclined      = "rider_declined"
+	MpSwapExpired            = "expired"
+	MpSwapCancelled          = "cancelled"
 )
 
 // machines is the contract, transcribed. Order inside a slice is irrelevant;
@@ -409,6 +446,56 @@ var machines = map[Name]struct {
 			MpBusinessReleased:  {},
 		},
 	},
+	MpVehicleOccupancy: {
+		initial: MpOccupancyActive,
+		transitions: map[string][]string{
+			MpOccupancyActive: {MpOccupancyReleased},
+			// Terminal state the contract lists only as a destination.
+			MpOccupancyReleased: {},
+		},
+	},
+	MpBookingRisk: {
+		initial: MpRiskOK,
+		transitions: map[string][]string{
+			MpRiskOK:     {MpRiskAtRisk},
+			MpRiskAtRisk: {MpRiskOK, MpRiskLapsed},
+			// Terminal state the contract lists only as a destination.
+			MpRiskLapsed: {},
+		},
+	},
+	MpVehicleSwap: {
+		initial: MpSwapProposed,
+		transitions: map[string][]string{
+			MpSwapProposed:       {MpSwapDriverAccepted, MpSwapDriverDeclined, MpSwapExpired, MpSwapCancelled},
+			MpSwapDriverAccepted: {MpSwapRevalidating, MpSwapExpired, MpSwapCancelled},
+			MpSwapRevalidating:   {MpSwapRiderConsent, MpSwapRevalidationFailed, MpSwapExpired, MpSwapCancelled},
+			MpSwapRiderConsent:   {MpSwapApplied, MpSwapRiderDeclined, MpSwapRevalidationFailed, MpSwapExpired, MpSwapCancelled},
+			// Terminal states the contract lists only as destinations.
+			MpSwapApplied:            {},
+			MpSwapDriverDeclined:     {},
+			MpSwapRevalidationFailed: {},
+			MpSwapRiderDeclined:      {},
+			MpSwapExpired:            {},
+			MpSwapCancelled:          {},
+		},
+	},
+}
+
+// MpSwapLiveStates are the vehicle-swap states still in flight: at most one
+// per booking (the partial unique index booking_vehicle_swaps_one_live
+// depends on this list being right).
+func MpSwapLiveStates() []string {
+	return []string{MpSwapProposed, MpSwapDriverAccepted, MpSwapRevalidating, MpSwapRiderConsent}
+}
+
+// IsMpSwapLive reports whether a swap in this state is still in flight.
+func IsMpSwapLive(state string) bool {
+	for _, s := range MpSwapLiveStates() {
+		if s == state {
+			return true
+		}
+	}
+	return false
 }
 
 // MpBookingOccupyingStates are the advance-booking states whose calendar

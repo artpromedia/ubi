@@ -115,7 +115,14 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 			AND to_regclass('mp.trip_access_tokens') IS NOT NULL
 			AND to_regclass('mp.request_business') IS NOT NULL
 			AND to_regclass('mp.business_bookings') IS NOT NULL
-			AND to_regclass('mp.delivery_cancellations') IS NOT NULL`).Scan(&current)
+			AND to_regclass('mp.delivery_cancellations') IS NOT NULL
+			AND to_regclass('mp.vehicle_occupancy') IS NOT NULL
+			AND to_regclass('mp.booking_risk_blockers') IS NOT NULL
+			AND to_regclass('mp.booking_vehicle_swaps') IS NOT NULL
+			AND to_regclass('mp.offroad_use_flags') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'advance_bookings' AND column_name = 'rematch_declined_at')`).Scan(&current)
 	return err == nil && current
 }
 

@@ -86,6 +86,15 @@ type Config struct {
 	// guest bookings are refused, fail closed — nothing is sent in clear.
 	TripAccessDeliveryKey string
 	TripAccessDeliveryKid string
+
+	// Internal contract A with fleet-service (A05 fleet calendar).
+	// FleetRideServiceKey (FLEET_RIDE_SERVICE_KEY) is what fleet-service
+	// presents to /internal/fleet; FleetServiceURL/FleetServiceKey
+	// (FLEET_SERVICE_URL / FLEET_SERVICE_KEY) are how ride-service calls it.
+	// Any of them unset (or a key under 32 characters) fails closed.
+	FleetRideServiceKey string
+	FleetServiceURL     string
+	FleetServiceKey     string
 }
 
 func main() {
@@ -131,6 +140,9 @@ func main() {
 		TripAccessDeliveryKey: config.TripAccessDeliveryKey,
 		TripAccessDeliveryKid: config.TripAccessDeliveryKid,
 		Environment:           config.Environment,
+
+		FleetServiceURL: config.FleetServiceURL,
+		FleetServiceKey: config.FleetServiceKey,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to start the ride service")
@@ -190,6 +202,10 @@ func main() {
 		marketplaceHandler = handler.NewMarketplaceHandler(runtime.Marketplace, log.Logger)
 	}
 	router.Mount("/v1", rideHandler.Routes(handler.RequireIdentity(verifier), locationHandler, marketplaceHandler))
+	// Internal contract A (A05 fleet calendar): fleet-service only, by
+	// FLEET_RIDE_SERVICE_KEY, outside the gateway identity middleware and
+	// never proxied by the client gateway. Unset key: every route refused.
+	router.Mount("/internal/fleet", handler.FleetInternalRoutes(config.FleetRideServiceKey, marketplaceHandler))
 
 	// The dispatcher is a sweep over durable rows, not a per-ride goroutine, so
 	// a restart resumes matching instead of losing it.
@@ -266,6 +282,10 @@ func loadConfig() *Config {
 
 		TripAccessDeliveryKey: getEnv("TRIP_ACCESS_DELIVERY_KEY", ""),
 		TripAccessDeliveryKid: getEnv("TRIP_ACCESS_DELIVERY_KID", ""),
+
+		FleetRideServiceKey: getEnv("FLEET_RIDE_SERVICE_KEY", ""),
+		FleetServiceURL:     getEnv("FLEET_SERVICE_URL", ""),
+		FleetServiceKey:     getEnv("FLEET_SERVICE_KEY", ""),
 	}
 }
 

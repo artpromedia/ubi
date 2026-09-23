@@ -221,6 +221,11 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 			return nil, 0, domain.Errorf(domain.CodeSlotUnavailable,
 				"the driver's calendar cannot be verified right now; try again shortly").Wrap(err)
 		}
+		// A05 FL-4: which vehicle the driver is assigned to for the whole
+		// booked interval, asked BEFORE any transaction opens. Never
+		// blocking: fleet-service down or slow leaves the booking without a
+		// vehicle, pending a sweep retry.
+		plan.vehicle = s.resolveBookingVehicle(ctx, bid.DriverID, request.CityID, plan.occupiedStart, plan.occupiedEnd)
 	}
 
 	award := &Award{
@@ -251,6 +256,7 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		// No live claim: the booking holds the calendar instead.
 		claim = nil
 		booking = newBooking(award, request, plan, advancePolicy, now)
+		plan.vehicle.applyTo(booking, now)
 	}
 
 	// Transaction 1: claim the request and the driver's capacity atomically.
@@ -324,11 +330,27 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 			if err := s.lockCalendar(ctx, tx, bid.DriverID, plan); err != nil {
 				return err
 			}
+			if booking.VehicleID != nil {
+				// The vehicle's ledger lock, then the off-road check: a
+				// vehicle reported off the road for this window cannot take
+				// a new booking.
+				if err := s.checkBookingVehicleFree(ctx, tx, booking); err != nil {
+					return err
+				}
+			}
 			if err := s.deps.Store.InsertBooking(ctx, tx, booking); err != nil {
 				if errors.Is(err, errCalendarConflict) {
 					return calendarConflict("the driver's calendar took an overlapping booking while this selection was in flight", nil)
 				}
 				return err
+			}
+			if booking.VehicleID != nil {
+				// The booking's row on the shared vehicle occupancy ledger,
+				// in the SAME transaction: a maintenance block on this
+				// vehicle for this interval refuses the booking.
+				if err := s.recordBookingOccupancy(ctx, tx, booking, "rider", actor.UserID.String(), now); err != nil {
+					return err
+				}
 			}
 		} else if err := s.deps.Store.InsertClaim(ctx, tx, claim); err != nil {
 			if errors.Is(err, errSlotOccupied) {
@@ -445,9 +467,9 @@ func (s *Service) SelectWinner(ctx context.Context, actor Actor, requestID uuid.
 		// rider's funding is secured yet.
 		if current, err := s.deps.Store.BookingByID(ctx, s.deps.Store.Pool(), booking.ID); err == nil {
 			withBooking := *result
-			withBooking.Booking = s.withBookingReminders(ctx,
+			withBooking.Booking = s.withFleetState(ctx, s.withBookingReminders(ctx,
 				s.withVerifiedDriver(ctx, bookingViewOf(current, request, request.VehicleClass, viewerRider), current, request.VehicleClass),
-				current.CityID)
+				current.CityID), current, viewerRider)
 			result = &withBooking
 		}
 	}

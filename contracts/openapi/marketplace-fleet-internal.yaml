@@ -1,0 +1,425 @@
+openapi: 3.1.0
+info:
+  title: "UBI Fleet Calendar — Internal Contract A (ride-service <-> fleet-service)"
+  version: 0.1.0
+  description: >-
+    Service-to-service contract for the fleet availability calendar (A05; handoff FL-2, FL-4, FL-6,
+    FL-8; docs/design/FLEET_CALENDAR_DECISIONS.md corrections 1-4 and 6). NEVER proxied by the client
+    gateway. Every route takes X-Service-Key: ride-service accepts FLEET_RIDE_SERVICE_KEY
+    (fleet-service -> ride-service, routes 1-7 under /internal/fleet on ride-service); fleet-service
+    accepts FLEET_SERVICE_KEY (ride-service -> fleet-service, routes 8-9 under /internal/fleet on
+    fleet-service). Both keys are at least 32 characters, compared in constant time, and an unset or
+    short key fails closed (503 on ride-service). Money is {amountMinor, currency}; times are
+    ISO-8601 UTC. Bookings reach a fleet ONLY as the opaque OccupiedBlock — time (buffers
+    included), the server's risk flag and deadline, and nothing else: no rider, location, fare,
+    request or booking internals, not even as null. Zod: packages/contracts/src/marketplace-fleet.ts.
+servers:
+  - url: http://ride-service.internal
+    description: routes 1-7 (served by ride-service)
+  - url: http://fleet-service.internal
+    description: routes 8-9 (served by fleet-service)
+security:
+  - serviceKey: []
+components:
+  securitySchemes:
+    serviceKey: { type: apiKey, in: header, name: X-Service-Key }
+  parameters:
+    IdemKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: "A replay with the same key and body answers the same; the key with another body is 409 idempotency_conflict."
+      schema: { type: string, maxLength: 64 }
+    BlockId:
+      name: blockId
+      in: path
+      required: true
+      schema: { type: string }
+    From:
+      name: from
+      in: query
+      required: true
+      schema: { type: string, format: date-time }
+    To:
+      name: to
+      in: query
+      required: true
+      description: "After from, at most 62 days later."
+      schema: { type: string, format: date-time }
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: "Canonical code; contract A adds occupancy_conflict (409), idempotency_conflict (409) and swap_ineligible (422)."
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    OccupiedBlock:
+      type: object
+      additionalProperties: false
+      description: "The ONLY shape of a booking a fleet receives. startsAt/endsAt include the booking's buffers. blockId is opaque (never the booking id)."
+      required:
+        [
+          blockId,
+          driverId,
+          vehicleId,
+          startsAt,
+          endsAt,
+          kind,
+          risk,
+          decisionDeadline,
+        ]
+      properties:
+        blockId: { type: string }
+        driverId: { type: string }
+        vehicleId: { type: [string, "null"] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        kind: { type: string, enum: [booked, on_trip] }
+        risk: { type: string, enum: [ok, at_risk] }
+        decisionDeadline: { type: [string, "null"], format: date-time }
+    MaintenanceWindow:
+      type: object
+      additionalProperties: false
+      required: [vehicleId, kind, startsAt, endsAt]
+      properties:
+        vehicleId: { type: string }
+        kind: { type: string, enum: [planned_service, inspection, repair] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+    MaintenanceBlock:
+      type: object
+      additionalProperties: false
+      required: [blockId, vehicleId, kind, startsAt, endsAt]
+      properties:
+        blockId:
+          { type: string, description: "fleet-service's maintenance block id." }
+        vehicleId: { type: string }
+        kind: { type: string, enum: [planned_service, inspection, repair] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+    MaintenancePreview:
+      type: object
+      additionalProperties: false
+      required: [feasible, affectedBlocks, nextFeasibleWindow]
+      properties:
+        feasible: { type: boolean }
+        affectedBlocks:
+          { type: array, items: { $ref: "#/components/schemas/OccupiedBlock" } }
+        nextFeasibleWindow:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [startsAt, endsAt]
+              properties:
+                startsAt: { type: string, format: date-time }
+                endsAt: { type: string, format: date-time }
+            - { type: "null" }
+    OccupancyConflict:
+      type: object
+      required: [code, message, details]
+      properties:
+        code: { type: string, const: occupancy_conflict }
+        message: { type: string }
+        details:
+          type: object
+          required: [affectedBlocks]
+          properties:
+            affectedBlocks:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/OccupiedBlock" },
+              }
+    OffRoadReport:
+      type: object
+      additionalProperties: false
+      required: [blockId, vehicleId, startsAt, expectedEndsAt]
+      properties:
+        blockId: { type: string }
+        vehicleId: { type: string }
+        startsAt: { type: string, format: date-time }
+        expectedEndsAt:
+          {
+            type: [string, "null"],
+            format: date-time,
+            description: "null: open-ended.",
+          }
+    OffRoadRecorded:
+      type: object
+      additionalProperties: false
+      required: [occupancyId, atRiskBookings]
+      properties:
+        occupancyId: { type: string }
+        atRiskBookings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [blockId, decisionDeadline]
+            properties:
+              blockId: { type: string }
+              decisionDeadline: { type: string, format: date-time }
+    SwapProposal:
+      type: object
+      additionalProperties: false
+      required: [toVehicleId, requestedByStaffId]
+      properties:
+        toVehicleId: { type: string }
+        requestedByStaffId:
+          {
+            type: string,
+            description: "Audit only; never shown to the driver or the rider.",
+          }
+    SwapIneligible:
+      type: object
+      required: [code, message, details]
+      properties:
+        code: { type: string, const: swap_ineligible }
+        message: { type: string }
+        details:
+          type: object
+          required: [reasons]
+          properties:
+            reasons:
+              type: array
+              minItems: 1
+              items:
+                type: string
+                enum:
+                  [
+                    swaps_not_enabled,
+                    booking_not_swappable,
+                    swap_already_open,
+                    same_vehicle,
+                    vehicle_unknown,
+                    different_fleet,
+                    class_not_eligible,
+                    capacity_too_small,
+                    vehicle_occupied,
+                    vehicle_off_road,
+                    documents_expired,
+                    fleet_service_unavailable,
+                  ]
+    VehicleAt:
+      type: object
+      additionalProperties: false
+      description: "The vehicle the driver is assigned to for the WHOLE interval under a signed assignment; all null when no assignment covers it."
+      required: [vehicleId, assignmentId, vehicleClass, capacity]
+      properties:
+        vehicleId: { type: [string, "null"] }
+        assignmentId: { type: [string, "null"] }
+        vehicleClass: { type: [string, "null"] }
+        capacity: { type: [integer, "null"], minimum: 1 }
+    FleetVehicle:
+      type: object
+      additionalProperties: false
+      required: [vehicleId, fleetId, classes, capacity, documents]
+      properties:
+        vehicleId: { type: string }
+        fleetId: { type: string }
+        classes: { type: array, items: { type: string } }
+        capacity: { type: integer, minimum: 1 }
+        documents:
+          type: object
+          additionalProperties: false
+          required: [insuranceExpiry, inspectionExpiry]
+          properties:
+            insuranceExpiry:
+              type: [string, "null"]
+              description: "ISO date (read as expiring at 00:00 UTC on that date) or ISO-8601 instant; null is a missing document."
+            inspectionExpiry: { type: [string, "null"] }
+paths:
+  /internal/fleet/occupancy/maintenance:preview:
+    post:
+      summary: "Route 1 (ride-service): would this planned block fit?"
+      description: "Reads the shared vehicle occupancy ledger only; nothing is held. Infeasible when the block overlaps a booking (or another block) on the vehicle; the next free window of the same length (buffers included) is suggested."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaintenanceWindow" }
+      responses:
+        "200":
+          description: The preview.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MaintenancePreview" }
+        "401": { description: Missing or wrong X-Service-Key. }
+        "503":
+          {
+            description: FLEET_RIDE_SERVICE_KEY is not configured (fail closed).,
+          }
+  /internal/fleet/occupancy/maintenance:
+    post:
+      summary: "Route 2 (ride-service): record a planned maintenance block"
+      description: "Atomic under the vehicle exclusion constraint: planned maintenance is never confirmed over a booking."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaintenanceBlock" }
+      responses:
+        "201":
+          description: Recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [occupancyId]
+                properties: { occupancyId: { type: string } }
+        "409":
+          description: occupancy_conflict (with the opaque blocks in the way) or idempotency_conflict.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OccupancyConflict" }
+  /internal/fleet/occupancy/maintenance/{blockId}/release:
+    post:
+      summary: "Route 3 (ride-service): release a maintenance or off-road block"
+      description: "Idempotent: a block already released, or never recorded, answers the same. Releasing an off-road report clears the risk it put on bookings."
+      parameters:
+        - { $ref: "#/components/parameters/BlockId" }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          description: Released.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [released]
+                properties: { released: { type: boolean, const: true } }
+  /internal/fleet/occupancy/off-road:
+    post:
+      summary: "Route 4 (ride-service): report a vehicle off the road"
+      description: "Never refused by bookings: every overlapping confirmed booking on the vehicle moves to at_risk with its decision deadline (never cancelled). Audited; the vehicle going online or starting a trip during the claimed breakdown is flagged to UBI ops."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OffRoadReport" }
+      responses:
+        "201":
+          description: Recorded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OffRoadRecorded" }
+  /internal/fleet/occupancy/blocks:
+    get:
+      summary: "Route 5 (ride-service): the fleet-safe projection of bookings"
+      parameters:
+        - {
+            name: vehicleIds,
+            in: query,
+            required: false,
+            schema: { type: string },
+            description: "Comma-separated (at most 200).",
+          }
+        - {
+            name: driverIds,
+            in: query,
+            required: false,
+            schema: { type: string },
+            description: "Comma-separated driver ids (at most 200).",
+          }
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+      responses:
+        "200":
+          description: The blocks.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [blocks]
+                properties:
+                  blocks:
+                    {
+                      type: array,
+                      items: { $ref: "#/components/schemas/OccupiedBlock" },
+                    }
+  /internal/fleet/drivers/{driverId}/calendar:
+    get:
+      summary: "Route 6 (ride-service): the driver-entitled calendar entries for composing that driver's own schedule"
+      description: "The same shape as MpDriverCalendarSchema (the DRIVER's own booking view, including their commission and net). fleet-service serves it to the driver only (decisions correction 7) — never to a fleet."
+      parameters:
+        - { name: driverId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+      responses:
+        "200":
+          description: "MpDriverCalendar: {bookings, note}."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bookings, note]
+                properties:
+                  bookings: { type: array, items: { type: object } }
+                  note: { type: string }
+  /internal/fleet/bookings/{blockId}/vehicle-swaps:
+    post:
+      summary: "Route 7 (ride-service): propose a vehicle swap on the booking behind an opaque block"
+      description: "Behind the deny-by-default marketplace_booking_vehicle_swaps flag. The booked driver decides (parked), the server revalidates (same-or-higher class, capacity, occupancy, documents via route 9) and the rider always consents; the fare is unchanged and the commission never charged again."
+      parameters:
+        - { $ref: "#/components/parameters/BlockId" }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SwapProposal" }
+      responses:
+        "201":
+          description: Proposed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [swapId, status]
+                properties:
+                  swapId: { type: string }
+                  status: { type: string, const: proposed }
+        "422":
+          description: swap_ineligible, with reasons.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SwapIneligible" }
+  /internal/fleet/drivers/{driverId}/vehicle-at:
+    get:
+      summary: "Route 8 (fleet-service): the vehicle a fleet driver is assigned to for an interval"
+      description: "ride-service asks at the advance award with a short timeout and never blocks the award on it: down, slow or malformed answers leave the booking without a vehicle, retried by the sweep."
+      parameters:
+        - { name: driverId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+      responses:
+        "200":
+          description: The assigned vehicle, or all null.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VehicleAt" }
+  /internal/fleet/vehicles/{vehicleId}:
+    get:
+      summary: "Route 9 (fleet-service): a vehicle's classes, capacity and documents (swap revalidation)"
+      parameters:
+        - {
+            name: vehicleId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          description: The vehicle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FleetVehicle" }
+        "404": { description: No such vehicle. }

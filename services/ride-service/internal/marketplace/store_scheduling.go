@@ -509,6 +509,25 @@ type AdvanceBooking struct {
 	LastError            string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+
+	// Fleet calendar (A05). BlockID is the OPAQUE id a fleet sees on the
+	// booking's OccupiedBlock (never the booking id). VehicleSource is where
+	// VehicleID came from (fleet_assignment | swap, "" for none);
+	// VehicleResolution is how the award resolved it (not_applicable |
+	// resolved | pending). VehicleClass/VehicleCapacity are the booked
+	// vehicle's class and seats (what a swap target must match). Risk is the
+	// mpBookingRisk overlay with its decision deadline.
+	BlockID            uuid.UUID
+	VehicleSource      string
+	VehicleResolution  string
+	VehicleClass       *string
+	VehicleCapacity    *int
+	VehicleCheckedAt   *time.Time
+	NextVehicleCheckAt *time.Time
+	Risk               string
+	RiskDeadline       *time.Time
+	RiskSince          *time.Time
+	RematchDeclinedAt  *time.Time
 }
 
 const bookingColumns = `
@@ -520,7 +539,9 @@ const bookingColumns = `
 	activation_at, activation_deadline,
 	reconfirm_requested_at, reconfirmed_at, activated_at, COALESCE(activated_slot, ''), claim_id,
 	reminders_sent, failure, rematch_request_id,
-	attempts, next_attempt_at, COALESCE(last_error, ''), created_at, updated_at`
+	attempts, next_attempt_at, COALESCE(last_error, ''), created_at, updated_at,
+	block_id, COALESCE(vehicle_source, ''), vehicle_resolution, vehicle_class, vehicle_capacity,
+	vehicle_checked_at, next_vehicle_check_at, risk, risk_deadline, risk_since, rematch_declined_at`
 
 func scanBooking(row pgx.Row) (*AdvanceBooking, error) {
 	var b AdvanceBooking
@@ -535,6 +556,8 @@ func scanBooking(row pgx.Row) (*AdvanceBooking, error) {
 		&b.ReconfirmRequestedAt, &b.ReconfirmedAt, &b.ActivatedAt, &b.ActivatedSlot, &b.ClaimID,
 		&b.RemindersSent, &failure, &b.RematchRequestID,
 		&b.Attempts, &b.NextAttemptAt, &b.LastError, &b.CreatedAt, &b.UpdatedAt,
+		&b.BlockID, &b.VehicleSource, &b.VehicleResolution, &b.VehicleClass, &b.VehicleCapacity,
+		&b.VehicleCheckedAt, &b.NextVehicleCheckAt, &b.Risk, &b.RiskDeadline, &b.RiskSince, &b.RematchDeclinedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -563,7 +586,9 @@ func scanBooking(row pgx.Row) (*AdvanceBooking, error) {
 }
 
 // errCalendarConflict marks a booking the calendar's exclusion constraints
-// refused: the driver (or the vehicle) already holds an overlapping one.
+// refused: the driver (or the vehicle) already holds an overlapping one — or
+// the shared vehicle occupancy ledger refused the booking's vehicle row (a
+// maintenance block holds the vehicle for that interval).
 var errCalendarConflict = errors.New("the driver's booking calendar already holds an overlapping booking")
 
 // isCalendarExclusion reports whether an error is one of the calendar's
@@ -572,7 +597,8 @@ func isCalendarExclusion(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		return pgErr.Code == "23P01" &&
-			(pgErr.ConstraintName == "advance_bookings_no_overlap" || pgErr.ConstraintName == "advance_bookings_vehicle_no_overlap")
+			(pgErr.ConstraintName == "advance_bookings_no_overlap" || pgErr.ConstraintName == "advance_bookings_vehicle_no_overlap" ||
+				pgErr.ConstraintName == vehicleOccupancyExclusion)
 	}
 	return false
 }
@@ -589,20 +615,38 @@ func (s *Store) InsertBooking(ctx context.Context, db DB, b *AdvanceBooking) err
 	if err != nil {
 		return fmt.Errorf("unserialisable dropoff: %w", err)
 	}
+	if b.BlockID == uuid.Nil {
+		b.BlockID = uuid.New()
+	}
+	if b.VehicleResolution == "" {
+		b.VehicleResolution = VehicleResolutionNotApplicable
+	}
+	if b.Risk == "" {
+		b.Risk = machine.MpRiskOK
+	}
+	var vehicleSource *string
+	if b.VehicleSource != "" {
+		vehicleSource = &b.VehicleSource
+	}
 	_, err = db.Exec(ctx, `
 		INSERT INTO mp.advance_bookings (
 			id, award_id, request_id, bid_id, driver_id, requester_id, vehicle_id, city_id,
 			state, version, funding_state, payment_method_id, currency, fare_minor, commission_minor,
 			window_start, window_end, trip_duration_sec, occupied, pickup, dropoff,
 			funding_due_at, funding_deadline, reconfirm_opens_at, reconfirm_deadline,
-			activation_at, activation_deadline, created_at, updated_at
+			activation_at, activation_deadline, created_at, updated_at,
+			block_id, vehicle_source, vehicle_resolution, vehicle_class, vehicle_capacity,
+			next_vehicle_check_at, risk
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-			tstzrange($19, $20, '[)'), $21,$22,$23,$24,$25,$26,$27,$28,$29,$29)`,
+			tstzrange($19, $20, '[)'), $21,$22,$23,$24,$25,$26,$27,$28,$29,$29,
+			$30,$31,$32,$33,$34,$35,$36)`,
 		b.ID, b.AwardID, b.RequestID, b.BidID, b.DriverID, b.RequesterID, b.VehicleID, b.CityID,
 		b.State, b.Version, b.FundingState, b.PaymentMethodID, b.Currency, b.FareMinor, b.CommissionMinor,
 		b.WindowStart, b.WindowEnd, b.TripDurationSec, b.OccupiedStart, b.OccupiedEnd, pickup, dropoff,
 		b.FundingDueAt, b.FundingDeadline, b.ReconfirmOpensAt, b.ReconfirmDeadline,
 		b.ActivationAt, b.ActivationDeadline, stampOf(b.CreatedAt),
+		b.BlockID, vehicleSource, b.VehicleResolution, b.VehicleClass, b.VehicleCapacity,
+		b.NextVehicleCheckAt, b.Risk,
 	)
 	if err != nil {
 		if isCalendarExclusion(err) {
@@ -752,20 +796,42 @@ func (s *Store) TransitionBooking(ctx context.Context, tx pgx.Tx, b *AdvanceBook
 			rematch_request_id = COALESCE($11, rematch_request_id),
 			next_attempt_at = CASE WHEN $12 THEN NULL ELSE next_attempt_at END,
 			attempts = CASE WHEN $12 THEN 0 ELSE attempts END,
+			-- A05: a booking past the states its vehicle is checked in never
+			-- needs another check, so it leaves the sweep's index for good.
+			next_vehicle_check_at = CASE WHEN $3 = ANY($13::text[]) THEN next_vehicle_check_at ELSE NULL END,
 			updated_at = now()
 		WHERE id = $1 AND version = $2
 		RETURNING `+bookingColumns,
 		b.ID, b.Version, to,
 		update.FundingState, update.ReconfirmRequestedAt, update.ReconfirmedAt,
 		update.ActivatedAt, update.ActivatedSlot, update.ClaimID, failure, update.RematchRequestID,
-		update.ClearNextTry,
+		update.ClearNextTry, vehicleCheckStates(),
 	)
 	updated, err := scanBooking(row)
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil, domain.Errorf(domain.CodeVersionConflict, "the booking changed while this call was in flight").
 			WithDetails(map[string]any{"bookingId": b.ID.String(), "expectedVersion": b.Version})
 	}
-	return updated, err
+	if err != nil {
+		return nil, err
+	}
+	// A booking that leaves its occupying states frees its vehicle on the
+	// shared occupancy ledger in the SAME transaction (A05): the ledger can
+	// never keep a vehicle busy for a booking that no longer exists.
+	if machine.IsMpBookingOccupying(b.State) && !machine.IsMpBookingOccupying(updated.State) {
+		released, err := s.ReleaseOccupancyBySource(ctx, tx, OccupancyKindBooking, updated.ID.String(), "booking_"+updated.State)
+		if err != nil {
+			return nil, err
+		}
+		if released != nil {
+			if err := writeOccupancyEvent(ctx, tx, released, "vehicle_occupancy.released", "system", "ride-service",
+				updated.UpdatedAt, "the booking left its occupying states; its vehicle is free for the interval",
+				map[string]any{"blockId": updated.BlockID.String(), "bookingState": updated.State}); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return updated, nil
 }
 
 // SetBookingFundingState records the funding decision the award saga took

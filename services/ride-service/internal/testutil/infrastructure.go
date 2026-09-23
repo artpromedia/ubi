@@ -76,6 +76,12 @@ type Harness struct {
 	// a city's config, flags, drivers or rides.
 	CityID        string
 	ConfigVersion int
+
+	// Internal is the /internal/fleet router (internal contract A, A05)
+	// exactly as cmd/server/main.go mounts it, authenticated by
+	// FleetRideServiceKey. Drive it with DoInternal.
+	Internal            http.Handler
+	FleetRideServiceKey string
 }
 
 // HarnessOption customises a harness before it is built.
@@ -101,6 +107,11 @@ type harnessOptions struct {
 	// business is the business-travel port (nil: the production default for
 	// an unwired deployment — every business call fails closed).
 	business marketplace.BusinessPort
+	// fleet is fleet-service's side of contract A (nil: the production
+	// default for an unwired deployment — nothing is ever resolved), and
+	// fleetRideServiceKey the key /internal/fleet accepts.
+	fleet               marketplace.FleetServicePort
+	fleetRideServiceKey *string
 }
 
 // WithCityConfig replaces the seeded city configuration.
@@ -160,6 +171,23 @@ func WithoutTripAccessSealer() HarnessOption {
 func WithBusiness(port marketplace.BusinessPort) HarnessOption {
 	return func(o *harnessOptions) { o.business = port }
 }
+
+// WithFleetService builds the marketplace with fleet-service's side of
+// internal contract A — in tests, the real HTTP client pointed at an
+// httptest server that answers routes 8 and 9 as documented.
+func WithFleetService(port marketplace.FleetServicePort) HarnessOption {
+	return func(o *harnessOptions) { o.fleet = port }
+}
+
+// WithFleetRideServiceKey sets the FLEET_RIDE_SERVICE_KEY /internal/fleet
+// accepts ("" is the production default when unset: fail closed).
+func WithFleetRideServiceKey(key string) HarnessOption {
+	return func(o *harnessOptions) { o.fleetRideServiceKey = &key }
+}
+
+// DefaultFleetRideServiceKey is the harness's FLEET_RIDE_SERVICE_KEY unless
+// a test sets another (a fixture, 32+ characters).
+const DefaultFleetRideServiceKey = "test-fleet-ride-service-key-0123456789abcdef"
 
 // WithMarketplace attaches the marketplace policy fixture to the city config
 // and opens the ride/delivery marketplace flags (queued jobs stays off; a
@@ -304,6 +332,7 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 
 		TripAccessSealer: tripAccessSealer,
 		Business:         options.business,
+		Fleet:            options.fleet,
 	})
 	if err != nil {
 		pool.Close()
@@ -312,10 +341,16 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	// Production parity: the move core notifies the marketplace post-commit
 	// when an execution ride ends (service.Build wires the same observer).
 	service.SetExecutionObserver(marketplaceService)
+	service.SetDriverActivityObserver(marketplaceService)
 
 	rideHandler := handler.NewRideHandler(service, zerolog.Nop())
 	marketplaceHandler := handler.NewMarketplaceHandler(marketplaceService, zerolog.Nop())
 	router := rideHandler.Routes(handler.RequireIdentity(handler.NewInternalContextVerifier("", 0)), nil, marketplaceHandler)
+	fleetKey := DefaultFleetRideServiceKey
+	if options.fleetRideServiceKey != nil {
+		fleetKey = *options.fleetRideServiceKey
+	}
+	internal := handler.FleetInternalRoutes(fleetKey, marketplaceHandler)
 
 	h := &Harness{
 		T: t, Pool: pool, Redis: redisClient, Service: service,
@@ -323,6 +358,7 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 		Marketplace: marketplaceService, Wallet: fakeWallet, Funding: fakeFunding, Settlement: fakeSettlement,
 		TripAccessKey: tripAccessKey, TripAccessKid: tripAccessKid,
 		CityID: cityID, ConfigVersion: version,
+		Internal: internal, FleetRideServiceKey: fleetKey,
 	}
 
 	t.Cleanup(func() {
@@ -353,6 +389,13 @@ func (h *Harness) cleanup(ctx context.Context) {
 		// keyed by the city of the trip they were saved from.
 		`DELETE FROM mp.favourite_drivers WHERE city_id = $1`,
 		`DELETE FROM mp.execution_routes WHERE city_id = $1`,
+		// A05 fleet calendar: off-road use flags reference the ledger; the
+		// ledger's fleet rows use this harness's vehicle ids (VehicleID) and
+		// its booking rows this city's bookings. Swaps and risk blockers
+		// cascade with their bookings.
+		`DELETE FROM mp.offroad_use_flags WHERE city_id = $1 OR vehicle_id LIKE 'veh-' || $1 || '-%'`,
+		`DELETE FROM mp.vehicle_occupancy WHERE vehicle_id LIKE 'veh-' || $1 || '-%'
+			OR (kind = 'booking' AND source_id IN (SELECT id::text FROM mp.advance_bookings WHERE city_id = $1))`,
 		// A03 Book for Later: the booking calendar references awards and
 		// requests; occurrences reference their templates.
 		`DELETE FROM mp.advance_bookings WHERE city_id = $1`,
@@ -438,6 +481,38 @@ func (h *Harness) Do(method, path string, actor Actor, body any, headers ...stri
 
 	recorder := httptest.NewRecorder()
 	h.Router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+// VehicleID is a fleet vehicle id scoped to this harness (its cleanup
+// removes every ledger row written for it).
+func (h *Harness) VehicleID(name string) string {
+	return "veh-" + h.CityID + "-" + name
+}
+
+// DoInternal sends a request through the /internal/fleet router with the
+// given X-Service-Key ("" sends none), as fleet-service would.
+func (h *Harness) DoInternal(method, path, serviceKey string, body any, headers ...string) *httptest.ResponseRecorder {
+	h.T.Helper()
+	var request *http.Request
+	if body == nil {
+		request = httptest.NewRequest(method, path, nil)
+	} else {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			h.T.Fatalf("failed to encode the request body: %v", err)
+		}
+		request = httptest.NewRequest(method, path, bytes.NewReader(encoded))
+		request.Header.Set("Content-Type", "application/json")
+	}
+	if serviceKey != "" {
+		request.Header.Set(marketplace.FleetServiceKeyHeader, serviceKey)
+	}
+	for i := 0; i+1 < len(headers); i += 2 {
+		request.Header.Set(headers[i], headers[i+1])
+	}
+	recorder := httptest.NewRecorder()
+	h.Internal.ServeHTTP(recorder, request)
 	return recorder
 }
 

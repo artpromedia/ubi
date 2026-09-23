@@ -159,6 +159,35 @@ var eventNames = map[string]struct{}{
 	"business_booking.refused":   {},
 	"business_booking.committed": {},
 	"business_booking.released":  {},
+
+	// Fleet availability calendar (A05) — registered in the contract's
+	// EVENT_NAMES too. The booking's risk overlay (subject
+	// mp_advance_booking; `risk_changed` names the DRIVER only, never the
+	// requester, so the realtime gateway reaches the driver alone) and the
+	// rider's "cancel and release" on a failed booking.
+	"mp.advance_booking.risk_changed":     {},
+	"mp.advance_booking.rematch_declined": {},
+	// A vehicle swap on an advance booking (subject mp_vehicle_swap,
+	// machine mpVehicleSwap). The fare never changes and the commission is
+	// never charged again; the rider's consent is always required.
+	"mp.vehicle_swap.proposed":                {},
+	"mp.vehicle_swap.driver_accepted":         {},
+	"mp.vehicle_swap.driver_declined":         {},
+	"mp.vehicle_swap.revalidation_failed":     {},
+	"mp.vehicle_swap.rider_consent_requested": {},
+	"mp.vehicle_swap.applied":                 {},
+	"mp.vehicle_swap.rider_declined":          {},
+	"mp.vehicle_swap.expired":                 {},
+	"mp.vehicle_swap.cancelled":               {},
+	// The shared vehicle occupancy ledger (subject vehicle_occupancy).
+	// Deliberately NOT mp.*: fleet/ops data that must never ride the channel
+	// fanned out to riders and drivers; payloads name no rider and no
+	// driver. `offroad_use_flagged` is the UBI ops alert for a vehicle that
+	// went online or started a trip during a reported breakdown.
+	"vehicle_occupancy.recorded":            {},
+	"vehicle_occupancy.released":            {},
+	"vehicle_occupancy.moved":               {},
+	"vehicle_occupancy.offroad_use_flagged": {},
 }
 
 // Event subjects (packages/contracts/src/events.ts): mp_request, mp_bid,
@@ -184,6 +213,11 @@ const (
 	// subjectTripAccess (guest.go) is a guest passenger's trip link (A06
 	// part B); subjectBusinessBooking (business_trips.go) one award's
 	// organization-budget funding (A06 part C).
+
+	// Fleet calendar (A05): a vehicle swap proposed on an advance booking,
+	// and one row of the shared vehicle occupancy ledger.
+	subjectVehicleSwap = "mp_vehicle_swap"
+	subjectOccupancy   = "vehicle_occupancy"
 )
 
 // Event is one row of the transactional outbox, always written in the same

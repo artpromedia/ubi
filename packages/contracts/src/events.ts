@@ -63,6 +63,24 @@ export const SUBJECT_TYPES = [
   // release on cancel). Organization events use the `user` subject and
   // payment-service's budget movements `booking` / `wallet`.
   "business_booking",
+  // Fleet calendar (A05). ride-service: a vehicle swap proposed on an advance
+  // booking, and one row of the shared vehicle occupancy ledger (a booking,
+  // maintenance block or off-road report occupying a vehicle). fleet-service:
+  // a vehicle, a maintenance block and a calendar conflict (its own
+  // aggregates; fleets and assignments keep `fleet` / `assignment`).
+  "mp_vehicle_swap",
+  "vehicle_occupancy",
+  "vehicle",
+  "maintenance_block",
+  "fleet_conflict",
+  // travel-service outbox aggregates: unregistered, the relay quarantined
+  // them, so settlement and refund events never reached consumers.
+  "travel_order",
+  "travel_refund",
+  "travel_settlement",
+  "travel_search",
+  "travel_cart",
+  "travel_webhook",
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
@@ -519,6 +537,74 @@ export const EVENT_NAMES = [
   "business_booking.refused",
   "business_booking.committed",
   "business_booking.released",
+  // ── Fleet availability calendar (A05) — ride-service ──
+  // ADVANCE BOOKING RISK — subject mp_advance_booking (machine mpBookingRisk).
+  // `risk_changed` is the DRIVER's alert (payload names the driver only, never
+  // the requester, so the realtime gateway reaches the driver alone): a
+  // blocker opened against the booking's vehicle (off_road, document_expiry,
+  // assignment_ending, vehicle_conflict) and the decision deadline, or every
+  // blocker cleared. The rider hears only about a vehicle change to consent to
+  // (mp.vehicle_swap.rider_consent_requested) or the booking failing
+  // (mp.advance_booking.failed, reason risk_unresolved — no reason shown).
+  // `rematch_declined` is the rider choosing "cancel and release" over a
+  // rematch on a failed booking.
+  "mp.advance_booking.risk_changed",
+  "mp.advance_booking.rematch_declined",
+  // VEHICLE SWAP ON A BOOKING — subject mp_vehicle_swap (machine
+  // mpVehicleSwap). proposed (fleet, service-authenticated; driver audience)
+  // → driver_accepted | driver_declined → revalidated (server: class,
+  // capacity, occupancy, documents) | revalidation_failed →
+  // rider_consent_requested (rider audience: "Confirm new vehicle" or cancel
+  // free) → applied | rider_declined; expired / cancelled keep the original
+  // vehicle. The fare never changes and the commission is never re-charged.
+  "mp.vehicle_swap.proposed",
+  "mp.vehicle_swap.driver_accepted",
+  "mp.vehicle_swap.driver_declined",
+  "mp.vehicle_swap.revalidation_failed",
+  "mp.vehicle_swap.rider_consent_requested",
+  "mp.vehicle_swap.applied",
+  "mp.vehicle_swap.rider_declined",
+  "mp.vehicle_swap.expired",
+  "mp.vehicle_swap.cancelled",
+  // VEHICLE OCCUPANCY LEDGER — subject vehicle_occupancy (machine
+  // mpVehicleOccupancy). Deliberately NOT mp.*: it is fleet/ops data and must
+  // never ride the channel the realtime gateway fans out to riders and
+  // drivers. `recorded` — a maintenance block or off-road report (or a
+  // booking's vehicle) now occupies the vehicle; `released` — it no longer
+  // does; `moved` — an applied swap moved a booking's occupancy to another
+  // vehicle; `offroad_use_flagged` — UBI ops alert: the vehicle a fleet
+  // reported off-road went online or started a trip during the claimed
+  // breakdown (every off-road report is audited; this is the abuse control).
+  "vehicle_occupancy.recorded",
+  "vehicle_occupancy.released",
+  "vehicle_occupancy.moved",
+  "vehicle_occupancy.offroad_use_flagged",
+  // ── Fleet availability calendar (A05) — fleet-service ──
+  // Emitted by fleet-service (not ride-service); registered here so the
+  // closed catalog is complete. Conflicts (subject fleet_conflict) open,
+  // resolve or lapse at their deadline; a maintenance block's status
+  // (subject maintenance_block); an assignment proposal's status (subject
+  // assignment); a vehicle document expiring at T-30/14/7/1 days or whenever
+  // a booking falls after the expiry (subject vehicle); an off-road report
+  // (subject maintenance_block).
+  "fleet.conflict.opened",
+  "fleet.conflict.resolved",
+  "fleet.conflict.lapsed",
+  "maintenance.status.changed",
+  "assignment.proposal.status.changed",
+  "vehicle.document.expiring",
+  "fleet.offroad.reported",
+  // Emitted by fleet-service (FLEET_EVENT_NAMES in ./fleet).
+  "fleet.created",
+  "fleet.staff.changed",
+  "fleet.vehicle.added",
+  "assignment.signed",
+  "assignment.status.changed",
+  "fleet.offroad.flagged",
+  "fleet.conflict.reminder_sent",
+  "vehicle.document.expired",
+  "driver.availability.saved",
+  "fleet.vehicle_swap.requested",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

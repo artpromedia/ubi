@@ -60,6 +60,11 @@ describe("canonical state machines", () => {
         // Business travel (A06 part C): one award's organization-budget
         // funding (reserve → commit | release).
         "mpBusinessBooking",
+        // Fleet calendar (A05): the shared vehicle occupancy ledger, an
+        // advance booking's risk overlay, and a vehicle swap on a booking.
+        "mpVehicleOccupancy",
+        "mpBookingRisk",
+        "mpVehicleSwap",
       ].sort(),
     );
   });

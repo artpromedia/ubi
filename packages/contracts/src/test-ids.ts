@@ -64,6 +64,21 @@ export const TEST_IDS = {
       banner: "rider.offline.banner",
       staleTimestamp: "rider.offline.staleTimestamp",
     },
+    /**
+     * Fleet calendar (A05) — the rider's two moments on an advance booking:
+     * D1 BookingChangeConsent (a revalidated vehicle change: confirm, or
+     * cancel the booking for free) and D2 BookingDriverLost (no reason
+     * shown: rematch at the same fare only when the server offers it, or
+     * cancel and release).
+     */
+    booking: {
+      vehicleChange: "rider.booking.vehicleChange",
+      vehicleChangeConfirm: "rider.booking.vehicleChangeConfirm",
+      vehicleChangeCancel: "rider.booking.vehicleChangeCancel",
+      driverLost: "rider.booking.driverLost",
+      rematchSameFare: "rider.booking.rematchSameFare",
+      cancelRelease: "rider.booking.cancelRelease",
+    },
   },
   driver: {
     home: {

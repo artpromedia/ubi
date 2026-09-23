@@ -30,7 +30,7 @@ func TestEventAllowlistMatchesContract(t *testing.T) {
 	for _, subject := range []string{
 		subjectRequest, subjectBid, subjectAward, subjectClaim, subjectHold, subjectRateProfile, subjectDriver,
 		subjectAmendment, subjectScheduled, subjectBooking, subjectTemplate, subjectFavourite, subjectTripAccess,
-		subjectBusinessBooking,
+		subjectBusinessBooking, subjectVehicleSwap, subjectOccupancy,
 	} {
 		if !strings.Contains(contract, `"`+subject+`"`) {
 			t.Errorf("subject %q is not registered in the contract's SUBJECT_TYPES", subject)
@@ -97,5 +97,52 @@ func TestBusinessTravelIsRegistered(t *testing.T) {
 	}
 	if found != 11 {
 		t.Fatalf("expected the 11 organization events, found %d", found)
+	}
+}
+
+// TestFleetCalendarIsRegistered (A05): the fleet flags are declared FlagKeys
+// the Go constants name exactly; the fleet-service events the lead passes on
+// are in the closed EVENT_NAMES (ride-service never publishes them, so they
+// stay OUT of its allowlist); and every fleet-calendar event ride-service
+// publishes builds an outbox key within the envelope's 64-character bound.
+func TestFleetCalendarIsRegistered(t *testing.T) {
+	flags, err := os.ReadFile(filepath.Clean(flagsContractPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := string(flags)[strings.Index(string(flags), "FLAG_KEYS"):]
+	keys = keys[:strings.Index(keys, "] as const")]
+	for _, flag := range []string{cityconfig.FlagFleet, cityconfig.FlagMarketplaceBookingVehicleSwaps} {
+		if !strings.Contains(keys, `"`+flag+`"`) {
+			t.Errorf("%q is not a declared FlagKey", flag)
+		}
+	}
+	events, err := os.ReadFile(filepath.Clean(eventsContractPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := string(events)[strings.Index(string(events), "export const EVENT_NAMES"):]
+	names = names[:strings.Index(names, "] as const")]
+	for _, name := range []string{
+		"fleet.conflict.opened", "fleet.conflict.resolved", "fleet.conflict.lapsed",
+		"maintenance.status.changed", "assignment.proposal.status.changed",
+		"vehicle.document.expiring", "fleet.offroad.reported",
+	} {
+		if !strings.Contains(names, `"`+name+`"`) {
+			t.Errorf("fleet-service event %q is not registered in EVENT_NAMES", name)
+		}
+		if _, ok := eventNames[name]; ok {
+			t.Errorf("%q is fleet-service's event; ride-service must not be able to publish it", name)
+		}
+	}
+	long := "00000000-0000-0000-0000-000000000000"
+	for name := range eventNames {
+		if !strings.HasPrefix(name, "mp.vehicle_swap.") && !strings.HasPrefix(name, "vehicle_occupancy.") &&
+			name != "mp.advance_booking.risk_changed" && name != "mp.advance_booking.rematch_declined" {
+			continue
+		}
+		if key := eventKey(name, long, long, "veh-with-a-long-fleet-vehicle-identifier", "43200"); len(key) > 64 {
+			t.Errorf("event %q builds a %d-character key", name, len(key))
+		}
 	}
 }

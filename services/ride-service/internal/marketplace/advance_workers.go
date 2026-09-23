@@ -38,6 +38,9 @@ const (
 func (s *Service) sweepAdvanceBookings(ctx context.Context, now time.Time) {
 	s.sweepBookingFunding(ctx, now)
 	s.sweepBookingEligibility(ctx, now)
+	// A05: the fleet calendar runs before reconfirmation and activation, so
+	// a booking whose risk lapsed fails before it could enter the live slots.
+	s.sweepFleetCalendar(ctx, now)
 	s.sweepBookingReconfirmation(ctx, now)
 	s.sweepBookingActivations(ctx, now)
 	s.sweepActivatedBookings(ctx, now)
@@ -499,6 +502,11 @@ func (s *Service) lockForActivation(ctx context.Context, tx pgx.Tx, b *AdvanceBo
 		return nil, nil, nil, false, err
 	}
 	if locked.State != machine.MpBookingReconfirmed {
+		return nil, nil, nil, false, nil
+	}
+	// A05: a booking at risk never enters the live slots — its vehicle is
+	// not usable; it resolves or lapses at its deadline (before activation).
+	if locked.Risk == machine.MpRiskAtRisk {
 		return nil, nil, nil, false, nil
 	}
 	lockedAward, err := s.deps.Store.AwardForUpdate(ctx, tx, award.ID)

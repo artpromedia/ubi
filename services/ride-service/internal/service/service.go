@@ -68,6 +68,14 @@ type Config struct {
 	// Environment names the deployment (UBI_ENV); in production an unusable
 	// trip-access key is logged as an alert rather than a warning.
 	Environment string
+	// FleetServiceURL (FLEET_SERVICE_URL) and FleetServiceKey
+	// (FLEET_SERVICE_KEY, at least 32 characters) wire internal contract A's
+	// fleet-service routes (A05: the vehicle a fleet driver is assigned to,
+	// a vehicle's class, capacity and documents). Either unusable fails
+	// closed: an advance award goes ahead without a vehicle (never blocked)
+	// and no vehicle swap can be revalidated, so none is offered.
+	FleetServiceURL string
+	FleetServiceKey string
 }
 
 // Runtime is a wired service and the resources it owns.
@@ -171,6 +179,10 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		config.Logger.Warn().Msg("DELIVERY_SERVICE_URL or a non-default delivery service key is not set: marketplace delivery awards cannot be handed off")
 	}
 	tripAccessSealer := buildTripAccessSealer(config)
+	fleetService := marketplace.NewHTTPFleetService(config.FleetServiceURL, config.FleetServiceKey, marketplace.FleetServiceOptions{})
+	if !marketplace.FleetServiceConfigured(fleetService) {
+		config.Logger.Warn().Msg("FLEET_SERVICE_URL or a FLEET_SERVICE_KEY of at least 32 characters is not set: advance bookings carry no fleet vehicle and no vehicle swap can be offered")
+	}
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
 		Store:      marketplace.NewStore(pool),
 		Config:     cityconfig.NewStore(pool, runtime.Redis, config.ConfigCacheTTL),
@@ -190,6 +202,8 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		// /v1/finance/business, on the same URL and service key as the
 		// wallet. Unwired, every business check fails closed.
 		Business: marketplace.NewHTTPBusiness(config.PaymentServiceURL, config.InternalServiceKey, nil),
+		// Fleet calendar (A05): fleet-service's side of contract A.
+		Fleet: fleetService,
 	})
 	if err != nil {
 		runtime.Close()
@@ -202,6 +216,10 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	// backstop for this callback. Defined in move, implemented in marketplace:
 	// no import cycle.
 	moveService.SetExecutionObserver(marketplaceService)
+	// A05: a driver going online, or a live trip starting, is checked
+	// against the vehicles fleets reported off the road (post-commit; the
+	// marketplace sweep backstops it).
+	moveService.SetDriverActivityObserver(marketplaceService)
 
 	return runtime, nil
 }

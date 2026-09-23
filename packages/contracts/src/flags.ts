@@ -106,6 +106,17 @@ export const FLAG_KEYS = [
   // money: commit, release, statements and existing trips keep working.
   // Nothing enables it (see BUSINESS_TRAVEL_FLAG in business-travel.ts).
   "business_travel",
+  // Vehicle swaps on advance bookings (A05 FL-8). Per city, deny-by-default:
+  // gates a fleet PROPOSING to move a confirmed advance booking to another of
+  // its vehicles (ride-service POST /internal/fleet/bookings/:blockId/
+  // vehicle-swaps). A swap is always decided by the booked driver (parked) and
+  // then explicitly consented to by the rider; the fare is unchanged and the
+  // commission is never charged again. Switching it off stops NEW proposals
+  // only — a swap already proposed can still be declined, consented to or
+  // expire. The fleet calendar itself (vehicle identity on bookings, the
+  // occupancy ledger, the risk overlay) rides on the pre-existing `fleet`
+  // flag, which also stays off. Nothing enables either.
+  "marketplace_booking_vehicle_swaps",
   // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
   // assistant quoting, publishing a bounded request, and (the only binding step)
   // selecting a winning offer within a user's grant/mandate. Deny-by-default and

@@ -458,6 +458,22 @@ export const marketplaceApi = {
     api<MpRequest>("POST", bookingPath(id) + "/rematch", undefined, {
       idempotencyKey,
     }),
+  // A05 fleet calendar, the rider's two moments. D1: the rider's explicit consent to a
+  // vehicle change the driver accepted and UBI revalidated (same driver, fare unchanged —
+  // nothing changes unless the rider accepts). D2: "cancel and release" on a booking whose
+  // driver can't make it (closes the rematch offer; the money was already settled when the
+  // booking failed). No body: the server holds every figure.
+  acceptBookingChange: (id: string, changeId: string, idempotencyKey: string) =>
+    api<MpAdvanceBooking>(
+      "POST",
+      bookingPath(id) + "/changes/" + encodeURIComponent(changeId) + "/accept",
+      undefined,
+      { idempotencyKey },
+    ),
+  releaseBooking: (id: string, idempotencyKey: string) =>
+    api<MpAdvanceBooking>("POST", bookingPath(id) + "/release", undefined, {
+      idempotencyKey,
+    }),
   createSeries: (body: MpCreateRecurringTemplate, idempotencyKey: string) =>
     api<MpRecurringTemplate>("POST", "/v1/mp/recurring-templates", body, {
       idempotencyKey,

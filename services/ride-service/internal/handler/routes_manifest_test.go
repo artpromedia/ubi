@@ -38,7 +38,8 @@ const (
 	regenerateCommand   = "UPDATE_ROUTE_MANIFEST=1 go test ./internal/handler/ -run TestRouteManifest"
 	routeManifestHeader = `# ride-service route manifest: every METHOD + chi pattern the production
 # router serves (cmd/server/main.go: the probes it registers directly plus
-# RideHandler.Routes at its mount prefix). GENERATED — do not edit by hand.
+# RideHandler.Routes and the service-key-only FleetInternalRoutes at their
+# mount prefixes). GENERATED — do not edit by hand.
 # Regenerate: (cd services/ride-service && ` + regenerateCommand + `)
 # Read by services/api-gateway/tests/route-contract.test.ts.
 `
@@ -48,6 +49,9 @@ const (
 type mainGoRoutes struct {
 	// apiPrefix is the pattern main.go mounts RideHandler.Routes at.
 	apiPrefix string
+	// fleetPrefix is the pattern main.go mounts FleetInternalRoutes (internal
+	// contract A, A05) at, or "" when it does not mount it.
+	fleetPrefix string
 	// direct holds "METHOD pattern" for every route main.go registers itself.
 	direct []string
 }
@@ -116,11 +120,21 @@ func readMainGoRoutes(t *testing.T) mainGoRoutes {
 				t.Fatalf("%s: main.go mounts something other than RideHandler.Routes; extend routes_manifest_test.go to walk it", fset.Position(call.Pos()))
 			}
 			targetSelector, ok := target.Fun.(*ast.SelectorExpr)
-			if !ok || targetSelector.Sel.Name != "Routes" {
+			switch {
+			case ok && targetSelector.Sel.Name == "Routes":
+				routes.apiPrefix = stringLiteral(t, fset, call.Args[0])
+				mounts++
+			case ok && targetSelector.Sel.Name == "FleetInternalRoutes":
+				// Internal contract A (A05): service-key authenticated,
+				// never proxied by the gateway — but a route the production
+				// router serves, so it belongs in the manifest.
+				if routes.fleetPrefix != "" {
+					t.Fatalf("%s: main.go mounts FleetInternalRoutes twice", fset.Position(call.Pos()))
+				}
+				routes.fleetPrefix = stringLiteral(t, fset, call.Args[0])
+			default:
 				t.Fatalf("%s: main.go mounts something other than RideHandler.Routes; extend routes_manifest_test.go to walk it", fset.Position(call.Pos()))
 			}
-			routes.apiPrefix = stringLiteral(t, fset, call.Args[0])
-			mounts++
 		case routerMethods[name] != "":
 			if len(call.Args) < 1 {
 				t.Fatalf("%s: router.%s without a pattern", fset.Position(call.Pos()), name)
@@ -155,6 +169,9 @@ func buildManifest(t *testing.T) string {
 	)
 	root := chi.NewRouter()
 	root.Mount(fromMain.apiPrefix, api)
+	if fromMain.fleetPrefix != "" {
+		root.Mount(fromMain.fleetPrefix, handler.FleetInternalRoutes("", handler.NewMarketplaceHandler(nil, logger)))
+	}
 
 	seen := map[string]bool{}
 	for _, line := range fromMain.direct {
@@ -244,6 +261,12 @@ func TestRouteManifestServesTheGatewayFamilies(t *testing.T) {
 		"POST /v1/mp/requests/{requestId}/select",
 		"GET /v1/admin/mp/requests",
 		"GET /health/ready",
+		// A05 fleet calendar: the booking parties' commands, and internal
+		// contract A (fleet-service only, never a gateway rule).
+		"POST /v1/mp/advance-bookings/{bookingId}/changes/{changeId}/accept",
+		"POST /internal/fleet/occupancy/maintenance",
+		"GET /internal/fleet/occupancy/blocks",
+		"POST /internal/fleet/bookings/{blockId}/vehicle-swaps",
 	} {
 		if !routes[route] {
 			t.Errorf("the production router does not serve %q", route)

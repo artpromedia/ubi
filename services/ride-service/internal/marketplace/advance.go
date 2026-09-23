@@ -260,6 +260,8 @@ type bookingPlan struct {
 	occupiedEnd   time.Time
 	previousID    *uuid.UUID
 	nextID        *uuid.UUID
+	// vehicle is the fleet vehicle resolved for the interval (A05 FL-4).
+	vehicle resolvedVehicle
 }
 
 // calendarConflict is the structured refusal of a booking the calendar
@@ -488,7 +490,7 @@ func (s *Service) bookingView(ctx context.Context, b *AdvanceBooking, viewer str
 		request = nil
 	}
 	view := s.withVerifiedDriver(ctx, bookingViewOf(b, request, vehicleClass, viewer), b, vehicleClass)
-	return s.withBookingReminders(ctx, view, b.CityID)
+	return s.withFleetState(ctx, s.withBookingReminders(ctx, view, b.CityID), b, viewer)
 }
 
 // GetBooking answers GET /v1/mp/advance-bookings/{id}.
@@ -734,6 +736,10 @@ type bookingEnd struct {
 	actorID   string
 	actorRole string
 	saveIdem  func(tx pgx.Tx, moved *AdvanceBooking) error
+	// riskLapsed marks the fleet calendar's deadline failure (A05): the
+	// booking's risk overlay moves at_risk → lapsed instead of being
+	// resolved (at_risk → ok) by the booking ending.
+	riskLapsed bool
 }
 
 // endBooking fails or cancels a not-yet-activated booking, exactly once:
@@ -775,6 +781,12 @@ func (s *Service) endBooking(ctx context.Context, b *AdvanceBooking, end booking
 			return domain.Errorf(domain.CodeConflict, "this booking can no longer be ended this way").
 				WithDetails(map[string]any{"state": locked.State})
 		}
+		// A05: the risk sweep listed this booking without a lock. Under the
+		// lock it must still be at risk past its deadline — a blocker that
+		// cleared (or a swap applied) meanwhile wins, and nothing ends.
+		if end.riskLapsed && (locked.Risk != machine.MpRiskAtRisk || locked.RiskDeadline == nil || now.Before(*locked.RiskDeadline)) {
+			return errRiskNoLongerDue
+		}
 		failure := &BookingFailure{
 			Reason:               end.reason,
 			Message:              end.message,
@@ -791,6 +803,14 @@ func (s *Service) endBooking(ctx context.Context, b *AdvanceBooking, end booking
 		}
 		moved, err = s.deps.Store.TransitionBooking(ctx, tx, locked, end.to, BookingUpdate{Failure: failure, FundingState: &funding})
 		if err != nil {
+			return err
+		}
+		// A05: the booking ending settles its fleet-calendar state in the
+		// same transaction — its vehicle left the occupancy ledger in
+		// TransitionBooking; its risk overlay resolves (or lapses, at the
+		// deadline) and any vehicle swap still in flight is cancelled,
+		// keeping the vehicle it had.
+		if moved, err = s.settleEndedBookingFleetState(ctx, tx, moved, end, now); err != nil {
 			return err
 		}
 		lockedAward, err := s.deps.Store.AwardForUpdate(ctx, tx, award.ID)
@@ -893,6 +913,9 @@ func (s *Service) endBooking(ctx context.Context, b *AdvanceBooking, end booking
 		}
 		return nil
 	})
+	if errors.Is(err, errRiskNoLongerDue) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, asDomainError(err)
 	}
@@ -968,6 +991,9 @@ func (s *Service) RematchBooking(ctx context.Context, actor Actor, id uuid.UUID,
 		return nil, 0, domain.Errorf(domain.CodeConflict, "a rematch was already requested for this booking").
 			WithDetails(map[string]any{"requestId": b.RematchRequestID.String()})
 	}
+	if b.RematchDeclinedAt != nil {
+		return nil, 0, domain.Errorf(domain.CodeConflict, "you chose to cancel and release this booking; book again instead")
+	}
 	original, err := s.deps.Store.RequestByID(ctx, s.deps.Store.Pool(), b.RequestID)
 	if err != nil {
 		return nil, 0, asDomainError(err)
@@ -1026,7 +1052,7 @@ func (s *Service) RematchBooking(ctx context.Context, actor Actor, id uuid.UUID,
 		if replayed, err = s.deps.Store.LookupIdempotent(ctx, tx, scopeBookingRematch, actor.UserID, idempotencyKey, body); err != nil || replayed != nil {
 			return err
 		}
-		if locked.State != machine.MpBookingFailed || locked.RematchRequestID != nil {
+		if locked.State != machine.MpBookingFailed || locked.RematchRequestID != nil || locked.RematchDeclinedAt != nil {
 			return domain.Errorf(domain.CodeConflict, "a rematch was already requested for this booking")
 		}
 		if err := s.acquirePublishCapacity(ctx, tx, actor.UserID, BookingKindAdvance, policy, advance); err != nil {
@@ -1067,6 +1093,88 @@ func (s *Service) RematchBooking(ctx context.Context, actor Actor, id uuid.UUID,
 		return &stored, replayed.StatusCode, nil
 	}
 	return view, 201, nil
+}
+
+// ReleaseBooking is the rider's "cancel and release" on a booking whose
+// driver can no longer make it (A05 D2): it closes the rematch offer for
+// good, with an event and an audit row. The money was already settled when
+// the booking failed — the captured commission returned with a linked
+// reversal and any rider funding hold released (both owed durably, driven
+// by the recovery sweep until confirmed) — so nothing is charged or moved
+// here.
+func (s *Service) ReleaseBooking(ctx context.Context, actor Actor, id uuid.UUID, idempotencyKey string) (*AdvanceBookingView, int, error) {
+	if !actor.IsRider() {
+		return nil, 0, domain.Errorf(domain.CodeForbidden, "only the requester can release their booking")
+	}
+	if err := ValidateIdempotencyKey(idempotencyKey); err != nil {
+		return nil, 0, err
+	}
+	b, _, err := s.bookingForParty(ctx, actor, id)
+	if err != nil {
+		return nil, 0, err
+	}
+	body := map[string]any{"bookingId": id.String()}
+	replay, err := s.deps.Store.LookupIdempotent(ctx, s.deps.Store.Pool(), scopeBookingRelease, actor.UserID, idempotencyKey, body)
+	if err != nil {
+		return nil, 0, asDomainError(err)
+	}
+	if replay != nil {
+		return bookingReplay(replay)
+	}
+	now := s.now()
+	var view *AdvanceBookingView
+	var replayed *IdempotentResult
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		locked, err := s.deps.Store.BookingForUpdate(ctx, tx, b.ID)
+		if err != nil {
+			return err
+		}
+		// Under the booking lock: a concurrent retry of this same key that
+		// committed first is replayed, not refused.
+		if replayed, err = s.deps.Store.LookupIdempotent(ctx, tx, scopeBookingRelease, actor.UserID, idempotencyKey, body); err != nil || replayed != nil {
+			return err
+		}
+		if locked.State != machine.MpBookingFailed || locked.RematchRequestID != nil {
+			return domain.Errorf(domain.CodeConflict, "only a failed booking with no rematch can be released").
+				WithDetails(map[string]any{"state": locked.State})
+		}
+		if locked.RematchDeclinedAt == nil {
+			updated, err := scanBooking(tx.QueryRow(ctx, `
+				UPDATE mp.advance_bookings
+				SET rematch_declined_at = $3, version = version + 1, updated_at = now()
+				WHERE id = $1 AND version = $2
+				RETURNING `+bookingColumns, locked.ID, locked.Version, now))
+			if err != nil {
+				return err
+			}
+			if err := s.writeBookingEvent(ctx, tx, updated, "mp.advance_booking.rematch_declined", "rider", actor.UserID.String(), now,
+				map[string]any{"riderCharged": false, "riderFundingReleased": locked.FundingState == BookingFundingReleased}); err != nil {
+				return err
+			}
+			if err := writeAudit(ctx, tx, AuditRecord{
+				ActorID: actor.UserID.String(), ActorRole: actor.Role, Action: "mp.advance_booking.rematch_declined",
+				SubjectType: subjectBooking, SubjectID: updated.ID.String(),
+				Before: map[string]any{"rematchOffered": locked.Failure != nil && locked.Failure.RematchAvailable},
+				After:  map[string]any{"rematchOffered": false, "fundingState": updated.FundingState},
+				Reason: "the rider chose to cancel and release instead of a rematch",
+			}); err != nil {
+				return err
+			}
+			locked = updated
+		}
+		view = bookingViewOf(locked, nil, "", viewerRider)
+		return s.deps.Store.SaveIdempotent(ctx, tx, scopeBookingRelease, actor.UserID, idempotencyKey, body, 200, view)
+	})
+	if err != nil {
+		return nil, 0, asDomainError(err)
+	}
+	if replayed != nil {
+		return bookingReplay(replayed)
+	}
+	if current, err := s.deps.Store.BookingByID(ctx, s.deps.Store.Pool(), b.ID); err == nil {
+		view = s.bookingView(ctx, current, viewerRider)
+	}
+	return view, 200, nil
 }
 
 // errBookingNotActivatable is a transient activation blocker (the driver

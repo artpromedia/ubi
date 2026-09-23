@@ -1,11 +1,14 @@
 # ride-service route manifest: every METHOD + chi pattern the production
 # router serves (cmd/server/main.go: the probes it registers directly plus
-# RideHandler.Routes at its mount prefix). GENERATED — do not edit by hand.
+# RideHandler.Routes and the service-key-only FleetInternalRoutes at their
+# mount prefixes). GENERATED — do not edit by hand.
 # Regenerate: (cd services/ride-service && UPDATE_ROUTE_MANIFEST=1 go test ./internal/handler/ -run TestRouteManifest)
 # Read by services/api-gateway/tests/route-contract.test.ts.
 GET /health
 GET /health/live
 GET /health/ready
+GET /internal/fleet/drivers/{driverId}/calendar
+GET /internal/fleet/occupancy/blocks
 GET /v1/admin/mp/cancellations
 GET /v1/admin/mp/drivers/standing
 GET /v1/admin/mp/drivers/{driverId}/standing
@@ -50,6 +53,11 @@ GET /v1/rides/active
 GET /v1/rides/{rideId}
 GET /v1/rides/{rideId}/offers
 PATCH /v1/mp/driver/preferences
+POST /internal/fleet/bookings/{blockId}/vehicle-swaps
+POST /internal/fleet/occupancy/maintenance
+POST /internal/fleet/occupancy/maintenance/{blockId}/release
+POST /internal/fleet/occupancy/maintenance:preview
+POST /internal/fleet/occupancy/off-road
 POST /v1/admin/mp/awards/{awardId}/reconcile
 POST /v1/admin/mp/drivers/{driverId}/standing-actions
 POST /v1/admin/mp/recoveries/{recoveryId}/retry
@@ -60,8 +68,13 @@ POST /v1/admin/mp/standing-actions/{actionId}/decide
 POST /v1/drivers/me/locations
 POST /v1/drivers/me/status
 POST /v1/mp/advance-bookings/{bookingId}/cancel
+POST /v1/mp/advance-bookings/{bookingId}/changes/{changeId}/accept
+POST /v1/mp/advance-bookings/{bookingId}/changes/{changeId}/decline
 POST /v1/mp/advance-bookings/{bookingId}/reconfirm
+POST /v1/mp/advance-bookings/{bookingId}/release
 POST /v1/mp/advance-bookings/{bookingId}/rematch
+POST /v1/mp/advance-bookings/{bookingId}/vehicle-swaps/{swapId}/accept
+POST /v1/mp/advance-bookings/{bookingId}/vehicle-swaps/{swapId}/decline
 POST /v1/mp/advance-bookings/{bookingId}/withdraw
 POST /v1/mp/advance-requests
 POST /v1/mp/bids/

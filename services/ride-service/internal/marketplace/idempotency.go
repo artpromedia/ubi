@@ -51,6 +51,13 @@ const (
 	scopeTemplateCreate   = "mp.template.create"
 	scopeTemplateCommand  = "mp.template.command"
 	scopeOccurrenceSkip   = "mp.template.skip"
+
+	// A05 fleet calendar: the rider's "cancel and release" on a failed
+	// booking, the driver's decision on a vehicle swap and the rider's on a
+	// vehicle change. (Contract A's scopes live in fleet_internal.go.)
+	scopeBookingRelease   = "mp.booking.release"
+	scopeSwapDriverDecide = "mp.booking.swap.driver"
+	scopeSwapRiderDecide  = "mp.booking.swap.rider"
 )
 
 // ValidateIdempotencyKey mirrors IdempotencyKeySchema, via the move package so

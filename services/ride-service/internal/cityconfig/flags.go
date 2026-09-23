@@ -64,6 +64,18 @@ const (
 	// or publish naming an organization is refused. Off stops NEW business
 	// bookings only — an award already reserved still commits or releases.
 	FlagBusinessTravel = "business_travel"
+	// Fleet availability calendar (A05) — the declared FlagKey `fleet`,
+	// shared with fleet-service. Deny by default: while off, an advance
+	// award never asks fleet-service which vehicle the driver is assigned
+	// to, so the booking carries no vehicle and no occupancy row — exactly as
+	// before the fleet calendar. The service-authenticated /internal/fleet
+	// surface is separately fail-closed on FLEET_RIDE_SERVICE_KEY.
+	FlagFleet = "fleet"
+	// Vehicle swaps on advance bookings (A05 FL-8). Deny by default: while
+	// off, a fleet's swap proposal is refused (swap_ineligible,
+	// swaps_not_enabled). Off stops NEW proposals only — a swap already
+	// proposed can still be declined, consented to or expire.
+	FlagMarketplaceBookingVehicleSwaps = "marketplace_booking_vehicle_swaps"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

@@ -42,6 +42,9 @@ type Service struct {
 	// observer, when set, hears about terminal ride transitions post-commit
 	// (see SetExecutionObserver); nil means nobody is listening.
 	observer ExecutionObserver
+	// activity, when set, hears about a driver going online and a live trip
+	// starting, post-commit (see SetDriverActivityObserver).
+	activity DriverActivityObserver
 }
 
 // NewService validates its dependencies rather than discovering a nil one

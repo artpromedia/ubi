@@ -64,6 +64,16 @@ const (
 	CodeQueueDependencyInvalid Code = "queue_dependency_invalid"
 	CodeAwardUnresolved        Code = "award_unresolved"
 	CodeRateProfileOutOfBounds Code = "rate_profile_out_of_bounds"
+
+	// Internal contract A (ride-service <-> fleet-service, A05 fleet
+	// calendar; FLEET_INTERNAL_ERROR_CODES in
+	// packages/contracts/src/marketplace-fleet.ts). Service-to-service
+	// answers only: a maintenance block the occupancy ledger refuses, an
+	// Idempotency-Key reused with another body, a vehicle swap that cannot
+	// be offered.
+	CodeOccupancyConflict   Code = "occupancy_conflict"
+	CodeIdempotencyConflict Code = "idempotency_conflict"
+	CodeSwapIneligible      Code = "swap_ineligible"
 )
 
 var statusByCode = map[Code]int{
@@ -108,6 +118,10 @@ var statusByCode = map[Code]int{
 	CodeQueueDependencyInvalid: http.StatusConflict,
 	CodeAwardUnresolved:        http.StatusConflict,
 	CodeRateProfileOutOfBounds: http.StatusUnprocessableEntity,
+
+	CodeOccupancyConflict:   http.StatusConflict,
+	CodeIdempotencyConflict: http.StatusConflict,
+	CodeSwapIneligible:      http.StatusUnprocessableEntity,
 }
 
 // StatusFor returns the HTTP status every UBI service uses for a code.

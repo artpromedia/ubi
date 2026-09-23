@@ -190,6 +190,9 @@ func SchedulingPolicyFixture() map[string]any {
 			"postBufferSec":        600,
 			"reminderOffsetsSec":   []int{43_200, 3_600},
 			"maxOpenPerRequester":  5,
+			// A05: a booking at risk must be resolved by the earlier of its
+			// reconfirmation deadline and activation minus 30 minutes.
+			"riskResolutionLeadSec": 1_800,
 		},
 		"recurring": map[string]any{
 			"generationHorizonDays":          7,

@@ -472,5 +472,46 @@
       "reserved": ["committed", "released"]
     },
     "rule": "BUSINESS BOOKING (A06 part C, business_travel): one marketplace AWARD funded by an organization's prefunded budget in payment-service (BUSINESS_INTERNAL_BASE_PATH), keyed by bookingRef = the award id. reserving: written with the award in the selection's own transaction, INSTEAD OF the rider's personal funding (never both); the award saga's funding step reserves the awarded fare (the agreed fare only — the driver's 10% commission is still reserved at bid and captured once at selection from the driver's own wallet, and never charged to the organization) under the one key business:<awardId>:reserve, and an unknown outcome is reconciled through the booking-ref status read before the SAME key is re-sent, so a crash or timeout can never reserve twice. reserved: the budget holds the fare; refused: payment-service definitely said no (policy, membership, no budget, insufficient budget, flag off) — the award is compensated with that reason before any transport is promised and nothing is ever put on credit. From reserved exactly one terminal op follows, owed durably in the same transaction as the trip event that decides it and driven until payment-service answers: committed — the trip completed and the ACTUAL total (agreed fare + committed adjustments, never above the reservation; a fare increase is refused on a business trip) left the budget under business:<awardId>:commit; released — the award was compensated, the trip was cancelled or declined before pickup, or it ended without service, naming who cancelled (traveller, booker or system per BUSINESS_CANCEL_RIGHTS) under business:<awardId>:release. Every transition writes its business_booking.* outbox event and audit row."
+  },
+  "mpVehicleOccupancy": {
+    "initial": "active",
+    "transitions": {
+      "active": ["released"]
+    },
+    "rule": "SHARED VEHICLE OCCUPANCY LEDGER (A05, fleet calendar decisions correction 3): one mp.vehicle_occupancy row per thing that occupies a vehicle for an interval — kind booking (an advance booking that carries a vehicle, written in the SAME transaction as the booking and moved with it only by an applied, rider-consented vehicle swap), maintenance (a fleet's planned service, inspection or repair block, recorded through the service-authenticated ride-service <-> fleet-service contract) or off_road (an unplanned breakdown report). An EXCLUDE USING gist (vehicle_id WITH =, occupied WITH &&) over active booking and maintenance rows makes a planned maintenance block and a booking on one vehicle impossible to hold at once, whatever races; off_road rows are deliberately outside it — a breakdown is never refused, it only moves overlapping bookings to at_risk (never cancels them) and every report is audited and flagged to UBI ops if the vehicle goes online during it. active -> released when the booking leaves its occupying states or the fleet releases the block; release is idempotent and never deletes the row."
+  },
+  "mpBookingRisk": {
+    "initial": "ok",
+    "transitions": {
+      "ok": ["at_risk"],
+      "at_risk": ["ok", "lapsed"]
+    },
+    "rule": "ADVANCE BOOKING RISK OVERLAY (A05): a server-computed overlay on an advance booking, never written by a client. ok -> at_risk when a blocker opens against the booking's vehicle — an unplanned off-road report overlapping it, a vehicle document expiring before the booking ends, or the driver's signed assignment to the vehicle no longer covering the booking (termination notice) — with decisionDeadline = the earlier of the booking's reconfirmation deadline (while it still awaits reconfirmation) and activation minus the market's riskResolutionLeadSec. at_risk -> ok when every blocker clears: an applied (driver- and rider-consented) vehicle swap, the fleet releasing the block, a renewed document or a covering assignment. A driver withdrawal ends the booking instead. at_risk -> lapsed at the deadline: the booking fails through the existing failure path with its explained outcome — the captured commission returned with a linked reversal, rider funding released, a rematch offered only when the server's rematchAvailable says so. Fleets see only ok/at_risk and the deadline on the opaque OccupiedBlock."
+  },
+  "mpVehicleSwap": {
+    "initial": "proposed",
+    "transitions": {
+      "proposed": [
+        "driver_accepted",
+        "driver_declined",
+        "expired",
+        "cancelled"
+      ],
+      "driver_accepted": ["revalidating", "expired", "cancelled"],
+      "revalidating": [
+        "rider_consent_pending",
+        "revalidation_failed",
+        "expired",
+        "cancelled"
+      ],
+      "rider_consent_pending": [
+        "applied",
+        "rider_declined",
+        "revalidation_failed",
+        "expired",
+        "cancelled"
+      ]
+    },
+    "rule": "VEHICLE SWAP ON AN ADVANCE BOOKING (A05 FL-8): a fleet proposes moving a confirmed booking to another of its vehicles (service-authenticated, behind the deny-by-default marketplace_booking_vehicle_swaps flag). The booked driver decides while parked (the stationary gate, as for every driver decision); on acceptance the server revalidates — target vehicle same-or-higher class, capacity at least the booking's, its occupancy free for the booking's buffered interval, insurance and inspection valid through it — and then the RIDER must explicitly consent (always required: riders check the plate at pickup). applied moves vehicle_id and the booking's occupancy row atomically under the vehicle exclusion constraint; the fare is unchanged and the commission is never charged again. Any decline, failed revalidation, expiry (the booking's decision deadline) or the booking ending (cancelled) keeps the original vehicle; if the blocker remains the booking stays at_risk. One live swap per booking."
   }
 }

@@ -56,6 +56,21 @@ type AdvanceReservationPolicy struct {
 	PostBufferSec        int   `json:"postBufferSec"`
 	ReminderOffsetsSec   []int `json:"reminderOffsetsSec"`
 	MaxOpenPerRequester  int   `json:"maxOpenPerRequester"`
+	// RiskResolutionLeadSec (A05 fleet calendar, optional) is how long
+	// before activation a booking put at risk must be resolved: its decision
+	// deadline is the EARLIER of its reconfirmation deadline and activation
+	// minus this lead. Absent means no lead beyond activation itself — never
+	// a guessed number.
+	RiskResolutionLeadSec *int `json:"riskResolutionLeadSec,omitempty"`
+}
+
+// RiskResolutionLead is the configured risk resolution lead (zero when the
+// market configures none).
+func (p *AdvanceReservationPolicy) RiskResolutionLead() int {
+	if p == nil || p.RiskResolutionLeadSec == nil {
+		return 0
+	}
+	return *p.RiskResolutionLeadSec
 }
 
 // RecurringPolicy mirrors MpRecurringPolicySchema.
@@ -122,6 +137,9 @@ func (p *MarketplaceSchedulingPolicy) validate(cityID string) error {
 			return fmt.Errorf("%w: city %s advance reservation reminders are unusable", ErrUnavailable, cityID)
 		case advance.MaxOpenPerRequester <= 0:
 			return fmt.Errorf("%w: city %s advance reservations have no per-requester cap", ErrUnavailable, cityID)
+		case advance.RiskResolutionLeadSec != nil &&
+			(*advance.RiskResolutionLeadSec <= 0 || *advance.RiskResolutionLeadSec >= advance.MinLeadSec):
+			return fmt.Errorf("%w: city %s advance reservation risk resolution lead is unusable", ErrUnavailable, cityID)
 		}
 	}
 	if recurring := p.Recurring; recurring != nil {

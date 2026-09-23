@@ -30,7 +30,8 @@ func loadContract(t *testing.T) map[string]contractMachine {
 	}
 	machines := map[string]contractMachine{}
 	for _, name := range []string{"rider", "driver", "mpRequest", "mpBid", "mpHold", "mpAward", "mpClaim", "mpAmendment",
-		"mpScheduledRequest", "mpAdvanceBooking", "mpRecurringTemplate", "mpPreferredWindow", "mpBusinessBooking"} {
+		"mpScheduledRequest", "mpAdvanceBooking", "mpRecurringTemplate", "mpPreferredWindow", "mpBusinessBooking",
+		"mpVehicleOccupancy", "mpBookingRisk", "mpVehicleSwap"} {
 		section, ok := document[name]
 		if !ok {
 			t.Fatalf("the contract has no %q machine", name)

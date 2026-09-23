@@ -32,6 +32,15 @@ func (h *MarketplaceHandler) mountScheduling(r chi.Router) {
 		r.Post("/{bookingId}/reconfirm", h.ReconfirmBooking)
 		r.Post("/{bookingId}/withdraw", h.WithdrawBooking)
 		r.Post("/{bookingId}/rematch", h.RematchBooking)
+		// A05 fleet calendar (fleet_internal.go): the rider's "cancel and
+		// release" on a failed booking (D2), the driver's decision on a
+		// fleet's vehicle swap (parked), the rider's consent to a vehicle
+		// change (D1).
+		r.Post("/{bookingId}/release", h.ReleaseBooking)
+		r.Post("/{bookingId}/vehicle-swaps/{swapId}/accept", h.vehicleSwapDecision(true))
+		r.Post("/{bookingId}/vehicle-swaps/{swapId}/decline", h.vehicleSwapDecision(false))
+		r.Post("/{bookingId}/changes/{changeId}/accept", h.bookingChangeDecision(true))
+		r.Post("/{bookingId}/changes/{changeId}/decline", h.bookingChangeDecision(false))
 	})
 	r.Get("/driver/calendar", h.DriverCalendar)
 	r.Route("/recurring-templates", func(r chi.Router) {

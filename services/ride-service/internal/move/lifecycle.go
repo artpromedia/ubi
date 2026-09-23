@@ -337,6 +337,7 @@ func (s *Service) Start(ctx context.Context, actor Actor, rideID uuid.UUID) (*Ri
 	}
 
 	var view *RideView
+	var startedCity string
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
 		if err != nil {
@@ -377,11 +378,13 @@ func (s *Service) Start(ctx context.Context, actor Actor, rideID uuid.UUID) (*Ri
 			return err
 		}
 		view = viewOf(moved, config.PinRequired)
+		startedCity = ride.CityID
 		return nil
 	})
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	s.notifyTripStarted(ctx, rideID, actor.UserID, startedCity)
 	return view, nil
 }
 

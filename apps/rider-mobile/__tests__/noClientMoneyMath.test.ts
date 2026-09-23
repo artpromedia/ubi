@@ -38,6 +38,8 @@ const FILES = [
   MP + "ScheduledDetail.tsx",
   MP + "AdvanceOffers.tsx",
   MP + "BookingDetail.tsx",
+  // A05 fleet calendar: the rider's D1/D2 moments.
+  MP + "BookingFleetMoments.tsx",
   MP + "RecurringSeries.tsx",
   MP + "riderCopy.ts",
   MP + "riderParts.tsx",

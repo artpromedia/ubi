@@ -75,6 +75,13 @@ type Deps struct {
 	// /v1/finance/business). Optional: nil fails closed — every business
 	// check answers service_unavailable, so no business trip is booked.
 	Business BusinessPort
+	// Fleet is fleet-service's side of internal contract A (routes 8-9,
+	// fleet_client.go): which vehicle a fleet driver is assigned to for a
+	// booking's interval, and a vehicle's class, capacity and documents.
+	// Optional: nil answers nothing — an advance award never waits on it
+	// (the booking goes ahead without a vehicle) and a vehicle swap cannot
+	// be revalidated, so none is offered.
+	Fleet FleetServicePort
 }
 
 // Service is the marketplace engine core.
@@ -112,6 +119,9 @@ func NewService(deps Deps) (*Service, error) {
 	}
 	if deps.Now == nil {
 		deps.Now = func() time.Time { return time.Now().UTC() }
+	}
+	if deps.Fleet == nil {
+		deps.Fleet = unconfiguredFleetService{}
 	}
 	return &Service{deps: deps}, nil
 }

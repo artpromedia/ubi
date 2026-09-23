@@ -36,6 +36,12 @@ import {
   MpServiceNeedsSchema,
 } from "./marketplace-confidence";
 import {
+  MpBookingPendingChangeSchema,
+  MpBookingRiskViewSchema,
+  MpBookingVehicleSchema,
+  MpBookingVehicleSwapOfferSchema,
+} from "./marketplace-fleet";
+import {
   MP_GUEST_TRIP_STATUSES,
   MpDriverPassengerSchema,
   MpGuestTripActionsSchema,
@@ -1756,6 +1762,14 @@ export const MpAdvanceReservationPolicySchema = z.object({
   postBufferSec: z.number().int().nonnegative(),
   reminderOffsetsSec: z.array(z.number().int().positive()).max(4),
   maxOpenPerRequester: z.number().int().positive(),
+  /**
+   * Fleet calendar (A05): a booking put at risk (off-road, document expiry,
+   * an assignment ending) must be resolved by the EARLIER of its
+   * reconfirmation deadline and activation minus this lead, or it fails
+   * through the ordinary failure path (commission returned, funding
+   * released). Optional: absent means no lead beyond activation itself.
+   */
+  riskResolutionLeadSec: z.number().int().positive().optional(),
 });
 
 export const MpRecurringPolicySchema = z.object({
@@ -1909,6 +1923,10 @@ export const MpBookingFailureSchema = z.object({
     "trip_cancelled",
     // The rider cancelled before activation (no fee in this slice).
     "rider_cancelled",
+    // Fleet calendar (A05): the booking was at risk (its vehicle off-road,
+    // a document expiring, the driver's assignment ending) and nothing
+    // resolved it by the decision deadline. The rider is not told why.
+    "risk_unresolved",
   ]),
   message: z.string().min(1),
   financialOutcome: z.object({
@@ -1921,6 +1939,18 @@ export const MpBookingFailureSchema = z.object({
   }),
   /** A consented re-publish is available (never an automatic substitute). */
   rematchAvailable: z.boolean(),
+  /**
+   * Rider view (A05 D2 BookingDriverLost): the driver can no longer make this
+   * trip. No reason is shown; the rider chooses a rematch at the same fare
+   * (only when `rematchAvailable`) or to cancel and release. Absent on older
+   * servers and on the driver's view.
+   */
+  driverLost: z.boolean().optional(),
+  /**
+   * Rider view: the rider already chose "cancel and release" (the rematch
+   * offer is closed for good). Absent on older servers and the driver view.
+   */
+  released: z.boolean().optional(),
 });
 
 export const MpAdvanceBookingSchema = z.object({
@@ -1963,6 +1993,18 @@ export const MpAdvanceBookingSchema = z.object({
   failure: MpBookingFailureSchema.nullable(),
   rematchRequestId: z.string().min(1).nullable(),
   /**
+   * Fleet calendar (A05), all optional and additive. `vehicle`: the vehicle
+   * recorded on the booking (both parties). `risk`: the DRIVER's view of the
+   * server's risk overlay (never on the rider's view). `vehicleSwap`: a
+   * fleet's vehicle-swap proposal awaiting the driver's decision (driver
+   * view). `pendingChange`: a revalidated vehicle change awaiting the RIDER's
+   * explicit consent (rider view, D1).
+   */
+  vehicle: MpBookingVehicleSchema.nullable().optional(),
+  risk: MpBookingRiskViewSchema.nullable().optional(),
+  vehicleSwap: MpBookingVehicleSwapOfferSchema.nullable().optional(),
+  pendingChange: MpBookingPendingChangeSchema.nullable().optional(),
+  /**
    * The market's reminder offsets for this booking, in seconds before the
    * pickup window opens (the rider is reminded at each; empty when the
    * market configures none).
@@ -1999,6 +2041,26 @@ export const MpWithdrawBookingSchema = z
 export const MpRematchBookingSchema = z
   .object({ requestedFareMinor: MoneySchema.optional() })
   .strict();
+
+/**
+ * Fleet calendar (A05) booking commands, each with an Idempotency-Key and no
+ * body, each answering the booking view (MpAdvanceBookingSchema):
+ *  - `POST /v1/mp/advance-bookings/:id/release` — the rider's "cancel and
+ *    release" on a failed booking (D2): closes the rematch offer; any rider
+ *    funding hold was already released when the booking failed.
+ *  - `POST /v1/mp/advance-bookings/:id/vehicle-swaps/:swapId/accept|decline`
+ *    — the booked DRIVER's decision on a fleet's swap proposal, made parked.
+ *  - `POST /v1/mp/advance-bookings/:id/changes/:changeId/accept|decline` —
+ *    the RIDER's consent to a revalidated vehicle change (D1). Declining keeps
+ *    the original vehicle; nothing changes unless the rider accepts.
+ */
+export const MP_BOOKING_FLEET_COMMANDS = [
+  "release",
+  "vehicle_swap_accept",
+  "vehicle_swap_decline",
+  "change_accept",
+  "change_decline",
+] as const;
 
 /** `POST /v1/mp/recurring-templates` (Idempotency-Key required). */
 export const MpCreateRecurringTemplateSchema = z
@@ -2058,6 +2120,7 @@ export const MpRecurringTemplateCommandSchema = z
 
 export * from "./marketplace-confidence";
 export * from "./marketplace-guest";
+export * from "./marketplace-fleet";
 
 /**
  * `GET /v1/mp/requests/:id[?sort=offered|price|pickup|service_fit]` — the

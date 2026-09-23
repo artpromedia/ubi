@@ -278,6 +278,12 @@ type BookingFailureView struct {
 	Message          string                  `json:"message"`
 	FinancialOutcome BookingFinancialOutcome `json:"financialOutcome"`
 	RematchAvailable bool                    `json:"rematchAvailable"`
+	// DriverLost (rider view, A05 D2): the driver can no longer make this
+	// trip — no reason is shown; the rider chooses a rematch at the same
+	// fare (only when RematchAvailable) or to cancel and release.
+	DriverLost *bool `json:"driverLost,omitempty"`
+	// Released (rider view): the rider already chose "cancel and release".
+	Released *bool `json:"released,omitempty"`
 }
 
 // AdvanceBookingView is MpAdvanceBookingSchema.
@@ -305,6 +311,13 @@ type AdvanceBookingView struct {
 	ActivatedSlot    *string                   `json:"activatedSlot"`
 	Failure          *BookingFailureView       `json:"failure"`
 	RematchRequestID *string                   `json:"rematchRequestId"`
+	// Fleet calendar (A05; withFleetState): the booked vehicle (both
+	// parties); the risk overlay and a swap awaiting the driver (driver
+	// view); a change awaiting the rider's consent (rider view, D1).
+	Vehicle       *BookingVehicleView       `json:"vehicle,omitempty"`
+	Risk          *BookingRiskView          `json:"risk,omitempty"`
+	VehicleSwap   *BookingSwapOfferView     `json:"vehicleSwap,omitempty"`
+	PendingChange *BookingPendingChangeView `json:"pendingChange,omitempty"`
 	// ReminderOffsetsSec are the market's reminder offsets, seconds before
 	// the pickup window opens (empty when none are configured or the policy
 	// could not be read).
@@ -464,8 +477,15 @@ func bookingViewOf(b *AdvanceBooking, request *Request, vehicleClass string, vie
 				RiderCharged:         false,
 			},
 			// The consented rematch is the RIDER's option; a driver is never
-			// offered it.
-			RematchAvailable: viewer == viewerRider && b.Failure.RematchAvailable && b.RematchRequestID == nil,
+			// offered it — and it closes once the rider chose to release.
+			RematchAvailable: viewer == viewerRider && b.Failure.RematchAvailable && b.RematchRequestID == nil &&
+				b.RematchDeclinedAt == nil,
+		}
+		if viewer == viewerRider {
+			lost := driverLostReason(b.Failure.Reason)
+			released := b.RematchDeclinedAt != nil
+			view.Failure.DriverLost = &lost
+			view.Failure.Released = &released
 		}
 	}
 	return view
@@ -532,6 +552,8 @@ func bookingFailureMessage(failure *BookingFailure, viewer string) string {
 		message = "The rider cancelled this booking."
 	case BookingFailTripCancelled:
 		message = "The trip from this booking was cancelled."
+	case BookingFailRiskUnresolved:
+		message = "The problem with this booking's vehicle was not resolved by the decision deadline, so the booking was released."
 	default:
 		// execution_blocked, award_cancelled and anything newer.
 		message = "This booking could not go ahead, so it was released."
@@ -540,6 +562,20 @@ func bookingFailureMessage(failure *BookingFailure, viewer string) string {
 		message += " Your 10% commission was returned with a linked reversal; nothing more is owed."
 	}
 	return message
+}
+
+// driverLostReason reports whether a failure means "your driver can't make
+// this trip" to the rider (D2): the driver withdrew, lost eligibility,
+// missed reconfirmation, could not start in time, or the booking's risk was
+// never resolved. The rider is never told which.
+func driverLostReason(reason string) bool {
+	switch reason {
+	case BookingFailDriverWithdrew, BookingFailDriverIneligible, BookingFailReconfirmMissed,
+		BookingFailDriverUnavailable, BookingFailDriverOnTrip, BookingFailRiskUnresolved:
+		return true
+	default:
+		return false
+	}
 }
 
 // coarse rounds a coordinate to the ~1 km cell its area label names.

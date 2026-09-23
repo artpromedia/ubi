@@ -2160,6 +2160,7 @@ components:
               award_cancelled,
               trip_cancelled,
               rider_cancelled,
+              risk_unresolved,
             ]
         message: { type: string }
         financialOutcome:
@@ -2174,6 +2175,94 @@ components:
             type: boolean,
             description: "A consented re-publish is available — never an automatic substitute.",
           }
+        driverLost:
+          {
+            type: boolean,
+            description: "Rider view (A05 D2): the driver can no longer make this trip. No reason is shown; the rider chooses a same-fare rematch (only when rematchAvailable) or to cancel and release.",
+          }
+        released:
+          {
+            type: boolean,
+            description: "Rider view: the rider already chose cancel and release; the rematch offer is closed.",
+          }
+    BookingVehicle:
+      type: object
+      description: "A vehicle as the booking's parties see it (A05): a server-written label, the classes it serves and its seats. Never a fleet's internal data."
+      required: [label, classes, capacity]
+      properties:
+        label: { type: string, example: "Comfort · 4 seats" }
+        classes: { type: array, items: { type: string } }
+        capacity: { type: [integer, "null"], minimum: 1 }
+    BookingRisk:
+      type: object
+      description: "Driver view only (A05, machine mpBookingRisk): the server's risk overlay on the booking — a blocker on its vehicle (off_road, document_expiry, assignment_ending, vehicle_conflict) and the decision deadline (the earlier of the reconfirmation deadline and activation minus the market's riskResolutionLeadSec). At the deadline the booking fails with its explained outcome."
+      required: [state, decisionDeadline, reasons, message]
+      properties:
+        state: { type: string, enum: [ok, at_risk] }
+        decisionDeadline: { type: [string, "null"], format: date-time }
+        reasons:
+          type: array
+          items:
+            type: string
+            enum:
+              [off_road, document_expiry, assignment_ending, vehicle_conflict]
+        message: { type: string }
+    BookingVehicleSwapOffer:
+      type: object
+      description: "Driver view (A05 FL-8): a fleet's proposal to move this booking to another vehicle, decided by the driver while parked. The fare and the commission are unchanged."
+      required: [swapId, state, from, to, expiresAt, notice]
+      properties:
+        swapId: { type: string }
+        state:
+          type: string
+          enum:
+            [
+              proposed,
+              driver_accepted,
+              revalidating,
+              rider_consent_pending,
+              applied,
+              driver_declined,
+              revalidation_failed,
+              rider_declined,
+              expired,
+              cancelled,
+            ]
+        from:
+          oneOf:
+            - { $ref: "#/components/schemas/BookingVehicle" }
+            - { type: "null" }
+        to: { $ref: "#/components/schemas/BookingVehicle" }
+        expiresAt: { type: string, format: date-time }
+        notice: { type: string }
+    BookingPendingChange:
+      type: object
+      description: "Rider view (A05 D1): a driver-accepted, server-revalidated vehicle change awaiting the rider's explicit consent — same driver, fare unchanged; nothing changes unless the rider accepts, and cancelling the booking stays free."
+      required:
+        [
+          changeId,
+          kind,
+          sameDriver,
+          from,
+          to,
+          fareMinor,
+          fareUnchanged,
+          expiresAt,
+          notice,
+        ]
+      properties:
+        changeId: { type: string }
+        kind: { type: string, const: vehicle_swap }
+        sameDriver: { type: boolean, const: true }
+        from:
+          oneOf:
+            - { $ref: "#/components/schemas/BookingVehicle" }
+            - { type: "null" }
+        to: { $ref: "#/components/schemas/BookingVehicle" }
+        fareMinor: { $ref: "#/components/schemas/Money" }
+        fareUnchanged: { type: boolean, const: true }
+        expiresAt: { type: string, format: date-time }
+        notice: { type: string }
     AdvanceBooking:
       type: object
       description: "An advance driver reservation on the driver's booking calendar (separate from the live current/next slots). held → confirmed (funding secured, or cash explicitly unsecured) | payment_pending (driver reserved, rider funding not yet secured) → reconfirmed → activated (into the live slots, exactly once, no second commission) → completed; failed / cancelled carry the explained financial outcome."
@@ -2263,6 +2352,26 @@ components:
             - { $ref: "#/components/schemas/BookingFailure" }
             - { type: "null" }
         rematchRequestId: { type: [string, "null"] }
+        vehicle:
+          description: "A05: the vehicle recorded on the booking (both parties), when one is known."
+          oneOf:
+            - { $ref: "#/components/schemas/BookingVehicle" }
+            - { type: "null" }
+        risk:
+          description: "A05, driver view only: the risk overlay while the booking is at risk."
+          oneOf:
+            - { $ref: "#/components/schemas/BookingRisk" }
+            - { type: "null" }
+        vehicleSwap:
+          description: "A05, driver view only: a vehicle swap in flight."
+          oneOf:
+            - { $ref: "#/components/schemas/BookingVehicleSwapOffer" }
+            - { type: "null" }
+        pendingChange:
+          description: "A05, rider view only (D1): a vehicle change awaiting the rider's consent."
+          oneOf:
+            - { $ref: "#/components/schemas/BookingPendingChange" }
+            - { type: "null" }
         reminderOffsetsSec:
           {
             type: array,
@@ -5911,8 +6020,110 @@ paths:
               schema: { $ref: "#/components/schemas/Request" }
         "409":
           {
-            description: "conflict (not rematchable / already rematched / too late).",
+            description: "conflict (not rematchable / already rematched / released / too late).",
           }
+  /v1/mp/advance-bookings/{bookingId}/release:
+    post:
+      summary: The rider's "cancel and release" on a booking whose driver can't make it (A05 D2)
+      description: "Closes the rematch offer for good. The money was already settled when the booking failed — the captured commission returned with a linked reversal and any rider funding hold released — so nothing is charged or moved here. Idempotent."
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409":
+          {
+            description: "conflict (not a failed booking, or already rematched).",
+          }
+  /v1/mp/advance-bookings/{bookingId}/vehicle-swaps/{swapId}/accept:
+    post:
+      summary: The booked driver accepts a fleet's vehicle swap (A05 FL-8), parked
+      description: "Only while the server confirms the driver stationary and parked (driver_ineligible otherwise). The server then revalidates the target vehicle (class, capacity, occupancy, documents) and, when it passes, asks the RIDER — nothing changes before the rider consents. The fare and the commission are unchanged."
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: swapId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "403":
+          {
+            description: "driver_ineligible (not parked) / forbidden (not the booked driver).",
+          }
+        "409": { description: "conflict (the swap can no longer be decided)." }
+  /v1/mp/advance-bookings/{bookingId}/vehicle-swaps/{swapId}/decline:
+    post:
+      summary: The booked driver declines a fleet's vehicle swap, parked — the original vehicle stays
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: swapId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409": { description: "conflict (the swap can no longer be decided)." }
+  /v1/mp/advance-bookings/{bookingId}/changes/{changeId}/accept:
+    post:
+      summary: The rider consents to a revalidated vehicle change (A05 D1)
+      description: "Applies the change: the booking's vehicle and its row on the shared vehicle occupancy ledger move atomically under the vehicle exclusion constraint. Same driver, fare unchanged, commission never charged again. A target no longer free fails the change (409) and the original vehicle stays."
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: changeId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409":
+          {
+            description: "conflict (no longer awaiting the rider, or the new vehicle is no longer available).",
+          }
+  /v1/mp/advance-bookings/{bookingId}/changes/{changeId}/decline:
+    post:
+      summary: The rider declines a vehicle change — nothing changes
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: changeId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409": { description: "conflict (no longer awaiting the rider)." }
   /v1/mp/driver/calendar:
     get:
       summary: The driver's booking calendar — committed future bookings, separate from the live current/next jobs

@@ -1069,3 +1069,187 @@ CREATE TABLE IF NOT EXISTS mp.delivery_cancellations (
 
 CREATE INDEX IF NOT EXISTS mp_delivery_cancellations_due_idx
     ON mp.delivery_cancellations (next_attempt_at) WHERE state = 'pending';
+
+-- ---------------------------------------------------------------------------
+-- Fleet availability calendar (A05: handoff FL-2, FL-4, FL-6, FL-8;
+-- docs/design/FLEET_CALENDAR_DECISIONS.md corrections 1-4), additive and
+-- idempotent.
+--
+--   * vehicle_occupancy is the ONE shared vehicle occupancy ledger
+--     (correction 3: Postgres cannot enforce one exclusion constraint across
+--     fleet-side maintenance blocks and ride-side bookings, so both are
+--     written here). kind booking — an advance booking that carries a
+--     vehicle, written in the SAME transaction as the booking and released
+--     with it; maintenance — a fleet's planned service, inspection or repair
+--     block (fleet-service's block id is the source id); off_road — an
+--     unplanned breakdown report. The exclusion constraint covers active
+--     booking + maintenance rows, so planned maintenance can never be held
+--     over a booking (nor a booking over maintenance), whatever races.
+--     off_road rows are OUTSIDE the constraint by design: a breakdown is
+--     never refused — it moves overlapping bookings to at_risk instead.
+--     advance_bookings keeps its own per-driver and per-vehicle exclusions.
+--   * advance_bookings gains its fleet columns: block_id (the OPAQUE id a
+--     fleet sees on an OccupiedBlock — never the booking id), where its
+--     vehicle came from (vehicle_source: fleet_assignment | swap) and how the
+--     award resolved it (vehicle_resolution: not_applicable while the fleet
+--     flag is off; resolved; pending while fleet-service could not answer —
+--     retried by the sweep, never blocking the award), the booked vehicle's
+--     class and capacity (what a swap must match), the revalidation schedule,
+--     the risk overlay (mpBookingRisk: ok | at_risk | lapsed, with its
+--     decision deadline) and the rider's "cancel and release" on a failed
+--     booking.
+--   * booking_risk_blockers are WHY a booking is at risk: one open row per
+--     (booking, kind, source). The booking is at_risk exactly while one is
+--     open; each clears on its own (the block released, a document renewed,
+--     an assignment covering the booking again, an applied swap).
+--   * booking_vehicle_swaps is a fleet's proposal to move a booking to
+--     another vehicle (mpVehicleSwap): driver decision, server revalidation,
+--     rider consent, applied — at most one live per booking.
+--   * offroad_use_flags records every time a vehicle reported off-road went
+--     online or started a trip during the claimed breakdown (correction 4),
+--     once per occurrence; each row also writes an ops event and an audit row.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.vehicle_occupancy (
+    id               uuid PRIMARY KEY,
+    kind             text NOT NULL,
+    source_id        text NOT NULL,
+    vehicle_id       text NOT NULL,
+    driver_id        uuid,
+    occupied         tstzrange NOT NULL,
+    state            text NOT NULL DEFAULT 'active',
+    maintenance_kind text,
+    version          integer NOT NULL DEFAULT 1,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    released_at      timestamptz,
+    release_reason   text,
+    CONSTRAINT vehicle_occupancy_kind CHECK (kind IN ('booking', 'maintenance', 'off_road')),
+    CONSTRAINT vehicle_occupancy_state CHECK (state IN ('active', 'released')),
+    CONSTRAINT vehicle_occupancy_maintenance_kind CHECK (
+        (kind = 'maintenance') = (maintenance_kind IS NOT NULL)
+        AND (maintenance_kind IS NULL OR maintenance_kind IN ('planned_service', 'inspection', 'repair'))),
+    CONSTRAINT vehicle_occupancy_booking_driver CHECK (kind <> 'booking' OR driver_id IS NOT NULL),
+    CONSTRAINT vehicle_occupancy_interval CHECK (NOT isempty(occupied) AND NOT lower_inf(occupied)),
+    CONSTRAINT vehicle_occupancy_bounded CHECK (kind = 'off_road' OR NOT upper_inf(occupied)),
+    CONSTRAINT vehicle_occupancy_source_uniq UNIQUE (kind, source_id),
+    CONSTRAINT vehicle_occupancy_no_overlap EXCLUDE USING gist (vehicle_id WITH =, occupied WITH &&)
+        WHERE (state = 'active' AND kind IN ('booking', 'maintenance'))
+);
+
+CREATE INDEX IF NOT EXISTS mp_vehicle_occupancy_vehicle_idx
+    ON mp.vehicle_occupancy USING gist (vehicle_id, occupied) WHERE state = 'active';
+CREATE INDEX IF NOT EXISTS mp_vehicle_occupancy_offroad_idx
+    ON mp.vehicle_occupancy (vehicle_id) WHERE kind = 'off_road' AND state = 'active';
+CREATE INDEX IF NOT EXISTS mp_vehicle_occupancy_source_idx
+    ON mp.vehicle_occupancy (source_id);
+
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS block_id uuid;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_source text;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_resolution text NOT NULL DEFAULT 'not_applicable';
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_class text;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_capacity integer;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_checked_at timestamptz;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS next_vehicle_check_at timestamptz;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS risk text NOT NULL DEFAULT 'ok';
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS risk_deadline timestamptz;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS risk_since timestamptz;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS rematch_declined_at timestamptz;
+UPDATE mp.advance_bookings SET block_id = gen_random_uuid() WHERE block_id IS NULL;
+ALTER TABLE mp.advance_bookings ALTER COLUMN block_id SET DEFAULT gen_random_uuid();
+ALTER TABLE mp.advance_bookings ALTER COLUMN block_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS advance_bookings_block_id_uniq ON mp.advance_bookings (block_id);
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_vehicle_idx
+    ON mp.advance_bookings (vehicle_id, window_start) WHERE vehicle_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_risk_idx
+    ON mp.advance_bookings (risk_deadline) WHERE risk = 'at_risk';
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_vehicle_check_idx
+    ON mp.advance_bookings (next_vehicle_check_at) WHERE next_vehicle_check_at IS NOT NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'advance_bookings_risk_state') THEN
+        ALTER TABLE mp.advance_bookings ADD CONSTRAINT advance_bookings_risk_state
+            CHECK (risk IN ('ok', 'at_risk', 'lapsed') AND (risk <> 'at_risk' OR risk_deadline IS NOT NULL));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'advance_bookings_vehicle_resolution') THEN
+        ALTER TABLE mp.advance_bookings ADD CONSTRAINT advance_bookings_vehicle_resolution
+            CHECK (vehicle_resolution IN ('not_applicable', 'resolved', 'pending')
+                AND (vehicle_source IS NULL OR vehicle_source IN ('fleet_assignment', 'swap')));
+    END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS mp.booking_risk_blockers (
+    id           uuid PRIMARY KEY,
+    booking_id   uuid NOT NULL REFERENCES mp.advance_bookings (id) ON DELETE CASCADE,
+    kind         text NOT NULL,
+    source_ref   text NOT NULL,
+    state        text NOT NULL DEFAULT 'open',
+    detail       jsonb NOT NULL DEFAULT '{}'::jsonb,
+    opened_at    timestamptz NOT NULL,
+    cleared_at   timestamptz,
+    clear_reason text,
+    CONSTRAINT booking_risk_blockers_kind CHECK (kind IN ('off_road', 'document_expiry', 'assignment_ending', 'vehicle_conflict')),
+    CONSTRAINT booking_risk_blockers_state CHECK (state IN ('open', 'cleared')),
+    CONSTRAINT booking_risk_blockers_cleared CHECK ((state = 'cleared') = (cleared_at IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS booking_risk_blockers_one_open
+    ON mp.booking_risk_blockers (booking_id, kind, source_ref) WHERE state = 'open';
+CREATE INDEX IF NOT EXISTS mp_booking_risk_blockers_source_idx
+    ON mp.booking_risk_blockers (source_ref) WHERE state = 'open';
+
+CREATE TABLE IF NOT EXISTS mp.booking_vehicle_swaps (
+    id                    uuid PRIMARY KEY,
+    booking_id            uuid NOT NULL REFERENCES mp.advance_bookings (id) ON DELETE CASCADE,
+    city_id               text NOT NULL,
+    driver_id             uuid NOT NULL,
+    requester_id          uuid NOT NULL,
+    from_vehicle_id       text,
+    to_vehicle_id         text NOT NULL,
+    requested_by_staff_id text NOT NULL,
+    state                 text NOT NULL,
+    version               integer NOT NULL DEFAULT 1,
+    from_classes          text[],
+    from_capacity         integer,
+    to_classes            text[] NOT NULL DEFAULT '{}',
+    to_capacity           integer,
+    fleet_id              text,
+    expires_at            timestamptz NOT NULL,
+    failure_reasons       text[] NOT NULL DEFAULT '{}',
+    driver_decided_at     timestamptz,
+    revalidated_at        timestamptz,
+    rider_decided_at      timestamptz,
+    applied_at            timestamptz,
+    ended_at              timestamptz,
+    attempts              integer NOT NULL DEFAULT 0,
+    next_attempt_at       timestamptz,
+    last_error            text,
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    updated_at            timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT booking_vehicle_swaps_state CHECK (state IN (
+        'proposed', 'driver_accepted', 'revalidating', 'rider_consent_pending', 'applied',
+        'driver_declined', 'revalidation_failed', 'rider_declined', 'expired', 'cancelled')),
+    CONSTRAINT booking_vehicle_swaps_distinct CHECK (from_vehicle_id IS NULL OR from_vehicle_id <> to_vehicle_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS booking_vehicle_swaps_one_live
+    ON mp.booking_vehicle_swaps (booking_id)
+    WHERE state IN ('proposed', 'driver_accepted', 'revalidating', 'rider_consent_pending');
+CREATE INDEX IF NOT EXISTS mp_booking_vehicle_swaps_due_idx
+    ON mp.booking_vehicle_swaps (expires_at)
+    WHERE state IN ('proposed', 'driver_accepted', 'revalidating', 'rider_consent_pending');
+
+CREATE TABLE IF NOT EXISTS mp.offroad_use_flags (
+    id           uuid PRIMARY KEY,
+    occupancy_id uuid NOT NULL REFERENCES mp.vehicle_occupancy (id),
+    vehicle_id   text NOT NULL,
+    driver_id    uuid NOT NULL,
+    city_id      text,
+    trigger      text NOT NULL,
+    subject_ref  text NOT NULL,
+    observed_at  timestamptz NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT offroad_use_flags_trigger CHECK (trigger IN ('driver_online', 'trip_started')),
+    CONSTRAINT offroad_use_flags_once UNIQUE (occupancy_id, driver_id, trigger, subject_ref)
+);
