@@ -75,8 +75,9 @@ let outbound: Outbound[] = [];
 let deps: TestDeps;
 
 /**
- * Stands in for travel-service's GET /v1/travel/orders/:id (OrderView: id,
- * state, supplierRefs) and records every request exactly as it left.
+ * Stands in for travel-service's GET /v1/travel/orders/:id (its OrderView,
+ * money included — the port refuses an order whose money does not read) and
+ * records every request exactly as it left.
  */
 const travelEndpoint = (async (
   input: string | URL | Request,
@@ -90,11 +91,19 @@ const travelEndpoint = (async (
   const path = new URL(request.url).pathname;
   outbound.push({ method: request.method, path, headers });
   const orderId = path.split("/").at(-1) ?? "";
+  const ngn = (amountMinor: number) => ({ amountMinor, currency: "NGN" });
   return new Response(
     JSON.stringify({
       id: orderId,
+      tripId: "trip_1",
+      kind: "flight",
       state: "ticketed",
       supplierRefs: { pnr: "QX1234", orderRef: "ord_supplier_1" },
+      price: ngn(14_850_000),
+      held: ngn(14_850_000),
+      charged: ngn(14_850_000),
+      released: ngn(0),
+      stateAt: "2026-09-12T06:45:00.000Z",
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   );

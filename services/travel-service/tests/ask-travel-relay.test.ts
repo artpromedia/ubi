@@ -356,12 +356,31 @@ describe("request-scoped calls relay the user's gateway-signed context", () => {
   it("reports a context travel-service does not ALLOW as a permission refusal, never an outage", async () => {
     const world = await bookedWorld();
     production();
+    // One reviewed item as ask's execution books it (its offer pinned on the
+    // review): the refusal comes at the first write, pricing the cart.
     const book = (token: string) =>
       runWithIdentityRelay(relayFrom(token), () =>
         askPort().book(world.traveller, {
           grantId: world.grantId,
-          offerRef: "AP-P4-7120",
+          offerRef: "tsr_relay000000000001.of_0123456789ab",
           idempotencyKey: idemKey("exec"),
+          paymentMethodId: "wallet",
+          kind: "flight",
+          priceMinor: 14_850_000,
+          currency: "NGN",
+          travellers: [
+            {
+              givenNames: "Ada",
+              surname: "Obi",
+              dateOfBirth: "1990-04-21",
+              phone: "+2348030000001",
+            },
+          ],
+          purchase: {
+            kind: "flight",
+            offerRef: "AP-P4-7120",
+            fareFamilyId: "saver",
+          },
         }),
       );
 
@@ -376,6 +395,7 @@ describe("request-scoped calls relay the user's gateway-signed context", () => {
       ),
     );
     expect(hops.at(-1)?.status).toBe(403);
+    expect(hops.at(-1)?.path).toBe("/v1/travel/carts");
     expect(limited.code).toBe("limited_mode");
     expect(limited.details).toMatchObject({ reason: "limited_mode" });
     expect(limited.message).toContain("security check");

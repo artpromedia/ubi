@@ -24,6 +24,7 @@ import { cancelOrder, getCancellationQuote, getOrder } from "../ops/orders";
 import { getRefund } from "../ops/refunds";
 import {
   flightSearch,
+  readSearchOffer,
   refreshFlightSearch,
   staySearch,
   stayRates,
@@ -94,6 +95,9 @@ const CheckoutBody = z.object({
     .object({ method: z.string(), proof: z.string().optional() })
     .optional(),
   expectedTotal: MoneySchema.optional(),
+  // The approval behind this checkout covers exactly `expectedTotal` at terms
+  // reviewed elsewhere (ops/checkout.ts): nothing a 409 surfaced is agreed.
+  reviewedTermsOnly: z.boolean().optional(),
 });
 
 const SwitchBody = z.object({
@@ -169,6 +173,25 @@ export function createTravelRoutes(deps: TravelDeps): Hono {
     }
   });
 
+  // One bookable offer from the caller's own search, read back by the key
+  // the search answered it with (ops/search.ts readSearchOffer). A read: it
+  // prices nothing with the supplier and holds nothing — the cart and the
+  // checkout revalidate before anything is charged. ask-service resolves the
+  // offers an assistant review is built on through it.
+  routes.get("/searches/:searchId/offers/:offerKey", async (c) => {
+    try {
+      const result = await readSearchOffer(deps, {
+        actor: actorOf(c),
+        cityId: cityOf(c),
+        searchId: c.req.param("searchId"),
+        offerKey: c.req.param("offerKey"),
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return failure(c, error);
+    }
+  });
+
   routes.post("/carts", async (c) => {
     try {
       const body = await parseBody(c, CartBody);
@@ -210,6 +233,7 @@ export function createTravelRoutes(deps: TravelDeps): Hono {
         grantId: body.grantId ?? null,
         assuranceMethod: body.assurance?.method ?? null,
         expectedTotal: body.expectedTotal ?? null,
+        reviewedTermsOnly: body.reviewedTermsOnly === true,
         idempotencyKey: idempotencyKeyOf(c),
         correlationId: correlationIdOf(c),
       });

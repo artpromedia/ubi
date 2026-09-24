@@ -7,6 +7,8 @@
  * material change to the offers changes the fingerprint, and a fingerprint that
  * no longer matches the row invalidates the review (rule #18).
  */
+import { z } from "zod";
+
 import { money, type Money } from "@ubi/contracts";
 
 import {
@@ -18,7 +20,11 @@ import {
   type MpReviewView,
 } from "./mp-review";
 
-import type { ResolvedOffer } from "../ports/travel-port";
+import type {
+  ResolvedOffer,
+  Traveller,
+  TravelPurchaseRef,
+} from "../ports/travel-port";
 
 export interface StoredReviewItem {
   readonly kind: "flight" | "stay" | "ride_reservation";
@@ -30,12 +36,40 @@ export interface StoredReviewItem {
   readonly offerRef: string;
   readonly action: string;
   readonly provider: string | null;
+  /**
+   * The exact supplier purchase the offer resolved to when the review was
+   * built — what the booking prices, never re-derived at execution time.
+   */
+  readonly purchase?: TravelPurchaseRef | null;
 }
+
+/**
+ * The travellers a travel review books for, as the user supplied them
+ * (usually through a `passenger` clarification). Strict: an unknown field —
+ * an identity document, say — is not a traveller the assistant carries.
+ */
+export const TravellerSchema = z
+  .object({
+    givenNames: z.string().trim().min(1).max(80),
+    surname: z.string().trim().min(1).max(80),
+    dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    phone: z
+      .string()
+      .trim()
+      .regex(/^\+?[0-9 ()-]{5,24}$/),
+    title: z.string().trim().min(1).max(12).optional(),
+    gender: z.enum(["m", "f"]).optional(),
+    email: z.string().email().max(200).optional(),
+  })
+  .strict();
+
+export const TravellersSchema = z.array(TravellerSchema).max(9);
 
 export interface StoredReview {
   readonly items: readonly StoredReviewItem[];
   readonly notes: readonly string[];
   readonly assuranceRequired: "pin" | "biometric";
+  readonly travellers: readonly Traveller[];
 }
 
 export function parseStoredReview(value: unknown): StoredReview {
@@ -44,13 +78,18 @@ export function parseStoredReview(value: unknown): StoredReview {
       items: value as StoredReviewItem[],
       notes: [],
       assuranceRequired: "pin",
+      travellers: [],
     };
   }
   const record = (value ?? {}) as {
     items?: unknown;
     notes?: unknown;
     assuranceRequired?: unknown;
+    travellers?: unknown;
   };
+  // Stored by this service; a row that does not read carries no travellers
+  // rather than a guess at them.
+  const travellers = TravellersSchema.safeParse(record.travellers ?? []);
   return {
     items: Array.isArray(record.items)
       ? (record.items as StoredReviewItem[])
@@ -58,7 +97,21 @@ export function parseStoredReview(value: unknown): StoredReview {
     notes: Array.isArray(record.notes) ? (record.notes as string[]) : [],
     assuranceRequired:
       record.assuranceRequired === "biometric" ? "biometric" : "pin",
+    travellers: travellers.success ? travellers.data : [],
   };
+}
+
+/** The review line naming who is travelling — names only, nothing else. */
+export function travellersNote(
+  travellers: readonly Traveller[],
+): string | null {
+  if (travellers.length === 0) {
+    return null;
+  }
+  const names = travellers.map(
+    (traveller) => `${traveller.givenNames} ${traveller.surname}`,
+  );
+  return `Travellers: ${names.join(", ")}.`;
 }
 
 /** A stable fingerprint of the exact offers and their terms versions. */
@@ -79,6 +132,7 @@ export function resolvedToStoredItem(offer: ResolvedOffer): StoredReviewItem {
     offerRef: offer.offerRef,
     action: offer.kind === "flight" ? "flight.book" : "stay.book",
     provider: null,
+    purchase: offer.purchase ?? null,
   };
 }
 

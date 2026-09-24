@@ -234,6 +234,7 @@ export async function handleMessage(
               items: proposal.items,
               notes: proposal.notes,
               assuranceRequired: proposal.assuranceRequired,
+              travellers: proposal.travellers,
             }),
             totalMinor: BigInt(proposal.totalMinor),
             currency: proposal.currency,

@@ -16,6 +16,7 @@ GET /v1/travel/orders/:id
 GET /v1/travel/orders/:id/cancellation-quote
 GET /v1/travel/orders/:id/disruption
 GET /v1/travel/refunds/:id
+GET /v1/travel/searches/:searchId/offers/:offerKey
 GET /v1/travel/stays/:propertyId/rates
 GET /v1/travel/trips/:id
 GET /v1/travel/trips/:id/linked

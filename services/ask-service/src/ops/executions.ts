@@ -7,6 +7,16 @@
  * `partly_booked` and is NEVER coerced to `confirmed` (rule #25, the askExecution
  * machine). The grant is already spent by the time booking runs, so a partial
  * failure cannot be silently retried into a second charge.
+ *
+ * Each item is booked at exactly the price, currency and travellers the user
+ * reviewed (the travel port refuses anything else before checkout). When an
+ * item is refused, the item records WHY — the port's reason (`limited_mode`,
+ * `scope_missing`, `repriced`, `sold_out`, `offer_expired`, …) as its
+ * `reasonCode` and the port's own explanation as its detail — never a blanket
+ * "the supplier could not be reached". A refusal the port throws happened
+ * before any money could move; an outcome the port could not settle comes
+ * back as the item's `unknown_reconciling` state, and an error of any other
+ * kind is recorded as unknown too, never as "nothing was charged".
  */
 import {
   assertTransition,
@@ -45,6 +55,53 @@ export interface ExecutionItemState {
   readonly releasedMinor: number | null;
   readonly currency: string;
   readonly detail: string | null;
+  /** Why the item is not (yet) booked, when it is not. */
+  readonly reasonCode?: string | null;
+}
+
+/**
+ * An item the travel port refused, recorded with the refusal's own reason.
+ * The port throws only refusals made before any money could move, as a
+ * ContractError whose `details.reason` names the cause and whose message
+ * says so; anything else is not proof that nothing happened, so it is
+ * recorded as unknown rather than as released.
+ */
+function refusedItem(
+  item: {
+    readonly kind: string;
+    readonly title: string;
+    readonly currency: string;
+  },
+  error: unknown,
+): ExecutionItemState {
+  if (error instanceof ContractError) {
+    const reason = error.details?.reason;
+    return {
+      kind: item.kind,
+      title: item.title,
+      state: "failed_released",
+      orderId: null,
+      supplierRef: null,
+      chargedMinor: null,
+      releasedMinor: null,
+      currency: item.currency,
+      detail: error.message,
+      reasonCode: typeof reason === "string" ? reason : error.code,
+    };
+  }
+  return {
+    kind: item.kind,
+    title: item.title,
+    state: "unknown_reconciling",
+    orderId: null,
+    supplierRef: null,
+    chargedMinor: null,
+    releasedMinor: null,
+    currency: item.currency,
+    detail:
+      "We could not confirm what happened to this booking. Do not book it again — check your trips before trying anything else.",
+    reasonCode: "outcome_unknown",
+  };
 }
 
 function deriveOverall(
@@ -88,12 +145,31 @@ export async function runExecution(
   // Book each item as a separate order. The grant is already consumed; book is
   // idempotent per item so a retry returns the same order, never a second charge.
   const results: ExecutionItemState[] = [];
-  for (const item of stored.items) {
+  for (const [index, item] of stored.items.entries()) {
+    if (item.kind !== "flight" && item.kind !== "stay") {
+      results.push(
+        refusedItem(
+          item,
+          new ContractError(
+            "validation_failed",
+            "This item is not travel the assistant can book. Nothing was booked or charged.",
+            { reason: "unsupported_item" },
+          ),
+        ),
+      );
+      continue;
+    }
     try {
       const booked = await deps.travel.book(input.actor, {
         grantId: input.grantId,
         offerRef: item.offerRef,
-        idempotencyKey: `${input.executionId}:${item.offerRef}`,
+        idempotencyKey: `${input.executionId}:${index}:${item.offerRef}`,
+        paymentMethodId: review.paymentMethodId,
+        kind: item.kind,
+        priceMinor: item.priceMinor,
+        currency: item.currency,
+        travellers: stored.travellers,
+        purchase: item.purchase ?? null,
       });
       results.push({
         kind: item.kind,
@@ -105,19 +181,10 @@ export async function runExecution(
         releasedMinor: booked.releasedMinor,
         currency: item.currency,
         detail: booked.detail,
+        reasonCode: booked.reasonCode ?? null,
       });
-    } catch {
-      results.push({
-        kind: item.kind,
-        title: item.title,
-        state: "failed_released",
-        orderId: null,
-        supplierRef: null,
-        chargedMinor: null,
-        releasedMinor: null,
-        currency: item.currency,
-        detail: "The supplier could not be reached; nothing was charged.",
-      });
+    } catch (error) {
+      results.push(refusedItem(item, error));
     }
   }
 

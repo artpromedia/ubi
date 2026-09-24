@@ -37,6 +37,7 @@ import {
   parseStoredReview,
   resolvedToStoredItem,
   reviewView,
+  travellersNote,
   type ReviewView,
   type StoredReviewItem,
 } from "./review-model";
@@ -136,6 +137,13 @@ async function supersedeAndReprice(
       resolved.push(offer);
     }
   }
+  if (resolved.length === 0) {
+    // Nothing in the review can still be bought (every offer expired, sold
+    // out or gone): there is no fresh review to offer, only a new search.
+    await expireReview(deps, actor, cityId, staleReview, correlationId);
+    throw new ReviewExpiredError();
+  }
+  const dropped = resolved.length < stored.items.length;
   const items: StoredReviewItem[] = resolved.map(resolvedToStoredItem);
   const currency = items[0]?.currency ?? staleReviewCurrency(stored.items);
   const totalMinor = items.reduce((sum, item) => sum + item.priceMinor, 0);
@@ -166,8 +174,17 @@ async function supersedeAndReprice(
           items,
           notes: [
             "These are separate orders with their own money, status and policy.",
+            ...(dropped
+              ? [
+                  "An offer from your earlier review is no longer available and was left out.",
+                ]
+              : []),
+            ...[travellersNote(stored.travellers)].filter(
+              (note): note is string => note !== null,
+            ),
           ],
           assuranceRequired: stored.assuranceRequired,
+          travellers: stored.travellers,
         }),
         totalMinor: BigInt(totalMinor),
         currency,
@@ -218,6 +235,53 @@ async function supersedeAndReprice(
   });
 }
 
+/**
+ * Moves a review still awaiting confirmation to `expired`, with its event —
+ * conditionally, so a review a concurrent confirm already moved keeps its
+ * status and no expiry is claimed for it.
+ */
+async function expireReview(
+  deps: AskDeps,
+  actor: Actor,
+  cityId: string,
+  review: { readonly id: string; readonly status: string },
+  correlationId: string | null,
+): Promise<void> {
+  if (review.status !== "awaiting_confirmation") {
+    return;
+  }
+  const now = deps.now();
+  await auditedTransaction(deps.db, async (tx) => {
+    assertTransition("askReview", review.status, "expired");
+    const moved = await tx.askReview.updateMany({
+      where: { id: review.id, status: "awaiting_confirmation" },
+      data: { status: "expired" },
+    });
+    if (moved.count === 0) {
+      return { result: null };
+    }
+    return {
+      result: null,
+      events: [
+        {
+          name: "ask.review.expired",
+          aggregateType: "askReview",
+          aggregateId: review.id,
+          fromVersion: 1,
+          toVersion: 2,
+          actor,
+          actorType: actorKindFor(actor.role),
+          cityId,
+          idempotencyKey: outboxKey(),
+          correlationId,
+          occurredAt: now,
+          payload: { reviewId: review.id },
+        },
+      ],
+    };
+  });
+}
+
 function staleReviewCurrency(items: readonly StoredReviewItem[]): string {
   return items[0]?.currency ?? "NGN";
 }
@@ -262,34 +326,13 @@ export async function confirmReview(
     (review.status === "awaiting_confirmation" &&
       review.expiresAt.getTime() <= now.getTime());
   if (isExpired) {
-    if (review.status === "awaiting_confirmation") {
-      await auditedTransaction(deps.db, async (tx) => {
-        assertTransition("askReview", review.status, "expired");
-        await tx.askReview.update({
-          where: { id: review.id },
-          data: { status: "expired" },
-        });
-        return {
-          result: null,
-          events: [
-            {
-              name: "ask.review.expired",
-              aggregateType: "askReview",
-              aggregateId: review.id,
-              fromVersion: 1,
-              toVersion: 2,
-              actor: input.actor,
-              actorType: actorKindFor(input.actor.role),
-              cityId: input.cityId,
-              idempotencyKey: outboxKey(),
-              correlationId: input.correlationId,
-              occurredAt: now,
-              payload: { reviewId: review.id },
-            },
-          ],
-        };
-      });
-    }
+    await expireReview(
+      deps,
+      input.actor,
+      input.cityId,
+      review,
+      input.correlationId,
+    );
     throw new ReviewExpiredError();
   }
 

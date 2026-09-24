@@ -26,6 +26,35 @@ import type { Actor } from "../src/ops/types";
 
 const actor: Actor = { id: "rider_refusals_1", role: "rider" };
 
+/** An offer reference as a travel search hands it out: `<searchId>.<offerKey>`. */
+const OFFER_REF = "tsr_refusals0000001.of_0123456789ab";
+
+/** One reviewed flight item, as runExecution books it. */
+function bookInput(idempotencyKey: string) {
+  return {
+    grantId: "grant_1",
+    offerRef: OFFER_REF,
+    idempotencyKey,
+    paymentMethodId: "pm_wallet",
+    kind: "flight" as const,
+    priceMinor: 14_850_000,
+    currency: "NGN",
+    travellers: [
+      {
+        givenNames: "Ada",
+        surname: "Obi",
+        dateOfBirth: "1990-04-21",
+        phone: "+2348030000001",
+      },
+    ],
+    purchase: {
+      kind: "flight" as const,
+      offerRef: "AP-P4-7120",
+      fareFamilyId: "saver",
+    },
+  };
+}
+
 /** A travel end that answers every request with `status` and `body`. */
 function travelAnswering(status: number, body: unknown) {
   const calls: string[] = [];
@@ -83,11 +112,7 @@ describe("travel-service's 403 is a permission refusal", () => {
   it("limited mode: the user can finish the security check — nothing was booked", async () => {
     const travel = travelAnswering(403, LIMITED);
     const error = await refusal(
-      travel.port.book(actor, {
-        grantId: "grant_1",
-        offerRef: "AP-P4-7120",
-        idempotencyKey: "exec_1:AP-P4-7120",
-      }),
+      travel.port.book(actor, bookInput("exec_1:0:" + OFFER_REF)),
     );
     expect(error.code).toBe("limited_mode");
     expect(error.status).toBe(403);
@@ -98,7 +123,8 @@ describe("travel-service's 403 is a permission refusal", () => {
     expect(error.message).toContain("limited mode");
     expect(error.message).toContain("security check");
     expect(error.message).toContain("Nothing was booked");
-    expect(travel.calls).toEqual(["POST /v1/travel/orders"]);
+    // Refused at the first write — pricing the cart — before any checkout.
+    expect(travel.calls).toEqual(["POST /v1/travel/carts"]);
   });
 
   it("a session without travel:book is told so, on searches and bookings alike", async () => {
@@ -115,11 +141,7 @@ describe("travel-service's 403 is a permission refusal", () => {
           5,
         ),
       (port: ReturnType<typeof travelAnswering>["port"]) =>
-        port.book(actor, {
-          grantId: "grant_1",
-          offerRef: "AP-P4-7120",
-          idempotencyKey: "exec_2:AP-P4-7120",
-        }),
+        port.book(actor, bookInput("exec_2:0:" + OFFER_REF)),
     ]) {
       const travel = travelAnswering(403, NO_BOOK_SCOPE);
       const error = await refusal(work(travel.port));
@@ -142,7 +164,7 @@ describe("travel-service's 403 is a permission refusal", () => {
     const unreadable = await refusal(
       travelAnswering(403, "<html>forbidden</html>").port.resolveOffer(
         actor,
-        "AP-P4-7120",
+        OFFER_REF,
       ),
     );
     expect(unreadable.code).toBe("forbidden");

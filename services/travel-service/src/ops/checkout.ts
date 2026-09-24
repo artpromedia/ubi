@@ -31,6 +31,14 @@
  * back exactly that total as `expectedTotal` — never auto-accepted. An expired
  * or sold-out offer is surfaced and never booked.
  *
+ * `reviewedTermsOnly` is for a caller whose approval was given ELSEWHERE, on
+ * terms reviewed before this cart existed — an assistant review under a grant
+ * (ask-service's travel port). Nobody it acts for sees a 409 it is answered,
+ * so nothing a 409 surfaced can count as shown: such a checkout charges only
+ * exactly `expectedTotal`, and a changed term is refused every time (it needs
+ * a fresh review). Without it, a replay under the same key after a lost 409
+ * would find the change "surfaced" and book it unseen.
+ *
  * MONEY. Every posting goes through ./payment-settle.ts: one key per order
  * (`<orderId>:auth|:cap|:rel`, shared with reconcile and webhooks) and, after
  * an ambiguous or 409 answer, convergence through payment-service's recorded
@@ -88,6 +96,8 @@ export interface CheckoutInput {
   readonly grantId: string | null;
   readonly assuranceMethod: string | null;
   readonly expectedTotal: Money | null;
+  /** Approval covers exactly `expectedTotal` at the reviewed terms (above). */
+  readonly reviewedTermsOnly?: boolean;
   readonly idempotencyKey: string;
   readonly correlationId: string | null;
 }
@@ -201,8 +211,14 @@ export async function checkout(
     anyRepriced || priceMoved || anyTermsChanged || surfacedUnconfirmed;
   // A changed term must have been SHOWN (a prior 409) before it can be agreed.
   const consentValid = consented && (!anyTermsChanged || surfacedUnconfirmed);
+  // An approval given on reviewed terms agrees to nothing a 409 surfaced:
+  // exactly the approved total, at unchanged terms, or nothing is charged.
+  const refused =
+    input.reviewedTermsOnly === true
+      ? !consented || anyTermsChanged
+      : needsConsent && !consentValid;
 
-  if (anySoldOut || anyExpired || (needsConsent && !consentValid)) {
+  if (anySoldOut || anyExpired || refused) {
     // Surface the new prices and terms and charge nothing.
     const repricedItems: PricedItem[] = revalidated.map((item) => ({
       ...item.priced,
@@ -212,6 +228,7 @@ export async function checkout(
       policy: item.validation.offer.policy,
       offerSnapshot: item.validation.offer.snapshot,
       terms: termsFor(item.validation.offer),
+      unavailable: unavailableReason(item.validation),
     }));
     const updated = await withOutbox(deps.db, async (tx) => {
       const row = await tx.travelCart.update({
@@ -302,6 +319,19 @@ export async function checkout(
   });
 
   return { kind: "ok", tripId, orders };
+}
+
+/** Why a revalidated item cannot be bought at all, if it cannot. */
+function unavailableReason(
+  validation: OfferValidation,
+): "sold_out" | "expired" | null {
+  if (validation.soldOut) {
+    return "sold_out";
+  }
+  if (validation.expired === true || !validation.available) {
+    return "expired";
+  }
+  return null;
 }
 
 function tripTitle(items: readonly RevalidatedItem[]): string {
