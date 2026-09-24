@@ -12,10 +12,11 @@
  * approval, the city status change and the config history. The admin ones
  * authorize on the gateway's verified x-user-role, but no client surface is
  * cleared to use them through the edge yet, and a wildcard rule has no method
- * filter — it would have forwarded every write. So each read is pinned here by METHOD (GET only) and by exact
- * path, and everything else under /v1/config, and all of /v1/flags, answers
- * the gateway's own 404 (tests/route-contract.test.ts pins both sides against
- * config-service's route manifest).
+ * filter — it would have forwarded every write. So each read is pinned here
+ * by METHOD (GET only) and by exact path, and everything else under
+ * /v1/config, and all of /v1/flags, answers the gateway's own 404
+ * (tests/route-contract.test.ts pins both sides against config-service's
+ * route manifest).
  *
  * Identity, rate limiting and scope enforcement are the same as for every
  * proxied request: these routes are mounted on the authenticated `/v1` app
