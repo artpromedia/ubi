@@ -3,8 +3,10 @@ package marketplace
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 
@@ -22,6 +24,11 @@ const (
 
 	SlotCurrent = "current"
 	SlotNext    = "next"
+	// SlotAdvance is what an ADVANCE RESERVATION bid and award are for (A03):
+	// a future pickup window on the driver's booking calendar. It is never a
+	// claim slot — the booking enters the live current/next slots only at
+	// activation near pickup.
+	SlotAdvance = "advance"
 )
 
 // Actor is the caller, built by the handler from the signed gateway headers,
@@ -44,11 +51,49 @@ type Deps struct {
 	Logger     zerolog.Logger
 	// Now is injectable so expiry, cooldown and dwell tests do not sleep.
 	Now func() time.Time
+	// DriverProfiles resolves verified driver cards from user-service for
+	// the rider's offer comparison (A06 part A). Optional: nil resolves
+	// nothing and every driver renders "details unavailable" — an offer is
+	// never blocked by a missing profile.
+	DriverProfiles DriverProfilePort
+	// Capabilities answers what is VERIFIED about accessibility and service
+	// needs (A06 part D). Optional: nil is the profile-backed source, which
+	// today verifies nothing — so hard requirements are honestly unavailable.
+	Capabilities CapabilitySource
+	// Delivery hands an awarded service=delivery request to delivery-service
+	// (delivery_handoff.go). Optional: nil fails closed — every hand-off
+	// answers misconfigured, nothing is sent and the award stays pending.
+	Delivery DeliveryAssignPort
+	// TripAccessSealer seals a guest passenger's trip-link delivery for
+	// notification-service (trip_access_seal.go). Optional: nil fails closed
+	// — no trip link is issued, so a publish naming a passenger and a link
+	// reissue are refused (service_unavailable, reason
+	// trip_link_delivery_unavailable) and nothing is ever written in clear.
+	TripAccessSealer *TripAccessSealer
+	// Business reserves, commits and releases an organization's budget for
+	// a business marketplace ride (business.go; payment-service's
+	// /v1/finance/business). Optional: nil fails closed — every business
+	// check answers service_unavailable, so no business trip is booked.
+	Business BusinessPort
+	// Fleet is fleet-service's side of internal contract A (routes 8-9,
+	// fleet_client.go): which vehicle a fleet driver is assigned to for a
+	// booking's interval, and a vehicle's class, capacity and documents.
+	// Optional: nil answers nothing — an advance award never waits on it
+	// (the booking goes ahead without a vehicle) and a vehicle swap cannot
+	// be revalidated, so none is offered.
+	Fleet FleetServicePort
 }
 
 // Service is the marketplace engine core.
 type Service struct {
 	deps Deps
+	// templateCursor is where the recurring generation pass resumes its
+	// round-robin walk over active series (A03). In memory only: a fairness
+	// hint, never a correctness input.
+	templateCursor struct {
+		mu    sync.Mutex
+		after uuid.UUID
+	}
 }
 
 // NewService validates its dependencies rather than discovering a nil one
@@ -74,6 +119,9 @@ func NewService(deps Deps) (*Service, error) {
 	}
 	if deps.Now == nil {
 		deps.Now = func() time.Time { return time.Now().UTC() }
+	}
+	if deps.Fleet == nil {
+		deps.Fleet = unconfiguredFleetService{}
 	}
 	return &Service{deps: deps}, nil
 }
@@ -141,6 +189,13 @@ func (s *Service) requireServiceFlag(ctx context.Context, service string, actor 
 		return err
 	}
 	return s.requireFlag(ctx, flag, actor, cityID)
+}
+
+// flagOn evaluates a flag for a user deny-by-default, turning an evaluation
+// failure into "off" rather than an error: the workers' question.
+func (s *Service) flagOn(ctx context.Context, key string, userID string, cityID string) bool {
+	enabled, err := s.deps.Flags.Enabled(ctx, key, cityID, userID)
+	return err == nil && enabled
 }
 
 // queueEnabled reports whether the queued-jobs (next slot) vertical is open,

@@ -27,12 +27,14 @@ import { errorHandler } from "./middleware/error-handler";
 import { serviceAuthMiddleware } from "./middleware/service-auth";
 import { authRoutes } from "./routes/auth";
 import { createDeviceRoutes } from "./routes/devices";
+import { createDriverProfileRoutes } from "./routes/driver-profiles";
 import { driverRoutes } from "./routes/drivers";
 import { createGrantRoutes } from "./routes/grants";
 import { healthRoutes } from "./routes/health";
 import { createIdentityRoutes } from "./routes/identity";
 import { createKycRoutes } from "./routes/kyc";
 import { createMandateRoutes } from "./routes/mandates";
+import { createOrganizationRoutes } from "./routes/organizations";
 import { sessionRoutes } from "./routes/sessions";
 import { userRoutes } from "./routes/users";
 
@@ -117,6 +119,26 @@ app.route("/", createKycRoutes());
 const aiActionDeps: AiActionDeps = { prisma, now: () => new Date() };
 app.route("/", createMandateRoutes(aiActionDeps));
 app.route("/", createGrantRoutes(aiActionDeps));
+
+// ===========================================
+// Verified driver-profile read model (P10)
+//
+// `GET /internal/driver-profiles` — ride-service and ask-service resolve the
+// privacy-limited driver card, each with its own service key. Mounted OUTSIDE
+// `protectedApi` for the same reason as the grant surface: a user identity or
+// a forged `x-auth-*` header must never be what lets a request in.
+// ===========================================
+app.route("/", createDriverProfileRoutes({ prisma, now: () => new Date() }));
+
+// ===========================================
+// Business travel organizations (A06 part C)
+//
+// `/organizations…` — organizations, members, invitations, cost centres and
+// the travel policy. Signed identity context only, mounted OUTSIDE
+// `protectedApi` like the mandate routes. The money side (funding, budgets,
+// business bookings, statements) is payment-service `/v1/business`.
+// ===========================================
+app.route("/", createOrganizationRoutes({ prisma, now: () => new Date() }));
 
 // ===========================================
 // Protected Routes (requires service auth or JWT)

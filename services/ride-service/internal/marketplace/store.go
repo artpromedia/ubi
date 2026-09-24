@@ -79,7 +79,50 @@ func (s *Store) schemaCurrent(ctx context.Context) bool {
 				WHERE table_schema = 'mp' AND table_name = 'bids' AND column_name = 'hold_released_at')
 			AND EXISTS (
 				SELECT 1 FROM information_schema.columns
-				WHERE table_schema = 'mp' AND table_name = 'award_attempts' AND column_name = 'captured')`).Scan(&current)
+				WHERE table_schema = 'mp' AND table_name = 'award_attempts' AND column_name = 'captured')
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'quotes' AND column_name = 'route_fingerprint')
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'requests' AND column_name = 'stops_dwell_sec')
+			AND to_regclass('mp.driver_preferences') IS NOT NULL
+			AND to_regclass('mp.execution_routes') IS NOT NULL
+			AND to_regclass('mp.execution_stops') IS NOT NULL
+			AND to_regclass('mp.amendments') IS NOT NULL
+			AND to_regclass('mp.amendment_history') IS NOT NULL
+			AND to_regclass('mp.recurring_templates') IS NOT NULL
+			AND to_regclass('mp.scheduled_requests') IS NOT NULL
+			AND to_regclass('mp.advance_bookings') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'requests' AND column_name = 'scheduled_request_id')
+			AND to_regclass('mp.bid_pickup_estimates') IS NOT NULL
+			AND to_regclass('mp.favourite_drivers') IS NOT NULL
+			AND to_regclass('mp.preferred_requests') IS NOT NULL
+			AND to_regclass('mp.request_service_needs') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'driver_preferences' AND column_name = 'accepts_preferred_requests')
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'execution_routes' AND column_name = 'routed_distance_m')
+			AND to_regclass('mp.delivery_handoffs') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'delivery_handoffs' AND column_name = 'unresolved_sends')
+			AND to_regclass('mp.request_passengers') IS NOT NULL
+			AND to_regclass('mp.trip_access_tokens') IS NOT NULL
+			AND to_regclass('mp.request_business') IS NOT NULL
+			AND to_regclass('mp.business_bookings') IS NOT NULL
+			AND to_regclass('mp.delivery_cancellations') IS NOT NULL
+			AND to_regclass('mp.vehicle_occupancy') IS NOT NULL
+			AND to_regclass('mp.booking_risk_blockers') IS NOT NULL
+			AND to_regclass('mp.booking_vehicle_swaps') IS NOT NULL
+			AND to_regclass('mp.offroad_use_flags') IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'mp' AND table_name = 'advance_bookings' AND column_name = 'rematch_declined_at')`).Scan(&current)
 	return err == nil && current
 }
 
@@ -172,12 +215,19 @@ type Quote struct {
 	RoutedDurationSec int64
 	Pickup            Area
 	Dropoff           Area
-	Breakdown         []BreakdownRow
-	PricingVersion    string
-	PolicyVersion     int
-	ExpiresAt         time.Time
-	ConsumedBy        *uuid.UUID
-	CreatedAt         time.Time
+	// Stops are the ordered intermediate stops this envelope priced (empty
+	// for a plain pickup → dropoff route); StopsDwellSec is their total
+	// expected dwell, priced as route time; RouteFingerprint names the exact
+	// route (endpoints + ordered stop set) the bounds belong to.
+	Stops            []RouteStop
+	StopsDwellSec    int64
+	RouteFingerprint string
+	Breakdown        []BreakdownRow
+	PricingVersion   string
+	PolicyVersion    int
+	ExpiresAt        time.Time
+	ConsumedBy       *uuid.UUID
+	CreatedAt        time.Time
 }
 
 // InsertQuote persists a priced envelope.
@@ -194,17 +244,23 @@ func (s *Store) InsertQuote(ctx context.Context, db DB, quote *Quote) error {
 	if err != nil {
 		return fmt.Errorf("unserialisable quote dropoff: %w", err)
 	}
+	stops, err := encodeStops(quote.Stops)
+	if err != nil {
+		return err
+	}
 	_, err = db.Exec(ctx, `
 		INSERT INTO mp.quotes (
 			id, requester_id, city_id, service, vehicle_class, currency,
 			suggested_minor, min_minor, max_minor,
 			routed_distance_m, routed_duration_sec, pickup, dropoff, breakdown,
-			pricing_version, policy_version, expires_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+			pricing_version, policy_version, expires_at,
+			stops, stops_dwell_sec, route_fingerprint
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
 		quote.ID, quote.RequesterID, quote.CityID, quote.Service, quote.VehicleClass, quote.Currency,
 		quote.SuggestedMinor, quote.MinMinor, quote.MaxMinor,
 		quote.RoutedDistanceM, quote.RoutedDurationSec, pickup, dropoff, breakdown,
 		quote.PricingVersion, quote.PolicyVersion, quote.ExpiresAt,
+		stops, quote.StopsDwellSec, quote.RouteFingerprint,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert marketplace quote: %w", err)
@@ -216,16 +272,18 @@ const quoteColumns = `
 	id, requester_id, city_id, service, vehicle_class, currency,
 	suggested_minor, min_minor, max_minor,
 	routed_distance_m, routed_duration_sec, pickup, dropoff, breakdown,
-	pricing_version, policy_version, expires_at, consumed_by, created_at`
+	pricing_version, policy_version, expires_at, consumed_by, created_at,
+	stops, stops_dwell_sec, route_fingerprint`
 
 func scanQuote(row pgx.Row) (*Quote, error) {
 	var quote Quote
-	var pickup, dropoff, breakdown []byte
+	var pickup, dropoff, breakdown, stops []byte
 	err := row.Scan(
 		&quote.ID, &quote.RequesterID, &quote.CityID, &quote.Service, &quote.VehicleClass, &quote.Currency,
 		&quote.SuggestedMinor, &quote.MinMinor, &quote.MaxMinor,
 		&quote.RoutedDistanceM, &quote.RoutedDurationSec, &pickup, &dropoff, &breakdown,
 		&quote.PricingVersion, &quote.PolicyVersion, &quote.ExpiresAt, &quote.ConsumedBy, &quote.CreatedAt,
+		&stops, &quote.StopsDwellSec, &quote.RouteFingerprint,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -243,6 +301,9 @@ func scanQuote(row pgx.Row) (*Quote, error) {
 		if err := json.Unmarshal(breakdown, &quote.Breakdown); err != nil {
 			return nil, fmt.Errorf("quote %s stores an unreadable breakdown: %w", quote.ID, err)
 		}
+	}
+	if quote.Stops, err = decodeStops(stops); err != nil {
+		return nil, fmt.Errorf("quote %s stores unreadable stops: %w", quote.ID, err)
 	}
 	return &quote, nil
 }
@@ -280,34 +341,63 @@ type Area struct {
 
 // Request is one marketplace request row.
 type Request struct {
-	ID              uuid.UUID
-	QuoteID         uuid.UUID
-	RequesterID     uuid.UUID
-	CityID          string
-	Service         string
-	VehicleClass    string
-	Currency        string
-	State           string
-	Revision        int
-	Version         int
-	RequestedMinor  int64
-	SuggestedMinor  int64
-	MinMinor        int64
-	MaxMinor        int64
-	Pickup          Area
-	Dropoff         Area
-	Delivery        map[string]any
-	PaymentMethodID string
-	EnvelopeStep    int
-	EnvelopeRadiusM int
-	EnvelopeEtaSec  int
-	PolicyVersion   int
-	PricingVersion  string
-	ExpiresAt       time.Time
-	CloseReason     string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID             uuid.UUID
+	QuoteID        uuid.UUID
+	RequesterID    uuid.UUID
+	CityID         string
+	Service        string
+	VehicleClass   string
+	Currency       string
+	State          string
+	Revision       int
+	Version        int
+	RequestedMinor int64
+	SuggestedMinor int64
+	MinMinor       int64
+	MaxMinor       int64
+	Pickup         Area
+	Dropoff        Area
+	// Stops is the request's ordered intermediate-stop route (empty for a
+	// plain pickup → dropoff trip), copied from the quote it was published
+	// or route-revised against. RouteRevision bumps only when a revision
+	// changes the stop set; Revision (which bids pin) bumps on every edit.
+	Stops             []RouteStop
+	RouteRevision     int
+	RouteFingerprint  string
+	RoutedDistanceM   int64
+	RoutedDurationSec int64
+	StopsDwellSec     int64
+	Delivery          map[string]any
+	PaymentMethodID   string
+	EnvelopeStep      int
+	EnvelopeRadiusM   int
+	EnvelopeEtaSec    int
+	PolicyVersion     int
+	PricingVersion    string
+	ExpiresAt         time.Time
+	CloseReason       string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	// Book for Later (A03). BookingKind is immediate (every classic request),
+	// scheduled (a published scheduled intent — an ordinary immediate market
+	// from then on) or advance (drivers bid NOW for the future pickup window
+	// in Schedule; the award books the driver's calendar, not a live slot).
+	BookingKind        string
+	PickupWindowStart  *time.Time
+	PickupWindowEnd    *time.Time
+	Schedule           *PickupSchedule
+	ScheduledRequestID *uuid.UUID
 }
+
+// Booking kinds (mp.requests.booking_kind).
+const (
+	BookingKindImmediate = "immediate"
+	BookingKindScheduled = "scheduled"
+	BookingKindAdvance   = "advance"
+)
+
+// isAdvance reports whether the request takes offers for a future window.
+func (r *Request) isAdvance() bool { return r.BookingKind == BookingKindAdvance }
 
 const requestColumns = `
 	id, quote_id, requester_id, city_id, service, vehicle_class, currency,
@@ -316,11 +406,14 @@ const requestColumns = `
 	pickup, dropoff, delivery, payment_method_id,
 	envelope_step, envelope_radius_m, envelope_eta_sec,
 	policy_version, pricing_version, expires_at,
-	COALESCE(close_reason, ''), created_at, updated_at`
+	COALESCE(close_reason, ''), created_at, updated_at,
+	stops, route_revision, route_fingerprint,
+	routed_distance_m, routed_duration_sec, stops_dwell_sec,
+	booking_kind, pickup_window_start, pickup_window_end, pickup_schedule, scheduled_request_id`
 
 func scanRequest(row pgx.Row) (*Request, error) {
 	var request Request
-	var pickup, dropoff, delivery []byte
+	var pickup, dropoff, delivery, stops, schedule []byte
 	err := row.Scan(
 		&request.ID, &request.QuoteID, &request.RequesterID, &request.CityID,
 		&request.Service, &request.VehicleClass, &request.Currency,
@@ -330,12 +423,21 @@ func scanRequest(row pgx.Row) (*Request, error) {
 		&request.EnvelopeStep, &request.EnvelopeRadiusM, &request.EnvelopeEtaSec,
 		&request.PolicyVersion, &request.PricingVersion, &request.ExpiresAt,
 		&request.CloseReason, &request.CreatedAt, &request.UpdatedAt,
+		&stops, &request.RouteRevision, &request.RouteFingerprint,
+		&request.RoutedDistanceM, &request.RoutedDurationSec, &request.StopsDwellSec,
+		&request.BookingKind, &request.PickupWindowStart, &request.PickupWindowEnd, &schedule, &request.ScheduledRequestID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to read marketplace request: %w", err)
+	}
+	if len(schedule) > 0 {
+		request.Schedule = &PickupSchedule{}
+		if err := json.Unmarshal(schedule, request.Schedule); err != nil {
+			return nil, fmt.Errorf("request %s stores an unreadable pickup schedule: %w", request.ID, err)
+		}
 	}
 	if err := json.Unmarshal(pickup, &request.Pickup); err != nil {
 		return nil, fmt.Errorf("request %s stores an unreadable pickup: %w", request.ID, err)
@@ -347,6 +449,9 @@ func scanRequest(row pgx.Row) (*Request, error) {
 		if err := json.Unmarshal(delivery, &request.Delivery); err != nil {
 			return nil, fmt.Errorf("request %s stores unreadable delivery details: %w", request.ID, err)
 		}
+	}
+	if request.Stops, err = decodeStops(stops); err != nil {
+		return nil, fmt.Errorf("request %s stores unreadable stops: %w", request.ID, err)
 	}
 	return &request, nil
 }
@@ -367,6 +472,24 @@ func (s *Store) InsertRequest(ctx context.Context, db DB, request *Request) erro
 			return fmt.Errorf("unserialisable delivery details: %w", err)
 		}
 	}
+	stops, err := encodeStops(request.Stops)
+	if err != nil {
+		return err
+	}
+	routeRevision := request.RouteRevision
+	if routeRevision < 1 {
+		routeRevision = 1
+	}
+	kind := request.BookingKind
+	if kind == "" {
+		kind = BookingKindImmediate
+	}
+	var schedule []byte
+	if request.Schedule != nil {
+		if schedule, err = json.Marshal(request.Schedule); err != nil {
+			return fmt.Errorf("unserialisable pickup schedule: %w", err)
+		}
+	}
 	_, err = db.Exec(ctx, `
 		INSERT INTO mp.requests (
 			id, quote_id, requester_id, city_id, service, vehicle_class, currency,
@@ -374,8 +497,12 @@ func (s *Store) InsertRequest(ctx context.Context, db DB, request *Request) erro
 			requested_minor, suggested_minor, min_minor, max_minor,
 			pickup, dropoff, delivery, payment_method_id,
 			envelope_step, envelope_radius_m, envelope_eta_sec,
-			policy_version, pricing_version, expires_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+			policy_version, pricing_version, expires_at,
+			stops, route_revision, route_fingerprint,
+			routed_distance_m, routed_duration_sec, stops_dwell_sec,
+			booking_kind, pickup_window_start, pickup_window_end, pickup_schedule, scheduled_request_id
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
+			$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`,
 		request.ID, request.QuoteID, request.RequesterID, request.CityID,
 		request.Service, request.VehicleClass, request.Currency,
 		request.State, request.Revision, request.Version,
@@ -383,10 +510,14 @@ func (s *Store) InsertRequest(ctx context.Context, db DB, request *Request) erro
 		pickup, dropoff, delivery, request.PaymentMethodID,
 		request.EnvelopeStep, request.EnvelopeRadiusM, request.EnvelopeEtaSec,
 		request.PolicyVersion, request.PricingVersion, request.ExpiresAt,
+		stops, routeRevision, request.RouteFingerprint,
+		request.RoutedDistanceM, request.RoutedDurationSec, request.StopsDwellSec,
+		kind, request.PickupWindowStart, request.PickupWindowEnd, schedule, request.ScheduledRequestID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert marketplace request: %w", err)
 	}
+	request.BookingKind = kind
 	return nil
 }
 
@@ -417,13 +548,15 @@ func (s *Store) RequestForUpdate(ctx context.Context, tx pgx.Tx, id uuid.UUID) (
 	return scanRequest(tx.QueryRow(ctx, `SELECT `+requestColumns+` FROM mp.requests WHERE id = $1 FOR UPDATE`, id))
 }
 
-// OpenRequestCount counts a requester's requests still occupying the market.
+// OpenRequestCount counts a requester's requests still occupying the
+// IMMEDIATE market. Advance-booking requests (A03) take offers for hours for
+// a future window and are capped separately (OpenAdvanceRequestCount).
 func (s *Store) OpenRequestCount(ctx context.Context, db DB, requesterID uuid.UUID) (int, error) {
 	var count int
 	err := db.QueryRow(ctx, `
 		SELECT COUNT(*) FROM mp.requests
-		WHERE requester_id = $1 AND state = ANY($2)`,
-		requesterID, []string{machine.MpRequestOpen, machine.MpRequestAwardPending}).Scan(&count)
+		WHERE requester_id = $1 AND state = ANY($2) AND booking_kind <> $3`,
+		requesterID, []string{machine.MpRequestOpen, machine.MpRequestAwardPending}, BookingKindAdvance).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count open requests: %w", err)
 	}
@@ -442,6 +575,15 @@ type RequestUpdate struct {
 	EnvelopeEtaSec  *int
 	ExpiresAt       *time.Time
 	CloseReason     *string
+	// Route columns, set together by a route-changing revision (Stops,
+	// RouteRevision, RouteFingerprint, StopsDwellSec) and by any revision
+	// that adopts a fresh quote (the routed metrics).
+	Stops             *[]RouteStop
+	RouteRevision     *int
+	RouteFingerprint  *string
+	RoutedDistanceM   *int64
+	RoutedDurationSec *int64
+	StopsDwellSec     *int64
 }
 
 // TransitionRequest moves a request to a new state (open → open is the
@@ -453,6 +595,14 @@ func (s *Store) TransitionRequest(ctx context.Context, tx pgx.Tx, request *Reque
 		return nil, domain.Errorf(domain.CodeIllegalTransition, "a request cannot move from %s to %s", request.State, to).
 			WithDetails(map[string]any{"from": request.State, "to": to, "allowed": allowed}).
 			Wrap(err)
+	}
+	var stops []byte
+	if update.Stops != nil {
+		encoded, err := encodeStops(*update.Stops)
+		if err != nil {
+			return nil, err
+		}
+		stops = encoded
 	}
 	row := tx.QueryRow(ctx, `
 		UPDATE mp.requests SET
@@ -468,6 +618,12 @@ func (s *Store) TransitionRequest(ctx context.Context, tx pgx.Tx, request *Reque
 			envelope_eta_sec = COALESCE($11, envelope_eta_sec),
 			expires_at = COALESCE($12, expires_at),
 			close_reason = COALESCE($13, close_reason),
+			stops = COALESCE($14::jsonb, stops),
+			route_revision = COALESCE($15, route_revision),
+			route_fingerprint = COALESCE($16, route_fingerprint),
+			routed_distance_m = COALESCE($17, routed_distance_m),
+			routed_duration_sec = COALESCE($18, routed_duration_sec),
+			stops_dwell_sec = COALESCE($19, stops_dwell_sec),
 			updated_at = now()
 		WHERE id = $1 AND version = $2
 		RETURNING `+requestColumns,
@@ -475,6 +631,8 @@ func (s *Store) TransitionRequest(ctx context.Context, tx pgx.Tx, request *Reque
 		update.Revision, update.RequestedMinor, update.MinMinor, update.MaxMinor,
 		update.QuoteID, update.EnvelopeStep, update.EnvelopeRadiusM, update.EnvelopeEtaSec,
 		update.ExpiresAt, update.CloseReason,
+		stops, update.RouteRevision, update.RouteFingerprint,
+		update.RoutedDistanceM, update.RoutedDurationSec, update.StopsDwellSec,
 	)
 	updated, err := scanRequest(row)
 	if errors.Is(err, domain.ErrNotFound) {
@@ -1015,6 +1173,10 @@ type RecoveryRow struct {
 	NextRetryAt time.Time
 	ResolvedAt  *time.Time
 	CreatedAt   time.Time
+
+	// Currency is the row's money's currency (admin reads only; derived
+	// from what the row names — recoveryCurrencySQL).
+	Currency string
 }
 
 // ReserveRecoveryPayload is what a reserve_replay row needs to converge: the

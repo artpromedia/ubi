@@ -32,6 +32,16 @@ type QuoteEnvelopeView struct {
 	Breakdown            []BreakdownRowView `json:"breakdown"`
 	RoutedDistanceMeters int64              `json:"routedDistanceMeters"`
 	RoutedDurationSec    int64              `json:"routedDurationSec"`
+	// Multi-stop only (omitted for a plain route): the ordered stops priced,
+	// their total expected dwell (priced as time), and the route fingerprint
+	// the bounds belong to.
+	Stops            []RouteStop `json:"stops,omitempty"`
+	StopsDwellSec    int64       `json:"stopsDwellSec,omitempty"`
+	RouteFingerprint string      `json:"routeFingerprint,omitempty"`
+	// Business is present only when the quote asked about an organization
+	// (A06 part C): the organization's advisory verdict at the suggested
+	// fare — an out-of-policy or unfunded option is never shown bookable.
+	Business *BusinessQuoteView `json:"business,omitempty"`
 }
 
 // SearchEnvelopeView is the request's current search envelope.
@@ -66,6 +76,28 @@ type RequestView struct {
 	ExpiresAt          time.Time          `json:"expiresAt"`
 	CreatedAt          time.Time          `json:"createdAt"`
 	CloseReason        *string            `json:"closeReason"`
+	// Present only for a request that carries (or carried) intermediate
+	// stops, so a plain request renders exactly as before: the owner's
+	// ordered stops (exact — this is their own trip), the route revision and
+	// the fingerprint of the route the current bounds were priced for.
+	Stops            []RouteStop `json:"stops,omitempty"`
+	RouteRevision    int         `json:"routeRevision,omitempty"`
+	RouteFingerprint string      `json:"routeFingerprint,omitempty"`
+	// Booking is present only on a scheduled or advance-booking request
+	// (A03): its future pickup window and whether a driver is secured.
+	Booking *RequestBookingView `json:"booking,omitempty"`
+	// PreferredDriver is present only on a request that named a saved driver
+	// (A04 item 3): the exclusive window and what happens when it ends.
+	PreferredDriver *PreferredDriverView `json:"preferredDriver,omitempty"`
+	// ServiceNeeds is present only when the requester stated needs (A06 D).
+	ServiceNeeds *ServiceNeeds `json:"serviceNeeds,omitempty"`
+	// Passenger is present only when the requester booked for another adult
+	// (A06 part B), and only on the requester's own view of this request.
+	Passenger *RequestPassengerView `json:"passenger,omitempty"`
+	// Business is present only on a request booked on an organization (A06
+	// part C), and only on the requester's own view: the payer, the booking
+	// terms and where the organization's funding stands.
+	Business *RequestBusinessView `json:"business,omitempty"`
 }
 
 func requestViewOf(request *Request) *RequestView {
@@ -74,7 +106,7 @@ func requestViewOf(request *Request) *RequestView {
 		reason := request.CloseReason
 		closeReason = &reason
 	}
-	return &RequestView{
+	view := &RequestView{
 		RequestID:          request.ID.String(),
 		State:              request.State,
 		Revision:           request.Revision,
@@ -103,6 +135,13 @@ func requestViewOf(request *Request) *RequestView {
 		CreatedAt:      request.CreatedAt,
 		CloseReason:    closeReason,
 	}
+	if request.hasRoute() {
+		view.Stops = request.Stops
+		view.RouteRevision = request.RouteRevision
+		view.RouteFingerprint = request.RouteFingerprint
+	}
+	view.Booking = requestBookingViewOf(request)
+	return view
 }
 
 // The client-facing hold-state vocabulary (MpBidDto.holdState). This is the
@@ -134,6 +173,10 @@ type BidView struct {
 	HoldState        string    `json:"holdState"`
 	ExpiresAt        time.Time `json:"expiresAt"`
 	CreatedAt        time.Time `json:"createdAt"`
+	// AdvanceCommitment restates, on an advance bid (A03), the wallet
+	// commitment the driver took on: held now, captured once at the advance
+	// award, never charged again at activation.
+	AdvanceCommitment *AdvanceCommitmentView `json:"advanceCommitment,omitempty"`
 }
 
 // holdStateFor maps a bid row to the honest client vocabulary. Live and
@@ -181,12 +224,13 @@ func bidViewOf(bid *Bid, currency string) *BidView {
 // display fields only, never rival prices, never another bidder's identity.
 //
 // ProfileStatus is the G09 honesty gate. Verified driver identity (real name,
-// plate, photo, rating and completed-trip history) is owned by user-service;
-// ride-service holds no projection of it and makes no cross-service call for it
-// (see docs/marketplace/DRIVER_IDENTITY.md). Until that join exists,
-// ProfileStatus is "unavailable" and Rating/CompletedTrips are placeholders a
-// client must not present as real. Vehicle is always server-verified: it is the
-// class the driver is eligible for and bidding on.
+// plate, photo, rating and completed-trip history) is owned by user-service
+// and resolved through the driver-profile port (driverprofiles.go; see
+// docs/marketplace/DRIVER_IDENTITY.md). ProfileStatus is "verified" only when
+// user-service returned a card whose verification status is "verified";
+// otherwise it is "unavailable" and Rating/CompletedTrips are placeholders a
+// client must not present as real. Vehicle is always server-verified: it is
+// the class the driver is eligible for and bidding on.
 type OfferDriverView struct {
 	DisplayName    string `json:"displayName"`
 	Initials       string `json:"initials"`
@@ -216,6 +260,21 @@ type OfferView struct {
 	ExpiresAt       time.Time       `json:"expiresAt"`
 	Withdrawn       bool            `json:"withdrawn"`
 	WhyRecommended  *string         `json:"whyRecommended"`
+
+	// Offer comparison (A06 part A), all server-computed: what the rider
+	// pays (the offered fare; the marketplace adds no booking fee on top),
+	// the pickup ESTIMATE, the vehicle, the verified driver card, the
+	// defined reliability figure, the service fit and reasoned badges.
+	BookingFeeMinor *Money                   `json:"bookingFeeMinor,omitempty"`
+	TotalMinor      *Money                   `json:"totalMinor,omitempty"`
+	TotalLabel      string                   `json:"totalLabel,omitempty"`
+	TotalNote       string                   `json:"totalNote,omitempty"`
+	PickupEstimate  *OfferPickupEstimateView `json:"pickupEstimate,omitempty"`
+	Vehicle         *OfferVehicleView        `json:"vehicle,omitempty"`
+	DriverProfile   *OfferDriverProfileView  `json:"driverProfile,omitempty"`
+	Reliability     *ReliabilityView         `json:"reliability,omitempty"`
+	ServiceFit      *ServiceFitView          `json:"serviceFit,omitempty"`
+	Badges          []CriterionView          `json:"badges,omitempty"`
 }
 
 // PickupWindow is a finishing-trip offer's predicted pickup window.
@@ -225,12 +284,19 @@ type PickupWindow struct {
 	EtaVersion  int `json:"etaVersion"`
 }
 
-// RequestSnapshotView answers GET /v1/mp/requests/{id}.
+// RequestSnapshotView answers GET /v1/mp/requests/{id}. An advance-booking
+// request's offers (A03) are listed under advanceOffers, never under offers:
+// they are bids on a future pickup window, not transport now, so a client
+// that only knows the live offer kinds never renders one as a live pickup.
 type RequestSnapshotView struct {
-	Request *RequestView `json:"request"`
-	Offers  []*OfferView `json:"offers"`
-	Award   *AwardView   `json:"award,omitempty"`
-	Seq     int          `json:"seq"`
+	Request       *RequestView `json:"request"`
+	Offers        []*OfferView `json:"offers"`
+	AdvanceOffers []*OfferView `json:"advanceOffers,omitempty"`
+	Award         *AwardView   `json:"award,omitempty"`
+	Seq           int          `json:"seq"`
+	// OfferOrder says which order the offers are in (A06 part A): the
+	// neutral offered order unless the requester asked for another.
+	OfferOrder *OfferOrderView `json:"offerOrder,omitempty"`
 }
 
 // ExecutionRefView names the execution an award handed off to, exactly as the
@@ -310,6 +376,23 @@ type FeedItemView struct {
 	AskedByLabel    string    `json:"askedByLabel"`
 	CapabilityBadge *string   `json:"capabilityBadge"`
 	ExpiresAt       time.Time `json:"expiresAt"`
+	// Route is the multi-stop summary (omitted for a plain route): stop
+	// count, coarse stop areas and the full route's distance/duration/dwell.
+	Route *FeedRouteView `json:"route,omitempty"`
+	// Earnings is the server-composed breakdown at the requester's published
+	// fare (A04.1): gross, 10% commission, fleet remittance (none), net, the
+	// unpaid pickup (coarsened, estimated), the paid route and stop waiting.
+	Earnings *EarningsBreakdownView `json:"earnings"`
+	// PreferenceTags are the driver's own preference matches (e.g.
+	// "homeward"); omitted when there are none.
+	PreferenceTags []string `json:"preferenceTags,omitempty"`
+	// Booking marks an advance-booking card (A03): a FUTURE pickup window,
+	// not an immediate job. Omitted for immediate requests.
+	Booking *RequestBookingView `json:"booking,omitempty"`
+	// PreferredRequest marks a request a rider asked THIS driver first on
+	// (A04 item 3), with the window and the free-decline note. Omitted
+	// otherwise; no other driver ever sees such a card while it is exclusive.
+	PreferredRequest *PreferredInvitationView `json:"preferredRequest,omitempty"`
 }
 
 // FeedPageView answers GET /v1/mp/feed.
@@ -317,6 +400,9 @@ type FeedPageView struct {
 	Items             []*FeedItemView `json:"items"`
 	NextCursor        *string         `json:"nextCursor"`
 	AvailabilityEpoch int64           `json:"availabilityEpoch"`
+	// Preferences says whether the driver's preferences shaped this page and
+	// how many requests they hid (A04.2).
+	Preferences *FeedPreferencesView `json:"preferences,omitempty"`
 }
 
 // EligibilityReasonView is one machine-readable reason with its human words.
@@ -337,9 +423,19 @@ type EligibilityView struct {
 	AvailabilityEpoch int64                   `json:"availabilityEpoch"`
 	EvaluatedAt       time.Time               `json:"evaluatedAt"`
 
-	// predictedPickupSec is server-internal: the finishing-trip pickup
-	// prediction the driver-view phrases into a label.
-	predictedPickupSec int
+	// PredictedPickupSec is the server's time-until-pickup ESTIMATE for an
+	// eligible driver (null otherwise), rounded up to the whole minute so it
+	// cannot triangulate the pickup: the routed leg on the immediate branch
+	// (basis routed_leg); on the finishing-trip branch the remaining service
+	// time + completion buffer + the post-dropoff leg + uncertainty buffer
+	// (basis finishing_trip_prediction).
+	PredictedPickupSec   *int    `json:"predictedPickupSec"`
+	PredictedPickupBasis *string `json:"predictedPickupBasis"`
+
+	// pickup is the measured UNPAID pickup leg behind that prediction (the
+	// whole leg on the immediate branch, only the post-dropoff hop on the
+	// finishing-trip branch): the driver view's earnings breakdown input.
+	pickup *pickupEstimate
 }
 
 // PresetView is one server-generated quick offer (MpPresetSchema).
@@ -355,19 +451,31 @@ type PresetView struct {
 	ShortfallLabel  *string `json:"shortfallLabel"`
 	Emphasized      bool    `json:"emphasized"`
 	Source          string  `json:"source"`
+	// Earnings is the same server-composed breakdown as the card's, at THIS
+	// preset's amount (A04.1).
+	Earnings *EarningsBreakdownView `json:"earnings"`
 }
 
 // DriverViewResult answers GET /v1/mp/requests/{id}/driver-view.
 // currentClaimId is the driver's current work claim — the mandatory
 // dependsOnClaimId for a next-slot bid — or null when none exists.
 type DriverViewResult struct {
-	Item           *FeedItemView    `json:"item"`
-	Eligibility    *EligibilityView `json:"eligibility"`
-	Presets        []*PresetView    `json:"presets"`
-	ProfileLine    *string          `json:"profileLine,omitempty"`
-	CeilingNotice  *string          `json:"ceilingNotice,omitempty"`
-	MyBid          *BidView         `json:"myBid,omitempty"`
-	CurrentClaimID *string          `json:"currentClaimId"`
+	Item          *FeedItemView    `json:"item"`
+	Eligibility   *EligibilityView `json:"eligibility"`
+	Presets       []*PresetView    `json:"presets"`
+	ProfileLine   *string          `json:"profileLine,omitempty"`
+	CeilingNotice *string          `json:"ceilingNotice,omitempty"`
+	// PreferenceNotice explains a preference this request cannot meet (the
+	// driver opened it directly although their feed would hide it).
+	PreferenceNotice *string  `json:"preferenceNotice,omitempty"`
+	MyBid            *BidView `json:"myBid,omitempty"`
+	CurrentClaimID   *string  `json:"currentClaimId"`
+	// AdvanceCommitment explains, BEFORE an advance bid (A03), what bidding
+	// commits the driver's wallet to at the requester's asked fare.
+	AdvanceCommitment *AdvanceCommitmentView `json:"advanceCommitment,omitempty"`
+	// PreferredRequest is present when a rider asked this driver first
+	// (A04 item 3): offer through the ordinary presets, or decline for free.
+	PreferredRequest *PreferredInvitationView `json:"preferredRequest,omitempty"`
 }
 
 // ParkedAckView answers POST /v1/mp/driver/parked: the state the SERVER
@@ -384,7 +492,11 @@ type ParkedAckView struct {
 // DriverJobView is one claims-projection row (contract DriverJob): the
 // driver's current or queued job with its money and execution reference.
 type DriverJobView struct {
-	ClaimID         string            `json:"claimId"`
+	ClaimID string `json:"claimId"`
+	// RequestID is the award's marketplace request: the key of the trip,
+	// stop and amendment routes (/v1/mp/requests/{id}/...) the driver app
+	// opens from this card. Absent only for a claim with no award.
+	RequestID       string            `json:"requestId,omitempty"`
 	Slot            string            `json:"slot"`
 	Service         string            `json:"service"`
 	State           string            `json:"state"`
@@ -393,6 +505,10 @@ type DriverJobView struct {
 	ReceiptID       *string           `json:"receiptId,omitempty"`
 	ExecutionRef    *ExecutionRefView `json:"executionRef,omitempty"`
 	PickupWindow    *PickupWindow     `json:"pickupWindow,omitempty"`
+	// Passenger is set when the requester booked this trip for another
+	// adult (A06 part B): the passenger's FIRST NAME and how pickup is
+	// verified — never the requester's details or the passenger's phone.
+	Passenger *DriverPassengerView `json:"passenger,omitempty"`
 }
 
 // DriverJobsView answers GET /v1/mp/driver/jobs (D05/D11).
@@ -472,19 +588,21 @@ func formatMinor(minor int64, currency string, fractionDigits int) string {
 
 // verifiedDriverView derives the rider-facing driver display server-side.
 //
-// G09: ride-service owns no verified driver profile, so there is nothing to
-// join here today. The one server-VERIFIED fact is the vehicle class (the
-// driver is eligible for it and bidding on it); everything identity- or
-// rating-shaped is marked ProfileStatusUnavailable so a client cannot render a
-// pseudonym, an em-dash rating or a placeholder trip count as if they were a
-// real, verified figure. The offer, winner (post-selection) and queue
-// projections all call THIS function, so the same driver never renders two
-// different ways. When a user-service profile join lands the branch that fills
-// verified name/rating/plate/trips replaces the unavailable placeholders and
-// flips ProfileStatus to ProfileStatusVerified.
-func verifiedDriverView(driverID string, vehicleClass string) OfferDriverView {
+// The one fact ride-service itself verifies is the vehicle class (the driver
+// is eligible for it and bidding on it). Identity and reputation come from
+// user-service's verified card (A06 part A): only a card whose verification
+// status is "verified" fills the name, initials, rating, completed trips and
+// masked plate and flips ProfileStatus to ProfileStatusVerified. A missing,
+// non-disclosing or not-yet-verified card keeps the G09 placeholders under
+// ProfileStatusUnavailable, so a client cannot render a pseudonym, an em-dash
+// rating or a placeholder trip count as if they were real. The legacy fields
+// stay non-nullable for the apps that read them; the structured card with
+// nullable fields is OfferView.DriverProfile. The offer, winner
+// (post-selection), queue and booking projections all call THIS function, so
+// the same driver never renders two different ways.
+func verifiedDriverView(driverID string, vehicleClass string, profile *DriverProfile) OfferDriverView {
 	tag := strings.ToUpper(digest("mp.driver.display:" + driverID)[:4])
-	return OfferDriverView{
+	view := OfferDriverView{
 		DisplayName:    "Driver " + tag,
 		Initials:       tag[:2],
 		Rating:         "–",
@@ -493,4 +611,22 @@ func verifiedDriverView(driverID string, vehicleClass string) OfferDriverView {
 		PlateMasked:    "•••",
 		ProfileStatus:  ProfileStatusUnavailable,
 	}
+	if !profile.Verified() {
+		return view
+	}
+	view.ProfileStatus = ProfileStatusVerified
+	if profile.DisplayName != nil {
+		view.DisplayName = *profile.DisplayName
+	}
+	if profile.Initials != nil {
+		view.Initials = *profile.Initials
+	}
+	if profile.Rating != nil {
+		view.Rating = formatRating(profile.Rating.Average)
+	}
+	view.CompletedTrips = profile.CompletedTrips
+	if profile.Vehicle != nil {
+		view.PlateMasked = profile.Vehicle.PlateMasked
+	}
+	return view
 }

@@ -11,7 +11,7 @@ import React from "react";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Screen, Skeleton, Banner } from "@ubi/mobile-ui";
-import { formatMinor } from "@ubi/mobile-core";
+import { formatMinor, useFlag } from "@ubi/mobile-core";
 import { marketplaceApi, type MpDriverJob } from "../../api/marketplace";
 import { JobsTimelineScreen, type JobCard } from "./JobsTimelineScreen";
 
@@ -47,6 +47,10 @@ export function JobsTimelineContainer() {
     navigate: (n: string, p?: unknown) => void;
     goBack: () => void;
   }>();
+  // Deny-by-default capabilities (each hook always runs).
+  const multiStopOn = useFlag("marketplace_multi_stop");
+  const amendmentsOn = useFlag("marketplace_trip_amendments");
+  const advanceOn = useFlag("marketplace_advance_reservations");
   const q = useQuery({
     queryKey: ["mp", "jobs"],
     queryFn: marketplaceApi.jobs,
@@ -91,6 +95,24 @@ export function JobsTimelineContainer() {
       promotion={view.promotion === "none" ? null : view.promotion}
       onContinueCurrent={() => toTrip(view.current?.executionRef?.id ?? null)}
       onBack={nav.goBack}
+      tripLinks={
+        // Only the server's own requestId opens the A02 trip routes — never a guess.
+        view.current?.requestId &&
+        view.current.service === "ride" &&
+        (multiStopOn || amendmentsOn)
+          ? {
+              onStops: () =>
+                nav.navigate("MpTrip", { requestId: view.current?.requestId }),
+              onChanges: amendmentsOn
+                ? () =>
+                    nav.navigate("MpAmendments", {
+                      requestId: view.current?.requestId,
+                    })
+                : null,
+            }
+          : null
+      }
+      onCalendar={advanceOn ? () => nav.navigate("Calendar") : null}
     />
   );
 }

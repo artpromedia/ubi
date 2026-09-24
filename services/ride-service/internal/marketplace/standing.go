@@ -24,6 +24,13 @@ import (
 // retry and award reconciliation only ask the SAME wallet/payment ports the
 // engine itself uses to converge, under the SAME idempotency keys.
 
+// Who funds an award (PendingSagaView.fundingSource).
+const (
+	FundingSourceBusiness = "business"
+	FundingSourceRider    = "rider"
+	FundingSourceCash     = "cash"
+)
+
 func requireAdmin(actor Actor, verb string) error {
 	if actor.Role != move.RoleAdmin {
 		return domain.Errorf(domain.CodeForbidden, "only an operator can %s", verb)
@@ -57,6 +64,11 @@ type PendingSagaView struct {
 	NextRetryAt  *time.Time `json:"nextRetryAt,omitempty"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	UpdatedAt    time.Time  `json:"updatedAt"`
+
+	// FundingSource marks who funds the award (business | rider | cash): on
+	// a business award the funding step is the organization budget's
+	// reserve (business:<awardId>:reserve), never rider funding.
+	FundingSource string `json:"fundingSource"`
 }
 
 // PendingSagasPage answers GET /v1/admin/mp/pending-sagas.
@@ -82,7 +94,8 @@ func (s *Service) AdminPendingSagas(ctx context.Context, actor Actor, cityID, cu
 	for _, row := range rows {
 		page.Rows = append(page.Rows, &PendingSagaView{
 			AwardID: row.AwardID.String(), RequestID: row.RequestID.String(), DriverID: row.DriverID.String(),
-			CityID: row.CityID, Step: row.Step, AttemptState: row.AttemptState, Attempts: row.Attempts,
+			CityID: row.CityID, FundingSource: row.FundingSource,
+			Step: row.Step, AttemptState: row.AttemptState, Attempts: row.Attempts,
 			LastError: row.LastError, AgeSec: ageSec(now, row.CreatedAt), NextRetryAt: row.NextRetryAt,
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
@@ -218,6 +231,10 @@ type RecoveryView struct {
 	NextRetryAt   time.Time  `json:"nextRetryAt"`
 	ResolvedAt    *time.Time `json:"resolvedAt,omitempty"`
 	CreatedAt     time.Time  `json:"createdAt"`
+
+	// Currency is AmountMinor's (and the row's money's) currency, derived
+	// from what the row names; absent only when nothing names one.
+	Currency string `json:"currency,omitempty"`
 }
 
 // RecoveriesPage answers GET /v1/admin/mp/recoveries.
@@ -234,7 +251,7 @@ func toRecoveryView(row *RecoveryRow, now time.Time) *RecoveryView {
 	}
 	return &RecoveryView{
 		ID: row.ID.String(), Action: row.Action, DriverID: row.DriverID.String(), BidID: bidID,
-		ReservationID: row.ReservationID, AmountMinor: row.AmountMinor, Attempts: row.Attempts,
+		ReservationID: row.ReservationID, AmountMinor: row.AmountMinor, Currency: row.Currency, Attempts: row.Attempts,
 		LastError: row.LastError, AgeSec: ageSec(now, row.CreatedAt), NextRetryAt: row.NextRetryAt,
 		ResolvedAt: row.ResolvedAt, CreatedAt: row.CreatedAt,
 	}

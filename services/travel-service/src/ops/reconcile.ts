@@ -3,22 +3,33 @@
  *
  * CLAUDE.md #24: `unknown_reconciling` is resolved ONLY by a lookup on UBI's own
  * reference — never by re-purchasing and never by compensating first. This
- * module is that lookup. It moves the order to `confirmed` (capturing the hold
- * that was left in place) or to `failed_released` (releasing it), strictly
- * through the contract machine. It never books anything.
+ * module is that lookup. It asks the supplier (with everything UBI knows about
+ * the order: supplier refs, the offer it was booked from) and converges the
+ * order to the answer through ./converge.ts — capturing the hold that was left
+ * in place, or releasing it — strictly through the contract machine and the
+ * one payment key scheme. It never books anything.
+ *
+ * A `supplier_pending` order (the supplier accepted but has not confirmed, e.g.
+ * a Duffel 202) is reconciled the same way, so a lost webhook cannot strand it.
+ * Money moves in the ORDER's city, whatever city the caller's header names:
+ * payment-service scopes the item to the city it was authorized in.
  *
  * A settlement difference is the gap between what UBI charged the traveller and
  * what the supplier later invoiced. It is recorded and surfaced to ops and
  * finance recon; it never silently adjusts the traveller's charge.
  */
-import { ContractError, money } from "@ubi/contracts";
+import { ContractError } from "@ubi/contracts";
 
 import {
-  advanceOrder,
-  orderView,
-  type OrderRow,
-  type OrderView,
-} from "./ladder";
+  cityProvenanceFields,
+  runConsoleWrite,
+  type ConsoleAnswer,
+  type ConsoleCity,
+  type ConsoleRecorder,
+  type ConsoleWrite,
+} from "./console";
+import { convergeOrder, hintFor } from "./converge";
+import { orderView, type OrderRow, type OrderView } from "./ladder";
 import { withOutbox } from "./outbox";
 import { actorTypeFor } from "./roles";
 import { adapterFor, contextFor, loadSupplier } from "./suppliers";
@@ -27,7 +38,8 @@ import { reconcileLogger } from "../lib/logger";
 
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
-import type { LookupResult } from "../adapters/types";
+
+const RECONCILABLE = new Set(["unknown_reconciling", "supplier_pending"]);
 
 export async function reconcileOrder(
   deps: TravelDeps,
@@ -36,6 +48,13 @@ export async function reconcileOrder(
     readonly cityId: string;
     readonly orderId: string;
     readonly correlationId: string | null;
+    /**
+     * Where `cityId` came from (a console lookup: ./console.ts). The order's
+     * own city is authoritative; only an order recorded without one falls
+     * back to the caller's city, and then every event it writes says whose
+     * word that city rests on.
+     */
+    readonly cityProvenance?: JsonRecord;
   },
 ): Promise<OrderView> {
   const order = await deps.db.travelOrder.findUnique({
@@ -46,7 +65,7 @@ export async function reconcileOrder(
       orderId: input.orderId,
     });
   }
-  if (order.state !== "unknown_reconciling") {
+  if (!RECONCILABLE.has(order.state)) {
     // Only an uncertain order is reconciled; anything else is already resolved.
     return orderView(order as unknown as OrderRow);
   }
@@ -56,13 +75,10 @@ export async function reconcileOrder(
   const lookup = await adapter.reconcile(
     contextFor(supplier, deps.now),
     order.id,
+    hintFor(order),
   );
 
-  if (
-    lookup.state === "pending" ||
-    lookup.state === "unknown" ||
-    !lookup.found
-  ) {
+  if (lookup.state === "pending" || lookup.state === "unknown") {
     // Still uncertain. Leave it exactly where it is; do not touch the hold.
     reconcileLogger.info(
       { orderId: order.id, state: lookup.state },
@@ -71,120 +87,66 @@ export async function reconcileOrder(
     return orderView(order as unknown as OrderRow);
   }
 
-  const occurredAt = deps.now();
-
-  if (lookup.state === "failed") {
-    const release = await deps.payment.release({
-      orderId: order.id,
-      userId: order.userId,
-      amount: money(Number(order.priceMinor), order.currency),
-      cityId: input.cityId,
-      reason: "travel reconcile release",
-      idempotencyKey: `${order.id}:rel`,
-      actor: input.actor,
-    });
-    const result = await withOutbox(deps.db, async (tx) => {
-      const advance = await advanceOrder(tx, {
-        order: order as unknown as OrderRow,
-        to: "failed_released",
-        actor: input.actor,
-        actorType: actorTypeFor(input.actor.role),
-        cityId: input.cityId,
-        detail: { resolvedBy: "lookup", releaseRef: release.ref },
-        occurredAt,
-        correlationId: input.correlationId,
-        releasedMinor: release.amount.amountMinor,
-      });
-      return { result: advance.order, events: advance.events };
-    });
-    return orderView(result);
-  }
-
-  // confirmed or ticketed: capture the hold that was never captured.
-  const capture = await deps.payment.capture({
-    orderId: order.id,
-    userId: order.userId,
-    amount: money(Number(order.priceMinor), order.currency),
-    cityId: input.cityId,
-    reason: "travel reconcile capture",
-    idempotencyKey: `${order.id}:cap`,
+  const outcome = await convergeOrder(deps, {
+    order: order as unknown as OrderRow,
+    lookup,
     actor: input.actor,
+    actorType: actorTypeFor(input.actor.role),
+    cityId: order.cityId ?? input.cityId,
+    via: "lookup",
+    correlationId: input.correlationId,
+    ...(order.cityId === null && input.cityProvenance !== undefined
+      ? { eventPayload: input.cityProvenance }
+      : {}),
   });
-
-  const refs = supplierRefsJson(lookup);
-  const result = await withOutbox(deps.db, async (tx) => {
-    const advance = await advanceOrder(tx, {
-      order: order as unknown as OrderRow,
-      to: "confirmed",
-      actor: input.actor,
-      actorType: actorTypeFor(input.actor.role),
-      cityId: input.cityId,
-      detail: { resolvedBy: "lookup", captureRef: capture.ref },
-      occurredAt,
-      correlationId: input.correlationId,
-      supplierRefs: refs,
-      chargedMinor: capture.amount.amountMinor,
-    });
-    let latest = advance.order;
-    const events = [...advance.events];
-    if (
-      lookup.state === "ticketed" &&
-      lookup.documentsIssued &&
-      order.kind === "flight"
-    ) {
-      const ticketed = await advanceOrder(tx, {
-        order: latest,
-        to: "ticketed",
-        actor: input.actor,
-        actorType: actorTypeFor(input.actor.role),
-        cityId: input.cityId,
-        detail: { resolvedBy: "lookup" },
-        occurredAt,
-        correlationId: input.correlationId,
-        supplierRefs: refs,
-      });
-      latest = ticketed.order;
-      events.push(...ticketed.events);
-    }
-    return { result: latest, events };
-  });
-  return orderView(result);
-}
-
-function supplierRefsJson(lookup: LookupResult): JsonRecord {
-  const refs: JsonRecord = {};
-  if (lookup.supplierRefs.pnr !== undefined) {
-    refs.pnr = lookup.supplierRefs.pnr;
-  }
-  if (lookup.supplierRefs.bookingRef !== undefined) {
-    refs.bookingRef = lookup.supplierRefs.bookingRef;
-  }
-  if (lookup.supplierRefs.orderRef !== undefined) {
-    refs.orderRef = lookup.supplierRefs.orderRef;
-  }
-  if (lookup.supplierRefs.ticketNumbers !== undefined) {
-    refs.ticketNumbers = [...lookup.supplierRefs.ticketNumbers];
-  }
-  return refs;
+  return orderView(outcome.order);
 }
 
 /**
- * Records a settlement difference (charged vs invoiced). Emits the event only
- * when the two disagree; a matching settlement is stored as accepted.
+ * Records a settlement difference (charged vs invoiced) — a travel-ops
+ * console write, exactly once per Idempotency-Key (./console.ts). Emits the
+ * event only when the two disagree; a matching settlement is stored as
+ * accepted. The event and the console's audit record carry the city's
+ * provenance: an operator-declared city says which operator declared it.
  */
 export async function recordSettlement(
   deps: TravelDeps,
   input: {
     readonly actor: Actor;
-    readonly cityId: string;
+    readonly city: ConsoleCity;
+    readonly orderId: string;
+    readonly invoicedMinor: number;
+    readonly idempotencyKey: string;
+    readonly correlationId: string | null;
+  },
+): Promise<ConsoleAnswer> {
+  const write: ConsoleWrite = {
+    operation: "settlement",
+    actor: input.actor,
+    city: input.city,
+    idempotencyKey: input.idempotencyKey,
+    subjectType: "travel_order",
+    subjectId: input.orderId,
+    request: { invoicedMinor: input.invoicedMinor },
+  };
+  const answer = await runConsoleWrite(deps, write, async (record) => {
+    const outcome = await settle(deps, input, record);
+    return outcome;
+  });
+  return answer;
+}
+
+async function settle(
+  deps: TravelDeps,
+  input: {
+    readonly actor: Actor;
+    readonly city: ConsoleCity;
     readonly orderId: string;
     readonly invoicedMinor: number;
     readonly correlationId: string | null;
   },
-): Promise<{
-  readonly settlementId: string;
-  readonly differenceMinor: number;
-}> {
+  record: ConsoleRecorder,
+): Promise<{ readonly status: number; readonly body: JsonRecord }> {
   const order = await deps.db.travelOrder.findUnique({
     where: { id: input.orderId },
   });
@@ -197,6 +159,7 @@ export async function recordSettlement(
   const differenceMinor = chargedMinor - input.invoicedMinor;
   const settlementId = generateId("tset");
   const occurredAt = deps.now();
+  const body: JsonRecord = { settlementId, differenceMinor };
 
   await withOutbox(deps.db, async (tx) => {
     await tx.travelSettlement.create({
@@ -225,7 +188,7 @@ export async function recordSettlement(
               toVersion: 1,
               actor: input.actor,
               actorType: actorTypeFor(input.actor.role),
-              cityId: input.cityId,
+              cityId: input.city.cityId,
               idempotencyKey: `travel.settlement.difference:${settlementId}`,
               correlationId: input.correlationId,
               occurredAt,
@@ -234,11 +197,21 @@ export async function recordSettlement(
                 charged: chargedMinor,
                 invoiced: input.invoicedMinor,
                 difference: differenceMinor,
+                ...cityProvenanceFields(input.city),
               } as JsonRecord,
             },
           ];
+    await record(tx, {
+      action: "travel.ops.settlement_recorded",
+      status: 201,
+      result: body,
+      reason:
+        differenceMinor === 0
+          ? "the supplier invoice matches the charge"
+          : "a settlement difference was recorded for finance recon",
+    });
     return { result: undefined, events };
   });
 
-  return { settlementId, differenceMinor };
+  return { status: 201, body };
 }

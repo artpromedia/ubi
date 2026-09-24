@@ -11,6 +11,7 @@ components:
     {
       bearer: { type: http, scheme: bearer },
       serviceKey: { type: apiKey, in: header, name: X-Service-Key },
+      tripAccessToken: { type: apiKey, in: header, name: X-Trip-Access-Token },
     }
   parameters:
     IdemKey:
@@ -60,6 +61,104 @@ components:
             lng: { type: number },
           },
       }
+    StopPurpose:
+      {
+        type: string,
+        enum: [pickup_passenger, drop_passenger, errand, other],
+        description: "What an intermediate stop is for. Informs the awarded driver; never changes the price (expected dwell does).",
+      }
+    StopInput:
+      {
+        type: object,
+        additionalProperties: false,
+        required: [lat, lng],
+        description: "One intermediate stop as the requester asks for it, in pickup → dropoff order. No stop id, no order and no price: the server assigns the stable id, the array position is the order, and the complete ordered route is priced server-side. Unknown keys are refused.",
+        properties:
+          {
+            lat: { type: number, minimum: -90, maximum: 90 },
+            lng: { type: number, minimum: -180, maximum: 180 },
+            label: { type: string, maxLength: 80 },
+            purpose:
+              {
+                $ref: "#/components/schemas/StopPurpose",
+                description: "Defaults to other.",
+              },
+            dwellSec:
+              {
+                type: integer,
+                minimum: 0,
+                description: "Expected wait at the stop, priced as route time. Defaults to the market's defaultDwellSec (pilot 120); refused above its maxDwellSec (pilot 600).",
+              },
+          },
+      }
+    RouteStop:
+      {
+        type: object,
+        required: [stopId, order, label, lat, lng, purpose, dwellSec],
+        description: "One ordered intermediate stop on the requester's OWN quote/request (exact — this is their trip). stopId is server-assigned and stable from the quote through the request (and any pre-award route revision that keeps the stop) to the execution ride.",
+        properties:
+          {
+            stopId: { type: string, format: uuid },
+            order:
+              {
+                type: integer,
+                minimum: 1,
+                description: "1-based position between pickup and dropoff.",
+              },
+            label: { type: string },
+            lat: { type: number },
+            lng: { type: number },
+            purpose: { $ref: "#/components/schemas/StopPurpose" },
+            dwellSec: { type: integer, minimum: 0 },
+          },
+      }
+    FeedStop:
+      {
+        type: object,
+        required: [order, areaLabel, purpose, dwellSec],
+        description: "A stop as a driver sees it BEFORE an award: coarsened exactly like the pickup/dropoff area labels — never a coordinate, never the requester's label.",
+        properties:
+          {
+            order: { type: integer, minimum: 1 },
+            areaLabel: { type: string },
+            purpose: { $ref: "#/components/schemas/StopPurpose" },
+            dwellSec: { type: integer, minimum: 0 },
+          },
+      }
+    FeedRoute:
+      {
+        type: object,
+        required:
+          [
+            stopCount,
+            stops,
+            routedDistanceMeters,
+            routedDurationSec,
+            stopsDwellSec,
+          ],
+        description: "Driver-card summary of a multi-stop request (absent for a plain pickup → dropoff request).",
+        properties:
+          {
+            stopCount: { type: integer, minimum: 1 },
+            stops:
+              { type: array, items: { $ref: "#/components/schemas/FeedStop" } },
+            routedDistanceMeters:
+              {
+                type: integer,
+                description: "The complete ordered route's server-measured distance.",
+              },
+            routedDurationSec:
+              {
+                type: integer,
+                description: "The complete ordered route's server-measured driving time.",
+              },
+            stopsDwellSec:
+              {
+                type: integer,
+                description: "Total expected dwell at the stops (priced as route time).",
+              },
+          },
+      }
     QuoteEnvelope:
       {
         type: object,
@@ -107,8 +206,33 @@ components:
                       },
                   },
               },
-            routedDistanceMeters: { type: integer },
+            routedDistanceMeters:
+              {
+                type: integer,
+                description: "Server-measured metres of the COMPLETE ordered route (every pickup → stops → dropoff leg).",
+              },
             routedDurationSec: { type: integer },
+            stops:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/RouteStop" },
+                description: "Multi-stop envelopes only (absent for a plain quote): the ordered stops the route was measured and priced through. A request published from this quote carries exactly these stops; the publish body cannot restate them.",
+              },
+            stopsDwellSec:
+              {
+                type: integer,
+                description: "Multi-stop only: total expected dwell, priced as route time (the 'Stop waiting' breakdown row).",
+              },
+            routeFingerprint:
+              {
+                type: string,
+                description: "Multi-stop only: names the exact route (endpoints + ordered stop set) these bounds were priced for.",
+              },
+            business:
+              {
+                $ref: "#/components/schemas/BusinessQuoteCheck",
+                description: "A06 part C (business_travel): present only when the quote named an organizationId — the organization's ADVISORY verdict at the suggested fare.",
+              },
           },
       }
     DeliveryDetails:
@@ -339,7 +463,53 @@ components:
                     no_offers,
                     driver_cancelled,
                     award_failed,
+                    booking_failed,
+                    preferred_driver_unavailable,
+                    passenger_declined,
                   ],
+                description: "preferred_driver_unavailable (A04 item 3): a preferred-driver request whose named driver did not offer in the exclusive window, and whose rider did not consent to open-market fallback — expired free of charge. passenger_declined (A06 part B): the guest passenger declined through their trip link before pickup — free for the requester, the driver's commission returned.",
+              },
+            stops:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/RouteStop" },
+                description: "Present only for a request that carries (or carried) intermediate stops; a plain request renders exactly as before. Absent ⇒ no stops.",
+              },
+            routeRevision:
+              {
+                type: integer,
+                minimum: 1,
+                description: "Bumps only when a revision changed the stop set. `revision` still bumps on every price- or route-affecting edit and is what bids are pinned to.",
+              },
+            routeFingerprint:
+              {
+                type: string,
+                description: "The route the current bounds were priced for.",
+              },
+            booking:
+              {
+                $ref: "#/components/schemas/RequestBooking",
+                description: "A03: present only on a scheduled or advance-booking request.",
+              },
+            preferredDriver:
+              {
+                $ref: "#/components/schemas/PreferredDriver",
+                description: "A04 item 3: present only on a request that named a saved driver.",
+              },
+            serviceNeeds:
+              {
+                $ref: "#/components/schemas/ServiceNeeds",
+                description: "A06 part D: present only when the requester stated needs.",
+              },
+            passenger:
+              {
+                $ref: "#/components/schemas/RequestPassenger",
+                description: "A06 part B: present only on the REQUESTER's view of a request booked for another adult — the passenger on this request, never on any other.",
+              },
+            business:
+              {
+                $ref: "#/components/schemas/RequestBusiness",
+                description: "A06 part C: present only on the REQUESTER's view of a request booked on an organization. Never on any driver surface.",
               },
           },
       }
@@ -401,12 +571,34 @@ components:
                 type: string,
                 description: 'Server-phrased comparison to the requested amount (e.g. "+₦200").',
               },
+            totalLabel:
+              {
+                type: string,
+                description: "A06 part A: the total the rider pays, phrased by the server.",
+              },
+            totalNote:
+              {
+                type: string,
+                description: "What the total includes: the offered fare; no booking or service fee is added on top (bookingFeeMinor is stated as zero); paid stop waiting only ever with the rider's approval.",
+              },
+            pickupEstimate:
+              { $ref: "#/components/schemas/OfferPickupEstimate" },
+            vehicle: { $ref: "#/components/schemas/OfferVehicle" },
+            driverProfile: { $ref: "#/components/schemas/OfferDriverProfile" },
+            reliability: { $ref: "#/components/schemas/Reliability" },
+            serviceFit: { $ref: "#/components/schemas/ServiceFit" },
+            badges:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/Criterion" },
+                description: "Reasoned badges (lowest total, earliest pickup estimate, a driver you saved). Never 'recommended', never sponsored.",
+              },
           },
       }
     OfferDriver:
       {
         type: object,
-        description: "Rider-facing driver display (G09). ride-service owns no verified driver identity/rating/vehicle registry — those live in user-service. When profileStatus is 'unavailable' the identity/rating fields are pseudonymous placeholders a client must not present as verified; 'vehicle' is always the server-verified eligible class. See docs/marketplace/DRIVER_IDENTITY.md.",
+        description: "Rider-facing driver display (G09). Verified driver identity/rating/vehicle live in user-service and are resolved through ride-service's driver-profile port (A06 part A). profileStatus is 'verified' only when user-service returned a card whose verification status is 'verified' — then the fields carry that card's values. When 'unavailable' the identity/rating fields are pseudonymous placeholders a client must not present as verified; 'vehicle' is always the server-verified eligible class. The structured, nullable card (with the rating count) is Offer.driverProfile. See docs/marketplace/DRIVER_IDENTITY.md.",
         required:
           [
             displayName,
@@ -608,9 +800,14 @@ components:
             amountMinor: { $ref: "#/components/schemas/Money" },
             commissionMinor: { $ref: "#/components/schemas/Money" },
             netMinor: { $ref: "#/components/schemas/Money" },
-            slot: { type: string, enum: [current, next] },
+            slot: { type: string, enum: [current, next, advance] },
             dependsOnClaimId: { type: string },
             reservationId: { type: string },
+            advanceCommitment:
+              {
+                $ref: "#/components/schemas/AdvanceCommitment",
+                description: "Advance bids only (A03): the wallet commitment taken on.",
+              },
             expiresAt: { type: string, format: date-time },
             createdAt: { type: string, format: date-time },
           },
@@ -644,7 +841,17 @@ components:
             shortfallLabel: { type: string },
             emphasized: { type: boolean },
             source:
-              { type: string, enum: [requested, lower, higher, rate_profile] },
+              {
+                type: string,
+                enum:
+                  [requested, lower, higher, rate_profile, preference_minimum],
+                description: "preference_minimum (A04.2): the driver's minimum trip amount, suggested when the request asks less but its maximum can pay it. A suggestion only — nothing is bid automatically.",
+              },
+            earnings:
+              {
+                $ref: "#/components/schemas/EarningsBreakdown",
+                description: "A04.1: the breakdown at this preset's amount.",
+              },
           },
       }
     EligibilityReason:
@@ -672,6 +879,9 @@ components:
                     OFFLINE,
                     INSUFFICIENT_SPENDABLE,
                     ROUTING_UNAVAILABLE,
+                    CALENDAR_CONFLICT,
+                    ADVANCE_DISABLED,
+                    SERVICE_NEED_UNVERIFIED,
                   ],
               },
             title: { type: string },
@@ -686,7 +896,7 @@ components:
         properties:
           {
             eligible: { type: boolean },
-            slot: { type: string, enum: [current, next] },
+            slot: { type: string, enum: [current, next, advance] },
             reasons:
               {
                 type: array,
@@ -695,6 +905,18 @@ components:
             policyVersion: { type: integer },
             availabilityEpoch: { type: integer },
             evaluatedAt: { type: string, format: date-time },
+            predictedPickupSec:
+              {
+                type: [integer, "null"],
+                minimum: 0,
+                description: "A04.1: the time-until-pickup ESTIMATE for an eligible driver, rounded up to the whole minute; null when not eligible.",
+              },
+            predictedPickupBasis:
+              {
+                type: [string, "null"],
+                enum: [routed_leg, finishing_trip_prediction, null],
+                description: "routed_leg: the routed leg to the pickup. finishing_trip_prediction: remaining service + completion buffer + post-dropoff leg + uncertainty buffer.",
+              },
           },
       }
     Award:
@@ -731,7 +953,7 @@ components:
             requesterId: { type: string },
             fareMinor: { $ref: "#/components/schemas/Money" },
             commissionMinor: { $ref: "#/components/schemas/Money" },
-            slot: { type: string, enum: [current, next] },
+            slot: { type: string, enum: [current, next, advance] },
             executionRef:
               {
                 type: object,
@@ -747,8 +969,479 @@ components:
             failReason:
               {
                 type: string,
-                description: "Human-phrased reason on award.failed; the request reopened if still valid.",
+                description: "Human-phrased reason on award.failed; the request reopened if still valid. A delivery award whose hand-off delivery-service refused permanently reads delivery_handoff_refused: <CODE>; one handed off while marketplace_delivery was off reads delivery_handoff_disabled (the captured fee reversed with a linked entry in both cases).",
               },
+          },
+        description: "A delivery award (service=delivery) is confirmed only after delivery-service's marketplace-assign answered 201/200 for it (the award saga's delivery_handoff step, after the ONE commission capture); its executionRef is {service: delivery, id: <the delivery's id>} and no execution ride exists.",
+      }
+    TripPlace:
+      {
+        type: object,
+        required: [label, lat, lng],
+        description: "A trip endpoint as the two parties to an AWARD see it (exact coordinates are disclosed after award).",
+        properties:
+          {
+            label: { type: string },
+            lat: { type: number },
+            lng: { type: number },
+          },
+      }
+    Amendment:
+      {
+        type: object,
+        description: "A post-award trip amendment (A02, mpAmendment machine). Priced server-side as a DELTA under the award's own pricing snapshot (its quote's city-config version — never today's policy). The original agreement stays in force until `committed`. Every amount is server-computed. The driver additionally sees commissionDeltaMinor (the incremental 10% — captured ONCE on an increase, refunded as a linked partial reversal on a decrease; the award's original capture is never re-charged) and driverNetDeltaMinor; the rider never sees the driver's commission.",
+        required:
+          [
+            amendmentId,
+            requestId,
+            awardId,
+            kind,
+            state,
+            proposedByRole,
+            baseRouteRevision,
+            baseFareRevision,
+            routeRevision,
+            fareRevision,
+            stops,
+            dropoff,
+            priorFareMinor,
+            revisedFareMinor,
+            fareDeltaMinor,
+            riderFundingDeltaMinor,
+            riderFunding,
+            addedDistanceMeters,
+            addedDurationSec,
+            approvals,
+            expiresAt,
+            createdAt,
+          ],
+        properties:
+          {
+            amendmentId: { type: string },
+            requestId: { type: string },
+            awardId: { type: string },
+            kind:
+              {
+                type: string,
+                enum: [route, stop_waiting, early_termination],
+                description: "`route` needs both parties' approvals; `stop_waiting` (paid waiting the rider authorized up front under the cap) and `early_termination` (a safe partial journey) are server-proposed and settle through the same linked-adjustment path.",
+              },
+            state:
+              {
+                type: string,
+                enum:
+                  [
+                    proposed,
+                    awaiting_approvals_and_funding,
+                    committed,
+                    rejected,
+                    expired,
+                    failed,
+                    compensated,
+                  ],
+              },
+            proposedByRole: { type: string, enum: [rider, driver, system] },
+            baseRouteRevision: { type: integer },
+            baseFareRevision: { type: integer },
+            routeRevision: { type: integer },
+            fareRevision: { type: integer },
+            stops:
+              {
+                type: array,
+                description: "The COMPLETE ordered stop list the amendment commits: stops already reached first, unchanged; surviving stops keep their stopId.",
+                items: { $ref: "#/components/schemas/RouteStop" },
+              },
+            dropoff: { $ref: "#/components/schemas/TripPlace" },
+            priorFareMinor: { $ref: "#/components/schemas/Money" },
+            revisedFareMinor: { $ref: "#/components/schemas/Money" },
+            fareDeltaMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Signed: revised − prior.",
+              },
+            riderFundingDeltaMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Signed: what the rider's funding adds (reserved as a top-up BEFORE approvals) or gets back (a partial release at commit).",
+              },
+            riderFunding:
+              {
+                type: string,
+                enum:
+                  [
+                    pending,
+                    reserved,
+                    committed,
+                    released,
+                    release_on_commit,
+                    partially_released,
+                    not_required,
+                    unsecured_cash,
+                  ],
+              },
+            commissionDeltaMinor: { $ref: "#/components/schemas/Money" },
+            driverNetDeltaMinor: { $ref: "#/components/schemas/Money" },
+            addedDistanceMeters: { type: integer },
+            addedDurationSec:
+              {
+                type: integer,
+                description: "Driving time plus expected dwell added (negative when shorter).",
+              },
+            approvals:
+              {
+                type: object,
+                required: [rider, driver],
+                properties:
+                  {
+                    rider:
+                      {
+                        type: object,
+                        required: [approved],
+                        properties:
+                          {
+                            approved: { type: boolean },
+                            approvedAt: { type: string, format: date-time },
+                          },
+                      },
+                    driver:
+                      {
+                        type: object,
+                        required: [approved],
+                        properties:
+                          {
+                            approved: { type: boolean },
+                            approvedAt: { type: string, format: date-time },
+                          },
+                      },
+                  },
+              },
+            expiresAt:
+              {
+                type: string,
+                format: date-time,
+                description: "Unapproved amendments expire here (market-configured window) and release everything reserved.",
+              },
+            reason:
+              {
+                type: string,
+                description: "e.g. next_job_conflict, insufficient_driver_spendable, insufficient_rider_funds, wallet_terms_refreshed, driver_rejected, rider_rejected, approval_window_elapsed, execution_ended, route_changed.",
+              },
+            pricing:
+              {
+                type: object,
+                additionalProperties: true,
+                description: "Driver only: the snapshot pricing (configVersion, policyVersion, per-km/per-minute rates, route delta, server bounds, boundedBy).",
+              },
+            createdAt: { type: string, format: date-time },
+            resolvedAt: { type: string, format: date-time },
+          },
+      }
+    AmendmentList:
+      {
+        type: object,
+        required:
+          [requestId, routeRevision, fareRevision, agreedFareMinor, amendments],
+        properties:
+          {
+            requestId: { type: string },
+            routeRevision: { type: integer },
+            fareRevision: { type: integer },
+            agreedFareMinor: { $ref: "#/components/schemas/Money" },
+            amendments:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/Amendment" },
+              },
+          },
+      }
+    AmendmentDecision:
+      {
+        type: object,
+        required: [routeRevision, fareRevision],
+        description: "Binds a decision to the exact (amendment id, route revision, fare revision); anything else answers version_conflict with the refreshed terms.",
+        properties:
+          {
+            routeRevision: { type: integer },
+            fareRevision: { type: integer },
+            reason: { type: string, maxLength: 120 },
+          },
+      }
+    StopWaiting:
+      {
+        type: object,
+        required:
+          [
+            waitedSec,
+            includedSec,
+            allowanceRemainingSec,
+            paidSec,
+            feeMinor,
+            accruing,
+            approvalRequired,
+            excessive,
+            settlement,
+          ],
+        description: "One stop's waiting, measured from the server's own timestamps (a confirmed arrival to the departure) — a replay after reconnect or restart recomputes the same figures and cannot double-accrue.",
+        properties:
+          {
+            waitedSec: { type: integer },
+            includedSec: { type: integer },
+            allowanceRemainingSec: { type: integer },
+            paidSec: { type: integer },
+            feeMinor: { $ref: "#/components/schemas/Money" },
+            accruing: { type: boolean },
+            approvalRequired: { type: boolean },
+            excessive: { type: boolean },
+            settlement:
+              { type: string, enum: [none, pending, committed, failed] },
+          },
+      }
+    TripStop:
+      {
+        type: object,
+        required:
+          [
+            stopId,
+            order,
+            state,
+            label,
+            purpose,
+            lat,
+            lng,
+            dwellSec,
+            arrivalDisputed,
+          ],
+        properties:
+          {
+            stopId: { type: string },
+            order: { type: integer, minimum: 1 },
+            state:
+              { type: string, enum: [pending, arrived, departed, skipped] },
+            label: { type: string },
+            purpose: { $ref: "#/components/schemas/StopPurpose" },
+            lat: { type: number },
+            lng: { type: number },
+            dwellSec:
+              {
+                type: integer,
+                description: "The included allowance: the expected dwell the fare priced.",
+              },
+            arrivedAt: { type: string, format: date-time },
+            arrivalDisputed: { type: boolean },
+            arrivalDistanceMeters: { type: integer },
+            departedAt: { type: string, format: date-time },
+            skippedAt: { type: string, format: date-time },
+            skipReason: { type: string },
+            waiting: { $ref: "#/components/schemas/StopWaiting" },
+          },
+      }
+    Trip:
+      {
+        type: object,
+        description: "An executing awarded trip's COMMITTED terms and server-authoritative stop states. The receipt reconciles: originalFareMinor + Σ committedAdjustments.fareDeltaMinor = agreedFareMinor, which is exactly what completion settles; nothing uncommitted ever appears in it. Commission captured == commission(agreedFareMinor). Paid STOP waiting is charged only through committed stop_waiting adjustments (the same linked path, commission moved by the delta once); the move core's PICKUP wait fee is written on the ride row but is not part of a marketplace settlement.",
+        required:
+          [
+            requestId,
+            awardId,
+            executionId,
+            routeRevision,
+            fareRevision,
+            originalFareMinor,
+            agreedFareMinor,
+            committedAdjustments,
+            pickup,
+            dropoff,
+            stops,
+            waitingTerms,
+            version,
+          ],
+        properties:
+          {
+            requestId: { type: string },
+            awardId: { type: string },
+            executionId: { type: string },
+            routeRevision: { type: integer },
+            fareRevision: { type: integer },
+            originalFareMinor: { $ref: "#/components/schemas/Money" },
+            agreedFareMinor: { $ref: "#/components/schemas/Money" },
+            committedAdjustments:
+              {
+                type: array,
+                items:
+                  {
+                    type: object,
+                    required:
+                      [
+                        amendmentId,
+                        kind,
+                        fareDeltaMinor,
+                        fareRevision,
+                        committedAt,
+                      ],
+                    properties:
+                      {
+                        amendmentId: { type: string },
+                        kind:
+                          {
+                            type: string,
+                            enum: [route, stop_waiting, early_termination],
+                          },
+                        fareDeltaMinor: { $ref: "#/components/schemas/Money" },
+                        fareRevision: { type: integer },
+                        committedAt: { type: string, format: date-time },
+                      },
+                  },
+              },
+            capturedCommissionMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "Driver only.",
+              },
+            pickup: { $ref: "#/components/schemas/TripPlace" },
+            dropoff: { $ref: "#/components/schemas/TripPlace" },
+            stops:
+              { type: array, items: { $ref: "#/components/schemas/TripStop" } },
+            waitingTerms:
+              {
+                type: object,
+                required:
+                  [
+                    includedBasis,
+                    perMinMinor,
+                    maxAuthorizedMinor,
+                    authorizedCapMinor,
+                    capRevision,
+                    committedMinor,
+                    excessiveAfterSec,
+                    geofenceMeters,
+                  ],
+                description: "The published paid-waiting terms (from the award's pricing snapshot): included allowance (stop dwell), per-minute rate, the maximum authorized waiting cost (and the cap after rider approvals), the excessive-waiting threshold and the arrival geofence.",
+                properties:
+                  {
+                    includedBasis: { type: string, const: stop_dwell },
+                    perMinMinor: { $ref: "#/components/schemas/Money" },
+                    maxAuthorizedMinor: { $ref: "#/components/schemas/Money" },
+                    authorizedCapMinor: { $ref: "#/components/schemas/Money" },
+                    capRevision: { type: integer },
+                    committedMinor: { $ref: "#/components/schemas/Money" },
+                    excessiveAfterSec: { type: integer },
+                    geofenceMeters: { type: integer },
+                  },
+              },
+            openAmendmentId: { type: string },
+            terminatedAt: { type: string, format: date-time },
+            version: { type: integer },
+          },
+      }
+    CommissionDelta:
+      {
+        type: object,
+        description: "payment-service's post-award commission delta (docs/MARKETPLACE-MONEY.md). Linked to the award's captured hold; only the difference moves.",
+        required:
+          [reservationId, amendmentId, awardId, direction, state, deltaMinor],
+        properties:
+          {
+            reservationId: { type: string },
+            amendmentId: { type: string },
+            awardId: { type: string },
+            direction: { type: string, enum: [increase, decrease, none] },
+            state:
+              {
+                type: string,
+                enum:
+                  [
+                    active,
+                    capture_pending,
+                    captured,
+                    released,
+                    refunded,
+                    reversed,
+                  ],
+              },
+            deltaReservationId: { type: string, nullable: true },
+            deltaMinor: { $ref: "#/components/schemas/Money" },
+            priorTotalMinor: { $ref: "#/components/schemas/Money" },
+            newTotalMinor: { $ref: "#/components/schemas/Money" },
+            newBaseMinor: { $ref: "#/components/schemas/Money" },
+            receiptId: { type: string, nullable: true },
+            journalEntryId: { type: string, nullable: true },
+            originalReceiptId: { type: string, nullable: true },
+          },
+      }
+    DeltaTerms:
+      {
+        type: object,
+        required: [awardId, priorTotalMinor, newTotalMinor, newBaseMinor],
+        properties:
+          {
+            awardId: { type: string },
+            priorTotalMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "The award's captured commission as the caller knows it; a stale prior is version_conflict with refreshedTerms.capturedTotalMinor.",
+              },
+            newTotalMinor:
+              {
+                $ref: "#/components/schemas/Money",
+                description: "commission(newBaseMinor): 10%, half-up.",
+              },
+            newBaseMinor: { $ref: "#/components/schemas/Money" },
+          },
+      }
+    FundingAmendment:
+      {
+        type: object,
+        required:
+          [
+            requesterId,
+            awardId,
+            amendmentId,
+            paymentMethodId,
+            priorAmountMinor,
+            newAmountMinor,
+            currency,
+            cityId,
+          ],
+        properties:
+          {
+            requesterId: { type: string },
+            awardId: { type: string },
+            amendmentId: { type: string },
+            paymentMethodId: { type: string },
+            priorAmountMinor:
+              {
+                type: integer,
+                description: "Bare integer: what the award is funded to as the caller knows it; stale is version_conflict with refreshedTerms.fundedAmountMinor.",
+              },
+            newAmountMinor: { type: integer },
+            currency: { type: string },
+            cityId: { type: string },
+          },
+      }
+    FundingAdjustment:
+      {
+        type: object,
+        required:
+          [awardId, amendmentId, kind, secured, status, deltaMinor, replayed],
+        properties:
+          {
+            awardId: { type: string },
+            amendmentId: { type: string },
+            kind: { type: string, enum: [top_up, partial_release, none] },
+            secured: { type: boolean },
+            status:
+              {
+                type: string,
+                enum:
+                  [reserved, committed, consumed, released, unsecured, missing],
+              },
+            adjustmentId: { type: string, nullable: true },
+            reservationId: { type: string, nullable: true },
+            deltaMinor: { type: integer },
+            priorAmountMinor: { type: integer, nullable: true },
+            newAmountMinor: { type: integer, nullable: true },
+            currency: { type: string, nullable: true },
+            replayed: { type: boolean },
           },
       }
     FeedItem:
@@ -776,6 +1469,326 @@ components:
             askedByLabel: { type: string },
             capabilityBadge: { type: string },
             expiresAt: { type: string, format: date-time },
+            route:
+              {
+                $ref: "#/components/schemas/FeedRoute",
+                description: "Multi-stop requests only: stop count, coarse stop areas and the full route's distance/duration/dwell.",
+              },
+            earnings:
+              {
+                $ref: "#/components/schemas/EarningsBreakdown",
+                description: "A04.1: the server-composed breakdown at the requester's fare, on every card.",
+              },
+            preferenceTags:
+              {
+                type: array,
+                items: { type: string, enum: [homeward] },
+                description: "A04.2: the driver's own preference matches; absent when none.",
+              },
+            booking:
+              {
+                $ref: "#/components/schemas/RequestBooking",
+                description: "A03: an advance-booking card — a FUTURE pickup window, not an immediate job. Absent for immediate requests.",
+              },
+            preferredRequest:
+              {
+                $ref: "#/components/schemas/PreferredInvitation",
+                description: "A04 item 3: a rider asked THIS driver first. Absent otherwise; no other driver sees the card while the window is exclusive.",
+              },
+          },
+      }
+    FleetRemittance:
+      {
+        type: object,
+        required: [status, amountMinor, reason],
+        description: "The disclosed fleet share of a fare. No fleet arrangement applies to marketplace jobs, so status is none and the amount is null — never a fabricated number.",
+        properties:
+          {
+            status: { type: string, enum: [none] },
+            amountMinor: { type: "null" },
+            reason: { type: string },
+          },
+      }
+    PickupEstimate:
+      {
+        type: object,
+        required:
+          [
+            distanceMeters,
+            distanceBasis,
+            durationSec,
+            durationBasis,
+            estimate,
+            paid,
+            label,
+          ],
+        description: "The UNPAID drive to the pickup. Always an estimate; pre-award the distance is coarsened to 100 m and the time rounded up to the minute. Null with basis unavailable when the server has no location.",
+        properties:
+          {
+            distanceMeters: { type: [integer, "null"], minimum: 0 },
+            distanceBasis:
+              { type: string, enum: [routed, straight_line, unavailable] },
+            durationSec: { type: [integer, "null"], minimum: 0 },
+            durationBasis:
+              {
+                type: string,
+                enum: [routed_leg, straight_line_estimate, unavailable],
+              },
+            estimate: { type: boolean, enum: [true] },
+            paid: { type: boolean, enum: [false] },
+            label: { type: string },
+          },
+      }
+    PaidRoute:
+      {
+        type: object,
+        required:
+          [
+            distanceMeters,
+            durationSec,
+            stopCount,
+            stopsWaitingSec,
+            estimate,
+            label,
+            waitingLabel,
+          ],
+        description: "The trip the fare pays for: the complete ordered route the request was priced on (every leg through every stop) and the expected stop waiting.",
+        properties:
+          {
+            distanceMeters: { type: integer, minimum: 1 },
+            durationSec: { type: integer, minimum: 0 },
+            stopCount: { type: integer, minimum: 0 },
+            stopsWaitingSec: { type: integer, minimum: 0 },
+            estimate: { type: boolean, enum: [true] },
+            label: { type: string },
+            waitingLabel: { type: string },
+          },
+      }
+    EarningsBreakdown:
+      {
+        type: object,
+        required:
+          [
+            grossMinor,
+            grossBasis,
+            commissionMinor,
+            commissionBps,
+            fleetRemittance,
+            estimatedNetMinor,
+            pickup,
+            route,
+            estimatedNetPerHour,
+            runningCosts,
+            disclaimer,
+          ],
+        description: "A04.1 server-composed driver earnings: commissionMinor = commissionMinorFor(grossMinor) (10%, half-up); estimatedNetMinor = gross − commission − fleet remittance. Clients render; they never derive a fee, net or rate. No fuel/energy estimate exists because no such input is disclosed.",
+        properties:
+          {
+            grossMinor: { $ref: "#/components/schemas/Money" },
+            grossBasis: { type: string, enum: [requested_fare, preset_amount] },
+            commissionMinor: { $ref: "#/components/schemas/Money" },
+            commissionBps: { type: integer, enum: [1000] },
+            fleetRemittance: { $ref: "#/components/schemas/FleetRemittance" },
+            estimatedNetMinor: { $ref: "#/components/schemas/Money" },
+            pickup: { $ref: "#/components/schemas/PickupEstimate" },
+            route:
+              {
+                oneOf:
+                  [
+                    { $ref: "#/components/schemas/PaidRoute" },
+                    { type: "null" },
+                  ],
+                description: "Null only for a request stored before route metrics existed.",
+              },
+            estimatedNetPerHour:
+              {
+                description: "Estimate over pickup + paid route + stop waiting (the figures shown); null whenever any time input is unknown.",
+                oneOf:
+                  [
+                    {
+                      type: object,
+                      required: [amountMinor, estimate, basisSec, basis],
+                      properties:
+                        {
+                          amountMinor: { $ref: "#/components/schemas/Money" },
+                          estimate: { type: boolean, enum: [true] },
+                          basisSec: { type: integer, minimum: 1 },
+                          basis: { type: string },
+                        },
+                    },
+                    { type: "null" },
+                  ],
+              },
+            runningCosts:
+              {
+                type: object,
+                required: [status, reason],
+                properties:
+                  {
+                    status: { type: string, enum: [not_estimated] },
+                    reason: { type: string },
+                  },
+              },
+            disclaimer: { type: string },
+          },
+      }
+    FeedPreferences:
+      {
+        type: object,
+        required: [version, applied, hiddenCount, note],
+        description: "A04.2: whether the driver's saved preferences shaped this page and how many requests they hid (never which). Absent when the driver saved none.",
+        properties:
+          {
+            version: { type: integer, minimum: 1 },
+            applied: { type: boolean },
+            hiddenCount: { type: integer, minimum: 0 },
+            note: { type: string },
+          },
+      }
+    AvailabilityWindow:
+      {
+        type: object,
+        required: [day, startMinute, endMinute],
+        description: "One weekly window in the city's local time (minutes from midnight, end exclusive). Stored only: the scheduled marketplace is a later slice.",
+        properties:
+          {
+            day: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] },
+            startMinute: { type: integer, minimum: 0, maximum: 1439 },
+            endMinute: { type: integer, minimum: 1, maximum: 1440 },
+          },
+      }
+    Homeward:
+      {
+        type: object,
+        required: [lat, lng, radiusMeters, label],
+        description: "The driver's OWN return area. Never shown to a requester, never in an event payload; matching uses the dropoff's coarse area cell.",
+        properties:
+          {
+            lat: { type: number },
+            lng: { type: number },
+            radiusMeters: { type: integer },
+            label: { type: string },
+          },
+      }
+    DriverPreferences:
+      {
+        type: object,
+        description: "A04.2 driver preferences in one city, versioned and append-only (version 0 = unsaved defaults). They FILTER and RANK the feed and PRE-FILL a suggested preset; they are never eligibility and never bid. The per-km rate and minimum trip fare stay in rate profiles.",
+        required:
+          [
+            driverId,
+            cityId,
+            version,
+            currency,
+            timezone,
+            minimumTripAmountMinor,
+            maxPickupDistanceMeters,
+            acceptsDeliveries,
+            acceptsStops,
+            maxStops,
+            homeward,
+            homewardOnly,
+            availabilityWindows,
+            availabilityNote,
+            bounds,
+            disclosure,
+            updatedAt,
+          ],
+        properties:
+          {
+            driverId: { type: string },
+            cityId: { type: string },
+            version: { type: integer, minimum: 0 },
+            currency: { type: string },
+            timezone: { type: string },
+            minimumTripAmountMinor:
+              {
+                oneOf:
+                  [{ $ref: "#/components/schemas/Money" }, { type: "null" }],
+                description: "Hide requests whose MAXIMUM fare cannot reach this; null = none.",
+              },
+            maxPickupDistanceMeters:
+              {
+                type: [integer, "null"],
+                description: "Hide pickups farther than this; null = the request's envelope decides (a preference never widens it).",
+              },
+            acceptsDeliveries: { type: boolean },
+            acceptsStops: { type: boolean },
+            maxStops:
+              {
+                type: [integer, "null"],
+                description: "Null = up to the market's stop limit; cleared when stops are declined.",
+              },
+            homeward:
+              {
+                oneOf:
+                  [{ $ref: "#/components/schemas/Homeward" }, { type: "null" }],
+              },
+            homewardOnly: { type: boolean },
+            availabilityWindows:
+              {
+                type: array,
+                items:
+                  {
+                    allOf:
+                      [
+                        { $ref: "#/components/schemas/AvailabilityWindow" },
+                        {
+                          type: object,
+                          required: [label],
+                          properties: { label: { type: string } },
+                        },
+                      ],
+                  },
+              },
+            availabilityNote: { type: string },
+            acceptsPreferredRequests:
+              {
+                type: boolean,
+                description: "A04 item 3: the opt-in to riders naming this driver on a preferred request. Off unless the driver turns it on.",
+              },
+            preferredRequestsNote: { type: string },
+            bounds:
+              {
+                type: object,
+                required:
+                  [
+                    minimumTripAmountMaxMinor,
+                    maxPickupDistanceMeters,
+                    maxStopsCeiling,
+                    homewardRadiusMeters,
+                    maxAvailabilityWindows,
+                  ],
+                properties:
+                  {
+                    minimumTripAmountMaxMinor:
+                      {
+                        oneOf:
+                          [
+                            { $ref: "#/components/schemas/Money" },
+                            { type: "null" },
+                          ],
+                      },
+                    maxPickupDistanceMeters:
+                      {
+                        type: object,
+                        required: [min, max],
+                        properties:
+                          { min: { type: integer }, max: { type: integer } },
+                      },
+                    maxStopsCeiling: { type: integer },
+                    homewardRadiusMeters:
+                      {
+                        type: object,
+                        required: [min, max],
+                        properties:
+                          { min: { type: integer }, max: { type: integer } },
+                      },
+                    maxAvailabilityWindows: { type: integer },
+                  },
+              },
+            disclosure: { type: string },
+            updatedAt: { type: [string, "null"], format: date-time },
           },
       }
     DriverJob:
@@ -785,6 +1798,16 @@ components:
         properties:
           {
             claimId: { type: string },
+            requestId:
+              {
+                type: string,
+                description: "The award's marketplace request — the key of the trip, stop and amendment routes (/v1/mp/requests/{requestId}/...). Absent only for a claim with no award.",
+              },
+            passenger:
+              {
+                $ref: "#/components/schemas/DriverPassenger",
+                description: "A06 part B: present only on a trip booked for another adult — the passenger's first name and the pickup verification, never the phone or the requester.",
+              },
             slot: { type: string, enum: [current, next] },
             service: { type: string, enum: [ride, delivery] },
             state: { type: string },
@@ -909,12 +1932,1295 @@ components:
               },
           },
       }
+    # ── Book for Later (A03) ──────────────────────────────────────────────
+    # Two explicitly different products: a SCHEDULED REQUEST (a stored
+    # intent; no driver is secured until an offer is selected after it is
+    # published at the market's lead time — flag scheduled_rides) and an
+    # ADVANCE DRIVER RESERVATION (drivers bid on a future window now; the
+    # requester selects one in advance; the commission is captured once at
+    # that award; flag marketplace_advance_reservations) — plus recurring
+    # templates (flag marketplace_recurring_journeys). All deny-by-default.
+    AdvanceOffer:
+      type: object
+      description: "A03: an offer on an advance-booking request — a driver's bid on a FUTURE pickup window, not transport now. Listed under the snapshot's advanceOffers, never under offers. pickupLabel names the booked window; pickupWindow is null (no live ETA). Private per driver like Offer."
+      required:
+        [
+          bidId,
+          bidVersion,
+          requestRevision,
+          amountMinor,
+          kind,
+          driver,
+          pickupLabel,
+          expiresAt,
+          withdrawn,
+        ]
+      properties:
+        bidId: { type: string }
+        bidVersion: { type: integer }
+        requestRevision: { type: integer }
+        amountMinor: { $ref: "#/components/schemas/Money" }
+        kind: { type: string, enum: [advance_booking] }
+        driver: { $ref: "#/components/schemas/OfferDriver" }
+        pickupLabel: { type: string }
+        pickupWindow: { type: "null" }
+        expiresAt: { type: string, format: date-time }
+        withdrawn: { type: boolean }
+        whyRecommended: { type: [string, "null"] }
+        bookingFeeMinor: { $ref: "#/components/schemas/Money" }
+        totalMinor: { $ref: "#/components/schemas/Money" }
+        deltaLabel: { type: [string, "null"] }
+    PickupScheduleInput:
+      type: object
+      additionalProperties: false
+      required: [localDate, localTime]
+      description: "A requested pickup: local date + local wall time + IANA timezone. The server resolves and stores the UTC instant; a client never sends one."
+      properties:
+        localDate: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+        localTime: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+        timeZone:
+          { type: string, description: "IANA zone; the city's when omitted." }
+        windowMinutes:
+          {
+            type: integer,
+            minimum: 1,
+            description: "Bounded by the market's scheduling policy.",
+          }
+        dstDisambiguation:
+          type: string
+          enum: [compatible, earlier, later, reject]
+          description: "compatible (default): a spring-forward gap shifts forward by the gap, a fall-back overlap takes the earlier instant; earlier/later pick explicitly; reject refuses both (validation_failed)."
+    PickupSchedule:
+      type: object
+      required:
+        [
+          localDate,
+          localTime,
+          timeZone,
+          utcOffset,
+          dstResolution,
+          pickupAt,
+          windowStart,
+          windowEnd,
+          windowMinutes,
+          label,
+        ]
+      properties:
+        localDate: { type: string }
+        localTime: { type: string }
+        timeZone: { type: string }
+        utcOffset: { type: string, example: "+01:00" }
+        dstResolution:
+          type: string
+          enum:
+            [
+              exact,
+              gap_shifted_forward,
+              gap_shifted_backward,
+              overlap_earlier,
+              overlap_later,
+            ]
+        pickupAt: { type: string, format: date-time }
+        windowStart: { type: string, format: date-time }
+        windowEnd: { type: string, format: date-time }
+        windowMinutes: { type: integer }
+        label: { type: string }
+    RequestBooking:
+      type: object
+      required: [kind, schedule, scheduledRequestId, driverSecured, notice]
+      properties:
+        kind: { type: string, enum: [scheduled, advance] }
+        schedule: { $ref: "#/components/schemas/PickupSchedule" }
+        scheduledRequestId: { type: [string, "null"] }
+        driverSecured:
+          {
+            type: boolean,
+            description: "False until an offer is selected and confirmed.",
+          }
+        notice: { type: string }
+    AdvanceCommitment:
+      type: object
+      description: "What an advance bid commits the driver's wallet to: the 10% held from the cleared balance while the offer stands, captured ONCE at the advance award, never charged again at activation, returned with a linked reversal if the booking fails or is cancelled."
+      required:
+        [
+          commissionMinor,
+          heldFrom,
+          capturedAt,
+          chargedAgainAtActivation,
+          holdExpiresAt,
+          pickupWindowStart,
+          pickupWindowEnd,
+          terms,
+        ]
+      properties:
+        commissionMinor: { $ref: "#/components/schemas/Money" }
+        heldFrom: { type: string, const: cleared_balance }
+        capturedAt: { type: string, const: advance_award }
+        chargedAgainAtActivation: { type: boolean, const: false }
+        holdExpiresAt: { type: [string, "null"], format: date-time }
+        pickupWindowStart: { type: string, format: date-time }
+        pickupWindowEnd: { type: string, format: date-time }
+        terms: { type: array, items: { type: string } }
+    ScheduledRequest:
+      type: object
+      description: "A stored Book for Later intent — a scheduled request, or one occurrence of a recurring template. NO driver is secured in any state; `published` hands it to an ordinary request (requestId)."
+      required:
+        [
+          scheduledRequestId,
+          product,
+          state,
+          version,
+          driverSecured,
+          statusLabel,
+          notice,
+          schedule,
+          publishAt,
+          requestedFareMinor,
+          maxFareMinor,
+          paymentMethodId,
+        ]
+      properties:
+        scheduledRequestId: { type: string }
+        product:
+          { type: string, enum: [scheduled_request, advance_reservation] }
+        state:
+          type: string
+          enum:
+            [
+              scheduled_unassigned,
+              needs_rider_approval,
+              published,
+              cancelled,
+              skipped,
+              expired,
+              unfulfilled,
+            ]
+        version: { type: integer }
+        driverSecured: { type: boolean }
+        statusLabel:
+          { type: string, example: "Scheduled — no driver secured yet" }
+        notice: { type: string }
+        service: { type: string, enum: [ride] }
+        vehicleClass: { type: string }
+        cityId: { type: string }
+        currency: { type: string }
+        pickup: { $ref: "#/components/schemas/Area" }
+        dropoff: { $ref: "#/components/schemas/Area" }
+        stops:
+          { type: array, items: { $ref: "#/components/schemas/RouteStop" } }
+        schedule: { $ref: "#/components/schemas/PickupSchedule" }
+        publishAt: { type: string, format: date-time }
+        requestedFareMinor: { $ref: "#/components/schemas/Money" }
+        maxFareMinor:
+          {
+            $ref: "#/components/schemas/Money",
+            description: "The most the rider approved; refreshed bounds above it need renewed approval.",
+          }
+        paymentMethodId: { type: string }
+        requestId: { type: [string, "null"] }
+        requestState: { type: [string, "null"] }
+        templateId: { type: [string, "null"] }
+        occurrenceDate: { type: [string, "null"] }
+        approval:
+          type: [object, "null"]
+          properties:
+            reason:
+              type: string
+              enum:
+                [
+                  fare_above_approval,
+                  payment_method_unavailable,
+                  funding_unavailable,
+                ]
+            message: { type: string }
+            refreshedTerms:
+              type: [object, "null"]
+              properties:
+                minimumFareMinor: { $ref: "#/components/schemas/Money" }
+                maximumFareMinor: { $ref: "#/components/schemas/Money" }
+                suggestedFareMinor: { $ref: "#/components/schemas/Money" }
+        closeReason: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BookingFailure:
+      type: object
+      required: [reason, message, financialOutcome, rematchAvailable]
+      properties:
+        reason:
+          type: string
+          enum:
+            [
+              driver_withdrew,
+              driver_ineligible,
+              reconfirmation_missed,
+              funding_not_secured,
+              driver_unavailable,
+              driver_on_running_trip,
+              execution_blocked,
+              award_cancelled,
+              trip_cancelled,
+              rider_cancelled,
+              risk_unresolved,
+            ]
+        message: { type: string }
+        financialOutcome:
+          type: object
+          required: [commissionReversed, riderFundingReleased, riderCharged]
+          properties:
+            commissionReversed: { type: boolean }
+            riderFundingReleased: { type: boolean }
+            riderCharged: { type: boolean, const: false }
+        rematchAvailable:
+          {
+            type: boolean,
+            description: "A consented re-publish is available — never an automatic substitute.",
+          }
+        driverLost:
+          {
+            type: boolean,
+            description: "Rider view (A05 D2): the driver can no longer make this trip. No reason is shown; the rider chooses a same-fare rematch (only when rematchAvailable) or to cancel and release.",
+          }
+        released:
+          {
+            type: boolean,
+            description: "Rider view: the rider already chose cancel and release; the rematch offer is closed.",
+          }
+    BookingVehicle:
+      type: object
+      description: "A vehicle as the booking's parties see it (A05): a server-written label, the classes it serves and its seats. Never a fleet's internal data."
+      required: [label, classes, capacity]
+      properties:
+        label: { type: string, example: "Comfort · 4 seats" }
+        classes: { type: array, items: { type: string } }
+        capacity: { type: [integer, "null"], minimum: 1 }
+    BookingRisk:
+      type: object
+      description: "Driver view only (A05, machine mpBookingRisk): the server's risk overlay on the booking — a blocker on its vehicle (off_road, document_expiry, assignment_ending, vehicle_conflict) and the decision deadline (decisions Q4: the earlier of the reconfirmation deadline and the pickup minus the market's riskResolutionLeadSec — default 2 h — never later than activation). At the deadline the booking fails with its explained outcome and the rider is proactively offered a same-fare rematch (only when rematchAvailable) or the refund; nothing is republished without the rider's choice."
+      required: [state, decisionDeadline, reasons, message]
+      properties:
+        state: { type: string, enum: [ok, at_risk] }
+        decisionDeadline: { type: [string, "null"], format: date-time }
+        reasons:
+          type: array
+          items:
+            type: string
+            enum:
+              [off_road, document_expiry, assignment_ending, vehicle_conflict]
+        message: { type: string }
+    BookingVehicleSwapOffer:
+      type: object
+      description: "Driver view (A05 FL-8): a fleet's proposal to move this booking to another vehicle, decided by the driver while parked. The fare and the commission are unchanged."
+      required: [swapId, state, from, to, expiresAt, notice]
+      properties:
+        swapId: { type: string }
+        state:
+          type: string
+          enum:
+            [
+              proposed,
+              driver_accepted,
+              revalidating,
+              rider_consent_pending,
+              applied,
+              driver_declined,
+              revalidation_failed,
+              rider_declined,
+              expired,
+              cancelled,
+            ]
+        from:
+          oneOf:
+            - { $ref: "#/components/schemas/BookingVehicle" }
+            - { type: "null" }
+        to: { $ref: "#/components/schemas/BookingVehicle" }
+        expiresAt: { type: string, format: date-time }
+        notice: { type: string }
+    BookingPendingChange:
+      type: object
+      description: "Rider view (A05 D1): a driver-accepted, server-revalidated vehicle change awaiting the rider's explicit consent — same driver, fare unchanged; nothing changes unless the rider accepts, and cancelling the booking stays free."
+      required:
+        [
+          changeId,
+          kind,
+          sameDriver,
+          from,
+          to,
+          fareMinor,
+          fareUnchanged,
+          expiresAt,
+          notice,
+        ]
+      properties:
+        changeId: { type: string }
+        kind: { type: string, const: vehicle_swap }
+        sameDriver: { type: boolean, const: true }
+        from:
+          oneOf:
+            - { $ref: "#/components/schemas/BookingVehicle" }
+            - { type: "null" }
+        to: { $ref: "#/components/schemas/BookingVehicle" }
+        fareMinor: { $ref: "#/components/schemas/Money" }
+        fareUnchanged: { type: boolean, const: true }
+        expiresAt: { type: string, format: date-time }
+        notice: { type: string }
+    AdvanceBooking:
+      type: object
+      description: "An advance driver reservation on the driver's booking calendar (separate from the live current/next slots). held → confirmed (funding secured, or cash explicitly unsecured) | payment_pending (driver reserved, rider funding not yet secured) → reconfirmed → activated (into the live slots, exactly once, no second commission) → completed; failed / cancelled carry the explained financial outcome."
+      required:
+        [
+          bookingId,
+          requestId,
+          awardId,
+          state,
+          version,
+          viewer,
+          driverReserved,
+          fullySecured,
+          statusLabel,
+          notices,
+          schedule,
+          pickup,
+          dropoff,
+          fareMinor,
+          funding,
+          reconfirmation,
+          activationAt,
+          reminderOffsetsSec,
+          freeCancellationDeadline,
+        ]
+      properties:
+        bookingId: { type: string }
+        requestId: { type: string }
+        awardId: { type: string }
+        state:
+          type: string
+          enum:
+            [
+              held,
+              payment_pending,
+              confirmed,
+              reconfirmed,
+              activated,
+              completed,
+              failed,
+              cancelled,
+              released,
+            ]
+        version: { type: integer }
+        viewer: { type: string, enum: [rider, driver] }
+        driverReserved: { type: boolean }
+        fullySecured: { type: boolean }
+        statusLabel: { type: string }
+        notices:
+          {
+            type: array,
+            items: { type: string },
+            description: "Always includes the no-guaranteed-pickup disclosure for the rider.",
+          }
+        schedule: { $ref: "#/components/schemas/PickupSchedule" }
+        pickup: { $ref: "#/components/schemas/Area" }
+        dropoff: { $ref: "#/components/schemas/Area" }
+        fareMinor: { $ref: "#/components/schemas/Money" }
+        commissionMinor:
+          {
+            $ref: "#/components/schemas/Money",
+            description: "Driver view only: captured once at the advance award.",
+          }
+        netMinor: { $ref: "#/components/schemas/Money" }
+        driver: { $ref: "#/components/schemas/OfferDriver" }
+        funding:
+          type: object
+          required: [state, label, dueAt, deadline]
+          properties:
+            state:
+              type: string
+              enum: [pending, secured, unsecured_cash, refused, released]
+            label: { type: string }
+            dueAt: { type: [string, "null"], format: date-time }
+            deadline: { type: [string, "null"], format: date-time }
+        reconfirmation:
+          type: object
+          required: [opensAt, deadline, reconfirmedAt]
+          properties:
+            opensAt: { type: string, format: date-time }
+            deadline: { type: string, format: date-time }
+            reconfirmedAt: { type: [string, "null"], format: date-time }
+        activationAt: { type: string, format: date-time }
+        activatedSlot: { type: [string, "null"], enum: [current, next, null] }
+        failure:
+          oneOf:
+            - { $ref: "#/components/schemas/BookingFailure" }
+            - { type: "null" }
+        rematchRequestId: { type: [string, "null"] }
+        vehicle:
+          description: "A05: the vehicle recorded on the booking (both parties), when one is known."
+          oneOf:
+            - { $ref: "#/components/schemas/BookingVehicle" }
+            - { type: "null" }
+        risk:
+          description: "A05, driver view only: the risk overlay while the booking is at risk."
+          oneOf:
+            - { $ref: "#/components/schemas/BookingRisk" }
+            - { type: "null" }
+        vehicleSwap:
+          description: "A05, driver view only: a vehicle swap in flight."
+          oneOf:
+            - { $ref: "#/components/schemas/BookingVehicleSwapOffer" }
+            - { type: "null" }
+        pendingChange:
+          description: "A05, rider view only (D1): a vehicle change awaiting the rider's consent."
+          oneOf:
+            - { $ref: "#/components/schemas/BookingPendingChange" }
+            - { type: "null" }
+        reminderOffsetsSec:
+          {
+            type: array,
+            items: { type: integer, minimum: 1 },
+            description: "The market's reminder offsets for this booking, seconds before the pickup window opens (empty when none are configured).",
+          }
+        freeCancellationDeadline:
+          {
+            type: [string, "null"],
+            format: date-time,
+            description: "Rider view: until when the booking may be cancelled free of charge (activation — no cancellation fee is charged before it). Null once it can no longer be cancelled that way, and always null on the driver view.",
+          }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RecurringTemplate:
+      type: object
+      description: "A recurring journey, stored apart from its occurrences (ScheduledRequest rows with templateId + occurrenceDate). Each occurrence has its own approval, funding, driver commitment, cancellation and receipt; a series is never `confirmed`."
+      required:
+        [
+          templateId,
+          state,
+          version,
+          product,
+          daysOfWeek,
+          localTime,
+          timeZone,
+          startsOn,
+          windowMinutes,
+          requestedFareMinor,
+          maxFareMinor,
+          paymentMethodId,
+          seriesNote,
+          occurrences,
+        ]
+      properties:
+        templateId: { type: string }
+        state: { type: string, enum: [active, paused, cancelled, ended] }
+        version: { type: integer }
+        product:
+          { type: string, enum: [scheduled_request, advance_reservation] }
+        daysOfWeek:
+          type: array
+          items: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] }
+        localTime: { type: string }
+        timeZone: { type: string }
+        startsOn: { type: string }
+        endsOn: { type: [string, "null"] }
+        windowMinutes: { type: integer }
+        requestedFareMinor: { $ref: "#/components/schemas/Money" }
+        maxFareMinor: { $ref: "#/components/schemas/Money" }
+        paymentMethodId: { type: string }
+        service: { type: string }
+        vehicleClass: { type: string }
+        pickup: { $ref: "#/components/schemas/Area" }
+        dropoff: { $ref: "#/components/schemas/Area" }
+        stops:
+          { type: array, items: { $ref: "#/components/schemas/RouteStop" } }
+        generatedThrough: { type: [string, "null"] }
+        seriesNote: { type: string }
+        occurrences:
+          type: array
+          items: { $ref: "#/components/schemas/ScheduledRequest" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    OfferPickupEstimate:
+      type: object
+      description: "A06 part A: an offer's pickup ESTIMATE — the eligibility prediction the bid passed (minute-coarsened) and when it was made, else a live straight-line estimate, else unavailable. Never a promise."
+      required: [seconds, basis, label, estimatedAt, estimate]
+      properties:
+        seconds: { type: [integer, "null"], minimum: 0 }
+        basis:
+          type: string
+          enum:
+            [
+              routed_leg,
+              finishing_trip_prediction,
+              straight_line_estimate,
+              advance_booking,
+              unavailable,
+            ]
+        label: { type: string }
+        estimatedAt: { type: [string, "null"], format: date-time }
+        estimate: { type: boolean, const: true }
+    OfferVehicle:
+      type: object
+      description: "The class ride-service verified the driver eligible for; the registered vehicle only from a VERIFIED user-service card. Seat capacity is null where the market publishes none."
+      required:
+        [
+          class,
+          capacitySeats,
+          capacityNote,
+          bodyType,
+          make,
+          model,
+          colour,
+          plateMasked,
+          verified,
+        ]
+      properties:
+        class: { type: string }
+        capacitySeats: { type: [integer, "null"] }
+        capacityNote: { type: string }
+        bodyType:
+          type: [string, "null"]
+          enum: [sedan, suv, van, motorcycle, electric, null]
+        make: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        colour: { type: [string, "null"] }
+        plateMasked: { type: [string, "null"] }
+        verified: { type: boolean }
+    OfferDriverProfile:
+      type: object
+      description: "The driver card from user-service's privacy-limited read model. status verified / not_verified (checks not complete) / unavailable (no card could be resolved — unconfigured, down, slow, malformed or non-disclosing; every field null, the offer is still served). rating is exactly user-service's {average, count} or null — never invented."
+      required:
+        [
+          status,
+          label,
+          displayName,
+          initials,
+          photoRef,
+          photoVerified,
+          verifiedAt,
+          rating,
+          ratingLabel,
+          completedTrips,
+          memberSince,
+          accessibility,
+        ]
+      properties:
+        status: { type: string, enum: [verified, not_verified, unavailable] }
+        label: { type: string }
+        displayName: { type: [string, "null"] }
+        initials: { type: [string, "null"] }
+        photoRef: { type: [string, "null"] }
+        photoVerified: { type: [boolean, "null"] }
+        verifiedAt: { type: [string, "null"], format: date }
+        rating:
+          oneOf:
+            - type: object
+              required: [average, count]
+              properties:
+                average: { type: number, minimum: 1, maximum: 5 }
+                count: { type: integer, minimum: 1 }
+            - { type: "null" }
+        ratingLabel: { type: string }
+        completedTrips: { type: [integer, "null"], minimum: 0 }
+        memberSince: { type: [string, "null"] }
+        accessibility: { type: string, enum: [unavailable] }
+    Reliability:
+      type: object
+      description: "Reliability, DEFINED: of the marketplace rides the driver was awarded in the trailing windowDays that ended, the share completed and the share the driver cancelled (rider cancellations, rider no-shows, declined or lapsed preferred invitations and trips under way are not counted). Below minimumSample the status is insufficient_history and both rates are null. Rates are basis points summing to 10,000."
+      required:
+        [
+          status,
+          definition,
+          windowDays,
+          minimumSample,
+          sampleSize,
+          completedJobs,
+          driverCancellations,
+          completionRateBps,
+          driverCancellationRateBps,
+          label,
+          computedAt,
+        ]
+      properties:
+        status:
+          { type: string, enum: [available, insufficient_history, unavailable] }
+        definition: { type: string }
+        windowDays: { type: integer }
+        minimumSample: { type: integer }
+        sampleSize: { type: integer }
+        completedJobs: { type: integer }
+        driverCancellations: { type: integer }
+        completionRateBps:
+          { type: [integer, "null"], minimum: 0, maximum: 10000 }
+        driverCancellationRateBps:
+          { type: [integer, "null"], minimum: 0, maximum: 10000 }
+        label: { type: string }
+        computedAt: { type: string, format: date-time }
+    Criterion:
+      type: object
+      description: "One named fact behind a service-fit point or a badge."
+      required: [code, label]
+      properties:
+        code: { type: string }
+        label: { type: string }
+    ServiceFit:
+      type: object
+      description: "One point per criterion — driver details verified, a driver the rider saved, each stated preference the driver's VERIFIED vehicle meets — every matched and unmet criterion named."
+      required: [score, maxScore, matched, unmet, definition]
+      properties:
+        score: { type: integer }
+        maxScore: { type: integer }
+        matched:
+          { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+        unmet:
+          { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+        definition: { type: string }
+    OfferOrder:
+      type: object
+      description: "Which order a snapshot's offers are in (and the other orders), with the tie-breaks each applies."
+      required: [sort, label, tieBreak, options, note]
+      properties:
+        sort: { type: string, enum: [offered, price, pickup, service_fit] }
+        label: { type: string }
+        tieBreak: { type: string }
+        options:
+          type: array
+          items:
+            type: object
+            required: [key, label, tieBreak]
+            properties:
+              key: { type: string, enum: [offered, price, pickup, service_fit] }
+              label: { type: string }
+              tieBreak: { type: string }
+        note: { type: string }
+    ServiceNeedsInput:
+      type: object
+      additionalProperties: false
+      description: "A06 part D (marketplace_accessibility_requirements; rides only). Requirements match VERIFIED capability only; preferences only affect the service-fit order."
+      properties:
+        requirements:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+            enum:
+              [
+                wheelchair_accessible_vehicle,
+                assistance_animal,
+                extra_luggage_capacity,
+              ]
+        preferences:
+          type: array
+          maxItems: 2
+          items: { type: string, enum: [larger_vehicle, electric_vehicle] }
+    ServiceNeeds:
+      type: object
+      required: [requirements, preferences]
+      properties:
+        requirements:
+          type: array
+          items:
+            type: string
+            enum:
+              [
+                wheelchair_accessible_vehicle,
+                assistance_animal,
+                extra_luggage_capacity,
+              ]
+        preferences:
+          type: array
+          items: { type: string, enum: [larger_vehicle, electric_vehicle] }
+    ServiceNeedsCatalog:
+      type: object
+      description: "The requirements a rider may state, each with its honest availability in the rider's market (unavailable wherever no verified capability source reports supply), and the soft preferences (ranking only)."
+      required:
+        [
+          cityId,
+          service,
+          vehicleClass,
+          requirements,
+          preferences,
+          fallback,
+          disclosure,
+        ]
+      properties:
+        cityId: { type: string }
+        service: { type: string, enum: [ride] }
+        vehicleClass: { type: string }
+        requirements:
+          type: array
+          items:
+            type: object
+            required: [code, title, availability, detail]
+            properties:
+              code: { type: string }
+              title: { type: string }
+              availability: { type: string, enum: [verified, unavailable] }
+              detail: { type: string }
+        preferences:
+          type: array
+          items:
+            type: object
+            required: [code, title, effect, detail]
+            properties:
+              code: { type: string }
+              title: { type: string }
+              effect: { type: string, enum: [ranking_only] }
+              detail: { type: string }
+        fallback: { type: string }
+        disclosure: { type: string }
+    PreferredDriverPolicy:
+      type: object
+      description: "Per-market preferred-driver window (MarketplacePolicy.preferredDriver). Absent: the pilot 120 s (half the request lifetime where requests live shorter). Always strictly shorter than the request lifetime."
+      required: [exclusiveWindowSec]
+      properties:
+        exclusiveWindowSec: { type: integer, minimum: 30, maximum: 900 }
+    PreferredDriverInput:
+      type: object
+      additionalProperties: false
+      description: "A04 item 3 (marketplace_preferred_drivers; rides only): ask a driver the rider saved after a completed trip, who opted in. fallbackToMarket is REQUIRED — the rider's explicit consent (or refusal) to open the request to every driver if the named one does not offer in the window."
+      required: [driverId, fallbackToMarket]
+      properties:
+        driverId: { type: string, format: uuid }
+        fallbackToMarket: { type: boolean }
+    PreferredDriver:
+      type: object
+      description: "The requester's view of the window (mpPreferredWindow): exclusive (only the named driver may discover and offer — through the ordinary funded-bid path, nothing waived) → market_open (window over, no live offer from them, fallback consented) or closed (no consent: the request expired free, closeReason preferred_driver_unavailable)."
+      required:
+        [driverId, state, windowSec, windowEndsAt, fallbackToMarket, label]
+      properties:
+        driverId: { type: string }
+        state: { type: string, enum: [exclusive, market_open, closed] }
+        windowSec: { type: integer }
+        windowEndsAt: { type: string, format: date-time }
+        fallbackToMarket: { type: boolean }
+        label: { type: string }
+    PreferredInvitation:
+      type: object
+      description: "The named driver's invitation (feed card / driver view). Never identifies the rider; declining is free."
+      required: [windowEndsAt, label, note, canDecline]
+      properties:
+        windowEndsAt: { type: string, format: date-time }
+        label: { type: string }
+        note: { type: string }
+        canDecline: { type: boolean }
+    PreferredDecline:
+      type: object
+      required: [requestId, declined, declinedAt, note]
+      properties:
+        requestId: { type: string }
+        declined: { type: boolean, const: true }
+        declinedAt: { type: string, format: date-time }
+        note: { type: string }
+    FavouriteDriver:
+      type: object
+      description: "A saved driver. canRequest says whether the rider may ask them first right now; why not (opted out, or not taking marketplace work) is deliberately not distinguished."
+      required:
+        [
+          driverId,
+          cityId,
+          state,
+          savedAt,
+          driver,
+          driverProfile,
+          canRequest,
+          canRequestLabel,
+        ]
+      properties:
+        driverId: { type: string }
+        cityId: { type: string }
+        state: { type: string, enum: [active, removed] }
+        savedAt: { type: string, format: date-time }
+        driver: { $ref: "#/components/schemas/OfferDriver" }
+        driverProfile: { $ref: "#/components/schemas/OfferDriverProfile" }
+        canRequest: { type: boolean }
+        canRequestLabel: { type: string }
+    FavouriteDrivers:
+      type: object
+      required: [items, note]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FavouriteDriver" }
+        note: { type: string }
+    ReceiptLine:
+      type: object
+      required: [code, label, amountMinor]
+      properties:
+        code:
+          type: string
+          enum:
+            [
+              agreed_fare,
+              route_change,
+              stop_waiting,
+              early_termination,
+              commission,
+              commission_adjustment,
+            ]
+        label: { type: string }
+        amountMinor: { $ref: "#/components/schemas/Money" }
+        amendmentId: { type: string }
+        committedAt: { type: string, format: date-time }
+    Receipt:
+      type: object
+      description: "A COMPLETED marketplace ride's receipt, to its two parties only. lines (agreed fare + committed adjustments) sum to totalMinor, which equals reconciliation.settledFareMinor. The rider's view carries taxes (the INCLUDED share at the market's configured rates for the trip's pricing snapshot — nothing is added) and never a commission line; the driver's view carries driver (gross, the 10% captured once plus linked adjustments, net). JSON only; a PDF rendering is a documented follow-up."
+      required:
+        [
+          receiptId,
+          viewer,
+          requestId,
+          awardId,
+          executionId,
+          currency,
+          lines,
+          totalMinor,
+          payment,
+          trip,
+          settlement,
+          reconciliation,
+          format,
+          issuedAt,
+        ]
+      properties:
+        receiptId: { type: string }
+        viewer: { type: string, enum: [rider, driver] }
+        requestId: { type: string }
+        awardId: { type: string }
+        executionId: { type: string }
+        currency: { type: string }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/ReceiptLine" }
+        totalMinor: { $ref: "#/components/schemas/Money" }
+        taxes:
+          type: object
+          required: [basis, lines, note]
+          properties:
+            basis:
+              { type: string, enum: [included, not_configured, unavailable] }
+            lines:
+              type: array
+              items:
+                type: object
+                required: [code, rateBps, label, amountMinor]
+                properties:
+                  code: { type: string }
+                  rateBps: { type: integer }
+                  label: { type: string }
+                  amountMinor: { $ref: "#/components/schemas/Money" }
+            note: { type: string }
+        payment:
+          type: object
+          required: [method, label]
+          properties:
+            method:
+              {
+                type: string,
+                enum: [wallet, cash, business, paid_by_ubi],
+                description: "business: an organization's budget paid (A06 part C) — the rider's receipt; the driver's receipt of that trip says paid_by_ubi (paid in-app, nothing to collect, no payer).",
+              }
+            label: { type: string }
+        trip:
+          type: object
+          required:
+            [
+              service,
+              vehicleClass,
+              pickup,
+              dropoff,
+              stopCount,
+              stopsVisited,
+              stopsSkipped,
+              routedDistanceMeters,
+              startedAt,
+              completedAt,
+              terminatedEarly,
+              driver,
+            ]
+          properties:
+            service: { type: string, enum: [ride] }
+            vehicleClass: { type: string }
+            pickup: { type: string }
+            dropoff: { type: string }
+            stopCount: { type: integer }
+            stopsVisited: { type: integer }
+            stopsSkipped: { type: integer }
+            routedDistanceMeters: { type: integer }
+            startedAt: { type: [string, "null"], format: date-time }
+            completedAt: { type: string, format: date-time }
+            terminatedEarly: { type: boolean }
+            driver: { $ref: "#/components/schemas/OfferDriver" }
+        settlement:
+          type: object
+          required: [status, settledAt, note]
+          properties:
+            status: { type: string, enum: [posted, pending] }
+            settledAt: { type: [string, "null"], format: date-time }
+            note: { type: string }
+        reconciliation:
+          type: object
+          required:
+            [
+              originalFareMinor,
+              adjustmentsMinor,
+              totalMinor,
+              settledFareMinor,
+              rule,
+            ]
+          properties:
+            originalFareMinor: { $ref: "#/components/schemas/Money" }
+            adjustmentsMinor: { $ref: "#/components/schemas/Money" }
+            totalMinor: { $ref: "#/components/schemas/Money" }
+            settledFareMinor: { $ref: "#/components/schemas/Money" }
+            rule: { type: string }
+        driver:
+          type: object
+          required:
+            [
+              grossMinor,
+              commissionBps,
+              commissionLines,
+              commissionMinor,
+              netMinor,
+              note,
+            ]
+          properties:
+            grossMinor: { $ref: "#/components/schemas/Money" }
+            commissionBps: { type: integer, const: 1000 }
+            commissionLines:
+              type: array
+              items: { $ref: "#/components/schemas/ReceiptLine" }
+            commissionMinor: { $ref: "#/components/schemas/Money" }
+            netMinor: { $ref: "#/components/schemas/Money" }
+            note: { type: string }
+        business: { $ref: "#/components/schemas/ReceiptBusiness" }
+        format: { type: string, enum: [json] }
+        issuedAt: { type: string, format: date-time }
+    ReceiptBusiness:
+      description: "A06 part C — a BUSINESS receipt's organization block (rider view only; the driver learns nothing about the organization): the paying organization's billing identity and tax id, the cost centre and expense category, and the budget funding as the ledger recorded it (ledgerTaxes: the taxes INCLUDED in the committed amount). VAT itself is the receipt's taxes block at the market's configured rates. Billing fields are null — and note says so — while payment-service cannot be read; never invented."
+      type: object
+      required:
+        [
+          organizationId,
+          organizationName,
+          legalName,
+          taxId,
+          costCentre,
+          expenseCategory,
+          bookingRef,
+          bookerId,
+          travellerId,
+          fundingState,
+          committedMinor,
+          ledgerTaxes,
+          note,
+        ]
+      properties:
+        organizationId: { type: string }
+        organizationName: { type: [string, "null"] }
+        legalName: { type: [string, "null"] }
+        taxId: { type: [string, "null"] }
+        costCentre:
+          oneOf:
+            - type: object
+              required: [id, code, name]
+              properties:
+                id: { type: string }
+                code: { type: [string, "null"] }
+                name: { type: [string, "null"] }
+            - { type: "null" }
+        expenseCategory: { type: [string, "null"] }
+        bookingRef: { type: string }
+        bookerId: { type: string }
+        travellerId: { type: string }
+        fundingState:
+          {
+            type: string,
+            enum: [reserving, reserved, refused, committed, released],
+          }
+        committedMinor:
+          oneOf:
+            - { $ref: "#/components/schemas/Money" }
+            - { type: "null" }
+        ledgerTaxes:
+          type: array
+          items:
+            type: object
+            required: [code, rateBps, amountMinor]
+            properties:
+              code: { type: string }
+              rateBps: { type: integer }
+              amountMinor: { type: integer }
+        note: { type: string }
+    BusinessQuoteCheck:
+      description: "A06 part C (business_travel): the organization's ADVISORY verdict at the quote's suggested fare (payment-service /v1/finance/business/policy-check). refused names every reason (BUSINESS_REFUSAL_REASONS); an unanswered check is unavailable, never allowed. The budget is reserved only when an offer is selected, and everything is decided again then."
+      type: object
+      required:
+        [
+          organizationId,
+          status,
+          reasons,
+          checkedAmountMinor,
+          available,
+          costCentreId,
+          policyVersion,
+          note,
+        ]
+      properties:
+        organizationId: { type: string }
+        status: { type: string, enum: [allowed, refused, unavailable] }
+        reasons: { type: array, items: { type: string } }
+        checkedAmountMinor: { $ref: "#/components/schemas/Money" }
+        available:
+          oneOf:
+            - { $ref: "#/components/schemas/Money" }
+            - { type: "null" }
+        costCentreId: { type: [string, "null"] }
+        policyVersion: { type: [integer, "null"] }
+        note: { type: string }
+    BusinessBookingInput:
+      description: "A06 part C (business_travel, deny by default; rides only): book the ride on an organization. Its prefunded budget pays INSTEAD OF the rider (the publish names paymentMethodId business — never both); the requester is the BOOKER and travellerId (default: the requester) the passenger, an active member — a colleague is ALSO named as the guest passenger. The organization's policy (service, class, per-trip cap, cost centre, membership) and budget are checked at the requested fare; a refusal answers its canonical code with details.reason and nothing is written. The budget is reserved when an offer is selected (bookingRef = the award id), committed at completion at the actual total and released on cancel. The driver's 10% commission is untouched and never charged to the organization."
+      type: object
+      additionalProperties: false
+      required: [organizationId]
+      properties:
+        organizationId: { type: string, minLength: 1, maxLength: 64 }
+        costCentreId: { type: string, minLength: 1, maxLength: 64 }
+        expenseCategory:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 64,
+            pattern: "^[A-Za-z0-9 ._-]+$",
+          }
+        travellerId: { type: string, format: uuid }
+    RequestBusiness:
+      description: "The requester's business block on their own request view (A06 part C). funding is null until an offer is selected."
+      type: object
+      required:
+        [
+          organizationId,
+          costCentreId,
+          expenseCategory,
+          bookerId,
+          travellerId,
+          payerRole,
+          funding,
+        ]
+      properties:
+        organizationId: { type: string }
+        costCentreId: { type: [string, "null"] }
+        expenseCategory: { type: [string, "null"] }
+        bookerId: { type: string }
+        travellerId: { type: string }
+        payerRole: { type: string, const: organization }
+        funding:
+          oneOf:
+            - type: object
+              required:
+                [
+                  state,
+                  reservedMinor,
+                  committedMinor,
+                  refusalReason,
+                  releasedBy,
+                ]
+              properties:
+                state:
+                  {
+                    type: string,
+                    enum: [reserving, reserved, refused, committed, released],
+                  }
+                reservedMinor: { $ref: "#/components/schemas/Money" }
+                committedMinor:
+                  oneOf:
+                    - { $ref: "#/components/schemas/Money" }
+                    - { type: "null" }
+                refusalReason: { type: [string, "null"] }
+                releasedBy: { type: [string, "null"] }
+            - { type: "null" }
+    TripAccessPin:
+      description: "The guest passenger's pickup PIN (GET /v1/mp/trip-access/pin). Unlike the requester's PickupPin it carries NO execution ride id — a trip link identifies nothing internal."
+      type: object
+      additionalProperties: false
+      required: [pin, state, expiresAt]
+      properties:
+        pin: { type: string }
+        state: { type: string }
+        expiresAt: { type: string, format: date-time }
+    TripAccessSealed:
+      description: "TRIP-LINK SEALED DELIVERY CONTRACT: AES-256-GCM under TRIP_ACCESS_DELIVERY_KEY (standard base64 of 32 bytes) named by kid (the consumer also accepts TRIP_ACCESS_DELIVERY_KEY_PREVIOUS / _KID_PREVIOUS, selecting by kid). Plaintext = the compact JSON object {phone, token, firstName}; AAD = the UTF-8 string 'ubi.trip_access.v1|' + tokenId; iv = 12 fresh random bytes per message. iv, ct and the 16-byte tag are base64url without padding. Without a usable key the producer issues no trip link (the guest booking is refused 503 service_unavailable, details.reason trip_link_delivery_unavailable) and the consumer does not start."
+      type: object
+      additionalProperties: false
+      required: [v, alg, kid, iv, ct, tag]
+      properties:
+        v: { type: integer, const: 1 }
+        alg: { type: string, const: A256GCM }
+        kid: { type: string, minLength: 1, maxLength: 64 }
+        iv: { type: string, pattern: "^[A-Za-z0-9_-]{16}$" }
+        ct: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+        tag: { type: string, pattern: "^[A-Za-z0-9_-]{22}$" }
+    TripAccessIssuedEventPayload:
+      description: "The trip_access.issued OUTBOX EVENT payload (not an HTTP body) — notification-service's SMS hand-off. The shared relay broadcasts every event and the outbox row persists, so it carries NOTHING sensitive in clear: no access token, phone or first name (additionalProperties false). smsCopy is a TEMPLATE with {firstName} and {link}, filled by the consumer from the opened envelope and its trip-link base."
+      type: object
+      additionalProperties: false
+      required:
+        [tokenId, requestId, scope, expiresAt, recipient, smsCopy, sealed]
+      properties:
+        tokenId:
+          {
+            type: string,
+            description: "The event's aggregate id; the AAD names it.",
+          }
+        requestId: { type: string }
+        scope: { type: string, const: guest_passenger }
+        expiresAt: { type: string, format: date-time }
+        recipient:
+          type: object
+          additionalProperties: false
+          required: [channel]
+          properties:
+            channel: { type: string, const: sms }
+        smsCopy: { type: string }
+        sealed: { $ref: "#/components/schemas/TripAccessSealed" }
+    PassengerInput:
+      description: "A06 part B (marketplace_guest_bookings, deny by default; rides only): book the ride for another named ADULT. Both attestations are required: isAdult false is refused 422 with details.reason unaccompanied_minor_not_supported (unaccompanied minors need a separately designed service), consentConfirmed false with passenger_consent_required, either missing with passenger_attestation_required. Names are letters (any script), combining marks, spaces, hyphens and apostrophes (lastName may also carry full stops) — the first name opens a UBI-sent SMS to a number the requester chose, so it can never carry a link, a number or a call to action (422 validation_failed otherwise). The requester stays the payer and the only authenticated party."
+      type: object
+      additionalProperties: false
+      required: [firstName, phone, isAdult, consentConfirmed]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 40 }
+        lastName: { type: string, maxLength: 60 }
+        phone: { type: string, pattern: "^\\+[1-9][0-9]{7,14}$" }
+        isAdult: { type: boolean }
+        consentConfirmed: { type: boolean }
+    RequestPassenger:
+      description: "The passenger block of the requester's own request view: what they entered, on this request only, and where the passenger's trip link stands. Never the link token."
+      type: object
+      required:
+        [
+          firstName,
+          lastName,
+          phone,
+          payerRole,
+          attestation,
+          attestedAt,
+          accessStatus,
+          accessSentAt,
+          accessExpiresAt,
+          declinedAt,
+        ]
+      properties:
+        firstName: { type: string }
+        lastName: { type: [string, "null"] }
+        phone: { type: string }
+        payerRole:
+          {
+            type: string,
+            enum: [requester, organization],
+            description: "organization on a request booked on an organization (A06 part C).",
+          }
+        attestation: { type: string }
+        attestedAt: { type: string, format: date-time }
+        accessStatus:
+          { type: string, enum: [active, revoked, expired, declined] }
+        accessSentAt: { type: [string, "null"], format: date-time }
+        accessExpiresAt: { type: [string, "null"], format: date-time }
+        declinedAt: { type: [string, "null"], format: date-time }
+    DriverPassenger:
+      type: object
+      required: [firstName, bookedForAnother, pickupVerification, note]
+      properties:
+        firstName: { type: string }
+        bookedForAnother: { type: boolean, const: true }
+        pickupVerification: { type: string, enum: [pin, first_name] }
+        note: { type: string }
+    TripAccessView:
+      description: "A guest passenger's trip, authenticated ONLY by the X-Trip-Access-Token header. Nothing about the requester, the money or any other trip. driver is the verified-card projection every rider surface uses, present once a driver is committed."
+      type: object
+      required:
+        [
+          status,
+          statusLabel,
+          passenger,
+          pickup,
+          dropoff,
+          driver,
+          eta,
+          pickupVerification,
+          support,
+          actions,
+          expiresAt,
+          asOf,
+        ]
+      properties:
+        status:
+          type: string
+          enum:
+            [
+              finding_driver,
+              confirming_driver,
+              driver_queued,
+              driver_on_the_way,
+              driver_arrived,
+              in_progress,
+              completed,
+              cancelled,
+              declined,
+            ]
+        statusLabel: { type: string }
+        passenger:
+          type: object
+          required: [firstName]
+          properties: { firstName: { type: string } }
+        pickup:
+          type: object
+          required: [label]
+          properties: { label: { type: string } }
+        dropoff:
+          type: object
+          required: [label]
+          properties: { label: { type: string } }
+        driver:
+          oneOf:
+            - { $ref: "#/components/schemas/OfferDriver" }
+            - { type: "null" }
+        eta:
+          oneOf:
+            - type: object
+              required: [label, etaSeconds, basis, asOf]
+              properties:
+                label: { type: string }
+                etaSeconds: { type: [integer, "null"] }
+                basis: { type: string, enum: [routed_leg, unavailable] }
+                asOf: { type: string, format: date-time }
+            - { type: "null" }
+        pickupVerification:
+          type: object
+          required: [method, pinAvailable, instructions]
+          properties:
+            method: { type: string, enum: [pin, first_name] }
+            pinAvailable: { type: boolean }
+            instructions: { type: string }
+        support:
+          type: object
+          required: [reference, emergencyNumber, note]
+          properties:
+            reference: { type: string }
+            emergencyNumber: { type: [string, "null"] }
+            note: { type: string }
+        actions:
+          type: object
+          required: [canDecline, declineIsFree, declineNote]
+          properties:
+            canDecline: { type: boolean }
+            declineIsFree: { type: boolean, const: true }
+            declineNote: { type: string }
+        expiresAt: { type: string, format: date-time }
+        asOf: { type: string, format: date-time }
 security: [{ bearer: [] }]
 paths:
   /v1/mp/quote:
     get:
       summary: Bounded fare quote envelope (R02)
-      description: "Prices the trip/delivery with the deterministic engine, wraps the signed quote with negotiation bounds (floor = max(absolute, cost-based, bps-of-suggested); ceiling = bps-of-suggested). 503 market_not_configured when the city/service/vehicle has no marketplace policy."
+      description: "Prices the trip/delivery with the deterministic engine, wraps the signed quote with negotiation bounds (floor = max(absolute, cost-based, bps-of-suggested); ceiling = bps-of-suggested). 503 market_not_configured when the city/service/vehicle has no marketplace policy. With `stops` (rides only, behind the deny-by-default marketplace_multi_stop flag) the COMPLETE ordered route pickup → stops → dropoff is routed and priced, expected dwell is priced as route time, and the bounds derive from that full-route price; the market's stop limit (pilot 3), coordinates, dwell bounds and duplicate/adjacent-identical stops are validated (422 validation_failed with details.field). A delivery with stops is 422 validation_failed (deliveries are single-drop); stops while the flag is off are 404 feature_disabled."
       parameters:
         - {
             name: service,
@@ -958,11 +3264,65 @@ paths:
             required: false,
             schema: { type: number },
           }
+        - {
+            name: stops,
+            in: query,
+            required: false,
+            description: 'Ordered intermediate stops as ONE JSON-encoded array (URL-encoded), e.g. [{"lat":6.53,"lng":3.38,"purpose":"errand","dwellSec":120}]. Absent, null or [] is the plain pickup → dropoff route, priced exactly as before.',
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: array,
+                        maxItems: 10,
+                        items: { $ref: "#/components/schemas/StopInput" },
+                      },
+                  },
+              },
+          }
+        - {
+            name: organizationId,
+            in: query,
+            required: false,
+            description: "A06 part C (business_travel, rides only): ask for the organization's advisory policy/budget verdict at the suggested fare (the envelope's business block). 404 feature_disabled while business_travel is off; a caller who may not book on it — and no such organization — answers the same 403 forbidden, booker_not_authorized, with none of the verdict.",
+            schema: { type: string, minLength: 1, maxLength: 64 },
+          }
+        - {
+            name: costCentreId,
+            in: query,
+            required: false,
+            description: "With organizationId: the cost centre to check (default: the traveller's).",
+            schema: { type: string, minLength: 1, maxLength: 64 },
+          }
+        - {
+            name: travellerId,
+            in: query,
+            required: false,
+            description: "With organizationId: the member who travels (default: the requester).",
+            schema: { type: string, format: uuid },
+          }
       responses:
         "200":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/QuoteEnvelope" }
+        "403":
+          description: "forbidden, details.reason booker_not_authorized — the quote named an organizationId the caller may not book on. A real organization and no organization at all answer this SAME body: an outsider never learns whether it exists, nor its status, policy, cost centres or budget. Members get the advisory business block instead."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: "feature_disabled — stops while marketplace_multi_stop is off here, an organizationId while business_travel is off (or the vertical itself is off)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: "validation_failed — a stop over the market limit, off-planet, duplicated, identical to its adjacent pickup/dropoff, with an out-of-bounds dwell or unknown purpose, or any stop on a delivery."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "503":
           content:
             application/json:
@@ -970,7 +3330,7 @@ paths:
   /v1/mp/requests:
     post:
       summary: Publish a request (R03)
-      description: "Validates the requested amount against the quote's snapshotted bounds server-side (fare_out_of_bounds with a structured field error otherwise). Requires a live, owned, unconsumed quote. One open request per requester per policy cap."
+      description: "Validates the requested amount against the quote's snapshotted bounds server-side (fare_out_of_bounds with a structured field error otherwise). Requires a live, owned, unconsumed quote. One open request per requester per policy cap. A multi-stop quote publishes its own ordered stops (ids, order, dwell and routeFingerprint) — the body cannot carry stops (unknown keys are refused) — and only while marketplace_multi_stop is on."
       parameters: [{ $ref: "#/components/parameters/IdemKey" }]
       requestBody:
         content:
@@ -985,26 +3345,60 @@ paths:
                     requestedFareMinor: { $ref: "#/components/schemas/Money" },
                     paymentMethodId: { type: string },
                     delivery: { $ref: "#/components/schemas/DeliveryDetails" },
+                    preferredDriver:
+                      { $ref: "#/components/schemas/PreferredDriverInput" },
+                    serviceNeeds:
+                      { $ref: "#/components/schemas/ServiceNeedsInput" },
+                    passenger: { $ref: "#/components/schemas/PassengerInput" },
+                    business:
+                      { $ref: "#/components/schemas/BusinessBookingInput" },
                   },
               }
       responses:
         "201":
+          description: "With a passenger: the passenger is recorded with the attestation, ONE trip link is issued (stored only as its SHA-256; handed to notification-service once in the trip_access.issued event for the SMS — SEALED, never in clear, see TripAccessIssuedEventPayload — never in this response) and the view carries `passenger`. With business: the organization is recorded as payer and the view carries `business`."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Request" }
+        "404":
+          {
+            description: "feature_disabled — preferredDriver needs marketplace_preferred_drivers; serviceNeeds needs marketplace_accessibility_requirements; passenger needs marketplace_guest_bookings; business needs business_travel (all deny by default). (A business publish naming no such organization answers exactly like a non-member: 403 forbidden, details.reason booker_not_authorized — a non-member never learns whether an organization exists.)",
+          }
+        "409":
+          {
+            description: "conflict with details.reason: service_need_unavailable (a stated requirement has no VERIFIED supply in this market — details.requirements lists each with its reason, details.fallback the options; nothing is published and the quote is not spent) or preferred_driver_unavailable (the saved driver is not taking preferred requests right now; why is not disclosed).",
+          }
         "422":
+          description: "Business refusals travel as their canonical codes with details.reason (BUSINESS_REFUSAL_REASONS): limit_exceeded (trip_cap_exceeded), insufficient_spendable (no_budget_for_period, budget_insufficient — refused, never deferred or put on credit), validation_failed (cost_centre_invalid, business_payment_method, business_passenger_required); forbidden (403) for booker_not_authorized, traveller_not_member, service_not_allowed, class_not_allowed."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "service_unavailable — details.reason trip_link_delivery_unavailable (a passenger's trip link cannot be sealed: no TRIP_ACCESS_DELIVERY_KEY; booking for yourself is unaffected) or business_check_unavailable (the organization's policy could not be checked; nothing was booked)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
   /v1/mp/requests/{requestId}:
     get:
       summary: Owner snapshot (R04) — request plus private offers
+      description: "A06 part A: every offer carries its server-computed comparison (total, pickup estimate, vehicle, verified driver card, defined reliability, service fit, reasoned badges). `sort` orders the offers server-side; absent (or `offered`) is the neutral order drivers offered — there is no default winner. An unknown sort is 422 validation_failed."
       parameters:
         - {
             name: requestId,
             in: path,
             required: true,
             schema: { type: string },
+          }
+        - {
+            name: sort,
+            in: query,
+            required: false,
+            schema:
+              {
+                type: string,
+                enum: [offered, price, pickup, service_fit],
+                default: offered,
+              },
           }
       responses:
         "200":
@@ -1022,8 +3416,15 @@ paths:
                           type: array,
                           items: { $ref: "#/components/schemas/Offer" },
                         },
+                      advanceOffers:
+                        {
+                          type: array,
+                          description: "A03: present only on an advance-booking request. Offers on a future pickup window are listed here, never under offers.",
+                          items: { $ref: "#/components/schemas/AdvanceOffer" },
+                        },
                       award: { $ref: "#/components/schemas/Award" },
                       seq: { type: integer },
+                      offerOrder: { $ref: "#/components/schemas/OfferOrder" },
                     },
                 }
   /v1/mp/requests/{requestId}/queue:
@@ -1048,6 +3449,119 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/QueueView" }
         "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/passenger/access/revoke:
+    post:
+      summary: Revoke a guest passenger's trip link (A06 part B) — requester only
+      description: "Withdraws the live trip link (trip_access.revoked). Idempotent; always allowed — a safety control is never behind a flag. A foreign requester, or a request with no passenger, is 404."
+      parameters:
+        - { $ref: "#/components/parameters/IdemKey" }
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RequestPassenger" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/passenger/access/reissue:
+    post:
+      summary: Send the guest passenger a fresh trip link (A06 part B) — requester only
+      description: "Revokes the live link and issues a new one to the same passenger (trip_access.revoked + trip_access.issued), while the trip is still ahead and the passenger has not declined. New links are issued only while marketplace_guest_bookings is on (404 feature_disabled otherwise); 409 conflict after a decline, 409 request_closed once the trip ended. Every link is an SMS to the passenger's phone, so one booking sends at most 5 links (the first plus 4 reissues): beyond that 429 rate_limited with details.reason trip_link_limit."
+      parameters:
+        - { $ref: "#/components/parameters/IdemKey" }
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RequestPassenger" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/trip-access:
+    get:
+      summary: A guest passenger's trip (A06 part B) — trip-link token only
+      description: "Authenticated ONLY by the X-Trip-Access-Token header (never a URL parameter; no gateway identity — one, if present, grants nothing). The token is bound to one trip, expires and is revocable. Rate limited per client and per token (429 before the token is looked up). Answers are Cache-Control: no-store and Referrer-Policy: no-referrer. 401 unauthorized with details.reason invalid (malformed, unknown or forged), expired or revoked — never naming a trip."
+      security: [{ tripAccessToken: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripAccessView" }
+        "401":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/trip-access/pin:
+    get:
+      summary: The guest passenger's pickup PIN (A06 part B) — trip-link token only
+      description: "The execution ride's pickup PIN while it is relevant (driver assigned/arrived, PIN not yet verified), under the PIN vault's own retrieval rate limit — shared with the requester's retrieval of the same PIN. 409 when not relevant or after a decline."
+      security: [{ tripAccessToken: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripAccessPin" }
+        "401":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/trip-access/decline:
+    post:
+      summary: The guest passenger declines the trip before pickup, free (A06 part B)
+      description: "Free for everyone before pickup: an open request closes (closeReason passenger_declined; every live offer's hold released); a queued award is cancelled with the driver's commission returned (linked reversal) and the requester's funding released; an execution not yet at pickup (driver assigned or arrived) ends cancelled_by_rider with feeMinor 0 through the same unwind a driver cancellation uses — commission reversed, funding released, the driver freed. Refused 409 conflict (details.reason past_pickup) once the PIN is being verified or the trip started; 409 award_unresolved while a selection is being confirmed. Publishes trip_access.declined (audience: the requester). Replays byte for byte under the same key."
+      security: [{ tripAccessToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripAccessView" }
+        "401":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1086,7 +3600,8 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
   /v1/mp/requests/{requestId}/revise:
     post:
-      summary: Price-affecting edit — new revision, bids invalidated, holds released
+      summary: Price- or route-affecting edit — new revision, bids invalidated, holds released
+      description: "Open requests only (request_closed otherwise). A replacement quote for the SAME endpoints but a different ordered stop set is the pre-award route edit: the request adopts the quote's stops (a surviving stop keeps its stopId), its bounds come from the quote's full-route price, routeRevision bumps together with revision, and every live bid — pinned to the old revision — is invalidated with its commission hold released exactly once. A stale-revision bid can never be selected afterwards."
       parameters:
         - {
             name: requestId,
@@ -1108,7 +3623,7 @@ paths:
                     quoteId:
                       {
                         type: string,
-                        description: "Required when route/service details changed — a fresh quote re-snapshots bounds.",
+                        description: "Required when route/service details changed — a fresh quote re-snapshots bounds. Must price the same service, class, city, currency, active policy and endpoints; it MAY carry a different stop set (the route edit).",
                       },
                     expectedVersion: { type: integer },
                   },
@@ -1141,7 +3656,7 @@ paths:
   /v1/mp/requests/{requestId}/select:
     post:
       summary: Select the winner (R05, M05 award saga)
-      description: "Authenticated request owner only. Pins requestVersion and bidVersion (version_conflict on stale terms). Runs the award saga: claim request + driver capacity atomically, authorize rider funding for the selected amount, capture the winning commission hold exactly once under the award id, commit execution, resolve losers. Answers 202 with the pending award; the client converges on award.confirmed/failed via events or GET. award_unresolved is returned to a second selection racing a pending award."
+      description: "Authenticated request owner only. Pins requestVersion and bidVersion (version_conflict on stale terms). Runs the award saga: claim request + driver capacity atomically, authorize rider funding for the selected amount, capture the winning commission hold exactly once under the award id, commit execution, resolve losers. Answers 202 with the pending award; the client converges on award.confirmed/failed via events or GET. award_unresolved is returned to a second selection racing a pending award. A bid placed on an earlier request revision (a fare or route edit landed since) answers version_conflict with the refreshed terms (current revision, routeRevision/routeFingerprint for multi-stop requests, and the bid's own requestRevision) and never wins. The execution ride of a multi-stop award carries the request's ordered stops with their stable ids."
       parameters:
         - {
             name: requestId,
@@ -1188,6 +3703,11 @@ paths:
                     {
                       award: { $ref: "#/components/schemas/Award" },
                       pickupPin: { type: string },
+                      booking:
+                        {
+                          $ref: "#/components/schemas/AdvanceBooking",
+                          description: "A03: the advance booking an advance selection created — driver reserved, and whether the rider's funding is secured yet (payment_pending beyond the funding horizon). No PIN: the execution starts at activation near pickup.",
+                        },
                     },
                 }
         "409":
@@ -1209,12 +3729,340 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Award" }
+  /v1/mp/requests/{requestId}/trip:
+    get:
+      summary: The executing trip's committed terms, stops and waiting (A02)
+      description: "Requester or awarded driver only (anyone else: not_found). Behind marketplace_rides and marketplace_multi_stop (or marketplace_trip_amendments for a trip without stops). Reads only: waiting figures are computed from the server's timestamps at read time."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/amendments:
+    get:
+      summary: Every change proposed on the executing trip, with the committed terms
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AmendmentList" }
+    post:
+      summary: Propose a post-award route change (A02 item 4)
+      description: "Requester or awarded driver (a driver only while the server confirms them parked — 403 driver_ineligible otherwise; never an in-motion fare interaction), behind the deny-by-default marketplace_trip_amendments flag (stops also need marketplace_multi_stop); rides only. Priced server-side as a DELTA under the award's pricing snapshot — only distance and time move, base/booking/minimum top-up are never re-charged; the route part is held inside the new route's server bounds. The driver's queued next job is revalidated FIRST (stop-aware remaining time): a change that would break the consented pickup window is refused with 409 conflict details.reason=next_job_conflict and nothing is reserved. For an increase the incremental commission (payment-service /holds/{id}/amendments/{amendmentId}/reserve) and the rider's top-up (/funding/top-up) are reserved BEFORE approvals. One amendment with open money per trip (409 conflict details.reason=amendment_open). The original agreement stays in force until the amendment commits. Replays with the same Idempotency-Key answer the SAME amendment's current view."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [stops, expectedRouteRevision, expectedFareRevision],
+                additionalProperties: false,
+                properties:
+                  {
+                    stops:
+                      {
+                        type: array,
+                        description: "The REMAINING intermediate stops after the change, in order; stops already reached are history and stay as they are. A surviving stop keeps its stopId. Bounded by the market's stop limit.",
+                        items: { $ref: "#/components/schemas/StopInput" },
+                      },
+                    dropoff:
+                      {
+                        type: object,
+                        required: [lat, lng],
+                        properties:
+                          {
+                            lat: { type: number },
+                            lng: { type: number },
+                            label: { type: string, maxLength: 80 },
+                          },
+                      },
+                    expectedRouteRevision: { type: integer },
+                    expectedFareRevision: { type: integer },
+                  },
+              }
+      responses:
+        "201":
+          description: "Priced and funded: awaiting both approvals."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+        "202":
+          description: "Recorded; the reservation's outcome is unknown and the sweep converges it (poll the amendment)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+        "403":
+          description: "driver_ineligible: the proposing driver is not confirmed parked (details.reason, e.g. NOT_STATIONARY)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "version_conflict (stale expected revisions, refreshedTerms), conflict (next_job_conflict, amendment_open)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: "insufficient_spendable (driver cannot cover the incremental commission) or insufficient_funds (rider cannot cover the top-up): the proposal is rejected with nothing held; validation_failed for a proposal that changes nothing or breaks the stop limits."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/amendments/{amendmentId}:
+    get:
+      summary: One amendment (poll/converge)
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+  /v1/mp/requests/{requestId}/amendments/{amendmentId}/approve:
+    post:
+      summary: Approve the exact terms (A02 item 4)
+      description: "Binds to (amendment id, route revision, fare revision). The driver's approval is accepted only while the server confirms them stationary and parked (403 driver_ineligible details.reason=NOT_STATIONARY) — never an in-motion control. The second approval runs the commit saga: revalidate (trip running, reached stops unchanged, next job still honoured — else rejected with next_job_conflict and everything released), then rider top-up commit + commission increment capture (an increase) or commission refund + rider partial release (a decrease), each idempotent on the amendment id and recorded durably, then the committed terms, stops and execution ride are rewritten in one transaction (ride.terms_amended). A refusal part-way fails the amendment and compensates with linked adjustments; an unknown outcome parks it for the sweep."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AmendmentDecision" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+        "403":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/amendments/{amendmentId}/reject:
+    post:
+      summary: Reject a proposed change (no standing penalty)
+      description: "Either party, until both approved; a driver only while the server confirms them parked (403 driver_ineligible otherwise — an unanswered proposal simply expires). Releases the commission increment and the rider's top-up (idempotent; the sweep retries an unconfirmed release). A driver's rejection carries NO standing or acceptance penalty."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AmendmentDecision" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Amendment" }
+  /v1/mp/requests/{requestId}/terminate:
+    post:
+      summary: Safe early end of the journey (partial trip)
+      description: "Behind marketplace_trip_amendments. Rider (any reason) or driver (parked, reason one of excessive_waiting, rider_request, safety_concern, vehicle_issue). Ends the trip at the vehicle's current position: stops never reached are skipped, the stop being waited at closes with its earned waiting, and the fare drops by the unvisited remainder priced under the award's snapshot (never below the travelled route's server floor) — ONE early_termination adjustment through the same linked path (partial commission refund, partial funding release). The driver then completes the ride; completion settles exactly the committed fare."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [expectedFareRevision],
+                properties:
+                  {
+                    reason: { type: string, maxLength: 80 },
+                    expectedFareRevision: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "202":
+          description: "The adjustment's money outcome is unknown; the sweep converges it."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+  /v1/mp/requests/{requestId}/stops/{stopId}/arrive:
+    post:
+      summary: Driver arrival at a stop (server-authoritative)
+      description: "Awarded driver only, passenger aboard, stops in order (one at a time). Geofenced against the driver's last ACCEPTED position with the fix's GPS accuracy as tolerance (up to the market's accuracy ceiling) and a freshness bound; outside it answers 422 not_at_pickup details.reason=not_at_stop|position_stale|position_inaccurate with the server's evidence. `disputed: true` records the arrival anyway as DISPUTED (mp.stop.arrival_disputed) — it never starts paid waiting; a later arrival from inside the fence confirms it and starts the clock then. Emits mp.stop.arrived and mp.stop.waiting_started."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              { type: object, properties: { disputed: { type: boolean } } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/stops/{stopId}/depart:
+    post:
+      summary: Driver departure from a stop — finalises its waiting
+      description: "Awarded driver only. The waiting fee is computed once from server timestamps (confirmed arrival → departure), capped at the rider's authorized cap, and settled as ONE stop_waiting adjustment through the amendment money path (commission increment captured once, rider top-up committed, agreed fare raised). Waiting milestones up to departure (allowance consumed, paid waiting accruing, approval required, excessive) are published once each, stamped when they happened."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+  /v1/mp/requests/{requestId}/stops/{stopId}/skip:
+    post:
+      summary: Skip a stop
+      description: "The rider may drop any stop not yet left; the driver may leave a stop only once its waiting is excessive (409 conflict details.reason=waiting_not_excessive otherwise). Skipping never lowers the agreed fare; waiting already earned settles."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties: { reason: { type: string, maxLength: 80 } },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+  /v1/mp/requests/{requestId}/stops/{stopId}/waiting-approval:
+    post:
+      summary: Rider approval to keep paying for waiting beyond the agreed cap
+      description: "Rider only, while the driver waits at the stop. Extends the authorized cap by one more increment of the published maximum, bound to the cap revision the rider saw (stale: version_conflict with the refreshed cap). Without it nothing accrues past the cap."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [capRevision],
+                properties: { capRevision: { type: integer } },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
   /v1/mp/feed:
     get:
       summary: Paginated eligible open-request feed (D01)
-      description: "All requests the driver is eligible to discover in their current envelope. Receiving the feed never reserves the driver or removes availability."
+      description: "All requests the driver is eligible to discover in their current envelope. Receiving the feed never reserves the driver or removes availability. Every card carries the A04.1 earnings breakdown; the driver's saved preferences (A04.2) hide what they do not want and rank homeward requests first within the page — a filter on discovery, never on eligibility."
       parameters:
         - { $ref: "#/components/parameters/Cursor" }
+        - {
+            name: preferences,
+            in: query,
+            required: false,
+            description: "apply (default) or ignore — ignore shows the whole envelope, unfiltered and unranked by preferences.",
+            schema: { type: string, enum: [apply, ignore] },
+          }
       responses:
         "200":
           content:
@@ -1232,6 +4080,8 @@ paths:
                         },
                       nextCursor: { type: string },
                       availabilityEpoch: { type: integer },
+                      preferences:
+                        { $ref: "#/components/schemas/FeedPreferences" },
                     },
                 }
   /v1/mp/requests/{requestId}/driver-view:
@@ -1263,11 +4113,26 @@ paths:
                         },
                       profileLine: { type: string },
                       ceilingNotice: { type: string },
+                      preferenceNotice:
+                        {
+                          type: string,
+                          description: "A04.2: a preference this request cannot meet (e.g. the minimum trip amount is above its maximum).",
+                        },
                       myBid: { $ref: "#/components/schemas/Bid" },
                       currentClaimId:
                         {
                           type: string,
                           description: "The driver's current work claim id — the mandatory dependsOnClaimId for a next-slot bid. Null unless a current claim exists.",
+                        },
+                      advanceCommitment:
+                        {
+                          $ref: "#/components/schemas/AdvanceCommitment",
+                          description: "A03: on an advance-booking request, what bidding commits the driver's wallet to — explained BEFORE the bid.",
+                        },
+                      preferredRequest:
+                        {
+                          $ref: "#/components/schemas/PreferredInvitation",
+                          description: "A04 item 3: a rider asked this driver first — offer through the ordinary presets, or decline for free. While the window is exclusive every other driver gets 404 here.",
                         },
                     },
                 }
@@ -1325,6 +4190,89 @@ paths:
                         },
                     },
                 }
+  /v1/mp/driver/preferences:
+    get:
+      summary: Driver preferences in the caller's city (A04.2)
+      description: "Version 0 with permissive defaults when the driver never saved any. bounds are derived from the market's policy (widest envelope, stop limit, rate-profile ceilings)."
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DriverPreferences" }
+    patch:
+      summary: Save a new preferences version (idempotent, versioned)
+      description: "Appends version expectedVersion + 1 (a stale expectedVersion or a concurrent writer answers 409 version_conflict with details.currentVersion). Absent fields are unchanged; null clears a nullable field; unknown keys are refused. A PATCH that changes nothing writes nothing. Writes one outbox event (mp.driver_preferences.saved, no homeward coordinates) and one audit row in the same transaction. Saving never touches a bid, hold, award or eligibility, and preferences never place a bid."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                additionalProperties: false,
+                required: [expectedVersion],
+                properties:
+                  {
+                    expectedVersion: { type: integer, minimum: 0 },
+                    minimumTripAmountMinor:
+                      {
+                        oneOf:
+                          [
+                            { $ref: "#/components/schemas/Money" },
+                            { type: "null" },
+                          ],
+                      },
+                    maxPickupDistanceMeters: { type: [integer, "null"] },
+                    acceptsDeliveries: { type: boolean },
+                    acceptsStops: { type: boolean },
+                    maxStops: { type: [integer, "null"] },
+                    homeward:
+                      {
+                        oneOf:
+                          [
+                            {
+                              type: object,
+                              additionalProperties: false,
+                              required: [lat, lng, radiusMeters],
+                              properties:
+                                {
+                                  lat: { type: number },
+                                  lng: { type: number },
+                                  radiusMeters: { type: integer },
+                                  label: { type: string, maxLength: 40 },
+                                },
+                            },
+                            { type: "null" },
+                          ],
+                      },
+                    homewardOnly: { type: boolean },
+                    availabilityWindows:
+                      {
+                        type: array,
+                        maxItems: 28,
+                        items:
+                          { $ref: "#/components/schemas/AvailabilityWindow" },
+                      },
+                    acceptsPreferredRequests:
+                      {
+                        type: boolean,
+                        description: "A04 item 3: opt in to (or out of) preferred requests. Turning it on needs marketplace_preferred_drivers (404 feature_disabled otherwise); turning it off never does.",
+                      },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DriverPreferences" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/mp/bids:
     post:
       summary: Submit a funded bid (D02 → D03)
@@ -1349,7 +4297,12 @@ paths:
                     requestId: { type: string },
                     requestRevision: { type: integer },
                     amountMinor: { $ref: "#/components/schemas/Money" },
-                    slot: { type: string, enum: [current, next] },
+                    slot:
+                      {
+                        type: string,
+                        enum: [current, next, advance],
+                        description: "`advance` only on an advance-booking request (A03): the offer is for its future pickup window; the 10% is held now and captured once if selected.",
+                      },
                     dependsOnClaimId: { type: string },
                     availabilityEpoch: { type: integer },
                     rateProfileVersion: { type: integer },
@@ -1892,6 +4845,212 @@ paths:
                       reservationId: { type: string, nullable: true },
                     },
                 }
+  /v1/wallet/mp/holds/{reservationId}/amendments/{amendmentId}/reserve:
+    post:
+      summary: Reserve a post-award commission increment (internal, A02)
+      description: "Service-authenticated. `reservationId` is the award's CAPTURED hold; the amendment id is the idempotency authority (same terms replay 200; different terms 409 idempotency_key_reuse). Encumbers commission(new fare) − captured on the driver's spendable, BEFORE approvals. 422 insufficient_spendable writes nothing; 409 version_conflict (stale prior, refreshedTerms.capturedTotalMinor); 409 conflict (another open amendment on the award, not captured, reversed)."
+      security: [{ serviceKey: [] }]
+      parameters:
+        - {
+            name: reservationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeltaTerms" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+        "200":
+          description: "Replay."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+  /v1/wallet/mp/holds/{reservationId}/amendments/{amendmentId}/capture:
+    post:
+      summary: Capture the committed increment exactly once (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters:
+        - {
+            name: reservationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, newTotalMinor],
+                properties:
+                  {
+                    awardId: { type: string },
+                    newTotalMinor: { $ref: "#/components/schemas/Money" },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+  /v1/wallet/mp/holds/{reservationId}/amendments/{amendmentId}/release:
+    post:
+      summary: Release a reserved increment (reject/expiry; safe before any reserve)
+      security: [{ serviceKey: [] }]
+      parameters:
+        - {
+            name: reservationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, reason],
+                properties:
+                  { awardId: { type: string }, reason: { type: string } },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+  /v1/wallet/mp/holds/{reservationId}/amendments/{amendmentId}/refund:
+    post:
+      summary: Refund a committed decrease as a linked partial reversal (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters:
+        - {
+            name: reservationId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: amendmentId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeltaTerms" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommissionDelta" }
+  /v1/wallet/mp/funding/top-up:
+    post:
+      summary: Reserve the rider's funding top-up for a fare increase (internal, A02)
+      description: "Service-authenticated; bare-integer amounts. The original reservation is never edited. Cash answers secured:false (no row). 422 insufficient_funds writes nothing; 409 version_conflict (refreshedTerms.fundedAmountMinor); 409 conflict (another open top-up, reservation not active)."
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundingAmendment" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FundingAdjustment" }
+  /v1/wallet/mp/funding/top-up/commit:
+    post:
+      summary: Commit a reserved top-up when its amendment commits (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, amendmentId, newAmountMinor],
+                properties:
+                  {
+                    awardId: { type: string },
+                    amendmentId: { type: string },
+                    newAmountMinor: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FundingAdjustment" }
+  /v1/wallet/mp/funding/top-up/release:
+    post:
+      summary: Release a top-up whose amendment was rejected or expired (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [awardId, amendmentId, reason],
+                properties:
+                  {
+                    awardId: { type: string },
+                    amendmentId: { type: string },
+                    reason: { type: string },
+                  },
+              }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FundingAdjustment" }
+  /v1/wallet/mp/funding/partial-release:
+    post:
+      summary: Partially release the rider's funding for a committed decrease (internal, A02)
+      security: [{ serviceKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundingAmendment" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FundingAdjustment" }
   /api/v1/webhooks/marketplace-assign:
     post:
       summary: Delivery execution hand-off (internal, marketplace engine → delivery-service)
@@ -2207,7 +5366,7 @@ paths:
                 }
   /v1/admin/mp/requests/{requestId}/timeline:
     get:
-      summary: Versioned request/bid/award timeline (A02) — append-only, no mutations
+      summary: Versioned request/bid/award timeline (A02) — append-only, no mutations. Carries the request's mp.* rows plus the trip_access.*, business_booking.* and ride.* (execution ride) rows linked to it; every detail is redacted server-side (never a sealed envelope, SMS copy, coordinate, raw token or phone)
       parameters:
         - {
             name: requestId,
@@ -2293,7 +5452,10 @@ paths:
           { $ref: "#/components/parameters/Cursor" },
         ]
       responses:
-        "200": { description: Paginated pending-saga rows. }
+        "200":
+          {
+            description: "Paginated pending-saga rows, each with fundingSource (business | rider | cash): a business award's funding step is the organization budget's reserve.",
+          }
   /v1/admin/mp/awards/{awardId}/reconcile:
     post:
       summary: C08 — ask the engine to advance ONE stuck award's saga now (same step the sweep would take); dryRun previews, apply requires expectedUpdatedAt + Idempotency-Key
@@ -2335,7 +5497,10 @@ paths:
           { $ref: "#/components/parameters/Cursor" },
         ]
       responses:
-        "200": { description: Paginated recovery rows. }
+        "200":
+          {
+            description: "Paginated recovery rows, each with the currency of its money.",
+          }
   /v1/admin/mp/recoveries/{recoveryId}/retry:
     post:
       summary: C08 — force one recovery row's retry now (same runRecovery the sweep uses); dryRun previews, apply requires expectedAttempts + Idempotency-Key
@@ -2365,6 +5530,112 @@ paths:
         "200":
           {
             description: The retry outcome (preview/resolved/deferred/already_resolved).,
+          }
+        "409":
+          {
+            description: version_conflict — the row's attempts changed since expectedAttempts was read.,
+          }
+  /v1/admin/mp/business-bookings:
+    get:
+      summary: Round 9 owed-work board — business bookings (organization-budget funding), oldest first; owed=true keeps only those still owing payment-service a commit or release. Ids, states and integer minor amounts only
+      parameters:
+        [
+          {
+            name: owed,
+            in: query,
+            required: false,
+            schema: { type: string, enum: ["true", "false"] },
+          },
+          {
+            name: cityId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/Cursor" },
+        ]
+      responses:
+        "200":
+          {
+            description: "Paginated rows: awardId, requestId, bookingRef, organizationId, costCentreId, cityId, state, owedOp, releaseParty, releaseReason, reservedMinor, committedMinor, attempts, lastError, nextAttemptAt, ageSec.",
+          }
+  /v1/admin/mp/business-bookings/{awardId}/retry:
+    post:
+      summary: Round 9 — drive ONE award's owed business commit/release now (the sweep's runner, under business:<awardId>:<op>); dryRun previews and sends nothing, apply requires expectedAttempts + Idempotency-Key; audited
+      parameters:
+        [
+          { name: awardId, in: path, required: true, schema: { type: string } },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties:
+                  {
+                    dryRun: { type: boolean },
+                    expectedAttempts: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          {
+            description: The retry outcome (preview/resolved/deferred/nothing_owed) with the row.,
+          }
+        "409":
+          {
+            description: version_conflict — the row's attempts changed since expectedAttempts was read.,
+          }
+  /v1/admin/mp/delivery-cancellations:
+    get:
+      summary: Round 9 owed-work board — queued delivery cancellations owed to delivery-service, oldest first
+      parameters:
+        [
+          {
+            name: state,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [pending, cancelled, refused] },
+          },
+          {
+            name: cityId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/Cursor" },
+        ]
+      responses:
+        "200":
+          {
+            description: "Paginated rows: awardId, deliveryId, reason, state, attempts, lastStatus, lastCode, lastError, nextAttemptAt, resolvedAt, ageSec.",
+          }
+  /v1/admin/mp/delivery-cancellations/{awardId}/retry:
+    post:
+      summary: Round 9 — drive ONE owed delivery cancellation now (the sweep's runner; delivery-service is idempotent on the award); dryRun previews and sends nothing, apply requires expectedAttempts + Idempotency-Key; audited
+      parameters:
+        [
+          { name: awardId, in: path, required: true, schema: { type: string } },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties:
+                  {
+                    dryRun: { type: boolean },
+                    expectedAttempts: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          {
+            description: The retry outcome (preview/resolved/deferred/nothing_owed) with the row.,
           }
         "409":
           {
@@ -2594,3 +5865,655 @@ paths:
           }
         "409":
           { description: version_conflict — this action has no pending appeal. }
+  # ── Book for Later (A03) — ride-service, gateway identity ────────────────
+  /v1/mp/scheduled-requests:
+    post:
+      summary: Schedule a request (A03 product A — no driver is secured)
+      description: "Rider only; flag scheduled_rides (deny-by-default) plus marketplace_rides. Stores an INTENT from a fresh quote (route, service and class pinned; the quote is not consumed): pickup as local date/time + IANA timezone (resolved and stored as a UTC instant with its DST resolution), a pickup window, the asked fare (inside the quote's bounds) and the rider's approved maximum. Nothing is published, reserved or charged. At publishAt (the market's lead time) a durable worker re-prices the route, re-checks the payment method and the wallet's spendable, and publishes an ordinary request within the approval (the ceiling tightened to the approved maximum) — or parks the intent in needs_rider_approval with the refreshed terms and a notification. Lead/horizon: at least minLeadSec and at most maxHorizonSec ahead (validation_failed)."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  quoteId,
+                  requestedFareMinor,
+                  maxFareMinor,
+                  paymentMethodId,
+                  schedule,
+                ]
+              properties:
+                quoteId: { type: string }
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+                maxFareMinor: { $ref: "#/components/schemas/Money" }
+                paymentMethodId: { type: string }
+                schedule: { $ref: "#/components/schemas/PickupScheduleInput" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+        "404":
+          {
+            description: "feature_disabled (flag off) or the quote is not the rider's.",
+          }
+        "409": { description: "request_cap_reached, idempotency_key_reuse." }
+        "422":
+          {
+            description: "validation_failed (schedule, lead, horizon, window), fare_out_of_bounds, payment_method_unavailable.",
+          }
+    get:
+      summary: The rider's one-off scheduled requests (occurrences are listed under their series)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScheduledRequest" }
+  /v1/mp/scheduled-requests/{scheduledRequestId}:
+    get:
+      summary: One scheduled request (owner only; 404 otherwise)
+      parameters:
+        - {
+            name: scheduledRequestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+  /v1/mp/scheduled-requests/{scheduledRequestId}/cancel:
+    post:
+      summary: Cancel an unpublished scheduled request (a published one is cancelled through its request — request_closed names it)
+      parameters:
+        - {
+            name: scheduledRequestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+        "409": { description: "request_closed (already published / terminal)." }
+  /v1/mp/scheduled-requests/{scheduledRequestId}/approve:
+    post:
+      summary: Renew approval of refreshed terms (needs_rider_approval → scheduled_unassigned)
+      description: "The new maximum must be at or above the refreshed minimum (fare_out_of_bounds otherwise); an optional replacement payment method must be available in the city. The next worker pass re-refreshes and publishes — an approval is never stretched over terms that moved again."
+      parameters:
+        - {
+            name: scheduledRequestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, maxFareMinor]
+              properties:
+                expectedVersion: { type: integer }
+                maxFareMinor: { $ref: "#/components/schemas/Money" }
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+                paymentMethodId: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+        "409":
+          {
+            description: "conflict (not awaiting approval), version_conflict, request_closed.",
+          }
+  /v1/mp/advance-requests:
+    post:
+      summary: Publish an advance-booking request (A03 product B)
+      description: "Rider only; flag marketplace_advance_reservations (deny-by-default) plus marketplace_rides. Publishes a request (booking.kind=advance) that takes offers NOW for the FUTURE pickup window — no driver is secured until the rider selects an offer (POST /v1/mp/requests/{id}/select), which books that driver in advance. Pickup at least minLeadSec and at most bookingHorizonSec ahead; offers run for offerWindowSec (never past the reconfirmation opening). Drivers bid with slot=advance (stationary manual bidding, the 10% held from the cleared balance)."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [quoteId, requestedFareMinor, paymentMethodId, schedule]
+              properties:
+                quoteId: { type: string }
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+                paymentMethodId: { type: string }
+                schedule: { $ref: "#/components/schemas/PickupScheduleInput" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Request" }
+        "404": { description: "feature_disabled." }
+        "422":
+          {
+            description: "validation_failed, fare_out_of_bounds, payment_method_unavailable.",
+          }
+  /v1/mp/advance-bookings:
+    get:
+      summary: My advance bookings (rider — theirs; driver — theirs)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdvanceBooking" }
+  /v1/mp/advance-bookings/{bookingId}:
+    get:
+      summary: One advance booking (its rider or its driver; 404 otherwise)
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+  /v1/mp/advance-bookings/{bookingId}/cancel:
+    post:
+      summary: Rider cancels before activation — award cancelled, the driver's captured commission returned (linked reversal), rider funding released; no fee in this slice
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409":
+          {
+            description: "award_unresolved (still held) or conflict (already ended / activated).",
+          }
+  /v1/mp/advance-bookings/{bookingId}/reconfirm:
+    post:
+      summary: Driver reconfirms between reconfirmation.opensAt and deadline (a missed deadline fails the booking, commission returned)
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "403": { description: "driver_ineligible (suspended)." }
+        "409":
+          { description: "conflict (window not open / closed / wrong state)." }
+  /v1/mp/advance-bookings/{bookingId}/withdraw:
+    post:
+      summary: Driver cannot attend — the booking fails with the reason explained, commission returned, rider funding released, a consented rematch offered; nobody is silently substituted
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties: { reason: { type: string, maxLength: 280 } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+  /v1/mp/advance-bookings/{bookingId}/rematch:
+    post:
+      summary: The rider's consent to re-publish a failed booking for the same window
+      description: "A NEW advance request (no driver secured) priced with refreshed bounds, at the original asked fare unless the rider names another — never silently raised: a refreshed minimum above it answers fare_out_of_bounds for the rider to decide. Once per booking."
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Request" }
+        "409":
+          {
+            description: "conflict (not rematchable / already rematched / released / too late).",
+          }
+  /v1/mp/advance-bookings/{bookingId}/release:
+    post:
+      summary: The rider's "cancel and release" on a booking whose driver can't make it (A05 D2)
+      description: "Closes the rematch offer for good. The money was already settled when the booking failed — the captured commission returned with a linked reversal and any rider funding hold released — so nothing is charged or moved here. Idempotent."
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409":
+          {
+            description: "conflict (not a failed booking, or already rematched).",
+          }
+  /v1/mp/advance-bookings/{bookingId}/vehicle-swaps/{swapId}/accept:
+    post:
+      summary: The booked driver accepts a fleet's vehicle swap (A05 FL-8), parked
+      description: "Only while the server confirms the driver stationary and parked (driver_ineligible otherwise). The server then revalidates the target vehicle (class, capacity, occupancy, documents) and, when it passes, asks the RIDER — nothing changes before the rider consents. The fare and the commission are unchanged."
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: swapId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "403":
+          {
+            description: "driver_ineligible (not parked) / forbidden (not the booked driver).",
+          }
+        "409": { description: "conflict (the swap can no longer be decided)." }
+  /v1/mp/advance-bookings/{bookingId}/vehicle-swaps/{swapId}/decline:
+    post:
+      summary: The booked driver declines a fleet's vehicle swap, parked — the original vehicle stays
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: swapId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409": { description: "conflict (the swap can no longer be decided)." }
+  /v1/mp/advance-bookings/{bookingId}/changes/{changeId}/accept:
+    post:
+      summary: The rider consents to a revalidated vehicle change (A05 D1)
+      description: "Applies the change: the booking's vehicle and its row on the shared vehicle occupancy ledger move atomically under the vehicle exclusion constraint. Same driver, fare unchanged, commission never charged again. A target no longer free fails the change (409) and the original vehicle stays."
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: changeId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409":
+          {
+            description: "conflict (no longer awaiting the rider, or the new vehicle is no longer available).",
+          }
+  /v1/mp/advance-bookings/{bookingId}/changes/{changeId}/decline:
+    post:
+      summary: The rider declines a vehicle change — nothing changes
+      parameters:
+        - {
+            name: bookingId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: changeId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvanceBooking" }
+        "409": { description: "conflict (no longer awaiting the rider)." }
+  /v1/mp/driver/calendar:
+    get:
+      summary: The driver's booking calendar — committed future bookings, separate from the live current/next jobs
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bookings, note]
+                properties:
+                  bookings:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdvanceBooking" }
+                  note: { type: string }
+  /v1/mp/recurring-templates:
+    post:
+      summary: Create a recurring journey (flag marketplace_recurring_journeys plus the product's flag)
+      description: "Occurrences are generated idempotently (one per template and local date, replay-safe) generationHorizonDays ahead; each is its own ScheduledRequest (product scheduled_request or advance_reservation) with its own approval, funding, driver commitment, cancellation and receipt. A date whose local time falls in a DST gap/overlap resolves per dstDisambiguation; with reject that date is recorded as skipped (closeReason dst_ambiguous_time)."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  quoteId,
+                  product,
+                  daysOfWeek,
+                  localTime,
+                  startsOn,
+                  requestedFareMinor,
+                  maxFareMinor,
+                  paymentMethodId,
+                ]
+              properties:
+                quoteId: { type: string }
+                product:
+                  {
+                    type: string,
+                    enum: [scheduled_request, advance_reservation],
+                  }
+                daysOfWeek:
+                  type: array
+                  minItems: 1
+                  items:
+                    { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] }
+                localTime: { type: string }
+                timeZone: { type: string }
+                startsOn: { type: string }
+                endsOn: { type: string }
+                windowMinutes: { type: integer }
+                dstDisambiguation:
+                  { type: string, enum: [compatible, earlier, later, reject] }
+                requestedFareMinor: { $ref: "#/components/schemas/Money" }
+                maxFareMinor: { $ref: "#/components/schemas/Money" }
+                paymentMethodId: { type: string }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTemplate" }
+    get:
+      summary: The rider's recurring journeys
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/RecurringTemplate" }
+  /v1/mp/recurring-templates/{templateId}:
+    get:
+      summary: One recurring journey with its occurrences
+      parameters:
+        - {
+            name: templateId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTemplate" }
+  /v1/mp/recurring-templates/{templateId}/{command}:
+    post:
+      summary: Pause, resume or cancel a series
+      description: "pause: nothing new is generated or published (a waiting occurrence whose pickup passes lapses); resume: generation and publication continue; cancel: generation stops and unpublished occurrences are cancelled — occurrences already sent to drivers (or booked) are separate trips and stand."
+      parameters:
+        - {
+            name: templateId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: command,
+            in: path,
+            required: true,
+            schema: { type: string, enum: [pause, resume, cancel] },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion]
+              properties: { expectedVersion: { type: integer } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringTemplate" }
+        "409":
+          { description: "version_conflict, conflict (illegal for the state)." }
+  /v1/mp/recurring-templates/{templateId}/occurrences/{date}/skip:
+    post:
+      summary: Skip one occurrence (generated or not yet generated — generation never resurrects it); the rest of the series is untouched
+      parameters:
+        - {
+            name: templateId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: date,
+            in: path,
+            required: true,
+            schema: { type: string, example: "2026-10-07" },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledRequest" }
+        "409":
+          {
+            description: "conflict (already sent to drivers — cancel its request or booking instead).",
+          }
+  /v1/mp/requests/{requestId}/receipt:
+    get:
+      summary: Trip receipt (JSON) — the requester's view or the awarded driver's view
+      description: "A COMPLETED marketplace ride only. The requester gets the rider view (itemised agreed fare and committed adjustments, included taxes, total, payment method, trip facts — never the commission); the awarded driver gets the driver view (same lines and total as gross, the 10% captured once plus linked adjustments, net). Anyone else gets 404. The total reconciles exactly with the settlement (agreed fare + committed adjustments); while an adjustment still holds open money the route answers 409 conflict (details.reason settling); before completion 409 conflict (details.reason trip_not_completed). Read-only and not flag-gated: a receipt records a trip that already happened."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Receipt" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/requests/{requestId}/preferred/decline:
+    post:
+      summary: The named driver declines a preferred request — free, idempotent, never recorded against them
+      description: "Only the invited driver, only while the window is exclusive and the request open (409 conflict otherwise; 409 with details.reason live_offer while they hold a live offer — withdraw it first). Anyone else gets 404 (403 for a non-driver). The window ends at once: open market if the rider consented to fallback, otherwise the request expires free (closeReason preferred_driver_unavailable). The rider is not told whether the driver declined or simply did not answer. Emits mp.request.preferred_driver_declined (audience: that driver) and an audit row; nothing touches standing or reliability. Not flag-gated: a driver can always decline an invitation they received."
+      parameters:
+        - {
+            name: requestId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PreferredDecline" }
+        "404":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /v1/mp/favourite-drivers:
+    get:
+      summary: The rider's saved drivers, with whether each can be asked first right now
+      description: "Always readable (whatever the flag says), so a rider can always see what is stored about their choices."
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FavouriteDrivers" }
+    post:
+      summary: Save the driver of a completed trip (marketplace_preferred_drivers)
+      description: "Body {requestId}: a request of the caller's whose marketplace RIDE was completed (409 conflict details.reason trip_not_completed otherwise; 404 for someone else's request). Idempotent; saving an already-saved driver answers 200 and changes nothing. Emits mp.favourite_driver.saved (audience: the rider only) and an audit row."
+      parameters: [{ $ref: "#/components/parameters/IdemKey" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestId]
+              properties:
+                requestId: { type: string, format: uuid }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FavouriteDriver" }
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FavouriteDriver" }
+        "404":
+          {
+            description: "feature_disabled, or not_found (not the caller's request).",
+          }
+        "409": { description: "conflict (details.reason trip_not_completed)." }
+  /v1/mp/favourite-drivers/{driverId}/remove:
+    post:
+      summary: Remove a saved driver (always allowed)
+      parameters:
+        - {
+            name: driverId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - { $ref: "#/components/parameters/IdemKey" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FavouriteDriver" }
+        "404":
+          { description: "not_found — not one of the rider's saved drivers." }
+  /v1/mp/service-needs:
+    get:
+      summary: Service requirements and preferences, with honest availability in the rider's market (marketplace_accessibility_requirements)
+      parameters:
+        - {
+            name: service,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [ride], default: ride },
+          }
+        - {
+            name: vehicleClass,
+            in: query,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceNeedsCatalog" }
+        "404": { description: "feature_disabled." }
+        "422":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }

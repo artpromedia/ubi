@@ -337,6 +337,7 @@ func (s *Service) Start(ctx context.Context, actor Actor, rideID uuid.UUID) (*Ri
 	}
 
 	var view *RideView
+	var startedCity string
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		ride, err := s.loadRideForActor(ctx, tx, actor, rideID)
 		if err != nil {
@@ -377,11 +378,13 @@ func (s *Service) Start(ctx context.Context, actor Actor, rideID uuid.UUID) (*Ri
 			return err
 		}
 		view = viewOf(moved, config.PinRequired)
+		startedCity = ride.CityID
 		return nil
 	})
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	s.notifyTripStarted(ctx, rideID, actor.UserID, startedCity)
 	return view, nil
 }
 
@@ -550,6 +553,15 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 	marketplaceAwardID, err := s.deps.Store.MarketplaceAwardID(ctx, s.deps.Store.Pool(), rideID)
 	if err != nil {
 		return nil, asDomainError(err)
+	}
+	if actor.IsRider() && marketplaceAwardID != nil && s.cancelGuard != nil {
+		// The marketplace may refuse the rider's cancel before anything moves
+		// (a business trip's booker who left the organization). Only the
+		// ride's own rider reaches here: prepare's authorise refused anyone
+		// else.
+		if err := s.cancelGuard.AuthorizeRiderCancel(ctx, *marketplaceAwardID, actor.UserID); err != nil {
+			return nil, asDomainError(err)
+		}
 	}
 
 	var view *RideView

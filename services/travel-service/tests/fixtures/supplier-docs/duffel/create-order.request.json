@@ -1,0 +1,54 @@
+{
+ "source": "https://duffel.com/docs/api/v2/orders/create-order",
+ "retrieved": "2026-09-23",
+ "payload": {
+  "data": {
+   "users": [
+    "icu_00009htyDGjIfajdNBZRlw"
+   ],
+   "type": "instant",
+   "services": [
+    {
+     "quantity": 1,
+     "id": "ase_00009hj8USM7Ncg31cB123"
+    }
+   ],
+   "selected_offers": [
+    "off_00009htyDGjIfajdNBZRlw"
+   ],
+   "payments": [
+    {
+     "type": "balance",
+     "three_d_secure_session_id": "3ds_0000AWr2XsTRIF1Vp34gh5",
+     "currency": "GBP",
+     "amount": "30.20"
+    }
+   ],
+   "passengers": [
+    {
+     "user_id": "icu_00009htyDGjIfajdNBZRlw",
+     "title": "mrs",
+     "phone_number": "+442080160509",
+     "infant_passenger_id": "pas_00009hj8USM8Ncg32aTGHL",
+     "identity_documents": [
+      {
+       "unique_identifier": "19KL56147",
+       "type": "passport",
+       "issuing_country_code": "GB",
+       "expires_on": "2025-04-25"
+      }
+     ],
+     "id": "pas_00009hj8USM7Ncg31cBCLL",
+     "given_name": "Amelia",
+     "gender": "f",
+     "family_name": "Earhart",
+     "email": "amelia@duffel.com",
+     "born_on": "1987-07-24"
+    }
+   ],
+   "metadata": {
+    "payment_intent_id": "pit_00009htYpSCXrwaB9DnUm2"
+   }
+  }
+ }
+}

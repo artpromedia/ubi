@@ -38,6 +38,10 @@ type PendingAwardRow struct {
 	NextRetryAt  *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+
+	// FundingSource is who funds the award (FundingSource*): its funding
+	// step reserves the organization's budget on a business award.
+	FundingSource string
 }
 
 // PendingAwards lists awards in `pending`, oldest first (the most urgent),
@@ -45,13 +49,15 @@ type PendingAwardRow struct {
 func (s *Store) PendingAwards(ctx context.Context, db DB, cityID, cursor string, limit int) ([]*PendingAwardRow, error) {
 	query := `
 		SELECT a.id, a.request_id, a.driver_id, r.city_id,
+			CASE WHEN EXISTS (SELECT 1 FROM mp.business_bookings b WHERE b.award_id = a.id) THEN $3
+				WHEN r.payment_method_id = 'cash' THEN $4 ELSE $5 END,
 			COALESCE(t.step, ''), COALESCE(t.state, ''), COALESCE(t.attempts, 0),
 			COALESCE(t.last_error, ''), t.next_retry_at, a.created_at, a.updated_at
 		FROM mp.awards a
 		JOIN mp.requests r ON r.id = a.request_id
 		LEFT JOIN mp.award_attempts t ON t.award_id = a.id
 		WHERE a.state = $1 AND ($2 = '' OR r.city_id = $2)`
-	args := []any{machine.MpAwardPending, cityID}
+	args := []any{machine.MpAwardPending, cityID, FundingSourceBusiness, FundingSourceCash, FundingSourceRider}
 	if cursor != "" {
 		at, id, err := decodeCursor(cursor)
 		if err != nil {
@@ -70,7 +76,7 @@ func (s *Store) PendingAwards(ctx context.Context, db DB, cityID, cursor string,
 	var out []*PendingAwardRow
 	for rows.Next() {
 		var row PendingAwardRow
-		if err := rows.Scan(&row.AwardID, &row.RequestID, &row.DriverID, &row.CityID,
+		if err := rows.Scan(&row.AwardID, &row.RequestID, &row.DriverID, &row.CityID, &row.FundingSource,
 			&row.Step, &row.AttemptState, &row.Attempts, &row.LastError, &row.NextRetryAt,
 			&row.CreatedAt, &row.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to read pending award row: %w", err)
@@ -80,17 +86,28 @@ func (s *Store) PendingAwards(ctx context.Context, db DB, cityID, cursor string,
 	return out, rows.Err()
 }
 
+// recoveryCurrencySQL derives a recovery row's currency (alias rr) from what
+// it names: its bid's request, a settlement's or replayed reserve's own
+// money, or the award its payload names — ” only when nothing names one.
+const recoveryCurrencySQL = `COALESCE(
+			(SELECT q.currency FROM mp.bids b JOIN mp.requests q ON q.id = b.request_id WHERE b.id = rr.bid_id),
+			rr.payload->'fareMinor'->>'currency',
+			rr.payload->'reserve'->'amountMinor'->>'currency',
+			(SELECT q.currency FROM mp.awards a JOIN mp.requests q ON q.id = a.request_id
+				WHERE a.id::text = rr.payload->>'awardId'),
+			'')`
+
 // RecoveryByID reads one recovery row for the admin retry command's preview
 // and its optimistic-concurrency check.
 func (s *Store) RecoveryByID(ctx context.Context, db DB, id uuid.UUID) (*RecoveryRow, error) {
 	var row RecoveryRow
 	err := db.QueryRow(ctx, `
 		SELECT id, reservation_id, driver_id, bid_id, action, amount_minor, payload,
-			attempts, COALESCE(last_error, ''), next_retry_at, resolved_at, created_at
-		FROM mp.reservation_recovery WHERE id = $1`, id).Scan(
+			attempts, COALESCE(last_error, ''), next_retry_at, resolved_at, created_at, `+recoveryCurrencySQL+`
+		FROM mp.reservation_recovery rr WHERE id = $1`, id).Scan(
 		&row.ID, &row.ReservationID, &row.DriverID, &row.BidID, &row.Action,
 		&row.AmountMinor, &row.Payload, &row.Attempts, &row.LastError, &row.NextRetryAt,
-		&row.ResolvedAt, &row.CreatedAt)
+		&row.ResolvedAt, &row.CreatedAt, &row.Currency)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, domain.ErrNotFound
@@ -106,8 +123,8 @@ func (s *Store) RecoveryByID(ctx context.Context, db DB, id uuid.UUID) (*Recover
 func (s *Store) ListRecoveries(ctx context.Context, db DB, action, cursor string, limit int) ([]*RecoveryRow, error) {
 	query := `
 		SELECT id, reservation_id, driver_id, bid_id, action, amount_minor, payload,
-			attempts, COALESCE(last_error, ''), next_retry_at, resolved_at, created_at
-		FROM mp.reservation_recovery
+			attempts, COALESCE(last_error, ''), next_retry_at, resolved_at, created_at, ` + recoveryCurrencySQL + `
+		FROM mp.reservation_recovery rr
 		WHERE resolved_at IS NULL AND ($1 = '' OR action = $1)`
 	args := []any{action}
 	if cursor != "" {
@@ -130,7 +147,7 @@ func (s *Store) ListRecoveries(ctx context.Context, db DB, action, cursor string
 		var row RecoveryRow
 		if err := rows.Scan(&row.ID, &row.ReservationID, &row.DriverID, &row.BidID, &row.Action,
 			&row.AmountMinor, &row.Payload, &row.Attempts, &row.LastError, &row.NextRetryAt,
-			&row.ResolvedAt, &row.CreatedAt); err != nil {
+			&row.ResolvedAt, &row.CreatedAt, &row.Currency); err != nil {
 			return nil, fmt.Errorf("failed to read recovery row: %w", err)
 		}
 		out = append(out, &row)
@@ -348,8 +365,8 @@ func (s *Store) ExecutionRideSummary(ctx context.Context, db DB, rideID uuid.UUI
 func (s *Store) RecoveriesForBid(ctx context.Context, db DB, bidID uuid.UUID) ([]*RecoveryRow, error) {
 	rows, err := db.Query(ctx, `
 		SELECT id, reservation_id, driver_id, bid_id, action, amount_minor, payload,
-			attempts, COALESCE(last_error, ''), next_retry_at, resolved_at, created_at
-		FROM mp.reservation_recovery WHERE bid_id = $1 ORDER BY created_at ASC`, bidID)
+			attempts, COALESCE(last_error, ''), next_retry_at, resolved_at, created_at, `+recoveryCurrencySQL+`
+		FROM mp.reservation_recovery rr WHERE bid_id = $1 ORDER BY created_at ASC`, bidID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list recoveries for bid %s: %w", bidID, err)
 	}
@@ -359,7 +376,7 @@ func (s *Store) RecoveriesForBid(ctx context.Context, db DB, bidID uuid.UUID) ([
 		var row RecoveryRow
 		if err := rows.Scan(&row.ID, &row.ReservationID, &row.DriverID, &row.BidID, &row.Action,
 			&row.AmountMinor, &row.Payload, &row.Attempts, &row.LastError, &row.NextRetryAt,
-			&row.ResolvedAt, &row.CreatedAt); err != nil {
+			&row.ResolvedAt, &row.CreatedAt, &row.Currency); err != nil {
 			return nil, fmt.Errorf("failed to read recovery row: %w", err)
 		}
 		out = append(out, &row)

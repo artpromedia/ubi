@@ -47,6 +47,24 @@ describe("canonical state machines", () => {
         "mpHold",
         "mpAward",
         "mpClaim",
+        // Post-award trip amendments (A02 items 4-7).
+        "mpAmendment",
+        // Book for Later (A03): scheduled requests (and recurring
+        // occurrences), advance driver reservations, recurring templates.
+        "mpScheduledRequest",
+        "mpAdvanceBooking",
+        "mpRecurringTemplate",
+        // Rider confidence (A04 item 3): a preferred-driver request's
+        // bounded exclusive window.
+        "mpPreferredWindow",
+        // Business travel (A06 part C): one award's organization-budget
+        // funding (reserve → commit | release).
+        "mpBusinessBooking",
+        // Fleet calendar (A05): the shared vehicle occupancy ledger, an
+        // advance booking's risk overlay, and a vehicle swap on a booking.
+        "mpVehicleOccupancy",
+        "mpBookingRisk",
+        "mpVehicleSwap",
       ].sort(),
     );
   });

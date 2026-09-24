@@ -3,6 +3,8 @@ package testutil
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -63,10 +65,23 @@ type Harness struct {
 	Funding     *marketplace.FakeFunding
 	Settlement  *marketplace.FakeSettlement
 
+	// TripAccessKey / TripAccessKid are the sealed-delivery key the harness
+	// built the marketplace with (a fresh random key per harness), so a test
+	// can open trip_access.issued exactly as notification-service does. Nil
+	// when built WithoutTripAccessSealer.
+	TripAccessKey []byte
+	TripAccessKid string
+
 	// CityID is unique per harness, so tests running side by side never share
 	// a city's config, flags, drivers or rides.
 	CityID        string
 	ConfigVersion int
+
+	// Internal is the /internal/fleet router (internal contract A, A05)
+	// exactly as cmd/server/main.go mounts it, authenticated by
+	// FleetRideServiceKey. Drive it with DoInternal.
+	Internal            http.Handler
+	FleetRideServiceKey string
 }
 
 // HarnessOption customises a harness before it is built.
@@ -78,6 +93,25 @@ type harnessOptions struct {
 	flags        map[string]bool
 	withoutRedis bool
 	marketplace  bool
+	// A06: the verified driver-profile port and the capability source the
+	// marketplace is built with (nil: the production defaults — no profile
+	// service, nothing verified).
+	driverProfiles marketplace.DriverProfilePort
+	capabilities   marketplace.CapabilitySource
+	// delivery is the award saga's delivery hand-off port (nil: the
+	// production default for an unwired deployment — fail closed).
+	delivery marketplace.DeliveryAssignPort
+	// withoutTripAccessSealer builds the marketplace with no sealed-delivery
+	// key: the production fail-closed posture for guest trip links.
+	withoutTripAccessSealer bool
+	// business is the business-travel port (nil: the production default for
+	// an unwired deployment — every business call fails closed).
+	business marketplace.BusinessPort
+	// fleet is fleet-service's side of contract A (nil: the production
+	// default for an unwired deployment — nothing is ever resolved), and
+	// fleetRideServiceKey the key /internal/fleet accepts.
+	fleet               marketplace.FleetServicePort
+	fleetRideServiceKey *string
 }
 
 // WithCityConfig replaces the seeded city configuration.
@@ -104,6 +138,56 @@ func WithoutRedisGuards() HarnessOption {
 func WithFlag(key string, enabled bool) HarnessOption {
 	return func(o *harnessOptions) { o.flags[key] = enabled }
 }
+
+// WithDriverProfiles builds the marketplace with a driver-profile port — in
+// tests, the real HTTP client pointed at an httptest server that answers
+// user-service's documented contract.
+func WithDriverProfiles(port marketplace.DriverProfilePort) HarnessOption {
+	return func(o *harnessOptions) { o.driverProfiles = port }
+}
+
+// WithCapabilities builds the marketplace with a capability source: the seam
+// a verified vehicle-capability registry plugs into.
+func WithCapabilities(source marketplace.CapabilitySource) HarnessOption {
+	return func(o *harnessOptions) { o.capabilities = source }
+}
+
+// WithDeliveryAssign builds the marketplace with a delivery hand-off port —
+// in tests, the real HTTP client pointed at an httptest server that answers
+// delivery-service's documented marketplace-assign contract.
+func WithDeliveryAssign(port marketplace.DeliveryAssignPort) HarnessOption {
+	return func(o *harnessOptions) { o.delivery = port }
+}
+
+// WithoutTripAccessSealer builds the marketplace with no
+// TRIP_ACCESS_DELIVERY_KEY: guest trip links must be refused, fail closed.
+func WithoutTripAccessSealer() HarnessOption {
+	return func(o *harnessOptions) { o.withoutTripAccessSealer = true }
+}
+
+// WithBusiness builds the marketplace with a business-travel port — in
+// tests, the real HTTP client pointed at an httptest server that answers
+// payment-service's documented /v1/finance/business contract.
+func WithBusiness(port marketplace.BusinessPort) HarnessOption {
+	return func(o *harnessOptions) { o.business = port }
+}
+
+// WithFleetService builds the marketplace with fleet-service's side of
+// internal contract A — in tests, the real HTTP client pointed at an
+// httptest server that answers routes 8 and 9 as documented.
+func WithFleetService(port marketplace.FleetServicePort) HarnessOption {
+	return func(o *harnessOptions) { o.fleet = port }
+}
+
+// WithFleetRideServiceKey sets the FLEET_RIDE_SERVICE_KEY /internal/fleet
+// accepts ("" is the production default when unset: fail closed).
+func WithFleetRideServiceKey(key string) HarnessOption {
+	return func(o *harnessOptions) { o.fleetRideServiceKey = &key }
+}
+
+// DefaultFleetRideServiceKey is the harness's FLEET_RIDE_SERVICE_KEY unless
+// a test sets another (a fixture, 32+ characters).
+const DefaultFleetRideServiceKey = "test-fleet-ride-service-key-0123456789abcdef"
 
 // WithMarketplace attaches the marketplace policy fixture to the city config
 // and opens the ride/delivery marketplace flags (queued jobs stays off; a
@@ -216,6 +300,19 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	// pins the hour gets the same ETA multiplier every run.
 	mpRouter := move.NewStraightLineRouter()
 	mpRouter.Now = clock.Now
+	var tripAccessKey []byte
+	var tripAccessKid string
+	var tripAccessSealer *marketplace.TripAccessSealer
+	if !options.withoutTripAccessSealer {
+		tripAccessKey = make([]byte, 32)
+		if _, err := rand.Read(tripAccessKey); err != nil {
+			t.Fatalf("no randomness for the trip access key: %v", err)
+		}
+		tripAccessKid = "test-" + cityID
+		if tripAccessSealer, err = marketplace.NewTripAccessSealer(base64.StdEncoding.EncodeToString(tripAccessKey), tripAccessKid); err != nil {
+			t.Fatalf("failed to build the trip access sealer: %v", err)
+		}
+	}
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
 		Store:      mpStore,
 		Config:     cityconfig.NewStore(pool, nil, time.Second),
@@ -228,6 +325,14 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 		Redis:      guards,
 		Logger:     zerolog.Nop(),
 		Now:        clock.Now,
+
+		DriverProfiles: options.driverProfiles,
+		Capabilities:   options.capabilities,
+		Delivery:       options.delivery,
+
+		TripAccessSealer: tripAccessSealer,
+		Business:         options.business,
+		Fleet:            options.fleet,
 	})
 	if err != nil {
 		pool.Close()
@@ -236,16 +341,25 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	// Production parity: the move core notifies the marketplace post-commit
 	// when an execution ride ends (service.Build wires the same observer).
 	service.SetExecutionObserver(marketplaceService)
+	service.SetDriverActivityObserver(marketplaceService)
+	service.SetRiderCancelGuard(marketplaceService)
 
 	rideHandler := handler.NewRideHandler(service, zerolog.Nop())
 	marketplaceHandler := handler.NewMarketplaceHandler(marketplaceService, zerolog.Nop())
 	router := rideHandler.Routes(handler.RequireIdentity(handler.NewInternalContextVerifier("", 0)), nil, marketplaceHandler)
+	fleetKey := DefaultFleetRideServiceKey
+	if options.fleetRideServiceKey != nil {
+		fleetKey = *options.fleetRideServiceKey
+	}
+	internal := handler.FleetInternalRoutes(fleetKey, marketplaceHandler)
 
 	h := &Harness{
 		T: t, Pool: pool, Redis: redisClient, Service: service,
 		Router: router, Signer: signer, Clock: clock,
 		Marketplace: marketplaceService, Wallet: fakeWallet, Funding: fakeFunding, Settlement: fakeSettlement,
+		TripAccessKey: tripAccessKey, TripAccessKid: tripAccessKid,
 		CityID: cityID, ConfigVersion: version,
+		Internal: internal, FleetRideServiceKey: fleetKey,
 	}
 
 	t.Cleanup(func() {
@@ -263,11 +377,37 @@ func (h *Harness) cleanup(ctx context.Context) {
 		`DELETE FROM mp.reservation_recovery WHERE bid_id IN (SELECT id FROM mp.bids WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
 		`DELETE FROM mp.driver_claims WHERE driver_id IN (SELECT driver_id FROM ride.driver_sessions WHERE city_id = $1)`,
 		`DELETE FROM mp.driver_claims WHERE award_id IN (SELECT id FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
+		// Completion settlement rows carry no bid: keyed by the award, they can
+		// stay deferred while an amendment still holds open money (A02), and
+		// must not be driven by a later test's sweep.
+		`DELETE FROM mp.reservation_recovery WHERE bid_id IS NULL AND reservation_id IN (SELECT 'mp.settle:' || id::text FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
+		// Rider funding releases the award paths wrote durably (keyed by
+		// the award, no bid): a later test's sweep must not drive them.
+		`DELETE FROM mp.reservation_recovery WHERE bid_id IS NULL AND reservation_id IN (SELECT 'mp.fund.release:' || id::text FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1))`,
+		`DELETE FROM mp.amendments WHERE city_id = $1`,
+		// A06/A04.3 rider confidence. Pickup estimates, preferred windows and
+		// service needs cascade with their bids/requests; saved drivers are
+		// keyed by the city of the trip they were saved from.
+		`DELETE FROM mp.favourite_drivers WHERE city_id = $1`,
+		`DELETE FROM mp.execution_routes WHERE city_id = $1`,
+		// A05 fleet calendar: off-road use flags reference the ledger; the
+		// ledger's fleet rows use this harness's vehicle ids (VehicleID) and
+		// its booking rows this city's bookings. Swaps and risk blockers
+		// cascade with their bookings.
+		`DELETE FROM mp.offroad_use_flags WHERE city_id = $1 OR vehicle_id LIKE 'veh-' || $1 || '-%'`,
+		`DELETE FROM mp.vehicle_occupancy WHERE vehicle_id LIKE 'veh-' || $1 || '-%'
+			OR (kind = 'booking' AND source_id IN (SELECT id::text FROM mp.advance_bookings WHERE city_id = $1))`,
+		// A03 Book for Later: the booking calendar references awards and
+		// requests; occurrences reference their templates.
+		`DELETE FROM mp.advance_bookings WHERE city_id = $1`,
+		`DELETE FROM mp.scheduled_requests WHERE city_id = $1`,
+		`DELETE FROM mp.recurring_templates WHERE city_id = $1`,
 		`DELETE FROM mp.awards WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1)`,
 		`DELETE FROM mp.bids WHERE request_id IN (SELECT id FROM mp.requests WHERE city_id = $1)`,
 		`DELETE FROM mp.requests WHERE city_id = $1`,
 		`DELETE FROM mp.quotes WHERE city_id = $1`,
 		`DELETE FROM mp.rate_profiles WHERE city_id = $1`,
+		`DELETE FROM mp.driver_preferences WHERE city_id = $1`,
 		`DELETE FROM ride.offers WHERE ride_id IN (SELECT id FROM ride.rides WHERE city_id = $1)`,
 		`DELETE FROM ride.rides WHERE city_id = $1`,
 		`DELETE FROM ride.quotes WHERE city_id = $1`,
@@ -342,6 +482,38 @@ func (h *Harness) Do(method, path string, actor Actor, body any, headers ...stri
 
 	recorder := httptest.NewRecorder()
 	h.Router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+// VehicleID is a fleet vehicle id scoped to this harness (its cleanup
+// removes every ledger row written for it).
+func (h *Harness) VehicleID(name string) string {
+	return "veh-" + h.CityID + "-" + name
+}
+
+// DoInternal sends a request through the /internal/fleet router with the
+// given X-Service-Key ("" sends none), as fleet-service would.
+func (h *Harness) DoInternal(method, path, serviceKey string, body any, headers ...string) *httptest.ResponseRecorder {
+	h.T.Helper()
+	var request *http.Request
+	if body == nil {
+		request = httptest.NewRequest(method, path, nil)
+	} else {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			h.T.Fatalf("failed to encode the request body: %v", err)
+		}
+		request = httptest.NewRequest(method, path, bytes.NewReader(encoded))
+		request.Header.Set("Content-Type", "application/json")
+	}
+	if serviceKey != "" {
+		request.Header.Set(marketplace.FleetServiceKeyHeader, serviceKey)
+	}
+	for i := 0; i+1 < len(headers); i += 2 {
+		request.Header.Set(headers[i], headers[i+1])
+	}
+	recorder := httptest.NewRecorder()
+	h.Internal.ServeHTTP(recorder, request)
 	return recorder
 }
 

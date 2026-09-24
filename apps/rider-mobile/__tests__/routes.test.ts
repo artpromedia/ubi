@@ -32,6 +32,37 @@ describe("typed deep-link routes", () => {
     );
   });
 
+  it("maps the A02 trip and A03 Book for Later paths", () => {
+    const screens = linking.config!.screens as Record<string, any>;
+    const mp = screens.Marketplace.screens;
+    expect(mp.Route).toBe("home/marketplace/:requestId/route");
+    expect(mp.Trip).toBe("home/marketplace/:requestId/trip");
+    expect(mp.ProposeChange).toBe("home/marketplace/:requestId/trip/change");
+    expect(mp.Later).toBe("home/marketplace/later");
+    expect(mp.Scheduled).toBe(
+      "home/marketplace/later/scheduled/:scheduledRequestId",
+    );
+    expect(mp.AdvanceOffers).toBe("home/marketplace/:requestId/advance");
+    expect(mp.Booking).toBe("home/marketplace/later/bookings/:bookingId");
+    expect(mp.Series).toBe("home/marketplace/later/series/:templateId");
+    // Object params (quoteParams) are in-app only — never a deep link.
+    expect(mp.Schedule).toBeUndefined();
+    expect(mp.Fare).toBeUndefined();
+  });
+
+  it("maps the rider-confidence and airport transfer paths", () => {
+    const screens = linking.config!.screens as Record<string, any>;
+    expect(screens.Marketplace.screens.Favourites).toBe(
+      "home/marketplace/favourites",
+    );
+    expect(screens.Marketplace.screens.Receipt).toBe(
+      "home/marketplace/:requestId/receipt",
+    );
+    expect(screens.Travel.screens.Transfer).toBe(
+      "travel/transfers/:transferId",
+    );
+  });
+
   it("includes the compile-time route/param assertions in the build", () => {
     expect(routeAssertions).toBe(true);
   });

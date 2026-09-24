@@ -349,6 +349,7 @@ model Vehicle {
 
   drivers        Driver[]
   ceerionVehicle CeerionVehicle?
+  fleetVehicles  FleetVehicle[]
 
   @@map("vehicles")
 }
@@ -1088,6 +1089,7 @@ model Delivery {
   custody       DeliveryCustody?
   custodyEvents CustodyEvent[]
   proofs        DeliveryProof[]
+  proofUploads  DeliveryProofUpload[]
   returns       DeliveryReturn[]
 
   @@index([senderId, status])
@@ -1123,10 +1125,11 @@ model DeliveryCustody {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  delivery Delivery         @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
-  events   CustodyEvent[]
-  proofs   DeliveryProof[]
-  returns  DeliveryReturn[]
+  delivery     Delivery              @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  events       CustodyEvent[]
+  proofs       DeliveryProof[]
+  proofUploads DeliveryProofUpload[]
+  returns      DeliveryReturn[]
 
   @@index([state])
   @@map("delivery_custody")
@@ -1155,40 +1158,104 @@ model CustodyEvent {
   @@map("custody_events")
 }
 
-/// A proof REFERENCE, never the bytes (see docs/marketplace/DELIVERY_CUSTODY.md
-/// "object storage" section — no S3/MinIO client is wired into delivery-service
-/// today, so this table stores a client-supplied, validated object key +
-/// checksum only). The uniqueness constraint makes a duplicate proof
-/// submission (retry, double-tap) idempotent: no second row.
+/// A custody proof: a REFERENCE to an object in the private proof bucket,
+/// never the bytes. Since P17 every new row points at an object
+/// delivery-service itself issued an upload for (DeliveryProofUpload) and
+/// verified before attaching — present in the bucket, size within bounds,
+/// SHA-256 of the stored bytes equal to `sha256`, content sniffed as the
+/// declared image type — so `verifiedAt` is set and `uploadId` names the
+/// issuance. Rows written before P17 carry neither (client-asserted
+/// references, never verified). The uniqueness constraint makes a duplicate
+/// proof submission (retry, double-tap) idempotent: no second row.
 model DeliveryProof {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  deliveryId   String   @map("delivery_id") @db.Uuid
-  custodyId    String   @map("custody_id") @db.Uuid
-  /// pickup | delivery
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId   String    @map("delivery_id") @db.Uuid
+  custodyId    String    @map("custody_id") @db.Uuid
+  /// pickup | delivery | return
   type         String
-  objectKey    String   @map("object_key")
-  contentType  String   @map("content_type")
-  sizeBytes    BigInt   @map("size_bytes")
+  objectKey    String    @map("object_key")
+  contentType  String    @map("content_type")
+  sizeBytes    BigInt    @map("size_bytes")
   sha256       String
-  uploadedBy   String   @map("uploaded_by") @db.Uuid
-  uploadedRole String   @map("uploaded_role")
-  createdAt    DateTime @default(now()) @map("created_at")
+  uploadedBy   String    @map("uploaded_by") @db.Uuid
+  uploadedRole String    @map("uploaded_role")
+  /// The server-issued upload this proof was attached from (null only on
+  /// pre-P17 rows).
+  uploadId     String?   @unique @map("upload_id") @db.Uuid
+  /// When delivery-service verified the stored object's bytes (null only on
+  /// pre-P17 rows).
+  verifiedAt   DateTime? @map("verified_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
-  custody  DeliveryCustody @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+  delivery Delivery             @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  custody  DeliveryCustody      @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+  upload   DeliveryProofUpload? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
 
   @@unique([deliveryId, type, sha256])
   @@index([custodyId])
   @@map("delivery_proofs")
 }
 
-/// A return proposal. `feeMinor` is a REFERENCE amount only — delivery-service
-/// never moves money (see docs/marketplace/DELIVERY_CUSTODY.md "return-leg
-/// charge"). `chargeStatus` records whether a charged return can actually be
-/// authorized: `not_required` (fee-free / hold-point return), or
-/// `unsupported` (a fee was proposed but no payment-service delivery-return
-/// funding endpoint exists yet — this return cannot complete the charged leg
-/// until one does; it may still complete as hold-at-point).
+/// A server-issued, short-lived, scope-bound proof upload (P17). The driver
+/// asks delivery-service for an upload slot, declaring the image's type, size
+/// and SHA-256; delivery-service generates the object key itself —
+/// `proofs/<deliveryId>/<type>/<issuedTo>/<uploadId>` — and answers a
+/// presigned PUT for exactly that key that expires in minutes. Attaching the
+/// proof later (DeliveryProof) is refused unless the caller is `issuedTo`,
+/// the upload belongs to the same delivery and proof type, and the stored
+/// object verifies against the declared size, type and checksum. A rejected
+/// upload's object is deleted and the row keeps the reason.
+model DeliveryProofUpload {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deliveryId   String    @map("delivery_id") @db.Uuid
+  custodyId    String    @map("custody_id") @db.Uuid
+  /// pickup | delivery | return
+  type         String
+  objectKey    String    @unique @map("object_key")
+  contentType  String    @map("content_type")
+  sizeBytes    BigInt    @map("size_bytes")
+  sha256       String
+  /// The custody actor (driver user id) the upload was issued to — the only
+  /// caller who may attach it.
+  issuedTo     String    @map("issued_to") @db.Uuid
+  issuedRole   String    @map("issued_role")
+  /// issued | attached | rejected
+  status       String    @default("issued")
+  rejectReason String?   @map("reject_reason")
+  /// When the presigned PUT stops working.
+  expiresAt    DateTime  @map("expires_at")
+  attachedAt   DateTime? @map("attached_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  custody  DeliveryCustody @relation(fields: [custodyId], references: [id], onDelete: Cascade)
+  proof    DeliveryProof?
+
+  @@index([deliveryId, status])
+  @@map("delivery_proof_uploads")
+}
+
+/// A return proposal. delivery-service never moves money itself: a fee is
+/// held and taken by payment-service's delivery-return funding module
+/// (/v1/finance/delivery-returns, P17) and this row mirrors where that stands.
+/// `chargeStatus`:
+///   - `not_required` — a fee-free return (or one resolved to a hold point);
+///   - `unsupported` — legacy (pre-P17) fee-bearing proposal recorded when no
+///     funding path existed; it can never complete the charged leg;
+///   - `authorization_required` — a fee-bearing proposal made while charged
+///     returns are enabled; the sender's approval reserves it;
+///   - `reserving` — the reserve call was sent and its outcome is not yet
+///     recorded (a write-ahead marker: any path that resolves this return
+///     without completing it releases the reservation first);
+///   - `reserved` — the fee is held on the sender's wallet (`chargeRef` names
+///     payment-service's charge); the parcel is on its way back;
+///   - `capture_pending` — the driver proved the return; the capture is owed
+///     and retried until payment-service confirms it;
+///   - `captured` — taken exactly once (`chargeEntryId` is the journal entry);
+///   - `released` — the hold was released (charge cancelled, or the approval
+///     never committed). The original award's 10% commission is never touched
+///     by any of these.
 model DeliveryReturn {
   id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   deliveryId     String  @map("delivery_id") @db.Uuid
@@ -1207,6 +1274,14 @@ model DeliveryReturn {
   resolvedAt       DateTime? @map("resolved_at")
   resolvedBy       String?   @map("resolved_by") @db.Uuid
 
+  /// The city the charge is scoped to (the approving sender's signed city).
+  chargeCityId    String?   @map("charge_city_id")
+  /// payment-service's delivery return charge id, once reserved.
+  chargeRef       String?   @map("charge_ref")
+  /// The capture journal entry id, once captured.
+  chargeEntryId   String?   @map("charge_entry_id")
+  chargeUpdatedAt DateTime? @map("charge_updated_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1215,6 +1290,7 @@ model DeliveryReturn {
 
   @@index([deliveryId])
   @@index([consentState, consentExpiresAt])
+  @@index([chargeStatus])
   @@map("delivery_returns")
 }
 
@@ -1808,13 +1884,18 @@ model Wallet {
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
   lines               JournalLine[]
-  transfersOut        Transfer[]           @relation("TransferFrom")
-  transfersIn         Transfer[]           @relation("TransferTo")
+  transfersOut        Transfer[]             @relation("TransferFrom")
+  transfersIn         Transfer[]             @relation("TransferTo")
   nipTransfers        NipTransfer[]
   topups              Topup[]
   statements          WalletStatement[]
   mpHolds             MpCommissionHold[]
   mpRiderReservations MpRiderReservation[]
+  travelPaymentItems  TravelPaymentItem[]
+  deliveryReturnFees  DeliveryReturnCharge[]
+  /// Set only on a business budget wallet (owner_type `org_budget`, A06 part C).
+  orgBudgetAccount    OrgBudgetAccount?
+  orgBudgetHolds      OrgBudgetReservation[]
 
   @@unique([ownerType, ownerId, currency])
   @@index([ownerId])
@@ -1831,9 +1912,15 @@ model JournalEntry {
   caseRef        String?  @map("case_ref")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  lines       JournalLine[]
-  transfers   Transfer[]
-  remittances Remittance[]
+  lines                  JournalLine[]
+  transfers              Transfer[]
+  remittances            Remittance[]
+  travelPaymentCaptures  TravelPaymentItem[]
+  travelPaymentOps       TravelPaymentOp[]
+  deliveryReturnCaptures DeliveryReturnCharge[]
+  deliveryReturnOps      DeliveryReturnChargeOp[]
+  orgBudgetCommit        OrgBudgetReservation?
+  orgBudgetOps           OrgBudgetOp[]
 
   @@index([kind, occurredAt])
   @@index([reference])
@@ -2027,10 +2114,172 @@ model MpRiderReservation {
   updatedAt       DateTime  @updatedAt @map("updated_at")
   resolvedAt      DateTime? @map("resolved_at")
 
-  wallet Wallet @relation(fields: [walletId], references: [id])
+  wallet               Wallet                @relation(fields: [walletId], references: [id])
+  /// Set only on a delivery return-fee encumbrance (award key
+  /// `delivery_return:<returnId>`, see DeliveryReturnCharge).
+  deliveryReturnCharge DeliveryReturnCharge?
 
   @@index([walletId, status], map: "mp_rider_reservations_spendable")
   @@map("mp_rider_reservations")
+}
+
+/// Travel payment item (P7/T02): payment-service's side of ONE travel order
+/// item — travel-service's per-item authorize → capture | release → refund
+/// ladder, served at /v1/finance/travel. An authorization is a durable
+/// encumbrance on the traveller's wallet: a table row, never a journal
+/// movement, so the cleared balance is untouched and only spendable drops
+/// while the item is `authorized`. Money moves only at capture (wallet →
+/// travel_clearing) and refund (travel_clearing → wallet, linked to the
+/// capture entry). Supplier travel NEVER uses a marketplace commission hold
+/// or a ride account. One authorization per order item, ever. The amount
+/// bounds (captured ≤ authorized, refunded ≤ captured) are also CHECK
+/// constraints in the migration, so no code path can over-capture or
+/// over-refund even if the application check were bypassed.
+model TravelPaymentItem {
+  id              String    @id
+  /// travel-service's order id — one order per cart item, one authorization per order.
+  orderId         String    @unique @map("order_id")
+  /// The traveller whose wallet the authorization encumbers.
+  userId          String    @map("user_id")
+  walletId        String    @map("wallet_id")
+  cityId          String    @map("city_id")
+  currency        String
+  /// authorized | captured | released | partially_refunded | refunded
+  state           String
+  authorizedMinor BigInt    @map("authorized_minor")
+  capturedMinor   BigInt    @default(0) @map("captured_minor")
+  refundedMinor   BigInt    @default(0) @map("refunded_minor")
+  /// The one capture journal entry; refunds link to it as their counterpart.
+  captureEntryId  String?   @map("capture_entry_id")
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  capturedAt      DateTime? @map("captured_at")
+  releasedAt      DateTime? @map("released_at")
+
+  wallet       Wallet            @relation(fields: [walletId], references: [id])
+  captureEntry JournalEntry?     @relation(fields: [captureEntryId], references: [id])
+  ops          TravelPaymentOp[]
+
+  @@index([walletId, state], map: "travel_payment_items_spendable")
+  @@map("travel_payment_items")
+}
+
+/// One accepted POST against a travel payment item — its idempotency record.
+/// The scoped Idempotency-Key is unique: a replay answers `result` verbatim,
+/// and a replay carrying different money terms (`payloadHash`) is refused.
+/// Every item carries at most one authorize, one capture and one release op;
+/// refunds may be several (partial), each with its own key.
+model TravelPaymentOp {
+  id             String   @id
+  itemId         String   @map("item_id")
+  /// authorize | capture | release | refund
+  op             String
+  idempotencyKey String   @unique @map("idempotency_key")
+  /// The key exactly as the caller sent it, so a reconciler can match its own request.
+  clientKey      String   @map("client_key")
+  payloadHash    String   @map("payload_hash")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  /// The journal entry this op posted; null for authorize and release.
+  entryId        String?  @map("entry_id")
+  /// Who the calling service said it acted for (context, not authentication).
+  onBehalfOfId   String?  @map("on_behalf_of_id")
+  onBehalfOfRole String?  @map("on_behalf_of_role")
+  reason         String?
+  /// The response body the op answered with — replayed verbatim.
+  result         Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  item  TravelPaymentItem @relation(fields: [itemId], references: [id])
+  entry JournalEntry?     @relation(fields: [entryId], references: [id])
+
+  @@index([itemId, createdAt])
+  @@map("travel_payment_ops")
+}
+
+/// Delivery return-leg fee (P17): payment-service's side of ONE charged
+/// return, served at /v1/finance/delivery-returns (src/finance/
+/// delivery-returns.ts). delivery-service reserves the fee from the SENDER's
+/// wallet when the sender approves the return, captures it when the driver
+/// proves the parcel is back, and releases it when the charge is cancelled or
+/// the approval never committed.
+///
+/// The encumbrance itself is a rider funding reservation row
+/// (mp_rider_reservations, award key `delivery_return:<returnId>` — the same
+/// linked-key convention funding amendments use), so the one spendable
+/// calculation already subtracts it. Capture posts ONE journal entry (sender
+/// wallet → driver wallet, kind `delivery_return_fee`): the return leg is a
+/// new charge, never the original award's 10% commission — nothing here
+/// adjusts or re-captures an mp_commission_holds row (reserve only READS the
+/// award's captured hold, to bind the payee to the award's driver). One
+/// charge per return, ever: a release that arrives before any reservation
+/// records a `released` row with no wallet or reservation (a tombstone), so a
+/// late reserve for that return is refused instead of stranding a hold.
+model DeliveryReturnCharge {
+  id             String    @id
+  /// delivery-service's delivery_returns.id — one charge per return, ever.
+  returnId       String    @unique @map("return_id")
+  deliveryId     String    @map("delivery_id")
+  /// The original marketplace award, recorded as context only: its
+  /// commission hold and funding reservation are never touched.
+  awardId        String    @map("award_id")
+  /// The payer (sender user id) and the payee (the driver's user id).
+  senderId       String    @map("sender_id")
+  driverId       String    @map("driver_id")
+  /// The payer's wallet; null only on a tombstone.
+  walletId       String?   @map("wallet_id")
+  cityId         String    @map("city_id")
+  currency       String
+  feeMinor       BigInt    @map("fee_minor")
+  /// reserved | captured | released
+  state          String
+  /// The companion mp_rider_reservations row that encumbers the fee; null
+  /// only on a tombstone.
+  reservationId  String?   @unique @map("reservation_id")
+  /// The one capture entry (sender wallet → driver wallet).
+  captureEntryId String?   @map("capture_entry_id")
+  releaseReason  String?   @map("release_reason")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  capturedAt     DateTime? @map("captured_at")
+  releasedAt     DateTime? @map("released_at")
+
+  wallet       Wallet?                  @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  reservation  MpRiderReservation?      @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  captureEntry JournalEntry?            @relation(fields: [captureEntryId], references: [id])
+  ops          DeliveryReturnChargeOp[]
+
+  @@index([deliveryId])
+  @@map("delivery_return_charges")
+}
+
+/// One accepted POST against a delivery return charge — its idempotency
+/// record. The scoped Idempotency-Key is unique: a replay answers `result`
+/// verbatim, and a replay carrying different money terms is refused.
+model DeliveryReturnChargeOp {
+  id             String   @id
+  chargeId       String   @map("charge_id")
+  /// reserve | capture | release
+  op             String
+  idempotencyKey String   @unique @map("idempotency_key")
+  clientKey      String   @map("client_key")
+  payloadHash    String   @map("payload_hash")
+  amountMinor    BigInt   @map("amount_minor")
+  currency       String
+  /// The journal entry this op posted; null for reserve and release.
+  entryId        String?  @map("entry_id")
+  reason         String?
+  /// The response body the op answered with — replayed verbatim.
+  result         Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  charge DeliveryReturnCharge @relation(fields: [chargeId], references: [id])
+  entry  JournalEntry?        @relation(fields: [entryId], references: [id])
+
+  @@index([chargeId, createdAt])
+  @@map("delivery_return_charge_ops")
 }
 
 model WalletStatement {
@@ -3027,7 +3276,9 @@ model ActionGrant {
   idempotencyKey String    @unique @map("idempotency_key")
   // assurance CHECK: pin | biometric | mandate
   assurance      String
-  // mandate_id is a plain text ref in the DDL (no FK) — kept as a scalar.
+  // mandate_id is a plain text ref in the DDL (no FK) — kept as a scalar. It is
+  // the ORIGINATING mandate of an `assurance = 'mandate'` grant, persisted at
+  // mint; every action under the grant re-derives its authority from it.
   mandateId      String?   @map("mandate_id")
   expiresAt      DateTime  @map("expires_at")
   consumedAt     DateTime? @map("consumed_at")
@@ -3035,8 +3286,10 @@ model ActionGrant {
 
   mandateExecutions MandateExecution[]
   askReviews        AskReview[]
+  mpExecution       AskMpExecution?
 
   @@index([actorId, expiresAt])
+  @@index([mandateId])
   @@map("action_grants")
 }
 
@@ -3044,6 +3297,9 @@ model Mandate {
   id                    String   @id
   userId                String   @map("user_id")
   // action CHECK: airport_pickup.reserve | flight.rebook_on_cancel | scheduled_ride.book
+  //             | marketplace.ride.select | marketplace.delivery.select
+  // (the marketplace members are NEW actions — a travel action never implies
+  // marketplace authority, see ask-service ops/mandate-scope.ts)
   action                String
   title                 String
   // passengers CHECK: self_only | saved_passengers
@@ -3063,12 +3319,16 @@ model Mandate {
   updatedAt             DateTime @updatedAt @map("updated_at")
 
   // CHECK (expires_at <= created_at + interval '12 months') — enforced by DB.
-  allowances MandateAllowance[]
-  executions MandateExecution[]
+  allowances   MandateAllowance[]
+  executions   MandateExecution[]
+  reservations MandateAllowanceReservation[]
 
   @@map("mandates")
 }
 
+// Usage counters include PENDING reservations, so a reservation that is still
+// in flight already counts against the period cap and run count.
+// CHECK (amount_used_minor >= 0 AND runs_used >= 0).
 model MandateAllowance {
   mandateId       String   @map("mandate_id")
   periodStart     DateTime @map("period_start") @db.Date
@@ -3079,6 +3339,42 @@ model MandateAllowance {
 
   @@id([mandateId, periodStart])
   @@map("mandate_allowances")
+}
+
+// One reservation of budget + one run against a mandate's period allowance.
+// Written and settled ONLY by the SQL functions mandate_allowance_reserve /
+// mandate_allowance_settle (migration 20260923100000) — the one canonical
+// allowance mechanism both user-service (mandate runs) and ask-service
+// (marketplace selections) call inside their own transactions.
+//   pending   → reserved; counted in mandate_allowances; outcome not yet known
+//   committed → actual spend recorded (committed_minor); never re-charged
+//   released  → budget + run returned after a definitive failure
+model MandateAllowanceReservation {
+  id             String    @id
+  mandateId      String    @map("mandate_id")
+  // The period the reservation counts against — settlement adjusts THIS row
+  // even when it lands after the month has turned.
+  periodStart    DateTime  @map("period_start") @db.Date
+  // Unique: a replayed reservation lands on its own row, never a second hold.
+  idempotencyKey String    @unique @map("idempotency_key")
+  // Plain text ref (no FK): a mandate run reserves before its grant exists.
+  grantId        String?   @map("grant_id")
+  reservedMinor  BigInt    @map("reserved_minor")
+  committedMinor BigInt?   @map("committed_minor")
+  currency       String
+  // status CHECK: pending | committed | released
+  status         String
+  reasonCode     String?   @map("reason_code")
+  resultRef      String?   @map("result_ref")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  resolvedAt     DateTime? @map("resolved_at")
+
+  mandate     Mandate         @relation(fields: [mandateId], references: [id])
+  mpExecution AskMpExecution?
+
+  @@index([mandateId, periodStart, status])
+  @@index([grantId])
+  @@map("mandate_allowance_reservations")
 }
 
 model MandateExecution {
@@ -3167,6 +3463,53 @@ model AskExecution {
   review AskReview @relation(fields: [reviewId], references: [id])
 
   @@map("ask_executions")
+}
+
+// The persisted intent of ONE marketplace selection by the assistant (ask-service
+// ops/marketplace.ts selectOffer). Written in the same transaction that consumes
+// the single-use grant and (for a mandate-backed grant) reserves the period
+// allowance — BEFORE the external award call — so a retry after a crash or an
+// ambiguous timeout reconciles THIS execution under THIS idempotency key instead
+// of consuming a new grant or a second allowance run.
+//   pending → the award call may or may not have landed; reconcile by query
+//   awarded → the award exists; allowance committed at the award fare
+//   failed  → definitively not awarded; allowance released
+model AskMpExecution {
+  id              String    @id
+  // One execution per single-use grant.
+  grantId         String    @unique @map("grant_id")
+  actorId         String    @map("actor_id")
+  cityId          String    @map("city_id")
+  // Copied from the grant's server-side binding, never from a caller.
+  mandateId       String?   @map("mandate_id")
+  reservationId   String?   @unique @map("reservation_id")
+  requestId       String    @map("request_id")
+  bidId           String    @map("bid_id")
+  requestVersion  Int       @map("request_version")
+  bidVersion      Int       @map("bid_version")
+  requestRevision Int       @map("request_revision")
+  fareMinor       BigInt    @map("fare_minor")
+  currency        String
+  // Bound to (grant, request, bid, versions); the ONLY key the award call uses.
+  idempotencyKey  String    @unique @map("idempotency_key")
+  // status CHECK: pending | awarded | failed
+  status          String
+  awardId         String?   @map("award_id")
+  reasonCode      String?   @map("reason_code")
+  attempts        Int       @default(1)
+  // While in the future, an attempt may still be in flight: a retry only
+  // queries the award and never re-sends the selection.
+  leaseUntil      DateTime  @map("lease_until")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  resolvedAt      DateTime? @map("resolved_at")
+
+  grant       ActionGrant                  @relation(fields: [grantId], references: [id])
+  reservation MandateAllowanceReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  @@index([status, leaseUntil])
+  @@index([mandateId])
+  @@map("ask_mp_executions")
 }
 
 // -------------------------------------------
@@ -3284,6 +3627,14 @@ model TravelOrder {
   // grant_id is a plain text ref in the DDL (no FK) — kept as a scalar.
   grantId            String?   @map("grant_id")
   idempotencyKey     String    @unique @map("idempotency_key")
+  // The city the order was placed in. Payment-service scopes the order's money
+  // item to it, so a capture/release driven later by a webhook or a reconcile
+  // must name the same city — read from here, never from the caller's header.
+  cityId             String?   @map("city_id")
+  // The supplier's own offer / quote id the order was booked from (Duffel
+  // `off_…`, LiteAPI offer/prebook id). A supplier event that only names the
+  // offer (Duffel `order.creation_failed`) resolves the order through it.
+  supplierOfferRef   String?   @map("supplier_offer_ref")
   createdAt          DateTime  @default(now()) @map("created_at")
 
   trip     TravelTrip?    @relation(fields: [tripId], references: [id])
@@ -3296,8 +3647,11 @@ model TravelOrder {
   disruptions      TravelDisruption[]
   settlements      TravelSettlement[]
   reservationLinks RideReservationLink[]
+  airportTransfers AirportTransfer[]
+  flightStatus     TravelFlightStatusEvent[]
 
   @@index([userId, state])
+  @@index([supplierId, supplierOfferRef])
   @@map("travel_orders")
 }
 
@@ -3326,6 +3680,9 @@ model TravelDocument {
 
   order TravelOrder @relation(fields: [orderId], references: [id])
 
+  // A document is written once: a repeated or racing supplier signal (a
+  // webhook and a reconcile at once) cannot duplicate a ticket.
+  @@unique([orderId, kind, number])
   @@map("travel_documents")
 }
 
@@ -3371,15 +3728,28 @@ model TravelDisruption {
 model TravelWebhook {
   id          String    @id
   supplierId  String    @map("supplier_id")
+  // The supplier's event id (Duffel `wev_…`, LiteAPI `event_id`) for a
+  // verified delivery — the dedupe key. A delivery whose signature failed is
+  // recorded under a `rejected:` id of our own, so an unverified body can never
+  // occupy (and so suppress) a real event's slot.
   externalId  String    @map("external_id")
   signatureOk Boolean   @map("signature_ok")
   payload     Json
   receivedAt  DateTime  @default(now()) @map("received_at")
   processedAt DateTime? @map("processed_at")
+  // Verified event metadata: the supplier's event type, the object it is about
+  // (Duffel `idempotency_key`, a booking/order id), when the supplier says it
+  // happened, and what processing did with it (e.g. `confirmed`, `already_resolved`,
+  // `supplier_conflict`) — for ops, and for out-of-order diagnosis.
+  eventType   String?   @map("event_type")
+  objectRef   String?   @map("object_ref")
+  occurredAt  DateTime? @map("occurred_at")
+  outcome     String?
 
   supplier TravelSupplier @relation(fields: [supplierId], references: [id])
 
   @@unique([supplierId, externalId])
+  @@index([supplierId, objectRef])
   @@map("travel_webhooks")
 }
 
@@ -3415,6 +3785,11 @@ model TravelCommercialRate {
   @@map("travel_commercial_rates")
 }
 
+// LEGACY — never written any more. A row here was only ever a link and an
+// event: no marketplace request was created and no driver was awarded, so no
+// row represents secured transport. Kept (not dropped) so what a traveller was
+// once shown stays auditable; the itinerary renders these rows as "not
+// reserved". Airport transport is AirportTransfer below.
 model RideReservationLink {
   reservationId String @id @map("reservation_id")
   orderId       String @map("order_id")
@@ -3425,6 +3800,155 @@ model RideReservationLink {
   order TravelOrder @relation(fields: [orderId], references: [id])
 
   @@map("ride_reservation_links")
+}
+
+// An airport transfer INTENT (travel-service, P16): a ride to or from the
+// airport linked to a FLIGHT order the traveller owns in the same city. It is
+// never secured transport by itself. travel-service turns it into a Book for
+// Later SCHEDULED REQUEST on ride-service (POST /v1/mp/scheduled-requests,
+// signed as the traveller) when the pickup enters the market's scheduling
+// horizon; ride-service publishes that near the pickup window, drivers bid
+// privately and the traveller selects an offer. Only a requester-approved
+// award reported by ride-service makes the transfer `awarded`.
+//
+// The flight and the ride stay separate orders: no column here carries flight
+// money, and the ride's fare, commission, refunds and receipt live in
+// ride-service. `max_fare_minor` is the traveller's approved spend limit —
+// the most any scheduled request made for this transfer may approve, retimes
+// included.
+model AirportTransfer {
+  // Deterministic from the scoped Idempotency-Key: a replay lands here.
+  id                 String    @id
+  orderId            String    @map("order_id")
+  userId             String    @map("user_id")
+  // The trusted request context's city at creation; every ride call is
+  // signed for this city and no other.
+  cityId             String    @map("city_id")
+  // direction CHECK: arrival_pickup | departure_dropoff
+  direction          String
+  legIndex           Int       @map("leg_index")
+  flightNumber       String?   @map("flight_number")
+  airportCode        String    @map("airport_code")
+  // The leg's CURRENT schedule (UTC); a verified flight status event moves it.
+  flightDepartAt     DateTime  @map("flight_depart_at")
+  flightArriveAt     DateTime  @map("flight_arrive_at")
+  // flight_status CHECK: scheduled | delayed | cancelled
+  flightStatus       String    @default("scheduled") @map("flight_status")
+  // observed_at of the last applied flight status event (monotonic guard).
+  flightStatusAt     DateTime? @map("flight_status_at")
+  // { label, lat, lng } — the airport end is the traveller's terminal point.
+  pickup             Json
+  dropoff            Json
+  // IANA zone the pickup is phrased in (the city's; the airport is in it).
+  timeZone           String    @map("time_zone")
+  // The pickup window [pickup_at, window_end). An arrival pickup's is known
+  // at creation (landing + the city's arrival buffer); a departure drop-off's
+  // is derived from the routed drive time when the ride is requested, so it
+  // ends in time to reach the airport by arrive_by.
+  pickupAt           DateTime? @map("pickup_at")
+  windowEnd          DateTime? @map("window_end")
+  arriveBy           DateTime? @map("arrive_by")
+  windowSec          Int       @map("window_sec")
+  vehicleClass       String    @map("vehicle_class")
+  currency           String
+  maxFareMinor       BigInt    @map("max_fare_minor")
+  requestedFareMinor BigInt?   @map("requested_fare_minor")
+  paymentMethodId    String    @map("payment_method_id")
+  policyVersion      String    @map("policy_version")
+  // state CHECK: pending_unassigned | requested | awarded | failed | cancelled
+  state              String
+  version            Int       @default(1)
+  // When the scheduled request may be created (inside the market horizon).
+  submitAfter        DateTime  @map("submit_after")
+  // When the orchestrator should look at this transfer next (null: terminal).
+  nextActionAt       DateTime? @map("next_action_at")
+  // One orchestrator (worker pass or traveller action) at a time.
+  leaseUntil         DateTime? @map("lease_until")
+  // How many scheduled requests were made for this transfer (retimes and
+  // re-requests each make one). Keys every ride-service call.
+  generation         Int       @default(0)
+  // The exact create body + key of the scheduled request being made, stored
+  // BEFORE the call so a retry after a lost answer replays it byte-for-byte.
+  pendingCreate      Json?     @map("pending_create")
+  // The window a flight change moved this transfer to while a scheduled
+  // request for the OLD window is live on ride-service ({ pickupAt,
+  // windowEnd, arriveBy }). The orchestrator withdraws the old one before
+  // publication and re-makes it here; once drivers were asked it becomes a
+  // choice for the traveller instead. The live window stays in pickup_at /
+  // window_end until then.
+  retimeTarget       Json?     @map("retime_target")
+  retimedCount       Int       @default(0) @map("retimed_count")
+  // A cancel the orchestrator still has to carry to ride-service (reason).
+  pendingCancel      String?   @map("pending_cancel")
+  scheduledRequestId String?   @map("scheduled_request_id")
+  rideRequestId      String?   @map("ride_request_id")
+  rideState          String?   @map("ride_state")
+  rideRequestState   String?   @map("ride_request_state")
+  // ride-service's own status label / notice / approval, as last reported.
+  rideNotice         Json?     @map("ride_notice")
+  // Choices the traveller must make (after-award flight change, a fare above
+  // the approved limit); nothing changes until they choose.
+  actionRequired     Json?     @map("action_required")
+  // The honest per-state outcome (why it failed / was cancelled, what money did).
+  outcome            Json?
+  attempts           Int       @default(0)
+  lastError          String?   @map("last_error")
+  // Idempotent create: the normalized request's hash and the stored answer.
+  requestHash        String    @map("request_hash")
+  createResult       Json      @map("create_result")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  order   TravelOrder             @relation(fields: [orderId], references: [id])
+  actions AirportTransferAction[]
+
+  @@index([orderId, legIndex])
+  @@index([userId, createdAt])
+  @@index([state, nextActionAt])
+  @@map("airport_transfers")
+}
+
+// One accepted traveller action on a transfer (cancel, keep, re-request,
+// approve a new limit), keyed by the scoped Idempotency-Key: a replay answers
+// the stored result, a replay with a different body is refused.
+model AirportTransferAction {
+  id          String   @id
+  transferId  String   @map("transfer_id")
+  action      String
+  requestHash String   @map("request_hash")
+  statusCode  Int      @map("status_code")
+  result      Json
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  transfer AirportTransfer @relation(fields: [transferId], references: [id])
+
+  @@index([transferId, createdAt])
+  @@map("airport_transfer_actions")
+}
+
+// A verified flight status observation for one leg of a flight order (delay,
+// cancellation). Deduped by (source, event_id); applied monotonically by
+// observed_at, and a cancellation is final.
+model TravelFlightStatusEvent {
+  id         String    @id
+  source     String
+  eventId    String    @map("event_id")
+  orderId    String    @map("order_id")
+  legIndex   Int       @map("leg_index")
+  // status CHECK: delayed | cancelled
+  status     String
+  departAt   DateTime? @map("depart_at")
+  arriveAt   DateTime? @map("arrive_at")
+  observedAt DateTime  @map("observed_at")
+  receivedAt DateTime  @default(now()) @map("received_at")
+  // What applying it did to each linked transfer.
+  outcome    Json?
+
+  order TravelOrder @relation(fields: [orderId], references: [id])
+
+  @@unique([source, eventId])
+  @@index([orderId, legIndex, observedAt])
+  @@map("travel_flight_status_events")
 }
 
 // -------------------------------------------
@@ -3484,4 +4008,622 @@ model AiActionAccessLog {
   at      DateTime @default(now())
 
   @@map("ai_action_access_log")
+}
+
+// -------------------------------------------
+// Business travel (A06 part C) — organizations (user-service) and prefunded
+// budgets on the canonical ledger (payment-service)
+// -------------------------------------------
+// Contract: packages/contracts/src/business-travel.ts. user-service owns the
+// organization, its members, invitations, cost centres and travel policy
+// (src/organizations). payment-service owns the budget accounts, the booking
+// reservations and their idempotency ops (src/business); it READS the
+// organization rows — never writes them — to authorize a reservation inside
+// the same transaction that takes it. The quarantined B2B models in
+// schema-b2b.prisma (float money, in-memory budgets) are NOT these and are not
+// migrated.
+
+/// An organization that books trips for its people from PREFUNDED budgets.
+/// The travel policy (per-trip cap, allowed services and vehicle classes)
+/// lives on the row and is deny-by-default: a new organization allows nothing
+/// until an admin sets it. There is no credit line anywhere in this model.
+model Organization {
+  id              String   @id
+  name            String
+  /// The city whose config (currency, timezone, taxes) and `business_travel`
+  /// flag govern the organization.
+  cityId          String   @map("city_id")
+  /// The city's wallet currency at creation; every budget amount is in it.
+  currency        String
+  // status CHECK: active | suspended
+  status          String
+  /// Billing profile printed on the consolidated statement. Admin-only.
+  legalName       String?  @map("legal_name")
+  taxId           String?  @map("tax_id")
+  /// Per-trip cap in integer minor units; 0 (nothing bookable) until set.
+  /// CHECK (trip_cap_minor >= 0).
+  tripCapMinor    BigInt   @default(0) @map("trip_cap_minor")
+  /// A subset of MP_SERVICES; empty ⇒ nothing is bookable.
+  allowedServices String[] @default([]) @map("allowed_services")
+  /// A subset of VEHICLE_CLASSES; empty ⇒ nothing is bookable.
+  allowedClasses  String[] @default([]) @map("allowed_classes")
+  /// Bumped on every policy change; snapshotted on each reservation.
+  policyVersion   Int      @default(1) @map("policy_version")
+  createdBy       String   @map("created_by")
+  version         Int      @default(1)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  members        OrganizationMember[]
+  invitations    OrganizationInvitation[]
+  costCentres    OrganizationCostCentre[]
+  budgetAccounts OrgBudgetAccount[]
+
+  @@index([cityId])
+  @@map("organizations")
+}
+
+/// One user's membership of one organization. A removed member keeps the row
+/// (status `removed`) so the audit trail and past bookings still resolve, and
+/// re-adding them reactivates it — one row per (organization, user), ever.
+model OrganizationMember {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  userId         String    @map("user_id")
+  // role CHECK: owner | admin | booker | traveller
+  role           String
+  // status CHECK: active | removed
+  status         String
+  /// The cost centre a booking for this member defaults to.
+  costCentreId   String?   @map("cost_centre_id")
+  addedBy        String    @map("added_by")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  removedAt      DateTime? @map("removed_at")
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  costCentre   OrganizationCostCentre? @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@index([userId, status])
+  @@map("organization_members")
+}
+
+/// An invitation to join an organization, bound to ONE existing user: only
+/// that user can accept or decline it, so nobody is made a traveller (and
+/// exposed to the organization's business-trip view) without consenting.
+model OrganizationInvitation {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  inviteeUserId  String    @map("invitee_user_id")
+  // role CHECK: owner | admin | booker | traveller
+  role           String
+  costCentreId   String?   @map("cost_centre_id")
+  // status CHECK: pending | accepted | declined | revoked | expired
+  status         String
+  invitedBy      String    @map("invited_by")
+  /// The scoped Idempotency-Key of the invite POST: a replay lands here.
+  idempotencyKey String    @unique @map("idempotency_key")
+  expiresAt      DateTime  @map("expires_at")
+  respondedAt    DateTime? @map("responded_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  costCentre   OrganizationCostCentre? @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+
+  @@index([inviteeUserId, status])
+  @@index([organizationId, status])
+  @@map("organization_invitations")
+}
+
+/// A cost centre business spend is charged to. Archived, never deleted: past
+/// bookings and statements keep resolving it.
+model OrganizationCostCentre {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  code           String
+  name           String
+  // status CHECK: active | archived
+  status         String
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  members        OrganizationMember[]
+  invitations    OrganizationInvitation[]
+  budgetAccounts OrgBudgetAccount[]
+
+  @@unique([organizationId, code])
+  @@map("organization_cost_centres")
+}
+
+/// A cost centre's budget for one city-local calendar month (payment-service,
+/// src/business). The budget IS a ledger wallet (owner_type `org_budget`): an
+/// admin allocates into it from the organization's prefunded wallet (owner_type
+/// `organization`, topped up through the wallet top-up rail) with a journal
+/// entry, so its balance is derived from journal lines like every other
+/// balance and nothing here stores one. Available = balance − the booking
+/// reservations still `reserved` against the wallet.
+model OrgBudgetAccount {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  costCentreId   String   @map("cost_centre_id")
+  /// The city-local calendar month, `YYYY-MM` (CHECK).
+  period         String
+  walletId       String   @unique @map("wallet_id")
+  currency       String
+  version        Int      @default(1)
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  costCentre   OrganizationCostCentre @relation(fields: [costCentreId], references: [id], onDelete: Restrict)
+  wallet       Wallet                 @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  reservations OrgBudgetReservation[]
+  ops          OrgBudgetOp[]
+
+  @@unique([costCentreId, period])
+  @@index([organizationId, period])
+  @@map("org_budget_accounts")
+}
+
+/// One business booking's budget reservation — one per booking reference,
+/// ever. Like a rider funding reservation it is a table row, never a journal
+/// movement: the budget wallet's balance is untouched while it is `reserved`
+/// and only availability drops. Commit posts ONE journal entry (budget wallet
+/// → `business_clearing`, kind `business_trip_commit`) for the actual amount
+/// (never more than reserved) and frees the rest; release frees it all. The
+/// bounds are CHECK constraints in the migration as well.
+model OrgBudgetReservation {
+  id              String    @id
+  bookingRef      String    @unique @map("booking_ref")
+  budgetAccountId String    @map("budget_account_id")
+  organizationId  String    @map("organization_id")
+  costCentreId    String    @map("cost_centre_id")
+  walletId        String    @map("wallet_id")
+  /// Who booked (the payer's authorized booker) and who travels (the
+  /// passenger). They may be the same member.
+  bookerId        String    @map("booker_id")
+  travellerId     String    @map("traveller_id")
+  service         String
+  vehicleClass    String    @map("vehicle_class")
+  expenseCategory String?   @map("expense_category")
+  cityId          String    @map("city_id")
+  currency        String
+  reservedMinor   BigInt    @map("reserved_minor")
+  committedMinor  BigInt?   @map("committed_minor")
+  // state CHECK: reserved | committed | released
+  state           String
+  /// Hash of the reservation's terms: a second reserve for the same booking
+  /// with other terms is a conflict, with the same terms a replay.
+  termsHash       String    @map("terms_hash")
+  policyVersion   Int       @map("policy_version")
+  commitEntryId   String?   @unique @map("commit_entry_id")
+  /// Taxes INCLUDED in the committed amount at the city's configured rates,
+  /// snapshotted at commit so a statement never re-prices history.
+  taxLines        Json?     @map("tax_lines")
+  releaseReason   String?   @map("release_reason")
+  releasedByRole  String?   @map("released_by_role")
+  releasedById    String?   @map("released_by_id")
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  committedAt     DateTime? @map("committed_at")
+  releasedAt      DateTime? @map("released_at")
+
+  budgetAccount OrgBudgetAccount @relation(fields: [budgetAccountId], references: [id], onDelete: Restrict)
+  wallet        Wallet           @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  commitEntry   JournalEntry?    @relation(fields: [commitEntryId], references: [id])
+  ops           OrgBudgetOp[]
+
+  @@index([walletId, state], map: "org_budget_reservations_available")
+  @@index([organizationId, createdAt])
+  @@index([travellerId, createdAt])
+  @@index([bookerId, createdAt])
+  @@map("org_budget_reservations")
+}
+
+/// One accepted business-budget POST — its idempotency record. The scoped
+/// Idempotency-Key is unique (a replay answers `result` verbatim; a replay
+/// carrying other money terms is refused), and a reservation carries at most
+/// ONE reserve, ONE commit and ONE release op — the database, not only the
+/// code, makes each exactly-once.
+model OrgBudgetOp {
+  id              String   @id
+  // op CHECK: topup | allocate | return | reserve | commit | release
+  op              String
+  organizationId  String   @map("organization_id")
+  budgetAccountId String?  @map("budget_account_id")
+  reservationId   String?  @map("reservation_id")
+  idempotencyKey  String   @unique @map("idempotency_key")
+  clientKey       String   @map("client_key")
+  payloadHash     String   @map("payload_hash")
+  amountMinor     BigInt   @map("amount_minor")
+  currency        String
+  /// The journal entry the op posted; null for reserve and release.
+  entryId         String?  @map("entry_id")
+  actorId         String   @map("actor_id")
+  actorRole       String   @map("actor_role")
+  result          Json
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  budgetAccount OrgBudgetAccount?     @relation(fields: [budgetAccountId], references: [id], onDelete: Restrict)
+  reservation   OrgBudgetReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  entry         JournalEntry?         @relation(fields: [entryId], references: [id])
+
+  @@unique([reservationId, op])
+  @@index([organizationId, createdAt])
+  @@map("org_budget_ops")
+}
+
+// -------------------------------------------
+// Fleet availability, maintenance and assignments (A05) — fleet-service
+// -------------------------------------------
+// Contract: packages/contracts/src/fleet.ts. Build decisions:
+// docs/design/FLEET_CALENDAR_DECISIONS.md (wins over the design handoff in
+// docs/launch-readiness/handoff-fleet-calendar/).
+//
+// fleet-service is the only writer. Bookings and the single vehicle
+// OCCUPANCY ledger (maintenance + bookings under one exclusion constraint)
+// live in ride-service's `mp` schema and are reached through internal
+// contract A; remittance settlement lives in payment-service's ledger and
+// reads its inputs through internal contract B — there are no settlement
+// tables here. Status vocabularies, money bounds and the overlap rules are
+// CHECK / EXCLUDE constraints in the migration (Prisma models neither), so
+// the database refuses what the code must never write.
+//
+// `driver_id` everywhere is the driver's USER id (the gateway identity
+// subject) — the id ride-service's marketplace records as `driver_id`.
+
+/// A business that owns several vehicles and places UBI drivers in them.
+/// KYB is out of scope (A05 brief §6); the deny-by-default `fleet` city flag
+/// gates every client route.
+model Fleet {
+  id        String   @id
+  name      String
+  /// The city whose config (currency, zone, remittance cap) and `fleet` flag govern the fleet.
+  cityId    String   @map("city_id")
+  currency  String
+  /// The city's IANA zone at creation: shifts and days split in it.
+  zone      String
+  // status CHECK: active | suspended
+  status    String
+  createdBy String   @map("created_by")
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  staff             FleetStaff[]
+  vehicles          FleetVehicle[]
+  proposals         FleetAssignmentProposal[]
+  assignments       FleetAssignment[]
+  maintenanceBlocks FleetMaintenanceBlock[]
+
+  @@index([cityId])
+  @@map("fleets")
+}
+
+/// One user's role in one fleet. Removal keeps the row (status `removed`);
+/// one row per (fleet, user), ever.
+model FleetStaff {
+  id        String    @id
+  fleetId   String    @map("fleet_id")
+  userId    String    @map("user_id")
+  // role CHECK: owner | manager | read_only
+  role      String
+  // status CHECK: active | removed
+  status    String
+  addedBy   String    @map("added_by")
+  version   Int       @default(1)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  removedAt DateTime? @map("removed_at")
+
+  fleet Fleet @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+
+  @@unique([fleetId, userId])
+  @@index([userId, status])
+  @@map("fleet_staff")
+}
+
+/// A vehicle (the shared `vehicles` row) placed in a fleet. A vehicle is in
+/// at most ONE fleet at a time (EXCLUDE ... WHERE status = 'active').
+model FleetVehicle {
+  id        String    @id
+  fleetId   String    @map("fleet_id")
+  vehicleId String    @map("vehicle_id") @db.Uuid
+  /// A subset of the city's vehicle classes; the first is the primary class.
+  classes   String[]
+  /// CHECK (capacity BETWEEN 1 AND 20).
+  capacity  Int
+  // status CHECK: active | removed
+  status    String
+  addedBy   String    @map("added_by")
+  version   Int       @default(1)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  removedAt DateTime? @map("removed_at")
+
+  fleet   Fleet   @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  @@index([fleetId, status])
+  @@index([vehicleId])
+  @@map("fleet_vehicles")
+}
+
+/// A fleet's proposal to a driver: vehicle, shift and remittance terms. It
+/// NEVER counts as availability. Sent → pending_signature → signed (driver
+/// PIN, verified by user-service) | declined (no reason, no penalty) |
+/// expired (48 h) | withdrawn | superseded. The terms columns are a snapshot
+/// with the same CHECKs as fleet_assignments.
+model FleetAssignmentProposal {
+  id                     String    @id
+  fleetId                String    @map("fleet_id")
+  vehicleId              String    @map("vehicle_id") @db.Uuid
+  driverId               String    @map("driver_id")
+  proposedBy             String    @map("proposed_by")
+  // proposed_by_role CHECK: owner | manager
+  proposedByRole         String    @map("proposed_by_role")
+  /// The signed arrangement a signature would supersede (a material change).
+  supersedesAssignmentId String?   @map("supersedes_assignment_id")
+  // shift_kind CHECK: full | day | night | custom
+  shiftKind              String    @map("shift_kind")
+  /// Local wall-clock `HH:mm`; end < start crosses midnight; full = 00:00-00:00.
+  shiftStart             String    @map("shift_start")
+  shiftEnd               String    @map("shift_end")
+  zone                   String
+  /// Local dates: instances start on [valid_from, valid_to).
+  validFrom              DateTime  @map("valid_from") @db.Date
+  validTo                DateTime? @map("valid_to") @db.Date
+  termsVersion           Int       @map("terms_version")
+  // terms_type CHECK: weekly_fixed | percent_of_net (with the matching amount/percent)
+  termsType              String    @map("terms_type")
+  amountMinor            BigInt?   @map("amount_minor")
+  currency               String
+  percent                Decimal?  @db.Decimal(5, 2)
+  // shortfall_policy CHECK: carry_forward
+  shortfallPolicy        String    @map("shortfall_policy")
+  shortfallMaxWeeks      Int       @map("shortfall_max_weeks")
+  fuelBy                 String    @map("fuel_by")
+  servicingBy            String    @map("servicing_by")
+  termsHash              String    @map("terms_hash")
+  /// TermDiff[]: which parts change, and whether each is material.
+  diff                   Json
+  /// The server check that let it be sent (overlap, city cap).
+  checkResult            Json      @map("check_result")
+  // status CHECK: PROPOSAL_STATUSES
+  status                 String
+  sentAt                 DateTime? @map("sent_at")
+  expiresAt              DateTime? @map("expires_at")
+  respondedAt            DateTime? @map("responded_at")
+  /// The scoped Idempotency-Key of the propose POST.
+  idempotencyKey         String    @unique @map("idempotency_key")
+  version                Int       @default(1)
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  fleet      Fleet            @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  assignment FleetAssignment?
+
+  @@index([driverId, status])
+  @@index([fleetId, status])
+  @@index([status, expiresAt])
+  @@map("fleet_assignment_proposals")
+}
+
+/// The assignment HISTORY (replaces reliance on the single Driver.vehicleId):
+/// one row per signed terms version. Immutable terms; only status and the
+/// validity end move (notice, supersession). Signed shifts on one vehicle —
+/// and of one driver — never overlap: fleet_assignment_shift_segments carries
+/// the EXCLUDE constraints.
+model FleetAssignment {
+  id                 String    @id
+  fleetId            String    @map("fleet_id")
+  vehicleId          String    @map("vehicle_id") @db.Uuid
+  driverId           String    @map("driver_id")
+  proposalId         String    @unique @map("proposal_id")
+  shiftKind          String    @map("shift_kind")
+  shiftStart         String    @map("shift_start")
+  shiftEnd           String    @map("shift_end")
+  zone               String
+  validFrom          DateTime  @map("valid_from") @db.Date
+  validTo            DateTime? @map("valid_to") @db.Date
+  termsVersion       Int       @map("terms_version")
+  termsType          String    @map("terms_type")
+  amountMinor        BigInt?   @map("amount_minor")
+  currency           String
+  percent            Decimal?  @db.Decimal(5, 2)
+  shortfallPolicy    String    @map("shortfall_policy")
+  shortfallMaxWeeks  Int       @map("shortfall_max_weeks")
+  fuelBy             String    @map("fuel_by")
+  servicingBy        String    @map("servicing_by")
+  termsHash          String    @map("terms_hash")
+  /// Signature evidence: when, and user-service's verification reference.
+  /// The PIN itself is never stored anywhere.
+  signedAt           DateTime  @map("signed_at")
+  pinVerificationRef String    @map("pin_verification_ref")
+  // status CHECK: active | notice | ended | superseded
+  status             String
+  noticeStartedAt    DateTime? @map("notice_started_at")
+  noticeStartedBy    String?   @map("notice_started_by")
+  endedAt            DateTime? @map("ended_at")
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  fleet    Fleet                         @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+  proposal FleetAssignmentProposal       @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+  segments FleetAssignmentShiftSegment[]
+
+  @@index([vehicleId, status])
+  @@index([driverId, status])
+  @@index([fleetId, status])
+  @@map("fleet_assignments")
+}
+
+/// A signed shift as local-day segments: a night shift 18:00-06:00 is two
+/// (day D minutes [1080,1440) and day D+1 minutes [0,360)). Two ACTIVE
+/// segments of one vehicle, or of one driver, whose day ranges and minute
+/// ranges both overlap are refused by EXCLUDE constraints (btree_gist).
+model FleetAssignmentShiftSegment {
+  id           String    @id
+  assignmentId String    @map("assignment_id")
+  vehicleId    String    @map("vehicle_id") @db.Uuid
+  driverId     String    @map("driver_id")
+  /// Local dates [days_from, days_to); days_to null = open-ended.
+  daysFrom     DateTime  @map("days_from") @db.Date
+  daysTo       DateTime? @map("days_to") @db.Date
+  /// Local minutes of the day [minute_from, minute_to) within 0..1440.
+  minuteFrom   Int       @map("minute_from")
+  minuteTo     Int       @map("minute_to")
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  assignment FleetAssignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+
+  @@index([assignmentId])
+  @@map("fleet_assignment_shift_segments")
+}
+
+/// A maintenance block on a fleet vehicle. Planned kinds occupy the vehicle
+/// through ride-service's occupancy ledger (contract A routes 1-3) and are
+/// never confirmed over a booking; `unplanned_off_road` (contract A route 4)
+/// takes effect immediately and only sets overlapping bookings at_risk.
+model FleetMaintenanceBlock {
+  id                String    @id
+  fleetId           String    @map("fleet_id")
+  vehicleId         String    @map("vehicle_id") @db.Uuid
+  // kind CHECK: planned_service | inspection | repair | unplanned_off_road
+  kind              String
+  startsAt          DateTime  @map("starts_at")
+  /// Null only for an off-road report with no expected end.
+  endsAt            DateTime? @map("ends_at")
+  zone              String
+  note              String?
+  // status CHECK: MAINTENANCE_STATUSES
+  status            String
+  /// ride-service's occupancy id once the block occupies the vehicle.
+  occupancyId       String?   @map("occupancy_id")
+  createdBy         String    @map("created_by")
+  createdByRole     String    @map("created_by_role")
+  /// Off-road abuse control: set when the vehicle was seen online or on a
+  /// trip during the claimed breakdown (visible to UBI ops).
+  offRoadFlaggedAt  DateTime? @map("off_road_flagged_at")
+  offRoadFlagReason String?   @map("off_road_flag_reason")
+  idempotencyKey    String    @unique @map("idempotency_key")
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  cancelledAt       DateTime? @map("cancelled_at")
+  completedAt       DateTime? @map("completed_at")
+
+  fleet Fleet @relation(fields: [fleetId], references: [id], onDelete: Restrict)
+
+  @@index([vehicleId, startsAt])
+  @@index([fleetId, status])
+  @@index([status, startsAt])
+  @@map("fleet_maintenance_blocks")
+}
+
+/// Driver-authored availability and time off. Only the driver writes it; a
+/// fleet sees time off as an unexplained "unavailable" block.
+model DriverAvailability {
+  id         String    @id
+  driverId   String    @map("driver_id")
+  // kind CHECK: available | time_off
+  kind       String
+  startsAt   DateTime  @map("starts_at")
+  endsAt     DateTime  @map("ends_at")
+  /// FREQ=DAILY|WEEKLY[;BYDAY=..][;COUNT=n|;UNTIL=YYYYMMDD], local wall clock.
+  rrule      String?
+  zone       String
+  // status CHECK: saved | saved_with_withdrawals | removed
+  status     String
+  /// The driver's availability set this window belongs to (bumped per PUT).
+  setVersion Int       @map("set_version")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  removedAt  DateTime? @map("removed_at")
+
+  @@index([driverId, status])
+  @@map("driver_availability")
+}
+
+/// The conflict centre. `allowed actions` are computed per caller role at
+/// read time, never stored. `dedupe_key` makes each (type, subject) one row.
+model FleetConflict {
+  id                 String    @id
+  fleetId            String?   @map("fleet_id")
+  // type CHECK: CONFLICT_TYPES
+  type               String
+  // severity CHECK: critical | high | medium | blocked | status
+  severity           String
+  vehicleId          String?   @map("vehicle_id")
+  driverId           String?   @map("driver_id")
+  bookingBlockId     String?   @map("booking_block_id")
+  maintenanceBlockId String?   @map("maintenance_block_id")
+  assignmentId       String?   @map("assignment_id")
+  resolverRoles      String[]  @map("resolver_roles")
+  deadlineAt         DateTime? @map("deadline_at")
+  // status CHECK: open | resolving | resolved | lapsed
+  status             String
+  dedupeKey          String    @unique @map("dedupe_key")
+  /// Server facts only (a document kind and its expiry, …) — never evidence.
+  detail             Json?
+  resolution         String?
+  lastRemindedAt     DateTime? @map("last_reminded_at")
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  resolvedAt         DateTime? @map("resolved_at")
+
+  @@index([fleetId, status])
+  @@index([driverId, status])
+  @@index([status, deadlineAt])
+  @@index([maintenanceBlockId])
+  @@map("fleet_conflicts")
+}
+
+/// A fleet's request to put an advance booking on another of its vehicles
+/// (contract A route 7). The swap itself — driver acceptance, revalidation,
+/// the rider's explicit consent — is ride-service's.
+model FleetVehicleSwapRequest {
+  id             String   @id
+  fleetId        String   @map("fleet_id")
+  bookingBlockId String   @map("booking_block_id")
+  fromVehicleId  String   @map("from_vehicle_id")
+  toVehicleId    String   @map("to_vehicle_id")
+  requestedBy    String   @map("requested_by")
+  swapId         String?  @map("swap_id")
+  // status CHECK: proposed | ineligible
+  status         String
+  reasons        String[] @default([])
+  idempotencyKey String   @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([fleetId, createdAt])
+  @@map("fleet_vehicle_swap_requests")
+}
+
+/// One accepted fleet-service POST/PUT/PATCH — its idempotency record. A
+/// replay with the same scoped key and body answers `response_body`
+/// verbatim; the same key with another body is refused (409).
+model FleetIdempotencyRecord {
+  id             String   @id
+  scopedKey      String   @unique @map("scoped_key")
+  operation      String
+  actorId        String   @map("actor_id")
+  payloadHash    String   @map("payload_hash")
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([actorId, createdAt])
+  @@map("fleet_idempotency_records")
 }

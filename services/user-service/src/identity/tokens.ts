@@ -23,6 +23,29 @@ const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 /**
  * Book with cash, view history, read your own profile and balance, and finish
  * the step-up that lifts the limitation. Nothing that moves money.
+ *
+ * The token's `scopes` claim NARROWS the gateway's own limited-mode list, so a
+ * scope missing here is lost to every limited session even when the gateway
+ * allows it. This list therefore mirrors the gateway's LIMITED_MODE_SCOPES
+ * (services/api-gateway/src/identity/scopes.ts) exactly:
+ *
+ *   ask:converse  the assistant's chat and read-only answers (its confirm,
+ *                 ask:transact, stays off);
+ *   travel:read   searching travel inventory and reading your own trips
+ *                 (carts, checkout, cancel and switch — travel:book — stay
+ *                 off).
+ *
+ * The fleet scopes (fleet:read, fleet:manage for fleet staff; fleet:driver
+ * for a driver's offers, PIN signing, schedule and availability) are NOT on
+ * this list, deliberately: a full-mode token carries no `scopes` claim, so
+ * they come from the gateway's role ceiling (riders and drivers may be fleet
+ * staff; only drivers hold fleet:driver), and a limited session holds none of
+ * them — deny-by-default for the new capability. fleet-service's own staff
+ * table decides owner / manager / read-only inside a fleet.
+ *
+ * services/api-gateway/tests/limited-token.test.ts sends tokens minted by
+ * `issueAccessToken` through the gateway scope matrix, so a drift between the
+ * two lists fails there.
  */
 export const LIMITED_MODE_SCOPES: readonly string[] = [
   "profile:read",
@@ -33,6 +56,8 @@ export const LIMITED_MODE_SCOPES: readonly string[] = [
   "device:enroll",
   "auth:step_up",
   "support:write",
+  "ask:converse",
+  "travel:read",
 ];
 
 function secret(): Uint8Array {

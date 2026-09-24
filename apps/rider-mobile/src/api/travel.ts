@@ -1,3 +1,10 @@
+// Travel (travel-service THROUGH the gateway, contracts/openapi/travel-v2.yaml). Only
+// routes travel-service actually serves are called here: there is no cart GET (the cart
+// view comes back from POST /v1/travel/carts and PUT …/passengers, and screens read it
+// from that answer) and no pickup "suggestion" — an airport transfer is the strict
+// CreateAirportTransfer intent below, whose pickup window the SERVER derives from the
+// flight leg. Both old calls are pinned as known client gaps in
+// services/api-gateway/tests/route-contract.test.ts.
 import { api, type Money } from "@ubi/mobile-core";
 export type Capabilities = {
   holdSupported: boolean;
@@ -79,9 +86,14 @@ export type CartItem = {
   title: string;
   detail: string;
   price: Money;
-  previousPrice?: Money;
+  previousPrice?: Money | null;
   terms: string[];
 };
+/**
+ * The cart as travel-service serves it (ops/carts.ts cartView). `paymentMethod`,
+ * `termsSummary` and `termsLinks` are not part of that view today, so they are optional:
+ * a screen shows them only when a server sends them, never an invented default.
+ */
 export type Cart = {
   id: string;
   status:
@@ -95,11 +107,13 @@ export type Cart = {
   fees: { label: string; amount: Money }[];
   adjustments: { label: string; amount?: Money; note?: string }[];
   total: Money;
-  previousTotal?: Money;
-  paymentMethod: { id: string; label: string; detail: string };
-  termsSummary: string[];
-  termsLinks: string[];
+  previousTotal?: Money | null;
+  paymentMethod?: { id: string; label: string; detail: string };
+  termsSummary?: string[];
+  termsLinks?: string[];
 };
+/** Query key the cart view is held under (seeded from the create / passengers answers). */
+export const cartKey = (cartId: string) => ["travel", "cart", cartId] as const;
 export type LadderStepDto = {
   step: string;
   label: string;
@@ -192,29 +206,47 @@ export type Disruption = {
   linkedRideImpact?: string;
   footnote?: string;
 };
+/** travel-v2.yaml LinkedItem.status. */
+export type LinkedItemStatus =
+  | "ticketed"
+  | "confirmed"
+  | "supplier_pending"
+  | "not_reserved"
+  | "pending_unassigned"
+  | "requested"
+  | "awarded"
+  | "failed"
+  | "reserved"
+  | "assigned"
+  | "completed"
+  | "cancelled"
+  | "refunded"
+  | "not_booked";
+/**
+ * travel-v2.yaml LinkedItem. `airport_transfer` items carry `transferId` and
+ * `driverSecured` (true ONLY when awarded); `ride_reservation` is the legacy link
+ * (never a marketplace request; status not_reserved).
+ */
 export type LinkedItem = {
-  kind: "flight" | "stay" | "ride_reservation" | "return_flight_placeholder";
+  kind:
+    | "flight"
+    | "stay"
+    | "airport_transfer"
+    | "ride_reservation"
+    | "return_flight_placeholder";
   orderId?: string;
+  transferId?: string;
   reservationId?: string;
+  driverSecured?: boolean;
   title: string;
   subtitle?: string;
-  dateLabel: string;
-  status:
-    | "ticketed"
-    | "confirmed"
-    | "supplier_pending"
-    | "not_reserved"
-    | "reserved"
-    | "assigned"
-    | "completed"
-    | "cancelled"
-    | "refunded"
-    | "not_booked";
+  dateLabel?: string;
+  status: LinkedItemStatus;
   charged?: Money;
   policy?: string;
   disruption?: string;
   refs?: string;
-  actions: { key: string; label: string; primary?: boolean }[];
+  actions?: { key: string; label: string; primary?: boolean }[];
 };
 export type Trip = {
   id: string;
@@ -223,16 +255,98 @@ export type Trip = {
   timezone: string;
   items: LinkedItem[];
 };
-export type ReservationSuggestion = {
-  flightLabel: string;
-  advice: string;
-  suggestedPickupAt: string;
-  options: string[];
-  from: string;
-  classes: { id: string; label: string; price: Money }[];
-  terms: string;
-  mapLabel: string;
+// ── Airport transfers (T03 contract: travel-v2.yaml CreateAirportTransfer / AirportTransfer) ──
+
+export type TransferDirection = "arrival_pickup" | "departure_dropoff";
+export type TransferPlace = { lat: number; lng: number; label?: string };
+
+/**
+ * POST /v1/reservations body — STRICT (additionalProperties: false). Never a pickup time,
+ * a user, a role, a city or a fare bound: those come from the gateway context and the
+ * server's airport policy. `maxFareMinor` is the traveller's approved spend limit, which
+ * every retime of the transfer stays within.
+ */
+export type CreateAirportTransfer = {
+  linkedOrderId: string;
+  legIndex?: number;
+  direction: TransferDirection;
+  airportPoint: TransferPlace;
+  place: TransferPlace;
+  vehicleClass: string;
+  maxFareMinor: Money;
+  requestedFareMinor?: Money;
+  paymentMethodId: string;
 };
+
+export type TransferStatus =
+  | "pending_unassigned"
+  | "requested"
+  | "awarded"
+  | "failed"
+  | "cancelled";
+export type TransferChoiceKey =
+  | "keep"
+  | "cancel"
+  | "rerequest"
+  | "approve_limit";
+
+/** travel-v2.yaml AirportTransfer — every label and notice is server-phrased. */
+export type AirportTransfer = {
+  transferId: string;
+  linkedOrderId: string;
+  direction: TransferDirection;
+  legIndex?: number;
+  flightNumber?: string | null;
+  airportCode?: string;
+  status: TransferStatus;
+  /** True ONLY when status is awarded. */
+  driverSecured: boolean;
+  statusLabel: string;
+  notice: string;
+  pickup?: TransferPlace | null;
+  dropoff?: TransferPlace | null;
+  pickupWindow?: {
+    start: string;
+    end: string;
+    timeZone: string;
+    label: string;
+  } | null;
+  arriveBy?: { at: string; timeZone: string; label: string } | null;
+  flight?: {
+    departAt?: string | null;
+    arriveAt?: string | null;
+    status?: "scheduled" | "delayed" | "cancelled" | null;
+  };
+  vehicleClass?: string;
+  approvedMaxFareMinor?: Money;
+  paymentMethodId?: string;
+  policyVersion?: string;
+  ride?: {
+    scheduledRequestId?: string | null;
+    requestId?: string | null;
+    state?: string | null;
+    requestState?: string | null;
+  } | null;
+  retimedCount?: number;
+  actionRequired?: {
+    reason?:
+      | "flight_changed_after_award"
+      | "flight_changed_after_publication"
+      | "flight_cancelled"
+      | "fare_above_approval"
+      | "ride_needs_approval";
+    message?: string;
+    choices?: { key: TransferChoiceKey; label: string }[];
+    minimumFareMinor?: Money;
+  } | null;
+  outcome?: { reason?: string; message?: string } | null;
+  terms: string[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+const transferPath = (transferId: string) =>
+  "/v1/reservations/" + encodeURIComponent(transferId);
 
 export const travelApi = {
   searchFlights: (params: {
@@ -258,9 +372,9 @@ export const travelApi = {
       rateId?: string;
     }[],
   ) => api<Cart>("POST", "/v1/travel/carts", { items }),
-  cart: (cartId: string) => api<Cart>("GET", "/v1/travel/carts/" + cartId),
+  // PUT answers the updated cart view — the one the checkout screen reads.
   putPassengers: (cartId: string, passengers: unknown[]) =>
-    api<void>("PUT", "/v1/travel/carts/" + cartId + "/passengers", passengers),
+    api<Cart>("PUT", "/v1/travel/carts/" + cartId + "/passengers", passengers),
   checkout: (
     cartId: string,
     paymentMethodId: string,
@@ -286,22 +400,40 @@ export const travelApi = {
     }),
   requestRefund: (orderId: string) =>
     api<Refund>("POST", "/v1/travel/orders/" + orderId + "/cancel"),
-  reservationSuggestion: (orderId: string, direction: string) =>
-    api<ReservationSuggestion>(
+  // Airport transfers. 202 answers the pending intent (no driver yet); a replay under the
+  // same caller-held key answers the stored result. Behind the `reservations` flag
+  // (404 feature_disabled while off).
+  createTransfer: (body: CreateAirportTransfer, idempotencyKey: string) =>
+    api<AirportTransfer>("POST", "/v1/reservations", body, { idempotencyKey }),
+  transfers: (linkedOrderId?: string) =>
+    api<{ items: AirportTransfer[] }>(
       "GET",
-      "/v1/reservations/suggest?linkedOrderId=" +
-        orderId +
-        "&direction=" +
-        direction,
+      "/v1/reservations" +
+        (linkedOrderId
+          ? "?linkedOrderId=" + encodeURIComponent(linkedOrderId)
+          : ""),
     ),
-  reserve: (orderId: string, pickupAt: string, classId: string) =>
-    api<{
-      reservationId: string;
-      status: "reserved" | "reservation_failed";
-      reason?: string;
-    }>("POST", "/v1/reservations", {
-      linkedOrderId: orderId,
-      pickupAt,
-      classId,
-    }),
+  transfer: (transferId: string) =>
+    api<AirportTransfer>("GET", transferPath(transferId)),
+  // Only a choice `actionRequired` offers (cancel is always allowed while live).
+  // `approve_limit` carries the traveller's NEW typed limit; no other choice sends money.
+  decideTransfer: (
+    transferId: string,
+    choice: TransferChoiceKey,
+    idempotencyKey: string,
+    maxFareMinor?: Money,
+  ) =>
+    api<AirportTransfer>(
+      "POST",
+      transferPath(transferId) + "/decision",
+      maxFareMinor ? { choice, maxFareMinor } : { choice },
+      { idempotencyKey },
+    ),
+  cancelTransfer: (transferId: string, idempotencyKey: string) =>
+    api<AirportTransfer>(
+      "POST",
+      transferPath(transferId) + "/cancel",
+      undefined,
+      { idempotencyKey },
+    ),
 };

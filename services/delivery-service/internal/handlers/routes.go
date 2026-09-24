@@ -7,34 +7,66 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/go-chi/httprate"
 
+	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/identity"
 	appMiddleware "github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/middleware"
 )
 
-// identityVerifier is the subset of *identity.Verifier this package needs.
-// Routes takes an interface (satisfied by *identity.RequireIdentity's
-// argument type) so this package does not need to import internal/identity
-// directly for its own sake — RequireIdentityMiddleware below is supplied by
-// the caller (cmd/server/main.go and testutil) instead, which already knows
-// the concrete type. This keeps handlers free to be imported by testutil
-// without a second import of identity leaking through here.
+// requireIdentityMiddleware is the shape of identity.RequireIdentity(verifier):
+// the middleware guarding the gateway-identity (custody/return) group.
 type requireIdentityMiddleware = func(http.Handler) http.Handler
+
+// NewRouter is the router the process serves: Routes with the custody/return
+// group behind a gateway-identity verifier in the posture the handler's
+// configuration demands — identity.NewVerifierFor(..., cfg.IsProduction()),
+// so in production a signature is mandatory and the plain identity headers
+// alone authenticate nobody. cmd/server/main.go serves exactly this, and the
+// test harness builds exactly this, so the identity posture under test is the
+// posture production runs. The verifier is returned for start-up logging and
+// so tests can sign a request the way the gateway does.
+//
+// The rate limiter is built here from the same configuration: valid
+// service-key calls (the marketplace hand-off and its cancellation) are not
+// throttled by the per-client limiter, a verified gateway identity is
+// counted as its user, and everyone else per client address — forwarded
+// headers believed only from DELIVERY_TRUSTED_PROXIES
+// (internal/middleware/ratelimit.go).
+func NewRouter(h *Handler) (http.Handler, *identity.Verifier) {
+	verifier := identity.NewVerifierFor(h.cfg.InternalContextSecret, 0, h.cfg.IsProduction())
+	exemptKey := ""
+	if marketplaceAssignKeyUsable(h.cfg.InternalServiceKey) {
+		// Only a usable key exempts anyone: the committed default is public.
+		exemptKey = h.cfg.InternalServiceKey
+	}
+	limiter := appMiddleware.NewRateLimiter(appMiddleware.RateLimitConfig{
+		ServiceKey:     exemptKey,
+		Verifier:       verifier,
+		TrustedProxies: h.cfg.TrustedProxies,
+		Limit:          appMiddleware.DefaultRateLimit,
+		Window:         appMiddleware.DefaultRateLimitWindow,
+	})
+	return Routes(h, identity.RequireIdentity(verifier), limiter), verifier
+}
 
 // Routes builds the complete delivery-service router: every route
 // cmd/server/main.go serves, plus the new custody/return routes (C07/G08).
-// main.go and the test harness (internal/testutil) both call this, so the
-// router under test is byte-for-byte the router production serves.
+// main.go and the test harness (internal/testutil) both reach it through
+// NewRouter, so the router under test is byte-for-byte the router production
+// serves.
 //
 // custodyIdentity is the RequireIdentity middleware for the gateway-identity
-// group (internal/identity.RequireIdentity(verifier)) — passed in rather than
-// built here so this package need not import internal/identity just to spell
-// its own routing table.
-func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler {
+// group (internal/identity.RequireIdentity(verifier)). Production wiring goes
+// through NewRouter, which picks the verifier's posture from configuration;
+// Routes stays parameterised so a test can mount a verifier in a posture of
+// its own choosing.
+//
+// limiter replaces chi's RealIP (client address, trusted proxies only) and
+// the old LimitByIP (per verified user / per client, service calls exempt).
+func Routes(h *Handler, custodyIdentity requireIdentityMiddleware, limiter *appMiddleware.RateLimiter) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
+	r.Use(limiter.ClientAddress)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.Compress(5))
@@ -49,7 +81,7 @@ func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler 
 		MaxAge:           300,
 	}))
 
-	r.Use(httprate.LimitByIP(100, time.Minute))
+	r.Use(limiter.Limit)
 
 	r.Get("/health", h.Health)
 	r.Get("/health/live", h.Liveness)
@@ -75,14 +107,26 @@ func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler 
 		// permission checks compare the gateway-verified actor against the
 		// delivery's own sender_id/driver_id — see internal/custody and this
 		// file's handlers for the exact matrix.
+		//
+		// Proofs (P17) are verified objects in the private proof bucket:
+		// proof-uploads issues a short-lived presigned PUT for a server-made
+		// key; the proof endpoints attach an upload only after verifying the
+		// stored bytes; proofs/{proofId}/url mints a seconds-long presigned
+		// GET for an entitled party. Charged returns (P17, deny-by-default)
+		// add return/complete (the driver's verified hand-back, which
+		// captures a reserved fee) and return/cancel-charge (ops).
 		r.Route("/deliveries/{id}/custody", func(r chi.Router) {
 			r.Use(custodyIdentity)
 			r.Get("/", h.GetCustodyTimeline)
+			r.Post("/proof-uploads", h.PostProofUpload)
+			r.Get("/proofs/{proofId}/url", h.GetProofURL)
 			r.Post("/pickup-proof", h.PostPickupProof)
 			r.Post("/delivery-proof", h.PostDeliveryProof)
 			r.Post("/recipient-unreachable", h.PostRecipientUnreachable)
 			r.Post("/return/propose", h.PostProposeReturn)
 			r.Post("/return/consent", h.PostReturnConsent)
+			r.Post("/return/complete", h.PostReturnComplete)
+			r.Post("/return/cancel-charge", h.PostReturnCancelCharge)
 			r.Post("/collected", h.PostCollectedAtPoint)
 		})
 
@@ -113,8 +157,11 @@ func Routes(h *Handler, custodyIdentity requireIdentityMiddleware) http.Handler 
 			r.Use(appMiddleware.ServiceAuth(h.cfg.InternalServiceKey))
 			r.Post("/payment", h.PaymentWebhook)
 			r.Post("/order", h.OrderWebhook)
-			// Marketplace award saga hand-off (idempotent on awardId).
+			// Marketplace award saga hand-off (idempotent on awardId), and its
+			// compensation when the queued award is cancelled before pickup
+			// (idempotent on awardId, fenced by the award claim's token).
 			r.Post("/marketplace-assign", h.MarketplaceAssign)
+			r.Post("/marketplace-cancel", h.MarketplaceCancel)
 		})
 	})
 

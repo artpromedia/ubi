@@ -14,9 +14,33 @@
  * currency carries an explicit `fxRate` from a supplier quote, and the amount
  * authorized is already in the charge currency.
  *
+ * THE ENDPOINT. By default the adapter posts to payment-service's mounted
+ * `/v1/finance/travel/{authorize,capture,release,refund}` (payment-service
+ * src/finance/travel-routes.ts, contract contracts/openapi/finance-travel.yaml)
+ * and reads `/v1/finance/travel/orders/{orderId}` for status. No environment
+ * override is needed for that; `PAYMENT_TRAVEL_PATH` (src/wiring.ts) only
+ * exists to point a non-standard deployment elsewhere. payment-service keys
+ * each item on the order id (one order per cart item) and settles captures to
+ * its dedicated `travel_clearing` account — never a marketplace commission
+ * hold.
+ *
+ * AUTH. The endpoint is service-to-service: every call carries `X-Service-Key`
+ * from INTERNAL_SERVICE_KEY, which must hold the SAME value payment-service
+ * checks (its `internalServiceAuth` fails closed when either side is unset).
+ * `X-User-ID`/`X-User-Role` name who this service acted for; payment-service
+ * records them as context, not as authentication.
+ *
+ * AMBIGUITY. A call that times out or loses its connection may or may not have
+ * happened on the payment side, so it is reported as unknown, never as "did
+ * not happen". Every op is idempotent on the scoped key this service sends: a
+ * retry with the SAME key answers the original posting, and `status()` reads
+ * what payment-service actually recorded for an order.
+ *
  * The HTTP adapter below is the real implementation. Tests substitute a fake;
  * nothing in `src/` ever does.
  */
+import { z } from "zod";
+
 import { ContractError, IDEMPOTENCY_HEADER, type Money } from "@ubi/contracts";
 
 import { paymentLogger } from "../lib/logger";
@@ -50,7 +74,77 @@ export interface PaymentPort {
   capture(request: PaymentRequest): Promise<PaymentResult>;
   release(request: PaymentRequest): Promise<PaymentResult>;
   refund(request: PaymentRequest): Promise<PaymentResult>;
+  /**
+   * What payment-service has actually recorded for an order — the only safe
+   * way forward after an ambiguous or refused (409) posting. `null` means no
+   * authorization exists for the order at all.
+   */
+  status(orderId: string): Promise<PaymentStatus | null>;
 }
+
+/**
+ * True when a posting may or may not have happened: no answer (timeout,
+ * dropped connection) or a 5xx from payment-service.
+ */
+export function isAmbiguousPaymentError(error: unknown): boolean {
+  if (!(error instanceof ContractError)) {
+    return false;
+  }
+  const details = (error.details ?? {}) as Record<string, unknown>;
+  if (details.outcome === "unknown") {
+    return true;
+  }
+  return typeof details.status === "number" && details.status >= 500;
+}
+
+/** True when payment-service refused the posting with a 409 (state / key conflict). */
+export function isConflictPaymentError(error: unknown): boolean {
+  if (!(error instanceof ContractError)) {
+    return false;
+  }
+  const details = (error.details ?? {}) as Record<string, unknown>;
+  return details.status === 409;
+}
+
+const MoneySchema = z.object({
+  amountMinor: z.number().int(),
+  currency: z.string().min(3).max(3),
+});
+
+const PaymentStatusSchema = z.object({
+  item: z.object({
+    itemId: z.string(),
+    orderId: z.string(),
+    state: z.enum([
+      "authorized",
+      "captured",
+      "released",
+      "partially_refunded",
+      "refunded",
+    ]),
+    authorized: MoneySchema,
+    captured: MoneySchema,
+    refunded: MoneySchema,
+    refundable: MoneySchema,
+    captureEntryId: z.string().nullable(),
+  }),
+  ops: z.array(
+    z.object({
+      ref: z.string(),
+      op: z.enum(["authorize", "capture", "release", "refund"]),
+      clientKey: z.string(),
+      amount: MoneySchema,
+      entryId: z.string().nullable(),
+      createdAt: z.string(),
+    }),
+  ),
+});
+
+/** What payment-service has recorded for one order item, read back for reconciliation. */
+export type PaymentStatus = z.infer<typeof PaymentStatusSchema>;
+
+/** The HTTP adapter — the real implementation; `status()` reads GET /orders/{orderId}. */
+export type HttpPaymentPort = PaymentPort;
 
 interface PaymentHttpOptions {
   readonly baseUrl: string;
@@ -63,7 +157,7 @@ interface PaymentHttpOptions {
 const RESPONSE_SHAPE_ERROR =
   "payment-service returned a response this service cannot read";
 
-function parseResult(body: unknown, amount: Money): PaymentResult {
+function parseResult(body: unknown, requested: Money): PaymentResult {
   if (typeof body !== "object" || body === null) {
     throw new ContractError("service_unavailable", RESPONSE_SHAPE_ERROR);
   }
@@ -72,12 +166,30 @@ function parseResult(body: unknown, amount: Money): PaymentResult {
   if (typeof ref !== "string") {
     throw new ContractError("service_unavailable", RESPONSE_SHAPE_ERROR);
   }
+  // Record back what payment-service says moved, not what was asked for; a
+  // reply in another currency is a contract break, never re-denominated here.
+  const reported = MoneySchema.safeParse(record.amount);
+  if (reported.success && reported.data.currency !== requested.currency) {
+    throw new ContractError("service_unavailable", RESPONSE_SHAPE_ERROR, {
+      requestedCurrency: requested.currency,
+      reportedCurrency: reported.data.currency,
+    });
+  }
   return {
     ref,
     entryId: typeof record.entryId === "string" ? record.entryId : null,
-    amount,
+    amount: reported.success ? reported.data : requested,
     replayed: record.replayed === true,
   };
+}
+
+async function errorCodeOf(response: Response): Promise<string | null> {
+  const detail: unknown = await response.json().catch(() => undefined);
+  return typeof detail === "object" &&
+    detail !== null &&
+    typeof (detail as { code?: unknown }).code === "string"
+    ? (detail as { code: string }).code
+    : null;
 }
 
 /**
@@ -85,26 +197,33 @@ function parseResult(body: unknown, amount: Money): PaymentResult {
  * this service sends, so a retry after a network failure returns the original
  * posting rather than authorizing or capturing twice.
  */
-export function createHttpPayment(options: PaymentHttpOptions): PaymentPort {
+export function createHttpPayment(
+  options: PaymentHttpOptions,
+): HttpPaymentPort {
   const doFetch = options.fetchImpl ?? fetch;
   const basePath = options.basePath ?? "/v1/finance/travel";
   const timeoutMs = options.timeoutMs ?? 10_000;
+  const root = `${options.baseUrl.replace(/\/+$/, "")}${basePath}`;
+
+  function serviceHeaders(): Record<string, string> {
+    return options.serviceKey === undefined
+      ? {}
+      : { "X-Service-Key": options.serviceKey };
+  }
 
   async function call(
     op: PaymentOp,
     request: PaymentRequest,
   ): Promise<PaymentResult> {
-    const url = `${options.baseUrl.replace(/\/+$/, "")}${basePath}/${op}`;
+    const url = `${root}/${op}`;
     const headers: Record<string, string> = {
       "content-type": "application/json",
       [IDEMPOTENCY_HEADER]: request.idempotencyKey,
       "X-City-ID": request.cityId,
       "X-User-ID": request.actor.id,
       "X-User-Role": request.actor.role,
+      ...serviceHeaders(),
     };
-    if (options.serviceKey !== undefined) {
-      headers["X-Service-Key"] = options.serviceKey;
-    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => {
@@ -125,13 +244,7 @@ export function createHttpPayment(options: PaymentHttpOptions): PaymentPort {
         }),
       });
       if (!response.ok) {
-        const detail: unknown = await response.json().catch(() => undefined);
-        const code =
-          typeof detail === "object" &&
-          detail !== null &&
-          typeof (detail as { code?: unknown }).code === "string"
-            ? (detail as { code: string }).code
-            : null;
+        const code = await errorCodeOf(response);
         paymentLogger.error(
           { status: response.status, code, op, orderId: request.orderId },
           "payment-service refused the posting",
@@ -149,11 +262,60 @@ export function createHttpPayment(options: PaymentHttpOptions): PaymentPort {
       }
       paymentLogger.error(
         { err: error, op, orderId: request.orderId },
-        "payment call failed",
+        "payment call failed; outcome unknown",
+      );
+      // The request may have been applied before the connection dropped or
+      // the timer fired: say so, and point at the two safe ways forward.
+      throw new ContractError(
+        "service_unavailable",
+        `payment-service did not answer; whether the ${op} happened is unknown — retry with the same idempotency key or read the order's payment status`,
+        { op, orderId: request.orderId, outcome: "unknown" },
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function status(orderId: string): Promise<PaymentStatus | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+    try {
+      const response = await doFetch(
+        `${root}/orders/${encodeURIComponent(orderId)}`,
+        { method: "GET", headers: serviceHeaders(), signal: controller.signal },
+      );
+      if (response.status === 404) {
+        const code = await errorCodeOf(response);
+        if (code === "not_found") {
+          return null;
+        }
+      }
+      if (!response.ok) {
+        throw new ContractError(
+          "service_unavailable",
+          "payment-service could not report this order's payment status",
+          { status: response.status },
+        );
+      }
+      const parsed = PaymentStatusSchema.safeParse(await response.json());
+      if (!parsed.success) {
+        throw new ContractError("service_unavailable", RESPONSE_SHAPE_ERROR);
+      }
+      return parsed.data;
+    } catch (error) {
+      if (error instanceof ContractError) {
+        throw error;
+      }
+      paymentLogger.error(
+        { err: error, orderId },
+        "payment status read failed",
       );
       throw new ContractError(
         "service_unavailable",
-        `payment-service is not reachable; the ${op} did not happen`,
+        "payment-service is not reachable; the order's payment status is unknown",
+        { orderId },
       );
     } finally {
       clearTimeout(timer);
@@ -177,5 +339,6 @@ export function createHttpPayment(options: PaymentHttpOptions): PaymentPort {
       const result = await call("refund", request);
       return result;
     },
+    status,
   };
 }

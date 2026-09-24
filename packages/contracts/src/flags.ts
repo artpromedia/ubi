@@ -41,6 +41,82 @@ export const FLAG_KEYS = [
   "marketplace_rides",
   "marketplace_delivery",
   "marketplace_queued_jobs",
+  // Ordered intermediate stops on marketplace RIDE requests (A02). Scoped by
+  // city like the verticals above. While off, a quote, publish or pre-award
+  // route revision that carries stops is refused and the no-stop path is
+  // untouched; deliveries stay single-drop whatever this says (multi-drop
+  // needs per-package custody). Nothing enables this by default.
+  "marketplace_multi_stop",
+  // Post-award trip amendments and safe early termination on marketplace
+  // RIDES (A02 items 4-7). While off, propose/approve/reject/list and
+  // terminate are refused; per-stop arrival/waiting events stay under
+  // marketplace_multi_stop. Money moves only through linked adjustments (the
+  // 10% is never re-charged). Nothing enables this by default.
+  "marketplace_trip_amendments",
+  // Book for Later on the marketplace (A03). Three DIFFERENT products, each
+  // deny-by-default and each also needing its vertical (`marketplace_rides`):
+  //  - `scheduled_rides` (declared above, pre-existing) gates SCHEDULED
+  //    REQUESTS: a stored intent that NO driver is committed to, published as
+  //    an ordinary request at the city's lead time;
+  //  - `marketplace_advance_reservations` gates ADVANCE DRIVER RESERVATIONS:
+  //    drivers bid on a future pickup window and the requester selects one in
+  //    advance (commission captured once at that award; a separate booking
+  //    calendar, never the live current/next slots);
+  //  - `marketplace_recurring_journeys` gates recurring templates, whose
+  //    occurrences are each one of the two products above.
+  // Switching a flag off stops NEW sales only: existing bookings, their
+  // workers and every financial recovery keep running.
+  "marketplace_advance_reservations",
+  "marketplace_recurring_journeys",
+  // Rider confidence on the marketplace (A04 item 3, A06 part D). Two
+  // DIFFERENT capabilities, each deny-by-default and each also needing the
+  // ride vertical (`marketplace_rides`):
+  //  - `marketplace_preferred_drivers` gates saving a driver you completed a
+  //    trip with, a driver's opt-in to preferred requests, and naming a saved
+  //    driver on a request: that driver gets a bounded exclusive window to
+  //    offer (same floors, stationary bidding, wallet hold and 10% — nothing
+  //    waived), after which the request opens to the market ONLY with the
+  //    rider's explicit fallback consent, otherwise it closes free;
+  //  - `marketplace_accessibility_requirements` gates stating concrete service
+  //    requirements (wheelchair-accessible vehicle, assistance animal, extra
+  //    luggage capacity) and soft preferences. Requirements match only
+  //    VERIFIED capability; with no verified source they surface honestly as
+  //    unavailable, never as silent matching to unverified drivers.
+  // Offer comparison (total payable, pickup estimate, verified driver details,
+  // reliability, sorting) and trip receipts only add read data and ship
+  // ungated. Nothing enables either flag by default.
+  "marketplace_preferred_drivers",
+  "marketplace_accessibility_requirements",
+  // Book for another adult (A06 part B). Deny-by-default and also needing the
+  // ride vertical (`marketplace_rides`): the requester (who stays the payer)
+  // may name an ADULT passenger with an attestation of their age and consent;
+  // unaccompanied minors are refused outright. The passenger follows the trip
+  // through a scoped, expiring, revocable link (driver card, status/ETA,
+  // pickup PIN, support, free decline before pickup). Off stops NEW guest
+  // bookings and new links only — existing trips' links, the requester's
+  // revoke and the passenger's decline keep working. Nothing enables it.
+  "marketplace_guest_bookings",
+  // Business travel (A06 part C). Per city, deny-by-default: gates NEW
+  // organizations, invitations, top-ups, budget allocations and reservations
+  // (user-service src/organizations, payment-service src/business) and, in
+  // ride-service, booking a marketplace ride on an organization — which ALSO
+  // needs the vertical (`marketplace_rides`). The organization's prefunded
+  // budget replaces the rider's personal funding for that trip (never both);
+  // the driver's 10% commission is untouched. Switching it off never strands
+  // money: commit, release, statements and existing trips keep working.
+  // Nothing enables it (see BUSINESS_TRAVEL_FLAG in business-travel.ts).
+  "business_travel",
+  // Vehicle swaps on advance bookings (A05 FL-8). Per city, deny-by-default:
+  // gates a fleet PROPOSING to move a confirmed advance booking to another of
+  // its vehicles (ride-service POST /internal/fleet/bookings/:blockId/
+  // vehicle-swaps). A swap is always decided by the booked driver (parked) and
+  // then explicitly consented to by the rider; the fare is unchanged and the
+  // commission is never charged again. Switching it off stops NEW proposals
+  // only — a swap already proposed can still be declined, consented to or
+  // expire. The fleet calendar itself (vehicle identity on bookings, the
+  // occupancy ledger, the risk overlay) rides on the pre-existing `fleet`
+  // flag, which also stays off. Nothing enables either.
+  "marketplace_booking_vehicle_swaps",
   // AI marketplace actions (C10). Gates ask-service's marketplace adapters — the
   // assistant quoting, publishing a bounded request, and (the only binding step)
   // selecting a winning offer within a user's grant/mandate. Deny-by-default and

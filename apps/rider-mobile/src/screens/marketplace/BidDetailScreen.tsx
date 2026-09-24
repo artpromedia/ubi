@@ -1,4 +1,7 @@
-// Design handoff R05 + R09 (handoff-marketplace/rn/rider/BidDetailScreen.tsx), adapted only for repo imports and contracts TEST_IDS.
+// Design handoff R05 + R09 (handoff-marketplace/rn/rider/BidDetailScreen.tsx), adapted for repo imports and
+// contracts TEST_IDS, and extended for A06 part A: the verified driver card (or "details unavailable" — never
+// a placeholder rating or trip count), the rating with its count as served, reliability WITH its definition,
+// window and sample, the service-fit criteria and each badge's reason.
 import React from "react";
 import { View, Pressable } from "react-native";
 import {
@@ -15,16 +18,24 @@ import {
 } from "@ubi/mobile-ui";
 import type { Money } from "@ubi/mobile-core";
 import { TEST_IDS } from "@ubi/contracts";
+import type { OfferDriverCard, ReliabilityLine } from "./offerView";
+import { StateTag } from "./riderParts";
 
 /** R05 + R09. Selection carries requestVersion + bidVersion; success renders ONLY on award.confirmed. */
 export type BidDetailProps = {
-  driver: {
-    name: string;
-    rating: string;
-    trips: number;
-    vehicle: string;
-    plateMasked: string;
-    initials: string;
+  driver: OfferDriverCard & { vehicle: string };
+  /** A06 part A comparison, all server-computed (absent from older servers). */
+  comparison?: {
+    pickupLabel: string;
+    totalNote: string | null;
+    reliability: ReliabilityLine | null;
+    fit: {
+      label: string;
+      matched: string[];
+      unmet: string[];
+      definition: string;
+    } | null;
+    badges: { code: string; label: string }[];
   };
   // bookingFee/total are server-computed; null renders "—" until the contract carries them (never client-added).
   bid: {
@@ -58,7 +69,14 @@ export function BidDetailScreen(p: BidDetailProps) {
   const consentMissing =
     p.slot === "next" && p.window ? !p.window.consented : false;
   return (
-    <Screen title={p.driver.name.split(" ")[0] + "’s offer"} onBack={p.onBack}>
+    <Screen
+      title={
+        p.driver.status === "unavailable"
+          ? "This offer"
+          : p.driver.name.split(" ")[0] + "’s offer"
+      }
+      onBack={p.onBack}
+    >
       {p.slot === "next" && p.window ? (
         <Banner
           tone="info"
@@ -83,17 +101,73 @@ export function BidDetailScreen(p: BidDetailProps) {
         >
           <Text variant="heading">{p.driver.initials}</Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text variant="bodyStrong">
-            {p.driver.name} · ★ {p.driver.rating} (
-            {p.driver.trips.toLocaleString()} trips)
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text variant="bodyStrong">{p.driver.name}</Text>
+          <StateTag
+            label={p.driver.statusLabel}
+            tone={
+              p.driver.status === "verified"
+                ? "ok"
+                : p.driver.status === "not_verified"
+                  ? "warn"
+                  : "neutral"
+            }
+          />
+          <Text variant="caption" tone="text2">
+            {p.driver.ratingLabel}
+            {p.driver.tripsLabel ? " · " + p.driver.tripsLabel : ""}
           </Text>
           <Text variant="caption" tone="text2">
             {p.driver.vehicle}
           </Text>
-          <Text variant="mono">{p.driver.plateMasked}</Text>
+          {p.driver.plateMasked ? (
+            <Text variant="mono">{p.driver.plateMasked}</Text>
+          ) : null}
         </View>
       </Card>
+      {p.comparison ? (
+        <Card style={{ gap: 6 }}>
+          <Text variant="caption" tone="text2">
+            {p.comparison.pickupLabel}
+          </Text>
+          {p.comparison.reliability ? (
+            <View style={{ gap: 2 }}>
+              <Text variant="bodySmStrong">
+                {"Reliability: " + p.comparison.reliability.label}
+              </Text>
+              {p.comparison.reliability.basis ? (
+                <Text variant="caption" tone="text2">
+                  {p.comparison.reliability.basis}
+                </Text>
+              ) : null}
+              <Text variant="caption" tone="text3">
+                {p.comparison.reliability.definition}
+              </Text>
+            </View>
+          ) : null}
+          {p.comparison.fit ? (
+            <View style={{ gap: 2 }}>
+              <Text variant="bodySmStrong">{p.comparison.fit.label}</Text>
+              {p.comparison.fit.matched.map((m) => (
+                <Text key={"m" + m} variant="caption" tone="text2">
+                  {"✓ " + m}
+                </Text>
+              ))}
+              {p.comparison.fit.unmet.map((m) => (
+                <Text key={"u" + m} variant="caption" tone="text3">
+                  {"– " + m}
+                </Text>
+              ))}
+              <Text variant="caption" tone="text3">
+                {p.comparison.fit.definition}
+              </Text>
+            </View>
+          ) : null}
+          {p.comparison.badges.map((b) => (
+            <StateTag key={b.code} label={b.label} tone="info" />
+          ))}
+        </Card>
+      ) : null}
       <Card>
         <Row
           label={"Offer · v" + p.bid.bidVersion + " (latest)"}
@@ -113,7 +187,10 @@ export function BidDetailScreen(p: BidDetailProps) {
       </Card>
       <Banner
         tone="ok"
-        body="The agreed total is fixed. Traffic or a longer route won’t change it."
+        body={
+          p.comparison?.totalNote ??
+          "The agreed total is fixed. Traffic or a longer route won’t change it."
+        }
       />
       {p.compareLine ? (
         <Text variant="caption" tone="text2">
@@ -200,7 +277,9 @@ export function BidDetailScreen(p: BidDetailProps) {
           p.phase === "award_pending"
             ? "Choosing…"
             : "Choose " +
-              p.driver.name.split(" ")[0] +
+              (p.driver.status === "unavailable"
+                ? "this offer"
+                : p.driver.name.split(" ")[0]) +
               (p.slot === "next" ? " · window accepted" : "")
         }
         loading={p.phase === "award_pending"}

@@ -1,71 +1,134 @@
 # UBI Payment Service - Production Dockerfile
-# Multi-stage build for optimal image size
+# Multi-stage build. The build context is the REPOSITORY ROOT:
+#
+#   docker build -f services/payment-service/Dockerfile .
+#
+# (infrastructure/hetzner/docker-compose.prod.yml builds it with
+# `context: ../..`.) Pattern: services/notification-service/Dockerfile.
+#
+# THE WORKSPACE CLOSURE. At runtime the service imports @ubi/config-client,
+# @ubi/contracts, @ubi/database, @ubi/logger, @ubi/outbox and @ubi/utils; it
+# builds against @ubi/typescript-config (every tsconfig extends it) and
+# @ubi/eslint-config (a workspace devDependency the install must be able to
+# link). infrastructure/scripts/check-dockerfiles.mjs fails when this file
+# stops copying a workspace package the service's manifest, or a package it
+# pulls in, depends on.
+# The previous version of this file copied neither packages/contracts,
+# packages/outbox nor packages/config-client, COPYed a root
+# node_modules/.prisma that does not exist under pnpm, and probed port 4005
+# while the service defaults to 4003 (compose runs it on PORT=3005).
+# Quarantined modules (QUARANTINE.md) are excluded by the service's own
+# tsconfig and are never reached from src/index.ts, so tsup never bundles
+# them.
+#
+# THE PRISMA CLIENT is generated into pnpm's virtual store
+# (node_modules/.pnpm/@prisma+client@…/node_modules/.prisma), not into a root
+# node_modules/.prisma, so the production stage takes the builder's pruned
+# node_modules as a whole rather than reinstalling (a fresh `pnpm install
+# --prod` would bring back an ungenerated client).
 
 # ===========================================
 # Build Stage
 # ===========================================
 FROM node:20-alpine AS builder
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9 --activate
+# Prisma's query engine needs OpenSSL 3; node:20-alpine already ships libssl3,
+# which Prisma detects (it generates the linux-musl-openssl-3.0.x engine).
+
+# pnpm, pinned to the repository's packageManager version.
+RUN corepack enable && corepack prepare pnpm@9.14.2 --activate
 
 WORKDIR /app
 
-# Copy workspace configuration
+# Workspace configuration
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
 
-# Copy package.json files for all relevant packages
+# The workspace manifests of the service and its whole workspace dependency
+# closure (keep in step with services/payment-service/package.json and each listed
+# package's own workspace dependencies).
 COPY services/payment-service/package.json ./services/payment-service/
-COPY packages/logger/package.json ./packages/logger/
-COPY packages/utils/package.json ./packages/utils/
+COPY packages/config-client/package.json ./packages/config-client/
+COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/database/package.json ./packages/database/
+COPY packages/eslint-config/package.json ./packages/eslint-config/
+COPY packages/logger/package.json ./packages/logger/
+COPY packages/outbox/package.json ./packages/outbox/
+COPY packages/typescript-config/package.json ./packages/typescript-config/
+COPY packages/utils/package.json ./packages/utils/
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+# Install the closure only (the lockfile is the whole monorepo's).
+RUN pnpm install --frozen-lockfile --filter "@ubi/payment-service..."
 
-# Copy source code
-COPY services/payment-service ./services/payment-service
-COPY packages/logger ./packages/logger
-COPY packages/utils ./packages/utils
-COPY packages/database ./packages/database
+# Sources — named file by file: the repository root has no .dockerignore, so
+# copying a whole package directory would also copy the host's node_modules,
+# dist and .turbo over the ones installed here.
+COPY contracts/state-machines.json ./contracts/state-machines.json
+COPY packages/typescript-config/*.json ./packages/typescript-config/
+COPY packages/config-client/src ./packages/config-client/src
+COPY packages/config-client/tsconfig.json packages/config-client/tsup.config.ts ./packages/config-client/
+COPY packages/contracts/src ./packages/contracts/src
+COPY packages/contracts/scripts ./packages/contracts/scripts
+COPY packages/contracts/tsconfig.json packages/contracts/tsup.config.ts ./packages/contracts/
+COPY packages/database/src ./packages/database/src
+COPY packages/database/prisma ./packages/database/prisma
+COPY packages/database/prisma.config.ts packages/database/tsconfig.json packages/database/tsup.config.ts ./packages/database/
+COPY packages/logger/src ./packages/logger/src
+COPY packages/logger/tsconfig.json packages/logger/tsup.config.ts ./packages/logger/
+COPY packages/outbox/src ./packages/outbox/src
+COPY packages/outbox/tsconfig.json packages/outbox/tsup.config.ts ./packages/outbox/
+COPY packages/utils/src ./packages/utils/src
+COPY packages/utils/tsconfig.json packages/utils/tsup.config.ts ./packages/utils/
+COPY services/payment-service/src ./services/payment-service/src
+COPY services/payment-service/tsconfig.json ./services/payment-service/
 
-# Generate Prisma client
-RUN cd packages/database && pnpm prisma generate
+# Generate the Prisma client, then build every package of the closure in
+# dependency order (contracts runs its codegen first).
+RUN pnpm --filter @ubi/database exec prisma generate
+RUN pnpm --filter "@ubi/payment-service..." run build
 
-# Build the service and its dependencies
-RUN pnpm turbo run build --filter=@ubi/payment-service...
+# Unlink devDependencies from every package of the closure; the generated
+# client stays (it lives in the virtual store, which this does not recreate).
+# pnpm asks before recreating modules directories and, with no TTY, the
+# question silently ends the step with nothing pruned — so the purge is
+# pre-confirmed. Lifecycle scripts are skipped: the root `prepare` (husky)
+# would fail once its devDependency is gone, and nothing needs to run again.
+RUN pnpm install --prod --frozen-lockfile --offline --ignore-scripts \
+      --config.confirmModulesPurge=false --filter "@ubi/payment-service..."
 
 # ===========================================
 # Production Stage
 # ===========================================
 FROM node:20-alpine AS production
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9 --activate
-
 WORKDIR /app
 
-# Copy workspace configuration
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/node_modules ./node_modules
 
-# Copy package.json files
-COPY services/payment-service/package.json ./services/payment-service/
-COPY packages/logger/package.json ./packages/logger/
-COPY packages/utils/package.json ./packages/utils/
-COPY packages/database/package.json ./packages/database/
-
-# Install production dependencies only
-RUN pnpm install --prod --frozen-lockfile
-
-# Copy built artifacts
-COPY --from=builder /app/services/payment-service/dist ./services/payment-service/dist
-COPY --from=builder /app/packages/logger/dist ./packages/logger/dist
-COPY --from=builder /app/packages/utils/dist ./packages/utils/dist
+# Each runtime workspace package: its manifest, its build and its (symlinked)
+# node_modules.
+COPY --from=builder /app/packages/config-client/package.json ./packages/config-client/package.json
+COPY --from=builder /app/packages/config-client/dist ./packages/config-client/dist
+COPY --from=builder /app/packages/config-client/node_modules ./packages/config-client/node_modules
+COPY --from=builder /app/packages/contracts/package.json ./packages/contracts/package.json
+COPY --from=builder /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=builder /app/packages/contracts/node_modules ./packages/contracts/node_modules
+COPY --from=builder /app/packages/database/package.json ./packages/database/package.json
 COPY --from=builder /app/packages/database/dist ./packages/database/dist
-
-# Copy Prisma client
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/packages/database/node_modules ./packages/database/node_modules
 COPY --from=builder /app/packages/database/prisma ./packages/database/prisma
+COPY --from=builder /app/packages/logger/package.json ./packages/logger/package.json
+COPY --from=builder /app/packages/logger/dist ./packages/logger/dist
+COPY --from=builder /app/packages/logger/node_modules ./packages/logger/node_modules
+COPY --from=builder /app/packages/outbox/package.json ./packages/outbox/package.json
+COPY --from=builder /app/packages/outbox/dist ./packages/outbox/dist
+COPY --from=builder /app/packages/outbox/node_modules ./packages/outbox/node_modules
+COPY --from=builder /app/packages/utils/package.json ./packages/utils/package.json
+COPY --from=builder /app/packages/utils/dist ./packages/utils/dist
+COPY --from=builder /app/packages/utils/node_modules ./packages/utils/node_modules
+COPY --from=builder /app/services/payment-service/package.json ./services/payment-service/package.json
+COPY --from=builder /app/services/payment-service/dist ./services/payment-service/dist
+COPY --from=builder /app/services/payment-service/node_modules ./services/payment-service/node_modules
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -75,10 +138,12 @@ USER nodejs
 
 WORKDIR /app/services/payment-service
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:4005/health || exit 1
+ENV NODE_ENV=production
 
-EXPOSE 4005
+# Health check (the port the service listens on: PORT, default 4003)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4003}/health" || exit 1
+
+EXPOSE 4003
 
 CMD ["node", "dist/index.js"]

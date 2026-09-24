@@ -2,8 +2,9 @@
 // support line from city config, dialled through the OS dialler. In-app SOS
 // dispatch has NO gateway-reachable endpoint today (UNSUPPORTED registry:
 // sosDispatch) and this screen says so — it never implies a control room was
-// alerted. City config itself is gateway-unmounted today (UNSUPPORTED:
-// cityConfig), so the numbers degrade honestly when it can't load.
+// alerted. City config is read through the gateway's read-only config route
+// (GET /v1/config/cities/{cityId}); the numbers still degrade honestly when it
+// can't load.
 import React from "react";
 import { Linking, View } from "react-native";
 import {

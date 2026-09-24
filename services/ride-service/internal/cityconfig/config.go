@@ -93,6 +93,11 @@ type CityConfig struct {
 	MaxPinAttempts         int                  `json:"maxPinAttempts"`
 	PaymentMethods         []PaymentMethod      `json:"paymentMethods"`
 	ServiceFeePct          float64              `json:"serviceFeePct"`
+	// Taxes are the market's configured tax rates in percent, keyed by tax
+	// code (CityConfigSchema.taxes, e.g. {"vat": 7.5}). Read only to itemise
+	// a receipt's tax share of an amount the rider already pays — never to
+	// add a charge. Absent or empty: the receipt itemises no tax.
+	Taxes map[string]float64 `json:"taxes,omitempty"`
 	// Marketplace is the optional negotiated-fare marketplace policy. Absent
 	// means the marketplace is not configured here and every marketplace read
 	// fails closed with ErrMarketNotConfigured (see marketplace.go).
@@ -247,6 +252,47 @@ func (s *Store) Config(ctx context.Context, cityID string) (*CityConfig, error) 
 			// A cache write failure is not a reason to refuse a good read.
 			_ = s.redis.Set(ctx, cacheKey(cityID), encoded, s.ttl).Err()
 		}
+	}
+	return &config, nil
+}
+
+// VersionedProvider reads one specific configuration version of a city, for
+// readers that must price under the snapshot an earlier decision was made
+// with rather than under whatever is activated today.
+type VersionedProvider interface {
+	ConfigVersion(ctx context.Context, cityID string, version int) (*CityConfig, error)
+}
+
+// ConfigVersion loads one version of a city's configuration — activated
+// then, possibly superseded since. A post-award amendment prices its delta
+// under the award's own snapshot with this, so a historical charge is never
+// recalculated under today's policy. Versions are immutable once activated,
+// so the read needs no cache invalidation; like Config it fails closed.
+func (s *Store) ConfigVersion(ctx context.Context, cityID string, version int) (*CityConfig, error) {
+	if cityID == "" || version <= 0 {
+		return nil, fmt.Errorf("%w: no city or version supplied", ErrUnavailable)
+	}
+	if s.pool == nil {
+		return nil, fmt.Errorf("%w: no configuration source is wired", ErrUnavailable)
+	}
+	var raw []byte
+	err := s.pool.QueryRow(ctx, `
+		SELECT config
+		FROM public.city_config_versions
+		WHERE city_id = $1 AND version = $2 AND activated_at IS NOT NULL
+		LIMIT 1`, cityID, version).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: city %s has no activated version %d", ErrUnavailable, cityID, version)
+		}
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	var config CityConfig
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return nil, fmt.Errorf("%w: city %s v%d stores an unreadable config: %v", ErrUnavailable, cityID, version, err)
+	}
+	if err := config.Validate(); err != nil {
+		return nil, err
 	}
 	return &config, nil
 }

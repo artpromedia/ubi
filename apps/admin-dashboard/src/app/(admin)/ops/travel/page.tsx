@@ -1,152 +1,163 @@
 "use client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Badge, Card } from "@ubi/ui";
-import { growthApi } from "@/lib/growth-api";
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { TravelOpsBoard } from "@/components/ops/TravelOpsBoard";
+import { useOnlineStatus } from "@/components/ops/useOnlineStatus";
+import { classifyError, isAmbiguousFailure, readFailure } from "@/lib/access";
+import { newIdempotencyKey } from "@/lib/api-client";
+import {
+  ACTION_COPY,
+  settlementDifferenceLine,
+  toExceptionRows,
+  toItineraryRows,
+  toProviderCards,
+  travelOpsApi,
+  type ExceptionAction,
+} from "@/lib/travel-ops";
 
-const KIND: Record<string, { label: string; cls: string }> = {
-  pending_ticketing: {
-    label: "PNR · NOT TICKETED",
-    cls: "bg-red-500/15 text-red-400",
-  },
-  unknown_result: {
-    label: "UNKNOWN · RECONCILING",
-    cls: "bg-amber-500/15 text-amber-400",
-  },
-  refund_due: { label: "REFUND DUE", cls: "bg-sky-500/15 text-sky-400" },
-  settlement_difference: {
-    label: "SETTLEMENT DIFF",
-    cls: "bg-amber-500/15 text-amber-400",
-  },
+type Pending = {
+  orderId: string;
+  action: ExceptionAction;
+  /** Minted when the confirmation opened; one confirmed action per key. */
+  idempotencyKey: string;
 };
-/** Board 23e (left) — travel exceptions + provider health inside the existing ops console. Unknown results: lookup by UBI ref only; never re-book. */
+
+/**
+ * Board 23e (left) — travel exceptions + provider health + airport transfers
+ * + the joined-orders itinerary, inside the existing ops console. Unknown
+ * results: lookup by UBI ref only; never re-book. No "settle all".
+ */
 export default function TravelOpsPage() {
   const qc = useQueryClient();
+  const online = useOnlineStatus();
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [result, setResult] = useState<{
+    tone: "ok" | "err";
+    text: string;
+  } | null>(null);
+  const [tripId, setTripId] = useState<string | null>(null);
+  // Synchronous one-in-flight guard: `act.isPending` only updates on the
+  // next render, and an exception action (chase_refund) advances a stage
+  // per call, so a second click in the same tick must not send again.
+  const inFlight = useRef(false);
+
   const ex = useQuery({
-    queryKey: ["travelExceptions"],
-    queryFn: growthApi.travelExceptions,
+    queryKey: ["travelOpsExceptions"],
+    queryFn: travelOpsApi.exceptions,
     refetchInterval: 30_000,
   });
   const health = useQuery({
-    queryKey: ["providerHealth"],
-    queryFn: growthApi.providerHealth,
+    queryKey: ["travelOpsProviderHealth"],
+    queryFn: travelOpsApi.providersHealth,
     refetchInterval: 30_000,
   });
-  const act = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: string }) =>
-      growthApi.travelAction(id, action),
-    onSuccess: () =>
-      void qc.invalidateQueries({ queryKey: ["travelExceptions"] }),
+  const trip = useQuery({
+    queryKey: ["travelOpsTrip", tripId],
+    queryFn: () => travelOpsApi.trip(tripId as string),
+    enabled: tripId !== null,
   });
-  const count = (k: string) => ex.data?.filter((e) => e.kind === k).length ?? 0;
+
+  const act = useMutation({
+    mutationFn: (p: Pending) =>
+      travelOpsApi.act(p.orderId, p.action, p.idempotencyKey),
+    onSettled: () => {
+      inFlight.current = false;
+    },
+    onSuccess: (_answer, p) => {
+      setPending(null);
+      setResult({
+        tone: "ok",
+        text:
+          ACTION_COPY[p.action].label +
+          " recorded on " +
+          p.orderId +
+          " with your operator id.",
+      });
+      void qc.invalidateQueries({ queryKey: ["travelOpsExceptions"] });
+    },
+    onError: (e, p) => {
+      setPending(null);
+      const state = classifyError(e);
+      const label = ACTION_COPY[p.action].label + " on " + p.orderId;
+      setResult({
+        tone: "err",
+        // A dropped connection or 5xx may have reached travel-service: the
+        // operator is told the outcome is unknown, never that nothing ran.
+        text: isAmbiguousFailure(e)
+          ? label +
+            ": the outcome is unknown — the request may have reached UBI (" +
+            state.title +
+            "). Reload the exceptions and check this order's state before doing anything else; do not repeat the action blindly."
+          : label +
+            " was refused — nothing was applied. " +
+            state.title +
+            ": " +
+            state.message +
+            " Reload the exceptions before trying again.",
+      });
+      void qc.invalidateQueries({ queryKey: ["travelOpsExceptions"] });
+    },
+  });
+
+  const view = trip.data;
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-border p-4">
         <h1 className="font-heading text-lg font-semibold">Ops › Travel</h1>
-        <Badge className={KIND.pending_ticketing.cls}>
-          {count("pending_ticketing")} PENDING TICKETING &gt; 30 MIN
-        </Badge>
-        <Badge className={KIND.unknown_result.cls}>
-          {count("unknown_result")} PROVIDER UNCERTAIN
-        </Badge>
-        <Badge className={KIND.refund_due.cls}>
-          {count("refund_due")} REFUNDS DUE
-        </Badge>
-      </div>
-      <div
-        data-testid="ops.travel.health"
-        className="flex gap-2 border-b border-border p-3"
-      >
-        {health.data?.map((h) => (
-          <Card
-            key={h.label}
-            className={
-              "flex-1 p-3 " + (h.tone === "warn" ? "border-amber-500/50" : "")
-            }
-          >
-            <div className="text-[10px] text-muted-foreground">{h.label}</div>
-            <div
-              className={
-                "font-heading text-base font-bold " +
-                (h.tone === "warn" ? "text-amber-400" : "")
-              }
-            >
-              {h.value}{" "}
-              <span
-                className={
-                  "text-[11px] font-normal " +
-                  (h.tone === "ok"
-                    ? "text-emerald-400"
-                    : "text-muted-foreground")
-                }
-              >
-                {h.note}
-              </span>
-            </div>
-          </Card>
-        ))}
       </div>
       <div className="flex-1 overflow-auto">
-        <table className="w-full text-xs">
-          <thead className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <tr className="border-b border-border">
-              {[
-                "Order · UBI id",
-                "Traveller · item",
-                "State · since",
-                "Money",
-                "Next action",
-              ].map((h) => (
-                <th key={h} className="px-4 py-2 text-left">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ex.data?.map((e) => (
-              <tr
-                key={e.id}
-                data-testid="ops.travel.exception"
-                className="border-b border-border/60"
-              >
-                <td className="px-4 py-2.5">
-                  <div className="font-mono font-semibold text-foreground">
-                    {e.orderId}
-                  </div>
-                  <div className="text-muted-foreground">{e.supplierRef}</div>
-                </td>
-                <td className="px-4 py-2.5">
-                  <div className="text-foreground">
-                    {e.traveller} · {e.item}
-                  </div>
-                  <div className="text-muted-foreground">{e.sub}</div>
-                </td>
-                <td className="px-4 py-2.5">
-                  <Badge className={KIND[e.kind].cls}>
-                    {e.state || KIND[e.kind].label}
-                  </Badge>
-                  <div className="text-muted-foreground">{e.since}</div>
-                </td>
-                <td className="px-4 py-2.5 tabular-nums text-muted-foreground">
-                  {e.money}
-                  {e.moneyNote ? <div>{e.moneyNote}</div> : null}
-                </td>
-                <td className="px-4 py-2.5">
-                  {e.nextAction.map((a) => (
-                    <button
-                      key={a.action}
-                      disabled={act.isPending}
-                      onClick={() => act.mutate({ id: e.id, action: a.action })}
-                      className="mr-2 text-sky-400 hover:underline"
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <TravelOpsBoard
+          offline={!online}
+          exceptions={{
+            loading: ex.isLoading,
+            error: readFailure(ex, online),
+            rows: toExceptionRows(ex.data ?? []),
+          }}
+          providers={{
+            loading: health.isLoading,
+            error: readFailure(health, online),
+            cards: toProviderCards(health.data),
+            settlementLine: settlementDifferenceLine(health.data),
+            generatedAt: health.data?.generatedAt,
+          }}
+          pendingAction={
+            pending
+              ? {
+                  orderId: pending.orderId,
+                  action: pending.action,
+                  busy: act.isPending,
+                }
+              : null
+          }
+          actionResult={result}
+          onRequestAction={(orderId, action) => {
+            setResult(null);
+            setPending({
+              orderId,
+              action,
+              idempotencyKey: newIdempotencyKey(),
+            });
+          }}
+          onConfirmAction={() => {
+            if (pending && !act.isPending && !inFlight.current) {
+              inFlight.current = true;
+              act.mutate(pending);
+            }
+          }}
+          onCancelAction={() => setPending(null)}
+          trip={{
+            lookedUp: tripId,
+            loading: trip.isLoading,
+            error: readFailure(trip, online),
+            title: view?.title ?? null,
+            dates:
+              view?.startDate || view?.endDate
+                ? (view?.startDate ?? "?") + " → " + (view?.endDate ?? "?")
+                : null,
+            rows: toItineraryRows(view),
+          }}
+          onLookupTrip={(id) => setTripId(id)}
+        />
       </div>
     </div>
   );

@@ -3,6 +3,13 @@
 # =============================================================================
 # The API Gateway is the entry point for all client requests.
 # It handles routing, authentication, rate limiting, and request transformation.
+#
+# SCALE-OUT TRACK ONLY. The pilot runs on the Hetzner single-host compose
+# stack (infrastructure/hetzner/, docs/ops/PILOT_RUNBOOK_DELTAS.md). This is
+# the only service with a Kubernetes manifest; the services its URLs name
+# (ask, travel, fleet, ...) have none yet, and none of this has been applied
+# to a cluster. The environment below mirrors what the gateway reads
+# (docs/ops/DEPLOY_ENV_MATRIX.md) so the manifest is not wrong by omission.
 # =============================================================================
 
 apiVersion: apps/v1
@@ -97,7 +104,8 @@ spec:
             - name: LOG_FORMAT
               value: json
 
-            # Service discovery
+            # Service discovery. Every proxied service needs its URL: an unset
+            # one falls back to a localhost default and its routes answer 503.
             - name: USER_SERVICE_URL
               value: "http://user-service.ubi-apps:3000"
             - name: RIDE_SERVICE_URL
@@ -110,6 +118,55 @@ spec:
               value: "http://payment-service.ubi-apps:3000"
             - name: NOTIFICATION_SERVICE_URL
               value: "http://notification-service.ubi-apps:3000"
+            # Round 9: the gateway also proxies ask (/v1/ask), travel
+            # (/v1/travel/..., /v1/reservations, /v1/ops/travel) and fleet
+            # (/v1/fleets, /v1/fleet-offers, /v1/drivers/me/fleet...). Ports are
+            # each service's own default.
+            - name: ASK_SERVICE_URL
+              value: "http://ask-service.ubi-apps:4013"
+            - name: TRAVEL_SERVICE_URL
+              value: "http://travel-service.ubi-apps:4012"
+            - name: FLEET_SERVICE_URL
+              value: "http://fleet-service.ubi-apps:4015"
+            # Only the two config reads are routed (src/routes/config-read.ts).
+            - name: CONFIG_SERVICE_URL
+              value: "http://config-service.ubi-apps:3010"
+
+            # Who the client is: X-Forwarded-For is believed only from these
+            # addresses (the ingress controller). From the ConfigMap; an overlay
+            # must narrow it to the ingress's own addresses. Empty trusts no one.
+            - name: GATEWAY_TRUSTED_PROXIES
+              valueFrom:
+                configMapKeyRef:
+                  name: api-gateway-config
+                  key: GATEWAY_TRUSTED_PROXIES
+
+            # Internal trust boundary (docs/security/INTERNAL_IDENTITY.md). The
+            # gateway refuses to start without them. The Secret is provisioned
+            # outside this repository (never committed).
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: api-gateway-secrets
+                  key: jwt-secret
+            - name: UBI_IDENTITY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: api-gateway-secrets
+                  key: ubi-identity-secret
+            - name: RIDE_INTERNAL_CONTEXT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: api-gateway-secrets
+                  key: ride-internal-context-secret
+            # The gateway reads ONE Redis URL (rate limits, token revocation);
+            # the REDIS_HOST/PORT/PASSWORD triple below is kept for the shared
+            # redis-credentials Secret's other consumers.
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: url
 
             # Redis connection
             - name: REDIS_HOST

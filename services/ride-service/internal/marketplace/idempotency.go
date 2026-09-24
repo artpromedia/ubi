@@ -28,13 +28,38 @@ const (
 	scopeRateProfileSave = "mp.rate_profile.save"
 	scopeAdminRepair     = "mp.admin.repair"
 
+	// A04.2: PATCH /v1/mp/driver/preferences.
+	scopePreferencesPatch = "mp.driver_preferences.patch"
+
 	// C08 admin resolution/standing scopes.
 	scopeAdminRecoveryRetry   = "mp.admin.recovery_retry"
 	scopeAdminAwardReconcile  = "mp.admin.award_reconcile"
+	scopeAdminBusinessRetry   = "mp.admin.business_retry"
+	scopeAdminDeliveryRetry   = "mp.admin.delivery_cancel_retry"
 	scopeStandingPropose      = "mp.admin.standing.propose"
 	scopeStandingApprove      = "mp.admin.standing.approve"
 	scopeStandingAppeal       = "mp.admin.standing.appeal"
 	scopeStandingAppealDecide = "mp.admin.standing.appeal_decide"
+
+	// A03 Book for Later.
+	scopeScheduledCreate  = "mp.scheduled.create"
+	scopeScheduledCancel  = "mp.scheduled.cancel"
+	scopeScheduledApprove = "mp.scheduled.approve"
+	scopeAdvanceCreate    = "mp.advance.create"
+	scopeBookingCancel    = "mp.booking.cancel"
+	scopeBookingReconfirm = "mp.booking.reconfirm"
+	scopeBookingWithdraw  = "mp.booking.withdraw"
+	scopeBookingRematch   = "mp.booking.rematch"
+	scopeTemplateCreate   = "mp.template.create"
+	scopeTemplateCommand  = "mp.template.command"
+	scopeOccurrenceSkip   = "mp.template.skip"
+
+	// A05 fleet calendar: the rider's "cancel and release" on a failed
+	// booking, the driver's decision on a vehicle swap and the rider's on a
+	// vehicle change. (Contract A's scopes live in fleet_internal.go.)
+	scopeBookingRelease   = "mp.booking.release"
+	scopeSwapDriverDecide = "mp.booking.swap.driver"
+	scopeSwapRiderDecide  = "mp.booking.swap.rider"
 )
 
 // ValidateIdempotencyKey mirrors IdempotencyKeySchema, via the move package so

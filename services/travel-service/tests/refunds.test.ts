@@ -7,13 +7,14 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createCart } from "../src/ops/carts";
 import { checkout } from "../src/ops/checkout";
-import { cancelOrder } from "../src/ops/orders";
+import { cancelOrder, getCancellationQuote } from "../src/ops/orders";
 import { advanceRefund } from "../src/ops/refunds";
 
 import {
   closeTestDb,
   idemKey,
   makeDeps,
+  money,
   resetTravel,
   rider,
   seedCity,
@@ -65,6 +66,47 @@ async function confirmedOrder(penaltyMinor: number) {
 }
 
 describe("refunds", () => {
+  it("surfaces a cancellation penalty first and cancels nothing without consent to it", async () => {
+    const { cityId, deps, actor, orderId } = await confirmedOrder(1_500_000);
+
+    const quote = await getCancellationQuote(deps, actor, orderId);
+    expect(quote.penalty).toEqual(money(1_500_000, "NGN"));
+    expect(quote.consentRequired).toBe(true);
+
+    const refused = await cancelOrder(deps, {
+      actor,
+      cityId,
+      orderId,
+      idempotencyKey: idemKey(),
+      correlationId: null,
+    }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refused).toMatchObject({
+      code: "conflict",
+      details: {
+        reason: "cancellation_penalty_consent_required",
+        penalty: { amountMinor: 1_500_000, currency: "NGN" },
+      },
+    });
+    // A different penalty than the live one is not consent either.
+    await expect(
+      cancelOrder(deps, {
+        actor,
+        cityId,
+        orderId,
+        idempotencyKey: idemKey(),
+        correlationId: null,
+        acceptedPenalty: money(1_000_000, "NGN"),
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+
+    const order = await db.travelOrder.findUnique({ where: { id: orderId } });
+    expect(order?.state).toBe("confirmed");
+    expect(await db.travelRefund.count({ where: { orderId } })).toBe(0);
+  });
+
   it("cancel opens a refund with the penalty applied, then pays out at the last hop", async () => {
     const { cityId, deps, payment, actor, orderId } =
       await confirmedOrder(1_500_000);
@@ -75,6 +117,7 @@ describe("refunds", () => {
       orderId,
       idempotencyKey: idemKey(),
       correlationId: null,
+      acceptedPenalty: money(1_500_000, "NGN"),
     });
     expect(refund.stage).toBe("requested");
     expect(refund.penalty.amountMinor).toBe(1_500_000);

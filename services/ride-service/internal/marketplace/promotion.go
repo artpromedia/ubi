@@ -11,6 +11,7 @@ import (
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/move"
 )
 
 // ExecutionTerminal implements move.ExecutionObserver: the move core calls it
@@ -56,7 +57,30 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 	// the pool mid-flight is read first (pool-deadlock rule).
 	var settlement *SettlementRequest
 	var settlementRowID uuid.UUID
-	if completed && claim.AwardID != nil {
+	// A06 part C: a business award never reaches the rider's personal
+	// settlement. A completed trip owes the organization's budget its COMMIT
+	// of the actual total instead; one that ended without service (the
+	// requester's cancel before pickup, ops, a no-show) owes the RELEASE —
+	// both written durably in the claim transaction below. A driver
+	// cancellation releases through the unwind's own intents.
+	var businessBooking *BusinessBooking
+	if claim.AwardID != nil {
+		booking, bizErr := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), *claim.AwardID)
+		switch {
+		case bizErr == nil:
+			businessBooking = booking
+		case !errors.Is(bizErr, domain.ErrNotFound):
+			return bizErr
+		}
+	}
+	if completed && claim.AwardID != nil && businessBooking != nil {
+		// Close any open trip changes first, exactly as a settlement does;
+		// the commit re-derives the committed fare when it is driven and
+		// defers while money is still open.
+		if _, adjErr := s.settleTripAdjustments(ctx, rideID, true); adjErr != nil && !errors.Is(adjErr, errTripUnsettled) {
+			return adjErr
+		}
+	} else if completed && claim.AwardID != nil {
 		award, awardErr := s.deps.Store.AwardByID(ctx, s.deps.Store.Pool(), *claim.AwardID)
 		if awardErr != nil {
 			return awardErr
@@ -73,12 +97,34 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 		if service == "" {
 			service = ServiceRide
 		}
+		// An amended trip settles its COMMITTED fare: the original agreed
+		// fare plus only the adjustments that committed (amendments, paid
+		// stop waiting) minus committed decreases. Anything still in flight
+		// is resolved first, or the SETTLEMENT waits for the sweep — a fare
+		// must never be settled while a delta to it can still land. The
+		// claim is released and the queued next job promoted regardless: an
+		// adjustment still converging (or parked for ops) never holds the
+		// driver's capacity or the queued rider hostage. The durable
+		// settlement row re-derives the committed fare when it is driven
+		// (committedSettlement) and defers while money is open.
+		fare := award.FareMinor
+		committed, adjErr := s.settleTripAdjustments(ctx, rideID, true)
+		switch {
+		case errors.Is(adjErr, errTripUnsettled):
+			s.deps.Logger.Warn().Str("ride_id", rideID.String()).Str("award_id", award.ID.String()).
+				Msg("a trip adjustment is still unresolved; the settlement is deferred to the sweep")
+		case adjErr != nil:
+			return adjErr
+		}
+		if committed != nil {
+			fare = committed.AgreedFareMinor
+		}
 		settlement = &SettlementRequest{
 			AwardID:      award.ID,
 			ExecutionRef: ExecutionRef{Service: service, ID: rideID.String()},
 			RequesterID:  award.RequesterID,
 			DriverID:     award.DriverID,
-			FareMinor:    money(award.FareMinor, request.Currency),
+			FareMinor:    money(fare, request.Currency),
 			Method:       method,
 			CityID:       request.CityID,
 		}
@@ -92,6 +138,15 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 	// reverse/release keys). The intents are written durably INSIDE the
 	// claim-release transaction, driven after commit and swept until confirmed
 	// — so a crash anywhere loses nothing and a replay moves no money twice.
+	if !completed && claim.AwardID != nil {
+		// A trip that ended without completing expires its open change
+		// proposals and releases what they reserved (a driver-cancelled
+		// award's reversal below also hands back everything with it).
+		if _, adjErr := s.settleTripAdjustments(ctx, rideID, false); adjErr != nil {
+			s.deps.Logger.Warn().Err(adjErr).Str("ride_id", rideID.String()).
+				Msg("closing open trip changes on a cancelled trip is unresolved")
+		}
+	}
 	var unwind *driverCancelUnwind
 	if driverCancelled && claim.AwardID != nil {
 		award, awardErr := s.deps.Store.AwardByID(ctx, s.deps.Store.Pool(), *claim.AwardID)
@@ -117,6 +172,7 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 	now := s.now()
 	settlementRecorded := false
 	unwound := false
+	businessOwed := false
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		locked, err := s.deps.Store.ClaimForUpdate(ctx, tx, claim.ID)
 		if err != nil {
@@ -134,6 +190,24 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 		}
 		if _, err := s.deps.Store.TransitionClaim(ctx, tx, locked, to, ClaimUpdate{}); err != nil {
 			return err
+		}
+		if businessBooking != nil && !driverCancelled {
+			op, release := businessOpCommit, businessRelease{}
+			if !completed {
+				op = businessOpRelease
+				release = systemRelease("trip_" + ride.State)
+				if ride.State == machine.RiderCancelledByRider {
+					// The requester's own cancel before pickup (the rider
+					// machine allows no later one): the booker's right, or
+					// the traveller's when they booked for themselves.
+					release = requesterRelease(businessBooking, "cancelled_by_requester")
+				}
+			}
+			owed, err := s.oweBusinessOp(ctx, tx, businessBooking.AwardID, op, release, now)
+			if err != nil {
+				return err
+			}
+			businessOwed = owed
 		}
 		if unwind != nil {
 			applied, err := s.unwindDriverCancelledAward(ctx, tx, unwind, now)
@@ -185,15 +259,23 @@ func (s *Service) handleExecutionTerminal(ctx context.Context, rideID uuid.UUID)
 
 	if settlementRecorded {
 		// The rows are committed: settle now, under the award's ONE
-		// settlement key. Any failure — definite or unknown — leaves the
+		// settlement key, at the committed fare. Any failure — definite or
+		// unknown, or an adjustment still holding open money — leaves the
 		// durable row for the sweep, which converges on the same key.
-		if settleErr := s.deps.Settlement.Settle(ctx, *settlement, settlementKeyFor(settlement.AwardID)); settleErr != nil {
+		final, settleErr := s.committedSettlement(ctx, *settlement)
+		if settleErr == nil {
+			settleErr = s.deps.Settlement.Settle(ctx, final, settlementKeyFor(settlement.AwardID))
+		}
+		if settleErr != nil {
 			s.deps.Logger.Warn().Err(settleErr).Str("award_id", settlement.AwardID.String()).
 				Msg("completion settlement unconfirmed; the sweep will retry it")
 		} else if resolveErr := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), settlementRowID, now); resolveErr != nil {
 			s.deps.Logger.Error().Err(resolveErr).Str("award_id", settlement.AwardID.String()).
 				Msg("could not resolve the settlement recovery row")
 		}
+	}
+	if businessOwed {
+		s.driveBusinessOp(ctx, businessBooking.AwardID)
 	}
 	if unwound {
 		s.driveDriverCancelReversal(ctx, unwind, now)
@@ -214,11 +296,48 @@ type driverCancelUnwind struct {
 	// calls leaves the sweep a durable record of what is still owed.
 	reverseRowID uuid.UUID
 	fundingRowID uuid.UUID
+	// reason is the linked reason carried into the award, the reversal and
+	// the release: driverCancelReason unless set (a guest passenger's free
+	// decline before pickup uses passengerDeclinedReason through this same
+	// funnel).
+	reason string
+	// actorType/actorID name who ended the execution on the events (the
+	// system for a driver cancellation, the guest passenger for a decline).
+	actorType string
+	actorID   string
+	// business is set by insertUnwindIntents when the award was funded by an
+	// organization's budget (A06 part C): its release is owed on the
+	// booking row instead of a rider funding release.
+	business bool
+}
+
+// unwindReason is the unwind's linked reason.
+func (u *driverCancelUnwind) unwindReason() string {
+	if u.reason == "" {
+		return driverCancelReason
+	}
+	return u.reason
+}
+
+// unwindActor names who ended the execution on the unwind's events.
+func (u *driverCancelUnwind) unwindActor() (string, string) {
+	if u.actorType == "" {
+		return "system", "ride-service"
+	}
+	return u.actorType, u.actorID
 }
 
 // driverCancelReason is the linked reason the driver-cancel unwind carries
 // into the award row, the commission reversal and the funding release.
 const driverCancelReason = "driver_cancelled"
+
+// unwindAuditReason is the audit row's sentence for an unwind reason.
+func unwindAuditReason(reason string) string {
+	if reason == passengerDeclinedReason {
+		return "the guest passenger declined the trip before pickup (free for the requester; the driver's commission returned)"
+	}
+	return "the assigned driver cancelled the marketplace execution"
+}
 
 // unwindDriverCancelledAward applies the state half of the unwind inside the
 // claim-release transaction: award confirmed → cancelled, the request's
@@ -235,7 +354,8 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 	if lockedAward.State != machine.MpAwardConfirmed {
 		return false, nil
 	}
-	reason := driverCancelReason
+	reason := unwind.unwindReason()
+	actorType, actorID := unwind.unwindActor()
 	if _, err := s.deps.Store.TransitionAward(ctx, tx, lockedAward, machine.MpAwardCancelled, AwardUpdate{
 		FailReason: &reason,
 		ResolvedAt: &now,
@@ -252,7 +372,7 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 	// truth. No new request and no new search are started here: that is the
 	// requester's explicit call.
 	if lockedRequest.CloseReason == "" {
-		if err := s.deps.Store.SetRequestCloseReason(ctx, tx, lockedRequest.ID, driverCancelReason); err != nil {
+		if err := s.deps.Store.SetRequestCloseReason(ctx, tx, lockedRequest.ID, reason); err != nil {
 			return false, err
 		}
 	}
@@ -262,46 +382,19 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 		AggregateID:    lockedRequest.ID.String(),
 		ToVersion:      lockedRequest.Version,
 		CityID:         lockedRequest.CityID,
-		ActorType:      "system",
-		ActorID:        "ride-service",
+		ActorType:      actorType,
+		ActorID:        actorID,
 		IdempotencyKey: "mp.request.closed:" + lockedRequest.ID.String(),
 		OccurredAt:     now,
 		Payload: map[string]any{
 			"requestId": lockedRequest.ID.String(),
-			"reason":    driverCancelReason,
+			"reason":    reason,
 		},
 	}); err != nil {
 		return false, err
 	}
 
-	// The two money intents, durable in this same transaction: the captured
-	// commission's linked reversal and the rider funding release, each under
-	// its award-derived idempotency key so the post-commit drive and the
-	// sweep converge on ONE reversal and ONE release however often they run.
-	bidID := unwind.bid.ID
-	if err := s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
-		ID:            unwind.reverseRowID,
-		ReservationID: unwind.bid.ReservationID,
-		DriverID:      unwind.bid.DriverID,
-		BidID:         &bidID,
-		Action:        RecoveryReverse,
-	}); err != nil {
-		return false, err
-	}
-	fundingPayload, err := json.Marshal(FundingReleaseRecoveryPayload{
-		AwardID: unwind.award.ID,
-		Reason:  driverCancelReason,
-	})
-	if err != nil {
-		return false, err
-	}
-	if err := s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
-		ID:            unwind.fundingRowID,
-		ReservationID: fundingReleaseKeyFor(unwind.award.ID),
-		DriverID:      unwind.award.RequesterID,
-		Action:        RecoveryFundingRelease,
-		Payload:       fundingPayload,
-	}); err != nil {
+	if err := s.insertUnwindIntents(ctx, tx, unwind); err != nil {
 		return false, err
 	}
 
@@ -311,8 +404,8 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 		AggregateID:    unwind.award.ID.String(),
 		ToVersion:      1,
 		CityID:         unwind.request.CityID,
-		ActorType:      "system",
-		ActorID:        "ride-service",
+		ActorType:      actorType,
+		ActorID:        actorID,
 		IdempotencyKey: "mp.award.cancelled:" + unwind.award.ID.String(),
 		OccurredAt:     now,
 		Payload: map[string]any{
@@ -320,7 +413,7 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 			"requestId":       unwind.award.RequestID.String(),
 			"driverId":        unwind.award.DriverID.String(),
 			"commissionMinor": unwind.award.CommissionMinor,
-			"reason":          driverCancelReason,
+			"reason":          reason,
 			"feeReversed":     true,
 		},
 	}); err != nil {
@@ -333,12 +426,61 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 		SubjectType: subjectAward,
 		SubjectID:   unwind.award.ID.String(),
 		Before:      map[string]any{"state": machine.MpAwardConfirmed},
-		After:       map[string]any{"state": machine.MpAwardCancelled, "reason": driverCancelReason},
-		Reason:      "the assigned driver cancelled the marketplace execution",
+		After:       map[string]any{"state": machine.MpAwardCancelled, "reason": reason},
+		Reason:      unwindAuditReason(reason),
 	}); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// insertUnwindIntents writes the unwind's two money intents, durable in the
+// caller's transaction: the captured commission's linked reversal and the
+// rider funding release, each under its award-derived idempotency key so the
+// post-commit drive (driveDriverCancelReversal) and the sweep converge on ONE
+// reversal and ONE release however often they run — and a crash after commit
+// still owes both.
+func (s *Service) insertUnwindIntents(ctx context.Context, tx pgx.Tx, unwind *driverCancelUnwind) error {
+	bidID := unwind.bid.ID
+	if err := s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
+		ID:            unwind.reverseRowID,
+		ReservationID: unwind.bid.ReservationID,
+		DriverID:      unwind.bid.DriverID,
+		BidID:         &bidID,
+		Action:        RecoveryReverse,
+	}); err != nil {
+		return err
+	}
+	// A business award has no rider funding to release: its organization
+	// budget reservation is released instead — by the traveller when they
+	// declined through their trip link, otherwise by the system.
+	booking, err := s.deps.Store.BusinessBookingForUpdate(ctx, tx, unwind.award.ID)
+	switch {
+	case err == nil:
+		unwind.business = true
+		release := systemRelease(unwind.unwindReason())
+		if unwind.unwindReason() == passengerDeclinedReason {
+			release = travellerRelease(booking, passengerDeclinedReason)
+		}
+		_, err := s.oweBusinessOp(ctx, tx, unwind.award.ID, businessOpRelease, release, s.now())
+		return err
+	case !errors.Is(err, domain.ErrNotFound):
+		return err
+	}
+	fundingPayload, err := json.Marshal(FundingReleaseRecoveryPayload{
+		AwardID: unwind.award.ID,
+		Reason:  unwind.unwindReason(),
+	})
+	if err != nil {
+		return err
+	}
+	return s.deps.Store.InsertRecovery(ctx, tx, RecoveryRow{
+		ID:            unwind.fundingRowID,
+		ReservationID: fundingReleaseKeyFor(unwind.award.ID),
+		DriverID:      unwind.award.RequesterID,
+		Action:        RecoveryFundingRelease,
+		Payload:       fundingPayload,
+	})
 }
 
 // driveDriverCancelReversal is the post-commit half of the unwind: it drives
@@ -346,8 +488,9 @@ func (s *Service) unwindDriverCancelledAward(ctx context.Context, tx pgx.Tx, unw
 // durable intent on a confirmed answer. Anything unconfirmed stays written
 // down for the sweep, which re-drives the same keys — never a second entry.
 func (s *Service) driveDriverCancelReversal(ctx context.Context, unwind *driverCancelUnwind, now time.Time) {
+	reason := unwind.unwindReason()
 	if _, revErr := s.deps.Wallet.Reverse(ctx, unwind.bid.ReservationID, unwind.award.ID.String(),
-		driverCancelReason, "mp.reverse:"+unwind.award.ID.String()); revErr != nil {
+		reason, "mp.reverse:"+unwind.award.ID.String()); revErr != nil {
 		s.deps.Logger.Warn().Err(revErr).Str("award_id", unwind.award.ID.String()).
 			Msg("driver-cancel fee reversal unconfirmed; the sweep owns the durable intent")
 	} else if err := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), unwind.reverseRowID, now); err != nil {
@@ -355,7 +498,13 @@ func (s *Service) driveDriverCancelReversal(ctx context.Context, unwind *driverC
 			Msg("could not resolve the reversal recovery row")
 	}
 
-	relErr := s.deps.Funding.Release(ctx, unwind.award.ID, driverCancelReason, fundingReleaseKeyFor(unwind.award.ID))
+	if unwind.business {
+		// The organization's reservation, owed on the booking row in the
+		// unwind's transaction; no rider funding exists for this award.
+		s.driveBusinessOp(ctx, unwind.award.ID)
+		return
+	}
+	relErr := s.deps.Funding.Release(ctx, unwind.award.ID, reason, fundingReleaseKeyFor(unwind.award.ID))
 	switch {
 	case relErr == nil:
 		if err := s.deps.Store.ResolveRecovery(ctx, s.deps.Store.Pool(), unwind.fundingRowID, now); err != nil {
@@ -480,25 +629,36 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 			}
 		}
 
-		// The execution ride is created first: a driver who is not available
-		// blocks the whole transaction and the promotion simply has not
-		// happened.
-		ride, pin, err := s.createExecutionRide(ctx, tx, lockedRequest, lockedAward, config, now)
-		if err != nil {
-			return err
+		service := ServiceRide
+		var executionID uuid.UUID
+		if lockedRequest.Service == ServiceDelivery && lockedAward.ExecutionService == ServiceDelivery && lockedAward.ExecutionID != nil {
+			// A queued DELIVERY already exists in delivery-service (the
+			// award saga handed it off before confirming); promotion only
+			// couples the claim to it — no execution ride, no second
+			// hand-off, no second commission.
+			service, executionID = ServiceDelivery, *lockedAward.ExecutionID
+		} else {
+			// The execution ride is created first: a driver who is not
+			// available blocks the whole transaction and the promotion
+			// simply has not happened.
+			ride, pin, err := s.createExecutionRide(ctx, tx, lockedRequest, lockedAward, config, now)
+			if err != nil {
+				return err
+			}
+			// The plaintext PIN was encrypted into the vault inside
+			// createExecutionRide (same tx). A promotion has no rider call in
+			// flight, so the requester retrieves it over the authenticated
+			// REST channel (GET .../pin); it is deliberately never put on
+			// the promotion event or any push.
+			_ = pin
+			executionID = ride.ID
 		}
-		// The plaintext PIN was encrypted into the vault inside createExecutionRide
-		// (same tx). A promotion has no rider call in flight, so the requester
-		// retrieves it over the authenticated REST channel (GET .../pin); it is
-		// deliberately never put on the promotion event or any push.
-		_ = pin
 
-		service := "ride"
 		slot := SlotCurrent
 		promoted, err := s.deps.Store.TransitionClaim(ctx, tx, locked, machine.MpClaimCurrent, ClaimUpdate{
 			Slot:             &slot,
 			ExecutionService: &service,
-			ExecutionID:      &ride.ID,
+			ExecutionID:      &executionID,
 			// The fencing token bump is what makes a stale execution unable to
 			// couple to the promoted claim, and what settles a race with a
 			// fresh award for the freed slot.
@@ -507,8 +667,10 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 		if err != nil {
 			return err
 		}
-		if err := s.deps.Store.SetAwardExecution(ctx, tx, lockedAward.ID, service, ride.ID); err != nil {
-			return err
+		if service == ServiceRide {
+			if err := s.deps.Store.SetAwardExecution(ctx, tx, lockedAward.ID, service, executionID); err != nil {
+				return err
+			}
 		}
 		if _, err := s.deps.Store.TransitionRequest(ctx, tx, lockedRequest, machine.MpRequestExecution, RequestUpdate{}); err != nil {
 			return err
@@ -525,11 +687,15 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 			IdempotencyKey: "mp.claim.promoted:" + promoted.ID.String(),
 			OccurredAt:     now,
 			Payload: map[string]any{
-				"claimId":      promoted.ID.String(),
-				"awardId":      lockedAward.ID.String(),
-				"driverId":     driverID.String(),
-				"rideId":       ride.ID.String(),
-				"fencingToken": promoted.FencingToken,
+				"claimId":          promoted.ID.String(),
+				"awardId":          lockedAward.ID.String(),
+				"requestId":        lockedAward.RequestID.String(),
+				"requesterId":      lockedAward.RequesterID.String(),
+				"driverId":         driverID.String(),
+				"rideId":           rideIDFor(service, executionID),
+				"executionService": service,
+				"executionId":      executionID.String(),
+				"fencingToken":     promoted.FencingToken,
 				"pickupWindow": map[string]any{
 					"earliestSec": merged.EarliestSec,
 					"latestSec":   merged.LatestSec,
@@ -546,7 +712,7 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 			SubjectType: subjectClaim,
 			SubjectID:   promoted.ID.String(),
 			Before:      map[string]any{"state": machine.MpClaimNext},
-			After:       map[string]any{"state": machine.MpClaimCurrent, "rideId": ride.ID.String()},
+			After:       map[string]any{"state": machine.MpClaimCurrent, "executionService": service, "executionId": executionID.String()},
 			// NO second commission: the fee was captured once, at selection.
 			Reason: "queued claim promoted after the current job finished",
 		})
@@ -597,8 +763,10 @@ func (s *Service) writeQueueEtaEvent(ctx context.Context, tx pgx.Tx, award *Awar
 		IdempotencyKey: "mp.queue.eta_updated:" + award.ID.String() + ":" + itoa(window.EtaVersion),
 		OccurredAt:     now,
 		Payload: map[string]any{
-			"awardId":   award.ID.String(),
-			"requestId": request.ID.String(),
+			"awardId":     award.ID.String(),
+			"requestId":   request.ID.String(),
+			"requesterId": award.RequesterID.String(),
+			"driverId":    award.DriverID.String(),
 			"pickupWindow": map[string]any{
 				"earliestSec": window.EarliestSec,
 				"latestSec":   window.LatestSec,
@@ -623,6 +791,8 @@ func (s *Service) writeWindowMissedEvent(ctx context.Context, tx pgx.Tx, award *
 		Payload: map[string]any{
 			"awardId":            award.ID.String(),
 			"requestId":          request.ID.String(),
+			"requesterId":        award.RequesterID.String(),
+			"driverId":           award.DriverID.String(),
 			"consentedLatestSec": window.ConsentedLatestSec,
 			"predictedSec":       window.PredictedSec,
 			"feeFreeCancel":      true,
@@ -641,6 +811,16 @@ func (s *Store) SetAwardExecution(ctx context.Context, db DB, awardID uuid.UUID,
 		return err
 	}
 	return nil
+}
+
+// rideIDFor keeps the promotion event's historical rideId key honest: the
+// execution id for a ride, empty for a delivery (whose id rides in
+// executionId with executionService).
+func rideIDFor(service string, executionID uuid.UUID) string {
+	if service != ServiceRide {
+		return ""
+	}
+	return executionID.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -666,6 +846,7 @@ func (s *Service) cancelQueuedAward(
 
 	now := s.now()
 	var closedRequest *Request
+	businessOwed := false
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		lockedAward, err := s.deps.Store.AwardForUpdate(ctx, tx, award.ID)
 		if err != nil {
@@ -788,6 +969,32 @@ func (s *Service) cancelQueuedAward(
 		}); err != nil {
 			return err
 		}
+		// A queued DELIVERY was handed off at award time: its cancellation in
+		// delivery-service is owed in this same transaction, so the orphan
+		// is recorded before the award's cancellation can commit.
+		if err := s.oweDeliveryCancel(ctx, tx, lockedAward, claim, reason, actorID, actorRole, now); err != nil {
+			return err
+		}
+		// A06 part C: a business award's budget reservation is released in
+		// this same transaction — as the traveller for their decline, the
+		// requester (booker, or traveller booking for themselves) for their
+		// own cancel, the system for a driver failure.
+		if booking, bizErr := s.deps.Store.BusinessBookingForUpdate(ctx, tx, award.ID); bizErr == nil {
+			release := systemRelease(reason)
+			switch {
+			case reason == passengerDeclinedReason:
+				release = travellerRelease(booking, reason)
+			case actorRole == move.RoleRider && actorID == award.RequesterID.String():
+				release = requesterRelease(booking, reason)
+			}
+			owed, owedErr := s.oweBusinessOp(ctx, tx, award.ID, businessOpRelease, release, now)
+			if owedErr != nil {
+				return owedErr
+			}
+			businessOwed = owed
+		} else if !errors.Is(bizErr, domain.ErrNotFound) {
+			return bizErr
+		}
 		if saveIdem != nil {
 			return saveIdem(tx, closedRequest)
 		}
@@ -795,6 +1002,15 @@ func (s *Service) cancelQueuedAward(
 	})
 	if err != nil {
 		return nil, asDomainError(err)
+	}
+	if businessOwed {
+		s.driveBusinessOp(ctx, award.ID)
+	}
+
+	if award.ExecutionService == ServiceDelivery && award.ExecutionID != nil {
+		// The delivery-service cancellation owed above: driven now, swept
+		// until delivery-service answers (delivery_cancel.go).
+		s.driveDeliveryCancel(ctx, award.ID)
 	}
 
 	// The rows are committed: the captured fee is reversed with a linked

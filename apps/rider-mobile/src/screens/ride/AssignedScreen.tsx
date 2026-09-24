@@ -32,6 +32,7 @@ import {
 import { useRideView, rideScreenFor } from "./useRideView";
 import type { RideStackParamList } from "../../navigation/routes";
 import { LoadingState, ErrorState } from "../../components/states";
+import { RequestPassengerPanel } from "../marketplace/PassengerLinkCard";
 
 const etaLabel = (etaSeconds?: number) =>
   etaSeconds === undefined
@@ -63,9 +64,13 @@ export function AssignedScreen() {
     const target = rideScreenFor(view);
     if (target === "InTrip" || target === "Pay") {
       void clearPickupPin();
-      nav.navigate(target, { rideId: view.rideId });
+      // Carry the marketplace request forward: the A02 trip screens are keyed by it.
+      nav.navigate(target, {
+        rideId: view.rideId,
+        ...(params.requestId ? { requestId: params.requestId } : {}),
+      });
     }
-  }, [view, nav]);
+  }, [view, nav, params.requestId]);
   const cancel = useMutation({
     mutationFn: () => ridesApi.cancel(params.rideId),
     onSuccess: () => {
@@ -170,6 +175,10 @@ export function AssignedScreen() {
           last
         />
       </Card>
+      {/* A06 part B: booked for another adult — the passenger's trip link, on this ride. */}
+      {params.requestId ? (
+        <RequestPassengerPanel requestId={params.requestId} />
+      ) : null}
       {!cancelled ? (
         <Button
           testID={TEST_IDS.rider.assigned.cancel}

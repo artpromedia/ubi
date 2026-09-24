@@ -6,6 +6,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -117,13 +118,17 @@ func AdminOnly(next http.Handler) http.Handler {
 	})
 }
 
-// ServiceAuth middleware for service-to-service auth
+// ServiceAuth middleware for service-to-service auth (the webhooks group,
+// including the marketplace hand-off). It fails closed: an empty configured
+// key authenticates nobody — otherwise a request that simply omits
+// X-Service-Key would match it — and the compare is constant-time so the key
+// cannot be recovered byte by byte from response timing.
 func ServiceAuth(serviceKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := r.Header.Get("X-Service-Key")
 
-			if key != serviceKey {
+			if serviceKey == "" || subtle.ConstantTimeCompare([]byte(key), []byte(serviceKey)) != 1 {
 				respondError(w, http.StatusForbidden, "FORBIDDEN", "Invalid service key")
 				return
 			}

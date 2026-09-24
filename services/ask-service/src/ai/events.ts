@@ -57,6 +57,8 @@ export type AskEvent =
       readonly type: "review_ready";
       readonly reviewId: string;
       readonly totals: Money;
+      /** Which review sheet to open: a travel booking or a marketplace stage. */
+      readonly reviewKind: "travel" | "marketplace";
     }
   | {
       readonly type: "refused";

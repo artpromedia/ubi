@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	goredis "github.com/go-redis/redis/v8"
@@ -44,6 +45,37 @@ type Config struct {
 	PaymentServiceURL  string
 	InternalServiceKey string
 	Logger             zerolog.Logger
+	// UserServiceURL and DriverProfileServiceKey (DRIVER_PROFILE_RIDE_SERVICE_KEY)
+	// wire the verified driver-profile port for the rider's offer comparison
+	// (A06 part A). Leaving either empty is legal: every driver renders
+	// "details unavailable" and no offer is ever blocked by it.
+	UserServiceURL          string
+	DriverProfileServiceKey string
+	// DeliveryServiceURL (DELIVERY_SERVICE_URL) and DeliveryServiceKey wire
+	// the award saga's hand-off to delivery-service's marketplace-assign.
+	// Leaving either empty is legal and fails closed: a delivery award's
+	// hand-off sends nothing and stays pending, alarmed, until configured.
+	DeliveryServiceURL string
+	DeliveryServiceKey string
+	// TripAccessDeliveryKey (TRIP_ACCESS_DELIVERY_KEY, standard base64 of 32
+	// random bytes) and TripAccessDeliveryKid (TRIP_ACCESS_DELIVERY_KID) seal
+	// a guest passenger's trip-link delivery to notification-service. Either
+	// missing or unusable fails closed: no trip link is issued (a guest
+	// booking is refused; booking for yourself is unaffected) and the phone
+	// and token are never written to the outbox in clear.
+	TripAccessDeliveryKey string
+	TripAccessDeliveryKid string
+	// Environment names the deployment (UBI_ENV); in production an unusable
+	// trip-access key is logged as an alert rather than a warning.
+	Environment string
+	// FleetServiceURL (FLEET_SERVICE_URL) and FleetServiceKey
+	// (FLEET_SERVICE_KEY, at least 32 characters) wire internal contract A's
+	// fleet-service routes (A05: the vehicle a fleet driver is assigned to,
+	// a vehicle's class, capacity and documents). Either unusable fails
+	// closed: an advance award goes ahead without a vehicle (never blocked)
+	// and no vehicle swap can be revalidated, so none is offered.
+	FleetServiceURL string
+	FleetServiceKey string
 }
 
 // Runtime is a wired service and the resources it owns.
@@ -139,6 +171,18 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		config.Logger.Warn().Msg("PAYMENT_SERVICE_URL is not set: marketplace bids will fail closed at the wallet")
 	}
 	httpWallet := marketplace.NewHTTPWallet(config.PaymentServiceURL, config.InternalServiceKey, nil)
+	if config.UserServiceURL == "" || config.DriverProfileServiceKey == "" {
+		config.Logger.Warn().Msg("USER_SERVICE_URL or DRIVER_PROFILE_RIDE_SERVICE_KEY is not set: offers show driver details as unavailable")
+	}
+	deliveryAssign := marketplace.NewHTTPDeliveryAssign(config.DeliveryServiceURL, config.DeliveryServiceKey, nil)
+	if !deliveryAssign.Configured() {
+		config.Logger.Warn().Msg("DELIVERY_SERVICE_URL or a non-default delivery service key is not set: marketplace delivery awards cannot be handed off")
+	}
+	tripAccessSealer := buildTripAccessSealer(config)
+	fleetService := marketplace.NewHTTPFleetService(config.FleetServiceURL, config.FleetServiceKey, marketplace.FleetServiceOptions{})
+	if !marketplace.FleetServiceConfigured(fleetService) {
+		config.Logger.Warn().Msg("FLEET_SERVICE_URL or a FLEET_SERVICE_KEY of at least 32 characters is not set: advance bookings carry no fleet vehicle and no vehicle swap can be offered")
+	}
 	marketplaceService, err := marketplace.NewService(marketplace.Deps{
 		Store:      marketplace.NewStore(pool),
 		Config:     cityconfig.NewStore(pool, runtime.Redis, config.ConfigCacheTTL),
@@ -150,6 +194,16 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 		Settlement: httpWallet,
 		Redis:      ridisc.New(runtime.Redis),
 		Logger:     config.Logger,
+		DriverProfiles: marketplace.NewHTTPDriverProfiles(config.UserServiceURL, config.DriverProfileServiceKey,
+			marketplace.DriverProfilesOptions{}),
+		Delivery:         deliveryAssign,
+		TripAccessSealer: tripAccessSealer,
+		// Business travel (A06 part C): payment-service's internal
+		// /v1/finance/business, on the same URL and service key as the
+		// wallet. Unwired, every business check fails closed.
+		Business: marketplace.NewHTTPBusiness(config.PaymentServiceURL, config.InternalServiceKey, nil),
+		// Fleet calendar (A05): fleet-service's side of contract A.
+		Fleet: fleetService,
 	})
 	if err != nil {
 		runtime.Close()
@@ -162,8 +216,44 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	// backstop for this callback. Defined in move, implemented in marketplace:
 	// no import cycle.
 	moveService.SetExecutionObserver(marketplaceService)
+	// A05: a driver going online, or a live trip starting, is checked
+	// against the vehicles fleets reported off the road (post-commit; the
+	// marketplace sweep backstops it).
+	moveService.SetDriverActivityObserver(marketplaceService)
+	// A06 part C: a rider's cancel of a marketplace ride is first asked of
+	// the marketplace (a business trip's booker who left the organization
+	// may not cancel a colleague's trip).
+	moveService.SetRiderCancelGuard(marketplaceService)
 
 	return runtime, nil
+}
+
+// buildTripAccessSealer turns TRIP_ACCESS_DELIVERY_KEY/KID into the sealer,
+// or nil (fail closed) when either is missing or unusable. A missing key in
+// production is an alert: guest bookings are refused until it is set.
+func buildTripAccessSealer(config Config) *marketplace.TripAccessSealer {
+	sealer, err := marketplace.NewTripAccessSealer(config.TripAccessDeliveryKey, config.TripAccessDeliveryKid)
+	if err == nil {
+		config.Logger.Info().Str("kid", sealer.Kid()).Msg("guest trip-link deliveries are sealed")
+		return sealer
+	}
+	event := config.Logger.Warn()
+	if isProduction(config.Environment) {
+		event = config.Logger.Error().Bool("alert", true)
+	}
+	event.Err(err).Msg("TRIP_ACCESS_DELIVERY_KEY/KID unusable: guest passenger trip links are refused (fail closed); nothing is sent in clear")
+	return nil
+}
+
+// isProduction mirrors main's production check for the two spellings
+// deployments use.
+func isProduction(environment string) bool {
+	switch strings.ToLower(strings.TrimSpace(environment)) {
+	case "production", "prod":
+		return true
+	default:
+		return false
+	}
 }
 
 // Migrate applies the ride and mp schemas. It is called from an explicit boot

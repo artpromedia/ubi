@@ -107,9 +107,25 @@ describe("toMonitorRow", () => {
   it("formats money in minor units and the envelope line", () => {
     const mapped = toMonitorRow(row);
     expect(mapped).not.toBeNull();
-    expect(mapped?.asked).toBe("₦2,500");
+    expect(mapped?.asked).toBe("₦2,500.00");
     expect(mapped?.envelope).toBe("2.0 km · 6 min · step 1");
     expect(mapped?.reach).toBe("17");
+  });
+
+  it("shows the asked amount in the request's OWN currency, exact to the minor unit", () => {
+    // Was growth-api's fmt: amountMinor / 100, rounded, always "₦".
+    expect(
+      toMonitorRow({
+        ...row,
+        askedMinor: { amountMinor: 250_050, currency: "KES" },
+      })?.asked,
+    ).toBe("KSh 2,500.50");
+    expect(
+      toMonitorRow({
+        ...row,
+        askedMinor: { amountMinor: 250_099, currency: "NGN" },
+      })?.asked,
+    ).toBe("₦2,500.99");
   });
 
   it("drops terminal states and dashes missing fields", () => {

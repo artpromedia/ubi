@@ -1,0 +1,137 @@
+{
+ "source": "https://docs.liteapi.travel/reference/post_rates-prebook",
+ "retrieved": "2026-09-23",
+ "payload": {
+  "data": {
+   "prebookId": "zzWkJcdgk",
+   "offerId": "GE5ESNBSIZKVMQ2QJJNEERSPKIZEMR2OIRKVOVCTKNFVMRCWKNLUWVKKGVDVMRKWGJEEWRSOIVEVCS2PJNJEEVKPK5FFKS2SI5LFKU2TLBETIMSGKVJEGQSKLJHEMR2SGIZEWUSDIUZFOU2TJM2UOVSFJZJUKSKOIVLFKVJSJBEUMTSFJFJTETSJJJFVKT2RJNNEYQSNKUZFKU2SJE2UKVCFKZBUESS2IJDEGURSJNDVURCVK5GTEVCHGVDFMTKTKNMUYRSMIVLVMQ2RJNFEMVSNKIZFGSKRGJCU6U2TIJFVEQKWINGVUVKJGVCVMVKSINJEUVK2KREVGMSWJRFEIRJSKYZEKS2OJFDEGV2LKVFDKSCFIVKUWSCHKFNEKSKRJNHESSSNIVHVCSSTJFJECVJUKEZESSS2JJDEWUSLLJFEMTSGJ5JDESSHKJFUKV2TJMZEWVSEKZFU2MSUI5FEQRSFKUZESSKVLJDFCV2LKZFU4RCVKVLVEV2JKJBVKMSRKNKESNKLKZJVEQ2IJJLE4RSDKIZEETCKINCUGVCLIVDVERCVJVHFGRSJGQZVKR2VGJEESVSNKZEVKS2OJFITERKPKJFFGS2SJBKTEV2TLFEVMSCFKVJEUV2KIVNEMR2TJMZEUQSCKVHVIS2TJNDEIVKTJVJVIR2KI5KUKVSDI5FVMTSGJFIUWSSJJJEVKT2TJJLESUSBKUZFCTBUI5CTGRCHJRJFOR22GZCEKTKCKNDVKV2UIFGVUTSHJVMUGQKNIJJUQSKZIRAU6USRI5BDMRSFKRMXYNRSHE2XYMT4NRYDCOBZG56DELL4KVJUI7CVKN6DEMBSGUWTANBNGAYXYMRQGI2S2MBUFUYDE7D4GQXDAMA",
+   "hotelId": "lp1897",
+   "checkin": "2025-12-05",
+   "checkout": "2025-12-10",
+   "currency": "USD",
+   "termsAndConditions": "",
+   "roomTypes": [
+    {
+     "rates": [
+      {
+       "rateId": "I42FUVCPJZBFOR2FGNDUWTSSKVDVSWKUJ5GVEV2HKFNEIQKOKRBUOWJUKRGVUSSXI42FURCBJZNFGR22KRCE2WSSK5GVENSEINEVUU2HIFNEIS2NIJKUOQKZLBMU2USRI5ETEVCBJZBFCR2KGZDUWM2TG5FVMSSYLFLEWVCQKJFVMR2SIQ2EOSSBKRAVCMZUI5EVURCRJUZTIS2VLJDE2V2EKNIFCWKUJ5HEEUKHGQZEIQKNIJMEOQJSIRAU4Q2IJZJFKRKZJFNFOR2JGRKEWSK2KVDVKM2TGJHFEU2IIUZFQWKVKNDUUWRWIRCU2QSTI5KVSRCHJVNFCR2BLJCECTKEGRDUMNSFI43UGU2HIVMVIUKNIQ2EORJSKRHU2WSYIVHEURJWJEZFGSK2JBBUOTKSKFDUSMSTGJGUEVCGKVNFIQKJIJIUOSJVIRAU2QL4GE3DGLRWGZ6DEMBSGUWTAMZNGMYCAMBSHIYDAORQGB6FETY",
+       "occupancyNumber": 1,
+       "name": "Standard King Room - Room only",
+       "maxOccupancy": 2,
+       "adultCount": 2,
+       "childCount": 0,
+       "childrenAges": [],
+       "boardType": "RO",
+       "boardName": "Room Only",
+       "remarks": "<br/><br/>A Resort Fee totaling USD43.61 will be charged for the stay. The Manhattan at Times Square Hotel has a mandatory Facilities Fee of $40.16 per room per night provides guests with the following inclusive services, amenities and added value offerings: \n All local, long distance and international phone calls \n Premium high-speed wireless internet access for unlimited devices \n An eco-friendly, collapsible 16 oz. water bottle to use at the hotel?s water filtration stations \n Unlimited use of our Business Center \n Unlimited use of our 24/7 Fitness Center with treadmills, bikes, elliptical machines and free weights \n*The Facilities Fee does not include service gratuity . Hotel Check In Policy: Major credit card required at check-in for deposit and incidentals. Any additional fees such as parking, pet fees, etc. are solely at the discretion of the hotel, are subject to change at any point and should be paid directly by the guest.. Minimum adult age at check in is 21 years.<br/>",
+       "priceType": "commission",
+       "commission": [
+        {
+         "amount": 6.28,
+         "currency": "USD"
+        }
+       ],
+       "retailRate": {
+        "total": [
+         {
+          "amount": 163.66,
+          "currency": "USD"
+         }
+        ],
+        "suggestedSellingPrice": [
+         {
+          "amount": 185.7,
+          "currency": "USD",
+          "source": ""
+         }
+        ],
+        "initialPrice": null,
+        "taxesAndFees": [
+         {
+          "included": true,
+          "description": "NYC Javits Center Fee",
+          "amount": 1.62,
+          "currency": "USD"
+         },
+         {
+          "included": true,
+          "description": "NYC Occupancy Tax",
+          "amount": 2.16,
+          "currency": "USD"
+         },
+         {
+          "included": true,
+          "description": "NY State Tax",
+          "amount": 11.88,
+          "currency": "USD"
+         },
+         {
+          "included": true,
+          "description": "NY City Tax",
+          "amount": 7.87,
+          "currency": "USD"
+         },
+         {
+          "included": false,
+          "description": "Facility Fee",
+          "amount": 43.61,
+          "currency": "USD"
+         }
+        ]
+       },
+       "cancellationPolicies": {
+        "cancelPolicyInfos": [
+         {
+          "cancelTime": "2025-03-30 02:00:00",
+          "amount": 163.66,
+          "currency": "USD",
+          "type": "amount",
+          "timezone": "GMT"
+         }
+        ],
+        "hotelRemarks": [],
+        "refundableTag": "RFN"
+       },
+       "paymentTypes": [
+        "NUITEE_PAY",
+        "PROPERTY_PAY"
+       ],
+       "perks": []
+      }
+     ]
+    }
+   ],
+   "suggestedSellingPrice": {
+    "amount": 185.7,
+    "currency": "USD",
+    "source": "expedia.com"
+   },
+   "isPackageRate": null,
+   "commission": 6.28,
+   "addonsTotalAmount": 70,
+   "price": 213.66,
+   "priceType": "commission",
+   "priceDifferencePercent": 0,
+   "cancellationChanged": false,
+   "boardChanged": false,
+   "supplier": "nuitee",
+   "supplierId": 2,
+   "transactionId": "tr_ct_NjePtG_-HHUDCeQ_LrTOS",
+   "secretKey": "pi_3QxSJ8A4FXPoRk9Y14cv6f1G_secret_psA870CD4S17fSh58skN1TWaG",
+   "voucherCode": "createvoucher83",
+   "voucherTotalAmount": 20,
+   "addonsRequest": [
+    {
+     "addon": "uber",
+     "value": 70,
+     "currency": "USD"
+    }
+   ],
+   "creditLine": {
+    "remainingCredit": 1000,
+    "currency": "USD"
+   }
+  },
+  "guestLevel": 0
+ }
+}

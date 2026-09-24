@@ -186,12 +186,15 @@ describe("MarketplacePushDeliverer", () => {
     }
   });
 
-  it("keeps bid.submitted private to the requester and bidding driver", async () => {
+  it("keeps bid.submitted private: the requester is told, never a rival (nor the bidder, who sent it)", async () => {
+    // Per-viewer copy: "New offer on your request" is the REQUESTER's copy.
+    // (Before per-viewer copy the bidding driver received it too.)
     const deliverer = new MarketplacePushDeliverer(ctx.ports);
     const res = await deliverer.handle(
       makeEnvelope({
         id: "evt_sub",
         name: "mp.bid.submitted",
+        actor: { type: "driver", id: "drv_bidder" },
         subject: { type: "mp_bid", id: "bid_9" },
         payload: {
           requestId: "req_1",
@@ -203,7 +206,11 @@ describe("MarketplacePushDeliverer", () => {
       }),
     );
     const recipients = res.perUser.map((u) => u.userId).sort();
-    expect(recipients).toEqual(["drv_bidder", "usr_requester"]);
+    expect(recipients).toEqual(["usr_requester"]);
+    expect(ctx.rec.sends[0]?.notification.title).toBe(
+      "New offer on your request",
+    );
+    expect(JSON.stringify(ctx.rec.sends)).not.toContain("250000");
   });
 
   it("records an offline recipient for retry instead of dropping it", async () => {

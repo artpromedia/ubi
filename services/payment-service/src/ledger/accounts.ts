@@ -47,6 +47,33 @@ export const LEDGER_ACCOUNTS = [
   "bank_settlement",
   /** Value UBI owes a merchant or hotel partner and has not yet paid out. */
   "merchant_payable",
+  /**
+   * Traveller money captured for a supplier travel order item (flight/stay)
+   * and not yet settled onward to the supplier or refunded back. Dedicated to
+   * travel: supplier inventory never touches `ubi_commission`, a marketplace
+   * commission hold or a ride account (finance/travel.ts).
+   */
+  "travel_clearing",
+  /**
+   * An organization's committed business-trip spend (A06 part C): value a
+   * budget wallet has paid for a completed booking and that the trip's
+   * settlement has not yet paid onward to the driver. Keyed by booking
+   * reference in `counterpartRef`, so recon can prove it nets to zero per
+   * booking (src/business).
+   */
+  "business_clearing",
+  /**
+   * Fleet remittance carry-forward (A05, src/fleet) — a MEMORANDUM account.
+   * UBI never lends: a fleet is credited only what a driver's wallet actually
+   * paid, and the part of a week's remittance the driver could not cover is
+   * tracked here as a pair of equal and opposite lines per change, keyed per
+   * fleet + driver + origin week in `counterpartRef`
+   * (`fleet_carry:<fleetId>:<driverId>:owed:<week>` is the driver's side,
+   * `…:fleet:<week>` the fleet's). The account as a whole always nets to
+   * zero; the outstanding carry-forward is the DERIVED sum of the `owed`
+   * lines — never a stored balance.
+   */
+  "fleet_remittance_carry",
 ] as const;
 
 export type LedgerAccount = (typeof LEDGER_ACCOUNTS)[number];
@@ -84,6 +111,16 @@ export const ENTRY_KINDS = [
   "mp_commission_capture",
   /** Linked compensation for a captured marketplace commission — never an edit. */
   "mp_commission_reversal",
+  /**
+   * A post-award amendment's commission INCREMENT (fare raised): only the
+   * difference, linked to the award's capture — the fee is never re-charged.
+   */
+  "mp_commission_delta_capture",
+  /**
+   * A post-award amendment's commission DECREMENT (fare lowered): a linked
+   * partial reversal back to the driver, never more than captured to date.
+   */
+  "mp_commission_delta_refund",
   /** Negotiated-fare completion: full fare to the driver, fee already captured (M06). */
   "mp_ride_completion",
   "mp_ride_completion_cash",
@@ -91,6 +128,50 @@ export const ENTRY_KINDS = [
   "recon_adjustment",
   /** A typed support remedy: counter-lines that make a case good. */
   "remedy",
+  /** The one capture of a travel order item: traveller wallet → travel_clearing. */
+  "travel_capture",
+  /** A full or partial travel refund, linked to its capture entry — never an edit. */
+  "travel_refund",
+  /**
+   * The one capture of a delivery return-leg fee: sender wallet → the driver's
+   * wallet, whole (finance/delivery-returns.ts). A new charge for a new leg —
+   * never the award's 10% commission, which is captured once at selection.
+   */
+  "delivery_return_fee",
+  /**
+   * Business travel (A06 part C, src/business): an admin moves prefunded
+   * organization money into a cost centre's monthly budget wallet, and back.
+   * Neither is a spend; both are wallet-to-wallet inside one organization.
+   */
+  "business_budget_allocation",
+  "business_budget_return",
+  /**
+   * The one commit of a business booking's ACTUAL amount at completion:
+   * budget wallet → `business_clearing`. Never more than was reserved, never
+   * posted twice for a booking (its idempotency key names the reservation).
+   */
+  "business_trip_commit",
+  /**
+   * The driver's side of a committed business trip (round-7 follow-up):
+   * `business_clearing` → the awarded driver's wallet, the FULL committed
+   * fare, once per reservation. The 10% was captured from the driver at
+   * selection and is never charged again (no `ubi_commission` line, ever),
+   * so the driver nets the committed fare less that one commission.
+   */
+  "business_trip_payout",
+  /**
+   * One assignment's weekly fleet remittance (A05, src/fleet): driver wallet
+   * → fleet wallet for what was collected, plus the carry-forward memo
+   * lines. Never touches `ubi_commission`. One per (assignment, week) — its
+   * idempotency key names both.
+   */
+  "fleet_remittance_settlement",
+  /**
+   * A later input change for a CLOSED week: the difference is recorded as a
+   * linked carry-forward adjustment attributed to the assignment's NEXT open
+   * week — never a rewrite of the closed week's entry.
+   */
+  "fleet_remittance_adjustment",
 ] as const;
 
 export type EntryKind = (typeof ENTRY_KINDS)[number];

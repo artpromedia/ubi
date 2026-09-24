@@ -1,0 +1,12 @@
+{
+ "source": "https://docs.liteapi.travel/docs/using-liteapi-webhooks",
+ "retrieved": "2026-09-23",
+ "note": "The guide's \"Example structure (simplified)\", verbatim: request/response are stringified JSON and the ellipses are the guide's own.",
+ "payload": {
+  "event_id": "…",
+  "event_name": "booking.prebook",
+  "request": "{ \"offerId\": \"…\", \"clientReference\": \"…\" }",
+  "response": "{ \"prebookId\": \"…\", \"hotelId\": \"…\", \"roomTypes\": [ … ] }",
+  "sandbox": false
+ }
+}

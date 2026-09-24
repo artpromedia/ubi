@@ -10,10 +10,22 @@ import {
 } from "@react-navigation/native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Screen, Skeleton, Banner } from "@ubi/mobile-ui";
-import { track, useCityConfig } from "@ubi/mobile-core";
+import { track, useCityConfig, useFlag } from "@ubi/mobile-core";
 import type { RootStackParamList } from "../../navigation/routes";
-import { marketplaceApi } from "../../api/marketplace";
+import { marketplaceApi, type MpAdvanceBooking } from "../../api/marketplace";
 import { WalletHoldsScreen, type WalletHold } from "./WalletHoldsScreen";
+
+const UPCOMING = new Set(["payment_pending", "confirmed", "reconfirmed"]);
+/** The earliest committed future booking (by the server's window start). */
+export const nextBookingOf = (
+  bookings: MpAdvanceBooking[],
+): MpAdvanceBooking | null =>
+  bookings
+    .filter((b) => UPCOMING.has(b.state))
+    .sort(
+      (a, b) =>
+        Date.parse(a.schedule.windowStart) - Date.parse(b.schedule.windowStart),
+    )[0] ?? null;
 
 export function WalletHoldsContainer() {
   const nav = useNavigation<{
@@ -29,6 +41,16 @@ export function WalletHoldsContainer() {
     queryFn: () => marketplaceApi.walletOverview(cityId),
     refetchInterval: 5_000,
   });
+  // A03: the next committed booking's net (only where advance bookings are on). A
+  // calendar failure simply omits the row — the wallet figures never depend on it.
+  const advanceOn = useFlag("marketplace_advance_reservations");
+  const calQ = useQuery({
+    queryKey: ["mp", "calendar"],
+    queryFn: marketplaceApi.calendar,
+    enabled: advanceOn,
+    retry: false,
+  });
+  const next = advanceOn ? nextBookingOf(calQ.data?.bookings ?? []) : null;
   const topup = useMutation({
     mutationFn: (presetLabel: string) => marketplaceApi.topup(presetLabel),
     onSuccess: (_r, presetLabel) => {
@@ -93,6 +115,15 @@ export function WalletHoldsContainer() {
       }
       onTopUp={(preset) => topup.mutate(preset)}
       onBack={nav.goBack}
+      nextBooking={
+        next?.netMinor
+          ? {
+              windowLabel: next.schedule.label,
+              netMinor: next.netMinor,
+              onOpen: () => nav.navigate("Calendar"),
+            }
+          : null
+      }
     />
   );
 }

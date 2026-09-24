@@ -31,6 +31,37 @@ const (
 	MpAward Name = "mpAward"
 	// MpClaim is the driver capacity claim machine: award_pending → … → released.
 	MpClaim Name = "mpClaim"
+	// MpAmendment is the post-award trip amendment machine: proposed →
+	// awaiting_approvals_and_funding → committed/rejected/expired (A02).
+	MpAmendment Name = "mpAmendment"
+	// MpScheduledRequest is the Book for Later stored intent (A03) — a
+	// scheduled request, or one occurrence of a recurring template:
+	// scheduled_unassigned → published (no driver secured in any state).
+	MpScheduledRequest Name = "mpScheduledRequest"
+	// MpAdvanceBooking is the advance driver reservation on the booking
+	// calendar (A03): held → confirmed/payment_pending → reconfirmed →
+	// activated.
+	MpAdvanceBooking Name = "mpAdvanceBooking"
+	// MpRecurringTemplate is the recurring journey template (A03):
+	// active ⇄ paused → cancelled/ended.
+	MpRecurringTemplate Name = "mpRecurringTemplate"
+	// MpPreferredWindow is a preferred-driver request's bounded exclusive
+	// window (A04 item 3): exclusive → market_open (the rider consented to
+	// fallback) or closed (the request expired free).
+	MpPreferredWindow Name = "mpPreferredWindow"
+	// MpBusinessBooking is one award's organization-budget funding (A06 part
+	// C): reserving → reserved | refused, reserved → committed | released.
+	MpBusinessBooking Name = "mpBusinessBooking"
+	// MpVehicleOccupancy is one row of the shared vehicle occupancy ledger
+	// (A05): active → released.
+	MpVehicleOccupancy Name = "mpVehicleOccupancy"
+	// MpBookingRisk is an advance booking's risk overlay (A05): ok ⇄
+	// at_risk, at_risk → lapsed when the deadline fails the booking.
+	MpBookingRisk Name = "mpBookingRisk"
+	// MpVehicleSwap is a vehicle swap on an advance booking (A05 FL-8):
+	// proposed → driver_accepted → revalidating → rider_consent_pending →
+	// applied, or a decline/failure/expiry that keeps the original vehicle.
+	MpVehicleSwap Name = "mpVehicleSwap"
 )
 
 // ErrIllegalTransition is returned for any move the contract does not allow.
@@ -134,6 +165,96 @@ const (
 	MpClaimNext         = "next"
 	MpClaimCompleted    = "completed"
 	MpClaimReleased     = "released"
+)
+
+// Marketplace amendment machine states (contracts/state-machines.json →
+// mpAmendment).
+const (
+	MpAmendmentProposed    = "proposed"
+	MpAmendmentAwaiting    = "awaiting_approvals_and_funding"
+	MpAmendmentCommitted   = "committed"
+	MpAmendmentRejected    = "rejected"
+	MpAmendmentExpired     = "expired"
+	MpAmendmentFailed      = "failed"
+	MpAmendmentCompensated = "compensated"
+)
+
+// Scheduled request / recurring occurrence states (contracts/state-machines.json
+// → mpScheduledRequest). The names say what is true: none of them secures a
+// driver.
+const (
+	MpScheduledUnassigned    = "scheduled_unassigned"
+	MpScheduledNeedsApproval = "needs_rider_approval"
+	MpScheduledPublished     = "published"
+	MpScheduledCancelled     = "cancelled"
+	MpScheduledSkipped       = "skipped"
+	MpScheduledExpired       = "expired"
+	MpScheduledUnfulfilled   = "unfulfilled"
+)
+
+// Advance booking states (contracts/state-machines.json → mpAdvanceBooking).
+const (
+	MpBookingHeld           = "held"
+	MpBookingPaymentPending = "payment_pending"
+	MpBookingConfirmed      = "confirmed"
+	MpBookingReconfirmed    = "reconfirmed"
+	MpBookingActivated      = "activated"
+	MpBookingCompleted      = "completed"
+	MpBookingFailed         = "failed"
+	MpBookingCancelled      = "cancelled"
+	MpBookingReleased       = "released"
+)
+
+// Recurring template states (contracts/state-machines.json → mpRecurringTemplate).
+const (
+	MpTemplateActive    = "active"
+	MpTemplatePaused    = "paused"
+	MpTemplateCancelled = "cancelled"
+	MpTemplateEnded     = "ended"
+)
+
+// Preferred-driver window states (contracts/state-machines.json →
+// mpPreferredWindow). Only an OPEN request is governed by its window.
+const (
+	MpPreferredExclusive  = "exclusive"
+	MpPreferredMarketOpen = "market_open"
+	MpPreferredClosed     = "closed"
+)
+
+// Business booking states (contracts/state-machines.json → mpBusinessBooking).
+const (
+	MpBusinessReserving = "reserving"
+	MpBusinessReserved  = "reserved"
+	MpBusinessRefused   = "refused"
+	MpBusinessCommitted = "committed"
+	MpBusinessReleased  = "released"
+)
+
+// Vehicle occupancy states (contracts/state-machines.json → mpVehicleOccupancy).
+const (
+	MpOccupancyActive   = "active"
+	MpOccupancyReleased = "released"
+)
+
+// Booking risk overlay states (contracts/state-machines.json → mpBookingRisk).
+const (
+	MpRiskOK     = "ok"
+	MpRiskAtRisk = "at_risk"
+	MpRiskLapsed = "lapsed"
+)
+
+// Vehicle swap states (contracts/state-machines.json → mpVehicleSwap).
+const (
+	MpSwapProposed           = "proposed"
+	MpSwapDriverAccepted     = "driver_accepted"
+	MpSwapRevalidating       = "revalidating"
+	MpSwapRiderConsent       = "rider_consent_pending"
+	MpSwapApplied            = "applied"
+	MpSwapDriverDeclined     = "driver_declined"
+	MpSwapRevalidationFailed = "revalidation_failed"
+	MpSwapRiderDeclined      = "rider_declined"
+	MpSwapExpired            = "expired"
+	MpSwapCancelled          = "cancelled"
 )
 
 // machines is the contract, transcribed. Order inside a slice is irrelevant;
@@ -253,6 +374,146 @@ var machines = map[Name]struct {
 			MpClaimReleased:  {},
 		},
 	},
+	MpAmendment: {
+		initial: MpAmendmentProposed,
+		transitions: map[string][]string{
+			MpAmendmentProposed: {MpAmendmentAwaiting, MpAmendmentRejected, MpAmendmentExpired},
+			MpAmendmentAwaiting: {MpAmendmentCommitted, MpAmendmentRejected, MpAmendmentExpired, MpAmendmentFailed},
+			MpAmendmentFailed:   {MpAmendmentCompensated},
+			// Terminal states the contract lists only as destinations.
+			MpAmendmentCommitted:   {},
+			MpAmendmentRejected:    {},
+			MpAmendmentExpired:     {},
+			MpAmendmentCompensated: {},
+		},
+	},
+	MpScheduledRequest: {
+		initial: MpScheduledUnassigned,
+		transitions: map[string][]string{
+			MpScheduledUnassigned: {MpScheduledPublished, MpScheduledNeedsApproval, MpScheduledCancelled,
+				MpScheduledSkipped, MpScheduledExpired, MpScheduledUnfulfilled},
+			MpScheduledNeedsApproval: {MpScheduledUnassigned, MpScheduledCancelled, MpScheduledSkipped, MpScheduledExpired},
+			MpScheduledPublished:     {MpScheduledUnfulfilled},
+			// Terminal states the contract lists only as destinations.
+			MpScheduledCancelled:   {},
+			MpScheduledSkipped:     {},
+			MpScheduledExpired:     {},
+			MpScheduledUnfulfilled: {},
+		},
+	},
+	MpAdvanceBooking: {
+		initial: MpBookingHeld,
+		transitions: map[string][]string{
+			MpBookingHeld:           {MpBookingConfirmed, MpBookingPaymentPending, MpBookingReleased},
+			MpBookingPaymentPending: {MpBookingConfirmed, MpBookingFailed, MpBookingCancelled},
+			MpBookingConfirmed:      {MpBookingReconfirmed, MpBookingFailed, MpBookingCancelled},
+			MpBookingReconfirmed:    {MpBookingActivated, MpBookingFailed, MpBookingCancelled},
+			MpBookingActivated:      {MpBookingCompleted, MpBookingFailed},
+			// Terminal states the contract lists only as destinations.
+			MpBookingCompleted: {},
+			MpBookingFailed:    {},
+			MpBookingCancelled: {},
+			MpBookingReleased:  {},
+		},
+	},
+	MpRecurringTemplate: {
+		initial: MpTemplateActive,
+		transitions: map[string][]string{
+			MpTemplateActive: {MpTemplatePaused, MpTemplateCancelled, MpTemplateEnded},
+			MpTemplatePaused: {MpTemplateActive, MpTemplateCancelled, MpTemplateEnded},
+			// Terminal states the contract lists only as destinations.
+			MpTemplateCancelled: {},
+			MpTemplateEnded:     {},
+		},
+	},
+	MpPreferredWindow: {
+		initial: MpPreferredExclusive,
+		transitions: map[string][]string{
+			MpPreferredExclusive: {MpPreferredMarketOpen, MpPreferredClosed},
+			// Terminal states the contract lists only as destinations.
+			MpPreferredMarketOpen: {},
+			MpPreferredClosed:     {},
+		},
+	},
+	MpBusinessBooking: {
+		initial: MpBusinessReserving,
+		transitions: map[string][]string{
+			MpBusinessReserving: {MpBusinessReserved, MpBusinessRefused},
+			MpBusinessReserved:  {MpBusinessCommitted, MpBusinessReleased},
+			// Terminal states the contract lists only as destinations.
+			MpBusinessRefused:   {},
+			MpBusinessCommitted: {},
+			MpBusinessReleased:  {},
+		},
+	},
+	MpVehicleOccupancy: {
+		initial: MpOccupancyActive,
+		transitions: map[string][]string{
+			MpOccupancyActive: {MpOccupancyReleased},
+			// Terminal state the contract lists only as a destination.
+			MpOccupancyReleased: {},
+		},
+	},
+	MpBookingRisk: {
+		initial: MpRiskOK,
+		transitions: map[string][]string{
+			MpRiskOK:     {MpRiskAtRisk},
+			MpRiskAtRisk: {MpRiskOK, MpRiskLapsed},
+			// Terminal state the contract lists only as a destination.
+			MpRiskLapsed: {},
+		},
+	},
+	MpVehicleSwap: {
+		initial: MpSwapProposed,
+		transitions: map[string][]string{
+			MpSwapProposed:       {MpSwapDriverAccepted, MpSwapDriverDeclined, MpSwapExpired, MpSwapCancelled},
+			MpSwapDriverAccepted: {MpSwapRevalidating, MpSwapExpired, MpSwapCancelled},
+			MpSwapRevalidating:   {MpSwapRiderConsent, MpSwapRevalidationFailed, MpSwapExpired, MpSwapCancelled},
+			MpSwapRiderConsent:   {MpSwapApplied, MpSwapRiderDeclined, MpSwapRevalidationFailed, MpSwapExpired, MpSwapCancelled},
+			// Terminal states the contract lists only as destinations.
+			MpSwapApplied:            {},
+			MpSwapDriverDeclined:     {},
+			MpSwapRevalidationFailed: {},
+			MpSwapRiderDeclined:      {},
+			MpSwapExpired:            {},
+			MpSwapCancelled:          {},
+		},
+	},
+}
+
+// MpSwapLiveStates are the vehicle-swap states still in flight: at most one
+// per booking (the partial unique index booking_vehicle_swaps_one_live
+// depends on this list being right).
+func MpSwapLiveStates() []string {
+	return []string{MpSwapProposed, MpSwapDriverAccepted, MpSwapRevalidating, MpSwapRiderConsent}
+}
+
+// IsMpSwapLive reports whether a swap in this state is still in flight.
+func IsMpSwapLive(state string) bool {
+	for _, s := range MpSwapLiveStates() {
+		if s == state {
+			return true
+		}
+	}
+	return false
+}
+
+// MpBookingOccupyingStates are the advance-booking states whose calendar
+// interval is committed. The exclusion constraints advance_bookings_no_overlap
+// and advance_bookings_vehicle_no_overlap depend on this list being right.
+func MpBookingOccupyingStates() []string {
+	return []string{MpBookingHeld, MpBookingPaymentPending, MpBookingConfirmed, MpBookingReconfirmed, MpBookingActivated}
+}
+
+// IsMpBookingOccupying reports whether a booking in this state still holds
+// its calendar interval.
+func IsMpBookingOccupying(state string) bool {
+	for _, s := range MpBookingOccupyingStates() {
+		if s == state {
+			return true
+		}
+	}
+	return false
 }
 
 // MpBidLiveStates are the bid states in which a bid still competes for the

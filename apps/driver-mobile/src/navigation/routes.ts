@@ -71,7 +71,23 @@ export type RootStackParamList = {
   Trip: NavigatorScreenParams<TripStackParamList>;
   WalletHolds: WalletHoldsParams;
   Rates: undefined;
+  // A04.2 driver preferences (filters/suggestions only — never bidding).
+  Preferences: undefined;
   Jobs: undefined;
+  // A02: the executing marketplace trip (stops, waiting, early termination) and its
+  // post-award route amendments — both keyed by the marketplace request id.
+  MpTrip: { requestId: string };
+  MpAmendments: { requestId: string };
+  // A03: the driver's booking calendar (future bookings, not the live slots).
+  Calendar: undefined;
+  // A05 fleet calendar (handoff C1–C5), each behind the deny-by-default `fleet`
+  // flag: the schedule, a fleet's proposal (PIN signing), a booking conflict
+  // (keep on a swapped vehicle / withdraw), time off, and a vehicle problem.
+  FleetSchedule: undefined;
+  FleetProposal: { offerId?: string } | undefined;
+  FleetConflict: { conflictId: string };
+  FleetAvailability: undefined;
+  FleetReportIssue: { vehicleId?: string } | undefined;
   Sos: { tripId?: string } | undefined;
   FlagOff: { feature: string };
   SecureConfirm: { purpose: string; onProof: (proof: string) => void };

@@ -39,12 +39,24 @@ import { RefundStatusScreen } from "../screens/travel/RefundStatusScreen";
 import { DisruptionScreen } from "../screens/travel/DisruptionScreen";
 import { AttachAirportRideScreen } from "../screens/travel/AttachAirportRideScreen";
 import { LinkedOrdersScreen } from "../screens/travel/LinkedOrdersScreen";
+import { TransferStatusContainer } from "../screens/travel/TransferStatusScreen";
 import { RequestDetailsScreen } from "../screens/marketplace/RequestDetailsScreen";
 import { FareEditorContainer } from "../screens/marketplace/FareEditorContainer";
 import { OfferInboxContainer } from "../screens/marketplace/OfferInboxContainer";
 import { BidDetailContainer } from "../screens/marketplace/BidDetailContainer";
 import { QueuedTrackerContainer } from "../screens/marketplace/QueuedTrackerContainer";
 import { DeliveryReturnContainer } from "../screens/marketplace/DeliveryReturnContainer";
+import { RouteBuilderContainer } from "../screens/marketplace/RouteBuilderContainer";
+import { TripContainer } from "../screens/marketplace/TripContainer";
+import { ProposeChangeContainer } from "../screens/marketplace/ProposeChangeContainer";
+import { ScheduleRideContainer } from "../screens/marketplace/ScheduleRideContainer";
+import { LaterHubContainer } from "../screens/marketplace/LaterHub";
+import { ScheduledDetailContainer } from "../screens/marketplace/ScheduledDetail";
+import { AdvanceOffersContainer } from "../screens/marketplace/AdvanceOffers";
+import { BookingDetailContainer } from "../screens/marketplace/BookingDetail";
+import { RecurringSeriesContainer } from "../screens/marketplace/RecurringSeries";
+import { FavouriteDriversContainer } from "../screens/marketplace/FavouriteDrivers";
+import { ReceiptContainer } from "../screens/marketplace/ReceiptScreen";
 import { SplashScreen } from "../screens/boot/SplashScreen";
 import { OnboardingScreen } from "../screens/boot/OnboardingScreen";
 import { useSessionKeeper } from "../api/auth";
@@ -265,6 +277,12 @@ function TravelNavigator({
           name="AttachAirportRide"
           component={AttachAirportRideScreen}
         />
+        {/* Airport transfers gate on the deny-by-default `reservations` flag inside
+            each screen, with an honest fallback when it is off. */}
+        <TravelStack.Screen
+          name="Transfer"
+          component={TransferStatusContainer}
+        />
         <TravelStack.Screen
           name="LinkedOrders"
           component={LinkedOrdersScreen}
@@ -306,6 +324,48 @@ function MarketplaceNavigator({
           name="DeliveryReturn"
           component={DeliveryReturnContainer}
         />
+        {/* A02 stops / trip changes and A03 Book for Later. Each screen gates on its
+            own deny-by-default flag (marketplace_multi_stop, marketplace_trip_amendments,
+            scheduled_rides, marketplace_advance_reservations,
+            marketplace_recurring_journeys) and shows an honest fallback when off;
+            Book for Later READS stay on, as the server keeps them on. */}
+        <MarketplaceStack.Screen
+          name="Route"
+          component={RouteBuilderContainer}
+        />
+        <MarketplaceStack.Screen name="Trip" component={TripContainer} />
+        <MarketplaceStack.Screen
+          name="ProposeChange"
+          component={ProposeChangeContainer}
+        />
+        <MarketplaceStack.Screen
+          name="Schedule"
+          component={ScheduleRideContainer}
+        />
+        <MarketplaceStack.Screen name="Later" component={LaterHubContainer} />
+        <MarketplaceStack.Screen
+          name="Scheduled"
+          component={ScheduledDetailContainer}
+        />
+        <MarketplaceStack.Screen
+          name="AdvanceOffers"
+          component={AdvanceOffersContainer}
+        />
+        <MarketplaceStack.Screen
+          name="Booking"
+          component={BookingDetailContainer}
+        />
+        <MarketplaceStack.Screen
+          name="Series"
+          component={RecurringSeriesContainer}
+        />
+        {/* A04.3 / A06: saved drivers are always readable; a receipt records a trip that
+            already happened, so neither is flag-gated server-side (saving/asking first is). */}
+        <MarketplaceStack.Screen
+          name="Favourites"
+          component={FavouriteDriversContainer}
+        />
+        <MarketplaceStack.Screen name="Receipt" component={ReceiptContainer} />
       </MarketplaceStack.Navigator>
     </FlagGate>
   );

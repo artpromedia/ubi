@@ -46,6 +46,41 @@ export const SUBJECT_TYPES = [
   "mp_claim",
   "mp_hold",
   "rate_profile",
+  // post-award trip amendments (A02)
+  "mp_amendment",
+  // Book for Later (A03): a stored scheduled request (also one recurring
+  // occurrence), an advance driver reservation on the booking calendar, and
+  // a recurring journey template.
+  "mp_scheduled_request",
+  "mp_advance_booking",
+  "mp_recurring_template",
+  // Rider confidence (A04 item 3): a rider's saved driver.
+  "mp_favourite_driver",
+  // Book for another adult (A06 part B): a guest passenger's scoped trip link.
+  "trip_access",
+  // Business travel (A06 part C): ride-service's record of one award's
+  // organization-budget funding (reserve at award, commit at settlement,
+  // release on cancel). Organization events use the `user` subject and
+  // payment-service's budget movements `booking` / `wallet`.
+  "business_booking",
+  // Fleet calendar (A05). ride-service: a vehicle swap proposed on an advance
+  // booking, and one row of the shared vehicle occupancy ledger (a booking,
+  // maintenance block or off-road report occupying a vehicle). fleet-service:
+  // a vehicle, a maintenance block and a calendar conflict (its own
+  // aggregates; fleets and assignments keep `fleet` / `assignment`).
+  "mp_vehicle_swap",
+  "vehicle_occupancy",
+  "vehicle",
+  "maintenance_block",
+  "fleet_conflict",
+  // travel-service outbox aggregates: unregistered, the relay quarantined
+  // them, so settlement and refund events never reached consumers.
+  "travel_order",
+  "travel_refund",
+  "travel_settlement",
+  "travel_search",
+  "travel_cart",
+  "travel_webhook",
 ] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
@@ -353,6 +388,9 @@ export const EVENT_NAMES = [
   "mp.queue.eta_updated",
   "mp.queue.window_missed",
   "mp.rate_profile.saved",
+  // Driver marketplace preferences saved (versioned PATCH, A04). Filters and
+  // ranks the feed only — never eligibility, never an automatic bid.
+  "mp.driver_preferences.saved",
   // Dedicated marketplace settlement event (G15). payment-service settles a
   // completed marketplace ride and, once migrated, emits THIS name alongside
   // the generic `transfer.posted` / `payment.cash_acknowledged` it emits today
@@ -361,6 +399,225 @@ export const EVENT_NAMES = [
   // backward compatible: the old names keep working until every consumer reads
   // the dedicated one.
   "mp.settlement.posted",
+  // ── Post-award trip amendments (A02 items 4-6) — subject mp_amendment ──
+  // proposed → awaiting_approvals (incremental commission + rider top-up
+  // reserved) → approved (each party, bound to route + fare revision) →
+  // committed | rejected | expired, or failed → compensated when a commit
+  // step is refused part-way. Only differences move; the 10% is never
+  // re-charged (payment-service emits mp.commission.* with kind
+  // amendment_delta alongside).
+  "mp.amendment.proposed",
+  "mp.amendment.awaiting_approvals",
+  "mp.amendment.approved",
+  "mp.amendment.committed",
+  "mp.amendment.rejected",
+  "mp.amendment.expired",
+  "mp.amendment.failed",
+  "mp.amendment.compensated",
+  // ── Server-authoritative stop events on a multi-stop execution (A02 item
+  // 7) — subject mp_award. Arrival is geofenced (disputed when the fence
+  // cannot confirm it, which never starts paid waiting); waiting milestones
+  // are stamped when they happened and published once each.
+  "mp.stop.arrived",
+  "mp.stop.arrival_disputed",
+  "mp.stop.waiting_started",
+  "mp.stop.allowance_consumed",
+  "mp.stop.paid_waiting_accruing",
+  "mp.stop.waiting_approval_required",
+  "mp.stop.waiting_approved",
+  "mp.stop.excessive_waiting",
+  "mp.stop.departed",
+  "mp.stop.skipped",
+  // A safe early end of the journey (partial trip), settled as one linked
+  // decrease through the amendment money path.
+  "mp.trip.terminated_early",
+  // The execution ride's quote/fare/dropoff rewritten by a committed
+  // amendment (subject ride; version bumps with it).
+  "ride.terms_amended",
+  // ── Book for Later (A03) ──
+  // SCHEDULED REQUEST — subject mp_scheduled_request. No driver is secured in
+  // any of these; `published` hands the intent to an ordinary request.
+  // `needs_approval` fires (and notifies) whenever refreshed terms leave the
+  // rider's approved maximum or funding cannot be verified — never a silent
+  // publish. A recurring occurrence is one of these rows (generated/skipped).
+  "mp.scheduled_request.created",
+  "mp.scheduled_request.reminder",
+  "mp.scheduled_request.needs_approval",
+  "mp.scheduled_request.reapproved",
+  "mp.scheduled_request.published",
+  "mp.scheduled_request.unfulfilled",
+  "mp.scheduled_request.cancelled",
+  "mp.scheduled_request.skipped",
+  "mp.scheduled_request.expired",
+  "mp.recurring_occurrence.generated",
+  // ADVANCE DRIVER RESERVATION — subject mp_advance_booking. `held` while the
+  // award saga runs (calendar interval already exclusive); `confirmed` =
+  // rider funding secured (or cash explicitly unsecured), `payment_pending` =
+  // driver reserved, funding not yet secured. The commission was captured
+  // once at the advance award; `activated` (into the live slots) never
+  // charges it again. `failed`/`cancelled` carry the financial outcome and
+  // the consented-rematch option; `rematch_requested` is the rider's consent.
+  "mp.advance_booking.held",
+  "mp.advance_booking.confirmed",
+  "mp.advance_booking.payment_pending",
+  "mp.advance_booking.funding_secured",
+  "mp.advance_booking.funding_refused",
+  "mp.advance_booking.reminder",
+  "mp.advance_booking.reconfirm_requested",
+  "mp.advance_booking.reconfirmed",
+  "mp.advance_booking.activated",
+  "mp.advance_booking.completed",
+  "mp.advance_booking.failed",
+  "mp.advance_booking.cancelled",
+  "mp.advance_booking.released",
+  "mp.advance_booking.rematch_requested",
+  // RECURRING TEMPLATE — subject mp_recurring_template. A series is never
+  // "confirmed": each occurrence books independently.
+  "mp.recurring_template.created",
+  "mp.recurring_template.paused",
+  "mp.recurring_template.resumed",
+  "mp.recurring_template.cancelled",
+  "mp.recurring_template.ended",
+  // ── Rider confidence (A04 item 3) ──
+  // PREFERRED-DRIVER REQUEST — subject mp_request. The named driver is
+  // invited to a bounded exclusive window (audience: that driver only; the
+  // rider is never identified to them). A decline is free and is announced to
+  // the declining driver alone. When the window ends with no live offer from
+  // that driver the request either opens to the market (only with the rider's
+  // explicit fallback consent at request time; audience: the rider) or closes
+  // through mp.request.closed with reason preferred_driver_unavailable.
+  "mp.request.preferred_driver_invited",
+  "mp.request.preferred_driver_declined",
+  "mp.request.opened_to_market",
+  // SAVED DRIVER — subject mp_favourite_driver. A rider saves (or removes) a
+  // driver they completed a marketplace trip with; rider-private.
+  "mp.favourite_driver.saved",
+  "mp.favourite_driver.removed",
+  // ── Book for another adult (A06 part B) — subject trip_access ──
+  // Deliberately NOT mp.*: `issued` is notification-service's hand-off to
+  // send ONE SMS with the trip link, and must never ride the mp.* channel the
+  // realtime gateway and push consumer fan out to riders and drivers. Even so
+  // it carries the passenger's phone, first name and the one-time link token
+  // (stored by ride-service only as its SHA-256) ONLY inside its AES-256-GCM
+  // `sealed` envelope — never in clear (MpTripAccessIssuedPayloadSchema). No driver is promised in the copy — none is committed
+  // at publish. `revoked` records a link the requester withdrew or replaced;
+  // `declined` is the passenger's free decline before pickup (audience: the
+  // requester, payload.requesterId; feeMinor is always 0).
+  "trip_access.issued",
+  "trip_access.revoked",
+  "trip_access.declined",
+  // ── Business travel (A06 part C) ──
+  // Organizations (user-service, BUSINESS_TRAVEL_EVENT_NAMES in
+  // business-travel.ts). Subject: the `user` the change is about — the
+  // invitee or member, or the acting admin for an organization-level change;
+  // payload: ids only (never a phone, email or personal trip).
+  "organization.created",
+  "organization.policy_updated",
+  "organization.billing_updated",
+  "organization.cost_centre_created",
+  "organization.cost_centre_archived",
+  "organization.member_invited",
+  "organization.invitation_accepted",
+  "organization.invitation_declined",
+  "organization.invitation_revoked",
+  "organization.member_updated",
+  "organization.member_removed",
+  // A business marketplace ride's budget funding (ride-service) — subject
+  // business_booking, keyed by the award (the booking ref payment-service
+  // reserves under). Deliberately NOT mp.*: the organization, its budget and
+  // its policy are never shown to the driver (BUSINESS_VISIBILITY), and the
+  // realtime gateway fans mp.* out to drivers. Payload: ids and integer minor
+  // amounts only. `reserved` — the budget took the awarded fare INSTEAD of
+  // the rider's personal funding; `refused` — no transport was promised, the
+  // award was compensated with the reason; `committed` — the actual total
+  // (agreed fare + committed adjustments, never above the reservation) left
+  // the budget; `released` — the reservation was freed (cancel, compensation
+  // or a trip that ended without service), naming who cancelled.
+  // `reserve_increased` — payment-service raised the ACTIVE reservation (its
+  // reserve top-up) before ride-service committed a raised total: an
+  // approved fare increase or paid waiting, one per amendment (reasonRef).
+  // A refused top-up leaves the reservation and the agreed fare unchanged.
+  "business_booking.reserved",
+  "business_booking.refused",
+  "business_booking.committed",
+  "business_booking.released",
+  "business_booking.reserve_increased",
+  // ── Fleet availability calendar (A05) — ride-service ──
+  // ADVANCE BOOKING RISK — subject mp_advance_booking (machine mpBookingRisk).
+  // `risk_changed` is the DRIVER's alert (payload names the driver only, never
+  // the requester, so the realtime gateway reaches the driver alone): a
+  // blocker opened against the booking's vehicle (off_road, document_expiry,
+  // assignment_ending, vehicle_conflict) and the decision deadline, or every
+  // blocker cleared. The rider hears only about a vehicle change to consent to
+  // (mp.vehicle_swap.rider_consent_requested) or the booking failing
+  // (mp.advance_booking.failed, reason risk_unresolved — no reason shown).
+  // `rematch_declined` is the rider choosing "cancel and release" over a
+  // rematch on a failed booking. `choice_offered` is the RIDER's proactive
+  // offer when a booking fails before activation (decisions Q4: at the risk
+  // decision deadline, or any other failure): a same-fare rematch — only when
+  // the server's rematchAvailable says enough lead time remains — or the
+  // refund ("cancel and release"; nothing was charged and any funding hold is
+  // released). Audience: the requester (payload.requesterId). It offers; it
+  // never republishes — only the rider's POST .../rematch does
+  // (MpAdvanceBookingChoiceOfferedPayloadSchema).
+  "mp.advance_booking.risk_changed",
+  "mp.advance_booking.rematch_declined",
+  "mp.advance_booking.choice_offered",
+  // VEHICLE SWAP ON A BOOKING — subject mp_vehicle_swap (machine
+  // mpVehicleSwap). proposed (fleet, service-authenticated; driver audience)
+  // → driver_accepted | driver_declined → revalidated (server: class,
+  // capacity, occupancy, documents) | revalidation_failed →
+  // rider_consent_requested (rider audience: "Confirm new vehicle" or cancel
+  // free) → applied | rider_declined; expired / cancelled keep the original
+  // vehicle. The fare never changes and the commission is never re-charged.
+  "mp.vehicle_swap.proposed",
+  "mp.vehicle_swap.driver_accepted",
+  "mp.vehicle_swap.driver_declined",
+  "mp.vehicle_swap.revalidation_failed",
+  "mp.vehicle_swap.rider_consent_requested",
+  "mp.vehicle_swap.applied",
+  "mp.vehicle_swap.rider_declined",
+  "mp.vehicle_swap.expired",
+  "mp.vehicle_swap.cancelled",
+  // VEHICLE OCCUPANCY LEDGER — subject vehicle_occupancy (machine
+  // mpVehicleOccupancy). Deliberately NOT mp.*: it is fleet/ops data and must
+  // never ride the channel the realtime gateway fans out to riders and
+  // drivers. `recorded` — a maintenance block or off-road report (or a
+  // booking's vehicle) now occupies the vehicle; `released` — it no longer
+  // does; `moved` — an applied swap moved a booking's occupancy to another
+  // vehicle; `offroad_use_flagged` — UBI ops alert: the vehicle a fleet
+  // reported off-road went online or started a trip during the claimed
+  // breakdown (every off-road report is audited; this is the abuse control).
+  "vehicle_occupancy.recorded",
+  "vehicle_occupancy.released",
+  "vehicle_occupancy.moved",
+  "vehicle_occupancy.offroad_use_flagged",
+  // ── Fleet availability calendar (A05) — fleet-service ──
+  // Emitted by fleet-service (not ride-service); registered here so the
+  // closed catalog is complete. Conflicts (subject fleet_conflict) open,
+  // resolve or lapse at their deadline; a maintenance block's status
+  // (subject maintenance_block); an assignment proposal's status (subject
+  // assignment); a vehicle document expiring at T-30/14/7/1 days or whenever
+  // a booking falls after the expiry (subject vehicle); an off-road report
+  // (subject maintenance_block).
+  "fleet.conflict.opened",
+  "fleet.conflict.resolved",
+  "fleet.conflict.lapsed",
+  "maintenance.status.changed",
+  "assignment.proposal.status.changed",
+  "vehicle.document.expiring",
+  "fleet.offroad.reported",
+  // Emitted by fleet-service (FLEET_EVENT_NAMES in ./fleet).
+  "fleet.created",
+  "fleet.staff.changed",
+  "fleet.vehicle.added",
+  "assignment.signed",
+  "assignment.status.changed",
+  "fleet.offroad.flagged",
+  "fleet.conflict.reminder_sent",
+  "vehicle.document.expired",
+  "driver.availability.saved",
+  "fleet.vehicle_swap.requested",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

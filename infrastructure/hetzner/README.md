@@ -2,6 +2,12 @@
 
 This directory contains all the configuration files needed to deploy UBI on a Hetzner Cloud server.
 
+> **Round 9:** the stack now also runs ask, travel, fleet, growth, config, support and
+> realtime-gateway; every image builds from the repository root; Caddy is a custom build
+> (rate-limit plugin) with a dedicated supplier-webhook host. Configured, **not deployed and
+> not enabled**. Every variable: [`docs/ops/DEPLOY_ENV_MATRIX.md`](../../docs/ops/DEPLOY_ENV_MATRIX.md);
+> what changed for operators: [`docs/ops/PILOT_RUNBOOK_DELTAS.md`](../../docs/ops/PILOT_RUNBOOK_DELTAS.md).
+
 ## Quick Start
 
 ### 1. Server Setup
@@ -46,14 +52,21 @@ This directory contains all the configuration files needed to deploy UBI on a He
    - `JWT_REFRESH_SECRET` - Generate with `openssl rand -base64 64`
    - `MINIO_ROOT_PASSWORD` - Strong MinIO password
    - `GRAFANA_ADMIN_PASSWORD` - Grafana admin password
+   - The internal trust boundary and service keys — `UBI_IDENTITY_SECRET`,
+     `RIDE_INTERNAL_CONTEXT_SECRET`, `INTERNAL_SERVICE_KEY`, `RIDE_QUOTE_SIGNING_SECRET`,
+     `RIDE_PIN_VAULT_SECRET`, `DRIVER_PROFILE_RIDE_SERVICE_KEY`, `AI_GRANTS_SERVICE_KEY`,
+     `TRAVEL_ASK_SERVICE_KEY`, `FLEET_SERVICE_KEY`, `FLEET_RIDE_SERVICE_KEY`,
+     `FLEET_PAYMENT_SERVICE_KEY` — each its own `openssl rand -base64 48` value
+   - Then run `./scripts/deploy.sh preflight` (refuses placeholders, short or shared secrets)
 
 3. **Configure DNS**
    Point these domains to your server IP:
    - `ubi.africa` → Server IP
    - `api.ubi.africa` → Server IP
    - `admin.ubi.africa` → Server IP
+   - `hooks.ubi.africa` → Server IP (`WEBHOOKS_DOMAIN`: travel supplier webhooks)
    - `grafana.ubi.africa` → Server IP (optional)
-   - `storage.ubi.africa` → Server IP (optional)
+   - `storage.ubi.africa` → Server IP (optional; required for delivery proof uploads)
 
 ### 3. Deployment
 
@@ -89,7 +102,8 @@ hetzner/
 ├── init-db.sql                # Database initialization
 ├── README.md                  # This file
 ├── caddy/
-│   └── Caddyfile              # Reverse proxy & SSL config
+│   ├── Caddyfile              # Reverse proxy & SSL config
+│   └── Dockerfile             # Caddy + rate-limit plugin (stock Caddy refuses the Caddyfile)
 ├── monitoring/
 │   ├── prometheus.yml         # Metrics collection
 │   ├── loki-config.yml        # Log aggregation
@@ -107,6 +121,9 @@ hetzner/
 # Build images
 ./scripts/deploy.sh build [tag]
 
+# Check .env and the compose file before deploying (no running stack needed)
+./scripts/deploy.sh preflight
+
 # Deploy (includes backup + migrate + start)
 ./scripts/deploy.sh deploy [tag]
 
@@ -122,8 +139,11 @@ hetzner/
 # Restore from backup
 ./scripts/deploy.sh restore <backup-file>
 
-# Run database migrations
+# Run database migrations (the `migrate` tool service)
 ./scripts/deploy.sh migrate
+
+# Create the private delivery-proof bucket and its limited MinIO user
+docker compose -f docker-compose.prod.yml --profile tools run --rm minio-init
 
 # Restart services
 ./scripts/deploy.sh restart [service-name]
@@ -162,6 +182,13 @@ Default memory limits in docker-compose.prod.yml:
 | Delivery Service (Go) | 256MB        | 64MB           |
 | Payment Service       | 384MB        | 96MB           |
 | Notification Service  | 384MB        | 96MB           |
+| Config Service        | 256MB        | 64MB           |
+| Ask Service           | 384MB        | 96MB           |
+| Travel Service        | 384MB        | 96MB           |
+| Fleet Service         | 256MB        | 64MB           |
+| Growth Service        | 256MB        | 64MB           |
+| Support Service       | 256MB        | 64MB           |
+| Realtime Gateway      | 256MB        | 64MB           |
 | Web App               | 512MB        | 128MB          |
 | Admin Dashboard       | 512MB        | 128MB          |
 | MinIO                 | 512MB        | 128MB          |
@@ -171,7 +198,7 @@ Default memory limits in docker-compose.prod.yml:
 | Promtail              | 128MB        | 32MB           |
 | Caddy                 | 128MB        | 32MB           |
 
-**Total: ~8GB minimum**
+**Total: ~10GB at the configured limits** (CX41 / 16GB remains the practical floor — an estimate, not a measurement)
 
 ## Backup Strategy
 

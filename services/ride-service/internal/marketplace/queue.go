@@ -122,7 +122,7 @@ func (s *Service) QueueProjection(ctx context.Context, actor Actor, requestID uu
 	}
 
 	now := s.now()
-	driver := verifiedDriverView(award.DriverID.String(), request.VehicleClass)
+	driver := s.driverDisplayFor(ctx, award.DriverID, request.VehicleClass)
 
 	view := &QueueView{
 		RequestID:       request.ID.String(),

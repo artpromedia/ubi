@@ -19,6 +19,9 @@ import {
 } from "@ubi/mobile-ui";
 import type { Money } from "@ubi/mobile-core";
 import { TEST_IDS, dynamicTestId } from "@ubi/contracts";
+import type { MpEarningsBreakdown } from "../../api/marketplace";
+import { EarningsBreakdownCard } from "./EarningsBreakdownCard";
+import { MP_DRIVER_TID } from "./testIds";
 
 /** D01 + D06 + D07. Driver app is dark-default (ThemeProvider defaultMode="dark").
  * Moving mode: bid affordances are NOT RENDERED (never disabled-and-tempting); one deferred banner max. */
@@ -31,6 +34,11 @@ export type FeedRequest = {
   askedByLabel: string; // "rider asks" | "sender asks"
   capabilityBadge: string | null;
   expiresLabel: string;
+  // A04.1: the server-composed breakdown, rendered verbatim (null from an older server:
+  // then no breakdown is shown — the client never builds one of its own).
+  earnings: MpEarningsBreakdown | null;
+  // A04.2: the server says this request ends in the driver's homeward area.
+  homeward: boolean;
 };
 export type MyBid = {
   bidId: string;
@@ -61,6 +69,14 @@ export type RequestFeedProps = {
   };
   // Repo addition (task D): Root-screen entries (WalletHolds / Rates / Jobs).
   quickLinks: { key: string; label: string; onPress: () => void }[];
+  // A04.2: the server's statement of how the driver's preferences shaped this page
+  // (null when none are saved). The toggle re-asks the server with preferences=ignore.
+  preferences: null | {
+    note: string;
+    hiddenLabel: string | null;
+    toggleLabel: string;
+    onToggle: () => void;
+  };
 };
 
 export function RequestFeedScreen(p: RequestFeedProps) {
@@ -162,11 +178,33 @@ export function RequestFeedScreen(p: RequestFeedProps) {
           <StatusPill status="done" suffix="refreshed from server" />
         ) : null}
         {p.quickLinks.length ? (
-          <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
             {p.quickLinks.map((l) => (
               <Chip key={l.key} label={l.label} onPress={l.onPress} />
             ))}
           </View>
+        ) : null}
+        {p.preferences ? (
+          <Card
+            testID={MP_DRIVER_TID.feed.prefsBanner}
+            style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text variant="caption" tone="text2">
+                {p.preferences.note}
+              </Text>
+              {p.preferences.hiddenLabel ? (
+                <Text variant="caption" tone="text3">
+                  {p.preferences.hiddenLabel}
+                </Text>
+              ) : null}
+            </View>
+            <Chip
+              testID={MP_DRIVER_TID.feed.prefsToggle}
+              label={p.preferences.toggleLabel}
+              onPress={p.preferences.onToggle}
+            />
+          </Card>
         ) : null}
       </View>
       <View
@@ -226,6 +264,18 @@ export function RequestFeedScreen(p: RequestFeedProps) {
                       <Text variant="caption" tone="text2">
                         {r.meta}
                       </Text>
+                      {r.homeward ? (
+                        <Text
+                          testID={dynamicTestId(
+                            MP_DRIVER_TID.feed.homewardTag,
+                            r.requestId,
+                          )}
+                          variant="caption"
+                          tone="ok"
+                        >
+                          Ends in your homeward area
+                        </Text>
+                      ) : null}
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
                       <MoneyText money={r.askedMinor} variant="title" />
@@ -234,6 +284,15 @@ export function RequestFeedScreen(p: RequestFeedProps) {
                       </Text>
                     </View>
                   </View>
+                  {r.earnings ? (
+                    <View style={{ marginTop: 8 }}>
+                      <EarningsBreakdownCard
+                        earnings={r.earnings}
+                        variant="compact"
+                        idSuffix={r.requestId}
+                      />
+                    </View>
+                  ) : null}
                   <View
                     style={{
                       flexDirection: "row",

@@ -43,11 +43,6 @@ export const UNSUPPORTED = {
     reason:
       "delivery-service has no custody/return endpoints (G08); publishing the Send surface would imply availability",
   },
-  cityConfig: {
-    wanted: "GET /v1/config/cities/{cityId} (city config through the gateway)",
-    reason:
-      "@ubi/mobile-core ConfigProvider already calls this path, but the api-gateway proxies no /v1/config/* prefix — config-dependent screens must degrade honestly until the mount lands",
-  },
 } as const;
 
 export type UnsupportedKey = keyof typeof UNSUPPORTED;

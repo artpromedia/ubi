@@ -6,9 +6,9 @@ import {
   type RouteProp,
 } from "@react-navigation/native";
 import type { TravelStackParamList } from "../../navigation/routes";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Screen, Text, Button, Skeleton, useTheme } from "@ubi/mobile-ui";
-import { travelApi } from "../../api/travel";
+import { cartKey, travelApi } from "../../api/travel";
 import { RateCard } from "../../components/travel/RateCard";
 
 /** Board 21b — room, occupancy, pay-now vs at-property, currency, cancellation deadline. Photos are supplied by the property. */
@@ -24,12 +24,17 @@ export function StayRoomsScreen() {
     queryFn: () => travelApi.rates(params.propertyId, params.searchId),
   });
   const [sel, setSel] = useState<string | undefined>();
+  const queryClient = useQueryClient();
   const cart = useMutation({
     mutationFn: () =>
       travelApi.createCart([
         { kind: "stay", offerRef: params.propertyId, rateId: sel },
       ]),
-    onSuccess: (c) => nav.navigate("Checkout", { cartId: c.id }),
+    // The cart view comes back on the create itself (there is no cart GET): hold it for checkout.
+    onSuccess: (c) => {
+      queryClient.setQueryData(cartKey(c.id), c);
+      nav.navigate("Checkout", { cartId: c.id });
+    },
   });
   const d = q.data;
   return (

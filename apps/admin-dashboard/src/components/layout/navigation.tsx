@@ -15,6 +15,7 @@ import {
   LogOut,
   Menu,
   Package,
+  Plane,
   Settings,
   Shield,
   Users,
@@ -103,6 +104,15 @@ const navigation = [
       { name: "Cases", href: "/marketplace/cases" },
       { name: "Standing & Appeals", href: "/marketplace/standing" },
       { name: "Notifications", href: "/marketplace/notifications" },
+    ],
+  },
+  {
+    name: "Ops",
+    href: "/ops/travel",
+    icon: Plane,
+    children: [
+      { name: "Travel", href: "/ops/travel" },
+      { name: "AI actions", href: "/ops/ai-actions" },
     ],
   },
   {

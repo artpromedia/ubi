@@ -16,3 +16,5 @@ export * from "./errors";
 export * from "./idempotency";
 export * from "./test-ids";
 export * from "./marketplace";
+export * from "./business-travel";
+export * from "./fleet";

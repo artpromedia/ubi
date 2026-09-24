@@ -19,7 +19,13 @@ type QuoteParams struct {
 	VehicleClass string
 	Pickup       domain.Place
 	Dropoff      domain.Place
-	WeightKg     float64
+	// Stops are the ordered intermediate stops, pickup → stops → dropoff.
+	// Empty is the plain route, priced exactly as before.
+	Stops    []StopInput
+	WeightKg float64
+	// Business asks for the organization's advisory policy verdict (A06
+	// part C; organizationId / costCentreId / travellerId query params).
+	Business *BusinessQuoteInput
 }
 
 // pricingVersionFor names the deterministic engine and the config version a
@@ -67,14 +73,52 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 	if !params.Dropoff.Valid() {
 		return nil, domain.Errorf(domain.CodeValidationFailed, "dropoff is not a valid coordinate")
 	}
+	if len(params.Stops) > 0 && params.Service == ServiceDelivery {
+		// Refused before any flag is read: a delivery is single-drop whatever
+		// is switched on, and the requester is owed the reason.
+		return nil, s.requireStopsAllowed(ctx, params.Service, actor, actor.CityID)
+	}
 	if err := s.requireServiceFlag(ctx, params.Service, actor, actor.CityID); err != nil {
 		return nil, err
+	}
+	if len(params.Stops) > 0 {
+		if err := s.requireStopsAllowed(ctx, params.Service, actor, actor.CityID); err != nil {
+			return nil, err
+		}
 	}
 
 	config, policy, err := s.policy(ctx, actor.CityID)
 	if err != nil {
 		return nil, err
 	}
+	quote, err := s.priceQuote(ctx, actor.UserID, config, policy, params)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		return s.deps.Store.InsertQuote(ctx, tx, quote)
+	})
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+
+	envelope := quoteEnvelopeViewOf(quote)
+	if params.Business != nil {
+		// Read after the quote is stored and outside any transaction: the
+		// verdict is advisory (the reservation re-decides everything).
+		if envelope.Business, err = s.quoteBusinessCheck(ctx, actor, quote, params.Business); err != nil {
+			return nil, err
+		}
+	}
+	return envelope, nil
+}
+
+// priceQuote routes and prices a trip server-side under the city's policy and
+// returns the bounded quote, unsaved. The HTTP quote and the Book for Later
+// publication worker (A03, which re-prices a stored route at publication)
+// share it, so a refreshed quote is priced exactly like a fresh one.
+func (s *Service) priceQuote(ctx context.Context, requesterID uuid.UUID, config *cityconfig.CityConfig, policy *cityconfig.MarketplacePolicy, params QuoteParams) (*Quote, error) {
 	if !config.SupportsVehicleClass(params.VehicleClass) {
 		return nil, domain.Errorf(domain.CodeValidationFailed,
 			"this city does not offer the %q class", params.VehicleClass).
@@ -85,22 +129,45 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 		return nil, asDomainError(err)
 	}
 
-	route, err := s.deps.Router.Route(ctx, params.Pickup, nil, params.Dropoff)
+	stops, err := buildRouteStops(params.Pickup, params.Dropoff, params.Stops, policy.StopsPolicy())
+	if err != nil {
+		return nil, err
+	}
+
+	// The COMPLETE ordered route is measured by the shared Router (it sums
+	// pickup → stops → dropoff legs) and priced server-side; the expected
+	// dwell at the stops is priced as route time under the same per-minute
+	// fare, and the bounds below are derived from that full-route price.
+	route, err := s.deps.Router.Route(ctx, params.Pickup, stopPlaces(stops), params.Dropoff)
 	if err != nil {
 		return nil, asDomainError(err)
 	}
-	suggested, breakdown, err := s.deps.Pricing.Fare(config, params.VehicleClass, route.DistanceMeters, route.DurationSeconds)
+	dwellSec := totalDwellSec(stops)
+	suggested, breakdown, err := s.deps.Pricing.Fare(config, params.VehicleClass, route.DistanceMeters, route.DurationSeconds+dwellSec)
 	if err != nil {
 		return nil, asDomainError(err)
 	}
 	minMinor, maxMinor := boundsFor(fareBounds, suggested.AmountMinor)
 
+	timeMinor, waitingMinor := breakdown.TimeMinor, int64(0)
+	if dwellSec > 0 {
+		// Split the time line so the stop waiting is its own disclosed row:
+		// the driving-only time, and the difference the dwell adds.
+		_, driving, err := s.deps.Pricing.Fare(config, params.VehicleClass, route.DistanceMeters, route.DurationSeconds)
+		if err != nil {
+			return nil, asDomainError(err)
+		}
+		timeMinor, waitingMinor = driving.TimeMinor, breakdown.TimeMinor-driving.TimeMinor
+	}
 	rows := []BreakdownRow{
 		{Label: "Base", AmountMinor: breakdown.BaseMinor},
 		{Label: "Distance", AmountMinor: breakdown.DistanceMinor},
-		{Label: "Time", AmountMinor: breakdown.TimeMinor},
-		{Label: "Booking fee", AmountMinor: breakdown.BookingFeeMinor},
+		{Label: "Time", AmountMinor: timeMinor},
 	}
+	if len(stops) > 0 {
+		rows = append(rows, BreakdownRow{Label: "Stop waiting", AmountMinor: waitingMinor})
+	}
+	rows = append(rows, BreakdownRow{Label: "Booking fee", AmountMinor: breakdown.BookingFeeMinor})
 	if breakdown.MinFareTopUpMinor > 0 {
 		rows = append(rows, BreakdownRow{Label: "Minimum fare top-up", AmountMinor: breakdown.MinFareTopUpMinor})
 	}
@@ -108,7 +175,7 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 	now := s.now()
 	quote := &Quote{
 		ID:                uuid.New(),
-		RequesterID:       actor.UserID,
+		RequesterID:       requesterID,
 		CityID:            config.CityID,
 		Service:           params.Service,
 		VehicleClass:      params.VehicleClass,
@@ -120,20 +187,16 @@ func (s *Service) Quote(ctx context.Context, actor Actor, params QuoteParams) (*
 		RoutedDurationSec: route.DurationSeconds,
 		Pickup:            exactAreaOf(params.Pickup),
 		Dropoff:           exactAreaOf(params.Dropoff),
+		Stops:             stops,
+		StopsDwellSec:     dwellSec,
 		Breakdown:         rows,
 		PricingVersion:    pricingVersionFor(config),
 		PolicyVersion:     policy.PolicyVersion,
 		ExpiresAt:         now.Add(config.QuoteTTL()).Truncate(1e9),
 	}
+	quote.RouteFingerprint = routeFingerprint(quote.Pickup, quote.Stops, quote.Dropoff)
 
-	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
-		return s.deps.Store.InsertQuote(ctx, tx, quote)
-	})
-	if err != nil {
-		return nil, asDomainError(err)
-	}
-
-	return quoteEnvelopeViewOf(quote), nil
+	return quote, nil
 }
 
 // quoteEnvelopeViewOf renders the client-facing envelope: every amount a
@@ -146,7 +209,7 @@ func quoteEnvelopeViewOf(quote *Quote) *QuoteEnvelopeView {
 			AmountMinor: money(row.AmountMinor, quote.Currency),
 		})
 	}
-	return &QuoteEnvelopeView{
+	view := &QuoteEnvelopeView{
 		QuoteID:              quote.ID.String(),
 		Service:              quote.Service,
 		VehicleClass:         quote.VehicleClass,
@@ -162,6 +225,14 @@ func quoteEnvelopeViewOf(quote *Quote) *QuoteEnvelopeView {
 		RoutedDistanceMeters: quote.RoutedDistanceM,
 		RoutedDurationSec:    quote.RoutedDurationSec,
 	}
+	// The route fields are present only for a multi-stop envelope, so a plain
+	// pickup → dropoff quote answers byte-for-byte what it always did.
+	if len(quote.Stops) > 0 {
+		view.Stops = quote.Stops
+		view.StopsDwellSec = quote.StopsDwellSec
+		view.RouteFingerprint = quote.RouteFingerprint
+	}
+	return view
 }
 
 // exactAreaOf keeps the routed coordinate for server-side checks — envelope

@@ -234,9 +234,15 @@ func (s *Service) RetrievePin(ctx context.Context, actor Actor, requestID uuid.U
 	if request.RequesterID != actor.UserID {
 		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
 	}
+	return s.retrieveVaultPin(ctx, requestID)
+}
 
+// retrieveVaultPin decrypts a request's execution PIN for a caller already
+// entitled to it (the requester, or the guest passenger's trip link), under
+// the vault's lifecycle gate and its one per-execution retrieval rate limit.
+func (s *Service) retrieveVaultPin(ctx context.Context, requestID uuid.UUID) (*PinView, error) {
 	var view *PinView
-	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+	err := s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		row, err := s.deps.Store.ExecutionPinForRequest(ctx, tx, requestID)
 		if errors.Is(err, domain.ErrNotFound) {
 			// The owner exists but there is no PIN to hand back (no execution

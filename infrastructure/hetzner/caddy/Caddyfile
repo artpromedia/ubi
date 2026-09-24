@@ -1,5 +1,11 @@
 # UBI Hetzner Caddyfile
 # Automatic HTTPS with Let's Encrypt
+#
+# The `rate_limit` directive on the API host is NOT part of stock Caddy
+# (`caddy:2-alpine` refuses this file with "unrecognized directive:
+# rate_limit"). docker-compose.prod.yml therefore builds caddy/Dockerfile —
+# Caddy 2.8.4 with github.com/mholt/caddy-ratelimit v0.1.0 — and this file is
+# validated against that build (docs/ops/PILOT_RUNBOOK_DELTAS.md).
 
 # Global options
 {
@@ -32,13 +38,15 @@
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
-        
-        # Health check
-        health_uri /api/health
+
+        # Health check. web-app has no /api/health route (a 404 marks the
+        # only upstream unhealthy and Caddy then answers 503 for the whole
+        # site), so probe the public home page, which renders with a 200.
+        health_uri /
         health_interval 30s
         health_timeout 10s
     }
-    
+
     # Logging
     log {
         output file /var/log/caddy/web-app.log {
@@ -60,16 +68,14 @@
         -Server
     }
     
-    # CORS configuration
-    @cors_preflight method OPTIONS
-    handle @cors_preflight {
-        header Access-Control-Allow-Origin "https://{$DOMAIN:ubi.africa}"
-        header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-        header Access-Control-Allow-Headers "Authorization, Content-Type, X-Requested-With"
-        header Access-Control-Max-Age "86400"
-        respond "" 204
-    }
-    
+    # CORS, preflights included, is the gateway's (services/api-gateway/src/
+    # app.ts: the web AND admin origins; Idempotency-Key, X-City-ID,
+    # X-Trip-Access-Token among the allowed headers). This site used to answer
+    # every OPTIONS itself with only the web origin and Authorization /
+    # Content-Type, so a browser refused every admin-dashboard call and every
+    # web POST carrying an Idempotency-Key or the passenger trip-link token
+    # before the gateway ever saw it. Preflights are proxied like any request.
+
     # Rate limiting for API
     rate_limit {
         zone api {
@@ -110,6 +116,77 @@
     }
 }
 
+# Supplier Webhooks (travel-service)
+#
+# A dedicated ingress, straight to travel-service and NEVER through the client
+# API gateway (which does not proxy /v1/travel/webhooks/* at all). Suppliers
+# (Duffel, LiteAPI) authenticate each callback with their own signature over
+# the raw body, verified by travel-service (src/routes/webhooks.ts), so this
+# host carries no client identity: the gateway's reserved identity headers are
+# removed before forwarding, the body is passed through byte for byte, and
+# anything but `POST /v1/travel/webhooks/<supplierId>` is a 404. Register
+# https://{$WEBHOOKS_DOMAIN}/v1/travel/webhooks/<supplierId> with each
+# supplier; the per-supplier signing secret is injected into travel-service as
+# TRAVEL_SECRET_<REF> (docs/ops/DEPLOY_ENV_MATRIX.md).
+{$WEBHOOKS_DOMAIN:hooks.ubi.africa} {
+    header {
+        X-Content-Type-Options nosniff
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    # Supplier payloads are small; nothing legitimate comes close to this.
+    request_body {
+        max_size 1MB
+    }
+
+    @supplier_webhook {
+        method POST
+        path_regexp supplier ^/v1/travel/webhooks/[A-Za-z0-9_-]+$
+    }
+
+    handle @supplier_webhook {
+        reverse_proxy travel-service:4012 {
+            header_up X-Real-IP {remote_host}
+
+            # Identity is the gateway's to issue; none may enter here.
+            header_up -X-UBI-Identity
+            header_up -X-UBI-City-Id
+            header_up -X-UBI-Tenant-Id
+            header_up -X-UBI-Scopes
+            header_up -X-UBI-Modes
+            header_up -X-Auth-User-Id
+            header_up -X-Auth-User-Role
+            header_up -X-Auth-User-Email
+            header_up -X-Auth-City-Id
+            header_up -X-Auth-Issued-At
+            header_up -X-Auth-Signature
+            header_up -X-User-Id
+            header_up -X-User-Role
+            header_up -X-User-Email
+            header_up -X-Session-Id
+            header_up -X-Internal-Service
+            header_up -X-Service-Key
+
+            transport http {
+                read_timeout 30s
+                write_timeout 30s
+            }
+        }
+    }
+
+    handle {
+        respond 404
+    }
+
+    log {
+        output file /var/log/caddy/webhooks.log {
+            roll_size 50mb
+            roll_keep 10
+        }
+    }
+}
+
 # Admin Dashboard
 {$ADMIN_DOMAIN:admin.ubi.africa} {
     encode gzip zstd
@@ -136,12 +213,14 @@
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
-        
-        health_uri /api/health
+
+        # admin-dashboard has no /api/health route either, and `/` is a
+        # redirect; /login is a static page that answers 200.
+        health_uri /login
         health_interval 30s
         health_timeout 10s
     }
-    
+
     log {
         output file /var/log/caddy/admin.log {
             roll_size 100mb

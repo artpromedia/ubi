@@ -44,6 +44,7 @@ import type {
   BookInput,
   BookedItem,
   BookingStatusResult,
+  ExecutionOrderRef,
   FlightSearchInput,
   ResolvedOffer,
   StaySearchInput,
@@ -56,10 +57,12 @@ import type {
   IncentiveExplanation,
   PromotionsPort,
 } from "../src/ports/promotions-port";
-import type {
-  GrantMintRequest,
-  GrantPort,
-  MintedGrant,
+import {
+  assertMintBinding,
+  type GrantAssurance,
+  type GrantMintRequest,
+  type GrantPort,
+  type MintedGrant,
 } from "../src/ports/grant-port";
 import {
   presentOffersForReview,
@@ -414,6 +417,15 @@ export class FakeTravelPort implements TravelPort {
     }
     return { orderId, state: order.state, supplierRef: null };
   }
+  async executionOrderStatus(
+    ref: ExecutionOrderRef,
+  ): Promise<BookingStatusResult | null> {
+    const order = this.orders.get(ref.orderId);
+    if (order === undefined || order.ownerId !== ref.actorId) {
+      return null;
+    }
+    return { orderId: ref.orderId, state: order.state, supplierRef: null };
+  }
   async book(_actor: Actor, input: BookInput): Promise<BookedItem> {
     this.booked.push(input);
     const offer = this.offers.get(input.offerRef);
@@ -468,13 +480,19 @@ export class FakePromotionsPort implements PromotionsPort {
   }
 }
 
-/** Mints REAL action_grants rows so the single-use + expiry guards run for real. */
+/**
+ * Mints REAL action_grants rows so the single-use + expiry guards run for real.
+ * Like user-service's mint (grants.ts insertGrant) it persists the assurance and
+ * the originating mandate exactly as asked, and replays the original row for a
+ * reused idempotency key.
+ */
 export class FakeGrantPort implements GrantPort {
   readonly minted: GrantMintRequest[] = [];
 
   constructor(private readonly db: AskDb) {}
 
   async mint(request: GrantMintRequest): Promise<MintedGrant> {
+    assertMintBinding(request);
     this.minted.push(request);
     const existing = await this.db.actionGrant.findUnique({
       where: { idempotencyKey: request.idempotencyKey },
@@ -483,7 +501,7 @@ export class FakeGrantPort implements GrantPort {
       return {
         grantId: existing.id,
         expiresAt: existing.expiresAt.toISOString(),
-        assurance: existing.assurance === "biometric" ? "biometric" : "pin",
+        assurance: existing.assurance as GrantAssurance,
       };
     }
     const grantId = uid("grn");
@@ -498,14 +516,15 @@ export class FakeGrantPort implements GrantPort {
         totalMinor: BigInt(request.totalMinor),
         currency: request.currency,
         idempotencyKey: request.idempotencyKey,
-        assurance: request.assurance === "biometric" ? "biometric" : "pin",
+        assurance: request.assurance,
+        mandateId: request.mandateId ?? null,
         expiresAt: request.expiresAt,
       },
     });
     return {
       grantId,
       expiresAt: request.expiresAt.toISOString(),
-      assurance: request.assurance === "biometric" ? "biometric" : "pin",
+      assurance: request.assurance,
     };
   }
 }
@@ -535,6 +554,34 @@ export class FakeMarketplacePort implements MarketplacePort {
   timeoutNextSelect = false;
   /** When set, the next select() throws award_unresolved (races a pending award). */
   unresolvedNextSelect = false;
+  /**
+   * When set, the next select() is LOST in transit: it times out and the
+   * marketplace never saw it (no award, nothing stored under its key).
+   */
+  loseNextSelect = false;
+  /**
+   * When set, the next select() lands but its answer is delayed past the
+   * caller's timeout: the award is stored under its key and becomes visible to
+   * getAward/viewOffers only once `landDelayedAwards()` runs (or a replay of
+   * the same key arrives).
+   */
+  delayNextSelect = false;
+  /** When set, the next select() dies with a non-contract error before sending. */
+  crashNextSelect = false;
+  /** When set, the next select() is definitively refused with this error. */
+  refuseNextSelect: ContractError | null = null;
+  /** When set, the next prepareRequest() fails with this error (nothing stored). */
+  failNextPrepare: ContractError | null = null;
+  /** Runs inside viewOffers — lets a test race a change against a selection. */
+  onViewOffers: (() => Promise<void>) | null = null;
+  /**
+   * Runs at the start of select() — lets a test land a racing award AFTER the
+   * caller read its snapshot but before its selection arrives.
+   */
+  onSelect: (() => void) | null = null;
+  /** The marketplace's clock (request expiry); a test with its own clock sets it. */
+  now: () => Date = () => new Date();
+  private readonly delayed = new Map<string, MpAward>();
 
   private readonly quotes = new Map<string, MpQuote>();
   private readonly requests = new Map<string, MpRequest>();
@@ -589,6 +636,11 @@ export class FakeMarketplacePort implements MarketplacePort {
     input: MpPrepareInput,
   ): Promise<MpRequest> {
     this.prepareCalls.push(input);
+    if (this.failNextPrepare !== null) {
+      const failure = this.failNextPrepare;
+      this.failNextPrepare = null;
+      throw failure;
+    }
     const replay = this.requestByPrepareKey.get(input.idempotencyKey);
     if (replay !== undefined) {
       return replay;
@@ -606,17 +658,30 @@ export class FakeMarketplacePort implements MarketplacePort {
       requesterId: actor.id,
       quoteId: input.quoteId,
       requestedFareMinor: input.requestedFareMinor,
-      expiresAt: new Date(Date.now() + 120_000).toISOString(),
+      expiresAt: new Date(this.now().getTime() + 120_000).toISOString(),
     };
     this.requests.set(request.requestId, request);
     this.requestByPrepareKey.set(input.idempotencyKey, request);
     return request;
   }
 
+  /** Makes every delayed award visible, as if its answer finally arrived. */
+  landDelayedAwards(): void {
+    for (const [requestId, award] of this.delayed) {
+      this.awardByRequest.set(requestId, award);
+    }
+    this.delayed.clear();
+  }
+
   async viewOffers(
     actor: Actor,
     requestId: string,
   ): Promise<MpSnapshot | null> {
+    if (this.onViewOffers !== null) {
+      const hook = this.onViewOffers;
+      this.onViewOffers = null;
+      await hook();
+    }
     const request = this.requests.get(requestId);
     if (request === undefined || request.requesterId !== actor.id) {
       return null;
@@ -643,6 +708,11 @@ export class FakeMarketplacePort implements MarketplacePort {
 
   async select(actor: Actor, input: MpSelectInput): Promise<MpSelectResult> {
     this.selectCalls.push(input);
+    if (this.onSelect !== null) {
+      const hook = this.onSelect;
+      this.onSelect = null;
+      hook();
+    }
     // An ambiguous, racing outcome: the award may or may not exist yet. The
     // caller must converge by querying, never resubmit.
     if (this.unresolvedNextSelect) {
@@ -652,10 +722,36 @@ export class FakeMarketplacePort implements MarketplacePort {
         "a selection is already pending for this request",
       );
     }
+    if (this.crashNextSelect) {
+      this.crashNextSelect = false;
+      throw new Error("the process died before the selection was sent");
+    }
+    if (this.loseNextSelect) {
+      this.loseNextSelect = false;
+      throw new MarketplaceTimeoutError(
+        "the selection did not confirm in time",
+      );
+    }
+    if (this.refuseNextSelect !== null) {
+      const refusal = this.refuseNextSelect;
+      this.refuseNextSelect = null;
+      throw refusal;
+    }
     // Idempotent on the key: an exact replay returns the same award.
     const byKey = this.awardByKey.get(input.idempotencyKey);
     if (byKey !== undefined) {
+      if (this.delayed.has(input.requestId)) {
+        this.delayed.delete(input.requestId);
+        this.awardByRequest.set(input.requestId, byKey);
+      }
       return { award: byKey };
+    }
+    if (this.delayed.has(input.requestId)) {
+      // An award is resolving for this request under another key.
+      throw new ContractError(
+        "award_unresolved",
+        "a selection is already pending for this request",
+      );
     }
     const existing = this.awardByRequest.get(input.requestId);
     if (existing !== undefined) {
@@ -690,11 +786,18 @@ export class FakeMarketplacePort implements MarketplacePort {
     };
     // Record BEFORE the possible timeout so the caller can converge by querying.
     this.awardsCreated += 1;
-    this.awardByRequest.set(input.requestId, award);
     this.awardByKey.set(input.idempotencyKey, award);
     if (request !== undefined) {
       this.requests.set(input.requestId, { ...request, state: "awarded" });
     }
+    if (this.delayNextSelect) {
+      this.delayNextSelect = false;
+      this.delayed.set(input.requestId, award);
+      throw new MarketplaceTimeoutError(
+        "the selection did not confirm in time",
+      );
+    }
+    this.awardByRequest.set(input.requestId, award);
     if (this.timeoutNextSelect) {
       this.timeoutNextSelect = false;
       throw new MarketplaceTimeoutError(

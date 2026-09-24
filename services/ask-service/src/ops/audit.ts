@@ -79,10 +79,13 @@ export interface AuditedOutcome<T> {
  * Writes one ai_actions row. Refuses to persist a redacted-input blob that still
  * contains a recognisable card / PIN / document / address — a leak into the log
  * is a defect, not a warning (rule #20).
+ *
+ * `at` is the row's timestamp; absent, the column default applies.
  */
 export async function writeAiAction(
   tx: AskTx,
   input: AiActionInput,
+  at?: Date,
 ): Promise<void> {
   const redactedInputs = input.redactedInputs ?? null;
   if (redactedInputs !== null && findSensitive(redactedInputs).length > 0) {
@@ -91,6 +94,7 @@ export async function writeAiAction(
   await tx.aiAction.create({
     data: {
       id: generateId("aia"),
+      ...(at === undefined ? {} : { at }),
       actorKind: input.actorKind,
       actorRef: input.actorRef,
       threadId: input.threadId ?? null,
@@ -145,6 +149,12 @@ export async function publishEvent(
  * Runs one ask action. The work receives a branded transaction client, and the
  * ai_actions rows and outbox rows it describes are written in the same
  * transaction before it commits.
+ *
+ * Each ai_actions row gets its own timestamp, one millisecond apart, in the
+ * order the work produced them. Left to the column default, every row of one
+ * transaction would carry Postgres now() — the transaction's start — and a
+ * turn's tool calls would read back in arbitrary order (ids are random), so
+ * the log could not say what the model did first.
  */
 export async function auditedTransaction<T>(
   db: AskDb,
@@ -152,8 +162,9 @@ export async function auditedTransaction<T>(
 ): Promise<T> {
   const result = await db.$transaction(async (tx) => {
     const outcome = await work(tx as AuditedTx);
-    for (const action of outcome.aiActions ?? []) {
-      await writeAiAction(tx, action);
+    const writtenAt = Date.now();
+    for (const [index, action] of (outcome.aiActions ?? []).entries()) {
+      await writeAiAction(tx, action, new Date(writtenAt + index));
     }
     for (const event of outcome.events ?? []) {
       await publishEvent(tx, event);

@@ -30,3 +30,8 @@ configMapGenerator:
       - RATE_LIMIT_WINDOW_MS=60000
       - RATE_LIMIT_MAX_REQUESTS=100
       - CORS_ORIGINS=https://app.ubi.africa,https://admin.ubi.africa
+      # The ingress controller's addresses (comma-separated IPs / CIDRs). The
+      # dev VPC (terraform/environments/dev: 10.0.0.0/16) is the widest safe
+      # value on the AWS VPC CNI, where the ingress pods take VPC addresses;
+      # an environment overlay should narrow it to the ingress subnets.
+      - GATEWAY_TRUSTED_PROXIES=10.0.0.0/16

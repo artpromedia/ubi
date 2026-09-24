@@ -68,11 +68,23 @@ export async function activeHoldsMinor(
 }
 
 /**
- * The sum of ACTIVE rider funding reservations encumbering the wallet (C02).
- * Mirrors `activeHoldsMinor`: a reservation is a table row, never a journal
- * movement — the cleared balance stays untouched from selection to
- * completion, and only spendable drops. A consumed or released reservation
- * encumbers nothing.
+ * Rider funding rows that still encumber: an award's `active` reservation and
+ * its amendment adjustments — a `reserved` top-up awaiting commit, and
+ * `committed` top-ups (positive) and partial releases (negative). The signed
+ * sum per award is exactly what the award still has spoken for.
+ */
+export const ENCUMBERING_RIDER_RESERVATION_STATUSES = [
+  "active",
+  "reserved",
+  "committed",
+] as const;
+
+/**
+ * The sum of ACTIVE rider funding reservations encumbering the wallet (C02),
+ * including amendment adjustments (A02 item 5). Mirrors `activeHoldsMinor`: a
+ * reservation is a table row, never a journal movement — the cleared balance
+ * stays untouched from selection to completion, and only spendable drops. A
+ * consumed or released reservation encumbers nothing.
  */
 export async function activeRiderReservationsMinor(
   tx: LedgerTx,
@@ -81,15 +93,38 @@ export async function activeRiderReservationsMinor(
 ): Promise<Money> {
   const result = await tx.mpRiderReservation.aggregate({
     _sum: { amountMinor: true },
-    where: { walletId, currency, status: "active" },
+    where: {
+      walletId,
+      currency,
+      status: { in: [...ENCUMBERING_RIDER_RESERVATION_STATUSES] },
+    },
   });
   return money(fromNullableDbMinor(result._sum.amountMinor), currency);
 }
 
 /**
- * The one spendable calculation (M04/D04/C02): cleared journal balance minus
- * active commission holds minus active rider funding reservations. Every
- * debit path checks this figure, not the raw balance.
+ * The sum of AUTHORIZED travel payment items encumbering the wallet (P7/T02).
+ * Same shape as the two above: a travel authorization is a table row, never a
+ * journal movement, so only spendable drops. A captured, released or refunded
+ * item encumbers nothing — capture moved the money in a journal entry.
+ */
+export async function activeTravelAuthorizationsMinor(
+  tx: LedgerTx,
+  walletId: string,
+  currency: string,
+): Promise<Money> {
+  const result = await tx.travelPaymentItem.aggregate({
+    _sum: { authorizedMinor: true },
+    where: { walletId, currency, state: "authorized" },
+  });
+  return money(fromNullableDbMinor(result._sum.authorizedMinor), currency);
+}
+
+/**
+ * The one spendable calculation (M04/D04/C02/P7): cleared journal balance
+ * minus active commission holds minus active rider funding reservations minus
+ * authorized travel items. Every debit path checks this figure, not the raw
+ * balance.
  */
 export async function spendableOf(
   tx: LedgerTx,
@@ -99,8 +134,12 @@ export async function spendableOf(
   const balance = await balanceOf(tx, walletId, currency);
   const held = await activeHoldsMinor(tx, walletId, currency);
   const reserved = await activeRiderReservationsMinor(tx, walletId, currency);
+  const travel = await activeTravelAuthorizationsMinor(tx, walletId, currency);
   return money(
-    balance.amountMinor - held.amountMinor - reserved.amountMinor,
+    balance.amountMinor -
+      held.amountMinor -
+      reserved.amountMinor -
+      travel.amountMinor,
     currency,
   );
 }

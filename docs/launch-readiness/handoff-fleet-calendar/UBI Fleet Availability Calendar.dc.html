@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<meta name="design_doc_mode" content="canvas">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  a { color: #047857; }
+  a:hover { color: #1DB954; }
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; background: #EEEFEA; color: #191414; padding: 64px; display: flex; flex-direction: column; gap: 72px; width: max-content; min-width: 100%;">
+
+  <header style="display: flex; flex-direction: column; gap: 28px; max-width: 1180px;">
+    <div style="display: flex; align-items: flex-start; gap: 20px;">
+      <svg width="72" height="36" viewBox="0 0 120 60" fill="none" style="margin-top: 6px;"><path d="M8 18 L8 42 Q8 54 20 54 Q32 54 32 42 L32 18" stroke="#191414" stroke-width="9" stroke-linecap="round" fill="none"></path><path d="M46 4 L46 44 M46 26 Q46 18 56 18 Q68 18 68 31 Q68 44 56 44 Q46 44 46 36" stroke="#191414" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none"></path><line x1="84" y1="24" x2="84" y2="52" stroke="#191414" stroke-width="9" stroke-linecap="round"></line><circle cx="84" cy="12" r="6" fill="#1DB954"></circle></svg>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: #1DB954; font-weight: 500;">Design A05 · Fleet availability & maintenance calendar · 23 Sep 2026</div>
+        <h1 style="font-family: Poppins, sans-serif; font-weight: 800; font-size: 46px; line-height: 1.02; margin: 0; letter-spacing: -1.2px; max-width: 960px;">Fleets plan vehicles. Drivers own their time. Riders keep their trip.</h1>
+        <p style="font-size: 16px; line-height: 1.55; color: #4B5563; margin: 0; max-width: 800px; text-wrap: pretty;">Screen-flow handoff for the fleet calendar: availability model, fleet portal (Next.js, dark), driver app (React Native, dark) and the rider moments it causes. The fleet backend is not built and the <b>fleet</b> flag is off — every screen here is a design reference.</p>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 12px; font-size: 13px; color: #92400E; line-height: 1.45;">
+      <span style="font-size: 18px; display: inline-flex;">{{ icons.alert }}</span>
+      <span><b>Fixture data.</b> Every plate, driver name, time and amount on this board is invented to show layout and states. None is real, and none should be copied into seed data.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: #D8DAD2; border: 1px solid #D8DAD2; border-radius: 16px; overflow: hidden;">
+      <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Fleets propose, drivers consent</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">No fleet action commits a driver's time, bids, or earnings. Any change to terms needs a new PIN signature.</div></div>
+      <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Bookings are never silently moved</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">Maintenance cannot cancel a booking. Changing the driver, class, seats or pickup window needs the rider's consent. A vehicle-only change is notified, with free cancellation.</div></div>
+      <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Fleets see opaque blocks</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">"Booked · 07:15–09:40". No rider, address, route or safety evidence — ever.</div></div>
+      <div style="background: #FFFFFF; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px;"><div style="font-family: Poppins; font-weight: 700; font-size: 14px;">Server decides feasibility</div><div style="font-size: 12.5px; line-height: 1.45; color: #6B7280;">Conflicts, travel time and money come from the backend. Screens show "Checking…", never assume success.</div></div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 16px 20px; background: #141414; border-radius: 14px; color: #E4E4E7;">
+      <span style="font-family: Poppins; font-weight: 700; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: #71717A;">Calendar layers</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;"><span style="width: 26px; height: 14px; border-radius: 4px; background: rgba(29,185,84,0.18); border: 1px solid rgba(29,185,84,0.6);"></span>Signed shift</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;"><span style="width: 26px; height: 14px; border-radius: 4px; border: 1px dashed #1DB954;"></span>Proposed (not counted)</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;"><span style="width: 26px; height: 14px; border-radius: 4px; background: #27345C; border: 1px solid #5B73C4;"></span>Booked (opaque)</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;"><span style="width: 26px; height: 14px; border-radius: 4px; background: repeating-linear-gradient(135deg, rgba(245,158,11,0.30) 0 6px, rgba(245,158,11,0.12) 6px 12px); border: 1px solid #F59E0B;"></span>Maintenance</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;"><span style="width: 26px; height: 14px; border-radius: 4px; background: repeating-linear-gradient(135deg, #3F3F46 0 6px, #27272A 6px 12px); border: 1px solid #52525B;"></span>Held by UBI</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;"><span style="width: 26px; height: 14px; border-radius: 4px; background: rgba(255,255,255,0.04); border: 1px solid #52525B;"></span>Driver availability</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;"><span style="width: 26px; height: 14px; border-radius: 4px; background: repeating-linear-gradient(135deg, rgba(161,161,170,0.22) 0 6px, rgba(161,161,170,0.08) 6px 12px); border: 1px solid #71717A;"></span>Driver time off</span>
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px;"><span style="width: 26px; height: 14px; border-radius: 4px; background: #3A1F2A; border: 2px solid #EF4444;"></span>Conflict</span>
+      <span style="font-size: 11.5px; color: #A1A1AA; margin-left: auto;">Every block also carries a text label, so colour is never the only signal.</span>
+    </div>
+  </header>
+
+  <!-- ================= A — AVAILABILITY MODEL ================= -->
+  <section style="display: flex; flex-direction: column; gap: 24px; max-width: 1180px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 2px solid #191414; padding-bottom: 12px;">
+      <span style="font-family: Poppins; font-weight: 800; font-size: 20px;">A</span>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #1DB954;">Availability model · the core decision</span>
+        <span style="font-family: Poppins; font-weight: 700; font-size: 22px;">Four layers, one precedence order. Bookable time is computed by the server.</span>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px;">
+      <div style="background: #FFFFFF; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-family: Poppins; font-weight: 700; font-size: 16px;">Precedence: the higher layer wins where they overlap</div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <sc-for list="{{ precedence }}" as="p" hint-placeholder-count="7">
+            <div style="display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 10px; background: #F7F8F5;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 13px; color: #6B7280;">{{ p.n }}</span>
+              <div style="display: flex; flex-direction: column; gap: 2px;"><span style="font-weight: 600; font-size: 13.5px;">{{ p.t }}</span><span style="font-size: 11.5px; color: #6B7280; line-height: 1.4;">{{ p.d }}</span></div>
+              <span style="font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: {{ p.bg }}; color: {{ p.c }}; white-space: nowrap;">{{ p.owner }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 12px; color: #374151; background: #ECFDF5; border-radius: 10px; padding: 11px 13px; line-height: 1.5;"><b>Bookable</b> = the driver's availability (6) ∩ the signed shift on that vehicle (5), minus layers 1–4 and minus routed travel time between commitments. Proposals (7) never count.</div>
+      </div>
+
+      <div style="background: #FFFFFF; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-family: Poppins; font-weight: 700; font-size: 16px;">Entities</div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+          <sc-for list="{{ entities }}" as="e" hint-placeholder-count="6">
+            <div style="border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px 13px; display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 12.5px;">{{ e.name }}</span><span style="font-size: 10px; color: #6B7280; white-space: nowrap;">{{ e.owner }}</span></div>
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #4B5563; line-height: 1.55;">{{ e.fields }}</div>
+              <div style="font-size: 10.5px; font-weight: 600; color: {{ e.tagC }};">{{ e.tag }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: #FFFFFF; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="font-family: Poppins; font-weight: 700; font-size: 16px;">State machines</div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <sc-for list="{{ machines }}" as="m" hint-placeholder-count="6">
+          <div style="border: 1px solid #E5E7EB; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; gap: 8px;"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 13px;">{{ m.name }}</span><span style="font-size: 11px; color: #6B7280;">{{ m.owner }}</span></div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+              <sc-for list="{{ m.steps }}" as="s" hint-placeholder-count="4">
+                <span style="display: inline-flex; align-items: center; gap: 6px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 4px 9px; border-radius: 7px; background: #F3F4F6; border: 1px solid #E5E7EB;">{{ s.label }}</span><span style="font-size: 11px; color: #9CA3AF;">{{ s.arrow }}</span></span>
+              </sc-for>
+            </div>
+            <div style="font-size: 11.5px; color: #6B7280; line-height: 1.5;">{{ m.alt }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="background: #FFFFFF; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;"><span style="font-family: Poppins; font-weight: 700; font-size: 16px;">Conflict matrix</span><span style="font-size: 12px; color: #6B7280;">No resolution path skips driver consent or rider consent, and none shows a fleet any rider data.</span></div>
+      <div style="border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 1.3fr 0.6fr 0.95fr 1.35fr 1.1fr 1.3fr; gap: 12px; background: #F9FAFB; padding: 10px 14px; font-size: 10.5px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: .5px;"><span>Conflict</span><span>Severity</span><span>Resolved by</span><span>Allowed actions</span><span>Consent</span><span>Financial outcome</span></div>
+        <sc-for list="{{ conflicts }}" as="c" hint-placeholder-count="9">
+          <div style="display: grid; grid-template-columns: 1.3fr 0.6fr 0.95fr 1.35fr 1.1fr 1.3fr; gap: 12px; padding: 12px 14px; font-size: 12px; line-height: 1.45; border-top: 1px solid #F0F1EE; align-items: start;">
+            <span style="font-weight: 600;">{{ c.name }}</span>
+            <span><span style="font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: {{ c.bg }}; color: {{ c.c }};">{{ c.sev }}</span></span>
+            <span style="color: #374151;">{{ c.who }}</span>
+            <span style="color: #374151;">{{ c.actions }}</span>
+            <span style="color: #374151;">{{ c.consent }}</span>
+            <span style="color: #374151;">{{ c.money }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= B — FLEET PORTAL ================= -->
+  <section style="display: flex; flex-direction: column; gap: 28px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 2px solid #191414; padding-bottom: 12px; max-width: 1180px;">
+      <span style="font-family: Poppins; font-weight: 800; font-size: 20px;">B</span>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #26408B;">Fleet portal · Next.js · dark</span>
+        <span style="font-family: Poppins; font-weight: 700; font-size: 22px;">Plan vehicles and maintenance without touching a rider's trip</span>
+      </div>
+    </div>
+
+    <!-- B1 Calendar · Day -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 1180px; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.35); border: 1px solid #2A2A2A; background: #141414; color: #F4F4F5;">
+        <div style="background: #0B0B0B; padding: 10px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1F1F1F;"><span style="display: inline-flex; gap: 6px;"><span style="width: 11px; height: 11px; border-radius: 50%; background: #FF5F57;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #FEBC2E;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #28C840;"></span></span><span style="flex: 1; background: #1C1C1C; border-radius: 7px; padding: 5px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">fleet.ubi.app/calendar?view=day&amp;date=2026-09-30</span><span style="font-size: 10.5px; font-weight: 700; color: #FCD34D; background: rgba(245,158,11,0.14); padding: 4px 9px; border-radius: 999px;">Fixture · design reference</span></div>
+        <div style="display: flex; min-height: 600px;">
+          <div style="width: 160px; flex-shrink: 0; background: #0F0F0F; border-right: 1px solid #222; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 0 8px 14px;"><svg width="40" height="20" viewBox="0 0 120 60" fill="none"><path d="M8 18 L8 42 Q8 54 20 54 Q32 54 32 42 L32 18" stroke="#fff" stroke-width="9" stroke-linecap="round"></path><path d="M46 4 L46 44 M46 26 Q46 18 56 18 Q68 18 68 31 Q68 44 56 44 Q46 44 46 36" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"></path><line x1="84" y1="24" x2="84" y2="52" stroke="#fff" stroke-width="9" stroke-linecap="round"></line><circle cx="84" cy="12" r="6" fill="#1DB954"></circle></svg><span style="font-size: 11px; color: #71717A; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;">Fleet</span></div>
+            <sc-for list="{{ navCal }}" as="n" hint-placeholder-count="7"><div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 9px 11px; border-radius: 9px; background: {{ n.bg }}; color: {{ n.c }}; font-weight: {{ n.w }};"><span>{{ n.label }}</span><span style="font-size: 10.5px; font-weight: 700; color: #FCA5A5;">{{ n.badge }}</span></div></sc-for>
+            <div style="margin-top: auto; padding: 12px 10px 0; border-top: 1px solid #222; display: flex; flex-direction: column; gap: 3px;"><span style="font-size: 12px; color: #E4E4E7; font-weight: 600;">Example Fleet Ltd</span><span style="font-size: 11px; color: #71717A;">Owner · Lagos</span></div>
+          </div>
+          <div style="flex: 1; min-width: 0; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+              <span style="font-family: Poppins; font-weight: 700; font-size: 20px;">Fleet calendar</span>
+              <div style="display: flex; align-items: center; gap: 4px; background: #1C1C1C; border: 1px solid #2A2A2A; border-radius: 9px; padding: 4px;"><span style="display: inline-flex; padding: 5px 7px; color: #A1A1AA;">{{ icons.chevL }}</span><span style="font-size: 13px; font-weight: 600; padding: 0 6px;">Tue 30 Sep 2026</span><span style="display: inline-flex; padding: 5px 7px; color: #A1A1AA;">{{ icons.chevR }}</span></div>
+              <div style="display: flex; background: #1C1C1C; border: 1px solid #2A2A2A; border-radius: 9px; padding: 3px; font-size: 12.5px;"><span style="padding: 5px 12px; border-radius: 7px; background: #F4F4F5; color: #141414; font-weight: 600;">Day</span><span style="padding: 5px 12px; color: #A1A1AA;">Week</span></div>
+              <div style="display: flex; background: #1C1C1C; border: 1px solid #2A2A2A; border-radius: 9px; padding: 3px; font-size: 12.5px;"><span style="padding: 5px 12px; border-radius: 7px; background: #2A2A2A; color: #F4F4F5; font-weight: 600;">Vehicles</span><span style="padding: 5px 12px; color: #A1A1AA;">Drivers</span></div>
+              <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #A1A1AA; font-family: 'JetBrains Mono', monospace;">{{ icons.clock }} Africa/Lagos · WAT (UTC+1)</span>
+              <button style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; border: none; background: #1DB954; color: #0B0B0B; font-weight: 700; font-size: 13px; padding: 9px 14px; border-radius: 9px;">{{ icons.plus }} Maintenance block</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px;">
+              <span style="display: inline-flex; align-items: center; gap: 6px; color: #71717A;">{{ icons.layers }} Layers</span>
+              <span style="padding: 5px 10px; border-radius: 999px; background: rgba(29,185,84,0.16); color: #86EFAC; font-weight: 600;">Assignments</span>
+              <span style="padding: 5px 10px; border-radius: 999px; background: rgba(245,158,11,0.16); color: #FCD34D; font-weight: 600;">Maintenance</span>
+              <span style="padding: 5px 10px; border-radius: 999px; background: rgba(91,115,196,0.22); color: #C7D2FE; font-weight: 600;">Bookings</span>
+              <span style="padding: 5px 10px; border-radius: 999px; background: rgba(239,68,68,0.16); color: #FCA5A5; font-weight: 600;">Documents</span>
+              <span style="width: 1px; height: 18px; background: #2A2A2A; margin: 0 4px;"></span>
+              <span style="display: inline-flex; align-items: center; gap: 6px; color: #71717A;">{{ icons.filter }}</span>
+              <span style="padding: 5px 10px; border-radius: 8px; border: 1px solid #2A2A2A; color: #D4D4D8;">Class: All</span>
+              <span style="padding: 5px 10px; border-radius: 8px; border: 1px solid #2A2A2A; color: #D4D4D8;">Status: All</span>
+              <span style="padding: 5px 10px; border-radius: 8px; border: 1px solid #2A2A2A; color: #D4D4D8;">Conflicts only: off</span>
+              <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 8px; background: #1C1C1C; border: 1px solid #2A2A2A; color: #71717A; min-width: 180px;">{{ icons.search }} Search plate</span>
+            </div>
+            <div style="border: 1px solid #2A2A2A; border-radius: 12px; overflow: hidden;">
+              <div style="display: grid; grid-template-columns: 170px minmax(0, 1fr); background: #181818; border-bottom: 1px solid #2A2A2A;">
+                <div style="padding: 10px 14px; font-size: 10.5px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Vehicle · 6</div>
+                <div style="position: relative; height: 46px;">
+                  <sc-for list="{{ hourTicks }}" as="h" hint-placeholder-count="9"><span style="position: absolute; left: {{ h.left }}; top: 26px; transform: translateX(-50%); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #71717A;">{{ h.label }}</span></sc-for>
+                  <span style="position: absolute; left: {{ nowLeft }}; top: 4px; transform: translateX(-50%); font-size: 10px; font-weight: 700; color: #0B0B0B; background: #1DB954; padding: 2px 6px; border-radius: 5px;">Now 09:42</span>
+                </div>
+              </div>
+              <sc-for list="{{ vehicleRows }}" as="v" hint-placeholder-count="6">
+                <div style="display: grid; grid-template-columns: 170px minmax(0, 1fr); border-bottom: 1px solid #1F1F1F;">
+                  <div style="padding: 9px 14px; display: flex; flex-direction: column; gap: 3px; border-right: 1px solid #1F1F1F;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 13px;">{{ v.plate }}</span>
+                    <span style="font-size: 11px; color: #A1A1AA;">{{ v.model }}</span>
+                    <span style="align-self: flex-start; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: {{ v.sc }}; background: {{ v.sb }};">{{ v.label }}</span>
+                  </div>
+                  <div style="position: relative; height: 66px; background: repeating-linear-gradient(90deg, #1C1C1C 0 1px, transparent 1px 6.25%);">
+                    <sc-for list="{{ v.blocks }}" as="b" hint-placeholder-count="2"><div title="{{ b.full }}" aria-label="{{ b.full }}" style="position: absolute; left: {{ b.left }}; width: {{ b.width }}; top: {{ b.top }}; height: 22px; background: {{ b.bg }}; border: {{ b.bd }}; color: {{ b.c }}; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; padding: 0 3px; line-height: 20px; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{ b.label }}</div></sc-for>
+                    <div style="position: absolute; left: {{ nowLeft }}; top: 0; bottom: 0; width: 2px; background: #1DB954;"></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11.5px; color: #71717A; flex-wrap: wrap; gap: 8px;"><span>Rows are virtualised beyond 40 vehicles. Row height is fixed so 200 rows scroll smoothly.</span><span style="display: inline-flex; align-items: center; gap: 6px;">{{ icons.refresh }} Feasibility from server · updated 09:42 WAT</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B1 · Fleet calendar, day zoom, vehicle rows. Each row has two lanes: the top lane holds assignments and maintenance, the bottom lane holds opaque bookings.</div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> FleetCalendar (Next.js) · testID fleet.calendar.vehicleRow</div><div>GET /v1/fleets/{id}/calendar?from&amp;to&amp;zoom=day&amp;layers= <b style="color:#B45309;">proposed</b></div><div>booking block = occupied interval incl. buffers · no rider / location</div><div>rule 3, 6: server computes conflicts, the UI only renders them</div></div>
+      </sc-if>
+    </div>
+
+    <!-- B2 Calendar · Week -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 1180px; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.35); border: 1px solid #2A2A2A; background: #141414; color: #F4F4F5;">
+        <div style="background: #0B0B0B; padding: 10px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1F1F1F;"><span style="display: inline-flex; gap: 6px;"><span style="width: 11px; height: 11px; border-radius: 50%; background: #FF5F57;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #FEBC2E;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #28C840;"></span></span><span style="flex: 1; background: #1C1C1C; border-radius: 7px; padding: 5px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">fleet.ubi.app/calendar?view=week&amp;date=2026-09-29</span><span style="font-size: 10.5px; font-weight: 700; color: #FCD34D; background: rgba(245,158,11,0.14); padding: 4px 9px; border-radius: 999px;">Fixture · design reference</span></div>
+        <div style="padding: 22px 24px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <span style="font-family: Poppins; font-weight: 700; font-size: 20px;">Fleet calendar</span>
+            <span style="font-size: 13px; font-weight: 600; background: #1C1C1C; border: 1px solid #2A2A2A; border-radius: 9px; padding: 7px 12px;">29 Sep – 5 Oct 2026</span>
+            <div style="display: flex; background: #1C1C1C; border: 1px solid #2A2A2A; border-radius: 9px; padding: 3px; font-size: 12.5px;"><span style="padding: 5px 12px; color: #A1A1AA;">Day</span><span style="padding: 5px 12px; border-radius: 7px; background: #F4F4F5; color: #141414; font-weight: 600;">Week</span></div>
+            <span style="font-size: 12px; color: #A1A1AA; font-family: 'JetBrains Mono', monospace;">Africa/Lagos · WAT (UTC+1)</span>
+            <span style="margin-left: auto; font-size: 12px; color: #FCA5A5; font-weight: 600;">3 days with conflicts</span>
+          </div>
+          <div style="border: 1px solid #2A2A2A; border-radius: 12px; overflow: hidden;">
+            <div style="display: grid; grid-template-columns: 150px repeat(7, minmax(0, 1fr)); background: #181818; border-bottom: 1px solid #2A2A2A;">
+              <div style="padding: 10px 14px; font-size: 10.5px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Vehicle</div>
+              <sc-for list="{{ weekDays }}" as="d" hint-placeholder-count="7"><div style="padding: 8px 10px; border-left: 1px solid #222; display: flex; flex-direction: column;"><span style="font-size: 12.5px; font-weight: 600;">{{ d.d }}</span><span style="font-size: 10.5px; color: #71717A;">{{ d.m }}</span></div></sc-for>
+            </div>
+            <sc-for list="{{ weekRows }}" as="r" hint-placeholder-count="6">
+              <div style="display: grid; grid-template-columns: 150px repeat(7, minmax(0, 1fr)); border-bottom: 1px solid #1F1F1F;">
+                <div style="padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 12.5px; display: flex; align-items: center;">{{ r.plate }}</div>
+                <sc-for list="{{ r.cells }}" as="c" hint-placeholder-count="7"><div style="padding: 6px; border-left: 1px solid #1F1F1F;"><div style="height: 46px; border-radius: 8px; background: {{ c.bg }}; border: {{ c.bd }}; color: {{ c.c }}; padding: 6px 8px; display: flex; flex-direction: column; justify-content: center; gap: 1px;"><span style="font-size: 11.5px; font-weight: 600;">{{ c.a }}</span><span style="font-size: 10px; opacity: .8;">{{ c.b }}</span></div></div></sc-for>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size: 11.5px; color: #71717A;">Week cells summarise the day. Selecting a cell opens the day view for that vehicle. The month boundary is labelled in the column header.</div>
+        </div>
+      </div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B2 · Week zoom across a month boundary (29 Sep – 5 Oct). A document that expires on 1 Oct turns the following days red and flags the booking at risk.</div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> FleetCalendar zoom=week · testID fleet.calendar.weekCell</div><div>same endpoint · server returns a per-day summary {`{bookedCount, shiftSummary, flags[]}`}</div><div>days split at local midnight in the fleet's city zone</div></div>
+      </sc-if>
+    </div>
+
+    <!-- B3 Driver rows -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 1180px; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.35); border: 1px solid #2A2A2A; background: #141414; color: #F4F4F5;">
+        <div style="background: #0B0B0B; padding: 10px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1F1F1F;"><span style="display: inline-flex; gap: 6px;"><span style="width: 11px; height: 11px; border-radius: 50%; background: #FF5F57;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #FEBC2E;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #28C840;"></span></span><span style="flex: 1; background: #1C1C1C; border-radius: 7px; padding: 5px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">fleet.ubi.app/calendar?view=day&amp;rows=drivers</span><span style="font-size: 10.5px; font-weight: 700; color: #FCD34D; background: rgba(245,158,11,0.14); padding: 4px 9px; border-radius: 999px;">Fixture · design reference</span></div>
+        <div style="padding: 22px 24px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <span style="font-family: Poppins; font-weight: 700; font-size: 20px;">Drivers · Tue 30 Sep</span>
+            <div style="display: flex; background: #1C1C1C; border: 1px solid #2A2A2A; border-radius: 9px; padding: 3px; font-size: 12.5px;"><span style="padding: 5px 12px; color: #A1A1AA;">Vehicles</span><span style="padding: 5px 12px; border-radius: 7px; background: #2A2A2A; color: #F4F4F5; font-weight: 600;">Drivers</span></div>
+            <span style="font-size: 12px; color: #A1A1AA; font-family: 'JetBrains Mono', monospace;">WAT (UTC+1)</span>
+            <span style="margin-left: auto; font-size: 11.5px; color: #A1A1AA;">Availability and time off are set by drivers. You see the hours only, never a reason, and you can't edit them.</span>
+          </div>
+          <div style="border: 1px solid #2A2A2A; border-radius: 12px; overflow: hidden;">
+            <div style="display: grid; grid-template-columns: 170px minmax(0, 1fr); background: #181818; border-bottom: 1px solid #2A2A2A;">
+              <div style="padding: 10px 14px; font-size: 10.5px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Driver · 7</div>
+              <div style="position: relative; height: 34px;"><sc-for list="{{ hourTicks }}" as="h" hint-placeholder-count="9"><span style="position: absolute; left: {{ h.left }}; top: 10px; transform: translateX(-50%); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #71717A;">{{ h.label }}</span></sc-for></div>
+            </div>
+            <sc-for list="{{ driverRows }}" as="v" hint-placeholder-count="7">
+              <div style="display: grid; grid-template-columns: 170px minmax(0, 1fr); border-bottom: 1px solid #1F1F1F;">
+                <div style="padding: 10px 14px; display: flex; flex-direction: column; gap: 3px; border-right: 1px solid #1F1F1F;">
+                  <span style="font-weight: 600; font-size: 13.5px;">{{ v.name }}</span>
+                  <span style="font-size: 11px; color: #A1A1AA;">{{ v.meta }}</span>
+                  <span style="font-size: 11px; color: #71717A; font-family: 'JetBrains Mono', monospace;">{{ v.hours }}</span>
+                </div>
+                <div style="position: relative; height: 92px; background: repeating-linear-gradient(90deg, #1C1C1C 0 1px, transparent 1px 6.25%);">
+                  <sc-for list="{{ v.blocks }}" as="b" hint-placeholder-count="3"><div title="{{ b.full }}" aria-label="{{ b.full }}" style="position: absolute; left: {{ b.left }}; width: {{ b.width }}; top: {{ b.top }}; height: 22px; background: {{ b.bg }}; border: {{ b.bd }}; color: {{ b.c }}; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; padding: 0 3px; line-height: 20px; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{ b.label }}</div></sc-for>
+                  <div style="position: absolute; left: {{ nowLeft }}; top: 0; bottom: 0; width: 2px; background: #1DB954;"></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; gap: 18px; font-size: 11px; color: #71717A;"><span>Lane 1: driver availability and time off</span><span>Lane 2: signed shift, plus the vehicle's maintenance</span><span>Lane 3: bookings (opaque)</span></div>
+        </div>
+      </div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B3 · Driver rows: hours, shifts, and bookings as opaque blocks. Driver-owned layers are shown read-only.</div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> FleetCalendar rows=drivers · testID fleet.calendar.driverRow</div><div>GET /v1/fleets/{id}/calendar?rows=drivers <b style="color:#B45309;">proposed</b></div><div>rule 1: availability and time off are read-only for the fleet</div><div>shows only drivers with a signed or pending arrangement with this fleet</div></div>
+      </sc-if>
+    </div>
+
+    <!-- B4 Vehicle detail -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 1180px; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.35); border: 1px solid #2A2A2A; background: #141414; color: #F4F4F5;">
+        <div style="background: #0B0B0B; padding: 10px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1F1F1F;"><span style="display: inline-flex; gap: 6px;"><span style="width: 11px; height: 11px; border-radius: 50%; background: #FF5F57;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #FEBC2E;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #28C840;"></span></span><span style="flex: 1; background: #1C1C1C; border-radius: 7px; padding: 5px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">fleet.ubi.app/vehicles/veh_118ab</span><span style="font-size: 10.5px; font-weight: 700; color: #FCD34D; background: rgba(245,158,11,0.14); padding: 4px 9px; border-radius: 999px;">Fixture · design reference</span></div>
+        <div style="padding: 24px; display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+            <span style="width: 44px; height: 44px; border-radius: 12px; background: #1C1C1C; border: 1px solid #2A2A2A; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #D4D4D8;">{{ icons.car }}</span>
+            <div style="display: flex; flex-direction: column; gap: 2px;"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 20px;">LAG-118-AB</span><span style="font-size: 12.5px; color: #A1A1AA;">Toyota Camry 2020 · Silver · Comfort · 4 seats · petrol</span></div>
+            <span style="font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; color: #FCA5A5; background: rgba(239,68,68,0.18);">1 conflict</span>
+            <button style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #2A2A2A; background: #1C1C1C; color: #F4F4F5; font-weight: 600; font-size: 13px; padding: 9px 14px; border-radius: 9px;">{{ icons.wrench }} Add maintenance</button>
+          </div>
+          <div style="display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 18px;">
+            <div style="display: flex; flex-direction: column; gap: 18px;">
+              <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                <div style="display: flex; justify-content: space-between;"><span style="font-weight: 600; font-size: 14px;">Documents against upcoming commitments</span><span style="font-size: 11px; color: #71717A; font-family: 'JetBrains Mono', monospace;">30 Sep – 29 Oct</span></div>
+                <div style="position: relative; height: 70px; border-radius: 8px; background: repeating-linear-gradient(90deg, #202020 0 1px, transparent 1px 3.333%);">
+                  <div style="position: absolute; left: 0; right: 0; top: 34px; height: 2px; background: #2A2A2A;"></div>
+                  <span style="position: absolute; left: 1%; top: 26px; width: 3px; height: 18px; background: #5B73C4; border-radius: 2px;"></span>
+                  <span style="position: absolute; left: 7%; top: 26px; width: 3px; height: 18px; background: #5B73C4; border-radius: 2px;"></span>
+                  <span style="position: absolute; left: 16%; top: 26px; width: 3px; height: 18px; background: #5B73C4; border-radius: 2px;"></span>
+                  <span style="position: absolute; left: 44%; top: 26px; width: 3px; height: 18px; background: #5B73C4; border-radius: 2px;"></span>
+                  <span style="position: absolute; left: 52%; top: 26px; width: 3px; height: 18px; background: #EF4444; border-radius: 2px;"></span>
+                  <span style="position: absolute; left: 6.6%; top: 4px; font-size: 10px; color: #FCD34D; font-weight: 600;">Inspection due 2 Oct</span>
+                  <span style="position: absolute; left: 6.6%; top: 18px; width: 3.3%; height: 34px; background: repeating-linear-gradient(135deg, rgba(245,158,11,0.3) 0 5px, rgba(245,158,11,0.1) 5px 10px); border: 1px solid #F59E0B; border-radius: 4px;"></span>
+                  <span style="position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #EF4444;"></span>
+                  <span style="position: absolute; left: 50.8%; top: 50px; font-size: 10px; color: #FCA5A5; font-weight: 700;">Insurance expires 15 Oct · 1 booking after this date</span>
+                </div>
+                <div style="display: flex; gap: 16px; font-size: 11px; color: #A1A1AA;"><span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 12px; background: #5B73C4;"></span>Booked (opaque)</span><span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 3px; height: 12px; background: #EF4444;"></span>Booking after document expiry</span></div>
+                <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; font-size: 12px;">
+                  <div style="background: #141414; border: 1px solid #262626; border-radius: 9px; padding: 10px 12px;"><div style="color: #71717A; font-size: 10.5px;">Insurance</div><div style="font-weight: 600; color: #FCD34D;">Expiring · 15 Oct</div><div style="font-size: 11px; color: #A1A1AA; margin-top: 3px;">Upload the renewal to clear the flag</div></div>
+                  <div style="background: #141414; border: 1px solid #262626; border-radius: 9px; padding: 10px 12px;"><div style="color: #71717A; font-size: 10.5px;">Inspection</div><div style="font-weight: 600; color: #86EFAC;">Valid · to 2 Oct</div><div style="font-size: 11px; color: #A1A1AA; margin-top: 3px;">Inspection block booked for 2 Oct</div></div>
+                  <div style="background: #141414; border: 1px solid #262626; border-radius: 9px; padding: 10px 12px;"><div style="color: #71717A; font-size: 10.5px;">Enforcement</div><div style="font-weight: 600;">By UBI</div><div style="font-size: 11px; color: #A1A1AA; margin-top: 3px;">Status only. There is no override.</div></div>
+                </div>
+              </div>
+              <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+                <span style="font-weight: 600; font-size: 14px;">Maintenance</span>
+                <div style="display: grid; grid-template-columns: 1.3fr 1fr 1fr auto; gap: 10px; font-size: 12px; padding: 10px 12px; border-radius: 9px; background: #141414; border: 1px solid #3F1D1D; align-items: center;"><span style="font-weight: 600;">Planned service</span><span style="color: #A1A1AA; font-family: 'JetBrains Mono', monospace;">30 Sep 10:00–15:00</span><span style="color: #FCA5A5; font-weight: 600;">Needs resolution</span><span style="color: #86EFAC; font-weight: 600;">Resolve →</span></div>
+                <div style="display: grid; grid-template-columns: 1.3fr 1fr 1fr auto; gap: 10px; font-size: 12px; padding: 10px 12px; border-radius: 9px; background: #141414; border: 1px solid #262626; align-items: center;"><span style="font-weight: 600;">Inspection</span><span style="color: #A1A1AA; font-family: 'JetBrains Mono', monospace;">2 Oct all day</span><span style="color: #86EFAC; font-weight: 600;">Scheduled</span><span style="color: #A1A1AA;">Edit</span></div>
+                <div style="display: grid; grid-template-columns: 1.3fr 1fr 1fr auto; gap: 10px; font-size: 12px; padding: 10px 12px; border-radius: 9px; background: #141414; border: 1px solid #262626; align-items: center; color: #71717A;"><span style="font-weight: 600;">Repair · brake pads</span><span style="font-family: 'JetBrains Mono', monospace;">12 Sep 09:00–13:30</span><span>Completed</span><span></span></div>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 18px;">
+              <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+                <span style="font-weight: 600; font-size: 14px;">Assigned drivers</span>
+                <div style="display: flex; align-items: center; gap: 10px; background: #141414; border: 1px solid #262626; border-radius: 9px; padding: 10px 12px;"><span style="width: 34px; height: 34px; border-radius: 50%; background: #1F2A22; color: #86EFAC; display: flex; align-items: center; justify-content: center; font-weight: 700;">B</span><div style="flex: 1;"><div style="font-weight: 600; font-size: 13px;">Bola A. · Day 06:00–18:00</div><div style="font-size: 11px; color: #A1A1AA;">Terms v1 · signed 2 Sep · weekly fixed</div></div></div>
+                <div style="font-size: 11px; color: #71717A;">Night shift is unassigned. To fill it, propose an assignment. It only takes effect once the driver signs.</div>
+              </div>
+              <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; justify-content: space-between;"><span style="font-weight: 600; font-size: 14px;">This week</span><span style="font-size: 10.5px; color: #71717A; font-family: 'JetBrains Mono', monospace;">from /overview · 09:40 WAT</span></div>
+                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12.5px;">
+                  <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Week gross</span><b>₦184,500</b></div>
+                  <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">UBI commission (10%)</span><span>₦18,450</span></div>
+                  <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Fleet remittance · weekly fixed</span><span>₦45,000</span></div>
+                  
+                  <div style="height: 1px; background: #262626;"></div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;"><span style="color: #A1A1AA;">Remittance status</span><span style="font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; color: #86EFAC; background: rgba(29,185,84,0.16);">Covered</span></div>
+                </div>
+                <div style="font-size: 10.5px; color: #71717A;">All amounts are computed by the server in integer minor units. Fleets don't see a driver's net earnings.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B4 · Vehicle detail: documents plotted against bookings, maintenance history, drivers, and the week's money in separate lines (the driver's net is never shown).</div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> VehicleDetail (Next.js) · testID fleet.vehicle.documentsTimeline</div><div>GET /v1/fleets/{id}/vehicles/{vid}/availability <b style="color:#B45309;">proposed</b></div><div>money: GET /v1/fleets/{id}/overview (existing)</div><div>rule 5: gross, commission and fleet remittance as separate lines · no driver net (Q7)</div></div>
+      </sc-if>
+    </div>
+
+    <!-- B5 Maintenance create + impact preview -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 1180px; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.35); border: 1px solid #2A2A2A; background: repeating-linear-gradient(90deg, #121212 0 1px, #0C0C0C 1px 60px); color: #F4F4F5; padding: 36px; display: flex; gap: 28px; align-items: flex-start; justify-content: center;">
+        <!-- checking -->
+        <div style="width: 480px; background: #1A1A1A; border: 1px solid #2A2A2A; border-radius: 16px; box-shadow: 0 30px 60px -20px rgb(0 0 0 / 0.6); display: flex; flex-direction: column;">
+          <div style="padding: 18px 20px; border-bottom: 1px solid #262626; display: flex; justify-content: space-between; align-items: center;"><span style="font-family: Poppins; font-weight: 700; font-size: 16px;">New maintenance block</span><span style="font-size: 18px; color: #71717A; display: inline-flex;">{{ icons.x }}</span></div>
+          <div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 11px; color: #A1A1AA;">Vehicle</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #141414; border: 1px solid #2A2A2A; border-radius: 9px; padding: 10px 12px;">LAG-118-AB</span></div>
+              <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 11px; color: #A1A1AA;">Type</span><span style="font-size: 13px; background: #141414; border: 1px solid #2A2A2A; border-radius: 9px; padding: 10px 12px;">Planned service</span></div>
+              <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 11px; color: #A1A1AA;">Starts (WAT)</span><span style="font-size: 13px; background: #141414; border: 1px solid #2A2A2A; border-radius: 9px; padding: 10px 12px;">Tue 30 Sep · 10:00</span></div>
+              <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 11px; color: #A1A1AA;">Ends (WAT)</span><span style="font-size: 13px; background: #141414; border: 1px solid #2A2A2A; border-radius: 9px; padding: 10px 12px;">Tue 30 Sep · 15:00</span></div>
+            </div>
+            <div style="background: #141414; border: 1px solid #262626; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600;"><span style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid #3F3F46; border-top-color: #1DB954;"></span>Checking impact with the server…</div>
+              <div style="height: 12px; border-radius: 6px; background: #222; width: 80%;"></div>
+              <div style="height: 12px; border-radius: 6px; background: #222; width: 60%;"></div>
+              <div style="font-size: 11.5px; color: #71717A;">We don't assume anything is free until the server confirms it.</div>
+            </div>
+          </div>
+          <div style="padding: 14px 20px; border-top: 1px solid #262626; display: flex; justify-content: flex-end; gap: 8px;"><button style="border: 1px solid #2A2A2A; background: transparent; color: #D4D4D8; font-weight: 600; font-size: 13px; padding: 10px 14px; border-radius: 9px;">Cancel</button><button style="border: none; background: #27272A; color: #71717A; font-weight: 700; font-size: 13px; padding: 10px 16px; border-radius: 9px;">Confirm block</button></div>
+        </div>
+        <!-- needs resolution -->
+        <div style="width: 540px; background: #1A1A1A; border: 1px solid #2A2A2A; border-radius: 16px; box-shadow: 0 30px 60px -20px rgb(0 0 0 / 0.6); display: flex; flex-direction: column;">
+          <div style="padding: 18px 20px; border-bottom: 1px solid #262626; display: flex; justify-content: space-between; align-items: center;"><span style="font-family: Poppins; font-weight: 700; font-size: 16px;">Impact preview · LAG-118-AB</span><span style="font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #71717A;">30 Sep 10:00–15:00 WAT</span></div>
+          <div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Affected assignment · 1</span>
+              <div style="background: #141414; border: 1px solid #262626; border-radius: 10px; padding: 11px 13px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 10px;"><span>Bola A. · Day shift 06:00–18:00</span><span style="color: #FCD34D;">No vehicle 10:00–15:00</span></div>
+              <div style="font-size: 11px; color: #A1A1AA;">Bola will be notified. Her signed terms don't change. Her weekly fixed remittance is <b>pro-rated</b> for the 5 lost shift hours: −₦3,125 (computed by UBI).</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Affected booking · 1</span>
+              <div style="background: #2A1A20; border: 1px solid #7F1D1D; border-radius: 10px; padding: 11px 13px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 10px;"><span style="font-weight: 600;">Booked · 11:20–13:00</span><span style="color: #FCA5A5; font-weight: 600;">Must be resolved first</span></div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Choose a resolution</span>
+              <div style="border: 1.5px solid #1DB954; background: rgba(29,185,84,0.08); border-radius: 10px; padding: 11px 13px; display: flex; gap: 10px;"><span style="width: 16px; height: 16px; border-radius: 50%; border: 5px solid #1DB954; flex-shrink: 0; margin-top: 1px;"></span><div><div style="font-size: 13px; font-weight: 600;">Move block to 13:40–18:40</div><div style="font-size: 11px; color: #A1A1AA;">Next window the server found with no overlaps (buffers included)</div></div></div>
+              <div style="border: 1px solid #2A2A2A; border-radius: 10px; padding: 11px 13px; display: flex; gap: 10px;"><span style="width: 16px; height: 16px; border-radius: 50%; border: 2px solid #52525B; flex-shrink: 0; margin-top: 1px;"></span><div><div style="font-size: 13px; font-weight: 600;">Propose a vehicle swap for the booking</div><div style="font-size: 11px; color: #A1A1AA;">No eligible vehicle: LAG-620-ZX is Economy (the booking needs Comfort), and LAG-744-MM is on Tunde B.'s shift</div></div></div>
+              <div style="border: 1px solid #2A2A2A; border-radius: 10px; padding: 11px 13px; display: flex; gap: 10px;"><span style="width: 16px; height: 16px; border-radius: 50%; border: 2px solid #52525B; flex-shrink: 0; margin-top: 1px;"></span><div><div style="font-size: 13px; font-weight: 600;">Ask Bola to review the booking</div><div style="font-size: 11px; color: #A1A1AA;">Only Bola can withdraw. The block stays in needs_resolution until she decides.</div></div></div>
+            </div>
+          </div>
+          <div style="padding: 14px 20px; border-top: 1px solid #262626; display: flex; align-items: center; gap: 8px;"><span style="font-size: 11.5px; color: #A1A1AA; flex: 1;">Planned maintenance never cancels a booking. Breakdown? Use "Report off-road" (remittance is pro-rated either way).</span><button style="border: 1px solid #2A2A2A; background: transparent; color: #D4D4D8; font-weight: 600; font-size: 13px; padding: 10px 14px; border-radius: 9px;">Back</button><button style="border: none; background: #1DB954; color: #0B0B0B; font-weight: 700; font-size: 13px; padding: 10px 16px; border-radius: 9px;">Move &amp; confirm</button></div>
+        </div>
+      </div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B5 · Create a maintenance block. Confirm stays disabled until the server's impact check returns. An overlapping booking has to be resolved before the block can be confirmed.</div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> MaintenanceEditor (Next.js) · testID fleet.maintenance.impactPreview</div><div>POST /v1/fleets/{id}/maintenance:preview → impact + suggestions <b style="color:#B45309;">proposed</b></div><div>POST /v1/fleets/{id}/maintenance (Idempotency-Key) · 409 if not resolved</div><div>rule 2: server rejects a confirm that overlaps a confirmed booking</div></div>
+      </sc-if>
+    </div>
+
+    <!-- B6 Conflict centre -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 1180px; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.35); border: 1px solid #2A2A2A; background: #141414; color: #F4F4F5;">
+        <div style="background: #0B0B0B; padding: 10px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1F1F1F;"><span style="display: inline-flex; gap: 6px;"><span style="width: 11px; height: 11px; border-radius: 50%; background: #FF5F57;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #FEBC2E;"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #28C840;"></span></span><span style="flex: 1; background: #1C1C1C; border-radius: 7px; padding: 5px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">fleet.ubi.app/conflicts</span><span style="font-size: 10.5px; font-weight: 700; color: #FCD34D; background: rgba(245,158,11,0.14); padding: 4px 9px; border-radius: 999px;">Fixture · design reference</span></div>
+        <div style="display: flex; min-height: 440px;">
+          <div style="width: 160px; flex-shrink: 0; background: #0F0F0F; border-right: 1px solid #222; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px;">
+            <div style="padding: 0 8px 14px; font-size: 11px; color: #71717A; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;">UBI Fleet</div>
+            <sc-for list="{{ navCon }}" as="n" hint-placeholder-count="7"><div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 9px 11px; border-radius: 9px; background: {{ n.bg }}; color: {{ n.c }}; font-weight: {{ n.w }};"><span>{{ n.label }}</span><span style="font-size: 10.5px; font-weight: 700; color: #FCA5A5;">{{ n.badge }}</span></div></sc-for>
+          </div>
+          <div style="flex: 1; min-width: 0; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;"><span style="font-family: Poppins; font-weight: 700; font-size: 20px;">Conflict centre</span><span style="font-size: 12px; color: #A1A1AA;">5 open · 1 status only · sorted by deadline</span><span style="margin-left: auto; font-size: 11px; color: #71717A; font-family: 'JetBrains Mono', monospace;">Computed by server · 09:42 WAT</span></div>
+            <div style="border: 1px solid #2A2A2A; border-radius: 12px; overflow: hidden;">
+              <div style="display: grid; grid-template-columns: 90px minmax(0, 1.6fr) 1fr 0.9fr 1.3fr; gap: 12px; background: #181818; padding: 10px 14px; font-size: 10.5px; font-weight: 700; color: #71717A; text-transform: uppercase; letter-spacing: .5px;"><span>Severity</span><span>Conflict</span><span>Who resolves</span><span>Deadline (WAT)</span><span>Actions</span></div>
+              <sc-for list="{{ ccRows }}" as="r" hint-placeholder-count="6">
+                <div style="display: grid; grid-template-columns: 90px minmax(0, 1.6fr) 1fr 0.9fr 1.3fr; gap: 12px; padding: 12px 14px; font-size: 12.5px; border-top: 1px solid #1F1F1F; align-items: center;">
+                  <span><span style="font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; color: {{ r.sc }}; background: {{ r.sb }};">{{ r.sev }}</span></span>
+                  <div style="display: flex; flex-direction: column; gap: 2px;"><span style="font-weight: 600;">{{ r.title }}</span><span style="font-size: 11px; color: #A1A1AA; font-family: 'JetBrains Mono', monospace;">{{ r.subject }}</span></div>
+                  <span style="color: #D4D4D8;">{{ r.owner }}</span>
+                  <span style="color: #D4D4D8; font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">{{ r.due }}</span>
+                  <div style="display: flex; gap: 6px; flex-wrap: wrap;"><span style="font-size: 11.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; background: {{ r.a1bg }}; color: {{ r.a1c }};">{{ r.a1 }}</span><span style="font-size: 11.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; border: 1px solid #2A2A2A; color: #A1A1AA;">{{ r.a2 }}</span></div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B6 · Conflict centre. When a conflict belongs to the driver or UBI, the fleet can only view it or send a reminder. It can never resolve it for them.</div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> ConflictCentre (Next.js) · testID fleet.conflicts.row</div><div>GET /v1/fleets/{id}/conflicts?status=open <b style="color:#B45309;">proposed</b></div><div>event: fleet.conflict.opened|resolved|lapsed</div><div>actions come from allowedActions[] — the client never infers them</div></div>
+      </sc-if>
+    </div>
+
+    <!-- B7 Propose assignment / consent -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 1180px; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.35); border: 1px solid #2A2A2A; background: #141414; color: #F4F4F5; padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px;">
+        <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-family: Poppins; font-weight: 700; font-size: 16px;">Propose shift change · Kemi L.</span><span style="font-size: 10.5px; font-weight: 700; color: #FCD34D; background: rgba(245,158,11,0.14); padding: 3px 9px; border-radius: 999px;">Fixture</span></div>
+          <div style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Terms diff (what Kemi will see)</div>
+          <div style="border: 1px solid #262626; border-radius: 10px; overflow: hidden; font-size: 12.5px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; background: #141414; padding: 8px 12px; font-size: 10.5px; color: #71717A; font-weight: 700; text-transform: uppercase;"><span>Term</span><span>Current</span><span>Proposed</span></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 10px 12px; border-top: 1px solid #222;"><span style="color: #A1A1AA;">Vehicle</span><span>None</span><span style="color: #86EFAC; font-weight: 600;">LAG-744-MM</span></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 10px 12px; border-top: 1px solid #222;"><span style="color: #A1A1AA;">Shift</span><span>None</span><span style="color: #86EFAC; font-weight: 600;">Night 14:00–22:00</span></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 10px 12px; border-top: 1px solid #222;"><span style="color: #A1A1AA;">Remittance</span><span>None</span><span style="color: #86EFAC; font-weight: 600;">₦40,000 / week</span></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 10px 12px; border-top: 1px solid #222;"><span style="color: #A1A1AA;">Shortfall</span><span>—</span><span>Carry forward</span></div>
+          </div>
+          <div style="background: rgba(29,185,84,0.08); border: 1px solid rgba(29,185,84,0.3); border-radius: 10px; padding: 11px 13px; font-size: 11.5px; color: #86EFAC; line-height: 1.5;">Server check passed: no overlap with Tunde B.'s signed Day shift (06:00–14:00), and ₦40,000 is within the Lagos city cap.</div>
+          <div style="background: #2A1A20; border: 1px solid #7F1D1D; border-radius: 10px; padding: 11px 13px; font-size: 11.5px; color: #FCA5A5; line-height: 1.5;"><b>Blocked variant:</b> "12:00–20:00 overlaps Tunde B.'s signed shift on LAG-744-MM (12:00–14:00). Change the times to send."</div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px;"><button style="border: 1px solid #2A2A2A; background: transparent; color: #D4D4D8; font-weight: 600; font-size: 13px; padding: 10px 14px; border-radius: 9px;">Cancel</button><button style="border: none; background: #1DB954; color: #0B0B0B; font-weight: 700; font-size: 13px; padding: 10px 16px; border-radius: 9px;">Send to Kemi</button></div>
+        </div>
+        <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+          <span style="font-family: Poppins; font-weight: 700; font-size: 16px;">Consent status</span>
+          <div style="display: flex; flex-direction: column; gap: 0;">
+            <div style="display: flex; gap: 12px;"><div style="display: flex; flex-direction: column; align-items: center;"><span style="width: 22px; height: 22px; border-radius: 50%; background: #1DB954; color: #0B0B0B; display: flex; align-items: center; justify-content: center; font-size: 12px;">{{ icons.check }}</span><span style="width: 2px; flex: 1; background: #2A2A2A; min-height: 26px;"></span></div><div style="padding-bottom: 14px;"><div style="font-size: 13px; font-weight: 600;">Sent</div><div style="font-size: 11px; color: #A1A1AA; font-family: 'JetBrains Mono', monospace;">23 Sep 10:02 WAT</div></div></div>
+            <div style="display: flex; gap: 12px;"><div style="display: flex; flex-direction: column; align-items: center;"><span style="width: 22px; height: 22px; border-radius: 50%; border: 2px solid #5B73C4; background: rgba(91,115,196,0.2);"></span><span style="width: 2px; flex: 1; background: #2A2A2A; min-height: 26px;"></span></div><div style="padding-bottom: 14px;"><div style="font-size: 13px; font-weight: 600; color: #C7D2FE;">Waiting for Kemi's signature</div><div style="font-size: 11px; color: #A1A1AA;">Expires 25 Sep 10:02 WAT (48 h). Not counted as availability.</div></div></div>
+            <div style="display: flex; gap: 12px;"><div><span style="width: 22px; height: 22px; border-radius: 50%; border: 2px dashed #3F3F46; display: block;"></span></div><div><div style="font-size: 13px; font-weight: 600; color: #71717A;">Signed with PIN</div><div style="font-size: 11px; color: #71717A;">The shift goes live from its start date</div></div></div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+            <div style="background: #141414; border: 1px solid #262626; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 3px;"><span style="font-size: 10.5px; font-weight: 700; color: #86EFAC;">SIGNED</span><span style="font-size: 11px; color: #A1A1AA;">Terms v1 is active. Changing it needs a new signature.</span></div>
+            <div style="background: #141414; border: 1px solid #262626; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 3px;"><span style="font-size: 10.5px; font-weight: 700; color: #D4D4D8;">DECLINED</span><span style="font-size: 11px; color: #A1A1AA;">Kemi declined. No reason is required and there is no penalty.</span></div>
+            <div style="background: #141414; border: 1px solid #262626; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 3px;"><span style="font-size: 10.5px; font-weight: 700; color: #FCD34D;">EXPIRED</span><span style="font-size: 11px; color: #A1A1AA;">No reply in 48 h. You can send a new proposal.</span></div>
+          </div>
+          <div style="font-size: 11px; color: #71717A;">The fleet never sees why a driver declined, and declining has no effect on the driver's score.</div>
+        </div>
+      </div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B7 · Propose an assignment or shift change: the terms diff, the server overlap check, then consent that stays pending until it is signed, declined or expired.</div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> ProposeAssignment (Next.js) · testID fleet.assignment.proposeSubmit</div><div>POST /v1/fleets/{id}/assignments/propose (existing) + shift{`{start,end}`} <b style="color:#B45309;">extension proposed</b></div><div>422 shift_overlap · 422 above_city_cap</div><div>rule 1: nothing takes effect until the driver signs</div></div>
+      </sc-if>
+    </div>
+
+    <!-- B8 Utilisation + B9 Roles -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 1180px; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.35); border: 1px solid #2A2A2A; background: #141414; color: #F4F4F5; padding: 24px; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px;">
+        <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap;"><span style="font-family: Poppins; font-weight: 700; font-size: 16px;">Utilisation · 22–28 Sep</span><span style="font-size: 10.5px; color: #71717A; font-family: 'JetBrains Mono', monospace;">Data as of 28 Sep 23:59 WAT · refreshed daily</span></div>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <sc-for list="{{ utilRows }}" as="u" hint-placeholder-count="5">
+              <div style="display: grid; grid-template-columns: 100px minmax(0, 1fr) 70px; gap: 12px; align-items: center;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">{{ u.plate }}</span>
+                <div style="display: flex; height: 22px; border-radius: 6px; overflow: hidden; background: #141414; border: 1px solid #262626;">
+                  <sc-for list="{{ u.segs }}" as="s" hint-placeholder-count="4"><span style="width: {{ s.w }}; background: {{ s.bg }}; color: #0B0B0B; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap;">{{ s.t }}</span></sc-for>
+                  <span style="flex: 1; display: flex; align-items: center; padding-left: 8px; font-size: 11px; color: #A1A1AA;">{{ u.note }}</span>
+                </div>
+                <span style="font-size: 11.5px; color: #A1A1AA; text-align: right; font-family: 'JetBrains Mono', monospace;">{{ u.total }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; font-size: 10.5px; color: #A1A1AA; line-height: 1.4;">
+            <span><b style="color: #1DB954;">On trip</b>: from pickup to drop-off</span>
+            <span><b style="color: #86EFAC;">Online idle</b>: online with no job</span>
+            <span><b style="color: #8FA3E6;">Booked ahead</b>: occupied advance-booking time</span>
+            <span><b style="color: #F59E0B;">Maintenance</b>: scheduled or active blocks</span>
+            <span><b style="color: #D4D4D8;">Offline</b>: rest of the signed shift</span>
+          </div>
+          <div style="font-size: 11px; color: #71717A;">No benchmarks or targets are shown. A vehicle with less than 7 days of data shows "Not enough data".</div>
+        </div>
+        <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+          <span style="font-family: Poppins; font-weight: 700; font-size: 16px;">Staff roles</span>
+          <div style="border: 1px solid #262626; border-radius: 10px; overflow: hidden;">
+            <div style="display: grid; grid-template-columns: minmax(0, 1.8fr) 0.6fr 0.7fr 0.7fr; background: #141414; padding: 8px 12px; font-size: 10.5px; color: #71717A; font-weight: 700; text-transform: uppercase;"><span>Capability</span><span>Owner</span><span>Manager</span><span>Read-only</span></div>
+            <sc-for list="{{ roleRows }}" as="r" hint-placeholder-count="8">
+              <div style="display: grid; grid-template-columns: minmax(0, 1.8fr) 0.6fr 0.7fr 0.7fr; padding: 8px 12px; border-top: 1px solid #222; font-size: 11.5px;"><span style="color: #D4D4D8;">{{ r.cap }}</span><span style="color: {{ r.oc }}; font-weight: 600;">{{ r.o }}</span><span style="color: {{ r.mc }}; font-weight: 600;">{{ r.m }}</span><span style="color: {{ r.rc }}; font-weight: 600;">{{ r.r }}</span></div>
+            </sc-for>
+          </div>
+          <div style="background: #141414; border: 1px solid #262626; border-radius: 10px; padding: 12px; display: flex; gap: 10px; align-items: flex-start;"><span style="font-size: 16px; color: #A1A1AA; display: inline-flex;">{{ icons.lock }}</span><div><div style="font-size: 12.5px; font-weight: 600;">Permission denied (read-only)</div><div style="font-size: 11px; color: #A1A1AA;">"Your role can view the calendar but can't create maintenance. Ask a fleet owner or manager." Action buttons are hidden, not just disabled.</div></div></div>
+        </div>
+      </div>
+      <div style="width: 1180px; font-size: 12px; color: #6B7280;">B8 · Utilisation, with each metric defined and the data date shown. B9 · Roles, including the permission-denied state.</div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div style="width: 1180px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 12px 16px; display: flex; gap: 28px; flex-wrap: wrap;"><div><b>screen</b> Utilisation · testID fleet.utilisation.vehicleBar</div><div>GET /v1/fleets/{id}/utilisation?from&amp;to <b style="color:#B45309;">proposed</b> · returns asOf</div><div><b>screen</b> StaffRoles · testID fleet.staff.roleMatrix · GET/PUT /v1/fleets/{id}/staff <b style="color:#B45309;">proposed</b></div></div>
+      </sc-if>
+    </div>
+  </section>
+
+  <!-- ================= C — DRIVER APP ================= -->
+  <section style="display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 2px solid #191414; padding-bottom: 12px; max-width: 1180px;">
+      <span style="font-family: Poppins; font-weight: 800; font-size: 20px;">C</span>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #1DB954;">Driver app · React Native · dark</span>
+        <span style="font-family: Poppins; font-weight: 700; font-size: 22px;">One schedule, clear diffs, and a no-penalty decline</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start;">
+
+      <!-- C1 My schedule -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #000; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; padding: 12px 18px 6px; font-size: 12px; font-weight: 600;"><span>9:41</span><span>WAT</span></div>
+            <div style="padding: 8px 18px 12px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;"><span style="font-family: Poppins; font-weight: 700; font-size: 20px;">My schedule</span><span style="font-size: 11px; color: #71717A;">Africa/Lagos</span></div>
+              <div style="display: flex; gap: 6px; font-size: 12px;"><span style="padding: 6px 12px; border-radius: 999px; background: #F4F4F5; color: #121212; font-weight: 600;">Tue 30</span><span style="padding: 6px 12px; border-radius: 999px; background: #1E1E1E; color: #A1A1AA;">Wed 1</span><span style="padding: 6px 12px; border-radius: 999px; background: #1E1E1E; color: #A1A1AA;">Thu 2</span></div>
+            </div>
+            <div style="margin: 0 14px; background: #2A1A20; border: 1px solid #7F1D1D; border-radius: 12px; padding: 11px 13px; display: flex; gap: 10px; align-items: flex-start;"><span style="color: #FCA5A5; font-size: 16px; display: inline-flex; margin-top: 1px;">{{ icons.alert }}</span><div><div style="font-size: 12.5px; font-weight: 600; color: #FECACA;">1 booking needs your decision</div><div style="font-size: 11px; color: #FCA5A5;">Vehicle in service during 11:20–13:00</div></div></div>
+            <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; overflow: hidden;">
+              <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #1A1A1A; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #71717A;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">06:00–18:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Available</div><div style="font-size: 11px; color: #71717A;">Set by you</div></div></div>
+              <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #1A1A1A; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #1DB954;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">06:00–18:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Shift · LAG-118-AB</div><div style="font-size: 11px; color: #71717A;">Example Fleet · terms v1 signed</div></div></div>
+              <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #1A1A1A; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #F59E0B;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #A1A1AA;">10:00–15:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Vehicle in service</div><div style="font-size: 11px; color: #71717A;">Planned by your fleet · remittance pro-rated</div></div></div>
+              <div style="display: grid; grid-template-columns: 70px 1fr; gap: 10px; background: #2A1A20; border-radius: 11px; padding: 10px 12px; border-left: 3px solid #EF4444;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #FCA5A5;">11:20–13:00</span><div><div style="font-size: 12.5px; font-weight: 600;">Advance booking · at risk</div><div style="font-size: 11px; color: #FCA5A5;">Decide by 09:20 →</div></div></div>
+            </div>
+            <div style="margin-top: auto; display: flex; justify-content: space-around; padding: 12px 0; border-top: 1px solid #1E1E1E; font-size: 11px; color: #71717A;"><span>Home</span><span style="color: #1DB954; font-weight: 600;">Schedule</span><span>Wallet</span><span>Account</span></div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C1 · My schedule: availability, shift, maintenance and bookings in one list</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> DriverSchedule (RN)</div><div>testID driver.fleet.scheduleView</div><div>GET /v1/drivers/me/schedule?from&amp;to <b style="color:#B45309;">proposed</b></div><div>extends existing driver calendar screen</div></div></sc-if>
+      </div>
+
+      <!-- C2 Proposal review -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #000; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; padding: 12px 18px 6px; font-size: 12px; font-weight: 600;"><span>9:41</span><span>WAT</span></div>
+            <div style="padding: 8px 18px 12px;"><div style="font-family: Poppins; font-weight: 700; font-size: 18px;">Proposal from Example Fleet</div><div style="font-size: 11.5px; color: #A1A1AA;">Expires 25 Sep 10:02 WAT</div></div>
+            <div style="padding: 0 14px; display: flex; flex-direction: column; gap: 8px;">
+              <div style="background: #1A1A1A; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 9px; font-size: 12px;">
+                <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Vehicle</span><span><span style="color: #71717A; text-decoration: line-through;">None</span> <b style="color: #86EFAC;">LAG-744-MM</b></span></div>
+                <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Shift</span><b style="color: #86EFAC;">Night · 14:00–22:00</b></div>
+                <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Remittance</span><b style="color: #86EFAC;">₦40,000 / week</b></div>
+                <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">Shortfall</span><span>Carry forward</span></div>
+                <div style="display: flex; justify-content: space-between;"><span style="color: #A1A1AA;">UBI commission</span><span>10%, from your wallet</span></div>
+              </div>
+              <div style="background: rgba(29,185,84,0.08); border: 1px solid rgba(29,185,84,0.3); border-radius: 11px; padding: 10px 12px; font-size: 11px; color: #86EFAC; line-height: 1.5;">This doesn't clash with your availability or your bookings (checked by UBI).</div>
+              <div style="font-size: 11px; color: #A1A1AA; line-height: 1.5; padding: 0 2px;">If you decline, nothing changes and there is no penalty. Your fleet only sees "declined".</div>
+            </div>
+            <div style="margin-top: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+              <button style="width: 100%; border: none; background: #1DB954; color: #0B0B0B; font-family: Poppins; font-weight: 700; font-size: 14px; padding: 14px; border-radius: 12px;">Accept &amp; sign with PIN</button>
+              <button style="width: 100%; border: 1px solid #2A2A2A; background: transparent; color: #F4F4F5; font-weight: 600; font-size: 14px; padding: 13px; border-radius: 12px;">Decline, no penalty</button>
+            </div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C2 · Review a fleet proposal: the terms diff, then a PIN signature</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> FleetProposalReview (RN)</div><div>testID driver.fleet.proposalAccept / proposalDecline</div><div>POST /v1/fleet-offers/{id}/sign {`{pin}`} · /decline (existing)</div></div></sc-if>
+      </div>
+
+      <!-- C2b Moving lock -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #000; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 28px; text-align: center;">
+            <span style="width: 84px; height: 84px; border-radius: 50%; background: #1E1E1E; display: flex; align-items: center; justify-content: center; font-size: 36px; color: #A1A1AA;">{{ icons.car }}</span>
+            <div><div style="font-family: Poppins; font-weight: 700; font-size: 19px;">Review when stopped</div><div style="font-size: 13px; color: #A1A1AA; margin-top: 6px; line-height: 1.5;">You have 1 proposal and 1 booking decision. They'll open once you're safely stationary.</div></div>
+            <div style="width: 100%; background: #1A1A1A; border-radius: 12px; padding: 12px; font-size: 12px; color: #A1A1AA; display: flex; justify-content: space-between;"><span>Earliest deadline</span><b style="color: #F4F4F5;">09:20 WAT</b></div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C2b · You can't act on decisions while moving</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>state</b> motion lock (reuses the stationary-bidding gate)</div><div>testID driver.fleet.motionLock</div></div></sc-if>
+      </div>
+
+      <!-- C3 Maintenance impact -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #000; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; padding: 12px 18px 6px; font-size: 12px; font-weight: 600;"><span>9:41</span><span>WAT</span></div>
+            <div style="padding: 8px 18px 12px;"><div style="font-family: Poppins; font-weight: 700; font-size: 18px;">Booking 11:20–13:00</div><div style="font-size: 11.5px; color: #FCA5A5;">LAG-118-AB is in service 10:00–15:00 · decide by 09:20</div></div>
+            <div style="padding: 0 14px; display: flex; flex-direction: column; gap: 8px;">
+              <div style="border: 1px solid #2A2A2A; border-radius: 12px; padding: 12px; opacity: .55;"><div style="font-size: 13px; font-weight: 600;">Keep it on another vehicle</div><div style="font-size: 11px; color: #A1A1AA; margin-top: 3px;">Not available: no eligible Comfort vehicle is free</div></div>
+              <div style="border: 1px solid #2A2A2A; border-radius: 12px; padding: 12px;"><div style="font-size: 13px; font-weight: 600;">Keep it, and ask the fleet to move the service</div><div style="font-size: 11px; color: #A1A1AA; margin-top: 3px;">Your booking stays as it is. The fleet has already been shown the conflict.</div></div>
+              <div style="border: 1.5px solid #F59E0B; background: rgba(245,158,11,0.08); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px;"><div style="font-size: 13px; font-weight: 600;">Withdraw from this booking</div><div style="font-size: 11px; color: #D4D4D8; line-height: 1.5;">Your ₦560 commission reserve is returned to your wallet. The rider's funding is released and they're offered a rematch at the same fare. No penalty and no score.</div></div>
+            </div>
+            <div style="margin-top: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px;"><button style="width: 100%; border: none; background: #F59E0B; color: #0B0B0B; font-family: Poppins; font-weight: 700; font-size: 14px; padding: 14px; border-radius: 12px;">Withdraw</button><div style="font-size: 10.5px; color: #71717A; text-align: center;">Amounts are from UBI. Nothing changes until you confirm.</div></div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C3 · Maintenance impact: each choice shows its outcome, including money</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> BookingImpact (RN)</div><div>testID driver.fleet.impactWithdraw</div><div>GET /v1/drivers/me/conflicts/{id} → options + outcomes <b style="color:#B45309;">proposed</b></div><div>POST …/withdraw (Idempotency-Key)</div></div></sc-if>
+      </div>
+
+      <!-- C5 Report breakdown -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #000; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; padding: 12px 18px 6px; font-size: 12px; font-weight: 600;"><span>9:41</span><span>WAT</span></div>
+            <div style="padding: 8px 18px 12px;"><div style="font-family: Poppins; font-weight: 700; font-size: 18px;">Report a vehicle problem</div><div style="font-size: 11.5px; color: #A1A1AA;">LAG-118-AB · you're stopped</div></div>
+            <div style="padding: 0 14px; display: flex; flex-direction: column; gap: 8px;">
+              <div style="border: 1.5px solid #F59E0B; background: rgba(245,158,11,0.08); border-radius: 11px; padding: 11px 12px; font-size: 13px; font-weight: 600;">Can't drive: breakdown</div>
+              <div style="border: 1px solid #2A2A2A; border-radius: 11px; padding: 11px 12px; font-size: 13px; font-weight: 600;">Can drive, needs service soon</div>
+              <div style="background: #1A1A1A; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 7px; font-size: 12px;">
+                <div style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">What happens</div>
+                <div style="color: #D4D4D8; line-height: 1.5;">Your fleet is alerted right away, and the vehicle is marked off-road.</div>
+                <div style="color: #D4D4D8; line-height: 1.5;">Your remittance is pro-rated for the lost hours.</div>
+                <div style="color: #D4D4D8; line-height: 1.5;">2 upcoming bookings will ask you to choose: another vehicle, or withdraw with no penalty.</div>
+              </div>
+              <div style="font-size: 11px; color: #A1A1AA; line-height: 1.5;">If you're unsafe, use the SOS button. This form only reports the vehicle.</div>
+            </div>
+            <div style="margin-top: auto; padding: 14px;"><button style="width: 100%; border: none; background: #F59E0B; color: #0B0B0B; font-family: Poppins; font-weight: 700; font-size: 14px; padding: 14px; border-radius: 12px;">Report breakdown</button></div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C5 · The driver reports a breakdown directly, so the fleet and bookings react minutes sooner</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> ReportVehicleIssue (RN)</div><div>testID driver.fleet.reportIssue</div><div>POST /v1/drivers/me/vehicle-issues (Idempotency-Key) <b style="color:#B45309;">proposed</b></div><div>creates an unplanned_off_road block · the fleet is notified</div></div></sc-if>
+      </div>
+
+      <!-- C4 Time off -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #000; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #121212; color: #F4F4F5; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; padding: 12px 18px 6px; font-size: 12px; font-weight: 600;"><span>9:41</span><span>WAT</span></div>
+            <div style="padding: 8px 18px 12px;"><div style="font-family: Poppins; font-weight: 700; font-size: 18px;">Time off</div><div style="font-size: 11.5px; color: #A1A1AA;">Only you can set this</div></div>
+            <div style="padding: 0 14px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;"><div style="background: #1A1A1A; border-radius: 10px; padding: 10px 12px;"><div style="font-size: 10.5px; color: #71717A;">From</div><div style="font-size: 13px; font-weight: 600;">Wed 1 Oct · 07:00</div></div><div style="background: #1A1A1A; border-radius: 10px; padding: 10px 12px;"><div style="font-size: 10.5px; color: #71717A;">To</div><div style="font-size: 13px; font-weight: 600;">Wed 1 Oct · 23:00</div></div></div>
+              <div style="background: #1A1A1A; border: 1px solid #262626; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                <div style="font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: .6px; font-weight: 600;">Checked by UBI</div>
+                <div style="display: flex; justify-content: space-between; font-size: 12.5px;"><span>Signed shift · Day</span><span style="color: #FCD34D;">Hours reduced</span></div>
+                <div style="display: flex; justify-content: space-between; font-size: 12.5px;"><span>Booking 08:00–09:30</span><span style="color: #FCA5A5; font-weight: 600;">Conflicts</span></div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <div style="border: 1.5px solid #1DB954; background: rgba(29,185,84,0.08); border-radius: 11px; padding: 10px 12px; font-size: 12px;"><b>Start time off at 09:30</b><div style="font-size: 11px; color: #A1A1AA;">Keep the booking</div></div>
+                <div style="border: 1px solid #2A2A2A; border-radius: 11px; padding: 10px 12px; font-size: 12px;"><b>Keep 07:00 and withdraw the booking</b><div style="font-size: 11px; color: #A1A1AA;">₦520 returned · rider offered a rematch · no penalty</div></div>
+              </div>
+            </div>
+            <div style="margin-top: auto; padding: 14px;"><button style="width: 100%; border: none; background: #1DB954; color: #0B0B0B; font-family: Poppins; font-weight: 700; font-size: 14px; padding: 14px; border-radius: 12px;">Save time off</button></div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">C4 · Set time off and see any conflicts before saving</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> AvailabilityEditor (RN)</div><div>testID driver.fleet.timeOffSave</div><div>POST /v1/drivers/me/availability:preview → PUT <b style="color:#B45309;">proposed</b></div><div>shows "Checking…" until the preview returns</div></div></sc-if>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= D — RIDER MOMENTS ================= -->
+  <section style="display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 2px solid #191414; padding-bottom: 12px; max-width: 1180px;">
+      <span style="font-family: Poppins; font-weight: 800; font-size: 20px;">D</span>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #1DB954;">Rider · React Native · Book-for-Later language</span>
+        <span style="font-family: Poppins; font-weight: 700; font-size: 22px;">Only two moments reach the rider, and neither mentions the fleet</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start;">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #191414; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #fff; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
+            <div style="padding: 16px; background: #EFF6FF; border-bottom: 1px solid #BFDBFE;"><div style="display: inline-flex; font-size: 11px; font-weight: 700; color: #1E40AF; background: #DBEAFE; padding: 4px 10px; border-radius: 999px;">VEHICLE UPDATED</div><div style="font-family: Poppins; font-weight: 700; font-size: 17px; margin-top: 8px;">Your driver will arrive in a different car</div></div>
+            <div style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+              <div style="font-size: 12.5px; color: #6B7280;">Tue 30 Sep · pickup 11:20–11:35 WAT</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;"><div style="border: 1px solid #E5E7EB; border-radius: 10px; padding: 10px;"><div style="color: #9CA3AF; font-size: 10.5px;">Was</div><div style="font-weight: 600; text-decoration: line-through; color: #9CA3AF;">Camry · Silver</div><div style="color: #9CA3AF;">Comfort · 4 seats</div></div><div style="border: 1.5px solid #1DB954; background: #ECFDF5; border-radius: 10px; padding: 10px;"><div style="color: #047857; font-size: 10.5px;">Now</div><div style="font-weight: 600;">Corolla · White</div><div style="color: #047857;">Comfort · 4 seats</div><div style="font-family: 'JetBrains Mono', monospace; font-weight: 600; margin-top: 3px;">LAG-744-MM</div></div></div>
+              <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;"><div style="display: flex; justify-content: space-between;"><span style="color: #6B7280;">Driver</span><b>Unchanged</b></div><div style="display: flex; justify-content: space-between;"><span style="color: #6B7280;">Fare</span><b>₦5,600 · unchanged</b></div></div>
+              <div style="background: #F9FAFB; border-radius: 10px; padding: 10px 12px; font-size: 11.5px; color: #6B7280; line-height: 1.5;">Your driver, class, seats, pickup time and fare are all unchanged. You can cancel for free until pickup. Check the plate when the car arrives.</div>
+            </div>
+            <div style="margin-top: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px;"><button style="width: 100%; border: none; background: #1DB954; color: #fff; font-family: Poppins; font-weight: 700; padding: 14px; border-radius: 12px;">Got it</button><button style="width: 100%; border: 1px solid #E5E7EB; background: #fff; font-weight: 600; padding: 13px; border-radius: 12px;">Cancel for free</button></div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">D1 · Vehicle-only swap: the rider is notified and can cancel free. A change to driver, class, seats or window uses an explicit Confirm variant.</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> BookingChangeConsent (RN)</div><div>testID rider.booking.vehicleUpdatedAck · vehicleChangeConfirm (consent variant)</div><div>POST /v1/bookings/{id}/changes/{cid}:accept|decline <b style="color:#B45309;">proposed</b></div></div></sc-if>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="width: 300px; border-radius: 34px; background: #191414; padding: 10px; box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.35);">
+          <div style="border-radius: 26px; background: #fff; overflow: hidden; height: 620px; display: flex; flex-direction: column;">
+            <div style="padding: 16px; background: #FEF2F2; border-bottom: 1px solid #FECACA;"><div style="display: inline-flex; font-size: 11px; font-weight: 700; color: #B91C1C; background: #FEE2E2; padding: 4px 10px; border-radius: 999px;">DRIVER UNAVAILABLE</div><div style="font-family: Poppins; font-weight: 700; font-size: 17px; margin-top: 8px;">Your driver can't make this trip</div></div>
+            <div style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+              <div style="font-size: 12.5px; color: #6B7280;">Tue 30 Sep · pickup 11:20–11:35 WAT</div>
+              <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">You won't be charged. Choose what happens next:</div>
+              <div style="border: 1.5px solid #1DB954; background: #ECFDF5; border-radius: 12px; padding: 12px;"><div style="font-weight: 600; font-size: 13.5px;">Find another driver</div><div style="font-size: 11.5px; color: #047857;">Same fare, ₦5,600. You choose from the new offers.</div></div>
+              <div style="border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;"><div style="font-weight: 600; font-size: 13.5px;">Cancel and release my ₦5,600</div><div style="font-size: 11.5px; color: #6B7280;">Returned to your payment method</div></div>
+            </div>
+            <div style="margin-top: auto; padding: 16px;"><button style="width: 100%; border: none; background: #1DB954; color: #fff; font-family: Poppins; font-weight: 700; padding: 14px; border-radius: 12px;">Find another driver</button></div>
+          </div>
+        </div>
+        <div style="width: 300px; font-size: 12px; color: #6B7280; text-align: center;">D2 · Driver withdrew or is held: rematch at the same fare, or cancel and release funds</div>
+        <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}"><div style="width: 300px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.6; color: #4B5563; background: #F7F8F5; border: 1px dashed #C6C9BF; border-radius: 10px; padding: 10px 12px;"><div><b>screen</b> BookingDriverLost (RN)</div><div>testID rider.booking.rematchSameFare</div><div>the reason is never shown (no hold / fleet details)</div></div></sc-if>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= S — STATES ================= -->
+  <section style="display: flex; flex-direction: column; gap: 24px; max-width: 1180px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 2px solid #191414; padding-bottom: 12px;">
+      <span style="font-family: Poppins; font-weight: 800; font-size: 20px;">S</span>
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #EF4444;">States &amp; edge cases · every surface</span>
+        <span style="font-family: Poppins; font-weight: 700; font-size: 22px;">Honest states: we show what is unknown rather than guess</span>
+      </div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+      <sc-for list="{{ states }}" as="s" hint-placeholder-count="14">
+        <div style="background: #141414; color: #F4F4F5; border-radius: 14px; border-top: 4px solid {{ s.accent }}; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-height: 170px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;"><span style="font-family: Poppins; font-weight: 700; font-size: 14px;">{{ s.title }}</span><span style="font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #71717A;">{{ s.where }}</span></div>
+          <div style="font-size: 12px; color: #D4D4D8; line-height: 1.5; background: #1C1C1C; border-radius: 9px; padding: 9px 11px;">"{{ s.copy }}"</div>
+          <div style="font-size: 11px; color: #A1A1AA; line-height: 1.45; margin-top: auto;">{{ s.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- ================= HANDOFF REFERENCE ================= -->
+  <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+    <section style="display: flex; flex-direction: column; gap: 24px; max-width: 1180px;">
+      <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 2px solid #191414; padding-bottom: 12px;">
+        <span style="font-family: Poppins; font-weight: 800; font-size: 20px;">⚙</span>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #4B5563;">Engineering handoff</span>
+          <span style="font-family: Poppins; font-weight: 700; font-size: 22px;">Dependencies, proposed contract, open questions</span>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px;">
+        <div style="background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="font-family: Poppins; font-weight: 700; font-size: 15px;">Backend dependencies</div>
+          <sc-for list="{{ deps }}" as="d" hint-placeholder-count="7"><div style="display: flex; gap: 10px; align-items: flex-start; font-size: 12px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #B91C1C; background: #FEE2E2; padding: 2px 6px; border-radius: 5px; white-space: nowrap;">{{ d.id }}</span><span style="color: #4B5563; line-height: 1.4;">{{ d.t }}</span></div></sc-for>
+        </div>
+        <div style="background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="font-family: Poppins; font-weight: 700; font-size: 15px;">Route → endpoint (all proposed)</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.85; color: #374151;">
+            <div>FleetCalendar → GET /v1/fleets/{id}/calendar</div>
+            <div>MaintenanceEditor → POST …/maintenance:preview</div>
+            <div>MaintenanceEditor → POST …/maintenance</div>
+            <div>ConflictCentre → GET …/conflicts</div>
+            <div>VehicleSwap → POST /v1/bookings/{id}/vehicle-swaps</div>
+            <div>Utilisation → GET …/utilisation</div>
+            <div>DriverSchedule → GET /v1/drivers/me/schedule</div>
+            <div>AvailabilityEditor → …/availability:preview · PUT</div>
+            <div>evt fleet.conflict.* · booking.risk.changed</div>
+          </div>
+        </div>
+        <div style="background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="font-family: Poppins; font-weight: 700; font-size: 15px;">Decisions (all resolved)</div>
+          <sc-for list="{{ openQs }}" as="q" hint-placeholder-count="6"><div style="display: flex; gap: 10px; align-items: flex-start; font-size: 12px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #92400E; background: #FEF3C7; padding: 2px 6px; border-radius: 5px;">{{ q.id }}</span><span style="color: #4B5563; line-height: 1.4;">{{ q.t }}</span></div></sc-for>
+        </div>
+      </div>
+    </section>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:900},&quot;showHandoff&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+class Component extends DCLogic {
+  icon(paths, filled) {
+    const h = React.createElement;
+    const base = { viewBox: "0 0 24 24", width: "1em", height: "1em", style: { display: "inline-block", verticalAlign: "-0.14em", flex: "0 0 auto" } };
+    const stroke = filled ? { fill: "currentColor", stroke: "none" } : { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" };
+    return h("svg", Object.assign({}, base, stroke), paths.map((d, i) => d.c ? h(d.c, Object.assign({ key: i }, d)) : h("path", { key: i, d })));
+  }
+  buildIcons() {
+    const I = (p, f) => this.icon(p, f);
+    return {
+      car: I(["M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.4-1.5-2.3-2.4c-.5-.4-1.1-.6-1.7-.6H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2", { c: "circle", cx: 7, cy: 17, r: 2 }, "M9 17h6", { c: "circle", cx: 17, cy: 17, r: 2 }]),
+      clock: I([{ c: "circle", cx: 12, cy: 12, r: 9 }, "M12 7v5l3 2"]),
+      calendar: I([{ c: "rect", x: 3, y: 5, width: 18, height: 16, rx: 2 }, "M3 9h18", "M8 3v4", "M16 3v4"]),
+      alert: I(["M10.3 4.3 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z", "M12 9v4", "M12 17h.01"]),
+      search: I([{ c: "circle", cx: 11, cy: 11, r: 7 }, "m21 21-4.3-4.3"]),
+      wrench: I(["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8z"]),
+      lock: I([{ c: "rect", x: 3, y: 11, width: 18, height: 11, rx: 2 }, "M7 11V7a5 5 0 0 1 10 0v4"]),
+      user: I(["M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2", { c: "circle", cx: 12, cy: 7, r: 4 }]),
+      file: I(["M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z", "M14 2v4a2 2 0 0 0 2 2h4", "M10 13h4", "M10 17h4"]),
+      check: I(["M20 6 9 17l-5-5"]),
+      x: I(["M18 6 6 18", "m6 6 12 12"]),
+      cloudOff: I(["m2 2 20 20", "M5.8 5.8A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.3-.2", "M21.5 14.7A4.5 4.5 0 0 0 17.5 10h-1.8A7 7 0 0 0 10 5.1"]),
+      layers: I(["m12 2 10 5-10 5L2 7z", "m2 17 10 5 10-5", "m2 12 10 5 10-5"]),
+      filter: I(["M22 3H2l8 9.5V19l4 2v-8.5z"]),
+      chevL: I(["m15 18-6-6 6-6"]),
+      chevR: I(["m9 18 6-6-6-6"]),
+      bell: I(["M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9", "M10.3 21a1.9 1.9 0 0 0 3.4 0"]),
+      plus: I(["M5 12h14", "M12 5v14"]),
+      shield: I(["M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"]),
+      refresh: I(["M21 12a9 9 0 1 1-3-6.7L21 8", "M21 3v5h-5"]),
+      moon: I(["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"]),
+    };
+  }
+  renderVals() {
+    const H0 = 6, SPAN = 16;
+    const pc = h => (((h - H0) / SPAN) * 100).toFixed(2) + "%";
+    const wd = (a, z) => (((z - a) / SPAN) * 100).toFixed(2) + "%";
+    const hatch = (a, b) => `repeating-linear-gradient(135deg, ${a} 0 6px, ${b} 6px 12px)`;
+    const K = {
+      shift: { bg: "rgba(29,185,84,0.18)", bd: "1px solid rgba(29,185,84,0.6)", c: "#86EFAC" },
+      pending: { bg: "transparent", bd: "1px dashed #1DB954", c: "#86EFAC" },
+      booking: { bg: "#27345C", bd: "1px solid #5B73C4", c: "#C7D2FE" },
+      bookingX: { bg: "#3A1F2A", bd: "2px solid #EF4444", c: "#FECACA" },
+      maint: { bg: hatch("rgba(245,158,11,0.30)", "rgba(245,158,11,0.12)"), bd: "1px solid #F59E0B", c: "#FCD34D" },
+      held: { bg: hatch("#3F3F46", "#27272A"), bd: "1px solid #52525B", c: "#E4E4E7" },
+      avail: { bg: "rgba(255,255,255,0.04)", bd: "1px solid #52525B", c: "#D4D4D8" },
+      off: { bg: hatch("rgba(161,161,170,0.22)", "rgba(161,161,170,0.08)"), bd: "1px solid #71717A", c: "#E4E4E7" },
+    };
+    const blk = (kind, a, z, label, lane = 0) => {
+      const m = label.match(/\d\d:\d\d–\d\d:\d\d/);
+      const short = m && kind === "booking" ? m[0] : m && kind === "bookingX" ? "⚠" + m[0] : label;
+      a = Math.max(a, H0); z = Math.min(z, H0 + SPAN);
+      return { left: pc(a), width: wd(a, z), top: (8 + lane * 26) + "px", label: short, full: label, bg: K[kind].bg, bd: K[kind].bd, c: K[kind].c };
+    };
+    const TONE = {
+      ok: { sc: "#86EFAC", sb: "rgba(29,185,84,0.16)" }, info: { sc: "#C7D2FE", sb: "rgba(91,115,196,0.22)" },
+      warn: { sc: "#FCD34D", sb: "rgba(245,158,11,0.16)" }, bad: { sc: "#FCA5A5", sb: "rgba(239,68,68,0.18)" },
+      mute: { sc: "#D4D4D8", sb: "rgba(161,161,170,0.16)" },
+    };
+    const st = (label, tone) => Object.assign({ label }, TONE[tone]);
+    const LT = { bad: { bg: "#FEE2E2", c: "#B91C1C" }, warn: { bg: "#FEF3C7", c: "#92400E" }, info: { bg: "#DBEAFE", c: "#1E40AF" }, mute: { bg: "#F3F4F6", c: "#374151" }, ok: { bg: "#D1FAE5", c: "#065F46" } };
+    const chain = arr => arr.map((label, i) => ({ label, arrow: i < arr.length - 1 ? "→" : "" }));
+
+    const vehicleRows = [
+      Object.assign({ plate: "LAG-472-KJ", model: "Corolla 2019 · Comfort · 4 seats", blocks: [blk("shift", 6, 14, "Chidi O. · Day shift"), blk("shift", 14, 22, "Ade K. · Night shift"), blk("booking", 7.25, 9.67, "Booked · 07:15–09:40", 1), blk("booking", 16.5, 18.08, "Booked · 16:30–18:05", 1)] }, st("On a trip", "ok")),
+      Object.assign({ plate: "LAG-118-AB", model: "Camry 2020 · Comfort · 4 seats", blocks: [blk("shift", 6, 10, "Bola A. · Day"), blk("maint", 10, 15, "Service · draft · 10:00–15:00"), blk("shift", 15, 18, "Bola A."), blk("bookingX", 11.33, 13, "Conflict · Booked 11:20–13:00", 1)] }, st("1 conflict", "bad")),
+      Object.assign({ plate: "LAG-309-TT", model: "Sienna 2018 · XL · 7 seats", blocks: [blk("shift", 6, 22, "Musa I. · Full shift"), blk("booking", 19, 21.17, "Booked · 19:00–21:10", 1)] }, st("Insurance expires 1 Oct", "warn")),
+      Object.assign({ plate: "LAG-551-QD", model: "Corolla 2017 · Economy · 4 seats", blocks: [blk("held", 5, 23, "Held by UBI · status only · decided by UBI")] }, st("Held by UBI", "mute")),
+      Object.assign({ plate: "LAG-620-ZX", model: "Accent 2021 · Economy · 4 seats", blocks: [] }, st("Unassigned", "mute")),
+      Object.assign({ plate: "LAG-744-MM", model: "Corolla 2020 · Comfort · 4 seats", blocks: [blk("shift", 6, 14, "Tunde B. · Day shift"), blk("pending", 14, 22, "Proposed · Kemi L. · awaiting signature"), blk("booking", 8, 9.5, "Booked · 08:00–09:30", 1)] }, st("Consent pending", "info")),
+    ];
+    const driverRows = [
+      { name: "Chidi O.", meta: "LAG-472-KJ · Day · terms v3", hours: "8 h shift · 1 booked", blocks: [blk("avail", 5.5, 15, "Available · set by Chidi"), blk("shift", 6, 14, "Shift · LAG-472-KJ", 1), blk("booking", 7.25, 9.67, "Booked · 07:15–09:40", 2)] },
+      { name: "Ade K.", meta: "LAG-472-KJ · Night · terms v2", hours: "8 h shift · 1 booked", blocks: [blk("avail", 13, 23, "Available · set by Ade"), blk("shift", 14, 22, "Shift · LAG-472-KJ", 1), blk("booking", 16.5, 18.08, "Booked · 16:30–18:05", 2)] },
+      { name: "Bola A.", meta: "LAG-118-AB · Day · terms v1", hours: "7 h shift · 1 at risk", blocks: [blk("avail", 6, 18, "Available · set by Bola"), blk("shift", 6, 10, "Shift", 1), blk("maint", 10, 15, "Vehicle in service", 1), blk("shift", 15, 18, "Shift", 1), blk("bookingX", 11.33, 13, "At risk · 11:20–13:00", 2)] },
+      { name: "Musa I.", meta: "LAG-309-TT · Full · terms v4", hours: "16 h shift · 1 booked", blocks: [blk("avail", 6, 22, "Available · set by Musa"), blk("shift", 6, 22, "Shift · LAG-309-TT", 1), blk("booking", 19, 21.17, "Booked · 19:00–21:10", 2)] },
+      { name: "Tunde B.", meta: "LAG-744-MM · Day · terms v2", hours: "8 h shift · 1 booked", blocks: [blk("avail", 5.5, 14, "Available"), blk("off", 14, 23, "Time off · set by Tunde"), blk("shift", 6, 14, "Shift · LAG-744-MM", 1), blk("booking", 8, 9.5, "Booked · 08:00–09:30", 2)] },
+      { name: "Kemi L.", meta: "No signed vehicle yet", hours: "Proposal pending", blocks: [blk("avail", 13, 22, "Available · set by Kemi"), blk("pending", 14, 22, "Proposed shift · awaiting Kemi", 1)] },
+      { name: "Yusuf D.", meta: "LAG-551-QD · Day", hours: "Unavailable", blocks: [blk("held", 5, 23, "Held by UBI · status only")] },
+    ];
+    const hourTicks = [8, 10, 12, 14, 16, 18, 20].map(h => ({ label: String(h).padStart(2, "0") + ":00", left: pc(h) }));
+
+    const C = {
+      n: { bg: "#1C1C1C", bd: "1px solid #2A2A2A", c: "#D4D4D8" },
+      m: { bg: hatch("rgba(245,158,11,0.22)", "rgba(245,158,11,0.08)"), bd: "1px solid #B45309", c: "#FCD34D" },
+      h: { bg: hatch("#303036", "#222226"), bd: "1px solid #3F3F46", c: "#D4D4D8" },
+      x: { bg: "#2A1A20", bd: "2px solid #EF4444", c: "#FECACA" },
+      d: { bg: "#2A1A20", bd: "1px solid #7F1D1D", c: "#FCA5A5" },
+      e: { bg: "transparent", bd: "1px dashed #2A2A2A", c: "#52525B" },
+      i: { bg: "#1C1C1C", bd: "1px dashed #1DB954", c: "#86EFAC" },
+    };
+    const cell = (k, a, b) => Object.assign({ a, b }, C[k]);
+    const weekDays = [
+      { d: "Mon 29", m: "Sep" }, { d: "Tue 30", m: "Sep" }, { d: "Wed 1", m: "Oct · new month" }, { d: "Thu 2", m: "Oct" }, { d: "Fri 3", m: "Oct" }, { d: "Sat 4", m: "Oct" }, { d: "Sun 5", m: "Oct" },
+    ];
+    const weekRows = [
+      { plate: "LAG-472-KJ", cells: [cell("n", "1 booked", "Day + Night"), cell("n", "2 booked", "Day + Night"), cell("n", "1 booked", "Day + Night"), cell("n", "No bookings", "Day + Night"), cell("n", "3 booked", "Day + Night"), cell("n", "1 booked", "Day"), cell("e", "No shift", "")] },
+      { plate: "LAG-118-AB", cells: [cell("n", "No bookings", "Day"), cell("x", "Conflict", "Service overlaps booking"), cell("n", "1 booked", "Day"), cell("m", "Inspection", "All day"), cell("n", "No bookings", "Day"), cell("e", "No shift", ""), cell("e", "No shift", "")] },
+      { plate: "LAG-309-TT", cells: [cell("n", "No bookings", "Full"), cell("n", "1 booked", "Full"), cell("d", "Insurance expired", "1 booking at risk"), cell("d", "Insurance expired", "Enforced by UBI"), cell("d", "Insurance expired", "Enforced by UBI"), cell("d", "Insurance expired", ""), cell("d", "Insurance expired", "")] },
+      { plate: "LAG-551-QD", cells: [cell("h", "Held by UBI", ""), cell("h", "Held by UBI", ""), cell("h", "Held by UBI", ""), cell("h", "Held by UBI", ""), cell("h", "Held by UBI", ""), cell("h", "Held by UBI", ""), cell("h", "Held by UBI", "")] },
+      { plate: "LAG-620-ZX", cells: [cell("e", "Unassigned", ""), cell("e", "Unassigned", ""), cell("e", "Unassigned", ""), cell("e", "Unassigned", ""), cell("e", "Unassigned", ""), cell("e", "Unassigned", ""), cell("e", "Unassigned", "")] },
+      { plate: "LAG-744-MM", cells: [cell("n", "1 booked", "Day"), cell("n", "1 booked", "Day"), cell("i", "Proposed", "Kemi · Night"), cell("i", "Proposed", "Kemi · Night"), cell("n", "No bookings", "Day"), cell("n", "No bookings", "Day"), cell("e", "No shift", "")] },
+    ];
+
+    const NAV = ["Overview", "Calendar", "Vehicles", "Drivers", "Conflicts", "Utilisation", "Staff & roles"];
+    const navFor = active => NAV.map(label => ({ label, badge: label === "Conflicts" ? "5" : "", bg: label === active ? "rgba(29,185,84,0.16)" : "transparent", c: label === active ? "#86EFAC" : "#A1A1AA", w: label === active ? "600" : "500" }));
+
+    const precedence = [
+      { n: "1", t: "UBI status", d: "Holds, expired documents, suspensions. The fleet sees the status only, with no evidence and no override.", owner: "UBI", ...LT.mute },
+      { n: "2", t: "Marketplace commitments", d: "On a trip now, plus confirmed advance bookings, including their buffers. Never silently displaced.", owner: "Rider + driver", ...LT.info },
+      { n: "3", t: "Driver time off", d: "Owned by the driver. A fleet cannot override it. If it overlaps the driver's own booking, the driver resolves it.", owner: "Driver", ...LT.ok },
+      { n: "4", t: "Maintenance block", d: "The vehicle is off the road. A block cannot be confirmed over layer 2 until each overlap is resolved.", owner: "Fleet", ...LT.warn },
+      { n: "5", t: "Signed assignment / shift", d: "Pairs a driver with a vehicle under a signed terms version.", owner: "Fleet + driver PIN", ...LT.ok },
+      { n: "6", t: "Driver availability window", d: "When the driver is open to work.", owner: "Driver", ...LT.ok },
+      { n: "7", t: "Proposals (unsigned)", d: "Drawn dashed. Never counted as availability and never bookable.", owner: "Fleet", ...LT.mute },
+    ];
+    const entities = [
+      { name: "MaintenanceBlock", owner: "Fleet · proposed", fields: "id, vehicleId, kind: planned_service|inspection|repair|unplanned_off_road, startsAt, endsAt (UTC), zone, note, status, createdBy, version", tag: "New store · backend to build", tagC: "#B45309" },
+      { name: "DriverAvailability", owner: "Driver only", fields: "id, driverId, kind: available|time_off, rrule?, startsAt, endsAt, zone, status", tag: "New · driver-authored", tagC: "#B45309" },
+      { name: "Assignment", owner: "Fleet + driver PIN", fields: "id, vehicleId, driverId, shift: full|day|night|custom{start,end}, validFrom, validTo, termsVersion, signedAt", tag: "Needs multi-vehicle drivers", tagC: "#B91C1C" },
+      { name: "OccupiedBlock (fleet view)", owner: "Backend · read-only", fields: "blockId, vehicleId?, driverId, startsAt, endsAt, kind: booked|on_trip, risk: ok|at_risk", tag: "No rider, no location", tagC: "#047857" },
+      { name: "UbiStatus", owner: "UBI · status only", fields: "subject: driver|vehicle, status: held_by_ubi|doc_expired|suspended, effectiveFrom, effectiveTo?", tag: "No evidence exposed", tagC: "#047857" },
+      { name: "Conflict", owner: "Backend-computed", fields: "id, type, severity, subjects[], resolverRoles[], deadlineAt, allowedActions[], status: open|resolving|resolved|lapsed", tag: "Server-authoritative", tagC: "#047857" },
+    ];
+    const machines = [
+      { name: "MaintenanceBlock", owner: "Fleet owner / manager", steps: chain(["draft", "checking", "needs_resolution", "scheduled", "active", "completed"]), alt: "checking → scheduled when there is no overlap. cancelled is allowed from any state before active. unplanned_off_road skips straight to active and puts overlapped bookings in at_risk (it never cancels them)." },
+      { name: "AssignmentProposal", owner: "Fleet proposes · driver signs", steps: chain(["draft", "checking", "sent", "pending_signature", "signed"]), alt: "declined (no penalty, no score) · expired (after 48 h) · withdrawn (by the fleet) · superseded. An overlap with a signed shift fails at checking, so it can never be sent." },
+      { name: "DriverAvailability", owner: "Driver only", steps: chain(["draft", "checking", "saved"]), alt: "saved_with_withdrawals: the driver confirmed the explained outcome for each booking they chose to withdraw. Otherwise the conflicting interval is trimmed." },
+      { name: "BookingVehicleSwap", owner: "Fleet → driver → rider", steps: chain(["proposed", "driver_accepted", "revalidating", "rider_notified | rider_consent_pending", "applied"]), alt: "Same driver, class, capacity and window: rider_notified, applied at once, with free cancellation until pickup. Otherwise rider_consent_pending. Declines and failures keep the original vehicle, and the booking becomes at_risk if the blocker remains." },
+      { name: "BookingRisk (overlay)", owner: "Backend", steps: chain(["ok", "at_risk", "resolved"]), alt: "If still unresolved at the deadline, the booking moves to failed(reason) with an explained outcome. It is never silently cancelled." },
+      { name: "VehicleAvailability (derived)", owner: "Backend", steps: chain(["in_service", "maintenance", "doc_expired", "held_by_ubi", "unassigned"]), alt: "Derived for each interval from the precedence order. Clients never set it." },
+    ];
+    const conflicts = [
+      { name: "Maintenance overlaps a confirmed booking", sev: "Critical", ...LT.bad, who: "Fleet, then driver, then rider", actions: "Move or shorten the block · propose a vehicle swap · the driver may withdraw", consent: "Swap: driver accepts, then rider consents. Withdrawal: driver only.", money: "Weekly fixed remittance pro-rated for lost shift hours. On withdrawal: driver commission returned, rider funding released, no penalty." },
+      { name: "Two drivers, one vehicle, overlapping shifts", sev: "Blocked", ...LT.mute, who: "Fleet", actions: "Change the proposed times. The proposal cannot be sent.", consent: "None needed. The server rejects it at propose time.", money: "None" },
+      { name: "Vehicle document expires inside a booking", sev: "High", ...LT.warn, who: "Fleet renews · UBI enforces", actions: "Prevented first: the server stops offering bookings that fall after a known expiry. For bookings that already exist: upload the renewal, swap, or the driver withdraws.", consent: "Same as a swap", money: "If unresolved: booking fails as eligibility_lost. Commission returned, funding released." },
+      { name: "Driver licence expires inside a booking", sev: "High", ...LT.warn, who: "Driver renews · UBI enforces", actions: "Driver renews. Otherwise the driver withdraws or the rider is offered a rematch.", consent: "Rematch needs rider consent (different driver)", money: "Same as eligibility_lost" },
+      { name: "Driver time off overlaps their own booking", sev: "Medium", ...LT.info, who: "Driver", actions: "Keep the booking (time off is trimmed) or withdraw", consent: "Driver only. The rider then chooses a rematch at the same fare or a refund.", money: "Commission returned. Rider funding released, or kept for a rematch at the same fare." },
+      { name: "Vehicle swap for a booking", sev: "Medium", ...LT.info, who: "Fleet proposes · driver accepts · rider consents", actions: "Swap to a vehicle of the same or higher class with at least the same capacity, revalidated", consent: "Driver always. Rider: notified with a free-cancel option if driver, class, capacity and window are unchanged. Explicit consent if any of them changes (Q3).", money: "Fare unchanged. Commission is not charged again." },
+      { name: "Termination with bookings after the notice date", sev: "High", ...LT.warn, who: "Driver · rider", actions: "The driver keeps the booking on another eligible vehicle, or withdraws", consent: "Rider consent if the vehicle changes", money: "Withdrawal as above. Remittance stops at the end of the notice period (not retroactive)." },
+      { name: "UBI holds a driver or vehicle", sev: "Status", ...LT.mute, who: "UBI only", actions: "The fleet has no action. The rider is offered a rematch or a refund.", consent: "Rider chooses", money: "Rider funding released on refund. The commission outcome follows UBI's decision." },
+      { name: "Unplanned off-road (breakdown)", sev: "Critical", ...LT.bad, who: "Driver or fleet reports, then driver, then rider", actions: "The block takes effect at once. Bookings become At risk and follow the swap / withdraw path.", consent: "Same as a swap", money: "Weekly fixed remittance pro-rated for lost hours (Q8). Bookings: same as a withdrawal." },
+    ];
+
+    const act = on => on ? { a1bg: "#1DB954", a1c: "#0B0B0B" } : { a1bg: "#27272A", a1c: "#D4D4D8" };
+    const ccRows = [
+      Object.assign({ sev: "Critical", title: "Maintenance overlaps a confirmed booking", subject: "LAG-118-AB · Booked 11:20–13:00", owner: "Fleet → driver → rider", due: "30 Sep 09:20", a1: "Resolve", a2: "View block" }, st("", "bad"), act(true), { sc: TONE.bad.sc, sb: TONE.bad.sb }),
+      Object.assign({ sev: "High", title: "Insurance expires before a booking", subject: "LAG-309-TT · expires 1 Oct 00:00", owner: "Fleet (renew) · UBI enforces", due: "30 Sep 23:59", a1: "Upload renewal", a2: "Details" }, act(true), { sc: TONE.warn.sc, sb: TONE.warn.sb }),
+      Object.assign({ sev: "High", title: "Driver licence expires before a booking", subject: "Musa I. · expires 3 Oct", owner: "Driver · UBI enforces", due: "2 Oct 23:59", a1: "Send reminder", a2: "Details" }, act(false), { sc: TONE.warn.sc, sb: TONE.warn.sb }),
+      Object.assign({ sev: "Medium", title: "Driver time off overlaps their own booking", subject: "Tunde B. · 1 booking", owner: "Driver (resolving)", due: "1 Oct 12:00", a1: "View only", a2: "—" }, act(false), { sc: TONE.info.sc, sb: TONE.info.sb }),
+      Object.assign({ sev: "High", title: "Notice period ends before 2 bookings", subject: "Ade K. · notice ends 14 Oct", owner: "Driver · rider", due: "14 Oct 00:00", a1: "View only", a2: "Details" }, act(false), { sc: TONE.warn.sc, sb: TONE.warn.sb }),
+      Object.assign({ sev: "Status", title: "Held by UBI", subject: "LAG-551-QD · Yusuf D.", owner: "UBI only", due: "—", a1: "No action", a2: "—" }, act(false), { sc: TONE.mute.sc, sb: TONE.mute.sb }),
+    ];
+    const seg = (w, bg, t) => ({ w, bg, t });
+    const utilRows = [
+      { plate: "LAG-472-KJ", segs: [seg("38%", "#1DB954", "On trip 42h"), seg("22%", "#86EFAC", "Idle 24h"), seg("14%", "#8FA3E6", "16h"), seg("0%", "#F59E0B", "")], note: "Offline 29h", total: "111 h" },
+      { plate: "LAG-118-AB", segs: [seg("26%", "#1DB954", "On trip 22h"), seg("18%", "#86EFAC", "Idle 15h"), seg("8%", "#8FA3E6", "7h"), seg("12%", "#F59E0B", "Maint 10h")], note: "Offline 18h", total: "84 h" },
+      { plate: "LAG-309-TT", segs: [seg("44%", "#1DB954", "On trip 58h"), seg("20%", "#86EFAC", "Idle 26h"), seg("10%", "#8FA3E6", "13h"), seg("0%", "#F59E0B", "")], note: "Offline 15h", total: "112 h" },
+      { plate: "LAG-551-QD", segs: [], note: "Held by UBI all week · not counted", total: "—" },
+      { plate: "LAG-620-ZX", segs: [], note: "Not enough data · added 26 Sep", total: "—" },
+    ];
+    const Y = "#86EFAC", N = "#71717A", R = "#FCA5A5";
+    const role = (cap, o, m, r) => ({ cap, o, m, r, oc: o === "Yes" ? Y : o === "Never" ? R : N, mc: m === "Yes" ? Y : m === "Never" ? R : N, rc: r === "Yes" ? Y : r === "Never" ? R : N });
+    const roleRows = [
+      role("View calendar & utilisation", "Yes", "Yes", "Yes"),
+      role("Create / edit maintenance", "Yes", "Yes", "No"),
+      role("Propose assignments & shifts", "Yes", "Yes", "No"),
+      role("Propose remittance terms", "Yes", "No", "No"),
+      role("Upload vehicle documents", "Yes", "Yes", "No"),
+      role("Terminate an arrangement", "Yes", "No", "No"),
+      role("Manage staff roles", "Yes", "No", "No"),
+      role("See rider identity, routes or safety evidence", "Never", "Never", "Never"),
+    ];
+    const S = (title, where, copy, note, accent) => ({ title, where, copy, note, accent });
+    const states = [
+      S("Loading", "all", "Loading calendar…", "Skeleton rows at a fixed height. Blocks are not guessed.", "#52525B"),
+      S("Empty · new fleet", "portal", "No vehicles yet. Add a vehicle to start planning.", "The CTA goes to the vehicle add flow (KYB is already specified).", "#52525B"),
+      S("Error", "all", "We couldn't load the calendar. Try again.", "Keeps the last good data if there is any, marked as stale.", "#EF4444"),
+      S("Offline / stale", "all", "Offline · showing data from 09:12 WAT", "Every write is disabled while offline. No queued maintenance.", "#71717A"),
+      S("Flag off", "all", "Fleet tools aren't available yet in your city.", "The fleet flag defaults to off. No fake preview data is shown.", "#71717A"),
+      S("Permission denied", "portal", "Your role can view but not edit. Ask a fleet owner.", "Action controls are hidden for read-only staff.", "#71717A"),
+      S("Held by UBI", "portal/driver", "Held by UBI. This vehicle can't take trips right now.", "Status only: no reason, no evidence, no appeal via the fleet.", "#A1A1AA"),
+      S("Checking…", "all", "Checking with UBI…", "Shown during a slow feasibility check. Confirm stays disabled and success is never shown early.", "#5B73C4"),
+      S("Consent pending / expired", "portal", "Waiting for Kemi · expires in 46 h", "Expired: \"No reply. You can send a new proposal.\"", "#5B73C4"),
+      S("Document expiring", "portal/driver", "Insurance expires 15 Oct. 1 booking is after that date.", "Warnings at 30, 14, 7 and 1 day, plus whenever a booking falls after expiry.", "#F59E0B"),
+      S("Booking at risk", "all", "At risk · needs a decision by 09:20", "Unresolved at the deadline → failed(reason), with the outcome explained to everyone affected.", "#EF4444"),
+      S("DST changeover", "portal/driver", "Sun · 25-hour day · 01:00–02:00 happens twice", "The ruler repeats the hour with its zone offset. Blocks are stored in UTC.", "#F59E0B"),
+      S("Month boundary", "portal", "29 Sep – 5 Oct 2026", "Week headers label the new month. Days split at local midnight.", "#52525B"),
+      S("Very large fleet", "portal", "Showing 1–40 of 212 vehicles", "Virtualised rows at a fixed height. Filters and search run on the server.", "#52525B"),
+    ];
+    const deps = [
+      { id: "FL-1", t: "The fleet backend isn't built (contract only). Every screen is a fixture until it is." },
+      { id: "FL-2", t: "A maintenance block store, with an exclusion constraint against confirmed booking intervals." },
+      { id: "FL-3", t: "Drivers on several vehicles over time: today a driver has a single vehicleId, so this needs an assignment history table." },
+      { id: "FL-4", t: "Writing vehicleId onto advance bookings, so the per-vehicle overlap constraint can apply." },
+      { id: "FL-5", t: "Driver availability and time-off store, plus preview endpoints." },
+      { id: "FL-6", t: "Opaque booking projection for the fleet (no rider, no location), with risk state." },
+      { id: "FL-7", t: "Utilisation aggregates with an asOf timestamp. There is no odometer feed, so mileage-based maintenance is out." },
+    ];
+    const openQs = [
+      { id: "Q1 ✓", t: "Decided: booking blocks stay fully opaque, with no zone label." },
+      { id: "Q2 ✓", t: "Decided: weekly fixed remittance is pro-rated for shift hours lost to fleet-scheduled maintenance." },
+      { id: "Q3 ✓", t: "Best practice: if only the vehicle changes (same driver, class, capacity, window and fare), notify the rider with its plate and free cancellation. Explicit consent is kept for any other change." },
+      { id: "Q7 ✓", t: "Decided: fleets never see a driver's net earnings. They see hours, gross, commission and remittance status." },
+      { id: "Q4 ✓", t: "Best practice: the deadline is the earlier of reconfirmation and pickup − 2 h (city-configurable). At the deadline, the rider is offered a rematch at the same fare automatically." },
+      { id: "Q5 ✓", t: "Best practice: the driver can report a breakdown from the app, as well as owners and managers." },
+      { id: "Q6 ✓", t: "Best practice: warnings at 30/14/7/1 days, and the server never offers a booking that falls after a known expiry." },
+      { id: "Q8 ✓", t: "Decided: breakdowns (unplanned off-road) pro-rate weekly fixed remittance too." },
+      { id: "Q9 ✓", t: "Decided: fleets see driver time off as read-only hours, with no reason." },
+    ];
+    return {
+      states, deps, openQs,
+      ccRows, utilRows, roleRows,
+      showHandoff: this.props.showHandoff ?? true,
+      icons: this.buildIcons(),
+      vehicleRows, driverRows, hourTicks, nowLeft: pc(9.7), weekDays, weekRows,
+      precedence, entities, machines, conflicts,
+      navCal: navFor("Calendar"), navVeh: navFor("Vehicles"), navCon: navFor("Conflicts"), navDrv: navFor("Drivers"), navUtil: navFor("Utilisation"), navRoles: navFor("Staff & roles"),
+    };
+  }
+}
+</script>
+</body>
+</html>

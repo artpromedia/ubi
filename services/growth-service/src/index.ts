@@ -39,7 +39,11 @@ import { createDeps } from "./wiring";
 
 import type { GrowthDeps } from "./ops/context";
 
-const PORT = Number.parseInt(process.env.PORT ?? "4012", 10);
+// 4014: the first free port in the service list. 4012 is travel-service's
+// default (and ask-service's is 4013), so the two used to collide when both
+// ran with defaults. The gateway proxies nothing to growth-service yet, so
+// there is no gateway registry fallback to keep in step.
+const PORT = Number.parseInt(process.env.PORT ?? "4014", 10);
 
 export function createApp(deps: GrowthDeps): Hono {
   const app = new Hono();

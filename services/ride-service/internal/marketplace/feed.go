@@ -5,12 +5,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/cityconfig"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/geo"
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/machine"
@@ -83,6 +85,14 @@ func feedItemOf(request *Request, distanceMeters float64) *FeedItemView {
 		title = "Delivery request · " + request.VehicleClass
 	}
 	meta := request.Pickup.Label + " → " + request.Dropoff.Label
+	if request.isAdvance() && request.Schedule != nil {
+		// A future booking, said first: this is not an immediate job.
+		title = "Advance booking · " + request.VehicleClass
+		meta = "Pickup " + scheduleViewOf(request.Schedule).Label + " · " + meta
+	}
+	if len(request.Stops) > 0 {
+		meta += " · " + stopCountLabel(len(request.Stops))
+	}
 	if distanceMeters >= 0 {
 		meta += " · " + formatKm(distanceMeters) + " from you"
 	}
@@ -103,13 +113,31 @@ func feedItemOf(request *Request, distanceMeters float64) *FeedItemView {
 		AskedByLabel:    "Requester asks",
 		CapabilityBadge: badge,
 		ExpiresAt:       request.ExpiresAt,
+		Route:           feedRouteOf(request),
+		Booking:         requestBookingViewOf(request),
 	}
 }
 
+// FeedQuery is what a driver may ask of the feed.
+type FeedQuery struct {
+	Cursor string
+	// IgnorePreferences shows every request the envelope admits, neither
+	// filtered nor ranked by the driver's preferences (A04.2). Preferences
+	// never touch eligibility either way.
+	IgnorePreferences bool
+}
+
+// feedPreferencesNote is the one line a feed states about preferences.
+const feedPreferencesNote = "Filtered and sorted by your preferences. They never bid for you."
+
 // Feed answers GET /v1/mp/feed (D01): the paginated, privacy-limited list of
 // open requests this driver could discover. Reading the feed never reserves
-// the driver or removes availability.
-func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPageView, error) {
+// the driver or removes availability. Every card carries the server-composed
+// earnings breakdown at the requester's fare (A04.1); the driver's saved
+// preferences hide what they do not want and rank homeward requests first
+// within the page (A04.2) — a filter on DISCOVERY, never on eligibility.
+func (s *Service) Feed(ctx context.Context, actor Actor, query FeedQuery) (*FeedPageView, error) {
+	cursor := query.Cursor
 	if !actor.IsDriver() {
 		return nil, domain.Errorf(domain.CodeForbidden, "only a driver has a marketplace feed")
 	}
@@ -134,6 +162,10 @@ func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPa
 	// driver simply does not appear.
 	ridesOn := s.requireFlag(ctx, flagFor(ServiceRide), actor, actor.CityID) == nil
 	deliveryOn := s.requireFlag(ctx, flagFor(ServiceDelivery), actor, actor.CityID) == nil
+	// A03: advance-booking cards appear only while advance bidding is open
+	// for this driver.
+	advanceOn := s.flagOn(ctx, cityconfig.FlagMarketplaceAdvanceReservations, actor.UserID.String(), actor.CityID)
+	var cityZone *time.Location
 	if !ridesOn && !deliveryOn {
 		return nil, domain.Errorf(domain.CodeFeatureDisabled, "this feature is not available here")
 	}
@@ -155,6 +187,24 @@ func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPa
 	}
 
 	page := &FeedPageView{Items: []*FeedItemView{}, AvailabilityEpoch: epoch}
+
+	prefs, err := s.deps.Store.LatestDriverPreferences(ctx, s.deps.Store.Pool(), actor.UserID, actor.CityID)
+	if errors.Is(err, domain.ErrNotFound) {
+		prefs = nil
+	} else if err != nil {
+		return nil, asDomainError(err)
+	}
+	if prefs != nil {
+		page.Preferences = &FeedPreferencesView{
+			Version: prefs.Version,
+			Applied: !query.IgnorePreferences,
+			Note:    feedPreferencesNote,
+		}
+		if query.IgnorePreferences {
+			page.Preferences.Note = "Showing every request in your area; your preferences are not applied."
+			prefs = nil
+		}
+	}
 	// Scan forward until a page is filled or the market runs out. The batch
 	// is larger than the page because capability and envelope filters drop
 	// rows after the query.
@@ -167,10 +217,37 @@ func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPa
 		if len(batch) == 0 {
 			break
 		}
+		// A04 item 3 / A06 part D: the batch's preferred-driver windows and
+		// stated needs, read once. An unreadable answer fails the page
+		// closed rather than showing a request to the wrong driver.
+		batchIDs := make([]uuid.UUID, 0, len(batch))
+		for _, request := range batch {
+			batchIDs = append(batchIDs, request.ID)
+		}
+		windows, err := s.deps.Store.PreferredForRequests(ctx, s.deps.Store.Pool(), batchIDs)
+		if err != nil {
+			return nil, asDomainError(err)
+		}
+		needs, err := s.deps.Store.ServiceNeedsForRequests(ctx, s.deps.Store.Pool(), batchIDs)
+		if err != nil {
+			return nil, asDomainError(err)
+		}
 		for _, request := range batch {
 			last := request
 			scanFrom, scanFromID = &last.CreatedAt, &last.ID
 			if request.RequesterID == actor.UserID {
+				continue
+			}
+			// While a preferred window is exclusive, only the named driver
+			// may discover the request.
+			window := windows[request.ID]
+			if window.excludes(actor.UserID) {
+				continue
+			}
+			invited := window.invites(actor.UserID)
+			// A stated requirement is matched only to drivers verified to
+			// meet it: never shown to anyone else.
+			if len(s.unmetRequirements(ctx, actor.UserID, needs[request.ID])) > 0 {
 				continue
 			}
 			if request.Service == ServiceRide && !ridesOn {
@@ -187,10 +264,48 @@ func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPa
 				continue
 			}
 			distance := geo.HaversineDistance(*session.LastLat, *session.LastLng, request.Pickup.Lat, request.Pickup.Lng)
-			if distance > float64(request.EnvelopeRadiusM) {
+			pickupForPrefs := coarsePickupMeters(distance)
+			if request.isAdvance() {
+				// A future pickup is not judged by where the driver is now:
+				// no search envelope, no pickup-distance preference. The
+				// driver's stored availability windows filter it instead.
+				if !advanceOn {
+					continue
+				}
+				pickupForPrefs = 0
+				if cityZone == nil {
+					cityZone = s.cityZone(ctx, actor.CityID)
+				}
+				if prefs != nil && request.PickupWindowStart != nil && !prefs.availableAt(*request.PickupWindowStart, cityZone) {
+					page.Preferences.HiddenCount++
+					continue
+				}
+			} else if distance > float64(request.EnvelopeRadiusM) {
 				continue
 			}
-			page.Items = append(page.Items, feedItemOf(request, distance))
+			// A request a rider asked this driver for first is never hidden
+			// by the driver's own feed preferences: they asked for THIS
+			// driver, who may still decline.
+			if reason := prefs.hiddenReason(request, pickupForPrefs); reason != "" && !invited {
+				page.Preferences.HiddenCount++
+				continue
+			}
+			item := feedItemOf(request, distance)
+			pickup := s.straightLinePickup(ctx, *session.LastLat, *session.LastLng, request)
+			pickup.distanceM = distance
+			if request.isAdvance() {
+				// Where the driver is now says nothing about the unpaid
+				// drive to a pickup hours away: stated as unavailable.
+				pickup = unknownPickup()
+			}
+			item.Earnings = earningsBreakdown(request, request.RequestedMinor, GrossBasisRequested, pickup)
+			if prefs != nil {
+				item.PreferenceTags = prefs.preferenceTags(request)
+			}
+			if invited {
+				item.PreferredRequest = preferredInvitationOf(window)
+			}
+			page.Items = append(page.Items, item)
 			if len(page.Items) == feedPageSize {
 				break
 			}
@@ -203,7 +318,37 @@ func (s *Service) Feed(ctx context.Context, actor Actor, cursor string) (*FeedPa
 		next := encodeCursor(*scanFrom, *scanFromID)
 		page.NextCursor = &next
 	}
+	// Rank within the page: requests a rider asked this driver for first,
+	// then homeward matches, otherwise newest first. The cursor is the SCAN
+	// position, so re-ordering a page never skips or repeats a request
+	// across pages.
+	rank := func(item *FeedItemView) int {
+		switch {
+		case item.PreferredRequest != nil:
+			return 2
+		case len(item.PreferenceTags) > 0:
+			return 1
+		}
+		return 0
+	}
+	sort.SliceStable(page.Items, func(i, j int) bool {
+		return rank(page.Items[i]) > rank(page.Items[j])
+	})
 	return page, nil
+}
+
+// cityZone is the city's configured timezone (UTC when it cannot be read —
+// only ever used to phrase or filter by the driver's own stored windows).
+func (s *Service) cityZone(ctx context.Context, cityID string) *time.Location {
+	config, err := s.config(ctx, cityID)
+	if err != nil {
+		return time.UTC
+	}
+	location, err := time.LoadLocation(config.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return location
 }
 
 func flagFor(service string) string {
@@ -233,6 +378,15 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 	if actor.CityID != "" && request.CityID != actor.CityID {
 		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
 	}
+	// A04 item 3: while a preferred window is exclusive, the request does
+	// not exist for any driver but the named one.
+	excluded, window, err := s.marketExcludes(ctx, s.deps.Store.Pool(), request, actor.UserID)
+	if err != nil {
+		return nil, asDomainError(err)
+	}
+	if excluded {
+		return nil, domain.Errorf(domain.CodeNotFound, "that request does not exist")
+	}
 	if err := s.requireServiceFlag(ctx, request.Service, actor, request.CityID); err != nil {
 		return nil, err
 	}
@@ -252,15 +406,46 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 	}
 
 	distance := float64(-1)
+	pickup := unknownPickup()
 	if session, sessionErr := s.deps.Store.DriverSessionRow(ctx, s.deps.Store.Pool(), actor.UserID); sessionErr == nil && session.HasLocation() {
 		distance = geo.HaversineDistance(*session.LastLat, *session.LastLng, request.Pickup.Lat, request.Pickup.Lng)
+		pickup = s.straightLinePickup(ctx, *session.LastLat, *session.LastLng, request)
+		pickup.distanceM = distance
+	}
+	// An eligible driver's pickup was routed by the eligibility evaluation
+	// itself; that measured leg replaces the straight-line estimate.
+	if eligibility.pickup != nil {
+		pickup = *eligibility.pickup
+	}
+	if request.isAdvance() {
+		// A future pickup's unpaid leg depends on where the driver will be
+		// then, not now: stated as unavailable rather than guessed.
+		pickup = unknownPickup()
 	}
 
+	prefs, err := s.deps.Store.LatestDriverPreferences(ctx, s.deps.Store.Pool(), actor.UserID, request.CityID)
+	if errors.Is(err, domain.ErrNotFound) {
+		prefs = nil
+	} else if err != nil {
+		return nil, asDomainError(err)
+	}
+
+	item := feedItemOf(request, distance)
+	item.Earnings = earningsBreakdown(request, request.RequestedMinor, GrossBasisRequested, pickup)
+	if prefs != nil {
+		item.PreferenceTags = prefs.preferenceTags(request)
+	}
 	result := &DriverViewResult{
-		Item:        feedItemOf(request, distance),
+		Item:        item,
 		Eligibility: eligibility,
 		Presets:     []*PresetView{},
 	}
+	if window.invites(actor.UserID) {
+		result.PreferredRequest = preferredInvitationOf(window)
+		item.PreferredRequest = result.PreferredRequest
+	}
+	// A03: before an advance bid, the wallet commitment it would take on.
+	result.AdvanceCommitment = advanceCommitmentOf(request, request.RequestedMinor, nil, config.CurrencyFractionDigits)
 
 	// Presets are money: they need the wallet's one spendable number. If the
 	// wallet cannot answer, the view fails honestly rather than promising
@@ -277,7 +462,15 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 		return nil, asDomainError(profileErr)
 	}
 
-	result.Presets, result.ProfileLine, result.CeilingNotice = s.buildPresets(ctx, request, config.CurrencyFractionDigits, overview.SpendableMinor.AmountMinor, profile)
+	result.Presets, result.ProfileLine, result.CeilingNotice = s.buildPresets(ctx, request, config.CurrencyFractionDigits, overview.SpendableMinor.AmountMinor, profile, prefs, pickup)
+	// A request the driver's feed would hide stays fully biddable here
+	// (preferences are not eligibility); the view just says which preference
+	// it does not meet.
+	if prefs != nil {
+		if words := prefs.hiddenWords(request, coarsePickupMeters(distance), config.CurrencyFractionDigits); words != "" {
+			result.PreferenceNotice = &words
+		}
+	}
 
 	if myBid, bidErr := s.deps.Store.LiveBidForDriverOnRequest(ctx, s.deps.Store.Pool(), request.ID, actor.UserID); bidErr == nil {
 		result.MyBid = bidViewOf(myBid, request.Currency)
@@ -298,12 +491,14 @@ func (s *Service) DriverView(ctx context.Context, actor Actor, requestID uuid.UU
 }
 
 // buildPresets generates the quick offers: the requested amount, one lower,
-// one higher (policy-derived steps inside the stored bounds) and the rate
-// profile's calculation when one exists. Every preset carries gross, the 10%
-// half-up commission and net, plus affordability against the one spendable.
-// Nothing outside the bounds is ever emitted, and nothing unaffordable is
-// emitted without its exact shortfall.
-func (s *Service) buildPresets(ctx context.Context, request *Request, digits int, spendableMinor int64, profile *RateProfile) ([]*PresetView, *string, *string) {
+// one higher (policy-derived steps inside the stored bounds), the rate
+// profile's calculation when one exists and the driver's minimum trip amount
+// when the request can pay it but asks less. Every preset carries gross, the
+// 10% half-up commission and net, the full earnings breakdown at its amount,
+// plus affordability against the one spendable. Nothing outside the bounds is
+// ever emitted, and nothing unaffordable is emitted without its exact
+// shortfall. Presets are suggestions: nothing here places a bid.
+func (s *Service) buildPresets(ctx context.Context, request *Request, digits int, spendableMinor int64, profile *RateProfile, prefs *DriverPreferences, pickup pickupEstimate) ([]*PresetView, *string, *string) {
 	currency := request.Currency
 
 	// The step is derived from the request's own envelope: a tenth of the
@@ -352,6 +547,16 @@ func (s *Service) buildPresets(ctx context.Context, request *Request, digits int
 		}
 	}
 
+	// The driver's minimum trip amount pre-fills an offer when the request
+	// asks less but its maximum can pay it (above the maximum the driver
+	// view's preference notice explains it instead; it is never clamped).
+	if prefs != nil && prefs.MinTripAmountMinor != nil && prefs.Currency == currency {
+		minimum := *prefs.MinTripAmountMinor
+		if minimum > request.RequestedMinor && minimum >= request.MinMinor && minimum <= request.MaxMinor {
+			candidates = append(candidates, candidate{minimum, "Your minimum trip", "preference_minimum", false})
+		}
+	}
+
 	seen := map[int64]bool{}
 	presets := make([]*PresetView, 0, len(candidates))
 	for _, c := range candidates {
@@ -371,6 +576,7 @@ func (s *Service) buildPresets(ctx context.Context, request *Request, digits int
 			Affordable:      spendableMinor >= commission,
 			Emphasized:      c.emphasized,
 			Source:          c.source,
+			Earnings:        earningsBreakdown(request, c.amount, GrossBasisPreset, pickup),
 		}
 		if !preset.Affordable {
 			shortfall := money(commission-spendableMinor, currency)

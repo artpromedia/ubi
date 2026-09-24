@@ -71,6 +71,7 @@ func (s *Service) SetDriverStatus(ctx context.Context, actor Actor, req DriverSt
 	}
 
 	var view *DriverStatusView
+	var wentOnline *time.Time
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
 		if _, err := s.deps.Store.EnsureSession(ctx, tx, actor.UserID, actor.CityID); err != nil {
 			return err
@@ -119,6 +120,9 @@ func (s *Service) SetDriverStatus(ctx context.Context, actor Actor, req DriverSt
 		if err != nil {
 			return err
 		}
+		if req.Online {
+			wentOnline = &now
+		}
 		if err := writeEvent(ctx, tx, Event{
 			Name:           "driver.status_changed",
 			AggregateType:  "driver",
@@ -143,6 +147,9 @@ func (s *Service) SetDriverStatus(ctx context.Context, actor Actor, req DriverSt
 	})
 	if err != nil {
 		return nil, asDomainError(err)
+	}
+	if wentOnline != nil {
+		s.notifyWentOnline(ctx, actor.UserID, actor.CityID, *wentOnline)
 	}
 	return view, nil
 }

@@ -130,10 +130,75 @@ func MarketplacePolicyFixture() map[string]any {
 		"queue": map[string]any{
 			"pickupWindowToleranceSec": 300,
 		},
+		// The pilot stop limits, stated, plus paid stop waiting (A02): 10.00
+		// a started minute past a stop's included allowance, 50.00 authorized
+		// up front per trip (and per rider approval), excessive after 15 min.
+		"stops": map[string]any{
+			"maxIntermediateStops": 3,
+			"defaultDwellSec":      120,
+			"maxDwellSec":          600,
+			"paidWaiting": map[string]any{
+				"perMinMinor":        1_000,
+				"maxAuthorizedMinor": 5_000,
+				"excessiveAfterSec":  900,
+			},
+			"amendmentApprovalSec": 180,
+		},
 		"rateProfileBounds": map[string]any{
 			"ride:go":      rateBounds,
 			"ride:comfort": rateBounds,
 			"delivery:go":  rateBounds,
+		},
+		// Book for Later (A03). Test data: every product is still dark until
+		// a test opens its deny-by-default flag.
+		"scheduling": SchedulingPolicyFixture(),
+	}
+}
+
+// SchedulingPolicyFixture is a complete, valid Book for Later block in the
+// shape MpSchedulingPolicySchema defines: publish 30 min before a scheduled
+// pickup; advance bookings up to 7 days ahead (at least 3 h), rider funding
+// secured within 48 h of pickup and by 2 h before, reconfirmation between
+// 2 h and 45 min before, activation 30 min before, 10-min buffers, a booking
+// at risk resolved by 2 h before pickup; recurring occurrences generated 7
+// days ahead.
+func SchedulingPolicyFixture() map[string]any {
+	return map[string]any{
+		"scheduledRequests": map[string]any{
+			"publishLeadSec":         1_800,
+			"minLeadSec":             3_600,
+			"maxHorizonSec":          1_209_600,
+			"defaultWindowSec":       600,
+			"minWindowSec":           300,
+			"maxWindowSec":           1_800,
+			"reminderOffsetsSec":     []int{43_200, 3_600},
+			"maxPendingPerRequester": 10,
+		},
+		"advanceReservations": map[string]any{
+			"bookingHorizonSec":    604_800,
+			"minLeadSec":           10_800,
+			"offerWindowSec":       3_600,
+			"bidExpirySec":         3_600,
+			"defaultWindowSec":     600,
+			"minWindowSec":         300,
+			"maxWindowSec":         1_800,
+			"fundingHorizonSec":    172_800,
+			"fundingDeadlineSec":   7_200,
+			"reconfirmOpensSec":    7_200,
+			"reconfirmDeadlineSec": 2_700,
+			"activationLeadSec":    1_800,
+			"preBufferSec":         600,
+			"postBufferSec":        600,
+			"reminderOffsetsSec":   []int{43_200, 3_600},
+			"maxOpenPerRequester":  5,
+			// A05 (decisions Q4): a booking at risk must be resolved by the
+			// earlier of its reconfirmation deadline and pickup minus 2 h.
+			"riskResolutionLeadSec": 7_200,
+		},
+		"recurring": map[string]any{
+			"generationHorizonDays":          7,
+			"maxActiveTemplatesPerRequester": 5,
+			"maxSeriesDays":                  366,
 		},
 	}
 }

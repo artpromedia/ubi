@@ -17,8 +17,15 @@ import { logger as honoLogger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import {
+  createBusinessFinanceRoutes,
+  createBusinessRoutes,
+} from "./business/routes";
+import { createDeliveryReturnRoutes } from "./finance/delivery-return-routes";
 import { createRemedyRoutes } from "./finance/remedies";
 import { createFinanceRoutes } from "./finance/routes";
+import { createTravelPaymentRoutes } from "./finance/travel-routes";
+import { createFleetFinanceRoutes } from "./fleet/routes";
 import { walletDeps } from "./ledger/wiring";
 import { analyticsService } from "./lib/analytics";
 import { logger } from "./lib/logger";
@@ -31,6 +38,7 @@ import { healthRoutes } from "./routes/health";
 import { createMpHoldRoutes } from "./routes/mp-holds";
 import { safetyRoutes } from "./routes/safety";
 import { createWalletV1Routes } from "./routes/wallet-v1";
+import { startSettlementWorker } from "./settlement-worker";
 
 // NOTE: The B2B (/b2b), loyalty (/loyalty) and driver-experience (/drivers)
 // routes and their services are DEFERRED until Move is green and are
@@ -86,7 +94,13 @@ app.use(
 // Error handler
 app.use("*", errorHandler);
 
-// Service auth and rate limiting for internal routes
+// Service auth and rate limiting for internal routes.
+//
+// The limiter runs BEFORE the routers authenticate, so it resolves the caller
+// itself with the routers' own checks (src/middleware/rate-limit.ts): a valid
+// service key is not throttled, a verified gateway identity is counted per
+// user, anything else per client address — never one shared bucket. It
+// grants no authentication; every route below still authenticates as before.
 app.use("/fraud/*", paymentRateLimit);
 app.use("/fraud/*", serviceAuth);
 app.use("/safety/*", paymentRateLimit);
@@ -95,6 +109,7 @@ app.use("/admin/*", paymentRateLimit);
 app.use("/admin/*", serviceAuth);
 app.use("/v1/wallet/*", paymentRateLimit);
 app.use("/v1/finance/*", paymentRateLimit);
+app.use("/v1/business/*", paymentRateLimit);
 
 // ===========================================
 // ROUTER REGISTRY — the single place a router is mounted (G14).
@@ -111,8 +126,12 @@ app.use("/v1/finance/*", paymentRateLimit);
 // Order notes: /v1/wallet/mp (marketplace commission holds, M04) mounts
 // BEFORE the general wallet routes, because the wallet router guards
 // everything under it with user session auth while the hold mutations are
-// service-key calls from the award engine. The route modules apply their own
-// auth; the health routes are deliberately unauthenticated probes.
+// service-key calls from the award engine. /v1/finance/travel (supplier
+// travel payments, P7) mounts BEFORE /v1/finance for the same reason: the
+// recon router's `use("*")` admin-session guards cover every path under
+// /v1/finance, while travel-service calls the travel endpoint with the
+// internal service key. The route modules apply their own auth; the health
+// routes are deliberately unauthenticated probes.
 // ===========================================
 const ledgerDeps = walletDeps();
 
@@ -126,8 +145,37 @@ const ROUTER_REGISTRY: ReadonlyArray<{
   { prefix: "/admin", router: adminRoutes },
   { prefix: "/v1/wallet/mp", router: createMpHoldRoutes(ledgerDeps) },
   { prefix: "/v1/wallet", router: createWalletV1Routes(ledgerDeps) },
+  {
+    prefix: "/v1/finance/travel",
+    router: createTravelPaymentRoutes(ledgerDeps),
+  },
+  // Delivery return-leg fees (P17): service-key, mounted ahead of /v1/finance
+  // for the same reason as /v1/finance/travel.
+  {
+    prefix: "/v1/finance/delivery-returns",
+    router: createDeliveryReturnRoutes(ledgerDeps),
+  },
+  // Business travel budgets (A06 part C): ride-service's service-key
+  // reserve / commit / release API, mounted ahead of /v1/finance for the
+  // same reason as travel.
+  {
+    prefix: "/v1/finance/business",
+    router: createBusinessFinanceRoutes(ledgerDeps),
+  },
+  // Weekly fleet remittance settlement (A05): UBI ops only (signed identity,
+  // role admin), behind the deny-by-default `fleet` flag; mounted ahead of
+  // /v1/finance for the same reason as travel.
+  {
+    prefix: "/v1/finance/fleet",
+    router: createFleetFinanceRoutes(ledgerDeps),
+  },
   { prefix: "/v1/finance", router: createFinanceRoutes(ledgerDeps) },
   { prefix: "/v1/finance/remedies", router: createRemedyRoutes(ledgerDeps) },
+  // Business travel money for the organization's people (A06 part C):
+  // funding, cost-centre budgets, business bookings, statements — signed
+  // identity context only. Rebuilt on the canonical ledger; the quarantined
+  // /b2b float-money surface stays unmounted.
+  { prefix: "/v1/business", router: createBusinessRoutes(ledgerDeps) },
 ];
 
 for (const { prefix, router } of ROUTER_REGISTRY) {
@@ -170,9 +218,14 @@ if (process.env.NODE_ENV !== "test") {
     port,
   });
 
+  // Fleet remittance sweep (only when fleet-service is configured) and the
+  // business payout retry — replay-safe background passes.
+  const settlementWorker = startSettlementWorker(ledgerDeps);
+
   // Graceful shutdown
   const shutdown = (signal: string): void => {
     logger.info({ signal }, "Shutdown signal received, closing gracefully...");
+    settlementWorker.stop();
 
     server.close(async () => {
       logger.info("HTTP server closed");

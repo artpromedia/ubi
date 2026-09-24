@@ -36,6 +36,7 @@ type Block = {
   fields?: ClarifyField[];
   sources?: Source[];
   reviewId?: string;
+  reviewKind?: "travel" | "marketplace";
   totalLabel?: string;
   deepLink?: string;
 };
@@ -123,6 +124,7 @@ export function AskScreen() {
               id: "r" + e.reviewId,
               kind: "review",
               reviewId: e.reviewId,
+              reviewKind: e.reviewKind ?? "travel",
             });
           if (e.type === "refused")
             next.push({
@@ -187,6 +189,26 @@ export function AskScreen() {
           />
         );
       case "review":
+        if (item.reviewKind === "marketplace")
+          return (
+            <View style={{ gap: 6 }}>
+              <Text variant="caption" tone="text2">
+                I can’t set prices or book without your OK.
+              </Text>
+              <Button
+                testID={TID.ask.plan.review}
+                label="Review offer"
+                size="md"
+                onPress={() => {
+                  track("ask_review_opened", {
+                    reviewId: item.reviewId,
+                    kind: "marketplace",
+                  });
+                  setReview(item.reviewId);
+                }}
+              />
+            </View>
+          );
         return (
           <View style={{ flexDirection: "row", gap: 8 }}>
             <Button
@@ -280,8 +302,16 @@ export function AskScreen() {
           }
         />
         {error ? (
-          <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+          <View style={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8 }}>
             <Banner tone="warn" body={error} />
+            {/* The assistant being unavailable is never a dead end. */}
+            <Button
+              testID="ask.composer.conventional"
+              label="Book without Ask UBI"
+              kind="secondary"
+              size="md"
+              onPress={() => nav.navigate("Main", { screen: "Home" })}
+            />
           </View>
         ) : null}
         <View

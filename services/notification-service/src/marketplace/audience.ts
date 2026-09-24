@@ -1,166 +1,144 @@
 /**
- * Marketplace (mp.*) push audience + spec.
+ * Notification audience + per-viewer copy model (marketplace, trip access,
+ * airport transfers, delivery returns).
  *
- * This mirrors realtime-gateway's fan-out rules so the two surfaces agree on
- * who may learn what: bid events are private between the requester and the
- * bidding driver, and rival bidders never appear. It is deliberately a second
- * implementation rather than a shared import because the two services must be
- * able to diverge in transport without silently coupling their privacy rules —
- * the shared contract is the event catalog, not this function. The unit tests
- * assert the privacy invariants directly.
+ * Every notifiable event names the ROLES it addresses, each with its own copy
+ * (the rider and the driver of one trip are told different things about the
+ * same event). A role absent from a spec is never told — that is how privacy
+ * by audience is enforced:
+ *
+ *   - bid events stay private between the requester and the bidding driver;
+ *     recipient LISTS in payloads (driverIds / audienceDriverIds) are never
+ *     read, so a push can never reach a rival bidder;
+ *   - drivers never receive rider PII and riders never receive the driver's
+ *     commission: copy is static per role and the push DATA is a hint built
+ *     only from ids (buildHintData) — never an amount, a name, a phone or a
+ *     PIN;
+ *   - the guest passenger of a booking-for-another-adult has no role here at
+ *     all: they are reached ONLY by the sealed trip-link SMS
+ *     (../trip-access/), never by push and never by a phone lookup.
+ *
+ * This mirrors realtime-gateway's fan-out rules deliberately as a second
+ * implementation (the shared contract is the event catalog, not code); the
+ * unit tests assert the privacy invariants directly.
  */
 import type { EventEnvelope } from "@ubi/contracts";
 
-function asId(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
+/** Who a notification is for, relative to the event. */
+export type Role = "requester" | "driver" | "sender" | "traveller";
 
-function asIdArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter(
-    (item): item is string => typeof item === "string" && item.length > 0,
-  );
-}
-
-/**
- * Resolve the userIds authorized to receive a push for this envelope. An empty
- * result means "notify no one" — the caller drops the event.
- */
-export function resolveMarketplaceAudience(envelope: EventEnvelope): string[] {
-  const payload = envelope.payload;
-  const requesterId = asId(payload.requesterId);
-  const driverId = asId(payload.driverId);
-  const audience = new Set<string>();
-
-  if (envelope.name.startsWith("mp.bid.")) {
-    // Bids are private between the requester and the bidding driver. Recipient
-    // LISTS are ignored so a bid push can never reach a rival bidder.
-    if (requesterId) {
-      audience.add(requesterId);
-    }
-    if (driverId) {
-      audience.add(driverId);
-    }
-    return [...audience];
-  }
-
-  if (
-    envelope.name === "mp.request.published" ||
-    envelope.name === "mp.request.closed"
-  ) {
-    if (requesterId) {
-      audience.add(requesterId);
-    }
-    for (const id of asIdArray(payload.audienceDriverIds)) {
-      audience.add(id);
-    }
-    return [...audience];
-  }
-
-  if (requesterId) {
-    audience.add(requesterId);
-  }
-  if (driverId) {
-    audience.add(driverId);
-  }
-  for (const id of asIdArray(payload.driverIds)) {
-    audience.add(id);
-  }
-  return [...audience];
-}
+/** Resolution order (and the order recipients are processed in). */
+export const ROLES: readonly Role[] = [
+  "requester",
+  "driver",
+  "sender",
+  "traveller",
+];
 
 /** Which preference category gates this push. */
-export type PushPrefCategory = "ride" | "payment";
+export type PushPrefCategory = "ride" | "payment" | "delivery";
 
-export interface MarketplacePushSpec {
+export interface ViewerCopy {
   readonly title: string;
   readonly body: string;
+}
+
+/** Static copy, or copy that depends on the event (null = not this time). */
+export type CopyRule =
+  | ViewerCopy
+  | ((envelope: EventEnvelope) => ViewerCopy | null);
+
+export interface NotificationSpec {
   readonly prefCategory: PushPrefCategory;
   /** Notification type recorded on the log row. */
   readonly type: string;
+  /** Per-role copy. A role absent here is never notified of this event. */
+  readonly copy: Partial<Record<Role, CopyRule>>;
+  /**
+   * By default the person who performed the action (envelope.actor, when a
+   * rider or driver) is not pushed about it — they already know. Set when the
+   * catalog names the actor as the audience (a driver's own free decline).
+   */
+  readonly notifyActor?: boolean;
+  /**
+   * Time-critical: when no device can take the push, fall back to ONE SMS to
+   * the recipient's own verified account phone (never anyone else's).
+   */
+  readonly smsFallback?: boolean;
 }
 
-/**
- * The closed set of marketplace events that produce a push, with the hint copy.
- *
- * The copy NEVER contains money or a PIN — a push is only a nudge to open the
- * app and pull the authoritative state over REST. Events absent from this map
- * are deliberately not pushed:
- *   - mp.bid.expired / invalidated / withdrawn  → an expired/void offer is not
- *     something to buzz a phone about (offer-expiry suppression);
- *   - mp.request.published / revised / reopened → drivers discover via the feed;
- *   - mp.award.pending / failed / cancelled, mp.commission.*, mp.claim.created /
- *     released, mp.rate_profile.saved → internal or non-actionable for a push.
- */
-export const MARKETPLACE_PUSH_SPECS: Readonly<
-  Record<string, MarketplacePushSpec>
-> = {
-  "mp.bid.submitted": {
-    title: "New offer on your request",
-    body: "A driver sent you an offer. Open UBI to review it.",
-    prefCategory: "ride",
-    type: "RIDE_REQUESTED",
-  },
-  "mp.bid.won": {
-    title: "You won a request",
-    body: "A rider chose your offer. Open UBI to see the job.",
-    prefCategory: "ride",
-    type: "RIDE_ACCEPTED",
-  },
-  "mp.bid.lost": {
-    // No amount, no winner identity — just that this offer was not selected.
-    title: "Requester chose another driver",
-    body: "Your offer wasn’t selected this time. Open UBI to keep bidding.",
-    prefCategory: "ride",
-    type: "RIDE_REQUESTED",
-  },
-  "mp.award.confirmed": {
-    title: "Your driver is confirmed",
-    body: "Open UBI to see your pickup details.",
-    prefCategory: "ride",
-    type: "RIDE_ACCEPTED",
-  },
-  "mp.claim.promoted": {
-    title: "Your driver is on the way",
-    body: "Your queued trip is starting. Open UBI for your PIN and pickup.",
-    prefCategory: "ride",
-    type: "DRIVER_ARRIVED",
-  },
-  "mp.queue.eta_updated": {
-    title: "Pickup ETA updated",
-    body: "Your pickup estimate changed. Open UBI for the latest.",
-    prefCategory: "ride",
-    type: "RIDE_REQUESTED",
-  },
-  "mp.queue.window_missed": {
-    title: "Pickup window update",
-    body: "Your pickup is running late. Open UBI for your options.",
-    prefCategory: "ride",
-    type: "RIDE_REQUESTED",
-  },
-  "mp.settlement.posted": {
-    title: "Ride settled",
-    body: "Your marketplace ride was settled. Open UBI for the receipt.",
-    prefCategory: "payment",
-    type: "PAYMENT_SUCCESSFUL",
-  },
-};
+export interface AddressedRole {
+  readonly role: Role;
+  readonly copy: ViewerCopy;
+}
+
+/** The roles this event addresses right now, with their copy. */
+export function addressedRoles(
+  envelope: EventEnvelope,
+  spec: NotificationSpec,
+): AddressedRole[] {
+  const out: AddressedRole[] = [];
+  for (const role of ROLES) {
+    const rule = spec.copy[role];
+    if (rule === undefined) {
+      continue;
+    }
+    const copy = typeof rule === "function" ? rule(envelope) : rule;
+    if (copy !== null) {
+      out.push({ role, copy });
+    }
+  }
+  return out;
+}
+
+export function asId(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** A payload id, or null. */
+export function payloadId(envelope: EventEnvelope, key: string): string | null {
+  return asId(envelope.payload[key]);
+}
+
+/** True when the actor is a person (rider/driver/…), not a system. */
+export function isPersonActor(actor: EventEnvelope["actor"]): boolean {
+  return actor.type !== "system" && actor.type !== "agent";
+}
+
+/** The client surface a hint opens. */
+function hintKind(name: string): string {
+  if (name.startsWith("reservation.")) {
+    return "airport_transfer";
+  }
+  if (name.startsWith("shipment.")) {
+    return "delivery";
+  }
+  return "marketplace";
+}
+
+/** The ONLY keys a push data payload may carry. */
+export const HINT_DATA_KEYS: readonly string[] = [
+  "kind",
+  "name",
+  "subjectType",
+  "subjectId",
+  "requestId",
+  "seq",
+];
 
 /**
  * Build the hint DATA payload. This is the ONLY place the wire payload is
  * assembled, and it copies ONLY ids and the event type — never an amount, a
- * currency, a bid price or a PIN. Everything is a string (FCM data values must
- * be strings). The client uses these ids to pull the authoritative state.
+ * currency, a bid price, a commission, a name, a phone or a PIN. Everything is
+ * a string (FCM data values must be strings). The client uses these ids to
+ * pull the authoritative, viewer-scoped state over REST.
  */
 export function buildHintData(envelope: EventEnvelope): Record<string, string> {
   const requestId =
-    (typeof envelope.payload.requestId === "string" &&
-      envelope.payload.requestId) ||
-    (envelope.subject.type === "mp_request" ? envelope.subject.id : "");
+    payloadId(envelope, "requestId") ??
+    (envelope.subject.type === "mp_request" ? envelope.subject.id : null);
   const data: Record<string, string> = {
-    kind: "marketplace",
+    kind: hintKind(envelope.name),
     name: envelope.name,
     subjectType: envelope.subject.type,
     subjectId: envelope.subject.id,

@@ -16,14 +16,15 @@ import {
   gatewayAuth,
   idempotencyKeyOf,
 } from "../middleware";
-import { parseBody } from "./parse";
+import { parseBody, parseOptionalBody } from "./parse";
 import { createCart, setPassengers } from "../ops/carts";
 import { checkout } from "../ops/checkout";
 import { getDisruption, switchOrder } from "../ops/disruptions";
-import { cancelOrder, getOrder } from "../ops/orders";
+import { cancelOrder, getCancellationQuote, getOrder } from "../ops/orders";
 import { getRefund } from "../ops/refunds";
 import {
   flightSearch,
+  readSearchOffer,
   refreshFlightSearch,
   staySearch,
   stayRates,
@@ -75,10 +76,17 @@ const PassengersBody = z.array(
     title: z.string().optional(),
     dateOfBirth: z.string(),
     phone: z.string().min(1),
+    // Airlines (Duffel) require gender and a contact email per passenger;
+    // hotels (LiteAPI) require the lead guest's email. Each supplier adapter
+    // refuses a booking that lacks what it needs — before any provider call.
+    gender: z.enum(["m", "f"]).optional(),
+    email: z.string().email().optional(),
     identityRef: z.string().optional(),
     save: z.boolean().optional(),
   }),
 );
+
+const CancelBody = z.object({ acceptedPenalty: MoneySchema.optional() });
 
 const CheckoutBody = z.object({
   paymentMethodId: z.string().min(1),
@@ -87,6 +95,9 @@ const CheckoutBody = z.object({
     .object({ method: z.string(), proof: z.string().optional() })
     .optional(),
   expectedTotal: MoneySchema.optional(),
+  // The approval behind this checkout covers exactly `expectedTotal` at terms
+  // reviewed elsewhere (ops/checkout.ts): nothing a 409 surfaced is agreed.
+  reviewedTermsOnly: z.boolean().optional(),
 });
 
 const SwitchBody = z.object({
@@ -162,6 +173,25 @@ export function createTravelRoutes(deps: TravelDeps): Hono {
     }
   });
 
+  // One bookable offer from the caller's own search, read back by the key
+  // the search answered it with (ops/search.ts readSearchOffer). A read: it
+  // prices nothing with the supplier and holds nothing — the cart and the
+  // checkout revalidate before anything is charged. ask-service resolves the
+  // offers an assistant review is built on through it.
+  routes.get("/searches/:searchId/offers/:offerKey", async (c) => {
+    try {
+      const result = await readSearchOffer(deps, {
+        actor: actorOf(c),
+        cityId: cityOf(c),
+        searchId: c.req.param("searchId"),
+        offerKey: c.req.param("offerKey"),
+      });
+      return c.json(result, 200);
+    } catch (error) {
+      return failure(c, error);
+    }
+  });
+
   routes.post("/carts", async (c) => {
     try {
       const body = await parseBody(c, CartBody);
@@ -203,6 +233,7 @@ export function createTravelRoutes(deps: TravelDeps): Hono {
         grantId: body.grantId ?? null,
         assuranceMethod: body.assurance?.method ?? null,
         expectedTotal: body.expectedTotal ?? null,
+        reviewedTermsOnly: body.reviewedTermsOnly === true,
         idempotencyKey: idempotencyKeyOf(c),
         correlationId: correlationIdOf(c),
       });
@@ -224,14 +255,29 @@ export function createTravelRoutes(deps: TravelDeps): Hono {
     }
   });
 
+  routes.get("/orders/:id/cancellation-quote", async (c) => {
+    try {
+      const result = await getCancellationQuote(
+        deps,
+        actorOf(c),
+        c.req.param("id"),
+      );
+      return c.json(result, 200);
+    } catch (error) {
+      return failure(c, error);
+    }
+  });
+
   routes.post("/orders/:id/cancel", async (c) => {
     try {
+      const body = await parseOptionalBody(c, CancelBody);
       const result = await cancelOrder(deps, {
         actor: actorOf(c),
         cityId: cityOf(c),
         orderId: c.req.param("id"),
         idempotencyKey: idempotencyKeyOf(c),
         correlationId: correlationIdOf(c),
+        acceptedPenalty: body?.acceptedPenalty ?? null,
       });
       return c.json(result, 202);
     } catch (error) {

@@ -26,6 +26,7 @@ import { preferencesRoutes } from "./routes/preferences";
 import { pushRoutes } from "./routes/push";
 import { smsRoutes } from "./routes/sms";
 import { templatesRoutes } from "./routes/templates";
+import { startTripAccessSms } from "./trip-access/consumer.js";
 
 const app = new Hono();
 
@@ -113,11 +114,12 @@ async function subscribeToEvents() {
 
 void subscribeToEvents();
 
-// Durable marketplace push (G10): subscribe to the mp.* outbox stream and
-// deliver hint pushes to FCM with dedupe, retry/backoff, DLQ, token rotation
-// and per-user preferences. Also recognizes the dedicated settlement event
-// (mp.settlement.posted, G15). This is separate from the legacy channel
-// subscriptions above.
+// Durable outbox push (G10): subscribe to the mp.* outbox stream (plus
+// trip_access.declined, reservation.* and shipment.return_proposed) and
+// deliver per-viewer hint pushes to FCM with dedupe, retry/backoff, DLQ, token
+// rotation, per-user preferences and an SMS fallback for time-critical
+// events. Also recognizes the dedicated settlement event (mp.settlement.posted,
+// G15). This is separate from the legacy channel subscriptions above.
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 let marketplacePush: { stop: () => Promise<void> } | null = null;
 startMarketplacePush(redisUrl)
@@ -126,6 +128,21 @@ startMarketplacePush(redisUrl)
   })
   .catch((error) => {
     logger.error({ err: error }, "Failed to start marketplace push consumer");
+  });
+
+// Passenger trip-link SMS (TRIP-LINK SEALED DELIVERY CONTRACT): fails closed —
+// without TRIP_ACCESS_DELIVERY_KEY/_KID and PASSENGER_TRIP_LINK_BASE_URL it is
+// not started (an alert is logged) and never sends.
+let tripAccessSms: { stop: () => Promise<void> } | null = null;
+startTripAccessSms({ redisUrl, env: process.env })
+  .then((handle) => {
+    tripAccessSms = handle;
+  })
+  .catch((error) => {
+    logger.error(
+      { err: error instanceof Error ? error.message : "start failed" },
+      "Failed to start passenger trip link SMS consumer",
+    );
   });
 
 // Graceful shutdown
@@ -137,6 +154,7 @@ async function shutdown() {
 
   await Promise.all([
     marketplacePush?.stop() ?? Promise.resolve(),
+    tripAccessSms?.stop() ?? Promise.resolve(),
     closeRedis(),
     disconnectPrisma(),
   ]);

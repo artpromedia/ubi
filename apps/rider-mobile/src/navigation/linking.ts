@@ -49,6 +49,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
           OrderStatus: "travel/orders/:orderId",
           Disruption: "travel/orders/:orderId/disruption",
           RefundStatus: "travel/refunds/:refundId",
+          Transfer: "travel/transfers/:transferId",
         },
       },
       Marketplace: {
@@ -58,8 +59,21 @@ export const linking: LinkingOptions<RootStackParamList> = {
           BidDetail: "home/marketplace/:requestId/offers/:bidId",
           Queued: "home/marketplace/:requestId/queued",
           DeliveryReturn: "home/marketplace/delivery/:deliveryId/return",
+          // A02: the pre-award route edit of an open request, and the executing trip.
+          Route: "home/marketplace/:requestId/route",
+          Trip: "home/marketplace/:requestId/trip",
+          ProposeChange: "home/marketplace/:requestId/trip/change",
+          // A03 Book for Later.
+          Later: "home/marketplace/later",
+          Scheduled: "home/marketplace/later/scheduled/:scheduledRequestId",
+          AdvanceOffers: "home/marketplace/:requestId/advance",
+          Booking: "home/marketplace/later/bookings/:bookingId",
+          Series: "home/marketplace/later/series/:templateId",
+          // A04.3 / A06 rider confidence.
+          Favourites: "home/marketplace/favourites",
+          Receipt: "home/marketplace/:requestId/receipt",
         },
-      }, // Fare carries an object param (quoteParams) and is reached in-app only.
+      }, // Fare and Schedule carry an object param (quoteParams) and are reached in-app only.
       FlagOff: "unavailable/:feature",
     },
   },

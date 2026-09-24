@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -63,6 +65,8 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 		r.Get("/feed", h.Feed)
 		r.Post("/driver/parked", h.ConfirmParked)
 		r.Get("/driver/jobs", h.DriverJobs)
+		r.Get("/driver/preferences", h.DriverPreferences)
+		r.Patch("/driver/preferences", h.PatchDriverPreferences)
 
 		r.Route("/requests", func(r chi.Router) {
 			r.Post("/", h.PublishRequest)
@@ -74,6 +78,28 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 			r.Get("/{requestId}/queue", h.RequestQueue)
 			r.Get("/{requestId}/pin", h.RetrievePin)
 			r.Get("/{requestId}/driver-view", h.DriverView)
+
+			// A02: the executing trip's committed terms, post-award
+			// amendments and server-authoritative stop events.
+			r.Get("/{requestId}/trip", h.TripView)
+			r.Post("/{requestId}/terminate", h.TerminateTrip)
+			r.Get("/{requestId}/amendments", h.ListAmendments)
+			r.Post("/{requestId}/amendments", h.ProposeAmendment)
+			r.Get("/{requestId}/amendments/{amendmentId}", h.GetAmendment)
+			r.Post("/{requestId}/amendments/{amendmentId}/approve", h.ApproveAmendment)
+			r.Post("/{requestId}/amendments/{amendmentId}/reject", h.RejectAmendment)
+			r.Post("/{requestId}/stops/{stopId}/arrive", h.ArriveAtStop)
+			r.Post("/{requestId}/stops/{stopId}/depart", h.DepartStop)
+			r.Post("/{requestId}/stops/{stopId}/skip", h.SkipStop)
+			r.Post("/{requestId}/stops/{stopId}/waiting-approval", h.ApproveWaiting)
+
+			// A06/A04.3 rider confidence: receipts and the preferred-driver
+			// decline.
+			h.mountRequestConfidence(r)
+
+			// A06 part B: the requester's controls over a guest
+			// passenger's trip link.
+			h.mountRequestGuest(r)
 		})
 
 		r.Route("/bids", func(r chi.Router) {
@@ -88,6 +114,13 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 			r.Put("/", h.SaveRateProfile)
 			r.Post("/preview", h.PreviewRateProfile)
 		})
+
+		// A03 Book for Later: scheduled requests, advance driver
+		// reservations and recurring journeys.
+		h.mountScheduling(r)
+
+		// A06/A04.3 rider confidence: saved drivers and service needs.
+		h.mountConfidence(r)
 	})
 
 	r.Route("/admin/mp", func(r chi.Router) {
@@ -101,6 +134,14 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 		r.Post("/awards/{awardId}/reconcile", h.AdminReconcileAward)
 		r.Get("/recoveries", h.AdminRecoveries)
 		r.Post("/recoveries/{recoveryId}/retry", h.AdminRetryRecovery)
+
+		// Round 9: the owed-work boards of the rounds 5-7 sagas — an
+		// organization budget's owed commit/release, a queued delivery's
+		// owed cancellation — each with an explicit retry (dry-run first).
+		r.Get("/business-bookings", h.AdminBusinessBookings)
+		r.Post("/business-bookings/{awardId}/retry", h.AdminRetryBusinessOp)
+		r.Get("/delivery-cancellations", h.AdminDeliveryCancellations)
+		r.Post("/delivery-cancellations/{awardId}/retry", h.AdminRetryDeliveryCancel)
 
 		// C08: cancellations/no-shows + driver standing & appeals.
 		r.Get("/cancellations", h.AdminCancellations)
@@ -155,19 +196,126 @@ func (h *MarketplaceHandler) Quote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	stops, err := parseStopsParam(query)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	business, err := parseBusinessQuoteParams(query)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 
 	envelope, err := h.service.Quote(r.Context(), actor, marketplace.QuoteParams{
 		Service:      query.Get("service"),
 		VehicleClass: query.Get("vehicleClass"),
 		Pickup:       domain.Place{Lat: pickupLat, Lng: pickupLng},
 		Dropoff:      domain.Place{Lat: dropoffLat, Lng: dropoffLng},
+		Stops:        stops,
 		WeightKg:     weightKg,
+		Business:     business,
 	})
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, envelope)
+}
+
+// parseBusinessQuoteParams reads the optional business quote parameters
+// (A06 part C): organizationId, and with it costCentreId and travellerId.
+// Absent organizationId means a personal quote; the others alone are refused.
+func parseBusinessQuoteParams(query url.Values) (*marketplace.BusinessQuoteInput, error) {
+	organizationID := strings.TrimSpace(query.Get("organizationId"))
+	costCentreID := strings.TrimSpace(query.Get("costCentreId"))
+	rawTraveller := strings.TrimSpace(query.Get("travellerId"))
+	if organizationID == "" {
+		if costCentreID != "" || rawTraveller != "" {
+			return nil, domain.Errorf(domain.CodeValidationFailed, "costCentreId and travellerId need an organizationId").
+				WithDetails(map[string]any{"field": "organizationId"})
+		}
+		return nil, nil
+	}
+	input := &marketplace.BusinessQuoteInput{OrganizationID: organizationID, CostCentreID: costCentreID}
+	if rawTraveller != "" {
+		traveller, err := uuid.Parse(rawTraveller)
+		if err != nil {
+			return nil, domain.Errorf(domain.CodeValidationFailed, "travellerId must be a user id").
+				WithDetails(map[string]any{"field": "travellerId"})
+		}
+		input.TravellerID = &traveller
+	}
+	return input, nil
+}
+
+// maxStopsParamBytes bounds the encoded `stops` query parameter. Plumbing,
+// not policy: the market's stop limit is enforced by the service; this only
+// keeps a query string from being a request body in disguise.
+const maxStopsParamBytes = 4096
+
+// stopInputWire is one element of the `stops` parameter as it arrives. The
+// coordinates are pointers so a missing (or null) lat/lng is refused: decoded
+// straight into a float it would read as 0 — a real point on the equator or
+// the prime meridian that Place.Valid accepts and the route would price.
+type stopInputWire struct {
+	Lat      *float64 `json:"lat"`
+	Lng      *float64 `json:"lng"`
+	Label    string   `json:"label,omitempty"`
+	Purpose  string   `json:"purpose,omitempty"`
+	DwellSec *int     `json:"dwellSec,omitempty"`
+}
+
+// parseStopsParam reads the optional `stops` query parameter of GET
+// /v1/mp/quote: ONE JSON array of {lat, lng, label?, purpose?, dwellSec?} in
+// pickup → dropoff order (MpStopInputSchema). Unknown keys are refused — a
+// client cannot name a stop id or a price — and lat and lng are required on
+// every stop. Absent, `null` and `[]` all mean the plain pickup → dropoff
+// route.
+func parseStopsParam(query url.Values) ([]marketplace.StopInput, error) {
+	values, present := query["stops"]
+	if !present {
+		return nil, nil
+	}
+	if len(values) != 1 {
+		return nil, domain.Errorf(domain.CodeValidationFailed, "stops must be given once, as one JSON array").
+			WithDetails(map[string]any{"field": "stops"})
+	}
+	raw := strings.TrimSpace(values[0])
+	if raw == "" {
+		return nil, nil
+	}
+	if len(raw) > maxStopsParamBytes {
+		return nil, domain.Errorf(domain.CodeValidationFailed, "stops is too long").
+			WithDetails(map[string]any{"field": "stops", "maximumBytes": maxStopsParamBytes})
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var wire []stopInputWire
+	if err := decoder.Decode(&wire); err != nil || decoder.More() {
+		return nil, domain.Errorf(domain.CodeValidationFailed,
+			"stops must be a JSON array of {lat, lng, label?, purpose?, dwellSec?}").
+			WithDetails(map[string]any{"field": "stops"})
+	}
+	if len(wire) == 0 {
+		return nil, nil
+	}
+	stops := make([]marketplace.StopInput, 0, len(wire))
+	for i, stop := range wire {
+		if stop.Lat == nil || stop.Lng == nil {
+			return nil, domain.Errorf(domain.CodeValidationFailed,
+				"stop %d needs both lat and lng", i+1).
+				WithDetails(map[string]any{"field": "stops[" + strconv.Itoa(i) + "]"})
+		}
+		stops = append(stops, marketplace.StopInput{
+			Lat:      *stop.Lat,
+			Lng:      *stop.Lng,
+			Label:    stop.Label,
+			Purpose:  stop.Purpose,
+			DwellSec: stop.DwellSec,
+		})
+	}
+	return stops, nil
 }
 
 // PublishRequest handles POST /v1/mp/requests.
@@ -201,7 +349,10 @@ func (h *MarketplaceHandler) GetRequest(w http.ResponseWriter, r *http.Request) 
 		h.fail(w, r, err)
 		return
 	}
-	snapshot, err := h.service.Snapshot(r.Context(), actor, requestID)
+	// A06 part A: the requester's chosen offer order (price, pickup,
+	// service_fit); absent is the neutral offered order.
+	snapshot, err := h.service.SnapshotWithOptions(r.Context(), actor, requestID,
+		marketplace.SnapshotOptions{Sort: r.URL.Query().Get("sort")})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -346,12 +497,57 @@ func (h *MarketplaceHandler) Feed(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	page, err := h.service.Feed(r.Context(), actor, r.URL.Query().Get("cursor"))
+	query := marketplace.FeedQuery{Cursor: r.URL.Query().Get("cursor")}
+	// `preferences=ignore` shows the whole envelope, unfiltered by the
+	// driver's preferences; `apply` (or nothing) applies them.
+	switch mode := r.URL.Query().Get("preferences"); mode {
+	case "", "apply":
+	case "ignore":
+		query.IgnorePreferences = true
+	default:
+		h.fail(w, r, domain.Errorf(domain.CodeValidationFailed, "preferences must be apply or ignore, not %q", mode))
+		return
+	}
+	page, err := h.service.Feed(r.Context(), actor, query)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// DriverPreferences handles GET /v1/mp/driver/preferences.
+func (h *MarketplaceHandler) DriverPreferences(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	view, err := h.service.DriverPreferences(r.Context(), actor)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// PatchDriverPreferences handles PATCH /v1/mp/driver/preferences: versioned
+// (expectedVersion) and idempotent (Idempotency-Key).
+func (h *MarketplaceHandler) PatchDriverPreferences(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	var req marketplace.PatchDriverPreferencesRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.PatchDriverPreferences(r.Context(), actor, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
 }
 
 // DriverView handles GET /v1/mp/requests/{requestId}/driver-view.
@@ -853,4 +1049,271 @@ func intQuery(query url.Values, name string) int {
 		return 0
 	}
 	return value
+}
+
+// decodeOptionalBody decodes a JSON body when one was sent; an absent body
+// leaves the target at its zero value.
+func decodeOptionalBody(r *http.Request, target any) error {
+	if err := decodeBody(r, target); err != nil {
+		if mapped, ok := domain.AsError(err); ok && mapped.Message == emptyBodyMessage {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// tripIDs parses the request id and, when named, one more path id.
+func tripIDs(r *http.Request, second string) (uuid.UUID, uuid.UUID, error) {
+	requestID, err := uuidParam(r, "requestId")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	if second == "" {
+		return requestID, uuid.Nil, nil
+	}
+	id, err := uuidParam(r, second)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	return requestID, id, nil
+}
+
+// TripView handles GET /v1/mp/requests/{requestId}/trip.
+func (h *MarketplaceHandler) TripView(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, _, err := tripIDs(r, "")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.TripView(r.Context(), actor, requestID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("ETag", etagFor(view.Version))
+	writeJSON(w, http.StatusOK, view)
+}
+
+// TerminateTrip handles POST /v1/mp/requests/{requestId}/terminate.
+func (h *MarketplaceHandler) TerminateTrip(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, _, err := tripIDs(r, "")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.TerminateTripRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.TerminateTrip(r.Context(), actor, requestID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// ListAmendments handles GET /v1/mp/requests/{requestId}/amendments.
+func (h *MarketplaceHandler) ListAmendments(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, _, err := tripIDs(r, "")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.ListAmendments(r.Context(), actor, requestID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// ProposeAmendment handles POST /v1/mp/requests/{requestId}/amendments.
+func (h *MarketplaceHandler) ProposeAmendment(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, _, err := tripIDs(r, "")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.ProposeAmendmentRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, status, err := h.service.ProposeAmendment(r.Context(), actor, requestID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// GetAmendment handles GET /v1/mp/requests/{requestId}/amendments/{amendmentId}.
+func (h *MarketplaceHandler) GetAmendment(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, amendmentID, err := tripIDs(r, "amendmentId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.GetAmendment(r.Context(), actor, requestID, amendmentID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// ApproveAmendment handles POST .../amendments/{amendmentId}/approve.
+func (h *MarketplaceHandler) ApproveAmendment(w http.ResponseWriter, r *http.Request) {
+	h.decideAmendment(w, r, true)
+}
+
+// RejectAmendment handles POST .../amendments/{amendmentId}/reject.
+func (h *MarketplaceHandler) RejectAmendment(w http.ResponseWriter, r *http.Request) {
+	h.decideAmendment(w, r, false)
+}
+
+func (h *MarketplaceHandler) decideAmendment(w http.ResponseWriter, r *http.Request, approve bool) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, amendmentID, err := tripIDs(r, "amendmentId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.AmendmentDecisionRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	decide := h.service.RejectAmendment
+	if approve {
+		decide = h.service.ApproveAmendment
+	}
+	view, status, err := decide(r.Context(), actor, requestID, amendmentID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, status, view)
+}
+
+// ArriveAtStop handles POST .../stops/{stopId}/arrive.
+func (h *MarketplaceHandler) ArriveAtStop(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, stopID, err := tripIDs(r, "stopId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.StopArriveRequest
+	if err := decodeOptionalBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.ArriveAtStop(r.Context(), actor, requestID, stopID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// DepartStop handles POST .../stops/{stopId}/depart.
+func (h *MarketplaceHandler) DepartStop(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, stopID, err := tripIDs(r, "stopId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var ignored struct{}
+	if err := decodeOptionalBody(r, &ignored); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.DepartStop(r.Context(), actor, requestID, stopID, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// SkipStop handles POST .../stops/{stopId}/skip.
+func (h *MarketplaceHandler) SkipStop(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, stopID, err := tripIDs(r, "stopId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.StopSkipRequest
+	if err := decodeOptionalBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.SkipStop(r.Context(), actor, requestID, stopID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// ApproveWaiting handles POST .../stops/{stopId}/waiting-approval.
+func (h *MarketplaceHandler) ApproveWaiting(w http.ResponseWriter, r *http.Request) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	requestID, stopID, err := tripIDs(r, "stopId")
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var req marketplace.WaitingApprovalRequest
+	if err := decodeBody(r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	view, err := h.service.ApproveWaiting(r.Context(), actor, requestID, stopID, req, r.Header.Get(move.IdempotencyHeader))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }

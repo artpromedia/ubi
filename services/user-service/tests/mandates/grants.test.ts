@@ -9,9 +9,12 @@ import {
   key,
   newUserId,
   outboxNames,
+  patch,
   post,
   serviceHeaders,
+  userHeaders,
 } from "./harness";
+import { prisma } from "../../src/lib/prisma";
 
 interface GrantView {
   id: string;
@@ -237,5 +240,155 @@ describe("action grants — verify + consume", () => {
     );
     expect(res.status).toBe(422);
     expect(res.body.error?.code).toBe("validation_failed");
+  });
+});
+
+describe("action grants — mandate binding (recheck A03 / P02)", () => {
+  function mandateBody(overrides: Record<string, unknown> = {}) {
+    return {
+      action: "marketplace.ride.select",
+      title: "Pick a driver for my commute",
+      passengers: "self_only",
+      categories: ["go"],
+      perRunCap: { amountMinor: 900_000, currency: "NGN" },
+      periodCap: {
+        amount: { amountMinor: 5_000_000, currency: "NGN" },
+        runs: 10,
+        period: "month",
+      },
+      constraints: [],
+      expiresAt: "2027-03-01T00:00:00.000Z",
+      assurance: { method: "pin", proof: "step-up" },
+      ...overrides,
+    };
+  }
+
+  async function createMandate(userId: string, at: Harness = harness) {
+    const res = await post<Envelope<{ mandate: { id: string } }>>(
+      at.app,
+      "/mandates",
+      await userHeaders({ userId }, key()),
+      mandateBody(),
+    );
+    expect(res.status).toBe(201);
+    return res.body.data?.mandate.id as string;
+  }
+
+  function mandateMint(actorId: string, mandateId: string | undefined) {
+    return {
+      ...mintBody(actorId, "2026-09-09T11:00:00.000Z"),
+      action: "mp.negotiate",
+      assurance: "mandate" as const,
+      ...(mandateId === undefined ? {} : { mandateId }),
+    };
+  }
+
+  async function mint(body: unknown, at: Harness = harness) {
+    return post<Envelope<{ grant: GrantView; replayed: boolean }>>(
+      at.app,
+      "/internal/grants",
+      serviceHeaders(key()),
+      body,
+    );
+  }
+
+  it("mints a mandate grant bound to an ACTIVE mandate the actor owns", async () => {
+    const actorId = newUserId();
+    const mandateId = await createMandate(actorId);
+    const res = await mint(mandateMint(actorId, mandateId));
+    expect(res.status).toBe(201);
+    expect(res.body.data?.grant.assurance).toBe("mandate");
+    expect(res.body.data?.grant.mandateId).toBe(mandateId);
+  });
+
+  it("refuses a mandate grant that names no mandate", async () => {
+    const res = await mint(mandateMint(newUserId(), undefined));
+    expect(res.status).toBe(403);
+    expect(res.body.error?.details?.reason).toBe("mandate_binding_missing");
+  });
+
+  it("refuses another user's mandate, and an unknown one, alike", async () => {
+    const owner = newUserId();
+    const mandateId = await createMandate(owner);
+    const stranger = await mint(mandateMint(newUserId(), mandateId));
+    expect(stranger.status).toBe(403);
+    expect(stranger.body.error?.details?.reason).toBe("mandate_not_found");
+    const unknown = await mint(mandateMint(owner, "mnd_does_not_exist"));
+    expect(unknown.status).toBe(403);
+    expect(unknown.body.error?.details?.reason).toBe("mandate_not_found");
+    expect(await prisma.actionGrant.count({ where: { mandateId } })).toBe(0);
+  });
+
+  it("refuses a paused or revoked mandate", async () => {
+    const actorId = newUserId();
+    const paused = await createMandate(actorId);
+    const pausedRes = await patch<Envelope<unknown>>(
+      harness.app,
+      `/mandates/${paused}`,
+      await userHeaders({ userId: actorId }, key()),
+      { op: "pause" },
+    );
+    expect(pausedRes.status).toBe(200);
+    const onPaused = await mint(mandateMint(actorId, paused));
+    expect(onPaused.status).toBe(403);
+    expect(onPaused.body.error?.details?.reason).toBe("mandate_paused");
+
+    const revoked = await createMandate(actorId);
+    const revokedRes = await patch<Envelope<unknown>>(
+      harness.app,
+      `/mandates/${revoked}`,
+      await userHeaders({ userId: actorId }, key()),
+      { op: "revoke", assurance: { method: "pin", proof: "step-up" } },
+    );
+    expect(revokedRes.status).toBe(200);
+    const onRevoked = await mint(mandateMint(actorId, revoked));
+    expect(onRevoked.status).toBe(403);
+    expect(onRevoked.body.error?.details?.reason).toBe("mandate_revoked");
+  });
+
+  it("refuses a mandate that has expired by the mint's clock", async () => {
+    const local = createHarness(new Date("2026-09-09T10:00:00.000Z"));
+    const actorId = newUserId();
+    const mandateId = await createMandate(actorId, local);
+    local.setNow(new Date("2027-03-02T00:00:00.000Z"));
+    const res = await mint(
+      {
+        ...mandateMint(actorId, mandateId),
+        expiresAt: "2027-03-02T01:00:00.000Z",
+      },
+      local,
+    );
+    expect(res.status).toBe(403);
+    expect(res.body.error?.details?.reason).toBe("mandate_expired");
+  });
+
+  it("refuses a currency the mandate does not cover and a total above its per-run cap", async () => {
+    const actorId = newUserId();
+    const mandateId = await createMandate(actorId);
+    const currency = await mint({
+      ...mandateMint(actorId, mandateId),
+      total: { amountMinor: 1_000, currency: "GHS" },
+    });
+    expect(currency.status).toBe(403);
+    expect(currency.body.error?.details?.reason).toBe(
+      "mandate_currency_mismatch",
+    );
+    const cap = await mint({
+      ...mandateMint(actorId, mandateId),
+      total: { amountMinor: 900_001, currency: "NGN" },
+    });
+    expect(cap.status).toBe(403);
+    expect(cap.body.error?.details?.reason).toBe("mandate_cap_exceeded");
+  });
+
+  it("refuses an attended grant that tries to carry a mandate", async () => {
+    const actorId = newUserId();
+    const mandateId = await createMandate(actorId);
+    const res = await mint({
+      ...mintBody(actorId, "2026-09-09T11:00:00.000Z"),
+      mandateId,
+    });
+    expect(res.status).toBe(403);
+    expect(res.body.error?.details?.reason).toBe("mandate_on_attended_grant");
   });
 });

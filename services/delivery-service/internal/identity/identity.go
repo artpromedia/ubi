@@ -8,13 +8,19 @@
 // JWT in internal/middleware/auth.go stays as-is for the pre-existing CRUD
 // routes; only the new custody/return routes use this gateway identity.
 //
-// Posture note (recorded honestly, not silently copied as a fix): like
-// ride-service before C03, this verifier trusts the gateway's plain headers
-// when no RIDE_INTERNAL_CONTEXT_SECRET is configured. That is a
-// development-only posture. Making it a hard boot-time requirement for
-// delivery-service is left to the identity-hardening workstream (G03/C03)
-// rather than being half-done here across a second service — see the C07
-// report for the exact gap this leaves.
+// Posture: production fails closed, exactly like ride-service after C03.
+//   - Boot: config.ValidateProduction refuses to start a production process
+//     without a usable RIDE_INTERNAL_CONTEXT_SECRET, or with the
+//     RIDE_ALLOW_UNSIGNED_IDENTITY bypass set (config.ValidateIdentity), and
+//     handlers.Readiness never reports that state ready.
+//   - Request: a production-posture verifier (NewVerifierFor with
+//     production=true) makes the signature mandatory and, should it ever be
+//     built without a key, refuses every request with 503 rather than falling
+//     back to the plain headers. The plain headers alone never authenticate
+//     anyone in production.
+//
+// Outside production an empty key list still means unsigned dev-trust of the
+// gateway's plain headers (cmd/server warns about it at start-up).
 package identity
 
 import (
@@ -69,6 +75,9 @@ type Actor struct {
 type Verifier struct {
 	secrets [][]byte
 	maxAge  time.Duration
+	// production is the fail-closed posture: with no key configured the
+	// verifier refuses every request instead of trusting the plain headers.
+	production bool
 }
 
 // NewVerifier builds a verifier. The secret is a comma-separated key list —
@@ -87,8 +96,29 @@ func NewVerifier(secret string, maxAge time.Duration) *Verifier {
 	return &Verifier{secrets: secrets, maxAge: maxAge}
 }
 
+// NewVerifierFor builds the verifier in the posture the process's environment
+// demands. production=true is the fail-closed posture: a signature is
+// mandatory on every request, and an empty key list refuses every request with
+// 503 IDENTITY_NOT_CONFIGURED instead of trusting the plain headers (the boot
+// check in config.ValidateProduction makes that state unreachable; this is the
+// second line of defence). production=false is NewVerifier. cmd/server and the
+// test harness both reach it through handlers.NewRouter, so the posture under
+// test is the posture production serves.
+func NewVerifierFor(secret string, maxAge time.Duration, production bool) *Verifier {
+	verifier := NewVerifier(secret, maxAge)
+	verifier.production = production
+	return verifier
+}
+
 // Enabled reports whether signatures are being checked.
 func (v *Verifier) Enabled() bool { return v != nil && len(v.secrets) > 0 }
+
+// refusesAll reports a verifier that can authenticate nobody: a nil verifier
+// (a wiring mistake, never a reason to trust headers), or the production
+// posture without a key.
+func (v *Verifier) refusesAll() bool {
+	return v == nil || (v.production && len(v.secrets) == 0)
+}
 
 func signingPayload(userID, role, cityID, issuedAt string) string {
 	return strings.Join([]string{"ubi.internal.v1", userID, role, cityID, issuedAt}, "|")
@@ -112,6 +142,9 @@ func (v *Verifier) Sign(userID, role, cityID string, issuedAt time.Time) string 
 }
 
 func (v *Verifier) verify(r *http.Request, userID, role, cityID string) error {
+	if v.refusesAll() {
+		return errNotConfigured()
+	}
 	if !v.Enabled() {
 		return nil
 	}
@@ -160,6 +193,16 @@ func errForbidden(message string) error {
 	return apiError{status: http.StatusForbidden, code: "FORBIDDEN", message: message}
 }
 
+// errNotConfigured is the deployment's fault, not the caller's — 503, the same
+// honesty as the marketplace hand-off's SERVICE_KEY_NOT_CONFIGURED.
+func errNotConfigured() error {
+	return apiError{
+		status:  http.StatusServiceUnavailable,
+		code:    "IDENTITY_NOT_CONFIGURED",
+		message: "caller identity cannot be verified: RIDE_INTERNAL_CONTEXT_SECRET is not configured",
+	}
+}
+
 func (e apiError) Error() string { return e.message }
 
 // writeErrorBody mirrors the {success:false,error:{code,message}} envelope
@@ -192,10 +235,16 @@ func writeError(w http.ResponseWriter, err error) {
 // RequireIdentity builds the middleware that turns gateway headers into an
 // Actor. A request without a user id and a role is refused with 401; there is
 // no anonymous fallback, because every endpoint behind it acts on somebody's
-// delivery.
+// delivery. A verifier that can authenticate nobody (nil, or production
+// posture without a key) refuses every request with 503 before any header is
+// read.
 func RequireIdentity(verifier *Verifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if verifier.refusesAll() {
+				writeError(w, errNotConfigured())
+				return
+			}
 			rawID := strings.TrimSpace(r.Header.Get(HeaderUserID))
 			role := strings.TrimSpace(r.Header.Get(HeaderUserRole))
 			cityID := strings.TrimSpace(r.Header.Get(HeaderCityID))
@@ -222,6 +271,36 @@ func RequireIdentity(verifier *Verifier) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), actorContextKey, actor)))
 		})
 	}
+}
+
+// VerifiedActor returns the actor a request's gateway identity names — only
+// when signatures are being checked and this request's signature verifies
+// exactly as RequireIdentity would accept it. With signatures disabled
+// (development only) the plain headers are unproven claims, so nothing is
+// returned. It authenticates nothing and writes nothing: the rate limiter
+// (internal/middleware/ratelimit.go) uses it to count a request against the
+// user it acts for, and RequireIdentity still runs on every identified route.
+func (v *Verifier) VerifiedActor(r *http.Request) (Actor, bool) {
+	if !v.Enabled() || v.refusesAll() {
+		return Actor{}, false
+	}
+	rawID := strings.TrimSpace(r.Header.Get(HeaderUserID))
+	role := strings.TrimSpace(r.Header.Get(HeaderUserRole))
+	cityID := strings.TrimSpace(r.Header.Get(HeaderCityID))
+	if rawID == "" || role == "" {
+		return Actor{}, false
+	}
+	if _, ok := knownRoles[role]; !ok {
+		return Actor{}, false
+	}
+	userID, err := uuid.Parse(rawID)
+	if err != nil {
+		return Actor{}, false
+	}
+	if v.verify(r, rawID, role, cityID) != nil {
+		return Actor{}, false
+	}
+	return Actor{UserID: userID, Role: role, CityID: cityID}, true
 }
 
 // ActorFrom reads the actor the middleware established. The second result is

@@ -9,21 +9,33 @@
  * The supply "provider" is the deterministic fixture adapter, driven entirely by
  * the `travel_suppliers.config` seeded here — the README cast (Air Peace P4 7120,
  * Ibom Air QI 0312/0316, Transcorp Hilton, Fraser Suites). The one fake in these
- * tests is the payment port, which lives here and nowhere near `src/`.
+ * tests is the payment port, which lives here and nowhere near `src/`. The
+ * airport-transfer suites reach ride-service through the REAL HTTP ride port
+ * over a socket, against tests/ride-stub.ts (which verifies the signed identity
+ * with ride-service's algorithm); every other suite gets UNWIRED_RIDES, which
+ * answers nothing.
  */
+import { randomUUID } from "node:crypto";
+
 import { PrismaClient } from "@prisma/client";
+import { vi } from "vitest";
 
-import { money } from "@ubi/contracts";
+import { ContractError, money } from "@ubi/contracts";
 
+import { signIdentityContext } from "../../api-gateway/src/identity/context";
 import { createCityConfigProvider } from "../src/ops/config";
+import { RideUnavailableError } from "../src/ports/ride-port";
 
+import type { Scope } from "../../api-gateway/src/identity/scopes";
 import type { TravelDeps } from "../src/ops/context";
 import type {
   PaymentPort,
   PaymentRequest,
   PaymentResult,
+  PaymentStatus,
 } from "../src/ports/payment-port";
 import type { JsonRecord, TravelDb } from "../src/ops/types";
+import type { RidePort } from "../src/ports/ride-port";
 
 export const TEST_DATABASE_URL =
   process.env.TRAVEL_TEST_DATABASE_URL ??
@@ -65,6 +77,14 @@ export function idemKey(label = "k"): string {
  * into another's `pickSupplier`.
  */
 export async function resetTravel(db: TravelDb): Promise<void> {
+  await db.airportTransferAction.deleteMany({});
+  await db.airportTransfer.deleteMany({});
+  await db.travelFlightStatusEvent.deleteMany({});
+  await db.auditLog.deleteMany({ where: { subjectType: "airport_transfer" } });
+  // The travel-ops console's idempotency records (src/ops/console.ts).
+  await db.auditLog.deleteMany({
+    where: { action: { startsWith: "travel.ops." } },
+  });
   await db.rideReservationLink.deleteMany({});
   await db.travelDocument.deleteMany({});
   await db.travelOrderEvent.deleteMany({});
@@ -88,7 +108,72 @@ export async function resetTravel(db: TravelDb): Promise<void> {
 
 export interface SeedCityOptions {
   readonly flags?: Record<string, boolean>;
+  /**
+   * Include a marketplace policy with a Book for Later block (the values
+   * ride-service's own fixtures use) — what an airport transfer needs.
+   */
+  readonly marketplace?: boolean;
 }
+
+const FARE_BOUNDS = {
+  absoluteFloorMinor: 80_000,
+  costFloorMinor: 60_000,
+  floorBpsOfSuggested: 7_000,
+  ceilingBpsOfSuggested: 20_000,
+};
+
+const RATE_BOUNDS = { maxPerKmMinor: 50_000, maxMinimumTripFareMinor: 400_000 };
+
+/** A MarketplacePolicySchema-valid policy; test data, never a production default. */
+export const MARKETPLACE_POLICY = {
+  policyVersion: 3,
+  commissionBps: 1_000,
+  commissionRounding: "half_up",
+  fareBounds: { "ride:go": FARE_BOUNDS, "ride:comfort": FARE_BOUNDS },
+  searchEnvelope: {
+    initialRadiusMeters: 3_000,
+    maxRadiusMeters: 9_000,
+    initialPickupEtaSec: 600,
+    maxPickupEtaSec: 1_500,
+    expandAfterSec: 30,
+    minOffersBeforeExpand: 2,
+    expansionSteps: 3,
+  },
+  stationary: {
+    minDwellSec: 60,
+    maxSpeedMps: 1.5,
+    maxLocationAgeSec: 120,
+    maxAccuracyMeters: 50,
+    motionCloseSec: 20,
+  },
+  finishingTrip: {
+    maxRemainingSec: 600,
+    completionBufferSec: 120,
+    uncertaintyBufferSec: 60,
+    corridorMaxBearingDeltaDeg: 90,
+  },
+  bids: {
+    bidExpirySec: 120,
+    requestExpirySec: 600,
+    revisionCooldownSec: 15,
+    maxLiveBidsPerDriver: 3,
+    maxOpenRequestsPerRequester: 2,
+  },
+  queue: { pickupWindowToleranceSec: 300 },
+  rateProfileBounds: { "ride:go": RATE_BOUNDS, "ride:comfort": RATE_BOUNDS },
+  scheduling: {
+    scheduledRequests: {
+      publishLeadSec: 1_800,
+      minLeadSec: 3_600,
+      maxHorizonSec: 1_209_600,
+      defaultWindowSec: 600,
+      minWindowSec: 300,
+      maxWindowSec: 1_800,
+      reminderOffsetsSec: [43_200, 3_600],
+      maxPendingPerRequester: 10,
+    },
+  },
+};
 
 export async function seedCity(
   db: TravelDb,
@@ -145,6 +230,9 @@ export async function seedCity(
       doors: { LOS: "D" },
     },
     taxes: { vat: 7.5 },
+    ...(options.marketplace === true
+      ? { marketplace: MARKETPLACE_POLICY }
+      : {}),
   };
 
   await db.city.create({
@@ -399,6 +487,16 @@ export async function setControl(
 // ---------------------------------------------------------------------------
 // Fake payment port — tests only
 // ---------------------------------------------------------------------------
+//
+// It mirrors payment-service's /v1/finance/travel item semantics (see
+// services/payment-service/src/finance/travel.ts) closely enough that the
+// travel flows cannot pass here and fail there: one item per order, a replay
+// under the SAME key answers the original posting, a second capture under a
+// DIFFERENT key is a 409 `illegal_transition`, and `status()` reads back what
+// was recorded. `failNext` injects the two ambiguities a network can cause —
+// a response lost AFTER the posting applied, and no answer BEFORE it applied —
+// with the exact error shapes the HTTP port raises. The real payment-service
+// is exercised in payment-port.test.ts.
 
 export interface PaymentCall {
   readonly op: string;
@@ -407,55 +505,218 @@ export interface PaymentCall {
   readonly idempotencyKey: string;
 }
 
+type FakeOp = "authorize" | "capture" | "release" | "refund";
+type FaultMode = "lose_response" | "no_answer";
+
+interface FakeItem {
+  itemId: string;
+  orderId: string;
+  state:
+    | "authorized"
+    | "captured"
+    | "released"
+    | "partially_refunded"
+    | "refunded";
+  currency: string;
+  authorizedMinor: number;
+  capturedMinor: number;
+  refundedMinor: number;
+  captureEntryId: string | null;
+}
+
+interface FakeRecordedOp {
+  ref: string;
+  op: FakeOp;
+  clientKey: string;
+  amountMinor: number;
+  entryId: string | null;
+  createdAt: string;
+}
+
+function unknownOutcome(op: string, orderId: string): ContractError {
+  return new ContractError(
+    "service_unavailable",
+    `payment-service did not answer; whether the ${op} happened is unknown`,
+    { op, orderId, outcome: "unknown" },
+  );
+}
+
+function refused(status: number, code: string, op: string): ContractError {
+  return new ContractError(
+    "service_unavailable",
+    `payment-service could not ${op} this order`,
+    { status, paymentCode: code },
+  );
+}
+
 export class FakePayment implements PaymentPort {
   readonly calls: PaymentCall[] = [];
-  private readonly refs = new Map<string, string>();
+  private readonly byKey = new Map<string, PaymentResult>();
+  private readonly items = new Map<string, FakeItem>();
+  private readonly log = new Map<string, FakeRecordedOp[]>();
+  private readonly faults: { op: FakeOp; mode: FaultMode }[] = [];
+  private sequence = 0;
 
-  private record(
-    op: string,
-    request: PaymentRequest,
-    entry: boolean,
-  ): PaymentResult {
+  /** The next `op` call fails with `mode` (once). */
+  failNext(op: FakeOp, mode: FaultMode): void {
+    this.faults.push({ op, mode });
+  }
+
+  private takeFault(op: FakeOp): FaultMode | null {
+    const index = this.faults.findIndex((fault) => fault.op === op);
+    if (index === -1) return null;
+    const [fault] = this.faults.splice(index, 1);
+    return fault?.mode ?? null;
+  }
+
+  private apply(op: FakeOp, request: PaymentRequest): PaymentResult {
+    const keyed = `${op}:${request.idempotencyKey}`;
+    const seen = this.byKey.get(keyed);
+    if (seen !== undefined) {
+      return { ...seen, replayed: true };
+    }
+    const amount = request.amount.amountMinor;
+    let item = this.items.get(request.orderId);
+    let entryId: string | null = null;
+    if (op === "authorize") {
+      if (item !== undefined) throw refused(409, "conflict", op);
+      item = {
+        itemId: `tpi_${request.orderId}`,
+        orderId: request.orderId,
+        state: "authorized",
+        currency: request.amount.currency,
+        authorizedMinor: amount,
+        capturedMinor: 0,
+        refundedMinor: 0,
+        captureEntryId: null,
+      };
+      this.items.set(request.orderId, item);
+    } else {
+      if (item === undefined) throw refused(404, "not_found", op);
+      if (op === "capture") {
+        if (item.state !== "authorized")
+          throw refused(409, "illegal_transition", op);
+        if (amount > item.authorizedMinor) throw refused(409, "conflict", op);
+        entryId = `je_cap_${request.orderId}`;
+        item.state = "captured";
+        item.capturedMinor = amount;
+        item.captureEntryId = entryId;
+      } else if (op === "release") {
+        if (item.state !== "authorized")
+          throw refused(409, "illegal_transition", op);
+        if (amount !== item.authorizedMinor) throw refused(409, "conflict", op);
+        item.state = "released";
+      } else {
+        if (item.state !== "captured" && item.state !== "partially_refunded") {
+          throw refused(409, "illegal_transition", op);
+        }
+        if (amount > item.capturedMinor - item.refundedMinor) {
+          throw refused(409, "conflict", op);
+        }
+        item.refundedMinor += amount;
+        item.state =
+          item.refundedMinor === item.capturedMinor
+            ? "refunded"
+            : "partially_refunded";
+        entryId = `je_ref_${this.sequence + 1}`;
+      }
+    }
+    this.sequence += 1;
+    const ref = `${op}_${this.sequence}_${Math.abs(hash(request.idempotencyKey))}`;
+    const result: PaymentResult = {
+      ref,
+      entryId,
+      amount: request.amount,
+      replayed: false,
+    };
+    this.byKey.set(keyed, result);
+    const entries = this.log.get(request.orderId) ?? [];
+    entries.push({
+      ref,
+      op,
+      clientKey: request.idempotencyKey,
+      amountMinor: amount,
+      entryId,
+      createdAt: new Date().toISOString(),
+    });
+    this.log.set(request.orderId, entries);
+    return result;
+  }
+
+  private call(op: FakeOp, request: PaymentRequest): PaymentResult {
     this.calls.push({
       op,
       orderId: request.orderId,
       amountMinor: request.amount.amountMinor,
       idempotencyKey: request.idempotencyKey,
     });
-    const seen = this.refs.get(request.idempotencyKey);
-    if (seen !== undefined) {
-      return {
-        ref: seen,
-        entryId: entry ? `je_${seen}` : null,
-        amount: request.amount,
-        replayed: true,
-      };
+    const fault = this.takeFault(op);
+    if (fault === "no_answer") {
+      throw unknownOutcome(op, request.orderId);
     }
-    const ref = `${op}_${this.refs.size + 1}_${Math.abs(hash(request.idempotencyKey))}`;
-    this.refs.set(request.idempotencyKey, ref);
-    return {
-      ref,
-      entryId: entry ? `je_${ref}` : null,
-      amount: request.amount,
-      replayed: false,
-    };
+    const result = this.apply(op, request);
+    if (fault === "lose_response") {
+      throw unknownOutcome(op, request.orderId);
+    }
+    return result;
   }
 
   async authorize(request: PaymentRequest): Promise<PaymentResult> {
-    return this.record("authorize", request, false);
+    return this.call("authorize", request);
   }
   async capture(request: PaymentRequest): Promise<PaymentResult> {
-    return this.record("capture", request, true);
+    return this.call("capture", request);
   }
   async release(request: PaymentRequest): Promise<PaymentResult> {
-    return this.record("release", request, false);
+    return this.call("release", request);
   }
   async refund(request: PaymentRequest): Promise<PaymentResult> {
-    return this.record("refund", request, true);
+    return this.call("refund", request);
   }
 
+  async status(orderId: string): Promise<PaymentStatus | null> {
+    const item = this.items.get(orderId);
+    if (item === undefined) return null;
+    const m = (amountMinor: number) => ({
+      amountMinor,
+      currency: item.currency,
+    });
+    return {
+      item: {
+        itemId: item.itemId,
+        orderId,
+        state: item.state,
+        authorized: m(item.authorizedMinor),
+        captured: m(item.capturedMinor),
+        refunded: m(item.refundedMinor),
+        refundable: m(item.capturedMinor - item.refundedMinor),
+        captureEntryId: item.captureEntryId,
+      },
+      ops: (this.log.get(orderId) ?? []).map((op) => ({
+        ref: op.ref,
+        op: op.op,
+        clientKey: op.clientKey,
+        amount: m(op.amountMinor),
+        entryId: op.entryId,
+        createdAt: op.createdAt,
+      })),
+    };
+  }
+
+  /** Calls made for `op`, replays and failed attempts included. */
   countOp(op: string): number {
     return this.calls.filter((call) => call.op === op).length;
+  }
+
+  /** Postings that actually moved state for `op` (replays excluded). */
+  appliedOps(orderId: string, op: FakeOp): number {
+    return (this.log.get(orderId) ?? []).filter((entry) => entry.op === op)
+      .length;
+  }
+
+  /** The item state payment-service would report. */
+  itemState(orderId: string): string | null {
+    return this.items.get(orderId)?.state ?? null;
   }
 }
 
@@ -473,7 +734,31 @@ function hash(value: string): number {
 
 export interface DepsOptions {
   readonly payment?: PaymentPort;
+  readonly rides?: RidePort;
   readonly now?: () => Date;
+}
+
+/**
+ * The ride port suites that never reach ride-service get: every call is an
+ * honest "unavailable" (the outcome-unknown error the HTTP port raises), so a
+ * stray call can never look like a ride-service answer.
+ */
+export const UNWIRED_RIDES: RidePort = {
+  quote: unwired,
+  createScheduledRequest: unwired,
+  getScheduledRequest: unwired,
+  cancelScheduledRequest: unwired,
+  approveScheduledRequest: unwired,
+  cancelRequest: unwired,
+};
+
+function unwired(): Promise<never> {
+  return Promise.reject(
+    new RideUnavailableError(
+      "ride-service is not wired in this test",
+      "ride_unreachable",
+    ),
+  );
 }
 
 export function makeDeps(
@@ -488,6 +773,7 @@ export function makeDeps(
     db,
     config: createCityConfigProvider(db),
     payment,
+    rides: options.rides ?? UNWIRED_RIDES,
     now: options.now ?? (() => new Date()),
   };
   return { deps, payment: payment as FakePayment };
@@ -495,6 +781,11 @@ export function makeDeps(
 
 export function rider(): { id: string; role: string } {
   return { id: uid("rider"), role: "rider" };
+}
+
+/** A rider whose id is a UUID — the only user id ride-service accepts. */
+export function uuidRider(): { id: string; role: string } {
+  return { id: randomUUID(), role: "rider" };
 }
 
 export function opsActor(): { id: string; role: string } {
@@ -513,6 +804,107 @@ export function headers(
     "X-City-ID": cityId,
     ...extra,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The gateway-signed identity context (production shape)
+// ---------------------------------------------------------------------------
+
+/** The internal key the gateway signs with and travel-service verifies with. */
+export const TEST_IDENTITY_SECRET =
+  "travel-identity-context-test-internal-secret-01";
+/** The client-facing key; the gateway refuses to sign if the two are equal. */
+export const TEST_CLIENT_SECRET =
+  "travel-identity-context-test-client-secret-01";
+
+/**
+ * Configures the shared internal identity key for one test. Callers undo it
+ * with `vi.unstubAllEnvs()` in their `afterEach`.
+ */
+export function stubIdentityKeys(): void {
+  vi.stubEnv("UBI_IDENTITY_SECRET", TEST_IDENTITY_SECRET);
+  vi.stubEnv("UBI_IDENTITY_KEY_ID", "test-k1");
+  vi.stubEnv("JWT_SECRET", TEST_CLIENT_SECRET);
+}
+
+/** What the gateway grants a full-mode rider on the travel routes. */
+export const TRAVELLER_SCOPES = [
+  "profile:read",
+  "ride:read",
+  "mp:request",
+  "travel:read",
+  "travel:book",
+] as const;
+
+export interface GatewayIdentityOptions {
+  /** Defaults to the actor's role. */
+  readonly role?: string;
+  /** The token's city; null for a context bound to no city (the default). */
+  readonly cityId?: string | null;
+  readonly scopes?: readonly string[];
+  readonly modes?: readonly string[];
+  /** Seconds until expiry; the gateway uses 120. A negative value is expired. */
+  readonly ttlSeconds?: number;
+}
+
+/**
+ * An `x-ubi-identity` context minted by the REAL gateway signer
+ * (services/api-gateway/src/identity/context.ts), so an issuer/verifier drift
+ * turns the identity tests red. Needs `stubIdentityKeys()` (or equivalent).
+ */
+export async function gatewayContext(
+  actor: { id: string; role: string },
+  options: GatewayIdentityOptions = {},
+): Promise<string> {
+  const token = await signIdentityContext(
+    {
+      userId: actor.id,
+      role: options.role ?? actor.role,
+      scopes: [...(options.scopes ?? TRAVELLER_SCOPES)] as Scope[],
+      modes: [...(options.modes ?? [])] as never[],
+      cityId: options.cityId === undefined ? null : options.cityId,
+      tenantId: null,
+      sessionId: null,
+      deviceId: null,
+      requestId: `req-${randomUUID()}`,
+    },
+    options.ttlSeconds,
+  );
+  return token;
+}
+
+/**
+ * Exactly the identity headers the gateway forwards for a verified caller
+ * (services/api-gateway/src/middleware/identity.ts): the signed context, its
+ * plain mirrors, and — when the token is bound to a city — the two city
+ * mirrors written from that claim. `declaredCityId` is the client's own
+ * `X-City-ID`, which the gateway passes through untouched.
+ */
+export async function gatewayHeaders(
+  actor: { id: string; role: string },
+  options: GatewayIdentityOptions & {
+    readonly declaredCityId?: string;
+    readonly extra?: Record<string, string>;
+  } = {},
+): Promise<Record<string, string>> {
+  const role = options.role ?? actor.role;
+  const cityId = options.cityId === undefined ? null : options.cityId;
+  const out: Record<string, string> = {
+    "content-type": "application/json",
+    "x-ubi-identity": await gatewayContext(actor, options),
+    "x-user-id": actor.id,
+    "x-user-role": role,
+    "x-auth-user-id": actor.id,
+    "x-auth-user-role": role,
+  };
+  if (cityId !== null) {
+    out["x-ubi-city-id"] = cityId;
+    out["x-auth-city-id"] = cityId;
+  }
+  if (options.declaredCityId !== undefined) {
+    out["X-City-ID"] = options.declaredCityId;
+  }
+  return { ...out, ...(options.extra ?? {}) };
 }
 
 export { money };

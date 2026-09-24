@@ -42,6 +42,13 @@ type Service struct {
 	// observer, when set, hears about terminal ride transitions post-commit
 	// (see SetExecutionObserver); nil means nobody is listening.
 	observer ExecutionObserver
+	// activity, when set, hears about a driver going online and a live trip
+	// starting, post-commit (see SetDriverActivityObserver).
+	activity DriverActivityObserver
+	// cancelGuard, when set, may refuse a rider's cancel of a
+	// marketplace-managed ride before anything moves (see
+	// SetRiderCancelGuard).
+	cancelGuard RiderCancelGuard
 }
 
 // NewService validates its dependencies rather than discovering a nil one
@@ -162,7 +169,7 @@ func (s *Service) CreateQuote(ctx context.Context, actor Actor, req QuoteRequest
 		VehicleClass:    req.VehicleClass,
 		Pickup:          req.Pickup,
 		Dropoff:         req.Dropoff,
-		Stops:           req.Stops,
+		Stops:           domain.StopsFromPlaces(req.Stops),
 		DistanceMeters:  route.DistanceMeters,
 		DurationSeconds: route.DurationSeconds,
 		FareMinor:       fare.AmountMinor,
@@ -493,6 +500,13 @@ func (s *Service) decorate(ctx context.Context, ride *domain.Ride) (*RideView, e
 		pinRequired = config.PinRequired
 	}
 	view := viewOf(ride, pinRequired)
+	// A marketplace execution names the request it was awarded from. A read
+	// failure omits the field (logged) rather than failing the ride read.
+	if requestID, err := s.deps.Store.MarketplaceRequestID(ctx, s.deps.Store.Pool(), ride.ID); err != nil {
+		s.deps.Logger.Warn().Err(err).Str("ride_id", ride.ID.String()).Msg("could not read the ride's marketplace request")
+	} else {
+		view.MarketplaceRequestID = requestID
+	}
 
 	if ride.State == machine.RiderNoDriver {
 		view.Options = []string{"switch_class", "keep_waiting", "cancel_free"}

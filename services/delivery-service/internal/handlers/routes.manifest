@@ -1,0 +1,38 @@
+# delivery-service route manifest: every METHOD + chi pattern the production
+# router serves (handlers.NewRouter, which cmd/server/main.go serves as its
+# http.Server handler). GENERATED — do not edit by hand.
+# Regenerate: (cd services/delivery-service && UPDATE_ROUTE_MANIFEST=1 go test ./internal/handlers/ -run TestRouteManifest)
+# Read by services/api-gateway/tests/route-contract.test.ts.
+GET /api/v1/deliveries/
+GET /api/v1/deliveries/active
+GET /api/v1/deliveries/{id}
+GET /api/v1/deliveries/{id}/custody/
+GET /api/v1/deliveries/{id}/custody/proofs/{proofId}/url
+GET /api/v1/deliveries/{id}/track
+GET /api/v1/driver/deliveries/available
+GET /api/v1/zones/
+GET /api/v1/zones/check
+GET /health
+GET /health/live
+GET /health/ready
+POST /api/v1/deliveries/
+POST /api/v1/deliveries/{id}/cancel
+POST /api/v1/deliveries/{id}/custody/collected
+POST /api/v1/deliveries/{id}/custody/delivery-proof
+POST /api/v1/deliveries/{id}/custody/pickup-proof
+POST /api/v1/deliveries/{id}/custody/proof-uploads
+POST /api/v1/deliveries/{id}/custody/recipient-unreachable
+POST /api/v1/deliveries/{id}/custody/return/cancel-charge
+POST /api/v1/deliveries/{id}/custody/return/complete
+POST /api/v1/deliveries/{id}/custody/return/consent
+POST /api/v1/deliveries/{id}/custody/return/propose
+POST /api/v1/deliveries/{id}/tip
+POST /api/v1/driver/deliveries/{id}/accept
+POST /api/v1/driver/deliveries/{id}/deliver
+POST /api/v1/driver/deliveries/{id}/pickup
+POST /api/v1/driver/location
+POST /api/v1/quotes/
+POST /api/v1/webhooks/marketplace-assign
+POST /api/v1/webhooks/marketplace-cancel
+POST /api/v1/webhooks/order
+POST /api/v1/webhooks/payment

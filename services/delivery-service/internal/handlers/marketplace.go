@@ -17,11 +17,13 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog/log"
 
 	"github.com/ubi-africa/ubi-monorepo/services/delivery-service/internal/models"
@@ -70,6 +72,15 @@ const placeholderPaymentMethod = "WALLET"
 
 // MarketplaceAssignRequest is the body of the internal
 // POST /api/v1/webhooks/marketplace-assign call from the marketplace engine.
+//
+// Identities (P17): CustomerID is the requester's USER id (users.id — the
+// same identity the gateway signs as x-auth-user-id and ride-service's award
+// carries) and DriverID the winning driver's user id; both are UUIDs.
+// deliveries.sender_id, however, is a foreign key to riders.id — a rider
+// PROFILE — so this adapter resolves the requester's profile itself
+// (resolveSenderProfile) and refuses the hand-off when there is none. The
+// custody row keeps the USER id (delivery_custody.sender_id), because the
+// custody access matrix compares it against the gateway-verified actor.
 type MarketplaceAssignRequest struct {
 	AwardID        string          `json:"awardId"`
 	RequestID      string          `json:"requestId"`
@@ -112,9 +123,16 @@ func validateMarketplaceAssign(req *MarketplaceAssignRequest) []string {
 	}
 	if req.DriverID == "" {
 		problems = append(problems, "driverId is required")
+	} else if _, err := uuid.Parse(req.DriverID); err != nil {
+		problems = append(problems, "driverId must be the driver's user id (a UUID)")
 	}
 	if req.CustomerID == "" {
 		problems = append(problems, "customerId is required")
+	} else if _, err := uuid.Parse(req.CustomerID); err != nil {
+		problems = append(problems, "customerId must be the requester's user id (a UUID)")
+	}
+	if req.DriverID != "" && req.DriverID == req.CustomerID {
+		problems = append(problems, "the requester cannot be the delivery's own driver")
 	}
 	if req.FareMinor <= 0 {
 		problems = append(problems, "fareMinor must be a positive integer minor amount")
@@ -204,11 +222,14 @@ func isMarketplaceManaged(metadataJSON []byte) bool {
 // marketplaceDeliverySummary is the response shape for both the fresh insert
 // and the idempotent replay, so callers cannot tell the two apart.
 type marketplaceDeliverySummary struct {
-	ID                 string    `json:"id"`
-	TrackingNumber     string    `json:"trackingNumber"`
-	Status             string    `json:"status"`
-	DriverID           string    `json:"driverId"`
-	CustomerID         string    `json:"customerId"`
+	ID             string `json:"id"`
+	TrackingNumber string `json:"trackingNumber"`
+	Status         string `json:"status"`
+	DriverID       string `json:"driverId"`
+	// CustomerID is the requester's user id, as the award sent it.
+	CustomerID string `json:"customerId"`
+	// SenderProfileID is the rider profile deliveries.sender_id references.
+	SenderProfileID    string    `json:"senderProfileId"`
 	MarketplaceAwardID string    `json:"marketplaceAwardId"`
 	AgreedFareMinor    int64     `json:"agreedFareMinor"`
 	Currency           string    `json:"currency"`
@@ -219,24 +240,67 @@ type marketplaceDeliverySummary struct {
 // or nil when none exists. This is the idempotency lookup: the award id is
 // the natural key of the hand-off.
 func (h *Handler) findDeliveryByAwardID(ctx context.Context, awardID string) (*marketplaceDeliverySummary, error) {
+	// sender_id is the rider PROFILE; the summary answers the requester's user
+	// id (riders.user_id) as customerId, exactly as the first call did.
 	query := `
-		SELECT id, tracking_number, status, COALESCE(driver_id::text, ''), sender_id::text,
-			marketplace_metadata->>'` + packageKeyMarketplaceAwardID + `',
-			COALESCE((marketplace_metadata->>'` + packageKeyAgreedFareMinor + `')::bigint, 0),
-			currency, created_at
-		FROM deliveries
-		WHERE marketplace_metadata->>'` + packageKeyMarketplaceAwardID + `' = $1
+		SELECT d.id, d.tracking_number, d.status, COALESCE(d.driver_id::text, ''),
+			r.user_id::text, d.sender_id::text,
+			d.marketplace_metadata->>'` + packageKeyMarketplaceAwardID + `',
+			COALESCE((d.marketplace_metadata->>'` + packageKeyAgreedFareMinor + `')::bigint, 0),
+			d.currency, d.created_at
+		FROM deliveries d
+		JOIN riders r ON r.id = d.sender_id
+		WHERE d.marketplace_metadata->>'` + packageKeyMarketplaceAwardID + `' = $1
 		LIMIT 1
 	`
 	var d marketplaceDeliverySummary
 	err := h.db.Pool.QueryRow(ctx, query, awardID).Scan(
-		&d.ID, &d.TrackingNumber, &d.Status, &d.DriverID, &d.CustomerID,
+		&d.ID, &d.TrackingNumber, &d.Status, &d.DriverID, &d.CustomerID, &d.SenderProfileID,
 		&d.MarketplaceAwardID, &d.AgreedFareMinor, &d.Currency, &d.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &d, nil
+}
+
+// errNoSenderProfile: the requester has no rider profile, so there is no
+// identity deliveries.sender_id may reference.
+var errNoSenderProfile = errors.New("the requester has no rider profile")
+
+// resolveSenderProfile maps the award's requester (a user id) to the rider
+// profile deliveries.sender_id references. Read-only against the canonical
+// riders table (user_id is unique there); it never creates a profile — a
+// delivery is not the place to invent one.
+func resolveSenderProfile(ctx context.Context, q interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, customerID string) (string, error) {
+	var riderID string
+	err := q.QueryRow(ctx, `SELECT id::text FROM riders WHERE user_id = $1`, customerID).Scan(&riderID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", errNoSenderProfile
+	}
+	if err != nil {
+		return "", err
+	}
+	return riderID, nil
+}
+
+// replayMatches reports whether a replayed hand-off names the same parties as
+// the delivery its award already created. The award id is the idempotency
+// key; a replay that disagrees about who is sending or driving is a caller
+// bug, answered with a conflict rather than with someone else's delivery.
+func replayMatches(existing *marketplaceDeliverySummary, req *MarketplaceAssignRequest) bool {
+	return existing.CustomerID == req.CustomerID && existing.DriverID == req.DriverID
+}
+
+func respondAssignReplay(w http.ResponseWriter, existing *marketplaceDeliverySummary, req *MarketplaceAssignRequest) {
+	if !replayMatches(existing, req) {
+		respondError(w, http.StatusConflict, "AWARD_REPLAY_MISMATCH",
+			"This award already created a delivery for a different requester or driver")
+		return
+	}
+	respond(w, http.StatusOK, existing)
 }
 
 // MarketplaceAssign handles POST /api/v1/webhooks/marketplace-assign
@@ -278,7 +342,7 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 
 	// Idempotent replay before taking any lock: the common retry case.
 	if existing, err := h.findDeliveryByAwardID(r.Context(), req.AwardID); err == nil && existing != nil {
-		respond(w, http.StatusOK, existing)
+		respondAssignReplay(w, existing, &req)
 		return
 	}
 
@@ -292,7 +356,7 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 		// A concurrent call holds the lock. It either finished (return its
 		// row) or is still inserting (tell the caller to retry).
 		if existing, lookupErr := h.findDeliveryByAwardID(r.Context(), req.AwardID); lookupErr == nil && existing != nil {
-			respond(w, http.StatusOK, existing)
+			respondAssignReplay(w, existing, &req)
 			return
 		}
 		respondError(w, http.StatusConflict, "ASSIGN_IN_PROGRESS", "This award is already being processed; retry shortly")
@@ -303,7 +367,25 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 	// our first lookup and the SETNX.
 	if existing, lookupErr := h.findDeliveryByAwardID(r.Context(), req.AwardID); lookupErr == nil && existing != nil {
 		_ = h.rdb.Delete(r.Context(), lockKey)
-		respond(w, http.StatusOK, existing)
+		respondAssignReplay(w, existing, &req)
+		return
+	}
+
+	// The requester's rider profile — the identity deliveries.sender_id's
+	// foreign key demands. No profile, no delivery: refused before anything
+	// is written, with a code the award saga can treat as permanent (it must
+	// compensate the award rather than retry).
+	senderProfileID, err := resolveSenderProfile(r.Context(), h.db.Pool, req.CustomerID)
+	if errors.Is(err, errNoSenderProfile) {
+		_ = h.rdb.Delete(r.Context(), lockKey)
+		respondError(w, http.StatusUnprocessableEntity, "SENDER_PROFILE_NOT_FOUND",
+			"The requester has no rider profile; a marketplace delivery's sender must be a rider")
+		return
+	}
+	if err != nil {
+		_ = h.rdb.Delete(r.Context(), lockKey)
+		log.Error().Err(err).Str("awardId", req.AwardID).Msg("Failed to resolve the requester's rider profile")
+		respondError(w, http.StatusInternalServerError, "DATABASE_ERROR", "Failed to resolve the requester's rider profile")
 		return
 	}
 
@@ -356,9 +438,26 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 		RETURNING created_at
 	`
 
+	// The delivery, its custody row and the custody's first event commit
+	// together or not at all (P17): a marketplace delivery without custody
+	// tracking has no proof, return or timeline endpoints, so the earlier
+	// best-effort seeding after the insert could strand one. A failure rolls
+	// everything back and answers 500; the award saga's retry is then a fresh,
+	// idempotent attempt, never a duplicate.
+	tx, err := h.db.Pool.Begin(r.Context())
+	if err != nil {
+		_ = h.rdb.Delete(r.Context(), lockKey)
+		log.Error().Err(err).Str("awardId", req.AwardID).Msg("Failed to begin the marketplace delivery transaction")
+		respondError(w, http.StatusInternalServerError, "DATABASE_ERROR", "Failed to create delivery")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
 	var createdAt time.Time
-	err = h.db.Pool.QueryRow(r.Context(), query,
-		deliveryID, trackingNumber, req.CustomerID, req.DriverID,
+	err = tx.QueryRow(r.Context(), query,
+		// sender_id is the requester's rider PROFILE (riders.id), never the
+		// raw user id the award carries — see resolveSenderProfile.
+		deliveryID, trackingNumber, senderProfileID, req.DriverID,
 		// DeliveryStatus (Prisma enum: PENDING, PICKED_UP, IN_TRANSIT,
 		// OUT_FOR_DELIVERY, DELIVERED, FAILED, RETURNED) has no
 		// "driver_assigned"/"confirmed" member, so PENDING is the closest
@@ -378,27 +477,21 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 		"PENDING",
 		metadataJSON,
 	).Scan(&createdAt)
-
+	if err == nil {
+		// Custody tracking (C07, G08): seeded at CourierAssigned since the
+		// award saga already picked the driver. The custody sender is the
+		// requester's USER id: the access matrix compares it with the
+		// gateway-verified actor.
+		err = seedMarketplaceCustody(r.Context(), tx, deliveryID, req.CustomerID, req.DriverID)
+	}
+	if err == nil {
+		err = tx.Commit(r.Context())
+	}
 	if err != nil {
 		_ = h.rdb.Delete(r.Context(), lockKey)
 		log.Error().Err(err).Str("awardId", req.AwardID).Msg("Failed to create marketplace delivery")
 		respondError(w, http.StatusInternalServerError, "DATABASE_ERROR", "Failed to create delivery")
 		return
-	}
-
-	// Custody tracking (C07, G08): every marketplace-managed delivery gets a
-	// delivery_custody row, seeded at CourierAssigned since the award saga
-	// already picked the driver. Best-effort and logged rather than fatal:
-	// the delivery itself is already committed above, and a transient failure
-	// here should not turn an otherwise-successful award hand-off into a 500
-	// the marketplace engine would retry into a duplicate-award investigation.
-	// A delivery that is missing its custody row simply has no custody
-	// endpoints available yet — GetCustodyTimeline and friends 404 on it —
-	// until an operator re-runs custodyForMarketplaceAssign; that gap is
-	// visible in logs, not silent.
-	if err := h.custodyForMarketplaceAssign(r.Context(), deliveryID, req.CustomerID, req.DriverID); err != nil {
-		log.Error().Err(err).Str("deliveryId", deliveryID).Str("awardId", req.AwardID).
-			Msg("Failed to seed delivery custody tracking for a marketplace-assigned delivery")
 	}
 
 	// Audit trail + the existing realtime channel, matching AcceptDelivery.
@@ -416,6 +509,7 @@ func (h *Handler) MarketplaceAssign(w http.ResponseWriter, r *http.Request) {
 		Status:             string(models.DeliveryStatusDriverAssigned),
 		DriverID:           req.DriverID,
 		CustomerID:         req.CustomerID,
+		SenderProfileID:    senderProfileID,
 		MarketplaceAwardID: req.AwardID,
 		AgreedFareMinor:    req.FareMinor,
 		Currency:           req.Currency,

@@ -57,6 +57,43 @@ export const SCOPES = [
   "mp:bid",
   "mp:admin:read",
   "support:write",
+  // Ask UBI (ask-service): converse = threads, messages, reading reviews and
+  // executions; transact = the explicit confirm that mints a grant and the
+  // reconcile that re-drives a confirmed execution.
+  "ask:converse",
+  "ask:transact",
+  // Standing authorisations (user-service /mandates): create, edit, pause,
+  // resume, revoke.
+  "mandate:manage",
+  // Travel (travel-service): read = search supplier inventory and read your
+  // own trips, orders, refunds and transfers; book = carts, checkout, cancel
+  // and switch (they price, authorize, refund or charge wallet money); ops =
+  // the travel-ops exception console.
+  "travel:read",
+  "travel:book",
+  "travel:ops",
+  // Business travel (user-service /organizations, payment-service
+  // /v1/business): read = your organizations, members, invitations, policy,
+  // budgets, funding, bookings and statements; manage = create and administer
+  // an organization (members, invitations, cost centres, policy, billing) and
+  // accept or decline an invitation; fund = top an organization up from a
+  // payment method and move its budget between cost centres. Authority INSIDE
+  // an organization (owner / admin / booker) is the service's own membership
+  // check; these scopes only decide whether the session may ask.
+  "business:read",
+  "business:manage",
+  "business:fund",
+  // Fleet (fleet-service, A05): read = a fleet's calendar, vehicles,
+  // conflicts, utilisation and staff; manage = every fleet write (create a
+  // fleet, vehicles, staff, maintenance, off-road reports, proposals,
+  // swaps, reminders, terminations); driver = the driver's side (fleet
+  // offers and PIN signing, the arrangement, the schedule, availability and
+  // time off, the driver's own conflicts). Authority INSIDE a fleet (owner /
+  // manager / read-only) is fleet-service's own staff check; these scopes
+  // only decide whether the session may ask.
+  "fleet:read",
+  "fleet:manage",
+  "fleet:driver",
   "admin:all",
 ] as const;
 
@@ -104,6 +141,22 @@ const RIDER_SCOPES: readonly Scope[] = [
   // Publish, revise, cancel and award negotiated-fare requests (M-series).
   "mp:request",
   "support:write",
+  "ask:converse",
+  "ask:transact",
+  "mandate:manage",
+  // Search and book supplier-priced flights and stays (no driver bidding or
+  // commission: travel money moves on its own ledger accounts).
+  "travel:read",
+  "travel:book",
+  // Business travel organizations: a traveller, booker, admin or owner is an
+  // ordinary rider account (drivers inherit the same).
+  "business:read",
+  "business:manage",
+  "business:fund",
+  // Fleet staff (owner / manager / read-only) are ordinary accounts too; a
+  // fleet's own staff table decides what each may do inside it.
+  "fleet:read",
+  "fleet:manage",
 ];
 
 const DRIVER_SCOPES: readonly Scope[] = [
@@ -113,6 +166,9 @@ const DRIVER_SCOPES: readonly Scope[] = [
   // Bid on marketplace requests and manage rate profiles. Every live bid
   // carries a wallet-held commission reservation.
   "mp:bid",
+  // The driver's side of a fleet arrangement: offers, PIN signing, the
+  // schedule, availability and time off, the driver's own conflicts.
+  "fleet:driver",
 ];
 
 const MERCHANT_SCOPES: readonly Scope[] = [
@@ -157,6 +213,26 @@ export const LIMITED_MODE_SCOPES: readonly Scope[] = [
   "device:enroll",
   "auth:step_up",
   "support:write",
+  // The assistant's chat and its read-only answers survive limited mode; its
+  // confirm (ask:transact), its marketplace stages (mp:request) and standing
+  // authorisations (mandate:manage) do not.
+  "ask:converse",
+  // Searching travel inventory and reading your own trips is a read, like
+  // ride:read; carts, checkout, cancel and switch (travel:book) and airport
+  // transfers (mp:request) move money and stay off this list.
+  "travel:read",
+  // The business scopes are DELIBERATELY absent, reads included: an
+  // organization's statements and bookings are other people's travel, not
+  // the holder's own history, so an unverified device sees none of it
+  // (deny-by-default for the new capability).
+  //
+  // The fleet scopes are DELIBERATELY absent too: a fleet's calendar is other
+  // people's work, and every driver-side fleet action commits the driver's
+  // time or signs remittance terms (deny-by-default for the new capability).
+  //
+  // user-service's limited token claim (src/identity/tokens.ts) states this
+  // same list; services/api-gateway/tests/limited-token.test.ts pins them
+  // together with tokens minted there.
 ];
 
 /** What wallet safe mode takes away, whatever the role. */
@@ -166,6 +242,14 @@ export const SAFE_MODE_DENIED_SCOPES: readonly Scope[] = [
   "security:pin:change",
   "security:phone:change",
   "security:contacts:change",
+  // Creating or editing a standing authorisation to spend is a security
+  // change: not while a SIM-swap signal holds the wallet.
+  "mandate:manage",
+  // Funding an organization moves money from the holder's payment method to
+  // an account other members can spend, the same shape as a P2P transfer:
+  // not while a SIM-swap signal holds the wallet. Reading and administering
+  // the organization are left alone.
+  "business:fund",
 ];
 
 export interface RouteRule {
@@ -192,6 +276,12 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/auth/pin/reset", anyOf: ["auth:step_up"] },
   { methods: "*", prefix: "/v1/auth/pin", anyOf: ["wallet:read"] },
   { methods: ["GET"], prefix: "/v1/users", anyOf: ["profile:read"] },
+  // The read-only config family (routes/config-read.ts: evaluated flags and
+  // the city's active config). Every role holds profile:read and it survives
+  // limited mode: an unverified device still needs its city's deny-by-default
+  // flags to render honestly. Nothing but these GETs is routed under
+  // /v1/config.
+  { methods: ["GET"], prefix: "/v1/config", anyOf: ["profile:read"] },
   {
     methods: ["POST", "PUT", "PATCH", "DELETE"],
     prefix: "/v1/users",
@@ -276,6 +366,26 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: ["GET"], prefix: "/v1/mp/feed", anyOf: ["mp:bid"] },
   { methods: "*", prefix: "/v1/mp/bids", anyOf: ["mp:bid"] },
   { methods: "*", prefix: "/v1/mp/rate-profiles", anyOf: ["mp:bid"] },
+  // Driver-only marketplace surfaces (parked confirmation, job list,
+  // preferences). Without this family rule they were undeclared, so any
+  // authenticated role reached them and only the downstream role check
+  // stood in the way.
+  { methods: "*", prefix: "/v1/mp/driver", anyOf: ["mp:bid"] },
+  // Book for Later (A03). Scheduled requests, advance requests and recurring
+  // templates are requester actions; an advance booking has two parties
+  // (the engine enforces which of rider/driver may cancel, rematch,
+  // reconfirm or withdraw). The driver calendar rides on /v1/mp/driver.
+  { methods: "*", prefix: "/v1/mp/scheduled-requests", anyOf: ["mp:request"] },
+  { methods: "*", prefix: "/v1/mp/advance-requests", anyOf: ["mp:request"] },
+  { methods: "*", prefix: "/v1/mp/recurring-templates", anyOf: ["mp:request"] },
+  // Rider confidence (A06/A04): saved drivers and the service-needs catalog.
+  { methods: "*", prefix: "/v1/mp/favourite-drivers", anyOf: ["mp:request"] },
+  { methods: ["GET"], prefix: "/v1/mp/service-needs", anyOf: ["mp:request"] },
+  {
+    methods: "*",
+    prefix: "/v1/mp/advance-bookings",
+    anyOf: ["mp:request", "mp:bid"],
+  },
   { methods: ["GET"], prefix: "/v1/admin/mp", anyOf: ["mp:admin:read"] },
   // Commission-hold ledger endpoints are service-to-service (payment-service
   // verifies the service key); at the gateway only admin/service tokens may
@@ -285,6 +395,134 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/wallets/mp/holds", anyOf: ["admin:all"] },
   { methods: "*", prefix: "/v1/wallet/mp/funding", anyOf: ["admin:all"] },
   { methods: "*", prefix: "/v1/wallets/mp/funding", anyOf: ["admin:all"] },
+  // Ask UBI (ask-service). The chat, its reads and handoff need only
+  // ask:converse (it survives limited mode). The explicit confirm that mints
+  // a grant and the reconcile that re-drives a confirmed execution need
+  // ask:transact. The AI marketplace stages sit on the same scope as the
+  // human marketplace (/v1/mp): mp:request, off the limited-mode allowlist.
+  { methods: "*", prefix: "/v1/ask", anyOf: ["ask:converse"] },
+  { methods: ["POST"], prefix: "/v1/ask/reviews", anyOf: ["ask:transact"] },
+  {
+    methods: ["POST"],
+    prefix: "/v1/ask/executions",
+    anyOf: ["ask:transact"],
+  },
+  { methods: "*", prefix: "/v1/ask/mp", anyOf: ["mp:request"] },
+  // Mandates (user-service): reading your automations is a profile read;
+  // creating, editing, pausing, resuming or revoking one is mandate:manage.
+  { methods: ["GET"], prefix: "/v1/mandates", anyOf: ["profile:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/mandates",
+    anyOf: ["mandate:manage"],
+  },
+  // Travel (travel-service). Searching supplier inventory and reading your
+  // own trips, orders, refunds and disruptions are reads (travel:read, kept in
+  // limited mode like ride:read). Every other write under /v1/travel moves or
+  // commits wallet money — a cart prices a purchase, checkout authorizes the
+  // wallet, cancel refunds, switch may charge the difference — so it needs
+  // travel:book, off the limited-mode allowlist like every other money-moving
+  // route (wallet safe mode leaves booking alone, as it does for rides). The
+  // supplier webhooks under /v1/travel/webhooks are not proxied at all
+  // (routes/proxy-map.ts).
+  { methods: ["GET"], prefix: "/v1/travel", anyOf: ["travel:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/travel",
+    anyOf: ["travel:book"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/travel/flights/searches",
+    anyOf: ["travel:read"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/travel/stays/searches",
+    anyOf: ["travel:read"],
+  },
+  // Airport transfers: reading them is travel:read; creating, deciding or
+  // cancelling one makes, changes or cancels a marketplace ride request on
+  // ride-service, so it needs mp:request exactly as /v1/mp does (travel-
+  // service re-checks it on the signed context, since it reaches ride-service
+  // without passing this table).
+  { methods: ["GET"], prefix: "/v1/reservations", anyOf: ["travel:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/reservations",
+    anyOf: ["mp:request"],
+  },
+  // The travel-ops console: admin and service tokens only. travel-service
+  // re-checks an ops role on the signed context.
+  { methods: "*", prefix: "/v1/ops/travel", anyOf: ["travel:ops"] },
+  // Business travel. user-service /organizations: reading is business:read,
+  // every write (create, members, invitations incl. accept/decline, cost
+  // centres, policy, billing) is business:manage. payment-service
+  // /v1/business: reading funding, budgets, bookings and statements is
+  // business:read; every write there (top-ups, budget allocations and
+  // returns) moves organization money and needs business:fund. None of them
+  // survives limited mode. payment-service's internal /v1/finance/business
+  // (ride-service, by service key) is not proxied at all.
+  { methods: ["GET"], prefix: "/v1/organizations", anyOf: ["business:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/organizations",
+    anyOf: ["business:manage"],
+  },
+  { methods: ["GET"], prefix: "/v1/business", anyOf: ["business:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/business",
+    anyOf: ["business:fund"],
+  },
+  // Fleet (fleet-service, A05). Reading a fleet is fleet:read; every write
+  // under /v1/fleets (create, vehicles, staff, maintenance and its preview,
+  // off-road, proposals, swaps, reminders, terminations) is fleet:manage.
+  // The driver's side — offers and PIN signing, the arrangement and its
+  // notice, the schedule, availability (and its preview) and the driver's
+  // own conflicts — is fleet:driver, a DRIVER scope. None survives limited
+  // mode. fleet-service re-checks each on the signed context, and its own
+  // staff table decides owner / manager / read-only inside a fleet.
+  { methods: ["GET"], prefix: "/v1/fleets", anyOf: ["fleet:read"] },
+  {
+    methods: ["POST", "PUT", "PATCH", "DELETE"],
+    prefix: "/v1/fleets",
+    anyOf: ["fleet:manage"],
+  },
+  { methods: "*", prefix: "/v1/fleet-offers", anyOf: ["fleet:driver"] },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/fleet-offers",
+    anyOf: ["fleet:driver"],
+  },
+  { methods: "*", prefix: "/v1/drivers/me/fleet", anyOf: ["fleet:driver"] },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/schedule",
+    anyOf: ["fleet:driver"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/availability",
+    anyOf: ["fleet:driver"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/availability:preview",
+    anyOf: ["fleet:driver"],
+  },
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/conflicts",
+    anyOf: ["fleet:driver"],
+  },
+  // C5: the driver reports the vehicle they are driving cannot drive or needs
+  // service soon (FLEET_CALENDAR_DECISIONS.md Q5).
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/vehicle-issues",
+    anyOf: ["fleet:driver"],
+  },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },
   { methods: ["POST"], prefix: "/v1/delivery", anyOf: ["shipment:create"] },
   { methods: ["POST"], prefix: "/v1/packages", anyOf: ["shipment:create"] },

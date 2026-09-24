@@ -52,6 +52,8 @@ describe("inbound identity headers are stripped", () => {
 
     const forwarded = upstream.received[0];
     expect(forwarded).toBeDefined();
+    // user-service mounts unversioned routes: /v1 comes off.
+    expect(forwarded?.url).toBe("/users/me");
     expect(forwarded?.headers["x-auth-user-id"]).toBe("usr_real");
     expect(forwarded?.headers["x-auth-user-role"]).toBe("rider");
     expect(forwarded?.headers["x-auth-user-id"]).not.toBe("usr_victim");
@@ -175,6 +177,7 @@ describe("inbound identity headers are stripped", () => {
 
     const forwarded = upstream.received[0];
     expect(forwarded).toBeDefined();
+    expect(forwarded?.url).toBe("/auth/login");
     expect(forwarded?.headers["x-auth-user-id"]).toBeUndefined();
     expect(forwarded?.headers[IDENTITY_HEADER]).toBeUndefined();
   });

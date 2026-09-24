@@ -26,7 +26,7 @@
     --input: 0 0% 90%;
     --ring: 145 72% 42%; /* UBI Green */
     --radius: 0.5rem;
-    
+
     /* Fleet-specific */
     --sidebar-width: 260px;
     --header-height: 64px;
@@ -63,7 +63,9 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
   }
 }
 
@@ -71,28 +73,92 @@
   .fleet-card {
     @apply rounded-xl border bg-card p-6 shadow-sm;
   }
-  
+
   .fleet-stat-card {
     @apply rounded-xl border bg-card p-4 hover:border-green-500/50 transition-colors;
   }
-  
+
   .fleet-badge {
     @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
   }
-  
+
   .fleet-badge-online {
     @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
   }
-  
+
   .fleet-badge-offline {
     @apply bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400;
   }
-  
+
   .fleet-badge-busy {
     @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400;
   }
-  
+
   .fleet-badge-inactive {
     @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400;
+  }
+}
+
+/*
+ * Fleet calendar layer vocabulary (handoff "Design system & tokens"). The
+ * hatch patterns keep maintenance, UBI holds and a driver's unavailable time
+ * distinguishable in greyscale; every block also carries text.
+ */
+@layer components {
+  .fleet-block-shift {
+    background: rgba(29, 185, 84, 0.18);
+    border: 1px solid #1db954;
+    color: #86efac;
+  }
+  .fleet-block-booked {
+    background: #27345c;
+    border: 1px solid #5b73c4;
+    color: #c7d2fe;
+  }
+  .fleet-block-risk {
+    background: #3a1f2a;
+    border: 2px solid #ef4444;
+    color: #fecaca;
+  }
+  .fleet-block-maintenance {
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(245, 158, 11, 0.3) 0 6px,
+      rgba(245, 158, 11, 0.12) 6px 12px
+    );
+    border: 1px solid #f59e0b;
+    color: #fcd34d;
+  }
+  .fleet-block-offroad {
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(245, 158, 11, 0.3) 0 6px,
+      rgba(245, 158, 11, 0.12) 6px 12px
+    );
+    border: 2px solid #ef4444;
+    color: #fecaca;
+  }
+  .fleet-block-held {
+    background: repeating-linear-gradient(
+      135deg,
+      #3f3f46 0 6px,
+      #27272a 6px 12px
+    );
+    border: 1px solid #52525b;
+    color: #d4d4d8;
+  }
+  .fleet-block-unavailable {
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(161, 161, 170, 0.22) 0 6px,
+      rgba(161, 161, 170, 0.08) 6px 12px
+    );
+    border: 1px solid #71717a;
+    color: #d4d4d8;
+  }
+  .fleet-block-available {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid #52525b;
+    color: #d4d4d8;
   }
 }

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { type ComponentType } from "react";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import {
@@ -25,7 +25,11 @@ import { RequestFeedContainer } from "../screens/marketplace/RequestFeedContaine
 import { RequestDetailContainer } from "../screens/marketplace/RequestDetailContainer";
 import { WalletHoldsContainer } from "../screens/marketplace/WalletHoldsContainer";
 import { RateProfileContainer } from "../screens/marketplace/RateProfileContainer";
+import { DriverPreferencesContainer } from "../screens/marketplace/DriverPreferencesContainer";
 import { JobsTimelineContainer } from "../screens/marketplace/JobsTimelineContainer";
+import { TripStopsContainer } from "../screens/marketplace/TripStopsContainer";
+import { RouteAmendmentContainer } from "../screens/marketplace/RouteAmendmentContainer";
+import { DriverCalendarContainer } from "../screens/marketplace/DriverCalendarContainer";
 import { useSessionKeeper } from "../api/auth";
 import { SplashScreen } from "../screens/boot/SplashScreen";
 import { OnboardingScreen } from "../screens/boot/OnboardingScreen";
@@ -43,6 +47,12 @@ import { SosScreen } from "../screens/safety/SosScreen";
 import { SecureConfirmScreen } from "../screens/safety/SecureConfirmScreen";
 import { ProfileScreen } from "../screens/account/ProfileScreen";
 import { FeatureUnavailableScreen } from "../screens/FeatureUnavailableScreen";
+import { FleetGate } from "../screens/fleet/FleetParts";
+import { FleetScheduleScreen } from "../screens/fleet/FleetScheduleScreen";
+import { FleetProposalScreen } from "../screens/fleet/FleetProposalScreen";
+import { FleetConflictScreen } from "../screens/fleet/FleetConflictScreen";
+import { FleetAvailabilityScreen } from "../screens/fleet/FleetAvailabilityScreen";
+import { FleetReportIssueScreen } from "../screens/fleet/FleetReportIssueScreen";
 
 const Root = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
@@ -132,7 +142,8 @@ function AccountNavigator() {
       <AccountStack.Screen name="Profile" component={ProfileScreen} />
       {/* Vehicle/documents/ratings/fleet/liveness/Ask have no audited server
           surface in this slice (api/unsupported.ts driverDocuments) — gated
-          honestly rather than shipping a screen with nothing real behind it. */}
+          honestly rather than shipping a screen with nothing real behind it.
+          The fleet arrangement is the A05 schedule below. */}
       <AccountStack.Screen
         name="Edit"
         component={FeatureUnavailableScreen}
@@ -163,10 +174,10 @@ function AccountNavigator() {
         component={FeatureUnavailableScreen}
         initialParams={{ feature: "Settings" } as never}
       />
+      {/* A05: the driver's fleet schedule (C1), behind the `fleet` flag. */}
       <AccountStack.Screen
         name="FleetArrangement"
-        component={FeatureUnavailableScreen}
-        initialParams={{ feature: "FleetArrangement" } as never}
+        component={GatedFleetSchedule as never}
       />
       <AccountStack.Screen
         name="LivenessCheck"
@@ -234,6 +245,20 @@ function GatedRates({
     </MarketplaceGate>
   );
 }
+function GatedPreferences({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Preferences"
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <DriverPreferencesContainer />
+    </MarketplaceGate>
+  );
+}
 function GatedJobs({
   navigation,
 }: {
@@ -248,6 +273,81 @@ function GatedJobs({
     </MarketplaceGate>
   );
 }
+// A02/A03 Root screens. Each gate needs the ride vertical AND its own deny-by-default
+// capability flag, mirroring the server's gating (the trip view answers behind
+// marketplace_multi_stop OR marketplace_trip_amendments; amendments behind the latter;
+// the calendar behind marketplace_advance_reservations).
+function GatedTrip({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Trip stops"
+      requires={{
+        all: ["marketplace_rides"],
+        any: ["marketplace_multi_stop", "marketplace_trip_amendments"],
+      }}
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <TripStopsContainer />
+    </MarketplaceGate>
+  );
+}
+function GatedAmendments({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Route changes"
+      requires={{ all: ["marketplace_rides", "marketplace_trip_amendments"] }}
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <RouteAmendmentContainer />
+    </MarketplaceGate>
+  );
+}
+function GatedCalendar({
+  navigation,
+}: {
+  navigation: { navigate: (s: "Main") => void };
+}) {
+  return (
+    <MarketplaceGate
+      featureName="Future bookings"
+      requires={{
+        all: ["marketplace_rides", "marketplace_advance_reservations"],
+      }}
+      onDismiss={() => navigation.navigate("Main")}
+    >
+      <DriverCalendarContainer />
+    </MarketplaceGate>
+  );
+}
+// A05 fleet calendar (handoff C1–C5). Each screen carries the deny-by-default
+// `fleet` gate so a deep link into a city without fleet tools lands on the honest
+// "not available yet" screen; fleet-service answers 404 feature_disabled as well.
+function fleetGated(Inner: ComponentType) {
+  return function Gated({
+    navigation,
+  }: {
+    navigation: { goBack: () => void };
+  }) {
+    return (
+      <FleetGate onDismiss={() => navigation.goBack()}>
+        <Inner />
+      </FleetGate>
+    );
+  };
+}
+const GatedFleetSchedule = fleetGated(FleetScheduleScreen);
+const GatedFleetProposal = fleetGated(FleetProposalScreen);
+const GatedFleetConflict = fleetGated(FleetConflictScreen);
+const GatedFleetAvailability = fleetGated(FleetAvailabilityScreen);
+const GatedFleetReportIssue = fleetGated(FleetReportIssueScreen);
 function MainTabs() {
   const t = useTheme();
   return (
@@ -297,7 +397,31 @@ export function RootNavigator() {
         <Root.Screen name="Trip" component={TripNavigator as never} />
         <Root.Screen name="WalletHolds" component={GatedWalletHolds as never} />
         <Root.Screen name="Rates" component={GatedRates as never} />
+        <Root.Screen name="Preferences" component={GatedPreferences as never} />
         <Root.Screen name="Jobs" component={GatedJobs as never} />
+        <Root.Screen name="MpTrip" component={GatedTrip as never} />
+        <Root.Screen name="MpAmendments" component={GatedAmendments as never} />
+        <Root.Screen name="Calendar" component={GatedCalendar as never} />
+        <Root.Screen
+          name="FleetSchedule"
+          component={GatedFleetSchedule as never}
+        />
+        <Root.Screen
+          name="FleetProposal"
+          component={GatedFleetProposal as never}
+        />
+        <Root.Screen
+          name="FleetConflict"
+          component={GatedFleetConflict as never}
+        />
+        <Root.Screen
+          name="FleetAvailability"
+          component={GatedFleetAvailability as never}
+        />
+        <Root.Screen
+          name="FleetReportIssue"
+          component={GatedFleetReportIssue as never}
+        />
         <Root.Screen name="FlagOff" component={FeatureUnavailableScreen} />
         <Root.Group screenOptions={{ presentation: "modal" }}>
           <Root.Screen name="Sos" component={SosScreen} />

@@ -8,6 +8,20 @@
 #   - Copy .env.example to .env and configure all variables
 #   - Ensure SSL certificates are in place (or use Caddy auto-SSL)
 #   - Run database migrations before starting services
+#
+# Every environment variable a service reads in production is either set
+# below or listed as intentionally unset (fail-closed) in
+# docs/ops/DEPLOY_ENV_MATRIX.md; infrastructure/scripts/check-compose-env.mjs
+# checks this file against the services' sources and that matrix.
+# CONFIGURED is not ENABLED: no feature flag is switched on by anything here
+# (flags live in config-service and default to off), and a capability whose
+# key is left empty stays closed.
+#
+# Network addresses: caddy and api-gateway have FIXED addresses on
+# ubi-network (172.28.0.10 / 172.28.0.11) because the services' trusted-proxy
+# lists take IP addresses, not names; every other container is assigned one
+# from 172.28.1.0/24, so the two can never collide. Changing either address
+# means changing every *_TRUSTED_PROXIES default below.
 
 services:
   # =============================================================================
@@ -15,7 +29,12 @@ services:
   # =============================================================================
 
   caddy:
-    image: caddy:2-alpine
+    # Stock caddy:2-alpine has no `rate_limit` directive and refuses the
+    # Caddyfile; caddy/Dockerfile adds github.com/mholt/caddy-ratelimit.
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    image: ubi/caddy:${IMAGE_TAG:-latest}
     container_name: ubi-caddy
     restart: unless-stopped
     ports:
@@ -26,16 +45,21 @@ services:
       - DOMAIN=${DOMAIN:-ubi.africa}
       - API_DOMAIN=${API_DOMAIN:-api.ubi.africa}
       - ADMIN_DOMAIN=${ADMIN_DOMAIN:-admin.ubi.africa}
+      # Supplier webhooks ingress (straight to travel-service, never the
+      # client gateway) — see caddy/Caddyfile.
+      - WEBHOOKS_DOMAIN=${WEBHOOKS_DOMAIN:-hooks.ubi.africa}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - api-gateway
+      - travel-service
       - web-app
       - admin-dashboard
     networks:
-      - ubi-network
+      ubi-network:
+        ipv4_address: 172.28.0.10
     healthcheck:
       test: ["CMD", "caddy", "version"]
       interval: 30s
@@ -47,7 +71,11 @@ services:
   # =============================================================================
 
   postgres:
-    image: postgis/postgis:15-3.4-alpine
+    # 16 + PostGIS 3.4: the major version CI migrates and tests against
+    # (.github/workflows/test.yml). A data directory initialised by 15 cannot
+    # be opened by 16 — this change applies to a fresh volume only
+    # (docs/ops/PILOT_RUNBOOK_DELTAS.md).
+    image: postgis/postgis:16-3.4-alpine
     container_name: ubi-postgres
     restart: unless-stopped
     ports:
@@ -86,9 +114,9 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     command: >
-      redis-server 
-      --appendonly yes 
-      --maxmemory 512mb 
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
       --maxmemory-policy allkeys-lru
       --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     volumes:
@@ -113,21 +141,13 @@ services:
   # NOT part of the default `docker compose up -d` bring-up (profile "tools"
   # only) — run explicitly, before starting/updating the backend services.
   #
-  # This does NOT reuse the api-gateway image the way scripts/deploy.sh's
-  # cmd_migrate/cmd_deploy currently do (`docker compose run --rm api-gateway
-  # sh -c "cd /app && npx prisma migrate deploy"`). That invocation is
-  # unreliable: api-gateway's production image stage installs with
-  # `pnpm install --prod` (the `prisma` CLI is a devDependency of
-  # @ubi/database, so it is excluded) and its Dockerfile never COPYs
-  # packages/database/prisma/** (schema + migrations) into the image, so
-  # there is neither a `prisma` binary nor a schema for it to run against.
-  # See docs/deploy/HETZNER_PILOT.md "Migrations" for the verified command
-  # and how it differs from deploy.sh today.
-  #
-  # This service instead mounts the full repository checkout (the same one
-  # `docker compose build` already reads via `context: ../..`) and runs
-  # migrations from source, the same way CI's db-check/unit-services/unit-go
-  # jobs do it.
+  # No service image carries the `prisma` CLI (it is a devDependency of
+  # @ubi/database) nor, except @ubi/database's own prisma/ folder, a reason to
+  # run migrations, so this service mounts the full repository checkout (the
+  # same one `docker compose build` already reads via `context: ../..`) and
+  # runs migrations from source, the same way CI's db-check/unit-services/
+  # unit-go jobs do it. scripts/deploy.sh `migrate` / `deploy` run exactly
+  # this (docs/deploy/HETZNER_PILOT.md "Migrations").
   migrate:
     image: node:20-alpine
     container_name: ubi-migrate
@@ -146,6 +166,49 @@ services:
              pnpm --filter @ubi/database exec prisma migrate deploy"
     depends_on:
       postgres:
+        condition: service_healthy
+    networks:
+      - ubi-network
+
+  # =============================================================================
+  # ONE-OFF: PROOF BUCKET + DELIVERY SERVICE ACCOUNT (MinIO)
+  # =============================================================================
+  # Profile "tools" only. Creates the PRIVATE bucket delivery-service keeps
+  # custody proofs in and a MinIO user limited to that bucket, whose keys are
+  # PROOF_STORAGE_ACCESS_KEY / PROOF_STORAGE_SECRET_KEY. Idempotent; refuses to
+  # run until both keys are set in .env.
+  # The policy is exactly what internal/proofstore calls: Get/Put/Delete on
+  # the bucket's objects (stat + read to verify an upload, delete a rejected
+  # one) and ListBucket + GetBucketPolicy on the bucket itself (the readiness
+  # check's HeadBucket, and its proof that no policy makes the bucket public).
+  # Without the bucket-level pair /health/ready stays 503 even when
+  # configured. Never s3:PutBucketPolicy: the service cannot make it public.
+  #
+  #   docker compose -f docker-compose.prod.yml --profile tools run --rm minio-init
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: ubi-minio-init
+    profiles: ["tools"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      PROOF_STORAGE_BUCKET: ${PROOF_STORAGE_BUCKET:-ubi-delivery-proofs}
+      PROOF_STORAGE_ACCESS_KEY: ${PROOF_STORAGE_ACCESS_KEY:-}
+      PROOF_STORAGE_SECRET_KEY: ${PROOF_STORAGE_SECRET_KEY:-}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        [ -n "$$PROOF_STORAGE_ACCESS_KEY" ] && [ -n "$$PROOF_STORAGE_SECRET_KEY" ] || { echo "set PROOF_STORAGE_ACCESS_KEY and PROOF_STORAGE_SECRET_KEY in .env first" >&2; exit 1; }
+        mc alias set ubi http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "ubi/$$PROOF_STORAGE_BUCKET"
+        mc anonymous set none "ubi/$$PROOF_STORAGE_BUCKET"
+        printf '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::%s/*"]},{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketPolicy"],"Resource":["arn:aws:s3:::%s"]}]}' "$$PROOF_STORAGE_BUCKET" "$$PROOF_STORAGE_BUCKET" > /tmp/delivery-proofs.json
+        mc admin policy create ubi delivery-proofs /tmp/delivery-proofs.json
+        mc admin user add ubi "$$PROOF_STORAGE_ACCESS_KEY" "$$PROOF_STORAGE_SECRET_KEY"
+        mc admin policy attach ubi delivery-proofs --user "$$PROOF_STORAGE_ACCESS_KEY" || true
+        echo "proof bucket $$PROOF_STORAGE_BUCKET ready (private; delivery-service user limited to it)"
+    depends_on:
+      minio:
         condition: service_healthy
     networks:
       - ubi-network
@@ -170,22 +233,36 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      # Internal trust boundary (docs/security/INTERNAL_IDENTITY.md): the gateway
+      # signs x-ubi-identity and the ride-service HMAC context. Required.
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
+      RIDE_INTERNAL_CONTEXT_SECRET: ${RIDE_INTERNAL_CONTEXT_SECRET:?RIDE_INTERNAL_CONTEXT_SECRET is required}
       CORS_ORIGINS: https://${DOMAIN:-ubi.africa},https://${ADMIN_DOMAIN:-admin.ubi.africa}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # Service Discovery
+      # Who the client is: X-Forwarded-For is believed only from Caddy.
+      GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-172.28.0.10}
+      # Service Discovery — every proxied service needs its URL: an unset one
+      # falls back to a localhost default and its routes answer 503.
       USER_SERVICE_URL: http://user-service:3001
       RIDE_SERVICE_URL: http://ride-service:3002
       FOOD_SERVICE_URL: http://food-service:3003
       DELIVERY_SERVICE_URL: http://delivery-service:3004
       PAYMENT_SERVICE_URL: http://payment-service:3005
       NOTIFICATION_SERVICE_URL: http://notification-service:3006
+      TRAVEL_SERVICE_URL: http://travel-service:4012
+      ASK_SERVICE_URL: http://ask-service:4013
+      FLEET_SERVICE_URL: http://fleet-service:4015
+      # Only the two config reads (GET /v1/config/flags, GET
+      # /v1/config/cities/{cityId}) are routed; see src/routes/config-read.ts.
+      CONFIG_SERVICE_URL: http://config-service:3010
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks:
-      - ubi-network
+      ubi-network:
+        ipv4_address: 172.28.0.11
     deploy:
       resources:
         limits:
@@ -207,13 +284,32 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Identity policy (PIN attempts, limits) comes from city config; the
+      # identity routes throw without it.
+      CONFIG_SERVICE_URL: http://config-service:3010
+      NOTIFICATION_SERVICE_URL: http://notification-service:3006
+      APP_URL: https://${DOMAIN:-ubi.africa}
+      # Service-key surfaces (>= 32 characters; shorter counts as unset and
+      # the route refuses): ride-service's driver-profile read and
+      # ask-service's action grants / mandate runs.
+      DRIVER_PROFILE_RIDE_SERVICE_KEY: ${DRIVER_PROFILE_RIDE_SERVICE_KEY:?DRIVER_PROFILE_RIDE_SERVICE_KEY is required}
+      AI_GRANTS_SERVICE_KEY: ${AI_GRANTS_SERVICE_KEY:?AI_GRANTS_SERVICE_KEY is required}
+      # Optional, each fail-closed when empty (see DEPLOY_ENV_MATRIX.md).
+      IDENTITY_OTP_PEPPER: ${IDENTITY_OTP_PEPPER:-}
+      IDENTITY_JOB_SERVICE_KEY: ${IDENTITY_JOB_SERVICE_KEY:-}
+      TELCO_SIM_SWAP_SECRET: ${TELCO_SIM_SWAP_SECRET:-}
+      IDENTITY_FACE_PROVIDER_URL: ${IDENTITY_FACE_PROVIDER_URL:-}
+      IDENTITY_FACE_PROVIDER_KEY: ${IDENTITY_FACE_PROVIDER_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      config-service:
+        condition: service_started
     networks:
       - ubi-network
     deploy:
@@ -234,10 +330,47 @@ services:
       - "3002"
     environment:
       ENVIRONMENT: production
+      # UBI_ENV is what the Go services actually read to enter production mode
+      # (ENVIRONMENT alone left their fail-closed identity guards inert).
+      UBI_ENV: production
+      RIDE_INTERNAL_CONTEXT_SECRET: ${RIDE_INTERNAL_CONTEXT_SECRET:?RIDE_INTERNAL_CONTEXT_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      # Quotes are HMAC-signed; the service refuses to start without a key of
+      # at least 32 bytes (internal/move/quote.go).
+      RIDE_QUOTE_SIGNING_SECRET: ${RIDE_QUOTE_SIGNING_SECRET:?RIDE_QUOTE_SIGNING_SECRET is required}
+      # The pickup-PIN vault key. Without it the vault derives its key from
+      # RIDE_INTERNAL_CONTEXT_SECRET — and rotating that secret would then make
+      # every stored PIN unreadable. Keep it separate and stable.
+      RIDE_PIN_VAULT_SECRET: ${RIDE_PIN_VAULT_SECRET:?RIDE_PIN_VAULT_SECRET is required}
       PORT: "3002"
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?sslmode=disable
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # X-Forwarded-For is believed only from the gateway and, behind it,
+      # Caddy (the gateway forwards "client, caddy").
+      RIDE_TRUSTED_PROXIES: ${RIDE_TRUSTED_PROXIES:-172.28.0.10,172.28.0.11}
+      # Wallet, funding, business budgets (payment-service, service key).
+      PAYMENT_SERVICE_URL: http://payment-service:3005
+      # Verified driver profiles for offer comparison (user-service).
+      USER_SERVICE_URL: http://user-service:3001
+      DRIVER_PROFILE_RIDE_SERVICE_KEY: ${DRIVER_PROFILE_RIDE_SERVICE_KEY:?DRIVER_PROFILE_RIDE_SERVICE_KEY is required}
+      # Delivery hand-off (marketplace-assign / -cancel): delivery-service
+      # authenticates it with ITS INTERNAL_SERVICE_KEY, which is the shared
+      # INTERNAL_SERVICE_KEY here (delivery also presents it to payment-service).
+      DELIVERY_SERVICE_URL: http://delivery-service:3004
+      DELIVERY_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      # Guest passenger trip link sealing. Empty = guest bookings are refused
+      # (fail closed); ride-service seals with the CURRENT key only.
+      TRIP_ACCESS_DELIVERY_KEY: ${TRIP_ACCESS_DELIVERY_KEY:-}
+      TRIP_ACCESS_DELIVERY_KID: ${TRIP_ACCESS_DELIVERY_KID:-}
+      # Fleet calendar contract A, both directions (>= 32 characters each).
+      FLEET_RIDE_SERVICE_KEY: ${FLEET_RIDE_SERVICE_KEY:?FLEET_RIDE_SERVICE_KEY is required}
+      FLEET_SERVICE_URL: http://fleet-service:4015
+      FLEET_SERVICE_KEY: ${FLEET_SERVICE_KEY:?FLEET_SERVICE_KEY is required}
+      # Marketplace sweep (expiry, envelope expansion, wallet recovery).
+      RIDE_MP_SWEEP_INTERVAL_MS: ${RIDE_MP_SWEEP_INTERVAL_MS:-1000}
+      # Optional: measured routes instead of straight-line estimates.
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -267,6 +400,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      PAYMENT_SERVICE_URL: http://payment-service:3005
+      BITES_ISSUE_SWEEP_INTERVAL_MS: ${BITES_ISSUE_SWEEP_INTERVAL_MS:-60000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -292,10 +429,32 @@ services:
       - "3004"
     environment:
       ENVIRONMENT: production
+      # UBI_ENV is what the Go services actually read to enter production mode
+      # (ENVIRONMENT alone left their fail-closed identity guards inert).
+      UBI_ENV: production
+      RIDE_INTERNAL_CONTEXT_SECRET: ${RIDE_INTERNAL_CONTEXT_SECRET:?RIDE_INTERNAL_CONTEXT_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PORT: "3004"
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?sslmode=disable
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      DELIVERY_TRUSTED_PROXIES: ${DELIVERY_TRUSTED_PROXIES:-172.28.0.10,172.28.0.11}
+      PAYMENT_SERVICE_URL: http://payment-service:3005
+      USER_SERVICE_URL: http://user-service:3001
+      NOTIFICATION_SERVICE_URL: http://notification-service:3006
+      # Custody proofs live in a PRIVATE MinIO bucket (minio-init creates it
+      # and the limited user). Presigned URLs are signed for the PUBLIC
+      # endpoint the apps reach. Empty keys = proof store not configured: proof
+      # routes refuse and production readiness stays 503 (fail closed).
+      PROOF_STORAGE_ENDPOINT: http://minio:9000
+      PROOF_STORAGE_PUBLIC_ENDPOINT: https://storage.${DOMAIN:-ubi.africa}
+      PROOF_STORAGE_REGION: ${PROOF_STORAGE_REGION:-us-east-1}
+      PROOF_STORAGE_BUCKET: ${PROOF_STORAGE_BUCKET:-ubi-delivery-proofs}
+      PROOF_STORAGE_ACCESS_KEY: ${PROOF_STORAGE_ACCESS_KEY:-}
+      PROOF_STORAGE_SECRET_KEY: ${PROOF_STORAGE_SECRET_KEY:-}
+      # DELIVERY_CHARGED_RETURNS_ENABLED is deliberately absent: fee-bearing
+      # returns stay off (deny-by-default switch, only "true" enables it).
     depends_on:
       postgres:
         condition: service_healthy
@@ -325,6 +484,25 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Internal trust boundary: verifies x-ubi-identity on /v1/finance and
+      # /v1/wallet, and X-Service-Key on service-to-service routes. Required.
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      PAYMENT_TRUSTED_PROXIES: ${PAYMENT_TRUSTED_PROXIES:-172.28.0.10,172.28.0.11}
+      # Weekly fleet remittance inputs (contract B). The sweep starts only
+      # with both set and a key of >= 32 characters.
+      FLEET_SERVICE_URL: http://fleet-service:4015
+      FLEET_PAYMENT_SERVICE_KEY: ${FLEET_PAYMENT_SERVICE_KEY:?FLEET_PAYMENT_SERVICE_KEY is required}
+      FLEET_SETTLEMENT_SWEEP_INTERVAL_MS: ${FLEET_SETTLEMENT_SWEEP_INTERVAL_MS:-3600000}
+      BUSINESS_PAYOUT_SWEEP_INTERVAL_MS: ${BUSINESS_PAYOUT_SWEEP_INTERVAL_MS:-300000}
+      NOTIFICATION_SERVICE_URL: http://notification-service:3006
+      # Canonical ledger rails (src/ledger/providers.ts): a rail with an empty
+      # base URL or key is unavailable and its operations fail closed.
+      NIP_BASE_URL: ${NIP_BASE_URL:-}
+      NIP_API_KEY: ${NIP_API_KEY:-}
+      NIP_WEBHOOK_SECRET: ${NIP_WEBHOOK_SECRET:-}
+      TOPUP_BASE_URL: ${TOPUP_BASE_URL:-}
+      TOPUP_API_KEY: ${TOPUP_API_KEY:-}
       # Payment Provider Keys (Stripe, Paystack, M-Pesa, etc.)
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
@@ -359,12 +537,33 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # Notification Provider Keys
+      # User routes verify the client JWT (500 without it); service routes
+      # take X-Service-Key = INTERNAL_SERVICE_KEY (refused without it).
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      NOTIFICATION_TRUSTED_PROXIES: ${NOTIFICATION_TRUSTED_PROXIES:-172.28.0.10,172.28.0.11}
+      # Passenger trip-link SMS: opens the sealed envelope (current key, plus
+      # the previous one during a rotation, chosen by kid). Without a usable
+      # key the consumer does not start and nothing is sent.
+      TRIP_ACCESS_DELIVERY_KEY: ${TRIP_ACCESS_DELIVERY_KEY:-}
+      TRIP_ACCESS_DELIVERY_KID: ${TRIP_ACCESS_DELIVERY_KID:-}
+      TRIP_ACCESS_DELIVERY_KEY_PREVIOUS: ${TRIP_ACCESS_DELIVERY_KEY_PREVIOUS:-}
+      TRIP_ACCESS_DELIVERY_KID_PREVIOUS: ${TRIP_ACCESS_DELIVERY_KID_PREVIOUS:-}
+      # The web passenger page (apps/web-app /trip-link); the token rides in
+      # the URL fragment. https is required in production.
+      PASSENGER_TRIP_LINK_BASE_URL: https://${DOMAIN:-ubi.africa}/trip-link
+      APP_URL: https://${DOMAIN:-ubi.africa}
+      # Notification Provider Keys — the names the providers actually read
+      # (src/providers/*.ts). An empty key leaves that channel off.
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
-      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
+      FIREBASE_SERVICE_ACCOUNT: ${FIREBASE_SERVICE_ACCOUNT:-}
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      AFRICASTALKING_API_KEY: ${AFRICASTALKING_API_KEY:-}
+      AFRICASTALKING_USERNAME: ${AFRICASTALKING_USERNAME:-}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-noreply@ubi.africa}
     depends_on:
       postgres:
         condition: service_healthy
@@ -378,6 +577,282 @@ services:
           memory: 384M
         reservations:
           memory: 96M
+
+  # ---------------------------------------------------------------------------
+  # Services added in round 9. Each listens on its own default port (PORT is
+  # still set explicitly). None is exposed on the host; only travel-service's
+  # supplier webhook path is reachable from outside, through Caddy's dedicated
+  # webhooks host. growth-service, config-service, support-service and
+  # realtime-gateway have NO public route at all (the gateway does not proxy
+  # them and Caddy has no site for them) — configured, not exposed.
+  # connection_limit bounds each new Prisma pool: Postgres allows 100
+  # connections and the pools of the older services are unbounded
+  # (docs/ops/PILOT_RUNBOOK_DELTAS.md, "Connection budget").
+  # ---------------------------------------------------------------------------
+
+  config-service:
+    build:
+      context: ../..
+      dockerfile: services/config-service/Dockerfile
+    image: ubi/config-service:${IMAGE_TAG:-latest}
+    container_name: ubi-config-service
+    restart: unless-stopped
+    expose:
+      - "3010"
+    environment:
+      NODE_ENV: production
+      PORT: 3010
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Only a caller holding this key may evaluate flags for a user id it
+      # supplies itself.
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      # CONFIG_SEED_ENABLED is deliberately absent: the seed never runs here.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ubi-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  ask-service:
+    build:
+      context: ../..
+      dockerfile: services/ask-service/Dockerfile
+    image: ubi/ask-service:${IMAGE_TAG:-latest}
+    container_name: ubi-ask-service
+    restart: unless-stopped
+    expose:
+      - "4013"
+    environment:
+      NODE_ENV: production
+      PORT: 4013
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=10
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Verifies the gateway-signed x-ubi-identity on every route.
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
+      # Signs the ride-service context for the one user it acts for; the
+      # service refuses to start in production without it.
+      RIDE_INTERNAL_CONTEXT_SECRET: ${RIDE_INTERNAL_CONTEXT_SECRET:?RIDE_INTERNAL_CONTEXT_SECRET is required}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      AI_GRANTS_SERVICE_KEY: ${AI_GRANTS_SERVICE_KEY:?AI_GRANTS_SERVICE_KEY is required}
+      TRAVEL_ASK_SERVICE_KEY: ${TRAVEL_ASK_SERVICE_KEY:?TRAVEL_ASK_SERVICE_KEY is required}
+      USER_SERVICE_URL: http://user-service:3001
+      RIDE_SERVICE_URL: http://ride-service:3002
+      TRAVEL_SERVICE_URL: http://travel-service:4012
+      SUPPORT_SERVICE_URL: http://support-service:4011
+      # MODEL_ENDPOINT_URL / MODEL_* / EMBED_* are deliberately NOT set: no
+      # model server runs on this host. The provider then answers every model
+      # call `service_unavailable` (the assistant is unavailable, never faked)
+      # and /health/ready says so. Add them only with an attested endpoint
+      # (services/ask-service/docs/MODEL-SERVING.md). PROMOTIONS_SERVICE_URL
+      # is unset too: no service in this repository serves /v1/promotions.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ubi-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 96M
+
+  travel-service:
+    build:
+      context: ../..
+      dockerfile: services/travel-service/Dockerfile
+    image: ubi/travel-service:${IMAGE_TAG:-latest}
+    container_name: ubi-travel-service
+    restart: unless-stopped
+    expose:
+      - "4012"
+    environment:
+      NODE_ENV: production
+      PORT: 4012
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=10
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Boot refuses production without a usable identity secret, with a
+      # test-only supply adapter enabled, or without the ride signing key.
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
+      RIDE_INTERNAL_CONTEXT_SECRET: ${RIDE_INTERNAL_CONTEXT_SECRET:?RIDE_INTERNAL_CONTEXT_SECRET is required}
+      # Travel payment port /v1/finance/travel/* (same value as payment-service).
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      TRAVEL_ASK_SERVICE_KEY: ${TRAVEL_ASK_SERVICE_KEY:?TRAVEL_ASK_SERVICE_KEY is required}
+      PAYMENT_SERVICE_URL: http://payment-service:3005
+      RIDE_SERVICE_URL: http://ride-service:3002
+      TRANSFER_SWEEP_INTERVAL_MS: ${TRANSFER_SWEEP_INTERVAL_MS:-30000}
+      # Supplier credentials are NOT listed here: a supplier row names its
+      # secret by reference and the platform injects TRAVEL_SECRET_<REF>
+      # (add them in a compose override, never in this file). None set = no
+      # supplier is operational (`credentials_missing`), nothing is booked.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ubi-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 96M
+
+  fleet-service:
+    build:
+      context: ../..
+      dockerfile: services/fleet-service/Dockerfile
+    image: ubi/fleet-service:${IMAGE_TAG:-latest}
+    container_name: ubi-fleet-service
+    restart: unless-stopped
+    expose:
+      - "4015"
+    environment:
+      NODE_ENV: production
+      PORT: 4015
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=10
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Refuses to start in production without it; client routes read the
+      # caller only from the signed context.
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
+      # Accepts FLEET_SERVICE_KEY (ride-service) and FLEET_PAYMENT_SERVICE_KEY
+      # (payment-service); presents FLEET_RIDE_SERVICE_KEY to ride-service.
+      FLEET_SERVICE_KEY: ${FLEET_SERVICE_KEY:?FLEET_SERVICE_KEY is required}
+      FLEET_PAYMENT_SERVICE_KEY: ${FLEET_PAYMENT_SERVICE_KEY:?FLEET_PAYMENT_SERVICE_KEY is required}
+      FLEET_RIDE_SERVICE_KEY: ${FLEET_RIDE_SERVICE_KEY:?FLEET_RIDE_SERVICE_KEY is required}
+      RIDE_SERVICE_URL: http://ride-service:3002
+      USER_SERVICE_URL: http://user-service:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ubi-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  growth-service:
+    build:
+      context: ../..
+      dockerfile: services/growth-service/Dockerfile
+    image: ubi/growth-service:${IMAGE_TAG:-latest}
+    container_name: ubi-growth-service
+    restart: unless-stopped
+    expose:
+      - "4014"
+    environment:
+      NODE_ENV: production
+      PORT: 4014
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      PAYMENT_SERVICE_URL: http://payment-service:3005
+      REFERRAL_URL_BASE: https://${DOMAIN:-ubi.africa}/r
+      # NOT PUBLIC. growth-service reads the caller from the plain X-User-ID
+      # header and is not proxied by the gateway: it must stay reachable from
+      # this network only until it verifies the signed context.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ubi-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  support-service:
+    build:
+      context: ../..
+      dockerfile: services/support-service/Dockerfile
+    image: ubi/support-service:${IMAGE_TAG:-latest}
+    container_name: ubi-support-service
+    restart: unless-stopped
+    expose:
+      - "4011"
+    environment:
+      NODE_ENV: production
+      PORT: 4011
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Ledger remedies (payment-service) and SOS notifications, by service key.
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      PAYMENT_SERVICE_URL: http://payment-service:3005
+      NOTIFICATION_SERVICE_URL: http://notification-service:3006
+      SOS_SWEEP_INTERVAL_MS: ${SOS_SWEEP_INTERVAL_MS:-30000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ubi-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  realtime-gateway:
+    build:
+      context: ../..
+      dockerfile: services/realtime-gateway/Dockerfile
+    image: ubi/realtime-gateway:${IMAGE_TAG:-latest}
+    container_name: ubi-realtime-gateway
+    restart: unless-stopped
+    expose:
+      - "4010"
+    environment:
+      NODE_ENV: production
+      PORT: 4010
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Refuses to start in production without a real JWT secret.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      # Closes its service endpoint: with neither this nor SERVICE_SECRET set
+      # it admits unauthenticated service calls.
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}
+      # No Caddy site proxies WebSockets to this service yet (the gateway does
+      # not proxy WebSockets): a public WSS ingress is a separate decision.
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - ubi-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
 
   # =============================================================================
   # FRONTEND APPLICATIONS
@@ -434,7 +909,10 @@ services:
   # =============================================================================
 
   minio:
-    image: minio/minio:latest
+    # MinIO no longer publishes minio/minio on Docker Hub (the registry
+    # answers 401 for it); quay.io is its registry. Pinned: the image
+    # carries minio, mc and curl (the healthcheck below uses curl).
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: ubi-minio
     restart: unless-stopped
     ports:
@@ -599,3 +1077,7 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/16
+          # Dynamic addresses come from here only; 172.28.0.0/24 is reserved
+          # for the fixed addresses above (caddy .10, api-gateway .11).
+          ip_range: 172.28.1.0/24
+          gateway: 172.28.0.1

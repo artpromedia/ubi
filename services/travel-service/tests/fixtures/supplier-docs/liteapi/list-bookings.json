@@ -1,0 +1,116 @@
+{
+ "source": "https://docs.liteapi.travel/reference/listbookings",
+ "retrieved": "2026-09-23",
+ "payload": {
+  "data": [
+   {
+    "bookingId": "9EjIcpy7K",
+    "clientReference": "6b462947-b183-450b-8113-098a674f7f86",
+    "supplierBookingId": "9EjIcpy7K",
+    "supplierBookingName": "nuitee",
+    "supplier": "nuitee",
+    "supplierId": 2,
+    "status": "CANCELLED",
+    "feed": "custom_feed",
+    "hotelConfirmationCode": "9348208430284093",
+    "checkin": "2025-05-23",
+    "checkout": "2025-05-24",
+    "hotel": {
+     "hotelId": "lp19f3a",
+     "name": "test name"
+    },
+    "rooms": [
+     {
+      "adults": 2,
+      "children": "",
+      "firstName": "Sunny",
+      "lastName": "Mars",
+      "childrenAges": null,
+      "room_id": "HQTX7FHWARP8R55FMQ9D7UN6DCLS9B7WXGNGRL6SFTZI1MG0GQH4TQE93EGSY1964F5PXF9HCX7JEZCW60K91QNXEXZ9Z6BY2Q0M",
+      "occupancy_number": 1,
+      "amount": 356.31,
+      "currency": "USD",
+      "children_count": 0,
+      "remarks": "quiet room please",
+      "guests": [
+       {
+        "firstName": "Sunny",
+        "lastName": "Mars",
+        "email": "s.mars@liteapi.travel",
+        "phone": "759834795387",
+        "remarks": "quiet room please",
+        "occupancyNumber": 1
+       }
+      ]
+     }
+    ],
+    "holder": {
+     "firstName": "First",
+     "lastName": "Last",
+     "email": "example-holder@liteapi.travel",
+     "phone": "",
+     "holderTitle": ""
+    },
+    "createdAt": "2025-03-05T13:37:20+02:00",
+    "updatedAt": "2025-03-05T17:41:06+02:00",
+    "cancellationPolicies": {
+     "cancelPolicyInfos": [
+      {
+       "cancelTime": "2025-05-23 23:59:59",
+       "amount": 356.31,
+       "type": "amount",
+       "timezone": "",
+       "currency": "USD"
+      }
+     ],
+     "hotelRemarks": null,
+     "refundableTag": ""
+    },
+    "specialRemarks": "quiet room please",
+    "price": 388.37,
+    "commission": 32.06,
+    "clientCommission": 32.06,
+    "currency": "USD",
+    "guestId": "102",
+    "trackingId": "ucn048ucr04ru09",
+    "prebookId": "U86A3mC6G",
+    "paymentStatus": "",
+    "paymentTransactionId": "",
+    "sellingPrice": "388.37",
+    "exchangeRate": 0.9612858754482988,
+    "exchangeRateUsd": 1,
+    "email": "example-holder@liteapi.travel",
+    "tag": "",
+    "lastFreeCancellationDate": "2025-05-24T02:59:59+03:00",
+    "userId": 869595,
+    "nationality": "GR",
+    "loyaltyGuestId": 102,
+    "cancelledAt": "2025-03-05T17:41:05+02:00",
+    "refundedAt": "2025-03-05T17:41:05+02:00",
+    "cancelledBy": 8459483,
+    "sandbox": 1,
+    "voucherId": null,
+    "voucherTotalAmount": 0,
+    "voucherTransationId": null,
+    "processingFee": 0,
+    "amountRefunded": 0,
+    "refundType": "full",
+    "paymentScheduledAt": null,
+    "addonsTotalAmount": null,
+    "addonsRedemptions": null,
+    "rebookFrom": "",
+    "agentId": null,
+    "suggestedSellingPrice": {
+     "amount": 185.7,
+     "currency": "USD",
+     "source": "expedia.com"
+    },
+    "goodwillPayment": {
+     "amount": 50,
+     "currency": "USD",
+     "description": "Example description"
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,17 @@
+# config-service route manifest: every METHOD + Hono path the production
+# app (src/app.ts buildApp) serves; middleware is left out.
+# GENERATED — do not edit by hand.
+# Regenerate: UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/config-service exec vitest run tests/unit/routes-manifest.test.ts
+# Read by services/api-gateway/tests/route-contract.test.ts.
+GET /health
+GET /health/live
+GET /health/ready
+GET /openapi.json
+GET /v1/config/cities
+GET /v1/config/cities/:cityId
+GET /v1/config/cities/:cityId/history
+GET /v1/flags
+POST /v1/config/change-requests
+POST /v1/config/change-requests/:id/approve
+POST /v1/config/cities/status
+PUT /v1/flags/:key

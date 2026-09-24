@@ -22,7 +22,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/go-chi/httprate"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -67,6 +66,34 @@ type Config struct {
 	PaymentServiceURL        string
 	InternalServiceKey       string
 	MarketplaceSweepInterval time.Duration
+
+	// UserServiceURL and DriverProfileServiceKey wire the verified
+	// driver-profile port (A06 part A). Either empty: offers are served with
+	// "details unavailable", never blocked.
+	UserServiceURL          string
+	DriverProfileServiceKey string
+
+	// DeliveryServiceURL and DeliveryServiceKey wire the award saga's
+	// delivery hand-off (marketplace-assign). Either empty — or the key the
+	// committed delivery-service default — and every hand-off fails closed:
+	// nothing is sent, the award stays pending and an alarm is logged.
+	DeliveryServiceURL string
+	DeliveryServiceKey string
+
+	// TripAccessDeliveryKey / TripAccessDeliveryKid seal a guest passenger's
+	// trip-link delivery (TRIP_ACCESS_DELIVERY_KEY / _KID). Either missing:
+	// guest bookings are refused, fail closed — nothing is sent in clear.
+	TripAccessDeliveryKey string
+	TripAccessDeliveryKid string
+
+	// Internal contract A with fleet-service (A05 fleet calendar).
+	// FleetRideServiceKey (FLEET_RIDE_SERVICE_KEY) is what fleet-service
+	// presents to /internal/fleet; FleetServiceURL/FleetServiceKey
+	// (FLEET_SERVICE_URL / FLEET_SERVICE_KEY) are how ride-service calls it.
+	// Any of them unset (or a key under 32 characters) fails closed.
+	FleetRideServiceKey string
+	FleetServiceURL     string
+	FleetServiceKey     string
 }
 
 func main() {
@@ -102,6 +129,19 @@ func main() {
 		PaymentServiceURL:  config.PaymentServiceURL,
 		InternalServiceKey: config.InternalServiceKey,
 		Logger:             log.Logger,
+
+		UserServiceURL:          config.UserServiceURL,
+		DriverProfileServiceKey: config.DriverProfileServiceKey,
+
+		DeliveryServiceURL: config.DeliveryServiceURL,
+		DeliveryServiceKey: config.DeliveryServiceKey,
+
+		TripAccessDeliveryKey: config.TripAccessDeliveryKey,
+		TripAccessDeliveryKid: config.TripAccessDeliveryKid,
+		Environment:           config.Environment,
+
+		FleetServiceURL: config.FleetServiceURL,
+		FleetServiceKey: config.FleetServiceKey,
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to start the ride service")
@@ -118,9 +158,19 @@ func main() {
 	rideHandler := handler.NewRideHandler(runtime.Service, log.Logger)
 	locationHandler := handler.NewLocationHandler(runtime.Maps)
 
+	// Who a request is counted as (internal/handler/ratelimit.go): the verified
+	// ride-context actor, else the client address — forwarded headers are
+	// believed only from RIDE_TRUSTED_PROXIES (the gateway), never from anyone.
+	limiter := handler.NewRateLimiter(verifier, getEnv(handler.EnvTrustedProxies, ""),
+		handler.DefaultRateLimit, handler.DefaultRateLimitWindow, log.Logger)
+	// fleet-service's /internal/fleet calls with the VALID service key are
+	// not throttled (a 429 mid-saga costs more than serving it); any other
+	// key is counted per client, then refused by RequireFleetServiceKey.
+	limiter.ExemptFleetServiceKey(config.FleetRideServiceKey)
+
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
-	router.Use(middleware.RealIP)
+	router.Use(limiter.ClientAddress)
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.Timeout(30 * time.Second))
 	router.Use(middleware.Compress(5))
@@ -133,12 +183,15 @@ func main() {
 			"If-None-Match",
 			handler.HeaderUserID, handler.HeaderUserRole, handler.HeaderCityID,
 			handler.HeaderSignature, handler.HeaderIssuedAt,
+			// A guest passenger's trip link (A06 part B) sends its token
+			// here, never in the URL.
+			handler.HeaderTripAccessToken,
 		},
 		ExposedHeaders:   []string{headerRequestID, "ETag"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
-	router.Use(httprate.LimitByIP(300, time.Minute))
+	router.Use(limiter.Limit)
 
 	// Belt and braces for the fatal above: were the process somehow running in
 	// production without signature checking, readiness would still never say
@@ -149,13 +202,19 @@ func main() {
 	router.Get("/health/ready", health.ready)
 	router.Get("/health", health.detailed)
 
-	// Every /v1 route is behind the identity middleware. There is no route on
-	// this service that serves an anonymous caller.
+	// Every /v1 route is behind the identity middleware except a guest
+	// passenger's trip link (/v1/mp/trip-access*, A06 part B), which is
+	// authenticated by its own scoped, expiring, revocable token and rate
+	// limited per client and token. No route serves an anonymous caller.
 	var marketplaceHandler *handler.MarketplaceHandler
 	if runtime.Marketplace != nil {
 		marketplaceHandler = handler.NewMarketplaceHandler(runtime.Marketplace, log.Logger)
 	}
 	router.Mount("/v1", rideHandler.Routes(handler.RequireIdentity(verifier), locationHandler, marketplaceHandler))
+	// Internal contract A (A05 fleet calendar): fleet-service only, by
+	// FLEET_RIDE_SERVICE_KEY, outside the gateway identity middleware and
+	// never proxied by the client gateway. Unset key: every route refused.
+	router.Mount("/internal/fleet", handler.FleetInternalRoutes(config.FleetRideServiceKey, marketplaceHandler))
 
 	// The dispatcher is a sweep over durable rows, not a per-ride goroutine, so
 	// a restart resumes matching instead of losing it.
@@ -220,6 +279,22 @@ func loadConfig() *Config {
 		PaymentServiceURL:        getEnv("PAYMENT_SERVICE_URL", ""),
 		InternalServiceKey:       getEnv("INTERNAL_SERVICE_KEY", ""),
 		MarketplaceSweepInterval: getDuration("RIDE_MP_SWEEP_INTERVAL_MS", time.Second),
+
+		UserServiceURL:          getEnv("USER_SERVICE_URL", ""),
+		DriverProfileServiceKey: getEnv("DRIVER_PROFILE_RIDE_SERVICE_KEY", ""),
+
+		DeliveryServiceURL: getEnv("DELIVERY_SERVICE_URL", ""),
+		// delivery-service authenticates the hand-off with ITS
+		// INTERNAL_SERVICE_KEY; DELIVERY_SERVICE_KEY names it when it differs
+		// from the key payment-service shares.
+		DeliveryServiceKey: getEnv("DELIVERY_SERVICE_KEY", getEnv("INTERNAL_SERVICE_KEY", "")),
+
+		TripAccessDeliveryKey: getEnv("TRIP_ACCESS_DELIVERY_KEY", ""),
+		TripAccessDeliveryKid: getEnv("TRIP_ACCESS_DELIVERY_KID", ""),
+
+		FleetRideServiceKey: getEnv("FLEET_RIDE_SERVICE_KEY", ""),
+		FleetServiceURL:     getEnv("FLEET_SERVICE_URL", ""),
+		FleetServiceKey:     getEnv("FLEET_SERVICE_KEY", ""),
 	}
 }
 

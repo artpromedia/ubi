@@ -1,0 +1,303 @@
+{
+  "$comment": "payment-service's internal business API as ride-service calls it (packages/contracts/src/business-travel.ts: BUSINESS_INTERNAL_BASE_PATH, BusinessBookingTermsSchema, BusinessPolicyCheckResultSchema, BusinessOpResultSchema, BusinessReservationStatusSchema, BusinessCommitInputSchema, BusinessReleaseInputSchema, BusinessReserveTopUpInputSchema, BusinessReserveTopUpResultSchema; payment-service src/business/routes.ts). Shared fixture: ride-service's Go client types decode every response strictly and its test double answers the same shapes; payment-service's tests can parse the same bodies with the zod schemas.",
+  "basePath": "/v1/finance/business",
+  "headers": {
+    "serviceKey": "X-Service-Key",
+    "idempotencyKey": "Idempotency-Key",
+    "city": "X-City-ID"
+  },
+  "policyCheck": {
+    "method": "POST",
+    "path": "/policy-check",
+    "request": {
+      "bookingRef": "request:3f6c1a52-9d0e-4b7e-8a1d-000000000001",
+      "organizationId": "org_acme",
+      "costCentreId": "occ_ops",
+      "bookerId": "11111111-1111-4111-8111-111111111111",
+      "travellerId": "22222222-2222-4222-8222-222222222222",
+      "service": "ride",
+      "vehicleClass": "go",
+      "amountMinor": 250000,
+      "currency": "NGN",
+      "expenseCategory": "client visit"
+    },
+    "response": {
+      "allowed": false,
+      "reasons": ["class_not_allowed", "budget_insufficient"],
+      "costCentreId": "occ_ops",
+      "budgetId": "obg_ops_2026_09",
+      "available": { "amountMinor": 100000, "currency": "NGN" },
+      "policyVersion": 3
+    }
+  },
+  "reserve": {
+    "method": "POST",
+    "path": "/reserve",
+    "idempotencyKey": "business:3f6c1a52-9d0e-4b7e-8a1d-0000000000aa:reserve",
+    "request": {
+      "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000aa",
+      "organizationId": "org_acme",
+      "bookerId": "11111111-1111-4111-8111-111111111111",
+      "travellerId": "22222222-2222-4222-8222-222222222222",
+      "service": "ride",
+      "vehicleClass": "go",
+      "amountMinor": 250000,
+      "currency": "NGN"
+    },
+    "response": {
+      "ref": "obo_1",
+      "op": "reserve",
+      "entryId": null,
+      "amount": { "amountMinor": 250000, "currency": "NGN" },
+      "reservation": {
+        "reservationId": "obr_1",
+        "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000aa",
+        "organizationId": "org_acme",
+        "costCentreId": "occ_ops",
+        "budgetId": "obg_ops_2026_09",
+        "period": "2026-09",
+        "bookerId": "11111111-1111-4111-8111-111111111111",
+        "travellerId": "22222222-2222-4222-8222-222222222222",
+        "service": "ride",
+        "vehicleClass": "go",
+        "expenseCategory": null,
+        "state": "reserved",
+        "reserved": { "amountMinor": 250000, "currency": "NGN" },
+        "committed": null,
+        "taxes": [],
+        "commitEntryId": null,
+        "policyVersion": 3,
+        "releaseReason": null,
+        "releasedBy": null,
+        "createdAt": "2026-09-23T10:00:00.000Z",
+        "committedAt": null,
+        "releasedAt": null
+      },
+      "replayed": false
+    }
+  },
+  "reserveTopUp": {
+    "method": "POST",
+    "path": "/reserve-top-up",
+    "idempotencyKey": "business:3f6c1a52-9d0e-4b7e-8a1d-0000000000dd:topup:7c1e2a90-4d3b-4f6e-9a21-0000000000ee",
+    "request": {
+      "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000dd",
+      "amountMinor": 20000,
+      "currency": "NGN",
+      "reason": "fare_increase",
+      "reasonRef": "7c1e2a90-4d3b-4f6e-9a21-0000000000ee"
+    },
+    "response": {
+      "ref": "obo_5",
+      "op": "reserve",
+      "entryId": null,
+      "amount": { "amountMinor": 20000, "currency": "NGN" },
+      "reservation": {
+        "reservationId": "obr_4",
+        "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000dd",
+        "organizationId": "org_acme",
+        "costCentreId": "occ_ops",
+        "budgetId": "obg_ops_2026_09",
+        "period": "2026-09",
+        "bookerId": "11111111-1111-4111-8111-111111111111",
+        "travellerId": "22222222-2222-4222-8222-222222222222",
+        "service": "ride",
+        "vehicleClass": "go",
+        "expenseCategory": null,
+        "state": "reserved",
+        "reserved": { "amountMinor": 200000, "currency": "NGN" },
+        "committed": null,
+        "taxes": [],
+        "commitEntryId": null,
+        "policyVersion": 3,
+        "releaseReason": null,
+        "releasedBy": null,
+        "createdAt": "2026-09-23T12:00:00.000Z",
+        "committedAt": null,
+        "releasedAt": null
+      },
+      "increase": {
+        "reason": "fare_increase",
+        "reasonRef": "7c1e2a90-4d3b-4f6e-9a21-0000000000ee",
+        "previousReserved": { "amountMinor": 180000, "currency": "NGN" },
+        "reserved": { "amountMinor": 200000, "currency": "NGN" }
+      },
+      "replayed": false
+    }
+  },
+  "commit": {
+    "method": "POST",
+    "path": "/commit",
+    "idempotencyKey": "business:3f6c1a52-9d0e-4b7e-8a1d-0000000000aa:commit",
+    "request": {
+      "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000aa",
+      "actualMinor": 215000,
+      "currency": "NGN"
+    },
+    "response": {
+      "ref": "obo_2",
+      "op": "commit",
+      "entryId": "jen_1",
+      "amount": { "amountMinor": 215000, "currency": "NGN" },
+      "reservation": {
+        "reservationId": "obr_1",
+        "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000aa",
+        "organizationId": "org_acme",
+        "costCentreId": "occ_ops",
+        "budgetId": "obg_ops_2026_09",
+        "period": "2026-09",
+        "bookerId": "11111111-1111-4111-8111-111111111111",
+        "travellerId": "22222222-2222-4222-8222-222222222222",
+        "service": "ride",
+        "vehicleClass": "go",
+        "expenseCategory": null,
+        "state": "committed",
+        "reserved": { "amountMinor": 250000, "currency": "NGN" },
+        "committed": { "amountMinor": 215000, "currency": "NGN" },
+        "taxes": [{ "code": "vat", "rateBps": 750, "amountMinor": 15000 }],
+        "commitEntryId": "jen_1",
+        "policyVersion": 3,
+        "releaseReason": null,
+        "releasedBy": null,
+        "createdAt": "2026-09-23T10:00:00.000Z",
+        "committedAt": "2026-09-23T10:40:00.000Z",
+        "releasedAt": null
+      },
+      "replayed": false
+    }
+  },
+  "release": {
+    "method": "POST",
+    "path": "/release",
+    "idempotencyKey": "business:3f6c1a52-9d0e-4b7e-8a1d-0000000000bb:release",
+    "request": {
+      "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000bb",
+      "cancelledBy": {
+        "party": "booker",
+        "userId": "11111111-1111-4111-8111-111111111111"
+      },
+      "reason": "cancelled_by_requester"
+    },
+    "response": {
+      "ref": "obo_3",
+      "op": "release",
+      "entryId": null,
+      "amount": { "amountMinor": 180000, "currency": "NGN" },
+      "reservation": {
+        "reservationId": "obr_2",
+        "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000bb",
+        "organizationId": "org_acme",
+        "costCentreId": "occ_ops",
+        "budgetId": "obg_ops_2026_09",
+        "period": "2026-09",
+        "bookerId": "11111111-1111-4111-8111-111111111111",
+        "travellerId": "22222222-2222-4222-8222-222222222222",
+        "service": "ride",
+        "vehicleClass": "go",
+        "expenseCategory": null,
+        "state": "released",
+        "reserved": { "amountMinor": 180000, "currency": "NGN" },
+        "committed": null,
+        "taxes": [],
+        "commitEntryId": null,
+        "policyVersion": 3,
+        "releaseReason": "cancelled_by_requester",
+        "releasedBy": "booker",
+        "createdAt": "2026-09-23T11:00:00.000Z",
+        "committedAt": null,
+        "releasedAt": "2026-09-23T11:05:00.000Z"
+      },
+      "replayed": false
+    }
+  },
+  "status": {
+    "method": "GET",
+    "path": "/reservations/3f6c1a52-9d0e-4b7e-8a1d-0000000000aa",
+    "response": {
+      "reservation": {
+        "reservationId": "obr_1",
+        "bookingRef": "3f6c1a52-9d0e-4b7e-8a1d-0000000000aa",
+        "organizationId": "org_acme",
+        "costCentreId": "occ_ops",
+        "budgetId": "obg_ops_2026_09",
+        "period": "2026-09",
+        "bookerId": "11111111-1111-4111-8111-111111111111",
+        "travellerId": "22222222-2222-4222-8222-222222222222",
+        "service": "ride",
+        "vehicleClass": "go",
+        "expenseCategory": null,
+        "state": "committed",
+        "reserved": { "amountMinor": 250000, "currency": "NGN" },
+        "committed": { "amountMinor": 215000, "currency": "NGN" },
+        "taxes": [{ "code": "vat", "rateBps": 750, "amountMinor": 15000 }],
+        "commitEntryId": "jen_1",
+        "policyVersion": 3,
+        "releaseReason": null,
+        "releasedBy": null,
+        "createdAt": "2026-09-23T10:00:00.000Z",
+        "committedAt": "2026-09-23T10:40:00.000Z",
+        "releasedAt": null
+      },
+      "ops": [
+        {
+          "ref": "obo_1",
+          "op": "reserve",
+          "clientKey": "business:3f6c1a52-9d0e-4b7e-8a1d-0000000000aa:reserve",
+          "amount": { "amountMinor": 250000, "currency": "NGN" },
+          "entryId": null,
+          "createdAt": "2026-09-23T10:00:00.000Z"
+        },
+        {
+          "ref": "obo_2",
+          "op": "commit",
+          "clientKey": "business:3f6c1a52-9d0e-4b7e-8a1d-0000000000aa:commit",
+          "amount": { "amountMinor": 215000, "currency": "NGN" },
+          "entryId": "jen_1",
+          "createdAt": "2026-09-23T10:40:00.000Z"
+        }
+      ],
+      "organization": {
+        "id": "org_acme",
+        "name": "Acme Logistics",
+        "legalName": "Acme Logistics Nigeria Ltd",
+        "taxId": "TIN-12345678-0001"
+      },
+      "costCentre": { "id": "occ_ops", "code": "OPS", "name": "Operations" }
+    }
+  },
+  "refusals": [
+    {
+      "status": 422,
+      "body": {
+        "code": "insufficient_spendable",
+        "message": "this cost centre's budget cannot cover the booking — it is refused, not deferred",
+        "details": {
+          "reason": "budget_insufficient",
+          "budgetId": "obg_ops_2026_09",
+          "availableMinor": 100000,
+          "requiredMinor": 250000
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "code": "forbidden",
+        "message": "that party may not cancel this business booking",
+        "details": { "reason": "cancel_not_permitted", "party": "booker" }
+      }
+    },
+    {
+      "status": 422,
+      "body": {
+        "code": "limit_exceeded",
+        "message": "the trip exceeds the organization's per-trip cap",
+        "details": {
+          "reason": "trip_cap_exceeded",
+          "tripCapMinor": 200000,
+          "requestedTotalMinor": 230000
+        }
+      }
+    }
+  ]
+}

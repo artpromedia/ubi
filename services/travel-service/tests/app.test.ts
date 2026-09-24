@@ -191,7 +191,7 @@ describe("travel HTTP surface", () => {
       `/v1/ops/travel/orders/${orderId}/settlement`,
       {
         method: "POST",
-        headers: headers(opsActor(), cityId),
+        headers: headers(opsActor(), cityId, { "Idempotency-Key": idemKey() }),
         body: JSON.stringify({ invoicedMinor: 14_800_000 }),
       },
     );

@@ -3,6 +3,7 @@ package marketplace
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -51,6 +52,39 @@ type FakeWallet struct {
 	BeforeAdjust  func()
 	BeforeCapture func()
 
+	// Post-award commission deltas (docs/MARKETPLACE-MONEY.md). captured
+	// is each captured hold's running total — the original capture plus
+	// captured increments minus refunds — and awardOf the award it was
+	// captured under; deltas are the increment rows keyed
+	// reservation|amendment (a zero row is a release that closed an
+	// amendment before any reserve), refunds the committed decreases.
+	captured map[string]int64
+	awardOf  map[string]string
+	deltas   map[string]*fakeDelta
+	refunds  map[string]*fakeDelta
+
+	// Amendment failure injection: a non-nil error fails the matching call
+	// without applying it; UnknownDeltaCapture applies the capture and then
+	// answers ErrWalletUnknownOutcome (a lost response). BeforeDeltaCapture
+	// is self-clearing, called without the lock.
+	FailDeltaReserve    error
+	FailDeltaCapture    error
+	FailDeltaRelease    error
+	FailDeltaRefund     error
+	UnknownDeltaCapture bool
+	BeforeDeltaCapture  func()
+
+	// Amendment counters: every call, and the effective (money-moving,
+	// non-replayed) ones per amendment.
+	DeltaReserveCalls int
+	DeltaCaptureCalls int
+	DeltaReleaseCalls int
+	DeltaRefundCalls  int
+	// DeltaCapturesByAmendment must never exceed 1 per amendment.
+	DeltaCapturesByAmendment map[string]int
+	DeltaRefundsByAmendment  map[string]int
+	DeltaReleasesByAmendment map[string]int
+
 	// Counters a test asserts on.
 	ReserveCalls int
 	AdjustCalls  int
@@ -76,7 +110,27 @@ func NewFakeWallet() *FakeWallet {
 		ReleasesByReservation:  map[string]int{},
 		CapturesByReservation:  map[string]int{},
 		ReversalsByReservation: map[string]int{},
+
+		captured:                 map[string]int64{},
+		awardOf:                  map[string]string{},
+		deltas:                   map[string]*fakeDelta{},
+		refunds:                  map[string]*fakeDelta{},
+		DeltaCapturesByAmendment: map[string]int{},
+		DeltaRefundsByAmendment:  map[string]int{},
+		DeltaReleasesByAmendment: map[string]int{},
 	}
+}
+
+// fakeDelta is one amendment's commission row against a captured hold.
+type fakeDelta struct {
+	awardID  string
+	state    string // active | captured | released | refunded
+	delta    int64
+	prior    int64
+	newTotal int64
+	newBase  int64
+	terms    string
+	closed   bool // released before any reserve: direction none
 }
 
 // SetSpendable sets a driver's spendable balance.
@@ -240,6 +294,8 @@ func (f *FakeWallet) Capture(_ context.Context, reservationID, awardID string, e
 	}
 	hold.State = machine.MpHoldCaptured
 	f.seenKeys[idempotencyKey] = reservationID
+	f.captured[reservationID] = hold.AmountMinor.AmountMinor
+	f.awardOf[reservationID] = awardID
 	result := &CaptureResult{
 		Hold:           *hold,
 		ReceiptID:      "rcp_" + awardID,
@@ -276,7 +332,22 @@ func (f *FakeWallet) Reverse(_ context.Context, reservationID, _ string, _ strin
 		return hold, nil
 	}
 	hold.State = machine.MpHoldReversed
-	f.spendable[uuid.MustParse(hold.DriverID)] += hold.AmountMinor.AmountMinor
+	// The NET captured commission comes back (original + captured
+	// increments − refunds), and any reserved increment is released with it,
+	// exactly as payment-service's reverseCapturedHold does.
+	net := hold.AmountMinor.AmountMinor
+	if total, ok := f.captured[reservationID]; ok {
+		net = total
+	}
+	driverID := uuid.MustParse(hold.DriverID)
+	f.spendable[driverID] += net
+	for key, row := range f.deltas {
+		if strings.HasPrefix(key, reservationID+"|") && row.state == machine.MpHoldActive {
+			row.state = machine.MpHoldReleased
+			f.spendable[driverID] += row.delta
+		}
+	}
+	f.captured[reservationID] = 0
 	f.ReversalsByReservation[reservationID]++
 	return hold, nil
 }
@@ -303,6 +374,329 @@ func (f *FakeWallet) Overview(_ context.Context, driverID uuid.UUID, cityID stri
 		SpendableMinor: money(spendable, currency),
 		Holds:          holds,
 	}, nil
+}
+
+// CapturedTotal is the commission captured so far on one hold: the original
+// capture plus captured increments minus refunds (0 once reversed).
+func (f *FakeWallet) CapturedTotal(reservationID string) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.captured[reservationID]
+}
+
+// OpenDeltas counts one hold's reserved, uncaptured increments.
+func (f *FakeWallet) OpenDeltas(reservationID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	open := 0
+	for key, row := range f.deltas {
+		if strings.HasPrefix(key, reservationID+"|") && row.state == machine.MpHoldActive {
+			open++
+		}
+	}
+	return open
+}
+
+func deltaKey(reservationID, amendmentID string) string {
+	return reservationID + "|" + amendmentID
+}
+
+func deltaTermsKey(op string, terms DeltaTerms) string {
+	return fmt.Sprintf("%s|%s|%d|%d|%d|%s", op, terms.AwardID, terms.PriorTotalMinor.AmountMinor,
+		terms.NewTotalMinor.AmountMinor, terms.NewBaseMinor.AmountMinor, terms.NewTotalMinor.Currency)
+}
+
+// validDeltaTerms is payment-service's assertDeltaTerms: one currency, and
+// the new total must be the ONE commission function applied to the new base.
+func validDeltaTerms(terms DeltaTerms) error {
+	currency := terms.NewTotalMinor.Currency
+	if terms.PriorTotalMinor.Currency != currency || terms.NewBaseMinor.Currency != currency {
+		return domain.Errorf(domain.CodeValidationFailed, "every Money body on this request must carry the same currency")
+	}
+	if terms.NewBaseMinor.AmountMinor <= 0 || terms.PriorTotalMinor.AmountMinor < 0 {
+		return domain.Errorf(domain.CodeValidationFailed, "amounts must be positive integers in minor units")
+	}
+	if terms.NewTotalMinor.AmountMinor != CommissionMinor(terms.NewBaseMinor.AmountMinor) {
+		return domain.Errorf(domain.CodeValidationFailed, "the new total is not 10%% of the new base, rounded half-up").
+			WithDetails(map[string]any{"expectedMinor": CommissionMinor(terms.NewBaseMinor.AmountMinor)})
+	}
+	return nil
+}
+
+// amendableHold is payment-service's assertAmendable: the award's CAPTURED
+// hold, under that award, still captured.
+func (f *FakeWallet) amendableHold(reservationID, awardID string) (*Hold, error) {
+	hold, ok := f.holds[reservationID]
+	if !ok {
+		return nil, domain.Errorf(domain.CodeNotFound, "no such reservation")
+	}
+	if hold.State == machine.MpHoldActive || hold.State == machine.MpHoldCapturePending {
+		return nil, domain.Errorf(domain.CodeConflict,
+			"this reservation's commission is not captured yet; a live hold is adjusted, not amended")
+	}
+	if f.awardOf[reservationID] != awardID {
+		return nil, domain.Errorf(domain.CodeConflict, "this reservation was captured under a different award")
+	}
+	if hold.State != machine.MpHoldCaptured {
+		return nil, domain.Errorf(domain.CodeConflict, "the award's commission is no longer captured; it cannot be amended")
+	}
+	return hold, nil
+}
+
+func (f *FakeWallet) refuseOpenDelta(reservationID string, currency string) error {
+	for key, row := range f.deltas {
+		if strings.HasPrefix(key, reservationID+"|") && row.state == machine.MpHoldActive {
+			return domain.Errorf(domain.CodeConflict, "another amendment's commission delta is still open on this award").
+				WithDetails(map[string]any{"refreshedTerms": map[string]any{
+					"capturedTotalMinor": money(f.captured[reservationID], currency),
+				}})
+		}
+	}
+	return nil
+}
+
+func (f *FakeWallet) staleCapturedTotal(reservationID, currency string, prior int64) error {
+	return domain.Errorf(domain.CodeVersionConflict,
+		"the prior total is not the award's captured commission; refresh and retry").
+		WithDetails(map[string]any{
+			"priorTotalMinor": money(prior, currency),
+			"refreshedTerms": map[string]any{
+				"capturedTotalMinor": money(f.captured[reservationID], currency),
+			},
+		})
+}
+
+func deltaView(reservationID, amendmentID string, row *fakeDelta, direction, currency string) *CommissionDelta {
+	view := &CommissionDelta{
+		ReservationID: reservationID,
+		AmendmentID:   amendmentID,
+		AwardID:       row.awardID,
+		Direction:     direction,
+		State:         row.state,
+		DeltaMinor:    money(row.delta, currency),
+	}
+	if direction != "none" {
+		prior, next, base := money(row.prior, currency), money(row.newTotal, currency), money(row.newBase, currency)
+		view.PriorTotalMinor, view.NewTotalMinor, view.NewBaseMinor = &prior, &next, &base
+	}
+	if direction == "increase" || direction == "none" {
+		id := "mph_" + digest(deltaKey(reservationID, amendmentID))
+		view.DeltaReservationID = &id
+	}
+	if row.state == machine.MpHoldCaptured || row.state == "refunded" {
+		receipt := "mcr_" + digest(deltaKey(reservationID, amendmentID)+row.state)
+		view.ReceiptID = &receipt
+	}
+	return view
+}
+
+// ReserveCommissionDelta implements WalletPort.
+func (f *FakeWallet) ReserveCommissionDelta(_ context.Context, reservationID, amendmentID string, terms DeltaTerms, _ string) (*CommissionDelta, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.DeltaReserveCalls++
+	if f.FailDeltaReserve != nil {
+		return nil, f.FailDeltaReserve
+	}
+	if err := validDeltaTerms(terms); err != nil {
+		return nil, err
+	}
+	currency := terms.NewTotalMinor.Currency
+	if terms.NewTotalMinor.AmountMinor <= terms.PriorTotalMinor.AmountMinor {
+		return nil, domain.Errorf(domain.CodeValidationFailed,
+			"a commission delta is reserved only for an increase; a decrease is refunded at commit")
+	}
+	key := deltaKey(reservationID, amendmentID)
+	termsKey := deltaTermsKey("reserve", terms)
+	if row, ok := f.deltas[key]; ok {
+		if row.terms == termsKey {
+			return deltaView(reservationID, amendmentID, row, "increase", currency), nil
+		}
+		if row.closed {
+			return nil, domain.Errorf(domain.CodeConflict, "this amendment was already released; it cannot reserve a delta")
+		}
+		return nil, domain.Errorf(domain.CodeIdempotencyKeyReuse,
+			"this amendment already reserved a commission delta with different terms")
+	}
+	hold, err := f.amendableHold(reservationID, terms.AwardID)
+	if err != nil {
+		return nil, err
+	}
+	if _, refunded := f.refunds[key]; refunded {
+		return nil, domain.Errorf(domain.CodeConflict, "this amendment already committed a commission decrease")
+	}
+	if err := f.refuseOpenDelta(reservationID, currency); err != nil {
+		return nil, err
+	}
+	capturedMinor := f.captured[reservationID]
+	if capturedMinor != terms.PriorTotalMinor.AmountMinor {
+		return nil, f.staleCapturedTotal(reservationID, currency, terms.PriorTotalMinor.AmountMinor)
+	}
+	delta := terms.NewTotalMinor.AmountMinor - capturedMinor
+	driverID := uuid.MustParse(hold.DriverID)
+	if f.spendable[driverID] < delta {
+		return nil, domain.Errorf(domain.CodeInsufficientSpendable,
+			"the spendable balance does not cover the commission increment").
+			WithDetails(map[string]any{
+				"requiredMinor":  delta,
+				"spendableMinor": f.spendable[driverID],
+				"shortfallMinor": delta - f.spendable[driverID],
+			})
+	}
+	f.spendable[driverID] -= delta
+	row := &fakeDelta{
+		awardID: terms.AwardID, state: machine.MpHoldActive, delta: delta,
+		prior: capturedMinor, newTotal: terms.NewTotalMinor.AmountMinor,
+		newBase: terms.NewBaseMinor.AmountMinor, terms: termsKey,
+	}
+	f.deltas[key] = row
+	return deltaView(reservationID, amendmentID, row, "increase", currency), nil
+}
+
+// CaptureCommissionDelta implements WalletPort: the reserved increment is
+// debited exactly once; a replay answers the original outcome.
+func (f *FakeWallet) CaptureCommissionDelta(_ context.Context, reservationID, amendmentID, awardID string, newTotalMinor Money, _ string) (*CommissionDelta, error) {
+	if hook := f.BeforeDeltaCapture; hook != nil {
+		f.BeforeDeltaCapture = nil
+		hook()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.DeltaCaptureCalls++
+	if f.FailDeltaCapture != nil {
+		return nil, f.FailDeltaCapture
+	}
+	key := deltaKey(reservationID, amendmentID)
+	row, ok := f.deltas[key]
+	if !ok {
+		return nil, domain.Errorf(domain.CodeNotFound, "no commission delta is reserved for this amendment")
+	}
+	switch {
+	case row.awardID != awardID:
+		return nil, domain.Errorf(domain.CodeConflict, "this amendment's delta belongs to a different award")
+	case row.closed:
+		return nil, domain.Errorf(domain.CodeConflict, "this amendment was released without an increment; nothing to capture")
+	case row.newTotal != newTotalMinor.AmountMinor:
+		return nil, domain.Errorf(domain.CodeConflict, "the committed total is not the total this amendment reserved for")
+	case row.state == machine.MpHoldCaptured:
+		if f.UnknownDeltaCapture {
+			return nil, fmt.Errorf("%w: injected", ErrWalletUnknownOutcome)
+		}
+		return deltaView(reservationID, amendmentID, row, "increase", newTotalMinor.Currency), nil
+	case row.state == machine.MpHoldReleased:
+		return nil, domain.Errorf(domain.CodeConflict, "this amendment's increment was released; it can no longer be captured")
+	}
+	if _, err := f.amendableHold(reservationID, awardID); err != nil {
+		return nil, err
+	}
+	if f.captured[reservationID]+row.delta != newTotalMinor.AmountMinor {
+		return nil, f.staleCapturedTotal(reservationID, newTotalMinor.Currency, newTotalMinor.AmountMinor-row.delta)
+	}
+	row.state = machine.MpHoldCaptured
+	f.captured[reservationID] += row.delta
+	f.DeltaCapturesByAmendment[amendmentID]++
+	if f.UnknownDeltaCapture {
+		return nil, fmt.Errorf("%w: injected", ErrWalletUnknownOutcome)
+	}
+	return deltaView(reservationID, amendmentID, row, "increase", newTotalMinor.Currency), nil
+}
+
+// ReleaseCommissionDelta implements WalletPort: a reserved increment is
+// released exactly once; a release that arrives first closes the amendment.
+func (f *FakeWallet) ReleaseCommissionDelta(_ context.Context, reservationID, amendmentID, awardID, _ string, _ string) (*CommissionDelta, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.DeltaReleaseCalls++
+	if f.FailDeltaRelease != nil {
+		return nil, f.FailDeltaRelease
+	}
+	hold, ok := f.holds[reservationID]
+	if !ok {
+		return nil, domain.Errorf(domain.CodeNotFound, "no such reservation")
+	}
+	currency := hold.AmountMinor.Currency
+	key := deltaKey(reservationID, amendmentID)
+	if row, ok := f.deltas[key]; ok {
+		switch {
+		case row.awardID != awardID:
+			return nil, domain.Errorf(domain.CodeConflict, "this amendment's delta belongs to a different award")
+		case row.state == machine.MpHoldReleased:
+			direction := "increase"
+			if row.closed {
+				direction = "none"
+			}
+			return deltaView(reservationID, amendmentID, row, direction, currency), nil
+		case row.state == machine.MpHoldCaptured:
+			return nil, domain.Errorf(domain.CodeConflict,
+				"this amendment's increment was captured; it is undone only by a decreasing amendment or the award's reversal")
+		}
+		row.state = machine.MpHoldReleased
+		f.spendable[uuid.MustParse(hold.DriverID)] += row.delta
+		f.DeltaReleasesByAmendment[amendmentID]++
+		return deltaView(reservationID, amendmentID, row, "increase", currency), nil
+	}
+	if f.awardOf[reservationID] != awardID {
+		return nil, domain.Errorf(domain.CodeConflict, "this reservation was not captured under that award")
+	}
+	if _, refunded := f.refunds[key]; refunded {
+		return nil, domain.Errorf(domain.CodeConflict, "this amendment already committed a commission decrease")
+	}
+	closed := &fakeDelta{awardID: awardID, state: machine.MpHoldReleased, closed: true, terms: "closed"}
+	f.deltas[key] = closed
+	return deltaView(reservationID, amendmentID, closed, "none", currency), nil
+}
+
+// RefundCommissionDelta implements WalletPort: a committed decrease's linked
+// partial reversal — prior − new, never more than captured.
+func (f *FakeWallet) RefundCommissionDelta(_ context.Context, reservationID, amendmentID string, terms DeltaTerms, _ string) (*CommissionDelta, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.DeltaRefundCalls++
+	if f.FailDeltaRefund != nil {
+		return nil, f.FailDeltaRefund
+	}
+	if err := validDeltaTerms(terms); err != nil {
+		return nil, err
+	}
+	currency := terms.NewTotalMinor.Currency
+	if terms.NewTotalMinor.AmountMinor >= terms.PriorTotalMinor.AmountMinor {
+		return nil, domain.Errorf(domain.CodeValidationFailed,
+			"a commission refund is only for a decrease; an increase is reserved and captured")
+	}
+	key := deltaKey(reservationID, amendmentID)
+	termsKey := deltaTermsKey("refund", terms)
+	if row, ok := f.refunds[key]; ok {
+		if row.terms != termsKey {
+			return nil, domain.Errorf(domain.CodeIdempotencyKeyReuse,
+				"this amendment already refunded commission with different terms")
+		}
+		return deltaView(reservationID, amendmentID, row, "decrease", currency), nil
+	}
+	hold, err := f.amendableHold(reservationID, terms.AwardID)
+	if err != nil {
+		return nil, err
+	}
+	if _, reserved := f.deltas[key]; reserved {
+		return nil, domain.Errorf(domain.CodeConflict,
+			"this amendment already reserved (or closed) an increase; it cannot also refund")
+	}
+	if err := f.refuseOpenDelta(reservationID, currency); err != nil {
+		return nil, err
+	}
+	capturedMinor := f.captured[reservationID]
+	if capturedMinor != terms.PriorTotalMinor.AmountMinor {
+		return nil, f.staleCapturedTotal(reservationID, currency, terms.PriorTotalMinor.AmountMinor)
+	}
+	refund := capturedMinor - terms.NewTotalMinor.AmountMinor
+	f.captured[reservationID] = terms.NewTotalMinor.AmountMinor
+	f.spendable[uuid.MustParse(hold.DriverID)] += refund
+	row := &fakeDelta{
+		awardID: terms.AwardID, state: "refunded", delta: refund, prior: capturedMinor,
+		newTotal: terms.NewTotalMinor.AmountMinor, newBase: terms.NewBaseMinor.AmountMinor, terms: termsKey,
+	}
+	f.refunds[key] = row
+	f.DeltaRefundsByAmendment[amendmentID]++
+	return deltaView(reservationID, amendmentID, row, "decrease", currency), nil
 }
 
 // FakeSettlement is the in-memory SettlementPort tests drive: idempotent on

@@ -19,6 +19,63 @@ const (
 	FlagMarketplaceRides      = "marketplace_rides"
 	FlagMarketplaceDelivery   = "marketplace_delivery"
 	FlagMarketplaceQueuedJobs = "marketplace_queued_jobs"
+	// Ordered intermediate stops on marketplace RIDE requests (A02). Deny by
+	// default: while off, a quote, publish or route revision that carries
+	// stops is refused, and the no-stop path is untouched either way.
+	FlagMarketplaceMultiStop = "marketplace_multi_stop"
+	// Post-award trip amendments on marketplace RIDE executions (A02 items
+	// 4-6): proposing, approving and committing a route/fare change after the
+	// award, and the safe early termination that settles through the same
+	// linked-adjustment path. Deny by default: while off, every amendment
+	// route answers feature_disabled and an award's agreed terms cannot move.
+	FlagMarketplaceTripAmendments = "marketplace_trip_amendments"
+	// Book for Later (A03): three different products, each deny by default
+	// and each ALSO needing the ride vertical. FlagScheduledRides gates
+	// SCHEDULED REQUESTS (a stored intent no driver is committed to, published
+	// at the market's lead time); FlagMarketplaceAdvanceReservations gates
+	// ADVANCE DRIVER RESERVATIONS (bids on a future window, requester-selected
+	// in advance, a booking calendar separate from the live slots);
+	// FlagMarketplaceRecurringJourneys gates recurring templates. Off stops
+	// new sales only — existing bookings and their workers keep running.
+	FlagScheduledRides                 = "scheduled_rides"
+	FlagMarketplaceAdvanceReservations = "marketplace_advance_reservations"
+	FlagMarketplaceRecurringJourneys   = "marketplace_recurring_journeys"
+	// Rider confidence (A04 item 3, A06 part D): two different capabilities,
+	// each deny by default and each ALSO needing the ride vertical.
+	// FlagMarketplacePreferredDrivers gates saving a driver after a completed
+	// trip, a driver's opt-in to preferred requests and naming a saved driver
+	// on a request (a bounded exclusive window, then the open market ONLY
+	// with the rider's explicit fallback consent). FlagMarketplaceAccessibility
+	// gates stating concrete service requirements and soft preferences;
+	// requirements match verified capability only, so without a verified
+	// source they are refused as honestly unavailable. Offer comparison and
+	// receipts only add read data and are not gated.
+	FlagMarketplacePreferredDrivers = "marketplace_preferred_drivers"
+	FlagMarketplaceAccessibility    = "marketplace_accessibility_requirements"
+	// Book for another adult (A06 part B). Deny by default and ALSO needing
+	// the ride vertical: while off, a publish naming a passenger and a new
+	// trip link are refused. Off stops NEW guest bookings only — an existing
+	// passenger's trip link, the requester's revoke and the passenger's free
+	// decline keep working for trips already booked.
+	FlagMarketplaceGuestBookings = "marketplace_guest_bookings"
+	// Business travel (A06 part C) — the declared FlagKey business_travel,
+	// shared with user-service (organizations) and payment-service (budgets).
+	// Deny by default and ALSO needing the ride vertical: while off, a quote
+	// or publish naming an organization is refused. Off stops NEW business
+	// bookings only — an award already reserved still commits or releases.
+	FlagBusinessTravel = "business_travel"
+	// Fleet availability calendar (A05) — the declared FlagKey `fleet`,
+	// shared with fleet-service. Deny by default: while off, an advance
+	// award never asks fleet-service which vehicle the driver is assigned
+	// to, so the booking carries no vehicle and no occupancy row — exactly as
+	// before the fleet calendar. The service-authenticated /internal/fleet
+	// surface is separately fail-closed on FLEET_RIDE_SERVICE_KEY.
+	FlagFleet = "fleet"
+	// Vehicle swaps on advance bookings (A05 FL-8). Deny by default: while
+	// off, a fleet's swap proposal is refused (swap_ineligible,
+	// swaps_not_enabled). Off stops NEW proposals only — a swap already
+	// proposed can still be declined, consented to or expire.
+	FlagMarketplaceBookingVehicleSwaps = "marketplace_booking_vehicle_swaps"
 )
 
 // Flags evaluates feature flags for a city and user, deny by default.

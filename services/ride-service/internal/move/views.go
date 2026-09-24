@@ -92,6 +92,11 @@ type RideView struct {
 	// Options is what a rider can do next when matching found nobody, so the
 	// app never has to invent choices for a dead end (board 1e).
 	Options []string `json:"options,omitempty"`
+	// MarketplaceRequestID is present only on a marketplace execution ride:
+	// the negotiated-fare request it was awarded from, so an app holding the
+	// ride can open that request's snapshot, amendments and receipt. Absent
+	// on a classic ride.
+	MarketplaceRequestID *uuid.UUID `json:"marketplaceRequestId,omitempty"`
 }
 
 // viewOf renders a ride. It takes no role argument because nothing in this

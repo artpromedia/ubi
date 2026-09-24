@@ -11,6 +11,7 @@ import { ContractError } from "@ubi/contracts";
 
 import {
   isMandateAction,
+  TIME_WINDOW_PATTERN,
   type Assurance,
   type MandateInput,
   type MandatePatch,
@@ -87,6 +88,23 @@ function validateInput(input: MandateInput, now: Date): void {
       "validation_failed",
       "The per-run cap cannot exceed the period cap",
     );
+  }
+
+  for (const constraint of input.constraints) {
+    // A time window the server could not parse would be unenforceable; refuse
+    // it here rather than let a selection fail closed on it later.
+    if (constraint.key === "time_window") {
+      for (const window of constraint.values ?? []) {
+        const [start, end] = window.split("-");
+        if (!TIME_WINDOW_PATTERN.test(window) || start === end) {
+          throw new ContractError(
+            "validation_failed",
+            "A time_window constraint takes HH:MM-HH:MM windows",
+            { key: constraint.key, value: window },
+          );
+        }
+      }
+    }
   }
 
   const expiresAt = new Date(input.expiresAt);

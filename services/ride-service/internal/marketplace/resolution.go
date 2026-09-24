@@ -182,6 +182,14 @@ func (s *Service) AdminResolution(ctx context.Context, actor Actor, requestID uu
 			view.Recoveries = append(view.Recoveries, toRecoveryView(r, now))
 		}
 		view.Stages = append(view.Stages, settlementStage(award, recoveries, view.Execution))
+		// A06 part C: a business award's organization-budget funding is its
+		// own saga (mpBusinessBooking) — shown as a stage so support sees an
+		// owed commit/release and why it is still owed.
+		if booking, bizErr := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), award.ID); bizErr == nil {
+			view.Stages = append(view.Stages, businessFundingStage(booking))
+		} else if !errors.Is(bizErr, domain.ErrNotFound) {
+			return nil, asDomainError(bizErr)
+		}
 	}
 
 	view.Stages = append(view.Stages, &ResolutionStage{
@@ -240,7 +248,7 @@ func fundingStage(award *Award, attempt *AwardAttempt) *ResolutionStage {
 			return &ResolutionStage{Name: "funding", Status: StageProposed, Detail: "funding outcome unknown; the sweep is re-polling"}
 		}
 		return &ResolutionStage{Name: "funding", Status: StageProposed, Detail: "funding authorization in flight"}
-	case AttemptStepCapture, AttemptStepFinalize:
+	case AttemptStepCapture, AttemptStepHandoff, AttemptStepFinalize:
 		return &ResolutionStage{Name: "funding", Status: StageCommitted, Detail: "funding step completed before capture"}
 	case AttemptStepCompensate:
 		return &ResolutionStage{Name: "funding", Status: StageFailed, Detail: "compensating: " + attempt.LastError}
@@ -304,4 +312,34 @@ func settlementStage(award *Award, recoveries []*RecoveryRow, exec *ResolutionEx
 		return &ResolutionStage{Name: "settlement", Status: StageCommitted, Detail: "resolved via compensation (no unresolved recovery for this award)"}
 	}
 	return &ResolutionStage{Name: "settlement", Status: StageUnavailable, Detail: "not reached yet"}
+}
+
+// businessFundingStage renders a business award's budget funding for the
+// resolution board.
+func businessFundingStage(b *BusinessBooking) *ResolutionStage {
+	stage := &ResolutionStage{Name: "business_funding", At: &b.UpdatedAt}
+	switch {
+	case b.OwedOp != "":
+		stage.Status = StageProposed
+		stage.Detail = "the organization's budget " + b.OwedOp + " is owed (booking ref " + b.BookingRef + "); the sweep is retrying"
+		if b.LastError != "" {
+			stage.Detail += ": " + b.LastError
+		}
+	case b.State == machine.MpBusinessReserving:
+		stage.Status = StageProposed
+		stage.Detail = "reserving the organization's budget for the awarded fare"
+	case b.State == machine.MpBusinessRefused:
+		stage.Status = StageFailed
+		stage.Detail = "the organization refused the reservation (" + b.RefusalReason + "); nothing was put on credit"
+	case b.State == machine.MpBusinessReleased:
+		stage.Status = StageCommitted
+		stage.Detail = "the reservation was released by the " + b.ReleaseParty
+	case b.State == machine.MpBusinessCommitted:
+		stage.Status = StageCommitted
+		stage.Detail = "the actual total was committed from the organization's budget"
+	default:
+		stage.Status = StageCommitted
+		stage.Detail = "the organization's budget holds the awarded fare"
+	}
+	return stage
 }

@@ -48,6 +48,12 @@ export interface FxQuote {
 /** A validated, re-priced offer returned by search or a refresh. */
 export interface AdapterOffer {
   readonly offerRef: string;
+  /**
+   * The supplier's own id for the offer / quote (Duffel `off_…`, LiteAPI
+   * offer id). Persisted on the order so a supplier event that names only the
+   * offer can find it.
+   */
+  readonly supplierOfferRef?: string | null;
   readonly kind: "flight" | "stay";
   /** The full offer document persisted as `offer_snapshot`. */
   readonly snapshot: JsonRecord;
@@ -76,6 +82,18 @@ export interface OfferValidation {
   /** Available but the price moved — checkout must surface the diff, never charge silently. */
   readonly repriced: boolean;
   readonly soldOut: boolean;
+  /**
+   * The supplier's quote has passed its expiry (Duffel `expires_at`, or the
+   * adapter's own quote TTL where the supplier states none). An expired quote
+   * is never booked; the traveller searches again.
+   */
+  readonly expired?: boolean;
+  /**
+   * The supplier changed a term other than the price on revalidation (LiteAPI
+   * `cancellationChanged` / `boardChanged`). Like a reprice, it needs the
+   * traveller's explicit consent — it is never accepted silently.
+   */
+  readonly termsChanged?: boolean;
   readonly offer: AdapterOffer;
 }
 
@@ -121,10 +139,34 @@ export interface BookResult {
 /** Resolving an order by UBI's own reference — the only way `unknown_reconciling` is closed. */
 export interface LookupResult {
   readonly found: boolean;
-  readonly state: "confirmed" | "ticketed" | "failed" | "pending" | "unknown";
+  /**
+   * `failed` is definitive: the supplier has no booking and never will under
+   * this attempt (e.g. no order exists and the offer it was booked from has
+   * expired). `cancelled` means the supplier holds a booking that has since
+   * been cancelled — ops territory, never an automatic refund.
+   */
+  readonly state:
+    | "confirmed"
+    | "ticketed"
+    | "failed"
+    | "pending"
+    | "unknown"
+    | "cancelled";
   readonly supplierRefs: SupplierRefs;
   readonly documentsIssued: boolean;
   readonly invoiced?: Money | null;
+}
+
+/**
+ * What UBI already knows about an order, handed to lookup/status/reconcile so a
+ * supplier whose API cannot search by our reference alone (Duffel lists orders
+ * by `offer_id`, not by metadata) can still be asked the right question.
+ */
+export interface LookupHint {
+  readonly supplierRefs?: SupplierRefs;
+  /** The supplier's offer / quote id the order was booked from. */
+  readonly supplierOfferRef?: string | null;
+  readonly offerSnapshot?: JsonRecord | null;
 }
 
 export interface ChangeRequest {
@@ -132,18 +174,32 @@ export interface ChangeRequest {
   readonly offerSnapshot: JsonRecord;
   readonly alternativeRef: string;
   readonly idempotencyKey: string;
+  readonly supplierRefs?: SupplierRefs;
+  /**
+   * The most the traveller (or a funded rule) has agreed the supplier may
+   * charge for this change. A supplier change that costs anything else is not
+   * confirmed — it comes back `failed` with the quoted total, never charged.
+   */
+  readonly acceptedChangeTotal?: Money | null;
 }
 
 export interface ChangeResult {
   readonly outcome: "changed" | "failed" | "unknown";
   readonly supplierRefs: SupplierRefs;
   readonly documentsIssued: boolean;
+  readonly reason?: string;
+  /** The supplier's price for the change, when it asked for one. */
+  readonly quotedTotal?: Money | null;
 }
 
 export interface CancelRequest {
   readonly ourRef: string;
   readonly supplierRefs: SupplierRefs;
   readonly idempotencyKey: string;
+  /** The quote the traveller saw (`quoteCancel`), when the supplier has one. */
+  readonly quoteRef?: string | null;
+  /** The penalty the traveller consented to; a different live penalty is refused. */
+  readonly acceptedPenalty?: Money | null;
 }
 
 export interface CancelResult {
@@ -152,6 +208,21 @@ export interface CancelResult {
   readonly penalty: Money;
   readonly refundable: Money;
   readonly reason?: string;
+}
+
+/**
+ * The supplier's cancellation terms right now, surfaced BEFORE anything is
+ * cancelled so the traveller consents to the exact penalty.
+ */
+export interface CancelQuote {
+  /** The supplier's pending-cancellation id (Duffel `ore_…`), when it issues one. */
+  readonly quoteRef: string | null;
+  readonly penalty: Money;
+  readonly refundable: Money;
+  /** When the quote lapses, if the supplier says. */
+  readonly expiresAt: string | null;
+  /** Where the supplier returns the refundable amount (Duffel `refund_to`). */
+  readonly refundTo: string | null;
 }
 
 export interface RefundRequest {
@@ -173,12 +244,30 @@ export interface StatusResult {
   readonly documentsIssued: boolean;
 }
 
+/** Per-capability truth: implemented against a documented endpoint, and usable now. */
+export interface CapabilityReadiness {
+  /** A request/response mapping against a documented supplier endpoint exists. */
+  readonly implemented: boolean;
+  /** Implemented + credentials present + (when configured) a passing probe. */
+  readonly operational: boolean;
+  readonly reason: string;
+  /** For a capability the supplier does not offer: what UBI does instead. */
+  readonly alternative?: string;
+}
+
 export interface ProviderHealth {
   readonly supplierId: string;
   readonly adapter: string;
+  /** True only when a real provider call (a probe) succeeded — never inferred. */
   readonly reachable: boolean;
   readonly liveCallsBlocked: boolean;
   readonly note?: string;
+  readonly implemented?: boolean;
+  readonly operational?: boolean;
+  /** `null` where the adapter has no credentials concept (the fixture). */
+  readonly credentialsPresent?: boolean | null;
+  readonly reason?: string;
+  readonly capabilities?: Readonly<Record<string, CapabilityReadiness>>;
 }
 
 /** Context handed to every adapter call: the supplier row's id and its config. */
@@ -199,12 +288,32 @@ export interface ServicingAdapter {
   hold?(ctx: SupplierContext, offerRef: string): Promise<HoldResult>;
   book(ctx: SupplierContext, request: BookRequest): Promise<BookResult>;
   /** Resolve an order by UBI's own reference (CLAUDE.md #24 — never re-purchase). */
-  lookup(ctx: SupplierContext, ourRef: string): Promise<LookupResult>;
+  lookup(
+    ctx: SupplierContext,
+    ourRef: string,
+    hint?: LookupHint,
+  ): Promise<LookupResult>;
   change(ctx: SupplierContext, request: ChangeRequest): Promise<ChangeResult>;
+  /**
+   * The live cancellation terms, without cancelling. Absent when the supplier
+   * cannot quote; `cancel` then reports the penalty it applied.
+   */
+  quoteCancel?(
+    ctx: SupplierContext,
+    request: CancelRequest,
+  ): Promise<CancelQuote>;
   cancel(ctx: SupplierContext, request: CancelRequest): Promise<CancelResult>;
   refund(ctx: SupplierContext, request: RefundRequest): Promise<RefundResult>;
-  status(ctx: SupplierContext, ourRef: string): Promise<StatusResult>;
-  reconcile(ctx: SupplierContext, ourRef: string): Promise<LookupResult>;
+  status(
+    ctx: SupplierContext,
+    ourRef: string,
+    hint?: LookupHint,
+  ): Promise<StatusResult>;
+  reconcile(
+    ctx: SupplierContext,
+    ourRef: string,
+    hint?: LookupHint,
+  ): Promise<LookupResult>;
   providerHealth(ctx: SupplierContext): Promise<ProviderHealth>;
 }
 

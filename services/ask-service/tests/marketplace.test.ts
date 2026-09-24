@@ -12,8 +12,10 @@
  *     under a STABLE key — never a second charge;
  *   - uncertainty: a timeout or an ambiguous outcome QUERIES the award, never a
  *     blind re-selection;
- *   - authority: unattended selection needs a valid, active mandate; a revoked or
- *     paused mandate blocks it;
+ *   - authority: unattended selection needs a valid, active mandate of the
+ *     marketplace action; a travel mandate never authorises it, and a revoked or
+ *     paused mandate blocks it (tests/mandate-execution.test.ts covers the full
+ *     scope, the allowance and recovery);
  *   - injection: offer/driver text cannot change the executed tool or its args.
  */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -23,7 +25,6 @@ import {
   cancelRequest,
   prepareRequest,
   quoteMarketplace,
-  reviewOffers,
   selectOffer,
   fingerprintScope,
   type MarketplaceGrantScope,
@@ -379,7 +380,9 @@ describe("material change", () => {
       paymentMethodId: "pm_wallet",
     });
     const bidId = uid("bid");
-    // The live offer is on revision 1; the reviewer saw revision 0.
+    // The request was revised to revision 1 and the live offer is on it; the
+    // reviewer saw revision 0.
+    mp.seedRequest({ ...request, revision: 1 });
     mp.setOffers(request.requestId, [
       mpOffer({
         bidId,
@@ -453,8 +456,16 @@ describe("idempotency", () => {
     // Exactly one award, one real selection call, one charge.
     expect(mp.awardsCreated).toBe(1);
     expect(mp.selectCalls).toHaveLength(1);
-    // The idempotency key was derived from the grant (stable, not regenerated).
-    expect(mp.selectCalls[0]?.idempotencyKey).toContain(grantId);
+    // The key is the one persisted on the grant's execution intent (stable, not
+    // regenerated), and fits ride-service's 64-char url-safe key rule.
+    const execution = await db.askMpExecution.findUnique({
+      where: { grantId },
+    });
+    expect(execution?.status).toBe("awarded");
+    expect(mp.selectCalls[0]?.idempotencyKey).toBe(execution?.idempotencyKey);
+    expect(mp.selectCalls[0]?.idempotencyKey).toMatch(
+      /^[A-Za-z0-9_.:-]{8,64}$/,
+    );
   });
 
   it("a spent grant cannot start a fresh selection (single-use)", async () => {
@@ -564,21 +575,25 @@ describe("uncertain outcomes", () => {
         totalMinor: 250_000,
       }),
     ]);
-    // A prior selection already resolved into an award for this request.
-    mp.seedAward({
-      awardId: uid("mpaw"),
-      requestId: request.requestId,
-      bidId,
-      state: "confirmed",
-      requestVersion: 1,
-      bidVersion: 1,
-      driverId: uid("drv"),
-      requesterId: actor.id,
-      fareMinor: 250_000,
-      commissionMinor: 25_000,
-      slot: "current",
-      createdAt: new Date().toISOString(),
-    });
+    // A racing selection resolves into an award for this request AFTER our
+    // snapshot was read (so the request still looked open) and just before
+    // our selection arrives, which the marketplace answers as unresolved.
+    mp.onSelect = () => {
+      mp.seedAward({
+        awardId: uid("mpaw"),
+        requestId: request.requestId,
+        bidId,
+        state: "confirmed",
+        requestVersion: 1,
+        bidVersion: 1,
+        driverId: uid("drv"),
+        requesterId: actor.id,
+        fareMinor: 250_000,
+        commissionMinor: 25_000,
+        slot: "current",
+        createdAt: new Date().toISOString(),
+      });
+    };
     mp.unresolvedNextSelect = true;
 
     const result = await selectOffer(deps, {
@@ -605,23 +620,27 @@ describe("uncertain outcomes", () => {
 async function seedMandate(
   deps: TestDeps,
   status: string,
-  overrides: { perRunCapMinor?: number; currency?: string } = {},
+  overrides: {
+    perRunCapMinor?: number;
+    currency?: string;
+    action?: string;
+  } = {},
 ): Promise<string> {
   const id = uid("mnd");
   await deps.db.mandate.create({
     data: {
       id,
       userId: actor.id,
-      action: "scheduled_ride.book",
-      title: "Airport pickup",
+      action: overrides.action ?? "marketplace.ride.select",
+      title: "Book my commute",
       passengers: "self_only",
-      categories: [],
+      categories: ["go"],
       providers: [],
       perRunCapMinor: BigInt(overrides.perRunCapMinor ?? 300_000),
       periodCapMinor: BigInt(1_000_000),
       periodRuns: 10,
       currency: overrides.currency ?? "NGN",
-      constraints: {},
+      constraints: [],
       status,
       expiresAt: new Date(Date.now() + 86_400_000),
     },
@@ -644,7 +663,7 @@ describe("unattended execution", () => {
     ).rejects.toMatchObject({ code: "step_up_required" });
   });
 
-  it("selects under a valid active mandate and logs a mandate receipt", async () => {
+  it("selects under a valid marketplace mandate and logs a mandate receipt", async () => {
     const db = testDb();
     const { mp, quoteId } = marketplaceWith();
     const deps = makeDeps(db, { marketplace: mp });
@@ -657,8 +676,11 @@ describe("unattended execution", () => {
       mandateId,
       idempotencyKey: uid("ik"),
     });
-    const { requestId, bidId } = await published(deps, mp, scope, grantId);
+    // The originating mandate is persisted ON the grant at mint.
+    const grant = await db.actionGrant.findUnique({ where: { id: grantId } });
+    expect(grant).toMatchObject({ assurance: "mandate", mandateId });
 
+    const { requestId, bidId } = await published(deps, mp, scope, grantId);
     const result = await selectOffer(deps, {
       actor,
       cityId,
@@ -668,7 +690,7 @@ describe("unattended execution", () => {
       bidId,
       expectedRequestRevision: 0,
       expectedFareMinor: 250_000,
-      mandateId,
+      mandateId, // a restatement that matches the grant is accepted
     });
     expect(result.award.state).toBe("confirmed");
     const mex = await db.mandateExecution.findFirst({
@@ -676,6 +698,40 @@ describe("unattended execution", () => {
     });
     expect(mex).not.toBeNull();
     expect(mex?.grantId).toBe(grantId);
+  });
+
+  it("a travel mandate (scheduled_ride.book) never authorises a marketplace selection", async () => {
+    // This used to pass: validateMandate ignored the action, so any active
+    // travel mandate drove an mp.select award. The action is now checked.
+    const db = testDb();
+    const { mp, quoteId } = marketplaceWith();
+    const deps = makeDeps(db, { marketplace: mp });
+    const scope = scopeFor(quoteId);
+    for (const action of [
+      "scheduled_ride.book",
+      "airport_pickup.reserve",
+      "flight.rebook_on_cancel",
+      "marketplace.delivery.select",
+    ]) {
+      const mandateId = await seedMandate(deps, "active", { action });
+      await expect(
+        authorizeNegotiation(deps, {
+          actor,
+          cityId,
+          scope,
+          mandateId,
+          idempotencyKey: uid("ik"),
+        }),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+        details: {
+          reason: "mandate_action_not_permitted",
+          requiredAction: "marketplace.ride.select",
+        },
+      });
+    }
+    expect(deps.grants.minted).toHaveLength(0);
+    expect(mp.awardsCreated).toBe(0);
   });
 
   it("a revoked mandate blocks authorization and selection", async () => {
@@ -698,7 +754,8 @@ describe("unattended execution", () => {
     });
 
     // Even if a grant existed (minted while active) and the mandate is then
-    // revoked, selection re-checks the mandate and refuses.
+    // revoked, selection re-derives the mandate FROM THE GRANT and refuses —
+    // the caller does not pass (or need to pass) the mandate id.
     const active = await seedMandate(deps, "active");
     const { grantId } = await authorizeNegotiation(deps, {
       actor,
@@ -722,13 +779,14 @@ describe("unattended execution", () => {
         bidId,
         expectedRequestRevision: 0,
         expectedFareMinor: 250_000,
-        mandateId: active,
       }),
     ).rejects.toMatchObject({
       code: "forbidden",
       details: { reason: "mandate_revoked" },
     });
     expect(mp.awardsCreated).toBe(0);
+    const grant = await db.actionGrant.findUnique({ where: { id: grantId } });
+    expect(grant?.consumedAt).toBeNull();
   });
 
   it("a mandate whose per-run cap is below the scope cap cannot authorize", async () => {

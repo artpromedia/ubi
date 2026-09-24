@@ -17,6 +17,7 @@ import {
   type Money,
 } from "@ubi/contracts";
 
+import { assertFlagEnabled } from "./config";
 import { isUniqueViolation } from "./errors";
 import { toJson } from "./json";
 import { adapterFor, contextFor, pickSupplier } from "./suppliers";
@@ -25,6 +26,12 @@ import { deterministicId } from "../lib/ids";
 import type { TravelDeps } from "./context";
 import type { Actor, JsonRecord } from "./types";
 import type { AdapterOffer } from "../adapters/types";
+
+/** The booking switch each vertical sits behind. */
+export const VERTICAL_FLAG = {
+  flight: "flights_booking",
+  stay: "stays_booking",
+} as const;
 
 export interface CartItemInput {
   readonly kind: "flight" | "stay";
@@ -53,6 +60,12 @@ export interface PricedItem {
   readonly offerSnapshot: JsonRecord;
   readonly protectionRuleId: string | null;
   readonly terms: readonly string[];
+  /**
+   * Set only when a checkout found the item no longer purchasable (and so
+   * charged nothing): sold out, or its quote expired. Surfaced on the cart
+   * view so a client can say which, instead of guessing from a price.
+   */
+  readonly unavailable?: "sold_out" | "expired" | null;
 }
 
 function purchaseRefFor(item: CartItemInput): string {
@@ -69,8 +82,20 @@ function purchaseRefFor(item: CartItemInput): string {
   return item.rateId ?? item.offerRef;
 }
 
-function termsFor(offer: AdapterOffer): string[] {
-  const caps = offer.capabilities;
+export function termsFor(offer: AdapterOffer): string[] {
+  return termsForCapabilities(
+    offer.capabilities as unknown as Readonly<Record<string, unknown>>,
+  );
+}
+
+/**
+ * The promises a capability record makes, as the terms a traveller reads —
+ * for a live offer (`termsFor`) and for a cached one read back by key
+ * (search.ts `readSearchOffer`), so both say the same thing.
+ */
+export function termsForCapabilities(
+  caps: Readonly<Record<string, unknown>>,
+): string[] {
   const terms: string[] = [];
   terms.push(
     caps.merchantOfRecord === "ubi"
@@ -78,16 +103,20 @@ function termsFor(offer: AdapterOffer): string[] {
       : "the supplier is the merchant of record",
   );
   terms.push(
-    caps.refundSupported ? "refundable per fare rules" : "non-refundable",
+    caps.refundSupported === true
+      ? "refundable per fare rules"
+      : "non-refundable",
   );
   terms.push(
-    caps.changeSupported ? "changes allowed per fare rules" : "no changes",
+    caps.changeSupported === true
+      ? "changes allowed per fare rules"
+      : "no changes",
   );
   if (caps.payAtProperty === true) {
     terms.push("part payable at the property");
   }
-  const priceGuaranteeUntil = caps.priceGuaranteeUntil ?? null;
-  if (priceGuaranteeUntil !== null) {
+  const priceGuaranteeUntil = caps.priceGuaranteeUntil;
+  if (typeof priceGuaranteeUntil === "string" && priceGuaranteeUntil !== "") {
     terms.push(`price guaranteed until ${priceGuaranteeUntil}`);
   }
   return terms;
@@ -121,6 +150,7 @@ async function priceItem(
   if (validation.soldOut) {
     throw new ContractError("conflict", "that offer is sold out", {
       purchaseRef,
+      reason: "sold_out",
     });
   }
   const offer = validation.offer;
@@ -188,6 +218,7 @@ export function cartView(row: CartRow): CartView {
           ? null
           : { amountMinor: item.previousPriceMinor, currency: item.currency },
       terms: [...item.terms],
+      unavailable: item.unavailable ?? null,
     })),
     fees: Array.isArray(row.fees) ? (row.fees as JsonRecord[]) : [],
     adjustments: Array.isArray(row.adjustments)
@@ -228,6 +259,13 @@ export async function createCart(
   const replay = await deps.db.travelCart.findUnique({ where: { id: cartId } });
   if (replay !== null) {
     return cartView(replay);
+  }
+
+  // Each item's vertical must be open in this city before its supplier is
+  // asked for a price (deny-by-default, per vertical).
+  const config = await deps.config.load(input.cityId);
+  for (const kind of new Set(input.items.map((item) => item.kind))) {
+    assertFlagEnabled(config.flags, VERTICAL_FLAG[kind]);
   }
 
   const priced: PricedItem[] = [];

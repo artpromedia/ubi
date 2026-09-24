@@ -1,9 +1,9 @@
 // Profile against user-service THROUGH the gateway (C05 / G12). Route
 // verified in services/user-service/src/routes/users.ts:
 //   GET /v1/users/me -> { success, data: { user } }
-// Vehicle, documents, ratings, fleet arrangement and liveness are NOT built
-// here (see api/unsupported.ts driverDocuments) — this module is the
-// Profile view only, matching this slice's audited scope.
+// Vehicle, documents, ratings and liveness are NOT built here (see
+// api/unsupported.ts driverDocuments); the fleet arrangement lives in
+// api/fleet.ts (A05) — this module is the Profile view only.
 import { api } from "@ubi/mobile-core";
 import type { Envelope } from "./auth";
 

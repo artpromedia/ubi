@@ -1,0 +1,27 @@
+{
+  "$comment": "INTERNAL CONTRACT B (fleet-service -> payment-service) example, transcribed verbatim from the round-8 brief: GET /internal/fleet/settlement-inputs?weekStart=2026-09-21&cityId=... The item is the brief's example item; the envelope is the brief's shape for that week (weekEnd = the week's last local date, zone = the city's IANA zone).",
+  "weekStart": "2026-09-21",
+  "weekEnd": "2026-09-27",
+  "zone": "Africa/Lagos",
+  "items": [
+    {
+      "assignmentId": "asg_1",
+      "fleetId": "flt_1",
+      "driverId": "drv_1",
+      "vehicleId": "veh_1",
+      "termsVersion": 3,
+      "terms": {
+        "type": "weekly_fixed",
+        "amountMinor": 2500000,
+        "currency": "NGN",
+        "percent": null,
+        "shortfall": { "policy": "carry_forward", "maxWeeks": 4 }
+      },
+      "shiftHoursInWeek": 60,
+      "plannedMaintenanceHoursInWeek": 12,
+      "unplannedOffRoadHoursInWeek": 0,
+      "activeFrom": "2026-09-21T00:00:00Z",
+      "activeTo": null
+    }
+  ]
+}

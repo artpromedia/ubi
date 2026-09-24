@@ -7,6 +7,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { consumeGrant, GrantConsumeError } from "../src/ops/grants";
 import {
+  createHttpGrantPort,
+  type GrantMintRequest,
+} from "../src/ports/grant-port";
+import {
   closeTestDb,
   makeDeps,
   rider,
@@ -103,5 +107,101 @@ describe("single-use grant consumption", () => {
         });
       }),
     ).rejects.toMatchObject({ code: "conflict" });
+  });
+});
+
+describe("the mint carries the originating mandate (recheck A03 / P02)", () => {
+  // The full round trip against the REAL user-service is
+  // tests/grant-port-user-service.test.ts. Here: what the production port puts
+  // on the wire, captured before any answer.
+  function capture(): {
+    calls: { headers: Record<string, string>; body: Record<string, unknown> }[];
+    fetchImpl: typeof fetch;
+  } {
+    const calls: {
+      headers: Record<string, string>;
+      body: Record<string, unknown>;
+    }[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      calls.push({
+        headers: { ...(init?.headers as Record<string, string>) },
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      // user-service's refusal envelope for a key it does not accept.
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: { code: "unauthorized", message: "Authentication required" },
+        }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
+    return { calls, fetchImpl };
+  }
+
+  function mintRequest(
+    overrides: Partial<GrantMintRequest> = {},
+  ): GrantMintRequest {
+    return {
+      actorId: rider().id,
+      action: "mp.negotiate",
+      resourceRef: uid("mpq"),
+      termsVersion: "mp.scope.v2:0123456789abcdef0123456789abcdef01234567",
+      totalMinor: 300_000,
+      currency: "NGN",
+      assurance: "mandate",
+      assuranceProof: "mandate:mnd_1",
+      mandateId: "mnd_1",
+      idempotencyKey: `mp.authorize:${rider().id}:${uid("ik")}`,
+      expiresAt: new Date(Date.now() + 60_000),
+      cityId: uid("city"),
+      ...overrides,
+    };
+  }
+
+  it("sends user-service's mint body: the actor in the body, the total as Money, the mandate binding, no nulls", async () => {
+    const { calls, fetchImpl } = capture();
+    const port = createHttpGrantPort({
+      baseUrl: "http://user",
+      serviceKey: "grants-service-key",
+      fetchImpl,
+    });
+    const request = mintRequest();
+    await expect(port.mint(request)).rejects.toMatchObject({
+      code: "service_unavailable",
+      details: { reason: "grant_service_auth_refused" },
+    });
+    expect(calls).toHaveLength(1);
+    const [call] = calls;
+    expect(call?.body).toEqual({
+      actorId: request.actorId,
+      action: "mp.negotiate",
+      resourceRef: request.resourceRef,
+      termsVersion: request.termsVersion,
+      total: { amountMinor: 300_000, currency: "NGN" },
+      assurance: "mandate",
+      mandateId: "mnd_1",
+      expiresAt: request.expiresAt.toISOString(),
+    });
+    expect(call?.headers["x-service-key"]).toBe("grants-service-key");
+    const key = call?.headers["idempotency-key"] ?? "";
+    expect(key.length).toBeLessThanOrEqual(64);
+    expect(key).toMatch(/^[A-Za-z0-9_.:-]+$/);
+  });
+
+  it("refuses, before any call, a mandate grant without its mandate", async () => {
+    const { calls, fetchImpl } = capture();
+    const port = createHttpGrantPort({
+      baseUrl: "http://user",
+      serviceKey: "grants-service-key",
+      fetchImpl,
+    });
+    await expect(
+      port.mint(mintRequest({ mandateId: undefined })),
+    ).rejects.toMatchObject({ details: { reason: "mandate_binding_invalid" } });
+    await expect(
+      port.mint(mintRequest({ assurance: "pin", assuranceProof: "p" })),
+    ).rejects.toMatchObject({ details: { reason: "mandate_binding_invalid" } });
+    expect(calls).toHaveLength(0);
   });
 });

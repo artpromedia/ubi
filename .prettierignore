@@ -19,3 +19,12 @@ docs/launch-readiness/handoff
 
 # Vendored verbatim from the external marketing design handoff (board 24)
 docs/launch-readiness/handoff-marketing
+
+# Vendored verbatim from the external fleet availability calendar design
+# handoff (answers docs/design/FLEET_AVAILABILITY_CALENDAR_BRIEF.md)
+docs/launch-readiness/handoff-fleet-calendar
+
+# Supplier API documentation example payloads, copied verbatim from the
+# official Duffel / LiteAPI docs (each file records its source URL and
+# retrieval date) so they can be diffed against the source — keep byte-for-byte
+services/travel-service/tests/fixtures/supplier-docs

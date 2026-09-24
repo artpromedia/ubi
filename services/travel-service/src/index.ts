@@ -10,11 +10,19 @@
  *    → confirmed → ticketed | failed_released | unknown_reconciling), resolved
  *    from unknown ONLY by a lookup on UBI's own reference;
  *  - refunds, disruptions and ₦0 switching (only under a funded rule), verified
- *    and deduped supplier webhooks, settlement differences, commercial rates and
- *    linked airport ride reservations.
+ *    and deduped supplier webhooks, settlement differences, commercial rates;
+ *  - airport transfers: intents linked to a flight order, made into Book for
+ *    Later scheduled ride requests on ride-service (signed as the traveller)
+ *    and `awarded` only once ride-service reports a requester-approved award.
  *
  * The double-entry ledger is NOT here: travel money moves through a typed
  * PaymentPort HTTP call to payment-service.
+ *
+ * Every client and ops route reads its caller, role and city from the API
+ * gateway's signed `x-ubi-identity` context (middleware/auth.ts); production
+ * refuses to boot without UBI_IDENTITY_SECRET and never falls back to plain
+ * headers. Supplier webhooks keep their own per-supplier signatures and are
+ * never forwarded by the gateway (suppliers call this service directly).
  */
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -22,14 +30,18 @@ import { cors } from "hono/cors";
 import { requestId } from "hono/request-id";
 import { secureHeaders } from "hono/secure-headers";
 
+import { assertProductionSupplyConfig } from "./adapters/production-guard";
+import { assertIdentityConfigured } from "./lib/identity-context";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis } from "./lib/redis";
 import { healthRoutes } from "./routes/health";
+import { createAskInternalRoutes } from "./routes/internal-ask";
 import { createOpsRoutes } from "./routes/ops";
 import { createReservationRoutes } from "./routes/reservations";
 import { createTravelRoutes } from "./routes/travel";
 import { createWebhookRoutes } from "./routes/webhooks";
+import { startTransferWorker } from "./transfer-worker";
 import { createDeps } from "./wiring";
 
 import type { TravelDeps } from "./ops/context";
@@ -74,19 +86,53 @@ export function createApp(deps: TravelDeps): Hono {
   app.route("/health", healthRoutes);
   app.route("/v1/travel/webhooks", createWebhookRoutes(deps));
   app.route("/v1/travel", createTravelRoutes(deps));
+  // Airport transfers: every route behind the deny-by-default `reservations`
+  // flag for the request's city (checked per request in the router).
   app.route("/v1/reservations", createReservationRoutes(deps));
   app.route("/v1/ops/travel", createOpsRoutes(deps));
+  // ask-service background reads (reconcile/status sweeps with no inbound
+  // user identity): X-Service-Key only (TRAVEL_ASK_SERVICE_KEY), read-only,
+  // one order booked under the named grant, owner taken from the order.
+  // Not proxied by the gateway; fails closed when the key is unset.
+  app.route("/internal/ask", createAskInternalRoutes(deps));
 
   return app;
 }
 
-if (process.env.NODE_ENV !== "test") {
-  const app = createApp(createDeps());
+async function main(): Promise<void> {
+  let deps: TravelDeps;
+  // Production configuration never authenticates a caller it cannot verify,
+  // never serves a test-only supply adapter, and never calls ride-service
+  // without a signing key: refuse to boot rather than trust a plain identity
+  // header, let a fixture catalog take a real booking or let a traveller's
+  // airport ride go out unsigned.
+  try {
+    if (!assertIdentityConfigured(process.env)) {
+      logger.warn(
+        "UBI_IDENTITY_SECRET is not set: routes read the plain X-User-ID / X-User-Role headers and answer a signed gateway context 503 (development only)",
+      );
+    }
+    deps = createDeps();
+    await assertProductionSupplyConfig(deps.db);
+  } catch (error) {
+    logger.fatal(
+      { err: error },
+      "refusing to start: unsafe identity, supplier or ride-context configuration",
+    );
+    process.stderr.write(
+      `travel-service refusing to start: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    await disconnectPrisma().catch(() => undefined);
+    process.exit(1);
+  }
+  const app = createApp(deps);
   const server = serve({ fetch: app.fetch, port: PORT });
   logger.info({ port: PORT }, "travel-service listening");
+  const transferWorker = startTransferWorker(deps);
 
   const shutdown = (signal: string): void => {
     logger.info({ signal }, "shutting down");
+    transferWorker.stop();
     server.close();
     void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).then(
       () => {
@@ -101,4 +147,8 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", () => {
     shutdown("SIGINT");
   });
+}
+
+if (process.env.NODE_ENV !== "test") {
+  void main();
 }

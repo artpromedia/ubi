@@ -92,21 +92,8 @@ export const growthApi = {
       "/v1/ai/marketing/threads/" + threadId + "/messages",
       { text },
     ),
-  travelExceptions: () =>
-    apiClient.get<TravelException[]>("/v1/ops/travel/exceptions"),
-  travelAction: (id: string, action: string) =>
-    apiClient.post<void>("/v1/ops/travel/exceptions/" + id + "/actions", {
-      action,
-    }),
-  providerHealth: () =>
-    apiClient.get<
-      {
-        label: string;
-        value: string;
-        note: string;
-        tone: "ok" | "warn" | "neutral";
-      }[]
-    >("/v1/ops/travel/providers/health"),
+  // Travel ops (/v1/ops/travel/*) lives in lib/travel-ops.ts, typed to the
+  // shapes travel-service actually returns.
   aiActions: () => apiClient.get<AiAction[]>("/v1/ops/ai/actions"),
   aiMetrics: () =>
     apiClient.get<{
@@ -145,24 +132,6 @@ export type Proposal = {
   assumptions: string[];
   budget: Liability;
   name: string;
-};
-export type TravelException = {
-  id: string;
-  orderId: string;
-  supplierRef: string;
-  traveller: string;
-  item: string;
-  sub: string;
-  kind:
-    | "pending_ticketing"
-    | "unknown_result"
-    | "refund_due"
-    | "settlement_difference";
-  state: string;
-  since: string;
-  money: string;
-  moneyNote?: string;
-  nextAction: { action: string; label: string }[];
 };
 export type AiAction = {
   at: string;

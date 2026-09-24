@@ -24,6 +24,8 @@
  *   forwards.
  */
 
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { ContractError } from "@ubi/contracts";
 
 import { IDENTITY_HEADER, verifyIdentityContext } from "../identity/context";
@@ -154,6 +156,39 @@ export async function optionalAuth(c: Context, next: Next) {
   await next();
 }
 
+/** The header a service-to-service caller presents the internal key in. */
+export const SERVICE_KEY_HEADER = "X-Service-Key";
+
+function digest(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
+}
+
+/**
+ * Whether `presented` is the internal service key — THE service-key check.
+ *
+ * `internalServiceAuth` refuses with it and the rate limiter
+ * (./rate-limit.ts) exempts service traffic with it, so the limiter can never
+ * wave through a key the routers would refuse.
+ *
+ * Fails CLOSED: an unset or empty INTERNAL_SERVICE_KEY matches nothing, and a
+ * missing or empty header never matches. The comparison is constant-time:
+ * both sides are hashed to fixed-length SHA-256 digests before
+ * `timingSafeEqual`, so neither the time taken nor an early exit on a length
+ * mismatch says anything about the key.
+ */
+export function isValidServiceKey(presented: string | undefined): boolean {
+  const expected = process.env.INTERNAL_SERVICE_KEY;
+  if (
+    expected === undefined ||
+    expected.length === 0 ||
+    presented === undefined ||
+    presented.length === 0
+  ) {
+    return false;
+  }
+  return timingSafeEqual(digest(presented), digest(expected));
+}
+
 /**
  * Internal service auth middleware
  * For service-to-service communication
@@ -168,15 +203,7 @@ export async function internalServiceAuth(
   c: Context,
   next: Next,
 ): Promise<void | Response> {
-  const serviceKey = c.req.header("X-Service-Key");
-  const expectedKey = process.env.INTERNAL_SERVICE_KEY;
-
-  if (
-    expectedKey === undefined ||
-    expectedKey.length === 0 ||
-    serviceKey === undefined ||
-    serviceKey !== expectedKey
-  ) {
+  if (!isValidServiceKey(c.req.header(SERVICE_KEY_HEADER))) {
     return c.json(
       {
         success: false,

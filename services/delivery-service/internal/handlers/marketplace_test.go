@@ -1,11 +1,10 @@
 /*
- * Unit tests for the marketplace assignment adapter's pure decision helpers.
- *
- * The handler itself needs a live pgx pool against the (unmanaged)
- * deliveries DDL and this environment has no docker/testcontainers, so the
- * decisions — payload validation, package jsonb shaping, the legacy-float
- * conversion and the MARKETPLACE_MANAGED guard — are extracted as pure
- * functions and tested here without a database.
+ * Unit tests for the marketplace assignment adapter's pure decision helpers:
+ * payload validation, metadata jsonb shaping, the legacy-float conversion and
+ * the MARKETPLACE_MANAGED guard, tested here without a database. The handler
+ * itself — sender-profile resolution under the real Prisma foreign keys,
+ * the atomic delivery+custody insert, replays — is exercised end to end in
+ * marketplace_integration_test.go.
  */
 
 package handlers
@@ -25,8 +24,8 @@ func validAssignRequest() MarketplaceAssignRequest {
 	return MarketplaceAssignRequest{
 		AwardID:    "awd_123",
 		RequestID:  "mpr_456",
-		DriverID:   "drv_789",
-		CustomerID: "usr_abc",
+		DriverID:   "5b0e0f4a-2d1c-4f7e-9a3b-6c8d1e2f3a4b",
+		CustomerID: "9c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f",
 		FareMinor:  125_000,
 		Currency:   "NGN",
 		Pickup:     models.Location{Latitude: 6.4281, Longitude: 3.4219, Address: "VI", City: "Lagos", Country: "NG"},
@@ -58,6 +57,9 @@ func TestValidateMarketplaceAssign(t *testing.T) {
 			{"missing requestId", func(r *MarketplaceAssignRequest) { r.RequestID = "" }},
 			{"missing driverId", func(r *MarketplaceAssignRequest) { r.DriverID = "" }},
 			{"missing customerId", func(r *MarketplaceAssignRequest) { r.CustomerID = "" }},
+			{"customerId that is not a user id", func(r *MarketplaceAssignRequest) { r.CustomerID = "usr_abc" }},
+			{"driverId that is not a user id", func(r *MarketplaceAssignRequest) { r.DriverID = "drv_789" }},
+			{"requester is the driver", func(r *MarketplaceAssignRequest) { r.DriverID = r.CustomerID }},
 			{"zero fare", func(r *MarketplaceAssignRequest) { r.FareMinor = 0 }},
 			{"negative fare", func(r *MarketplaceAssignRequest) { r.FareMinor = -100 }},
 			{"bad currency", func(r *MarketplaceAssignRequest) { r.Currency = "NAIRA" }},

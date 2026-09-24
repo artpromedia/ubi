@@ -1,0 +1,167 @@
+{
+ "source": "https://docs.liteapi.travel/reference/get_bookings-bookingid",
+ "retrieved": "2026-09-23",
+ "payload": {
+  "data": {
+   "bookingId": "hSq2gVDrf",
+   "clientReference": "REF123",
+   "supplierBookingId": "38000",
+   "supplierBookingName": "nuitee",
+   "supplier": "nuitee",
+   "supplierId": 2,
+   "status": "CONFIRMED",
+   "feed": "custom_feed",
+   "hotelConfirmationCode": "hSq2gVDrf",
+   "checkin": "2024-11-15",
+   "checkout": "2024-11-16",
+   "hotel": {
+    "hotelId": "lp1897",
+    "name": "Some hotel Name"
+   },
+   "bookedRooms": [
+    {
+     "roomType": {
+      "roomTypeId": "RT123",
+      "name": "Test rate"
+     },
+     "boardType": "RO",
+     "boardName": "Room Only",
+     "adults": 1,
+     "children": 2,
+     "rate": {
+      "rateId": "RATE123",
+      "retailRate": {
+       "total": {
+        "amount": 115,
+        "currency": "USD"
+       }
+      },
+      "cancellationPolicies": {
+       "cancelPolicyInfos": [
+        {
+         "cancelTime": "2024-11-15",
+         "amount": 100,
+         "type": "amount",
+         "timezone": "GMT",
+         "currency": "USD"
+        }
+       ],
+       "hotelRemarks": [],
+       "refundableTag": "RFN"
+      },
+      "maxOccupancy": 0,
+      "boardType": "RO",
+      "boardName": "Room Only",
+      "remarks": ""
+     },
+     "firstName": "John",
+     "lastName": "Doe",
+     "childrenAges": [],
+     "board": "Room Only",
+     "boardCode": "RO",
+     "cancellationPolicies": {
+      "cancelPolicyInfos": [
+       {
+        "cancelTime": "2024-11-15",
+        "amount": 100,
+        "type": "amount",
+        "timezone": "GMT",
+        "currency": "USD"
+       }
+      ],
+      "hotelRemarks": [],
+      "refundableTag": "RFN"
+     },
+     "room_id": "RM123",
+     "occupancy_number": 1,
+     "amount": 115,
+     "currency": "USD",
+     "children_count": 2,
+     "remarks": "",
+     "guests": null
+    }
+   ],
+   "holder": {
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "johndoe@liteapi.travel",
+    "phone": "+1234567890"
+   },
+   "createdAt": "2024-01-27T21:38:48",
+   "updatedAt": "2024-01-27T21:38:48",
+   "cancellationPolicies": {
+    "cancelPolicyInfos": [
+     {
+      "cancelTime": "2024-11-15",
+      "amount": 100,
+      "type": "amount",
+      "timezone": "GMT",
+      "currency": "USD"
+     }
+    ],
+    "hotelRemarks": [],
+    "refundableTag": "RFN"
+   },
+   "specialRemarks": "",
+   "optionalFees": "",
+   "mandatoryFees": "",
+   "knowBeforeYouGo": "",
+   "price": 115,
+   "commission": 10,
+   "addonsTotalAmount": 0,
+   "currency": "USD",
+   "remarks": "",
+   "voucherCode": "",
+   "voucherTotalAmount": 0,
+   "addons": null,
+   "guestId": 1,
+   "distributorCommission": 5,
+   "distributorPrice": 110,
+   "trackingId": "TRACK123",
+   "firstName": "John",
+   "lastName": "Doe",
+   "adults": 1,
+   "children": "2",
+   "childrenCount": 2,
+   "prebookId": "PRE123",
+   "paymentStatus": "succeeded",
+   "paymentTransactionId": "PAY123",
+   "sellingPrice": "115",
+   "exchangeRate": 1,
+   "exchangeRateUsd": 1,
+   "email": "johndoe@liteapi.travel",
+   "tag": "RFN",
+   "lastFreeCancellationDate": "2024-11-15T00:00:00+00:00",
+   "userId": 1,
+   "nationality": "US",
+   "holderTitle": "Mr",
+   "hotelId": "HTL123",
+   "hotelName": "Test Hotel",
+   "cancelledAt": null,
+   "refundedAt": null,
+   "loyaltyGuestId": null,
+   "sandbox": 0,
+   "clientCommission": 5,
+   "voucherId": 0,
+   "voucherTransationId": "",
+   "processingFee": 0,
+   "amountRefunded": 0,
+   "refundType": "",
+   "paymentScheduledAt": null,
+   "addonsRedemptions": null,
+   "rebookFrom": "",
+   "agentId": null,
+   "cancelledBy": null,
+   "suggestedSellingPrice": {
+    "amount": 185.7,
+    "currency": "USD",
+    "source": "expedia.com"
+   },
+   "goodwillPayment": {
+    "amount": 15,
+    "currency": "USD",
+    "description": "Example description"
+   }
+  }
+ }
+}

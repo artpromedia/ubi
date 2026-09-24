@@ -163,10 +163,16 @@ describe("BidDetailContainer — select wrapper { award, pickupPin? } and execut
     const choose = await screen.findByTestId(TEST_IDS.mp.rider.bid.choose);
     fireEvent.press(choose);
 
+    // requestId rides along so the A02 trip screens (keyed by the request) are reachable
+    // from the ride — the ride view itself does not carry it.
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith("Ride", {
         screen: "Assigned",
-        params: { rideId: "ride_mp_901", pickupPin: "4831" },
+        params: {
+          rideId: "ride_mp_901",
+          pickupPin: "4831",
+          requestId: "req_mp_1",
+        },
       });
     });
     view.unmount();

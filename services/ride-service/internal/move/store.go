@@ -289,6 +289,24 @@ func (s *Store) MarketplaceAwardID(ctx context.Context, db DB, rideID uuid.UUID)
 	return awardID, nil
 }
 
+// MarketplaceRequestID reads the marketplace request a ride was awarded from
+// (through its award), or nil for a classic ride. The mp schema is only
+// consulted for a ride that carries a marketplace award.
+func (s *Store) MarketplaceRequestID(ctx context.Context, db DB, rideID uuid.UUID) (*uuid.UUID, error) {
+	awardID, err := s.MarketplaceAwardID(ctx, db, rideID)
+	if err != nil || awardID == nil {
+		return nil, err
+	}
+	var requestID uuid.UUID
+	if err := db.QueryRow(ctx, `SELECT request_id FROM mp.awards WHERE id = $1`, *awardID).Scan(&requestID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read the ride's marketplace request: %w", err)
+	}
+	return &requestID, nil
+}
+
 // RideForUpdate reads and locks one ride for the rest of the transaction, so
 // two concurrent transitions on the same ride serialise instead of racing.
 func (s *Store) RideForUpdate(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*domain.Ride, error) {

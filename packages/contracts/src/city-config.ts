@@ -7,6 +7,12 @@
  */
 import { z } from "zod";
 
+import { FleetPolicySchema } from "./fleet";
+import {
+  MpMultiStopPolicySchema,
+  MpPreferredDriverPolicySchema,
+  MpSchedulingPolicySchema,
+} from "./marketplace";
 import { CurrencySchema } from "./money";
 
 export const VEHICLE_CLASSES = ["go", "comfort", "xl", "moto"] as const;
@@ -155,6 +161,18 @@ export const MarketplacePolicySchema = z.object({
   bids: MarketplaceBidPolicySchema,
   queue: QueuePolicySchema,
   rateProfileBounds: z.record(RateProfileBoundsSchema),
+  /**
+   * Per-market multi-stop limits (A02). Absent ⇒ the pilot defaults
+   * (`MP_MULTI_STOP_PILOT_DEFAULTS`). Declared here so a market's stop limits
+   * survive schema parsing instead of being stripped as an unknown key.
+   */
+  stops: MpMultiStopPolicySchema.optional(),
+  // Book for Later policy (A03): scheduled requests, advance reservations and
+  // recurring journeys. Without it config-service strips the block and all
+  // three products fail closed for the market.
+  scheduling: MpSchedulingPolicySchema.optional(),
+  // Preferred-driver exclusive window (A04 item 3); absent = pilot window.
+  preferredDriver: MpPreferredDriverPolicySchema.optional(),
 });
 export type MarketplacePolicy = z.infer<typeof MarketplacePolicySchema>;
 
@@ -187,6 +205,9 @@ export const CityConfigSchema = z.object({
   taxes: z.record(z.number()),
   /** Absent ⇒ the negotiated-fare marketplace is not configured here: fail closed. */
   marketplace: MarketplacePolicySchema.optional(),
+  // Fleet availability calendar policy (A05); without it config-service
+  // strips the block and fleet-service falls back to its defaults.
+  fleet: FleetPolicySchema.optional(),
 });
 
 export type CityConfig = z.infer<typeof CityConfigSchema>;

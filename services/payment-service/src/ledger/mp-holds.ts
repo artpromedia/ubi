@@ -16,6 +16,9 @@
  *    receipt, a different award on the same reservation is a conflict;
  *  - a captured fee is only ever undone by a LINKED compensating entry
  *    (`mp_commission_reversal`); history is never edited;
+ *  - after capture, a post-award amendment changes the fee only by a linked
+ *    DELTA (mp-commission-deltas.ts) — never by reverse-and-recapture — so a
+ *    full reversal hands back the award's NET captured commission;
  *  - every state change goes through `assertTransition("mpHold", …)` and
  *    writes its audit row and outbox event in the same transaction.
  */
@@ -33,12 +36,18 @@ import { publishEvent, writeAudit } from "./audit";
 import {
   activeHoldsMinor,
   activeRiderReservationsMinor,
+  activeTravelAuthorizationsMinor,
   balanceOf,
   spendableOf,
 } from "./balances";
 import { lockWallet, type WalletDeps } from "./context";
 import { isIdempotencyRace } from "./idempotency";
 import { fromDbMinor, toDbMinor } from "./minor-units";
+import {
+  capturedCommissionMinor,
+  commissionDeltaPrefix,
+  isCommissionDeltaBidRef,
+} from "./mp-amendment-refs";
 import { releaseReservationInTx } from "./mp-funding";
 import { movement, postEntry } from "./post-entry";
 import { assertNotLocked, ensureWallet, findWallet } from "./wallets";
@@ -60,7 +69,7 @@ export const MP_ROUNDING_RULE = "half_up";
 const MP_SERVICE_ACTOR: Actor = { id: "marketplace-engine", role: "service" };
 
 /** The row shape Prisma hands back for `mp_commission_holds`. */
-interface HoldRow {
+export interface HoldRow {
   readonly id: string;
   readonly walletId: string;
   readonly driverId: string;
@@ -207,7 +216,7 @@ function assertCommissionArithmetic(
   }
 }
 
-function insufficientSpendable(
+export function insufficientSpendable(
   requiredMinor: number,
   spendableMinor: number,
   heldMinor: number,
@@ -239,6 +248,22 @@ async function requireHold(
     });
   }
   return row;
+}
+
+/**
+ * An amendment's commission increment is a hold row too (it must encumber
+ * spendable like one), but it is reserved, captured and released only through
+ * the amendment operations, which check it against the award's captured
+ * total. The generic bid-hold operations refuse it.
+ */
+function refuseDeltaRow(row: HoldRow): void {
+  if (isCommissionDeltaBidRef(row.bidRef)) {
+    throw new ContractError(
+      "conflict",
+      "this reservation is an amendment's commission delta; use the amendment operations",
+      { reservationId: row.id },
+    );
+  }
 }
 
 // ── Reserve ────────────────────────────────────────────────────────────────
@@ -291,6 +316,13 @@ export async function reserveHold(
   }
 
   assertCommissionArithmetic(input.amountMinor, input.baseMinor);
+  if (isCommissionDeltaBidRef(input.bidRef)) {
+    throw new ContractError(
+      "validation_failed",
+      "bidRef uses the reserved amendment-delta namespace",
+      { bidRef: input.bidRef },
+    );
+  }
   if (input.policyVersion < 1 || !Number.isInteger(input.policyVersion)) {
     throw new ContractError("validation_failed", "policyVersion is not valid", {
       policyVersion: input.policyVersion,
@@ -346,7 +378,15 @@ export async function reserveHold(
         wallet.id,
         wallet.currency,
       );
-      const encumberedMinor = held.amountMinor + reserved.amountMinor;
+      // Authorized travel items (P7) encumber it too: money reserved for a
+      // flight or stay is not commission money either.
+      const travel = await activeTravelAuthorizationsMinor(
+        tx,
+        wallet.id,
+        wallet.currency,
+      );
+      const encumberedMinor =
+        held.amountMinor + reserved.amountMinor + travel.amountMinor;
       const spendableMinor = balance.amountMinor - encumberedMinor;
       if (spendableMinor < input.amountMinor) {
         throw insufficientSpendable(
@@ -441,7 +481,7 @@ export async function reserveHold(
 }
 
 /** A P2002 on the per-bid unique index — the losing side of a bid-level race. */
-function isBidRefRace(error: unknown): boolean {
+export function isBidRefRace(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
   }
@@ -487,6 +527,7 @@ export async function adjustHold(
   try {
     return await deps.db.$transaction(async (tx) => {
       const before = await requireHold(tx, reservationId);
+      refuseDeltaRow(before);
       await lockWallet(tx, before.walletId);
       // Re-read under the wallet lock: the lock serialises every money
       // operation on this wallet, including rival hold changes.
@@ -511,7 +552,13 @@ export async function adjustHold(
             hold.walletId,
             hold.currency,
           );
-          const encumberedMinor = held.amountMinor + reserved.amountMinor;
+          const travel = await activeTravelAuthorizationsMinor(
+            tx,
+            hold.walletId,
+            hold.currency,
+          );
+          const encumberedMinor =
+            held.amountMinor + reserved.amountMinor + travel.amountMinor;
           throw insufficientSpendable(
             deltaMinor,
             spendable.amountMinor,
@@ -613,6 +660,7 @@ export async function releaseHold(
       reservationId,
     });
   }
+  refuseDeltaRow(pre);
   const preReplay = releaseGuards(pre);
   if (preReplay !== null) {
     return preReplay;
@@ -782,6 +830,7 @@ export async function captureHold(
       reservationId,
     });
   }
+  refuseDeltaRow(pre);
   const preReplay = capturedReplay(pre);
   if (preReplay !== null) {
     return preReplay;
@@ -916,6 +965,11 @@ export interface ReverseHoldInput {
  * compensating entry (`ubi_commission` → driver wallet). The original capture
  * entry is untouched — the journal is append-only, and the pair stays
  * traceable through `award:<id>` / `award:<id>:reversal` counterpart refs.
+ *
+ * The amount is the award's NET captured commission (amendment increments
+ * and partial reversals included), so the award's commission nets to zero;
+ * an amendment increment still only reserved is released in the same
+ * transaction.
  */
 export async function reverseCapturedHold(
   deps: WalletDeps,
@@ -949,6 +1003,7 @@ export async function reverseCapturedHold(
       reservationId,
     });
   }
+  refuseDeltaRow(pre);
   const preReplay = reversedReplay(pre);
   if (preReplay !== null) {
     return preReplay;
@@ -971,31 +1026,118 @@ export async function reverseCapturedHold(
       }
       assertTransition(HOLD_MACHINE, hold.state, "reversed");
 
-      const amountMinor = fromDbMinor(hold.amountMinor);
-      const entry = await postEntry(tx, {
-        kind: "mp_commission_reversal",
-        reference: `mp_award:${input.awardId}:reversal`,
-        occurredAt: now,
-        idempotencyKey: reverseKey,
-        description: "marketplace commission reversed (compensation)",
-        lines: movement(
-          {
-            account: "ubi_commission",
-            counterpartRef: `award:${input.awardId}:reversal`,
-          },
-          {
-            account: "wallet",
-            walletId: hold.walletId,
-            counterpartRef: `award:${input.awardId}:reversal`,
-          },
-          amountMinor,
-          hold.currency,
-        ),
+      // What goes back is the award's NET captured commission — the original
+      // capture plus every captured amendment increment, minus every partial
+      // reversal — derived from the journal under the wallet lock. Never the
+      // row's original amount: after an amendment that would under- or
+      // over-refund.
+      const originalAmountMinor = fromDbMinor(hold.amountMinor);
+      const amountMinor = await capturedCommissionMinor(
+        tx,
+        hold.walletId,
+        input.awardId,
+        hold.currency,
+      );
+      if (amountMinor < 0) {
+        throw new ContractError(
+          "internal_error",
+          "the award's captured commission is negative in the journal",
+          { reservationId: hold.id, capturedMinor: amountMinor },
+        );
+      }
+
+      // An amendment increment still merely RESERVED dies with the award: it
+      // is released in this transaction, so it cannot outlive the reversal
+      // and keep encumbering the driver's spendable.
+      const deltaPrefix = commissionDeltaPrefix(hold.id);
+      const openDeltas = await tx.mpCommissionHold.findMany({
+        where: { bidRef: { startsWith: deltaPrefix }, state: "active" },
       });
+      for (const delta of openDeltas) {
+        assertTransition(HOLD_MACHINE, delta.state, "released");
+        await tx.mpCommissionHold.update({
+          where: { id: delta.id },
+          data: { state: "released", releasedAt: now },
+        });
+        await writeAudit(tx, {
+          actor: MP_SERVICE_ACTOR,
+          action: "wallet.mp_hold.delta_released",
+          subjectType: "mp_hold",
+          subjectId: hold.id,
+          before: { state: delta.state },
+          after: {
+            state: "released",
+            deltaReservationId: delta.id,
+            amountMinor: fromDbMinor(delta.amountMinor),
+          },
+          reason: `award_reversed: ${input.reason}`,
+        });
+        await publishEvent(tx, {
+          name: "mp.commission.released",
+          aggregateType: "mp_hold",
+          aggregateId: delta.id,
+          fromVersion: 1,
+          toVersion: 2,
+          actor: MP_SERVICE_ACTOR,
+          actorType: "service",
+          cityId: null,
+          idempotencyKey: `${reverseKey}:delta:${delta.id}:released`,
+          occurredAt: now,
+          payload: {
+            reservationId: delta.id,
+            originalReservationId: hold.id,
+            awardId: input.awardId,
+            kind: "amendment_delta",
+            walletId: hold.walletId,
+            amountMinor: fromDbMinor(delta.amountMinor),
+            currency: hold.currency,
+            reason: `award_reversed: ${input.reason}`,
+          },
+        });
+      }
+
+      // An award amended down to a zero fee has nothing left to hand back.
+      const entry =
+        amountMinor === 0
+          ? null
+          : await postEntry(tx, {
+              kind: "mp_commission_reversal",
+              reference: `mp_award:${input.awardId}:reversal`,
+              occurredAt: now,
+              idempotencyKey: reverseKey,
+              description: "marketplace commission reversed (compensation)",
+              lines: movement(
+                {
+                  account: "ubi_commission",
+                  counterpartRef: `award:${input.awardId}:reversal`,
+                },
+                {
+                  account: "wallet",
+                  walletId: hold.walletId,
+                  counterpartRef: `award:${input.awardId}:reversal`,
+                },
+                amountMinor,
+                hold.currency,
+              ),
+            });
+      const reversalEntryId = entry?.id ?? null;
+
+      // Captured increments were part of what that entry just handed back;
+      // their rows say so, linked to the same reversal entry.
+      const capturedDeltas = await tx.mpCommissionHold.findMany({
+        where: { bidRef: { startsWith: deltaPrefix }, state: "captured" },
+      });
+      for (const delta of capturedDeltas) {
+        assertTransition(HOLD_MACHINE, delta.state, "reversed");
+        await tx.mpCommissionHold.update({
+          where: { id: delta.id },
+          data: { state: "reversed", reversalEntryId },
+        });
+      }
 
       const updated = await tx.mpCommissionHold.update({
         where: { id: hold.id },
-        data: { state: "reversed", reversalEntryId: entry.id },
+        data: { state: "reversed", reversalEntryId },
       });
 
       // A reversed award is an abandoned award: the rider's funding
@@ -1016,7 +1158,14 @@ export async function reverseCapturedHold(
         subjectType: "mp_hold",
         subjectId: hold.id,
         before: { state: hold.state },
-        after: { state: "reversed", reversalEntryId: entry.id, amountMinor },
+        after: {
+          state: "reversed",
+          reversalEntryId,
+          amountMinor,
+          originalAmountMinor,
+          reversedDeltaIds: capturedDeltas.map((delta) => delta.id),
+          releasedDeltaIds: openDeltas.map((delta) => delta.id),
+        },
         reason: input.reason,
       });
       await publishEvent(tx, {
@@ -1034,7 +1183,7 @@ export async function reverseCapturedHold(
           reservationId: hold.id,
           awardId: input.awardId,
           walletId: hold.walletId,
-          reversalEntryId: entry.id,
+          reversalEntryId,
           amountMinor,
           currency: hold.currency,
           reason: input.reason,

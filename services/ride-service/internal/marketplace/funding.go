@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,6 +64,51 @@ type FundingPort interface {
 	// (missing/already-released answer the current state); a reservation the
 	// settlement already consumed answers ErrFundingReservationConsumed.
 	Release(ctx context.Context, awardID uuid.UUID, reason string, idempotencyKey string) error
+
+	// Post-award funding amendments (A02; payment-service
+	// docs/MARKETPLACE-MONEY.md). The award's original reservation is never
+	// edited: a fare increase tops it up with a linked adjustment BEFORE
+	// approvals and commits it when the amendment commits (or releases it on
+	// reject/expiry); a decrease partially releases at commit. The amendment
+	// id is the idempotency authority; bare-integer amounts, like Authorize.
+	TopUp(ctx context.Context, req FundingAmendment, idempotencyKey string) (*FundingAdjustment, error)
+	CommitTopUp(ctx context.Context, awardID uuid.UUID, amendmentID string, newAmountMinor int64, idempotencyKey string) (*FundingAdjustment, error)
+	ReleaseTopUp(ctx context.Context, awardID uuid.UUID, amendmentID, reason string, idempotencyKey string) (*FundingAdjustment, error)
+	PartialRelease(ctx context.Context, req FundingAmendment, idempotencyKey string) (*FundingAdjustment, error)
+}
+
+// FundingAmendment is the body of /funding/top-up and
+// /funding/partial-release: the award's funded amount as ride-service knows
+// it and the amended fare. payment-service verifies the prior against the
+// original reservation plus committed adjustments (a stale prior is
+// version_conflict with refreshedTerms.fundedAmountMinor) and derives the
+// delta itself.
+type FundingAmendment struct {
+	RequesterID      uuid.UUID `json:"requesterId"`
+	AwardID          uuid.UUID `json:"awardId"`
+	AmendmentID      string    `json:"amendmentId"`
+	PaymentMethodID  string    `json:"paymentMethodId"`
+	PriorAmountMinor int64     `json:"priorAmountMinor"`
+	NewAmountMinor   int64     `json:"newAmountMinor"`
+	Currency         string    `json:"currency"`
+	CityID           string    `json:"cityId"`
+}
+
+// FundingAdjustment is payment-service's answer to every funding amendment
+// call. `secured` is false for cash (nothing to encumber).
+type FundingAdjustment struct {
+	AwardID          string  `json:"awardId"`
+	AmendmentID      string  `json:"amendmentId"`
+	Kind             string  `json:"kind"`
+	Secured          bool    `json:"secured"`
+	Status           string  `json:"status"`
+	AdjustmentID     *string `json:"adjustmentId"`
+	ReservationID    *string `json:"reservationId"`
+	DeltaMinor       int64   `json:"deltaMinor"`
+	PriorAmountMinor *int64  `json:"priorAmountMinor"`
+	NewAmountMinor   *int64  `json:"newAmountMinor"`
+	Currency         *string `json:"currency"`
+	Replayed         bool    `json:"replayed"`
 }
 
 // fundingReleaseKeyFor is the ONE idempotency key an award's rider funding is
@@ -178,101 +222,44 @@ func (f *HTTPFunding) Release(ctx context.Context, awardID uuid.UUID, reason str
 	return nil
 }
 
-// FakeFunding is the in-memory FundingPort tests drive: idempotent like the
-// real one, with injectable definite failures and unknown outcomes, and a
-// full record of releases so "released exactly once, with this reason" is a
-// property a test can observe.
-type FakeFunding struct {
-	mu   sync.Mutex
-	seen map[string]bool
-	// reservations maps awards that authorized a SECURED (non-cash) funding
-	// to the fake reservation id the authorize answered.
-	reservations map[uuid.UUID]string
-
-	// Fail makes the next Authorize calls answer this definite refusal.
-	Fail error
-	// Unknown makes Authorize record the authorization but answer
-	// ErrWalletUnknownOutcome, which is what a lost response looks like.
-	Unknown bool
-	// FailRelease makes the next Release calls answer this error.
-	FailRelease error
-	// Consumed marks awards whose reservation the settlement already
-	// consumed: Release answers ErrFundingReservationConsumed for them.
-	Consumed map[uuid.UUID]bool
-
-	// Calls counts every Authorize; EffectiveCalls counts non-replayed ones.
-	Calls          int
-	EffectiveCalls int
-	// ReleaseCalls counts every Release; EffectiveReleases counts
-	// non-replayed ones. ReleasedAwards records each award's release reason.
-	ReleaseCalls      int
-	EffectiveReleases int
-	ReleasedAwards    map[uuid.UUID]string
+// TopUp implements FundingPort against POST /v1/wallet/mp/funding/top-up.
+func (f *HTTPFunding) TopUp(ctx context.Context, req FundingAmendment, idempotencyKey string) (*FundingAdjustment, error) {
+	var adjustment FundingAdjustment
+	if err := f.call(ctx, "/v1/wallet/mp/funding/top-up", req, idempotencyKey, &adjustment); err != nil {
+		return nil, err
+	}
+	return &adjustment, nil
 }
 
-// NewFakeFunding builds an empty fake.
-func NewFakeFunding() *FakeFunding {
-	return &FakeFunding{
-		seen:           map[string]bool{},
-		reservations:   map[uuid.UUID]string{},
-		Consumed:       map[uuid.UUID]bool{},
-		ReleasedAwards: map[uuid.UUID]string{},
+// CommitTopUp implements FundingPort against POST
+// /v1/wallet/mp/funding/top-up/commit.
+func (f *HTTPFunding) CommitTopUp(ctx context.Context, awardID uuid.UUID, amendmentID string, newAmountMinor int64, idempotencyKey string) (*FundingAdjustment, error) {
+	var adjustment FundingAdjustment
+	body := map[string]any{"awardId": awardID.String(), "amendmentId": amendmentID, "newAmountMinor": newAmountMinor}
+	if err := f.call(ctx, "/v1/wallet/mp/funding/top-up/commit", body, idempotencyKey, &adjustment); err != nil {
+		return nil, err
 	}
+	return &adjustment, nil
 }
 
-// Authorize implements FundingPort.
-func (f *FakeFunding) Authorize(_ context.Context, req FundingRequest, idempotencyKey string) (*FundingAuthorization, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.Calls++
-	if f.Fail != nil {
-		return nil, f.Fail
+// ReleaseTopUp implements FundingPort against POST
+// /v1/wallet/mp/funding/top-up/release — safe even if the top-up never
+// landed (payment-service closes the amendment).
+func (f *HTTPFunding) ReleaseTopUp(ctx context.Context, awardID uuid.UUID, amendmentID, reason string, idempotencyKey string) (*FundingAdjustment, error) {
+	var adjustment FundingAdjustment
+	body := map[string]any{"awardId": awardID.String(), "amendmentId": amendmentID, "reason": reason}
+	if err := f.call(ctx, "/v1/wallet/mp/funding/top-up/release", body, idempotencyKey, &adjustment); err != nil {
+		return nil, err
 	}
-	if !f.seen[idempotencyKey] {
-		f.seen[idempotencyKey] = true
-		f.EffectiveCalls++
-	}
-	if f.Unknown {
-		return nil, fmt.Errorf("%w: injected", ErrWalletUnknownOutcome)
-	}
-	auth := &FundingAuthorization{
-		Authorized:      true,
-		AwardID:         req.AwardID.String(),
-		PaymentMethodID: req.PaymentMethodID,
-	}
-	if req.PaymentMethodID != "cash" {
-		reservationID, ok := f.reservations[req.AwardID]
-		if !ok {
-			reservationID = "mfr_" + uuid.NewString()
-			f.reservations[req.AwardID] = reservationID
-		}
-		auth.Secured = true
-		auth.ReservationID = &reservationID
-	}
-	return auth, nil
+	return &adjustment, nil
 }
 
-// Release implements FundingPort: exactly-once per award, forgiving like the
-// real endpoint (missing/already-released answer nil), consumed distinct.
-func (f *FakeFunding) Release(_ context.Context, awardID uuid.UUID, reason string, idempotencyKey string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.ReleaseCalls++
-	if f.FailRelease != nil {
-		return f.FailRelease
+// PartialRelease implements FundingPort against POST
+// /v1/wallet/mp/funding/partial-release.
+func (f *HTTPFunding) PartialRelease(ctx context.Context, req FundingAmendment, idempotencyKey string) (*FundingAdjustment, error) {
+	var adjustment FundingAdjustment
+	if err := f.call(ctx, "/v1/wallet/mp/funding/partial-release", req, idempotencyKey, &adjustment); err != nil {
+		return nil, err
 	}
-	if f.Consumed[awardID] {
-		return fmt.Errorf("%w: award %s", ErrFundingReservationConsumed, awardID)
-	}
-	if f.seen[idempotencyKey] {
-		return nil
-	}
-	f.seen[idempotencyKey] = true
-	if _, released := f.ReleasedAwards[awardID]; !released {
-		if _, had := f.reservations[awardID]; had {
-			f.EffectiveReleases++
-		}
-		f.ReleasedAwards[awardID] = reason
-	}
-	return nil
+	return &adjustment, nil
 }

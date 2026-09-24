@@ -9,7 +9,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
-    exclude: ["node_modules", "dist"],
+    // Supplier sandbox suites need live credentials and network: they run
+    // only under vitest.sandbox.config.ts (`pnpm test:sandbox`).
+    exclude: ["node_modules", "dist", "tests/sandbox/**"],
     testTimeout: 30000,
     hookTimeout: 30000,
     mockReset: true,

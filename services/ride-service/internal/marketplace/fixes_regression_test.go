@@ -977,7 +977,11 @@ func TestCompletionSettlementRecoveredBySweep(t *testing.T) {
 
 	// The wire heals: the sweep settles exactly once, however often it runs.
 	h.Settlement.Fail = nil
-	h.Clock.Advance(2 * time.Second)
+	// The recovery row is due at the DATABASE's now() when it was written,
+	// while the sweep asks with the harness clock (which only moves when told
+	// to): step past the wall time this test has already spent, not a fixed
+	// two seconds that a slow -race run overtakes.
+	h.Clock.Advance(time.Minute)
 	if err := h.Marketplace.Sweep(ctx); err != nil {
 		t.Fatal(err)
 	}

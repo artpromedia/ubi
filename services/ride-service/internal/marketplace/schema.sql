@@ -343,3 +343,913 @@ CREATE INDEX IF NOT EXISTS mp_standing_driver_idx
     ON mp.driver_standing_actions (driver_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS mp_standing_status_idx
     ON mp.driver_standing_actions (status, created_at ASC);
+
+-- ---------------------------------------------------------------------------
+-- Multiple stops (A02), additive and idempotent.
+--
+--   * quotes.stops / requests.stops hold the ORDERED intermediate stops, each
+--     with a stable server-assigned stopId, its 1-based order, lat/lng, label,
+--     purpose and expected dwell. '[]' is the plain pickup → dropoff route, so
+--     every existing row reads exactly as before.
+--   * stops_dwell_sec is the total expected dwell the quote priced as route
+--     time; route_fingerprint names the exact stop set (and endpoints) the
+--     bounds were priced for. A request inherits both from the quote it was
+--     published or revised against — never from anything a client restates.
+--   * requests.route_revision bumps only when a revision changes the stop set.
+--     The request `revision` still bumps on EVERY price- or route-affecting
+--     edit and remains the one counter bids are pinned to, so a bid placed on
+--     an obsolete route is invalidated and can never be selected.
+--   * requests.routed_distance_m / routed_duration_sec carry the priced
+--     route's metrics so the driver card can state them without a quote read.
+-- ---------------------------------------------------------------------------
+ALTER TABLE mp.quotes ADD COLUMN IF NOT EXISTS stops jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE mp.quotes ADD COLUMN IF NOT EXISTS stops_dwell_sec bigint NOT NULL DEFAULT 0;
+ALTER TABLE mp.quotes ADD COLUMN IF NOT EXISTS route_fingerprint text NOT NULL DEFAULT '';
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS stops jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS route_revision integer NOT NULL DEFAULT 1;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS route_fingerprint text NOT NULL DEFAULT '';
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS routed_distance_m bigint NOT NULL DEFAULT 0;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS routed_duration_sec bigint NOT NULL DEFAULT 0;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS stops_dwell_sec bigint NOT NULL DEFAULT 0;
+
+-- ---------------------------------------------------------------------------
+-- Driver preferences (A04.2), additive and idempotent.
+--
+-- A driver's marketplace preferences in one city, versioned and append-only
+-- exactly like mp.rate_profiles (the per-km rate and the minimum trip FARE
+-- stay there, per service/vehicle class). A PATCH writes the next version;
+-- the UNIQUE (driver_id, city_id, version) key is the optimistic-concurrency
+-- authority, so two PATCHes against the same version cannot both land.
+--
+-- Preferences FILTER and RANK the driver's feed and pre-fill suggested offers.
+-- They are never eligibility (EvaluateEligibility does not read this table)
+-- and nothing reads them to place a bid: manual stationary bidding stays the
+-- only way an offer exists.
+--
+--   * min_trip_amount_minor: hide requests whose MAXIMUM fare cannot reach it
+--     (NULL = no minimum). Integer minor units in `currency` (the city's).
+--   * max_pickup_distance_m: hide requests whose pickup is farther (NULL = the
+--     request's own search envelope decides; a preference never widens it).
+--   * accepts_deliveries / accepts_stops / max_stops: multi-stop and delivery
+--     willingness (max_stops NULL = the market's limit).
+--   * homeward: {lat, lng, radiusMeters, label} — the driver's OWN return
+--     area (NULL = none); homeward_only hides everything not ending there.
+--     Matching uses the dropoff's coarse area cell, never its coordinate.
+--   * availability: [{day, startMinute, endMinute}] in the city's local
+--     time. Filters advance-booking cards in the feed (A03) — never
+--     eligibility.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.driver_preferences (
+    id                     uuid PRIMARY KEY,
+    driver_id              uuid NOT NULL,
+    city_id                text NOT NULL,
+    version                integer NOT NULL,
+    currency               text NOT NULL,
+    min_trip_amount_minor  bigint,
+    max_pickup_distance_m  integer,
+    accepts_deliveries     boolean NOT NULL DEFAULT true,
+    accepts_stops          boolean NOT NULL DEFAULT true,
+    max_stops              integer,
+    homeward               jsonb,
+    homeward_only          boolean NOT NULL DEFAULT false,
+    availability           jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_at             timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT driver_preferences_version_key UNIQUE (driver_id, city_id, version),
+    CONSTRAINT driver_preferences_min_trip_positive CHECK (min_trip_amount_minor IS NULL OR min_trip_amount_minor > 0),
+    CONSTRAINT driver_preferences_pickup_positive CHECK (max_pickup_distance_m IS NULL OR max_pickup_distance_m > 0),
+    CONSTRAINT driver_preferences_stops_nonnegative CHECK (max_stops IS NULL OR max_stops >= 0)
+);
+
+-- ---------------------------------------------------------------------------
+-- Post-award trip amendments + server-authoritative stop events (A02 items
+-- 4-7), additive and idempotent.
+--
+--   * execution_routes is the COMMITTED terms of one awarded execution: the
+--     route (pickup, ordered stops, dropoff) and route revision, the agreed
+--     fare and fare revision, the commission captured so far, what the
+--     rider's funding covers, and the award's pricing snapshot (the city
+--     config version its quote was priced under — deltas are priced under it,
+--     never under today's policy) and paid-waiting terms. Created lazily from
+--     the award on first use, so an award that never amends or reports a stop
+--     reads exactly as before. The original agreement stays in force until an
+--     amendment COMMITS; only committed adjustments ever change this row.
+--   * execution_stops is each stop's server-authoritative state: arrival
+--     (geofenced, disputed when outside the fence), the paid-waiting clock
+--     (started only by a confirmed arrival), departure/skip, and the waiting
+--     fee finalised at departure and settled through the amendment path.
+--   * amendments is the mpAmendment aggregate; `money_open` is true while
+--     payment-service may hold anything for it (a reserved increment or
+--     top-up, a commit in flight, a compensation or release owed), and the
+--     partial unique index is the database refusing a second amendment with
+--     open money per award — payment-service's own one-open rule, mirrored.
+--   * amendment_history is append-only (an UPDATE is refused by trigger):
+--     every transition and approval, with the revisions it was bound to.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.execution_routes (
+    award_id                  uuid PRIMARY KEY REFERENCES mp.awards (id),
+    request_id                uuid NOT NULL,
+    execution_id              uuid NOT NULL,
+    requester_id              uuid NOT NULL,
+    driver_id                 uuid NOT NULL,
+    city_id                   text NOT NULL,
+    service                   text NOT NULL,
+    vehicle_class             text NOT NULL,
+    currency                  text NOT NULL,
+    payment_method_id         text NOT NULL,
+    reservation_id            text NOT NULL,
+    config_version            integer NOT NULL,
+    policy_version            integer NOT NULL,
+    route_revision            integer NOT NULL DEFAULT 1,
+    fare_revision             integer NOT NULL DEFAULT 1,
+    original_fare_minor       bigint NOT NULL,
+    agreed_fare_minor         bigint NOT NULL,
+    captured_commission_minor bigint NOT NULL,
+    funded_minor              bigint NOT NULL,
+    pickup                    jsonb NOT NULL,
+    dropoff                   jsonb NOT NULL,
+    stops                     jsonb NOT NULL DEFAULT '[]'::jsonb,
+    waiting_terms             jsonb NOT NULL,
+    waiting_cap_minor         bigint NOT NULL DEFAULT 0,
+    cap_revision              integer NOT NULL DEFAULT 1,
+    waiting_committed_minor   bigint NOT NULL DEFAULT 0,
+    terminated_at             timestamptz,
+    version                   integer NOT NULL DEFAULT 1,
+    created_at                timestamptz NOT NULL DEFAULT now(),
+    updated_at                timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT execution_routes_money_nonnegative CHECK (
+        agreed_fare_minor > 0 AND captured_commission_minor >= 0 AND funded_minor >= 0
+        AND waiting_cap_minor >= 0 AND waiting_committed_minor >= 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS execution_routes_execution_uniq
+    ON mp.execution_routes (execution_id);
+
+CREATE TABLE IF NOT EXISTS mp.execution_stops (
+    award_id              uuid NOT NULL REFERENCES mp.execution_routes (award_id) ON DELETE CASCADE,
+    stop_id               uuid NOT NULL,
+    execution_id          uuid NOT NULL,
+    stop_order            integer NOT NULL,
+    state                 text NOT NULL, -- pending | arrived | departed | skipped | removed
+    lat                   double precision NOT NULL,
+    lng                   double precision NOT NULL,
+    label                 text NOT NULL DEFAULT '',
+    purpose               text NOT NULL,
+    dwell_sec             integer NOT NULL,
+    arrived_at            timestamptz,
+    arrival_distance_m    integer,
+    arrival_accuracy_m    double precision,
+    arrival_disputed      boolean NOT NULL DEFAULT false,
+    wait_started_at       timestamptz,
+    departed_at           timestamptz,
+    skipped_at            timestamptz,
+    skip_reason           text,
+    waiting_fee_minor     bigint NOT NULL DEFAULT 0,
+    waiting_settlement    text NOT NULL DEFAULT 'none', -- none | pending | committed | failed
+    waiting_amendment_id  uuid,
+    version               integer NOT NULL DEFAULT 1,
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    updated_at            timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (award_id, stop_id),
+    CONSTRAINT execution_stops_fee_nonnegative CHECK (waiting_fee_minor >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS mp_execution_stops_waiting_idx
+    ON mp.execution_stops (state, waiting_settlement);
+
+CREATE TABLE IF NOT EXISTS mp.amendments (
+    id                       uuid PRIMARY KEY,
+    award_id                 uuid NOT NULL REFERENCES mp.execution_routes (award_id),
+    request_id               uuid NOT NULL,
+    execution_id             uuid NOT NULL,
+    city_id                  text NOT NULL,
+    kind                     text NOT NULL, -- route | stop_waiting | early_termination
+    state                    text NOT NULL,
+    proposed_by              text NOT NULL,
+    proposed_by_role         text NOT NULL,
+    base_route_revision      integer NOT NULL,
+    base_fare_revision       integer NOT NULL,
+    route_revision           integer NOT NULL,
+    fare_revision            integer NOT NULL,
+    stops                    jsonb NOT NULL DEFAULT '[]'::jsonb,
+    dropoff                  jsonb NOT NULL,
+    currency                 text NOT NULL,
+    prior_fare_minor         bigint NOT NULL,
+    revised_fare_minor       bigint NOT NULL,
+    prior_commission_minor   bigint NOT NULL,
+    revised_commission_minor bigint NOT NULL,
+    prior_funded_minor       bigint NOT NULL,
+    revised_funded_minor     bigint NOT NULL,
+    added_distance_m         bigint NOT NULL DEFAULT 0,
+    added_duration_sec       bigint NOT NULL DEFAULT 0,
+    pricing                  jsonb NOT NULL DEFAULT '{}'::jsonb,
+    reference_stop_id        uuid,
+    rider_approved_at        timestamptz,
+    driver_approved_at       timestamptz,
+    expires_at               timestamptz NOT NULL,
+    step                     text NOT NULL,
+    step_state               text NOT NULL,
+    attempts                 integer NOT NULL DEFAULT 0,
+    last_error               text,
+    next_retry_at            timestamptz,
+    funding_done             boolean NOT NULL DEFAULT false,
+    commission_done          boolean NOT NULL DEFAULT false,
+    money_open               boolean NOT NULL DEFAULT true,
+    reason                   text,
+    version                  integer NOT NULL DEFAULT 1,
+    created_at               timestamptz NOT NULL DEFAULT now(),
+    updated_at               timestamptz NOT NULL DEFAULT now(),
+    resolved_at              timestamptz,
+    CONSTRAINT amendments_money_positive CHECK (revised_fare_minor > 0 AND prior_fare_minor > 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS amendments_one_open_per_award
+    ON mp.amendments (award_id) WHERE money_open;
+CREATE INDEX IF NOT EXISTS mp_amendments_award_idx
+    ON mp.amendments (award_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS mp_amendments_due_idx
+    ON mp.amendments (next_retry_at) WHERE money_open;
+
+CREATE TABLE IF NOT EXISTS mp.amendment_history (
+    id              bigserial PRIMARY KEY,
+    amendment_id    uuid NOT NULL REFERENCES mp.amendments (id) ON DELETE CASCADE,
+    award_id        uuid NOT NULL,
+    event           text NOT NULL,
+    from_state      text,
+    to_state        text NOT NULL,
+    actor_role      text NOT NULL,
+    actor_id        text NOT NULL,
+    route_revision  integer NOT NULL,
+    fare_revision   integer NOT NULL,
+    detail          jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS mp_amendment_history_amendment_idx
+    ON mp.amendment_history (amendment_id, id);
+
+CREATE OR REPLACE FUNCTION mp.refuse_history_update() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'mp.amendment_history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS amendment_history_append_only ON mp.amendment_history;
+CREATE TRIGGER amendment_history_append_only
+    BEFORE UPDATE ON mp.amendment_history
+    FOR EACH ROW EXECUTE FUNCTION mp.refuse_history_update();
+
+-- ---------------------------------------------------------------------------
+-- Book for Later (A03), additive and idempotent. Two explicitly different
+-- products plus recurring templates — and a naming rule: "reservation" in
+-- this schema already means the WALLET funding/commission reservation
+-- (mp.reservation_recovery), so the new concepts are named distinctly.
+--
+--   * scheduled_requests is a STORED INTENT that no driver is committed to:
+--     pickup as a local date + local time + IANA timezone, the resolved UTC
+--     instant and the DST resolution applied, a pickup window, the rider's
+--     approved maximum fare and the route (stops included). A durable worker
+--     publishes it as an ordinary mp.requests row at publish_at (the market's
+--     lead time), refreshing routing, bounds and funding; terms outside the
+--     approval park it in needs_rider_approval instead. It is ALSO the
+--     occurrence row of a recurring template: (template_id, occurrence_date)
+--     is unique, so a replayed generation can never create a duplicate.
+--   * recurring_templates is the series, stored apart from its occurrences.
+--   * advance_bookings is the BOOKING CALENDAR of advance driver
+--     reservations — separate from mp.driver_claims (the live current/next
+--     slots), which a booking only enters at activation near pickup. Each
+--     booking occupies [window_start − pre buffer, window_end + routed trip +
+--     post buffer); btree_gist exclusion constraints refuse two committed
+--     bookings of one driver (and, once the fleet slice supplies vehicle
+--     identity, of one vehicle) whose intervals overlap, whatever the app
+--     races. The travel time between consecutive bookings is checked on top,
+--     under a per-driver transaction lock.
+--   * requests gain the booking kind (immediate | scheduled | advance), the
+--     pickup window and the resolved schedule of a future pickup.
+-- ---------------------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS booking_kind text NOT NULL DEFAULT 'immediate';
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS pickup_window_start timestamptz;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS pickup_window_end timestamptz;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS pickup_schedule jsonb;
+ALTER TABLE mp.requests ADD COLUMN IF NOT EXISTS scheduled_request_id uuid;
+
+CREATE INDEX IF NOT EXISTS mp_requests_booking_kind_idx
+    ON mp.requests (booking_kind, state) WHERE booking_kind <> 'immediate';
+
+CREATE TABLE IF NOT EXISTS mp.recurring_templates (
+    id                 uuid PRIMARY KEY,
+    requester_id       uuid NOT NULL,
+    city_id            text NOT NULL,
+    product            text NOT NULL,
+    service            text NOT NULL,
+    vehicle_class      text NOT NULL,
+    currency           text NOT NULL,
+    state              text NOT NULL,
+    version            integer NOT NULL DEFAULT 1,
+    pickup             jsonb NOT NULL,
+    dropoff            jsonb NOT NULL,
+    stops              jsonb NOT NULL DEFAULT '[]'::jsonb,
+    payment_method_id  text NOT NULL,
+    requested_minor    bigint NOT NULL,
+    max_fare_minor     bigint NOT NULL,
+    days_of_week       text[] NOT NULL,
+    local_time         text NOT NULL,
+    time_zone          text NOT NULL,
+    window_sec         integer NOT NULL,
+    dst_disambiguation text NOT NULL,
+    starts_on          date NOT NULL,
+    ends_on            date,
+    generated_through  date,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT recurring_templates_product CHECK (product IN ('scheduled_request', 'advance_reservation')),
+    CONSTRAINT recurring_templates_money CHECK (requested_minor > 0 AND max_fare_minor >= requested_minor),
+    CONSTRAINT recurring_templates_days CHECK (cardinality(days_of_week) BETWEEN 1 AND 7),
+    CONSTRAINT recurring_templates_series CHECK (ends_on IS NULL OR ends_on >= starts_on)
+);
+
+CREATE INDEX IF NOT EXISTS mp_recurring_templates_active_idx
+    ON mp.recurring_templates (state, generated_through) WHERE state = 'active';
+CREATE INDEX IF NOT EXISTS mp_recurring_templates_requester_idx
+    ON mp.recurring_templates (requester_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS mp.scheduled_requests (
+    id                 uuid PRIMARY KEY,
+    product            text NOT NULL,
+    requester_id       uuid NOT NULL,
+    city_id            text NOT NULL,
+    service            text NOT NULL,
+    vehicle_class      text NOT NULL,
+    currency           text NOT NULL,
+    state              text NOT NULL,
+    version            integer NOT NULL DEFAULT 1,
+    pickup             jsonb NOT NULL,
+    dropoff            jsonb NOT NULL,
+    stops              jsonb NOT NULL DEFAULT '[]'::jsonb,
+    payment_method_id  text NOT NULL,
+    requested_minor    bigint NOT NULL,
+    max_fare_minor     bigint NOT NULL,
+    local_date         date NOT NULL,
+    local_time         text NOT NULL,
+    time_zone          text NOT NULL,
+    utc_offset_sec     integer NOT NULL,
+    dst_resolution     text NOT NULL,
+    window_sec         integer NOT NULL,
+    pickup_at          timestamptz NOT NULL,
+    window_end         timestamptz NOT NULL,
+    publish_at         timestamptz NOT NULL,
+    template_id        uuid REFERENCES mp.recurring_templates (id),
+    occurrence_date    date,
+    request_id         uuid,
+    approval           jsonb,
+    reminders_sent     integer[] NOT NULL DEFAULT '{}',
+    attempts           integer NOT NULL DEFAULT 0,
+    next_attempt_at    timestamptz,
+    last_error         text,
+    close_reason       text,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT scheduled_requests_product CHECK (product IN ('scheduled_request', 'advance_reservation')),
+    CONSTRAINT scheduled_requests_money CHECK (requested_minor > 0 AND max_fare_minor >= requested_minor),
+    CONSTRAINT scheduled_requests_window CHECK (window_end > pickup_at),
+    CONSTRAINT scheduled_requests_occurrence CHECK ((template_id IS NULL) = (occurrence_date IS NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS scheduled_requests_one_per_occurrence
+    ON mp.scheduled_requests (template_id, occurrence_date) WHERE template_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS scheduled_requests_one_per_request
+    ON mp.scheduled_requests (request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS mp_scheduled_requests_due_idx
+    ON mp.scheduled_requests (state, publish_at);
+CREATE INDEX IF NOT EXISTS mp_scheduled_requests_requester_idx
+    ON mp.scheduled_requests (requester_id, pickup_at);
+
+CREATE TABLE IF NOT EXISTS mp.advance_bookings (
+    id                     uuid PRIMARY KEY,
+    award_id               uuid NOT NULL REFERENCES mp.awards (id),
+    request_id             uuid NOT NULL REFERENCES mp.requests (id),
+    bid_id                 uuid NOT NULL,
+    driver_id              uuid NOT NULL,
+    requester_id           uuid NOT NULL,
+    -- NULL until the fleet slice (A05) supplies a vehicle identity for the
+    -- driver; the vehicle exclusion constraint applies once it is set.
+    vehicle_id             text,
+    city_id                text NOT NULL,
+    state                  text NOT NULL,
+    version                integer NOT NULL DEFAULT 1,
+    funding_state          text NOT NULL DEFAULT 'pending',
+    payment_method_id      text NOT NULL,
+    currency               text NOT NULL,
+    fare_minor             bigint NOT NULL,
+    commission_minor       bigint NOT NULL,
+    window_start           timestamptz NOT NULL,
+    window_end             timestamptz NOT NULL,
+    trip_duration_sec      bigint NOT NULL,
+    occupied               tstzrange NOT NULL,
+    pickup                 jsonb NOT NULL,
+    dropoff                jsonb NOT NULL,
+    funding_due_at         timestamptz NOT NULL,
+    funding_deadline       timestamptz NOT NULL,
+    reconfirm_opens_at     timestamptz NOT NULL,
+    reconfirm_deadline     timestamptz NOT NULL,
+    activation_at          timestamptz NOT NULL,
+    activation_deadline    timestamptz NOT NULL,
+    reconfirm_requested_at timestamptz,
+    reconfirmed_at         timestamptz,
+    activated_at           timestamptz,
+    activated_slot         text,
+    claim_id               uuid,
+    reminders_sent         integer[] NOT NULL DEFAULT '{}',
+    failure                jsonb,
+    rematch_request_id     uuid,
+    attempts               integer NOT NULL DEFAULT 0,
+    next_attempt_at        timestamptz,
+    last_error             text,
+    created_at             timestamptz NOT NULL DEFAULT now(),
+    updated_at             timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT advance_bookings_award_uniq UNIQUE (award_id),
+    CONSTRAINT advance_bookings_window CHECK (window_end > window_start AND NOT isempty(occupied)),
+    CONSTRAINT advance_bookings_money CHECK (fare_minor > 0 AND commission_minor >= 0),
+    CONSTRAINT advance_bookings_no_overlap EXCLUDE USING gist (driver_id WITH =, occupied WITH &&)
+        WHERE (state IN ('held', 'payment_pending', 'confirmed', 'reconfirmed', 'activated')),
+    CONSTRAINT advance_bookings_vehicle_no_overlap EXCLUDE USING gist (vehicle_id WITH =, occupied WITH &&)
+        WHERE (vehicle_id IS NOT NULL AND state IN ('held', 'payment_pending', 'confirmed', 'reconfirmed', 'activated'))
+);
+
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_driver_idx
+    ON mp.advance_bookings (driver_id, window_start);
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_requester_idx
+    ON mp.advance_bookings (requester_id, window_start);
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_due_idx
+    ON mp.advance_bookings (state, window_start);
+
+-- ---------------------------------------------------------------------------
+-- Rider confidence (A04 item 3, A06 parts A and D), additive and idempotent.
+--
+--   * bid_pickup_estimates is the server's pickup ESTIMATE behind one bid,
+--     copied from the authoritative eligibility evaluation the bid passed
+--     (routed leg, or the finishing-trip prediction) and stamped with when it
+--     was made — the rider's offer comparison shows it labelled as an
+--     estimate, with its age, never as a promise.
+--   * favourite_drivers is a rider's saved drivers: one row per rider and
+--     driver, saved only from a completed marketplace trip the rider took
+--     with that driver (source_award_id), removable at any time.
+--   * preferred_requests is the mpPreferredWindow aggregate of a request
+--     that names a saved driver: the bounded exclusive window, the rider's
+--     explicit fallback consent captured at request time, a free decline and
+--     the resolution (market_open / closed). Only an OPEN request is governed
+--     by it; bidding still goes through the ordinary funded-bid path.
+--   * request_service_needs holds a request's concrete service requirements
+--     (matched against VERIFIED capability only) apart from its soft
+--     preferences (ranking only). Codes only — never free text about a
+--     rider's health.
+--   * driver_preferences.accepts_preferred_requests is the driver's opt-in to
+--     being named on a preferred request; off unless the driver turns it on.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.bid_pickup_estimates (
+    bid_id         uuid PRIMARY KEY REFERENCES mp.bids (id) ON DELETE CASCADE,
+    predicted_sec  integer NOT NULL,
+    basis          text NOT NULL,
+    distance_m     integer,
+    estimated_at   timestamptz NOT NULL,
+    CONSTRAINT bid_pickup_estimates_nonnegative CHECK (predicted_sec >= 0 AND (distance_m IS NULL OR distance_m >= 0))
+);
+
+CREATE TABLE IF NOT EXISTS mp.favourite_drivers (
+    id               uuid PRIMARY KEY,
+    rider_id         uuid NOT NULL,
+    driver_id        uuid NOT NULL,
+    city_id          text NOT NULL,
+    source_award_id  uuid NOT NULL,
+    state            text NOT NULL,
+    version          integer NOT NULL DEFAULT 1,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    removed_at       timestamptz,
+    CONSTRAINT favourite_drivers_pair_key UNIQUE (rider_id, driver_id),
+    CONSTRAINT favourite_drivers_not_self CHECK (rider_id <> driver_id),
+    CONSTRAINT favourite_drivers_state_check CHECK (state IN ('active', 'removed'))
+);
+
+CREATE INDEX IF NOT EXISTS mp_favourite_drivers_rider_idx
+    ON mp.favourite_drivers (rider_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS mp.preferred_requests (
+    request_id          uuid PRIMARY KEY REFERENCES mp.requests (id) ON DELETE CASCADE,
+    driver_id           uuid NOT NULL,
+    requester_id        uuid NOT NULL,
+    city_id             text NOT NULL,
+    state               text NOT NULL,
+    fallback_to_market  boolean NOT NULL,
+    window_sec          integer NOT NULL,
+    window_ends_at      timestamptz NOT NULL,
+    declined_at         timestamptz,
+    resolved_at         timestamptz,
+    resolution          text,
+    version             integer NOT NULL DEFAULT 1,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT preferred_requests_state_check CHECK (state IN ('exclusive', 'market_open', 'closed')),
+    CONSTRAINT preferred_requests_window_positive CHECK (window_sec > 0),
+    CONSTRAINT preferred_requests_not_self CHECK (driver_id <> requester_id)
+);
+
+CREATE INDEX IF NOT EXISTS mp_preferred_requests_due_idx
+    ON mp.preferred_requests (window_ends_at) WHERE state = 'exclusive';
+CREATE INDEX IF NOT EXISTS mp_preferred_requests_driver_idx
+    ON mp.preferred_requests (driver_id) WHERE state = 'exclusive';
+
+CREATE TABLE IF NOT EXISTS mp.request_service_needs (
+    request_id    uuid PRIMARY KEY REFERENCES mp.requests (id) ON DELETE CASCADE,
+    requirements  jsonb NOT NULL DEFAULT '[]'::jsonb,
+    preferences   jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE mp.driver_preferences ADD COLUMN IF NOT EXISTS accepts_preferred_requests boolean NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------------
+-- Round 6: follow-ups and book-for-another-adult (A06 part B), additive and
+-- idempotent.
+--
+--   * execution_routes.routed_distance_m is the COMMITTED route's routed
+--     distance: the award's when the terms are first written, replaced by the
+--     proposed route's measurement when a committed amendment changes the
+--     route. NULL on rows written before the column existed.
+--   * delivery_handoffs is the durable record of the award saga's
+--     delivery-service hand-off (step `delivery_handoff` in award_attempts):
+--     what was sent, every attempt's answer and — once delivery-service
+--     answered 201/200 — the delivery the award now executes as. One row per
+--     award; the delivery id is unique across awards.
+--   * request_passengers separates the PASSENGER from the requester (who is
+--     also the payer in this slice) on a marketplace ride request: a named
+--     adult, with the requester's attestation that they are an adult and
+--     agreed to be booked for. The CHECK makes an unattested row impossible.
+--   * trip_access_tokens are the passenger's scoped trip links: an opaque
+--     random token stored ONLY as its SHA-256, bound to one request, expiring
+--     and revocable; at most one live (unrevoked) token per request.
+-- ---------------------------------------------------------------------------
+ALTER TABLE mp.execution_routes ADD COLUMN IF NOT EXISTS routed_distance_m bigint;
+
+CREATE TABLE IF NOT EXISTS mp.delivery_handoffs (
+    award_id        uuid PRIMARY KEY REFERENCES mp.awards (id) ON DELETE CASCADE,
+    request_id      uuid NOT NULL,
+    requester_id    uuid NOT NULL,
+    driver_id       uuid NOT NULL,
+    city_id         text NOT NULL,
+    fencing_token   bigint NOT NULL,
+    fare_minor      bigint NOT NULL,
+    currency        text NOT NULL,
+    state           text NOT NULL,
+    delivery_id     uuid,
+    tracking_number text,
+    attempts        integer NOT NULL DEFAULT 0,
+    last_status     integer,
+    last_code       text,
+    last_error      text,
+    delivered_at    timestamptz,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT delivery_handoffs_delivered_has_delivery CHECK (state <> 'delivered' OR delivery_id IS NOT NULL),
+    CONSTRAINT delivery_handoffs_fare_positive CHECK (fare_minor > 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS delivery_handoffs_delivery_uniq
+    ON mp.delivery_handoffs (delivery_id) WHERE delivery_id IS NOT NULL;
+
+-- unresolved_sends counts the hand-off requests put on the wire (written
+-- BEFORE each call, under the row lock) whose outcome is not a definite
+-- "nothing was created" answer. While it is above zero delivery-service may
+-- already hold the award's delivery, so the step only reconciles through the
+-- idempotent re-send — it never compensates on the flag alone.
+ALTER TABLE mp.delivery_handoffs ADD COLUMN IF NOT EXISTS unresolved_sends integer NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS mp.request_passengers (
+    request_id        uuid PRIMARY KEY REFERENCES mp.requests (id) ON DELETE CASCADE,
+    requester_id      uuid NOT NULL,
+    payer_id          uuid NOT NULL,
+    city_id           text NOT NULL,
+    first_name        text NOT NULL,
+    last_name         text,
+    phone_e164        text NOT NULL,
+    attested_adult    boolean NOT NULL,
+    attested_consent  boolean NOT NULL,
+    attested_at       timestamptz NOT NULL,
+    declined_at       timestamptz,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT request_passengers_attested CHECK (attested_adult AND attested_consent)
+);
+
+CREATE INDEX IF NOT EXISTS mp_request_passengers_requester_idx
+    ON mp.request_passengers (requester_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS mp.trip_access_tokens (
+    id             uuid PRIMARY KEY,
+    request_id     uuid NOT NULL REFERENCES mp.request_passengers (request_id) ON DELETE CASCADE,
+    token_hash     text NOT NULL,
+    scope          text NOT NULL,
+    expires_at     timestamptz NOT NULL,
+    revoked_at     timestamptz,
+    revoked_by     text,
+    revoke_reason  text,
+    last_used_at   timestamptz,
+    created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS trip_access_tokens_hash_uniq
+    ON mp.trip_access_tokens (token_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS trip_access_tokens_one_live_per_request
+    ON mp.trip_access_tokens (request_id) WHERE revoked_at IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- A06 part C — business marketplace rides (business_travel, deny-by-default).
+--
+--   * request_business records the business terms a request was published
+--     under: the ORGANIZATION pays (its prefunded budget in payment-service),
+--     the authenticated requester is the BOOKER, the traveller is the
+--     passenger (an active member; when not the booker, also the request's
+--     guest passenger). No rider funding is ever authorized for such a
+--     request (its payment method is `business`).
+--   * business_bookings is one AWARD's budget funding, machine
+--     mpBusinessBooking (reserving → reserved | refused; reserved →
+--     committed | released), keyed by booking_ref = the award id. The row is
+--     written in the selection's transaction; the award saga's funding step
+--     reserves the AGREED FARE (never the driver's commission). owed_op is
+--     the durable intent of the one terminal op (commit at completion,
+--     release on cancel/compensation), written in the same transaction as
+--     the trip event that decides it and driven until payment-service
+--     answers. The CHECKs make an owed op on a terminal booking, and a
+--     commit above the reservation, impossible.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.request_business (
+    request_id              uuid PRIMARY KEY REFERENCES mp.requests (id) ON DELETE CASCADE,
+    organization_id         text NOT NULL,
+    cost_centre_id          text,
+    expense_category        text,
+    booker_id               uuid NOT NULL,
+    traveller_id            uuid NOT NULL,
+    city_id                 text NOT NULL,
+    policy_version          integer,
+    checked_cost_centre_id  text,
+    created_at              timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mp.business_bookings (
+    award_id          uuid PRIMARY KEY REFERENCES mp.awards (id) ON DELETE CASCADE,
+    request_id        uuid NOT NULL REFERENCES mp.requests (id) ON DELETE CASCADE,
+    booking_ref       text NOT NULL,
+    organization_id   text NOT NULL,
+    cost_centre_id    text,
+    expense_category  text,
+    booker_id         uuid NOT NULL,
+    traveller_id      uuid NOT NULL,
+    city_id           text NOT NULL,
+    service           text NOT NULL,
+    vehicle_class     text NOT NULL,
+    currency          text NOT NULL,
+    reserved_minor    bigint NOT NULL,
+    state             text NOT NULL,
+    version           integer NOT NULL DEFAULT 1,
+    reservation_id    text,
+    budget_id         text,
+    policy_version    integer,
+    refusal_reason    text,
+    owed_op           text,
+    release_party     text,
+    release_user_id   uuid,
+    release_reason    text,
+    committed_minor   bigint,
+    commit_entry_id   text,
+    taxes             jsonb,
+    billing           jsonb,
+    attempts          integer NOT NULL DEFAULT 0,
+    next_attempt_at   timestamptz,
+    last_error        text,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    updated_at        timestamptz NOT NULL DEFAULT now(),
+    resolved_at       timestamptz,
+    CONSTRAINT business_bookings_state CHECK (state IN ('reserving', 'reserved', 'refused', 'committed', 'released')),
+    CONSTRAINT business_bookings_owed_op CHECK (owed_op IS NULL OR owed_op IN ('commit', 'release')),
+    CONSTRAINT business_bookings_owed_only_while_open CHECK (owed_op IS NULL OR state IN ('reserving', 'reserved')),
+    CONSTRAINT business_bookings_reserved_positive CHECK (reserved_minor > 0),
+    CONSTRAINT business_bookings_committed_has_amount CHECK (state <> 'committed' OR committed_minor IS NOT NULL),
+    CONSTRAINT business_bookings_commit_within_reservation CHECK (committed_minor IS NULL OR (committed_minor > 0 AND committed_minor <= reserved_minor))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS business_bookings_ref_uniq ON mp.business_bookings (booking_ref);
+CREATE INDEX IF NOT EXISTS mp_business_bookings_owed_idx
+    ON mp.business_bookings (next_attempt_at) WHERE owed_op IS NOT NULL;
+CREATE INDEX IF NOT EXISTS mp_business_bookings_request_idx ON mp.business_bookings (request_id);
+
+-- ---------------------------------------------------------------------------
+-- Queued delivery cancellation compensation: a queued service=delivery award
+-- already handed off to delivery-service owes delivery-service a cancellation
+-- when the award is later cancelled (missed window, driver failure, a
+-- decline). The intent is written in the award-cancelling transaction and
+-- driven until delivery-service answers definitely — never an orphan
+-- delivery, never silently dropped.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.delivery_cancellations (
+    award_id         uuid PRIMARY KEY REFERENCES mp.awards (id) ON DELETE CASCADE,
+    delivery_id      uuid NOT NULL,
+    fencing_token    bigint NOT NULL,
+    reason           text NOT NULL,
+    state            text NOT NULL,
+    attempts         integer NOT NULL DEFAULT 0,
+    last_status      integer,
+    last_code        text,
+    last_error       text,
+    next_attempt_at  timestamptz,
+    resolved_at      timestamptz,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT delivery_cancellations_state CHECK (state IN ('pending', 'cancelled', 'refused'))
+);
+
+CREATE INDEX IF NOT EXISTS mp_delivery_cancellations_due_idx
+    ON mp.delivery_cancellations (next_attempt_at) WHERE state = 'pending';
+
+-- ---------------------------------------------------------------------------
+-- Fleet availability calendar (A05: handoff FL-2, FL-4, FL-6, FL-8;
+-- docs/design/FLEET_CALENDAR_DECISIONS.md corrections 1-4), additive and
+-- idempotent.
+--
+--   * vehicle_occupancy is the ONE shared vehicle occupancy ledger
+--     (correction 3: Postgres cannot enforce one exclusion constraint across
+--     fleet-side maintenance blocks and ride-side bookings, so both are
+--     written here). kind booking — an advance booking that carries a
+--     vehicle, written in the SAME transaction as the booking and released
+--     with it; maintenance — a fleet's planned service, inspection or repair
+--     block (fleet-service's block id is the source id); off_road — an
+--     unplanned breakdown report. The exclusion constraint covers active
+--     booking + maintenance rows, so planned maintenance can never be held
+--     over a booking (nor a booking over maintenance), whatever races.
+--     off_road rows are OUTSIDE the constraint by design: a breakdown is
+--     never refused — it moves overlapping bookings to at_risk instead.
+--     advance_bookings keeps its own per-driver and per-vehicle exclusions.
+--   * advance_bookings gains its fleet columns: block_id (the OPAQUE id a
+--     fleet sees on an OccupiedBlock — never the booking id), where its
+--     vehicle came from (vehicle_source: fleet_assignment | swap) and how the
+--     award resolved it (vehicle_resolution: not_applicable while the fleet
+--     flag is off; resolved; pending while fleet-service could not answer —
+--     retried by the sweep, never blocking the award), the booked vehicle's
+--     class and capacity (what a swap must match), the revalidation schedule,
+--     the risk overlay (mpBookingRisk: ok | at_risk | lapsed, with its
+--     decision deadline) and the rider's "cancel and release" on a failed
+--     booking.
+--   * booking_risk_blockers are WHY a booking is at risk: one open row per
+--     (booking, kind, source). The booking is at_risk exactly while one is
+--     open; each clears on its own (the block released, a document renewed,
+--     an assignment covering the booking again, an applied swap).
+--   * booking_vehicle_swaps is a fleet's proposal to move a booking to
+--     another vehicle (mpVehicleSwap): driver decision, server revalidation,
+--     rider consent, applied — at most one live per booking.
+--   * offroad_use_flags records every time a vehicle reported off-road went
+--     online or started a trip during the claimed breakdown (correction 4),
+--     once per occurrence; each row also writes an ops event and an audit row.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mp.vehicle_occupancy (
+    id               uuid PRIMARY KEY,
+    kind             text NOT NULL,
+    source_id        text NOT NULL,
+    vehicle_id       text NOT NULL,
+    driver_id        uuid,
+    occupied         tstzrange NOT NULL,
+    state            text NOT NULL DEFAULT 'active',
+    maintenance_kind text,
+    version          integer NOT NULL DEFAULT 1,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    released_at      timestamptz,
+    release_reason   text,
+    CONSTRAINT vehicle_occupancy_kind CHECK (kind IN ('booking', 'maintenance', 'off_road')),
+    CONSTRAINT vehicle_occupancy_state CHECK (state IN ('active', 'released')),
+    CONSTRAINT vehicle_occupancy_maintenance_kind CHECK (
+        (kind = 'maintenance') = (maintenance_kind IS NOT NULL)
+        AND (maintenance_kind IS NULL OR maintenance_kind IN ('planned_service', 'inspection', 'repair'))),
+    CONSTRAINT vehicle_occupancy_booking_driver CHECK (kind <> 'booking' OR driver_id IS NOT NULL),
+    CONSTRAINT vehicle_occupancy_interval CHECK (NOT isempty(occupied) AND NOT lower_inf(occupied)),
+    CONSTRAINT vehicle_occupancy_bounded CHECK (kind = 'off_road' OR NOT upper_inf(occupied)),
+    CONSTRAINT vehicle_occupancy_source_uniq UNIQUE (kind, source_id),
+    CONSTRAINT vehicle_occupancy_no_overlap EXCLUDE USING gist (vehicle_id WITH =, occupied WITH &&)
+        WHERE (state = 'active' AND kind IN ('booking', 'maintenance'))
+);
+
+CREATE INDEX IF NOT EXISTS mp_vehicle_occupancy_vehicle_idx
+    ON mp.vehicle_occupancy USING gist (vehicle_id, occupied) WHERE state = 'active';
+CREATE INDEX IF NOT EXISTS mp_vehicle_occupancy_offroad_idx
+    ON mp.vehicle_occupancy (vehicle_id) WHERE kind = 'off_road' AND state = 'active';
+CREATE INDEX IF NOT EXISTS mp_vehicle_occupancy_source_idx
+    ON mp.vehicle_occupancy (source_id);
+
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS block_id uuid;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_source text;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_resolution text NOT NULL DEFAULT 'not_applicable';
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_class text;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_capacity integer;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS vehicle_checked_at timestamptz;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS next_vehicle_check_at timestamptz;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS risk text NOT NULL DEFAULT 'ok';
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS risk_deadline timestamptz;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS risk_since timestamptz;
+ALTER TABLE mp.advance_bookings ADD COLUMN IF NOT EXISTS rematch_declined_at timestamptz;
+UPDATE mp.advance_bookings SET block_id = gen_random_uuid() WHERE block_id IS NULL;
+ALTER TABLE mp.advance_bookings ALTER COLUMN block_id SET DEFAULT gen_random_uuid();
+ALTER TABLE mp.advance_bookings ALTER COLUMN block_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS advance_bookings_block_id_uniq ON mp.advance_bookings (block_id);
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_vehicle_idx
+    ON mp.advance_bookings (vehicle_id, window_start) WHERE vehicle_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_risk_idx
+    ON mp.advance_bookings (risk_deadline) WHERE risk = 'at_risk';
+CREATE INDEX IF NOT EXISTS mp_advance_bookings_vehicle_check_idx
+    ON mp.advance_bookings (next_vehicle_check_at) WHERE next_vehicle_check_at IS NOT NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'advance_bookings_risk_state') THEN
+        ALTER TABLE mp.advance_bookings ADD CONSTRAINT advance_bookings_risk_state
+            CHECK (risk IN ('ok', 'at_risk', 'lapsed') AND (risk <> 'at_risk' OR risk_deadline IS NOT NULL));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'advance_bookings_vehicle_resolution') THEN
+        ALTER TABLE mp.advance_bookings ADD CONSTRAINT advance_bookings_vehicle_resolution
+            CHECK (vehicle_resolution IN ('not_applicable', 'resolved', 'pending')
+                AND (vehicle_source IS NULL OR vehicle_source IN ('fleet_assignment', 'swap')));
+    END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS mp.booking_risk_blockers (
+    id           uuid PRIMARY KEY,
+    booking_id   uuid NOT NULL REFERENCES mp.advance_bookings (id) ON DELETE CASCADE,
+    kind         text NOT NULL,
+    source_ref   text NOT NULL,
+    state        text NOT NULL DEFAULT 'open',
+    detail       jsonb NOT NULL DEFAULT '{}'::jsonb,
+    opened_at    timestamptz NOT NULL,
+    cleared_at   timestamptz,
+    clear_reason text,
+    CONSTRAINT booking_risk_blockers_kind CHECK (kind IN ('off_road', 'document_expiry', 'assignment_ending', 'vehicle_conflict')),
+    CONSTRAINT booking_risk_blockers_state CHECK (state IN ('open', 'cleared')),
+    CONSTRAINT booking_risk_blockers_cleared CHECK ((state = 'cleared') = (cleared_at IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS booking_risk_blockers_one_open
+    ON mp.booking_risk_blockers (booking_id, kind, source_ref) WHERE state = 'open';
+CREATE INDEX IF NOT EXISTS mp_booking_risk_blockers_source_idx
+    ON mp.booking_risk_blockers (source_ref) WHERE state = 'open';
+
+CREATE TABLE IF NOT EXISTS mp.booking_vehicle_swaps (
+    id                    uuid PRIMARY KEY,
+    booking_id            uuid NOT NULL REFERENCES mp.advance_bookings (id) ON DELETE CASCADE,
+    city_id               text NOT NULL,
+    driver_id             uuid NOT NULL,
+    requester_id          uuid NOT NULL,
+    from_vehicle_id       text,
+    to_vehicle_id         text NOT NULL,
+    requested_by_staff_id text NOT NULL,
+    state                 text NOT NULL,
+    version               integer NOT NULL DEFAULT 1,
+    from_classes          text[],
+    from_capacity         integer,
+    to_classes            text[] NOT NULL DEFAULT '{}',
+    to_capacity           integer,
+    fleet_id              text,
+    expires_at            timestamptz NOT NULL,
+    failure_reasons       text[] NOT NULL DEFAULT '{}',
+    driver_decided_at     timestamptz,
+    revalidated_at        timestamptz,
+    rider_decided_at      timestamptz,
+    applied_at            timestamptz,
+    ended_at              timestamptz,
+    attempts              integer NOT NULL DEFAULT 0,
+    next_attempt_at       timestamptz,
+    last_error            text,
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    updated_at            timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT booking_vehicle_swaps_state CHECK (state IN (
+        'proposed', 'driver_accepted', 'revalidating', 'rider_consent_pending', 'applied',
+        'driver_declined', 'revalidation_failed', 'rider_declined', 'expired', 'cancelled')),
+    CONSTRAINT booking_vehicle_swaps_distinct CHECK (from_vehicle_id IS NULL OR from_vehicle_id <> to_vehicle_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS booking_vehicle_swaps_one_live
+    ON mp.booking_vehicle_swaps (booking_id)
+    WHERE state IN ('proposed', 'driver_accepted', 'revalidating', 'rider_consent_pending');
+CREATE INDEX IF NOT EXISTS mp_booking_vehicle_swaps_due_idx
+    ON mp.booking_vehicle_swaps (expires_at)
+    WHERE state IN ('proposed', 'driver_accepted', 'revalidating', 'rider_consent_pending');
+
+CREATE TABLE IF NOT EXISTS mp.offroad_use_flags (
+    id           uuid PRIMARY KEY,
+    occupancy_id uuid NOT NULL REFERENCES mp.vehicle_occupancy (id),
+    vehicle_id   text NOT NULL,
+    driver_id    uuid NOT NULL,
+    city_id      text,
+    trigger      text NOT NULL,
+    subject_ref  text NOT NULL,
+    observed_at  timestamptz NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT offroad_use_flags_trigger CHECK (trigger IN ('driver_online', 'trip_started')),
+    CONSTRAINT offroad_use_flags_once UNIQUE (occupancy_id, driver_id, trigger, subject_ref)
+);

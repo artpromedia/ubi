@@ -18,12 +18,13 @@
 /* eslint-disable require-await -- the SupplyAdapter interfaces are async by contract; this deterministic fixture computes every answer synchronously */
 import { z } from "zod";
 
-import { money } from "@ubi/contracts";
+import { ContractError, money } from "@ubi/contracts";
 
 import type {
   AdapterOffer,
   BookRequest,
   BookResult,
+  CancelQuote,
   CancelRequest,
   CancelResult,
   ChangeRequest,
@@ -140,6 +141,17 @@ const controlSchema = z.object({
   documentsIssued: z.boolean().optional(),
   repriceToMinor: z.number().int().optional(),
   soldOut: z.boolean().optional(),
+  /**
+   * The supplier reports the offer's terms (cancellation policy, board) as
+   * changed since it was quoted — what LiteAPI's prebook flags.
+   */
+  termsChanged: z.boolean().optional(),
+  /**
+   * `refreshOffer` refuses the offer the way the real adapters do when the
+   * provider says it is gone — Duffel's `offer_no_longer_available`, LiteAPI's
+   * `no_availability` / outdated offer — rather than flagging it sold out.
+   */
+  refreshRefusal: z.enum(["no_longer_available", "offer_expired"]).optional(),
   lookupState: z
     .enum(["confirmed", "ticketed", "failed", "pending", "unknown"])
     .optional(),
@@ -236,6 +248,24 @@ function controlFor(cfg: FixtureConfig, ...keys: string[]): Control {
   return {};
 }
 
+/** The provider-shaped refusal a `refreshRefusal` control asks for, if any. */
+function assertRefreshable(control: Control, offerRef: string): void {
+  if (control.refreshRefusal === "no_longer_available") {
+    throw new ContractError(
+      "conflict",
+      "that offer is no longer available; search again",
+      { adapter: "fixture", reason: "offer_no_longer_available", offerRef },
+    );
+  }
+  if (control.refreshRefusal === "offer_expired") {
+    throw new ContractError(
+      "offer_expired",
+      "that offer is outdated; search again",
+      { adapter: "fixture", reason: "outdated_offer", offerRef },
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Flight adapter
 // ---------------------------------------------------------------------------
@@ -246,6 +276,10 @@ function flightOfferView(flight: FixtureFlight): JsonRecord {
     carrier: flight.carrier,
     flightNumber: flight.flightNumber,
     aircraft: flight.aircraft ?? null,
+    // The airports the leg flies between: an airport transfer checks the
+    // arrival / departure airport against the city's airports.
+    from: flight.from ?? null,
+    to: flight.to ?? null,
     departAt: flight.departAt,
     arriveAt: flight.arriveAt,
     departTerminal: flight.departTerminal ?? null,
@@ -387,6 +421,28 @@ function lookupResultFrom(control: Control, currency: string): LookupResult {
   };
 }
 
+/**
+ * The fixture is a local catalog: always "reachable", never credentialed, and
+ * test-only — the registry refuses it in production configuration.
+ */
+function fixtureHealth(
+  ctx: SupplierContext,
+  cfg: FixtureConfig,
+): ProviderHealth {
+  const blocked = cfg.liveCallsBlocked ?? false;
+  return {
+    supplierId: ctx.supplierId,
+    adapter: "fixture",
+    reachable: true,
+    liveCallsBlocked: blocked,
+    implemented: true,
+    operational: !blocked,
+    credentialsPresent: null,
+    reason: blocked ? "live_calls_blocked" : "fixture_test_only",
+    note: "deterministic fixture adapter (DEV/TEST only; refused in production)",
+  };
+}
+
 const servicingMixin = {
   async hold(_ctx: SupplierContext, _offerRef: string): Promise<HoldResult> {
     // The fixture catalog holds no live inventory, so it never claims a hold.
@@ -410,6 +466,21 @@ const servicingMixin = {
       state: result.state,
       supplierRefs: result.supplierRefs,
       documentsIssued: result.documentsIssued,
+    };
+  },
+
+  async quoteCancel(
+    ctx: SupplierContext,
+    request: CancelRequest,
+  ): Promise<CancelQuote> {
+    const cfg = parseConfig(ctx);
+    const control = controlFor(cfg, request.ourRef);
+    return {
+      quoteRef: null,
+      penalty: money(control.cancelPenaltyMinor ?? 0, cfg.currency),
+      refundable: money(0, cfg.currency),
+      expiresAt: null,
+      refundTo: null,
     };
   },
 
@@ -517,9 +588,11 @@ export function createFixtureFlightAdapter(): FlightSupplyAdapter {
         ctx.now(),
       );
       const control = controlFor(cfg, offerRef, baseRef);
+      assertRefreshable(control, offerRef);
       const repriced = control.repriceToMinor !== undefined;
       const soldOut = control.soldOut ?? false;
-      return { available: !soldOut, repriced, soldOut, offer };
+      const termsChanged = control.termsChanged === true;
+      return { available: !soldOut, repriced, soldOut, termsChanged, offer };
     },
 
     async book(
@@ -533,13 +606,7 @@ export function createFixtureFlightAdapter(): FlightSupplyAdapter {
 
     async providerHealth(ctx: SupplierContext): Promise<ProviderHealth> {
       const cfg = parseConfig(ctx);
-      return {
-        supplierId: ctx.supplierId,
-        adapter: "fixture",
-        reachable: true,
-        liveCallsBlocked: cfg.liveCallsBlocked ?? false,
-        note: "deterministic fixture adapter",
-      };
+      return fixtureHealth(ctx, cfg);
     },
 
     ...servicingMixin,
@@ -680,9 +747,11 @@ export function createFixtureStayAdapter(): StaySupplyAdapter {
       }
       const offer = rateOffer(cfg, rate);
       const control = controlFor(cfg, offerRef);
+      assertRefreshable(control, offerRef);
       const repriced = control.repriceToMinor !== undefined;
       const soldOut = control.soldOut ?? false;
-      return { available: !soldOut, repriced, soldOut, offer };
+      const termsChanged = control.termsChanged === true;
+      return { available: !soldOut, repriced, soldOut, termsChanged, offer };
     },
 
     async book(
@@ -696,13 +765,7 @@ export function createFixtureStayAdapter(): StaySupplyAdapter {
 
     async providerHealth(ctx: SupplierContext): Promise<ProviderHealth> {
       const cfg = parseConfig(ctx);
-      return {
-        supplierId: ctx.supplierId,
-        adapter: "fixture",
-        reachable: true,
-        liveCallsBlocked: cfg.liveCallsBlocked ?? false,
-        note: "deterministic fixture adapter",
-      };
+      return fixtureHealth(ctx, cfg);
     },
 
     ...servicingMixin,

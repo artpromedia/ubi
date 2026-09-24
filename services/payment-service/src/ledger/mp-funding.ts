@@ -17,7 +17,12 @@
  *    in the same transaction as the fare postings;
  *  - RELEASED with a linked reason when the award is abandoned — by the saga
  *    compensation, by the queued-award cancellation's fee reversal, or by the
- *    ride-service sweep retrying a lost release.
+ *    ride-service sweep retrying a lost release;
+ *  - AMENDED only through linked adjustment rows (mp-funding-amendments.ts):
+ *    a post-award fare change tops the award up or partially releases it
+ *    without ever editing this row, so the authorize replay guard below still
+ *    compares against the terms the award was selected with. Consumption and
+ *    release carry the award's adjustments with it, in the same transaction.
  *
  * CASH stays deliberately unsecured: there is no custody to encumber, so the
  * answer is `secured: false` and the audit record says so explicitly.
@@ -37,7 +42,13 @@ import {
 import { writeAudit } from "./audit";
 import { spendableOf } from "./balances";
 import { lockWallet, type WalletDeps } from "./context";
-import { fromDbMinor, toDbMinor } from "./minor-units";
+import { fromDbMinor, fromNullableDbMinor, toDbMinor } from "./minor-units";
+import {
+  FUNDING_ADJUSTMENT_COMMITTED,
+  FUNDING_ADJUSTMENT_OPEN,
+  fundingAdjustmentPrefix,
+  isFundingAdjustmentKey,
+} from "./mp-amendment-refs";
 import { assertNotLocked, assertNotSafeMode, ensureWallet } from "./wallets";
 import { generateId } from "../lib/utils";
 
@@ -66,7 +77,7 @@ export interface MarketplaceFundingResult {
 }
 
 /** The row shape Prisma hands back for `mp_rider_reservations`. */
-interface ReservationRow {
+export interface ReservationRow {
   readonly id: string;
   readonly awardId: string;
   readonly requestId: string;
@@ -139,7 +150,7 @@ function replayOf(
 }
 
 /** A P2002 on the per-award unique index — the losing side of a replay race. */
-function isAwardIdRace(error: unknown): boolean {
+export function isAwardIdRace(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
   }
@@ -165,6 +176,15 @@ export async function authorizeMarketplaceFunding(
       "validation_failed",
       "the funding amount must be a positive integer in minor units",
       { amountMinor: input.amountMinor },
+    );
+  }
+  // Amendment adjustments live in this table under `amendment:<award>:<id>`
+  // keys; an award id in that namespace could squat one, so it is refused.
+  if (isFundingAdjustmentKey(input.awardId)) {
+    throw new ContractError(
+      "validation_failed",
+      "awardId uses the reserved amendment-adjustment namespace",
+      { awardId: input.awardId },
     );
   }
 
@@ -461,6 +481,16 @@ export async function releaseReservationInTx(
     return null;
   }
   const row = await tx.mpRiderReservation.findUnique({ where: { awardId } });
+  // The award's amendment adjustments (open top-ups, committed top-ups and
+  // partial releases) end with it, in the same commit — an abandoned award
+  // must not leave a top-up encumbering the rider.
+  const adjustments = await tx.mpRiderReservation.updateMany({
+    where: {
+      awardId: { startsWith: fundingAdjustmentPrefix(awardId) },
+      status: { in: [FUNDING_ADJUSTMENT_OPEN, FUNDING_ADJUSTMENT_COMMITTED] },
+    },
+    data: { status: "released", reason, resolvedAt: now },
+  });
   await writeAudit(tx, {
     actor: MP_SERVICE_ACTOR,
     action: "wallet.mp_funding.released",
@@ -473,6 +503,7 @@ export async function releaseReservationInTx(
       amountMinor: row === null ? null : fromDbMinor(row.amountMinor),
       currency: row?.currency ?? null,
       walletId: row?.walletId ?? null,
+      adjustmentsReleased: adjustments.count,
     },
     reason,
   });
@@ -493,6 +524,12 @@ export interface ConsumeReservationResult {
   /** True when an active reservation moved to consumed in this transaction. */
   readonly consumed: boolean;
   readonly reservationId: string | null;
+  /**
+   * What the consumption ended: the original reservation plus every COMMITTED
+   * amendment adjustment (top-ups positive, partial releases negative). Null
+   * when nothing was consumed.
+   */
+  readonly consumedMinor: number | null;
 }
 
 /**
@@ -519,6 +556,42 @@ export async function consumeReservationForSettlement(
     const row = await tx.mpRiderReservation.findUnique({
       where: { awardId: input.awardId },
     });
+    const reservedMinor = row === null ? 0 : fromDbMinor(row.amountMinor);
+
+    // Amendment adjustments settle WITH the award, gated by the conditional
+    // update above (a settlement replay never reaches here): the committed
+    // ones are consumed — original + committed top-ups − committed partial
+    // releases, exactly once — and a top-up whose amendment never committed
+    // is released, not consumed, because it was never agreed.
+    const prefix = fundingAdjustmentPrefix(input.awardId);
+    const committed = await tx.mpRiderReservation.aggregate({
+      _sum: { amountMinor: true },
+      where: {
+        awardId: { startsWith: prefix },
+        status: FUNDING_ADJUSTMENT_COMMITTED,
+      },
+    });
+    const adjustmentsMinor = fromNullableDbMinor(committed._sum.amountMinor);
+    const consumedAdjustments = await tx.mpRiderReservation.updateMany({
+      where: {
+        awardId: { startsWith: prefix },
+        status: FUNDING_ADJUSTMENT_COMMITTED,
+      },
+      data: { status: "consumed", resolvedAt: input.occurredAt },
+    });
+    const releasedTopUps = await tx.mpRiderReservation.updateMany({
+      where: {
+        awardId: { startsWith: prefix },
+        status: FUNDING_ADJUSTMENT_OPEN,
+      },
+      data: {
+        status: "released",
+        reason: "amendment_uncommitted_at_settlement",
+        resolvedAt: input.occurredAt,
+      },
+    });
+    const consumedMinor = reservedMinor + adjustmentsMinor;
+
     await writeAudit(tx, {
       actor: MP_SERVICE_ACTOR,
       action: "wallet.mp_funding.consumed",
@@ -528,17 +601,21 @@ export async function consumeReservationForSettlement(
       after: {
         status: "consumed",
         reservationId: row?.id ?? null,
-        reservedMinor: row === null ? null : fromDbMinor(row.amountMinor),
+        reservedMinor: row === null ? null : reservedMinor,
+        adjustmentsMinor,
+        adjustmentsConsumed: consumedAdjustments.count,
+        uncommittedTopUpsReleased: releasedTopUps.count,
+        consumedMinor,
         settledFareMinor: input.fareMinor,
         currency: input.currency,
       },
     });
-    return { consumed: true, reservationId: row?.id ?? null };
+    return { consumed: true, reservationId: row?.id ?? null, consumedMinor };
   }
 
   if (input.method !== "wallet") {
     // Cash settlements carry no reservation by design — nothing to record.
-    return { consumed: false, reservationId: null };
+    return { consumed: false, reservationId: null, consumedMinor: null };
   }
 
   // Wallet settlement with no active reservation: the money still moves (the
@@ -560,5 +637,9 @@ export async function consumeReservationForSettlement(
       currency: input.currency,
     },
   });
-  return { consumed: false, reservationId: row?.id ?? null };
+  return {
+    consumed: false,
+    reservationId: row?.id ?? null,
+    consumedMinor: null,
+  };
 }
