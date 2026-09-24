@@ -5,8 +5,8 @@
  *
  *   /v1/fleets/*                 GET → fleet:read;  every write → fleet:manage
  *   /v1/fleet-offers/*           fleet:driver
- *   /v1/drivers/me/fleet…, /schedule, /availability…, /conflicts/…
- *                                fleet:driver
+ *   /v1/drivers/me/fleet…, /schedule, /availability…, /conflicts/…,
+ *   /vehicle-issues              fleet:driver
  *
  * Limited mode (a new, unverified device) keeps none of them: fleet reads are
  * other people's operations, and every driver-side action commits the
@@ -33,6 +33,7 @@ const DRIVER_PREFIXES = [
   "/v1/drivers/me/schedule",
   "/v1/drivers/me/availability",
   "/v1/drivers/me/conflicts",
+  "/v1/drivers/me/vehicle-issues",
 ] as const;
 
 /** The scope a client request to fleet-service needs, or null for none. */

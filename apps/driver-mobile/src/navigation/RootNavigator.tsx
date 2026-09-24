@@ -1,4 +1,4 @@
-import React from "react";
+import React, { type ComponentType } from "react";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import {
@@ -47,6 +47,12 @@ import { SosScreen } from "../screens/safety/SosScreen";
 import { SecureConfirmScreen } from "../screens/safety/SecureConfirmScreen";
 import { ProfileScreen } from "../screens/account/ProfileScreen";
 import { FeatureUnavailableScreen } from "../screens/FeatureUnavailableScreen";
+import { FleetGate } from "../screens/fleet/FleetParts";
+import { FleetScheduleScreen } from "../screens/fleet/FleetScheduleScreen";
+import { FleetProposalScreen } from "../screens/fleet/FleetProposalScreen";
+import { FleetConflictScreen } from "../screens/fleet/FleetConflictScreen";
+import { FleetAvailabilityScreen } from "../screens/fleet/FleetAvailabilityScreen";
+import { FleetReportIssueScreen } from "../screens/fleet/FleetReportIssueScreen";
 
 const Root = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
@@ -136,7 +142,8 @@ function AccountNavigator() {
       <AccountStack.Screen name="Profile" component={ProfileScreen} />
       {/* Vehicle/documents/ratings/fleet/liveness/Ask have no audited server
           surface in this slice (api/unsupported.ts driverDocuments) — gated
-          honestly rather than shipping a screen with nothing real behind it. */}
+          honestly rather than shipping a screen with nothing real behind it.
+          The fleet arrangement is the A05 schedule below. */}
       <AccountStack.Screen
         name="Edit"
         component={FeatureUnavailableScreen}
@@ -167,10 +174,10 @@ function AccountNavigator() {
         component={FeatureUnavailableScreen}
         initialParams={{ feature: "Settings" } as never}
       />
+      {/* A05: the driver's fleet schedule (C1), behind the `fleet` flag. */}
       <AccountStack.Screen
         name="FleetArrangement"
-        component={FeatureUnavailableScreen}
-        initialParams={{ feature: "FleetArrangement" } as never}
+        component={GatedFleetSchedule as never}
       />
       <AccountStack.Screen
         name="LivenessCheck"
@@ -320,6 +327,27 @@ function GatedCalendar({
     </MarketplaceGate>
   );
 }
+// A05 fleet calendar (handoff C1–C5). Each screen carries the deny-by-default
+// `fleet` gate so a deep link into a city without fleet tools lands on the honest
+// "not available yet" screen; fleet-service answers 404 feature_disabled as well.
+function fleetGated(Inner: ComponentType) {
+  return function Gated({
+    navigation,
+  }: {
+    navigation: { goBack: () => void };
+  }) {
+    return (
+      <FleetGate onDismiss={() => navigation.goBack()}>
+        <Inner />
+      </FleetGate>
+    );
+  };
+}
+const GatedFleetSchedule = fleetGated(FleetScheduleScreen);
+const GatedFleetProposal = fleetGated(FleetProposalScreen);
+const GatedFleetConflict = fleetGated(FleetConflictScreen);
+const GatedFleetAvailability = fleetGated(FleetAvailabilityScreen);
+const GatedFleetReportIssue = fleetGated(FleetReportIssueScreen);
 function MainTabs() {
   const t = useTheme();
   return (
@@ -374,6 +402,26 @@ export function RootNavigator() {
         <Root.Screen name="MpTrip" component={GatedTrip as never} />
         <Root.Screen name="MpAmendments" component={GatedAmendments as never} />
         <Root.Screen name="Calendar" component={GatedCalendar as never} />
+        <Root.Screen
+          name="FleetSchedule"
+          component={GatedFleetSchedule as never}
+        />
+        <Root.Screen
+          name="FleetProposal"
+          component={GatedFleetProposal as never}
+        />
+        <Root.Screen
+          name="FleetConflict"
+          component={GatedFleetConflict as never}
+        />
+        <Root.Screen
+          name="FleetAvailability"
+          component={GatedFleetAvailability as never}
+        />
+        <Root.Screen
+          name="FleetReportIssue"
+          component={GatedFleetReportIssue as never}
+        />
         <Root.Screen name="FlagOff" component={FeatureUnavailableScreen} />
         <Root.Group screenOptions={{ presentation: "modal" }}>
           <Root.Screen name="Sos" component={SosScreen} />

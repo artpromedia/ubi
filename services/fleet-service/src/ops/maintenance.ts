@@ -35,7 +35,7 @@ import {
   illegalTransition,
   notFound,
 } from "./errors";
-import { withOutbox, type OutboxInput } from "./outbox";
+import { withOutbox, type AuditInput, type OutboxInput } from "./outbox";
 import { assertCapability, type FleetAccess } from "./roles";
 import { shiftIntervals } from "./shifts";
 import { arrangementsOn, fleetVehicleOf } from "./vehicles";
@@ -61,8 +61,12 @@ import {
 
 import type { FleetDeps } from "./context";
 import type { Actor } from "./types";
-import type { OccupiedBlock, PlannedMaintenanceKind } from "../contract";
-import type { FleetMaintenanceBlock } from "@prisma/client/index";
+import type {
+  FleetStaffRole,
+  OccupiedBlock,
+  PlannedMaintenanceKind,
+} from "../contract";
+import type { Fleet, FleetMaintenanceBlock } from "@prisma/client/index";
 
 const SYSTEM: Actor = { id: "fleet-service", role: "system" };
 
@@ -1069,30 +1073,86 @@ export async function reportOffRoad(
     );
   }
   await fleetVehicleOf(deps.db, access.fleet.id, input.vehicleId);
-  let block: FleetMaintenanceBlock;
+  const block = await recordOffRoad(deps, access, {
+    blockId,
+    vehicleId: input.vehicleId,
+    startsAt,
+    expectedEndsAt: expected,
+    note: input.note ?? null,
+    scopedKey,
+  });
+  return completeOffRoad(deps, access, block);
+}
+
+/**
+ * Who reports a breakdown: an owner or manager (the fleet's staff check), or
+ * the driver a signed arrangement assigns to the vehicle today (handoff C5,
+ * decisions Q5 — ops/vehicle-issues.ts). Both take the same path from here.
+ */
+export interface OffRoadReporter {
+  readonly fleet: Fleet;
+  readonly actor: Actor;
+  readonly role: FleetStaffRole | "driver";
+  readonly cityId: string;
+}
+
+/** Extra rows a caller adds to the report's own unit of work. */
+export interface OffRoadExtras {
+  readonly events?: (row: FleetMaintenanceBlock) => readonly OutboxInput[];
+  readonly audits?: (row: FleetMaintenanceBlock) => readonly AuditInput[];
+}
+
+/**
+ * Creates the ACTIVE unplanned_off_road block with its status event, its
+ * `fleet.offroad.reported` event and its audit row (visible to UBI ops,
+ * decisions correction 4) in one transaction. The caller has validated the
+ * window and the vehicle; ride-service's ledger write is `completeOffRoad`.
+ */
+export async function recordOffRoad(
+  deps: FleetDeps,
+  reporter: OffRoadReporter,
+  input: {
+    readonly blockId: string;
+    readonly vehicleId: string;
+    readonly startsAt: number;
+    readonly expectedEndsAt: number | null;
+    readonly note: string | null;
+    readonly scopedKey: string;
+  },
+  extras: OffRoadExtras = {},
+): Promise<FleetMaintenanceBlock> {
+  const now = deps.now();
+  const { startsAt, expectedEndsAt: expected } = input;
   try {
-    block = await withOutbox(deps.db, async (tx) => {
+    return await withOutbox(deps.db, async (tx) => {
       const row = await tx.fleetMaintenanceBlock.create({
         data: {
-          id: blockId,
-          fleetId: access.fleet.id,
+          id: input.blockId,
+          fleetId: reporter.fleet.id,
           vehicleId: input.vehicleId,
           kind: "unplanned_off_road",
           startsAt: new Date(startsAt),
           endsAt: expected === null ? null : new Date(expected),
-          zone: access.fleet.zone,
-          note: input.note ?? null,
+          zone: reporter.fleet.zone,
+          note: input.note,
           // created → active: a breakdown takes effect immediately (safety).
           status: "active",
-          createdBy: access.actor.id,
-          createdByRole: access.role,
-          idempotencyKey: scopedKey,
+          createdBy: reporter.actor.id,
+          createdByRole: reporter.role,
+          idempotencyKey: input.scopedKey,
         },
       });
       return {
         result: row,
         events: [
-          statusEvent(row, null, "active", access.actor, access.cityId, now),
+          statusEvent(
+            row,
+            null,
+            "active",
+            reporter.actor,
+            reporter.cityId,
+            now,
+          ),
           {
             name: "fleet.offroad.reported",
             aggregateType: "maintenance_block",
@@ -1100,24 +1160,25 @@ export async function reportOffRoad(
             fromVersion: null,
             toVersion: row.version,
             idempotencyKey: `fleet.offroad.reported:${row.id}`,
-            actor: access.actor,
-            cityId: access.cityId,
+            actor: reporter.actor,
+            cityId: reporter.cityId,
             occurredAt: now,
             payload: {
               blockId: row.id,
               fleetId: row.fleetId,
               vehicleId: row.vehicleId,
-              reportedBy: access.actor.id,
-              reportedByRole: access.role,
+              reportedBy: reporter.actor.id,
+              reportedByRole: reporter.role,
               startsAt: iso(startsAt),
               expectedEndsAt: expected === null ? null : iso(expected),
             },
           },
+          ...(extras.events?.(row) ?? []),
         ],
         // Visible to UBI ops (decisions correction 4).
         audits: [
           {
-            actor: access.actor,
+            actor: reporter.actor,
             action: "fleet.off_road.reported",
             subjectType: "fleet_maintenance_block",
             subjectId: row.id,
@@ -1125,10 +1186,11 @@ export async function reportOffRoad(
               vehicleId: row.vehicleId,
               startsAt: iso(startsAt),
               expectedEndsAt: expected === null ? null : iso(expected),
-              role: access.role,
+              role: reporter.role,
             },
             reason: "off_road_reported",
           },
+          ...(extras.audits?.(row) ?? []),
         ],
       };
     });
@@ -1141,13 +1203,22 @@ export async function reportOffRoad(
     }
     throw error;
   }
-  return completeOffRoad(deps, access, block);
 }
 
-/** Records the off-road block on ride-service's ledger (route 4) and opens the at-risk conflicts. */
-async function completeOffRoad(
+/** Who acted on an off-road report, and in which city (a FleetAccess or a driver). */
+export interface OffRoadContext {
+  readonly actor: Actor;
+  readonly cityId: string;
+}
+
+/**
+ * Records the off-road block on ride-service's ledger (route 4) and opens the
+ * at-risk conflicts. Replay-safe: a block already on the ledger answers its
+ * conflicts as they stand.
+ */
+export async function completeOffRoad(
   deps: FleetDeps,
-  access: FleetAccess,
+  access: OffRoadContext,
   block: FleetMaintenanceBlock,
 ) {
   if (block.occupancyId !== null) {
@@ -1469,14 +1540,16 @@ export async function retryUnrecordedOffRoad(deps: FleetDeps): Promise<number> {
   let recorded = 0;
   for (const block of pending) {
     try {
-      const config = await deps.config.load(block.fleet.cityId);
+      // The conflicts it opens are recorded as the reporter's (a driver's
+      // own report keeps the envelope's `driver` actor type).
       await completeOffRoad(
         deps,
         {
-          fleet: block.fleet,
-          role: "owner",
-          config,
-          actor: { id: block.createdBy, role: block.createdByRole },
+          actor: {
+            id: block.createdBy,
+            role: block.createdByRole,
+            ...(block.createdByRole === "driver" ? { as: "driver" } : {}),
+          },
           cityId: block.fleet.cityId,
         },
         block,

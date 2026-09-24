@@ -100,6 +100,8 @@ const FLEET_EVENTS = [
   "vehicle.document.expired",
   "driver.availability.saved",
   "fleet.vehicle_swap.requested",
+  // Canonical, raised by a driver's vehicle-problem report (C5).
+  "fleet.alert",
 ];
 
 // ── Cities ─────────────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ GET /v1/fleets/:id/vehicles/:vehicleId/availability
 PATCH /v1/fleets/:id/maintenance/:blockId
 POST /v1/drivers/me/availability:preview
 POST /v1/drivers/me/fleet/terminate
+POST /v1/drivers/me/vehicle-issues
 POST /v1/fleet-offers/:offerId/decline
 POST /v1/fleet-offers/:offerId/sign
 POST /v1/fleets

@@ -21,7 +21,7 @@
  */
 import { createHash } from "node:crypto";
 
-import { isKnownEventName } from "@ubi/contracts";
+import { isKnownEventName, type EventName } from "@ubi/contracts";
 
 import {
   FLEET_EVENT_NAMES,
@@ -43,7 +43,12 @@ const FLEET_EVENT_SET: ReadonlySet<string> = new Set(FLEET_EVENT_NAMES);
 const MAX_EVENT_KEY_LENGTH = 64;
 
 export interface OutboxInput {
-  readonly name: FleetEventName;
+  /**
+   * A fleet event, or a canonical one fleet-service produces (the slice-10
+   * `fleet.alert` a driver's vehicle-problem report raises). Checked again at
+   * runtime by `assertFleetEventName`.
+   */
+  readonly name: FleetEventName | EventName;
   readonly aggregateType: FleetSubjectType;
   readonly aggregateId: string;
   readonly fromVersion: number | null;

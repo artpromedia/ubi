@@ -1,6 +1,6 @@
-// The no-client-math rule (launch CLAUDE.md #1, A04.1), checked on the source: the
-// screens and containers that render offer earnings and preferences never put a money
-// field into arithmetic. Money reaches them as server Money objects and leaves through
+// The no-client-math rule (launch CLAUDE.md #1, A04.1, A05), checked on the source: the
+// screens and containers that render offer earnings, preferences and the fleet
+// calendar (C1–C5) never put a money field into arithmetic. Money reaches them as server Money objects and leaves through
 // MoneyText/formatMinor (formatting) or verbatim server labels. The one documented
 // exception is the preferences input packaging (typed whole major units → minor units,
 // the same helper RateProfileContainer uses), which is asserted to stay in its helpers.
@@ -95,6 +95,70 @@ describe("no client money math", () => {
     expect(read("tripCopy.ts")).toMatch(
       /export const moneySign = \(m: Money \| null \| undefined\)/,
     );
+  });
+
+  // A05 fleet driver screens (C1–C5), their shared parts and copy helpers. Every amount
+  // — a proposal's weekly remittance, the commission a withdrawal returns — is a server
+  // Money object passed straight to MoneyText. The one Money reshaping (a signed terms
+  // snapshot's amount + currency, paired for MoneyText) lives in api/fleet.ts.
+  const FLEET_DIR = join(__dirname, "..", "..", "fleet");
+  const readFleet = (file: string) =>
+    readFileSync(join(FLEET_DIR, file), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const FLEET_FILES = [
+    "FleetScheduleScreen.tsx",
+    "FleetProposalScreen.tsx",
+    "FleetConflictScreen.tsx",
+    "FleetAvailabilityScreen.tsx",
+    "FleetReportIssueScreen.tsx",
+    "FleetParts.tsx",
+    "fleetCopy.ts",
+  ];
+  const FLEET_MONEY_SCREENS = [
+    "FleetProposalScreen.tsx",
+    "FleetConflictScreen.tsx",
+    "FleetAvailabilityScreen.tsx",
+  ];
+  // Fleet money names that don't end in …Minor.
+  const FLEET_MONEY_ARITHMETIC =
+    /\b(?:commissionReturned|commissionMinor|weekly|remittance|money)\b\)?\s*[-+*/%](?![=>])\s*[\w(]/i;
+
+  it.each(FLEET_FILES)(
+    "fleet %s does no arithmetic on money, never builds, formats or reads a Money amount",
+    (file) => {
+      const source = readFleet(file);
+      for (const pattern of [...MONEY_ARITHMETIC, FLEET_MONEY_ARITHMETIC]) {
+        const hit = source.match(pattern);
+        expect(hit ? hit[0] : null).toBeNull();
+      }
+      expect(source).not.toMatch(/amountMinor/);
+      expect(source).not.toMatch(/formatMinor\(/);
+      expect(source).not.toMatch(
+        /(?:Math\.\w+|Number|parseInt|parseFloat)\([^)]*(?:Minor|commission|remittance)\b/i,
+      );
+    },
+  );
+
+  it.each(FLEET_MONEY_SCREENS)(
+    "fleet %s renders money only through MoneyText",
+    (file) => {
+      expect(readFleet(file)).toMatch(/<MoneyText/);
+    },
+  );
+
+  it("the fleet API's only Money value pairs two server fields, with no arithmetic", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "..", "..", "api", "fleet.ts"),
+      "utf8",
+    );
+    const helper = source.match(/export const remittanceOf = [\s\S]*?;\n/)?.[0];
+    expect(helper).toBeDefined();
+    expect(helper).toMatch(
+      /\{ amountMinor: terms\.amountMinor, currency: terms\.currency \}/,
+    );
+    expect(helper).not.toMatch(/[-+*/%]\s*\d|Math\.|toFixed/);
+    expect(source.replace(helper ?? "", "")).not.toMatch(/amountMinor\s*:/);
   });
 
   it("the preferences container converts typed input only inside its packaging helpers", () => {

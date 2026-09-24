@@ -69,7 +69,11 @@ export const TEST_IDS = {
      * D1 BookingChangeConsent (a revalidated vehicle change: confirm, or
      * cancel the booking for free) and D2 BookingDriverLost (no reason
      * shown: rematch at the same fare only when the server offers it, or
-     * cancel and release).
+     * cancel and release). The handoff's `rider.booking.vehicleUpdatedAck`
+     * ("Got it" on a notify-only vehicle swap) is deliberately absent: that
+     * path was overridden (docs/design/FLEET_CALENDAR_DECISIONS.md Q3 — every
+     * vehicle change needs the rider's consent), so D1 is always the consent
+     * variant.
      */
     booking: {
       vehicleChange: "rider.booking.vehicleChange",
@@ -118,9 +122,81 @@ export const TEST_IDS = {
       upload: "driver.documents.upload",
       status: "driver.documents.status",
     },
+    /**
+     * Fleet calendar (A05) driver screens — handoff C1 DriverSchedule, C2
+     * FleetProposalReview (+ C2b motion lock), C3 BookingImpact, C4
+     * AvailabilityEditor, C5 ReportVehicleIssue. The handoff's list is kept
+     * verbatim; the rest are each screen's states and sub-controls. Row-level
+     * ids append a server id or option code (`dynamicTestId`).
+     */
     fleet: {
       signPin: "driver.fleet.signPin",
       arrangement: "driver.fleet.arrangement",
+      // C1
+      scheduleView: "driver.fleet.scheduleView",
+      scheduleDay: "driver.fleet.scheduleDay",
+      scheduleItem: "driver.fleet.scheduleItem",
+      scheduleEmpty: "driver.fleet.scheduleEmpty",
+      decisionBanner: "driver.fleet.decisionBanner",
+      proposalEntry: "driver.fleet.proposalEntry",
+      timeOffEntry: "driver.fleet.timeOffEntry",
+      reportEntry: "driver.fleet.reportEntry",
+      // C2
+      proposalCard: "driver.fleet.proposalCard",
+      proposalTerms: "driver.fleet.proposalTerms",
+      proposalCheck: "driver.fleet.proposalCheck",
+      proposalExpiry: "driver.fleet.proposalExpiry",
+      proposalAccept: "driver.fleet.proposalAccept",
+      proposalDecline: "driver.fleet.proposalDecline",
+      proposalOutcome: "driver.fleet.proposalOutcome",
+      proposalEmpty: "driver.fleet.proposalEmpty",
+      pinPad: "driver.fleet.pinPad",
+      pinKey: "driver.fleet.pinKey",
+      pinDelete: "driver.fleet.pinDelete",
+      pinCancel: "driver.fleet.pinCancel",
+      pinError: "driver.fleet.pinError",
+      // C2b
+      motionLock: "driver.fleet.motionLock",
+      motionDeadline: "driver.fleet.motionDeadline",
+      motionParked: "driver.fleet.motionParked",
+      // C3
+      impactOption: "driver.fleet.impactOption",
+      impactDeadline: "driver.fleet.impactDeadline",
+      impactSwapAccept: "driver.fleet.impactSwapAccept",
+      impactSwapDecline: "driver.fleet.impactSwapDecline",
+      impactWithdraw: "driver.fleet.impactWithdraw",
+      impactWithdrawConfirm: "driver.fleet.impactWithdrawConfirm",
+      impactWithdrawCancel: "driver.fleet.impactWithdrawCancel",
+      impactOutcome: "driver.fleet.impactOutcome",
+      // C4
+      timeOffForm: "driver.fleet.timeOffForm",
+      timeOffDay: "driver.fleet.timeOffDay",
+      timeOffStartEarlier: "driver.fleet.timeOffStartEarlier",
+      timeOffStartLater: "driver.fleet.timeOffStartLater",
+      timeOffEndEarlier: "driver.fleet.timeOffEndEarlier",
+      timeOffEndLater: "driver.fleet.timeOffEndLater",
+      timeOffReplace: "driver.fleet.timeOffReplace",
+      timeOffCheck: "driver.fleet.timeOffCheck",
+      timeOffPreview: "driver.fleet.timeOffPreview",
+      timeOffTrim: "driver.fleet.timeOffTrim",
+      timeOffWithdrawal: "driver.fleet.timeOffWithdrawal",
+      timeOffSave: "driver.fleet.timeOffSave",
+      timeOffSaved: "driver.fleet.timeOffSaved",
+      // C5
+      reportIssue: "driver.fleet.reportIssue",
+      reportVehicle: "driver.fleet.reportVehicle",
+      reportCannotDrive: "driver.fleet.reportCannotDrive",
+      reportServiceSoon: "driver.fleet.reportServiceSoon",
+      reportNote: "driver.fleet.reportNote",
+      reportSos: "driver.fleet.reportSos",
+      reportOutcome: "driver.fleet.reportOutcome",
+      reportDecision: "driver.fleet.reportDecision",
+      // Every fleet screen
+      refusal: "driver.fleet.refusal",
+      unavailable: "driver.fleet.unavailable",
+      error: "driver.fleet.error",
+      offline: "driver.fleet.offline",
+      retry: "driver.fleet.retry",
     },
   },
   common: {

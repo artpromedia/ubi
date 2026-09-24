@@ -1,6 +1,7 @@
 /**
  * The driver's side of the fleet — `/v1/fleet-offers/…` and
- * `/v1/drivers/me/{fleet-offers, fleet, schedule, availability, conflicts}`.
+ * `/v1/drivers/me/{fleet-offers, fleet, schedule, availability, conflicts,
+ * vehicle-issues}`.
  *
  * The caller is always the driver the gateway signed for: an offer, an
  * arrangement or a conflict that is not theirs is `not_found`. Signing
@@ -37,6 +38,11 @@ import {
 } from "../ops/assignments";
 import { previewAvailability, putAvailability } from "../ops/availability";
 import { driverConflict, driverSchedule } from "../ops/driver";
+import { reportVehicleIssue } from "../ops/vehicle-issues";
+import {
+  ReportVehicleIssueSchema,
+  VehicleIssueViewSchema,
+} from "../vehicle-issue-contract";
 
 import type { FleetDeps } from "../ops/context";
 import type { Actor } from "../ops/types";
@@ -201,6 +207,30 @@ export function createDriverFleetRoutes(deps: FleetDeps): Hono {
           body: shape(
             AvailabilitySavedViewSchema,
             await putAvailability(deps, actor, cityId, body),
+          ),
+        }),
+      );
+    }),
+  );
+
+  // Handoff C5: the assigned driver reports a breakdown (an active off-road
+  // block, bookings at risk) or a service need (a fleet alert only).
+  routes.post(
+    "/vehicle-issues",
+    route(async (c) => {
+      const body = ReportVehicleIssueSchema.parse(await jsonBody(c));
+      const actor = driverOf(c);
+      const cityId = cityOf(c);
+      return idempotentResponse(
+        c,
+        deps,
+        "fleet.vehicle_issue",
+        body,
+        async (scopedKey) => ({
+          status: 201,
+          body: shape(
+            VehicleIssueViewSchema,
+            await reportVehicleIssue(deps, actor, cityId, body, scopedKey),
           ),
         }),
       );

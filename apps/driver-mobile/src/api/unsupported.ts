@@ -42,7 +42,7 @@ export const UNSUPPORTED = {
     wanted:
       "vehicle/document management beyond the identity slice's upload endpoints",
     reason:
-      "identity document upload exists (/v1/drivers/me/documents, gateway-proxied), but this app's Account.Vehicle/Documents/Ratings/FleetArrangement/LivenessCheck boards were not part of this slice's audited scope and would imply more than is verified working end to end",
+      "identity document upload exists (/v1/drivers/me/documents, gateway-proxied), but this app's Account.Vehicle/Documents/Ratings/LivenessCheck boards were not part of this slice's audited scope and would imply more than is verified working end to end (Account.FleetArrangement is now the A05 fleet schedule, api/fleet.ts)",
   },
 } as const;
 

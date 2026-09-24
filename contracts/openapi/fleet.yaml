@@ -940,3 +940,63 @@ paths:
       responses:
         "200":
           description: the driver's own conflict with its options and server-explained outcomes
+  /v1/drivers/me/vehicle-issues:
+    post:
+      summary: The assigned driver reports a vehicle problem (handoff C5)
+      description:
+        "Only the driver a signed arrangement assigns to the vehicle today may
+        report it; the app offers it only while the driver is stationary and
+        points to SOS for personal safety. cannot_drive creates an ACTIVE
+        unplanned_off_road block through the same path as an owner/manager
+        off-road report (overlapping bookings go at_risk with their decision
+        deadline, never cancelled; audited; flagged if the vehicle is seen in
+        use). service_soon creates no block and touches no booking. Both
+        alert the fleet (fleet.alert, ids and codes only -- the note rides the
+        off-road block the fleet reads, never an event). Remittance is not
+        pro-rated for a breakdown: its hours follow the signed terms'
+        shortfall rule (decisions Q8)."
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - vehicleId
+                - severity
+              properties:
+                vehicleId:
+                  type: string
+                severity:
+                  type: string
+                  enum:
+                    - cannot_drive
+                    - service_soon
+                note:
+                  type: string
+                  maxLength: 280
+      responses:
+        "201":
+          description:
+            "{issueId, severity, vehicleId, reportedAt, fleetAlerted: true,
+            block: {blockId, kind: unplanned_off_road, status, startsAt,
+            endsAt|null} | null, decisions: [{conflictId, deadlineAt}] -- the
+            reporting driver's OWN bookings now at risk, remittanceEffect:
+            signed_terms_shortfall_rule | none}"
+        "403":
+          description:
+            forbidden (details.reason not_assigned_to_vehicle -- the same answer
+            for a vehicle that is not the driver's or does not exist), or
+            limited_mode
+        "404":
+          description: feature_disabled (the fleet flag is off)
+        "409":
+          description:
+            maintenance_overlap (the vehicle is already reported off-road) or
+            idempotency_key_reuse
+        "503":
+          description:
+            service_unavailable -- ride-service's ledger was unreachable; the
+            block is kept and the same Idempotency-Key completes it

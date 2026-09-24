@@ -350,4 +350,24 @@ export const marketplaceApi = {
       { reason },
       { idempotencyKey },
     ),
+  // A05 (fleet calendar C3): the booked driver's decision on a fleet's proposal to
+  // keep this booking on another vehicle. Accepting only starts it — ride-service
+  // revalidates, then the RIDER must confirm the new vehicle (decisions Q3); the
+  // fare never changes and the commission is never charged again. No body.
+  decideVehicleSwap: (
+    bookingId: string,
+    swapId: string,
+    decision: "accept" | "decline",
+    idempotencyKey: string,
+  ) =>
+    api<MpAdvanceBooking>(
+      "POST",
+      bookingPath(bookingId, "vehicle-swaps") +
+        "/" +
+        encodeURIComponent(swapId) +
+        "/" +
+        decision,
+      undefined,
+      { idempotencyKey },
+    ),
 };
