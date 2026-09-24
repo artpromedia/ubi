@@ -1002,6 +1002,11 @@ func (s *Service) cancelMissedQueuedAward(ctx context.Context, actor Actor, requ
 		return nil, 0, domain.Errorf(domain.CodeRequestClosed,
 			"this queued job's pickup window still stands; it can only be cancelled fee-free after a missed window")
 	}
+	// A06 part C: a booker who left the organization may not cancel a
+	// colleague's business trip (checked at cancel time).
+	if err := s.AuthorizeRiderCancel(ctx, award.ID, actor.UserID); err != nil {
+		return nil, 0, err
+	}
 
 	var view *RequestView
 	closed, err := s.cancelQueuedAward(ctx, award, "window_missed", actor.UserID.String(), actor.Role,

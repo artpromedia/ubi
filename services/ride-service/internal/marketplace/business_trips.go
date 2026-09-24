@@ -54,10 +54,14 @@ import (
 //  4. COMPLETE — the ACTUAL total (agreed fare + committed adjustments,
 //     derived exactly like a personal settlement, never above the
 //     reservation) is COMMITTED under business:<awardId>:commit, owed
-//     durably in the claim-completion transaction. A fare increase is
-//     refused on a business trip (the contract has no reserve top-up yet),
-//     so the actual can never exceed what was reserved. The rider's
-//     personal settlement is never called for a business award.
+//     durably in the claim-completion transaction. A total that grows — an
+//     approved fare increase, paid waiting — first raises the reservation
+//     (POST /reserve-top-up under business:<awardId>:topup:<amendmentId>)
+//     in the amendment's funding leg, BEFORE the raised total commits; a
+//     refusal (no budget, the per-trip cap) fails the amendment into
+//     compensation and the original agreement stands. So the actual can
+//     never exceed what was reserved. The rider's personal settlement is
+//     never called for a business award.
 //  5. CANCEL   — the reservation is RELEASED under business:<awardId>:release,
 //     owed durably in the transaction that ends the award: compensation, a
 //     driver cancellation, an ops cancellation or a no-show release as the
@@ -77,6 +81,23 @@ import (
 // organization: the budget pays; no rider funding exists for it.
 const PaymentMethodBusiness = "business"
 
+// PaymentMethodPaidByUBI (MP_PAID_BY_UBI_METHOD) is what the DRIVER is told
+// about a business trip's payment: paid through UBI, nothing to collect, and
+// no payer details (BUSINESS_VISIBILITY). The execution ride — read by the
+// driver's ride views and published in every ride.* event — carries it
+// instead of `business`; the requester's marketplace views keep `business`.
+const PaymentMethodPaidByUBI = "paid_by_ubi"
+
+// executionPaymentMethod is the payment method an execution ride carries: a
+// business request's becomes paid_by_ubi; any other is the requester's own
+// (cash stays cash — the driver must know to collect it).
+func executionPaymentMethod(requestMethod string) string {
+	if requestMethod == PaymentMethodBusiness {
+		return PaymentMethodPaidByUBI
+	}
+	return requestMethod
+}
+
 // Business booking owed ops.
 const (
 	businessOpCommit  = "commit"
@@ -93,8 +114,12 @@ const (
 	ReasonBusinessPaymentMethod     = "business_payment_method"
 	ReasonBusinessServiceUnsupport  = "business_service_unsupported"
 	ReasonBusinessCheckUnavailable  = "business_check_unavailable"
-	ReasonBusinessTopUpUnavailable  = "business_budget_topup_unavailable"
 )
+
+// businessTopUpMarker tags a refused reserve top-up's details (topUp), so
+// the amendment names the organization's refusal (business_<reason>), never
+// the driver's spendable.
+const businessTopUpMarker = "business"
 
 // businessOpBackoffCap bounds how long a stuck owed op waits between drives.
 const businessOpBackoffCap = 10 * time.Minute
@@ -842,6 +867,207 @@ func travellerRelease(booking *BusinessBooking, reason string) businessRelease {
 	return businessRelease{party: BusinessPartyTraveller, userID: &user, reason: reason}
 }
 
+// businessTopUpKey is the ONE key an amendment's reserve top-up is ever
+// sent under (contract: business:<awardId>:topup:<reasonRef>).
+func businessTopUpKey(awardID uuid.UUID, reasonRef string) string {
+	return businessKey(awardID, "topup:"+reasonRef)
+}
+
+// raiseBusinessReservation is a business trip's funding leg for a raised
+// total (A06 part C): before the amendment commits — an approved fare
+// increase, or paid waiting — the organization's budget reservation is
+// raised to the new total through payment-service's reserve top-up, exactly
+// once per amendment (key and reasonRef = the amendment id). A total still
+// within the reservation (after an earlier decrease) needs no raise. The
+// increase is derived from stored rows only, so a re-send after a lost
+// answer carries identical terms and payment-service replays it. An unknown
+// outcome parks the amendment (the sweep re-sends the same key); a definite
+// refusal fails it into compensation — the commission increment released,
+// the original agreement standing — with the organization's reason.
+func (s *Service) raiseBusinessReservation(ctx context.Context, amendment *Amendment) error {
+	if amendment.fareDelta() <= 0 {
+		return nil
+	}
+	booking, err := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), amendment.AwardID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return businessTopUpRefusal(domain.Errorf(domain.CodeConflict, "this business trip has no budget reservation"),
+			businessIncreaseReason(amendment), "no_reservation")
+	}
+	if err != nil {
+		return err
+	}
+	if booking.State != machine.MpBusinessReserved {
+		return businessTopUpRefusal(domain.Errorf(domain.CodeIllegalTransition, "the budget reservation is %s", booking.State),
+			businessIncreaseReason(amendment), "reservation_not_open")
+	}
+	increase := amendment.RevisedFareMinor - booking.ReservedMinor
+	if increase <= 0 {
+		return nil
+	}
+	reason := businessIncreaseReason(amendment)
+	result, err := s.business().ReserveTopUp(ctx, BusinessReserveTopUpRequest{
+		BookingRef:  booking.BookingRef,
+		AmountMinor: increase,
+		Currency:    booking.Currency,
+		Reason:      reason,
+		ReasonRef:   amendment.ID.String(),
+	}, businessTopUpKey(booking.AwardID, amendment.ID.String()))
+	if err != nil {
+		if isUnknownOutcome(err) {
+			return err
+		}
+		return businessTopUpRefusal(err, reason, "")
+	}
+	raised := result.Increase.Reserved
+	if raised.Currency != booking.Currency || raised.AmountMinor < amendment.RevisedFareMinor ||
+		result.Reservation.Reserved.AmountMinor != raised.AmountMinor {
+		s.deps.Logger.Error().Str("award_id", booking.AwardID.String()).Str("amendment_id", amendment.ID.String()).
+			Int64("reserved", raised.AmountMinor).Int64("needed", amendment.RevisedFareMinor).
+			Msg("ALARM: payment-service's reserve top-up answered a reservation that does not cover the raised total")
+		return businessTopUpRefusal(domain.Errorf(domain.CodeConflict, "the raised reservation does not cover the new total"),
+			reason, "reservation_short")
+	}
+	return s.recordBusinessIncrease(ctx, booking.AwardID, amendment, result, reason, s.now())
+}
+
+// businessIncreaseReason names why a reservation grows: paid waiting for a
+// stop's waiting fee, a fare increase for anything else.
+func businessIncreaseReason(amendment *Amendment) string {
+	if amendment.Kind == AmendmentKindStopWaiting {
+		return BusinessIncreasePaidWaiting
+	}
+	return BusinessIncreaseFareIncrease
+}
+
+// businessTopUpRefusal explains a refused raise to the party whose approval
+// ran the commit: the organization's reason (details.reason), the stage, and
+// that the trip continues on the agreed terms. `fallback` names a refusal
+// payment-service gave no reason for.
+func businessTopUpRefusal(cause error, stage, fallback string) error {
+	reason := businessReasonOf(cause)
+	if reason == "" {
+		reason = fallback
+	}
+	if reason == "" {
+		reason = "refused"
+	}
+	code := domain.CodeConflict
+	if mapped, ok := domain.AsError(cause); ok {
+		code = mapped.Code
+	}
+	message := "the organization's budget could not be raised for this change, so it was not applied; the trip continues on the agreed terms"
+	switch reason {
+	case BusinessReasonBudgetInsufficient, BusinessReasonNoBudget:
+		message = "the organization's budget cannot cover the higher fare, so the change was not applied; the trip continues on the agreed terms"
+	case "trip_cap_exceeded":
+		message = "the higher fare is above the organization's per-trip cap, so the change was not applied; the trip continues on the agreed terms"
+	case "organization_not_active", BusinessReasonFeatureDisabled:
+		message = "the organization cannot fund a higher fare right now, so the change was not applied; the trip continues on the agreed terms"
+	}
+	return domain.Errorf(code, "%s", message).WithDetails(map[string]any{
+		"field": "business", "reason": reason, "stage": stage, "topUp": businessTopUpMarker,
+	}).Wrap(cause)
+}
+
+// recordBusinessIncrease writes the raised reservation onto the booking —
+// once: a replay that finds it already recorded changes nothing — with its
+// business_booking.reserve_increased event and audit row.
+func (s *Service) recordBusinessIncrease(ctx context.Context, awardID uuid.UUID, amendment *Amendment, result *BusinessTopUpResult, reason string, now time.Time) error {
+	return s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {
+		locked, err := s.deps.Store.BusinessBookingForUpdate(ctx, tx, awardID)
+		if err != nil {
+			return err
+		}
+		raised := result.Increase.Reserved.AmountMinor
+		if locked.ReservedMinor >= raised {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE mp.business_bookings SET reserved_minor = $2, version = version + 1, updated_at = $3
+			WHERE award_id = $1`, awardID, raised, now); err != nil {
+			return fmt.Errorf("failed to record the raised business reservation: %w", err)
+		}
+		name := "business_booking.reserve_increased"
+		fromVersion := locked.Version
+		payload := map[string]any{
+			"awardId":          locked.AwardID.String(),
+			"requestId":        locked.RequestID.String(),
+			"bookingRef":       locked.BookingRef,
+			"organizationId":   locked.OrganizationID,
+			"state":            locked.State,
+			"reason":           reason,
+			"reasonRef":        amendment.ID.String(),
+			"increase":         result.Amount,
+			"previousReserved": money(locked.ReservedMinor, locked.Currency),
+			"reserved":         money(raised, locked.Currency),
+		}
+		if err := writeEvent(ctx, tx, Event{
+			Name:           name,
+			AggregateType:  subjectBusinessBooking,
+			AggregateID:    locked.AwardID.String(),
+			FromVersion:    &fromVersion,
+			ToVersion:      locked.Version + 1,
+			CityID:         locked.CityID,
+			ActorType:      "system",
+			ActorID:        "ride-service",
+			IdempotencyKey: eventKey(name, locked.AwardID.String(), amendment.ID.String()),
+			OccurredAt:     now,
+			Payload:        payload,
+		}); err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, AuditRecord{
+			ActorID:     "ride-service",
+			ActorRole:   "system",
+			Action:      name,
+			SubjectType: subjectBusinessBooking,
+			SubjectID:   locked.AwardID.String(),
+			Before:      map[string]any{"reservedMinor": locked.ReservedMinor},
+			After:       payload,
+			Reason:      "the organization's reservation was raised before a raised total committed (" + reason + ")",
+		})
+	})
+}
+
+// AuthorizeRiderCancel implements move.RiderCancelGuard (and guards the
+// requester's queued-award cancel): before the requester cancels a business
+// trip booked for a COLLEAGUE, their authority is re-checked at cancel time
+// through the documented membership contract — payment-service's read-only
+// POST /policy-check, whose booker_not_authorized says the booker is no
+// longer an active booking member of the organization (the same rule its
+// release applies to a booker, BUSINESS_CANCEL_RIGHTS). A booker who left
+// is refused and the trip is untouched: the passenger may still decline it
+// from their trip link, and the system still releases the budget when the
+// trip ends without service. A traveller who booked for themselves always
+// may cancel their own trip. Fails closed: when membership cannot be read,
+// nothing is cancelled. A personal (non-business) trip is never asked about.
+func (s *Service) AuthorizeRiderCancel(ctx context.Context, awardID, riderID uuid.UUID) error {
+	booking, err := s.deps.Store.BusinessBookingByAward(ctx, s.deps.Store.Pool(), awardID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return asDomainError(err)
+	}
+	if riderID != booking.BookerID || booking.BookerID == booking.TravellerID {
+		return nil
+	}
+	terms := businessTermsOf(booking)
+	terms.BookingRef = "cancel:" + booking.AwardID.String()
+	verdict, err := s.business().PolicyCheck(ctx, booking.CityID, terms)
+	if err != nil {
+		return domain.Errorf(domain.CodeServiceUnavailable,
+			"the organization's membership could not be checked right now; nothing was cancelled").
+			WithDetails(map[string]any{"reason": ReasonBusinessCheckUnavailable}).Wrap(err)
+	}
+	if outsiderVerdict(verdict.Reasons) {
+		return domain.Errorf(domain.CodeForbidden,
+			"you are no longer a booker for this organization, so you cannot cancel a colleague's business trip; the passenger can still decline it from their trip link").
+			WithDetails(map[string]any{"reason": BusinessReasonCancelNotPermitted, "party": BusinessPartyBooker})
+	}
+	return nil
+}
+
 // oweBusinessOp records, inside the caller's transaction, that the award's
 // booking owes one terminal op. It is the durable intent: written in the same
 // transaction as the trip event that decides it, so a crash after that commit
@@ -970,9 +1196,9 @@ func (s *Service) runBusinessCommit(ctx context.Context, booking *BusinessBookin
 	}
 	actual := final.FareMinor.AmountMinor
 	if actual > booking.ReservedMinor {
-		// Unreachable while fare increases are refused on business trips;
-		// never commit more than was reserved (payment-service refuses it
-		// too). Alarm and park for ops.
+		// Unreachable: every raised total raised the reservation first
+		// (raiseBusinessReservation). Never commit more than was reserved
+		// (payment-service refuses it too). Alarm and park for ops.
 		err := fmt.Errorf("award %s: actual %d exceeds the budget reservation %d", award.ID, actual, booking.ReservedMinor)
 		s.deps.Logger.Error().Err(err).Msg("ALARM: a business trip's actual total exceeds its reservation")
 		return s.parkBusinessOp(ctx, booking, err, now)

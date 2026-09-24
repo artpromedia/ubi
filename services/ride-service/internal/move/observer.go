@@ -65,3 +65,18 @@ func (s *Service) notifyTripStarted(ctx context.Context, rideID, driverID uuid.U
 		s.activity.TripStarted(ctx, rideID, driverID, cityID)
 	}
 }
+
+// RiderCancelGuard is asked BEFORE a rider cancels a marketplace-managed ride
+// (one carrying a marketplace award), outside any transaction, and may refuse
+// it with a definite error. The marketplace implements it for business trips
+// (A06 part C): a booker who has left the organization may no longer cancel a
+// colleague's trip. nil is nobody asking.
+type RiderCancelGuard interface {
+	AuthorizeRiderCancel(ctx context.Context, awardID, riderID uuid.UUID) error
+}
+
+// SetRiderCancelGuard wires the guard. It is called once from the
+// composition root, after both services exist.
+func (s *Service) SetRiderCancelGuard(guard RiderCancelGuard) {
+	s.cancelGuard = guard
+}

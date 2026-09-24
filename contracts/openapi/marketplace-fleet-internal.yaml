@@ -9,7 +9,9 @@ info:
     (fleet-service -> ride-service, routes 1-7 under /internal/fleet on ride-service); fleet-service
     accepts FLEET_SERVICE_KEY (ride-service -> fleet-service, routes 8-9 under /internal/fleet on
     fleet-service). Both keys are at least 32 characters, compared in constant time, and an unset or
-    short key fails closed (503 on ride-service). Money is {amountMinor, currency}; times are
+    short key fails closed (503 on ride-service). ride-service's per-client rate limiter does not
+    throttle a call carrying the VALID FLEET_RIDE_SERVICE_KEY; a missing or wrong key is counted
+    against the sender's address and refused (401). Money is {amountMinor, currency}; times are
     ISO-8601 UTC. Bookings reach a fleet ONLY as the opaque OccupiedBlock — time (buffers
     included), the server's risk flag and deadline, and nothing else: no rider, location, fare,
     request or booking internals, not even as null. Zod: packages/contracts/src/marketplace-fleet.ts.

@@ -191,31 +191,37 @@ func writeOccupancyEvent(ctx context.Context, tx pgx.Tx, o *VehicleOccupancy, na
 	})
 }
 
-// bookingRiskLead is the market's risk resolution lead in seconds (0 when
-// none is configured or the policy cannot be read).
+// bookingRiskLead is the market's risk resolution lead in seconds: the
+// configured one, else the decided 2 h default (capped at the market's
+// minimum advance lead) — also when the policy cannot be read right now.
 func (s *Service) bookingRiskLead(ctx context.Context, cityID string) int {
 	_, policy, err := s.policy(ctx, cityID)
 	if err != nil {
-		return 0
+		return cityconfig.DefaultRiskResolutionLeadSec
 	}
 	advance, err := policy.AdvanceReservationPolicyFor(cityID)
 	if err != nil {
-		return 0
+		return cityconfig.DefaultRiskResolutionLeadSec
 	}
 	return advance.RiskResolutionLead()
 }
 
-// riskDeadlineFor is when a booking put at risk must be resolved (Q4 as
-// decided, a per-market policy value): the EARLIER of its reconfirmation
-// deadline — while it still awaits reconfirmation — and activation minus the
-// market's risk resolution lead. A blocker that arrives too late to resolve
-// is due at once (never a deadline in the past).
+// riskDeadlineFor is when a booking put at risk must be resolved (decisions
+// Q4, a per-market policy value, default 2 h): the EARLIER of its
+// reconfirmation deadline — while it still awaits reconfirmation — and the
+// pickup (the window's start) minus the market's risk resolution lead. It is
+// never later than activation: an activated booking's trip is in the live
+// slots and a current passenger is never diverted. A blocker that arrives
+// too late to resolve is due at once (never a deadline in the past).
 func riskDeadlineFor(b *AdvanceBooking, leadSec int, now time.Time) time.Time {
-	deadline := b.ActivationAt.Add(-time.Duration(leadSec) * time.Second)
+	deadline := b.WindowStart.Add(-time.Duration(leadSec) * time.Second)
 	awaitingReconfirmation := b.ReconfirmedAt == nil &&
 		(b.State == machine.MpBookingHeld || b.State == machine.MpBookingPaymentPending || b.State == machine.MpBookingConfirmed)
 	if awaitingReconfirmation && b.ReconfirmDeadline.Before(deadline) {
 		deadline = b.ReconfirmDeadline
+	}
+	if b.ActivationAt.Before(deadline) {
+		deadline = b.ActivationAt
 	}
 	if deadline.Before(now) {
 		deadline = now

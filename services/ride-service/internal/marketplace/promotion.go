@@ -689,6 +689,8 @@ func (s *Service) promoteNextFor(ctx context.Context, driverID uuid.UUID) error 
 			Payload: map[string]any{
 				"claimId":          promoted.ID.String(),
 				"awardId":          lockedAward.ID.String(),
+				"requestId":        lockedAward.RequestID.String(),
+				"requesterId":      lockedAward.RequesterID.String(),
 				"driverId":         driverID.String(),
 				"rideId":           rideIDFor(service, executionID),
 				"executionService": service,
@@ -761,8 +763,10 @@ func (s *Service) writeQueueEtaEvent(ctx context.Context, tx pgx.Tx, award *Awar
 		IdempotencyKey: "mp.queue.eta_updated:" + award.ID.String() + ":" + itoa(window.EtaVersion),
 		OccurredAt:     now,
 		Payload: map[string]any{
-			"awardId":   award.ID.String(),
-			"requestId": request.ID.String(),
+			"awardId":     award.ID.String(),
+			"requestId":   request.ID.String(),
+			"requesterId": award.RequesterID.String(),
+			"driverId":    award.DriverID.String(),
 			"pickupWindow": map[string]any{
 				"earliestSec": window.EarliestSec,
 				"latestSec":   window.LatestSec,
@@ -787,6 +791,8 @@ func (s *Service) writeWindowMissedEvent(ctx context.Context, tx pgx.Tx, award *
 		Payload: map[string]any{
 			"awardId":            award.ID.String(),
 			"requestId":          request.ID.String(),
+			"requesterId":        award.RequesterID.String(),
+			"driverId":           award.DriverID.String(),
 			"consentedLatestSec": window.ConsentedLatestSec,
 			"predictedSec":       window.PredictedSec,
 			"feeFreeCancel":      true,

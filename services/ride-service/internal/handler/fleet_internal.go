@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -40,7 +38,7 @@ const FleetServiceKeyMinLength = marketplace.FleetServiceKeyMinLength
 // constant time, so neither the key nor its length leaks through timing.
 func RequireFleetServiceKey(serviceKey string) func(http.Handler) http.Handler {
 	configured := len(serviceKey) >= FleetServiceKeyMinLength
-	want := sha256.Sum256([]byte(serviceKey))
+	matches := fleetKeyMatcher(serviceKey)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !configured {
@@ -48,9 +46,7 @@ func RequireFleetServiceKey(serviceKey string) func(http.Handler) http.Handler {
 					"the fleet contract is not configured on this service"))
 				return
 			}
-			presented := r.Header.Get(marketplace.FleetServiceKeyHeader)
-			got := sha256.Sum256([]byte(presented))
-			if presented == "" || subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
+			if !matches(r.Header.Get(marketplace.FleetServiceKeyHeader)) {
 				writeError(w, domain.Errorf(domain.CodeUnauthorized, "a valid service key is required"))
 				return
 			}

@@ -135,6 +135,14 @@ func (h *MarketplaceHandler) mount(r chi.Router) {
 		r.Get("/recoveries", h.AdminRecoveries)
 		r.Post("/recoveries/{recoveryId}/retry", h.AdminRetryRecovery)
 
+		// Round 9: the owed-work boards of the rounds 5-7 sagas — an
+		// organization budget's owed commit/release, a queued delivery's
+		// owed cancellation — each with an explicit retry (dry-run first).
+		r.Get("/business-bookings", h.AdminBusinessBookings)
+		r.Post("/business-bookings/{awardId}/retry", h.AdminRetryBusinessOp)
+		r.Get("/delivery-cancellations", h.AdminDeliveryCancellations)
+		r.Post("/delivery-cancellations/{awardId}/retry", h.AdminRetryDeliveryCancel)
+
 		// C08: cancellations/no-shows + driver standing & appeals.
 		r.Get("/cancellations", h.AdminCancellations)
 		r.Get("/drivers/standing", h.AdminDriverStandingList)

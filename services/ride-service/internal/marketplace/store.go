@@ -1173,6 +1173,10 @@ type RecoveryRow struct {
 	NextRetryAt time.Time
 	ResolvedAt  *time.Time
 	CreatedAt   time.Time
+
+	// Currency is the row's money's currency (admin reads only; derived
+	// from what the row names — recoveryCurrencySQL).
+	Currency string
 }
 
 // ReserveRecoveryPayload is what a reserve_replay row needs to converge: the

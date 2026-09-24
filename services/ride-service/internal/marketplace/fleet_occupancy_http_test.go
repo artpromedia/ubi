@@ -177,9 +177,9 @@ func TestFleetOffRoadIsNeverRefusedAndPutsBookingsAtRisk(t *testing.T) {
 	if b.State != machine.MpBookingConfirmed || b.Risk != machine.MpRiskOK {
 		t.Fatalf("a fresh booking is confirmed and ok: %s / %s", b.State, b.Risk)
 	}
-	wantDeadline := b.ActivationAt.Add(-30 * time.Minute)
+	wantDeadline := b.WindowStart.Add(-2 * time.Hour)
 	if !wantDeadline.Before(b.ReconfirmDeadline) {
-		t.Fatalf("fixture: activation − 30 min is the earlier candidate here")
+		t.Fatalf("fixture: pickup − 2 h (decisions Q4) is the earlier candidate here")
 	}
 
 	start := h.Clock.Now()

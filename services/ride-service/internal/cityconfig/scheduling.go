@@ -56,21 +56,36 @@ type AdvanceReservationPolicy struct {
 	PostBufferSec        int   `json:"postBufferSec"`
 	ReminderOffsetsSec   []int `json:"reminderOffsetsSec"`
 	MaxOpenPerRequester  int   `json:"maxOpenPerRequester"`
-	// RiskResolutionLeadSec (A05 fleet calendar, optional) is how long
-	// before activation a booking put at risk must be resolved: its decision
-	// deadline is the EARLIER of its reconfirmation deadline and activation
-	// minus this lead. Absent means no lead beyond activation itself — never
-	// a guessed number.
+	// RiskResolutionLeadSec (A05 fleet calendar, optional; decisions Q4) is
+	// how long before the PICKUP a booking put at risk must be resolved: its
+	// decision deadline is the EARLIER of its reconfirmation deadline (while
+	// it awaits reconfirmation) and the pickup minus this lead — never later
+	// than activation. At most MinLeadSec: a lead equal to it still leaves a
+	// same-fare rematch possible at the deadline. Absent applies the decided
+	// default, DefaultRiskResolutionLeadSec, capped at MinLeadSec.
 	RiskResolutionLeadSec *int `json:"riskResolutionLeadSec,omitempty"`
 }
 
-// RiskResolutionLead is the configured risk resolution lead (zero when the
-// market configures none).
+// DefaultRiskResolutionLeadSec is the decided risk resolution lead
+// (docs/design/FLEET_CALENDAR_DECISIONS.md Q4: pickup − 2 h; the contract's
+// MP_DEFAULT_RISK_RESOLUTION_LEAD_SEC) for a market that configures none. It
+// is a product decision recorded in the contract, not a guessed number.
+const DefaultRiskResolutionLeadSec = 7_200
+
+// RiskResolutionLead is the market's risk resolution lead in seconds: the
+// configured one, else the decided default capped at the market's minimum
+// advance lead (the bound a configured lead is validated against).
 func (p *AdvanceReservationPolicy) RiskResolutionLead() int {
-	if p == nil || p.RiskResolutionLeadSec == nil {
-		return 0
+	if p == nil {
+		return DefaultRiskResolutionLeadSec
 	}
-	return *p.RiskResolutionLeadSec
+	if p.RiskResolutionLeadSec != nil {
+		return *p.RiskResolutionLeadSec
+	}
+	if p.MinLeadSec > 0 && p.MinLeadSec < DefaultRiskResolutionLeadSec {
+		return p.MinLeadSec
+	}
+	return DefaultRiskResolutionLeadSec
 }
 
 // RecurringPolicy mirrors MpRecurringPolicySchema.
@@ -138,7 +153,7 @@ func (p *MarketplaceSchedulingPolicy) validate(cityID string) error {
 		case advance.MaxOpenPerRequester <= 0:
 			return fmt.Errorf("%w: city %s advance reservations have no per-requester cap", ErrUnavailable, cityID)
 		case advance.RiskResolutionLeadSec != nil &&
-			(*advance.RiskResolutionLeadSec <= 0 || *advance.RiskResolutionLeadSec >= advance.MinLeadSec):
+			(*advance.RiskResolutionLeadSec <= 0 || *advance.RiskResolutionLeadSec > advance.MinLeadSec):
 			return fmt.Errorf("%w: city %s advance reservation risk resolution lead is unusable", ErrUnavailable, cityID)
 		}
 	}

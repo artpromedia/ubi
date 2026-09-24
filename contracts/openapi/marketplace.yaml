@@ -2195,7 +2195,7 @@ components:
         capacity: { type: [integer, "null"], minimum: 1 }
     BookingRisk:
       type: object
-      description: "Driver view only (A05, machine mpBookingRisk): the server's risk overlay on the booking — a blocker on its vehicle (off_road, document_expiry, assignment_ending, vehicle_conflict) and the decision deadline (the earlier of the reconfirmation deadline and activation minus the market's riskResolutionLeadSec). At the deadline the booking fails with its explained outcome."
+      description: "Driver view only (A05, machine mpBookingRisk): the server's risk overlay on the booking — a blocker on its vehicle (off_road, document_expiry, assignment_ending, vehicle_conflict) and the decision deadline (decisions Q4: the earlier of the reconfirmation deadline and the pickup minus the market's riskResolutionLeadSec — default 2 h — never later than activation). At the deadline the booking fails with its explained outcome and the rider is proactively offered a same-fare rematch (only when rematchAvailable) or the refund; nothing is republished without the rider's choice."
       required: [state, decisionDeadline, reasons, message]
       properties:
         state: { type: string, enum: [ok, at_risk] }
@@ -2813,8 +2813,8 @@ components:
             method:
               {
                 type: string,
-                enum: [wallet, cash, business],
-                description: "business: an organization's budget paid (A06 part C); the driver's view says only that it was paid in-app.",
+                enum: [wallet, cash, business, paid_by_ubi],
+                description: "business: an organization's budget paid (A06 part C) — the rider's receipt; the driver's receipt of that trip says paid_by_ubi (paid in-app, nothing to collect, no payer).",
               }
             label: { type: string }
         trip:
@@ -5366,7 +5366,7 @@ paths:
                 }
   /v1/admin/mp/requests/{requestId}/timeline:
     get:
-      summary: Versioned request/bid/award timeline (A02) — append-only, no mutations
+      summary: Versioned request/bid/award timeline (A02) — append-only, no mutations. Carries the request's mp.* rows plus the trip_access.*, business_booking.* and ride.* (execution ride) rows linked to it; every detail is redacted server-side (never a sealed envelope, SMS copy, coordinate, raw token or phone)
       parameters:
         - {
             name: requestId,
@@ -5452,7 +5452,10 @@ paths:
           { $ref: "#/components/parameters/Cursor" },
         ]
       responses:
-        "200": { description: Paginated pending-saga rows. }
+        "200":
+          {
+            description: "Paginated pending-saga rows, each with fundingSource (business | rider | cash): a business award's funding step is the organization budget's reserve.",
+          }
   /v1/admin/mp/awards/{awardId}/reconcile:
     post:
       summary: C08 — ask the engine to advance ONE stuck award's saga now (same step the sweep would take); dryRun previews, apply requires expectedUpdatedAt + Idempotency-Key
@@ -5494,7 +5497,10 @@ paths:
           { $ref: "#/components/parameters/Cursor" },
         ]
       responses:
-        "200": { description: Paginated recovery rows. }
+        "200":
+          {
+            description: "Paginated recovery rows, each with the currency of its money.",
+          }
   /v1/admin/mp/recoveries/{recoveryId}/retry:
     post:
       summary: C08 — force one recovery row's retry now (same runRecovery the sweep uses); dryRun previews, apply requires expectedAttempts + Idempotency-Key
@@ -5524,6 +5530,112 @@ paths:
         "200":
           {
             description: The retry outcome (preview/resolved/deferred/already_resolved).,
+          }
+        "409":
+          {
+            description: version_conflict — the row's attempts changed since expectedAttempts was read.,
+          }
+  /v1/admin/mp/business-bookings:
+    get:
+      summary: Round 9 owed-work board — business bookings (organization-budget funding), oldest first; owed=true keeps only those still owing payment-service a commit or release. Ids, states and integer minor amounts only
+      parameters:
+        [
+          {
+            name: owed,
+            in: query,
+            required: false,
+            schema: { type: string, enum: ["true", "false"] },
+          },
+          {
+            name: cityId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/Cursor" },
+        ]
+      responses:
+        "200":
+          {
+            description: "Paginated rows: awardId, requestId, bookingRef, organizationId, costCentreId, cityId, state, owedOp, releaseParty, releaseReason, reservedMinor, committedMinor, attempts, lastError, nextAttemptAt, ageSec.",
+          }
+  /v1/admin/mp/business-bookings/{awardId}/retry:
+    post:
+      summary: Round 9 — drive ONE award's owed business commit/release now (the sweep's runner, under business:<awardId>:<op>); dryRun previews and sends nothing, apply requires expectedAttempts + Idempotency-Key; audited
+      parameters:
+        [
+          { name: awardId, in: path, required: true, schema: { type: string } },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties:
+                  {
+                    dryRun: { type: boolean },
+                    expectedAttempts: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          {
+            description: The retry outcome (preview/resolved/deferred/nothing_owed) with the row.,
+          }
+        "409":
+          {
+            description: version_conflict — the row's attempts changed since expectedAttempts was read.,
+          }
+  /v1/admin/mp/delivery-cancellations:
+    get:
+      summary: Round 9 owed-work board — queued delivery cancellations owed to delivery-service, oldest first
+      parameters:
+        [
+          {
+            name: state,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [pending, cancelled, refused] },
+          },
+          {
+            name: cityId,
+            in: query,
+            required: false,
+            schema: { type: string },
+          },
+          { $ref: "#/components/parameters/Cursor" },
+        ]
+      responses:
+        "200":
+          {
+            description: "Paginated rows: awardId, deliveryId, reason, state, attempts, lastStatus, lastCode, lastError, nextAttemptAt, resolvedAt, ageSec.",
+          }
+  /v1/admin/mp/delivery-cancellations/{awardId}/retry:
+    post:
+      summary: Round 9 — drive ONE owed delivery cancellation now (the sweep's runner; delivery-service is idempotent on the award); dryRun previews and sends nothing, apply requires expectedAttempts + Idempotency-Key; audited
+      parameters:
+        [
+          { name: awardId, in: path, required: true, schema: { type: string } },
+          { $ref: "#/components/parameters/IdemKey" },
+        ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                properties:
+                  {
+                    dryRun: { type: boolean },
+                    expectedAttempts: { type: integer },
+                  },
+              }
+      responses:
+        "200":
+          {
+            description: The retry outcome (preview/resolved/deferred/nothing_owed) with the row.,
           }
         "409":
           {

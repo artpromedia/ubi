@@ -163,6 +163,10 @@ func main() {
 	// believed only from RIDE_TRUSTED_PROXIES (the gateway), never from anyone.
 	limiter := handler.NewRateLimiter(verifier, getEnv(handler.EnvTrustedProxies, ""),
 		handler.DefaultRateLimit, handler.DefaultRateLimitWindow, log.Logger)
+	// fleet-service's /internal/fleet calls with the VALID service key are
+	// not throttled (a 429 mid-saga costs more than serving it); any other
+	// key is counted per client, then refused by RequireFleetServiceKey.
+	limiter.ExemptFleetServiceKey(config.FleetRideServiceKey)
 
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)

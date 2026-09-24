@@ -434,8 +434,9 @@ func (s *Service) Receipt(ctx context.Context, actor Actor, requestID uuid.UUID)
 	case booking != nil && viewer == receiptViewerRider:
 		method, methodLabel = PaymentMethodBusiness, "Organization budget"
 	case booking != nil:
-		// The driver learns nothing about the organization (BUSINESS_VISIBILITY).
-		method, methodLabel = PaymentMethodBusiness, "Paid in-app; nothing is collected at the trip"
+		// The driver learns nothing about the organization (BUSINESS_VISIBILITY):
+		// paid through UBI, no payer named.
+		method, methodLabel = PaymentMethodPaidByUBI, "Paid in-app; nothing is collected at the trip"
 	case request.PaymentMethodID == "cash":
 		method, methodLabel = "cash", "Cash, paid to the driver"
 	}

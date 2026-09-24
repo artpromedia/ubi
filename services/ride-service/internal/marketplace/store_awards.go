@@ -122,6 +122,20 @@ func (s *Store) AwardByID(ctx context.Context, db DB, id uuid.UUID) (*Award, err
 	return scanAward(db.QueryRow(ctx, `SELECT `+awardColumns+` FROM mp.awards WHERE id = $1`, id))
 }
 
+// AwardParties reads an award's two parties — the requester and the awarded
+// driver — for the event payloads that name each audience by id.
+func (s *Store) AwardParties(ctx context.Context, db DB, id uuid.UUID) (uuid.UUID, uuid.UUID, error) {
+	var requesterID, driverID uuid.UUID
+	err := db.QueryRow(ctx, `SELECT requester_id, driver_id FROM mp.awards WHERE id = $1`, id).Scan(&requesterID, &driverID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, uuid.Nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("failed to read the parties of award %s: %w", id, err)
+	}
+	return requesterID, driverID, nil
+}
+
 // AwardForUpdate reads and locks one award for the rest of the transaction.
 func (s *Store) AwardForUpdate(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*Award, error) {
 	return scanAward(tx.QueryRow(ctx, `SELECT `+awardColumns+` FROM mp.awards WHERE id = $1 FOR UPDATE`, id))

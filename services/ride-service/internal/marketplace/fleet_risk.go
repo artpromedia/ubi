@@ -25,8 +25,9 @@ import (
 // vehicle taken by a maintenance block while the booking's vehicle was still
 // unknown. Each such cause is a BLOCKER row (mp.booking_risk_blockers); the
 // booking is `at_risk` exactly while one is open, with a decision deadline =
-// the earlier of its reconfirmation deadline and activation minus the
-// market's riskResolutionLeadSec (riskDeadlineFor).
+// the earlier of its reconfirmation deadline and the pickup minus the
+// market's riskResolutionLeadSec (default 2 h, decisions Q4), never later
+// than activation (riskDeadlineFor).
 //
 // It is resolved by an applied vehicle swap (driver-accepted, server-
 // revalidated, rider-consented — fleet_swaps.go), by the driver withdrawing

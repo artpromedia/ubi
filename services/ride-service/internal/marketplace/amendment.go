@@ -928,6 +928,9 @@ func (s *Service) ApproveAmendment(ctx context.Context, actor Actor, requestID, 
 	if advErr != nil {
 		if mapped, ok := domain.AsError(advErr); ok && (advanced.State == machine.MpAmendmentRejected ||
 			advanced.State == machine.MpAmendmentFailed || advanced.State == machine.MpAmendmentCompensated) {
+			if trip.role == partyDriver {
+				mapped = driverSafeRefusal(mapped)
+			}
 			details := redactQueuedJobFor(trip.role, mapped.Details)
 			details["amendmentId"] = advanced.ID.String()
 			details["amendmentState"] = advanced.State
@@ -1221,8 +1224,11 @@ func refusalReason(err error) string {
 	if !ok {
 		return "refused"
 	}
-	if reason, _ := mapped.Details["reason"].(string); reason == ReasonBusinessTopUpUnavailable {
-		return ReasonBusinessTopUpUnavailable
+	if topUp, _ := mapped.Details["topUp"].(string); topUp == businessTopUpMarker {
+		// A06 part C: the organization's budget refused the raise (e.g.
+		// business_budget_insufficient) — never the driver's spendable.
+		reason, _ := mapped.Details["reason"].(string)
+		return "business_" + reason
 	}
 	switch mapped.Code {
 	case domain.CodeInsufficientSpendable:
@@ -1234,6 +1240,42 @@ func refusalReason(err error) string {
 	default:
 		return "refused:" + string(mapped.Code)
 	}
+}
+
+// amendReasonFundingRefused is what the DRIVER, and the shared mp.amendment.*
+// channel every audience reads, are told when an organization's budget
+// refused to raise a business trip's reservation (BUSINESS_VISIBILITY: the
+// driver learns nothing about the organization, its budget or its policy).
+// The row keeps the organization's reason (funding_business_<reason>) for
+// the requester's own view and for operators.
+const amendReasonFundingRefused = "funding_refused"
+
+// businessRefusalPrefix marks a stored amendment reason that names an
+// organization's refusal (a failed leg + "_business_" + its reason).
+const businessRefusalPrefix = "_business_"
+
+// amendmentReasonFor is the amendment reason a party may read: the
+// requester reads what is stored; the driver (and partyShared, the event
+// channel both audiences read) never reads an organization's refusal.
+func amendmentReasonFor(role, reason string) string {
+	if role != partyRider && strings.Contains(reason, businessRefusalPrefix) {
+		return amendReasonFundingRefused
+	}
+	return reason
+}
+
+// driverSafeRefusal is the refusal a DRIVER's approval answers when an
+// organization's budget refused the raise: that the change was not funded
+// and the trip continues on the agreed terms — never the organization's
+// code, reason, stage or budget (BUSINESS_VISIBILITY). Any other refusal is
+// returned as is.
+func driverSafeRefusal(mapped *domain.Error) *domain.Error {
+	if topUp, _ := mapped.Details["topUp"].(string); topUp != businessTopUpMarker {
+		return mapped
+	}
+	return domain.Errorf(domain.CodeConflict,
+		"the higher fare could not be funded, so the change was not applied; the trip continues on the agreed terms").
+		WithDetails(map[string]any{"reason": amendReasonFundingRefused})
 }
 
 // fundingRequestFor is the funding-amendment body for one amendment.
@@ -1275,16 +1317,11 @@ func (s *Service) runAmendmentReserve(ctx context.Context, amendment *Amendment,
 	}
 	commissionReserved := false
 	var refusal error
-	if amendment.fundingDelta() > 0 && route.businessFunded() {
-		// A06 part C: the organization's budget reserved the agreed fare and
-		// the contract has no reserve top-up yet, so a business trip's fare
-		// can never rise past its reservation — refused before any money
-		// moves (the driver's commission delta is not even reserved).
-		refusal = domain.Errorf(domain.CodeConflict,
-			"this trip is paid from an organization's budget, which cannot fund a higher fare; the change is refused").
-			WithDetails(map[string]any{"reason": ReasonBusinessTopUpUnavailable})
-	}
-	if refusal == nil && amendment.commissionDelta() > 0 {
+	// A06 part C: a business trip's increase reserves the driver's
+	// commission delta here like any other; the organization's budget is
+	// raised (reserve top-up) in the commit step's funding leg, before the
+	// raised total commits (raiseBusinessReservation).
+	if amendment.commissionDelta() > 0 {
 		_, err := s.deps.Wallet.ReserveCommissionDelta(ctx, route.ReservationID, amendment.ID.String(),
 			deltaTermsFor(amendment, amendment.PriorCommissionMinor, amendment.RevisedCommissionMinor, amendment.RevisedFareMinor),
 			amendmentKey("res", amendment.ID))
@@ -1625,8 +1662,14 @@ func (s *Service) runAmendmentCommit(ctx context.Context, amendment *Amendment, 
 	return s.markStep(ctx, current.ID, amendStepApply)
 }
 
-// commitFundingLeg moves the rider's side of one amendment.
+// commitFundingLeg moves the payer's side of one amendment: the rider's
+// funding — or, on a business trip, the organization's budget reservation
+// raised to cover a raised total (a decrease needs nothing: completion
+// commits the actual).
 func (s *Service) commitFundingLeg(ctx context.Context, amendment *Amendment, route *ExecutionRoute) error {
+	if route.businessFunded() {
+		return s.raiseBusinessReservation(ctx, amendment)
+	}
 	delta := amendment.fundingDelta()
 	if !route.securedFunding() || delta == 0 {
 		return nil
@@ -1739,8 +1782,10 @@ func (s *Service) failAmendment(ctx context.Context, amendment *Amendment, leg s
 		}); err != nil {
 			return err
 		}
+		// The event reaches the driver too: an organization's refusal reads
+		// as funding_refused there (the row and the audit keep it).
 		if err := s.writeAmendmentEvent(ctx, tx, saved, "mp.amendment.failed", partySystem, "ride-service", now,
-			map[string]any{"reason": reason}); err != nil {
+			map[string]any{"reason": amendmentReasonFor(partySystem, reason)}); err != nil {
 			return err
 		}
 		return writeAudit(ctx, tx, AuditRecord{
@@ -1922,10 +1967,18 @@ func (s *Service) revalidateAmendment(ctx context.Context, amendment *Amendment,
 
 // writeAmendmentEvent appends one mp.amendment.* outbox row.
 func (s *Service) writeAmendmentEvent(ctx context.Context, tx pgx.Tx, amendment *Amendment, name, role, actorID string, now time.Time, extra map[string]any) error {
+	// The two parties by id (notification-service reaches each audience
+	// from the payload first): ids only, never a name or a phone.
+	requesterID, driverID, err := s.deps.Store.AwardParties(ctx, tx, amendment.AwardID)
+	if err != nil {
+		return err
+	}
 	payload := map[string]any{
 		"amendmentId":            amendment.ID.String(),
 		"awardId":                amendment.AwardID.String(),
 		"requestId":              amendment.RequestID.String(),
+		"requesterId":            requesterID.String(),
+		"driverId":               driverID.String(),
 		"executionId":            amendment.ExecutionID.String(),
 		"kind":                   amendment.Kind,
 		"state":                  amendment.State,

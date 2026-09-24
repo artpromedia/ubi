@@ -3,6 +3,7 @@ package marketplace_test
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -286,15 +287,81 @@ func TestBusinessCancelRights(t *testing.T) {
 	}
 }
 
-// TestBusinessReleaseFallsBackToTheSystemWhenTheBookerLeft: payment-service
-// refuses the booker's release once they are no longer a booking member
-// (cancel_not_permitted). The trip still ended without service, so the
-// budget is released as the system under its own key — never stranded.
+// TestBusinessDepartedBookerCannotCancelAColleaguesTrip (round-7 low): a
+// booker who has left the organization cannot cancel the colleague's trip
+// they booked. Their authority is re-checked at cancel time through the
+// documented membership contract (payment-service's policy check,
+// booker_not_authorized); the refusal moves nothing — the ride, the award
+// and the budget reservation stand, the passenger can still decline from
+// their trip link — and a booker who is still a member cancels as before.
+// When membership cannot be read, nothing is cancelled either.
+func TestBusinessDepartedBookerCannotCancelAColleaguesTrip(t *testing.T) {
+	double := newBusinessDouble(t, businessServiceKey)
+	h := businessHarness(t, double, testutil.WithFlag(cityconfig.FlagMarketplaceGuestBookings, true))
+	f, org, token := guestBusinessTrip(t, h, double)
+	double.removeMember(org.orgID, org.booker)
+	checksBefore := double.callCount(businessPolicyPath)
+
+	refused := h.Do(http.MethodPost, "/rides/"+f.rideID.String()+"/cancel", f.rider, map[string]any{"reasonCode": "changed_mind"})
+	requireRefusalReason(t, refused, http.StatusForbidden, domain.CodeForbidden, marketplace.BusinessReasonCancelNotPermitted)
+	if double.callCount(businessPolicyPath) != checksBefore+1 {
+		t.Fatal("membership is checked at cancel time through the policy check")
+	}
+	checked := double.bodiesOf(businessPolicyPath)[checksBefore]
+	if checked["bookerId"] != org.booker.String() || checked["travellerId"] != org.traveller.String() {
+		t.Fatalf("the check names the cancelling booker and the colleague: %v", checked)
+	}
+	state, _, _, _, active := rideRow(t, h, f.rideID)
+	if !active || state != machine.RiderDriverAssigned {
+		t.Fatalf("the refused cancel leaves the trip running: %s active=%v", state, active)
+	}
+	if award := awardRow(t, h, f.requestID); award.State != machine.MpAwardConfirmed {
+		t.Fatalf("the award stands: %s", award.State)
+	}
+	if booking := bookingRow(t, h, f.award.ID); booking.State != machine.MpBusinessReserved || booking.OwedOp != "" ||
+		double.callCount(businessReleasePath) != 0 {
+		t.Fatalf("nothing is released: %+v, %d releases", booking, double.callCount(businessReleasePath))
+	}
+	if h.Wallet.ReversalsByReservation[f.reservation] != 0 {
+		t.Fatal("the driver's commission is untouched")
+	}
+
+	// The passenger's own right is unchanged: they decline from the link.
+	requireStatus(t, tripAccess(t, h, http.MethodPost, "/mp/trip-access/decline", token, clientAddr(), move.IdempotencyHeader, idemKey()),
+		http.StatusOK)
+	if by := double.releasedBy(f.award.ID.String()); by != marketplace.BusinessPartyTraveller {
+		t.Fatalf("the traveller's decline releases as the traveller: %q", by)
+	}
+
+	// A booker who is still a member cancels as before.
+	member, _, _ := guestBusinessTrip(t, h, double)
+	requireStatus(t, h.Do(http.MethodPost, "/rides/"+member.rideID.String()+"/cancel", member.rider,
+		map[string]any{"reasonCode": "changed_mind"}), http.StatusOK)
+	if by := double.releasedBy(member.award.ID.String()); by != marketplace.BusinessPartyBooker {
+		t.Fatalf("a member booker's cancel releases as the booker: %q", by)
+	}
+
+	// Unreadable membership: fail closed, nothing cancelled.
+	unreadable, _, _ := guestBusinessTrip(t, h, double)
+	double.failBeforeHandling(businessPolicyPath, 1)
+	blind := h.Do(http.MethodPost, "/rides/"+unreadable.rideID.String()+"/cancel", unreadable.rider, map[string]any{"reasonCode": "changed_mind"})
+	requireRefusalReason(t, blind, http.StatusServiceUnavailable, domain.CodeServiceUnavailable, marketplace.ReasonBusinessCheckUnavailable)
+	if _, _, _, _, active := rideRow(t, h, unreadable.rideID); !active {
+		t.Fatal("an unverifiable cancel moves nothing")
+	}
+}
+
+// TestBusinessReleaseFallsBackToTheSystemWhenTheBookerLeft: the booker was
+// a member when they cancelled (the cancel-time check passed) but left
+// before the owed release reached payment-service, which refuses the
+// booker's release (cancel_not_permitted). The trip still ended without
+// service, so the budget is released as the system under its own key —
+// never stranded.
 func TestBusinessReleaseFallsBackToTheSystemWhenTheBookerLeft(t *testing.T) {
 	double := newBusinessDouble(t, businessServiceKey)
 	h := businessHarness(t, double, testutil.WithFlag(cityconfig.FlagMarketplaceGuestBookings, true))
 	f, org, _ := guestBusinessTrip(t, h, double)
-	double.removeMember(org.orgID, org.booker)
+	double.leaveWhenReleased(org.orgID, org.booker)
 
 	requireStatus(t, h.Do(http.MethodPost, "/rides/"+f.rideID.String()+"/cancel", f.rider,
 		map[string]any{"reasonCode": "changed_mind"}), http.StatusOK)
@@ -374,21 +441,19 @@ func businessTripFixture(t *testing.T, h *testutil.Harness, f *businessTrip) *tr
 	}
 }
 
-// TestBusinessTripFareChangesStayWithinTheReservation: the organization's
-// budget reserved the agreed fare and the contract has no reserve top-up, so
-// a fare INCREASE on a business trip is refused before any money moves (no
-// commission delta reserved, no rider funding touched); a committed DECREASE
-// moves only the driver's commission by a linked refund, and completion
-// commits the lower ACTUAL — agreed fare plus committed adjustments.
-func TestBusinessTripFareChangesStayWithinTheReservation(t *testing.T) {
-	double := newBusinessDouble(t, businessServiceKey)
+const businessTopUpPath = "/v1/finance/business/reserve-top-up"
+
+// businessAmendTrip awards a business trip at the TOP of its bounds (so a
+// shorter route can lower it) on a harness with multi-stop and trip
+// amendments on.
+func businessAmendTrip(t *testing.T, double *businessDouble, budget int64) (*testutil.Harness, *tripFixture, *orgFixture) {
+	t.Helper()
 	h := businessHarness(t, double,
 		testutil.WithFlag(cityconfig.FlagMarketplaceMultiStop, true),
 		testutil.WithFlag(cityconfig.FlagMarketplaceTripAmendments, true))
 	h.Clock.Set(fixedOffPeakHour)
 	rider := h.Rider()
-	org := double.seedOrg(rider.UserID, uuid.New(), 5_000_000, 2_000_000)
-	// Agreed at the top of the bounds, so a shorter route can lower it.
+	org := double.seedOrg(rider.UserID, uuid.New(), 5_000_000, budget)
 	quote := quoteEnvelope(t, h, rider, testutil.PickupFixture(), testutil.DropoffFixture())
 	published := h.Do(http.MethodPost, "/mp/requests", rider, map[string]any{
 		"quoteId":            quote["quoteId"],
@@ -396,21 +461,185 @@ func TestBusinessTripFareChangesStayWithinTheReservation(t *testing.T) {
 		"paymentMethodId":    marketplace.PaymentMethodBusiness,
 		"business":           map[string]any{"organizationId": org.orgID},
 	}, move.IdempotencyHeader, idemKey())
-	f := businessTripFixture(t, h, awardPublishedBusinessTrip(t, h, rider, published, "maximumFareMinor"))
+	return h, businessTripFixture(t, h, awardPublishedBusinessTrip(t, h, rider, published, "maximumFareMinor")), org
+}
 
+// furtherDropoff proposes a longer route: the fare rises.
+func (f *tripFixture) furtherDropoff(t *testing.T) map[string]any {
+	t.Helper()
 	further := testutil.PlaceAt(testutil.DropoffFixture(), 1_500)
-	raised := f.propose(f.rider, map[string]any{
+	proposed := f.propose(f.rider, map[string]any{
 		"stops":                 []map[string]any{},
 		"dropoff":               map[string]any{"lat": further.Lat, "lng": further.Lng, "label": "Further"},
 		"expectedRouteRevision": 1,
 		"expectedFareRevision":  1,
 	}, "")
-	requireRefusalReason(t, raised, http.StatusConflict, domain.CodeConflict, marketplace.ReasonBusinessTopUpUnavailable)
-	if h.Wallet.OpenDeltas(f.reservation) != 0 || h.Funding.TopUpCalls != 0 {
-		t.Fatalf("nothing is reserved for a refused increase: deltas %d, top-ups %d", h.Wallet.OpenDeltas(f.reservation), h.Funding.TopUpCalls)
+	requireStatus(t, proposed, http.StatusCreated)
+	return decode(t, proposed)
+}
+
+// TestBusinessFareIncreaseRaisesTheReservationFirst: an approved fare
+// increase on a business trip raises the organization's reservation through
+// payment-service's reserve top-up BEFORE the raised total commits — under
+// business:<award>:topup:<amendment>, the increase only, reason
+// fare_increase — exactly once across a lost answer (the sweep re-sends the
+// SAME key and terms, payment-service replays). The driver's commission
+// increment is captured once, no rider funding is touched, and completion
+// commits the higher actual within the raised reservation.
+func TestBusinessFareIncreaseRaisesTheReservationFirst(t *testing.T) {
+	double := newBusinessDouble(t, businessServiceKey)
+	h, f, org := businessAmendTrip(t, double, 2_000_000)
+	amendment := f.furtherDropoff(t)
+	id := amendment["amendmentId"].(string)
+	revised := moneyMinor(t, amendment, "revisedFareMinor")
+	if revised <= f.amount || amendment["riderFunding"] != "not_required" || amendment["state"] != machine.MpAmendmentAwaiting {
+		t.Fatalf("fixture: a business increase awaits approvals with no rider funding: %v", amendment)
+	}
+	if double.callCount(businessTopUpPath) != 0 {
+		t.Fatal("nothing is raised before both parties approve")
+	}
+	requireStatus(t, f.decide(f.rider, amendment, "approve", ""), http.StatusOK)
+	// The first answer is lost for good (net/http re-sends once itself).
+	double.dropAfterRecording(businessTopUpPath, 2)
+	f.park(t, f.position, 30*time.Second)
+	paused := f.decide(f.driver, amendment, "approve", "")
+	requireStatus(t, paused, http.StatusOK)
+	if row := f.amendmentRow(t, id); row.State != machine.MpAmendmentAwaiting || row.FundingDone {
+		t.Fatalf("an unknown top-up parks the commit; nothing committed: %s funding=%v", row.State, row.FundingDone)
+	}
+	if fare, _, _, _ := f.rideTerms(t); fare != f.amount {
+		t.Fatal("the original agreement stands while the raise is unconfirmed")
+	}
+
+	h.Clock.Advance(10 * time.Minute)
+	sweepOnce(t, h)
+	row := f.amendmentRow(t, id)
+	if row.State != machine.MpAmendmentCommitted {
+		t.Fatalf("the sweep re-sends the same raise and commits: %s (%s)", row.State, row.LastError)
+	}
+	key := "business:" + f.award.ID.String() + ":topup:" + id
+	for _, sent := range double.keysOf(businessTopUpPath) {
+		if sent != key {
+			t.Fatalf("every send carries the amendment's one key: %s", sent)
+		}
+	}
+	bodies := double.bodiesOf(businessTopUpPath)
+	for _, body := range bodies {
+		if body["bookingRef"] != f.award.ID.String() || int64(body["amountMinor"].(float64)) != revised-f.amount ||
+			body["reason"] != marketplace.BusinessIncreaseFareIncrease || body["reasonRef"] != id || body["currency"] != testCurrency {
+			t.Fatalf("the INCREASE, named by the amendment, with identical terms on every send: %v", body)
+		}
+	}
+	if len(bodies) < 2 || double.topUpCount(f.award.ID.String()) != 1 {
+		t.Fatalf("re-sent, raised once: %d sends, %d raises", len(bodies), double.topUpCount(f.award.ID.String()))
+	}
+	reservation, _ := double.reservation(f.award.ID.String())
+	if booking := bookingRow(t, h, f.award.ID); booking.ReservedMinor != revised || reservation.reserved != revised {
+		t.Fatalf("the raised reservation covers the new total: booking %d, payment-service %d, want %d",
+			booking.ReservedMinor, reservation.reserved, revised)
+	}
+	if outboxCount(t, h, "business_booking.reserve_increased", f.award.ID.String()) != 1 ||
+		auditCount(t, h, "business_booking.reserve_increased", f.award.ID.String()) != 1 {
+		t.Fatal("the raise is evented and audited once")
+	}
+	if h.Wallet.DeltaCapturesByAmendment[id] != 1 || h.Funding.TopUpCalls != 0 || h.Funding.Calls != 0 {
+		t.Fatalf("the commission increment is captured once; no rider funding: %d / %d / %d",
+			h.Wallet.DeltaCapturesByAmendment[id], h.Funding.TopUpCalls, h.Funding.Calls)
+	}
+	if n := countRows(t, h, `SELECT COUNT(*) FROM public.outbox_events WHERE name LIKE 'mp.%' AND payload::text LIKE '%' || $1 || '%'`, org.orgID); n != 0 {
+		t.Fatalf("no mp.* event (fanned out to drivers) names the organization: %d", n)
+	}
+	sends := double.callCount(businessTopUpPath)
+	sweepOnce(t, h)
+	if double.callCount(businessTopUpPath) != sends {
+		t.Fatal("a committed raise is never sent again")
+	}
+
+	completeTrip(t, h, f.rider, f.driver, f.requestID, f.rideID, 40)
+	reservation, _ = double.reservation(f.award.ID.String())
+	if reservation.state != "committed" || reservation.committed == nil || *reservation.committed != revised {
+		t.Fatalf("completion commits the higher actual within the raised reservation: %+v", reservation)
+	}
+	if double.balance(org.centreID) != 2_000_000-revised {
+		t.Fatalf("the budget paid the raised actual: %d", double.balance(org.centreID))
+	}
+}
+
+// TestBusinessTripFareChangesStayWithinTheReservation: without budget for
+// it, an approved increase is REFUSED by payment-service's top-up (never on
+// credit): the amendment fails into compensation — the driver's commission
+// increment released, nothing charged, the original agreement kept — and
+// the approving party is told why. A committed DECREASE moves only the
+// driver's commission by a linked refund and raises nothing; completion
+// commits the lower ACTUAL — agreed fare plus committed adjustments.
+func TestBusinessTripFareChangesStayWithinTheReservation(t *testing.T) {
+	double := newBusinessDouble(t, businessServiceKey)
+	h, f, org := businessAmendTrip(t, double, 2_000_000)
+	// The cost centre's budget now holds exactly the reservation.
+	double.setBudget(org.centreID, f.amount)
+
+	raised := f.furtherDropoff(t)
+	requireStatus(t, f.decide(f.rider, raised, "approve", ""), http.StatusOK)
+	f.park(t, f.position, 30*time.Second)
+	// The DRIVER's approval runs the commit: they are told the change was not
+	// funded and the trip continues — never the organization's code, reason
+	// or budget (BUSINESS_VISIBILITY).
+	refused := f.decide(f.driver, raised, "approve", "")
+	requireRefusalReason(t, refused, http.StatusConflict, domain.CodeConflict, "funding_refused")
+	body := decode(t, refused)
+	if details := body["details"].(map[string]any); details["amendmentState"] != machine.MpAmendmentCompensated ||
+		details["stage"] != nil || details["topUp"] != nil ||
+		!strings.Contains(body["message"].(string), "continues on the agreed terms") {
+		t.Fatalf("the driver's refusal keeps the agreement and explains it neutrally: %v", body)
+	}
+	for _, leak := range []string{"business", "budget", "organization", org.orgID} {
+		if strings.Contains(refused.Body.String(), leak) {
+			t.Fatalf("the driver's refusal never mentions %q: %s", leak, refused.Body.String())
+		}
+	}
+	row := f.amendmentRow(t, raised["amendmentId"].(string))
+	if row.State != machine.MpAmendmentCompensated || row.Reason != "funding_business_budget_insufficient" {
+		t.Fatalf("the amendment names the organization's refusal: %s / %s", row.State, row.Reason)
+	}
+	amendmentPath := f.path("/amendments/" + row.ID.String())
+	if seen := decode(t, h.Do(http.MethodGet, amendmentPath, f.driver, nil))["reason"]; seen != "funding_refused" {
+		t.Fatalf("the driver's view reads funding_refused: %v", seen)
+	}
+	if seen := decode(t, h.Do(http.MethodGet, amendmentPath, f.rider, nil))["reason"]; seen != "funding_business_budget_insufficient" {
+		t.Fatalf("the booker's own view names the organization's refusal: %v", seen)
+	}
+	if n := countRows(t, h, `SELECT COUNT(*) FROM public.outbox_events WHERE name = 'mp.amendment.failed'
+		AND payload->>'amendmentId' = $1 AND payload->>'reason' = 'funding_refused'`, row.ID.String()); n != 1 {
+		t.Fatalf("the shared mp.amendment.failed event reads funding_refused: %d", n)
+	}
+	if n := countRows(t, h, `SELECT COUNT(*) FROM public.outbox_events WHERE name LIKE 'mp.%'
+		AND payload->>'awardId' = $1 AND (payload::text LIKE '%budget%' OR payload::text LIKE '%business%')`, f.award.ID.String()); n != 0 {
+		t.Fatalf("no mp.* event (fanned out to the driver) mentions the organization's budget: %d", n)
+	}
+
+	// The BOOKER's approval runs the commit of a second attempt: they are
+	// told the organization's reason and that the agreement stands.
+	again := f.furtherDropoff(t)
+	f.park(t, f.position, 30*time.Second)
+	requireStatus(t, f.decide(f.driver, again, "approve", ""), http.StatusOK)
+	riderRefused := f.decide(f.rider, again, "approve", "")
+	requireRefusalReason(t, riderRefused, http.StatusUnprocessableEntity, domain.CodeInsufficientSpendable, marketplace.BusinessReasonBudgetInsufficient)
+	riderBody := decode(t, riderRefused)
+	if details := riderBody["details"].(map[string]any); details["amendmentState"] != machine.MpAmendmentCompensated ||
+		details["stage"] != marketplace.BusinessIncreaseFareIncrease ||
+		!strings.Contains(riderBody["message"].(string), "continues on the agreed terms") {
+		t.Fatalf("the booker's refusal keeps the agreement and explains it: %v", riderBody)
 	}
 	if fare, _, _, _ := f.rideTerms(t); fare != f.amount {
 		t.Fatalf("the agreed fare stands: %d", fare)
+	}
+	if h.Wallet.OpenDeltas(f.reservation) != 0 || h.Wallet.DeltaCapturesByAmendment[row.ID.String()] != 0 || h.Funding.TopUpCalls != 0 {
+		t.Fatalf("the commission increment is released, never captured; no rider funding: deltas %d", h.Wallet.OpenDeltas(f.reservation))
+	}
+	reservation, _ := double.reservation(f.award.ID.String())
+	if booking := bookingRow(t, h, f.award.ID); booking.ReservedMinor != f.amount || reservation.reserved != f.amount ||
+		double.topUpCount(f.award.ID.String()) != 0 {
+		t.Fatalf("a refused raise changes no reservation: %d / %d", booking.ReservedMinor, reservation.reserved)
 	}
 
 	pickup, dropoff := testutil.PickupFixture(), testutil.DropoffFixture()
@@ -438,21 +667,78 @@ func TestBusinessTripFareChangesStayWithinTheReservation(t *testing.T) {
 	if decode(t, committed)["state"] != machine.MpAmendmentCommitted {
 		t.Fatalf("the decrease commits: %s", committed.Body.String())
 	}
-	if h.Funding.PartialReleaseCalls != 0 || h.Funding.Calls != 0 {
-		t.Fatal("no rider funding leg exists on a business trip")
+	if h.Funding.PartialReleaseCalls != 0 || h.Funding.Calls != 0 || double.callCount(businessTopUpPath) != 2 {
+		t.Fatal("no rider funding leg exists on a business trip, and a decrease raises nothing")
 	}
 
-	completeTrip(t, h, rider, f.driver, f.requestID, f.rideID, 40)
-	reservation, _ := double.reservation(f.award.ID.String())
+	completeTrip(t, h, f.rider, f.driver, f.requestID, f.rideID, 40)
+	reservation, _ = double.reservation(f.award.ID.String())
 	if reservation.state != "committed" || reservation.committed == nil || *reservation.committed != revised || reservation.reserved != f.amount {
 		t.Fatalf("the budget commits the ACTUAL (agreed fare + committed adjustments): %+v", reservation)
 	}
-	if double.balance(org.centreID) != 2_000_000-revised {
+	if double.balance(org.centreID) != f.amount-revised {
 		t.Fatalf("the budget paid the actual only: %d", double.balance(org.centreID))
 	}
-	receipt := h.Do(http.MethodGet, "/mp/requests/"+f.requestID+"/receipt", rider, nil)
+	receipt := h.Do(http.MethodGet, "/mp/requests/"+f.requestID+"/receipt", f.rider, nil)
 	requireStatus(t, receipt, http.StatusOK)
 	if total := moneyMinor(t, decode(t, receipt), "totalMinor"); total != revised {
 		t.Fatalf("the receipt reconciles with the commit: %d", total)
+	}
+}
+
+// TestBusinessPaidWaitingRaisesTheReservation: paid waiting at a stop of a
+// business trip settles through its pre-authorized adjustment, whose
+// funding leg raises the organization's reservation by the waiting fee
+// (reason paid_waiting, named by the waiting adjustment) before it commits;
+// completion commits the fare plus the waiting.
+func TestBusinessPaidWaitingRaisesTheReservation(t *testing.T) {
+	double := newBusinessDouble(t, businessServiceKey)
+	h := businessHarness(t, double,
+		testutil.WithFlag(cityconfig.FlagMarketplaceMultiStop, true),
+		testutil.WithFlag(cityconfig.FlagMarketplaceTripAmendments, true))
+	h.Clock.Set(fixedOffPeakHour)
+	rider := h.Rider()
+	org := double.seedOrg(rider.UserID, uuid.New(), 5_000_000, 2_000_000)
+	pickup, dropoff, firstPlace, _ := stopFixtures()
+	recorder := quoteStops(t, h, rider, pickup, dropoff, []map[string]any{firstStopInput()})
+	requireStatus(t, recorder, http.StatusOK)
+	quote := decode(t, recorder)
+	published := h.Do(http.MethodPost, "/mp/requests", rider, map[string]any{
+		"quoteId":            quote["quoteId"],
+		"requestedFareMinor": moneyBody(moneyMinor(t, quote, "minimumFareMinor")),
+		"paymentMethodId":    marketplace.PaymentMethodBusiness,
+		"business":           map[string]any{"organizationId": org.orgID},
+	}, move.IdempotencyHeader, idemKey())
+	requireStatus(t, published, http.StatusCreated)
+	stops := routeStops(t, decode(t, published))
+	f := businessTripFixture(t, h, awardPublishedBusinessTrip(t, h, rider, published, "minimumFareMinor"))
+	stopID := stops[0]["stopId"].(string)
+
+	f.start(t)
+	f.moveTo(t, firstPlace, 5*time.Minute)
+	requireStatus(t, f.stopPost(f.driver, stopID, "arrive", map[string]any{}, ""), http.StatusOK)
+	h.Clock.Advance(270 * time.Second)
+	sweepOnce(t, h)
+	requireStatus(t, f.stopPost(f.driver, stopID, "depart", nil, ""), http.StatusOK)
+	h.Clock.Advance(time.Minute)
+	sweepOnce(t, h)
+
+	waiting := waitingAmendments(t, f)
+	if len(waiting) != 1 || waiting[0].State != machine.MpAmendmentCommitted {
+		t.Fatalf("the waiting adjustment commits: %+v", waiting)
+	}
+	fee := waiting[0].RevisedFareMinor - waiting[0].PriorFareMinor
+	bodies := double.bodiesOf(businessTopUpPath)
+	if fee <= 0 || len(bodies) != 1 || int64(bodies[0]["amountMinor"].(float64)) != fee ||
+		bodies[0]["reason"] != marketplace.BusinessIncreasePaidWaiting || bodies[0]["reasonRef"] != waiting[0].ID.String() {
+		t.Fatalf("paid waiting raises the reservation by the fee, named by its adjustment: fee %d, %v", fee, bodies)
+	}
+	if booking := bookingRow(t, h, f.award.ID); booking.ReservedMinor != f.amount+fee {
+		t.Fatalf("the reservation covers the fare and the waiting: %d", booking.ReservedMinor)
+	}
+	f.complete(t)
+	reservation, _ := double.reservation(f.award.ID.String())
+	if reservation.state != "committed" || reservation.committed == nil || *reservation.committed != f.amount+fee {
+		t.Fatalf("completion commits the fare plus the waiting: %+v", reservation)
 	}
 }

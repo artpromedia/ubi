@@ -68,32 +68,36 @@ func TestFleetClientHoldsFleetServiceToTheContract(t *testing.T) {
 	}
 }
 
-// TestRiskDeadlineIsTheEarlierCandidate (Q4): the earlier of the
-// reconfirmation deadline (while reconfirmation is still owed) and
-// activation minus the market's lead; never in the past.
+// TestRiskDeadlineIsTheEarlierCandidate (decisions Q4): the earlier of the
+// reconfirmation deadline (while reconfirmation is still owed) and the PICKUP
+// minus the market's lead — never later than activation, never in the past.
 func TestRiskDeadlineIsTheEarlierCandidate(t *testing.T) {
 	pickup := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	b := &AdvanceBooking{
 		State:             "confirmed",
+		WindowStart:       pickup,
 		ReconfirmDeadline: pickup.Add(-45 * time.Minute),
 		ActivationAt:      pickup.Add(-30 * time.Minute),
 	}
 	now := pickup.Add(-5 * time.Hour)
-	if got := riskDeadlineFor(b, 0, now); !got.Equal(b.ReconfirmDeadline) {
-		t.Fatalf("with no lead, the reconfirmation deadline comes first: %v", got)
+	if got := riskDeadlineFor(b, 7_200, now); !got.Equal(pickup.Add(-2 * time.Hour)) {
+		t.Fatalf("the default: pickup − 2 h comes first: %v", got)
 	}
-	if got := riskDeadlineFor(b, 1_800, now); !got.Equal(pickup.Add(-time.Hour)) {
-		t.Fatalf("activation − 30 min comes first: %v", got)
+	if got := riskDeadlineFor(b, 1_800, now); !got.Equal(b.ReconfirmDeadline) {
+		t.Fatalf("with a 30-minute lead the reconfirmation deadline comes first: %v", got)
 	}
 	reconfirmed := *b
 	reconfirmed.State = "reconfirmed"
 	at := pickup.Add(-2 * time.Hour)
 	reconfirmed.ReconfirmedAt = &at
-	if got := riskDeadlineFor(&reconfirmed, 0, now); !got.Equal(b.ActivationAt) {
-		t.Fatalf("a reconfirmed booking owes no reconfirmation: %v", got)
+	if got := riskDeadlineFor(&reconfirmed, 2_700, now); !got.Equal(pickup.Add(-45 * time.Minute)) {
+		t.Fatalf("a reconfirmed booking owes no reconfirmation — pickup − lead: %v", got)
+	}
+	if got := riskDeadlineFor(&reconfirmed, 600, now); !got.Equal(b.ActivationAt) {
+		t.Fatalf("never later than activation (a current passenger is never diverted): %v", got)
 	}
 	late := pickup.Add(-10 * time.Minute)
-	if got := riskDeadlineFor(b, 1_800, late); !got.Equal(late) {
+	if got := riskDeadlineFor(b, 7_200, late); !got.Equal(late) {
 		t.Fatalf("a blocker too late to resolve is due at once: %v", got)
 	}
 }

@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/domain"
+	"github.com/ubi-africa/ubi-monorepo/services/ride-service/internal/marketplace"
 )
 
 // RATE LIMITING (round 8, P0).
@@ -54,9 +57,21 @@ import (
 //     runaway assistant or transfer worker spends the budget of the user it
 //     acts for and nobody else's. Exempting delegations instead would exempt
 //     every gateway call too — they carry the same proof.
-//     2. Everything else — the trip link, health checks, fleet-service's
-//     /internal/fleet, and any request whose context does not verify — is
-//     counted per client address (an IPv4 host, or an IPv6 /64).
+//     2. fleet-service's calls to /internal/fleet (internal contract A)
+//     that present a VALID X-Service-Key — the constant-time check
+//     RequireFleetServiceKey refuses with, against FLEET_RIDE_SERVICE_KEY
+//     (ExemptFleetServiceKey) — are not throttled at all, like
+//     payment-service's service-key exemption: the key is one credential
+//     the client gateway never proxies, its holder is a platform service
+//     bounded by its own retries, and a 429 mid-saga (an off-road report,
+//     a maintenance block, a swap) costs more than serving it. A missing,
+//     wrong or short key is NOT exempt: it is counted per client below and
+//     then refused (401) by RequireFleetServiceKey, never against the
+//     service it claims to be.
+//     3. Everything else — the trip link, health checks, an /internal/fleet
+//     call without a valid key, and any request whose context does not
+//     verify — is counted per client address (an IPv4 host, or an IPv6
+//     /64).
 //
 //     Nothing here authenticates or writes anything identity reads:
 //     RequireIdentity still runs, unchanged, on every identified route, and
@@ -94,8 +109,52 @@ type RateLimiter struct {
 	trusted  []netip.Prefix
 	limiter  *httprate.RateLimiter
 	logger   zerolog.Logger
+	// fleetKey matches a valid FLEET_RIDE_SERVICE_KEY; nil exempts nobody.
+	fleetKey func(presented string) bool
 
 	lastUntrustedWarning atomic.Int64
+}
+
+// FleetInternalPrefix is where cmd/server mounts internal contract A.
+const FleetInternalPrefix = "/internal/fleet"
+
+// ExemptFleetServiceKey exempts fleet-service's /internal/fleet calls that
+// present `serviceKey` (FLEET_RIDE_SERVICE_KEY) from the per-client limit.
+// An unset or short key (the fleet contract refuses everyone then) exempts
+// nobody. Call it once, before serving.
+func (l *RateLimiter) ExemptFleetServiceKey(serviceKey string) {
+	if len(serviceKey) < FleetServiceKeyMinLength {
+		l.fleetKey = nil
+		return
+	}
+	l.fleetKey = fleetKeyMatcher(serviceKey)
+}
+
+// fleetKeyMatcher compares a presented key with the configured one over
+// SHA-256 digests in constant time, so neither the key nor its length leaks
+// through timing. An empty presented key never matches.
+func fleetKeyMatcher(serviceKey string) func(presented string) bool {
+	want := sha256.Sum256([]byte(serviceKey))
+	return func(presented string) bool {
+		if presented == "" {
+			return false
+		}
+		got := sha256.Sum256([]byte(presented))
+		return subtle.ConstantTimeCompare(got[:], want[:]) == 1
+	}
+}
+
+// exemptServiceCall reports an /internal/fleet call carrying the VALID
+// fleet service key — the only traffic this limiter does not count.
+func (l *RateLimiter) exemptServiceCall(r *http.Request) bool {
+	if l.fleetKey == nil {
+		return false
+	}
+	path := r.URL.Path
+	if path != FleetInternalPrefix && !strings.HasPrefix(path, FleetInternalPrefix+"/") {
+		return false
+	}
+	return l.fleetKey(r.Header.Get(marketplace.FleetServiceKeyHeader))
 }
 
 // NewRateLimiter builds the limiter: `limit` requests per `window` per key.
@@ -301,9 +360,14 @@ func (l *RateLimiter) rateKey(r *http.Request) (string, bool) {
 }
 
 // Limit refuses a request over its key's budget with 429 rate_limited and
-// X-RateLimit-* / Retry-After headers.
+// X-RateLimit-* / Retry-After headers. A valid fleet service call is not
+// counted (ExemptFleetServiceKey).
 func (l *RateLimiter) Limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if l.exemptServiceCall(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		key, ok := l.rateKey(r)
 		if !ok {
 			writeError(w, domain.Errorf(domain.CodeValidationFailed, "the client address of this connection is unavailable"))

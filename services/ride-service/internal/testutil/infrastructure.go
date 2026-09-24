@@ -342,6 +342,7 @@ func NewHarness(t *testing.T, opts ...HarnessOption) *Harness {
 	// when an execution ride ends (service.Build wires the same observer).
 	service.SetExecutionObserver(marketplaceService)
 	service.SetDriverActivityObserver(marketplaceService)
+	service.SetRiderCancelGuard(marketplaceService)
 
 	rideHandler := handler.NewRideHandler(service, zerolog.Nop())
 	marketplaceHandler := handler.NewMarketplaceHandler(marketplaceService, zerolog.Nop())

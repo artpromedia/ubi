@@ -258,10 +258,10 @@ export const BusinessPeriodSchema = z
  *  - commit:     budget wallet → business_clearing      (`business_trip_commit`)
  *  - release:    no journal movement — the row stops encumbering
  * `business_clearing` holds committed business spend until the trip's
- * settlement pays the driver out of it (payment-service's settlement for
- * business-funded awards — not built yet; ride-service commits the budget
- * and never calls the personal settlement for a business award), so recon
- * can prove it nets to zero per booking.
+ * settlement pays the driver out of it (payment-service pays the awarded
+ * driver inside /commit; ride-service commits the budget and never calls
+ * the personal settlement for a business award), so recon can prove it nets
+ * to zero per booking.
  */
 export const BUSINESS_LEDGER = {
   organizationWalletOwnerType: "organization",
@@ -377,10 +377,18 @@ export const BudgetAllocationInputSchema = z.object({
  *     transaction. The rider's personal settlement is never called for a
  *     business award. The driver is then paid out of `business_clearing` for
  *     that booking ref by payment-service's settlement for business-funded
- *     awards — NOT BUILT YET (payment-service). An amendment that would raise
- *     the total above the reservation needs a reserve top-up op first (not
- *     built); until then ride-service refuses it
- *     (`business_budget_topup_unavailable`).
+ *     awards (payment-service, inside /commit). A total that GREW past the
+ *     reservation — an approved fare-increase amendment, paid waiting — is
+ *     raised first: before the amendment commits, `POST /reserve-top-up`
+ *     with the INCREASE, key `business:<awardId>:topup:<reasonRef>` (the
+ *     amendment id), once per reasonRef (BusinessReserveTopUpInputSchema).
+ *     A refusal (no budget, per-trip cap, organization inactive) fails the
+ *     amendment into compensation: the original agreement stands, the
+ *     driver's commission increment is released, and the booker is told why
+ *     (details.reason, e.g. `budget_insufficient`; their amendment view's
+ *     reason `funding_business_<reason>`). The DRIVER — their approval
+ *     answer, their amendment view and the shared mp.amendment.failed event
+ *     — reads only `funding_refused` (BUSINESS_VISIBILITY). Never on credit.
  *  5. CANCEL / NO AWARD — `POST /release` naming who cancelled
  *     (`BUSINESS_CANCEL_RIGHTS`), key `business:<awardId>:release`: the
  *     system for compensation / driver / ops cancellation / no-show, the
@@ -557,6 +565,41 @@ export type BusinessReservationStatus = z.infer<
   typeof BusinessReservationStatusSchema
 >;
 
+/**
+ * Why an ACTIVE reservation may grow (payment-service reservations.ts
+ * RESERVE_INCREASE_REASONS): an approved fare increase, or paid waiting —
+ * each named by the id ride-service holds for it (`reasonRef`).
+ */
+export const BUSINESS_RESERVE_INCREASE_REASONS = [
+  "fare_increase",
+  "paid_waiting",
+] as const;
+export type BusinessReserveIncreaseReason =
+  (typeof BUSINESS_RESERVE_INCREASE_REASONS)[number];
+
+/**
+ * `POST /reserve-top-up` (Idempotency-Key `business:<awardId>:topup:<reasonRef>`):
+ * raise an ACTIVE reservation by the INCREASE (never the new total) before a
+ * raised total is committed. Exactly once per key AND per reasonRef; refused
+ * (`budget_insufficient`, `trip_cap_exceeded`, `organization_not_active`,
+ * `currency_mismatch`, `feature_disabled`) without available budget — never
+ * on credit; a reservation no longer `reserved` is `illegal_transition`.
+ */
+export const BusinessReserveTopUpInputSchema = z.object({
+  bookingRef: z.string().min(1).max(200),
+  amountMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  currency: CurrencySchema,
+  reason: z.enum(BUSINESS_RESERVE_INCREASE_REASONS),
+  reasonRef: z
+    .string()
+    .min(1)
+    .max(200)
+    .regex(/^[A-Za-z0-9_.:-]+$/),
+});
+export type BusinessReserveTopUpInput = z.infer<
+  typeof BusinessReserveTopUpInputSchema
+>;
+
 /** What reserve / commit / release answer (201 recorded, 200 replayed). */
 export const BusinessOpResultSchema = z.object({
   ref: z.string().min(1),
@@ -566,6 +609,23 @@ export const BusinessOpResultSchema = z.object({
   reservation: BusinessReservationViewSchema,
   replayed: z.boolean(),
 });
+
+/**
+ * What `/reserve-top-up` answers: the op result (op `reserve`, entryId null,
+ * amount = the increase, the reservation with its NEW `reserved`) plus what
+ * the reservation was and is now.
+ */
+export const BusinessReserveTopUpResultSchema = BusinessOpResultSchema.extend({
+  increase: z.object({
+    reason: z.enum(BUSINESS_RESERVE_INCREASE_REASONS),
+    reasonRef: z.string().min(1),
+    previousReserved: MoneySchema,
+    reserved: MoneySchema,
+  }),
+});
+export type BusinessReserveTopUpResult = z.infer<
+  typeof BusinessReserveTopUpResultSchema
+>;
 
 // ── Payer / passenger rights (the contract ride-service implements) ───────
 

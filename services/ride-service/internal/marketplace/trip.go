@@ -879,6 +879,8 @@ func (s *Service) writeStopEvent(ctx context.Context, tx pgx.Tx, route *Executio
 	payload := map[string]any{
 		"awardId":     route.AwardID.String(),
 		"requestId":   route.RequestID.String(),
+		"requesterId": route.RequesterID.String(),
+		"driverId":    route.DriverID.String(),
 		"executionId": route.ExecutionID.String(),
 		"stopId":      stop.StopID.String(),
 		"order":       stop.Order,

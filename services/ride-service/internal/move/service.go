@@ -45,6 +45,10 @@ type Service struct {
 	// activity, when set, hears about a driver going online and a live trip
 	// starting, post-commit (see SetDriverActivityObserver).
 	activity DriverActivityObserver
+	// cancelGuard, when set, may refuse a rider's cancel of a
+	// marketplace-managed ride before anything moves (see
+	// SetRiderCancelGuard).
+	cancelGuard RiderCancelGuard
 }
 
 // NewService validates its dependencies rather than discovering a nil one

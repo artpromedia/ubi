@@ -1763,14 +1763,28 @@ export const MpAdvanceReservationPolicySchema = z.object({
   reminderOffsetsSec: z.array(z.number().int().positive()).max(4),
   maxOpenPerRequester: z.number().int().positive(),
   /**
-   * Fleet calendar (A05): a booking put at risk (off-road, document expiry,
-   * an assignment ending) must be resolved by the EARLIER of its
-   * reconfirmation deadline and activation minus this lead, or it fails
-   * through the ordinary failure path (commission returned, funding
-   * released). Optional: absent means no lead beyond activation itself.
+   * Fleet calendar (A05; decisions Q4): a booking put at risk (off-road,
+   * document expiry, an assignment ending) must be resolved by the EARLIER
+   * of its reconfirmation deadline (while it still awaits reconfirmation)
+   * and the PICKUP minus this lead — never later than activation. Otherwise
+   * it fails through the ordinary failure path (commission returned with a
+   * linked reversal, funding released) and the rider is proactively offered
+   * a same-fare rematch (only when the server's rematchAvailable allows it)
+   * or the refund (mp.advance_booking.choice_offered) — never republished
+   * without the rider's choice. At most `minLeadSec` (a lead equal to it
+   * still leaves a same-fare rematch possible at the deadline). Optional:
+   * absent applies MP_DEFAULT_RISK_RESOLUTION_LEAD_SEC (2 h), capped at the
+   * market's `minLeadSec`.
    */
   riskResolutionLeadSec: z.number().int().positive().optional(),
 });
+
+/**
+ * The decided default risk resolution lead (decisions Q4: pickup − 2 h),
+ * applied by ride-service when a market configures no
+ * `riskResolutionLeadSec`.
+ */
+export const MP_DEFAULT_RISK_RESOLUTION_LEAD_SEC = 7_200;
 
 export const MpRecurringPolicySchema = z.object({
   /** Occurrences are generated this many local days ahead. */
@@ -2042,6 +2056,56 @@ export const MpRematchBookingSchema = z
   .object({ requestedFareMinor: MoneySchema.optional() })
   .strict();
 
+/** What a rider may choose on a failed advance booking. */
+export const MP_BOOKING_RIDER_CHOICES = [
+  /** A same-fare re-publish (POST .../rematch) — only with rematchAvailable. */
+  "rematch",
+  /** Cancel and release (POST .../release): nothing charged, hold released. */
+  "refund",
+] as const;
+
+/**
+ * `mp.advance_booking.choice_offered` — the payload of the RIDER's proactive
+ * offer when a booking fails before activation (decisions Q4). Audience: the
+ * requester alone. It offers; it never republishes: a new request exists only
+ * after the rider's own POST .../rematch. Ids, codes, times and the booking's
+ * own fare only — never the driver's commission, a location or PII.
+ */
+export const MpAdvanceBookingChoiceOfferedPayloadSchema = z
+  .object({
+    bookingId: z.string().min(1),
+    awardId: z.string().min(1),
+    requestId: z.string().min(1),
+    requesterId: z.string().min(1),
+    /** A MpBookingFailureSchema reason (e.g. risk_unresolved). */
+    reason: z.string().min(1),
+    /** `["rematch", "refund"]` with rematchAvailable, else `["refund"]`. */
+    options: z.array(z.enum(MP_BOOKING_RIDER_CHOICES)).min(1),
+    rematchAvailable: z.boolean(),
+    /** The asked fare a rematch republishes at; null without a rematch. */
+    sameFareMinor: MoneySchema.nullable(),
+    /** The last moment a rematch can still be asked for; null without one. */
+    rematchBy: z.string().datetime({ offset: true }).nullable(),
+    refund: z.object({
+      riderCharged: z.literal(false),
+      riderFundingReleased: z.boolean(),
+    }),
+    audience: z.tuple([z.literal("rider")]),
+  })
+  .strict();
+export type MpAdvanceBookingChoiceOfferedPayload = z.infer<
+  typeof MpAdvanceBookingChoiceOfferedPayloadSchema
+>;
+
+/**
+ * The payment method a DRIVER is shown on a trip an organization's budget
+ * pays (A06 part C): paid through UBI, nothing to collect at the trip, and no
+ * payer details (BUSINESS_VISIBILITY). The execution ride — every ride view
+ * and every ride.* event — and the driver's receipt carry it instead of
+ * `business`; the requester's own marketplace views keep `business`.
+ */
+export const MP_PAID_BY_UBI_METHOD = "paid_by_ubi";
+
 /**
  * Fleet calendar (A05) booking commands, each with an Idempotency-Key and no
  * body, each answering the booking view (MpAdvanceBookingSchema):
@@ -2181,8 +2245,12 @@ export const MpReceiptSchema = z
     totalMinor: MoneySchema,
     taxes: MpReceiptTaxesSchema.optional(),
     payment: z.object({
-      /** `business`: an organization's budget paid (A06 part C). */
-      method: z.enum(["wallet", "cash", "business"]),
+      /**
+       * `business`: an organization's budget paid (A06 part C) — the RIDER's
+       * receipt. The driver's receipt of the same trip says `paid_by_ubi`
+       * (MP_PAID_BY_UBI_METHOD): paid in-app, nothing to collect, no payer.
+       */
+      method: z.enum(["wallet", "cash", "business", "paid_by_ubi"]),
       label: z.string().min(1),
     }),
     trip: z.object({

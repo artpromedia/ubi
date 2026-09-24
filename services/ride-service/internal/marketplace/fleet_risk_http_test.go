@@ -3,6 +3,7 @@ package marketplace_test
 import (
 	"context"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -51,7 +52,12 @@ func TestRiskDeadlineFailsTheBookingThroughTheFailurePath(t *testing.T) {
 	reportOffRoad(t, h, "off-a", vehicle)
 	b := f.reload(t)
 	deadline := *b.RiskDeadline
+	if !deadline.Equal(b.WindowStart.Add(-2*time.Hour)) || !deadline.Before(b.ReconfirmDeadline) {
+		t.Fatalf("decisions Q4: the earlier of reconfirmation and pickup − 2 h: %v (pickup %v, reconfirm %v)",
+			deadline, b.WindowStart, b.ReconfirmDeadline)
+	}
 	checkedWhileLive := b.NextVehicleCheckAt
+	requestsBefore := riderRequests(t, h, f.rider)
 
 	h.Clock.Set(deadline.Add(-time.Minute))
 	sweepOnce(t, h)
@@ -97,6 +103,21 @@ func TestRiskDeadlineFailsTheBookingThroughTheFailurePath(t *testing.T) {
 	if outboxCount(t, h, "mp.advance_booking.failed", b.ID.String()) != 1 {
 		t.Fatal("the failure is published once")
 	}
+	// Proactively offered: with too little lead left for a rematch, the
+	// refund alone — to the rider only, never republished.
+	if outboxCount(t, h, "mp.advance_booking.choice_offered", b.ID.String()) != 1 {
+		t.Fatal("the rider's choice is offered once, however many sweeps ran")
+	}
+	offer := outboxPayload(t, h, "mp.advance_booking.choice_offered", b.ID.String())
+	requireChoiceOffer(t, offer, f, marketplace.BookingFailRiskUnresolved, []any{"refund"})
+	if offer["sameFareMinor"] != nil || offer["rematchBy"] != nil || offer["rematchAvailable"] != false ||
+		offer["refund"].(map[string]any)["riderFundingReleased"] != true {
+		t.Fatalf("no rematch is offered without the lead for one; the hold was released: %v", offer)
+	}
+	if after := riderRequests(t, h, f.rider); after != requestsBefore || b.RematchRequestID != nil {
+		t.Fatalf("nothing is republished without the rider's choice: %d requests before, %d after, rematch %v",
+			requestsBefore, after, b.RematchRequestID)
+	}
 	for _, row := range ledgerRows(t, h, vehicle) {
 		if row.Kind == "booking" && row.State != "released" {
 			t.Fatalf("the failed booking frees its vehicle on the ledger: %+v", row)
@@ -135,7 +156,9 @@ func TestRiskDeadlineFailsTheBookingThroughTheFailurePath(t *testing.T) {
 func TestRiskDeadlineOffersRematchOnlyWhenTimeRemains(t *testing.T) {
 	double := newFleetDouble(t)
 	h := fleetHarness(t, double)
-	setRiskLead(t, h, 9_000)
+	// A market lead equal to the minimum advance lead (3 h): the deadline
+	// still leaves time for a same-fare rematch.
+	setRiskLead(t, h, 10_800)
 	vehicle := fleetVehicle(h, double, "a")
 	other := fleetVehicle(h, double, "b")
 	f := bookOnVehicle(t, h, double, vehicle, 4*time.Hour, "wallet")
@@ -143,21 +166,41 @@ func TestRiskDeadlineOffersRematchOnlyWhenTimeRemains(t *testing.T) {
 	reportOffRoad(t, h, "off-a", vehicle)
 	reportOffRoad(t, h, "off-b", other)
 	fb, gb := f.reload(t), g.reload(t)
-	if !fb.RiskDeadline.Equal(fb.ActivationAt.Add(-9_000 * time.Second)) {
-		t.Fatalf("the deadline follows the market's lead: %v", fb.RiskDeadline)
+	if !fb.RiskDeadline.Equal(fb.WindowStart.Add(-10_800 * time.Second)) {
+		t.Fatalf("the deadline is the pickup minus the market's lead: %v", fb.RiskDeadline)
 	}
 
 	// Each lapses at its own deadline (the minimum advance lead still ahead).
 	h.Clock.Set(*fb.RiskDeadline)
+	requestsBefore := riderRequests(t, h, f.rider)
+	sweepOnce(t, h)
 	sweepOnce(t, h)
 	if fb = f.reload(t); fb.State != machine.MpBookingFailed || !fb.Failure.RematchAvailable {
 		t.Fatalf("with the minimum lead left, a rematch is offered: %+v", fb.Failure)
+	}
+	// The rider is OFFERED the same-fare rematch or the refund, proactively,
+	// once — and nothing is republished until they choose.
+	if outboxCount(t, h, "mp.advance_booking.choice_offered", fb.ID.String()) != 1 {
+		t.Fatal("the choice is offered once")
+	}
+	offer := outboxPayload(t, h, "mp.advance_booking.choice_offered", fb.ID.String())
+	requireChoiceOffer(t, offer, f, marketplace.BookingFailRiskUnresolved, []any{"rematch", "refund"})
+	same := offer["sameFareMinor"].(map[string]any)
+	if int64(same["amountMinor"].(float64)) != f.amount || offer["rematchAvailable"] != true ||
+		!parseTime(t, offer["rematchBy"]).Equal(fb.WindowStart.Add(-10_800*time.Second)) {
+		t.Fatalf("the offer names the same asked fare and until when a rematch can be asked: %v", offer)
+	}
+	if after := riderRequests(t, h, f.rider); after != requestsBefore || fb.RematchRequestID != nil {
+		t.Fatalf("nothing is republished without the rider's choice: %d → %d", requestsBefore, after)
 	}
 	// Booking f: the rider rematches at the same fare.
 	rematch := h.Do(http.MethodPost, f.bookingPath("/rematch"), f.rider, nil, move.IdempotencyHeader, idemKey())
 	requireStatus(t, rematch, http.StatusCreated)
 	if asked := moneyMinor(t, decode(t, rematch), "requestedFareMinor"); asked != f.amount {
 		t.Fatalf("the rematch asks the same fare: %d vs %d", asked, f.amount)
+	}
+	if after := riderRequests(t, h, f.rider); after != requestsBefore+1 {
+		t.Fatalf("the rider's own choice republishes exactly once: %d → %d", requestsBefore, after)
 	}
 
 	h.Clock.Set(*gb.RiskDeadline)
@@ -270,5 +313,31 @@ func TestDriverWithdrawalResolvesTheRisk(t *testing.T) {
 	riderFailure := decode(t, h.Do(http.MethodGet, f.bookingPath(""), f.rider, nil))["failure"].(map[string]any)
 	if riderFailure["driverLost"] != true || riderFailure["rematchAvailable"] != true {
 		t.Fatalf("the rider sees D2 with a same-fare rematch: %v", riderFailure)
+	}
+}
+
+// riderRequests counts every marketplace request a rider has (a rematch is
+// a new one).
+func riderRequests(t *testing.T, h *testutil.Harness, rider testutil.Actor) int {
+	t.Helper()
+	return countRows(t, h, `SELECT COUNT(*) FROM mp.requests WHERE requester_id = $1`, rider.UserID)
+}
+
+// requireChoiceOffer checks the rider-only shape of an
+// mp.advance_booking.choice_offered payload: the requester named, never the
+// driver, no location, no commission — and the options offered.
+func requireChoiceOffer(t *testing.T, offer map[string]any, f *advanceFixture, reason string, options []any) {
+	t.Helper()
+	if offer["requesterId"] != f.rider.UserID.String() || offer["reason"] != reason ||
+		!reflect.DeepEqual(offer["options"], options) || !reflect.DeepEqual(offer["audience"], []any{"rider"}) {
+		t.Fatalf("the offer is the rider's, with the options %v: %v", options, offer)
+	}
+	for _, leak := range []string{"driverId", "commissionMinor", "pickup", "dropoff", "lat", "lng", "vehicleId"} {
+		if _, present := offer[leak]; present {
+			t.Fatalf("the rider's offer never carries %q: %v", leak, offer)
+		}
+	}
+	if refund := offer["refund"].(map[string]any); refund["riderCharged"] != false {
+		t.Fatalf("nothing is charged to the rider: %v", refund)
 	}
 }

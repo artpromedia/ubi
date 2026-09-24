@@ -533,10 +533,15 @@ export const EVENT_NAMES = [
   // (agreed fare + committed adjustments, never above the reservation) left
   // the budget; `released` — the reservation was freed (cancel, compensation
   // or a trip that ended without service), naming who cancelled.
+  // `reserve_increased` — payment-service raised the ACTIVE reservation (its
+  // reserve top-up) before ride-service committed a raised total: an
+  // approved fare increase or paid waiting, one per amendment (reasonRef).
+  // A refused top-up leaves the reservation and the agreed fare unchanged.
   "business_booking.reserved",
   "business_booking.refused",
   "business_booking.committed",
   "business_booking.released",
+  "business_booking.reserve_increased",
   // ── Fleet availability calendar (A05) — ride-service ──
   // ADVANCE BOOKING RISK — subject mp_advance_booking (machine mpBookingRisk).
   // `risk_changed` is the DRIVER's alert (payload names the driver only, never
@@ -547,9 +552,17 @@ export const EVENT_NAMES = [
   // (mp.vehicle_swap.rider_consent_requested) or the booking failing
   // (mp.advance_booking.failed, reason risk_unresolved — no reason shown).
   // `rematch_declined` is the rider choosing "cancel and release" over a
-  // rematch on a failed booking.
+  // rematch on a failed booking. `choice_offered` is the RIDER's proactive
+  // offer when a booking fails before activation (decisions Q4: at the risk
+  // decision deadline, or any other failure): a same-fare rematch — only when
+  // the server's rematchAvailable says enough lead time remains — or the
+  // refund ("cancel and release"; nothing was charged and any funding hold is
+  // released). Audience: the requester (payload.requesterId). It offers; it
+  // never republishes — only the rider's POST .../rematch does
+  // (MpAdvanceBookingChoiceOfferedPayloadSchema).
   "mp.advance_booking.risk_changed",
   "mp.advance_booking.rematch_declined",
+  "mp.advance_booking.choice_offered",
   // VEHICLE SWAP ON A BOOKING — subject mp_vehicle_swap (machine
   // mpVehicleSwap). proposed (fleet, service-authenticated; driver audience)
   // → driver_accepted | driver_declined → revalidated (server: class,

@@ -376,7 +376,7 @@ func TestVehicleSwapExpiresAtTheDecisionDeadline(t *testing.T) {
 	f := bookOnVehicle(t, h, double, original, 30*time.Hour, "wallet")
 	swapID := proposedSwapID(t, h, f.booking.BlockID, target)
 	swap := swapRow(t, h, swapID)
-	if !swap.ExpiresAt.Equal(f.booking.ActivationAt.Add(-30 * time.Minute)) {
+	if !swap.ExpiresAt.Equal(f.booking.WindowStart.Add(-2 * time.Hour)) {
 		t.Fatalf("a swap expires at the booking's decision deadline: %v", swap.ExpiresAt)
 	}
 	h.Clock.Set(swap.ExpiresAt)

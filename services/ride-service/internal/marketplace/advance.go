@@ -760,10 +760,17 @@ func (s *Service) endBooking(ctx context.Context, b *AdvanceBooking, end booking
 	}
 	now := s.now()
 	rematch := false
+	var rematchBy *time.Time
 	if _, policy, err := s.policy(ctx, b.CityID); err == nil {
 		if advance, err := policy.AdvanceReservationPolicyFor(b.CityID); err == nil {
-			rematch = end.to == machine.MpBookingFailed &&
-				b.WindowStart.Sub(now) >= time.Duration(advance.MinLeadSec)*time.Second
+			minLead := time.Duration(advance.MinLeadSec) * time.Second
+			rematch = end.to == machine.MpBookingFailed && b.WindowStart.Sub(now) >= minLead
+			if rematch {
+				// A rematch is a NEW advance request, which needs the
+				// market's minimum lead: the offer lasts until then.
+				by := b.WindowStart.Add(-minLead)
+				rematchBy = &by
+			}
 		}
 	}
 	reverseRowID, fundingRowID := uuid.New(), uuid.New()
@@ -895,6 +902,15 @@ func (s *Service) endBooking(ctx context.Context, b *AdvanceBooking, end booking
 		}); err != nil {
 			return err
 		}
+		if end.to == machine.MpBookingFailed {
+			// Decisions Q4: the rider is OFFERED the choice proactively —
+			// a same-fare rematch (only when rematchAvailable) or the
+			// refund. Nothing is republished here; only the rider's own
+			// POST .../rematch creates a new request.
+			if err := s.writeChoiceOffered(ctx, tx, moved, lockedRequest, failure, rematchBy, now); err != nil {
+				return err
+			}
+		}
 		if err := writeAudit(ctx, tx, AuditRecord{
 			ActorID: end.actorID, ActorRole: end.actorRole, Action: event,
 			SubjectType: subjectBooking, SubjectID: moved.ID.String(),
@@ -923,6 +939,59 @@ func (s *Service) endBooking(ctx context.Context, b *AdvanceBooking, end booking
 		s.driveAwardUnwind(ctx, award, bid, end.reason, reverseRowID, fundingRowID, now)
 	}
 	return moved, nil
+}
+
+// Rider choices on a failed booking (MP_BOOKING_RIDER_CHOICES).
+const (
+	BookingChoiceRematch = "rematch"
+	BookingChoiceRefund  = "refund"
+)
+
+// writeChoiceOffered writes mp.advance_booking.choice_offered, the RIDER's
+// proactive offer on a booking that just failed before activation
+// (MpAdvanceBookingChoiceOfferedPayloadSchema): a same-fare rematch — the
+// original asked fare, exactly what POST .../rematch republishes at — only
+// when rematchAvailable, else the refund alone ("cancel and release":
+// nothing was charged and any funding hold is released). The payload names
+// the requester only (never the driver, so no driver audience is reached),
+// carries no location and never the driver's commission; it offers and
+// never republishes.
+func (s *Service) writeChoiceOffered(ctx context.Context, tx pgx.Tx, b *AdvanceBooking, request *Request, failure *BookingFailure, rematchBy *time.Time, now time.Time) error {
+	options := []string{BookingChoiceRefund}
+	var sameFare, by any
+	if failure.RematchAvailable && rematchBy != nil {
+		options = []string{BookingChoiceRematch, BookingChoiceRefund}
+		sameFare = money(request.RequestedMinor, request.Currency)
+		by = rematchBy.UTC().Format(time.RFC3339)
+	}
+	name := "mp.advance_booking.choice_offered"
+	return writeEvent(ctx, tx, Event{
+		Name:           name,
+		AggregateType:  subjectBooking,
+		AggregateID:    b.ID.String(),
+		ToVersion:      b.Version,
+		CityID:         b.CityID,
+		ActorType:      "system",
+		ActorID:        "ride-service",
+		IdempotencyKey: eventKey(name, b.ID.String()),
+		OccurredAt:     now,
+		Payload: map[string]any{
+			"bookingId":        b.ID.String(),
+			"awardId":          b.AwardID.String(),
+			"requestId":        b.RequestID.String(),
+			"requesterId":      b.RequesterID.String(),
+			"reason":           failure.Reason,
+			"options":          options,
+			"rematchAvailable": failure.RematchAvailable && rematchBy != nil,
+			"sameFareMinor":    sameFare,
+			"rematchBy":        by,
+			"refund": map[string]any{
+				"riderCharged":         false,
+				"riderFundingReleased": failure.RiderFundingReleased,
+			},
+			"audience": []string{viewerRider},
+		},
+	})
 }
 
 // driveAwardUnwind is the post-commit half of ending a booking: the linked

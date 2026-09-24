@@ -159,14 +159,20 @@ var eventNames = map[string]struct{}{
 	"business_booking.refused":   {},
 	"business_booking.committed": {},
 	"business_booking.released":  {},
+	// payment-service raised the reservation (its reserve top-up) before a
+	// raised total committed: an approved fare increase or paid waiting.
+	"business_booking.reserve_increased": {},
 
 	// Fleet availability calendar (A05) — registered in the contract's
 	// EVENT_NAMES too. The booking's risk overlay (subject
 	// mp_advance_booking; `risk_changed` names the DRIVER only, never the
-	// requester, so the realtime gateway reaches the driver alone) and the
-	// rider's "cancel and release" on a failed booking.
+	// requester, so the realtime gateway reaches the driver alone), the
+	// rider's "cancel and release" on a failed booking, and the rider's
+	// proactive offer when a booking fails (decisions Q4: a same-fare rematch
+	// only when rematchAvailable, or the refund — never a republish).
 	"mp.advance_booking.risk_changed":     {},
 	"mp.advance_booking.rematch_declined": {},
+	"mp.advance_booking.choice_offered":   {},
 	// A vehicle swap on an advance booking (subject mp_vehicle_swap,
 	// machine mpVehicleSwap). The fare never changes and the commission is
 	// never charged again; the rider's consent is always required.

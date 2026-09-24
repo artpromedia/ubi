@@ -143,14 +143,14 @@ func (s *Service) amendmentViewFor(ctx context.Context, amendment *Amendment, ro
 			Driver: AmendmentApprovalView{Approved: amendment.DriverApprovedAt != nil, ApprovedAt: amendment.DriverApprovedAt},
 		},
 		ExpiresAt:  amendment.ExpiresAt,
-		Reason:     amendment.Reason,
+		Reason:     amendmentReasonFor(role, amendment.Reason),
 		CreatedAt:  amendment.CreatedAt,
 		ResolvedAt: amendment.ResolvedAt,
 	}
 	if business {
 		// A business trip has no rider funding at all: the organization's
-		// budget reservation covers the agreed fare (an increase is refused)
-		// and completion commits the actual.
+		// budget reservation covers the agreed fare (raised before an
+		// increase commits) and completion commits the actual.
 		view.RiderFunding = "not_required"
 	}
 	if role == partyDriver {

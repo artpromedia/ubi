@@ -68,6 +68,14 @@ type businessDouble struct {
 	dropAfter map[string]int // path → answers to drop after recording
 	// serverErrors answers 500 BEFORE handling, per path: nothing recorded.
 	serverErrors map[string]int
+	// leaveOnRelease removes a member the moment a release naming them
+	// arrives: the booker left between ride-service's cancel-time check and
+	// the release it owes.
+	leaveOnRelease map[string]string // org → user
+	// topUps are the reserve top-ups: by reservation (status ops) and by
+	// reservation|reasonRef (one raise per approval).
+	topUps     map[string][]*doubleOp
+	topUpByRef map[string]*doubleOp
 }
 
 type doubleOrg struct {
@@ -125,7 +133,8 @@ func newBusinessDouble(t *testing.T, key string) *businessDouble {
 		resByRef: map[string]*doubleReservation{}, opsByKey: map[string]*doubleOp{},
 		opsByRes: map[string]map[string]*doubleOp{}, calls: map[string]int{},
 		bodies: map[string][]map[string]any{}, keys: map[string][]string{}, dropAfter: map[string]int{},
-		serverErrors: map[string]int{},
+		serverErrors: map[string]int{}, leaveOnRelease: map[string]string{},
+		topUps: map[string][]*doubleOp{}, topUpByRef: map[string]*doubleOp{},
 	}
 	d.srv = httptest.NewServer(http.HandlerFunc(d.serve))
 	t.Cleanup(d.srv.Close)
@@ -183,6 +192,14 @@ func (d *businessDouble) removeMember(orgID string, user uuid.UUID) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.members[orgID][user.String()].status = "removed"
+}
+
+// leaveWhenReleased removes `user` from `orgID` when a release naming them
+// arrives (after any cancel-time membership check already passed).
+func (d *businessDouble) leaveWhenReleased(orgID string, user uuid.UUID) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.leaveOnRelease[orgID] = user.String()
 }
 
 func (d *businessDouble) dropAfterRecording(path string, times int) {
@@ -408,6 +425,8 @@ func (d *businessDouble) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		d.reserve(w, r, terms, key)
+	case "/reserve-top-up":
+		d.reserveTopUp(w, r, body, key)
 	case "/commit":
 		d.commit(w, r, body, key)
 	case "/release":
@@ -639,6 +658,109 @@ func (d *businessDouble) reserve(w http.ResponseWriter, r *http.Request, terms d
 	d.reply(w, r, 201, withReplayed(result, false))
 }
 
+// reserveTopUp is reservations.ts increaseReservation: raise an ACTIVE
+// reservation by the increase — idempotent on the scoped key (other terms ⇒
+// 409 idempotency_key_reuse) AND per reasonRef (other terms ⇒ 409
+// conflict); business_travel-gated; refused (never on credit) without
+// available budget, above the per-trip cap, for an inactive organization or
+// another currency; a reservation no longer `reserved` is illegal_transition.
+func (d *businessDouble) reserveTopUp(w http.ResponseWriter, r *http.Request, body map[string]any, key string) {
+	ref, _ := body["bookingRef"].(string)
+	amount, isNum := body["amountMinor"].(float64)
+	currency, _ := body["currency"].(string)
+	reason, _ := body["reason"].(string)
+	reasonRef, _ := body["reasonRef"].(string)
+	if ref == "" || !isNum || amount != float64(int64(amount)) || amount <= 0 || len(currency) != 3 ||
+		(reason != "fare_increase" && reason != "paid_waiting") ||
+		!regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,200}$`).MatchString(reasonRef) {
+		d.fail(w, 422, "validation_failed", "the request body is not valid", nil)
+		return
+	}
+	hash := termsHash("reserve_increase", ref, int64(amount), currency, reason, reasonRef)
+	if prior, ok := d.opsByKey["topup|"+key]; ok {
+		if prior.hash != hash {
+			d.fail(w, 409, "idempotency_key_reuse", "this key was used with other terms", nil)
+			return
+		}
+		d.reply(w, r, 200, withReplayed(prior.result, true))
+		return
+	}
+	res := d.resByRef[ref]
+	if res == nil {
+		d.fail(w, 404, "not_found", "this booking has no business budget reservation", map[string]any{"bookingRef": ref})
+		return
+	}
+	if prior, ok := d.topUpByRef[res.id+"|"+reasonRef]; ok {
+		if prior.hash != hash {
+			d.fail(w, 409, "conflict", "this approval already raised the reservation with different terms",
+				map[string]any{"reasonRef": reasonRef})
+			return
+		}
+		d.reply(w, r, 200, withReplayed(prior.result, true))
+		return
+	}
+	if !d.flagOn {
+		d.refuse(w, "feature_disabled", map[string]any{"feature": "business_travel"})
+		return
+	}
+	if res.state != "reserved" {
+		d.fail(w, 409, "illegal_transition", "this booking's reservation is already "+res.state, map[string]any{"bookingRef": ref})
+		return
+	}
+	if currency != res.currency {
+		d.refuse(w, "currency_mismatch", map[string]any{"reservationCurrency": res.currency, "requestCurrency": currency})
+		return
+	}
+	org := d.orgs[res.org]
+	if org.status != "active" {
+		d.refuse(w, "organization_not_active", nil)
+		return
+	}
+	increase := int64(amount)
+	previous := res.reserved
+	next := previous + increase
+	if next > org.tripCapMinor {
+		d.refuse(w, "trip_cap_exceeded", map[string]any{"tripCapMinor": org.tripCapMinor, "requestedTotalMinor": next})
+		return
+	}
+	if d.budgets[res.centre] == nil {
+		d.refuse(w, "budget_insufficient", map[string]any{"budgetId": res.budget, "availableMinor": 0, "requiredMinor": increase})
+		return
+	}
+	if free := d.availableLocked(res.centre); free < increase {
+		d.refuse(w, "budget_insufficient", map[string]any{"budgetId": res.budget, "availableMinor": free, "requiredMinor": increase})
+		return
+	}
+	res.reserved = next
+	res.view["reserved"] = map[string]any{"amountMinor": next, "currency": res.currency}
+	opRef := d.nextID("obo")
+	result := map[string]any{
+		"ref": opRef, "op": "reserve", "entryId": nil,
+		"amount":      map[string]any{"amountMinor": increase, "currency": res.currency},
+		"reservation": d.reservationView(res),
+		"increase": map[string]any{
+			"reason": reason, "reasonRef": reasonRef,
+			"previousReserved": map[string]any{"amountMinor": previous, "currency": res.currency},
+			"reserved":         map[string]any{"amountMinor": next, "currency": res.currency},
+		},
+	}
+	record := &doubleOp{op: "reserve", hash: hash, reservation: res.id, key: key, result: result, amount: increase, at: d.now()}
+	d.opsByKey["topup|"+key] = record
+	d.topUpByRef[res.id+"|"+reasonRef] = record
+	d.topUps[res.id] = append(d.topUps[res.id], record)
+	d.reply(w, r, 201, withReplayed(result, false))
+}
+
+// topUpCount is how many raises a booking ref's reservation took.
+func (d *businessDouble) topUpCount(ref string) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if res, ok := d.resByRef[ref]; ok {
+		return len(d.topUps[res.id])
+	}
+	return 0
+}
+
 func (d *businessDouble) terminalReplay(w http.ResponseWriter, r *http.Request, res *doubleReservation, op, hash string) bool {
 	recorded := d.opsByRes[res.id][op]
 	if recorded == nil {
@@ -738,6 +860,10 @@ func (d *businessDouble) release(w http.ResponseWriter, r *http.Request, body ma
 		d.fail(w, 409, "illegal_transition", "this booking's reservation is already "+res.state, map[string]any{"bookingRef": ref})
 		return
 	}
+	if leaving, ok := d.leaveOnRelease[res.org]; ok && leaving == user {
+		delete(d.leaveOnRelease, res.org)
+		d.members[res.org][user].status = "removed"
+	}
 	// assertMayCancel: the IDENTITY half of BUSINESS_CANCEL_RIGHTS.
 	allowed := false
 	switch party {
@@ -777,7 +903,12 @@ func (d *businessDouble) status(w http.ResponseWriter, r *http.Request, ref stri
 		return
 	}
 	ops := []map[string]any{}
+	all := []*doubleOp{}
 	for _, op := range d.opsByRes[res.id] {
+		all = append(all, op)
+	}
+	all = append(all, d.topUps[res.id]...)
+	for _, op := range all {
 		ops = append(ops, map[string]any{
 			"ref": op.result["ref"], "op": op.op, "clientKey": op.key,
 			"amount":  map[string]any{"amountMinor": op.amount, "currency": res.currency},

@@ -150,6 +150,30 @@ const money = (
   return currency ? formatMinor(amount, currency) : formatMinorUnits(amount);
 };
 
+/**
+ * A money OBJECT field (`{ amountMinor, currency }`, as ride-service's
+ * money() helper writes it), falling back to a bare minor amount.
+ */
+const moneyAt = (
+  p: Payload,
+  key: string,
+  ctx: RenderContext,
+): string | undefined => {
+  const nested = obj(p, key);
+  return nested ? money(nested, "amountMinor", ctx) : money(p, key, ctx);
+};
+
+/** The rider's offer, by what the server said about a rematch. */
+const choiceOfferText = (rematchAvailable: unknown): string => {
+  if (rematchAvailable === true) {
+    return "Rider offered a same-fare rematch or a refund";
+  }
+  if (rematchAvailable === false) {
+    return "Rider offered a refund — too late for a rematch";
+  }
+  return "Rider offered their options on the failed booking";
+};
+
 /** "2026-09-23 14:05:09 UTC" from an ISO instant; scrubbed text otherwise. */
 export function displayInstant(value: unknown): string | undefined {
   if (typeof value !== "string" || value === "") {
@@ -1268,6 +1292,40 @@ const SPECS: Record<string, Spec> = {
       ),
     facts: bookingFacts,
   },
+  // The rider's proactive offer on a booking that failed before activation:
+  // a same-fare rematch only when the server said rematchAvailable, else the
+  // refund alone. It offers; nothing is republished without the rider.
+  "mp.advance_booking.choice_offered": {
+    category: "book_for_later",
+    label: "Rider offered a choice",
+    tone: "warn",
+    summary: (p, ctx) =>
+      join(
+        choiceOfferText(p.rematchAvailable),
+        labelled("rematch at ", moneyAt(p, "sameFareMinor", ctx)),
+        code(p.reason),
+      ),
+    facts: (p, ctx) => {
+      const refund = obj(p, "refund");
+      return [
+        ...bookingFacts(p, ctx),
+        fact("Options", codes(p.options)),
+        fact("Same-fare rematch", moneyAt(p, "sameFareMinor", ctx)),
+        fact("Rematch by", when(p, "rematchBy")),
+        fact(
+          "Refund",
+          refund
+            ? join(
+                refund.riderCharged === false ? "rider not charged" : undefined,
+                refund.riderFundingReleased === true
+                  ? "funding released"
+                  : undefined,
+              ) || undefined
+            : undefined,
+        ),
+      ];
+    },
+  },
   "mp.advance_booking.cancelled": {
     category: "book_for_later",
     label: "Advance booking cancelled",
@@ -1475,6 +1533,30 @@ const SPECS: Record<string, Spec> = {
           : undefined,
       ),
     facts: businessFacts,
+  },
+  // A raised total (an amendment) needed more organization budget: the
+  // reservation was raised BEFORE the raised total committed.
+  "business_booking.reserve_increased": {
+    category: "business",
+    label: "Business budget raised",
+    tone: "ok",
+    summary: (p, ctx) =>
+      join(
+        "Organization reservation raised before a higher total committed",
+        moneyAt(p, "previousReserved", ctx) && moneyAt(p, "reserved", ctx)
+          ? moneyAt(p, "previousReserved", ctx) +
+              " → " +
+              moneyAt(p, "reserved", ctx)
+          : undefined,
+        code(p.reason),
+      ),
+    facts: (p, ctx) => [
+      ...businessFacts(p, ctx),
+      fact("Increase", moneyAt(p, "increase", ctx)),
+      fact("Previously reserved", moneyAt(p, "previousReserved", ctx)),
+      fact("Now reserved", moneyAt(p, "reserved", ctx)),
+      fact("Amendment", str(p, "reasonRef")),
+    ],
   },
   "business_booking.released": {
     category: "business",

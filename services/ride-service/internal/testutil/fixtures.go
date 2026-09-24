@@ -159,8 +159,9 @@ func MarketplacePolicyFixture() map[string]any {
 // shape MpSchedulingPolicySchema defines: publish 30 min before a scheduled
 // pickup; advance bookings up to 7 days ahead (at least 3 h), rider funding
 // secured within 48 h of pickup and by 2 h before, reconfirmation between
-// 2 h and 45 min before, activation 30 min before, 10-min buffers; recurring
-// occurrences generated 7 days ahead.
+// 2 h and 45 min before, activation 30 min before, 10-min buffers, a booking
+// at risk resolved by 2 h before pickup; recurring occurrences generated 7
+// days ahead.
 func SchedulingPolicyFixture() map[string]any {
 	return map[string]any{
 		"scheduledRequests": map[string]any{
@@ -190,9 +191,9 @@ func SchedulingPolicyFixture() map[string]any {
 			"postBufferSec":        600,
 			"reminderOffsetsSec":   []int{43_200, 3_600},
 			"maxOpenPerRequester":  5,
-			// A05: a booking at risk must be resolved by the earlier of its
-			// reconfirmation deadline and activation minus 30 minutes.
-			"riskResolutionLeadSec": 1_800,
+			// A05 (decisions Q4): a booking at risk must be resolved by the
+			// earlier of its reconfirmation deadline and pickup minus 2 h.
+			"riskResolutionLeadSec": 7_200,
 		},
 		"recurring": map[string]any{
 			"generationHorizonDays":          7,

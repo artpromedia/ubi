@@ -554,6 +554,15 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, rideID uuid.UUID, rea
 	if err != nil {
 		return nil, asDomainError(err)
 	}
+	if actor.IsRider() && marketplaceAwardID != nil && s.cancelGuard != nil {
+		// The marketplace may refuse the rider's cancel before anything moves
+		// (a business trip's booker who left the organization). Only the
+		// ride's own rider reaches here: prepare's authorise refused anyone
+		// else.
+		if err := s.cancelGuard.AuthorizeRiderCancel(ctx, *marketplaceAwardID, actor.UserID); err != nil {
+			return nil, asDomainError(err)
+		}
+	}
 
 	var view *RideView
 	err = s.deps.Store.InTx(ctx, func(tx pgx.Tx) error {

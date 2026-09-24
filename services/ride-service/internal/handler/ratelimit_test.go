@@ -336,6 +336,83 @@ func TestRateLimitNeverAuthenticates(t *testing.T) {
 	requireStatusRL(t, rlServe(router, rlRequest("/v1/rides/active", "10.0.0.1")), http.StatusUnauthorized, "no context")
 }
 
+// fleet-service's /internal/fleet calls carrying the VALID
+// FLEET_RIDE_SERVICE_KEY are never throttled (payment-service's service-key
+// exemption); a wrong or missing key is counted against its sender's client
+// address — and refused by RequireFleetServiceKey — never exempted; the key
+// buys nothing outside /internal/fleet; and an unset or short configured key
+// exempts nobody.
+func TestRateLimitExemptsOnlyTheValidFleetServiceKey(t *testing.T) {
+	const limit = 3
+	const fleetKey = "fleet-ride-service-key-0123456789abcdef"
+	build := func(configured string) http.Handler {
+		verifier := NewInternalContextVerifier(rateLimitSecret, 5*time.Minute)
+		limiter := NewRateLimiter(verifier, "", limit, time.Minute, zerolog.Nop())
+		limiter.ExemptFleetServiceKey(configured)
+		router := chi.NewRouter()
+		router.Use(limiter.ClientAddress)
+		router.Use(limiter.Limit)
+		router.Get("/v1/mp/trip-access", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]string{"client": clientKey(r)})
+		})
+		// The real contract A router; with no engine wired, an
+		// authenticated call answers 503 — anything but 429 is "served".
+		router.Mount(FleetInternalPrefix, FleetInternalRoutes(configured, nil))
+		return router
+	}
+	fleetCall := func(router http.Handler, peer, key string) *httptest.ResponseRecorder {
+		request := rlRequest(FleetInternalPrefix+"/occupancy/blocks", peer)
+		if key != "" {
+			request.Header.Set("X-Service-Key", key)
+		}
+		return rlServe(router, request)
+	}
+	router := build(fleetKey)
+
+	for i := 0; i < limit*10; i++ {
+		requireStatusRL(t, fleetCall(router, "10.1.1.1", fleetKey), http.StatusServiceUnavailable,
+			fmt.Sprintf("valid service key call %d is authenticated and never throttled", i+1))
+	}
+
+	for i := 0; i < limit; i++ {
+		refused := fleetCall(router, "10.1.1.1", "not-the-fleet-service-key-0123456789")
+		requireStatusRL(t, refused, http.StatusUnauthorized, fmt.Sprintf("wrong key %d is refused", i+1))
+		if refused.Header().Get("X-RateLimit-Limit") == "" {
+			t.Fatal("a wrong key is counted, never exempted")
+		}
+	}
+	requireStatusRL(t, fleetCall(router, "10.1.1.1", "not-the-fleet-service-key-0123456789"), http.StatusTooManyRequests,
+		"a wrong key over its sender's budget")
+	requireStatusRL(t, fleetCall(router, "10.1.1.1", ""), http.StatusTooManyRequests, "a missing key is counted too")
+	requireStatusRL(t, rlServe(router, rlRequest("/v1/mp/trip-access", "10.1.1.1")), http.StatusTooManyRequests,
+		"the wrong keys were counted against their sender's address")
+	requireStatusRL(t, fleetCall(router, "10.1.1.1", fleetKey), http.StatusServiceUnavailable,
+		"the valid key is still served from that address")
+	if fleetCall(router, "10.1.1.9", fleetKey).Header().Get("X-RateLimit-Limit") != "" {
+		t.Fatal("a valid service call is not counted at all")
+	}
+
+	// Outside /internal/fleet the key is just a header: counted per client.
+	for i := 0; i < limit; i++ {
+		request := rlRequest("/v1/mp/trip-access", "10.2.2.2")
+		request.Header.Set("X-Service-Key", fleetKey)
+		requireStatusRL(t, rlServe(router, request), http.StatusOK, fmt.Sprintf("trip link %d", i+1))
+	}
+	outside := rlRequest("/v1/mp/trip-access", "10.2.2.2")
+	outside.Header.Set("X-Service-Key", fleetKey)
+	requireStatusRL(t, rlServe(router, outside), http.StatusTooManyRequests, "the key buys nothing outside the contract")
+
+	// A short configured key: the contract refuses everyone and nobody is
+	// exempt.
+	short := build("short-key")
+	for i := 0; i < limit; i++ {
+		requireStatusRL(t, fleetCall(short, "10.3.3.3", "short-key"), http.StatusServiceUnavailable,
+			fmt.Sprintf("unconfigured contract %d", i+1))
+	}
+	requireStatusRL(t, fleetCall(short, "10.3.3.3", "short-key"), http.StatusTooManyRequests,
+		"an unusable configured key exempts nobody")
+}
+
 func TestParseTrustedProxies(t *testing.T) {
 	trusted, rejected := ParseTrustedProxies(" 10.0.0.1 , 172.16.0.0/12, fd00::/8, ::ffff:192.168.0.0/112, [::1], nonsense, 10.0.0.0/99, ")
 	var got []string
@@ -362,7 +439,7 @@ func TestMainWiresTheLimiter(t *testing.T) {
 		t.Fatalf("parse %s: %v", mainGo, err)
 	}
 	var uses []string
-	constructed := false
+	constructed, exempted := false, false
 	ast.Inspect(file, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
@@ -387,6 +464,18 @@ func TestMainWiresTheLimiter(t *testing.T) {
 				t.Fatal("RIDE_TRUSTED_PROXIES must default to trusting no one")
 			}
 		}
+		if receiver, ok := selector.X.(*ast.Ident); ok && receiver.Name == "limiter" && selector.Sel.Name == "ExemptFleetServiceKey" {
+			// The exemption must be keyed by the SAME key the fleet contract
+			// authenticates with, never another.
+			if len(call.Args) != 1 {
+				t.Fatalf("ExemptFleetServiceKey called with %d arguments", len(call.Args))
+			}
+			arg, ok := call.Args[0].(*ast.SelectorExpr)
+			if !ok || arg.Sel.Name != "FleetRideServiceKey" {
+				t.Fatal("the limiter exempts only calls carrying config.FleetRideServiceKey")
+			}
+			exempted = true
+		}
 		if receiver, ok := selector.X.(*ast.Ident); !ok || receiver.Name != "router" || selector.Sel.Name != "Use" {
 			return true
 		}
@@ -408,6 +497,9 @@ func TestMainWiresTheLimiter(t *testing.T) {
 	})
 	if !constructed {
 		t.Fatal("main.go never builds handler.NewRateLimiter")
+	}
+	if !exempted {
+		t.Fatal("main.go never exempts fleet-service's valid service key (limiter.ExemptFleetServiceKey)")
 	}
 	index := map[string]int{}
 	for i, use := range uses {

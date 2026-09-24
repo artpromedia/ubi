@@ -1,9 +1,13 @@
 package marketplace
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -144,16 +148,25 @@ func (s *Service) AdminRequestTimeline(ctx context.Context, actor Actor, request
 	}, nil
 }
 
-// outboxTimelineEvents reads the append-only mp.* outbox history for one
-// request — the shared read behind both the plain per-request timeline (A02)
-// and the unified resolution view (C08).
+// outboxTimelineEvents reads the append-only outbox history for one request
+// — the shared read behind both the plain per-request timeline (A02) and the
+// unified resolution view (C08): its mp.* rows, the trip_access.* rows of its
+// guest passenger's link, the business_booking.* rows of its organization-
+// budget funding, and the ride.* rows of its execution rides (the awards'
+// execution ids). Every detail is REDACTED server-side (redactTimelineDetail):
+// an operator never reads a sealed envelope, SMS copy, coordinates, a raw
+// token or a phone number, whatever a payload carries.
 func (s *Service) outboxTimelineEvents(ctx context.Context, requestID uuid.UUID) ([]*TimelineEvent, error) {
 	rows, err := s.deps.Store.Pool().Query(ctx, `
+		WITH awards AS (SELECT id, execution_id FROM mp.awards WHERE request_id = $1)
 		SELECT name, occurred_at, payload
 		FROM public.outbox_events
-		WHERE name LIKE 'mp.%'
-			AND (aggregate_id = $1 OR payload->>'requestId' = $1)
-		ORDER BY occurred_at ASC, id ASC`, requestID.String())
+		WHERE ((name LIKE 'mp.%' OR name LIKE 'trip_access.%' OR name LIKE 'business_booking.%')
+				AND (aggregate_id = $2 OR payload->>'requestId' = $2
+					OR aggregate_id IN (SELECT id::text FROM awards)))
+			OR (name LIKE 'ride.%'
+				AND aggregate_id IN (SELECT execution_id::text FROM awards WHERE execution_id IS NOT NULL))
+		ORDER BY occurred_at ASC, id ASC`, requestID, requestID.String())
 	if err != nil {
 		return nil, asDomainError(err)
 	}
@@ -167,10 +180,103 @@ func (s *Service) outboxTimelineEvents(ctx context.Context, requestID uuid.UUID)
 		if err := rows.Scan(&name, &at, &payload); err != nil {
 			return nil, asDomainError(err)
 		}
-		events = append(events, &TimelineEvent{At: at, Type: name, Detail: string(payload)})
+		events = append(events, &TimelineEvent{At: at, Type: name, Detail: redactTimelineDetail(payload)})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, asDomainError(err)
 	}
 	return events, nil
+}
+
+// Timeline redaction: keys whose VALUE an operator never reads, whatever
+// its type — the trip link's sealed envelope and SMS copy, coordinates and
+// location-bearing structures, raw tokens and PINs, phones and names.
+// Matched case-insensitively; ids (tokenId, requesterId, …) stay.
+var timelineRedactedKeys = map[string]bool{
+	"sealed": true, "envelope": true, "ciphertext": true, "smscopy": true, "recipient": true,
+	"lat": true, "lng": true, "lon": true, "latitude": true, "longitude": true, "location": true,
+	"coordinates": true, "geometry": true, "polyline": true, "position": true, "pickup": true,
+	"dropoff": true, "stops": true, "origin": true, "destination": true, "address": true,
+	"token": true, "rawtoken": true, "accesstoken": true, "triptoken": true, "tripaccesstoken": true,
+	"tokenhash": true, "pin": true, "pickuppin": true, "pinhash": true, "secret": true, "signature": true,
+	"firstname": true, "lastname": true, "fullname": true, "email": true,
+}
+
+// timelineRedactedSuffixes widen the key list to the names a future payload
+// is likely to use for the same things (pickupLat, driverLng, rawToken,
+// verifyPin, …): a key ENDING in one of them is redacted too. Ids never end
+// in one (tokenId, pinId stay readable).
+var timelineRedactedSuffixes = []string{"lat", "lng", "latitude", "longitude", "token", "pin", "secret"}
+
+// timelineKeyRedacted reports a key whose value an operator never reads.
+func timelineKeyRedacted(key string) bool {
+	lower := strings.ToLower(key)
+	if timelineRedactedKeys[lower] || strings.Contains(lower, "phone") {
+		return true
+	}
+	for _, suffix := range timelineRedactedSuffixes {
+		if strings.HasSuffix(lower, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// phoneLike matches a phone number written as a value, once spaces, dashes
+// and brackets are removed: E.164 (+ and 8-15 digits) or a national number
+// (a leading 0 and 10-12 digits). Dates and amounts never match.
+var phoneLike = regexp.MustCompile(`^(\+[1-9][0-9]{7,14}|0[0-9]{9,11})$`)
+
+// phoneSeparators are stripped before a value is judged phone-like.
+var phoneSeparators = strings.NewReplacer(" ", "", "-", "", "(", "", ")", "", ".", "")
+
+// timelineRedacted is what a redacted value reads as.
+const timelineRedacted = "[redacted]"
+
+// redactTimelineDetail renders an outbox payload for an operator with every
+// sensitive key's value replaced (and any key naming a phone), and any
+// phone-like string value blanked wherever it sits. An unreadable payload is
+// never echoed.
+func redactTimelineDetail(payload []byte) string {
+	// Numbers stay exactly as written (json.Number): an integer minor
+	// amount or a sequence is never re-rendered through a float.
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil || decoder.More() {
+		return `{"detail":"` + timelineRedacted + `"}`
+	}
+	encoded, err := json.Marshal(redactTimelineValue(decoded))
+	if err != nil {
+		return `{"detail":"` + timelineRedacted + `"}`
+	}
+	return string(encoded)
+}
+
+func redactTimelineValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, inner := range typed {
+			if timelineKeyRedacted(key) {
+				out[key] = timelineRedacted
+				continue
+			}
+			out[key] = redactTimelineValue(inner)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, inner := range typed {
+			out[i] = redactTimelineValue(inner)
+		}
+		return out
+	case string:
+		if phoneLike.MatchString(phoneSeparators.Replace(strings.TrimSpace(typed))) {
+			return timelineRedacted
+		}
+		return typed
+	default:
+		return typed
+	}
 }

@@ -220,6 +220,10 @@ func Build(ctx context.Context, config Config) (*Runtime, error) {
 	// against the vehicles fleets reported off the road (post-commit; the
 	// marketplace sweep backstops it).
 	moveService.SetDriverActivityObserver(marketplaceService)
+	// A06 part C: a rider's cancel of a marketplace ride is first asked of
+	// the marketplace (a business trip's booker who left the organization
+	// may not cancel a colleague's trip).
+	moveService.SetRiderCancelGuard(marketplaceService)
 
 	return runtime, nil
 }

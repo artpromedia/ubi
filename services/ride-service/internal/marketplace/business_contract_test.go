@@ -33,6 +33,7 @@ type businessContract struct {
 	BasePath    string     `json:"basePath"`
 	PolicyCheck contractOp `json:"policyCheck"`
 	Reserve     contractOp `json:"reserve"`
+	TopUp       contractOp `json:"reserveTopUp"`
 	Commit      contractOp `json:"commit"`
 	Release     contractOp `json:"release"`
 	Status      contractOp `json:"status"`
@@ -154,6 +155,14 @@ func TestBusinessClientMatchesTheContractFixture(t *testing.T) {
 			t.Fatalf("%s decoded: %+v", label, result)
 		}
 	}
+	var topUp marketplace.BusinessTopUpResult
+	strictDecode(t, "reserve-top-up", contract.TopUp.Response, &topUp)
+	if topUp.Op != "reserve" || topUp.EntryID != nil || topUp.Amount.AmountMinor != 20000 ||
+		topUp.Increase.Reason != marketplace.BusinessIncreaseFareIncrease ||
+		topUp.Increase.PreviousReserved.AmountMinor+topUp.Amount.AmountMinor != topUp.Increase.Reserved.AmountMinor ||
+		topUp.Reservation.Reserved != topUp.Increase.Reserved {
+		t.Fatalf("reserve-top-up decoded: %+v", topUp)
+	}
 	var status marketplace.BusinessReservationStatus
 	strictDecode(t, "status", contract.Status.Response, &status)
 	if status.Organization == nil || status.Organization.TaxID == nil || status.CostCentre == nil || status.CostCentre.Code != "OPS" || len(status.Ops) != 2 {
@@ -182,6 +191,13 @@ func TestBusinessClientMatchesTheContractFixture(t *testing.T) {
 	if contract.Reserve.IdempotencyKey != "business:"+reserve.BookingRef+":reserve" {
 		t.Fatalf("the documented reserve key: %s", contract.Reserve.IdempotencyKey)
 	}
+	var raise marketplace.BusinessReserveTopUpRequest
+	strictDecode(t, "reserve-top-up request", contract.TopUp.Request, &raise)
+	encoded, _ = json.Marshal(raise)
+	sameJSON(t, "reserve-top-up request", encoded, contract.TopUp.Request)
+	if contract.TopUp.IdempotencyKey != "business:"+raise.BookingRef+":topup:"+raise.ReasonRef || contract.TopUp.Path != "/reserve-top-up" {
+		t.Fatalf("the documented top-up key and path: %s %s", contract.TopUp.IdempotencyKey, contract.TopUp.Path)
+	}
 	var commit marketplace.BusinessCommitRequest
 	strictDecode(t, "commit request", contract.Commit.Request, &commit)
 	encoded, _ = json.Marshal(commit)
@@ -193,7 +209,8 @@ func TestBusinessClientMatchesTheContractFixture(t *testing.T) {
 }
 
 // TestBusinessDoubleAnswersTheContractShapes: the test double's reserve,
-// commit, release and status answers have exactly the documented shapes.
+// reserve top-up, commit, release and status answers have exactly the
+// documented shapes.
 func TestBusinessDoubleAnswersTheContractShapes(t *testing.T) {
 	contract := loadBusinessContract(t)
 	double := newBusinessDouble(t, businessServiceKey)
@@ -237,6 +254,10 @@ func TestBusinessDoubleAnswersTheContractShapes(t *testing.T) {
 		TravellerID: booker.String(), Service: "ride", VehicleClass: "go", AmountMinor: 250000, Currency: testCurrency}
 	sameShape(t, "policy-check", call(http.MethodPost, "/policy-check", "", terms), contract.PolicyCheck.Response)
 	sameShape(t, "reserve", call(http.MethodPost, "/reserve", "business:"+ref+":reserve", terms), contract.Reserve.Response)
+	reasonRef := uuid.NewString()
+	sameShape(t, "reserve-top-up", call(http.MethodPost, "/reserve-top-up", "business:"+ref+":topup:"+reasonRef,
+		marketplace.BusinessReserveTopUpRequest{BookingRef: ref, AmountMinor: 20000, Currency: testCurrency,
+			Reason: marketplace.BusinessIncreaseFareIncrease, ReasonRef: reasonRef}), contract.TopUp.Response)
 	sameShape(t, "commit", call(http.MethodPost, "/commit", "business:"+ref+":commit",
 		marketplace.BusinessCommitRequest{BookingRef: ref, ActualMinor: 215000, Currency: testCurrency}), contract.Commit.Response)
 	sameShape(t, "status", call(http.MethodGet, "/reservations/"+ref, "", nil), contract.Status.Response)

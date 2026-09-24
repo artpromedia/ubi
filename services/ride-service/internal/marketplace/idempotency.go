@@ -34,6 +34,8 @@ const (
 	// C08 admin resolution/standing scopes.
 	scopeAdminRecoveryRetry   = "mp.admin.recovery_retry"
 	scopeAdminAwardReconcile  = "mp.admin.award_reconcile"
+	scopeAdminBusinessRetry   = "mp.admin.business_retry"
+	scopeAdminDeliveryRetry   = "mp.admin.delivery_cancel_retry"
 	scopeStandingPropose      = "mp.admin.standing.propose"
 	scopeStandingApprove      = "mp.admin.standing.approve"
 	scopeStandingAppeal       = "mp.admin.standing.appeal"

@@ -120,6 +120,53 @@ describe("renderer coverage — closed catalogs", () => {
   });
 });
 
+describe("round-9 event renderers", () => {
+  it("renders a raised business reservation from ride-service's money objects", () => {
+    const raised = ev("business_booking.reserve_increased", {
+      awardId: "awd-1",
+      organizationId: "org-1",
+      bookingRef: "bk-1",
+      reason: "route_amended",
+      reasonRef: "amd-1",
+      increase: { amountMinor: 50_000, currency: "NGN" },
+      previousReserved: { amountMinor: 400_000, currency: "NGN" },
+      reserved: { amountMinor: 450_000, currency: "NGN" },
+    });
+    expect(raised.known).toBe(true);
+    expect(raised.summary).toContain("₦4,000.00 → ₦4,500.00");
+    expect(visible(raised)).toContain("₦500.00");
+    expect(visible(raised)).toContain("amd-1");
+  });
+
+  it("renders the rider's choice offer, with the rematch only when the server allowed it", () => {
+    const withRematch = ev("mp.advance_booking.choice_offered", {
+      bookingId: "bkg-1",
+      reason: "driver_withdrew",
+      options: ["rematch", "refund"],
+      rematchAvailable: true,
+      sameFareMinor: { amountMinor: 380_000, currency: "NGN" },
+      rematchBy: "2026-09-24T07:00:00Z",
+      refund: { riderCharged: false, riderFundingReleased: true },
+    });
+    expect(withRematch.summary).toContain("same-fare rematch or a refund");
+    expect(withRematch.summary).toContain("₦3,800.00");
+    expect(visible(withRematch)).toContain("rider not charged");
+
+    const refundOnly = ev("mp.advance_booking.choice_offered", {
+      bookingId: "bkg-2",
+      reason: "vehicle_offroad",
+      options: ["refund"],
+      rematchAvailable: false,
+      sameFareMinor: null,
+      rematchBy: null,
+      refund: { riderCharged: false, riderFundingReleased: true },
+    });
+    expect(refundOnly.summary).toContain("Rider offered a refund");
+    expect(refundOnly.summary).not.toContain("rematch or");
+    expect(refundOnly.summary).not.toContain("₦");
+  });
+});
+
 describe("PII minimisation", () => {
   const PHONE = "+2348031234567";
   const TOKEN = "uta_" + "Zk3v9QxPp2LmT8wYbN4cR7sD1fGhJ6kE0aVuWiXoYzA";

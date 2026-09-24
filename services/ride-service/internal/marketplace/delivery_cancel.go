@@ -174,6 +174,12 @@ type DeliveryCancelRow struct {
 	LastCode     string
 	LastError    string
 	ResolvedAt   *time.Time
+
+	// When the sweep drives it next, and the row's own timestamps (the
+	// admin board's ordering and age).
+	NextAttemptAt *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // oweDeliveryCancel writes the durable cancellation intent for a queued
@@ -337,15 +343,14 @@ func (s *Service) resolveDeliveryCancel(ctx context.Context, row *DeliveryCancel
 	})
 }
 
-// DeliveryCancelByAward reads one award's owed cancellation.
-func (s *Store) DeliveryCancelByAward(ctx context.Context, db DB, awardID uuid.UUID) (*DeliveryCancelRow, error) {
+const deliveryCancelColumns = `
+	award_id, delivery_id, fencing_token, reason, state, attempts, last_status,
+	COALESCE(last_code, ''), COALESCE(last_error, ''), next_attempt_at, resolved_at, created_at, updated_at`
+
+func scanDeliveryCancel(scanner pgx.Row) (*DeliveryCancelRow, error) {
 	var row DeliveryCancelRow
-	err := db.QueryRow(ctx, `
-		SELECT award_id, delivery_id, fencing_token, reason, state, attempts, last_status,
-			COALESCE(last_code, ''), COALESCE(last_error, ''), resolved_at
-		FROM mp.delivery_cancellations WHERE award_id = $1`, awardID).Scan(
-		&row.AwardID, &row.DeliveryID, &row.FencingToken, &row.Reason, &row.State, &row.Attempts, &row.LastStatus,
-		&row.LastCode, &row.LastError, &row.ResolvedAt)
+	err := scanner.Scan(&row.AwardID, &row.DeliveryID, &row.FencingToken, &row.Reason, &row.State, &row.Attempts,
+		&row.LastStatus, &row.LastCode, &row.LastError, &row.NextAttemptAt, &row.ResolvedAt, &row.CreatedAt, &row.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -353,4 +358,10 @@ func (s *Store) DeliveryCancelByAward(ctx context.Context, db DB, awardID uuid.U
 		return nil, fmt.Errorf("failed to read the owed delivery cancellation: %w", err)
 	}
 	return &row, nil
+}
+
+// DeliveryCancelByAward reads one award's owed cancellation.
+func (s *Store) DeliveryCancelByAward(ctx context.Context, db DB, awardID uuid.UUID) (*DeliveryCancelRow, error) {
+	return scanDeliveryCancel(db.QueryRow(ctx,
+		`SELECT `+deliveryCancelColumns+` FROM mp.delivery_cancellations WHERE award_id = $1`, awardID))
 }

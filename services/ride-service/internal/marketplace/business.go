@@ -185,13 +185,49 @@ type BusinessReleaseRequest struct {
 	Reason      string              `json:"reason"`
 }
 
+// Why an ACTIVE reservation may grow (BUSINESS_RESERVE_INCREASE_REASONS).
+const (
+	BusinessIncreaseFareIncrease = "fare_increase"
+	BusinessIncreasePaidWaiting  = "paid_waiting"
+)
+
+// BusinessReserveTopUpRequest is BusinessReserveTopUpInputSchema: raise an
+// ACTIVE reservation by the INCREASE (never the new total), named by the id
+// ride-service holds for it (the amendment id) — once per reasonRef.
+type BusinessReserveTopUpRequest struct {
+	BookingRef  string `json:"bookingRef"`
+	AmountMinor int64  `json:"amountMinor"`
+	Currency    string `json:"currency"`
+	Reason      string `json:"reason"`
+	ReasonRef   string `json:"reasonRef"`
+}
+
+// BusinessReserveIncrease is the top-up answer's `increase`: what the
+// reservation was and is now.
+type BusinessReserveIncrease struct {
+	Reason           string `json:"reason"`
+	ReasonRef        string `json:"reasonRef"`
+	PreviousReserved Money  `json:"previousReserved"`
+	Reserved         Money  `json:"reserved"`
+}
+
+// BusinessTopUpResult is BusinessReserveTopUpResultSchema: the op result (op
+// reserve, amount = the increase, the reservation with its NEW reserved) and
+// the increase.
+type BusinessTopUpResult struct {
+	BusinessOpResult
+	Increase BusinessReserveIncrease `json:"increase"`
+}
+
 // BusinessPort is everything ride-service asks of payment-service's business
 // API. Reserve, Commit and Release are idempotent on their key AND on the
 // booking ref (one reservation per ref ever, at most one commit and one
-// release); a replay answers the original result.
+// release); ReserveTopUp on its key AND its reasonRef (one raise per
+// amendment); a replay answers the original result.
 type BusinessPort interface {
 	PolicyCheck(ctx context.Context, cityID string, terms BusinessBookingTerms) (*BusinessPolicyVerdict, error)
 	Reserve(ctx context.Context, cityID string, terms BusinessBookingTerms, idempotencyKey string) (*BusinessOpResult, error)
+	ReserveTopUp(ctx context.Context, req BusinessReserveTopUpRequest, idempotencyKey string) (*BusinessTopUpResult, error)
 	Commit(ctx context.Context, req BusinessCommitRequest, idempotencyKey string) (*BusinessOpResult, error)
 	Release(ctx context.Context, req BusinessReleaseRequest, idempotencyKey string) (*BusinessOpResult, error)
 	ReservationStatus(ctx context.Context, bookingRef string) (*BusinessReservationStatus, error)
@@ -296,6 +332,16 @@ func (b *HTTPBusiness) Reserve(ctx context.Context, cityID string, terms Busines
 	return &result, nil
 }
 
+// ReserveTopUp implements BusinessPort against POST /reserve-top-up (the
+// trip's city is the reservation's; no X-City-ID).
+func (b *HTTPBusiness) ReserveTopUp(ctx context.Context, req BusinessReserveTopUpRequest, idempotencyKey string) (*BusinessTopUpResult, error) {
+	var result BusinessTopUpResult
+	if err := b.call(ctx, http.MethodPost, "/reserve-top-up", "", idempotencyKey, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // Commit implements BusinessPort against POST /commit.
 func (b *HTTPBusiness) Commit(ctx context.Context, req BusinessCommitRequest, idempotencyKey string) (*BusinessOpResult, error) {
 	var result BusinessOpResult
@@ -332,6 +378,9 @@ func (unconfiguredBusiness) PolicyCheck(context.Context, string, BusinessBooking
 	return nil, errBusinessUnconfigured()
 }
 func (unconfiguredBusiness) Reserve(context.Context, string, BusinessBookingTerms, string) (*BusinessOpResult, error) {
+	return nil, errBusinessUnconfigured()
+}
+func (unconfiguredBusiness) ReserveTopUp(context.Context, BusinessReserveTopUpRequest, string) (*BusinessTopUpResult, error) {
 	return nil, errBusinessUnconfigured()
 }
 func (unconfiguredBusiness) Commit(context.Context, BusinessCommitRequest, string) (*BusinessOpResult, error) {
