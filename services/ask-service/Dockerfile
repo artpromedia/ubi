@@ -1,22 +1,21 @@
-# UBI User Service - Production Dockerfile
+# UBI Ask Service - Production Dockerfile
 # Multi-stage build. The build context is the REPOSITORY ROOT:
 #
-#   docker build -f services/user-service/Dockerfile .
+#   docker build -f services/ask-service/Dockerfile .
 #
 # (infrastructure/hetzner/docker-compose.prod.yml builds it with
 # `context: ../..`.) Pattern: services/notification-service/Dockerfile.
 #
-# THE WORKSPACE CLOSURE. At runtime the service imports @ubi/config-client
-# (identity policy from city config), @ubi/contracts, @ubi/database,
-# @ubi/logger, @ubi/outbox and @ubi/utils; it builds against
-# @ubi/typescript-config (every tsconfig extends it) and @ubi/eslint-config (a
-# workspace devDependency the install must be able to link).
-# infrastructure/scripts/check-dockerfiles.mjs fails when this file stops
-# copying a workspace package the service's manifest, or a package it pulls
-# in, depends on.
-# The previous version of this file copied neither packages/contracts,
-# packages/outbox nor packages/config-client, and COPYed a root
-# node_modules/.prisma that does not exist under pnpm.
+# THE WORKSPACE CLOSURE. At runtime the service imports @ubi/config-client,
+# @ubi/contracts, @ubi/database, @ubi/logger and @ubi/outbox; it builds
+# against @ubi/typescript-config (every tsconfig extends it) and
+# @ubi/eslint-config (a workspace devDependency the install must be able to
+# link). infrastructure/scripts/check-dockerfiles.mjs fails when this file
+# stops copying a workspace package the service's manifest, or a package it
+# pulls in, depends on.
+# New in round 9 (ask-service had no Dockerfile). The model endpoint is an
+# external OpenAI-compatible server (MODEL_ENDPOINT_URL); nothing model-
+# related is baked into this image.
 #
 # THE PRISMA CLIENT is generated into pnpm's virtual store
 # (node_modules/.pnpm/@prisma+client@…/node_modules/.prisma), not into a root
@@ -41,9 +40,9 @@ WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
 
 # The workspace manifests of the service and its whole workspace dependency
-# closure (keep in step with services/user-service/package.json and each listed
+# closure (keep in step with services/ask-service/package.json and each listed
 # package's own workspace dependencies).
-COPY services/user-service/package.json ./services/user-service/
+COPY services/ask-service/package.json ./services/ask-service/
 COPY packages/config-client/package.json ./packages/config-client/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/database/package.json ./packages/database/
@@ -51,10 +50,9 @@ COPY packages/eslint-config/package.json ./packages/eslint-config/
 COPY packages/logger/package.json ./packages/logger/
 COPY packages/outbox/package.json ./packages/outbox/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-COPY packages/utils/package.json ./packages/utils/
 
 # Install the closure only (the lockfile is the whole monorepo's).
-RUN pnpm install --frozen-lockfile --filter "@ubi/user-service..."
+RUN pnpm install --frozen-lockfile --filter "@ubi/ask-service..."
 
 # Sources — named file by file: the repository root has no .dockerignore, so
 # copying a whole package directory would also copy the host's node_modules,
@@ -73,15 +71,13 @@ COPY packages/logger/src ./packages/logger/src
 COPY packages/logger/tsconfig.json packages/logger/tsup.config.ts ./packages/logger/
 COPY packages/outbox/src ./packages/outbox/src
 COPY packages/outbox/tsconfig.json packages/outbox/tsup.config.ts ./packages/outbox/
-COPY packages/utils/src ./packages/utils/src
-COPY packages/utils/tsconfig.json packages/utils/tsup.config.ts ./packages/utils/
-COPY services/user-service/src ./services/user-service/src
-COPY services/user-service/tsconfig.json ./services/user-service/
+COPY services/ask-service/src ./services/ask-service/src
+COPY services/ask-service/tsconfig.json ./services/ask-service/
 
 # Generate the Prisma client, then build every package of the closure in
 # dependency order (contracts runs its codegen first).
 RUN pnpm --filter @ubi/database exec prisma generate
-RUN pnpm --filter "@ubi/user-service..." run build
+RUN pnpm --filter "@ubi/ask-service..." run build
 
 # Unlink devDependencies from every package of the closure; the generated
 # client stays (it lives in the virtual store, which this does not recreate).
@@ -90,7 +86,7 @@ RUN pnpm --filter "@ubi/user-service..." run build
 # pre-confirmed. Lifecycle scripts are skipped: the root `prepare` (husky)
 # would fail once its devDependency is gone, and nothing needs to run again.
 RUN pnpm install --prod --frozen-lockfile --offline --ignore-scripts \
-      --config.confirmModulesPurge=false --filter "@ubi/user-service..."
+      --config.confirmModulesPurge=false --filter "@ubi/ask-service..."
 
 # ===========================================
 # Production Stage
@@ -120,12 +116,9 @@ COPY --from=builder /app/packages/logger/node_modules ./packages/logger/node_mod
 COPY --from=builder /app/packages/outbox/package.json ./packages/outbox/package.json
 COPY --from=builder /app/packages/outbox/dist ./packages/outbox/dist
 COPY --from=builder /app/packages/outbox/node_modules ./packages/outbox/node_modules
-COPY --from=builder /app/packages/utils/package.json ./packages/utils/package.json
-COPY --from=builder /app/packages/utils/dist ./packages/utils/dist
-COPY --from=builder /app/packages/utils/node_modules ./packages/utils/node_modules
-COPY --from=builder /app/services/user-service/package.json ./services/user-service/package.json
-COPY --from=builder /app/services/user-service/dist ./services/user-service/dist
-COPY --from=builder /app/services/user-service/node_modules ./services/user-service/node_modules
+COPY --from=builder /app/services/ask-service/package.json ./services/ask-service/package.json
+COPY --from=builder /app/services/ask-service/dist ./services/ask-service/dist
+COPY --from=builder /app/services/ask-service/node_modules ./services/ask-service/node_modules
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -133,14 +126,14 @@ RUN addgroup -g 1001 -S nodejs && \
 
 USER nodejs
 
-WORKDIR /app/services/user-service
+WORKDIR /app/services/ask-service
 
 ENV NODE_ENV=production
 
-# Health check (the port the service listens on: PORT, default 4001)
+# Health check (the port the service listens on: PORT, default 4013)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4001}/health" || exit 1
+    CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4013}/health" || exit 1
 
-EXPOSE 4001
+EXPOSE 4013
 
 CMD ["node", "dist/index.js"]

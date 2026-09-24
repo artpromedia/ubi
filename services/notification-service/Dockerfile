@@ -79,8 +79,14 @@ COPY services/notification-service/tsconfig.json ./services/notification-service
 RUN pnpm --filter @ubi/database exec prisma generate
 RUN pnpm --filter "@ubi/notification-service..." run build
 
-# Drop devDependencies from the installed tree; the generated client stays.
-RUN pnpm install --prod --frozen-lockfile --offline --filter "@ubi/notification-service..."
+# Unlink devDependencies from every package of the closure; the generated
+# client stays (it lives in the virtual store, which this does not recreate).
+# pnpm asks before recreating modules directories and, with no TTY, the
+# question silently ends the step with nothing pruned — so the purge is
+# pre-confirmed. Lifecycle scripts are skipped: the root `prepare` (husky)
+# would fail once its devDependency is gone, and nothing needs to run again.
+RUN pnpm install --prod --frozen-lockfile --offline --ignore-scripts \
+      --config.confirmModulesPurge=false --filter "@ubi/notification-service..."
 
 # ===========================================
 # Production Stage

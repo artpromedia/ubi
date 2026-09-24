@@ -1,22 +1,22 @@
-# UBI User Service - Production Dockerfile
+# UBI Fleet Service - Production Dockerfile
 # Multi-stage build. The build context is the REPOSITORY ROOT:
 #
-#   docker build -f services/user-service/Dockerfile .
+#   docker build -f services/fleet-service/Dockerfile .
 #
 # (infrastructure/hetzner/docker-compose.prod.yml builds it with
 # `context: ../..`.) Pattern: services/notification-service/Dockerfile.
 #
-# THE WORKSPACE CLOSURE. At runtime the service imports @ubi/config-client
-# (identity policy from city config), @ubi/contracts, @ubi/database,
-# @ubi/logger, @ubi/outbox and @ubi/utils; it builds against
-# @ubi/typescript-config (every tsconfig extends it) and @ubi/eslint-config (a
-# workspace devDependency the install must be able to link).
+# THE WORKSPACE CLOSURE. At runtime the service imports @ubi/contracts,
+# @ubi/database and @ubi/outbox; it builds against @ubi/typescript-config
+# (every tsconfig extends it) and @ubi/eslint-config (a workspace
+# devDependency the install must be able to link).
 # infrastructure/scripts/check-dockerfiles.mjs fails when this file stops
 # copying a workspace package the service's manifest, or a package it pulls
 # in, depends on.
-# The previous version of this file copied neither packages/contracts,
-# packages/outbox nor packages/config-client, and COPYed a root
-# node_modules/.prisma that does not exist under pnpm.
+# New in round 9 (fleet-service had no Dockerfile). src/contract.ts
+# re-exports packages/contracts/src/fleet.ts BY PATH (see the service's
+# tsconfig); tsup bundles that file, so packages/contracts/src must be in
+# the build stage even beyond what @ubi/contracts' own build needs.
 #
 # THE PRISMA CLIENT is generated into pnpm's virtual store
 # (node_modules/.pnpm/@prisma+client@…/node_modules/.prisma), not into a root
@@ -41,47 +41,38 @@ WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
 
 # The workspace manifests of the service and its whole workspace dependency
-# closure (keep in step with services/user-service/package.json and each listed
+# closure (keep in step with services/fleet-service/package.json and each listed
 # package's own workspace dependencies).
-COPY services/user-service/package.json ./services/user-service/
-COPY packages/config-client/package.json ./packages/config-client/
+COPY services/fleet-service/package.json ./services/fleet-service/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/database/package.json ./packages/database/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
-COPY packages/logger/package.json ./packages/logger/
 COPY packages/outbox/package.json ./packages/outbox/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-COPY packages/utils/package.json ./packages/utils/
 
 # Install the closure only (the lockfile is the whole monorepo's).
-RUN pnpm install --frozen-lockfile --filter "@ubi/user-service..."
+RUN pnpm install --frozen-lockfile --filter "@ubi/fleet-service..."
 
 # Sources — named file by file: the repository root has no .dockerignore, so
 # copying a whole package directory would also copy the host's node_modules,
 # dist and .turbo over the ones installed here.
 COPY contracts/state-machines.json ./contracts/state-machines.json
 COPY packages/typescript-config/*.json ./packages/typescript-config/
-COPY packages/config-client/src ./packages/config-client/src
-COPY packages/config-client/tsconfig.json packages/config-client/tsup.config.ts ./packages/config-client/
 COPY packages/contracts/src ./packages/contracts/src
 COPY packages/contracts/scripts ./packages/contracts/scripts
 COPY packages/contracts/tsconfig.json packages/contracts/tsup.config.ts ./packages/contracts/
 COPY packages/database/src ./packages/database/src
 COPY packages/database/prisma ./packages/database/prisma
 COPY packages/database/prisma.config.ts packages/database/tsconfig.json packages/database/tsup.config.ts ./packages/database/
-COPY packages/logger/src ./packages/logger/src
-COPY packages/logger/tsconfig.json packages/logger/tsup.config.ts ./packages/logger/
 COPY packages/outbox/src ./packages/outbox/src
 COPY packages/outbox/tsconfig.json packages/outbox/tsup.config.ts ./packages/outbox/
-COPY packages/utils/src ./packages/utils/src
-COPY packages/utils/tsconfig.json packages/utils/tsup.config.ts ./packages/utils/
-COPY services/user-service/src ./services/user-service/src
-COPY services/user-service/tsconfig.json ./services/user-service/
+COPY services/fleet-service/src ./services/fleet-service/src
+COPY services/fleet-service/tsconfig.json ./services/fleet-service/
 
 # Generate the Prisma client, then build every package of the closure in
 # dependency order (contracts runs its codegen first).
 RUN pnpm --filter @ubi/database exec prisma generate
-RUN pnpm --filter "@ubi/user-service..." run build
+RUN pnpm --filter "@ubi/fleet-service..." run build
 
 # Unlink devDependencies from every package of the closure; the generated
 # client stays (it lives in the virtual store, which this does not recreate).
@@ -90,7 +81,7 @@ RUN pnpm --filter "@ubi/user-service..." run build
 # pre-confirmed. Lifecycle scripts are skipped: the root `prepare` (husky)
 # would fail once its devDependency is gone, and nothing needs to run again.
 RUN pnpm install --prod --frozen-lockfile --offline --ignore-scripts \
-      --config.confirmModulesPurge=false --filter "@ubi/user-service..."
+      --config.confirmModulesPurge=false --filter "@ubi/fleet-service..."
 
 # ===========================================
 # Production Stage
@@ -104,9 +95,6 @@ COPY --from=builder /app/node_modules ./node_modules
 
 # Each runtime workspace package: its manifest, its build and its (symlinked)
 # node_modules.
-COPY --from=builder /app/packages/config-client/package.json ./packages/config-client/package.json
-COPY --from=builder /app/packages/config-client/dist ./packages/config-client/dist
-COPY --from=builder /app/packages/config-client/node_modules ./packages/config-client/node_modules
 COPY --from=builder /app/packages/contracts/package.json ./packages/contracts/package.json
 COPY --from=builder /app/packages/contracts/dist ./packages/contracts/dist
 COPY --from=builder /app/packages/contracts/node_modules ./packages/contracts/node_modules
@@ -114,18 +102,12 @@ COPY --from=builder /app/packages/database/package.json ./packages/database/pack
 COPY --from=builder /app/packages/database/dist ./packages/database/dist
 COPY --from=builder /app/packages/database/node_modules ./packages/database/node_modules
 COPY --from=builder /app/packages/database/prisma ./packages/database/prisma
-COPY --from=builder /app/packages/logger/package.json ./packages/logger/package.json
-COPY --from=builder /app/packages/logger/dist ./packages/logger/dist
-COPY --from=builder /app/packages/logger/node_modules ./packages/logger/node_modules
 COPY --from=builder /app/packages/outbox/package.json ./packages/outbox/package.json
 COPY --from=builder /app/packages/outbox/dist ./packages/outbox/dist
 COPY --from=builder /app/packages/outbox/node_modules ./packages/outbox/node_modules
-COPY --from=builder /app/packages/utils/package.json ./packages/utils/package.json
-COPY --from=builder /app/packages/utils/dist ./packages/utils/dist
-COPY --from=builder /app/packages/utils/node_modules ./packages/utils/node_modules
-COPY --from=builder /app/services/user-service/package.json ./services/user-service/package.json
-COPY --from=builder /app/services/user-service/dist ./services/user-service/dist
-COPY --from=builder /app/services/user-service/node_modules ./services/user-service/node_modules
+COPY --from=builder /app/services/fleet-service/package.json ./services/fleet-service/package.json
+COPY --from=builder /app/services/fleet-service/dist ./services/fleet-service/dist
+COPY --from=builder /app/services/fleet-service/node_modules ./services/fleet-service/node_modules
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -133,14 +115,14 @@ RUN addgroup -g 1001 -S nodejs && \
 
 USER nodejs
 
-WORKDIR /app/services/user-service
+WORKDIR /app/services/fleet-service
 
 ENV NODE_ENV=production
 
-# Health check (the port the service listens on: PORT, default 4001)
+# Health check (the port the service listens on: PORT, default 4015)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4001}/health" || exit 1
+    CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4015}/health" || exit 1
 
-EXPOSE 4001
+EXPOSE 4015
 
 CMD ["node", "dist/index.js"]
