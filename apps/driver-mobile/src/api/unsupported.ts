@@ -22,11 +22,6 @@ export const UNSUPPORTED = {
     reason:
       "payment-service mounts safety routes at /safety, but the api-gateway proxies no /v1/safety/* prefix (services/api-gateway/src/routes/proxy.ts), so no dispatch endpoint is reachable by the app",
   },
-  cityConfig: {
-    wanted: "GET /v1/config/cities/{cityId} (city config through the gateway)",
-    reason:
-      "@ubi/mobile-core ConfigProvider already calls this path, but the api-gateway proxies no /v1/config/* prefix — config-dependent screens must degrade honestly until the mount lands",
-  },
   earningsOverview: {
     wanted:
       "GET /v1/drivers/me/earnings/overview (an aggregated earnings read model)",

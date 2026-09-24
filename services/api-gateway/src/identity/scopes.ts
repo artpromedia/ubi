@@ -276,6 +276,12 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/auth/pin/reset", anyOf: ["auth:step_up"] },
   { methods: "*", prefix: "/v1/auth/pin", anyOf: ["wallet:read"] },
   { methods: ["GET"], prefix: "/v1/users", anyOf: ["profile:read"] },
+  // The read-only config family (routes/config-read.ts: evaluated flags and
+  // the city's active config). Every role holds profile:read and it survives
+  // limited mode: an unverified device still needs its city's deny-by-default
+  // flags to render honestly. Nothing but these GETs is routed under
+  // /v1/config.
+  { methods: ["GET"], prefix: "/v1/config", anyOf: ["profile:read"] },
   {
     methods: ["POST", "PUT", "PATCH", "DELETE"],
     prefix: "/v1/users",
@@ -508,6 +514,13 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   {
     methods: "*",
     prefix: "/v1/drivers/me/conflicts",
+    anyOf: ["fleet:driver"],
+  },
+  // C5: the driver reports the vehicle they are driving cannot drive or needs
+  // service soon (FLEET_CALENDAR_DECISIONS.md Q5).
+  {
+    methods: "*",
+    prefix: "/v1/drivers/me/vehicle-issues",
     anyOf: ["fleet:driver"],
   },
   { methods: ["POST"], prefix: "/v1/food", anyOf: ["order:create"] },

@@ -22,7 +22,10 @@
  *                                   context and installs it on the request.
  *   5. scopeEnforcementMiddleware   applies the limited-mode / safe-mode
  *                                   matrix, deny-by-default.
- *   6. proxyRoutes                  forwards to the downstream service.
+ *   6. configReadRoutes             the read-only config family
+ *                                   (routes/config-read.ts): GET, exact
+ *                                   paths, to config-service.
+ *      proxyRoutes                  forwards to the downstream service.
  *
  * ONE family sits outside steps 2-6: the passenger trip link
  * (routes/trip-access.ts — GET /v1/mp/trip-access, GET /v1/mp/trip-access/pin,
@@ -47,6 +50,7 @@ import {
   stripInboundIdentityHeaders,
 } from "./middleware/identity";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
+import { configReadRoutes } from "./routes/config-read";
 import { healthRoutes } from "./routes/health";
 import { proxyRoutes } from "./routes/proxy";
 import { tripAccessRoutes } from "./routes/trip-access";
@@ -151,6 +155,10 @@ export function createApp(
   api.use("*", identityContextMiddleware);
   api.use("*", scopeEnforcementMiddleware);
 
+  // The read-only config family first: GET-only exact paths. Nothing in
+  // PROXY_RULES matches /config, so every other method and path under it (and
+  // all of /flags) falls through to the gateway's own 404.
+  api.route("/", configReadRoutes);
   api.route("/", proxyRoutes);
 
   // The gateway mounts /v1. `/api` is not a UBI prefix.

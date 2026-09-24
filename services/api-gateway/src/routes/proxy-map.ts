@@ -121,6 +121,14 @@ export const SERVICES = {
     fallback: "http://localhost:4015",
     basePath: "/v1",
   },
+  // Reached ONLY through routes/config-read.ts (GET, exact paths): no
+  // PROXY_RULES entry forwards to config-service, whose flag flips, change
+  // requests and approvals stay off the client edge.
+  "config-service": {
+    env: "CONFIG_SERVICE_URL",
+    fallback: "http://localhost:3010",
+    basePath: "/v1",
+  },
 } as const satisfies Record<string, ServiceTarget>;
 
 export type ServiceName = keyof typeof SERVICES;
@@ -180,6 +188,9 @@ export const PROXY_RULES: readonly ProxyRule[] = [
   { pattern: "/drivers/me/availability", service: "fleet-service" },
   { pattern: "/drivers/me/availability:preview", service: "fleet-service" },
   { pattern: "/drivers/me/conflicts/*", service: "fleet-service" },
+  // C5 ReportVehicleIssue (FLEET_CALENDAR_DECISIONS.md Q5): the driver's
+  // breakdown / service-soon report on the vehicle they are driving.
+  { pattern: "/drivers/me/vehicle-issues", service: "fleet-service" },
   { pattern: "/fleets", service: "fleet-service" },
   { pattern: "/fleets/*", service: "fleet-service" },
   { pattern: "/fleet-offers/*", service: "fleet-service" },

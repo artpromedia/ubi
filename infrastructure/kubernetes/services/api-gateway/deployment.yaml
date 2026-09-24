@@ -128,6 +128,9 @@ spec:
               value: "http://travel-service.ubi-apps:4012"
             - name: FLEET_SERVICE_URL
               value: "http://fleet-service.ubi-apps:4015"
+            # Only the two config reads are routed (src/routes/config-read.ts).
+            - name: CONFIG_SERVICE_URL
+              value: "http://config-service.ubi-apps:3010"
 
             # Who the client is: X-Forwarded-For is believed only from these
             # addresses (the ingress controller). From the ConfigMap; an overlay

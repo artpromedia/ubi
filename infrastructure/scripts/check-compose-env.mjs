@@ -124,6 +124,7 @@ export const CONTRACT = {
     ASK_SERVICE_URL: "set",
     TRAVEL_SERVICE_URL: "set",
     FLEET_SERVICE_URL: "set",
+    CONFIG_SERVICE_URL: "set",
     ANALYTICS_SERVICE_URL: "unset",
     CEERION_SERVICE_URL: "unset",
   },

@@ -98,27 +98,27 @@ admin-dashboard 3000; Caddy 172.28.0.10.
 
 ## 4. Service URLs (compose literals)
 
-| Variable                       | Read by                                                    | Class | Value                                                                              |
-| ------------------------------ | ---------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- |
-| `USER_SERVICE_URL`             | api-gateway, ride, delivery, ask, fleet                    | set   | `http://user-service:3001`                                                         |
-| `RIDE_SERVICE_URL`             | api-gateway, ask, travel, fleet                            | set   | `http://ride-service:3002`                                                         |
-| `FOOD_SERVICE_URL`             | api-gateway                                                | set   | `http://food-service:3003`                                                         |
-| `DELIVERY_SERVICE_URL`         | api-gateway, ride                                          | set   | `http://delivery-service:3004`                                                     |
-| `PAYMENT_SERVICE_URL`          | api-gateway, ride, food, delivery, travel, growth, support | set   | `http://payment-service:3005`                                                      |
-| `NOTIFICATION_SERVICE_URL`     | api-gateway, user, delivery, payment, support              | set   | `http://notification-service:3006`                                                 |
-| `CONFIG_SERVICE_URL`           | user                                                       | set   | `http://config-service:3010` (identity routes throw without it)                    |
-| `SUPPORT_SERVICE_URL`          | ask                                                        | set   | `http://support-service:4011`                                                      |
-| `TRAVEL_SERVICE_URL`           | api-gateway, ask                                           | set   | `http://travel-service:4012`                                                       |
-| `ASK_SERVICE_URL`              | api-gateway                                                | set   | `http://ask-service:4013`                                                          |
-| `FLEET_SERVICE_URL`            | api-gateway, ride, payment                                 | set   | `http://fleet-service:4015`                                                        |
-| `APP_URL`                      | user, notification                                         | set   | `https://$DOMAIN`                                                                  |
-| `REFERRAL_URL_BASE`            | growth                                                     | set   | `https://$DOMAIN/r`                                                                |
-| `PASSENGER_TRIP_LINK_BASE_URL` | notification                                               | set   | `https://$DOMAIN/trip-link` (the web passenger page; https required in production) |
-| `ANALYTICS_SERVICE_URL`        | api-gateway                                                | unset | No such service exists; those rules keep answering 503.                            |
-| `CEERION_SERVICE_URL`          | api-gateway                                                | unset | Same.                                                                              |
-| `PROMOTIONS_SERVICE_URL`       | ask                                                        | unset | No service serves `/v1/promotions`; the port reports unavailable.                  |
-| `PAYMENT_TRAVEL_PATH`          | travel                                                     | unset | Code default `/v1/finance/travel` is the mounted route.                            |
-| `LEDGER_REMEDY_PATH`           | support                                                    | unset | Code default is the canonical remedy route.                                        |
+| Variable                       | Read by                                                    | Class | Value                                                                                                      |
+| ------------------------------ | ---------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------- |
+| `USER_SERVICE_URL`             | api-gateway, ride, delivery, ask, fleet                    | set   | `http://user-service:3001`                                                                                 |
+| `RIDE_SERVICE_URL`             | api-gateway, ask, travel, fleet                            | set   | `http://ride-service:3002`                                                                                 |
+| `FOOD_SERVICE_URL`             | api-gateway                                                | set   | `http://food-service:3003`                                                                                 |
+| `DELIVERY_SERVICE_URL`         | api-gateway, ride                                          | set   | `http://delivery-service:3004`                                                                             |
+| `PAYMENT_SERVICE_URL`          | api-gateway, ride, food, delivery, travel, growth, support | set   | `http://payment-service:3005`                                                                              |
+| `NOTIFICATION_SERVICE_URL`     | api-gateway, user, delivery, payment, support              | set   | `http://notification-service:3006`                                                                         |
+| `CONFIG_SERVICE_URL`           | api-gateway, user                                          | set   | `http://config-service:3010` (identity routes throw without it; the gateway's two config reads answer 503) |
+| `SUPPORT_SERVICE_URL`          | ask                                                        | set   | `http://support-service:4011`                                                                              |
+| `TRAVEL_SERVICE_URL`           | api-gateway, ask                                           | set   | `http://travel-service:4012`                                                                               |
+| `ASK_SERVICE_URL`              | api-gateway                                                | set   | `http://ask-service:4013`                                                                                  |
+| `FLEET_SERVICE_URL`            | api-gateway, ride, payment                                 | set   | `http://fleet-service:4015`                                                                                |
+| `APP_URL`                      | user, notification                                         | set   | `https://$DOMAIN`                                                                                          |
+| `REFERRAL_URL_BASE`            | growth                                                     | set   | `https://$DOMAIN/r`                                                                                        |
+| `PASSENGER_TRIP_LINK_BASE_URL` | notification                                               | set   | `https://$DOMAIN/trip-link` (the web passenger page; https required in production)                         |
+| `ANALYTICS_SERVICE_URL`        | api-gateway                                                | unset | No such service exists; those rules keep answering 503.                                                    |
+| `CEERION_SERVICE_URL`          | api-gateway                                                | unset | Same.                                                                                                      |
+| `PROMOTIONS_SERVICE_URL`       | ask                                                        | unset | No service serves `/v1/promotions`; the port reports unavailable.                                          |
+| `PAYMENT_TRAVEL_PATH`          | travel                                                     | unset | Code default `/v1/finance/travel` is the mounted route.                                                    |
+| `LEDGER_REMEDY_PATH`           | support                                                    | unset | Code default is the canonical remedy route.                                                                |
 
 ## 5. Who the client is: trusted proxies
 

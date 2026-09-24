@@ -24,6 +24,7 @@ import {
   downstreamPath,
   serviceBaseUrl,
   type ProxyRule,
+  type ServiceName,
 } from "./proxy-map";
 import { proxyLogger } from "../lib/logger.js";
 import { clientAddressOf } from "../middleware/client-address";
@@ -116,19 +117,21 @@ function forwardClientAddress(c: Context, headers: Headers): void {
 }
 
 /**
- * Generic proxy handler.
+ * The hop itself: forwards the request to `serviceName` at `downstream` (a
+ * path with no query), with the query string unchanged and the sanitized
+ * headers above.
  *
- * Forwards the request to the rule's service at the path the proxy map
- * decides (proxy-map.ts: the service's base path, never a blanket strip of
- * `/v1`), with the query string unchanged.
+ * Exported for the one family that is not a PROXY_RULES entry: the read-only
+ * config routes (routes/config-read.ts), which pin both the method and the
+ * exact downstream path.
  */
-const proxyToService = async (
-  rule: ProxyRule,
+export const forwardToServicePath = async (
+  serviceName: ServiceName,
+  downstream: string,
   c: Context,
 ): Promise<Response> => {
-  const serviceName = rule.service;
   const url = new URL(c.req.url);
-  const targetUrl = `${serviceBaseUrl(serviceName)}${downstreamPath(rule, c.req.path)}${url.search}`;
+  const targetUrl = `${serviceBaseUrl(serviceName)}${downstream}${url.search}`;
 
   const forwardHeaders = new Headers();
   for (const header of HEADERS_TO_FORWARD) {
@@ -201,6 +204,25 @@ const proxyToService = async (
   } finally {
     clearTimeout(timeoutId);
   }
+};
+
+/**
+ * Generic proxy handler.
+ *
+ * Forwards the request to the rule's service at the path the proxy map
+ * decides (proxy-map.ts: the service's base path, never a blanket strip of
+ * `/v1`), with the query string unchanged.
+ */
+const proxyToService = async (
+  rule: ProxyRule,
+  c: Context,
+): Promise<Response> => {
+  const response = await forwardToServicePath(
+    rule.service,
+    downstreamPath(rule, c.req.path),
+    c,
+  );
+  return response;
 };
 
 /** Builds a route callback: an async handler that awaits the proxy hop. */

@@ -126,9 +126,17 @@ mapping.
   delivery-service's gateway-identity custody group. The legacy delivery CRUD,
   driver and webhook routes behind the same rule still authenticate with the
   service's own JWT / service key, which the gateway does not forward.
+- **config-service: two reads only.** `GET /v1/config/flags` (config-service
+  `GET /v1/flags`) and `GET /v1/config/cities/{cityId}` are served by
+  `src/routes/config-read.ts`: GET-only, exact paths, scope `profile:read`.
+  The hop forwards the verified `x-user-id` / `x-user-role`, and never an
+  `x-service-key`, so config-service evaluates flags for the caller. Every
+  other config-service route — the flag flip, the city list, change requests
+  and approvals, city status, history — answers the gateway's own 404, pinned
+  against config-service's route manifest.
 - **Not proxied at all (gateway 404):** growth-service (`/v1/benefits`,
   `/v1/referrals`, `/v1/attribution`, `/v1/driver`, `/v1/growth`,
-  `/v1/ai/marketing`), config-service (`/v1/config`, `/v1/flags`), `/v1/kyc`,
+  `/v1/ai/marketing`), config-service's admin routes (above), `/v1/kyc`,
   `/v1/ops/*` other than `/v1/ops/travel`, and every service's `/internal/*`
   and service-key webhook surface. travel-service has been proxied since
   round 6 (route manifest `services/travel-service/tests/routes.manifest`).

@@ -252,6 +252,9 @@ services:
       TRAVEL_SERVICE_URL: http://travel-service:4012
       ASK_SERVICE_URL: http://ask-service:4013
       FLEET_SERVICE_URL: http://fleet-service:4015
+      # Only the two config reads (GET /v1/config/flags, GET
+      # /v1/config/cities/{cityId}) are routed; see src/routes/config-read.ts.
+      CONFIG_SERVICE_URL: http://config-service:3010
     depends_on:
       postgres:
         condition: service_healthy

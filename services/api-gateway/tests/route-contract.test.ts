@@ -61,6 +61,7 @@ import {
   type ProxyRule,
   type ServiceName,
 } from "../src/routes/proxy-map";
+import { CONFIG_READ_ROUTES } from "../src/routes/config-read";
 import {
   TRIP_ACCESS_ROUTES,
   resetTripAccessLimiter,
@@ -123,6 +124,12 @@ const MANIFEST_SOURCES: Partial<Record<ServiceName, ManifestSource>> = {
     style: "hono",
     regenerate:
       "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/fleet-service exec vitest run tests/routes-manifest.test.ts",
+  },
+  "config-service": {
+    file: "services/config-service/tests/routes.manifest",
+    style: "hono",
+    regenerate:
+      "UPDATE_ROUTE_MANIFEST=1 pnpm --filter @ubi/config-service exec vitest run tests/unit/routes-manifest.test.ts",
   },
 };
 
@@ -480,6 +487,13 @@ const REACHABLE: readonly ReachableCase[] = [
     path: "/v1/drivers/me/conflicts/fcf_1",
     downstream: "/v1/drivers/me/conflicts/fcf_1",
     source: FLEET,
+  },
+  {
+    rule: "/drivers/me/vehicle-issues",
+    method: "POST",
+    path: "/v1/drivers/me/vehicle-issues",
+    downstream: "/v1/drivers/me/vehicle-issues",
+    source: `${DRIVER} src/api/fleet.ts (C5 ReportVehicleIssue)`,
   },
   {
     rule: "/fleets",
@@ -1462,12 +1476,6 @@ const UNPROXIED_CLIENT_CALLS: readonly {
   },
   {
     method: "GET",
-    path: "/v1/config/flags?cityId=LOS",
-    servedBy: "config-service /v1/config",
-    source: "packages/mobile-core src/flags.ts",
-  },
-  {
-    method: "GET",
     path: "/v1/kyc/requirements?cityId=LOS&role=driver",
     servedBy: "user-service /v1/kyc/requirements",
     source: "apps/marketing-site src/lib/requirements.ts",
@@ -1477,6 +1485,28 @@ const UNPROXIED_CLIENT_CALLS: readonly {
     path: "/v1/flags",
     servedBy: "config-service /v1/flags",
     source: "apps/admin-dashboard",
+  },
+  // The admin policy page's config writes and history. config-service
+  // authorizes them on the gateway's verified x-user-role, but only the two
+  // reads in src/routes/config-read.ts are routed until the admin config
+  // path is cleared (docs/launch/GAP_REGISTER.md).
+  {
+    method: "PUT",
+    path: "/v1/flags/marketplace_rides",
+    servedBy: "config-service /v1/flags/:key",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "POST",
+    path: "/v1/config/change-requests",
+    servedBy: "config-service /v1/config/change-requests",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "GET",
+    path: "/v1/config/cities/LOS/history",
+    servedBy: "config-service /v1/config/cities/:cityId/history",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
   },
   {
     method: "GET",
@@ -1862,6 +1892,87 @@ describe("the passenger trip link reaches ride-service without a user token", ()
       expect(result.arrivals, `${method} ${clientPath}`).toEqual([]);
     }
   });
+});
+
+/**
+ * The read-only config family (src/routes/config-read.ts): GET-only exact
+ * paths, the one config-service surface a client token reaches. Each case
+ * must land on a route in config-service's manifest, and each admin route it
+ * withholds must exist there too, so the 404s above cannot pass vacuously.
+ */
+const CONFIG_READS: readonly {
+  readonly pattern: string;
+  readonly path: string;
+  readonly downstream: string;
+  readonly source: string;
+}[] = [
+  {
+    pattern: "/config/flags",
+    path: "/v1/config/flags?cityId=LOS",
+    downstream: "/v1/flags",
+    source: "packages/mobile-core src/flags.ts",
+  },
+  {
+    pattern: "/config/cities/:cityId{[A-Za-z0-9_-]+}",
+    path: "/v1/config/cities/LOS",
+    downstream: "/v1/config/cities/LOS",
+    source: "packages/mobile-core src/config.ts",
+  },
+];
+
+const CONFIG_WITHHELD: readonly { method: string; path: string }[] = [
+  { method: "PUT", path: "/v1/flags/marketplace_rides" },
+  { method: "GET", path: "/v1/config/cities" },
+  { method: "POST", path: "/v1/config/cities/status" },
+  { method: "GET", path: "/v1/config/cities/LOS/history" },
+  { method: "POST", path: "/v1/config/change-requests" },
+  { method: "POST", path: "/v1/config/change-requests/cr_1/approve" },
+];
+
+describe("the read-only config family reaches config-service", () => {
+  it("has a case for every config read route", () => {
+    expect(CONFIG_READS.map((testCase) => testCase.pattern).sort()).toEqual(
+      CONFIG_READ_ROUTES.map((route) => route.pattern).sort(),
+    );
+  });
+
+  it.each(CONFIG_READS.map((testCase) => [testCase.path, testCase]))(
+    "GET %s",
+    async (_path, testCase) => {
+      const manifest = loadManifest("config-service");
+      expect(manifest).toBeDefined();
+      if (manifest === undefined) return;
+      expect(
+        manifestServes(manifest, "GET", testCase.downstream),
+        `GET ${testCase.path} (${testCase.source}) maps to config-service GET ${testCase.downstream}, which ${manifest.source.file} does not serve: regenerate it (${manifest.source.regenerate}) or fix src/routes/config-read.ts`,
+      ).toBe(true);
+
+      const result = await sendThroughGateway("GET", testCase.path);
+      expect(result.status).toBe(200);
+      expect(result.arrivals).toEqual([
+        {
+          service: "config-service",
+          url: `${testCase.downstream}${queryOf(testCase.path)}`,
+          method: "GET",
+        },
+      ]);
+    },
+  );
+
+  it.each(CONFIG_WITHHELD.map((entry) => [entry.method, entry.path]))(
+    "withholds %s %s, which config-service serves",
+    async (method, clientPath) => {
+      const manifest = loadManifest("config-service");
+      expect(manifest).toBeDefined();
+      if (manifest === undefined) return;
+      expect(manifestServes(manifest, method, clientPath)).toBe(true);
+
+      const result = await sendThroughGateway(method, clientPath);
+      expect(result.status).toBe(404);
+      expect(result.code).toBe("NOT_FOUND");
+      expect(result.arrivals).toEqual([]);
+    },
+  );
 });
 
 describe("unbacked rules stay honest", () => {
