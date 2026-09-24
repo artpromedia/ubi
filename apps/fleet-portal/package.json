@@ -2,7 +2,7 @@
   "name": "@ubi/fleet-portal",
   "version": "0.0.1",
   "private": true,
-  "description": "UBI Fleet Portal - Fleet managers track vehicles, drivers, CEERION EV financing",
+  "description": "UBI Fleet Portal - fleet staff plan vehicles, maintenance and driver assignments on the fleet calendar",
   "scripts": {
     "dev": "next dev --port 3004",
     "build": "next build",
@@ -10,6 +10,8 @@
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
