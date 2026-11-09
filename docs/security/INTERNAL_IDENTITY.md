@@ -19,12 +19,12 @@ in production every service below refuses to run unauthenticated.
 
 ## Signatures on the wire
 
-| What                                       | Headers                                                                                                                                                                 | Key env var                                                               | Verifier                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity context JWS (HS256, 120 s TTL)    | `x-ubi-identity`                                                                                                                                                        | `UBI_IDENTITY_SECRET` (+ `_PREVIOUS`, `_KEY_ID`)                          | api-gateway (`src/identity/context.ts`), user-service (`src/identity/context.ts`), payment-service (`src/identity/context.ts`), ask-service (`src/lib/identity-context.ts`), travel-service (`src/lib/identity-context.ts` + `src/middleware/auth.ts`), fleet-service (`src/lib/identity-context.ts` + `src/middleware/auth.ts`) |
-| Ride-service HMAC context                  | `x-auth-signature`, `x-auth-issued-at`, `x-auth-city-id`                                                                                                                | `RIDE_INTERNAL_CONTEXT_SECRET`                                            | ride-service (`internal/handler/identity.go`), delivery-service custody routes (`internal/identity`); signers: api-gateway (`src/identity/ride-context.ts`), and — each for exactly one user — ask-service (`src/lib/ride-context.ts`) and travel-service (`src/lib/ride-context.ts`, airport transfers as the traveller)        |
-| Service-to-service key                     | `X-Service-Key`                                                                                                                                                         | `INTERNAL_SERVICE_KEY` and the per-surface keys below                     | payment-service (`internalServiceAuth`, fail-closed), delivery-service (`ServiceAuth` + boot guard) — see **Internal service-key surfaces**                                                                                                                                                                                      |
-| Travel payment port `/v1/finance/travel/*` | `X-Service-Key` (auth); `x-ubi-identity` verified when presented; `X-User-ID`/`X-User-Role` recorded as unverified context only; scoped `Idempotency-Key` on every POST | `INTERNAL_SERVICE_KEY` (same value on travel-service and payment-service) | payment-service (`src/finance/travel-routes.ts`: `internalServiceAuth` fail-closed + signed-identity check); caller travel-service (`src/ports/payment-port.ts`, keys `<orderId>:auth\|:cap\|:rel`, `status()` read-back after an ambiguous or 409 answer)                                                                       |
+| What                                       | Headers                                                                                                                                                                 | Key env var                                                               | Verifier                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Identity context JWS (HS256, 120 s TTL)    | `x-ubi-identity`                                                                                                                                                        | `UBI_IDENTITY_SECRET` (+ `_PREVIOUS`, `_KEY_ID`)                          | api-gateway (`src/identity/context.ts`), user-service (`src/identity/context.ts`), payment-service (`src/identity/context.ts`), config-service (`src/lib/identity-context.ts` + `src/middleware/actor.ts`), ask-service (`src/lib/identity-context.ts`), travel-service (`src/lib/identity-context.ts` + `src/middleware/auth.ts`), fleet-service (`src/lib/identity-context.ts` + `src/middleware/auth.ts`) |
+| Ride-service HMAC context                  | `x-auth-signature`, `x-auth-issued-at`, `x-auth-city-id`                                                                                                                | `RIDE_INTERNAL_CONTEXT_SECRET`                                            | ride-service (`internal/handler/identity.go`), delivery-service custody routes (`internal/identity`); signers: api-gateway (`src/identity/ride-context.ts`), and — each for exactly one user — ask-service (`src/lib/ride-context.ts`) and travel-service (`src/lib/ride-context.ts`, airport transfers as the traveller)                                                                                    |
+| Service-to-service key                     | `X-Service-Key`                                                                                                                                                         | `INTERNAL_SERVICE_KEY` and the per-surface keys below                     | payment-service (`internalServiceAuth`, fail-closed), delivery-service (`ServiceAuth` + boot guard) — see **Internal service-key surfaces**                                                                                                                                                                                                                                                                  |
+| Travel payment port `/v1/finance/travel/*` | `X-Service-Key` (auth); `x-ubi-identity` verified when presented; `X-User-ID`/`X-User-Role` recorded as unverified context only; scoped `Idempotency-Key` on every POST | `INTERNAL_SERVICE_KEY` (same value on travel-service and payment-service) | payment-service (`src/finance/travel-routes.ts`: `internalServiceAuth` fail-closed + signed-identity check); caller travel-service (`src/ports/payment-port.ts`, keys `<orderId>:auth\|:cap\|:rel`, `status()` read-back after an ambiguous or 409 answer)                                                                                                                                                   |
 
 The ride HMAC signs the canonical payload
 `ubi.internal.v1|<userId>|<role>|<cityId>|<issuedAt unix seconds>`
@@ -71,6 +71,13 @@ be tuned with `RIDE_INTERNAL_CONTEXT_MAX_AGE_MS` on the ride-service.
 - **fleet-service** (`src/index.ts`): refuses to boot in production without a
   usable `UBI_IDENTITY_SECRET`; client routes read the caller, role and city
   from the signed context only.
+- **config-service** (`src/index.ts`, `src/middleware/actor.ts`): refuses to
+  boot in production without a usable `UBI_IDENTITY_SECRET` (`>= 32` chars).
+  Every caller-authenticated route (`GET /v1/flags` user identity and every
+  admin route) verifies `x-ubi-identity` in all environments when presented and
+  requires it in production — plain `X-User-ID` / `X-User-Role` headers are
+  refused there, and admin routes additionally re-check `CONFIG_ADMIN_ROLES`,
+  `config:admin`, and non-`limited` mode on the signed context.
 - **user-service** (`src/middleware/service-auth.ts`): with
   `NODE_ENV=production`, the legacy `/users` `/drivers` `/sessions` surface
   authenticates ONLY via the verified `x-ubi-identity` JWS; the plain
@@ -112,6 +119,7 @@ mapping.
 | user-service (org)    | `/organizations`                                                                                                 | `/v1` stripped (signed context only)                                                                           |
 | payment-service (biz) | `/business`                                                                                                      | unchanged (`/v1/business`); the internal `/v1/finance/business` is never proxied                               |
 | fleet-service         | `/fleets`, `/fleet-offers`, `/drivers/me/{fleet,fleet-offers,schedule,availability,conflicts}`                   | fleet-service's client routes; `/internal/fleet` is never proxied                                              |
+| config-service        | exact routes only (`routes/config-read.ts` + `routes/config-admin.ts`; never a wildcard)                         | `GET /v1/config/flags` → `GET /v1/flags`; all other exact routes unchanged                                     |
 
 - **Proof, not convention.** ride-service and delivery-service walk their
   production chi routers into `internal/handler(s)/routes.manifest`
@@ -126,17 +134,26 @@ mapping.
   delivery-service's gateway-identity custody group. The legacy delivery CRUD,
   driver and webhook routes behind the same rule still authenticate with the
   service's own JWT / service key, which the gateway does not forward.
-- **config-service: two reads only.** `GET /v1/config/flags` (config-service
-  `GET /v1/flags`) and `GET /v1/config/cities/{cityId}` are served by
-  `src/routes/config-read.ts`: GET-only, exact paths, scope `profile:read`.
-  The hop forwards the verified `x-user-id` / `x-user-role`, and never an
-  `x-service-key`, so config-service evaluates flags for the caller. Every
-  other config-service route — the flag flip, the city list, change requests
-  and approvals, city status, history — answers the gateway's own 404, pinned
-  against config-service's route manifest.
+- **config-service: exact reads (`profile:read`) and exact admin routes (`config:admin`, DEC-1 = A).**
+  `GET /v1/config/flags` (`config-service` `GET /v1/flags`) and
+  `GET /v1/config/cities/{cityId}` are served by `src/routes/config-read.ts`:
+  GET-only, exact paths, scope `profile:read` (survives limited mode so an
+  unverified device still renders its city's deny-by-default flags honestly).
+  The admin policy console's eight exact method + path routes (`PUT /v1/flags/{key}`,
+  `GET /v1/config/cities`, `GET /v1/config/cities/{cityId}/history`,
+  `POST /v1/config/cities/status`, `GET|POST /v1/config/change-requests`, and
+  `POST /v1/config/change-requests/{id}/approve|reject`) are served by
+  `src/routes/config-admin.ts` behind `config:admin` — held ONLY by
+  `CONFIG_ADMIN_ROLES` (`config_admin`, `ops_admin`, `admin`, `super_admin`),
+  never in `LIMITED_MODE_SCOPES`, and excluded from `SAFE_MODE_DENIED_SCOPES`
+  so the `marketplace_rides` kill switch keeps working under a Redis outage.
+  Every hop forwards the signed `x-ubi-identity` JWS (and `Idempotency-Key`),
+  never an `x-service-key`; every unrouted path or method under `/v1/config` or
+  `/v1/flags` (such as `GET /v1/flags`) answers the gateway's own 404, pinned
+  against `config-service`'s route manifest.
 - **Not proxied at all (gateway 404):** growth-service (`/v1/benefits`,
   `/v1/referrals`, `/v1/attribution`, `/v1/driver`, `/v1/growth`,
-  `/v1/ai/marketing`), config-service's admin routes (above), `/v1/kyc`,
+  `/v1/ai/marketing`), direct `GET /v1/flags` (above), `/v1/kyc`,
   `/v1/ops/*` other than `/v1/ops/travel`, and every service's `/internal/*`
   and service-key webhook surface. travel-service has been proxied since
   round 6 (route manifest `services/travel-service/tests/routes.manifest`).

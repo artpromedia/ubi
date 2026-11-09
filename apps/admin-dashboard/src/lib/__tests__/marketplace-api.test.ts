@@ -336,3 +336,19 @@ describe("redactedExport (C08)", () => {
     expect(parsed.nonce).toBe("[redacted]");
   });
 });
+
+describe("marketplaceApi kill-switch & rejection reason guards (CC-B01)", () => {
+  it("refuses blank or <3-char reasons synchronously before issuing a network call", async () => {
+    const { marketplaceApi } = await import("../marketplace-api");
+    expect(() => marketplaceApi.stopAwards("LOS", "")).toThrow(/at least 3/i);
+    expect(() => marketplaceApi.stopAwards("LOS", "  ab ")).toThrow(
+      /at least 3/i,
+    );
+    expect(() => marketplaceApi.resumeAwards("LOS", "ok")).toThrow(
+      /at least 3/i,
+    );
+    expect(() => marketplaceApi.rejectChangeRequest("cr_1", "no")).toThrow(
+      /at least 3/i,
+    );
+  });
+});

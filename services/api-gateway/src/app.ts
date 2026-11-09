@@ -25,6 +25,10 @@
  *   6. configReadRoutes             the read-only config family
  *                                   (routes/config-read.ts): GET, exact
  *                                   paths, to config-service.
+ *      configAdminRoutes            the admin config & flag family
+ *                                   (routes/config-admin.ts): exact method +
+ *                                   path, gated by config:admin, to
+ *                                   config-service.
  *      proxyRoutes                  forwards to the downstream service.
  *
  * ONE family sits outside steps 2-6: the passenger trip link
@@ -50,6 +54,7 @@ import {
   stripInboundIdentityHeaders,
 } from "./middleware/identity";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
+import { configAdminRoutes } from "./routes/config-admin";
 import { configReadRoutes } from "./routes/config-read";
 import { healthRoutes } from "./routes/health";
 import { proxyRoutes } from "./routes/proxy";
@@ -155,10 +160,12 @@ export function createApp(
   api.use("*", identityContextMiddleware);
   api.use("*", scopeEnforcementMiddleware);
 
-  // The read-only config family first: GET-only exact paths. Nothing in
-  // PROXY_RULES matches /config, so every other method and path under it (and
-  // all of /flags) falls through to the gateway's own 404.
+  // Exact-route config families: GET-only reads (`profile:read`) and exact
+  // admin routes (`config:admin`, DEC-1 = A). Nothing in PROXY_RULES matches
+  // `/config` or `/flags`, so every unrouted method or path under them falls
+  // through to the gateway's own 404.
   api.route("/", configReadRoutes);
+  api.route("/", configAdminRoutes);
   api.route("/", proxyRoutes);
 
   // The gateway mounts /v1. `/api` is not a UBI prefix.

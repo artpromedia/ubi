@@ -7,11 +7,13 @@ GET /health
 GET /health/live
 GET /health/ready
 GET /openapi.json
+GET /v1/config/change-requests
 GET /v1/config/cities
 GET /v1/config/cities/:cityId
 GET /v1/config/cities/:cityId/history
 GET /v1/flags
 POST /v1/config/change-requests
 POST /v1/config/change-requests/:id/approve
+POST /v1/config/change-requests/:id/reject
 POST /v1/config/cities/status
 PUT /v1/flags/:key

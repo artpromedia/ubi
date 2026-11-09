@@ -284,6 +284,8 @@ export const CONTRACT = {
   },
   "config-service": {
     ...NODE_COMMON,
+    UBI_IDENTITY_SECRET: "required",
+    UBI_IDENTITY_SECRET_PREVIOUS: "optional",
     INTERNAL_SERVICE_KEY: "required",
     CONFIG_CACHE_TTL_SEC: "optional",
     CONFIG_SEED_ENABLED: "unset",

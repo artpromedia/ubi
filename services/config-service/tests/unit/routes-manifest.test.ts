@@ -88,7 +88,7 @@ describe("config-service route manifest", () => {
     );
   });
 
-  it("serves the reads the gateway forwards and the admin routes it never does", () => {
+  it("serves the reads and exact admin routes the gateway pins against the manifest", () => {
     const routes = servedRoutes();
     for (const route of [
       "GET /v1/flags",
@@ -97,8 +97,10 @@ describe("config-service route manifest", () => {
       "PUT /v1/flags/:key",
       "POST /v1/config/cities/status",
       "GET /v1/config/cities/:cityId/history",
+      "GET /v1/config/change-requests",
       "POST /v1/config/change-requests",
       "POST /v1/config/change-requests/:id/approve",
+      "POST /v1/config/change-requests/:id/reject",
     ]) {
       expect(routes, route).toContain(route);
     }

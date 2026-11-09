@@ -1108,5 +1108,22 @@ describe("limited mode and wallet safe mode scope matrix", () => {
     expect(
       (await call("full", "GET", "/v1/admin/mp/requests", "travel_ops")).code,
     ).toBe("forbidden");
+
+    // config:admin routes (CC-B01): config_admin, ops_admin, admin, super_admin in full/safe mode only; never ops, never limited mode
+    for (const role of ["config_admin", "ops_admin", "admin", "super_admin"]) {
+      expect(
+        (await call("full", "PUT", "/v1/flags/marketplace_rides", role)).status,
+      ).toBe(200);
+      expect(
+        (await call("safe", "PUT", "/v1/flags/marketplace_rides", role)).status,
+      ).toBe(200);
+      expect(
+        (await call("limited", "PUT", "/v1/flags/marketplace_rides", role))
+          .code,
+      ).toBe("limited_mode");
+    }
+    expect(
+      (await call("full", "PUT", "/v1/flags/marketplace_rides", "ops")).code,
+    ).toBe("forbidden");
   });
 });

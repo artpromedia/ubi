@@ -84,6 +84,47 @@ export const ChangeRequestResponse = z
   })
   .openapi("ConfigChangeRequest");
 
+export const ChangeRequestsQuery = z.object({
+  cityId: z.string().min(1).max(16).optional(),
+  status: z
+    .enum(["pending", "approved", "rejected", "activated"])
+    .default("pending"),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export const ChangeRequestDetailSchema = z
+  .object({
+    id: z.string(),
+    cityId: z.string(),
+    status: z.string(),
+    reason: z.string(),
+    patch: z.record(z.unknown()),
+    authorId: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    approvals: z.number().int(),
+    approvalsRequired: z.number().int(),
+    approvers: z.array(
+      z.object({
+        approverId: z.string(),
+        createdAt: z.string(),
+      }),
+    ),
+  })
+  .openapi("ConfigChangeRequestDetail");
+
+export const ChangeRequestListResponse = z
+  .object({
+    requests: z.array(ChangeRequestDetailSchema),
+  })
+  .openapi("ConfigChangeRequestList");
+
+export const ApproveBody = z
+  .object({
+    note: z.string().trim().min(1).max(500).optional(),
+  })
+  .openapi("ConfigApproveBody");
+
 export const ApprovalResponse = z
   .object({
     requestId: z.string(),
@@ -98,6 +139,23 @@ export const ApprovalResponse = z
     ),
   })
   .openapi("ConfigApproval");
+
+export const RejectBody = z
+  .object({
+    reason: z.string().trim().min(3).max(500),
+  })
+  .openapi("ConfigRejectBody");
+
+export const RejectResponse = z
+  .object({
+    requestId: z.string(),
+    cityId: z.string(),
+    status: z.literal("rejected"),
+    rejectedBy: z.string(),
+    reason: z.string(),
+    replayed: z.boolean(),
+  })
+  .openapi("ConfigRejectResponse");
 
 export const HistoryResponse = z
   .object({

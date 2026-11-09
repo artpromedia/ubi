@@ -342,15 +342,92 @@ export async function createChangeRequest(
   };
 }
 
+export interface ChangeRequestApprovalEntry {
+  readonly approverId: string;
+  readonly createdAt: string;
+}
+
+export interface ChangeRequestDetailView {
+  readonly id: string;
+  readonly cityId: string;
+  readonly status: string;
+  readonly reason: string;
+  readonly patch: JsonObject;
+  readonly authorId: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly approvals: number;
+  readonly approvalsRequired: number;
+  readonly approvers: readonly ChangeRequestApprovalEntry[];
+}
+
+export interface ListChangeRequestsInput {
+  readonly cityId?: string | undefined;
+  readonly status?: string | undefined;
+  readonly limit?: number | undefined;
+}
+
+export async function listChangeRequests(
+  input: ListChangeRequestsInput,
+): Promise<readonly ChangeRequestDetailView[]> {
+  const rows = await prisma.configChangeRequest.findMany({
+    where: {
+      ...(input.cityId === undefined ? {} : { cityId: input.cityId }),
+      ...(input.status === undefined ? {} : { status: input.status }),
+    },
+    include: {
+      approvals: {
+        orderBy: { createdAt: "asc" },
+        select: { approverId: true, createdAt: true },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    take: input.limit ?? 50,
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    cityId: row.cityId,
+    status: row.status,
+    reason: row.reason,
+    patch: asJsonObject(row.patch),
+    authorId: row.authorId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    approvals: row.approvals.length,
+    approvalsRequired: REQUIRED_APPROVALS,
+    approvers: row.approvals.map((a) => ({
+      approverId: a.approverId,
+      createdAt: a.createdAt.toISOString(),
+    })),
+  }));
+}
+
+export async function getChangeRequestAuthor(
+  requestId: string,
+): Promise<{ readonly id: string; readonly authorId: string }> {
+  const row = await prisma.configChangeRequest.findUnique({
+    where: { id: requestId },
+    select: { id: true, authorId: true },
+  });
+  if (row === null) {
+    throw new ContractError("not_found", "change request not found", {
+      requestId,
+    });
+  }
+  return row;
+}
+
 export interface ApproveChangeRequestInput {
   readonly requestId: string;
   readonly actor: Actor;
+  readonly note?: string | undefined;
 }
 
 export async function approveChangeRequest(
   input: ApproveChangeRequestInput,
 ): Promise<ApprovalResult> {
-  const { requestId, actor } = input;
+  const { requestId, actor, note } = input;
 
   const request = await prisma.configChangeRequest.findUnique({
     where: { id: requestId },
@@ -418,6 +495,23 @@ export async function approveChangeRequest(
         const approvals = await tx.configApproval.count({
           where: { requestId },
         });
+
+        await writeAudit(tx, {
+          actorId: actor.id,
+          actorRole: actor.role,
+          action: "config.change_approved",
+          subjectType: "config",
+          subjectId: requestId,
+          after: {
+            requestId,
+            cityId: current.cityId,
+            approvals,
+            approvalsRequired: REQUIRED_APPROVALS,
+            ...(note === undefined ? {} : { note }),
+          } as Prisma.InputJsonValue,
+          reason: note ?? current.reason,
+        });
+
         if (approvals < REQUIRED_APPROVALS) {
           return {
             requestId,
@@ -490,6 +584,7 @@ export async function approveChangeRequest(
             requestId,
             authoredBy: current.authorId,
             approvers,
+            ...(note === undefined ? {} : { approvalNote: note }),
           } as unknown as Prisma.InputJsonValue,
           reason: current.reason,
         });
@@ -567,6 +662,131 @@ export async function approveChangeRequest(
   }
 
   return result;
+}
+
+export interface RejectChangeRequestInput {
+  readonly requestId: string;
+  readonly reason: string;
+  readonly actor: Actor;
+  readonly idempotencyKey: string;
+}
+
+export interface RejectChangeRequestResult {
+  readonly requestId: string;
+  readonly cityId: string;
+  readonly status: "rejected";
+  readonly rejectedBy: string;
+  readonly reason: string;
+  readonly replayed: boolean;
+}
+
+export async function rejectChangeRequest(
+  input: RejectChangeRequestInput,
+): Promise<RejectChangeRequestResult> {
+  const { requestId, reason, actor } = input;
+  const scopedKey = scopedIdempotencyKey(
+    "config.change_reject",
+    actor.id,
+    input.idempotencyKey,
+  );
+
+  const request = await prisma.configChangeRequest.findUnique({
+    where: { id: requestId },
+  });
+  if (request === null) {
+    throw new ContractError("not_found", "change request not found", {
+      requestId,
+    });
+  }
+
+  if (request.status === CHANGE_REQUEST_STATUS.rejected) {
+    const priorAudit = await prisma.auditLog.findFirst({
+      where: {
+        subjectType: "config",
+        subjectId: requestId,
+        action: "config.change_rejected",
+        actorId: actor.id,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    const priorAfter = asJsonObject(priorAudit?.after);
+    if (priorAfter["idempotencyKey"] === scopedKey) {
+      if (priorAudit?.reason !== reason) {
+        throw new ContractError(
+          "idempotency_key_reuse",
+          "idempotency key was already used with a different rejection reason",
+          { requestId },
+        );
+      }
+      return {
+        requestId,
+        cityId: request.cityId,
+        status: "rejected",
+        rejectedBy: actor.id,
+        reason,
+        replayed: true,
+      };
+    }
+  }
+
+  if (request.status !== CHANGE_REQUEST_STATUS.pending) {
+    throw new ContractError("conflict", `change request is ${request.status}`, {
+      requestId,
+      status: request.status,
+    });
+  }
+
+  await prisma.$transaction(
+    async (tx) => {
+      const current = await tx.configChangeRequest.findUnique({
+        where: { id: requestId },
+      });
+      if (
+        current === null ||
+        current.status !== CHANGE_REQUEST_STATUS.pending
+      ) {
+        throw new ContractError(
+          "conflict",
+          "change request is no longer pending",
+          {
+            requestId,
+            status: current?.status ?? "missing",
+          },
+        );
+      }
+
+      await tx.configChangeRequest.update({
+        where: { id: requestId },
+        data: { status: CHANGE_REQUEST_STATUS.rejected },
+      });
+
+      await writeAudit(tx, {
+        actorId: actor.id,
+        actorRole: actor.role,
+        action: "config.change_rejected",
+        subjectType: "config",
+        subjectId: requestId,
+        before: { status: current.status } as Prisma.InputJsonValue,
+        after: {
+          status: CHANGE_REQUEST_STATUS.rejected,
+          requestId,
+          cityId: current.cityId,
+          idempotencyKey: scopedKey,
+        } as Prisma.InputJsonValue,
+        reason,
+      });
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
+
+  return {
+    requestId,
+    cityId: request.cityId,
+    status: "rejected",
+    rejectedBy: actor.id,
+    reason,
+    replayed: false,
+  };
 }
 
 export async function getHistory(

@@ -50,10 +50,14 @@ import "./env";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app";
 import { setIdentityStateStore } from "../src/lib/redis";
+import { CONFIG_ADMIN_ROUTES } from "../src/routes/config-admin";
+import { CONFIG_READ_ROUTES } from "../src/routes/config-read";
+import { forwardToServicePath } from "../src/routes/proxy";
 import {
   PROXY_RULES,
   SERVICES,
@@ -61,7 +65,6 @@ import {
   type ProxyRule,
   type ServiceName,
 } from "../src/routes/proxy-map";
-import { CONFIG_READ_ROUTES } from "../src/routes/config-read";
 import {
   TRIP_ACCESS_ROUTES,
   resetTripAccessLimiter,
@@ -1540,29 +1543,7 @@ const UNPROXIED_CLIENT_CALLS: readonly {
     method: "GET",
     path: "/v1/flags",
     servedBy: "config-service /v1/flags",
-    source: "apps/admin-dashboard",
-  },
-  // The admin policy page's config writes and history. config-service
-  // authorizes them on the gateway's verified x-user-role, but only the two
-  // reads in src/routes/config-read.ts are routed until the admin config
-  // path is cleared (docs/launch/GAP_REGISTER.md).
-  {
-    method: "PUT",
-    path: "/v1/flags/marketplace_rides",
-    servedBy: "config-service /v1/flags/:key",
-    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
-  },
-  {
-    method: "POST",
-    path: "/v1/config/change-requests",
-    servedBy: "config-service /v1/config/change-requests",
-    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
-  },
-  {
-    method: "GET",
-    path: "/v1/config/cities/LOS/history",
-    servedBy: "config-service /v1/config/cities/:cityId/history",
-    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+    source: "apps/admin-dashboard (must call /v1/config/flags instead)",
   },
   {
     method: "GET",
@@ -1951,10 +1932,12 @@ describe("the passenger trip link reaches ride-service without a user token", ()
 });
 
 /**
- * The read-only config family (src/routes/config-read.ts): GET-only exact
- * paths, the one config-service surface a client token reaches. Each case
- * must land on a route in config-service's manifest, and each admin route it
- * withholds must exist there too, so the 404s above cannot pass vacuously.
+ * Exact config routes (`src/routes/config-read.ts` + `src/routes/config-admin.ts`,
+ * DEC-1 = A / CC-B01): never a wildcard. Every exact route must land on a route
+ * in `config-service`'s manifest, every withheld route (`GET /v1/flags`) must
+ * exist in the manifest while answering 404 on the gateway, and unrouted
+ * `/v1/config/*` / `/v1/flags/*` probes must answer 404 (with a negative
+ * control proving a wildcard fails them).
  */
 const CONFIG_READS: readonly {
   readonly pattern: string;
@@ -1976,19 +1959,96 @@ const CONFIG_READS: readonly {
   },
 ];
 
-const CONFIG_WITHHELD: readonly { method: string; path: string }[] = [
-  { method: "PUT", path: "/v1/flags/marketplace_rides" },
-  { method: "GET", path: "/v1/config/cities" },
-  { method: "POST", path: "/v1/config/cities/status" },
-  { method: "GET", path: "/v1/config/cities/LOS/history" },
-  { method: "POST", path: "/v1/config/change-requests" },
-  { method: "POST", path: "/v1/config/change-requests/cr_1/approve" },
+const CONFIG_ADMINS: readonly {
+  readonly method: "GET" | "POST" | "PUT";
+  readonly pattern: string;
+  readonly path: string;
+  readonly downstream: string;
+  readonly source: string;
+}[] = [
+  {
+    method: "PUT",
+    pattern: "/flags/:key{[A-Za-z0-9_.-]+}",
+    path: "/v1/flags/marketplace_rides",
+    downstream: "/v1/flags/marketplace_rides",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "GET",
+    pattern: "/config/cities",
+    path: "/v1/config/cities",
+    downstream: "/v1/config/cities",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "GET",
+    pattern: "/config/cities/:cityId{[A-Za-z0-9_-]+}/history",
+    path: "/v1/config/cities/LOS/history",
+    downstream: "/v1/config/cities/LOS/history",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "POST",
+    pattern: "/config/cities/status",
+    path: "/v1/config/cities/status",
+    downstream: "/v1/config/cities/status",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "GET",
+    pattern: "/config/change-requests",
+    path: "/v1/config/change-requests?cityId=LOS&status=pending",
+    downstream: "/v1/config/change-requests",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "POST",
+    pattern: "/config/change-requests",
+    path: "/v1/config/change-requests",
+    downstream: "/v1/config/change-requests",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "POST",
+    pattern: "/config/change-requests/:id{[A-Za-z0-9_-]+}/approve",
+    path: "/v1/config/change-requests/cr_1/approve",
+    downstream: "/v1/config/change-requests/cr_1/approve",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
+  {
+    method: "POST",
+    pattern: "/config/change-requests/:id{[A-Za-z0-9_-]+}/reject",
+    path: "/v1/config/change-requests/cr_1/reject",
+    downstream: "/v1/config/change-requests/cr_1/reject",
+    source: "apps/admin-dashboard src/lib/marketplace-api.ts",
+  },
 ];
 
-describe("the read-only config family reaches config-service", () => {
-  it("has a case for every config read route", () => {
+const CONFIG_WITHHELD: readonly { method: string; path: string }[] = [
+  { method: "GET", path: "/v1/flags" },
+];
+
+const CONFIG_UNROUTED_PROBES: readonly { method: string; path: string }[] = [
+  { method: "DELETE", path: "/v1/flags/marketplace_rides" },
+  { method: "POST", path: "/v1/flags/marketplace_rides" },
+  { method: "PUT", path: "/v1/config/cities/LOS" },
+  { method: "DELETE", path: "/v1/config/change-requests/cr_1" },
+  { method: "GET", path: "/v1/config/unknown" },
+];
+
+describe("the exact config read and admin families reach config-service", () => {
+  it("has a case for every config read route and every config admin route", () => {
     expect(CONFIG_READS.map((testCase) => testCase.pattern).sort()).toEqual(
       CONFIG_READ_ROUTES.map((route) => route.pattern).sort(),
+    );
+    expect(
+      CONFIG_ADMINS.map(
+        (testCase) => `${testCase.method} ${testCase.pattern}`,
+      ).sort(),
+    ).toEqual(
+      CONFIG_ADMIN_ROUTES.map(
+        (route) => `${route.method} ${route.pattern}`,
+      ).sort(),
     );
   });
 
@@ -2015,6 +2075,28 @@ describe("the read-only config family reaches config-service", () => {
     },
   );
 
+  it.each(
+    CONFIG_ADMINS.map((testCase) => [testCase.method, testCase.path, testCase]),
+  )("%s %s", async (method, _path, testCase) => {
+    const manifest = loadManifest("config-service");
+    expect(manifest).toBeDefined();
+    if (manifest === undefined) return;
+    expect(
+      manifestServes(manifest, method, testCase.downstream),
+      `${method} ${testCase.path} (${testCase.source}) maps to config-service ${method} ${testCase.downstream}, which ${manifest.source.file} does not serve: regenerate it (${manifest.source.regenerate}) or fix src/routes/config-admin.ts`,
+    ).toBe(true);
+
+    const result = await sendThroughGateway(method, testCase.path);
+    expect(result.status).toBe(200);
+    expect(result.arrivals).toEqual([
+      {
+        service: "config-service",
+        url: `${testCase.downstream}${queryOf(testCase.path)}`,
+        method,
+      },
+    ]);
+  });
+
   it.each(CONFIG_WITHHELD.map((entry) => [entry.method, entry.path]))(
     "withholds %s %s, which config-service serves",
     async (method, clientPath) => {
@@ -2029,6 +2111,60 @@ describe("the read-only config family reaches config-service", () => {
       expect(result.arrivals).toEqual([]);
     },
   );
+
+  it.each(CONFIG_UNROUTED_PROBES.map((entry) => [entry.method, entry.path]))(
+    "answers 404 for unrouted %s %s (no wildcard on /config/* or /flags/*)",
+    async (method, clientPath) => {
+      const result = await sendThroughGateway(method, clientPath);
+      expect(result.status).toBe(404);
+      expect(result.code).toBe("NOT_FOUND");
+      expect(result.arrivals).toEqual([]);
+    },
+  );
+
+  it("negative control: widening /config/* or /flags/* to a wildcard is caught by the withheld and unrouted probes", async () => {
+    // Confirm PROXY_RULES itself has zero wildcard rules for config-service.
+    expect(
+      PROXY_RULES.filter((rule) => rule.service === "config-service"),
+    ).toEqual([]);
+
+    // Build a counterfactual app that widens /v1/config/* and /v1/flags/* to a
+    // wildcard forwarder, and prove every withheld/unrouted probe above leaks
+    // to config-service (status 200, arrivals non-empty) instead of 404.
+    const widened = new Hono();
+    widened.all("/v1/config/*", (c) =>
+      forwardToServicePath("config-service", c.req.path, c),
+    );
+    widened.all("/v1/flags", (c) =>
+      forwardToServicePath("config-service", c.req.path, c),
+    );
+    widened.all("/v1/flags/*", (c) =>
+      forwardToServicePath("config-service", c.req.path, c),
+    );
+
+    const configUpstream = upstreams.get("config-service");
+    expect(configUpstream).toBeDefined();
+    if (configUpstream === undefined) return;
+
+    for (const probe of [...CONFIG_WITHHELD, ...CONFIG_UNROUTED_PROBES]) {
+      configUpstream.received.length = 0;
+      const init: RequestInit = { method: probe.method };
+      if (probe.method !== "GET") {
+        (init as { body?: string }).body = "{}";
+      }
+      const leaked = await widened.fetch(
+        new Request(`http://gateway.test${probe.path}`, init),
+      );
+      // Under a wildcard, the probe reaches config-service (200, 1 arrival),
+      // which directly violates the `status === 404 && arrivals === []`
+      // contract assertions above.
+      expect(leaked.status, `${probe.method} ${probe.path}`).toBe(200);
+      expect(
+        configUpstream.received,
+        `${probe.method} ${probe.path}`,
+      ).toHaveLength(1);
+    }
+  });
 });
 
 describe("unbacked rules stay honest", () => {

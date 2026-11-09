@@ -1,29 +1,25 @@
 /**
- * Read-only config routes — the ONE config-service family the gateway serves.
+ * Read-only config routes — the app-facing GET config family (`profile:read`).
  *
  * The apps read deny-by-default flags and their city's active config through
- * the gateway (packages/mobile-core src/flags.ts and src/config.ts; the admin
- * dashboard's policy page reads the same city config). Until these routes
- * existed nothing under /v1/config was proxied, so every app evaluated
- * DENY_ALL whatever the city's flags said.
+ * the gateway (`packages/mobile-core` `src/flags.ts` and `src/config.ts`; the
+ * admin dashboard's policy page reads the same city config).
  *
- * Why this is not a PROXY_RULES entry: config-service also serves the flag
- * flip (PUT /v1/flags/{key}), the city list, change requests and their
- * approval, the city status change and the config history. The admin ones
- * authorize on the gateway's verified x-user-role, but no client surface is
- * cleared to use them through the edge yet, and a wildcard rule has no method
- * filter — it would have forwarded every write. So each read is pinned here
- * by METHOD (GET only) and by exact path, and everything else under
- * /v1/config, and all of /v1/flags, answers the gateway's own 404
- * (tests/route-contract.test.ts pins both sides against config-service's
+ * Why this is not a `PROXY_RULES` wildcard: `config-service` also serves admin
+ * flag flips (`PUT /v1/flags/{key}`), the city list, change requests and their
+ * dual-approval / rejection, city status changes, and config history. Those
+ * admin routes are mounted separately by exact method + path in
+ * `routes/config-admin.ts` behind `config:admin` (DEC-1 = A, CC-B01). Every
+ * unrouted path or method under `/v1/config` or `/v1/flags` (such as
+ * `GET /v1/flags` or `DELETE /v1/flags/{key}`) answers the gateway's own 404
+ * (`tests/route-contract.test.ts` pins both sides against `config-service`'s
  * route manifest).
  *
  * Identity, rate limiting and scope enforcement are the same as for every
  * proxied request: these routes are mounted on the authenticated `/v1` app
- * after the identity middleware, and the hop (routes/proxy.ts
- * `forwardToServicePath`) forwards the gateway's verified x-user-id, so
- * config-service evaluates flags for the caller and refuses a `userId` query
- * that names somebody else (config-service src/middleware/actor.ts).
+ * after the identity middleware, and `forwardToServicePath` (`routes/proxy.ts`)
+ * forwards the signed `x-ubi-identity` JWS so `config-service` evaluates flags
+ * for the caller and refuses a `userId` query naming somebody else.
  */
 import { Hono, type Context } from "hono";
 

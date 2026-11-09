@@ -295,7 +295,33 @@ paths:
                 additionalProperties:
                   type: boolean
   /v1/config/change-requests:
+    get:
+      summary: List city config change requests (defaults to pending)
+      parameters:
+        - name: cityId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - pending
+              - approved
+              - rejected
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: change request queue with approvals recorded so far
     post:
+      parameters:
+        - $ref: "#/components/parameters/IdemKey"
       requestBody:
         content:
           application/json:
@@ -323,9 +349,45 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 500
       responses:
         "200":
-          description: second approver (≠ author) activates new version
+          description: first approver records audited approval; second distinct approver (≠ author) activates new version
+  /v1/config/change-requests/{id}/reject:
+    post:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdemKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+      responses:
+        "200":
+          description: pending request rejected and audited (idempotent replay on same request)
   /v1/devices/enroll:
     post:
       responses:

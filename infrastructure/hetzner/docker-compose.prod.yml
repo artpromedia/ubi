@@ -584,10 +584,10 @@ services:
   # ---------------------------------------------------------------------------
   # Services added in round 9. Each listens on its own default port (PORT is
   # still set explicitly). None is exposed on the host; only travel-service's
-  # supplier webhook path is reachable from outside, through Caddy's dedicated
-  # webhooks host. growth-service, config-service, support-service and
-  # realtime-gateway have NO public route at all (the gateway does not proxy
-  # them and Caddy has no site for them) — configured, not exposed.
+  # webhook path is reachable from outside, through Caddy's dedicated webhooks
+  # host. growth-service, support-service and realtime-gateway have NO public
+  # HTTP route at all; config-service is reached only through the gateway's
+  # exact read (`config-read.ts`) and `config:admin` (`config-admin.ts`) routes.
   # connection_limit bounds each new Prisma pool: Postgres allows 100
   # connections and the pools of the older services are unbounded
   # (docs/ops/PILOT_RUNBOOK_DELTAS.md, "Connection budget").
@@ -608,6 +608,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ubi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ubi_production}?schema=public&connection_limit=5
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Verifies the gateway-signed x-ubi-identity JWS on flag evaluation and
+      # every config:admin route; config-service refuses to boot without it.
+      UBI_IDENTITY_SECRET: ${UBI_IDENTITY_SECRET:?UBI_IDENTITY_SECRET is required}
       # Only a caller holding this key may evaluate flags for a user id it
       # supplies itself.
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?INTERNAL_SERVICE_KEY is required}

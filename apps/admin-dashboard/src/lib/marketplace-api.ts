@@ -118,6 +118,47 @@ export type ChangeRequest = {
   approvalsRequired: number;
   replayed: boolean;
 };
+export type ChangeRequestDetail = {
+  id: string;
+  cityId: string;
+  status: string;
+  reason: string;
+  patch: Record<string, unknown>;
+  authorId: string;
+  createdAt: string;
+  updatedAt: string;
+  approvals: number;
+  approvalsRequired: number;
+  approvers: { approverId: string; createdAt: string }[];
+};
+export type ChangeRequestApproval = {
+  requestId: string;
+  cityId: string;
+  status: string;
+  approvals: number;
+  approvalsRequired: number;
+  activated: boolean;
+  version: number | null;
+  diff: { path: string; before: unknown; after: unknown }[];
+};
+export type ChangeRequestRejection = {
+  requestId: string;
+  cityId: string;
+  status: "rejected";
+  rejectedBy: string;
+  reason: string;
+  replayed: boolean;
+};
+export type CitySummary = {
+  id: string;
+  name: string;
+  country: string;
+  region: string | null;
+  timezone: string;
+  status: string;
+  active: boolean;
+  launchGroup: string | null;
+};
 export type FlagChange = {
   key: string;
   cityId: string | null;
@@ -453,9 +494,34 @@ export const marketplaceApi = {
       { idempotencyKey: newIdempotencyKey() },
     ),
   cityConfig: (cityId: string) =>
-    apiClient.get<CityConfigView>("/v1/config/cities/" + cityId),
+    apiClient.get<CityConfigView>(
+      "/v1/config/cities/" + encodeURIComponent(cityId),
+    ),
+  cityFlags: (cityId: string) =>
+    apiClient.get<Record<string, boolean>>(
+      "/v1/config/flags" + toQuery({ cityId }),
+    ),
+  listCities: () => apiClient.get<CitySummary[]>("/v1/config/cities"),
+  setCityStatus: (body: {
+    cityIds: string[];
+    status: string;
+    reason: string;
+    flags?: { key: string; enabled: boolean }[];
+  }) =>
+    apiClient.post("/v1/config/cities/status", body, {
+      idempotencyKey: newIdempotencyKey(),
+    }),
   configHistory: (cityId: string) =>
-    apiClient.get<ConfigHistory>("/v1/config/cities/" + cityId + "/history"),
+    apiClient.get<ConfigHistory>(
+      "/v1/config/cities/" + encodeURIComponent(cityId) + "/history",
+    ),
+  listChangeRequests: (
+    cityId?: string,
+    status: "pending" | "approved" | "rejected" | "activated" = "pending",
+  ) =>
+    apiClient.get<{ requests: ChangeRequestDetail[] }>(
+      "/v1/config/change-requests" + toQuery({ cityId, status }),
+    ),
   /** Policy edits go through the existing two-person config change-request flow. config-service requires an idempotency-key header (min 8 chars) or it 422s. */
   proposePolicyChange: (
     cityId: string,
@@ -467,13 +533,51 @@ export const marketplaceApi = {
       { cityId, patch, reason },
       { idempotencyKey: newIdempotencyKey() },
     ),
-  /** Kill switch: stops NEW awards only (deny-by-default flag); audited single-actor path in config-service. Requires an idempotency-key header or it 422s. */
-  stopAwards: (cityId: string, reason: string) =>
-    apiClient.put<FlagChange>(
-      "/v1/flags/marketplace_rides",
-      { cityId, enabled: false, reason },
+  approveChangeRequest: (id: string, note?: string) => {
+    const trimmed = note?.trim();
+    return apiClient.post<ChangeRequestApproval>(
+      "/v1/config/change-requests/" + encodeURIComponent(id) + "/approve",
+      trimmed && trimmed.length > 0 ? { note: trimmed } : {},
       { idempotencyKey: newIdempotencyKey() },
-    ),
+    );
+  },
+  rejectChangeRequest: (id: string, reason: string) => {
+    const trimmed = reason.trim();
+    if (trimmed.length < 3) {
+      throw new Error(
+        "A rejection reason of at least 3 characters is required",
+      );
+    }
+    return apiClient.post<ChangeRequestRejection>(
+      "/v1/config/change-requests/" + encodeURIComponent(id) + "/reject",
+      { reason: trimmed },
+      { idempotencyKey: newIdempotencyKey() },
+    );
+  },
+  /** Kill switch: stops NEW awards only (deny-by-default flag); audited single-actor path in config-service. Requires an idempotency-key header and a real operator reason. */
+  stopAwards: (cityId: string, reason: string) => {
+    const trimmed = reason.trim();
+    if (trimmed.length < 3) {
+      throw new Error("An audit reason of at least 3 characters is required");
+    }
+    return apiClient.put<FlagChange>(
+      "/v1/flags/marketplace_rides",
+      { cityId, enabled: false, reason: trimmed },
+      { idempotencyKey: newIdempotencyKey() },
+    );
+  },
+  /** Resume new marketplace awards for a city (audited single-actor path in config-service). */
+  resumeAwards: (cityId: string, reason: string) => {
+    const trimmed = reason.trim();
+    if (trimmed.length < 3) {
+      throw new Error("An audit reason of at least 3 characters is required");
+    }
+    return apiClient.put<FlagChange>(
+      "/v1/flags/marketplace_rides",
+      { cityId, enabled: true, reason: trimmed },
+      { idempotencyKey: newIdempotencyKey() },
+    );
+  },
 };
 
 // ---------------------------------------------------------------------------

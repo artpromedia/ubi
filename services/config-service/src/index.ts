@@ -8,10 +8,13 @@ import { serve } from "@hono/node-server";
 
 import { buildApp } from "./app";
 import { PORT } from "./lib/env";
+import { assertIdentityConfigured } from "./lib/identity-context";
 import { logger } from "./lib/logger";
 import { disconnectPrisma } from "./lib/prisma";
 import { disconnectRedis } from "./lib/redis";
 import { startMarketingRevalidation } from "./marketing-revalidate";
+
+assertIdentityConfigured();
 
 const app = buildApp();
 

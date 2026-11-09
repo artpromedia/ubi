@@ -6,12 +6,19 @@
  */
 import { type OpenAPIHono, createRoute } from "@hono/zod-openapi";
 
-import { CityConfigSchema, IDEMPOTENCY_HEADER } from "@ubi/contracts";
+import {
+  CityConfigSchema,
+  ContractError,
+  IDEMPOTENCY_HEADER,
+} from "@ubi/contracts";
 
 import {
   ApprovalResponse,
+  ApproveBody,
   ChangeRequestBody,
+  ChangeRequestListResponse,
   ChangeRequestResponse,
+  ChangeRequestsQuery,
   CitiesResponse,
   CityIdParam,
   CityStatusBody,
@@ -19,19 +26,27 @@ import {
   ConditionalHeaders,
   HistoryResponse,
   IdempotencyHeaders,
+  RejectBody,
+  RejectResponse,
   RequestIdParam,
   errorResponses,
   jsonContent,
 } from "./schemas";
 import { CONFIG_CACHE_TTL_SEC } from "../lib/env";
 import { etagMatches } from "../lib/etag";
-import { requireConfigAdmin } from "../middleware/actor";
+import {
+  requireChangeRequestRejector,
+  requireConfigAdmin,
+} from "../middleware/actor";
 import { listCities, setCityStatus } from "../services/cities.service";
 import {
   approveChangeRequest,
   createChangeRequest,
   getActiveConfig,
+  getChangeRequestAuthor,
   getHistory,
+  listChangeRequests,
+  rejectChangeRequest,
 } from "../services/config.service";
 
 const listCitiesRoute = createRoute({
@@ -98,6 +113,24 @@ const historyRoute = createRoute({
   },
 });
 
+const listChangeRequestsRoute = createRoute({
+  method: "get",
+  path: "/v1/config/change-requests",
+  tags: ["config"],
+  summary: "List config change requests (pending by default) with approvals",
+  request: { query: ChangeRequestsQuery },
+  responses: {
+    200: jsonContent(
+      ChangeRequestListResponse,
+      "change requests matching the filter",
+    ),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    422: errorResponses[422],
+    500: errorResponses[500],
+  },
+});
+
 const createChangeRequestRoute = createRoute({
   method: "post",
   path: "/v1/config/change-requests",
@@ -123,13 +156,37 @@ const approveRoute = createRoute({
   path: "/v1/config/change-requests/{id}/approve",
   tags: ["config"],
   summary:
-    "Approve a change request; the second distinct approver activates it",
-  request: { params: RequestIdParam, headers: IdempotencyHeaders },
+    "Approve a change request (optional note); the second distinct approver activates it",
+  request: {
+    params: RequestIdParam,
+    headers: IdempotencyHeaders,
+  },
   responses: {
     200: jsonContent(
       ApprovalResponse,
       "approval recorded, possibly activating",
     ),
+    401: errorResponses[401],
+    403: errorResponses[403],
+    404: errorResponses[404],
+    409: errorResponses[409],
+    422: errorResponses[422],
+    500: errorResponses[500],
+  },
+});
+
+const rejectRoute = createRoute({
+  method: "post",
+  path: "/v1/config/change-requests/{id}/reject",
+  tags: ["config"],
+  summary: "Reject a pending change request (author or config admin)",
+  request: {
+    params: RequestIdParam,
+    headers: IdempotencyHeaders,
+    body: { content: { "application/json": { schema: RejectBody } } },
+  },
+  responses: {
+    200: jsonContent(RejectResponse, "change request rejected (or replayed)"),
     401: errorResponses[401],
     403: errorResponses[403],
     404: errorResponses[404],
@@ -195,6 +252,25 @@ export function registerConfigRoutes(app: OpenAPIHono): void {
     );
   });
 
+  app.openapi(listChangeRequestsRoute, async (c) => {
+    requireConfigAdmin(c);
+    const query = c.req.valid("query");
+    const requests = await listChangeRequests({
+      cityId: query.cityId,
+      status: query.status,
+      limit: query.limit,
+    });
+    return c.json(
+      {
+        requests: requests.map((entry) => ({
+          ...entry,
+          approvers: entry.approvers.map((approver) => ({ ...approver })),
+        })),
+      },
+      200,
+    );
+  });
+
   app.openapi(createChangeRequestRoute, async (c) => {
     const actor = requireConfigAdmin(c);
     const body = c.req.valid("json");
@@ -211,13 +287,54 @@ export function registerConfigRoutes(app: OpenAPIHono): void {
   app.openapi(approveRoute, async (c) => {
     const actor = requireConfigAdmin(c);
     const { id } = c.req.valid("param");
-    // Idempotency-Key is required by the route schema; the approval itself is
-    // keyed on (requestId, approverId), so a retry is caught as already_approved
-    // rather than recorded twice.
-    const result = await approveChangeRequest({ requestId: id, actor });
+    let note: string | undefined;
+    const rawBody = await c.req.text();
+    if (rawBody.trim().length > 0) {
+      let jsonValue: unknown;
+      try {
+        jsonValue = JSON.parse(rawBody);
+      } catch {
+        throw new ContractError(
+          "validation_failed",
+          "request failed validation",
+          {
+            issues: [{ path: "", message: "Invalid JSON body" }],
+          },
+        );
+      }
+      const parsed = ApproveBody.safeParse(jsonValue);
+      if (!parsed.success) {
+        throw new ContractError(
+          "validation_failed",
+          "request failed validation",
+          {
+            issues: parsed.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+            })),
+          },
+        );
+      }
+      note = parsed.data.note;
+    }
+    const result = await approveChangeRequest({ requestId: id, actor, note });
     return c.json(
       { ...result, diff: result.diff.map((entry) => ({ ...entry })) },
       200,
     );
+  });
+
+  app.openapi(rejectRoute, async (c) => {
+    const { id } = c.req.valid("param");
+    const { authorId } = await getChangeRequestAuthor(id);
+    const actor = requireChangeRequestRejector(c, authorId);
+    const body = c.req.valid("json");
+    const result = await rejectChangeRequest({
+      requestId: id,
+      reason: body.reason,
+      actor,
+      idempotencyKey: c.req.valid("header")[IDEMPOTENCY_HEADER],
+    });
+    return c.json(result, 200);
   });
 }

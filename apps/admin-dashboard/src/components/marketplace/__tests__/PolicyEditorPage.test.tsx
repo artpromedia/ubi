@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { PolicyEditorPage, type PolicyEditorProps } from "../PolicyEditorPage";
 
 const base: PolicyEditorProps = {
-  scopeLine: "Marketplace policy · lagos",
+  scopeLine: "Marketplace policy · LOS",
   activeVersion: "config v7 · policy v3",
   bounds: [
     {
@@ -84,5 +84,101 @@ describe("PolicyEditorPage", () => {
     expect(html).toContain('data-testid="mp.admin.policy.stopAwards"');
     expect(html).toContain("Stop new awards");
     expect(html).toContain("Stops NEW awards only.");
+  });
+
+  it("renders resume awards, city-named kill-switch confirmation, and requires a >=3-char reason (CC-B01)", () => {
+    const emptyReasonHtml = renderToStaticMarkup(
+      <PolicyEditorPage
+        {...base}
+        awardsEnabled={false}
+        onResumeAwards={() => undefined}
+        killSwitchDialog={{
+          action: "stop",
+          cityId: "LOS",
+          reason: "  ",
+          onReasonChange: () => undefined,
+          onConfirm: () => undefined,
+          onCancel: () => undefined,
+        }}
+      />,
+    );
+    expect(emptyReasonHtml).toContain(
+      'data-testid="mp.admin.policy.resumeAwards"',
+    );
+    expect(emptyReasonHtml).toContain("Resume new awards");
+    expect(emptyReasonHtml).toContain("Awards paused");
+    expect(emptyReasonHtml).toContain(
+      'data-testid="mp.admin.policy.killSwitchDialog"',
+    );
+    expect(emptyReasonHtml).toContain(
+      "Confirm: stop new marketplace awards in LOS",
+    );
+    expect(emptyReasonHtml).toMatch(
+      /data-testid="mp\.admin\.policy\.killSwitchConfirm" disabled/,
+    );
+
+    const validResumeHtml = renderToStaticMarkup(
+      <PolicyEditorPage
+        {...base}
+        awardsEnabled={false}
+        onResumeAwards={() => undefined}
+        killSwitchDialog={{
+          action: "resume",
+          cityId: "LOS",
+          reason: "Incident mitigated and dispatch verified",
+          onReasonChange: () => undefined,
+          onConfirm: () => undefined,
+          onCancel: () => undefined,
+        }}
+      />,
+    );
+    expect(validResumeHtml).toContain(
+      "Confirm: resume new marketplace awards in LOS",
+    );
+    expect(validResumeHtml).not.toMatch(
+      /data-testid="mp\.admin\.policy\.killSwitchConfirm" disabled/,
+    );
+  });
+
+  it("renders pending change requests with dual-approval counts and approve/reject actions (CC-B01)", () => {
+    const html = renderToStaticMarkup(
+      <PolicyEditorPage
+        {...base}
+        pendingRequests={[
+          {
+            id: "cr_los_01",
+            cityId: "LOS",
+            reason: "Adjust peak envelope radius",
+            authorId: "usr_author",
+            approvals: 1,
+            approvalsRequired: 2,
+            approvers: ["usr_approver_one"],
+            createdAt: "2026-11-09T12:00:00.000Z",
+          },
+        ]}
+        onApproveRequest={() => undefined}
+        onRejectRequest={() => undefined}
+        decisionDialog={{
+          mode: "reject",
+          requestId: "cr_los_01",
+          cityId: "LOS",
+          text: "",
+          onTextChange: () => undefined,
+          onConfirm: () => undefined,
+          onCancel: () => undefined,
+        }}
+      />,
+    );
+    expect(html).toContain('data-testid="mp.admin.policy.pendingRequests"');
+    expect(html).toContain("cr_los_01");
+    expect(html).toContain("approvals 1/2 (usr_approver_one)");
+    expect(html).toContain(
+      'data-testid="mp.admin.policy.cr.approve.cr_los_01"',
+    );
+    expect(html).toContain('data-testid="mp.admin.policy.cr.reject.cr_los_01"');
+    // Reject requires a >=3-char reason before Confirm rejection enables.
+    expect(html).toMatch(
+      /data-testid="mp\.admin\.policy\.decisionConfirm" disabled/,
+    );
   });
 });

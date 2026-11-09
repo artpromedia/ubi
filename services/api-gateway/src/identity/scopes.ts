@@ -94,6 +94,11 @@ export const SCOPES = [
   "fleet:read",
   "fleet:manage",
   "fleet:driver",
+  // City config writes, change-request creation/approval/rejection, city
+  // launch-status flips, config history, and feature-flag flips (including the
+  // marketplace_rides kill switch). Held ONLY by CONFIG_ADMIN_ROLES and never
+  // in LIMITED_MODE_SCOPES (DEC-1 = A, CC-B01).
+  "config:admin",
   "admin:all",
 ] as const;
 
@@ -185,7 +190,7 @@ const MERCHANT_SCOPES: readonly Scope[] = [
   "support:write",
 ];
 
-const OPS_ADMIN_SCOPES: readonly Scope[] = [
+const OPS_SCOPES: readonly Scope[] = [
   "profile:read",
   "device:enroll",
   "auth:step_up",
@@ -197,6 +202,8 @@ const OPS_ADMIN_SCOPES: readonly Scope[] = [
   "wallet:read",
   "history:read",
 ];
+
+const OPS_ADMIN_SCOPES: readonly Scope[] = [...OPS_SCOPES, "config:admin"];
 
 const SUPPORT_OPS_SCOPES: readonly Scope[] = [
   "profile:read",
@@ -223,12 +230,13 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
   merchant: MERCHANT_SCOPES,
   restaurant: MERCHANT_SCOPES,
   ops_admin: OPS_ADMIN_SCOPES,
-  ops: OPS_ADMIN_SCOPES,
+  ops: OPS_SCOPES,
   config_admin: [
     "profile:read",
     "device:enroll",
     "auth:step_up",
     "mp:admin:read",
+    "config:admin",
   ],
   travel_ops: [
     "profile:read",
@@ -264,7 +272,7 @@ export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
   ai_ops: GROWTH_OPS_SCOPES,
   admin: [...SCOPES],
   super_admin: [...SCOPES],
-  service: [...SCOPES],
+  service: SCOPES.filter((scope) => scope !== "config:admin"),
 };
 
 /**
@@ -325,11 +333,25 @@ export const SAFE_MODE_DENIED_SCOPES: readonly Scope[] = [
   "business:fund",
 ];
 
+export const CONFIG_ADMIN_ROLES = [
+  "config_admin",
+  "ops_admin",
+  "admin",
+  "super_admin",
+] as const;
+
 export interface RouteRule {
   /** `"*"` matches every method. */
   readonly methods: readonly string[] | "*";
-  /** Path prefix, always including the `/v1` version segment the gateway mounts. */
+  /**
+   * Path prefix (or exact path when `exact` is true), always including the
+   * `/v1` version segment the gateway mounts.
+   */
   readonly prefix: string;
+  /** When true, `path` must equal `prefix` exactly (subpaths do not match). */
+  readonly exact?: boolean;
+  /** Full-path pattern for exact single-route matching with path parameters. */
+  readonly pattern?: RegExp;
   /** The request is allowed when the session holds ANY of these. */
   readonly anyOf: readonly Scope[];
   /**
@@ -364,12 +386,71 @@ export const ROUTE_RULES: readonly RouteRule[] = [
   { methods: "*", prefix: "/v1/auth/pin/reset", anyOf: ["auth:step_up"] },
   { methods: "*", prefix: "/v1/auth/pin", anyOf: ["wallet:read"] },
   { methods: ["GET"], prefix: "/v1/users", anyOf: ["profile:read"] },
-  // The read-only config family (routes/config-read.ts: evaluated flags and
-  // the city's active config). Every role holds profile:read and it survives
-  // limited mode: an unverified device still needs its city's deny-by-default
-  // flags to render honestly. Nothing but these GETs is routed under
-  // /v1/config.
-  { methods: ["GET"], prefix: "/v1/config", anyOf: ["profile:read"] },
+  // Read-only config routes (routes/config-read.ts: evaluated flags and the
+  // city's active config). Every role holds profile:read and it survives
+  // limited mode so an unverified device still renders its city's
+  // deny-by-default flags honestly. Matched strictly by exact path / pattern so
+  // admin siblings (/v1/config/cities, .../history, change-requests) never
+  // inherit profile:read.
+  {
+    methods: ["GET"],
+    prefix: "/v1/config/flags",
+    exact: true,
+    anyOf: ["profile:read"],
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/config/cities/:cityId",
+    pattern: /^\/v1\/config\/cities\/[A-Za-z0-9_-]+$/,
+    anyOf: ["profile:read"],
+  },
+  // Admin config & feature-flag routes (routes/config-admin.ts, DEC-1 = A,
+  // CC-B01): exact method + path only, never a wildcard, gated by config:admin
+  // (held ONLY by CONFIG_ADMIN_ROLES, never in LIMITED_MODE_SCOPES, and left
+  // out of SAFE_MODE_DENIED_SCOPES so the kill switch works under a Redis
+  // outage).
+  {
+    methods: ["PUT"],
+    prefix: "/v1/flags/:key",
+    pattern: /^\/v1\/flags\/[A-Za-z0-9_.-]+$/,
+    anyOf: ["config:admin"],
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/config/cities",
+    exact: true,
+    anyOf: ["config:admin"],
+  },
+  {
+    methods: ["GET"],
+    prefix: "/v1/config/cities/:cityId/history",
+    pattern: /^\/v1\/config\/cities\/[A-Za-z0-9_-]+\/history$/,
+    anyOf: ["config:admin"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/config/cities/status",
+    exact: true,
+    anyOf: ["config:admin"],
+  },
+  {
+    methods: ["GET", "POST"],
+    prefix: "/v1/config/change-requests",
+    exact: true,
+    anyOf: ["config:admin"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/config/change-requests/:id/approve",
+    pattern: /^\/v1\/config\/change-requests\/[A-Za-z0-9_-]+\/approve$/,
+    anyOf: ["config:admin"],
+  },
+  {
+    methods: ["POST"],
+    prefix: "/v1/config/change-requests/:id/reject",
+    pattern: /^\/v1\/config\/change-requests\/[A-Za-z0-9_-]+\/reject$/,
+    anyOf: ["config:admin"],
+  },
   {
     methods: ["POST", "PUT", "PATCH", "DELETE"],
     prefix: "/v1/users",
@@ -767,13 +848,28 @@ export function effectiveScopes(input: EffectiveScopeInput): readonly Scope[] {
 }
 
 function ruleMatches(rule: RouteRule, path: string, method: string): boolean {
-  if (path !== rule.prefix && !path.startsWith(`${rule.prefix}/`)) {
+  if (rule.pattern !== undefined) {
+    if (!rule.pattern.test(path)) {
+      return false;
+    }
+  } else if (rule.exact === true) {
+    if (path !== rule.prefix) {
+      return false;
+    }
+  } else if (path !== rule.prefix && !path.startsWith(`${rule.prefix}/`)) {
     return false;
   }
   return rule.methods === "*" || rule.methods.includes(method.toUpperCase());
 }
 
-/** Longest prefix wins; a method-specific rule beats `"*"` at equal length. */
+function isExactOrPatternRule(rule: RouteRule): boolean {
+  return rule.exact === true || rule.pattern !== undefined;
+}
+
+/**
+ * Exact / pattern rules beat prefix rules; otherwise longest prefix wins and a
+ * method-specific rule beats `"*"` at equal length.
+ */
 export function ruleFor(path: string, method: string): RouteRule | undefined {
   let best: RouteRule | undefined;
   for (const rule of ROUTE_RULES) {
@@ -782,6 +878,15 @@ export function ruleFor(path: string, method: string): RouteRule | undefined {
     }
     if (best === undefined) {
       best = rule;
+      continue;
+    }
+    const candidateExact = isExactOrPatternRule(rule);
+    const bestExact = isExactOrPatternRule(best);
+    if (candidateExact && !bestExact) {
+      best = rule;
+      continue;
+    }
+    if (!candidateExact && bestExact) {
       continue;
     }
     if (rule.prefix.length > best.prefix.length) {

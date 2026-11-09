@@ -365,4 +365,301 @@ describe("config change requests", () => {
       "not_found",
     );
   });
+
+  it("lists pending change requests with approvals so far and records an audit row for the first approval too", async () => {
+    const created = (await (
+      await createRequest({ quoteTtlSec: 210 }, "shorten quote TTL")
+    ).json()) as { id: string };
+
+    const firstApproval = await app.request(
+      `/v1/config/change-requests/${created.id}/approve`,
+      {
+        method: "POST",
+        headers: adminHeaders(APPROVER_ONE, "apr-note-001"),
+        body: JSON.stringify({ note: "Reviewed bounds against peak traffic" }),
+      },
+    );
+    expect(firstApproval.status).toBe(200);
+    const firstBody = (await firstApproval.json()) as {
+      activated: boolean;
+      approvals: number;
+      approvalsRequired: number;
+    };
+    expect(firstBody.activated).toBe(false);
+    expect(firstBody.approvals).toBe(1);
+    expect(firstBody.approvalsRequired).toBe(2);
+
+    // First approval writes its own audit row with actor and note.
+    const firstAudit = await prisma.auditLog.findFirstOrThrow({
+      where: {
+        action: "config.change_approved",
+        subjectId: created.id,
+        actorId: APPROVER_ONE,
+      },
+    });
+    expect(firstAudit.reason).toBe("Reviewed bounds against peak traffic");
+
+    // GET /v1/config/change-requests returns the pending request with approvals so far.
+    const listed = await app.request(
+      `/v1/config/change-requests?cityId=${LAGOS_CITY.id}&status=pending`,
+      { headers: adminHeaders(APPROVER_TWO) },
+    );
+    expect(listed.status).toBe(200);
+    const listBody = (await listed.json()) as {
+      requests: Array<{
+        id: string;
+        cityId: string;
+        status: string;
+        approvals: number;
+        approvalsRequired: number;
+        approvers: Array<{ approverId: string; createdAt: string }>;
+        patch: Record<string, unknown>;
+      }>;
+    };
+    expect(listBody.requests).toHaveLength(1);
+    expect(listBody.requests[0]).toMatchObject({
+      id: created.id,
+      cityId: LAGOS_CITY.id,
+      status: "pending",
+      approvals: 1,
+      approvalsRequired: 2,
+      patch: { quoteTtlSec: 210 },
+    });
+    expect(listBody.requests[0]?.approvers.map((a) => a.approverId)).toEqual([
+      APPROVER_ONE,
+    ]);
+  });
+
+  it("allows the author or a config admin to reject a pending request with a required reason, audits it, and replays idempotently", async () => {
+    const created = (await (
+      await createRequest({ quoteTtlSec: 195 }, "experimental TTL")
+    ).json()) as { id: string };
+
+    // Reason < 3 chars is rejected by schema validation (422).
+    const shortReason = await app.request(
+      `/v1/config/change-requests/${created.id}/reject`,
+      {
+        method: "POST",
+        headers: adminHeaders(APPROVER_ONE, "rej-short-001"),
+        body: JSON.stringify({ reason: "no" }),
+      },
+    );
+    expect(shortReason.status).toBe(422);
+
+    // Unrelated non-admin caller cannot reject (403).
+    const outsider = await app.request(
+      `/v1/config/change-requests/${created.id}/reject`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-user-id": "usr_outsider",
+          "x-user-role": "ops",
+          "idempotency-key": "rej-outsider-001",
+        },
+        body: JSON.stringify({ reason: "not my request" }),
+      },
+    );
+    expect(outsider.status).toBe(403);
+
+    // Author (even without a config_admin role) may withdraw/reject their own request.
+    const rejected = await app.request(
+      `/v1/config/change-requests/${created.id}/reject`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-user-id": AUTHOR,
+          "x-user-role": "ops",
+          "idempotency-key": "rej-author-001",
+        },
+        body: JSON.stringify({
+          reason: "Withdrawing in favour of v3 proposal",
+        }),
+      },
+    );
+    expect(rejected.status).toBe(200);
+    const rejBody = (await rejected.json()) as {
+      requestId: string;
+      status: string;
+      rejectedBy: string;
+      reason: string;
+      replayed: boolean;
+    };
+    expect(rejBody).toEqual({
+      requestId: created.id,
+      cityId: LAGOS_CITY.id,
+      status: "rejected",
+      rejectedBy: AUTHOR,
+      reason: "Withdrawing in favour of v3 proposal",
+      replayed: false,
+    });
+
+    // Idempotent replay with same key + reason returns replayed: true.
+    const replay = await app.request(
+      `/v1/config/change-requests/${created.id}/reject`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-user-id": AUTHOR,
+          "x-user-role": "ops",
+          "idempotency-key": "rej-author-001",
+        },
+        body: JSON.stringify({
+          reason: "Withdrawing in favour of v3 proposal",
+        }),
+      },
+    );
+    expect(replay.status).toBe(200);
+    expect(((await replay.json()) as { replayed: boolean }).replayed).toBe(
+      true,
+    );
+
+    // Audit row recorded with actor and reason.
+    const rejAudit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: "config.change_rejected", subjectId: created.id },
+    });
+    expect(rejAudit.actorId).toBe(AUTHOR);
+    expect(rejAudit.reason).toBe("Withdrawing in favour of v3 proposal");
+
+    // Subsequent approval on a rejected request fails 409 conflict.
+    const lateApprove = await approve(created.id, APPROVER_ONE, "apr-late-001");
+    expect(lateApprove.status).toBe(409);
+  });
+
+  it("verifies signed x-ubi-identity JWS, enforces config:admin + non-limited mode, and refuses unsigned headers in production", async () => {
+    const crypto = await import("node:crypto");
+    const secret = "test-config-ubi-identity-secret-at-least-32-chars!!";
+    const prevSecret = process.env.UBI_IDENTITY_SECRET;
+    const prevEnv = process.env.NODE_ENV;
+    process.env.UBI_IDENTITY_SECRET = secret;
+
+    const signIdentity = (claims: {
+      sub: string;
+      role: string;
+      scp: string[];
+      mod: string[];
+      city?: string | null;
+      rid?: string;
+    }): string => {
+      const header = Buffer.from(
+        JSON.stringify({ alg: "HS256", typ: "vnd.ubi.identity+jwt" }),
+      ).toString("base64url");
+      const now = Math.floor(Date.now() / 1000);
+      const payload = Buffer.from(
+        JSON.stringify({
+          iss: "ubi-gateway",
+          aud: "ubi-internal",
+          iat: now,
+          exp: now + 60,
+          rid: claims.rid ?? "req_test_cfg_001",
+          sub: claims.sub,
+          role: claims.role,
+          scp: claims.scp,
+          mod: claims.mod,
+          city: claims.city ?? "LOS",
+        }),
+      ).toString("base64url");
+      const sig = crypto
+        .createHmac("sha256", secret)
+        .update(`${header}.${payload}`)
+        .digest("base64url");
+      return `${header}.${payload}.${sig}`;
+    };
+
+    try {
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        "production";
+
+      // Plain x-user-id / x-user-role without x-ubi-identity is refused 401 in production.
+      const unsigned = await app.request(
+        `/v1/config/cities/${LAGOS_CITY.id}/history`,
+        {
+          headers: adminHeaders("usr_forged_admin"),
+        },
+      );
+      expect(unsigned.status).toBe(401);
+
+      // Tampered x-ubi-identity is refused 401.
+      const badSig = await app.request(
+        `/v1/config/cities/${LAGOS_CITY.id}/history`,
+        {
+          headers: {
+            "x-ubi-identity": `${signIdentity({ sub: "usr_cfg", role: "config_admin", scp: ["config:admin"], mod: [] })}tamper`,
+          },
+        },
+      );
+      expect(badSig.status).toBe(401);
+
+      // Limited-mode admin token is refused 403 limited_mode.
+      const limitedAdmin = await app.request(
+        `/v1/config/cities/${LAGOS_CITY.id}/history`,
+        {
+          headers: {
+            "x-ubi-identity": signIdentity({
+              sub: "usr_cfg",
+              role: "config_admin",
+              scp: ["config:admin"],
+              mod: ["limited"],
+            }),
+          },
+        },
+      );
+      expect(limitedAdmin.status).toBe(403);
+      expect(((await limitedAdmin.json()) as { code: string }).code).toBe(
+        "limited_mode",
+      );
+
+      // Admin role without config:admin scope is refused 403 forbidden.
+      const missingScope = await app.request(
+        `/v1/config/cities/${LAGOS_CITY.id}/history`,
+        {
+          headers: {
+            "x-ubi-identity": signIdentity({
+              sub: "usr_cfg",
+              role: "config_admin",
+              scp: ["profile:read"],
+              mod: [],
+            }),
+          },
+        },
+      );
+      expect(missingScope.status).toBe(403);
+
+      // Valid signed config_admin JWS succeeds and overrides any plain header mirror.
+      const validJws = signIdentity({
+        sub: "usr_real_cfg_admin",
+        role: "config_admin",
+        scp: ["profile:read", "config:admin"],
+        mod: ["wallet_safe"],
+      });
+      const flip = await app.request("/v1/flags/marketplace_rides", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "kill-prod-jws-001",
+          "x-ubi-identity": validJws,
+          "x-user-id": "usr_spoofed_mirror",
+          "x-user-role": "rider",
+        },
+        body: JSON.stringify({
+          cityId: LAGOS_CITY.id,
+          enabled: false,
+          reason: "Incident drill kill switch",
+        }),
+      });
+      expect(flip.status).toBe(200);
+      expect(((await flip.json()) as { by: string }).by).toBe(
+        "usr_real_cfg_admin",
+      );
+    } finally {
+      if (prevSecret === undefined) {
+        delete process.env.UBI_IDENTITY_SECRET;
+      } else {
+        process.env.UBI_IDENTITY_SECRET = prevSecret;
+      }
+      (process.env as Record<string, string | undefined>).NODE_ENV = prevEnv;
+    }
+  });
 });

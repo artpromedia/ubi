@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { AdminLoginView } from "@/app/login/page";
+import { AdminLoginView } from "@/components/auth/AdminLoginView";
 import {
   AdminSessionProvider,
   AdminShell,
