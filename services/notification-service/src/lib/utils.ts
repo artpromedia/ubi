@@ -2,23 +2,23 @@
  * Utility Functions
  */
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt, randomUUID } from "node:crypto";
 
 // ============================================
 // ID Generation
 // ============================================
 
 /**
- * Generate a prefixed unique ID
+ * Generate a UUID primary key matching `@db.Uuid` across notification tables
+ * (`notification_logs`, `device_tokens`, `notification_preferences`,
+ * `notification_templates`, `in_app_notifications`).
  */
-export function generateId(prefix: string): string {
-  const timestamp = Date.now().toString(36);
-  const random = randomBytes(8).toString("hex");
-  return `${prefix}_${timestamp}${random}`;
+export function generateId(_prefix?: string): string {
+  return randomUUID();
 }
 
 /**
- * Generate short ID (for OTPs, verification codes, etc.)
+ * Generate short ID (for reference codes, etc.)
  */
 export function generateShortId(length: number = 8): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -37,13 +37,11 @@ export function generateShortId(length: number = 8): string {
 // ============================================
 
 /**
- * Generate numeric OTP
+ * Generate cryptographically random numeric OTP
  */
 export function generateOTP(length: number = 6): string {
-  const max = Math.pow(10, length);
-  const min = Math.pow(10, length - 1);
-  const otp = Math.floor(Math.random() * (max - min) + min);
-  return otp.toString();
+  const max = 10 ** length;
+  return String(randomInt(0, max)).padStart(length, "0");
 }
 
 /**

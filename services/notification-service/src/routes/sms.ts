@@ -94,15 +94,15 @@ smsRoutes.post(
       senderId: senderId || "UBI",
     });
 
-    // Log notification
+    // Log notification with OTP codes and recipient phone masked
     await prisma.notificationLog.create({
       data: {
         id: generateId("log"),
         userId,
         channel: "SMS",
         type: "GENERAL",
-        body: message,
-        recipient: phone,
+        body: maskOtpCodesInMessage(message),
+        recipient: maskPhoneNumber(phone),
         status: result.success
           ? NotificationStatus.SENT
           : NotificationStatus.FAILED,
@@ -227,7 +227,7 @@ smsRoutes.post(
         channel: "SMS",
         type: "OTP",
         body: `OTP sent for ${purpose}`,
-        recipient: phone,
+        recipient: maskPhoneNumber(phone),
         status: result.success
           ? NotificationStatus.SENT
           : NotificationStatus.FAILED,
@@ -256,10 +256,11 @@ smsRoutes.post(
 );
 
 /**
- * POST /sms/otp/verify - Verify OTP
+ * POST /sms/otp/verify - Verify OTP (service-to-service only)
  */
 smsRoutes.post(
   "/otp/verify",
+  serviceAuth,
   zValidator("json", verifyOTPSchema),
   async (c) => {
     const { phone, code, purpose } = c.req.valid("json");
@@ -350,6 +351,27 @@ function getOTPMessage(
     messages[purpose] ||
     `Your UBI code is ${otp}. Valid for ${expiresIn} minutes.`
   );
+}
+
+/**
+ * Masks 4–8 digit numeric verification/OTP codes before storing SMS bodies in
+ * `notification_logs`.
+ */
+export function maskOtpCodesInMessage(message: string): string {
+  return message.replace(/\b\d{4,8}\b/g, "[REDACTED]");
+}
+
+/**
+ * Masks middle digits of an E.164 or local phone number before persisting in
+ * `notification_logs`.
+ */
+export function maskPhoneNumber(phone: string): string {
+  if (phone.length <= 6) {
+    return "***";
+  }
+  const prefix = phone.slice(0, 4);
+  const suffix = phone.slice(-2);
+  return `${prefix}${"*".repeat(Math.max(3, phone.length - 6))}${suffix}`;
 }
 
 export { smsRoutes };

@@ -249,7 +249,7 @@ describe("an SMS code never unlocks money", () => {
 });
 
 describe("delivery failures", () => {
-  it("does not leave a live code behind when the SMS cannot be sent", async () => {
+  it("answers otp_send_failed without leaving a live code or blocking an immediate retry", async () => {
     const user = await createUser("RIDER");
     await clearOtpState(user.phone);
 
@@ -257,9 +257,14 @@ describe("delivery failures", () => {
     try {
       const response = await requestCode(user.phone);
       expect(response.status).toBe(503);
+      const body = (await response.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("otp_send_failed");
       expect(await redis.get(otpCacheKey(user.phone))).toBeNull();
     } finally {
       harness.breakSms(false);
     }
+
+    const retry = await requestCode(user.phone);
+    expect(retry.status).toBe(200);
   });
 });

@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 
+import { ContractError } from "@ubi/contracts";
 import { ErrorCodes, formatErrorForLogging, UbiError } from "@ubi/utils";
 
 import { logger } from "../lib/logger.js";
@@ -26,6 +27,14 @@ export const errorHandler = (error: Error, c: Context) => {
     },
     "Request error",
   );
+
+  // Handle canonical ContractError (@ubi/contracts)
+  if (error instanceof ContractError) {
+    return c.json(
+      { success: false, error: error.toBody() },
+      error.status as 400,
+    );
+  }
 
   // Handle UbiError
   if (error instanceof UbiError) {

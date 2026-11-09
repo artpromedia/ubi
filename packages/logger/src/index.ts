@@ -1,26 +1,103 @@
-import pino, { type Logger as PinoLogger, type LoggerOptions } from "pino";
+import pino, {
+  type DestinationStream,
+  type Logger as PinoLogger,
+  type LoggerOptions,
+} from "pino";
 
-export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+export type LogLevel =
+  | "trace"
+  | "debug"
+  | "info"
+  | "warn"
+  | "error"
+  | "fatal"
+  | "silent";
+
+/**
+ * Canonical PII and secret field paths redacted across every structured log
+ * line emitted through `@ubi/logger`.
+ */
+export const DEFAULT_REDACT_PATHS = [
+  "phone",
+  "*.phone",
+  "*.*.phone",
+  "recipient",
+  "*.recipient",
+  "email",
+  "*.email",
+  "*.*.email",
+  "otp",
+  "*.otp",
+  "*.*.otp",
+  "code",
+  "*.code",
+  "*.*.code",
+  "pin",
+  "*.pin",
+  "*.*.pin",
+  "password",
+  "*.password",
+  "*.*.password",
+  "passwordHash",
+  "*.passwordHash",
+  "token",
+  "*.token",
+  "*.*.token",
+  "accessToken",
+  "*.accessToken",
+  "refreshToken",
+  "*.refreshToken",
+  "resetToken",
+  "*.resetToken",
+  "resetUrl",
+  "*.resetUrl",
+  "authorization",
+  "*.authorization",
+  "*.*.authorization",
+  'headers["x-service-key"]',
+  '*.headers["x-service-key"]',
+  'headers["x-ubi-identity"]',
+  '*.headers["x-ubi-identity"]',
+  "serviceKey",
+  "*.serviceKey",
+  "apiKey",
+  "*.apiKey",
+  "secret",
+  "*.secret",
+] as const;
+
+export const REDACTED_VALUE = "[REDACTED]";
 
 export interface LoggerConfig {
   name: string;
   level?: LogLevel;
   pretty?: boolean;
+  redactPaths?: readonly string[];
+  destination?: DestinationStream;
 }
 
 /**
- * Create a structured logger instance
+ * Create a structured logger instance with mandatory PII/secret redaction.
  */
 export function createLogger(config: LoggerConfig): PinoLogger {
   const {
     name,
     level = "info",
-    pretty = process.env.NODE_ENV !== "production",
+    pretty = process.env.NODE_ENV !== "production" &&
+      config.destination === undefined,
+    redactPaths = [],
+    destination,
   } = config;
+
+  const paths = Array.from(new Set([...DEFAULT_REDACT_PATHS, ...redactPaths]));
 
   const options: LoggerOptions = {
     name,
     level,
+    redact: {
+      paths,
+      censor: REDACTED_VALUE,
+    },
     ...(pretty && {
       transport: {
         target: "pino-pretty",
@@ -33,7 +110,7 @@ export function createLogger(config: LoggerConfig): PinoLogger {
     }),
   };
 
-  return pino(options);
+  return destination ? pino(options, destination) : pino(options);
 }
 
 /**

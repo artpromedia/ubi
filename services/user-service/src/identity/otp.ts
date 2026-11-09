@@ -130,10 +130,10 @@ export async function requestOtp(
       )} minutes. UBI will never ask you for it.`,
     });
   } catch {
-    // A code the user never received must not stay valid.
-    await deps.cache.del(codeKey(id));
+    // A code the user never received must not stay valid, nor block a retry.
+    await deps.cache.del(codeKey(id), cooldownKey(id));
     throw new ContractError(
-      "service_unavailable",
+      "otp_send_failed",
       "We couldn't send your code right now. Please try again shortly.",
     );
   }

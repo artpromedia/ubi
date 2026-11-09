@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import * as jose from "jose";
 import { z } from "zod";
 
+import { ContractError } from "@ubi/contracts";
 import {
   ErrorCodes,
   generateOTP,
@@ -17,10 +18,7 @@ import {
 } from "@ubi/utils";
 
 import { authLogger } from "../lib/logger.js";
-import {
-  notificationClient,
-  sendOTPFallback,
-} from "../lib/notification-client.js";
+import { notificationClient } from "../lib/notification-client.js";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 
@@ -212,28 +210,31 @@ authRoutes.post("/register", async (c) => {
     },
   });
 
-  // Generate and send OTP
+  // Generate and store OTP so a retry within the rate limit can resend it
   const otp = generateOTP(6);
   await redis.setex(`otp:${data.phone}`, 300, otp); // 5 minute expiry
 
-  // Send OTP via notification service
+  // Send OTP via notification service — never claim success when delivery fails
   try {
     await notificationClient.sendSMS({
       userId: user.id,
       phone: data.phone,
       message: `Your UBI verification code is: ${otp}. This code expires in 5 minutes. Do not share this code with anyone.`,
     });
-    authLogger.info(
-      { phone: data.phone },
-      "Registration OTP sent successfully",
-    );
+    authLogger.info({ userId: user.id }, "Registration OTP sent successfully");
   } catch (error) {
-    // Fallback: OTP is already stored in Redis, log warning
-    authLogger.warn(
-      { phone: data.phone, error },
-      "Failed to send OTP via notification service, using fallback",
+    authLogger.error(
+      {
+        userId: user.id,
+        err: error instanceof Error ? error.message : "send_failed",
+      },
+      "Failed to send registration OTP via notification service",
     );
-    await sendOTPFallback(data.phone, otp, redis);
+    throw new ContractError(
+      "otp_send_failed",
+      "We couldn't send your verification code right now. Please try again shortly.",
+      { retryable: true },
+    );
   }
 
   return c.json({
@@ -260,11 +261,6 @@ authRoutes.post("/login/otp", async (c) => {
     select: { id: true, status: true },
   });
 
-  if (!user) {
-    // Don't reveal if user exists or not for security
-    // But still "send" OTP to prevent enumeration
-  }
-
   if (user?.status === "SUSPENDED") {
     throw new UbiError(
       ErrorCodes.ACCOUNT_SUSPENDED,
@@ -272,11 +268,7 @@ authRoutes.post("/login/otp", async (c) => {
     );
   }
 
-  // Generate and store OTP
-  const otp = generateOTP(6);
-  await redis.setex(`otp:${phone}`, 300, otp); // 5 minute expiry
-
-  // Rate limit OTP requests
+  // Rate limit OTP requests before issuing or resending
   const otpCount = await redis.incr(`otp_count:${phone}`);
   if (otpCount === 1) {
     await redis.expire(`otp_count:${phone}`, 3600); // Reset after 1 hour
@@ -288,21 +280,33 @@ authRoutes.post("/login/otp", async (c) => {
     );
   }
 
-  // Send OTP via notification service
+  // Reuse an unexpired stored code so a retry after a transient SMS failure
+  // resends the same code within the rate limit.
+  const existingOtp = await redis.get(`otp:${phone}`);
+  const otp = existingOtp ?? generateOTP(6);
+  await redis.setex(`otp:${phone}`, 300, otp); // 5 minute expiry
+
+  // Send OTP via notification service — never claim "OTP sent" when delivery fails
   try {
     await notificationClient.sendSMS({
       userId: user?.id,
       phone,
       message: `Your UBI login code is: ${otp}. This code expires in 5 minutes. Do not share this code with anyone.`,
     });
-    authLogger.info({ phone }, "Login OTP sent successfully");
+    authLogger.info({ userId: user?.id }, "Login OTP sent successfully");
   } catch (error) {
-    // Fallback: OTP is already stored in Redis, log warning
-    authLogger.warn(
-      { phone, error },
-      "Failed to send OTP via notification service, using fallback",
+    authLogger.error(
+      {
+        userId: user?.id,
+        err: error instanceof Error ? error.message : "send_failed",
+      },
+      "Failed to send login OTP via notification service",
     );
-    await sendOTPFallback(phone, otp, redis);
+    throw new ContractError(
+      "otp_send_failed",
+      "We couldn't send your login code right now. Please try again shortly.",
+      { retryable: true },
+    );
   }
 
   return c.json({
@@ -682,19 +686,18 @@ This link expires in 1 hour. If you didn't request this, please ignore this emai
 - The UBI Team
         `.trim(),
       });
-      authLogger.info({ email }, "Password reset email sent successfully");
+      authLogger.info(
+        { userId: user.id },
+        "Password reset email sent successfully",
+      );
     } catch (error) {
       authLogger.warn(
-        { email, error },
+        {
+          userId: user.id,
+          err: error instanceof Error ? error.message : "send_failed",
+        },
         "Failed to send password reset email via notification service",
       );
-      // In development, log the reset token for testing
-      if (process.env.NODE_ENV === "development") {
-        authLogger.debug(
-          { resetToken, email, resetUrl },
-          "[FALLBACK] Password reset token generated - email not sent",
-        );
-      }
     }
   }
 

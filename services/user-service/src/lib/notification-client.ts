@@ -2,22 +2,49 @@
  * Notification Service Client
  *
  * HTTP client for communicating with the notification-service
- * to send SMS, email, and push notifications.
+ * to send SMS, email, and push notifications using the per-surface
+ * X-Service-Key (`NOTIFICATION_SERVICE_KEY`).
  */
 
 import { authLogger } from "./logger.js";
 
-const NOTIFICATION_SERVICE_URL =
-  process.env.NOTIFICATION_SERVICE_URL || "http://localhost:4006";
-const SERVICE_API_KEY = process.env.SERVICE_API_KEY || "";
+export const MIN_NOTIFICATION_SERVICE_KEY_LENGTH = 32;
+export const NOTIFICATION_CALLER_NAME = "user-service";
 
-interface SendSMSParams {
+export interface NotificationClientOptions {
+  baseUrl?: string;
+  serviceKey?: string;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Refuses to start user-service in production without a >= 32-character
+ * `NOTIFICATION_SERVICE_KEY`.
+ */
+export function assertNotificationClientConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (env.NODE_ENV !== "production") {
+    return;
+  }
+  const key = env.NOTIFICATION_SERVICE_KEY;
+  if (
+    key === undefined ||
+    key.trim().length < MIN_NOTIFICATION_SERVICE_KEY_LENGTH
+  ) {
+    throw new Error(
+      `NOTIFICATION_SERVICE_KEY is required in production (at least ${MIN_NOTIFICATION_SERVICE_KEY_LENGTH} characters)`,
+    );
+  }
+}
+
+export interface SendSMSParams {
   userId?: string;
   phone: string;
   message: string;
 }
 
-interface SendOTPParams {
+export interface SendOTPParams {
   userId?: string;
   phone: string;
   purpose: "login" | "verification" | "password_reset" | "transaction";
@@ -25,7 +52,7 @@ interface SendOTPParams {
   expiresInMinutes?: number;
 }
 
-interface SendEmailParams {
+export interface SendEmailParams {
   userId?: string;
   email: string;
   subject: string;
@@ -34,7 +61,7 @@ interface SendEmailParams {
   templateData?: Record<string, unknown>;
 }
 
-interface NotificationResponse {
+export interface NotificationResponse {
   success: boolean;
   data?: {
     messageId?: string;
@@ -46,44 +73,72 @@ interface NotificationResponse {
   };
 }
 
-class NotificationClient {
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
+export class NotificationClient {
+  private readonly configuredBaseUrl: string | undefined;
+  private readonly configuredServiceKey: string | undefined;
+  private readonly configuredFetchImpl: typeof fetch | undefined;
 
-  constructor() {
-    this.baseUrl = NOTIFICATION_SERVICE_URL;
-    this.apiKey = SERVICE_API_KEY;
+  constructor(options: NotificationClientOptions = {}) {
+    this.configuredBaseUrl = options.baseUrl;
+    this.configuredServiceKey = options.serviceKey;
+    this.configuredFetchImpl = options.fetchImpl;
+  }
+
+  private resolveBaseUrl(): string {
+    return (
+      this.configuredBaseUrl ??
+      process.env.NOTIFICATION_SERVICE_URL ??
+      "http://localhost:4006"
+    ).replace(/\/+$/, "");
+  }
+
+  private resolveServiceKey(): string {
+    return (
+      this.configuredServiceKey ?? process.env.NOTIFICATION_SERVICE_KEY ?? ""
+    );
   }
 
   private async request<T>(endpoint: string, data: unknown): Promise<T> {
-    const url = `${this.baseUrl}/api/v1${endpoint}`;
+    const url = `${this.resolveBaseUrl()}/api/v1${endpoint}`;
+    const serviceKey = this.resolveServiceKey();
+    const fetchFn = this.configuredFetchImpl ?? globalThis.fetch;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchFn(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(this.apiKey && { Authorization: `Bearer ${this.apiKey}` }),
-          "X-Service-Name": "user-service",
+          ...(serviceKey.length > 0 && { "X-Service-Key": serviceKey }),
+          "X-Service-Name": NOTIFICATION_CALLER_NAME,
         },
         body: JSON.stringify(data),
       });
 
-      const result = (await response.json()) as { error?: { message: string } };
+      const result = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        error?: { message?: string };
+      };
 
       if (!response.ok) {
         authLogger.error(
-          { url, status: response.status, error: result },
+          { endpoint, status: response.status },
           "Notification service request failed",
         );
-        throw new Error(result.error?.message || "Notification service error");
+        throw new Error(
+          result.error?.message ??
+            result.message ??
+            `Notification service error (${response.status})`,
+        );
       }
 
       return result as T;
     } catch (error) {
       authLogger.error(
-        { url, error },
-        "Failed to connect to notification service",
+        {
+          endpoint,
+          err: error instanceof Error ? error.message : "request_failed",
+        },
+        "Failed to deliver notification request",
       );
       throw error;
     }
@@ -93,24 +148,23 @@ class NotificationClient {
    * Send an SMS message
    */
   async sendSMS(params: SendSMSParams): Promise<NotificationResponse> {
-    const response = await this.request<NotificationResponse>(
+    const result = await this.request<NotificationResponse>(
       "/sms/send",
       params,
     );
-    return response;
+    return result;
   }
 
   /**
    * Send an OTP via SMS
-   * Returns the OTP in development mode for testing
    */
   async sendOTP(params: SendOTPParams): Promise<NotificationResponse> {
-    const response = await this.request<NotificationResponse>("/sms/otp", {
+    const result = await this.request<NotificationResponse>("/sms/otp", {
       ...params,
       length: params.length || 6,
       expiresInMinutes: params.expiresInMinutes || 5,
     });
-    return response;
+    return result;
   }
 
   /**
@@ -121,22 +175,22 @@ class NotificationClient {
     code: string,
     purpose: SendOTPParams["purpose"],
   ): Promise<{ success: boolean; valid: boolean }> {
-    const response = await this.request<{ success: boolean; valid: boolean }>(
+    const result = await this.request<{ success: boolean; valid: boolean }>(
       "/sms/otp/verify",
       { phone, code, purpose },
     );
-    return response;
+    return result;
   }
 
   /**
    * Send an email
    */
   async sendEmail(params: SendEmailParams): Promise<NotificationResponse> {
-    const response = await this.request<NotificationResponse>(
+    const result = await this.request<NotificationResponse>(
       "/email/send",
       params,
     );
-    return response;
+    return result;
   }
 
   /**
@@ -148,39 +202,13 @@ class NotificationClient {
       templateData: Record<string, unknown>;
     },
   ): Promise<NotificationResponse> {
-    const response = await this.request<NotificationResponse>(
-      "/email/template",
-      {
-        ...params,
-        templateId,
-      },
-    );
-    return response;
+    const result = await this.request<NotificationResponse>("/email/template", {
+      ...params,
+      templateId,
+    });
+    return result;
   }
 }
 
 // Singleton instance
 export const notificationClient = new NotificationClient();
-
-/**
- * Fallback OTP sender for when notification service is unavailable
- * Stores OTP in Redis and logs it in development
- */
-export async function sendOTPFallback(
-  phone: string,
-  otp: string,
-  redis: {
-    setex: (key: string, ttl: number, value: string) => Promise<unknown>;
-  },
-): Promise<void> {
-  // Store OTP in Redis with 5 minute expiry
-  await redis.setex(`otp:${phone}`, 300, otp);
-
-  // In development, log the OTP
-  if (process.env.NODE_ENV === "development") {
-    authLogger.warn(
-      { phone, otp },
-      "[FALLBACK] OTP stored locally - notification service unavailable",
-    );
-  }
-}

@@ -18,6 +18,7 @@ import {
   subscribeToChannel,
 } from "./lib/redis";
 import { startMarketplacePush } from "./marketplace/consumer.js";
+import { assertServiceAuthConfig } from "./middleware/auth";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler";
 import { emailRoutes } from "./routes/email";
 import { healthRoutes } from "./routes/health";
@@ -27,6 +28,8 @@ import { pushRoutes } from "./routes/push";
 import { smsRoutes } from "./routes/sms";
 import { templatesRoutes } from "./routes/templates";
 import { startTripAccessSms } from "./trip-access/consumer.js";
+
+assertServiceAuthConfig();
 
 const app = new Hono();
 

@@ -44,13 +44,13 @@
  * exactly as they would otherwise.
  */
 
-import { createHash, timingSafeEqual } from "node:crypto";
 import { BlockList, isIPv4, isIPv6 } from "node:net";
 
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { HTTPException } from "hono/http-exception";
 import { verify } from "jsonwebtoken";
 
+import { verifyServiceCaller } from "./auth";
 import { logger } from "../lib/logger.js";
 import { RateLimiter, redis } from "../lib/redis";
 
@@ -311,23 +311,7 @@ export function getClientIP(c: Context): string | undefined {
 }
 
 const SERVICE_KEY_HEADER = "X-Service-Key";
-
-/** Constant-time: SHA-256 digests have one length whatever was presented. */
-function isValidServiceKey(presented: string | undefined): boolean {
-  const configured = process.env.INTERNAL_SERVICE_KEY;
-  if (
-    presented === undefined ||
-    presented.length === 0 ||
-    configured === undefined ||
-    configured.length === 0
-  ) {
-    return false;
-  }
-  return timingSafeEqual(
-    createHash("sha256").update(presented).digest(),
-    createHash("sha256").update(configured).digest(),
-  );
-}
+const SERVICE_NAME_HEADER = "X-Service-Name";
 
 /** The user a bearer token names, verified exactly as `auth` verifies it. */
 function verifiedBearerUser(c: Context): string | undefined {
@@ -359,7 +343,12 @@ function verifiedBearerUser(c: Context): string | undefined {
  * authentication.
  */
 export function resolveRateLimitSubject(c: Context): RateLimitSubject {
-  if (isValidServiceKey(c.req.header(SERVICE_KEY_HEADER))) {
+  if (
+    verifyServiceCaller(
+      c.req.header(SERVICE_NAME_HEADER),
+      c.req.header(SERVICE_KEY_HEADER),
+    )
+  ) {
     return { kind: "service" };
   }
   const authenticated = c.get("userId") as string | undefined;

@@ -22,6 +22,7 @@ import { timing } from "hono/timing";
 
 import { defaultIdentityDeps } from "./identity/deps";
 import { logger } from "./lib/logger.js";
+import { assertNotificationClientConfig } from "./lib/notification-client.js";
 import { prisma } from "./lib/prisma";
 import { errorHandler } from "./middleware/error-handler";
 import { serviceAuthMiddleware } from "./middleware/service-auth";
@@ -43,6 +44,7 @@ import type { AiActionDeps } from "./grants/types";
 // Environment configuration
 const PORT = Number.parseInt(process.env.PORT || "4001", 10);
 const NODE_ENV = process.env.NODE_ENV || "development";
+assertNotificationClientConfig();
 
 // Create Hono app
 const app = new Hono();
