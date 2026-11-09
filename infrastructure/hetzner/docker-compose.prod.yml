@@ -898,6 +898,8 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: https://${API_DOMAIN:-api.ubi.africa}
+      ADMIN_GATEWAY_URL: http://api-gateway:3000
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?ADMIN_SESSION_SECRET is required}
     networks:
       - ubi-network
     deploy:

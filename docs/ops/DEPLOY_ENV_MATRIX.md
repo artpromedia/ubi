@@ -245,6 +245,9 @@ round 9 corrected two compose names (`FIREBASE_PRIVATE_KEY` →
 | Variable                                                                                                                                              | App                      | Class    |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | -------- |
 | `NEXT_PUBLIC_API_URL`                                                                                                                                 | web-app, admin-dashboard | set      |
+| `ADMIN_GATEWAY_URL`                                                                                                                                   | admin-dashboard          | set      |
+| `ADMIN_SESSION_SECRET`                                                                                                                                | admin-dashboard          | required |
+| `NEXT_PUBLIC_ADMIN_API_BASE`                                                                                                                          | admin-dashboard          | optional |
 | `NEXT_PUBLIC_APP_URL`                                                                                                                                 | web-app                  | optional |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `NEXT_PUBLIC_MIXPANEL_TOKEN`, `NEXT_PUBLIC_AMPLITUDE_API_KEY`, `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` | web-app                  | unset    |
 

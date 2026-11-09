@@ -1070,4 +1070,43 @@ describe("limited mode and wallet safe mode scope matrix", () => {
     );
     expect(adminRes.status).toBe(200);
   });
+
+  it("grants super_admin and specialist ops roles their console scopes in full mode while blocking limited mode", async () => {
+    expect(
+      (await call("full", "GET", "/v1/admin/mp/requests", "super_admin"))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call("full", "GET", "/v1/ops/travel/exceptions", "super_admin"))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call("limited", "GET", "/v1/admin/mp/requests", "super_admin"))
+        .code,
+    ).toBe("limited_mode");
+    expect(
+      (await call("limited", "POST", "/v1/auth/logout", "super_admin")).status,
+    ).toBe(200);
+
+    // ops_admin reaches mp admin and travel ops, but never internal holds (admin:all)
+    expect(
+      (await call("full", "GET", "/v1/admin/mp/requests", "ops_admin")).status,
+    ).toBe(200);
+    expect(
+      (await call("full", "GET", "/v1/ops/travel/exceptions", "ops_admin"))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call("full", "POST", "/v1/wallet/mp/holds", "ops_admin")).code,
+    ).toBe("forbidden");
+
+    // travel_ops reaches travel ops, but not marketplace admin
+    expect(
+      (await call("full", "GET", "/v1/ops/travel/exceptions", "travel_ops"))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call("full", "GET", "/v1/admin/mp/requests", "travel_ops")).code,
+    ).toBe("forbidden");
+  });
 });

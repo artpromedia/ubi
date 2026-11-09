@@ -185,12 +185,85 @@ const MERCHANT_SCOPES: readonly Scope[] = [
   "support:write",
 ];
 
+const OPS_ADMIN_SCOPES: readonly Scope[] = [
+  "profile:read",
+  "device:enroll",
+  "auth:step_up",
+  "mp:admin:read",
+  "travel:ops",
+  "travel:read",
+  "support:write",
+  "ask:converse",
+  "wallet:read",
+  "history:read",
+];
+
+const SUPPORT_OPS_SCOPES: readonly Scope[] = [
+  "profile:read",
+  "device:enroll",
+  "auth:step_up",
+  "mp:admin:read",
+  "travel:ops",
+  "travel:read",
+  "support:write",
+  "history:read",
+];
+
+const GROWTH_OPS_SCOPES: readonly Scope[] = [
+  "profile:read",
+  "device:enroll",
+  "auth:step_up",
+  "mp:admin:read",
+  "ask:converse",
+];
+
 export const ROLE_SCOPES: Readonly<Record<string, readonly Scope[]>> = {
   rider: RIDER_SCOPES,
   driver: DRIVER_SCOPES,
   merchant: MERCHANT_SCOPES,
   restaurant: MERCHANT_SCOPES,
+  ops_admin: OPS_ADMIN_SCOPES,
+  ops: OPS_ADMIN_SCOPES,
+  config_admin: [
+    "profile:read",
+    "device:enroll",
+    "auth:step_up",
+    "mp:admin:read",
+  ],
+  travel_ops: [
+    "profile:read",
+    "device:enroll",
+    "auth:step_up",
+    "travel:ops",
+    "travel:read",
+    "support:write",
+  ],
+  support_lead: SUPPORT_OPS_SCOPES,
+  support_agent: SUPPORT_OPS_SCOPES,
+  safety_responder: [
+    "profile:read",
+    "device:enroll",
+    "auth:step_up",
+    "support:write",
+    "history:read",
+  ],
+  reviewer: [
+    "profile:read",
+    "device:enroll",
+    "auth:step_up",
+    "mp:admin:read",
+    "support:write",
+  ],
+  growth_admin: GROWTH_OPS_SCOPES,
+  growth_editor: [
+    "profile:read",
+    "device:enroll",
+    "auth:step_up",
+    "mp:admin:read",
+  ],
+  ai_ops: GROWTH_OPS_SCOPES,
   admin: [...SCOPES],
+  super_admin: [...SCOPES],
   service: [...SCOPES],
 };
 

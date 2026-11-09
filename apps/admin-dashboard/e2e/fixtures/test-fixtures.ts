@@ -5,15 +5,28 @@
 /* eslint-disable no-empty-pattern, react-hooks/rules-of-hooks -- Playwright fixture `use` is not a React hook, and `{}` is the idiomatic empty fixture arg. */
 import { test as base, expect, type Page } from "@playwright/test";
 
+import {
+  ADMIN_SESSION_COOKIE,
+  sealSessionCookie,
+  type AdminSessionData,
+} from "../../src/lib/session";
+
+const E2E_SESSION_SECRET =
+  process.env.ADMIN_SESSION_SECRET ||
+  "e2e-admin-session-secret-with-at-least-32-chars!";
+
 // =============================================================================
 // Types
 // =============================================================================
 
 interface AdminUser {
   id: string;
+  phone: string;
   email: string;
+  firstName: string;
+  lastName: string;
   name: string;
-  role: "super_admin" | "admin" | "analyst" | "support";
+  role: "super_admin" | "admin" | "ops_admin" | "support_agent";
   token: string;
 }
 
@@ -27,36 +40,82 @@ interface TestDataHelpers {
 // Test Users
 // =============================================================================
 
-const TEST_ADMIN_USERS: Record<string, AdminUser> = {
+const TEST_ADMIN_USERS = {
   super_admin: {
     id: "admin_001",
-    email: "super@ubi.com",
-    name: "Super Admin",
+    phone: "+2348010000001",
+    email: "super@ubi.africa",
+    firstName: "Adaeze",
+    lastName: "Okafor",
+    name: "Adaeze Okafor",
     role: "super_admin",
     token: "test_super_admin_token",
   },
   admin: {
     id: "admin_002",
-    email: "admin@ubi.com",
-    name: "Regular Admin",
+    phone: "+2348010000002",
+    email: "admin@ubi.africa",
+    firstName: "Chidi",
+    lastName: "Nwosu",
+    name: "Chidi Nwosu",
     role: "admin",
     token: "test_admin_token",
   },
   analyst: {
     id: "admin_003",
-    email: "analyst@ubi.com",
-    name: "Data Analyst",
-    role: "analyst",
-    token: "test_analyst_token",
+    phone: "+2348010000003",
+    email: "ops@ubi.africa",
+    firstName: "Kemi",
+    lastName: "Adeyemi",
+    name: "Kemi Adeyemi",
+    role: "ops_admin",
+    token: "test_ops_admin_token",
   },
   support: {
     id: "admin_004",
-    email: "support@ubi.com",
-    name: "Support Agent",
-    role: "support",
+    phone: "+2348010000004",
+    email: "support@ubi.africa",
+    firstName: "Musa",
+    lastName: "Bello",
+    name: "Musa Bello",
+    role: "support_agent",
     token: "test_support_token",
   },
-};
+} satisfies Record<string, AdminUser>;
+
+async function setAdminSessionCookie(
+  page: Page,
+  user: AdminUser,
+  baseUrl: string,
+): Promise<void> {
+  const session: AdminSessionData = {
+    user: {
+      id: user.id,
+      phone: user.phone,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      homeCityId: "LOS",
+    },
+    accessToken: user.token,
+    refreshToken: `rt_${user.token}`,
+    deviceId: `adm_web_fixture_${user.id}`,
+    mode: "full",
+    expiresAt: Date.now() + 15 * 60 * 1000,
+    stepUp: null,
+  };
+  const sealed = await sealSessionCookie(session, E2E_SESSION_SECRET);
+  await page.context().addCookies([
+    {
+      name: ADMIN_SESSION_COOKIE,
+      value: sealed,
+      url: baseUrl,
+      httpOnly: true,
+      sameSite: "Strict",
+    },
+  ]);
+}
 
 // =============================================================================
 // Custom Fixtures
@@ -79,34 +138,18 @@ export const test = base.extend<AdminFixtures>({
     await use(TEST_ADMIN_USERS.admin);
   },
 
-  authenticatedPage: async ({ page, adminUser }, use) => {
-    // Set up authentication state
-    await page.goto("/login");
-
-    // Set auth token in localStorage
-    await page.evaluate(
-      ({ user }) => {
-        localStorage.setItem("admin_token", user.token);
-        localStorage.setItem("admin_user", JSON.stringify(user));
-      },
-      { user: adminUser },
-    );
-
+  authenticatedPage: async ({ page, adminUser, baseURL }, use) => {
+    const targetUrl = baseURL ?? "http://127.0.0.1:3002";
+    await setAdminSessionCookie(page, adminUser, targetUrl);
     await page.goto("/dashboard");
     await use(page);
   },
 
-  loginAsAdmin: async ({ page }, use) => {
+  loginAsAdmin: async ({ page, baseURL }, use) => {
+    const targetUrl = baseURL ?? "http://127.0.0.1:3002";
     const login = async (role: keyof typeof TEST_ADMIN_USERS = "admin") => {
       const user = TEST_ADMIN_USERS[role];
-
-      await page.evaluate(
-        ({ user }) => {
-          localStorage.setItem("admin_token", user.token);
-          localStorage.setItem("admin_user", JSON.stringify(user));
-        },
-        { user },
-      );
+      await setAdminSessionCookie(page, user, targetUrl);
     };
 
     await use(login);
@@ -118,8 +161,8 @@ export const test = base.extend<AdminFixtures>({
       response: unknown,
       status = 200,
     ) => {
-      await page.route(urlPattern, (route) => {
-        route.fulfill({
+      await page.route(urlPattern, async (route) => {
+        await route.fulfill({
           status,
           contentType: "application/json",
           body: JSON.stringify(response),
@@ -134,7 +177,10 @@ export const test = base.extend<AdminFixtures>({
     const helpers: TestDataHelpers = {
       createMockUser: (overrides = {}) => ({
         id: `admin_${Date.now()}`,
-        email: "test@ubi.com",
+        phone: "+2348019999999",
+        email: "test@ubi.africa",
+        firstName: "Test",
+        lastName: "Admin",
         name: "Test Admin",
         role: "admin",
         token: "test_token",
@@ -178,24 +224,17 @@ export const test = base.extend<AdminFixtures>({
 
 export { expect, TEST_ADMIN_USERS };
 
-/**
- * Helper to wait for page to be fully loaded
- */
 export async function waitForPageLoad(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");
 }
 
-/**
- * Helper to wait for dashboard data to load
- */
 export async function waitForDashboardLoad(page: Page): Promise<void> {
   await page
     .waitForSelector('[data-testid="dashboard-stats"]', {
       state: "visible",
       timeout: 10000,
     })
-    .catch(() => {
-      // Stats may not have test IDs, wait for any loading indicators to disappear
-      return page.waitForLoadState("networkidle");
+    .catch(async () => {
+      await page.waitForLoadState("networkidle");
     });
 }

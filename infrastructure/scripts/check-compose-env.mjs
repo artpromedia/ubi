@@ -379,7 +379,10 @@ export const CONTRACT = {
   },
   "admin-dashboard": {
     NODE_ENV: "required",
+    ADMIN_SESSION_SECRET: "required",
+    ADMIN_GATEWAY_URL: "set",
     NEXT_PUBLIC_API_URL: "set",
+    NEXT_PUBLIC_ADMIN_API_BASE: "optional",
   },
 };
 

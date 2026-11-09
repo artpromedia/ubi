@@ -1,30 +1,36 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { LogoIcon } from "@ubi/ui";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
   Car,
+  CheckCircle2,
   ChevronDown,
   CreditCard,
   FileCheck,
   Gavel,
   HelpCircle,
   LayoutDashboard,
+  Loader2,
   LogOut,
   Menu,
   Package,
   Plane,
   Settings,
   Shield,
+  ShieldCheck,
   Users,
   UtensilsCrossed,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+
+import { LogoIcon } from "@ubi/ui";
+
+import { formatAdminRole, type PublicAdminSession } from "@/lib/session";
+import { cn } from "@/lib/utils";
 
 const navigation = [
   {
@@ -137,14 +143,42 @@ const secondaryNavigation = [
   { name: "Help", href: "/help", icon: HelpCircle },
 ];
 
+function operatorDisplayName(session?: PublicAdminSession | null): string {
+  if (!session) {
+    return "Operator";
+  }
+  const full =
+    `${session.user.firstName} ${session.user.lastName}`.trim() ||
+    session.user.phone;
+  return full;
+}
+
+function operatorInitials(session?: PublicAdminSession | null): string {
+  if (!session) {
+    return "OP";
+  }
+  const first = session.user.firstName.trim().charAt(0);
+  const last = session.user.lastName.trim().charAt(0);
+  const combined = `${first}${last}`.toUpperCase();
+  return combined.length > 0 ? combined : "OP";
+}
+
 interface SidebarProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
+  readonly session?: PublicAdminSession | null;
+  readonly onSignOut?: () => Promise<void> | void;
 }
 
-export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
-  const pathname = usePathname();
+export const Sidebar = ({
+  isOpen,
+  onClose,
+  session,
+  onSignOut,
+}: Readonly<SidebarProps>) => {
+  const pathname = usePathname() ?? "";
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const isLimited = session?.mode === "limited";
 
   const toggleExpanded = (name: string) => {
     setExpandedItems((prev) =>
@@ -159,7 +193,6 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
 
   return (
     <>
-      {/* Mobile overlay */}
       {isOpen && (
         <button
           type="button"
@@ -169,14 +202,12 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed top-0 left-0 z-50 h-full w-72 bg-gray-950 border-r border-gray-800 flex flex-col transition-transform lg:translate-x-0",
           isOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        {/* Header */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
@@ -185,175 +216,316 @@ export function Sidebar({ isOpen, onClose }: Readonly<SidebarProps>) {
             <span className="font-bold text-white">UBI Admin</span>
           </Link>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close navigation menu"
             className="lg:hidden text-gray-400 hover:text-white"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          {navigation.map((item) => (
-            <div key={item.name}>
-              {item.children ? (
-                <>
-                  <button
-                    onClick={() => toggleExpanded(item.name)}
+        {/* Navigation: hidden in limited mode so zero console actions appear before device step-up */}
+        {isLimited ? (
+          <div
+            className="flex-1 p-4 text-xs text-amber-300/90"
+            data-testid="sidebar.limited-notice"
+          >
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="font-medium text-amber-200">Device unverified</p>
+              <p className="mt-1 text-gray-400">
+                Complete device verification to unlock operator navigation and
+                tools.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+            {navigation.map((item) => (
+              <div key={item.name}>
+                {item.children ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(item.name)}
+                      className={cn(
+                        "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition",
+                        isActive(item.href)
+                          ? "bg-green-500/10 text-green-500"
+                          : "text-gray-400 hover:text-white hover:bg-gray-800",
+                      )}
+                    >
+                      <span className="flex items-center gap-3">
+                        <item.icon className="w-5 h-5" />
+                        {item.name}
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "w-4 h-4 transition-transform",
+                          expandedItems.includes(item.name) && "rotate-180",
+                        )}
+                      />
+                    </button>
+                    <motion.div
+                      initial={false}
+                      animate={{
+                        height: expandedItems.includes(item.name) ? "auto" : 0,
+                        opacity: expandedItems.includes(item.name) ? 1 : 0,
+                      }}
+                      className="overflow-hidden"
+                    >
+                      <div className="ml-4 mt-1 space-y-1 border-l border-gray-800 pl-4">
+                        {item.children.map((child) => (
+                          <Link
+                            key={child.name}
+                            href={child.href}
+                            className={cn(
+                              "block px-3 py-2 rounded-lg text-sm transition",
+                              pathname === child.href
+                                ? "bg-green-500/10 text-green-500"
+                                : "text-gray-400 hover:text-white hover:bg-gray-800",
+                            )}
+                          >
+                            {child.name}
+                          </Link>
+                        ))}
+                      </div>
+                    </motion.div>
+                  </>
+                ) : (
+                  <Link
+                    href={item.href}
                     className={cn(
-                      "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition",
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition",
                       isActive(item.href)
                         ? "bg-green-500/10 text-green-500"
                         : "text-gray-400 hover:text-white hover:bg-gray-800",
                     )}
                   >
-                    <span className="flex items-center gap-3">
-                      <item.icon className="w-5 h-5" />
-                      {item.name}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        "w-4 h-4 transition-transform",
-                        expandedItems.includes(item.name) && "rotate-180",
-                      )}
-                    />
-                  </button>
-                  <motion.div
-                    initial={false}
-                    animate={{
-                      height: expandedItems.includes(item.name) ? "auto" : 0,
-                      opacity: expandedItems.includes(item.name) ? 1 : 0,
-                    }}
-                    className="overflow-hidden"
-                  >
-                    <div className="ml-4 mt-1 space-y-1 border-l border-gray-800 pl-4">
-                      {item.children.map((child) => (
-                        <Link
-                          key={child.name}
-                          href={child.href}
-                          className={cn(
-                            "block px-3 py-2 rounded-lg text-sm transition",
-                            pathname === child.href
-                              ? "bg-green-500/10 text-green-500"
-                              : "text-gray-400 hover:text-white hover:bg-gray-800",
-                          )}
-                        >
-                          {child.name}
-                        </Link>
-                      ))}
-                    </div>
-                  </motion.div>
-                </>
-              ) : (
-                <Link
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition",
-                    isActive(item.href)
-                      ? "bg-green-500/10 text-green-500"
-                      : "text-gray-400 hover:text-white hover:bg-gray-800",
-                  )}
-                >
-                  <item.icon className="w-5 h-5" />
-                  {item.name}
-                </Link>
-              )}
-            </div>
-          ))}
+                    <item.icon className="w-5 h-5" />
+                    {item.name}
+                  </Link>
+                )}
+              </div>
+            ))}
 
-          {/* Divider */}
-          <div className="!my-4 border-t border-gray-800" />
+            <div className="!my-4 border-t border-gray-800" />
 
-          {/* Secondary navigation */}
-          {secondaryNavigation.map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition",
-                pathname === item.href
-                  ? "bg-green-500/10 text-green-500"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800",
-              )}
-            >
-              <item.icon className="w-5 h-5" />
-              {item.name}
-            </Link>
-          ))}
-        </nav>
+            {secondaryNavigation.map((item) => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition",
+                  pathname === item.href
+                    ? "bg-green-500/10 text-green-500"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800",
+                )}
+              >
+                <item.icon className="w-5 h-5" />
+                {item.name}
+              </Link>
+            ))}
+          </nav>
+        )}
 
-        {/* User section */}
+        {/* Signed-in operator identity + real sign-out */}
         <div className="p-4 border-t border-gray-800">
           <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-900">
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-              <span className="text-white text-sm font-medium">JD</span>
+              <span className="text-white text-sm font-medium">
+                {operatorInitials(session)}
+              </span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">
-                John Doe
+              <p
+                className="text-sm font-medium text-white truncate"
+                data-testid="sidebar.operator-name"
+              >
+                {operatorDisplayName(session)}
               </p>
-              <p className="text-xs text-gray-500 truncate">Super Admin</p>
+              <p
+                className="text-xs text-gray-500 truncate"
+                data-testid="sidebar.operator-role"
+              >
+                {session
+                  ? `${formatAdminRole(session.user.role)}${isLimited ? " · Unverified device" : ""}`
+                  : "Signed in"}
+              </p>
             </div>
-            <button className="text-gray-400 hover:text-white transition">
-              <LogOut className="w-5 h-5" />
-            </button>
+            {onSignOut ? (
+              <button
+                type="button"
+                aria-label="Sign out"
+                title="Sign out"
+                data-testid="sidebar.signout"
+                onClick={() => {
+                  void onSignOut();
+                }}
+                className="text-gray-400 hover:text-white transition"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            ) : null}
           </div>
         </div>
       </aside>
     </>
   );
-}
+};
 
 interface AdminHeaderProps {
   readonly onMenuClick: () => void;
   readonly title?: string;
+  readonly session?: PublicAdminSession | null;
 }
 
-export function AdminHeader({
+export const AdminHeader = ({
   onMenuClick,
   title,
-}: Readonly<AdminHeaderProps>) {
+  session,
+}: Readonly<AdminHeaderProps>) => {
+  const isLimited = session?.mode === "limited";
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [challengeId, setChallengeId] = useState("");
+  const [approving, setApproving] = useState(false);
+  const [approveNotice, setApproveNotice] = useState<string | null>(null);
+  const [approveError, setApproveError] = useState<string | null>(null);
+
+  const handleApproveDevice = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    setApproveError(null);
+    setApproveNotice(null);
+    const trimmed = challengeId.trim();
+    if (!trimmed) {
+      setApproveError("Enter the challenge ID shown on your new device.");
+      return;
+    }
+
+    setApproving(true);
+    try {
+      const res = await fetch("/api/auth/step-up/approve", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: trimmed }),
+      });
+      const payload = (await res.json()) as {
+        error?: { message?: string };
+      };
+      if (!res.ok) {
+        setApproveError(
+          payload.error?.message ?? "Could not approve that device challenge.",
+        );
+        return;
+      }
+      setApproveNotice("Device approved. Continue on the new browser.");
+      setChallengeId("");
+    } catch {
+      setApproveError("Network error while approving device challenge.");
+    } finally {
+      setApproving(false);
+    }
+  };
+
   return (
     <header className="sticky top-0 z-30 h-16 bg-gray-950/80 backdrop-blur-sm border-b border-gray-800 flex items-center px-4 lg:px-6">
       <button
+        type="button"
+        aria-label="Open navigation menu"
         onClick={onMenuClick}
         className="lg:hidden text-gray-400 hover:text-white mr-4"
       >
         <Menu className="w-6 h-6" />
       </button>
 
-      {title && <h1 className="text-lg font-semibold text-white">{title}</h1>}
+      {title ? (
+        <h1 className="text-lg font-semibold text-white">{title}</h1>
+      ) : null}
 
-      <div className="ml-auto flex items-center gap-4">
-        {/* Search */}
-        <div className="hidden md:block">
-          <input
-            type="search"
-            placeholder="Search..."
-            className="w-64 px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          />
-        </div>
-
-        {/* Notifications */}
-        <button className="relative text-gray-400 hover:text-white transition">
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+      {!isLimited ? (
+        <div className="ml-auto flex items-center gap-3 relative">
+          <div className="hidden md:block">
+            <input
+              type="search"
+              placeholder="Search..."
+              className="w-64 px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
             />
-          </svg>
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-            3
-          </span>
-        </button>
-      </div>
+          </div>
+
+          {session?.mode === "full" ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setApproveOpen((prev) => !prev);
+                  setApproveError(null);
+                  setApproveNotice(null);
+                }}
+                data-testid="header.approve-device-toggle"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 border border-gray-800 text-xs text-gray-300 transition"
+              >
+                <ShieldCheck className="w-4 h-4 text-green-400" />
+                <span>Approve device</span>
+              </button>
+
+              {approveOpen ? (
+                <form
+                  onSubmit={(e) => {
+                    void handleApproveDevice(e);
+                  }}
+                  className="absolute right-0 mt-2 w-80 rounded-xl bg-gray-900 border border-gray-800 p-4 shadow-xl space-y-3 z-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-white">
+                      Approve a new browser
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setApproveOpen(false)}
+                      className="text-gray-500 hover:text-gray-300"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={challengeId}
+                    onChange={(e) => setChallengeId(e.target.value)}
+                    placeholder="Paste challenge ID"
+                    className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-xs text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                  {approveError ? (
+                    <p className="text-xs text-red-400">{approveError}</p>
+                  ) : null}
+                  {approveNotice ? (
+                    <p className="text-xs text-green-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {approveNotice}
+                    </p>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={approving}
+                    className="w-full py-2 px-3 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-50 text-xs font-medium text-white flex items-center justify-center gap-1.5"
+                  >
+                    {approving ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Approving…
+                      </>
+                    ) : (
+                      "Approve challenge"
+                    )}
+                  </button>
+                </form>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </header>
   );
-}
+};

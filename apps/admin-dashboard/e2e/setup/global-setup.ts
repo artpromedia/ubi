@@ -13,6 +13,7 @@ async function globalSetup(config: FullConfig): Promise<void> {
     value: "test",
     writable: true,
     configurable: true,
+    enumerable: true,
   });
 
   console.log(`📍 Base URL: ${config.projects[0]?.use?.baseURL || "Not set"}`);

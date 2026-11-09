@@ -1,44 +1,203 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Lock,
-  Mail,
-  Eye,
-  EyeOff,
   AlertCircle,
-  Shield,
+  ArrowLeft,
+  KeyRound,
   Loader2,
+  Phone,
+  Shield,
+  ShieldX,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import {
+  Suspense,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactElement,
+} from "react";
 
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+import { DeviceStepUpCard } from "@/components/auth/DeviceStepUpCard";
+import { sanitizeNextPath, type PublicAdminSession } from "@/lib/session";
+
+const E164_RE = /^\+[1-9]\d{7,14}$/;
+
+type LoginStep = "phone" | "otp" | "step_up";
+
+interface OtpApiResponse {
+  success?: boolean;
+  data?: {
+    expiresInSeconds?: number;
+    resendAfterSeconds?: number;
+  };
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
+interface VerifyApiResponse {
+  success?: boolean;
+  data?: {
+    session?: PublicAdminSession;
+  };
+  error?: {
+    code?: string;
+    message?: string;
+    details?: { role?: string };
+  };
+}
+
+export const AdminLoginView = ({
+  nextPath = "/dashboard",
+}: {
+  readonly nextPath?: string;
+}): ReactElement => {
+  const safeNext = sanitizeNextPath(nextPath);
+
+  const [step, setStep] = useState<LoginStep>("phone");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [roleRefusal, setRoleRefusal] = useState<string | null>(null);
+  const [limitedSession, setLimitedSession] =
+    useState<PublicAdminSession | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (resendCooldown <= 0) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
+  const navigateToConsole = (): void => {
+    if (typeof globalThis.location !== "undefined") {
+      globalThis.location.assign(safeNext);
+    }
+  };
+
+  const requestCode = async (targetPhone: string): Promise<boolean> => {
+    setError(null);
+    setRoleRefusal(null);
+    const normalized = targetPhone.trim();
+    if (!E164_RE.test(normalized)) {
+      setError(
+        "Enter your operator phone number in international format (for example, +2348012345678).",
+      );
+      return false;
+    }
+
     setIsLoading(true);
-    setError("");
-
-    // Simulated login - replace with actual auth
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      // Redirect to dashboard on success
-      window.location.href = "/dashboard";
+      const res = await fetch("/api/auth/otp", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: normalized }),
+      });
+      const payload = (await res.json()) as OtpApiResponse;
+      if (!res.ok) {
+        setError(
+          payload.error?.message ??
+            "Could not send a verification code right now.",
+        );
+        return false;
+      }
+      setResendCooldown(payload.data?.resendAfterSeconds ?? 60);
+      setStep("otp");
+      return true;
     } catch {
-      setError("Invalid email or password");
+      setError("Cannot reach UBI authentication right now. Check connection.");
+      return false;
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handlePhoneSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    await requestCode(phone);
+  };
+
+  const handleOtpSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    setError(null);
+    setRoleRefusal(null);
+
+    const trimmedCode = code.trim();
+    if (!/^\d{6}$/.test(trimmedCode)) {
+      setError("Enter the 6-digit verification code sent to your phone.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/auth/verify", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phone.trim(), code: trimmedCode }),
+      });
+      const payload = (await res.json()) as VerifyApiResponse;
+
+      if (res.status === 403 && payload.error?.code === "forbidden") {
+        setRoleRefusal(
+          payload.error.message ??
+            "This account does not have operator access to the UBI Admin Console.",
+        );
+        setCode("");
+        return;
+      }
+
+      if (!res.ok || !payload.data?.session) {
+        setError(
+          payload.error?.message ??
+            "Verification failed. Check the code and try again.",
+        );
+        return;
+      }
+
+      const session = payload.data.session;
+      if (session.mode === "limited") {
+        setLimitedSession(session);
+        setStep("step_up");
+        return;
+      }
+
+      navigateToConsole();
+    } catch {
+      setError("Cannot reach UBI authentication right now. Check connection.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignOutFromStepUp = async (): Promise<void> => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    } finally {
+      setLimitedSession(null);
+      setCode("");
+      setStep("phone");
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-950 p-4">
-      {/* Background pattern */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#1a1a1a_1px,transparent_1px),linear-gradient(to_bottom,#1a1a1a_1px,transparent_1px)] bg-[size:4rem_4rem]" />
 
       <motion.div
@@ -46,159 +205,218 @@ export default function LoginPage() {
         animate={{ opacity: 1, y: 0 }}
         className="relative w-full max-w-md"
       >
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 mb-4">
             <Shield className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white">UBI Admin</h1>
-          <p className="text-gray-400 mt-2">Internal operations dashboard</p>
+          <p className="text-gray-400 mt-2">
+            Internal operations &amp; safety console
+          </p>
         </div>
 
-        {/* Login form */}
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Error message */}
+        {step === "step_up" && limitedSession ? (
+          <DeviceStepUpCard
+            session={limitedSession}
+            onVerified={() => navigateToConsole()}
+            onSignOut={handleSignOutFromStepUp}
+          />
+        ) : (
+          <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8">
             <AnimatePresence>
-              {error && (
+              {roleRefusal ? (
                 <motion.div
+                  key="role-refusal"
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400"
+                  role="alert"
+                  data-testid="login.role-refused"
+                  className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200"
+                >
+                  <ShieldX className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm space-y-1">
+                    <p className="font-semibold text-red-300">
+                      Operator role required
+                    </p>
+                    <p className="text-red-200/90">{roleRefusal}</p>
+                  </div>
+                </motion.div>
+              ) : null}
+
+              {error ? (
+                <motion.div
+                  key="login-error"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  role="alert"
+                  data-testid="login.error"
+                  className="mb-6 flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400"
                 >
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
                   <span className="text-sm">{error}</span>
                 </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
 
-            {/* Email field */}
-            <div className="space-y-2">
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-300"
+            {step === "phone" ? (
+              <form
+                onSubmit={(e) => {
+                  void handlePhoneSubmit(e);
+                }}
+                className="space-y-6"
+                data-testid="login.phone-form"
               >
-                Email address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@ubi.africa"
-                  className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition"
-                  required
-                />
-              </div>
-            </div>
+                <div className="space-y-2">
+                  <label
+                    htmlFor="phone"
+                    className="block text-sm font-medium text-gray-300"
+                  >
+                    Operator phone number
+                  </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                    <input
+                      id="phone"
+                      name="phone"
+                      type="tel"
+                      autoComplete="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+2348012345678"
+                      className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition"
+                      required
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Use the E.164 phone number registered to your UBI operator
+                    account.
+                  </p>
+                </div>
 
-            {/* Password field */}
-            <div className="space-y-2">
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-300"
-              >
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-12 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition"
-                  required
-                />
                 <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition"
+                  type="submit"
+                  disabled={isLoading}
+                  data-testid="login.send-code"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-green-600 hover:bg-green-500 disabled:bg-green-600/50 text-white font-medium rounded-lg transition"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Sending verification code…
+                    </>
                   ) : (
-                    <Eye className="w-5 h-5" />
+                    "Send verification code"
                   )}
                 </button>
-              </div>
-            </div>
-
-            {/* Remember me & Forgot password */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-green-500 focus:ring-green-500 focus:ring-offset-0"
-                />
-                <span className="text-sm text-gray-400">Remember me</span>
-              </label>
-              <a
-                href="#"
-                className="text-sm text-green-500 hover:text-green-400 transition"
+              </form>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  void handleOtpSubmit(e);
+                }}
+                className="space-y-6"
+                data-testid="login.otp-form"
               >
-                Forgot password?
-              </a>
-            </div>
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("phone");
+                      setCode("");
+                      setError(null);
+                      setRoleRefusal(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Use a different number
+                  </button>
+                  <span className="text-xs text-gray-500">{phone.trim()}</span>
+                </div>
 
-            {/* Submit button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-green-600 hover:bg-green-500 disabled:bg-green-600/50 text-white font-medium rounded-lg transition"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                "Sign in"
-              )}
-            </button>
-          </form>
+                <div className="space-y-2">
+                  <label
+                    htmlFor="otp-code"
+                    className="block text-sm font-medium text-gray-300"
+                  >
+                    6-digit verification code
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                    <input
+                      id="otp-code"
+                      name="code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={code}
+                      onChange={(e) =>
+                        setCode(e.target.value.replace(/\D/g, ""))
+                      }
+                      placeholder="123456"
+                      className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white tracking-widest font-mono placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition"
+                      required
+                    />
+                  </div>
+                </div>
 
-          {/* SSO options */}
-          <div className="mt-6 pt-6 border-t border-gray-800">
-            <p className="text-center text-sm text-gray-500 mb-4">
-              Or continue with
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <button className="flex items-center justify-center gap-2 py-2.5 px-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-gray-300 transition">
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  data-testid="login.verify-code"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-green-600 hover:bg-green-500 disabled:bg-green-600/50 text-white font-medium rounded-lg transition"
                 >
-                  <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
-                </svg>
-                <span className="text-sm">Google</span>
-              </button>
-              <button className="flex items-center justify-center gap-2 py-2.5 px-4 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-gray-300 transition">
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                </svg>
-                <span className="text-sm">GitHub</span>
-              </button>
-            </div>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Verifying…
+                    </>
+                  ) : (
+                    "Verify & sign in"
+                  )}
+                </button>
+
+                <div className="text-center">
+                  <button
+                    type="button"
+                    disabled={isLoading || resendCooldown > 0}
+                    onClick={() => {
+                      void requestCode(phone);
+                    }}
+                    className="text-xs text-green-500 hover:text-green-400 disabled:text-gray-500 transition"
+                  >
+                    {resendCooldown > 0
+                      ? `Resend code in ${resendCooldown}s`
+                      : "Resend verification code"}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
-        </div>
+        )}
 
-        {/* Security notice */}
         <p className="text-center text-xs text-gray-600 mt-6">
-          This is a secure admin portal. Unauthorized access is prohibited.
-          <br />
-          All activities are monitored and logged.
+          Authorised UBI operators only. Sign-in attempts, device verifications,
+          and administrative actions are recorded in the audit log.
         </p>
       </motion.div>
     </div>
+  );
+};
+
+const LoginWithSearchParams = (): ReactElement => {
+  const searchParams = useSearchParams();
+  const next = searchParams?.get("next") ?? "/dashboard";
+  return <AdminLoginView nextPath={next} />;
+};
+
+export default function LoginPage(): ReactElement {
+  return (
+    <Suspense fallback={<AdminLoginView nextPath="/dashboard" />}>
+      <LoginWithSearchParams />
+    </Suspense>
   );
 }

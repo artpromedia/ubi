@@ -1,23 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import { Sidebar, AdminHeader } from "@/components/layout/navigation";
+import type { ReactElement, ReactNode } from "react";
 
-export default function DashboardLayout({
+import {
+  AdminSessionProvider,
+  AdminShell,
+} from "@/components/providers/admin-session-provider";
+
+const DashboardLayout = ({
   children,
 }: {
-  children: React.ReactNode;
-}) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
+  readonly children: ReactNode;
+}): ReactElement => {
   return (
-    <div className="min-h-screen bg-gray-950">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-
-      <div className="lg:ml-72">
-        <AdminHeader onMenuClick={() => setSidebarOpen(true)} />
-        <main className="p-4 lg:p-6">{children}</main>
-      </div>
-    </div>
+    <AdminSessionProvider>
+      <AdminShell>{children}</AdminShell>
+    </AdminSessionProvider>
   );
-}
+};
+
+export default DashboardLayout;

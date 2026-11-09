@@ -1,18 +1,17 @@
 /**
  * Admin API client — the single network boundary for the growth + ops consoles.
  *
- * A small typed fetch wrapper (same shape as `apps/web-app/src/lib/api-client.ts`)
- * whose `get<T>` / `post<T>` resolve to the decoded, contract-shaped JSON body so
- * callers in `growth-api.ts` get typed values directly. Screens never fetch on
- * their own — they go through `growthApi`, which goes through this client.
+ * A small typed fetch wrapper whose `get<T>` / `post<T>` / `put<T>` resolve to
+ * the decoded, contract-shaped JSON body so callers in `growth-api.ts`,
+ * `marketplace-api.ts` and `travel-ops.ts` get typed values directly.
  *
- * Auth: the admin bearer token is read at request time. The dashboard stores it
- * under `ubi_admin_token` after login; during SSR/prerender there is no token,
- * which is expected — data loads client-side.
+ * Auth (CC-B05): tokens are NEVER stored in `localStorage`. Browser calls go
+ * through the same-origin `/api/gateway` Next.js route handler, which reads the
+ * `HttpOnly`, `SameSite=Strict` session cookie (`ubi_admin_session`), refreshes
+ * before expiry, and attaches `Authorization: Bearer <token>` server-side.
  */
 
-const ADMIN_API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const ADMIN_API_BASE = process.env.NEXT_PUBLIC_ADMIN_API_BASE ?? "/api/gateway";
 
 export interface RequestOptions {
   /** Extra headers merged onto the defaults. */
@@ -43,15 +42,6 @@ export function newIdempotencyKey(): string {
     /* fall through to the non-crypto fallback */
   }
   return `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
-function authToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem("ubi_admin_token");
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -116,18 +106,18 @@ class AdminApiClient {
     if (options?.idempotencyKey) {
       headers["idempotency-key"] = options.idempotencyKey;
     }
-    const token = authToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
     return headers;
   }
 
   async get<T>(url: string, options?: RequestOptions): Promise<T> {
     const res = await fetch(this.baseUrl + url, {
       method: "GET",
+      credentials: "same-origin",
       headers: this.headers(options),
       signal: options?.signal,
     });
-    return decode<T>(res);
+    const decoded = await decode<T>(res);
+    return decoded;
   }
 
   async post<T>(
@@ -137,11 +127,13 @@ class AdminApiClient {
   ): Promise<T> {
     const res = await fetch(this.baseUrl + url, {
       method: "POST",
+      credentials: "same-origin",
       headers: this.headers(options),
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: options?.signal,
     });
-    return decode<T>(res);
+    const decoded = await decode<T>(res);
+    return decoded;
   }
 
   async put<T>(
@@ -151,14 +143,16 @@ class AdminApiClient {
   ): Promise<T> {
     const res = await fetch(this.baseUrl + url, {
       method: "PUT",
+      credentials: "same-origin",
       headers: this.headers(options),
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: options?.signal,
     });
-    return decode<T>(res);
+    const decoded = await decode<T>(res);
+    return decoded;
   }
 }
 
-export const apiClient = new AdminApiClient(ADMIN_API_URL);
+export const apiClient = new AdminApiClient(ADMIN_API_BASE);
 
 export default apiClient;
